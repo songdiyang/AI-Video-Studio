@@ -1,7 +1,7 @@
 import React, { useState, FormEvent, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Card, CardBody, Button, Input } from '@heroui/react';
-import { User, Lock, ArrowRight, KeyRound } from 'lucide-react';
+import { User, Lock, ArrowRight, KeyRound, Maximize2, Minimize2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { login, register, loginWithAdminAccess, getLoginRequirements } from '../services/auth';
 import { useToast } from '../contexts/ToastContext';
@@ -21,9 +21,34 @@ const Auth: React.FC = () => {
   const [checkingLoginRequirements, setCheckingLoginRequirements] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<{ username?: string; password?: string }>({});
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   // 获取登录前想访问的页面
   const from = (location.state as any)?.from?.pathname || '/';
+
+  // 全屏切换功能
+  const toggleFullscreen = async () => {
+    try {
+      if (!document.fullscreenElement) {
+        await document.documentElement.requestFullscreen();
+        setIsFullscreen(true);
+      } else {
+        await document.exitFullscreen();
+        setIsFullscreen(false);
+      }
+    } catch (err) {
+      console.error('全屏切换失败:', err);
+    }
+  };
+
+  // 监听全屏变化事件
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
 
   useEffect(() => {
     if (mode !== 'login') {
@@ -138,6 +163,19 @@ const Auth: React.FC = () => {
           />
         ))}
       </div>
+
+      {/* 全屏按钮 */}
+      <button
+        onClick={toggleFullscreen}
+        className="absolute top-4 right-4 z-20 p-2 rounded-lg bg-[var(--bg-input)]/80 border border-[var(--border-color)] text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:border-[var(--accent)]/30 transition-all duration-200 backdrop-blur-sm"
+        title={isFullscreen ? '退出全屏' : '全屏模式'}
+      >
+        {isFullscreen ? (
+          <Minimize2 className="w-4 h-4" />
+        ) : (
+          <Maximize2 className="w-4 h-4" />
+        )}
+      </button>
 
       <Card className="w-full max-w-md pro-card relative z-10">
         <CardBody className="p-8 sm:p-10 space-y-7">
