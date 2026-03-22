@@ -204,14 +204,6 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
   });
   const frontViewUrl = frontResult.image_url;
   console.log('[CharacterViews] ✅ 正面视图生成完成');
-  console.log('[CharacterViews] DEBUG - 正面视图结果:', {
-    prompt: frontPrompt.substring(0, 150) + '...',
-    imageUrl: frontViewUrl,
-    imageModel,
-    textModel,
-    aspectRatio: aspectRatio || null,
-    dimensions: `${width}x${height}`
-  });
 
   // 持久化正面视图到 MinIO
   const persistedFrontUrl = await downloadAndStore(
@@ -271,13 +263,6 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
   });
   const sideViewUrl = sideResult.image_url;
   console.log('[CharacterViews] ✅ 侧面视图生成完成');
-  console.log('[CharacterViews] DEBUG - 侧面视图结果:', {
-    prompt: sidePrompt.substring(0, 150) + '...',
-    imageUrl: sideViewUrl,
-    imageModel,
-    aspectRatio: aspectRatio || null,
-    dimensions: `${width}x${height}`
-  });
 
   // 持久化侧面视图到 MinIO
   const persistedSideUrl = await downloadAndStore(
@@ -335,13 +320,6 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
   });
   const backViewUrl = backResult.image_url;
   console.log('[CharacterViews] ✅ 背面视图生成完成');
-  console.log('[CharacterViews] DEBUG - 背面视图结果:', {
-    prompt: backPrompt.substring(0, 150) + '...',
-    imageUrl: backViewUrl,
-    imageModel,
-    aspectRatio: aspectRatio || null,
-    dimensions: `${width}x${height}`
-  });
 
   // 持久化背面视图到 MinIO
   const persistedBackUrl = await downloadAndStore(
@@ -401,7 +379,6 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
   };
 
   console.log('[CharacterViews] ✅ 三视图生成完成');
-  console.log('[CharacterViews] DEBUG - 最终输出:', JSON.stringify(finalResult, null, 2));
 
   return finalResult;
 }

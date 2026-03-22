@@ -355,7 +355,6 @@ ${extraInfo}
   // modified 镜头：自动生成更新版空镜场景图并存入 DB（供后续 inherit 镜头使用）
   if (sceneState === 'modified' && (variables.location || location)) {
     trace('触发空镜场景图生成', { sceneState, location: variables.location || location, environmentChange });
-    console.error(`\x1b[31m[SingleFrameGen][DEBUG] 镜头 storyboardId=${storyboardId} 触发空镜生成→ 场景: ${variables.location || location} | 变化: ${environmentChange}\x1b[0m`);
     try {
       await generateUpdatedSceneImage({
         storyboardId,

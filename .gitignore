@@ -35,5 +35,10 @@ Thumbs.db
 docker-data/
 
 
+# Temporary files
+review_diff.txt
+partial_diff.txt
+*.diff
+
 .claude/
 .gitnexus

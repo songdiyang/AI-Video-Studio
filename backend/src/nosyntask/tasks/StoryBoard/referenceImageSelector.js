@@ -172,7 +172,6 @@ ${imageListText}
     .map(id => idToUrl[id]);
 
   const reasoning = parsed.reasoning || '';
-  console.error(`\x1b[31m[RefSelector][DEBUG] frameType=${frameType} | AI 选择: [${parsed.selected.join(', ')}] | 理由: ${reasoning}\x1b[0m`);
 
   if (selectedUrls.length === 0) {
     throw new Error(`[RefSelector] AI 选择的图片 ID 全部无法映射: selected=[${parsed.selected.join(', ')}], available=[${availableImages.map(i => i.id).join(', ')}]`);

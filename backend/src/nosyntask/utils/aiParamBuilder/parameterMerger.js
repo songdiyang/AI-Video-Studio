@@ -4,8 +4,14 @@
  */
 
 /**
- * 合并工作流参数和用户参数
+ * 合并工作流参数和用户参数（三层合并，带重复检测）
  * 优先级：workflowParams > userParams > defaultParams
+ *
+ * 注意：此函数与 utils/templateRenderer.js 中的 mergeParams 不同：
+ * - 本函数：三层合并，带重复参数检测和警告，用于 AI 参数构建场景
+ * - mergeParams：简单两层合并（defaultParams + runtimeParams），用于模板渲染场景
+ * 
+ * 两者用途不同，请勿混用。
  *
  * @param {object} workflowParams - 工作流传入的参数（优先级最高）
  * @param {object} userParams - 用户传入的参数（优先级中等）

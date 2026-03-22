@@ -1,5 +1,41 @@
-import React, { useState, memo } from 'react';
+import React, { useState, useRef, useEffect, useCallback, memo } from 'react';
 import Skeleton from './Skeleton';
+
+/**
+ * 懒加载 hook - 使用 Intersection Observer 实现图片懒加载
+ * 图片未进入视口时不加载，提前 200px 开始加载
+ */
+export const useLazyImage = (src: string | undefined) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [isVisible, setIsVisible] = useState(false);
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [hasError, setHasError] = useState(false);
+
+  useEffect(() => {
+    if (!src) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setIsVisible(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: '200px' } // 提前 200px 开始加载
+    );
+
+    if (containerRef.current) {
+      observer.observe(containerRef.current);
+    }
+
+    return () => observer.disconnect();
+  }, [src]);
+
+  const handleLoad = useCallback(() => setIsLoaded(true), []);
+  const handleError = useCallback(() => setHasError(true), []);
+
+  return { containerRef, isVisible, isLoaded, hasError, handleLoad, handleError };
+};
 
 interface LazyImageProps {
   src: string;

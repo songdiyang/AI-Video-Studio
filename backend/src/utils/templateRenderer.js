@@ -148,7 +148,13 @@ function mapResponse(rawResponse, mapping) {
 }
 
 /**
- * 合并默认参数和运行时参数
+ * 合并默认参数和运行时参数（简单两层合并）
+ * 
+ * 注意：此函数与 nosyntask/utils/aiParamBuilder/parameterMerger.js 中的 mergeParameters 不同：
+ * - 本函数：简单两层合并（defaultParams + runtimeParams），用于模板渲染场景
+ * - mergeParameters：三层合并（workflowParams > userParams > defaultParams），带重复参数检测和警告，用于 AI 参数构建场景
+ * 
+ * 两者用途不同，请勿混用。
  */
 function mergeParams(defaultParams, runtimeParams) {
   return {

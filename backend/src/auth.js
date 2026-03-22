@@ -14,12 +14,6 @@ function validatePassword(password) {
   if (password.length > 128) {
     return { valid: false, message: '密码过长' };
   }
-  // 可选：要求包含数字、大小写字母等
-  // const hasNumber = /\d/.test(password);
-  // const hasLetter = /[a-zA-Z]/.test(password);
-  // if (!hasNumber || !hasLetter) {
-  //   return { valid: false, message: '密码需要包含字母和数字' };
-  // }
   return { valid: true };
 }
 
