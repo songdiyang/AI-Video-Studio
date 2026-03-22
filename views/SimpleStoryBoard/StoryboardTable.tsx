@@ -34,7 +34,7 @@ const COLUMNS = [
   { key: 'chars', label: '出场人物', width: 'min-w-[120px]' },
   { key: 'scene', label: '场景', width: 'w-[80px]' },
   { key: 'props', label: '道具', width: 'w-[80px]' },
-  { key: 'audio', label: '配音', width: 'w-16' },
+  { key: 'director', label: '导演', width: 'w-16' },
   { key: 'video', label: '视频', width: 'w-20' },
   { key: 'actions', label: '操作', width: 'w-12' },
 ];

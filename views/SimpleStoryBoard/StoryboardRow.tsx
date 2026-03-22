@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Textarea, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Button, Tooltip } from '@heroui/react';
-import { Check, Edit2, Trash2, Mic, Play, Lock, Unlock, Image, Clapperboard } from 'lucide-react';
+import { Check, Edit2, Trash2, Play, Lock, Unlock, Image, Clapperboard, Pencil, Edit3 } from 'lucide-react';
 import { StoryboardScene } from '../StoryBoard/useSceneManager';
 import { Character } from '../StoryBoard/ResourcePanel/types';
 import { Scene } from '../StoryBoard/ResourcePanel/useSceneData';
@@ -22,6 +22,7 @@ interface StoryboardRowProps {
   onGenerateVideo: (id: number) => void;
   onGenerateImage: (id: number) => void;
   onUpdateDirectorParams?: (id: number, params: DirectorParams) => void;
+  onOpenSketchEditor?: (id: number) => void;
   isGeneratingImage?: boolean;
   isGeneratingVideo?: boolean;
   isDragOver?: boolean;
@@ -48,6 +49,7 @@ const StoryboardRow: React.FC<StoryboardRowProps> = ({
   onGenerateVideo,
   onGenerateImage,
   onUpdateDirectorParams,
+  onOpenSketchEditor,
   isGeneratingImage,
   isGeneratingVideo,
   isDragOver,
@@ -189,15 +191,33 @@ const StoryboardRow: React.FC<StoryboardRowProps> = ({
       </td>
 
       {/* 首/尾帧 */}
-      <td className="px-3 py-3 w-[140px]">
-        <div className="flex gap-1.5">
+      <td className="px-3 py-3 w-[180px]">
+        <div className="flex gap-1.5 items-center">
           {scene.startFrame ? (
             <div className="relative">
               <img src={scene.startFrame} alt="首帧" className="w-16 h-10 object-cover rounded" style={{ border: '1px solid var(--border-color)' }} />
               <span className="absolute bottom-0 left-0 bg-emerald-600/80 text-[8px] text-white px-1 rounded-tr">首</span>
+              {/* 草图指示 */}
+              {scene.sketchUrl && (
+                <Tooltip content="已有草图">
+                  <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-purple-500/90 flex items-center justify-center">
+                    <Pencil className="w-2.5 h-2.5 text-white" />
+                  </div>
+                </Tooltip>
+              )}
             </div>
           ) : (
-            <div className="w-16 h-10 rounded border-dashed flex items-center justify-center text-[10px]" style={{ borderWidth: '1px', borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>首帧</div>
+            <div className="relative w-16 h-10 rounded border-dashed flex items-center justify-center text-[10px]" style={{ borderWidth: '1px', borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
+              首帧
+              {/* 无首帧时的草图指示 */}
+              {scene.sketchUrl && (
+                <Tooltip content="已有草图">
+                  <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-purple-500/90 flex items-center justify-center">
+                    <Pencil className="w-2.5 h-2.5 text-white" />
+                  </div>
+                </Tooltip>
+              )}
+            </div>
           )}
           {scene.endFrame ? (
             <div className="relative">
@@ -207,17 +227,33 @@ const StoryboardRow: React.FC<StoryboardRowProps> = ({
           ) : (
             <div className="w-16 h-10 rounded border-dashed flex items-center justify-center text-[10px]" style={{ borderWidth: '1px', borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>尾帧</div>
           )}
-          {!scene.startFrame && !scene.endFrame && (
-            <button
-              onClick={() => onGenerateImage(scene.id)}
-              disabled={isGeneratingImage}
-              className="w-8 h-10 rounded border-dashed flex items-center justify-center transition-all disabled:opacity-40"
-              style={{ borderWidth: '1px', borderColor: 'var(--accent-primary)', color: 'var(--accent-primary)' }}
-              title="生成首尾帧"
-            >
-              {isGeneratingImage ? <span className="text-[10px]">...</span> : <Image className="w-3.5 h-3.5" />}
-            </button>
-          )}
+          {/* 草图/生成按钮 */}
+          <div className="flex flex-col gap-1">
+            {!scene.startFrame && !scene.endFrame && (
+              <button
+                onClick={() => onGenerateImage(scene.id)}
+                disabled={isGeneratingImage}
+                className="w-8 h-5 rounded border-dashed flex items-center justify-center transition-all disabled:opacity-40"
+                style={{ borderWidth: '1px', borderColor: 'var(--accent-primary)', color: 'var(--accent-primary)' }}
+                title="生成首尾帧"
+              >
+                {isGeneratingImage ? <span className="text-[10px]">...</span> : <Image className="w-3 h-3" />}
+              </button>
+            )}
+            <Tooltip content={scene.sketchUrl ? "编辑草图" : "添加草图"}>
+              <button
+                onClick={() => onOpenSketchEditor?.(scene.id)}
+                className={`w-8 h-5 rounded border flex items-center justify-center transition-all ${
+                  scene.sketchUrl 
+                    ? 'bg-purple-500/20 border-purple-500/50 text-purple-400' 
+                    : 'border-dashed border-purple-400/50 text-purple-400 hover:bg-purple-500/10'
+                }`}
+                title={scene.sketchUrl ? "编辑草图" : "添加草图"}
+              >
+                {scene.sketchUrl ? <Edit3 className="w-3 h-3" /> : <Pencil className="w-3 h-3" />}
+              </button>
+            </Tooltip>
+          </div>
         </div>
       </td>
 
@@ -255,30 +291,21 @@ const StoryboardRow: React.FC<StoryboardRowProps> = ({
         </div>
       </td>
 
-      {/* 配音 */}
+      {/* 导演参数 */}
       <td className="px-3 py-3 w-16 text-center">
-        <div className="flex flex-col gap-1 items-center">
-          <button 
-            className="p-2 rounded-lg transition-all" 
-            style={{ backgroundColor: 'var(--bg-input)', color: 'var(--text-muted)' }}
-            title="配音"
+        <Tooltip content={hasDirectorParams ? '编辑导演参数' : '添加导演参数'}>
+          <button
+            onClick={() => setShowDirectorAssistant(true)}
+            className="p-2 rounded-lg transition-all"
+            style={{
+              backgroundColor: hasDirectorParams ? 'rgba(217, 119, 6, 0.2)' : 'var(--bg-input)',
+              color: hasDirectorParams ? '#d97706' : 'var(--text-muted)',
+            }}
+            title="导演助手"
           >
-            <Mic className="w-4 h-4" />
+            <Clapperboard className="w-4 h-4" />
           </button>
-          <Tooltip content={hasDirectorParams ? '编辑导演参数' : '添加导演参数'}>
-            <button
-              onClick={() => setShowDirectorAssistant(true)}
-              className="p-2 rounded-lg transition-all"
-              style={{
-                backgroundColor: hasDirectorParams ? 'rgba(217, 119, 6, 0.2)' : 'var(--bg-input)',
-                color: hasDirectorParams ? '#d97706' : 'var(--text-muted)',
-              }}
-              title="导演助手"
-            >
-              <Clapperboard className="w-4 h-4" />
-            </button>
-          </Tooltip>
-        </div>
+        </Tooltip>
       </td>
 
       {/* 视频 */}
