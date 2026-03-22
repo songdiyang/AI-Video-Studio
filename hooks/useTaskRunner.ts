@@ -11,7 +11,7 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { startWorkflow, getWorkflowStatus, getActiveWorkflows, consumeWorkflow, WorkflowJob, ApiError } from './useWorkflow';
+import { startWorkflow, getWorkflowStatus, getActiveWorkflows, consumeWorkflow, resumeWorkflow, WorkflowJob, ApiError } from './useWorkflow';
 
 export interface TaskState {
   jobId: number;
@@ -26,6 +26,8 @@ interface UseTaskRunnerOptions {
   interval?: number;
   /** projectId，默认 0 */
   projectId?: number;
+  /** 最大自动重试次数，默认 0（不重试） */
+  maxRetries?: number;
 }
 
 /**
@@ -44,7 +46,7 @@ interface UseTaskRunnerOptions {
  * const task = tasks['img_123']; // { status, progress, result, error }
  */
 export function useTaskRunner(options: UseTaskRunnerOptions = {}) {
-  const { interval = 500, projectId = 0 } = options;
+  const { interval = 500, projectId = 0, maxRetries = 0 } = options;
 
   const [tasks, setTasks] = useState<Record<string, TaskState>>({});
   const timersRef = useRef<Record<string, ReturnType<typeof setInterval>>>({});
@@ -53,12 +55,15 @@ export function useTaskRunner(options: UseTaskRunnerOptions = {}) {
   const activeKeysRef = useRef<Set<string>>(new Set());
   // 用于记录每个任务的轮询次数，实现自适应轮询
   const pollCountRef = useRef<Record<string, number>>({});
+  const retryCountRef = useRef<Record<string, number>>({});
+  const retryTimerRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   useEffect(() => { tasksRef.current = tasks; }, [tasks]);
 
   // 清理所有定时器
   useEffect(() => {
     return () => {
       Object.values(timersRef.current).forEach(clearInterval);
+      Object.values(retryTimerRef.current).forEach(clearTimeout);
     };
   }, []);
 
@@ -129,9 +134,42 @@ export function useTaskRunner(options: UseTaskRunnerOptions = {}) {
         } else if (job.status === 'failed' || job.status === 'cancelled') {
           stopPolling(key);
           const failedTask = allTasks.find((t: any) => t.status === 'failed');
+          const errorMsg = job.error_message || failedTask?.error_message || '任务失败';
+          
+          // 自动重试逻辑（仅 failed 状态且配置了 maxRetries）
+          if (job.status === 'failed' && maxRetries > 0) {
+            const currentRetry = retryCountRef.current[key] || 0;
+            if (currentRetry < maxRetries) {
+              retryCountRef.current[key] = currentRetry + 1;
+              const delay = Math.min(30000, 2000 * Math.pow(2, currentRetry));
+              console.log(`[useTaskRunner] 任务 ${key} 失败，${delay/1000}秒后自动重试 (${currentRetry + 1}/${maxRetries})`);
+              
+              updateTask(key, {
+                status: 'pending',
+                progress: 0,
+                error: `重试中 (${currentRetry + 1}/${maxRetries})...`
+              });
+              
+              retryTimerRef.current[key] = setTimeout(async () => {
+                try {
+                  await resumeWorkflow(jobId);
+                  startPolling(key, jobId);
+                } catch (retryErr: any) {
+                  console.error(`[useTaskRunner] 重试失败: ${key}`, retryErr);
+                  updateTask(key, {
+                    status: 'failed',
+                    error: errorMsg
+                  });
+                }
+              }, delay);
+              return;
+            }
+            console.log(`[useTaskRunner] 任务 ${key} 已达最大重试次数 (${maxRetries})`);
+          }
+          
           updateTask(key, {
             status: job.status,
-            error: job.error_message || failedTask?.error_message || '任务失败'
+            error: errorMsg
           });
           return;
         }
@@ -156,7 +194,7 @@ export function useTaskRunner(options: UseTaskRunnerOptions = {}) {
 
     // 立即查一次
     poll();
-  }, [stopPolling, updateTask, getAdaptiveInterval]);
+  }, [stopPolling, updateTask, getAdaptiveInterval, maxRetries]);
 
   /**
    * 启动任务
@@ -261,6 +299,11 @@ export function useTaskRunner(options: UseTaskRunnerOptions = {}) {
       );
     }
     activeKeysRef.current.delete(key);
+    delete retryCountRef.current[key];
+    if (retryTimerRef.current[key]) {
+      clearTimeout(retryTimerRef.current[key]);
+      delete retryTimerRef.current[key];
+    }
     stopPolling(key);
     setTasks(prev => {
       const next = { ...prev };
@@ -288,27 +331,11 @@ export function useTaskRunner(options: UseTaskRunnerOptions = {}) {
           if (task.status === 'pending' || task.status === 'running') {
             if (task.jobId && !timersRef.current[key]) {
               console.log(`[useTaskRunner] 恢复任务轮询: ${key}`);
-              // 重新开始轮询，但保留轮询计数
+              // 复用 startPolling，但不重置 pollCountRef 以保留自适应间隔状态
               activeKeysRef.current.add(key);
-              const poll = async () => {
-                if (!activeKeysRef.current.has(key)) return;
-                try {
-                  const job = await getWorkflowStatus(task.jobId);
-                  const allTasks = job.tasks || [];
-                  const progress = allTasks.length > 0
-                    ? Math.round(allTasks.reduce((sum: number, t: any) => sum + (t.progress ?? 0), 0) / allTasks.length)
-                    : 0;
-                  updateTask(key, { status: job.status, progress });
-                  if (job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled') {
-                    stopPolling(key);
-                    return;
-                  }
-                } catch {}
-                if (activeKeysRef.current.has(key)) {
-                  timersRef.current[key] = setTimeout(poll, getAdaptiveInterval(key)) as any;
-                }
-              };
-              poll();
+              const savedPollCount = pollCountRef.current[key] || 0;
+              startPolling(key, task.jobId);
+              pollCountRef.current[key] = savedPollCount; // 恢复轮询计数
             }
           }
         });
@@ -316,7 +343,7 @@ export function useTaskRunner(options: UseTaskRunnerOptions = {}) {
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [updateTask, stopPolling, getAdaptiveInterval]);
+  }, [startPolling]);
 
   // 是否有任何任务在运行
   const isRunning = (Object.values(tasks) as TaskState[]).some(

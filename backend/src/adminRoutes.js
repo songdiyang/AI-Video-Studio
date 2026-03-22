@@ -813,4 +813,366 @@ router.delete('/rate-limit-configs/:id', authMiddleware, requireAdmin, async (re
   }
 });
 
+// ========================================
+// 订阅计划管理 API
+// ========================================
+
+/**
+ * 获取所有订阅计划（包括未激活的）
+ * GET /api/admin/subscription-plans
+ */
+router.get('/subscription-plans', authMiddleware, requireAdmin, async (_req, res) => {
+  try {
+    const plans = await queryAll(
+      `SELECT id, name, display_name, price_monthly, price_yearly,
+              max_projects, max_api_calls_monthly, max_team_members,
+              features_json, is_active, sort_order, created_at, updated_at
+       FROM subscription_plans
+       ORDER BY sort_order ASC, id ASC`
+    );
+
+    // 解析 features_json
+    const parsedPlans = plans.map(plan => ({
+      ...plan,
+      features: parseJsonField(plan.features_json, [])
+    }));
+
+    res.json({ plans: parsedPlans });
+  } catch (error) {
+    console.error('[Admin] Get subscription plans error:', error);
+    res.status(500).json({ message: '获取订阅计划失败' });
+  }
+});
+
+/**
+ * 创建新订阅计划
+ * POST /api/admin/subscription-plans
+ */
+router.post('/subscription-plans', authMiddleware, requireAdmin, async (req, res) => {
+  const {
+    name, display_name, price_monthly, price_yearly,
+    max_projects, max_api_calls_monthly, max_team_members,
+    features, is_active, sort_order
+  } = req.body;
+
+  if (!name || !display_name) {
+    return res.status(400).json({ message: '套餐名称不能为空' });
+  }
+
+  try {
+    // 检查名称是否已存在
+    const existing = await queryOne(
+      'SELECT id FROM subscription_plans WHERE name = ?',
+      [name]
+    );
+    if (existing) {
+      return res.status(409).json({ message: '套餐名称已存在' });
+    }
+
+    const result = await execute(
+      `INSERT INTO subscription_plans 
+        (name, display_name, price_monthly, price_yearly,
+         max_projects, max_api_calls_monthly, max_team_members,
+         features_json, is_active, sort_order)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        name,
+        display_name,
+        price_monthly || 0,
+        price_yearly || 0,
+        max_projects || 5,
+        max_api_calls_monthly || 1000,
+        max_team_members || 1,
+        stringifyJsonValue(features || []),
+        is_active ?? 1,
+        sort_order ?? 0
+      ]
+    );
+
+    res.json({ 
+      message: '订阅计划创建成功',
+      planId: result.insertId
+    });
+  } catch (error) {
+    console.error('[Admin] Create subscription plan error:', error);
+    res.status(500).json({ message: '创建订阅计划失败' });
+  }
+});
+
+/**
+ * 更新订阅计划
+ * PUT /api/admin/subscription-plans/:id
+ */
+router.put('/subscription-plans/:id', authMiddleware, requireAdmin, async (req, res) => {
+  const { id } = req.params;
+  const {
+    name, display_name, price_monthly, price_yearly,
+    max_projects, max_api_calls_monthly, max_team_members,
+    features, is_active, sort_order
+  } = req.body;
+
+  try {
+    const plan = await queryOne('SELECT id FROM subscription_plans WHERE id = ?', [id]);
+    if (!plan) {
+      return res.status(404).json({ message: '订阅计划不存在' });
+    }
+
+    const updates = [];
+    const values = [];
+
+    if (name !== undefined) {
+      // 检查名称是否被其他套餐使用
+      const nameExists = await queryOne(
+        'SELECT id FROM subscription_plans WHERE name = ? AND id != ?',
+        [name, id]
+      );
+      if (nameExists) {
+        return res.status(409).json({ message: '套餐名称已被使用' });
+      }
+      updates.push('name = ?');
+      values.push(name);
+    }
+    if (display_name !== undefined) {
+      updates.push('display_name = ?');
+      values.push(display_name);
+    }
+    if (price_monthly !== undefined) {
+      updates.push('price_monthly = ?');
+      values.push(price_monthly);
+    }
+    if (price_yearly !== undefined) {
+      updates.push('price_yearly = ?');
+      values.push(price_yearly);
+    }
+    if (max_projects !== undefined) {
+      updates.push('max_projects = ?');
+      values.push(max_projects);
+    }
+    if (max_api_calls_monthly !== undefined) {
+      updates.push('max_api_calls_monthly = ?');
+      values.push(max_api_calls_monthly);
+    }
+    if (max_team_members !== undefined) {
+      updates.push('max_team_members = ?');
+      values.push(max_team_members);
+    }
+    if (features !== undefined) {
+      updates.push('features_json = ?');
+      values.push(stringifyJsonValue(features));
+    }
+    if (is_active !== undefined) {
+      updates.push('is_active = ?');
+      values.push(is_active);
+    }
+    if (sort_order !== undefined) {
+      updates.push('sort_order = ?');
+      values.push(sort_order);
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ message: '没有需要更新的字段' });
+    }
+
+    values.push(id);
+    await execute(
+      `UPDATE subscription_plans SET ${updates.join(', ')} WHERE id = ?`,
+      values
+    );
+
+    res.json({ message: '订阅计划更新成功' });
+  } catch (error) {
+    console.error('[Admin] Update subscription plan error:', error);
+    res.status(500).json({ message: '更新订阅计划失败' });
+  }
+});
+
+/**
+ * 删除订阅计划
+ * DELETE /api/admin/subscription-plans/:id
+ */
+router.delete('/subscription-plans/:id', authMiddleware, requireAdmin, async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const plan = await queryOne('SELECT id FROM subscription_plans WHERE id = ?', [id]);
+    if (!plan) {
+      return res.status(404).json({ message: '订阅计划不存在' });
+    }
+
+    // 检查是否有用户正在使用此套餐
+    const activeSubscriptions = await queryOne(
+      `SELECT COUNT(*) as count FROM user_subscriptions 
+       WHERE plan_id = ? AND status IN ('active', 'trial')`,
+      [id]
+    );
+    if (activeSubscriptions?.count > 0) {
+      return res.status(400).json({ 
+        message: '无法删除：有用户正在使用此套餐',
+        activeCount: activeSubscriptions.count
+      });
+    }
+
+    await execute('DELETE FROM subscription_plans WHERE id = ?', [id]);
+    res.json({ message: '订阅计划已删除' });
+  } catch (error) {
+    console.error('[Admin] Delete subscription plan error:', error);
+    res.status(500).json({ message: '删除订阅计划失败' });
+  }
+});
+
+/**
+ * 获取所有用户订阅（支持分页、筛选）
+ * GET /api/admin/subscriptions
+ * 
+ * Query params:
+ *   - page: 页码（从1开始，默认1）
+ *   - limit: 每页数量（默认20，最大100）
+ *   - status: 筛选状态（active/expired/cancelled/trial）
+ *   - planId: 筛选套餐
+ */
+router.get('/subscriptions', authMiddleware, requireAdmin, async (req, res) => {
+  const {
+    page: rawPage = 1,
+    limit: rawLimit = 20,
+    status,
+    planId
+  } = req.query;
+
+  try {
+    const page = Math.max(1, parseInt(rawPage, 10) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(rawLimit, 10) || 20));
+    const offset = (page - 1) * limit;
+
+    // 构建查询条件
+    const conditions = [];
+    const params = [];
+
+    if (status) {
+      conditions.push('us.status = ?');
+      params.push(status);
+    }
+    if (planId) {
+      conditions.push('us.plan_id = ?');
+      params.push(planId);
+    }
+
+    const whereClause = conditions.length > 0 
+      ? 'WHERE ' + conditions.join(' AND ')
+      : '';
+
+    // 查询总数
+    const countResult = await queryOne(
+      `SELECT COUNT(*) as total 
+       FROM user_subscriptions us 
+       ${whereClause}`,
+      params
+    );
+    const total = countResult?.total || 0;
+
+    // 查询订阅列表
+    const subscriptions = await queryAll(
+      `SELECT 
+        us.id,
+        us.user_id,
+        us.plan_id,
+        us.status,
+        us.billing_cycle,
+        us.current_period_start,
+        us.current_period_end,
+        us.api_calls_used,
+        us.created_at,
+        u.email as user_email,
+        sp.name as plan_name,
+        sp.display_name as plan_display_name
+       FROM user_subscriptions us
+       LEFT JOIN users u ON us.user_id = u.id
+       LEFT JOIN subscription_plans sp ON us.plan_id = sp.id
+       ${whereClause}
+       ORDER BY us.created_at DESC
+       LIMIT ? OFFSET ?`,
+      [...params, limit, offset]
+    );
+
+    res.json({
+      subscriptions,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit)
+      }
+    });
+  } catch (error) {
+    console.error('[Admin] Get subscriptions error:', error);
+    res.status(500).json({ message: '获取订阅列表失败' });
+  }
+});
+
+/**
+ * 手动调整用户订阅（管理员操作）
+ * PUT /api/admin/subscriptions/:id
+ */
+router.put('/subscriptions/:id', authMiddleware, requireAdmin, async (req, res) => {
+  const { id } = req.params;
+  const { status, plan_id, current_period_end, api_calls_used } = req.body;
+
+  try {
+    const subscription = await queryOne(
+      'SELECT id FROM user_subscriptions WHERE id = ?',
+      [id]
+    );
+    if (!subscription) {
+      return res.status(404).json({ message: '订阅记录不存在' });
+    }
+
+    const updates = [];
+    const values = [];
+
+    if (status !== undefined) {
+      if (!['active', 'expired', 'cancelled', 'trial'].includes(status)) {
+        return res.status(400).json({ message: '无效的订阅状态' });
+      }
+      updates.push('status = ?');
+      values.push(status);
+    }
+    if (plan_id !== undefined) {
+      // 验证套餐是否存在
+      if (plan_id !== null) {
+        const plan = await queryOne(
+          'SELECT id FROM subscription_plans WHERE id = ?',
+          [plan_id]
+        );
+        if (!plan) {
+          return res.status(400).json({ message: '指定的套餐不存在' });
+        }
+      }
+      updates.push('plan_id = ?');
+      values.push(plan_id);
+    }
+    if (current_period_end !== undefined) {
+      updates.push('current_period_end = ?');
+      values.push(current_period_end);
+    }
+    if (api_calls_used !== undefined) {
+      updates.push('api_calls_used = ?');
+      values.push(api_calls_used);
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ message: '没有需要更新的字段' });
+    }
+
+    values.push(id);
+    await execute(
+      `UPDATE user_subscriptions SET ${updates.join(', ')} WHERE id = ?`,
+      values
+    );
+
+    res.json({ message: '订阅信息已更新' });
+  } catch (error) {
+    console.error('[Admin] Update subscription error:', error);
+    res.status(500).json({ message: '更新订阅信息失败' });
+  }
+});
+
 module.exports = router;

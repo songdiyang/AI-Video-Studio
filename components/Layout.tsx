@@ -1,32 +1,24 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Film, User, Package, LogOut, FolderOpen, Settings, Sparkles, Wifi, WifiOff } from 'lucide-react';
+import { Film, User, Package, LogOut, FolderOpen, Settings, Sparkles, Wifi, WifiOff, Pencil, Moon, Sun, Monitor, Contrast, BarChart3, LayoutTemplate, Users } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from "@heroui/react";
 import { motion } from 'framer-motion';
 import { getAuthToken, logout } from '../services/auth';
 import { useKeyboardShortcuts, ShortcutConfig, GLOBAL_SHORTCUTS_CONFIG } from '../hooks/useKeyboardShortcuts';
 import KeyboardShortcutsHelp from './KeyboardShortcutsHelp';
+import CommandPalette from './CommandPalette';
+import { Command } from '../hooks/useCommandPalette';
+import { useLanguage } from '../contexts/LanguageContext';
+import { useTheme } from '../contexts/ThemeContext';
+import OnboardingOverlay from './Onboarding/OnboardingOverlay';
+import DashboardPanel from './WorkflowDashboard/DashboardPanel';
+import { useOnboarding, OnboardingStep } from '../hooks/useOnboarding';
+import NetworkStatusBar from './NetworkStatusBar';
+import { useRoutePreload } from '../hooks/useRoutePreload';
 
 interface LayoutProps {
   children: React.ReactNode;
 }
-
-// 导航项配置
-const navItems = [
-  { path: '/', icon: Film, label: '创作工作台' },
-  { path: '/assets', icon: Package, label: '资产管理' },
-  { path: '/projects', icon: FolderOpen, label: '我的工程' },
-  { path: '/settings', icon: Settings, label: '设置' },
-];
-
-// 页面标题映射
-const pageTitles: Record<string, string> = {
-  '/': '创作工作台',
-  '/assets': '资产管理',
-  '/projects': '我的工程',
-  '/settings': '设置',
-  '/user-center': '个人中心',
-};
 
 // 响应式断点 Hook
 function useMediaQuery(query: string): boolean {
@@ -50,14 +42,44 @@ function useMediaQuery(query: string): boolean {
 const Layout: React.FC<LayoutProps> = ({ children }) => {
   const location = useLocation();
   const navigate = useNavigate();
+  const { t, language, setLanguage } = useLanguage();
+  const { theme, setTheme } = useTheme();
   const isAuth = location.pathname === '/auth';
   const isLoggedIn = !!getAuthToken();
   const [isConnected, setIsConnected] = useState(true);
   const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const [isDashboardOpen, setIsDashboardOpen] = useState(false);
   
   // 响应式断点
   const isMobile = useMediaQuery('(max-width: 767px)');
   const isTablet = useMediaQuery('(min-width: 768px) and (max-width: 1280px)');
+
+  // 路由预加载
+  const { preload } = useRoutePreload();
+
+  // 导航项配置（使用 useMemo 优化，依赖 t 对象）
+  const navItems = useMemo(() => [
+    { path: '/', icon: Film, label: t.nav.workspace },
+    { path: '/assets', icon: Package, label: t.nav.assets },
+    { path: '/projects', icon: FolderOpen, label: t.nav.projects },
+    { path: '/sketch', icon: Pencil, label: t.nav.sketch },
+    { path: '/templates', icon: LayoutTemplate, label: (t as Record<string, unknown>).templates ? ((t as Record<string, unknown>).templates as Record<string, string>).title : '模板库' },
+    { path: '/community', icon: Users, label: (t as Record<string, unknown>).community ? ((t as Record<string, unknown>).community as Record<string, string>).title : '社区' },
+    { path: '/settings', icon: Settings, label: t.nav.settings },
+  ], [t]);
+
+  // 页面标题映射（使用 useMemo 优化，依赖 t 对象）
+  const pageTitles = useMemo<Record<string, string>>(() => ({
+    '/': t.nav.workspace,
+    '/assets': t.nav.assets,
+    '/projects': t.nav.projects,
+    '/sketch': t.nav.sketch,
+    '/templates': (t as Record<string, unknown>).templates ? ((t as Record<string, unknown>).templates as Record<string, string>).title : '模板库',
+    '/community': (t as Record<string, unknown>).community ? ((t as Record<string, unknown>).community as Record<string, string>).title : '社区',
+    '/settings': t.nav.settings,
+    '/user-center': t.nav.userCenter,
+  }), [t]);
 
   // 模拟连接状态检测
   useEffect(() => {
@@ -74,6 +96,25 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     };
   }, []);
 
+  // 命令面板命令列表
+  const commands: Command[] = useMemo(() => [
+    // 导航类
+    { id: 'nav-workspace', title: t.nav.workspace, category: 'navigation', icon: <Film className="w-4 h-4" />, shortcut: 'Ctrl+1', action: () => navigate('/'), keywords: ['studio', '工作台', '创作'] },
+    { id: 'nav-assets', title: t.nav.assets, category: 'navigation', icon: <Package className="w-4 h-4" />, shortcut: 'Ctrl+2', action: () => navigate('/assets'), keywords: ['asset', '素材', '角色'] },
+    { id: 'nav-projects', title: t.nav.projects, category: 'navigation', icon: <FolderOpen className="w-4 h-4" />, shortcut: 'Ctrl+3', action: () => navigate('/projects'), keywords: ['project', '工程'] },
+    { id: 'nav-sketch', title: t.nav.sketch, category: 'navigation', icon: <Pencil className="w-4 h-4" />, shortcut: 'Ctrl+4', action: () => navigate('/sketch'), keywords: ['draw', '绘制', '草图'] },
+    { id: 'nav-settings', title: t.nav.settings, category: 'navigation', icon: <Settings className="w-4 h-4" />, shortcut: 'Ctrl+5', action: () => navigate('/settings'), keywords: ['setting', '设置', '偏好'] },
+    // 操作类
+    { id: 'action-shortcuts', title: t.commandPalette.commands.showShortcuts, category: 'action', action: () => setShowShortcutsHelp(true), keywords: ['keyboard', '快捷键', 'shortcut'] },
+    // 设置类
+    { id: 'settings-dark', title: t.commandPalette.commands.themeDark, category: 'settings', icon: <Moon className="w-4 h-4" />, action: () => setTheme('dark'), keywords: ['theme', '主题', '深色', 'dark'] },
+    { id: 'settings-light', title: t.commandPalette.commands.themeLight, category: 'settings', icon: <Sun className="w-4 h-4" />, action: () => setTheme('light'), keywords: ['theme', '主题', '浅色', 'light'] },
+    { id: 'settings-high-contrast', title: t.commandPalette.commands.themeHighContrast, category: 'settings', icon: <Contrast className="w-4 h-4" />, action: () => setTheme('high-contrast'), keywords: ['theme', '主题', '高对比度', 'contrast'] },
+    { id: 'settings-system', title: t.commandPalette.commands.themeSystem, category: 'settings', icon: <Monitor className="w-4 h-4" />, action: () => setTheme('system'), keywords: ['theme', '主题', '系统', 'system'] },
+    { id: 'settings-lang-zh', title: t.commandPalette.commands.langZh, category: 'settings', action: () => setLanguage('zh-CN'), keywords: ['language', '语言', '中文'] },
+    { id: 'settings-lang-en', title: t.commandPalette.commands.langEn, category: 'settings', action: () => setLanguage('en-US'), keywords: ['language', '语言', 'english'] },
+  ], [t, navigate, setTheme, setLanguage]);
+
   // 全局快捷键
   const globalShortcuts = useMemo<ShortcutConfig[]>(() => [
     {
@@ -89,6 +130,10 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       action: () => navigate('/projects'),
     },
     {
+      ...GLOBAL_SHORTCUTS_CONFIG.NAVIGATE_SKETCH,
+      action: () => navigate('/sketch'),
+    },
+    {
       ...GLOBAL_SHORTCUTS_CONFIG.NAVIGATE_SETTINGS,
       action: () => navigate('/settings'),
     },
@@ -96,10 +141,33 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       ...GLOBAL_SHORTCUTS_CONFIG.SHOW_HELP,
       action: () => setShowShortcutsHelp(true),
     },
+    {
+      ...GLOBAL_SHORTCUTS_CONFIG.COMMAND_PALETTE,
+      action: () => setIsCommandPaletteOpen(true),
+    },
   ], [navigate]);
 
   // 注册全局快捷键（非登录页面生效）
   useKeyboardShortcuts(globalShortcuts, !isAuth);
+
+  // 引导系统步骤配置
+  const onboardingSteps: OnboardingStep[] = useMemo(() => [
+    { target: '[data-onboarding="sidebar"]', title: t.onboarding?.steps?.sidebar?.title || '导航侧边栏', description: t.onboarding?.steps?.sidebar?.description || '这是您的主导航区域，可以快速切换不同的功能模块。', placement: 'right' },
+    { target: '[data-onboarding="nav-workspace"]', title: t.onboarding?.steps?.workspace?.title || '创作工作台', description: t.onboarding?.steps?.workspace?.description || '在这里开始您的创作之旅，编写剧本、生成分镜。', placement: 'right' },
+    { target: '[data-onboarding="nav-assets"]', title: t.onboarding?.steps?.assets?.title || '资产管理', description: t.onboarding?.steps?.assets?.description || '管理您的角色、场景、道具等创作素材。', placement: 'right' },
+    { target: '[data-onboarding="shortcuts-hint"]', title: t.onboarding?.steps?.shortcuts?.title || '快捷键系统', description: t.onboarding?.steps?.shortcuts?.description || '按 ? 查看所有快捷键，按 Ctrl+K 打开命令面板快速执行操作。', placement: 'top' },
+    { target: '[data-onboarding="nav-settings"]', title: t.onboarding?.steps?.settings?.title || '个性化设置', description: t.onboarding?.steps?.settings?.description || '自定义界面主题、语言偏好，让工作环境更舒适。', placement: 'right' },
+  ], [t]);
+
+  // 引导系统（移动端禁用）
+  const onboarding = useOnboarding(onboardingSteps, isMobile);
+
+  // 监听重置引导事件
+  useEffect(() => {
+    const handler = () => onboarding.resetOnboarding();
+    window.addEventListener('reset-onboarding', handler);
+    return () => window.removeEventListener('reset-onboarding', handler);
+  }, [onboarding.resetOnboarding]);
 
   const handleAccountClick = (e: React.MouseEvent) => {
     if (!isLoggedIn) {
@@ -114,7 +182,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     window.location.reload();
   };
 
-  const currentPageTitle = pageTitles[location.pathname] || '饺子动漫';
+  const currentPageTitle = pageTitles[location.pathname] || t.nav.studioName;
 
   // Auth 页面不显示导航
   if (isAuth) {
@@ -130,7 +198,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[var(--bg-app)]">
       {/* 左侧侧边栏 - 小屏隐藏 */}
-      <aside className={`pro-sidebar flex flex-col bg-[var(--bg-nav)] border-r border-[var(--border-color)] hide-on-mobile ${isTablet ? 'w-12' : 'w-14'}`}>
+      <aside data-onboarding="sidebar" className={`pro-sidebar flex flex-col bg-[var(--bg-nav)] border-r border-[var(--border-color)] hide-on-mobile ${isTablet ? 'w-12' : 'w-14'}`}>
         {/* Logo */}
         <div className={`${isTablet ? 'h-12' : 'h-14'} flex items-center justify-center border-b border-[var(--border-color)]`}>
           <Link to="/" className="group relative" tabIndex={0}>
@@ -141,10 +209,21 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         </div>
 
         {/* 导航图标列表 */}
-        <nav className="flex-1 py-2 flex flex-col gap-1" role="navigation" aria-label="主导航">
+        <nav className="flex-1 py-2 flex flex-col gap-1" role="navigation" aria-label={t.nav.mainNav}>
           {navItems.map((item, index) => {
             const isActive = location.pathname === item.path;
             const Icon = item.icon;
+            
+            // 根据路径确定 data-onboarding 属性
+            const getOnboardingAttr = () => {
+              switch (item.path) {
+                case '/': return 'nav-workspace';
+                case '/assets': return 'nav-assets';
+                case '/settings': return 'nav-settings';
+                default: return undefined;
+              }
+            };
+            const onboardingAttr = getOnboardingAttr();
             
             return (
               <Link
@@ -153,6 +232,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 tabIndex={0}
                 aria-label={item.label}
                 aria-current={isActive ? 'page' : undefined}
+                data-onboarding={onboardingAttr}
+                onMouseEnter={() => preload(item.path)}
                 className={`pro-nav-item group relative mx-2 ${isTablet ? 'p-2.5' : 'p-3'} rounded-lg flex items-center justify-center transition-all duration-200
                   ${isActive 
                     ? 'bg-[var(--accent)]/15 text-[var(--accent)]' 
@@ -181,7 +262,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 <div className="absolute left-full ml-2 px-2.5 py-1.5 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-md text-xs font-medium text-[var(--text-primary)] whitespace-nowrap opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 shadow-lg">
                   {item.label}
                   <span className="ml-2 text-[var(--text-muted)]">
-                    Ctrl+{index + 1}
+                    {t.nav.shortcutPrefix}{index + 1}
                   </span>
                   {/* 小三角 */}
                   <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1 w-2 h-2 bg-[var(--bg-card)] border-l border-b border-[var(--border-color)] rotate-45" />
@@ -198,19 +279,19 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
               <DropdownTrigger>
                 <button 
                   className={`pro-nav-item group relative mx-2 ${isTablet ? 'p-2.5' : 'p-3'} rounded-lg flex items-center justify-center transition-all duration-200 text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-white/5 ${isTablet ? 'w-8' : 'w-10'}`}
-                  aria-label="我的账户"
+                  aria-label={t.nav.myAccount}
                 >
                   <User className={`${isTablet ? 'w-4 h-4' : 'w-5 h-5'}`} />
                   
                   {/* Tooltip */}
                   <div className="absolute left-full ml-2 px-2.5 py-1.5 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-md text-xs font-medium text-[var(--text-primary)] whitespace-nowrap opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 shadow-lg pointer-events-none">
-                    我的账户
+                    {t.nav.myAccount}
                     <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1 w-2 h-2 bg-[var(--bg-card)] border-l border-b border-[var(--border-color)] rotate-45" />
                   </div>
                 </button>
               </DropdownTrigger>
               <DropdownMenu 
-                aria-label="用户菜单"
+                aria-label={t.nav.userMenu}
                 classNames={{
                   base: "bg-[var(--bg-card)] backdrop-blur-xl border border-[var(--border-color)] shadow-xl shadow-black/50 rounded-lg min-w-[140px]",
                   list: "bg-transparent"
@@ -222,7 +303,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                   startContent={<User className="w-4 h-4" />}
                   onPress={() => navigate('/user-center')}
                 >
-                  个人中心
+                  {t.nav.userCenter}
                 </DropdownItem>
                 <DropdownItem
                   key="logout"
@@ -231,7 +312,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                   startContent={<LogOut className="w-4 h-4" />}
                   onPress={handleLogout}
                 >
-                  退出登录
+                  {t.common.logout}
                 </DropdownItem>
               </DropdownMenu>
             </Dropdown>
@@ -239,13 +320,13 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
             <button
               onClick={handleAccountClick}
               className={`pro-nav-item group relative mx-2 ${isTablet ? 'p-2.5' : 'p-3'} rounded-lg flex items-center justify-center transition-all duration-200 text-[var(--accent)] hover:bg-[var(--accent)]/10 ${isTablet ? 'w-8' : 'w-10'}`}
-              aria-label="登录"
+              aria-label={t.common.login}
             >
               <User className={`${isTablet ? 'w-4 h-4' : 'w-5 h-5'}`} />
               
               {/* Tooltip */}
               <div className="absolute left-full ml-2 px-2.5 py-1.5 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-md text-xs font-medium text-[var(--text-primary)] whitespace-nowrap opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 shadow-lg">
-                登录
+                {t.common.login}
                 <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1 w-2 h-2 bg-[var(--bg-card)] border-l border-b border-[var(--border-color)] rotate-45" />
               </div>
             </button>
@@ -255,6 +336,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
       {/* 右侧主区域 */}
       <div className="flex-1 flex flex-col min-w-0">
+        {/* 网络状态提示条 */}
+        <NetworkStatusBar />
+        
         {/* 顶部工具栏 - 小屏简化 */}
         <header className="pro-toolbar h-10 items-center justify-between px-4 bg-[var(--bg-nav)]/50 border-b border-[var(--border-color)] hide-on-mobile flex">
           {/* 左侧：当前页面标题 */}
@@ -266,8 +350,16 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           
           {/* 右侧：辅助信息 */}
           <div className="flex items-center gap-4">
+            <button
+              onClick={() => setIsDashboardOpen(true)}
+              className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-white/5 transition-colors"
+              aria-label={(t as Record<string, unknown>).dashboard ? ((t as Record<string, unknown>).dashboard as Record<string, string>).title : '工作流概览'}
+              title={(t as Record<string, unknown>).dashboard ? ((t as Record<string, unknown>).dashboard as Record<string, string>).title : '工作流概览'}
+            >
+              <BarChart3 className="w-4 h-4" />
+            </button>
             <span className="text-xs text-[var(--text-muted)]">
-              饺子动漫 AI Video Studio
+              {t.nav.studioTitle}
             </span>
           </div>
         </header>
@@ -280,7 +372,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 <Sparkles className="w-4 h-4 text-white" />
               </div>
               <span className="text-sm font-semibold text-[var(--text-primary)]">
-                饺子动漫
+                {t.nav.studioName}
               </span>
             </Link>
           </header>
@@ -298,12 +390,12 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
             {isConnected ? (
               <>
                 <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                <span className="text-xs text-[var(--text-muted)]">已连接</span>
+                <span className="text-xs text-[var(--text-muted)]">{t.nav.connected}</span>
               </>
             ) : (
               <>
                 <span className="w-2 h-2 rounded-full bg-red-500" />
-                <span className="text-xs text-red-400">未连接</span>
+                <span className="text-xs text-red-400">{t.nav.disconnected}</span>
               </>
             )}
           </div>
@@ -313,9 +405,10 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
             <button 
               onClick={() => setShowShortcutsHelp(true)}
               className="text-xs text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors"
-              aria-label="显示快捷键帮助"
+              aria-label={t.nav.showShortcuts}
+              data-onboarding="shortcuts-hint"
             >
-              按 ? 查看快捷键
+              {t.nav.pressForShortcuts}
             </button>
           </div>
           
@@ -328,7 +421,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
       {/* 小屏底部导航栏 */}
       {isMobile && (
-        <nav className="mobile-bottom-nav show-on-mobile" role="navigation" aria-label="底部导航">
+        <nav className="mobile-bottom-nav show-on-mobile" role="navigation" aria-label={t.nav.bottomNav}>
           <div className="h-full flex items-center">
             {navItems.map((item) => {
               const isActive = location.pathname === item.path;
@@ -352,19 +445,19 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
               <button
                 onClick={() => navigate('/user-center')}
                 className="mobile-nav-item"
-                aria-label="个人中心"
+                aria-label={t.nav.userCenter}
               >
                 <User className="w-5 h-5" />
-                <span className="mobile-nav-label">我的</span>
+                <span className="mobile-nav-label">{t.nav.my}</span>
               </button>
             ) : (
               <button
                 onClick={handleAccountClick}
                 className="mobile-nav-item"
-                aria-label="登录"
+                aria-label={t.common.login}
               >
                 <User className="w-5 h-5" />
-                <span className="mobile-nav-label">登录</span>
+                <span className="mobile-nav-label">{t.common.login}</span>
               </button>
             )}
           </div>
@@ -375,6 +468,30 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       <KeyboardShortcutsHelp 
         isOpen={showShortcutsHelp} 
         onClose={() => setShowShortcutsHelp(false)} 
+      />
+
+      {/* 命令面板 */}
+      <CommandPalette
+        isOpen={isCommandPaletteOpen}
+        onClose={() => setIsCommandPaletteOpen(false)}
+        commands={commands}
+      />
+
+      {/* 工作流概览面板 */}
+      <DashboardPanel
+        isOpen={isDashboardOpen}
+        onClose={() => setIsDashboardOpen(false)}
+      />
+
+      {/* 新手引导系统 */}
+      <OnboardingOverlay
+        isActive={onboarding.isActive}
+        currentStep={onboarding.currentStep}
+        currentStepIndex={onboarding.currentStepIndex}
+        totalSteps={onboarding.totalSteps}
+        onNext={onboarding.nextStep}
+        onPrev={onboarding.prevStep}
+        onSkip={onboarding.skip}
       />
     </div>
   );

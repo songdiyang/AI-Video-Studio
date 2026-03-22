@@ -26,7 +26,7 @@ const Skeleton: React.FC<SkeletonProps> = ({
   width,
   height,
 }) => {
-  const baseClass = 'skeleton';
+  const baseClass = 'skeleton skeleton-shimmer';
   const shapeClass = circle ? 'skeleton-circle' : card ? 'skeleton-card' : '';
   
   const style: React.CSSProperties = {

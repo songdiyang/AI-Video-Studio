@@ -6,6 +6,7 @@ import App from './App';
 import { ToastProvider } from './contexts/ToastContext';
 import { ConfirmProvider } from './contexts/ConfirmContext';
 import { ThemeProvider } from './contexts/ThemeContext';
+import { LanguageProvider } from './contexts/LanguageContext';
 import { NotificationProvider } from './contexts/NotificationContext';
 
 const rootElement = document.getElementById('root');
@@ -17,15 +18,17 @@ const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
     <ThemeProvider>
-      <HeroUIProvider>
-        <ToastProvider>
-          <NotificationProvider>
-            <ConfirmProvider>
-              <App />
-            </ConfirmProvider>
-          </NotificationProvider>
-        </ToastProvider>
-      </HeroUIProvider>
+      <LanguageProvider>
+        <HeroUIProvider>
+          <ToastProvider>
+            <NotificationProvider>
+              <ConfirmProvider>
+                <App />
+              </ConfirmProvider>
+            </NotificationProvider>
+          </ToastProvider>
+        </HeroUIProvider>
+      </LanguageProvider>
     </ThemeProvider>
   </React.StrictMode>
 );

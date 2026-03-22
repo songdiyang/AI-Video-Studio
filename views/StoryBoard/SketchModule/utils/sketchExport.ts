@@ -201,3 +201,97 @@ export function generateFilename(prefix: string = 'sketch', extension: string = 
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
   return `${prefix}_${timestamp}.${extension}`;
 }
+
+/**
+ * .excalidraw 文件格式接口
+ */
+export interface ExcalidrawFileData {
+  type: 'excalidraw';
+  version: number;
+  source: string;
+  elements: ExcalidrawElement[];
+  appState?: Partial<AppState>;
+  files?: BinaryFiles;
+}
+
+/**
+ * 导出为 .excalidraw JSON 格式
+ * 返回符合 Excalidraw 原生格式的 JSON 字符串
+ */
+export function exportToExcalidrawFile(
+  elements: readonly ExcalidrawElement[],
+  appState: Partial<AppState>,
+  files: BinaryFiles | null
+): string {
+  const fileData: ExcalidrawFileData = {
+    type: 'excalidraw',
+    version: 2,
+    source: 'nanostory-sketch-editor',
+    elements: elements as ExcalidrawElement[],
+    appState: {
+      viewBackgroundColor: appState.viewBackgroundColor ?? '#ffffff',
+      ...appState
+    },
+    files: files ?? undefined
+  };
+  
+  return JSON.stringify(fileData, null, 2);
+}
+
+/**
+ * 下载 .excalidraw 文件
+ */
+export function downloadExcalidrawFile(jsonString: string, filename: string): void {
+  const blob = new Blob([jsonString], { type: 'application/json;charset=utf-8' });
+  downloadBlob(blob, filename);
+}
+
+/**
+ * 解析结果接口
+ */
+export interface ParsedExcalidrawFile {
+  elements: ExcalidrawElement[];
+  appState?: Partial<AppState>;
+  files?: BinaryFiles;
+}
+
+/**
+ * 从 .excalidraw JSON 导入
+ * 解析 JSON 字符串并返回 Excalidraw 场景数据
+ * @returns 解析后的数据，或 null（解析失败时）
+ */
+export function parseExcalidrawFile(jsonString: string): ParsedExcalidrawFile | null {
+  try {
+    const data = JSON.parse(jsonString);
+    
+    // 验证基本结构
+    if (!data || typeof data !== 'object') {
+      console.error('[sketchExport] 无效的 JSON 结构');
+      return null;
+    }
+    
+    // 支持标准 .excalidraw 格式
+    if (data.type === 'excalidraw' && Array.isArray(data.elements)) {
+      return {
+        elements: data.elements,
+        appState: data.appState ?? undefined,
+        files: data.files ?? undefined
+      };
+    }
+    
+    // 支持简化格式（直接 { elements, appState, files }）
+    if (Array.isArray(data.elements)) {
+      return {
+        elements: data.elements,
+        appState: data.appState ?? undefined,
+        files: data.files ?? undefined
+      };
+    }
+    
+    console.error('[sketchExport] 无法识别的文件格式');
+    return null;
+  } catch (error) {
+    console.error('[sketchExport] 解析 .excalidraw 文件失败:', error);
+    return null;
+  }
+}

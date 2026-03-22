@@ -152,8 +152,10 @@ export const GLOBAL_SHORTCUTS_CONFIG = {
   NAVIGATE_WORKSPACE: { key: '1', ctrl: true, scope: 'global', description: '切换到创作工作台' },
   NAVIGATE_ASSETS: { key: '2', ctrl: true, scope: 'global', description: '切换到资产管理' },
   NAVIGATE_PROJECTS: { key: '3', ctrl: true, scope: 'global', description: '切换到我的工程' },
-  NAVIGATE_SETTINGS: { key: '4', ctrl: true, scope: 'global', description: '切换到设置' },
+  NAVIGATE_SKETCH: { key: '4', ctrl: true, scope: 'global', description: '切换到草图绘制' },
+  NAVIGATE_SETTINGS: { key: '5', ctrl: true, scope: 'global', description: '切换到设置' },
   SHOW_HELP: { key: '?', scope: 'global', description: '显示快捷键帮助' },
+  COMMAND_PALETTE: { key: 'k', ctrl: true, scope: 'global', description: '打开命令面板' },
 } as const;
 
 // 预定义的分镜视图快捷键配置（供 StoryBoard 组件使用）

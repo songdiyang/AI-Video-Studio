@@ -2,20 +2,12 @@ import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Keyboard } from 'lucide-react';
 import { ShortcutConfig, formatShortcutKey, GLOBAL_SHORTCUTS_CONFIG, STORYBOARD_SHORTCUTS_CONFIG, ANIMATIC_SHORTCUTS_CONFIG } from '../hooks/useKeyboardShortcuts';
+import { useLanguage } from '../contexts/LanguageContext';
 
 interface KeyboardShortcutsHelpProps {
   isOpen: boolean;
   onClose: () => void;
 }
-
-// 作用域名称映射
-const scopeNames: Record<string, string> = {
-  global: '全局导航',
-  storyboard: '分镜操作',
-  script: '剧本操作',
-  assets: '资产管理',
-  animatic: 'Animatic 预览',
-};
 
 // 所有快捷键配置（合并全局和分镜）
 const allShortcuts: ShortcutConfig[] = [
@@ -47,6 +39,62 @@ const groupedShortcuts = allShortcuts.reduce((acc, shortcut) => {
 }, {} as Record<string, ShortcutConfig[]>);
 
 const KeyboardShortcutsHelp: React.FC<KeyboardShortcutsHelpProps> = ({ isOpen, onClose }) => {
+  const { t } = useLanguage();
+
+  // 作用域名称映射（使用翻译）
+  const scopeNames: Record<string, string> = {
+    global: t.shortcuts.scopes.global,
+    storyboard: t.shortcuts.scopes.storyboard,
+    script: t.shortcuts.scopes.script,
+    assets: t.shortcuts.scopes.assets,
+    animatic: t.shortcuts.scopes.animatic,
+    'video-composition': t.shortcuts.scopes.videoComposition,
+  };
+
+  // 快捷键描述映射（将硬编码中文映射到翻译）
+  const descriptionMap: Record<string, string> = {
+    // 全局
+    '切换到创作工作台': t.shortcuts.descriptions.navigateWorkspace,
+    '切换到资产管理': t.shortcuts.descriptions.navigateAssets,
+    '切换到我的工程': t.shortcuts.descriptions.navigateProjects,
+    '切换到草图绘制': t.shortcuts.descriptions.navigateSketch,
+    '切换到设置': t.shortcuts.descriptions.navigateSettings,
+    '显示快捷键帮助': t.shortcuts.descriptions.showHelp,
+    '打开命令面板': t.shortcuts.descriptions.openCommandPalette,
+    // 分镜
+    '选择上一个分镜': t.shortcuts.descriptions.selectPrev,
+    '选择下一个分镜': t.shortcuts.descriptions.selectNext,
+    '删除选中的分镜': t.shortcuts.descriptions.deleteScene,
+    '新增分镜': t.shortcuts.descriptions.newScene,
+    '刷新分镜列表': t.shortcuts.descriptions.refreshList,
+    '取消选择': t.shortcuts.descriptions.deselect,
+    '上移选中的分镜': t.shortcuts.descriptions.moveUp,
+    '下移选中的分镜': t.shortcuts.descriptions.moveDown,
+    '锁定/解锁选中的分镜': t.shortcuts.descriptions.lockScene,
+    '生成选中的分镜图片': t.shortcuts.descriptions.generateImage,
+    '生成选中的分镜视频': t.shortcuts.descriptions.generateVideo,
+    '复制选中的分镜': t.shortcuts.descriptions.duplicateScene,
+    '全选分镜': t.shortcuts.descriptions.selectAll,
+    // Animatic
+    '播放/暂停': t.shortcuts.descriptions.playPause,
+    '上一个分镜': t.shortcuts.descriptions.prevFrame,
+    '下一个分镜': t.shortcuts.descriptions.nextFrame,
+    '减慢速度': t.shortcuts.descriptions.slowDown,
+    '加快速度': t.shortcuts.descriptions.speedUp,
+    '全屏预览': t.shortcuts.descriptions.fullscreen,
+    '静音/取消静音': t.shortcuts.descriptions.muteToggle,
+    '关闭预览': t.shortcuts.descriptions.closePreview,
+    // 视频合成
+    '上一个片段': t.shortcuts.descriptions.prevClip,
+    '下一个片段': t.shortcuts.descriptions.nextClip,
+    '删除选中的片段': t.shortcuts.descriptions.deleteClip,
+    '导出视频': t.shortcuts.descriptions.exportVideo,
+    '清空时间线': t.shortcuts.descriptions.clearTimeline,
+    '放大时间线': t.shortcuts.descriptions.zoomIn,
+    '缩小时间线': t.shortcuts.descriptions.zoomOut,
+    '重置缩放': t.shortcuts.descriptions.resetZoom,
+    '切换属性面板': t.shortcuts.descriptions.togglePanel,
+  };
   // 按 Escape 关闭
   React.useEffect(() => {
     if (!isOpen) return;
@@ -96,13 +144,13 @@ const KeyboardShortcutsHelp: React.FC<KeyboardShortcutsHelpProps> = ({ isOpen, o
                     <Keyboard className="w-5 h-5 text-[var(--accent)]" />
                   </div>
                   <h2 id="shortcuts-help-title" className="text-lg font-semibold text-[var(--text-primary)]">
-                    键盘快捷键
+                    {t.shortcuts.title}
                   </h2>
                 </div>
                 <button
                   onClick={onClose}
                   className="p-2 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-card-hover)] transition-colors focus-visible-ring"
-                  aria-label="关闭"
+                  aria-label={t.shortcuts.close}
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -122,7 +170,7 @@ const KeyboardShortcutsHelp: React.FC<KeyboardShortcutsHelpProps> = ({ isOpen, o
                           className="flex items-center justify-between py-2 px-3 rounded-lg bg-[var(--bg-app)]/50 hover:bg-[var(--bg-app)] transition-colors"
                         >
                           <span className="text-sm text-[var(--text-secondary)]">
-                            {shortcut.description}
+                            {descriptionMap[shortcut.description] || shortcut.description}
                           </span>
                           <kbd className="inline-flex items-center gap-1 px-2 py-1 text-xs font-mono font-medium text-[var(--text-primary)] bg-[var(--bg-card)] border border-[var(--border-color)] rounded-md shadow-sm min-w-[2.5rem] justify-center">
                             {formatShortcutKey(shortcut)}
@@ -137,7 +185,7 @@ const KeyboardShortcutsHelp: React.FC<KeyboardShortcutsHelpProps> = ({ isOpen, o
               {/* 底部提示 */}
               <div className="px-5 py-3 border-t border-[var(--border-color)] bg-[var(--bg-app)]/30">
                 <p className="text-xs text-[var(--text-muted)] text-center">
-                  按 <kbd className="px-1.5 py-0.5 text-[10px] font-mono bg-[var(--bg-card)] border border-[var(--border-color)] rounded">Esc</kbd> 或点击背景关闭
+                  {t.shortcuts.closeHint}
                 </p>
               </div>
             </div>

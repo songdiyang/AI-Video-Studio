@@ -21,6 +21,10 @@ const modelRoutes = require('./modelRoutes');
 const adminRoutes = require('./adminRoutes');
 const fileProxyRoutes = require('./scripts/fileProxy');
 const feedbackRoutes = require('./feedback');
+const sketchProjectRoutes = require('./scripts/sketchProjects');
+const templateRoutes = require('./templates');
+const communityRoutes = require('./community');
+const subscriptionRoutes = require('./subscriptions');
 const { notificationResponseMiddleware } = require('./notificationResponseMiddleware');
 
 const app = express();
@@ -106,6 +110,10 @@ app.use('/api/ai-models', modelRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/feedback', feedbackRoutes);
 app.use('/api/files', fileProxyRoutes);
+app.use('/api/sketch-projects', sketchProjectRoutes);
+app.use('/api/templates', templateRoutes);
+app.use('/api/community', communityRoutes);
+app.use('/api/subscriptions', subscriptionRoutes);
 
 // Serve static files for production if needed
 const clientBuildPath = path.join(__dirname, '..', '..', 'dist');

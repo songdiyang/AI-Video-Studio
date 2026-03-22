@@ -916,6 +916,96 @@ async function getBillingStats(userId) {
   };
 }
 
+/**
+ * 按时间段统计费用
+ * @param {number} userId
+ * @param {object} options
+ * @param {'day'|'week'|'month'} options.period - 统计粒度
+ * @param {number} options.limit - 返回记录数，默认30
+ * @returns {Promise<Array>}
+ */
+async function getBillingStatsByPeriod(userId, { period = 'day', limit = 30 } = {}) {
+  let dateFormat;
+  switch (period) {
+    case 'week':
+      dateFormat = '%x-W%v'; // ISO year-week
+      break;
+    case 'month':
+      dateFormat = '%Y-%m';
+      break;
+    case 'day':
+    default:
+      dateFormat = '%Y-%m-%d';
+      break;
+  }
+
+  const rows = await queryAll(
+    `SELECT
+      DATE_FORMAT(created_at, ?) AS period_key,
+      COALESCE(SUM(CASE WHEN charge_status = 'charged' THEN amount ELSE 0 END), 0) AS total_amount,
+      COUNT(*) AS total_records,
+      COALESCE(SUM(CASE WHEN charge_status = 'charged' THEN input_tokens + output_tokens ELSE 0 END), 0) AS total_tokens,
+      COALESCE(SUM(CASE WHEN request_status = 'success' THEN 1 ELSE 0 END), 0) AS success_count,
+      COALESCE(SUM(CASE WHEN request_status = 'failed' THEN 1 ELSE 0 END), 0) AS failed_count
+     FROM billing_records
+     WHERE user_id = ?
+     GROUP BY period_key
+     ORDER BY period_key DESC
+     LIMIT ?`,
+    [dateFormat, userId, Number(limit)]
+  );
+
+  return rows.map(row => ({
+    period: row.period_key,
+    amount: Number(row.total_amount || 0),
+    records: Number(row.total_records || 0),
+    tokenUsage: Number(row.total_tokens || 0),
+    successCount: Number(row.success_count || 0),
+    failedCount: Number(row.failed_count || 0)
+  }));
+}
+
+/**
+ * 按模型维度统计费用
+ * @param {number} userId
+ * @returns {Promise<Array>}
+ */
+async function getBillingStatsByModel(userId) {
+  const rows = await queryAll(
+    `SELECT
+      model_name,
+      model_category,
+      model_provider,
+      COUNT(*) AS call_count,
+      COALESCE(SUM(CASE WHEN charge_status = 'charged' THEN amount ELSE 0 END), 0) AS total_amount,
+      COALESCE(SUM(CASE WHEN request_status = 'success' THEN 1 ELSE 0 END), 0) AS success_count,
+      COALESCE(SUM(CASE WHEN request_status = 'failed' THEN 1 ELSE 0 END), 0) AS failed_count,
+      COALESCE(SUM(input_tokens + output_tokens), 0) AS total_tokens,
+      COALESCE(SUM(duration_seconds), 0) AS total_duration,
+      COALESCE(SUM(item_count), 0) AS total_items
+     FROM billing_records
+     WHERE user_id = ? AND model_name IS NOT NULL
+     GROUP BY model_name, model_category, model_provider
+     ORDER BY total_amount DESC`,
+    [userId]
+  );
+
+  return rows.map(row => ({
+    modelName: row.model_name,
+    modelCategory: row.model_category,
+    provider: row.model_provider,
+    callCount: Number(row.call_count || 0),
+    totalAmount: Number(row.total_amount || 0),
+    successRate: row.call_count > 0
+      ? Math.round((Number(row.success_count || 0) / Number(row.call_count)) * 10000) / 100
+      : 0,
+    failedCount: Number(row.failed_count || 0),
+    totalTokens: Number(row.total_tokens || 0),
+    totalDuration: Number(row.total_duration || 0),
+    totalItems: Number(row.total_items || 0)
+  }));
+}
+
 module.exports = {
   ModelBillingConfigError,
   normalizePriceConfig,
@@ -927,5 +1017,7 @@ module.exports = {
   finalizeAsyncBillingFromQuery,
   listBillingRecords,
   getBillingSummary,
-  getBillingStats
+  getBillingStats,
+  getBillingStatsByPeriod,
+  getBillingStatsByModel
 };

@@ -41,13 +41,28 @@ export function useTaskQueue(options?: UseTaskQueueOptions): UseTaskQueueReturn 
   // 跟踪任务状态，用于检测失败
   const prevStatusRef = useRef<Map<number, string>>(new Map());
   const currentIntervalRef = useRef<number>(POLLING_IDLE);
+  // 指数退避相关
+  const staleCountRef = useRef(0); // 连续无变化次数
+  const prevJobsSnapshotRef = useRef<string>(''); // 任务状态快照用于比较
+  // 请求去重
+  const isFetchingRef = useRef(false);
   // 使用 ref 包裹回调，避免依赖变化
   const onJobFailedRef = useRef(onJobFailed);
   onJobFailedRef.current = onJobFailed;
 
   const fetchJobs = useCallback(async (showLoading = false) => {
+    // 请求去重：如果上一次请求还未返回，跳过本次
+    if (isFetchingRef.current) {
+      console.log('[TaskQueue] 跳过重叠请求');
+      return;
+    }
+    isFetchingRef.current = true;
+
     const token = getAuthToken();
-    if (!token) return;
+    if (!token) {
+      isFetchingRef.current = false;
+      return;
+    }
 
     try {
       // 只在手动刷新或首次加载时显示 loading
@@ -104,12 +119,22 @@ export function useTaskQueue(options?: UseTaskQueueOptions): UseTaskQueueReturn 
       prevJobIdsRef.current = currentJobIds;
       prevJobTypesRef.current = new Map(currentJobs.map((j: WorkflowJob) => [j.id, j.workflow_type]));
 
+      // 检测任务状态是否有变化（用于指数退避）
+      const currentSnapshot = currentJobs.map((j: WorkflowJob) => `${j.id}:${j.status}`).join(',');
+      if (currentSnapshot === prevJobsSnapshotRef.current) {
+        staleCountRef.current++;
+      } else {
+        staleCountRef.current = 0;
+        prevJobsSnapshotRef.current = currentSnapshot;
+      }
+
       setJobs(currentJobs);
       isFirstLoad.current = false;
     } catch (err) {
       console.error('[TaskQueue] 获取任务列表失败:', err);
     } finally {
       setLoading(false);
+      isFetchingRef.current = false;
     }
   }, []);
 
@@ -123,7 +148,14 @@ export function useTaskQueue(options?: UseTaskQueueOptions): UseTaskQueueReturn 
     const hasActiveTasks = jobs.some(
       (j) => j.status === 'running' || j.status === 'pending'
     );
-    return hasActiveTasks ? POLLING_ACTIVE : POLLING_IDLE;
+    if (!hasActiveTasks) return POLLING_IDLE;
+    
+    // 有活跃任务时，根据连续无变化次数进行指数退避
+    const staleCount = staleCountRef.current;
+    if (staleCount < 3) return POLLING_ACTIVE;        // 前3次: 3s
+    if (staleCount < 6) return 5000;                   // 3-6次: 5s
+    if (staleCount < 10) return 8000;                  // 6-10次: 8s
+    return POLLING_MINIMIZED;                           // 10次+: 15s（和最小化一样）
   }, [jobs, isExpanded]);
 
   // Effect to manage adaptive polling interval
@@ -175,6 +207,37 @@ export function useTaskQueue(options?: UseTaskQueueOptions): UseTaskQueueReturn 
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [fetchJobs]);
+
+  // 网络状态感知：离线时暂停轮询，上线时恢复
+  useEffect(() => {
+    const handleOnline = () => {
+      console.log('[TaskQueue] 网络恢复，立即获取数据');
+      fetchJobs(false);
+      // 恢复轮询
+      if (!intervalRef.current) {
+        const token = getAuthToken();
+        if (token) {
+          intervalRef.current = setInterval(() => fetchJobs(false), currentIntervalRef.current);
+        }
+      }
+    };
+
+    const handleOffline = () => {
+      console.log('[TaskQueue] 网络离线，暂停轮询');
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
   }, [fetchJobs]);
 
   // Initial fetch on mount

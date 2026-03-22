@@ -11,7 +11,7 @@
  */
 
 const handleBaseTextModelCall = require('../base/baseTextModelCall');
-const handleBaseImageModelCall = require('../base/baseImageModelCall');
+const handleBaseImageModelCall = require('../base/imageGeneration');
 
 // 道具提示词生成模板
 const PROP_PROMPT_TEMPLATE = `你是一个专业的道具设计师，根据以下信息生成道具的详细英文描述，用于AI图像生成。

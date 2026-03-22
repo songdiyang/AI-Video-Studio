@@ -521,11 +521,11 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
   }, []);
 
   // 草图编辑器保存回调
-  const handleSketchEditorSave = useCallback((sketchUrl: string, sketchData: unknown) => {
-    if (sketchEditorStoryboardId) {
+  const handleSketchEditorSave = useCallback((result: { sketchUrl?: string; sketchData?: unknown }) => {
+    if (sketchEditorStoryboardId && result.sketchUrl) {
       setScenes(prev => prev.map(s => 
         s.id === sketchEditorStoryboardId 
-          ? { ...s, sketchUrl, sketchData } 
+          ? { ...s, sketchUrl: result.sketchUrl, sketchData: result.sketchData } 
           : s
       ));
     }

@@ -1,6 +1,6 @@
 const express = require('express');
 const { authMiddleware } = require('./middleware');
-const { getBillingSummary, listBillingRecords } = require('./aiBillingService');
+const { getBillingSummary, listBillingRecords, getBillingStatsByPeriod, getBillingStatsByModel } = require('./aiBillingService');
 const modelStatsRoutes = require('./billingHandlers/modelStats');
 
 const router = express.Router();
@@ -36,6 +36,39 @@ router.get('/history', authMiddleware, async (req, res) => {
   } catch (err) {
     console.error('DB error in billing history:', err);
     return res.status(500).json({ message: 'Failed to fetch billing history' });
+  }
+});
+
+// 按时间段统计
+router.get('/stats/period', authMiddleware, async (req, res) => {
+  const userId = req.user.id;
+  const period = req.query.period || 'day';
+  const limit = parseInt(req.query.limit, 10) || 30;
+
+  // 校验 period 参数
+  if (!['day', 'week', 'month'].includes(period)) {
+    return res.status(400).json({ message: 'Invalid period. Must be day, week, or month.' });
+  }
+
+  try {
+    const stats = await getBillingStatsByPeriod(userId, { period, limit });
+    return res.json({ stats, period, limit });
+  } catch (err) {
+    console.error('DB error in billing stats by period:', err);
+    return res.status(500).json({ message: 'Failed to fetch billing stats' });
+  }
+});
+
+// 按模型统计
+router.get('/stats/model', authMiddleware, async (req, res) => {
+  const userId = req.user.id;
+
+  try {
+    const stats = await getBillingStatsByModel(userId);
+    return res.json({ stats });
+  } catch (err) {
+    console.error('DB error in billing stats by model:', err);
+    return res.status(500).json({ message: 'Failed to fetch billing model stats' });
   }
 });
 

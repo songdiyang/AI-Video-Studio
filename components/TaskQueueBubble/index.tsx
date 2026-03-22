@@ -82,7 +82,9 @@ const TaskQueueBubble: React.FC = () => {
   // 计算运行中的任务数
   const runningCount = jobs.filter(j => j.status === 'running').length;
   const pendingCount = jobs.filter(j => j.status === 'pending').length;
+  const failedCount = jobs.filter(j => j.status === 'failed').length;
   const activeCount = runningCount + pendingCount;
+  const hasFailedJobs = failedCount > 0;
 
   // 计算整体进度
   const overallProgress = jobs.length > 0
@@ -160,7 +162,17 @@ const TaskQueueBubble: React.FC = () => {
             {/* 任务图标 */}
             <div className="relative">
               <ListTodo className="w-4 h-4" style={{ color: 'var(--text-secondary)' }} />
-              {activeCount > 0 && (
+              {/* 失败任务指示器（优先显示） */}
+              {hasFailedJobs && (
+                <motion.span
+                  animate={{ scale: [1, 1.2, 1] }}
+                  transition={{ duration: 1.5, repeat: Infinity }}
+                  className="absolute -top-1 -right-1 w-2 h-2 rounded-full"
+                  style={{ backgroundColor: 'var(--danger)' }}
+                />
+              )}
+              {/* 活跃任务指示器（仅在无失败任务时显示） */}
+              {!hasFailedJobs && activeCount > 0 && (
                 <motion.span
                   animate={{ scale: [1, 1.2, 1] }}
                   transition={{ duration: 2, repeat: Infinity }}

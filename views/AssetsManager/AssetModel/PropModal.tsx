@@ -44,7 +44,7 @@ const PropModal: React.FC<PropModalProps> = ({
   const [selectedTextModel, setSelectedTextModel] = useState<string>('');
   
   // 获取可用的 AI 模型
-  const { models, loading: modelsLoading } = useAIModels();
+  const { models, loading: modelsLoading } = useAIModels(null);
   const imageModels = models.filter(m => m.type === 'image');
   const textModels = models.filter(m => m.type === 'text');
 

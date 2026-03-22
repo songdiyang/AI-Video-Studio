@@ -18,6 +18,8 @@ interface SketchToolbarProps {
   onClear?: () => void;
   saving: boolean;
   hasBackgroundImage?: boolean;
+  /** 独立模式：隐藏 AI 生成相关控件 (SketchTypeSelector, ControlStrengthSlider) */
+  standalone?: boolean;
 }
 
 const SketchToolbar: React.FC<SketchToolbarProps> = ({
@@ -33,40 +35,51 @@ const SketchToolbar: React.FC<SketchToolbarProps> = ({
   onCancel,
   onClear,
   saving,
-  hasBackgroundImage = false
+  hasBackgroundImage = false,
+  standalone = false
 }) => {
   return (
     <div className="flex items-center justify-between px-4 py-2 bg-[var(--bg-card)] border-b border-[var(--border-color)] flex-wrap gap-2">
-      {/* 左侧：草图类型 + 控制强度 */}
+      {/* 左侧：草图类型 + 控制强度（分镜模式显示） */}
       <div className="flex items-center gap-6">
-        <SketchTypeSelector
-          value={sketchType}
-          onChange={onSketchTypeChange}
-          compact
-        />
-
-        {/* 控制强度滑块 */}
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-[var(--text-muted)] whitespace-nowrap">控制强度:</span>
-          <Slider
-            size="sm"
-            step={0.05}
-            minValue={0}
-            maxValue={1}
-            value={controlStrength}
-            onChange={(value) => onControlStrengthChange(value as number)}
-            className="w-28"
-            classNames={{
-              track: "bg-[var(--bg-app)]",
-              filler: "bg-[var(--accent)]",
-              thumb: "bg-[var(--accent)] border-2 border-white shadow-md"
-            }}
-            aria-label="控制强度"
+        {/* 分镜模式：草图类型选择器 */}
+        {!standalone && (
+          <SketchTypeSelector
+            value={sketchType}
+            onChange={onSketchTypeChange}
+            compact
           />
-          <span className="text-xs font-mono text-[var(--text-secondary)] w-10">
-            {controlStrength.toFixed(2)}
-          </span>
-        </div>
+        )}
+
+        {/* 分镜模式：控制强度滑块 */}
+        {!standalone && (
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-[var(--text-muted)] whitespace-nowrap">控制强度:</span>
+            <Slider
+              size="sm"
+              step={0.05}
+              minValue={0}
+              maxValue={1}
+              value={controlStrength}
+              onChange={(value) => onControlStrengthChange(value as number)}
+              className="w-28"
+              classNames={{
+                track: "bg-[var(--bg-app)]",
+                filler: "bg-[var(--accent)]",
+                thumb: "bg-[var(--accent)] border-2 border-white shadow-md"
+              }}
+              aria-label="控制强度"
+            />
+            <span className="text-xs font-mono text-[var(--text-secondary)] w-10">
+              {controlStrength.toFixed(2)}
+            </span>
+          </div>
+        )}
+
+        {/* 独立模式：显示简单提示 */}
+        {standalone && (
+          <span className="text-sm text-[var(--text-muted)]">草图编辑器</span>
+        )}
       </div>
 
       {/* 右侧：背景控制 + 保存/取消 */}

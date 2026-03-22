@@ -46,6 +46,12 @@ interface LazyImageProps {
   style?: React.CSSProperties;
   /** 点击回调 */
   onClick?: (e: React.MouseEvent) => void;
+  /** 优先加载（跳过 lazy），用于首屏关键图片 */
+  priority?: boolean;
+  /** 低分辨率占位图 URL，用于 blur-up 效果 */
+  blurPlaceholder?: string;
+  /** 加载策略：'eager' 立即加载，'lazy' 懒加载 */
+  loading?: 'eager' | 'lazy';
 }
 
 /**
@@ -54,6 +60,8 @@ interface LazyImageProps {
  * - 加载时显示骨架屏占位符
  * - 加载完成后淡入显示
  * - 支持加载失败显示占位符
+ * - 支持 blur-up 效果：图片加载期间显示低分辨率模糊占位
+ * - 支持 priority 属性：跳过懒加载直接加载首屏关键图片
  */
 const LazyImage: React.FC<LazyImageProps> = ({
   src,
@@ -62,6 +70,9 @@ const LazyImage: React.FC<LazyImageProps> = ({
   fallback,
   style,
   onClick,
+  priority = false,
+  blurPlaceholder,
+  loading,
 }) => {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
@@ -82,10 +93,29 @@ const LazyImage: React.FC<LazyImageProps> = ({
     setLoaded(false);
   };
 
+  // 确定加载策略：priority 为 true 或 loading 为 'eager' 时立即加载
+  const loadingStrategy = priority || loading === 'eager' ? 'eager' : 'lazy';
+
   return (
     <div className={`relative overflow-hidden ${className}`} style={style} onClick={onClick}>
-      {/* 加载中或加载失败时显示占位符 */}
-      {!loaded && !error && (
+      {/* blur-up 占位图：未加载完成且有占位图时显示 */}
+      {blurPlaceholder && !loaded && !error && (
+        <img
+          src={blurPlaceholder}
+          alt=""
+          aria-hidden="true"
+          className="absolute inset-0 w-full h-full object-cover"
+          style={{
+            filter: 'blur(20px)',
+            transform: 'scale(1.1)', // 防止模糊边缘露出
+            transition: 'opacity 0.3s ease',
+            opacity: loaded ? 0 : 1,
+          }}
+        />
+      )}
+      
+      {/* 加载中或加载失败时显示占位符（无 blurPlaceholder 时） */}
+      {!loaded && !error && !blurPlaceholder && (
         fallback || (
           <div className="absolute inset-0 flex items-center justify-center bg-[var(--bg-app)]">
             <Skeleton card className="w-full h-full" />
@@ -102,17 +132,22 @@ const LazyImage: React.FC<LazyImageProps> = ({
         </div>
       )}
       
-      {/* 实际图片 - 使用原生懒加载 */}
+      {/* 实际图片 - 根据 priority/loading 决定加载策略 */}
       <img
         src={src}
         alt={alt}
-        loading="lazy"
+        loading={loadingStrategy}
         onLoad={handleLoad}
         onError={handleError}
-        className={`w-full h-full object-cover transition-opacity duration-300 ${
-          loaded ? 'opacity-100' : 'opacity-0'
-        }`}
-        style={{ position: loaded ? 'relative' : 'absolute', inset: 0 }}
+        className="w-full h-full object-cover"
+        style={{
+          position: loaded ? 'relative' : 'absolute',
+          inset: 0,
+          // blur-up 过渡效果
+          filter: loaded ? 'blur(0)' : (blurPlaceholder ? 'blur(20px)' : 'none'),
+          opacity: loaded ? 1 : 0,
+          transition: 'filter 0.3s ease, opacity 0.3s ease',
+        }}
       />
     </div>
   );

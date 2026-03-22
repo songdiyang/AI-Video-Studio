@@ -133,18 +133,45 @@ export default defineConfig(({ mode }) => {
         rollupOptions: {
           output: {
             // 手动分块策略，优化加载性能
-            manualChunks: {
+            manualChunks(id) {
               // 核心 React 库
-              vendor: ['react', 'react-dom', 'react-router-dom'],
-              // UI 组件库和动画
-              ui: ['@heroui/react', 'framer-motion'],
+              if (id.includes('node_modules/react-dom') || 
+                  id.includes('node_modules/react-router-dom') ||
+                  (id.includes('node_modules/react/') && !id.includes('react-'))) {
+                return 'vendor';
+              }
+              // Excalidraw - 最大依赖，单独拆包（约 1-2 MB）
+              if (id.includes('@excalidraw')) {
+                return 'excalidraw';
+              }
+              // 动画库单独拆包（约 300-500 KB）
+              if (id.includes('framer-motion')) {
+                return 'animation';
+              }
+              // UI 组件库
+              if (id.includes('@heroui/react') || id.includes('@heroui/')) {
+                return 'ui';
+              }
               // 拖拽库
-              dnd: ['@dnd-kit/core', '@dnd-kit/sortable'],
+              if (id.includes('@dnd-kit/core') || id.includes('@dnd-kit/sortable')) {
+                return 'dnd';
+              }
+              // 图片灯箱组件
+              if (id.includes('yet-another-react-lightbox')) {
+                return 'lightbox';
+              }
+              // FFmpeg 视频处理
+              if (id.includes('@ffmpeg/ffmpeg') || id.includes('@ffmpeg/util')) {
+                return 'ffmpeg';
+              }
+              // 图标库
+              if (id.includes('lucide-react')) {
+                return 'icons';
+              }
               // 工具库
-              utils: ['jszip', 'lucide-react'],
-              // 注意: @excalidraw/excalidraw 已通过 React.lazy() 懒加载
-              // 如需进一步优化，可添加以下配置将其单独分包：
-              // excalidraw: ['@excalidraw/excalidraw'],
+              if (id.includes('jszip')) {
+                return 'utils';
+              }
             },
           },
         },

@@ -1,14 +1,17 @@
 import React, { useState, FormEvent, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Card, CardBody, Button, Input, Divider } from '@heroui/react';
-import { User, Lock, ArrowRight, Sparkles, KeyRound } from 'lucide-react';
+import { Card, CardBody, Button, Input } from '@heroui/react';
+import { User, Lock, ArrowRight, KeyRound } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { login, register, loginWithAdminAccess, getLoginRequirements } from '../services/auth';
 import { useToast } from '../contexts/ToastContext';
+import { useLanguage } from '../contexts/LanguageContext';
 
 const Auth: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { showToast } = useToast();
+  const { t } = useLanguage();
 
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [username, setUsername] = useState('');
@@ -17,6 +20,7 @@ const Auth: React.FC = () => {
   const [requiresAdminAccess, setRequiresAdminAccess] = useState(false);
   const [checkingLoginRequirements, setCheckingLoginRequirements] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState<{ username?: string; password?: string }>({});
 
   // 获取登录前想访问的页面
   const from = (location.state as any)?.from?.pathname || '/';
@@ -67,12 +71,26 @@ const Auth: React.FC = () => {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+
+    // 前端验证
+    const newErrors: typeof errors = {};
+    if (username.trim().length < 3) {
+      newErrors.username = t.auth.usernameMinLength;
+    }
+    if (password.length < 6) {
+      newErrors.password = t.auth.passwordMinLength;
+    }
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
+      return;
+    }
+
     if (!username || !password) {
-      showToast('请填写完整信息', 'error');
+      showToast(t.auth.fillAllFields, 'error');
       return;
     }
     if (mode === 'login' && requiresAdminAccess && !adminAccessKey.trim()) {
-      showToast('该管理员账号需要填写后台访问密钥', 'error');
+      showToast(t.auth.adminKeyRequired, 'error');
       return;
     }
 
@@ -93,24 +111,24 @@ const Auth: React.FC = () => {
       if (err?.reason === 'missing' || err?.reason === 'invalid') {
         setRequiresAdminAccess(true);
       }
-      showToast(mode === 'login' ? '登录失败，请稍后重试' : '注册失败，请稍后重试', 'error');
+      showToast(mode === 'login' ? t.auth.loginFailed : t.auth.registerFailed, 'error');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#0c0e1a] px-4 relative overflow-hidden">
+    <div className="min-h-screen flex items-center justify-center bg-[var(--bg-app)] px-4 relative overflow-hidden">
       {/* 装饰背景元素 */}
       <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
-        <div className="absolute -top-40 -right-40 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl animate-float"></div>
-        <div className="absolute -bottom-40 -left-40 w-96 h-96 bg-amber-500/10 rounded-full blur-3xl animate-float-delay"></div>
-        <div className="absolute top-1/3 left-1/4 w-64 h-64 bg-[rgba(230,200,122,0.05)] rounded-full blur-2xl"></div>
+        <div className="absolute -top-40 -right-40 w-96 h-96 bg-[var(--accent-secondary)]/10 rounded-full blur-3xl animate-float"></div>
+        <div className="absolute -bottom-40 -left-40 w-96 h-96 bg-[var(--accent)]/10 rounded-full blur-3xl animate-float-delay"></div>
+        <div className="absolute top-1/3 left-1/4 w-64 h-64 bg-[var(--accent)]/5 rounded-full blur-2xl"></div>
         {/* 星点装饰 */}
         {Array.from({ length: 20 }).map((_, i) => (
           <div
             key={i}
-            className="absolute w-1 h-1 bg-[rgba(230,200,122,0.4)] rounded-full animate-twinkle"
+            className="absolute w-1 h-1 bg-[var(--accent)]/40 rounded-full animate-twinkle"
             style={{
               left: `${Math.random() * 100}%`,
               top: `${Math.random() * 100}%`,
@@ -122,134 +140,225 @@ const Auth: React.FC = () => {
       </div>
 
       <Card className="w-full max-w-md pro-card relative z-10">
-        <CardBody className="p-10 space-y-8">
-          {/* Logo 区域 */}
-          <div className="text-center space-y-4">
+        <CardBody className="p-8 sm:p-10 space-y-7">
+          {/* Logo 区域 - 入场动画 */}
+          <motion.div
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.5, ease: [0.25, 0.46, 0.45, 0.94] }}
+            className="text-center space-y-5"
+          >
             <div className="relative inline-block">
-              <div className="absolute inset-0 bg-gradient-to-br from-amber-400/40 to-yellow-600/40 rounded-2xl blur-xl"></div>
-              <div className="relative inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-amber-400 to-yellow-600 rounded-2xl shadow-lg shadow-amber-500/30">
-                <Sparkles className="w-8 h-8 text-[#1a1d35]" />
+              {/* 外层光晕 */}
+              <div className="absolute inset-0 bg-gradient-to-br from-[var(--accent)]/30 to-[var(--accent-dark)]/30 rounded-2xl blur-2xl animate-pulse-slow" />
+              {/* 内层光晕 */}
+              <div className="absolute inset-0 bg-gradient-to-br from-[var(--accent)]/20 to-[var(--accent-dark)]/20 rounded-2xl blur-xl" />
+              {/* Logo 容器 */}
+              <div 
+                className="relative inline-flex items-center justify-center w-18 h-18 bg-gradient-to-br from-[var(--accent)] to-[var(--accent-dark)] rounded-2xl transition-transform duration-300 hover:scale-105"
+                style={{ boxShadow: '0 10px 25px -5px var(--accent-glow), 0 8px 10px -6px var(--accent-glow)' }}
+              >
+                {/* 饺子图标 */}
+                <svg 
+                  viewBox="0 0 48 48" 
+                  className="w-9 h-9 text-[var(--text-inverse)]"
+                  fill="currentColor"
+                >
+                  {/* 饺子主体 - 半月形 */}
+                  <path d="M24 8C16 8 8 14 8 22C8 30 14 38 24 40C34 38 40 30 40 22C40 14 32 8 24 8Z" />
+                  {/* 饺子褶皱 */}
+                  <path 
+                    d="M12 20 Q16 18 20 20 Q24 18 28 20 Q32 18 36 20" 
+                    fill="none" 
+                    stroke="var(--accent-dark)" 
+                    strokeWidth="2" 
+                    strokeLinecap="round"
+                  />
+                  <path 
+                    d="M14 26 Q18 24 22 26 Q26 24 30 26 Q34 24 38 26" 
+                    fill="none" 
+                    stroke="var(--accent-dark)" 
+                    strokeWidth="2" 
+                    strokeLinecap="round"
+                  />
+                  {/* 高光 */}
+                  <ellipse cx="18" cy="16" rx="4" ry="2" fill="white" opacity="0.4" />
+                </svg>
               </div>
             </div>
-            <div>
+            <div className="space-y-1">
               <h1 className="text-3xl font-black tracking-tight pro-title">
-                饺子动漫
+                {t.auth.title}
               </h1>
-              <p className="text-sm text-[#6b6561] mt-2 font-medium">
-                AI 驱动的视频创作平台
+              <p className="text-sm text-[var(--text-muted)] font-medium">
+                {t.auth.subtitle}
               </p>
             </div>
-          </div>
+          </motion.div>
 
-          {/* Tab 切换 */}
-          <div className="flex gap-2 p-1 bg-[rgba(30,35,60,0.6)] rounded-xl border border-[rgba(255,255,255,0.08)]">
+          {/* Tab 切换 - 滑块动画 */}
+          <div className="flex gap-1 p-1 bg-[var(--bg-input)] rounded-xl border border-[var(--border-color)] relative">
+            {/* 滑块 */}
+            <motion.div
+              layoutId="auth-tab-indicator"
+              className="absolute inset-y-1 rounded-lg bg-gradient-to-r from-[var(--accent)]/20 to-[var(--accent-light)]/20 border border-[var(--accent)]/30 shadow-[0_0_15px_var(--accent-glow)]"
+              style={{
+                left: mode === 'login' ? '4px' : 'calc(50%)',
+                width: 'calc(50% - 4px)'
+              }}
+              transition={{ type: "spring", stiffness: 400, damping: 35 }}
+            />
             <button
               onClick={() => setMode('login')}
-              className={`flex-1 py-2.5 text-sm font-bold rounded-lg transition-all cursor-pointer ${
+              className={`flex-1 py-2.5 text-sm font-semibold rounded-lg transition-all duration-200 cursor-pointer relative z-10 ${
                 mode === 'login'
-                  ? 'bg-gradient-to-r from-amber-500/20 to-yellow-500/20 text-[#e6c87a] border border-amber-500/30 shadow-[0_0_10px_rgba(230,200,122,0.2)]'
-                  : 'text-[#6b6561] hover:text-[#a8a29e]'
+                  ? 'text-[var(--accent)]'
+                  : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
               }`}
             >
-              登录
+              {t.auth.loginTab}
             </button>
             <button
               onClick={() => setMode('register')}
-              className={`flex-1 py-2.5 text-sm font-bold rounded-lg transition-all cursor-pointer ${
+              className={`flex-1 py-2.5 text-sm font-semibold rounded-lg transition-all duration-200 cursor-pointer relative z-10 ${
                 mode === 'register'
-                  ? 'bg-gradient-to-r from-amber-500/20 to-yellow-500/20 text-[#e6c87a] border border-amber-500/30 shadow-[0_0_10px_rgba(230,200,122,0.2)]'
-                  : 'text-[#6b6561] hover:text-[#a8a29e]'
+                  ? 'text-[var(--accent)]'
+                  : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
               }`}
             >
-              注册
+              {t.auth.registerTab}
             </button>
           </div>
 
-          {/* 表单 */}
-          <form onSubmit={handleSubmit} className="space-y-5">
-            <Input
-              type="text"
-              placeholder="用户名"
-              value={username}
-              onValueChange={setUsername}
-              startContent={<User className="w-4 h-4 text-[#6b6561]" />}
-              variant="flat"
-              radius="lg"
-              size="lg"
-              classNames={{
-                base: 'bg-transparent',
-                input: 'bg-transparent text-[#e8e4dc] placeholder:text-[#6b6561]',
-                inputWrapper: 'bg-[rgba(30,35,60,0.6)] border border-[rgba(255,255,255,0.08)] hover:border-[rgba(230,200,122,0.3)] data-[focus=true]:border-[rgba(230,200,122,0.4)] shadow-sm',
-              }}
-            />
-
-            <Input
-              type="password"
-              placeholder="密码"
-              value={password}
-              onValueChange={setPassword}
-              startContent={<Lock className="w-4 h-4 text-[#6b6561]" />}
-              variant="flat"
-              radius="lg"
-              size="lg"
-              classNames={{
-                base: 'bg-transparent',
-                input: 'bg-transparent text-[#e8e4dc] placeholder:text-[#6b6561]',
-                inputWrapper: 'bg-[rgba(30,35,60,0.6)] border border-[rgba(255,255,255,0.08)] hover:border-[rgba(230,200,122,0.3)] data-[focus=true]:border-[rgba(230,200,122,0.4)] shadow-sm',
-              }}
-            />
-
-            {mode === 'login' && requiresAdminAccess ? (
-              <div className="space-y-2">
+          {/* 表单 - 切换动画 */}
+          <AnimatePresence mode="wait">
+            <motion.form
+              key={mode}
+              initial={{ opacity: 0, x: mode === 'login' ? -20 : 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: mode === 'login' ? 20 : -20 }}
+              transition={{ duration: 0.2 }}
+              onSubmit={handleSubmit}
+              className="space-y-4"
+            >
+              <div className="space-y-1">
                 <Input
-                  type="password"
-                  placeholder="后台访问密钥"
-                  value={adminAccessKey}
-                  onValueChange={setAdminAccessKey}
-                  startContent={<KeyRound className="w-4 h-4 text-[#6b6561]" />}
+                  type="text"
+                  placeholder={t.auth.username}
+                  value={username}
+                  onValueChange={(v) => {
+                    setUsername(v);
+                    setErrors(prev => ({ ...prev, username: undefined }));
+                  }}
+                  startContent={<User className="w-4 h-4 text-[var(--text-muted)]" />}
                   variant="flat"
                   radius="lg"
                   size="lg"
+                  isInvalid={!!errors.username}
+                  errorMessage={errors.username}
                   classNames={{
                     base: 'bg-transparent',
-                    input: 'bg-transparent text-[#e8e4dc] placeholder:text-[#6b6561]',
-                    inputWrapper: 'bg-[rgba(30,35,60,0.6)] border border-[rgba(255,255,255,0.08)] hover:border-[rgba(230,200,122,0.3)] data-[focus=true]:border-[rgba(230,200,122,0.4)] shadow-sm',
+                    input: 'bg-transparent text-[var(--text-primary)] placeholder:text-[var(--text-muted)]',
+                    inputWrapper: `bg-[var(--bg-input)] border hover:border-[var(--accent)]/30 data-[focus=true]:border-[var(--accent)]/50 shadow-sm transition-colors ${errors.username ? 'border-[var(--danger)]' : 'border-[var(--border-color)]'}`,
                   }}
                 />
-                <p className="text-xs text-[#e6c87a]">
-                  检测到管理员账号，登录时需要额外提供后台访问密钥。
-                </p>
               </div>
-            ) : null}
 
-            {mode === 'login' && checkingLoginRequirements ? (
-              <p className="text-xs text-[#6b6561]">正在检测账号权限...</p>
-            ) : null}
+              <div className="space-y-1">
+                <Input
+                  type="password"
+                  placeholder={t.auth.password}
+                  value={password}
+                  onValueChange={(v) => {
+                    setPassword(v);
+                    setErrors(prev => ({ ...prev, password: undefined }));
+                  }}
+                  startContent={<Lock className="w-4 h-4 text-[var(--text-muted)]" />}
+                  variant="flat"
+                  radius="lg"
+                  size="lg"
+                  isInvalid={!!errors.password}
+                  errorMessage={errors.password}
+                  classNames={{
+                    base: 'bg-transparent',
+                    input: 'bg-transparent text-[var(--text-primary)] placeholder:text-[var(--text-muted)]',
+                    inputWrapper: `bg-[var(--bg-input)] border hover:border-[var(--accent)]/30 data-[focus=true]:border-[var(--accent)]/50 shadow-sm transition-colors ${errors.password ? 'border-[var(--danger)]' : 'border-[var(--border-color)]'}`,
+                  }}
+                />
+              </div>
 
-            <Button
-              type="submit"
-              size="lg"
-              radius="lg"
-              className="w-full font-bold bg-gradient-to-br from-amber-400 to-yellow-600 text-[#1a1d35] shadow-lg shadow-amber-500/30 hover:shadow-amber-500/50 transition-all cursor-pointer"
-              endContent={<ArrowRight className="w-4 h-4" />}
-              isLoading={loading}
-            >
-              {mode === 'login' ? '登录' : '注册'}
-            </Button>
-          </form>
+              {mode === 'login' && requiresAdminAccess ? (
+                <div className="space-y-2 animate-fade-in-up">
+                  <Input
+                    type="password"
+                    placeholder={t.auth.adminAccessKey}
+                    value={adminAccessKey}
+                    onValueChange={setAdminAccessKey}
+                    startContent={<KeyRound className="w-4 h-4 text-[var(--accent)]" />}
+                    variant="flat"
+                    radius="lg"
+                    size="lg"
+                    classNames={{
+                      base: 'bg-transparent',
+                      input: 'bg-transparent text-[var(--text-primary)] placeholder:text-[var(--text-muted)]',
+                      inputWrapper: 'bg-[var(--bg-input)] border border-[var(--accent)]/50 hover:border-[var(--accent)] data-[focus=true]:border-[var(--accent)] shadow-[0_0_10px_rgba(59,130,246,0.15)]',
+                    }}
+                  />
+                  <div className="flex items-center gap-2 px-1">
+                    <div className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] animate-pulse" />
+                    <p className="text-xs text-[var(--accent)] font-medium">
+                      {t.auth.adminAccountDetected}
+                    </p>
+                  </div>
+                </div>
+              ) : null}
 
-          <Divider className="bg-[rgba(255,255,255,0.08)]" />
+              {mode === 'login' && checkingLoginRequirements ? (
+                <div className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
+                  <div className="w-3 h-3 border-2 border-[var(--text-muted)]/30 border-t-[var(--accent)] rounded-full animate-spin" />
+                  {t.auth.checkingPermissions}
+                </div>
+              ) : null}
+
+              <Button
+                type="submit"
+                size="lg"
+                radius="lg"
+                className="w-full font-bold bg-gradient-to-br from-[var(--accent)] to-[var(--accent-dark)] text-[var(--text-inverse)] transition-all cursor-pointer glow-accent group"
+                endContent={<ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />}
+                isLoading={loading}
+              >
+                {mode === 'login' ? t.auth.loginBtn : t.auth.registerBtn}
+              </Button>
+            </motion.form>
+          </AnimatePresence>
 
           {/* 底部提示 */}
-          <p className="text-center text-xs text-[#6b6561]">
-            {mode === 'login' ? '首次使用？' : '已有账户？'}
-            <button
-              onClick={() => setMode(mode === 'login' ? 'register' : 'login')}
-              className="ml-2 text-[#e6c87a] hover:text-[#f0dca0] font-bold transition-colors cursor-pointer"
-            >
-              {mode === 'login' ? '立即注册' : '返回登录'}
-            </button>
-          </p>
+          <div className="pt-4 border-t border-[var(--border-color)]">
+            <p className="text-center text-sm text-[var(--text-muted)]">
+              {mode === 'login' ? (
+                <>
+                  {t.auth.firstTime}
+                  <button
+                    onClick={() => setMode('register')}
+                    className="ml-1.5 text-[var(--accent)] hover:text-[var(--accent-light)] font-semibold transition-colors cursor-pointer hover:underline underline-offset-2"
+                  >
+                    {t.auth.goRegister}
+                  </button>
+                </>
+              ) : (
+                <>
+                  {t.auth.hasAccount}
+                  <button
+                    onClick={() => setMode('login')}
+                    className="ml-1.5 text-[var(--accent)] hover:text-[var(--accent-light)] font-semibold transition-colors cursor-pointer hover:underline underline-offset-2"
+                  >
+                    {t.auth.goLogin}
+                  </button>
+                </>
+              )}
+            </p>
+          </div>
         </CardBody>
       </Card>
     </div>

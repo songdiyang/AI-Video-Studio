@@ -54,10 +54,10 @@ const SketchPanel: React.FC<SketchPanelProps> = ({
   const [localControlStrength, setLocalControlStrength] = useState(controlStrength);
 
   // 处理草图编辑器保存
-  const handleEditorSave = useCallback((newSketchUrl: string, newSketchData: unknown) => {
+  const handleEditorSave = useCallback((result: { sketchUrl?: string; sketchData?: unknown }) => {
     onSketchChange({
-      sketchUrl: newSketchUrl,
-      sketchData: newSketchData,
+      sketchUrl: result.sketchUrl ?? '',
+      sketchData: result.sketchData,
       sketchType: localSketchType,
       controlStrength: localControlStrength
     });

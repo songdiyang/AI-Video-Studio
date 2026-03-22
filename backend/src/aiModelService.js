@@ -21,6 +21,60 @@ const {
   finalizeAsyncBillingFromQuery
 } = require('./aiBillingService');
 
+// ============ 辅助函数 ============
+function toNumberSafe(val, fallback) {
+  const n = Number(val);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
+// ============ 模型配置缓存 ============
+const MODEL_CACHE_TTL = 60000; // 60秒缓存
+const modelConfigCache = new Map(); // key: modelName, value: { config, expireAt }
+
+async function getCachedModelConfig(modelName) {
+  const cached = modelConfigCache.get(modelName);
+  if (cached && Date.now() < cached.expireAt) {
+    return cached.config;
+  }
+  const config = await queryOne(
+    'SELECT * FROM ai_model_configs WHERE name = ? AND is_active = 1',
+    [modelName]
+  );
+  if (config) {
+    modelConfigCache.set(modelName, { config, expireAt: Date.now() + MODEL_CACHE_TTL });
+  }
+  return config;
+}
+
+function invalidateModelCache(modelName) {
+  if (modelName) {
+    modelConfigCache.delete(modelName);
+  } else {
+    modelConfigCache.clear();
+  }
+}
+
+/**
+ * 带单次重试的请求封装
+ * 网络错误或 5xx 错误自动重试一次，间隔 2 秒
+ */
+async function fetchWithRetry(url, options, context = '') {
+  try {
+    const response = await safeFetch(url, options, context);
+    if (response.status >= 500) {
+      console.warn(`[AI Model] ${context} 收到 ${response.status}，2秒后重试`);
+      await new Promise(r => setTimeout(r, 2000));
+      return safeFetch(url, options, context);
+    }
+    return response;
+  } catch (err) {
+    if (err.name === 'AbortError') throw err; // 超时不重试
+    console.warn(`[AI Model] ${context} 网络错误: ${err.message}，2秒后重试`);
+    await new Promise(r => setTimeout(r, 2000));
+    return safeFetch(url, options, context);
+  }
+}
+
 const LOG_LEVEL = process.env.LOG_LEVEL || 'info';
 const isDebug = LOG_LEVEL === 'debug';
 
@@ -213,11 +267,8 @@ async function callAIModel(modelName, params = {}, apiKey = null) {
   let requestStarted = false;
   let mergedParams = { ...params };
   try {
-    // 从数据库获取模型配置
-    model = await queryOne(
-      'SELECT * FROM ai_model_configs WHERE name = ? AND is_active = 1',
-      [modelName]
-    );
+    // 从数据库获取模型配置（带缓存）
+    model = await getCachedModelConfig(modelName);
     
     if (!model) {
       throw new Error(`模型 "${modelName}" 不存在或未启用`);
@@ -396,15 +447,16 @@ async function callAIModel(modelName, params = {}, apiKey = null) {
       }
     }
     
-    // 添加超时控制（600秒）
+    // 添加超时控制（从 default_params.timeout 读取，默认300秒）
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 600000);
+    const timeoutMs = toNumberSafe(defaultParams.timeout, 300) * 1000;
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
     
     let data;
     let response;
     try {
       requestStarted = true;
-      response = await safeFetch(url, {
+      response = await fetchWithRetry(url, {
         ...requestOptions,
         signal: controller.signal
       }, `AI 模型 ${modelName} 提交请求`);
@@ -438,8 +490,8 @@ async function callAIModel(modelName, params = {}, apiKey = null) {
     } catch (fetchError) {
       clearTimeout(timeout);
       if (fetchError.name === 'AbortError') {
-        console.error('[AI Model] Request timeout after 600 seconds');
-        throw new Error('API 请求超时（600秒），请稍后重试');
+        console.error(`[AI Model] Request timeout after ${Math.round(timeoutMs / 1000)} seconds`);
+        throw new Error(`API 请求超时（${Math.round(timeoutMs / 1000)}秒），请稍后重试`);
       }
       console.error('[AI Model] Network error:', fetchError.message);
       throw new Error(`网络请求失败: ${fetchError.message}。请检查网络连接或稍后重试`);
@@ -531,10 +583,7 @@ async function callAIModel(modelName, params = {}, apiKey = null) {
  */
 async function queryAIModel(modelName, params = {}, apiKey = null) {
   try {
-    const model = await queryOne(
-      'SELECT * FROM ai_model_configs WHERE name = ? AND is_active = 1',
-      [modelName]
-    );
+    const model = await getCachedModelConfig(modelName);
 
     if (!model) {
       throw new Error(`模型 "${modelName}" 不存在或未启用`);
@@ -656,19 +705,20 @@ async function queryAIModel(modelName, params = {}, apiKey = null) {
     // === 默认模板 fetch 流程 ===
     console.log(`[AI Model Query] Querying ${modelName}:`, url);
 
-    // 添加超时控制（60秒）
+    // 添加超时控制（从 default_params.queryTimeout 读取，默认60秒）
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 60000);
+    const queryTimeoutMs = toNumberSafe(defaultParams.queryTimeout, 60) * 1000;
+    const timeout = setTimeout(() => controller.abort(), queryTimeoutMs);
 
     let data;
     try {
-      const response = await safeFetch(url, { ...requestOptions, signal: controller.signal }, `AI 模型 ${modelName} 查询请求`);
+      const response = await fetchWithRetry(url, { ...requestOptions, signal: controller.signal }, `AI 模型 ${modelName} 查询请求`);
       clearTimeout(timeout);
       data = await response.json();
     } catch (fetchError) {
       clearTimeout(timeout);
       if (fetchError.name === 'AbortError') {
-        throw new Error('查询请求超时（60秒），请稍后重试');
+        throw new Error(`查询请求超时（${Math.round(queryTimeoutMs / 1000)}秒），请稍后重试`);
       }
       throw fetchError;
     }
@@ -736,9 +786,43 @@ async function getImageModels() {
   return models;
 }
 
+/**
+ * 批量调用 AI 模型（并发控制）
+ * @param {Array<{modelName: string, params: object, apiKey?: string}>} calls - 调用列表
+ * @param {object} options - 选项
+ * @param {number} options.concurrency - 最大并发数，默认 3
+ * @returns {Promise<{results: Array, errors: Array}>}
+ */
+async function callAIModelBatch(calls, { concurrency = 3 } = {}) {
+  const results = new Array(calls.length).fill(null);
+  const errors = new Array(calls.length).fill(null);
+  
+  // 手写并发控制（不引入外部依赖）
+  let index = 0;
+  const execute = async () => {
+    while (index < calls.length) {
+      const currentIndex = index++;
+      const { modelName, params, apiKey } = calls[currentIndex];
+      try {
+        results[currentIndex] = await callAIModel(modelName, params, apiKey);
+      } catch (err) {
+        errors[currentIndex] = { index: currentIndex, modelName, error: err.message };
+      }
+    }
+  };
+  
+  // 启动 concurrency 个并发 worker
+  const workers = Array.from({ length: Math.min(concurrency, calls.length) }, () => execute());
+  await Promise.all(workers);
+  
+  return { results, errors: errors.filter(Boolean) };
+}
+
 module.exports = {
   callAIModel,
   queryAIModel,
+  callAIModelBatch,
   getTextModels,
-  getImageModels
+  getImageModels,
+  invalidateModelCache
 };

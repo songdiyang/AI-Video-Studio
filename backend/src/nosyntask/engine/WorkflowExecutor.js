@@ -12,6 +12,7 @@ const { runWithTrace } = require('./generationTrace');
 const { withAIBillingContext } = require('../../aiBillingContext');
 
 const MAX_STEPS = 50; // 单个工作流最大步骤数，防止无限递归
+const MAX_CONCURRENT_TASKS = parseInt(process.env.WORKFLOW_MAX_CONCURRENT, 10) || 5;
 
 function extractResourceRefs(inputParams, executionContext = {}) {
   const refs = {};
@@ -116,16 +117,37 @@ class WorkflowExecutor {
 
       // 检查是否所有任务都完成
       const allCompleted = allTasks.every(t => t.status === 'completed');
+      const allSettled = allTasks.every(t => t.status === 'completed' || t.status === 'failed');
+
       if (allCompleted) {
         this.stepCounters.delete(jobId);
         this.runningTasks.delete(jobId);
         await this.jobStatusManager.completeJob(jobId);
+      } else if (allSettled) {
+        // continue_independent 策略下：有失败的但其他都完成了
+        const failedTasks = allTasks.filter(t => t.status === 'failed');
+        this.stepCounters.delete(jobId);
+        this.runningTasks.delete(jobId);
+        await this.jobStatusManager.failJob(jobId, `${failedTasks.length} 个任务失败，其余任务已完成`);
       }
       return;
     }
 
+    // 全局并发限制：计算当前正在运行的任务数
+    const currentRunningCount = runningSet.size;
+    const availableSlots = Math.max(0, MAX_CONCURRENT_TASKS - currentRunningCount);
+
+    if (availableSlots === 0) {
+      console.log(`[WorkflowExecutor] 已达并发上限 (${MAX_CONCURRENT_TASKS})，等待任务完成: jobId=${jobId}`);
+      return;
+    }
+
+    // 限制本批次调度的任务数量
+    const tasksToExecute = executableTasks.slice(0, availableSlots);
+    console.log(`[WorkflowExecutor] 调度 ${tasksToExecute.length}/${executableTasks.length} 个任务 (并发: ${currentRunningCount + tasksToExecute.length}/${MAX_CONCURRENT_TASKS}): jobId=${jobId}`);
+
     // 更新 Job 状态
-    const minStepIndex = Math.min(...executableTasks.map(t => t.task.step_index));
+    const minStepIndex = Math.min(...tasksToExecute.map(t => t.task.step_index));
     await execute(
       `UPDATE workflow_jobs SET status = 'running', current_step_index = ?, started_at = COALESCE(started_at, NOW()) WHERE id = ?`,
       [minStepIndex, jobId]
@@ -136,10 +158,10 @@ class WorkflowExecutor {
       this.runningTasks.set(jobId, new Set());
     }
     const running = this.runningTasks.get(jobId);
-    executableTasks.forEach(({ task }) => running.add(task.id));
+    tasksToExecute.forEach(({ task }) => running.add(task.id));
 
     // 并行执行所有可执行的任务
-    const executions = executableTasks.map(async ({ task, stepDef }) => {
+    const executions = tasksToExecute.map(async ({ task, stepDef }) => {
       // 构建上下文
       const context = await this.contextBuilder.buildContext(jobId, job);
 
@@ -225,8 +247,12 @@ class WorkflowExecutor {
       const running = this.runningTasks.get(jobId);
       if (running) running.delete(taskId);
 
-      // 触发下一批任务
-      await this.runNextStep(jobId);
+      // 异步触发下一批任务（避免递归调用栈过深）
+      setImmediate(() => {
+        this.runNextStep(jobId).catch(err => {
+          console.error(`[WorkflowExecutor] 异步调度失败: jobId=${jobId}`, err);
+        });
+      });
 
     } catch (error) {
       console.error(`[WorkflowExecutor] 任务执行失败: taskId=${taskId}`, error);
@@ -236,6 +262,41 @@ class WorkflowExecutor {
       if (running) running.delete(taskId);
       
       await this.jobStatusManager.failTask(taskId, error.message, error._trace || null);
+
+      // 获取工作流定义的失败策略
+      const definition = getWorkflowDefinition(
+        (await queryOne('SELECT workflow_type FROM workflow_jobs WHERE id = ?', [jobId]))?.workflow_type
+      );
+      const failPolicy = definition?.failPolicy || 'fail_fast';
+
+      if (failPolicy === 'continue_independent') {
+        // 检查是否还有不依赖失败任务的独立分支可继续
+        const allTasks = await queryAll(
+          'SELECT * FROM generation_tasks WHERE job_id = ? ORDER BY step_index ASC',
+          [jobId]
+        );
+        const failedStepIndex = allTasks.find(t => t.id === taskId)?.step_index;
+        const hasIndependentPending = allTasks.some(t => {
+          if (t.status !== 'pending') return false;
+          const stepDef = definition?.steps?.[t.step_index];
+          if (!stepDef) return false;
+          // 检查该任务是否依赖了已失败的步骤
+          const deps = stepDef.dependencies || [];
+          return !deps.includes(failedStepIndex);
+        });
+
+        if (hasIndependentPending) {
+          console.log(`[WorkflowExecutor] failPolicy=continue_independent，继续独立分支: jobId=${jobId}`);
+          setImmediate(() => {
+            this.runNextStep(jobId).catch(err => {
+              console.error(`[WorkflowExecutor] 独立分支调度失败: jobId=${jobId}`, err);
+            });
+          });
+          return;
+        }
+        console.log(`[WorkflowExecutor] 无独立分支可继续，标记工作流失败: jobId=${jobId}`);
+      }
+
       await this.jobStatusManager.failJob(jobId, `步骤执行失败: ${error.message}`);
     }
   }

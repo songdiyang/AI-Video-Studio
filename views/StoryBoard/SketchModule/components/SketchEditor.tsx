@@ -1,6 +1,6 @@
 import React, { Suspense, useRef, useCallback, useState, useEffect, useMemo } from 'react';
-import { X, Loader2, HelpCircle, Download, FileImage, FileCode, Check, Cloud, CloudOff } from 'lucide-react';
-import { Tooltip, Button, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from '@heroui/react';
+import { X, Loader2, HelpCircle, Download, FileImage, FileCode, Check, Cloud, CloudOff, Upload, FileJson, Pencil } from 'lucide-react';
+import { Tooltip, Button, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem, Input } from '@heroui/react';
 import SketchToolbar from './SketchToolbar';
 import { useSketchEditor } from '../hooks/useSketchEditor';
 import { useToast } from '../../../../contexts/ToastContext';
@@ -10,7 +10,10 @@ import {
   exportSketchToSVG,
   downloadBlob,
   downloadSVG,
-  generateFilename
+  generateFilename,
+  exportToExcalidrawFile,
+  downloadExcalidrawFile,
+  parseExcalidrawFile
 } from '../utils/sketchExport';
 
 // 动态导入 Excalidraw 组件（避免增加首屏包体积）
@@ -36,10 +39,17 @@ const Excalidraw = React.lazy(() => {
 });
 
 export interface SketchEditorProps {
-  storyboardId: number;
+  // 分镜模式（保持现有行为）
+  storyboardId?: number;
+  // 独立模式
+  standalone?: boolean;
+  sketchProjectId?: number;
+  title?: string;
+  onTitleChange?: (title: string) => void;
+  // 通用
   initialData?: unknown;
   backgroundImage?: string;
-  onSave: (sketchUrl: string, sketchData: unknown) => void;
+  onSave: (result: { sketchUrl?: string; sketchData?: unknown }) => void;
   onClose: () => void;
 }
 
@@ -155,15 +165,27 @@ const SaveStatusIndicator: React.FC<{ status: SaveStatus }> = ({ status }) => {
 
 const SketchEditor: React.FC<SketchEditorProps> = ({
   storyboardId,
+  standalone = false,
+  sketchProjectId,
+  title: initialTitle,
+  onTitleChange,
   initialData,
   backgroundImage,
   onSave,
   onClose
 }) => {
   const excalidrawRef = useRef<ExcalidrawAPI | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const { showToast } = useToast();
   const { theme } = useTheme();
   const [isExcalidrawReady, setIsExcalidrawReady] = useState(false);
+  
+  // 独立模式：可编辑标题
+  const [editableTitle, setEditableTitle] = useState(initialTitle ?? '未命名草图');
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  
+  // 拖拽状态（独立模式文件导入）
+  const [isDraggingFile, setIsDraggingFile] = useState(false);
   
   // 自动保存相关状态
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('saved');
@@ -208,18 +230,29 @@ const SketchEditor: React.FC<SketchEditorProps> = ({
         files
       };
       
-      await saveSketchData(storyboardId, sketchData);
+      if (standalone) {
+        // 独立模式：通过回调传出数据，外部处理持久化
+        onSave({ sketchData });
+      } else if (storyboardId !== undefined) {
+        // 分镜模式：调用 API 保存
+        await saveSketchData(storyboardId, sketchData);
+      }
+      
       setSaveStatus('saved');
     } catch (error) {
       console.error('[SketchEditor] 自动保存失败:', error);
       setSaveStatus('unsaved');
     }
-  }, [storyboardId, backgroundType, saveSketchData]);
+  }, [storyboardId, standalone, backgroundType, saveSketchData, onSave]);
 
+  // 计算 debounce 延迟：独立模式 3000ms，分镜模式 2000ms
+  const baseDebounceDelay = standalone ? 3000 : 2000;
+  
   // 创建 debounced 自动保存函数
+  // 注意：大画布优化在 handleExcalidrawChange 中动态调整
   const debouncedAutoSave = useMemo(
-    () => debounce(autoSaveSketchData, 2000),
-    [autoSaveSketchData]
+    () => debounce(autoSaveSketchData, baseDebounceDelay),
+    [autoSaveSketchData, baseDebounceDelay]
   );
 
   // 清理 debounce 定时器
@@ -245,24 +278,52 @@ const SketchEditor: React.FC<SketchEditorProps> = ({
     }
   }, []);
 
+  // 大画布检测阈值
+  const LARGE_CANVAS_THRESHOLD = 500;
+  
+  // 大画布 debounced 自动保存（5000ms）
+  const debouncedAutoSaveLarge = useMemo(
+    () => debounce(autoSaveSketchData, 5000),
+    [autoSaveSketchData]
+  );
+
   // 处理 Excalidraw onChange 事件
   const handleExcalidrawChange = useCallback(
     (elements: readonly any[], appState: any) => {
-      // 更新状态栏信息
       const visibleElements = elements.filter(el => !el.isDeleted);
-      setElementCount(visibleElements.length);
+      const count = visibleElements.length;
       
-      if (appState.zoom && typeof appState.zoom === 'object' && 'value' in appState.zoom) {
-        setZoomLevel(Math.round((appState.zoom as { value: number }).value * 100));
+      // 使用 requestIdleCallback 处理非紧急状态更新（元素计数、缩放等）
+      const updateNonCriticalState = () => {
+        setElementCount(count);
+        
+        if (appState.zoom && typeof appState.zoom === 'object' && 'value' in appState.zoom) {
+          setZoomLevel(Math.round((appState.zoom as { value: number }).value * 100));
+        }
+      };
+      
+      if (typeof requestIdleCallback !== 'undefined') {
+        requestIdleCallback(updateNonCriticalState, { timeout: 100 });
+      } else {
+        // 降级处理：使用 setTimeout
+        setTimeout(updateNonCriticalState, 0);
       }
       
       // 标记为未保存并触发自动保存
       if (isExcalidrawReady) {
         setSaveStatus('unsaved');
-        debouncedAutoSave();
+        
+        // 大画布优化：元素超过阈值时使用更长的 debounce 延迟
+        if (count > LARGE_CANVAS_THRESHOLD) {
+          debouncedAutoSave.cancel();
+          debouncedAutoSaveLarge();
+        } else {
+          debouncedAutoSaveLarge.cancel();
+          debouncedAutoSave();
+        }
       }
     },
-    [isExcalidrawReady, debouncedAutoSave]
+    [isExcalidrawReady, debouncedAutoSave, debouncedAutoSaveLarge]
   );
 
   // 处理 Excalidraw 初始化完成
@@ -295,6 +356,7 @@ const SketchEditor: React.FC<SketchEditorProps> = ({
 
     // 取消自动保存避免冲突
     debouncedAutoSave.cancel();
+    debouncedAutoSaveLarge.cancel();
     setSaving(true);
     setSaveStatus('saving');
 
@@ -304,26 +366,7 @@ const SketchEditor: React.FC<SketchEditorProps> = ({
       const appState = excalidrawRef.current.getAppState();
       const files = excalidrawRef.current.getFiles();
 
-      // 动态导入 exportToBlob 函数
-      const { exportToBlob: exportToBlobFn } = await import('@excalidraw/excalidraw');
-
-      // 导出为 PNG Blob
-      const blob = await exportToBlobFn({
-        elements: elements as Parameters<typeof exportToBlobFn>[0]['elements'],
-        appState: {
-          ...(appState as object),
-          exportBackground: backgroundType === 'white',
-          viewBackgroundColor: backgroundType === 'white' ? '#ffffff' : 'transparent'
-        } as Parameters<typeof exportToBlobFn>[0]['appState'],
-        files: files as Parameters<typeof exportToBlobFn>[0]['files'],
-        mimeType: 'image/png',
-        quality: 1
-      });
-
-      // 上传 PNG 到服务器
-      const sketchUrl = await exportAndUpload(blob, storyboardId, sketchType, controlStrength);
-
-      // 保存矢量数据（用于后续回显编辑）
+      // 构建矢量数据
       const sketchData = {
         elements,
         appState: {
@@ -331,11 +374,35 @@ const SketchEditor: React.FC<SketchEditorProps> = ({
         },
         files
       };
-      await saveSketchData(storyboardId, sketchData);
+      
+      if (standalone) {
+        // 独立模式：直接通过回调传出数据
+        onSave({ sketchData });
+        setSaveStatus('saved');
+        showToast('草图保存成功', 'success');
+      } else if (storyboardId !== undefined) {
+        // 分镜模式：导出 PNG 并上传到服务器
+        const { exportToBlob: exportToBlobFn } = await import('@excalidraw/excalidraw');
 
-      setSaveStatus('saved');
-      showToast('草图保存成功', 'success');
-      onSave(sketchUrl, sketchData);
+        const blob = await exportToBlobFn({
+          elements: elements as Parameters<typeof exportToBlobFn>[0]['elements'],
+          appState: {
+            ...(appState as object),
+            exportBackground: backgroundType === 'white',
+            viewBackgroundColor: backgroundType === 'white' ? '#ffffff' : 'transparent'
+          } as Parameters<typeof exportToBlobFn>[0]['appState'],
+          files: files as Parameters<typeof exportToBlobFn>[0]['files'],
+          mimeType: 'image/png',
+          quality: 1
+        });
+
+        const sketchUrl = await exportAndUpload(blob, storyboardId, sketchType, controlStrength);
+        await saveSketchData(storyboardId, sketchData);
+
+        setSaveStatus('saved');
+        showToast('草图保存成功', 'success');
+        onSave({ sketchUrl, sketchData });
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : '保存失败';
       showToast(message, 'error');
@@ -346,6 +413,7 @@ const SketchEditor: React.FC<SketchEditorProps> = ({
     }
   }, [
     storyboardId,
+    standalone,
     sketchType,
     controlStrength,
     backgroundType,
@@ -354,7 +422,8 @@ const SketchEditor: React.FC<SketchEditorProps> = ({
     onSave,
     setSaving,
     showToast,
-    debouncedAutoSave
+    debouncedAutoSave,
+    debouncedAutoSaveLarge
   ]);
 
   // 导出 PNG
@@ -417,6 +486,126 @@ const SketchEditor: React.FC<SketchEditorProps> = ({
     }
   }, [backgroundType, showToast]);
 
+  // 导出 .excalidraw 文件（独立模式专用）
+  const handleExportExcalidraw = useCallback(() => {
+    if (!excalidrawRef.current) {
+      showToast('画布组件未就绪', 'error');
+      return;
+    }
+
+    try {
+      const elements = excalidrawRef.current.getSceneElements();
+      const appState = excalidrawRef.current.getAppState();
+      const files = excalidrawRef.current.getFiles();
+
+      const jsonString = exportToExcalidrawFile(
+        elements as any,
+        { ...appState as any, viewBackgroundColor: backgroundType === 'white' ? '#ffffff' : 'transparent' },
+        files as any
+      );
+
+      const filename = editableTitle 
+        ? `${editableTitle.replace(/[^\w\u4e00-\u9fa5-]/g, '_')}.excalidraw`
+        : generateFilename('sketch', 'excalidraw');
+      
+      downloadExcalidrawFile(jsonString, filename);
+      showToast('.excalidraw 导出成功', 'success');
+    } catch (error) {
+      console.error('[SketchEditor] .excalidraw 导出失败:', error);
+      showToast('.excalidraw 导出失败', 'error');
+    }
+  }, [backgroundType, editableTitle, showToast]);
+
+  // 导入 .excalidraw 文件（独立模式专用）
+  const handleImportExcalidraw = useCallback((file: File) => {
+    if (!excalidrawRef.current) {
+      showToast('画布组件未就绪', 'error');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const content = e.target?.result as string;
+        const parsed = parseExcalidrawFile(content);
+        
+        if (!parsed) {
+          showToast('无法解析文件，请确认是有效的 .excalidraw 文件', 'error');
+          return;
+        }
+
+        excalidrawRef.current?.updateScene({
+          elements: parsed.elements as readonly unknown[],
+          appState: parsed.appState as Record<string, unknown>
+        });
+        
+        setElementCount(parsed.elements.filter(el => !el.isDeleted).length);
+        setSaveStatus('unsaved');
+        showToast('文件导入成功', 'success');
+      } catch (error) {
+        console.error('[SketchEditor] 导入文件失败:', error);
+        showToast('导入文件失败', 'error');
+      }
+    };
+    reader.onerror = () => {
+      showToast('读取文件失败', 'error');
+    };
+    reader.readAsText(file);
+  }, [showToast]);
+
+  // 处理文件选择（独立模式文件导入按钮）
+  const handleFileInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      handleImportExcalidraw(file);
+      // 清空 input 以便可以再次选择同一文件
+      e.target.value = '';
+    }
+  }, [handleImportExcalidraw]);
+
+  // 拖拽导入处理（独立模式专用）
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    if (!standalone) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingFile(true);
+  }, [standalone]);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    if (!standalone) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingFile(false);
+  }, [standalone]);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    if (!standalone) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingFile(false);
+
+    const file = e.dataTransfer.files[0];
+    if (file && (file.name.endsWith('.excalidraw') || file.type === 'application/json')) {
+      handleImportExcalidraw(file);
+    } else if (file) {
+      showToast('请拖入 .excalidraw 文件', 'warning');
+    }
+  }, [standalone, handleImportExcalidraw, showToast]);
+
+  // 处理标题编辑（独立模式）
+  const handleTitleChange = useCallback((value: string) => {
+    setEditableTitle(value);
+    onTitleChange?.(value);
+  }, [onTitleChange]);
+
+  const handleTitleBlur = useCallback(() => {
+    setIsEditingTitle(false);
+    if (!editableTitle.trim()) {
+      setEditableTitle('未命名草图');
+      onTitleChange?.('未命名草图');
+    }
+  }, [editableTitle, onTitleChange]);
+
   // 清空画布
   const handleClear = useCallback(() => {
     if (!excalidrawRef.current) return;
@@ -467,8 +656,51 @@ const SketchEditor: React.FC<SketchEditorProps> = ({
   }, [saving, onClose, handleSave, handleExportPNG, handleExportSVG]);
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-[var(--bg-app)]">
-      {/* 顶部工具栏 */}
+    <div 
+      className="fixed inset-0 z-50 flex flex-col bg-[var(--bg-app)]"
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {/* 隐藏的文件输入（用于导入按钮） */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".excalidraw,.json"
+        className="hidden"
+        onChange={handleFileInputChange}
+      />
+
+      {/* 独立模式：顶部标题栏 */}
+      {standalone && (
+        <div className="flex items-center gap-3 px-4 py-2 bg-[var(--bg-card)] border-b border-[var(--border-color)]">
+          {isEditingTitle ? (
+            <Input
+              value={editableTitle}
+              onValueChange={handleTitleChange}
+              onBlur={handleTitleBlur}
+              onKeyDown={(e) => e.key === 'Enter' && handleTitleBlur()}
+              size="sm"
+              variant="bordered"
+              classNames={{
+                input: 'text-base font-medium',
+                inputWrapper: 'h-8 min-h-8'
+              }}
+              autoFocus
+            />
+          ) : (
+            <button
+              onClick={() => setIsEditingTitle(true)}
+              className="flex items-center gap-2 text-base font-medium text-[var(--text-primary)] hover:text-[var(--accent)] transition-colors"
+            >
+              <span>{editableTitle}</span>
+              <Pencil className="w-3.5 h-3.5 text-[var(--text-muted)]" />
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* 顶部工具栏 - 独立模式隐藏 SketchTypeSelector 和 ControlStrengthSlider */}
       <SketchToolbar
         sketchType={sketchType}
         controlStrength={controlStrength}
@@ -483,6 +715,7 @@ const SketchEditor: React.FC<SketchEditorProps> = ({
         onClear={handleClear}
         saving={saving}
         hasBackgroundImage={!!backgroundImage}
+        standalone={standalone}
       />
 
       {/* 画布区域 */}
@@ -543,6 +776,19 @@ const SketchEditor: React.FC<SketchEditorProps> = ({
 
         {/* 右上角导出按钮组 */}
         <div className="absolute top-4 right-4 z-20 hidden sm:flex items-center gap-2">
+          {/* 独立模式：导入按钮 */}
+          {standalone && (
+            <Button
+              variant="flat"
+              size="sm"
+              startContent={<Upload className="w-4 h-4" />}
+              className="bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-primary)]"
+              onPress={() => fileInputRef.current?.click()}
+            >
+              导入
+            </Button>
+          )}
+          
           <Dropdown>
             <DropdownTrigger>
               <Button
@@ -571,6 +817,17 @@ const SketchEditor: React.FC<SketchEditorProps> = ({
               >
                 导出为 SVG
               </DropdownItem>
+              {/* 独立模式：.excalidraw 导出 */}
+              {standalone && (
+                <DropdownItem
+                  key="excalidraw"
+                  startContent={<FileJson className="w-4 h-4" />}
+                  description="原生格式"
+                  onPress={handleExportExcalidraw}
+                >
+                  导出为 .excalidraw
+                </DropdownItem>
+              )}
             </DropdownMenu>
           </Dropdown>
         </div>
@@ -626,6 +883,17 @@ const SketchEditor: React.FC<SketchEditorProps> = ({
             <span className="font-mono">{elementCount}</span>
           </div>
         </div>
+
+        {/* 拖拽覆盖层（独立模式文件导入） */}
+        {standalone && isDraggingFile && (
+          <div className="absolute inset-0 z-30 flex items-center justify-center bg-[var(--bg-app)]/90 backdrop-blur-sm border-4 border-dashed border-[var(--accent)] rounded-lg">
+            <div className="text-center">
+              <Upload className="w-16 h-16 mx-auto text-[var(--accent)] mb-4" />
+              <p className="text-lg font-medium text-[var(--text-primary)]">松开鼠标导入文件</p>
+              <p className="text-sm text-[var(--text-muted)] mt-1">支持 .excalidraw 格式</p>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -1,8 +1,12 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { Card, CardBody, Button, Chip, Table, TableHeader, TableColumn, TableBody, TableRow, TableCell, Progress, Tooltip } from '@heroui/react';
-import { Wallet, TrendingUp, FolderOpen, FileText, Receipt, AlertTriangle, Sparkles, Clock, Zap, ChevronLeft, ChevronRight, User, Calendar, Activity, RefreshCw, ExternalLink } from 'lucide-react';
+import { Wallet, TrendingUp, FolderOpen, FileText, Receipt, AlertTriangle, Sparkles, Clock, Zap, ChevronLeft, ChevronRight, User, Calendar, Activity, RefreshCw, ExternalLink, CreditCard, ArrowUpRight, XCircle } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { getAuthToken, logout } from '../services/auth';
+import { useLanguage } from '../contexts/LanguageContext';
+import { useConfirm } from '../contexts/ConfirmContext';
+import { useToast } from '../contexts/ToastContext';
+import { fetchCurrentSubscription, cancelSubscription, type CurrentSubscriptionResponse } from '../services/subscriptions';
 
 interface UserProfile {
   id: number;
@@ -64,6 +68,9 @@ const PAGE_SIZE = 20;
 const UserCenter: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const { t } = useLanguage();
+  const { confirm } = useConfirm();
+  const { showToast } = useToast();
 
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [stats, setStats] = useState<UserStats | null>(null);
@@ -75,9 +82,15 @@ const UserCenter: React.FC = () => {
   const [chargeStatus, setChargeStatus] = useState('');
   const [modelCategory, setModelCategory] = useState('');
   const [sourceType, setSourceType] = useState('');
+  
+  // 订阅相关状态
+  const [subscription, setSubscription] = useState<CurrentSubscriptionResponse | null>(null);
+  const [subscriptionLoading, setSubscriptionLoading] = useState(false);
+  const [cancellingSubscription, setCancellingSubscription] = useState(false);
 
   useEffect(() => {
     void fetchSummaryData();
+    void fetchSubscriptionData();
   }, []);
 
   useEffect(() => {
@@ -87,6 +100,65 @@ const UserCenter: React.FC = () => {
   const redirectToAuth = () => {
     logout();
     navigate('/auth', { replace: true, state: { from: location } });
+  };
+
+  const fetchSubscriptionData = async () => {
+    const token = getAuthToken();
+    if (!token) return;
+
+    setSubscriptionLoading(true);
+    try {
+      const subData = await fetchCurrentSubscription();
+      setSubscription(subData);
+    } catch (error) {
+      console.error('获取订阅信息失败:', error);
+    } finally {
+      setSubscriptionLoading(false);
+    }
+  };
+
+  const handleCancelSubscription = async () => {
+    const confirmed = await confirm({
+      title: t.subscription.cancel,
+      message: t.subscription.cancelConfirm,
+      type: 'danger',
+      confirmText: t.common.confirm
+    });
+    if (!confirmed) return;
+
+    setCancellingSubscription(true);
+    try {
+      await cancelSubscription();
+      showToast('订阅已取消', 'success');
+      await fetchSubscriptionData();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : '取消订阅失败', 'error');
+    } finally {
+      setCancellingSubscription(false);
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'active':
+        return 'bg-emerald-500/10 text-emerald-400';
+      case 'trial':
+        return 'bg-blue-500/10 text-blue-400';
+      case 'expired':
+        return 'bg-orange-500/10 text-orange-400';
+      case 'cancelled':
+        return 'bg-slate-500/10 text-slate-400';
+      default:
+        return 'bg-slate-500/10 text-slate-400';
+    }
+  };
+
+  const formatExpiryDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('zh-CN', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
   };
 
   const fetchSummaryData = async () => {
@@ -183,10 +255,10 @@ const UserCenter: React.FC = () => {
   };
 
   const getSourceLabel = (value?: string | null) => {
-    if (value === 'workflow') return '工作流';
-    if (value === 'route') return '直连接口';
-    if (value === 'admin_tool') return '管理调试';
-    return value || '未知来源';
+    if (value === 'workflow') return t.userCenter.sourceWorkflow;
+    if (value === 'route') return t.userCenter.sourceRoute;
+    if (value === 'admin_tool') return t.userCenter.sourceAdminTool;
+    return value || t.userCenter.sourceUnknown;
   };
 
   const getStatusChipClass = (value?: string | null, type: 'request' | 'charge' = 'request') => {
@@ -205,11 +277,11 @@ const UserCenter: React.FC = () => {
 
   const buildUsageSummary = (record: BillingRecord) => {
     const parts: string[] = [];
-    if (record.input_tokens) parts.push(`输入 ${formatInteger(record.input_tokens)}`);
-    if (record.output_tokens) parts.push(`输出 ${formatInteger(record.output_tokens)}`);
-    if (record.duration_seconds) parts.push(`${Number(record.duration_seconds).toFixed(2)} 秒`);
-    if (record.item_count) parts.push(`${formatInteger(record.item_count)} 个产物`);
-    if (!parts.length && record.tokens) parts.push(`总 Token ${formatInteger(record.tokens)}`);
+    if (record.input_tokens) parts.push(`${t.userCenter.usageInput} ${formatInteger(record.input_tokens)}`);
+    if (record.output_tokens) parts.push(`${t.userCenter.usageOutput} ${formatInteger(record.output_tokens)}`);
+    if (record.duration_seconds) parts.push(`${Number(record.duration_seconds).toFixed(2)} ${t.userCenter.usageSeconds}`);
+    if (record.item_count) parts.push(`${formatInteger(record.item_count)} ${t.userCenter.usageItems}`);
+    if (!parts.length && record.tokens) parts.push(`${t.userCenter.usageTotalTokens} ${formatInteger(record.tokens)}`);
     return parts.join(' · ');
   };
 
@@ -241,7 +313,7 @@ const UserCenter: React.FC = () => {
       <div className="h-full flex items-center justify-center bg-[var(--bg-app)]">
         <div className="flex flex-col items-center gap-3">
           <div className="w-10 h-10 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin" />
-          <div className="text-[var(--text-muted)]">Loading...</div>
+          <div className="text-[var(--text-muted)]">{t.common.loading}</div>
         </div>
       </div>
     );
@@ -269,7 +341,7 @@ const UserCenter: React.FC = () => {
               
               {/* 用户信息 */}
               <div className="flex-1">
-                <h1 className="text-2xl font-bold text-[var(--text-primary)] mb-1">欢迎回来</h1>
+                <h1 className="text-2xl font-bold text-[var(--text-primary)] mb-1">{t.userCenter.welcomeBack}</h1>
                 <p className="text-[var(--text-secondary)] flex items-center gap-2">
                   <User className="w-4 h-4" />
                   {profile?.email}
@@ -277,11 +349,11 @@ const UserCenter: React.FC = () => {
                 <div className="flex items-center gap-4 mt-3 text-sm text-[var(--text-muted)]">
                   <span className="flex items-center gap-1.5">
                     <Calendar className="w-4 h-4" />
-                    {memberSince} 加入
+                    {memberSince} {t.userCenter.joinedAt}
                   </span>
                   <span className="flex items-center gap-1.5">
                     <Activity className="w-4 h-4" />
-                    {formatInteger(stats?.totalRecords)} 次 API 调用
+                    {formatInteger(stats?.totalRecords)} {t.userCenter.apiCalls}
                   </span>
                 </div>
               </div>
@@ -291,7 +363,7 @@ const UserCenter: React.FC = () => {
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2 text-sm text-[var(--text-secondary)]">
                     <Wallet className="w-4 h-4 text-emerald-400" />
-                    账户余额
+                    {t.userCenter.accountBalance}
                   </div>
                   <Button
                     size="sm"
@@ -299,7 +371,7 @@ const UserCenter: React.FC = () => {
                     className="text-[var(--accent)] min-w-0 px-2 h-7"
                     onPress={() => window.open('https://example.com/recharge', '_blank')}
                   >
-                    充值
+                    {t.userCenter.rechargeBtn}
                     <ExternalLink className="w-3 h-3 ml-1" />
                   </Button>
                 </div>
@@ -318,12 +390,12 @@ const UserCenter: React.FC = () => {
                 <div className="p-2.5 bg-orange-500/10 rounded-xl">
                   <TrendingUp className="w-5 h-5 text-orange-400" />
                 </div>
-                <Tooltip content="与余额的比例">
+                <Tooltip content={t.userCenter.totalSpent}>
                   <div className="text-xs text-[var(--text-muted)]">{spentPercentage.toFixed(1)}%</div>
                 </Tooltip>
               </div>
               <div className="text-2xl font-bold text-[var(--text-primary)] mb-1">{formatMoney(stats?.totalSpent)}</div>
-              <div className="text-xs text-[var(--text-muted)]">累计消费</div>
+              <div className="text-xs text-[var(--text-muted)]">{t.userCenter.totalSpent}</div>
               <Progress 
                 value={spentPercentage} 
                 size="sm" 
@@ -341,12 +413,12 @@ const UserCenter: React.FC = () => {
                 <div className="p-2.5 bg-blue-500/10 rounded-xl">
                   <Zap className="w-5 h-5 text-blue-400" />
                 </div>
-                <Tooltip content="文本模型消耗的总Token数">
+                <Tooltip content={t.userCenter.totalTokens}>
                   <div className="text-xs text-[var(--text-muted)] cursor-help">?</div>
                 </Tooltip>
               </div>
               <div className="text-2xl font-bold text-[var(--text-primary)] mb-1">{formatInteger(stats?.totalTokens)}</div>
-              <div className="text-xs text-[var(--text-muted)]">累计 Token</div>
+              <div className="text-xs text-[var(--text-muted)]">{t.userCenter.totalTokens}</div>
             </CardBody>
           </Card>
 
@@ -360,11 +432,11 @@ const UserCenter: React.FC = () => {
               </div>
               <div className="flex items-baseline gap-2 mb-1">
                 <span className="text-2xl font-bold text-[var(--text-primary)]">{formatInteger(stats?.projectCount)}</span>
-                <span className="text-sm text-[var(--text-muted)]">项目</span>
+                <span className="text-sm text-[var(--text-muted)]">{t.userCenter.projectCount}</span>
               </div>
               <div className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
                 <FileText className="w-3.5 h-3.5" />
-                {formatInteger(stats?.scriptCount)} 个剧本
+                {formatInteger(stats?.scriptCount)} {t.userCenter.scriptCount}
               </div>
             </CardBody>
           </Card>
@@ -377,14 +449,137 @@ const UserCenter: React.FC = () => {
                   <AlertTriangle className="w-5 h-5 text-rose-400" />
                 </div>
                 {(stats?.failedRecords ?? 0) > 0 && (
-                  <Chip size="sm" className="bg-rose-500/10 text-rose-400 text-xs">需关注</Chip>
+                  <Chip size="sm" className="bg-rose-500/10 text-rose-400 text-xs">{t.userCenter.needsAttention}</Chip>
                 )}
               </div>
               <div className="text-2xl font-bold text-[var(--text-primary)] mb-1">{formatInteger(stats?.failedRecords)}</div>
-              <div className="text-xs text-[var(--text-muted)]">失败请求</div>
+              <div className="text-xs text-[var(--text-muted)]">{t.userCenter.failedRequests}</div>
             </CardBody>
           </Card>
         </div>
+
+        {/* 我的订阅 */}
+        <Card className="bg-[var(--bg-card)] border border-[var(--border-color)] shadow-sm">
+          <CardBody className="p-6">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="p-2.5 bg-[var(--accent)]/10 rounded-xl">
+                <CreditCard className="w-5 h-5 text-[var(--accent)]" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-[var(--text-primary)]">{t.subscription.title}</h3>
+              </div>
+            </div>
+
+            {subscriptionLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="w-6 h-6 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : subscription ? (
+              <div className="space-y-6">
+                {/* 订阅信息头部 */}
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 p-4 bg-[var(--bg-secondary)] rounded-xl">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[var(--accent)] to-purple-600 flex items-center justify-center">
+                      <Sparkles className="w-6 h-6 text-white" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg font-semibold text-[var(--text-primary)]">
+                          {subscription.plan?.display_name || '免费版'}
+                        </span>
+                        <Chip size="sm" className={getStatusColor(subscription.subscription?.status || subscription.status)}>
+                          {t.subscription.status[(subscription.subscription?.status || subscription.status) as keyof typeof t.subscription.status] || subscription.status}
+                        </Chip>
+                      </div>
+                      <div className="text-sm text-[var(--text-muted)] mt-1">
+                        {(subscription.subscription?.status || subscription.status) === 'trial' ? t.subscription.trialEnds : t.subscription.renewsOn}: {subscription.subscription?.current_period_end ? formatExpiryDate(subscription.subscription.current_period_end) : '-'}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      className="bg-[var(--accent)]/10 text-[var(--accent)]"
+                      startContent={<ArrowUpRight className="w-4 h-4" />}
+                      onPress={() => navigate('/pricing')}
+                    >
+                      {t.subscription.upgrade}
+                    </Button>
+                    {(subscription.subscription?.status || subscription.status) === 'active' && (
+                      <Button
+                        variant="flat"
+                        className="bg-rose-500/10 text-rose-400"
+                        startContent={<XCircle className="w-4 h-4" />}
+                        isLoading={cancellingSubscription}
+                        onPress={handleCancelSubscription}
+                      >
+                        {t.subscription.cancel}
+                      </Button>
+                    )}
+                  </div>
+                </div>
+
+                {/* 用量统计 */}
+                {subscription.usage && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* API 用量 */}
+                    <div className="p-4 bg-[var(--bg-secondary)] rounded-xl">
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-sm text-[var(--text-secondary)]">{t.subscription.apiUsage}</span>
+                        <span className="text-sm font-medium text-[var(--text-primary)]">
+                          {formatInteger(subscription.usage.api_calls_used)} / {subscription.usage.api_calls_limit === -1 ? '∞' : formatInteger(subscription.usage.api_calls_limit)}
+                        </span>
+                      </div>
+                      <Progress
+                        value={subscription.usage.api_calls_limit === -1 ? 0 : (subscription.usage.api_calls_used / subscription.usage.api_calls_limit) * 100}
+                        size="sm"
+                        color={subscription.usage.api_calls_limit !== -1 && subscription.usage.api_calls_used / subscription.usage.api_calls_limit > 0.8 ? 'warning' : 'primary'}
+                        className="h-2"
+                        classNames={{
+                          indicator: 'bg-[var(--accent)]',
+                          track: 'bg-[var(--accent)]/10'
+                        }}
+                      />
+                    </div>
+
+                    {/* 项目用量 */}
+                    <div className="p-4 bg-[var(--bg-secondary)] rounded-xl">
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-sm text-[var(--text-secondary)]">{t.subscription.projectUsage}</span>
+                        <span className="text-sm font-medium text-[var(--text-primary)]">
+                          {formatInteger(subscription.usage.projects_used)} / {subscription.usage.projects_limit === -1 ? '∞' : formatInteger(subscription.usage.projects_limit)}
+                        </span>
+                      </div>
+                      <Progress
+                        value={subscription.usage.projects_limit === -1 ? 0 : (subscription.usage.projects_used / subscription.usage.projects_limit) * 100}
+                        size="sm"
+                        color={subscription.usage.projects_limit !== -1 && subscription.usage.projects_used / subscription.usage.projects_limit > 0.8 ? 'warning' : 'secondary'}
+                        className="h-2"
+                        classNames={{
+                          indicator: 'bg-purple-500',
+                          track: 'bg-purple-500/10'
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <div className="w-16 h-16 mx-auto mb-4 bg-[var(--bg-secondary)] rounded-full flex items-center justify-center">
+                  <CreditCard className="w-8 h-8 text-[var(--text-muted)]" />
+                </div>
+                <p className="text-[var(--text-muted)] mb-4">{t.subscription.noPlan}</p>
+                <Button
+                  className="bg-gradient-to-r from-[var(--accent)] to-purple-600 text-white font-semibold"
+                  startContent={<ArrowUpRight className="w-4 h-4" />}
+                  onPress={() => navigate('/pricing')}
+                >
+                  {t.pricing.starter.cta}
+                </Button>
+              </div>
+            )}
+          </CardBody>
+        </Card>
 
         {/* 详细账单 */}
         <Card className="bg-[var(--bg-card)] border border-[var(--border-color)] shadow-sm">
@@ -397,9 +592,9 @@ const UserCenter: React.FC = () => {
                     <Receipt className="w-5 h-5 text-[var(--accent)]" />
                   </div>
                   <div>
-                    <h3 className="text-lg font-semibold text-[var(--text-primary)]">详细账单</h3>
+                    <h3 className="text-lg font-semibold text-[var(--text-primary)]">{t.userCenter.billingTitle}</h3>
                     <div className="text-sm text-[var(--text-muted)]">
-                      每次 AI 模型调用的状态、用量和计费明细
+                      {t.userCenter.billingDesc}
                     </div>
                   </div>
                   <Button
@@ -423,10 +618,10 @@ const UserCenter: React.FC = () => {
                     }}
                     className="bg-[var(--bg-secondary)] border border-[var(--border-color)] text-[var(--text-primary)] rounded-lg px-3 py-2 text-sm min-w-[120px] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/50"
                   >
-                    <option value="">全部状态</option>
-                    <option value="charged">已扣费</option>
-                    <option value="skipped">已跳过</option>
-                    <option value="pending">待结算</option>
+                    <option value="">{t.userCenter.filterAllStatus}</option>
+                    <option value="charged">{t.userCenter.filterCharged}</option>
+                    <option value="skipped">{t.userCenter.filterSkipped}</option>
+                    <option value="pending">{t.userCenter.filterPending}</option>
                   </select>
 
                   <select
@@ -437,11 +632,11 @@ const UserCenter: React.FC = () => {
                     }}
                     className="bg-[var(--bg-secondary)] border border-[var(--border-color)] text-[var(--text-primary)] rounded-lg px-3 py-2 text-sm min-w-[120px] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/50"
                   >
-                    <option value="">全部模型</option>
-                    <option value="TEXT">文本模型</option>
-                    <option value="IMAGE">图像模型</option>
-                    <option value="VIDEO">视频模型</option>
-                    <option value="AUDIO">音频模型</option>
+                    <option value="">{t.userCenter.filterAllModels}</option>
+                    <option value="TEXT">{t.userCenter.filterTextModel}</option>
+                    <option value="IMAGE">{t.userCenter.filterImageModel}</option>
+                    <option value="VIDEO">{t.userCenter.filterVideoModel}</option>
+                    <option value="AUDIO">{t.userCenter.filterAudioModel}</option>
                   </select>
 
                   <select
@@ -452,10 +647,10 @@ const UserCenter: React.FC = () => {
                     }}
                     className="bg-[var(--bg-secondary)] border border-[var(--border-color)] text-[var(--text-primary)] rounded-lg px-3 py-2 text-sm min-w-[120px] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/50"
                   >
-                    <option value="">全部来源</option>
-                    <option value="workflow">工作流</option>
-                    <option value="route">直连接口</option>
-                    <option value="admin_tool">管理调试</option>
+                    <option value="">{t.userCenter.filterAllSources}</option>
+                    <option value="workflow">{t.userCenter.sourceWorkflow}</option>
+                    <option value="route">{t.userCenter.sourceRoute}</option>
+                    <option value="admin_tool">{t.userCenter.sourceAdminTool}</option>
                   </select>
                 </div>
               </div>
@@ -464,7 +659,7 @@ const UserCenter: React.FC = () => {
             {/* 账单表格 */}
             <div className="overflow-x-auto">
               <Table
-                aria-label="详细账单表格"
+                aria-label={t.userCenter.billingTitle}
                 className="min-w-full"
                 classNames={{
                   wrapper: 'bg-transparent shadow-none rounded-none',
@@ -473,12 +668,12 @@ const UserCenter: React.FC = () => {
                 }}
               >
                 <TableHeader>
-                  <TableColumn>时间</TableColumn>
-                  <TableColumn>来源</TableColumn>
-                  <TableColumn>模型</TableColumn>
-                  <TableColumn>状态</TableColumn>
-                  <TableColumn>计费明细</TableColumn>
-                  <TableColumn className="text-right">总价</TableColumn>
+                  <TableColumn>{t.userCenter.colTime}</TableColumn>
+                  <TableColumn>{t.userCenter.colSource}</TableColumn>
+                  <TableColumn>{t.userCenter.colModel}</TableColumn>
+                  <TableColumn>{t.userCenter.colStatus}</TableColumn>
+                  <TableColumn>{t.userCenter.colBreakdown}</TableColumn>
+                  <TableColumn className="text-right">{t.userCenter.colTotal}</TableColumn>
                 </TableHeader>
               <TableBody emptyContent={
                 recordsLoading ? (
@@ -488,7 +683,7 @@ const UserCenter: React.FC = () => {
                 ) : (
                   <div className="text-center py-12">
                     <Receipt className="w-12 h-12 mx-auto mb-3 text-[var(--text-muted)] opacity-30" />
-                    <p className="text-[var(--text-muted)]">暂无账单记录</p>
+                    <p className="text-[var(--text-muted)]">{t.userCenter.billingEmpty}</p>
                   </div>
                 )
               }>
@@ -575,8 +770,8 @@ const UserCenter: React.FC = () => {
             {/* 分页 */}
             <div className="p-4 border-t border-[var(--border-color)] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div className="text-sm text-[var(--text-muted)]">
-                共 <span className="font-medium text-[var(--text-primary)]">{formatInteger(total)}</span> 条记录，
-                第 {page} / {totalPages} 页
+                {t.userCenter.totalRecords} <span className="font-medium text-[var(--text-primary)]">{formatInteger(total)}</span> {t.userCenter.recordsUnit}
+                {t.userCenter.pageInfo.replace('{page}', String(page)).replace('{total}', String(totalPages))}
               </div>
 
               <div className="flex items-center gap-2">
@@ -588,7 +783,7 @@ const UserCenter: React.FC = () => {
                   onPress={() => setPage((prev) => Math.max(1, prev - 1))}
                 >
                   <ChevronLeft className="w-4 h-4" />
-                  上一页
+                  {t.userCenter.prevPage}
                 </Button>
                 <Button
                   size="sm"
@@ -597,7 +792,7 @@ const UserCenter: React.FC = () => {
                   isDisabled={page >= totalPages || recordsLoading}
                   onPress={() => setPage((prev) => Math.min(totalPages, prev + 1))}
                 >
-                  下一页
+                  {t.userCenter.nextPage}
                   <ChevronRight className="w-4 h-4" />
                 </Button>
               </div>

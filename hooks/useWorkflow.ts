@@ -69,32 +69,52 @@ export class ApiError extends Error {
 
 async function fetchApi(url: string, options: RequestInit = {}) {
   const token = getAuthToken();
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 30000);
+  
+  const doFetch = async (isRetry = false): Promise<any> => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
 
-  try {
-    const res = await fetch(url, {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        ...options.headers
-      },
-      signal: controller.signal
-    });
-    clearTimeout(timeoutId);
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      throw new ApiError(data.message || '请求失败', res.status, data);
+    try {
+      const res = await fetch(url, {
+        ...options,
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...options.headers
+        },
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+      
+      // 5xx 错误且不是重试时，自动重试一次
+      if (res.status >= 500 && !isRetry) {
+        console.warn(`[Workflow API] ${url} 返回 ${res.status}，1秒后重试`);
+        await new Promise(r => setTimeout(r, 1000));
+        return doFetch(true);
+      }
+      
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new ApiError(data.message || '请求失败', res.status, data);
+      }
+      return data;
+    } catch (err: any) {
+      clearTimeout(timeoutId);
+      if (err instanceof ApiError) throw err; // 业务错误不重试
+      if (err.name === 'AbortError') {
+        throw new Error('请求超时（30秒）');
+      }
+      // 网络错误且不是重试时，自动重试一次
+      if (!isRetry) {
+        console.warn(`[Workflow API] ${url} 网络错误: ${err.message}，1秒后重试`);
+        await new Promise(r => setTimeout(r, 1000));
+        return doFetch(true);
+      }
+      throw err;
     }
-    return data;
-  } catch (err: any) {
-    clearTimeout(timeoutId);
-    if (err.name === 'AbortError') {
-      throw new Error('请求超时（30秒）');
-    }
-    throw err;
-  }
+  };
+  
+  return doFetch(false);
 }
 
 /** 启动工作流 */
