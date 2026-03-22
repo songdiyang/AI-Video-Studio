@@ -190,4 +190,18 @@ export const VIDEO_COMPOSITION_SHORTCUTS_CONFIG = {
   FULLSCREEN: { key: 'f', scope: 'video-composition', description: '全屏预览' },
 } as const;
 
+// 预定义的 Animatic 预览快捷键配置（供 AnimaticPreview 组件使用）
+// 注意：实际的 action 回调在 AnimaticPreview 组件内部通过 useEffect 直接监听键盘事件实现
+// 这里的配置主要用于在快捷键帮助面板中展示
+export const ANIMATIC_SHORTCUTS_CONFIG: ShortcutConfig[] = [
+  { key: ' ', scope: 'animatic', description: '播放/暂停', action: () => {} },
+  { key: 'ArrowLeft', scope: 'animatic', description: '上一个分镜', action: () => {} },
+  { key: 'ArrowRight', scope: 'animatic', description: '下一个分镜', action: () => {} },
+  { key: '[', scope: 'animatic', description: '减慢速度', action: () => {} },
+  { key: ']', scope: 'animatic', description: '加快速度', action: () => {} },
+  { key: 'f', scope: 'animatic', description: '全屏预览', action: () => {} },
+  { key: 'm', scope: 'animatic', description: '静音/取消静音', action: () => {} },
+  { key: 'Escape', scope: 'animatic', description: '关闭预览', action: () => {} },
+];
+
 export default useKeyboardShortcuts;

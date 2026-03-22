@@ -13,11 +13,12 @@ import DarkEpisodeSelector from './DarkEpisodeSelector';
 import AutoStoryboardModal from '../StoryBoard/AutoStoryboardModal';
 import StoryboardTable from './StoryboardTable';
 import ResourceSidebar from './ResourceSidebar';
-import { Wand2, Users, Image, Film, Video } from 'lucide-react';
+import { Wand2, Users, Image, Film, Video, Play } from 'lucide-react';
 import { Button } from '@heroui/react';
 import { getAuthToken } from '../../services/auth';
 import { AIModel } from '../../components/AIModelSelector';
 import { normalizeCapabilityOptions } from '../../utils/modelCapabilities';
+import { AnimaticPreview } from '../StoryBoard/AnimaticPreview';
 
 interface Script {
   id: number;
@@ -59,6 +60,7 @@ const SimpleStoryBoard: React.FC<SimpleStoryBoardProps> = ({
   // 右侧面板联动状态
   const [selectedCharName, setSelectedCharName] = useState<string | null>(null);
   const [selectedSceneName, setSelectedSceneName] = useState<string | null>(null);
+  const [isAnimaticOpen, setIsAnimaticOpen] = useState(false);
 
   const imageAspectRatio = useMemo(() => {
     const model = models.find((item) => item.name === imageModel && (item.type || item.category)?.toUpperCase() === 'IMAGE');
@@ -476,6 +478,17 @@ const SimpleStoryBoard: React.FC<SimpleStoryBoardProps> = ({
           >
             批量生成视频
           </Button>
+          {scenes.length > 0 && (
+            <Button
+              size="sm"
+              variant="flat"
+              color="secondary"
+              startContent={<Play className="w-3.5 h-3.5" />}
+              onPress={() => setIsAnimaticOpen(true)}
+            >
+              播放分镜
+            </Button>
+          )}
         </div>
       </div>
 
@@ -539,6 +552,13 @@ const SimpleStoryBoard: React.FC<SimpleStoryBoardProps> = ({
         dontShowAgain={autoStoryboard.dontShowAgain}
         onDontShowAgainChange={autoStoryboard.setDontShowAgain}
         onConfirm={autoStoryboard.handleConfirmGenerate}
+      />
+
+      {/* Animatic 预览弹窗 */}
+      <AnimaticPreview
+        isOpen={isAnimaticOpen}
+        onClose={() => setIsAnimaticOpen(false)}
+        storyboards={scenes}
       />
     </div>
   );

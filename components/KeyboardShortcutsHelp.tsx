@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Keyboard } from 'lucide-react';
-import { ShortcutConfig, formatShortcutKey, GLOBAL_SHORTCUTS_CONFIG, STORYBOARD_SHORTCUTS_CONFIG } from '../hooks/useKeyboardShortcuts';
+import { ShortcutConfig, formatShortcutKey, GLOBAL_SHORTCUTS_CONFIG, STORYBOARD_SHORTCUTS_CONFIG, ANIMATIC_SHORTCUTS_CONFIG } from '../hooks/useKeyboardShortcuts';
 
 interface KeyboardShortcutsHelpProps {
   isOpen: boolean;
@@ -14,6 +14,7 @@ const scopeNames: Record<string, string> = {
   storyboard: '分镜操作',
   script: '剧本操作',
   assets: '资产管理',
+  animatic: 'Animatic 预览',
 };
 
 // 所有快捷键配置（合并全局和分镜）
@@ -31,6 +32,8 @@ const allShortcuts: ShortcutConfig[] = [
   { ...STORYBOARD_SHORTCUTS_CONFIG.DELETE_SCENE, action: () => {} },
   { ...STORYBOARD_SHORTCUTS_CONFIG.REFRESH_LIST, action: () => {} },
   { ...STORYBOARD_SHORTCUTS_CONFIG.DESELECT, action: () => {} },
+  // Animatic 预览
+  ...ANIMATIC_SHORTCUTS_CONFIG,
 ];
 
 // 按作用域分组
