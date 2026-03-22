@@ -63,6 +63,7 @@ export interface Scene {
   mood: string;
   image_url: string;
   reverse_image_url?: string;
+  sketch_url?: string | null;
   tags: string;
   project_name?: string;
   spatial_layout?: SpatialLayout | null;
@@ -957,4 +958,78 @@ export async function deletePropState(
     const result = await response.json();
     throw new Error(result.message || '删除道具状态失败');
   }
+}
+
+// ============================================================
+// 场景草图 API
+// ============================================================
+
+/**
+ * 上传场景草图
+ * @param sceneId 场景ID
+ * @param file 草图文件
+ * @returns 草图URL
+ */
+export async function uploadSceneSketch(
+  sceneId: number,
+  file: File
+): Promise<{ sketch_url: string }> {
+  const token = getAuthToken();
+  const formData = new FormData();
+  formData.append('sketch', file);
+
+  const response = await fetch(`/api/scenes/${sceneId}/sketch`, {
+    method: 'POST',
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    },
+    body: formData
+  });
+
+  if (!response.ok) {
+    const result = await response.json();
+    throw new Error(result.message || '上传场景草图失败');
+  }
+  return response.json();
+}
+
+/**
+ * 删除场景草图
+ * @param sceneId 场景ID
+ */
+export async function deleteSceneSketch(sceneId: number): Promise<void> {
+  const token = getAuthToken();
+  const response = await fetch(`/api/scenes/${sceneId}/sketch`, {
+    method: 'DELETE',
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    }
+  });
+
+  if (!response.ok) {
+    const result = await response.json();
+    throw new Error(result.message || '删除场景草图失败');
+  }
+}
+
+/**
+ * 获取场景草图
+ * @param sceneId 场景ID
+ * @returns 草图URL
+ */
+export async function getSceneSketch(
+  sceneId: number
+): Promise<{ sketch_url: string | null }> {
+  const token = getAuthToken();
+  const response = await fetch(`/api/scenes/${sceneId}/sketch`, {
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    }
+  });
+
+  if (!response.ok) {
+    const result = await response.json();
+    throw new Error(result.message || '获取场景草图失败');
+  }
+  return response.json();
 }

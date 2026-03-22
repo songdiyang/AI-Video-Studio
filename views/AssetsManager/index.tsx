@@ -821,6 +821,7 @@ const AssetsManager: React.FC = () => {
               onEdit={handleEdit} 
               onDelete={handleDelete}
               onViewDetail={handleViewSceneDetail}
+              onSceneUpdate={loadData}
             />
           </Tab>
 

@@ -7,6 +7,9 @@ const router = express.Router();
 // 注册场景图片生成路由
 require('./generateImage')(router);
 
+// 注册场景草图路由
+require('./sceneSketch')(router);
+
 // 获取所有场景
 router.get('/', authMiddleware, async (req, res) => {
   const userId = req.user.id;
