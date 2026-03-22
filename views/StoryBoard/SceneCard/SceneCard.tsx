@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect, memo } from 'react';
-import { Card, CardBody, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Button, Checkbox } from '@heroui/react';
-import { Trash2, ImageIcon } from 'lucide-react';
+import { Card, CardBody, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Button, Checkbox, Tooltip } from '@heroui/react';
+import { Trash2, ImageIcon, Pencil, Plus, Edit3 } from 'lucide-react';
 import SceneImageGenerator from '../SceneImageGenerator';
 import { StoryboardScene } from '../useSceneManager';
 import { TaskState } from '../../../hooks/useTaskRunner';
@@ -32,6 +32,7 @@ export interface SceneCardProps {
   onGenerateImage: (id: number, prompt: string) => Promise<{ success: boolean; error?: string }>;
   onGenerateVideo: (id: number) => Promise<{ success: boolean; error?: string }>;
   onUpdateScene?: (id: number, updates: Partial<StoryboardScene>) => void;
+  onOpenSketchEditor?: (id: number) => void;
   imageTask?: TaskState;
   videoTask?: TaskState;
 }
@@ -52,6 +53,7 @@ const SceneCard: React.FC<SceneCardProps> = ({
   onGenerateImage,
   onGenerateVideo,
   onUpdateScene,
+  onOpenSketchEditor,
   imageTask,
   videoTask
 }) => {
@@ -322,13 +324,29 @@ const SceneCard: React.FC<SceneCardProps> = ({
                     <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
                   </div>
                 )}
+                {/* 草图指示图标 */}
+                {scene.sketchUrl && (
+                  <Tooltip content="已有草图">
+                    <div className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-purple-500/80 flex items-center justify-center">
+                      <Pencil className="w-2.5 h-2.5 text-white" />
+                    </div>
+                  </Tooltip>
+                )}
               </div>
             ) : (
-              <div className="w-16 h-10 flex-shrink-0 rounded border border-dashed border-[var(--border-color)] flex items-center justify-center bg-[var(--bg-app)]">
+              <div className="relative w-16 h-10 flex-shrink-0 rounded border border-dashed border-[var(--border-color)] flex items-center justify-center bg-[var(--bg-app)]">
                 {isGeneratingImage ? (
                   <div className="w-3 h-3 border-2 border-[var(--text-muted)] border-t-transparent rounded-full animate-spin" />
                 ) : (
                   <ImageIcon className="w-4 h-4 text-[var(--text-muted)]" />
+                )}
+                {/* 无图时的草图指示 */}
+                {scene.sketchUrl && (
+                  <Tooltip content="已有草图">
+                    <div className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-purple-500/80 flex items-center justify-center">
+                      <Pencil className="w-2.5 h-2.5 text-white" />
+                    </div>
+                  </Tooltip>
                 )}
               </div>
             )}
@@ -360,6 +378,19 @@ const SceneCard: React.FC<SceneCardProps> = ({
 
             {/* 悬停时显示的操作按钮 */}
             <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+              {/* 草图按钮 */}
+              <Tooltip content={scene.sketchUrl ? "编辑草图" : "添加草图"}>
+                <button
+                  onClick={(e) => { e.stopPropagation(); onOpenSketchEditor?.(scene.id); }}
+                  className={`p-1 rounded transition-colors ${
+                    scene.sketchUrl 
+                      ? 'bg-purple-500/20 text-purple-400 hover:bg-purple-500/30' 
+                      : 'hover:bg-purple-500/20 text-[var(--text-muted)] hover:text-purple-400'
+                  }`}
+                >
+                  {scene.sketchUrl ? <Edit3 className="w-3.5 h-3.5" /> : <><Plus className="w-2 h-2" /><Pencil className="w-3 h-3" /></>}
+                </button>
+              </Tooltip>
               <button
                 onClick={(e) => { e.stopPropagation(); handleDeleteClick(scene.id); }}
                 className="p-1 rounded hover:bg-red-500/20 text-[var(--text-muted)] hover:text-red-400 transition-colors"

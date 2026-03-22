@@ -18,6 +18,15 @@ const WORKFLOW_TYPE_NAMES: Record<string, string> = {
   'batch_frame_generation': '批量帧生成',
   'batch_scene_video_generation': '批量视频生成',
   'smart_parse': 'AI 智能解析',
+  // 草图工作流类型
+  'sketch_frame_generation': '草图帧生成',
+  'batch_sketch_frame_generation': '批量草图帧生成',
+  // 并发帧生成
+  'parallel_frame_generation': '并发帧生成',
+  // 道具生成
+  'prop_image_generation': '道具图片生成',
+  // 运镜生成
+  'camera_run_generation': '精细运镜生成',
 };
 
 // 相对时间格式化

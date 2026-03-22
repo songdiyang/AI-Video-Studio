@@ -142,6 +142,9 @@ export default defineConfig(({ mode }) => {
               dnd: ['@dnd-kit/core', '@dnd-kit/sortable'],
               // 工具库
               utils: ['jszip', 'lucide-react'],
+              // 注意: @excalidraw/excalidraw 已通过 React.lazy() 懒加载
+              // 如需进一步优化，可添加以下配置将其单独分包：
+              // excalidraw: ['@excalidraw/excalidraw'],
             },
           },
         },

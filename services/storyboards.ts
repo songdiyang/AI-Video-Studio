@@ -1,4 +1,5 @@
 import { getAuthToken } from './auth';
+import type { SketchHistoryEntry } from '../views/StoryBoard/SketchModule/types/sketch';
 
 // 分镜空间描述接口
 export interface CharacterPosition {
@@ -375,4 +376,92 @@ export async function batchUnlockStoryboards(storyboardIds: number[]): Promise<{
   }
 
   return data as { success: boolean; message: string; count: number };
+}
+
+// ============================================================
+// 草图版本历史相关 API
+// ============================================================
+
+/**
+ * 获取草图版本历史
+ * @param storyboardId 分镜ID
+ * @param params 分页参数
+ */
+export async function getSketchHistory(
+  storyboardId: number,
+  params?: { limit?: number; offset?: number }
+): Promise<{ history: SketchHistoryEntry[]; total: number }> {
+  const searchParams = new URLSearchParams();
+  if (params?.limit) searchParams.set('limit', String(params.limit));
+  if (params?.offset) searchParams.set('offset', String(params.offset));
+
+  const queryString = searchParams.toString();
+  const url = `/api/storyboards/${storyboardId}/sketch/history${queryString ? `?${queryString}` : ''}`;
+
+  const res = await fetch(url, {
+    headers: {
+      ...authHeaders(),
+    },
+  });
+
+  const data = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw new Error(data?.message || 'Failed to get sketch history');
+  }
+
+  return data as { history: SketchHistoryEntry[]; total: number };
+}
+
+/**
+ * 获取特定版本的草图
+ * @param storyboardId 分镜ID
+ * @param version 版本号
+ */
+export async function getSketchHistoryVersion(
+  storyboardId: number,
+  version: number
+): Promise<SketchHistoryEntry> {
+  const res = await fetch(`/api/storyboards/${storyboardId}/sketch/history/${version}`, {
+    headers: {
+      ...authHeaders(),
+    },
+  });
+
+  const data = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw new Error(data?.message || 'Failed to get sketch version');
+  }
+
+  return data as SketchHistoryEntry;
+}
+
+/**
+ * 恢复到指定版本的草图
+ * @param storyboardId 分镜ID
+ * @param version 要恢复的版本号
+ */
+export async function restoreSketchVersion(
+  storyboardId: number,
+  version: number
+): Promise<{
+  success: boolean;
+  message: string;
+  version: number;
+  sketchUrl: string | null;
+  sketchType: string | null;
+  controlStrength: number;
+}> {
+  const res = await fetch(`/api/storyboards/${storyboardId}/sketch/restore/${version}`, {
+    method: 'POST',
+    headers: {
+      ...authHeaders(),
+    },
+  });
+
+  const data = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw new Error(data?.message || 'Failed to restore sketch version');
+  }
+
+  return data;
 }

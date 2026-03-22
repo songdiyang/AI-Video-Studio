@@ -16,6 +16,59 @@ const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 
 // 工作流模板目录
+
+/**
+ * 带重试的异步函数执行器
+ * @param {Function} fn - 要执行的异步函数
+ * @param {number} maxRetries - 最大重试次数
+ * @param {number} baseDelay - 基础延迟（毫秒）
+ * @param {Function} shouldRetry - 判断是否应该重试的函数
+ * @returns {Promise<any>}
+ */
+async function withRetry(fn, maxRetries = 3, baseDelay = 1000, shouldRetry = () => true) {
+  let lastError;
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastError = err;
+      // 只对网络错误和临时性故障重试，不重试业务逻辑错误
+      const isRetryable = shouldRetry(err);
+      if (!isRetryable || i === maxRetries - 1) {
+        throw err;
+      }
+      const delay = baseDelay * Math.pow(2, i);
+      console.warn(`[ComfyUI Handler] 重试 ${i + 1}/${maxRetries}，等待 ${delay}ms: ${err.message}`);
+      await new Promise(r => setTimeout(r, delay));
+    }
+  }
+  throw lastError;
+}
+
+/**
+ * 判断错误是否可重试
+ * @param {Error} err 
+ * @returns {boolean}
+ */
+function isRetryableError(err) {
+  // 网络连接错误
+  if (err.code === 'ECONNREFUSED' || err.code === 'ENOTFOUND' || err.code === 'ETIMEDOUT') {
+    return true;
+  }
+  // 超时错误
+  if (err.name === 'AbortError' || err.message?.includes('超时')) {
+    return true;
+  }
+  // 服务器临时错误（5xx）
+  if (err.message?.includes('(5') && err.message?.includes(')')) {
+    return true;
+  }
+  // ComfyUI 队列满或繁忙
+  if (err.message?.includes('queue') || err.message?.includes('busy')) {
+    return true;
+  }
+  return false;
+}
 const WORKFLOW_DIR = path.join(__dirname, 'comfyui_workflows');
 
 // sketch_type 到工作流模板的映射
@@ -164,58 +217,69 @@ module.exports = {
       client_id: clientId
     };
     
-    // 6. 发送请求到 ComfyUI
+    // 6. 发送请求到 ComfyUI（带重试机制）
     const promptUrl = `${baseUrl}/prompt`;
     console.log(`[ComfyUI Handler] 提交到: ${promptUrl}`);
     
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 120000);
-    
-    let response;
-    try {
-      response = await fetch(promptUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(requestBody),
-        signal: controller.signal
-      });
-      clearTimeout(timeout);
-    } catch (err) {
-      clearTimeout(timeout);
-      if (err.name === 'AbortError') {
-        throw new Error('ComfyUI API 请求超时（120秒）');
+    const sendRequest = async () => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 120000);
+      
+      let response;
+      try {
+        response = await fetch(promptUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(requestBody),
+          signal: controller.signal
+        });
+        clearTimeout(timeout);
+      } catch (err) {
+        clearTimeout(timeout);
+        if (err.name === 'AbortError') {
+          throw new Error('ComfyUI API 请求超时（120秒）');
+        }
+        // 连接失败处理
+        if (err.code === 'ECONNREFUSED' || err.code === 'ENOTFOUND') {
+          const connError = new Error(`ComfyUI 连接失败: 无法连接到 ${baseUrl}，请检查 ComfyUI 是否已启动`);
+          connError.code = err.code;
+          throw connError;
+        }
+        throw new Error(`ComfyUI 请求失败: ${err.message}`);
       }
-      // 连接失败处理
-      if (err.code === 'ECONNREFUSED' || err.code === 'ENOTFOUND') {
-        throw new Error(`ComfyUI 连接失败: 无法连接到 ${baseUrl}，请检查 ComfyUI 是否已启动`);
+      
+      const responseText = await response.text();
+      console.log('[ComfyUI Handler] 响应状态:', response.status);
+      console.log('[ComfyUI Handler] 响应内容:', responseText);
+      
+      // 解析响应
+      let data;
+      try {
+        data = JSON.parse(responseText);
+      } catch (err) {
+        throw new Error(`ComfyUI API 返回非 JSON: ${responseText.substring(0, 300)}`);
       }
-      throw new Error(`ComfyUI 请求失败: ${err.message}`);
-    }
+      
+      // 错误处理
+      if (!response.ok) {
+        const errorMsg = data.error || data.message || JSON.stringify(data);
+        const httpError = new Error(`ComfyUI API 错误 (${response.status}): ${errorMsg}`);
+        httpError.status = response.status;
+        throw httpError;
+      }
+      
+      // ComfyUI 可能返回节点验证错误
+      if (data.error) {
+        throw new Error(`ComfyUI 工作流错误: ${JSON.stringify(data.error)}`);
+      }
+      
+      return data;
+    };
     
-    const responseText = await response.text();
-    console.log('[ComfyUI Handler] 响应状态:', response.status);
-    console.log('[ComfyUI Handler] 响应内容:', responseText);
-    
-    // 7. 解析响应
-    let data;
-    try {
-      data = JSON.parse(responseText);
-    } catch (err) {
-      throw new Error(`ComfyUI API 返回非 JSON: ${responseText.substring(0, 300)}`);
-    }
-    
-    // 8. 错误处理
-    if (!response.ok) {
-      const errorMsg = data.error || data.message || JSON.stringify(data);
-      throw new Error(`ComfyUI API 错误 (${response.status}): ${errorMsg}`);
-    }
-    
-    // ComfyUI 可能返回节点验证错误
-    if (data.error) {
-      throw new Error(`ComfyUI 工作流错误: ${JSON.stringify(data.error)}`);
-    }
+    // 使用重试机制执行请求
+    const data = await withRetry(sendRequest, 3, 1000, isRetryableError);
     
     // 9. 返回 prompt_id
     if (!data.prompt_id) {

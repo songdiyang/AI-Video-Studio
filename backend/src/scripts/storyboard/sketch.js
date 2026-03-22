@@ -10,7 +10,11 @@
 const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
-const { queryOne, execute } = require('../../dbHelper');
+const { queryOne, execute, query } = require('../../dbHelper');
+const { getPool } = require('../../db');
+
+// 最大历史版本数量（超过后删除最旧的）
+const MAX_HISTORY_VERSIONS = 50;
 
 // 有效的草图类型
 const VALID_SKETCH_TYPES = ['stick_figure', 'storyboard_sketch', 'detailed_lineart'];
@@ -72,12 +76,53 @@ const upload = multer({
  */
 async function getStoryboardWithAuth(storyboardId, userId) {
   return queryOne(
-    `SELECT s.id, s.project_id, s.sketch_url, s.sketch_type, s.sketch_data, s.control_strength
+    `SELECT s.id, s.project_id, s.sketch_url, s.sketch_type, s.sketch_data, s.control_strength, s.sketch_version
      FROM storyboards s 
      JOIN scripts sc ON s.script_id = sc.id 
      WHERE s.id = ? AND sc.user_id = ?`,
     [storyboardId, userId]
   );
+}
+
+/**
+ * 创建草图历史记录（使用事务版本）
+ * @param {object} connection - 数据库连接（事务中的连接）
+ * @param {number} storyboardId 
+ * @param {object} sketchData - 草图数据 {sketch_url, sketch_type, sketch_data, control_strength, sketch_version}
+ */
+async function createSketchHistoryWithConnection(connection, storyboardId, sketchData) {
+  const version = sketchData.sketch_version || 1;
+  
+  // 插入历史记录
+  await connection.execute(
+    `INSERT INTO sketch_history (storyboard_id, version, sketch_url, sketch_type, sketch_data, control_strength)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [
+      storyboardId,
+      version,
+      sketchData.sketch_url || null,
+      sketchData.sketch_type || null,
+      sketchData.sketch_data ? JSON.stringify(sketchData.sketch_data) : null,
+      sketchData.control_strength || 0.85
+    ]
+  );
+  
+  // 清理超过限制的旧版本
+  const [countResult] = await connection.execute(
+    'SELECT COUNT(*) as count FROM sketch_history WHERE storyboard_id = ?',
+    [storyboardId]
+  );
+  
+  if (countResult[0].count > MAX_HISTORY_VERSIONS) {
+    const deleteCount = countResult[0].count - MAX_HISTORY_VERSIONS;
+    await connection.execute(
+      `DELETE FROM sketch_history 
+       WHERE storyboard_id = ? 
+       ORDER BY version ASC 
+       LIMIT ?`,
+      [storyboardId, deleteCount]
+    );
+  }
 }
 
 /**
@@ -120,6 +165,9 @@ async function uploadSketch(req, res) {
     return res.status(400).json({ message: '请选择要上传的草图文件' });
   }
 
+  const pool = getPool();
+  const connection = await pool.getConnection();
+
   try {
     // 验证用户权限
     const storyboard = await getStoryboardWithAuth(storyboardId, userId);
@@ -155,24 +203,49 @@ async function uploadSketch(req, res) {
     // 生成相对 URL
     const sketchUrl = `/uploads/sketches/${projectId}/${fileName}`;
 
-    // 更新数据库
-    await execute(
-      'UPDATE storyboards SET sketch_url = ?, sketch_type = ? WHERE id = ?',
-      [sketchUrl, sketchType, storyboardId]
-    );
+    // 使用事务更新数据库并创建历史记录
+    await connection.beginTransaction();
+    
+    try {
+      // 计算新版本号
+      const newVersion = (storyboard.sketch_version || 0) + 1;
+      
+      // 更新分镜表
+      await connection.execute(
+        'UPDATE storyboards SET sketch_url = ?, sketch_type = ?, sketch_version = ? WHERE id = ?',
+        [sketchUrl, sketchType, newVersion, storyboardId]
+      );
+      
+      // 创建历史记录
+      await createSketchHistoryWithConnection(connection, storyboardId, {
+        sketch_url: sketchUrl,
+        sketch_type: sketchType,
+        sketch_data: storyboard.sketch_data, // 保留原有的矢量数据
+        control_strength: storyboard.control_strength,
+        sketch_version: newVersion
+      });
+      
+      await connection.commit();
+      
+      console.log('[Sketch] Uploaded:', { storyboardId, sketchUrl, sketchType, version: newVersion });
 
-    console.log('[Sketch] Uploaded:', { storyboardId, sketchUrl, sketchType });
-
-    res.json({ 
-      message: '草图上传成功',
-      sketch_url: sketchUrl,
-      sketchUrl  // 兼容前端驼峰命名
-    });
+      res.json({ 
+        message: '草图上传成功',
+        sketch_url: sketchUrl,
+        sketchUrl,  // 兼容前端驼峰命名
+        version: newVersion
+      });
+    } catch (err) {
+      await connection.rollback();
+      throw err;
+    }
   } catch (err) {
     // 清理临时文件
     if (req.file) safeDeleteFile(req.file.path);
     console.error('[Sketch Upload]', err);
     res.status(500).json({ message: '草图上传失败' });
+  } finally {
+    connection.release();
   }
 }
 
@@ -310,6 +383,9 @@ async function saveSketchData(req, res) {
     return res.status(400).json({ message: '缺少 sketch_data 字段' });
   }
 
+  const pool = getPool();
+  const connection = await pool.getConnection();
+
   try {
     // 验证用户权限
     const storyboard = await getStoryboardWithAuth(storyboardId, userId);
@@ -317,18 +393,245 @@ async function saveSketchData(req, res) {
       return res.status(404).json({ message: '分镜不存在或无权访问' });
     }
 
-    // 存储 JSON 数据
-    await execute(
-      'UPDATE storyboards SET sketch_data = ? WHERE id = ?',
-      [JSON.stringify(sketch_data), storyboardId]
-    );
+    // 使用事务存储 JSON 数据并创建历史记录
+    await connection.beginTransaction();
+    
+    try {
+      // 计算新版本号
+      const newVersion = (storyboard.sketch_version || 0) + 1;
+      
+      // 更新分镜表
+      await connection.execute(
+        'UPDATE storyboards SET sketch_data = ?, sketch_version = ? WHERE id = ?',
+        [JSON.stringify(sketch_data), newVersion, storyboardId]
+      );
+      
+      // 创建历史记录
+      await createSketchHistoryWithConnection(connection, storyboardId, {
+        sketch_url: storyboard.sketch_url,
+        sketch_type: storyboard.sketch_type,
+        sketch_data: sketch_data,
+        control_strength: storyboard.control_strength,
+        sketch_version: newVersion
+      });
+      
+      await connection.commit();
 
-    console.log('[Sketch] Data saved:', { storyboardId });
+      console.log('[Sketch] Data saved:', { storyboardId, version: newVersion });
 
-    res.json({ success: true });
+      res.json({ success: true, version: newVersion });
+    } catch (err) {
+      await connection.rollback();
+      throw err;
+    }
   } catch (err) {
     console.error('[Sketch Data]', err);
     res.status(500).json({ message: '保存草图数据失败' });
+  } finally {
+    connection.release();
+  }
+}
+
+/**
+ * GET /:storyboardId/sketch/history
+ * 获取草图版本历史列表
+ */
+async function getSketchHistory(req, res) {
+  const userId = req.user.id;
+  const storyboardId = Number(req.params.storyboardId);
+  const limit = Math.min(Math.max(parseInt(req.query.limit) || 20, 1), 100);
+  const offset = Math.max(parseInt(req.query.offset) || 0, 0);
+
+  if (!storyboardId) {
+    return res.status(400).json({ message: '无效的分镜 ID' });
+  }
+
+  try {
+    // 验证用户权限
+    const storyboard = await getStoryboardWithAuth(storyboardId, userId);
+    if (!storyboard) {
+      return res.status(404).json({ message: '分镜不存在或无权访问' });
+    }
+
+    // 查询历史记录
+    const history = await query(
+      `SELECT id, version, sketch_url, sketch_type, sketch_data, control_strength, created_at
+       FROM sketch_history
+       WHERE storyboard_id = ?
+       ORDER BY version DESC
+       LIMIT ? OFFSET ?`,
+      [storyboardId, limit, offset]
+    );
+
+    // 查询总数
+    const countResult = await queryOne(
+      'SELECT COUNT(*) as total FROM sketch_history WHERE storyboard_id = ?',
+      [storyboardId]
+    );
+
+    // 转换为前端期望的格式
+    const formattedHistory = history.map(item => ({
+      id: String(item.id),
+      version: item.version,
+      sketchUrl: item.sketch_url,
+      sketchType: item.sketch_type,
+      sketchData: item.sketch_data,
+      controlStrength: parseFloat(item.control_strength),
+      createdAt: item.created_at?.toISOString() || null
+    }));
+
+    res.json({
+      history: formattedHistory,
+      total: countResult?.total || 0
+    });
+  } catch (err) {
+    console.error('[Sketch History]', err);
+    res.status(500).json({ message: '获取草图历史失败' });
+  }
+}
+
+/**
+ * GET /:storyboardId/sketch/history/:version
+ * 获取特定版本的草图数据
+ */
+async function getSketchHistoryVersion(req, res) {
+  const userId = req.user.id;
+  const storyboardId = Number(req.params.storyboardId);
+  const version = Number(req.params.version);
+
+  if (!storyboardId) {
+    return res.status(400).json({ message: '无效的分镜 ID' });
+  }
+
+  if (!version || version < 1) {
+    return res.status(400).json({ message: '无效的版本号' });
+  }
+
+  try {
+    // 验证用户权限
+    const storyboard = await getStoryboardWithAuth(storyboardId, userId);
+    if (!storyboard) {
+      return res.status(404).json({ message: '分镜不存在或无权访问' });
+    }
+
+    // 查询指定版本
+    const historyItem = await queryOne(
+      `SELECT id, version, sketch_url, sketch_type, sketch_data, control_strength, created_at
+       FROM sketch_history
+       WHERE storyboard_id = ? AND version = ?`,
+      [storyboardId, version]
+    );
+
+    if (!historyItem) {
+      return res.status(404).json({ message: '指定版本的草图不存在' });
+    }
+
+    res.json({
+      id: String(historyItem.id),
+      version: historyItem.version,
+      sketchUrl: historyItem.sketch_url,
+      sketchType: historyItem.sketch_type,
+      sketchData: historyItem.sketch_data,
+      controlStrength: parseFloat(historyItem.control_strength),
+      createdAt: historyItem.created_at?.toISOString() || null
+    });
+  } catch (err) {
+    console.error('[Sketch History Version]', err);
+    res.status(500).json({ message: '获取草图版本失败' });
+  }
+}
+
+/**
+ * POST /:storyboardId/sketch/restore/:version
+ * 恢复到指定版本的草图
+ */
+async function restoreSketchVersion(req, res) {
+  const userId = req.user.id;
+  const storyboardId = Number(req.params.storyboardId);
+  const version = Number(req.params.version);
+
+  if (!storyboardId) {
+    return res.status(400).json({ message: '无效的分镜 ID' });
+  }
+
+  if (!version || version < 1) {
+    return res.status(400).json({ message: '无效的版本号' });
+  }
+
+  const pool = getPool();
+  const connection = await pool.getConnection();
+
+  try {
+    // 验证用户权限
+    const storyboard = await getStoryboardWithAuth(storyboardId, userId);
+    if (!storyboard) {
+      return res.status(404).json({ message: '分镜不存在或无权访问' });
+    }
+
+    // 查询要恢复的版本
+    const historyItem = await queryOne(
+      `SELECT sketch_url, sketch_type, sketch_data, control_strength
+       FROM sketch_history
+       WHERE storyboard_id = ? AND version = ?`,
+      [storyboardId, version]
+    );
+
+    if (!historyItem) {
+      return res.status(404).json({ message: '指定版本的草图不存在' });
+    }
+
+    // 使用事务恢复并创建新历史记录
+    await connection.beginTransaction();
+
+    try {
+      // 计算新版本号
+      const newVersion = (storyboard.sketch_version || 0) + 1;
+
+      // 更新分镜表为恢复的数据
+      await connection.execute(
+        `UPDATE storyboards 
+         SET sketch_url = ?, sketch_type = ?, sketch_data = ?, control_strength = ?, sketch_version = ?
+         WHERE id = ?`,
+        [
+          historyItem.sketch_url,
+          historyItem.sketch_type,
+          historyItem.sketch_data ? JSON.stringify(historyItem.sketch_data) : null,
+          historyItem.control_strength,
+          newVersion,
+          storyboardId
+        ]
+      );
+
+      // 创建新的历史记录（恢复操作也产生一个新版本）
+      await createSketchHistoryWithConnection(connection, storyboardId, {
+        sketch_url: historyItem.sketch_url,
+        sketch_type: historyItem.sketch_type,
+        sketch_data: historyItem.sketch_data,
+        control_strength: historyItem.control_strength,
+        sketch_version: newVersion
+      });
+
+      await connection.commit();
+
+      console.log('[Sketch] Restored:', { storyboardId, fromVersion: version, toVersion: newVersion });
+
+      res.json({
+        success: true,
+        message: `已恢复到版本 ${version}`,
+        version: newVersion,
+        sketchUrl: historyItem.sketch_url,
+        sketchType: historyItem.sketch_type,
+        controlStrength: parseFloat(historyItem.control_strength)
+      });
+    } catch (err) {
+      await connection.rollback();
+      throw err;
+    }
+  } catch (err) {
+    console.error('[Sketch Restore]', err);
+    res.status(500).json({ message: '恢复草图版本失败' });
+  } finally {
+    connection.release();
   }
 }
 
@@ -350,5 +653,10 @@ module.exports = function(router) {
 
   // 保存 Excalidraw 数据
   router.put('/:storyboardId/sketch-data', authMiddleware, saveSketchData);
+
+  // 草图版本历史 API
+  router.get('/:storyboardId/sketch/history', authMiddleware, getSketchHistory);
+  router.get('/:storyboardId/sketch/history/:version', authMiddleware, getSketchHistoryVersion);
+  router.post('/:storyboardId/sketch/restore/:version', authMiddleware, restoreSketchVersion);
 };
 
