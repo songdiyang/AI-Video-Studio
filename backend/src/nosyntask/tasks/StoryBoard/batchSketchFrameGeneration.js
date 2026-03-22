@@ -12,33 +12,85 @@
  * 2. 过滤出有草图的分镜
  * 3. 并发处理每个分镜的草图转图片
  * 4. 容错机制：某个镜头失败时记录错误，继续处理其他镜头
+ * 5. 超时保护：总体超时30分钟，单任务超时5分钟
  * 
- * input:  { scriptId, imageModel, textModel, aspectRatio, controlStrength, overwriteFrames, maxConcurrency }
- * output: { total, totalWithSketch, completed, skipped, failed, results[] }
+ * input:  { scriptId, imageModel, textModel, aspectRatio, controlStrength, overwriteFrames, maxConcurrency, timeoutMs }
+ * output: { total, totalWithSketch, completed, skipped, failed, results[], timedOut, timeoutMs, elapsedMs, abortedTasks }
  */
 
 const { queryAll, execute } = require('../../../dbHelper');
 const handleSketchToImage = require('./sketchToImage');
 
+// 超时常量
+const BATCH_TIMEOUT_MS = 30 * 60 * 1000; // 30分钟总体超时
+const SINGLE_TASK_TIMEOUT_MS = 5 * 60 * 1000; // 5分钟单任务超时
+const GRACE_PERIOD_MS = 2 * 60 * 1000; // 2分钟宽限期
+
 /**
- * 控制并发数量的执行器
+ * 带超时的 Promise 包装器
+ * @param {Promise} promise - 原始 Promise
+ * @param {number} timeoutMs - 超时毫秒数
+ * @param {string} taskName - 任务名称（用于错误信息）
+ * @returns {Promise} 带超时的 Promise
+ */
+function withTimeout(promise, timeoutMs, taskName = 'Task') {
+  let timeoutId;
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error(`${taskName} 超时（${Math.round(timeoutMs / 1000)}秒）`));
+    }, timeoutMs);
+  });
+
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    clearTimeout(timeoutId);
+  });
+}
+
+/**
+ * 控制并发数量的执行器（支持中断和单任务超时）
  * @param {Array} items - 待处理项
  * @param {number} concurrency - 并发数
  * @param {Function} handler - 处理函数 (item, index) => Promise
- * @returns {Promise<Array>} 处理结果数组
+ * @param {object} options - 可选参数
+ * @param {object} options.abortSignal - 中断信号对象 { aborted: boolean }
+ * @param {number} options.singleTaskTimeoutMs - 单任务超时时间
+ * @returns {Promise<{results: Array, abortedCount: number}>} 处理结果数组和被中断的任务数
  */
-async function runWithConcurrency(items, concurrency, handler) {
+async function runWithConcurrency(items, concurrency, handler, options = {}) {
+  const { abortSignal = { aborted: false }, singleTaskTimeoutMs = SINGLE_TASK_TIMEOUT_MS } = options;
   const results = new Array(items.length);
   let currentIndex = 0;
+  let abortedCount = 0;
 
   async function worker() {
     while (currentIndex < items.length) {
+      // 检查是否已中断
+      if (abortSignal.aborted) {
+        // 标记剩余未处理的任务
+        while (currentIndex < items.length) {
+          const index = currentIndex++;
+          results[index] = { status: 'aborted', reason: '批量任务超时中断' };
+          abortedCount++;
+        }
+        break;
+      }
+
       const index = currentIndex++;
       const item = items[index];
       try {
-        results[index] = await handler(item, index);
+        // 使用单任务超时包装 handler
+        const handlerPromise = handler(item, index);
+        results[index] = await withTimeout(
+          handlerPromise,
+          singleTaskTimeoutMs,
+          `单任务 ${item.id || index}`
+        );
       } catch (err) {
-        results[index] = { error: err.message, item };
+        results[index] = { 
+          error: err.message, 
+          item,
+          status: err.message.includes('超时') ? 'timeout' : 'failed'
+        };
       }
     }
   }
@@ -50,7 +102,7 @@ async function runWithConcurrency(items, concurrency, handler) {
   }
   await Promise.all(workers);
 
-  return results;
+  return { results, abortedCount };
 }
 
 async function handleBatchSketchFrameGeneration(inputParams, onProgress) {
@@ -61,8 +113,12 @@ async function handleBatchSketchFrameGeneration(inputParams, onProgress) {
     aspectRatio,
     controlStrength = 0.8,
     overwriteFrames = false,
-    maxConcurrency = 5
+    maxConcurrency = 5,
+    timeoutMs = BATCH_TIMEOUT_MS  // 允许调用方自定义超时时间
   } = inputParams;
+
+  const startTime = Date.now();
+  const effectiveTimeout = timeoutMs || BATCH_TIMEOUT_MS;
 
   if (!scriptId) {
     throw new Error('缺少必要参数: scriptId');
@@ -71,7 +127,8 @@ async function handleBatchSketchFrameGeneration(inputParams, onProgress) {
     throw new Error('imageModel 参数是必需的');
   }
 
-  console.log(`[BatchSketchGen] 开始批量草图帧生成，scriptId: ${scriptId}, 覆盖: ${overwriteFrames}, 并发: ${maxConcurrency}`);
+  console.log(`[BatchSketchGen] 开始批量草图帧生成，scriptId: ${scriptId}, 覆盖: ${overwriteFrames}, 并发: ${maxConcurrency}, 超时: ${Math.round(effectiveTimeout / 1000 / 60)}分钟`);
+  console.log(`[BatchSketchGen] 单任务超时: ${Math.round(SINGLE_TASK_TIMEOUT_MS / 1000 / 60)}分钟`);
 
   // 0. 覆盖模式：先批量清除有草图分镜的首尾帧
   if (overwriteFrames) {
@@ -145,63 +202,130 @@ async function handleBatchSketchFrameGeneration(inputParams, onProgress) {
 
   if (onProgress) onProgress(5);
 
-  // 4. 并发处理草图转图片
+  // 4. 设置总体超时机制
+  const abortSignal = { aborted: false };
+  let batchTimeoutId;
+  let timedOut = false;
+
+  // 创建超时处理函数
+  const setupBatchTimeout = () => {
+    return new Promise((resolve) => {
+      batchTimeoutId = setTimeout(() => {
+        console.log(`[BatchSketchGen] 总体超时触发（${Math.round(effectiveTimeout / 1000 / 60)}分钟），正在优雅终止...`);
+        abortSignal.aborted = true;
+        timedOut = true;
+        // 给已运行任务宽限期后 resolve
+        setTimeout(resolve, GRACE_PERIOD_MS);
+      }, effectiveTimeout);
+    });
+  };
+
+  // 5. 并发处理草图转图片（带超时）
   let processedCount = 0;
-  const processResults = await runWithConcurrency(toProcess, maxConcurrency, async (sb, index) => {
-    const description = sb.prompt_template || '';
-    const sketchUrl = sb.sketch_url;
-    const sketchType = sb.sketch_type || 'storyboard_sketch';
+  let processResults;
+  let abortedTasks = 0;
 
-    console.log(`[BatchSketchGen] [${processedCount + 1}/${toProcess.length}] 处理分镜 ${sb.id}...`);
+  const processingPromise = (async () => {
+    const result = await runWithConcurrency(toProcess, maxConcurrency, async (sb, index) => {
+      const description = sb.prompt_template || '';
+      const sketchUrl = sb.sketch_url;
+      const sketchType = sb.sketch_type || 'storyboard_sketch';
 
-    try {
-      const res = await handleSketchToImage({
-        storyboardId: sb.id,
-        processedSketchUrl: sketchUrl,
-        sketchType,
-        prompt: description,
-        controlStrength,
-        imageModel,
-        textModel,
-        aspectRatio
-      }, null);
+      console.log(`[BatchSketchGen] [${processedCount + 1}/${toProcess.length}] 处理分镜 ${sb.id}...`);
 
-      processedCount++;
-      console.log(`[BatchSketchGen] 分镜 ${sb.id} 生成成功`);
+      try {
+        const res = await handleSketchToImage({
+          storyboardId: sb.id,
+          processedSketchUrl: sketchUrl,
+          sketchType,
+          prompt: description,
+          controlStrength,
+          imageModel,
+          textModel,
+          aspectRatio
+        }, null);
 
-      // 更新进度
-      const pct = 5 + Math.floor((processedCount / toProcess.length) * 90);
-      if (onProgress) onProgress(pct);
+        processedCount++;
+        console.log(`[BatchSketchGen] 分镜 ${sb.id} 生成成功`);
 
-      return {
-        storyboardId: sb.id,
-        status: 'completed',
-        ...res
-      };
-    } catch (err) {
-      processedCount++;
-      console.error(`[BatchSketchGen] 分镜 ${sb.id} 生成失败:`, err.message);
+        // 更新进度
+        const pct = 5 + Math.floor((processedCount / toProcess.length) * 90);
+        if (onProgress) onProgress(pct);
 
-      // 更新进度
-      const pct = 5 + Math.floor((processedCount / toProcess.length) * 90);
-      if (onProgress) onProgress(pct);
+        return {
+          storyboardId: sb.id,
+          status: 'completed',
+          ...res
+        };
+      } catch (err) {
+        processedCount++;
+        console.error(`[BatchSketchGen] 分镜 ${sb.id} 生成失败:`, err.message);
 
-      return {
-        storyboardId: sb.id,
-        status: 'failed',
-        error: err.message
-      };
+        // 更新进度
+        const pct = 5 + Math.floor((processedCount / toProcess.length) * 90);
+        if (onProgress) onProgress(pct);
+
+        return {
+          storyboardId: sb.id,
+          status: err.message.includes('超时') ? 'timeout' : 'failed',
+          error: err.message
+        };
+      }
+    }, { abortSignal, singleTaskTimeoutMs: SINGLE_TASK_TIMEOUT_MS });
+    
+    return result;
+  })();
+
+  // 使用 Promise.race 实现总体超时
+  const timeoutPromise = setupBatchTimeout();
+  
+  try {
+    const raceResult = await Promise.race([
+      processingPromise.then(r => ({ type: 'completed', data: r })),
+      timeoutPromise.then(() => ({ type: 'timeout' }))
+    ]);
+
+    if (raceResult.type === 'completed') {
+      processResults = raceResult.data.results;
+      abortedTasks = raceResult.data.abortedCount;
+    } else {
+      // 超时后等待处理 Promise 完成（已经设置了 abort 信号）
+      const finalResult = await processingPromise;
+      processResults = finalResult.results;
+      abortedTasks = finalResult.abortedCount;
     }
-  });
+  } finally {
+    // 清理定时器，避免内存泄漏
+    if (batchTimeoutId) {
+      clearTimeout(batchTimeoutId);
+    }
+  }
 
-  // 5. 统计结果
+  const elapsedMs = Date.now() - startTime;
+
+  // 超时日志
+  if (timedOut) {
+    const completedBefore = processResults.filter(r => r && r.status === 'completed').length;
+    const pendingCount = processResults.filter(r => !r || r.status === 'aborted').length;
+    console.log(`[BatchSketchGen] 超时终止：已完成 ${completedBefore} 个，未执行 ${pendingCount} 个`);
+  }
+
+  // 6. 统计结果
   let completed = 0;
   let failed = 0;
+  let timeout = 0;
+  let aborted = 0;
   const allResults = [...skippedResults];
 
   for (const res of processResults) {
+    if (!res) continue;
     if (res.status === 'completed') {
       completed++;
+    } else if (res.status === 'timeout') {
+      timeout++;
+      failed++; // timeout 也计入 failed
+    } else if (res.status === 'aborted') {
+      aborted++;
     } else if (res.status === 'failed' || res.error) {
       failed++;
     }
@@ -209,7 +333,12 @@ async function handleBatchSketchFrameGeneration(inputParams, onProgress) {
   }
 
   if (onProgress) onProgress(100);
-  console.log(`[BatchSketchGen] 批量草图帧生成完成: 总计=${total}, 有草图=${totalWithSketch}, 成功=${completed}, 跳过=${skipped}, 失败=${failed}`);
+  
+  const elapsedSeconds = Math.round(elapsedMs / 1000);
+  const completionRate = toProcess.length > 0 ? Math.round((completed / toProcess.length) * 100) : 100;
+  
+  console.log(`[BatchSketchGen] 批量草图帧生成完成: 总计=${total}, 有草图=${totalWithSketch}, 成功=${completed}, 跳过=${skipped}, 失败=${failed}, 超时任务=${timeout}, 中断任务=${aborted}`);
+  console.log(`[BatchSketchGen] 总耗时: ${elapsedSeconds}秒, 完成比例: ${completionRate}%, 是否超时终止: ${timedOut}`);
 
   return {
     total,
@@ -219,7 +348,13 @@ async function handleBatchSketchFrameGeneration(inputParams, onProgress) {
     failed,
     controlStrength,
     maxConcurrency,
-    results: allResults
+    results: allResults,
+    // 新增超时相关信息
+    timedOut,
+    timeoutMs: effectiveTimeout,
+    elapsedMs,
+    abortedTasks: abortedTasks + aborted,
+    timeoutTasks: timeout
   };
 }
 
