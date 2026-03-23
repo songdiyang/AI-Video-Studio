@@ -440,7 +440,7 @@ const SimpleStoryBoard: React.FC<SimpleStoryBoardProps> = ({
         <div className="flex items-center gap-2">
           <Button
             size="sm"
-            className="bg-gradient-to-r from-blue-500 to-cyan-500 text-white font-bold shadow-lg shadow-blue-500/30 hover:shadow-[0_0_20px_rgba(59,130,246,0.4)] transition-all cursor-pointer"
+            className="bg-gradient-to-r from-violet-600 to-purple-600 text-white font-bold shadow-md hover:shadow-lg hover:from-violet-700 hover:to-purple-700 transition-all cursor-pointer"
             startContent={<Users className="w-3.5 h-3.5" />}
             onPress={handleBatchCharacterGeneration}
             isDisabled={!currentScriptId || isSubmittingCharacterBatch || characterBatchRecovery.isGenerating}
@@ -450,7 +450,7 @@ const SimpleStoryBoard: React.FC<SimpleStoryBoardProps> = ({
           </Button>
           <Button
             size="sm"
-            className="bg-gradient-to-r from-green-500 to-emerald-500 text-white font-bold shadow-lg shadow-green-500/30 hover:shadow-[0_0_20px_rgba(16,185,129,0.4)] transition-all cursor-pointer"
+            className="bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold shadow-md hover:shadow-lg hover:from-emerald-700 hover:to-teal-700 transition-all cursor-pointer"
             startContent={<Image className="w-3.5 h-3.5" />}
             onPress={handleBatchSceneGeneration}
             isDisabled={!currentScriptId || isSubmittingSceneBatch || sceneBatchRecovery.isGenerating}
@@ -460,7 +460,7 @@ const SimpleStoryBoard: React.FC<SimpleStoryBoardProps> = ({
           </Button>
           <Button
             size="sm"
-            className="bg-gradient-to-r from-purple-500 to-violet-500 text-white font-bold shadow-lg shadow-purple-500/30 hover:shadow-[0_0_20px_rgba(139,92,246,0.4)] transition-all cursor-pointer"
+            className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold shadow-md hover:shadow-lg hover:from-blue-700 hover:to-indigo-700 transition-all cursor-pointer"
             startContent={<Film className="w-3.5 h-3.5" />}
             onPress={handleBatchFrameGeneration}
             isDisabled={!currentScriptId || batchFrameGen.isGenerating}
@@ -470,7 +470,7 @@ const SimpleStoryBoard: React.FC<SimpleStoryBoardProps> = ({
           </Button>
           <Button
             size="sm"
-            className="bg-gradient-to-r from-rose-500 to-pink-500 text-white font-bold shadow-lg shadow-rose-500/30 hover:shadow-[0_0_20px_rgba(244,63,94,0.4)] transition-all cursor-pointer"
+            className="bg-gradient-to-r from-rose-600 to-red-600 text-white font-bold shadow-md hover:shadow-lg hover:from-rose-700 hover:to-red-700 transition-all cursor-pointer"
             startContent={<Video className="w-3.5 h-3.5" />}
             onPress={handleBatchVideoGeneration}
             isDisabled={!currentScriptId || batchSceneVideoGen.isGenerating}

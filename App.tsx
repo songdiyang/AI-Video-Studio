@@ -6,11 +6,13 @@ import Auth from './views/Auth';
 import AdminRoute from './components/AdminRoute';
 import ProtectedRoute from './components/ProtectedRoute';
 import { PreviewProvider } from './components/PreviewProvider';
+import { WorkbenchProvider } from './contexts/WorkbenchContext';
 import TaskQueueBubble from './components/TaskQueueBubble';
 import Skeleton from './components/Skeleton';
 import ErrorBoundary from './components/ErrorBoundary';
 
 // 懒加载主要视图组件
+const DynamicWorkbench = React.lazy(() => import('./components/DynamicWorkbench'));
 const ScriptStudio = React.lazy(() => import('./views/ScriptStudio/index'));
 const AssetsManager = React.lazy(() => import('./views/AssetsManager'));
 const Projects = React.lazy(() => import('./views/Projects'));
@@ -22,6 +24,8 @@ const Pricing = React.lazy(() => import('./views/Pricing'));
 const TemplateGallery = React.lazy(() => import('./views/TemplateGallery'));
 const Community = React.lazy(() => import('./views/Community'));
 const CreatorProfile = React.lazy(() => import('./views/Community/CreatorProfile'));
+const Teams = React.lazy(() => import('./views/Teams'));
+const AcceptInvite = React.lazy(() => import('./views/AcceptInvite'));
 
 // 懒加载管理员模块
 const AdminLogin = React.lazy(() => import('./views/AdminLogin'));
@@ -62,6 +66,11 @@ const AnimatedRoutes: React.FC = () => {
     <AnimatePresence mode="wait">
       <Routes location={location} key={location.pathname}>
         <Route path="/" element={
+          <Suspense fallback={<LoadingFallback />}>
+            <PageTransition><DynamicWorkbench /></PageTransition>
+          </Suspense>
+        } />
+        <Route path="/studio" element={
           <Suspense fallback={<LoadingFallback />}>
             <PageTransition><ScriptStudio /></PageTransition>
           </Suspense>
@@ -106,6 +115,16 @@ const AnimatedRoutes: React.FC = () => {
             <PageTransition><CreatorProfile /></PageTransition>
           </Suspense>
         } />
+        <Route path="/teams" element={
+          <Suspense fallback={<LoadingFallback />}>
+            <PageTransition><Teams /></PageTransition>
+          </Suspense>
+        } />
+        <Route path="/teams/:id" element={
+          <Suspense fallback={<LoadingFallback />}>
+            <PageTransition><Teams /></PageTransition>
+          </Suspense>
+        } />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </AnimatePresence>
@@ -128,6 +147,11 @@ const App: React.FC = () => {
             <Route path="/pricing" element={
               <Suspense fallback={<LoadingFallback />}>
                 <Pricing />
+              </Suspense>
+            } />
+            <Route path="/invite/:code" element={
+              <Suspense fallback={<LoadingFallback />}>
+                <AcceptInvite />
               </Suspense>
             } />
             <Route path="/admin/login" element={
@@ -185,9 +209,11 @@ const App: React.FC = () => {
             {/* 受保护路由 - 需要登录 */}
             <Route path="*" element={
               <ProtectedRoute>
-                <Layout>
-                  <AnimatedRoutes />
-                </Layout>
+                <WorkbenchProvider>
+                  <Layout>
+                    <AnimatedRoutes />
+                  </Layout>
+                </WorkbenchProvider>
               </ProtectedRoute>
             } />
           </Routes>

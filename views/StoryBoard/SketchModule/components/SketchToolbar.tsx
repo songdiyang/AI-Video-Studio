@@ -39,7 +39,7 @@ const SketchToolbar: React.FC<SketchToolbarProps> = ({
   standalone = false
 }) => {
   return (
-    <div className="flex items-center justify-between px-4 py-2 bg-[var(--bg-card)] border-b border-[var(--border-color)] flex-wrap gap-2">
+    <div className="flex items-center justify-between px-4 py-2 bg-[var(--bg-card)] border-b border-[var(--border-color)] md:flex-wrap gap-2">
       {/* 左侧：草图类型 + 控制强度（分镜模式显示） */}
       <div className="flex items-center gap-6">
         {/* 分镜模式：草图类型选择器 */}
@@ -62,7 +62,7 @@ const SketchToolbar: React.FC<SketchToolbarProps> = ({
               maxValue={1}
               value={controlStrength}
               onChange={(value) => onControlStrengthChange(value as number)}
-              className="w-28"
+              className="w-24 md:w-28 lg:w-32"
               classNames={{
                 track: "bg-[var(--bg-app)]",
                 filler: "bg-[var(--accent)]",
@@ -111,7 +111,7 @@ const SketchToolbar: React.FC<SketchToolbarProps> = ({
               <button
                 onClick={() => onBackgroundTypeChange('white')}
                 className={`
-                  w-6 h-6 rounded border-2 transition-all
+                  w-6 h-6 rounded border-2 transition-all hover:scale-110 hover:ring-2 hover:ring-[var(--accent)]/30
                   ${backgroundType === 'white'
                     ? 'border-[var(--accent)] ring-2 ring-[var(--accent)]/30'
                     : 'border-[var(--border-color)]'
@@ -125,7 +125,7 @@ const SketchToolbar: React.FC<SketchToolbarProps> = ({
               <button
                 onClick={() => onBackgroundTypeChange('transparent')}
                 className={`
-                  w-6 h-6 rounded border-2 transition-all overflow-hidden
+                  w-6 h-6 rounded border-2 transition-all overflow-hidden hover:scale-110 hover:ring-2 hover:ring-[var(--accent)]/30
                   ${backgroundType === 'transparent'
                     ? 'border-[var(--accent)] ring-2 ring-[var(--accent)]/30'
                     : 'border-[var(--border-color)]'

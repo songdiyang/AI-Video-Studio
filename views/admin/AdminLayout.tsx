@@ -108,28 +108,30 @@ const AdminLayout: React.FC = () => {
             }
           }}
           className={`
-            w-full flex items-center justify-between px-4 py-3 rounded-lg transition-all
-            ${level === 0 ? 'mb-1' : 'mb-0.5'}
+            w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all
+            ${level === 0 ? 'mb-1' : 'mb-1'}
             ${active 
-              ? 'bg-gradient-to-r from-blue-500 to-violet-600 text-white shadow-md' 
-              : 'text-slate-300 hover:bg-slate-700/50 hover:text-white'
+              ? 'bg-white/10 text-white backdrop-blur-sm' 
+              : 'text-white/90 hover:bg-white/5 hover:text-white'
             }
-            ${level > 0 ? 'ml-4 text-sm' : ''}
+            ${level > 0 ? 'ml-6' : ''}
           `}
         >
           <div className="flex items-center gap-3">
-            {item.icon}
+            <span className={active ? 'text-white' : 'text-white/60'}>
+              {item.icon}
+            </span>
             <span className="font-medium">{item.label}</span>
           </div>
           {hasChildren && (
             isExpanded 
-              ? <ChevronDown className="w-4 h-4" />
-              : <ChevronRight className="w-4 h-4" />
+              ? <ChevronDown className="w-4 h-4 text-white/60" />
+              : <ChevronRight className="w-4 h-4 text-white/60" />
           )}
         </button>
 
         {hasChildren && isExpanded && (
-          <div className="mt-1 space-y-0.5">
+          <div className="mt-1 space-y-1">
             {item.children!.map(child => renderMenuItem(child, level + 1))}
           </div>
         )}
@@ -139,39 +141,39 @@ const AdminLayout: React.FC = () => {
 
   return (
     <div className="flex h-screen bg-[#0a0a0f]">
-      <aside className="w-64 bg-slate-950 shadow-xl flex flex-col border-r border-slate-800">
-        <div className="p-6 border-b border-slate-800">
+      <aside className="w-64 bg-gradient-to-b from-[#1a1035] via-[#2d1f4e] to-[#4a3070] shadow-xl flex flex-col">
+        <div className="p-6">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-violet-600 rounded-lg flex items-center justify-center">
+            <div className="w-10 h-10 bg-white/10 backdrop-blur rounded-xl flex items-center justify-center">
               <Settings className="w-6 h-6 text-white" />
             </div>
             <div>
               <h1 className="text-white font-bold text-lg">管理后台</h1>
-              <p className="text-slate-400 text-xs">NanoStory Admin</p>
+              <p className="text-white/50 text-xs">NanoStory Admin</p>
             </div>
           </div>
         </div>
 
-        <nav className="flex-1 p-4 overflow-y-auto">
+        <nav className="flex-1 px-4 overflow-y-auto">
           {menuItems.map(item => renderMenuItem(item))}
         </nav>
 
-        <div className="p-4 border-t border-slate-800">
-          <div className="flex items-center gap-3 px-3 py-2 bg-slate-700/50 rounded-lg mb-3">
-            <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-violet-600 rounded-full flex items-center justify-center">
+        <div className="p-4">
+          <div className="flex items-center gap-3 px-3 py-3 bg-white/10 backdrop-blur rounded-xl mb-3">
+            <div className="w-9 h-9 bg-gradient-to-r from-blue-400 to-violet-500 rounded-full flex items-center justify-center">
               <span className="text-white text-sm font-semibold">
                 {userEmail.charAt(0).toUpperCase()}
               </span>
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-white text-sm font-medium truncate">{userEmail}</p>
-              <p className="text-slate-400 text-xs">管理员</p>
+              <p className="text-white/50 text-xs">管理员</p>
             </div>
           </div>
           
           <button
             onClick={handleLogout}
-            className="w-full flex items-center gap-2 px-4 py-2.5 text-slate-300 hover:bg-red-600 hover:text-white rounded-lg transition-all"
+            className="w-full flex items-center gap-2 px-4 py-2.5 text-white/70 hover:bg-white/10 hover:text-white rounded-xl transition-all"
           >
             <LogOut className="w-4 h-4" />
             <span className="text-sm font-medium">退出登录</span>

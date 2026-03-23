@@ -41,9 +41,9 @@ const SketchStudio: React.FC = () => {
   const [deleteTargetId, setDeleteTargetId] = useState<number | null>(null);
 
   // 获取当前项目 ID
-  const getCurrentProjectId = useCallback((): number => {
+  const getCurrentProjectId = useCallback((): number | null => {
     const storedId = localStorage.getItem(LAST_PROJECT_KEY);
-    return storedId ? parseInt(storedId, 10) : 1; // 默认项目 ID 为 1
+    return storedId ? parseInt(storedId, 10) : null;
   }, []);
 
   // 加载草图列表
@@ -51,6 +51,10 @@ const SketchStudio: React.FC = () => {
     setLoading(true);
     try {
       const projectId = getCurrentProjectId();
+      if (!projectId) {
+        setSketches([]);
+        return;
+      }
       const response = await getSketchProjects({ 
         project_id: projectId,
         search: searchQuery || undefined 
@@ -70,9 +74,13 @@ const SketchStudio: React.FC = () => {
 
   // 创建新草图
   const handleCreate = async () => {
+    const projectId = getCurrentProjectId();
+    if (!projectId) {
+      showToast('请先创建或选择一个工程', 'warning');
+      return;
+    }
     setIsCreating(true);
     try {
-      const projectId = getCurrentProjectId();
       const newSketch = await createSketchProject({
         title: `草图 ${new Date().toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`,
         project_id: projectId
@@ -245,11 +253,11 @@ const SketchStudio: React.FC = () => {
           </div>
         ) : filteredSketches.length === 0 ? (
           <div className="text-center py-12">
-            <div className="w-20 h-20 mx-auto bg-[rgba(30,35,60,0.6)] rounded-full flex items-center justify-center mb-4 border border-[rgba(255,255,255,0.08)]">
-              <Pencil className="w-10 h-10 text-[#6b6561]" />
+            <div className="w-20 h-20 mx-auto bg-[var(--bg-card)] rounded-full flex items-center justify-center mb-4 border border-[var(--border-color)]">
+              <Pencil className="w-10 h-10 text-[var(--text-muted)]" />
             </div>
-            <p className="text-[#a8a29e] font-medium">还没有草图</p>
-            <p className="text-[#6b6561] text-sm mt-1">点击"新建草图"开始创作吧</p>
+            <p className="text-[var(--text-secondary)] font-medium">还没有草图</p>
+            <p className="text-[var(--text-muted)] text-sm mt-1">点击"新建草图"开始创作吧</p>
             <Button
               className="pro-btn-primary mt-4"
               startContent={<Plus className="w-4 h-4" />}
@@ -264,13 +272,13 @@ const SketchStudio: React.FC = () => {
             {filteredSketches.map((sketch) => (
               <Card
                 key={sketch.id}
-                className="pro-card cursor-pointer group"
+                className="pro-card cursor-pointer group rounded-xl"
                 isPressable
                 onPress={() => setEditingSketch(sketch)}
               >
                 <CardBody className="p-0 overflow-hidden">
                   {/* 缩略图区域 */}
-                  <div className="h-40 bg-gradient-to-br from-[var(--bg-card)] to-[var(--bg-input)] relative overflow-hidden rounded-t-2xl">
+                  <div className="h-32 lg:h-40 bg-gradient-to-br from-[var(--bg-card)] to-[var(--bg-input)] relative overflow-hidden rounded-t-xl">
                     {sketch.thumbnail_url ? (
                       <img 
                         src={sketch.thumbnail_url} 
@@ -283,7 +291,7 @@ const SketchStudio: React.FC = () => {
                       </div>
                     )}
                     {/* 操作按钮 */}
-                    <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="absolute top-2 right-2 flex gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                       <Button
                         size="sm"
                         isIconOnly

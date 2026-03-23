@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardBody, Button, Input, Textarea, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure, Chip, Spinner } from '@heroui/react';
-import { FolderOpen, Plus, Edit, Trash2, Search, BookOpen, Clock, Palette, Sparkles, Rocket } from 'lucide-react';
+import { FolderOpen, Plus, Edit, Trash2, Search, BookOpen, Clock, Palette, Sparkles } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Project, fetchProjects, createProject, updateProject, deleteProject } from '../services/projects';
 import { useToast } from '../contexts/ToastContext';
@@ -96,19 +96,8 @@ const Projects: React.FC = () => {
   };
 
   const handleAdd = () => {
-    setEditMode(false);
-    setCurrentId(null);
-    setFormData({
-      name: '',
-      description: '',
-      cover_url: '',
-      status: 'draft',
-      visualStyle: '',
-      visualStylePrompt: '',
-      storyStyle: '',
-      storyConstraints: ''
-    });
-    onOpen();
+    // 使用统一的快速开始向导创建项目
+    setShowQuickStart(true);
   };
 
   const handleEdit = (project: Project) => {
@@ -139,7 +128,7 @@ const Projects: React.FC = () => {
       if (visualStylePrompt) settingsObj.visualStylePrompt = visualStylePrompt;
       if (storyStyle) settingsObj.storyStyle = storyStyle;
       if (storyConstraints) settingsObj.storyConstraints = storyConstraints;
-      const saveData = { ...rest, type: 'comic' as const, settings_json: JSON.stringify(settingsObj) };
+      const saveData = { ...rest, type: 'comic_drama' as const, settings_json: JSON.stringify(settingsObj) };
       if (editMode && currentId) {
         await updateProject(currentId, saveData);
       } else {
@@ -260,10 +249,10 @@ const Projects: React.FC = () => {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'draft': return 'bg-[rgba(107,101,97,0.2)] text-[#a8a29e] border border-[rgba(168,162,158,0.3)]';
-      case 'in_progress': return 'bg-[rgba(79,195,247,0.15)] text-[#4fc3f7] border border-[rgba(79,195,247,0.3)]';
-      case 'completed': return 'bg-[rgba(105,240,174,0.15)] text-[#69f0ae] border border-[rgba(105,240,174,0.3)]';
-      default: return 'bg-[rgba(107,101,97,0.2)] text-[#a8a29e] border border-[rgba(168,162,158,0.3)]';
+      case 'draft': return 'bg-slate-500/20 text-slate-600 dark:text-slate-300 border border-slate-400/30';
+      case 'in_progress': return 'bg-blue-500/20 text-blue-600 dark:text-blue-300 border border-blue-400/30';
+      case 'completed': return 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 border border-emerald-400/30';
+      default: return 'bg-slate-500/20 text-slate-600 dark:text-slate-300 border border-slate-400/30';
     }
   };
 
@@ -273,6 +262,28 @@ const Projects: React.FC = () => {
       case 'in_progress': return t.projects.statusInProgress;
       case 'completed': return t.projects.statusCompleted;
       default: return t.projects.statusDraft;
+    }
+  };
+
+  // 获取项目类型标签
+  const getProjectTypeLabel = (type: string) => {
+    switch (type) {
+      case 'comic_drama': return '漫剧';
+      case 'manga': return '漫画';
+      case 'short_video': return '短视频';
+      case 'novel': return '小说';
+      default: return type;
+    }
+  };
+
+  // 获取项目类型颜色
+  const getProjectTypeColor = (type: string) => {
+    switch (type) {
+      case 'comic_drama': return 'bg-violet-500/20 text-violet-600 dark:text-violet-300 border border-violet-400/30';
+      case 'manga': return 'bg-orange-500/20 text-orange-600 dark:text-orange-300 border border-orange-400/30';
+      case 'short_video': return 'bg-cyan-500/20 text-cyan-600 dark:text-cyan-300 border border-cyan-400/30';
+      case 'novel': return 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 border border-emerald-400/30';
+      default: return 'bg-slate-500/20 text-slate-600 dark:text-slate-300 border border-slate-400/30';
     }
   };
 
@@ -318,64 +329,16 @@ const Projects: React.FC = () => {
           }}
         />
 
-        {/* 快速开始入口 */}
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4 }}
-          className="relative overflow-hidden rounded-2xl cursor-pointer group"
-          onClick={() => setShowQuickStart(true)}
-        >
-          {/* 渐变背景 */}
-          <div className="absolute inset-0 bg-gradient-to-r from-[var(--accent)]/20 via-[var(--accent-secondary)]/15 to-[var(--accent-dark)]/20" />
-          <div className="absolute inset-0 bg-gradient-to-br from-transparent to-black/20" />
-          
-          {/* 装饰光效 */}
-          <div className="absolute -top-20 -right-20 w-40 h-40 bg-[var(--accent)]/20 rounded-full blur-3xl group-hover:bg-[var(--accent)]/30 transition-all" />
-          <div className="absolute -bottom-10 -left-10 w-32 h-32 bg-[var(--accent-secondary)]/15 rounded-full blur-2xl" />
-          
-          {/* 内容 */}
-          <div className="relative flex items-center gap-4 p-5">
-            <div className="flex-shrink-0">
-              <div className="relative">
-                <div className="absolute inset-0 bg-gradient-to-br from-[var(--accent)] to-[var(--accent-dark)] rounded-xl blur-lg opacity-50 group-hover:opacity-70 transition-opacity" />
-                <div className="relative p-3 bg-gradient-to-br from-[var(--accent)] to-[var(--accent-dark)] rounded-xl shadow-lg">
-                  <Rocket className="w-6 h-6 text-white" />
-                </div>
-              </div>
-            </div>
-            
-            <div className="flex-1 min-w-0">
-              <h3 className="text-lg font-bold text-[var(--text-primary)] group-hover:text-[var(--accent)] transition-colors">
-                {t.quickStart?.quickCreate || '快速创作'}
-              </h3>
-              <p className="text-sm text-[var(--text-muted)]">
-                {t.quickStart?.subtitle || '几步即可开始创作'}
-              </p>
-            </div>
-            
-            <div className="flex-shrink-0">
-              <div className="flex items-center gap-1 px-4 py-2 rounded-lg bg-[var(--accent)]/20 text-[var(--accent)] font-medium text-sm group-hover:bg-[var(--accent)] group-hover:text-white transition-all">
-                <Sparkles className="w-4 h-4" />
-                {t.quickStart?.title || '快速开始'}
-              </div>
-            </div>
-          </div>
-          
-          {/* 边框 */}
-          <div className="absolute inset-0 rounded-2xl border border-[var(--accent)]/30 group-hover:border-[var(--accent)]/50 transition-colors pointer-events-none" />
-        </motion.div>
-
         {/* 工程列表 */}
         {loading ? (
           <div className="text-center py-12 text-[var(--text-muted)]">{t.common.loading}</div>
         ) : filteredProjects.length === 0 ? (
           <div className="text-center py-12">
-            <div className="w-20 h-20 mx-auto bg-[rgba(30,35,60,0.6)] rounded-full flex items-center justify-center mb-4 border border-[rgba(255,255,255,0.08)]">
-              <FolderOpen className="w-10 h-10 text-[#6b6561]" />
+            <div className="w-20 h-20 mx-auto bg-[var(--bg-card)] rounded-full flex items-center justify-center mb-4 border border-[var(--border-color)]">
+              <FolderOpen className="w-10 h-10 text-[var(--text-muted)]" />
             </div>
-            <p className="text-[#a8a29e] font-medium">{t.projects.emptyTitle}</p>
-            <p className="text-[#6b6561] text-sm mt-1">{t.projects.emptyDesc}</p>
+            <p className="text-[var(--text-secondary)] font-medium">{t.projects.emptyTitle}</p>
+            <p className="text-[var(--text-muted)] text-sm mt-1">{t.projects.emptyDesc}</p>
           </div>
         ) : useVirtual ? (
           /* 虚拟列表模式（项目数 > 20） */
@@ -445,11 +408,16 @@ const Projects: React.FC = () => {
                           {/* 信息区域 */}
                           <div className="p-3 flex-1 flex flex-col justify-between">
                             <div className="space-y-1">
-                              <div className="flex items-start justify-between">
+                              <div className="flex items-start justify-between gap-2">
                                 <h3 className="text-base font-semibold text-[var(--text-primary)] line-clamp-1">{project.name}</h3>
-                                <Chip size="sm" className={getStatusColor(project.status)}>
-                                  {getStatusText(project.status)}
-                                </Chip>
+                                <div className="flex items-center gap-1 flex-shrink-0">
+                                  <Chip size="sm" className={getProjectTypeColor(project.type)}>
+                                    {getProjectTypeLabel(project.type)}
+                                  </Chip>
+                                  <Chip size="sm" className={getStatusColor(project.status)}>
+                                    {getStatusText(project.status)}
+                                  </Chip>
+                                </div>
                               </div>
                               <p className="text-xs text-[var(--text-muted)] line-clamp-2">
                                 {project.description || t.projects.noDescription}
@@ -513,11 +481,16 @@ const Projects: React.FC = () => {
                   
                   {/* 信息区域 */}
                   <div className="p-4 space-y-2">
-                    <div className="flex items-start justify-between">
+                    <div className="flex items-start justify-between gap-2">
                       <h3 className="text-lg font-semibold text-[var(--text-primary)] line-clamp-1">{project.name}</h3>
-                      <Chip size="sm" className={getStatusColor(project.status)}>
-                        {getStatusText(project.status)}
-                      </Chip>
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <Chip size="sm" className={getProjectTypeColor(project.type)}>
+                          {getProjectTypeLabel(project.type)}
+                        </Chip>
+                        <Chip size="sm" className={getStatusColor(project.status)}>
+                          {getStatusText(project.status)}
+                        </Chip>
+                      </div>
                     </div>
                     <p className="text-sm text-[var(--text-muted)] line-clamp-2 min-h-[40px]">
                       {project.description || t.projects.noDescription}
@@ -669,9 +642,9 @@ const Projects: React.FC = () => {
                       value={formData.storyStyle}
                       onValueChange={(val) => setFormData({ ...formData, storyStyle: val })}
                       classNames={{
-                        input: "bg-transparent text-[#e8e4dc] placeholder:text-[#6b6561]",
-                        label: "text-[#a8a29e] font-medium",
-                        inputWrapper: "bg-[rgba(30,35,60,0.6)] border border-[rgba(255,255,255,0.08)] hover:border-[rgba(230,200,122,0.3)] focus-within:border-[rgba(230,200,122,0.4)]"
+                        input: "bg-transparent text-[var(--text-primary)] placeholder:text-[var(--text-muted)]",
+                        label: "text-[var(--text-secondary)] font-medium",
+                        inputWrapper: "bg-[var(--bg-input)] border border-[var(--border-color)] hover:border-[var(--accent)]/30 focus-within:border-[var(--accent)]/40"
                       }}
                     />
                     <Input
@@ -680,9 +653,9 @@ const Projects: React.FC = () => {
                       value={formData.storyConstraints}
                       onValueChange={(val) => setFormData({ ...formData, storyConstraints: val })}
                       classNames={{
-                        input: "bg-transparent text-[#e8e4dc] placeholder:text-[#6b6561]",
-                        label: "text-[#a8a29e] font-medium",
-                        inputWrapper: "bg-[rgba(30,35,60,0.6)] border border-[rgba(255,255,255,0.08)] hover:border-[rgba(230,200,122,0.3)] focus-within:border-[rgba(230,200,122,0.4)]"
+                        input: "bg-transparent text-[var(--text-primary)] placeholder:text-[var(--text-muted)]",
+                        label: "text-[var(--text-secondary)] font-medium",
+                        inputWrapper: "bg-[var(--bg-input)] border border-[var(--border-color)] hover:border-[var(--accent)]/30 focus-within:border-[var(--accent)]/40"
                       }}
                     />
                   </div>

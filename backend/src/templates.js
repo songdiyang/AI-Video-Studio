@@ -59,16 +59,15 @@ router.get('/', async (req, res) => {
     const countResult = await queryOne(countSql, params);
     const total = countResult?.total || 0;
 
-    // 查询列表
+    // 查询列表 - 简化查询，避免 creator_profiles 表不存在的问题
     const listSql = `
       SELECT 
         t.id, t.name, t.description, t.category, t.thumbnail_url,
         t.tags, t.use_count, t.is_official, t.created_at,
-        u.id as creator_id, u.email as creator_email,
-        cp.display_name as creator_name, cp.avatar_url as creator_avatar
+        t.creator_id,
+        u.email as creator_email
       FROM templates t
       LEFT JOIN users u ON t.creator_id = u.id
-      LEFT JOIN creator_profiles cp ON t.creator_id = cp.user_id
       ${whereClause}
       ${orderClause}
       LIMIT ? OFFSET ?
@@ -86,8 +85,8 @@ router.get('/', async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('[Templates List]', error);
-    res.status(500).json({ error: '获取模板列表失败' });
+    console.error('[Templates List] Error:', error.message, error.stack);
+    res.status(500).json({ error: '获取模板列表失败', detail: error.message });
   }
 });
 
@@ -101,11 +100,10 @@ router.get('/:id', async (req, res) => {
     const template = await queryOne(`
       SELECT 
         t.*,
-        u.id as creator_id, u.email as creator_email,
-        cp.display_name as creator_name, cp.avatar_url as creator_avatar, cp.bio as creator_bio
+        t.creator_id,
+        u.email as creator_email
       FROM templates t
       LEFT JOIN users u ON t.creator_id = u.id
-      LEFT JOIN creator_profiles cp ON t.creator_id = cp.user_id
       WHERE t.id = ?
     `, [id]);
 
@@ -124,8 +122,8 @@ router.get('/:id', async (req, res) => {
 
     res.json(template);
   } catch (error) {
-    console.error('[Template Detail]', error);
-    res.status(500).json({ error: '获取模板详情失败' });
+    console.error('[Template Detail] Error:', error.message, error.stack);
+    res.status(500).json({ error: '获取模板详情失败', detail: error.message });
   }
 });
 

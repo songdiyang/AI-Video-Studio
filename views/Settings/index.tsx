@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Settings as SettingsIcon, Moon, Sun, Eye, Check, Send, 
-  Palette, MessageSquare, Info, ChevronRight, Sparkles, Monitor, Globe, RotateCcw
+  Palette, MessageSquare, Info, ChevronRight, Sparkles, Monitor, Globe, RotateCcw, Maximize, Minimize
 } from 'lucide-react';
 import { useTheme, ThemeType } from '../../contexts/ThemeContext';
 import { useLanguage, LanguageType } from '../../contexts/LanguageContext';
@@ -236,6 +236,33 @@ const Settings: React.FC = () => {
   const [content, setContent] = useState('');
   const [contact, setContact] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  // 监听全屏状态变化
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    // 初始化检查
+    setIsFullscreen(!!document.fullscreenElement);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
+  // 切换全屏
+  const toggleFullscreen = async () => {
+    try {
+      if (!document.fullscreenElement) {
+        await document.documentElement.requestFullscreen();
+        showToast(t.settings.appearance.fullscreenEnabled, 'success');
+      } else {
+        await document.exitFullscreen();
+        showToast(t.settings.appearance.fullscreenDisabled, 'success');
+      }
+    } catch (err) {
+      console.error('Fullscreen error:', err);
+    }
+  };
 
   // 动态翻译数据
   const typeLabels: Record<FeedbackType, string> = {
@@ -359,6 +386,50 @@ const Settings: React.FC = () => {
             );
           })}
         </div>
+      </div>
+
+      {/* 全屏显示 */}
+      <div>
+        <h3 className="text-sm font-medium mb-4" style={{ color: 'var(--text-primary)' }}>
+          {t.settings.appearance.fullscreen}
+        </h3>
+        <button
+          onClick={toggleFullscreen}
+          className="w-full rounded-2xl p-4 transition-all duration-200 hover:scale-[1.01] flex items-center gap-4"
+          style={{
+            backgroundColor: isFullscreen ? 'var(--accent-primary)12' : 'var(--bg-card-hover)',
+            border: `2px solid ${isFullscreen ? 'var(--accent-primary)' : 'transparent'}`,
+          }}
+        >
+          <div 
+            className="p-3 rounded-xl shrink-0 transition-colors"
+            style={{ 
+              backgroundColor: isFullscreen ? 'var(--accent-primary)' : 'var(--bg-input)',
+              color: isFullscreen ? 'white' : 'var(--text-secondary)'
+            }}
+          >
+            {isFullscreen ? <Minimize className="w-5 h-5" /> : <Maximize className="w-5 h-5" />}
+          </div>
+          <div className="flex-1 text-left">
+            <div className="flex items-center gap-2">
+              <span className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
+                {isFullscreen ? t.settings.appearance.exitFullscreen : t.settings.appearance.enterFullscreen}
+              </span>
+              {isFullscreen && (
+                <span 
+                  className="text-[10px] px-2 py-0.5 rounded-full font-medium"
+                  style={{ backgroundColor: 'var(--accent-primary)25', color: 'var(--accent-primary)' }}
+                >
+                  {t.common.current}
+                </span>
+              )}
+            </div>
+            <p className="text-xs mt-1 leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+              {t.settings.appearance.fullscreenDesc}
+            </p>
+          </div>
+          <ChevronRight className="w-5 h-5 shrink-0" style={{ color: 'var(--text-muted)' }} />
+        </button>
       </div>
     </div>
   );

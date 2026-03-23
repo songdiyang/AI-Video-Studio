@@ -923,10 +923,22 @@ html.theme-transitioning *::after {
   border-radius: 12px;
 }
 
-/* =========== 响应式断点系统 =========== */
-/* sm: < 768px  - 移动端（单面板模式）*/
-/* md: 768-1280px - 平板/小屏（双面板模式）*/
-/* lg: > 1280px - 桌面（三面板模式）*/
+/* ============================================
+   响应式断点设计规范
+   ============================================
+   xs:  480px  - 手机竖屏（iPhone SE/小屏手机）
+   sm:  640px  - 手机横屏/大屏手机
+   md:  768px  - 平板竖屏（iPad Mini）
+   lg:  1024px - 平板横屏/小笔记本
+   xl:  1280px - 标准笔记本/桌面
+   2xl: 1536px - 大屏桌面/外接显示器
+   
+   设计原则：
+   - Mobile First: 基础样式面向最小屏幕，逐步增强
+   - 关键断点: xs(手机) → md(平板) → lg(桌面)
+   - 布局切换: 单列(base) → 双列(sm) → 多列(lg)
+   - 导航切换: 底部标签栏(< md) → 侧边栏(>= md)
+   ============================================ */
 
 :root {
   /* 响应式布局变量 */
@@ -935,6 +947,17 @@ html.theme-transitioning *::after {
   --toolbar-height: 40px;
   --statusbar-height: 28px;
   --mobile-nav-height: 56px;
+  
+  /* Z-index 全局层级管理 */
+  --z-base: 0;           /* 基础层 */
+  --z-content: 10;       /* 内容层：粘性表头、拖拽分隔线 */
+  --z-float: 20;         /* 浮动层：悬浮控件、工具提示 */
+  --z-overlay: 30;       /* 覆盖层：拖拽覆盖、遮罩 */
+  --z-backdrop: 40;      /* 背景遮罩层：模态框背景 */
+  --z-modal: 50;         /* 模态框层：弹窗、全屏编辑器 */
+  --z-popup: 60;         /* 弹出层：下拉菜单、Tooltip（高于模态框） */
+  --z-toast: 70;         /* 通知层：Toast 消息 */
+  --z-nav: 100;          /* 导航层：移动端底部导航 */
 }
 
 /* 中屏适配 */
@@ -950,6 +973,14 @@ html.theme-transitioning *::after {
     --sidebar-width: 0px;
     --toolbar-height: 0px;
     --statusbar-height: 0px;
+  }
+}
+
+/* xs 超小屏适配 - 手机竖屏专用 */
+@media (max-width: 479px) {
+  :root {
+    --sidebar-width: 0px;
+    --toolbar-height: 36px;
   }
 }
 

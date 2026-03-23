@@ -3,8 +3,9 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Input, Textarea, Spinner } from '@heroui/react';
 import { 
   X, ChevronLeft, ChevronRight, Check, 
-  Film, Video, BookImage, Sparkles, Rocket, FileText
+  Film, Video, BookImage, BookOpen, Sparkles, Rocket, FileText
 } from 'lucide-react';
+import { ProjectType, PROJECT_TYPES } from '../../types/projectTypes';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { getAuthToken } from '../../services/auth';
 
@@ -21,13 +22,27 @@ interface Template {
   used_count?: number;
 }
 
-type CreationType = 'comic' | 'shortVideo' | 'manga';
+// 使用新的项目类型定义
+type CreationType = ProjectType;
 
-const CREATION_TYPES: { type: CreationType; icon: React.ElementType; color: string }[] = [
-  { type: 'comic', icon: Film, color: 'from-violet-500 to-purple-600' },
-  { type: 'shortVideo', icon: Video, color: 'from-cyan-500 to-blue-600' },
-  { type: 'manga', icon: BookImage, color: 'from-orange-500 to-red-600' },
+// 图标映射
+const ICON_MAP: Record<string, React.ElementType> = {
+  Film,
+  Video,
+  BookImage,
+  BookOpen,
+};
+
+// 创作类型配置，使用新的项目类型定义
+const CREATION_TYPES: { type: CreationType; icon: React.ElementType; color: string; desc: string }[] = [
+  { type: 'comic_drama', icon: Film, color: PROJECT_TYPES.comic_drama.color, desc: '制作精彩的漫剧短片' },
+  { type: 'short_video', icon: Video, color: PROJECT_TYPES.short_video.color, desc: '创作吸睛的短视频内容' },
+  { type: 'manga', icon: BookImage, color: PROJECT_TYPES.manga.color, desc: '绘制独特的漫画作品' },
+  { type: 'novel', icon: BookOpen, color: PROJECT_TYPES.novel.color, desc: '书写精彩的小说故事' },
 ];
+
+// 步骤名称配置
+const STEP_NAMES = ['类型', '模板', '信息', '完成'];
 
 const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ isOpen, onClose, onComplete }) => {
   const { t } = useLanguage();
@@ -101,27 +116,45 @@ const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ isOpen, onClose, on
     setCreating(true);
     try {
       const token = getAuthToken();
-      const res = await fetch('/api/projects', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({
-          name: projectName.trim(),
-          description: projectDesc.trim(),
-          type: selectedType === 'shortVideo' ? 'video' : 'comic',
-          template_id: selectedTemplate !== 'scratch' ? selectedTemplate : undefined,
-        }),
-      });
       
-      if (res.ok) {
-        const data = await res.json();
-        setNewProjectId(data.id || data.project?.id);
-        setCreated(true);
+      // 如果选择模板，使用模板创建接口
+      if (selectedTemplate !== 'scratch') {
+        const res = await fetch(`/api/templates/${selectedTemplate}/use`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+        });
+        
+        if (res.ok) {
+          const data = await res.json();
+          setNewProjectId(data.projectId || data.id);
+          setCreated(true);
+        }
+      } else {
+        // 从零开始创建项目
+        const res = await fetch('/api/projects', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({
+            name: projectName.trim(),
+            description: projectDesc.trim(),
+            type: selectedType,
+          }),
+        });
+        
+        if (res.ok) {
+          const data = await res.json();
+          setNewProjectId(data.id || data.project?.id);
+          setCreated(true);
+        }
       }
-    } catch {
-      // 静默失败
+    } catch (err) {
+      console.error('[CreateProject]', err);
     } finally {
       setCreating(false);
     }
@@ -155,7 +188,7 @@ const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ isOpen, onClose, on
       case 0: return !!selectedType;
       case 1: return true;
       case 2: return !!projectName.trim();
-      case 3: return created;
+      case 3: return !creating; // 第3步：只要不在创建中就可以点击
       default: return false;
     }
   };
@@ -225,46 +258,75 @@ const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ isOpen, onClose, on
             <X className="w-5 h-5" />
           </button>
 
-          {/* 进度条 */}
-          <div className="px-8 pt-6">
-            <div className="flex items-center gap-2">
+          {/* 进度条 - 增强版 */}
+          <div className="px-8 pt-6 pb-2">
+            <div className="flex items-center">
               {[0, 1, 2, 3].map((step) => (
                 <React.Fragment key={step}>
-                  <div
-                    className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold transition-all ${
-                      step < currentStep
-                        ? 'bg-[var(--accent)] text-white'
-                        : step === currentStep
-                        ? 'bg-[var(--accent)]/20 text-[var(--accent)] border-2 border-[var(--accent)]'
-                        : 'bg-[var(--bg-input)] text-[var(--text-muted)]'
-                    }`}
-                  >
-                    {step < currentStep ? <Check className="w-4 h-4" /> : step + 1}
+                  <div className="flex flex-col items-center">
+                    <motion.div
+                      initial={false}
+                      animate={{
+                        scale: step === currentStep ? 1.1 : 1,
+                        boxShadow: step === currentStep ? '0 0 20px var(--accent-glow)' : 'none'
+                      }}
+                      className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold transition-all ${
+                        step < currentStep
+                          ? 'bg-gradient-to-br from-[var(--accent)] to-[var(--accent-dark)] text-white shadow-lg'
+                          : step === currentStep
+                          ? 'bg-[var(--accent)]/20 text-[var(--accent)] border-2 border-[var(--accent)] ring-4 ring-[var(--accent)]/20'
+                          : 'bg-[var(--bg-input)] text-[var(--text-muted)] border border-[var(--border-color)]'
+                      }`}
+                    >
+                      {step < currentStep ? <Check className="w-5 h-5" /> : step + 1}
+                    </motion.div>
+                    <span className={`text-xs mt-1.5 font-medium transition-colors ${
+                      step <= currentStep ? 'text-[var(--accent)]' : 'text-[var(--text-muted)]'
+                    }`}>
+                      {STEP_NAMES[step]}
+                    </span>
                   </div>
                   {step < 3 && (
-                    <div
-                      className={`flex-1 h-0.5 transition-colors ${
-                        step < currentStep ? 'bg-[var(--accent)]' : 'bg-[var(--border-color)]'
-                      }`}
-                    />
+                    <div className="flex-1 mx-2 relative h-0.5">
+                      <div className="absolute inset-0 bg-[var(--border-color)] rounded-full" />
+                      <motion.div
+                        initial={{ width: 0 }}
+                        animate={{ width: step < currentStep ? '100%' : '0%' }}
+                        transition={{ duration: 0.3 }}
+                        className="absolute inset-y-0 left-0 bg-gradient-to-r from-[var(--accent)] to-[var(--accent-dark)] rounded-full"
+                      />
+                    </div>
                   )}
                 </React.Fragment>
               ))}
             </div>
           </div>
 
-          {/* 标题 */}
-          <div className="px-8 pt-4 pb-2">
-            <h2 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
-              {t.quickStart?.title || '快速开始'}
-            </h2>
-            <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
-              {t.quickStart?.subtitle || '几步即可开始创作'}
-            </p>
+          {/* 标题 - 紧凑版 */}
+          <div className="px-8 pt-4 pb-1">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[var(--accent)] to-[var(--accent-dark)] flex items-center justify-center shadow-lg">
+                <Rocket className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
+                  {currentStep === 0 ? (t.quickStart?.step1Title || '选择创作类型') :
+                   currentStep === 1 ? (t.quickStart?.step2Title || '选择模板') :
+                   currentStep === 2 ? (t.quickStart?.step3Title || '项目信息') :
+                   (t.quickStart?.step4Title || '开始创作！')}
+                </h2>
+                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                  {currentStep === 0 ? (t.quickStart?.step1Desc || '选择您想创作的内容类型') :
+                   currentStep === 1 ? (t.quickStart?.step2Desc || '从模板开始或从零创建') :
+                   currentStep === 2 ? (t.quickStart?.step3Desc || '为您的作品起个名字') :
+                   (t.quickStart?.step4Desc || '一切准备就绪')}
+                </p>
+              </div>
+            </div>
           </div>
 
           {/* 步骤内容 */}
-          <div className="px-8 py-6 min-h-[320px]">
+          <div className="px-8 py-4 min-h-[300px]">
             <AnimatePresence mode="wait" custom={direction}>
               <motion.div
                 key={currentStep}
@@ -277,38 +339,48 @@ const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ isOpen, onClose, on
               >
                 {/* Step 1: 选择创作类型 */}
                 {currentStep === 0 && (
-                  <div className="space-y-4">
-                    <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>
-                      {t.quickStart?.step1Title || '选择创作类型'}
-                    </h3>
-                    <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                      {t.quickStart?.step1Desc || '选择您想创作的内容类型'}
-                    </p>
-                    <div className="grid grid-cols-3 gap-4 pt-4">
-                      {CREATION_TYPES.map(({ type, icon: Icon, color }) => (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-4">
+                      {CREATION_TYPES.map(({ type, icon: Icon, color, desc }) => (
                         <motion.button
                           key={type}
-                          whileHover={{ scale: 1.02 }}
+                          whileHover={{ scale: 1.02, y: -2 }}
                           whileTap={{ scale: 0.98 }}
                           onClick={() => setSelectedType(type)}
-                          className={`relative p-6 rounded-xl border-2 transition-all ${
+                          className={`relative p-5 rounded-2xl border-2 transition-all text-left group ${
                             selectedType === type
-                              ? 'border-[var(--accent)] bg-[var(--accent)]/10'
-                              : 'border-[var(--border-color)] bg-[var(--bg-card)] hover:border-[var(--accent)]/50'
+                              ? 'border-[var(--accent)] bg-gradient-to-br from-[var(--accent)]/15 to-[var(--accent)]/5 shadow-lg shadow-[var(--accent)]/10'
+                              : 'border-[var(--border-color)] bg-[var(--bg-card)] hover:border-[var(--accent)]/40 hover:shadow-md'
                           }`}
                         >
-                          <div className={`w-12 h-12 mx-auto rounded-xl bg-gradient-to-br ${color} flex items-center justify-center mb-3`}>
-                            <Icon className="w-6 h-6 text-white" />
+                          {/* 背景装饰 */}
+                          <div className={`absolute top-0 right-0 w-24 h-24 rounded-full blur-3xl transition-opacity ${
+                            selectedType === type ? 'opacity-30' : 'opacity-0 group-hover:opacity-15'
+                          }`} style={{ background: `linear-gradient(135deg, var(--accent), transparent)` }} />
+                          
+                          <div className="relative flex items-start gap-4">
+                            <div className={`flex-shrink-0 w-14 h-14 rounded-xl bg-gradient-to-br ${color} flex items-center justify-center shadow-lg transition-transform group-hover:scale-105`}>
+                              <Icon className="w-7 h-7 text-white" />
+                            </div>
+                            <div className="flex-1 min-w-0 pt-1">
+                              <p className="font-bold text-base" style={{ color: 'var(--text-primary)' }}>
+                                {t.quickStart?.types?.[type] || type}
+                              </p>
+                              <p className="text-xs mt-1 line-clamp-2" style={{ color: 'var(--text-muted)' }}>
+                                {desc}
+                              </p>
+                            </div>
                           </div>
-                          <p className="font-medium" style={{ color: 'var(--text-primary)' }}>
-                            {t.quickStart?.types?.[type] || type}
-                          </p>
+                          
+                          {/* 选中标记 */}
                           {selectedType === type && (
                             <motion.div
                               layoutId="type-check"
-                              className="absolute top-2 right-2 w-5 h-5 rounded-full bg-[var(--accent)] flex items-center justify-center"
+                              initial={{ scale: 0 }}
+                              animate={{ scale: 1 }}
+                              className="absolute top-3 right-3 w-6 h-6 rounded-full bg-gradient-to-br from-[var(--accent)] to-[var(--accent-dark)] flex items-center justify-center shadow-lg"
                             >
-                              <Check className="w-3 h-3 text-white" />
+                              <Check className="w-3.5 h-3.5 text-white" />
                             </motion.div>
                           )}
                         </motion.button>

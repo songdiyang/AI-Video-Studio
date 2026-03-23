@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Film, User, Package, LogOut, FolderOpen, Settings, Sparkles, Wifi, WifiOff, Pencil, Moon, Sun, Monitor, Contrast, BarChart3, LayoutTemplate, Users } from 'lucide-react';
+import { Film, User, Package, LogOut, FolderOpen, Settings, Sparkles, Wifi, WifiOff, Pencil, Moon, Sun, Monitor, Contrast, BarChart3, LayoutTemplate, Users, Maximize, Minimize, BookOpen, Video, Image, UsersRound } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from "@heroui/react";
 import { motion } from 'framer-motion';
@@ -10,6 +10,7 @@ import CommandPalette from './CommandPalette';
 import { Command } from '../hooks/useCommandPalette';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useTheme } from '../contexts/ThemeContext';
+import { useWorkbench } from '../contexts/WorkbenchContext';
 import OnboardingOverlay from './Onboarding/OnboardingOverlay';
 import DashboardPanel from './WorkflowDashboard/DashboardPanel';
 import { useOnboarding, OnboardingStep } from '../hooks/useOnboarding';
@@ -44,12 +45,14 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const navigate = useNavigate();
   const { t, language, setLanguage } = useLanguage();
   const { theme, setTheme } = useTheme();
+  const { projectType, currentProject } = useWorkbench();
   const isAuth = location.pathname === '/auth';
   const isLoggedIn = !!getAuthToken();
   const [isConnected, setIsConnected] = useState(true);
   const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isDashboardOpen, setIsDashboardOpen] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   
   // 响应式断点
   const isMobile = useMediaQuery('(max-width: 767px)');
@@ -63,6 +66,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     { path: '/', icon: Film, label: t.nav.workspace },
     { path: '/assets', icon: Package, label: t.nav.assets },
     { path: '/projects', icon: FolderOpen, label: t.nav.projects },
+    { path: '/teams', icon: UsersRound, label: '团队' },
     { path: '/sketch', icon: Pencil, label: t.nav.sketch },
     { path: '/templates', icon: LayoutTemplate, label: (t as Record<string, unknown>).templates ? ((t as Record<string, unknown>).templates as Record<string, string>).title : '模板库' },
     { path: '/community', icon: Users, label: (t as Record<string, unknown>).community ? ((t as Record<string, unknown>).community as Record<string, string>).title : '社区' },
@@ -72,14 +76,48 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   // 页面标题映射（使用 useMemo 优化，依赖 t 对象）
   const pageTitles = useMemo<Record<string, string>>(() => ({
     '/': t.nav.workspace,
+    '/studio': t.nav.workspace,
     '/assets': t.nav.assets,
     '/projects': t.nav.projects,
+    '/teams': '我的团队',
     '/sketch': t.nav.sketch,
     '/templates': (t as Record<string, unknown>).templates ? ((t as Record<string, unknown>).templates as Record<string, string>).title : '模板库',
     '/community': (t as Record<string, unknown>).community ? ((t as Record<string, unknown>).community as Record<string, string>).title : '社区',
     '/settings': t.nav.settings,
     '/user-center': t.nav.userCenter,
   }), [t]);
+
+  // 获取工作台标题（根据项目类型）
+  const getWorkbenchTitle = useCallback(() => {
+    if (location.pathname !== '/' || !projectType) {
+      return pageTitles[location.pathname] || t.nav.studioName;
+    }
+    
+    const workbenchTitles: Record<string, string> = {
+      'comic_drama': '漫剧工作台',
+      'manga': '漫画工作台',
+      'short_video': '短视频工作台',
+      'novel': '小说工作台',
+    };
+    
+    return workbenchTitles[projectType] || t.nav.workspace;
+  }, [location.pathname, projectType, pageTitles, t]);
+
+  // 获取工作台图标
+  const getWorkbenchIcon = useCallback(() => {
+    if (location.pathname !== '/' || !projectType) {
+      return null;
+    }
+    
+    const icons: Record<string, React.ReactNode> = {
+      'comic_drama': <Film className="w-4 h-4 text-[var(--accent)]" />,
+      'manga': <Image className="w-4 h-4 text-purple-400" />,
+      'short_video': <Video className="w-4 h-4 text-pink-400" />,
+      'novel': <BookOpen className="w-4 h-4 text-emerald-400" />,
+    };
+    
+    return icons[projectType] || null;
+  }, [location.pathname, projectType]);
 
   // 模拟连接状态检测
   useEffect(() => {
@@ -95,6 +133,29 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       window.removeEventListener('offline', checkConnection);
     };
   }, []);
+
+  // 监听全屏状态变化
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    setIsFullscreen(!!document.fullscreenElement);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
+  // 切换全屏
+  const toggleFullscreen = async () => {
+    try {
+      if (!document.fullscreenElement) {
+        await document.documentElement.requestFullscreen();
+      } else {
+        await document.exitFullscreen();
+      }
+    } catch (err) {
+      console.error('Fullscreen error:', err);
+    }
+  };
 
   // 命令面板命令列表
   const commands: Command[] = useMemo(() => [
@@ -182,7 +243,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     window.location.reload();
   };
 
-  const currentPageTitle = pageTitles[location.pathname] || t.nav.studioName;
+  const currentPageTitle = getWorkbenchTitle();
+  const workbenchIcon = getWorkbenchIcon();
 
   // Auth 页面不显示导航
   if (isAuth) {
@@ -240,23 +302,14 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                     : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-white/5'
                   }`}
               >
-                {/* 激活态左侧指示条 - 带动画 */}
+                {/* 激活态左侧指示条 */}
                 {isActive && (
-                  <motion.div 
-                    layoutId="nav-indicator"
-                    className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-[var(--accent)] rounded-r"
-                    transition={{ type: "spring", stiffness: 500, damping: 30 }}
-                  />
+                  <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-[var(--accent)] rounded-r" />
                 )}
                 
-                <motion.div
-                  whileHover={{ scale: 1.1 }}
-                  whileTap={{ scale: 0.95 }}
-                  animate={{ scale: isActive ? 1.1 : 1 }}
-                  transition={{ duration: 0.15 }}
-                >
+                <div className={`transition-transform duration-150 ${isActive ? 'scale-110' : 'hover:scale-110 active:scale-95'}`}>
                   <Icon className={`${isTablet ? 'w-4 h-4' : 'w-5 h-5'}`} />
-                </motion.div>
+                </div>
                 
                 {/* Tooltip */}
                 <div className="absolute left-full ml-2 px-2.5 py-1.5 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-md text-xs font-medium text-[var(--text-primary)] whitespace-nowrap opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 shadow-lg">
@@ -293,21 +346,21 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
               <DropdownMenu 
                 aria-label={t.nav.userMenu}
                 classNames={{
-                  base: "bg-[var(--bg-card)] backdrop-blur-xl border border-[var(--border-color)] shadow-xl shadow-black/50 rounded-lg min-w-[140px]",
-                  list: "bg-transparent"
+                  base: "bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-lg rounded-xl min-w-[160px] p-1",
+                  list: "bg-transparent gap-0.5"
                 }}
               >
                 <DropdownItem
                   key="profile"
-                  className="text-[var(--text-primary)] hover:bg-white/10 rounded-md"
-                  startContent={<User className="w-4 h-4" />}
+                  className="text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg py-2.5"
+                  startContent={<User className="w-4 h-4 text-slate-500" />}
                   onPress={() => navigate('/user-center')}
                 >
                   {t.nav.userCenter}
                 </DropdownItem>
                 <DropdownItem
                   key="logout"
-                  className="text-red-400 hover:bg-red-500/10 rounded-md"
+                  className="text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg py-2.5"
                   color="danger"
                   startContent={<LogOut className="w-4 h-4" />}
                   onPress={handleLogout}
@@ -343,9 +396,19 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         <header className="pro-toolbar h-10 items-center justify-between px-4 bg-[var(--bg-nav)]/50 border-b border-[var(--border-color)] hide-on-mobile flex">
           {/* 左侧：当前页面标题 */}
           <div className="flex items-center gap-3">
+            {workbenchIcon && (
+              <div className="flex items-center gap-2">
+                {workbenchIcon}
+              </div>
+            )}
             <h1 className="text-sm font-semibold text-[var(--text-primary)]">
               {currentPageTitle}
             </h1>
+            {currentProject && location.pathname === '/' && (
+              <span className="text-xs text-[var(--text-muted)] px-2 py-0.5 bg-[var(--bg-card)] rounded">
+                {currentProject.name}
+              </span>
+            )}
           </div>
           
           {/* 右侧：辅助信息 */}
@@ -493,6 +556,16 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         onPrev={onboarding.prevStep}
         onSkip={onboarding.skip}
       />
+
+      {/* 右上角全屏按钮 */}
+      <button
+        onClick={toggleFullscreen}
+        className="fixed top-3 right-3 z-50 p-2 rounded-lg bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-card-hover)] transition-colors shadow-lg"
+        aria-label={isFullscreen ? t.settings?.appearance?.exitFullscreen || '退出全屏' : t.settings?.appearance?.enterFullscreen || '全屏'}
+        title={isFullscreen ? t.settings?.appearance?.exitFullscreen || '退出全屏' : t.settings?.appearance?.enterFullscreen || '全屏'}
+      >
+        {isFullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
+      </button>
     </div>
   );
 };

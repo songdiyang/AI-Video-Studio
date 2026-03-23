@@ -74,6 +74,9 @@ const wrapExcalidrawAPI = (nativeApi: any): ExcalidrawAPI => ({
 // 保存状态类型
 type SaveStatus = 'saved' | 'saving' | 'unsaved';
 
+// 大画布检测阈值 - 移到组件外部避免每次渲染重新创建
+const LARGE_CANVAS_THRESHOLD = 500;
+
 // Debounce 工具函数
 function debounce<T extends (...args: any[]) => any>(
   fn: T,
@@ -214,6 +217,7 @@ const SketchEditor: React.FC<SketchEditorProps> = ({
 
   // 自动保存矢量数据的函数
   const autoSaveSketchData = useCallback(async () => {
+    // 检查组件是否已卸载 - 通过 ref 是否为 null 来判断
     if (!excalidrawRef.current) return;
     
     try {
@@ -221,6 +225,12 @@ const SketchEditor: React.FC<SketchEditorProps> = ({
       const elements = excalidrawRef.current.getSceneElements();
       const appState = excalidrawRef.current.getAppState();
       const files = excalidrawRef.current.getFiles();
+      
+      // 安全检查：确保数据有效
+      if (!elements || !Array.isArray(elements)) {
+        console.warn('[SketchEditor] 自动保存跳过：无效的元素数据');
+        return;
+      }
       
       const sketchData = {
         elements,
@@ -232,16 +242,28 @@ const SketchEditor: React.FC<SketchEditorProps> = ({
       
       if (standalone) {
         // 独立模式：通过回调传出数据，外部处理持久化
-        onSave({ sketchData });
+        // 注意：父组件的异常不会传播回来，这是预期行为
+        try {
+          onSave({ sketchData });
+        } catch (callbackError) {
+          console.error('[SketchEditor] onSave 回调执行失败:', callbackError);
+          throw callbackError;
+        }
       } else if (storyboardId !== undefined) {
         // 分镜模式：调用 API 保存
         await saveSketchData(storyboardId, sketchData);
       }
       
-      setSaveStatus('saved');
+      // 再次检查 ref 是否仍然有效（防止在异步操作期间组件卸载）
+      if (excalidrawRef.current) {
+        setSaveStatus('saved');
+      }
     } catch (error) {
       console.error('[SketchEditor] 自动保存失败:', error);
-      setSaveStatus('unsaved');
+      // 检查组件是否仍然挂载
+      if (excalidrawRef.current) {
+        setSaveStatus('unsaved');
+      }
     }
   }, [storyboardId, standalone, backgroundType, saveSketchData, onSave]);
 
@@ -255,12 +277,19 @@ const SketchEditor: React.FC<SketchEditorProps> = ({
     [autoSaveSketchData, baseDebounceDelay]
   );
 
-  // 清理 debounce 定时器
+  // 大画布 debounced 自动保存（5000ms）
+  const debouncedAutoSaveLarge = useMemo(
+    () => debounce(autoSaveSketchData, 5000),
+    [autoSaveSketchData]
+  );
+
+  // 清理 debounce 定时器 - 同时清理普通和大画布的 debounce
   useEffect(() => {
     return () => {
       debouncedAutoSave.cancel();
+      debouncedAutoSaveLarge.cancel();
     };
-  }, [debouncedAutoSave]);
+  }, [debouncedAutoSave, debouncedAutoSaveLarge]);
 
   // 组件首次渲染性能追踪
   useEffect(() => {
@@ -277,15 +306,6 @@ const SketchEditor: React.FC<SketchEditorProps> = ({
       }
     }
   }, []);
-
-  // 大画布检测阈值
-  const LARGE_CANVAS_THRESHOLD = 500;
-  
-  // 大画布 debounced 自动保存（5000ms）
-  const debouncedAutoSaveLarge = useMemo(
-    () => debounce(autoSaveSketchData, 5000),
-    [autoSaveSketchData]
-  );
 
   // 处理 Excalidraw onChange 事件
   const handleExcalidrawChange = useCallback(
@@ -328,22 +348,37 @@ const SketchEditor: React.FC<SketchEditorProps> = ({
 
   // 处理 Excalidraw 初始化完成
   const handleExcalidrawMount = useCallback((nativeApi: any) => {
-    const api = wrapExcalidrawAPI(nativeApi);
-    excalidrawRef.current = api;
-    setIsExcalidrawReady(true);
+    try {
+      const api = wrapExcalidrawAPI(nativeApi);
+      excalidrawRef.current = api;
+      setIsExcalidrawReady(true);
 
-    // 如果有初始数据，恢复到画布
-    if (initialData && typeof initialData === 'object') {
-      const data = initialData as { elements?: readonly unknown[]; appState?: Record<string, unknown> };
-      if (data.elements) {
-        api.updateScene({
-          elements: data.elements,
-          appState: data.appState
-        });
-        // 初始化元素数量
-        const visibleElements = (data.elements as any[]).filter(el => !el.isDeleted);
-        setElementCount(visibleElements.length);
+      // 如果有初始数据，恢复到画布 - 增强防御性验证
+      if (initialData && typeof initialData === 'object') {
+        const data = initialData as { elements?: readonly unknown[]; appState?: Record<string, unknown> };
+        
+        // 验证 elements 是否为有效数组
+        if (data.elements && Array.isArray(data.elements)) {
+          try {
+            api.updateScene({
+              elements: data.elements,
+              appState: data.appState
+            });
+            // 初始化元素数量 - 安全过滤
+            const visibleElements = (data.elements as any[]).filter(
+              el => el && typeof el === 'object' && !el.isDeleted
+            );
+            setElementCount(visibleElements.length);
+          } catch (sceneError) {
+            console.error('[SketchEditor] 恢复场景数据失败:', sceneError);
+            // 场景恢复失败不阻塞编辑器初始化，用户可以从空白画布开始
+          }
+        }
       }
+    } catch (error) {
+      console.error('[SketchEditor] Excalidraw 挂载失败:', error);
+      // 即使挂载出错，也标记为就绪，让用户能看到错误提示
+      setIsExcalidrawReady(true);
     }
   }, [initialData]);
 
@@ -657,7 +692,7 @@ const SketchEditor: React.FC<SketchEditorProps> = ({
 
   return (
     <div 
-      className="fixed inset-0 z-50 flex flex-col bg-[var(--bg-app)]"
+      className="fixed inset-0 z-modal flex flex-col bg-[var(--bg-app)]"
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -734,7 +769,7 @@ const SketchEditor: React.FC<SketchEditorProps> = ({
         )}
 
         {/* Excalidraw 画布 */}
-        <div className="absolute inset-0 z-10">
+        <div className="absolute inset-0 z-content overflow-hidden">
           <Suspense fallback={<SketchEditorSkeleton />}>
             <Excalidraw
               excalidrawAPI={handleExcalidrawMount}
@@ -768,14 +803,14 @@ const SketchEditor: React.FC<SketchEditorProps> = ({
         {/* 关闭按钮（移动端可见） */}
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 z-20 p-2 rounded-full bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-card-hover)] transition-colors sm:hidden"
+          className="absolute top-4 right-4 z-float p-2 rounded-full bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-card-hover)] transition-colors sm:hidden"
           disabled={saving}
         >
           <X className="w-5 h-5" />
         </button>
 
         {/* 右上角导出按钮组 */}
-        <div className="absolute top-4 right-4 z-20 hidden sm:flex items-center gap-2">
+        <div className="absolute top-4 right-4 z-float hidden sm:flex items-center gap-2">
           {/* 独立模式：导入按钮 */}
           {standalone && (
             <Button
@@ -818,7 +853,7 @@ const SketchEditor: React.FC<SketchEditorProps> = ({
                 导出为 SVG
               </DropdownItem>
               {/* 独立模式：.excalidraw 导出 */}
-              {standalone && (
+              {standalone ? (
                 <DropdownItem
                   key="excalidraw"
                   startContent={<FileJson className="w-4 h-4" />}
@@ -827,13 +862,13 @@ const SketchEditor: React.FC<SketchEditorProps> = ({
                 >
                   导出为 .excalidraw
                 </DropdownItem>
-              )}
+              ) : null}
             </DropdownMenu>
           </Dropdown>
         </div>
 
         {/* 帮助提示 */}
-        <div className="absolute bottom-4 left-4 z-20">
+        <div className="absolute bottom-4 left-4 z-float">
           <Tooltip 
             content={
               <div className="text-xs space-y-1 p-1">
@@ -861,7 +896,7 @@ const SketchEditor: React.FC<SketchEditorProps> = ({
         </div>
 
         {/* 底部状态栏 */}
-        <div className="absolute bottom-4 right-4 z-20 flex items-center gap-4 px-3 py-1.5 rounded-lg bg-[var(--bg-card)]/80 backdrop-blur-sm border border-[var(--border-color)]">
+        <div className="absolute bottom-4 right-4 z-float hidden md:flex items-center gap-4 px-3 py-1.5 rounded-lg bg-[var(--bg-card)]/80 backdrop-blur-sm border border-[var(--border-color)]">
           {/* 保存状态 */}
           <SaveStatusIndicator status={saveStatus} />
           
@@ -886,7 +921,7 @@ const SketchEditor: React.FC<SketchEditorProps> = ({
 
         {/* 拖拽覆盖层（独立模式文件导入） */}
         {standalone && isDraggingFile && (
-          <div className="absolute inset-0 z-30 flex items-center justify-center bg-[var(--bg-app)]/90 backdrop-blur-sm border-4 border-dashed border-[var(--accent)] rounded-lg">
+          <div className="absolute inset-0 z-overlay flex items-center justify-center bg-[var(--bg-app)]/90 backdrop-blur-sm border-4 border-dashed border-[var(--accent)] rounded-lg">
             <div className="text-center">
               <Upload className="w-16 h-16 mx-auto text-[var(--accent)] mb-4" />
               <p className="text-lg font-medium text-[var(--text-primary)]">松开鼠标导入文件</p>

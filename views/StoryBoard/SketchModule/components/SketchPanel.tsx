@@ -241,7 +241,7 @@ const SketchPanel: React.FC<SketchPanelProps> = ({
           </div>
 
           {/* 操作按钮组 */}
-          <div className="flex gap-2">
+          <div className="flex flex-col sm:flex-row gap-2">
             <Button
               size="sm"
               variant="flat"
@@ -381,7 +381,7 @@ const SketchPanel: React.FC<SketchPanelProps> = ({
                 </div>
               </ModalHeader>
               <ModalBody className="p-4">
-                <div className="flex gap-4 h-[60vh]">
+                <div className="flex gap-4 h-[50vh] md:h-[60vh]">
                   {/* 草图原稿 */}
                   <div className="flex-1 flex flex-col">
                     <div className="flex items-center gap-2 mb-2">

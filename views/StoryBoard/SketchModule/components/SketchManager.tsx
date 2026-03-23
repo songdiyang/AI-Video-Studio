@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import {
   Button,
   ButtonGroup,
@@ -32,6 +32,7 @@ import {
   SketchViewMode
 } from '../hooks/useSketchManager';
 import { SketchType, SKETCH_TYPE_CONFIGS } from '../types/sketch';
+import { useVirtualGrid } from '../../../../hooks/useVirtualList';
 
 export interface SketchManagerProps {
   scriptId: number;
@@ -48,6 +49,20 @@ const SKETCH_TYPE_COLORS: Record<SketchType, 'default' | 'primary' | 'secondary'
   stick_figure: 'warning',
   storyboard_sketch: 'primary',
   detailed_lineart: 'success'
+};
+
+// 虚拟网格相关常量
+const VIRTUAL_GRID_THRESHOLD = 20; // 超过此数量启用虚拟网格
+const ROW_HEIGHT = 280; // 卡片高度（缩略图 aspect-video + 信息区 + padding）
+const GAP = 16; // gap-4 = 16px
+
+// 根据断点计算列数
+const getColumns = (): number => {
+  if (typeof window === 'undefined') return 4;
+  if (window.innerWidth >= 1024) return 4;  // lg
+  if (window.innerWidth >= 768) return 3;   // md
+  if (window.innerWidth >= 640) return 2;   // sm
+  return 1;
 };
 
 // 格式化时间
@@ -71,6 +86,44 @@ const SketchManager: React.FC<SketchManagerProps> = ({
   onStoryboardUpdate,
   onRefresh
 }) => {
+  // 虚拟网格相关状态
+  const [columns, setColumns] = useState(getColumns());
+  const gridContainerRef = useRef<HTMLDivElement>(null);
+  const [containerHeight, setContainerHeight] = useState(600);
+
+  // 监听窗口大小变化，更新列数
+  useEffect(() => {
+    const handleResize = () => {
+      setColumns(getColumns());
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // 监听容器高度变化
+  useEffect(() => {
+    const updateContainerHeight = () => {
+      if (gridContainerRef.current) {
+        const rect = gridContainerRef.current.getBoundingClientRect();
+        setContainerHeight(rect.height || 600);
+      }
+    };
+    
+    updateContainerHeight();
+    window.addEventListener('resize', updateContainerHeight);
+    
+    // 使用 ResizeObserver 监听容器尺寸变化
+    const resizeObserver = new ResizeObserver(updateContainerHeight);
+    if (gridContainerRef.current) {
+      resizeObserver.observe(gridContainerRef.current);
+    }
+    
+    return () => {
+      window.removeEventListener('resize', updateContainerHeight);
+      resizeObserver.disconnect();
+    };
+  }, []);
+
   const {
     filteredStoryboards,
     typeFilter,
@@ -101,7 +154,20 @@ const SketchManager: React.FC<SketchManagerProps> = ({
     onRefresh
   });
 
-  // 选中数量
+  // 是否启用虚拟网格
+    const enableVirtualGrid = filteredStoryboards.length > VIRTUAL_GRID_THRESHOLD;
+  
+    // 虚拟网格 hook
+    const virtualGrid = useVirtualGrid({
+      itemCount: filteredStoryboards.length,
+      columns,
+      rowHeight: ROW_HEIGHT,
+      containerHeight,
+      overscan: 2,
+      gap: GAP,
+    });
+  
+    // 选中数量
   const selectedCount = selectedIds.size;
   const hasSelection = selectedCount > 0;
 
@@ -177,122 +243,172 @@ const SketchManager: React.FC<SketchManagerProps> = ({
     </div>
   );
 
-  // 渲染网格视图
-  const renderGridView = () => (
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 p-4">
-      {filteredStoryboards.map((storyboard) => (
-        <Card
-          key={storyboard.id}
-          className={`
-            bg-[var(--bg-card)] border border-[var(--border-color)] overflow-hidden
-            transition-all duration-200 group
-            ${selectedIds.has(storyboard.id) ? 'ring-2 ring-[var(--accent)]' : ''}
-          `}
-        >
-          <CardBody className="p-0">
-            {/* 缩略图区域 */}
-            <div className="relative aspect-video bg-[var(--bg-app)]">
-              {storyboard.sketchUrl ? (
-                <img
-                  src={storyboard.sketchUrl}
-                  alt={`分镜 ${storyboard.order} 草图`}
-                  className="w-full h-full object-contain"
-                />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center">
-                  <PencilLine className="w-8 h-8 text-[var(--text-muted)] opacity-30" />
-                </div>
-              )}
-
-              {/* 左上角：选择框 + 序号 */}
-              <div className="absolute top-2 left-2 flex items-center gap-2">
-                <Checkbox
-                  isSelected={selectedIds.has(storyboard.id)}
-                  onValueChange={() => toggleSelect(storyboard.id)}
-                  classNames={{
-                    wrapper: 'bg-black/40 backdrop-blur-sm rounded'
-                  }}
-                />
-                <span className="px-2 py-0.5 rounded bg-black/60 text-white text-xs font-medium">
-                  #{storyboard.order}
+  // 渲染单个网格卡片
+    const renderGridCard = useCallback((storyboard: SketchStoryboard, style?: React.CSSProperties) => (
+      <Card
+        key={storyboard.id}
+        className={`
+          bg-[var(--bg-card)] border border-[var(--border-color)] overflow-hidden
+          transition-all duration-200 group
+          ${selectedIds.has(storyboard.id) ? 'ring-2 ring-[var(--accent)]' : ''}
+        `}
+        style={style}
+      >
+        <CardBody className="p-0">
+          {/* 缩略图区域 */}
+          <div className="relative aspect-video bg-[var(--bg-app)]">
+            {storyboard.sketchUrl ? (
+              <img
+                src={storyboard.sketchUrl}
+                alt={`分镜 ${storyboard.order} 草图`}
+                className="w-full h-full object-contain"
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center">
+                <PencilLine className="w-8 h-8 text-[var(--text-muted)] opacity-30" />
+              </div>
+            )}
+  
+            {/* 左上角：选择框 + 序号 */}
+            <div className="absolute top-2 left-2 flex items-center gap-2">
+              <Checkbox
+                isSelected={selectedIds.has(storyboard.id)}
+                onValueChange={() => toggleSelect(storyboard.id)}
+                classNames={{
+                  wrapper: 'bg-black/40 backdrop-blur-sm rounded'
+                }}
+              />
+              <span className="px-2 py-0.5 rounded bg-black/60 text-white text-xs font-medium">
+                #{storyboard.order}
+              </span>
+            </div>
+  
+            {/* 右上角：草图类型标签 */}
+            {storyboard.sketchType && (
+              <div className="absolute top-2 right-2">
+                {renderSketchTypeChip(storyboard.sketchType)}
+              </div>
+            )}
+  
+            {/* 悬浮操作栏 */}
+            <div className="absolute inset-x-0 bottom-0 p-2 bg-gradient-to-t from-black/80 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
+              <div className="flex justify-center gap-2">
+                <Tooltip content="编辑草图">
+                  <Button
+                    size="sm"
+                    isIconOnly
+                    variant="flat"
+                    className="bg-white/20 text-white hover:bg-white/30 min-w-8 w-8 h-8"
+                    onPress={() => handleEdit(storyboard.id)}
+                  >
+                    <Pencil className="w-4 h-4" />
+                  </Button>
+                </Tooltip>
+                {storyboard.sketchUrl && (
+                  <>
+                    <Tooltip content="基于草图生成">
+                      <Button
+                        size="sm"
+                        isIconOnly
+                        variant="flat"
+                        className="bg-emerald-500/30 text-emerald-300 hover:bg-emerald-500/50 min-w-8 w-8 h-8"
+                        onPress={() => handleGenerate(storyboard.id)}
+                        isLoading={isLoading}
+                      >
+                        <Wand2 className="w-4 h-4" />
+                      </Button>
+                    </Tooltip>
+                    <Tooltip content="删除草图">
+                      <Button
+                        size="sm"
+                        isIconOnly
+                        variant="flat"
+                        className="bg-red-500/30 text-red-300 hover:bg-red-500/50 min-w-8 w-8 h-8"
+                        onPress={() => handleDeleteSketch(storyboard.id)}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </Tooltip>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+  
+          {/* 描述区域 */}
+          <div className="p-3">
+            <p className="text-xs text-[var(--text-muted)] line-clamp-2 min-h-[2.5rem]">
+              {storyboard.description || '暂无描述'}
+            </p>
+            {storyboard.controlStrength !== undefined && storyboard.sketchUrl && (
+              <div className="mt-2 flex items-center gap-1">
+                <span className="text-[10px] text-[var(--text-muted)]">控制强度:</span>
+                <span className="text-[10px] text-[var(--text-secondary)] font-medium">
+                  {Math.round(storyboard.controlStrength * 100)}%
                 </span>
               </div>
-
-              {/* 右上角：草图类型标签 */}
-              {storyboard.sketchType && (
-                <div className="absolute top-2 right-2">
-                  {renderSketchTypeChip(storyboard.sketchType)}
+            )}
+          </div>
+        </CardBody>
+      </Card>
+    ), [selectedIds, toggleSelect, handleEdit, handleGenerate, handleDeleteSketch, isLoading, renderSketchTypeChip]);
+  
+    // 渲染网格视图（普通模式）
+    const renderNormalGridView = () => (
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 p-4">
+        {filteredStoryboards.map((storyboard) => renderGridCard(storyboard))}
+      </div>
+    );
+  
+    // 渲染网格视图（虚拟滚动模式）
+    const renderVirtualGridView = () => (
+      <div 
+        {...virtualGrid.containerProps}
+        style={{
+          ...virtualGrid.containerProps.style,
+          height: '100%',
+        }}
+      >
+        <div {...virtualGrid.wrapperProps}>
+          <div 
+            className="grid gap-4 p-4"
+            style={{
+              gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
+              position: 'relative',
+            }}
+          >
+            {virtualGrid.virtualItems.map(({ index, row, col, offsetTop }) => {
+              const storyboard = filteredStoryboards[index];
+              if (!storyboard) return null;
+              
+              return (
+                <div
+                  key={storyboard.id}
+                  style={{
+                    position: 'absolute',
+                    top: offsetTop + GAP, // 加上顶部 padding
+                    left: `calc(${(col / columns) * 100}% + ${GAP}px)`,
+                    width: `calc(${100 / columns}% - ${GAP + GAP / columns}px)`,
+                    height: ROW_HEIGHT - GAP,
+                  }}
+                >
+                  {renderGridCard(storyboard)}
                 </div>
-              )}
-
-              {/* 悬浮操作栏 */}
-              <div className="absolute inset-x-0 bottom-0 p-2 bg-gradient-to-t from-black/80 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
-                <div className="flex justify-center gap-2">
-                  <Tooltip content="编辑草图">
-                    <Button
-                      size="sm"
-                      isIconOnly
-                      variant="flat"
-                      className="bg-white/20 text-white hover:bg-white/30 min-w-8 w-8 h-8"
-                      onPress={() => handleEdit(storyboard.id)}
-                    >
-                      <Pencil className="w-4 h-4" />
-                    </Button>
-                  </Tooltip>
-                  {storyboard.sketchUrl && (
-                    <>
-                      <Tooltip content="基于草图生成">
-                        <Button
-                          size="sm"
-                          isIconOnly
-                          variant="flat"
-                          className="bg-emerald-500/30 text-emerald-300 hover:bg-emerald-500/50 min-w-8 w-8 h-8"
-                          onPress={() => handleGenerate(storyboard.id)}
-                          isLoading={isLoading}
-                        >
-                          <Wand2 className="w-4 h-4" />
-                        </Button>
-                      </Tooltip>
-                      <Tooltip content="删除草图">
-                        <Button
-                          size="sm"
-                          isIconOnly
-                          variant="flat"
-                          className="bg-red-500/30 text-red-300 hover:bg-red-500/50 min-w-8 w-8 h-8"
-                          onPress={() => handleDeleteSketch(storyboard.id)}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </Tooltip>
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* 描述区域 */}
-            <div className="p-3">
-              <p className="text-xs text-[var(--text-muted)] line-clamp-2 min-h-[2.5rem]">
-                {storyboard.description || '暂无描述'}
-              </p>
-              {storyboard.controlStrength !== undefined && storyboard.sketchUrl && (
-                <div className="mt-2 flex items-center gap-1">
-                  <span className="text-[10px] text-[var(--text-muted)]">控制强度:</span>
-                  <span className="text-[10px] text-[var(--text-secondary)] font-medium">
-                    {Math.round(storyboard.controlStrength * 100)}%
-                  </span>
-                </div>
-              )}
-            </div>
-          </CardBody>
-        </Card>
-      ))}
-    </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  
+    // 渲染网格视图
+  const renderGridView = () => (
+    enableVirtualGrid ? renderVirtualGridView() : renderNormalGridView()
   );
 
   // 渲染列表视图
   const renderListView = () => (
-    <div className="p-4">
+    <div className="p-4 overflow-x-auto">
       <Table
         aria-label="草图管理列表"
         selectionMode="multiple"
@@ -363,7 +479,7 @@ const SketchManager: React.FC<SketchManagerProps> = ({
                 )}
               </TableCell>
               <TableCell>
-                <p className="text-[var(--text-muted)] line-clamp-1 max-w-xs">
+                <p className="text-[var(--text-muted)] line-clamp-1 max-w-[200px] lg:max-w-xs">
                   {storyboard.description || '暂无描述'}
                 </p>
               </TableCell>
@@ -539,7 +655,7 @@ const SketchManager: React.FC<SketchManagerProps> = ({
       </div>
 
       {/* 内容区域 */}
-      <div className="flex-1 overflow-auto">
+      <div ref={gridContainerRef} className="flex-1 overflow-auto">
         {filteredStoryboards.length === 0 ? (
           renderEmptyState()
         ) : viewMode === 'grid' ? (

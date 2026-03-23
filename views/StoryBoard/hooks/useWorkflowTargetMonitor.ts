@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import {
   WorkflowJob,
   consumeWorkflow,
@@ -43,6 +43,11 @@ export function useWorkflowTargetMonitor({
   const [activeTargetIds, setActiveTargetIds] = useState<string[]>([]);
   const handledJobsRef = useRef<Set<number>>(new Set());
   const callbacksRef = useRef({ onCompleted, onFailed });
+  
+  // 稳定化 workflowTypes 引用，避免无限循环
+  const workflowTypesKey = useMemo(() => workflowTypes.join(','), [workflowTypes]);
+  const workflowTypesRef = useRef(workflowTypes);
+  workflowTypesRef.current = workflowTypes;
 
   useEffect(() => {
     callbacksRef.current = { onCompleted, onFailed };
@@ -55,8 +60,9 @@ export function useWorkflowTargetMonitor({
     }
 
     const { jobs } = await getActiveWorkflows(projectId);
+    const currentWorkflowTypes = workflowTypesRef.current;
     const matchedJobs = (jobs || [])
-      .filter((job) => workflowTypes.includes(job.workflow_type))
+      .filter((job) => currentWorkflowTypes.includes(job.workflow_type))
       .map((job) => ({
         ...job,
         input_params: parseInputParams(job.input_params),
@@ -94,7 +100,7 @@ export function useWorkflowTargetMonitor({
         }
       }
     }
-  }, [isActive, projectId, targetParamKey, workflowTypes]);
+  }, [isActive, projectId, targetParamKey, workflowTypesKey]);
 
   useEffect(() => {
     if (!projectId || !isActive) {

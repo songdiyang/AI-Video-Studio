@@ -116,63 +116,65 @@ const TagGroupManager: React.FC<TagGroupManagerProps> = ({ isOpen, onOpenChange,
         },
       }}
       classNames={{
-        base: "bg-slate-900/95 backdrop-blur-xl border border-slate-700/50",
-        header: "border-b border-slate-700/50",
+        base: "bg-white shadow-xl",
+        header: "border-b-0",
         body: "py-4",
-        backdrop: "bg-black/60 backdrop-blur-sm"
+        backdrop: "bg-black/40 backdrop-blur-sm"
       }}
     >
       <ModalContent>
         {(onClose) => (
           <>
-            <ModalHeader className="text-slate-100 font-bold flex items-center gap-2">
-              <Tag className="w-5 h-5" />
+            <ModalHeader className="text-slate-800 font-bold flex items-center gap-2">
+              <Tag className="w-5 h-5 text-slate-600" />
               标签分组管理
             </ModalHeader>
             <ModalBody className="space-y-4">
               {/* 新建分组 */}
-              <div className="flex gap-2 items-center p-3 bg-slate-800/50 rounded-lg border border-slate-700/50">
+              <div className="flex gap-3 items-center">
                 <Input
-                  size="sm"
-                  placeholder="输入新分组名称"
+                  size="lg"
+                  placeholder=""
                   value={newName}
                   onValueChange={setNewName}
                   classNames={{
-                    input: "bg-transparent text-slate-100",
-                    inputWrapper: "bg-slate-700/60 border border-slate-600/50"
+                    input: "bg-transparent text-slate-700 placeholder:text-slate-400",
+                    inputWrapper: "bg-blue-50 border-0 shadow-none hover:bg-blue-100 transition-colors"
                   }}
                   className="flex-1"
                 />
                 <Popover>
                   <PopoverTrigger>
                     <button
-                      className="w-8 h-8 rounded-full border-2 border-white/20 flex-shrink-0"
-                      style={{ backgroundColor: newColor }}
+                      className="w-10 h-10 rounded-full flex-shrink-0 shadow-md hover:scale-105 transition-transform"
+                      style={{ 
+                        backgroundColor: newColor,
+                        boxShadow: `0 2px 8px ${newColor}40`
+                      }}
                     />
                   </PopoverTrigger>
-                  <PopoverContent className="bg-slate-800 border border-slate-700 p-2">
+                  <PopoverContent className="bg-white border border-slate-200 p-3 shadow-lg rounded-xl">
                     <div className="flex flex-wrap gap-2 max-w-[200px]">
                       {TAG_GROUP_COLORS.map((color) => (
                         <button
                           key={color}
                           onClick={() => setNewColor(color)}
-                          className="w-7 h-7 rounded-full transition-all"
+                          className="w-8 h-8 rounded-full transition-all hover:scale-110"
                           style={{
                             backgroundColor: color,
                             boxShadow: newColor === color 
-                              ? `0 0 0 2px #1e293b, 0 0 0 4px ${color}` 
-                              : `0 0 0 1px rgba(255,255,255,0.15)`,
-                            transform: newColor === color ? 'scale(1.15)' : 'scale(1)',
+                              ? `0 0 0 3px white, 0 0 0 5px ${color}` 
+                              : 'none',
+                            transform: newColor === color ? 'scale(1.1)' : 'scale(1)',
                           }}
-                          title={color}
                         />
                       ))}
                     </div>
                   </PopoverContent>
                 </Popover>
                 <Button
-                  size="sm"
-                  className="bg-blue-500 text-white"
+                  size="lg"
+                  className="bg-blue-500 hover:bg-blue-600 text-white font-medium px-6"
                   onPress={handleCreate}
                   isDisabled={!newName.trim()}
                 >
@@ -184,15 +186,14 @@ const TagGroupManager: React.FC<TagGroupManagerProps> = ({ isOpen, onOpenChange,
               {/* 分组列表 */}
               <div className="space-y-2 max-h-[400px] overflow-y-auto">
                 {tagGroups.length === 0 ? (
-                  <div className="text-center text-slate-500 py-8">
+                  <div className="text-center text-slate-400 py-12">
                     暂无标签分组，点击上方添加
                   </div>
                 ) : (
                   tagGroups.map((group) => (
                     <div
                       key={group.id}
-                      className="flex items-center gap-3 p-3 bg-slate-800/30 rounded-lg border border-slate-700/30 hover:border-slate-600/50 transition-colors"
-                    >
+                      className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg hover:bg-slate-100 transition-colors">
                       {editingId === group.id ? (
                         <>
                           <Popover>
@@ -227,15 +228,15 @@ const TagGroupManager: React.FC<TagGroupManagerProps> = ({ isOpen, onOpenChange,
                             value={editName}
                             onValueChange={setEditName}
                             classNames={{
-                              input: "bg-transparent text-slate-100",
-                              inputWrapper: "bg-slate-700/60 border border-slate-600/50"
+                              input: "bg-transparent text-slate-700",
+                              inputWrapper: "bg-blue-50 border-0 shadow-none"
                             }}
                             className="flex-1"
                           />
                           <Button size="sm" className="bg-green-500 text-white" onPress={handleSaveEdit}>
                             保存
                           </Button>
-                          <Button size="sm" variant="light" onPress={() => setEditingId(null)}>
+                          <Button size="sm" variant="light" className="text-slate-500" onPress={() => setEditingId(null)}>
                             取消
                           </Button>
                         </>
@@ -248,13 +249,13 @@ const TagGroupManager: React.FC<TagGroupManagerProps> = ({ isOpen, onOpenChange,
                               boxShadow: `0 0 0 2px ${group.color}30`,
                             }}
                           />
-                          <span className="flex-1 text-slate-200">{group.name}</span>
+                          <span className="flex-1 text-slate-700">{group.name}</span>
                           <Button
                             size="sm"
                             isIconOnly
                             variant="light"
                             onPress={() => handleStartEdit(group)}
-                            className="text-slate-400 hover:text-blue-400"
+                            className="text-slate-400 hover:text-blue-500"
                           >
                             <Edit2 className="w-4 h-4" />
                           </Button>
@@ -263,7 +264,7 @@ const TagGroupManager: React.FC<TagGroupManagerProps> = ({ isOpen, onOpenChange,
                             isIconOnly
                             variant="light"
                             onPress={() => handleDelete(group.id)}
-                            className="text-slate-400 hover:text-red-400"
+                            className="text-slate-400 hover:text-red-500"
                           >
                             <X className="w-4 h-4" />
                           </Button>
@@ -275,7 +276,7 @@ const TagGroupManager: React.FC<TagGroupManagerProps> = ({ isOpen, onOpenChange,
               </div>
             </ModalBody>
             <ModalFooter>
-              <Button variant="light" onPress={onClose} className="text-slate-400">
+              <Button variant="light" onPress={onClose} className="text-slate-500 hover:text-slate-700">
                 关闭
               </Button>
             </ModalFooter>

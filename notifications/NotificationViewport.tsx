@@ -27,21 +27,20 @@ const NotificationToastItem: React.FC<{ toast: ToastItemData; onClose: () => voi
     <div
       className={`
         w-80 p-4
-        bg-gradient-to-br ${style.bg}
-        backdrop-blur-xl
+        ${style.bg}
         border ${style.border}
         rounded-xl
-        shadow-lg ${style.glow}
+        shadow-lg
         flex items-start gap-3
       `}
     >
       <div className="mt-0.5 shrink-0 animate-scale-in">{style.icon}</div>
       <div className="flex-1 mr-2">
-        <p className="text-sm font-semibold text-[#e8e4dc] leading-snug break-words">{toast.message}</p>
+        <p className={`text-sm font-semibold ${style.text} leading-snug break-words`}>{toast.message}</p>
       </div>
       <button
         onClick={onClose}
-        className="shrink-0 text-[#a8a29e] hover:text-[#e8e4dc] transition-colors cursor-pointer"
+        className={`shrink-0 ${style.text} opacity-70 hover:opacity-100 transition-opacity cursor-pointer`}
       >
         <X className="w-4 h-4" />
       </button>

@@ -4,7 +4,27 @@ const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
+const os = require('os');
 const { initializeDatabase } = require('./db');
+
+// 记录服务启动时间
+const SERVER_START_TIME = Date.now();
+
+// 导出服务器状态信息
+module.exports.getServerStatus = () => ({
+  startTime: SERVER_START_TIME,
+  uptime: Date.now() - SERVER_START_TIME,
+  nodeVersion: process.version,
+  platform: process.platform,
+  arch: process.arch,
+  hostname: os.hostname(),
+  cpuCores: os.cpus().length,
+  totalMemory: os.totalmem(),
+  freeMemory: os.freemem(),
+  processMemory: process.memoryUsage(),
+  env: process.env.NODE_ENV || 'development',
+  port: process.env.PORT || 4000,
+});
 
 const authRoutes = require('./auth');
 const scriptRoutes = require('./scripts');
@@ -25,6 +45,7 @@ const sketchProjectRoutes = require('./scripts/sketchProjects');
 const templateRoutes = require('./templates');
 const communityRoutes = require('./community');
 const subscriptionRoutes = require('./subscriptions');
+const collaborationRoutes = require('./collaboration');
 const { notificationResponseMiddleware } = require('./notificationResponseMiddleware');
 
 const app = express();
@@ -114,6 +135,7 @@ app.use('/api/sketch-projects', sketchProjectRoutes);
 app.use('/api/templates', templateRoutes);
 app.use('/api/community', communityRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
+app.use('/api', collaborationRoutes);  // 协作路由（/api/teams, /api/invites, /api/users/search）
 
 // Serve static files for production if needed
 const clientBuildPath = path.join(__dirname, '..', '..', 'dist');

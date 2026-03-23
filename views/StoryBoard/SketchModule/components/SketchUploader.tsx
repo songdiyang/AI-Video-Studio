@@ -182,7 +182,7 @@ const SketchUploader: React.FC<SketchUploaderProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+    <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/60 backdrop-blur-sm">
       <div className="w-full max-w-lg mx-4 bg-[var(--bg-card)] rounded-xl border border-[var(--border-color)] shadow-2xl">
         {/* 头部 */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--border-color)]">
@@ -198,7 +198,7 @@ const SketchUploader: React.FC<SketchUploaderProps> = ({
         </div>
 
         {/* 内容 */}
-        <div className="p-6 space-y-5">
+        <div className="p-6 space-y-5 max-h-[60vh] overflow-y-auto">
           {/* 拖拽上传区域 */}
           {!selectedFile ? (
             <div

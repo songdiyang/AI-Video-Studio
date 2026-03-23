@@ -243,14 +243,14 @@ const VideoComposition: React.FC<VideoCompositionProps> = ({ projectId, projectN
 
         {/* 右侧：属性面板 */}
         {showPanel && (
-          <div className="w-64 flex-shrink-0 border-l border-[rgba(255,255,255,0.06)] bg-[rgba(18,20,40,0.6)] overflow-y-auto flex flex-col">
+          <div className="w-64 flex-shrink-0 border-l border-[var(--border-color)] bg-[var(--bg-nav)] overflow-y-auto flex flex-col">
             {/* 面板 Tab 切换 */}
-            <div className="flex border-b border-[rgba(255,255,255,0.06)]">
+            <div className="flex border-b border-[var(--border-color)]">
               <button
                 className={`flex-1 text-xs font-medium py-2.5 transition-colors ${
                   panelTab === 'clip'
-                    ? 'text-[#e6c87a] border-b-2 border-[#e6c87a]'
-                    : 'text-[#6b6561] hover:text-[#a8a29e]'
+                    ? 'text-[var(--accent)] border-b-2 border-[var(--accent)]'
+                    : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
                 }`}
                 onClick={() => setPanelTab('clip')}
               >
@@ -259,8 +259,8 @@ const VideoComposition: React.FC<VideoCompositionProps> = ({ projectId, projectN
               <button
                 className={`flex-1 text-xs font-medium py-2.5 transition-colors ${
                   panelTab === 'subtitle'
-                    ? 'text-[#e6c87a] border-b-2 border-[#e6c87a]'
-                    : 'text-[#6b6561] hover:text-[#a8a29e]'
+                    ? 'text-[var(--accent)] border-b-2 border-[var(--accent)]'
+                    : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
                 }`}
                 onClick={() => setPanelTab('subtitle')}
               >
@@ -296,7 +296,7 @@ const VideoComposition: React.FC<VideoCompositionProps> = ({ projectId, projectN
           isIconOnly
           size="sm"
           variant="light"
-          className="absolute right-2 top-2 z-10 text-[#a8a29e] hover:text-[#e6c87a]"
+          className="absolute right-2 top-2 z-10 text-[var(--text-muted)] hover:text-[var(--accent)]"
           onPress={() => setShowPanel(prev => !prev)}
           title={showPanel ? '收起面板' : '展开面板'}
         >

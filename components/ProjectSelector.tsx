@@ -43,7 +43,7 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({ onSelectProject }) =>
       const project = await createProject({
         name: newProjectName,
         description: newProjectDesc,
-        type: 'script',
+        type: 'comic_drama',
         status: 'draft'
       });
       

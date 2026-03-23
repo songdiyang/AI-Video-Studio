@@ -10,7 +10,7 @@ const FREE_LIMITS = {
 /**
  * 配额检查中间件工厂函数
  * 
- * @param {'api_call' | 'project'} resourceType - 资源类型
+ * @param {'api_call' | 'project' | 'team_member'} resourceType - 资源类型
  * @returns {Function} Express 中间件
  * 
  * 依赖：authMiddleware 需先执行（req.user 必须存在）
@@ -18,6 +18,7 @@ const FREE_LIMITS = {
  * 使用示例：
  * router.post('/generate', authMiddleware, quotaCheck('api_call'), async (req, res) => { ... });
  * router.post('/projects', authMiddleware, quotaCheck('project'), async (req, res) => { ... });
+ * router.post('/teams/:id/members', authMiddleware, quotaCheck('team_member'), async (req, res) => { ... });
  */
 function quotaCheck(resourceType) {
   return async (req, res, next) => {
@@ -130,6 +131,60 @@ function quotaCheck(resourceType) {
           used: projectsUsed,
           limit: limits.max_projects,
           isSubscribed
+        };
+      } else if (resourceType === 'team_member') {
+        // 检查团队成员数量配额
+        const teamId = req.params.id || req.params.teamId || req.body.teamId;
+        
+        if (!teamId) {
+          return res.status(400).json({ message: '缺少团队ID' });
+        }
+
+        // 查询团队当前成员数
+        const memberCount = await queryOne(
+          'SELECT COUNT(*) as count FROM team_members WHERE team_id = ?',
+          [teamId]
+        );
+        const membersUsed = memberCount?.count || 0;
+
+        // 团队成员配额基于团队所有者的订阅
+        const team = await queryOne('SELECT owner_id FROM teams WHERE id = ?', [teamId]);
+        if (!team) {
+          return res.status(404).json({ message: '团队不存在' });
+        }
+
+        // 查询团队所有者的订阅配额
+        const ownerSubscription = await queryOne(
+          `SELECT sp.max_team_members
+           FROM user_subscriptions us
+           JOIN subscription_plans sp ON us.plan_id = sp.id
+           WHERE us.user_id = ?
+             AND us.status IN ('active', 'trial')
+             AND us.current_period_end >= NOW()
+           LIMIT 1`,
+          [team.owner_id]
+        );
+
+        const maxTeamMembers = ownerSubscription?.max_team_members || FREE_LIMITS.max_team_members;
+
+        // -1 表示无限
+        if (maxTeamMembers !== -1 && membersUsed >= maxTeamMembers) {
+          return res.status(429).json({
+            error: '配额已达上限',
+            message: `团队成员数量已达上限（${maxTeamMembers} 人）`,
+            upgradeUrl: '/pricing',
+            usage: {
+              used: membersUsed,
+              limit: maxTeamMembers
+            }
+          });
+        }
+
+        req.quota = {
+          type: 'team_member',
+          used: membersUsed,
+          limit: maxTeamMembers,
+          isSubscribed: !!ownerSubscription
         };
       }
 

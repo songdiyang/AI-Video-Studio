@@ -1,4 +1,5 @@
 import { getAuthToken } from './auth';
+import { ProjectType, mapLegacyProjectType } from '../types/projectTypes';
 
 export interface Project {
   id: number;
@@ -6,19 +7,33 @@ export interface Project {
   name: string;
   description: string;
   cover_url: string;
-  type: 'comic' | 'script';
+  type: ProjectType;
   status: 'draft' | 'in_progress' | 'completed';
   settings_json: string;
+  use_models?: Record<string, string>;
   created_at: string;
   updated_at: string;
 }
 
-const getHeaders = () => {
+/**
+ * 规范化项目数据，处理旧类型映射
+ */
+function normalizeProject(project: any): Project {
+  return {
+    ...project,
+    type: mapLegacyProjectType(project.type),
+  };
+}
+
+const getHeaders = (): Record<string, string> => {
   const token = getAuthToken();
-  return token ? { 
+  const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    Authorization: `Bearer ${token}` 
-  } : { 'Content-Type': 'application/json' };
+  };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return headers;
 };
 
 export async function fetchProjects(): Promise<Project[]> {

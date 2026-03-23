@@ -42,6 +42,20 @@ export default {
       },
       backgroundImage: {
         'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',
+      },
+      zIndex: {
+        'content': 'var(--z-content)',    // z-content
+        'float': 'var(--z-float)',        // z-float  
+        'overlay': 'var(--z-overlay)',    // z-overlay
+        'backdrop': 'var(--z-backdrop)',  // z-backdrop
+        'modal': 'var(--z-modal)',        // z-modal
+        'popup': 'var(--z-popup)',        // z-popup
+        'toast': 'var(--z-toast)',        // z-toast
+        'nav': 'var(--z-nav)',            // z-nav
+      },
+      screens: {
+        'xs': '480px',
+        // sm/md/lg/xl/2xl 使用 Tailwind 默认值，无需重新声明
       }
     },
   },

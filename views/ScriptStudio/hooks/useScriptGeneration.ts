@@ -242,7 +242,7 @@ export function useScriptGeneration({
         const newProject = await createProject({
           name: projectName,
           description: description || '',
-          type: 'comic',
+          type: 'comic_drama',
           status: 'draft'
         });
         projectToUse = newProject;

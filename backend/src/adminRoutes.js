@@ -8,6 +8,7 @@ const { callAIModel, queryAIModel, getTextModels } = require('./aiModelService')
 const { generationStartService, sendGenerationError } = require('./modules/generation');
 const { listServices, runServiceAction } = require('./coreServiceClient');
 const { getRateLimitStats, reloadRateLimitConfigs } = require('./nosyntask/utils/aiRateLimiter');
+const { getServerStatus } = require('./index');
 
 const router = express.Router();
 
@@ -73,6 +74,129 @@ router.get('/stats', authMiddleware, requireAdmin, async (req, res) => {
   } catch (error) {
     console.error('[Admin] Get stats error:', error);
     res.status(500).json({ message: '获取统计数据失败' });
+  }
+});
+
+// 获取服务器状态信息
+// 检查各服务端口健康状态
+router.get('/service-ports-status', authMiddleware, requireAdmin, async (_req, res) => {
+  const services = [
+    {
+      name: 'Backend',
+      port: process.env.PORT || 4000,
+      url: null, // 当前服务，直接返回在线
+      description: '主后端服务'
+    },
+    {
+      name: 'Notification Service',
+      port: 4101,
+      url: process.env.NOTIFICATION_SERVICE_URL || 'http://localhost:4101',
+      healthPath: '/health',
+      description: '实时通知服务'
+    },
+    {
+      name: 'Core Service',
+      port: 4100,
+      url: process.env.CORE_SERVICE_URL || 'http://localhost:4100',
+      healthPath: '/health',
+      description: '核心调度服务'
+    },
+    {
+      name: 'MinIO',
+      port: process.env.MINIO_PORT || 9000,
+      url: `http://${process.env.MINIO_ENDPOINT || 'localhost'}:${process.env.MINIO_PORT || 9000}`,
+      healthPath: '/minio/health/live',
+      description: '对象存储服务'
+    }
+  ];
+
+  const checkService = async (service) => {
+    const result = {
+      name: service.name,
+      port: service.port,
+      description: service.description,
+      status: 'unknown',
+      latency: null,
+      error: null
+    };
+
+    // 当前服务直接返回在线
+    if (!service.url) {
+      result.status = 'online';
+      result.latency = 0;
+      return result;
+    }
+
+    const startTime = Date.now();
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3000);
+
+      const healthUrl = service.healthPath
+        ? `${service.url.replace(/\/+$/, '')}${service.healthPath}`
+        : service.url;
+
+      const response = await fetch(healthUrl, {
+        method: 'GET',
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+
+      result.latency = Date.now() - startTime;
+      result.status = response.ok ? 'online' : 'degraded';
+    } catch (error) {
+      result.latency = Date.now() - startTime;
+      result.status = 'offline';
+      result.error = error.name === 'AbortError' ? '连接超时' : (error.message || '连接失败');
+    }
+
+    return result;
+  };
+
+  try {
+    const results = await Promise.all(services.map(checkService));
+    res.json({
+      services: results,
+      checkedAt: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('[Admin] Get service ports status error:', error);
+    res.status(500).json({ message: '检查服务状态失败' });
+  }
+});
+
+router.get('/server-status', authMiddleware, requireAdmin, async (req, res) => {
+  try {
+    const status = getServerStatus();
+    
+    // 获取数据库连接状态
+    let dbStatus = { connected: false, error: null };
+    try {
+      await queryOne('SELECT 1');
+      dbStatus.connected = true;
+    } catch (dbError) {
+      dbStatus.error = dbError.message;
+    }
+    
+    // 获取环境变量配置（隐藏敏感信息）
+    const envConfig = {
+      MYSQL_HOST: process.env.MYSQL_HOST ? '✓ 已配置' : '✗ 未配置',
+      MYSQL_DATABASE: process.env.MYSQL_DATABASE || '未配置',
+      JWT_SECRET: process.env.JWT_SECRET ? '✓ 已配置' : '✗ 未配置',
+      ADMIN_ACCESS_KEY: process.env.ADMIN_ACCESS_KEY ? '✓ 已配置' : '✗ 未配置',
+      MINIO_ENDPOINT: process.env.MINIO_ENDPOINT ? '✓ 已配置' : '✗ 未配置',
+      MINIO_BUCKET: process.env.MINIO_BUCKET || '未配置',
+      COMFYUI_BASE_URL: process.env.COMFYUI_BASE_URL || '未配置',
+    };
+    
+    res.json({
+      server: status,
+      database: dbStatus,
+      config: envConfig,
+    });
+  } catch (error) {
+    console.error('[Admin] Get server status error:', error);
+    res.status(500).json({ message: '获取服务器状态失败' });
   }
 });
 
