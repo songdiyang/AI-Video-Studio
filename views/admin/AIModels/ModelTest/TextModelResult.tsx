@@ -2,6 +2,7 @@ import React from 'react';
 import { CheckCircle, XCircle, Clock } from 'lucide-react';
 import { TestResult } from './types';
 import RawResponseDetail from './RawResponseDetail';
+import SimpleMarkdown from './SimpleMarkdown';
 
 interface TextModelResultProps {
   testResult: TestResult;
@@ -35,8 +36,8 @@ const TextModelResult: React.FC<TextModelResultProps> = ({ testResult }) => {
       {isSuccess && actualResult?.content && (
         <div className="bg-slate-800/60 rounded-md p-3 border border-slate-700/50 mt-2">
           <p className="text-sm font-medium text-slate-400 mb-2">生成内容：</p>
-          <div className="text-sm text-slate-200 whitespace-pre-wrap max-h-96 overflow-y-auto">
-            {actualResult.content}
+          <div className="max-h-96 overflow-y-auto">
+            <SimpleMarkdown content={actualResult.content} />
           </div>
           {actualResult.tokens && (
             <p className="text-xs text-slate-500 mt-2 pt-2 border-t border-slate-700/50">

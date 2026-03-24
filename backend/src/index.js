@@ -40,12 +40,14 @@ const workflowRoutes = require('./nosyntask/routes');
 const modelRoutes = require('./modelRoutes');
 const adminRoutes = require('./adminRoutes');
 const fileProxyRoutes = require('./scripts/fileProxy');
-const feedbackRoutes = require('./feedback');
+const feedbackModule = require('./feedback');
+const feedbackRoutes = feedbackModule.router;
 const sketchProjectRoutes = require('./scripts/sketchProjects');
 const templateRoutes = require('./templates');
 const communityRoutes = require('./community');
 const subscriptionRoutes = require('./subscriptions');
 const collaborationRoutes = require('./collaboration');
+const systemConfigRoutes = require('./systemConfigRoutes');
 const { notificationResponseMiddleware } = require('./notificationResponseMiddleware');
 
 const app = express();
@@ -136,6 +138,7 @@ app.use('/api/templates', templateRoutes);
 app.use('/api/community', communityRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api', collaborationRoutes);  // 协作路由（/api/teams, /api/invites, /api/users/search）
+app.use('/api/system-configs', systemConfigRoutes);
 
 // Serve static files for production if needed
 const clientBuildPath = path.join(__dirname, '..', '..', 'dist');
@@ -160,8 +163,25 @@ const PORT = process.env.PORT || 4000;
 
 async function start() {
   await initializeDatabase();
+
+  // 初始化依赖数据库的表
+  if (feedbackModule.ensureFeedbackTable) {
+    try {
+      await feedbackModule.ensureFeedbackTable();
+    } catch (err) {
+      console.warn('[Startup] 初始化 feedback 表失败:', err.message);
+    }
+  }
+
   app.listen(PORT, () => {
-    console.log(`Backend server listening on http://localhost:${PORT}`);
+    console.log('\n' +
+      '  ~(=^\u30FB\u03C9\u30FB^)\uFF8D >\uFF9F)))\u5F61\n' +
+      '\n' +
+      '  \x1b[36m\u2728 NanoStory Backend \u542F\u52A8\u6210\u529F!\x1b[0m\n' +
+      `  \x1b[32m\u2714\x1b[0m \u670D\u52A1\u5730\u5740: http://localhost:${PORT}\n` +
+      `  \x1b[32m\u2714\x1b[0m \u8FD0\u884C\u73AF\u5883: ${process.env.NODE_ENV || 'development'}\n` +
+      `  \x1b[32m\u2714\x1b[0m \u542F\u52A8\u65F6\u95F4: ${new Date().toLocaleString('zh-CN')}\n`
+    );
   });
 }
 

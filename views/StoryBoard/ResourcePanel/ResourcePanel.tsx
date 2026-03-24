@@ -15,6 +15,7 @@ import SceneImageModal from './SceneImageModal';
 import { useResourceModals } from './useResourceModals';
 import { Character } from './types';
 import { getAuthToken } from '../../../services/auth';
+import { deleteCharacter, uploadCharacterImage } from '../../../services/assets';
 import { useToast } from '../../../contexts/ToastContext';
 import { useWorkflowTargetMonitor } from '../hooks/useWorkflowTargetMonitor';
 
@@ -126,6 +127,37 @@ const ResourcePanel: React.FC<ResourcePanelProps> = ({
     }
     await loadCharacters();
     await loadScenes();
+  };
+
+  // === 角色详情回调 ===
+  const handleDeleteCharacter = async (characterId: number) => {
+    try {
+      await deleteCharacter(characterId);
+      showToast('角色已删除', 'success');
+      closeDetailModal();
+      await loadCharacters();
+    } catch (error: any) {
+      showToast('删除失败: ' + error.message, 'error');
+    }
+  };
+
+  const handleUploadCharacterImage = async (characterId: number, file: File) => {
+    try {
+      await uploadCharacterImage(characterId, file);
+      showToast('图片上传成功', 'success');
+      await loadCharacters();
+    } catch (error: any) {
+      showToast('上传失败: ' + error.message, 'error');
+      throw error;
+    }
+  };
+
+  const handleGenerateViewsFromDetail = (characterId: number) => {
+    const char = dbCharacters.find(c => c.id === characterId);
+    if (char) {
+      closeDetailModal();
+      handleGenerateViewsWrapper(char.name, characterId);
+    }
   };
 
   const handleShowSceneDetail = (sceneName: string) => {
@@ -285,6 +317,9 @@ const ResourcePanel: React.FC<ResourcePanelProps> = ({
         onClose={closeDetailModal}
         character={selectedCharacter}
         scenes={scenes}
+        onDelete={handleDeleteCharacter}
+        onUploadImage={handleUploadCharacterImage}
+        onGenerateViews={handleGenerateViewsFromDetail}
       />
 
       <SceneDetailModal

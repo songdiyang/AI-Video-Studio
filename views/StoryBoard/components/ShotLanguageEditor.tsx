@@ -168,7 +168,7 @@ const ShotLanguageEditor: React.FC<ShotLanguageEditorProps> = ({
     <div className="space-y-4">
       {/* 头部工具栏 */}
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-slate-200 flex items-center gap-2">
+        <h3 className="text-sm font-semibold text-[var(--text-primary)] flex items-center gap-2">
           <Camera className="w-4 h-4" />
           镜头设置
         </h3>
@@ -176,7 +176,7 @@ const ShotLanguageEditor: React.FC<ShotLanguageEditorProps> = ({
           <Button
             size="sm"
             variant="flat"
-            className="bg-slate-800 text-slate-300"
+            className="bg-[var(--bg-input)] text-[var(--text-secondary)] border border-[var(--border-color)]"
             startContent={<Wand2 className="w-3 h-3" />}
             onPress={() => setShowPresets(!showPresets)}
           >
@@ -185,7 +185,7 @@ const ShotLanguageEditor: React.FC<ShotLanguageEditorProps> = ({
           <Button
             size="sm"
             variant="flat"
-            className="bg-slate-800 text-slate-300"
+            className="bg-[var(--bg-input)] text-[var(--text-secondary)] border border-[var(--border-color)]"
             startContent={<RotateCcw className="w-3 h-3" />}
             onPress={resetValues}
           >
@@ -193,7 +193,7 @@ const ShotLanguageEditor: React.FC<ShotLanguageEditorProps> = ({
           </Button>
           <Button
             size="sm"
-            className="bg-blue-600 text-white"
+            className="pro-btn-primary"
             startContent={<Save className="w-3 h-3" />}
             onPress={handleSave}
             isLoading={saving}
@@ -205,18 +205,18 @@ const ShotLanguageEditor: React.FC<ShotLanguageEditorProps> = ({
 
       {/* 预设面板 */}
       {showPresets && (
-        <Card className="bg-slate-800/50 border-slate-700">
+        <Card className="bg-[var(--bg-card)] border border-[var(--border-color)]">
           <CardBody className="p-3">
-            <p className="text-xs text-slate-400 mb-2">选择一个场景类型，快速应用推荐设置：</p>
+            <p className="text-xs text-[var(--text-muted)] mb-2">选择一个场景类型，快速应用推荐设置：</p>
             <div className="grid grid-cols-2 gap-2">
               {DEFAULT_SHOT_PRESETS.map((preset) => (
                 <button
                   key={preset.id}
                   onClick={() => applyPreset(preset)}
-                  className="text-left p-2 rounded bg-slate-700/50 hover:bg-slate-700 transition-colors"
+                  className="text-left p-2 rounded bg-[var(--bg-input)] hover:bg-[var(--bg-card-hover)] border border-[var(--border-color)] transition-colors"
                 >
-                  <div className="text-xs font-medium text-slate-200">{preset.name}</div>
-                  <div className="text-[10px] text-slate-400">{preset.description}</div>
+                  <div className="text-xs font-medium text-[var(--text-primary)]">{preset.name}</div>
+                  <div className="text-[10px] text-[var(--text-muted)]">{preset.description}</div>
                 </button>
               ))}
             </div>
@@ -228,16 +228,16 @@ const ShotLanguageEditor: React.FC<ShotLanguageEditorProps> = ({
       <div className="space-y-4">
         {/* 画面大小 */}
         <div className="space-y-2">
-          <label className="text-xs text-slate-300 font-medium">画面大小（人物占画面比例）</label>
+          <label className="text-xs text-[var(--text-secondary)] font-medium">画面大小（人物占画面比例）</label>
           <div className="grid grid-cols-4 gap-1.5">
             {SIMPLE_OPTIONS.shotSize.map((opt) => (
               <button
                 key={opt.value}
                 onClick={() => handleChange('shotSize', opt.value)}
-                className={`p-2 rounded text-center transition-colors ${
+                className={`p-2 rounded text-center transition-colors border ${
                   values.shotSize === opt.value
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-slate-700/50 text-slate-300 hover:bg-slate-700'
+                    ? 'bg-[var(--accent)] text-white border-[var(--accent)]'
+                    : 'bg-[var(--bg-input)] text-[var(--text-primary)] border-[var(--border-color)] hover:border-[var(--accent)]/50 hover:bg-[var(--bg-card-hover)]'
                 }`}
               >
                 <div className="text-xs font-medium">{opt.label}</div>
@@ -248,20 +248,20 @@ const ShotLanguageEditor: React.FC<ShotLanguageEditorProps> = ({
 
         {/* 视角 */}
         <div className="space-y-2">
-          <label className="text-xs text-slate-300 font-medium">视角（摄像机高度）</label>
+          <label className="text-xs text-[var(--text-secondary)] font-medium">视角（摄像机高度）</label>
           <div className="grid grid-cols-4 gap-1.5">
             {SIMPLE_OPTIONS.cameraAngle.map((opt) => (
               <button
                 key={opt.value}
                 onClick={() => handleChange('cameraHeight', opt.value)}
-                className={`p-2 rounded text-center transition-colors ${
+                className={`p-2 rounded text-center transition-colors border ${
                   values.cameraHeight === opt.value
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-slate-700/50 text-slate-300 hover:bg-slate-700'
+                    ? 'bg-[var(--accent)] text-white border-[var(--accent)]'
+                    : 'bg-[var(--bg-input)] text-[var(--text-primary)] border-[var(--border-color)] hover:border-[var(--accent)]/50 hover:bg-[var(--bg-card-hover)]'
                 }`}
               >
                 <div className="text-xs font-medium">{opt.label}</div>
-                <div className="text-[10px] text-slate-400">{opt.desc}</div>
+                <div className="text-[10px] text-[var(--text-muted)]">{opt.desc}</div>
               </button>
             ))}
           </div>
@@ -269,16 +269,16 @@ const ShotLanguageEditor: React.FC<ShotLanguageEditorProps> = ({
 
         {/* 镜头运动 */}
         <div className="space-y-2">
-          <label className="text-xs text-slate-300 font-medium">镜头运动</label>
+          <label className="text-xs text-[var(--text-secondary)] font-medium">镜头运动</label>
           <div className="grid grid-cols-4 gap-1.5">
             {SIMPLE_OPTIONS.movement.slice(0, 4).map((opt) => (
               <button
                 key={opt.value}
                 onClick={() => handleChange('cameraMovement', opt.value)}
-                className={`p-2 rounded text-center transition-colors ${
+                className={`p-2 rounded text-center transition-colors border ${
                   values.cameraMovement === opt.value
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-slate-700/50 text-slate-300 hover:bg-slate-700'
+                    ? 'bg-[var(--accent)] text-white border-[var(--accent)]'
+                    : 'bg-[var(--bg-input)] text-[var(--text-primary)] border-[var(--border-color)] hover:border-[var(--accent)]/50 hover:bg-[var(--bg-card-hover)]'
                 }`}
               >
                 <div className="text-xs font-medium">{opt.label}</div>
@@ -290,10 +290,10 @@ const ShotLanguageEditor: React.FC<ShotLanguageEditorProps> = ({
               <button
                 key={opt.value}
                 onClick={() => handleChange('cameraMovement', opt.value)}
-                className={`p-2 rounded text-center transition-colors ${
+                className={`p-2 rounded text-center transition-colors border ${
                   values.cameraMovement === opt.value
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-slate-700/50 text-slate-300 hover:bg-slate-700'
+                    ? 'bg-[var(--accent)] text-white border-[var(--accent)]'
+                    : 'bg-[var(--bg-input)] text-[var(--text-primary)] border-[var(--border-color)] hover:border-[var(--accent)]/50 hover:bg-[var(--bg-card-hover)]'
                 }`}
               >
                 <div className="text-xs font-medium">{opt.label}</div>
@@ -305,13 +305,13 @@ const ShotLanguageEditor: React.FC<ShotLanguageEditorProps> = ({
         {/* 氛围与时长 */}
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
-            <label className="text-xs text-slate-300 font-medium">画面氛围</label>
+            <label className="text-xs text-[var(--text-secondary)] font-medium">画面氛围</label>
             <Select
               size="sm"
               placeholder="选择氛围..."
               selectedKeys={values.lightingMood ? [values.lightingMood] : []}
               onChange={(e) => handleChange('lightingMood', e.target.value)}
-              classNames={{ trigger: 'bg-slate-800 border-slate-700' }}
+              classNames={{ trigger: 'bg-[var(--bg-input)] border-[var(--border-color)]' }}
             >
               {SIMPLE_OPTIONS.mood.map((opt) => (
                 <SelectItem key={opt.value}>{opt.label} - {opt.desc}</SelectItem>
@@ -320,7 +320,7 @@ const ShotLanguageEditor: React.FC<ShotLanguageEditorProps> = ({
           </div>
 
           <div className="space-y-2">
-            <label className="text-xs text-slate-300 font-medium flex items-center gap-1">
+            <label className="text-xs text-[var(--text-secondary)] font-medium flex items-center gap-1">
               <Clock className="w-3 h-3" /> 时长
             </label>
             <Input
@@ -332,24 +332,24 @@ const ShotLanguageEditor: React.FC<ShotLanguageEditorProps> = ({
               placeholder="秒"
               value={values.shotDuration?.toString() || ''}
               onChange={(e) => handleChange('shotDuration', parseFloat(e.target.value) || undefined)}
-              classNames={{ inputWrapper: 'bg-slate-800 border-slate-700' }}
-              endContent={<span className="text-xs text-slate-500">秒</span>}
+              classNames={{ inputWrapper: 'bg-[var(--bg-input)] border-[var(--border-color)]' }}
+              endContent={<span className="text-xs text-[var(--text-muted)]">秒</span>}
             />
           </div>
         </div>
 
         {/* 转场 */}
         <div className="space-y-2">
-          <label className="text-xs text-slate-300 font-medium">转场效果</label>
+          <label className="text-xs text-[var(--text-secondary)] font-medium">转场效果</label>
           <div className="grid grid-cols-4 gap-1.5">
             {SIMPLE_OPTIONS.transition.map((opt) => (
               <button
                 key={opt.value}
                 onClick={() => handleChange('transitionType', opt.value)}
-                className={`p-2 rounded text-center transition-colors ${
+                className={`p-2 rounded text-center transition-colors border ${
                   values.transitionType === opt.value
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-slate-700/50 text-slate-300 hover:bg-slate-700'
+                    ? 'bg-[var(--accent)] text-white border-[var(--accent)]'
+                    : 'bg-[var(--bg-input)] text-[var(--text-primary)] border-[var(--border-color)] hover:border-[var(--accent)]/50 hover:bg-[var(--bg-card-hover)]'
                 }`}
               >
                 <div className="text-xs font-medium">{opt.label}</div>

@@ -3,6 +3,7 @@ import { Button, Textarea, Modal, ModalContent, ModalHeader, ModalBody, ModalFoo
 import { Play, AlertCircle } from 'lucide-react';
 import { AIModel } from '../types';
 import DebugPanel from './DebugPanel';
+import SimpleMarkdown from './SimpleMarkdown';
 import { getAdminAuthHeaders } from '../../../../services/auth';
 import { useToast } from '../../../../contexts/ToastContext';
 
@@ -164,12 +165,10 @@ const ModelTestModal: React.FC<ModelTestModalProps> = ({ isOpen, onClose, model 
                     )}
                   </div>
                   
-                  {/* TEXT 模型：显示文本内容 */}
+                  {/* TEXT 模型：显示文本内容（Markdown 渲染） */}
                   {model.category === 'TEXT' && testResult.result.content && (
                     <div className="bg-slate-800/40 rounded p-3 border border-slate-700/50 max-h-96 overflow-auto">
-                      <p className="text-sm text-slate-200 whitespace-pre-wrap">
-                        {testResult.result.content}
-                      </p>
+                      <SimpleMarkdown content={testResult.result.content} />
                     </div>
                   )}
 

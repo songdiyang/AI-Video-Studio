@@ -52,6 +52,7 @@ export default {
         'popup': 'var(--z-popup)',        // z-popup
         'toast': 'var(--z-toast)',        // z-toast
         'nav': 'var(--z-nav)',            // z-nav
+        'fullscreen': 'var(--z-fullscreen)', // z-fullscreen
       },
       screens: {
         'xs': '480px',

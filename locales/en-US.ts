@@ -211,6 +211,7 @@ const enUS: Translations = {
     // Form validation
     usernameMinLength: 'Username must be at least 3 characters',
     passwordMinLength: 'Password must be at least 6 characters',
+    registrationClosed: 'Registration is closed, please contact the administrator',
   },
   // Projects
   projects: {

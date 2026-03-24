@@ -209,6 +209,7 @@ const zhCN = {
     // 表单验证
     usernameMinLength: '用户名至少需要3个字符',
     passwordMinLength: '密码至少需要6个字符',
+    registrationClosed: '注册功能已关闭，请联系管理员',
   },
   // 项目管理
   projects: {

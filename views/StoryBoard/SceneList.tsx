@@ -103,9 +103,8 @@ const SceneList: React.FC<SceneListProps> = ({
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [showBatchModal, setShowBatchModal] = useState(false);
   const [showBatchVideoModal, setShowBatchVideoModal] = useState(false);
-  // 追踪是否是首次加载，用于控制 stagger 动画
-  const [isInitialLoad, setIsInitialLoad] = useState(true);
-  const prevScenesLengthRef = useRef(0);
+  // 标记首次加载完成，用于控制 layout 动画
+  const [hasLoaded, setHasLoaded] = useState(false);
 
   // 滚动容器 ref，用于追踪滚动位置
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -116,21 +115,13 @@ const SceneList: React.FC<SceneListProps> = ({
   // 预加载当前位置前后各 3 个分镜的图片
   useImagePreloader(scenes, currentScrollIndex, 3);
 
-  // 首次加载后关闭 stagger 动画
+  // 首次加载完成后启用 layout 动画
   useEffect(() => {
-    if (scenes.length > 0 && isInitialLoad) {
-      // 延迟关闭，确保动画完成
-      const timer = setTimeout(() => {
-        setIsInitialLoad(false);
-      }, scenes.length * 50 + 300);
+    if (scenes.length > 0 && !hasLoaded) {
+      const timer = setTimeout(() => setHasLoaded(true), scenes.length * 50 + 300);
       return () => clearTimeout(timer);
     }
-    // 如果场景列表被清空再重新加载，重置为首次加载
-    if (scenes.length > 0 && prevScenesLengthRef.current === 0) {
-      setIsInitialLoad(true);
-    }
-    prevScenesLengthRef.current = scenes.length;
-  }, [scenes.length, isInitialLoad]);
+  }, [scenes.length, hasLoaded]);
 
   // 统计已有帧的镜头数
   const scenesWithFrames = scenes.filter(s => s.startFrame).length;
@@ -242,16 +233,16 @@ const SceneList: React.FC<SceneListProps> = ({
           <SceneListSkeleton />
         ) : (
           <motion.div
-            variants={isInitialLoad ? containerVariants : undefined}
-            initial={isInitialLoad ? "hidden" : false}
+            variants={containerVariants}
+            initial="hidden"
             animate="show"
             className="space-y-1.5"
           >
             {scenes.map((scene, index) => (
               <motion.div
                 key={scene.id}
-                variants={isInitialLoad ? itemVariants : undefined}
-                layout={!isInitialLoad}
+                variants={itemVariants}
+                layout={hasLoaded}
                 draggable
                 onDragStart={(e) => handleDragStart(e as any, index)}
                 onDragOver={(e) => handleDragOver(e as any, index)}

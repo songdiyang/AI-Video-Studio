@@ -100,7 +100,7 @@ export function useTaskRunner(options: UseTaskRunnerOptions = {}) {
     activeKeysRef.current.add(key);
     pollCountRef.current[key] = 0;
     let failCount = 0;
-    const MAX_FAIL = 3; // 连续失败 3 次才真正停止
+    const MAX_FAIL = 1; // 立即标记失败，不静默重试
 
     const poll = async () => {
       // 检查是否已停止
@@ -175,15 +175,15 @@ export function useTaskRunner(options: UseTaskRunnerOptions = {}) {
         }
       } catch (err: any) {
         failCount++;
+        console.error(`[useTaskRunner] 轮询失败 (${failCount}/${MAX_FAIL}): ${key}`, err.message);
         if (failCount >= MAX_FAIL) {
           stopPolling(key);
           updateTask(key, {
             status: 'failed',
-            error: err.message || '轮询失败'
+            error: err.message || '网络请求失败，请检查网络连接'
           });
           return;
         }
-        // 未达上限时忽略本次错误，等下次轮询重试
       }
       
       // 继续下一次轮询（使用自适应间隔）

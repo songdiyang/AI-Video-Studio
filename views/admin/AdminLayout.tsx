@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { ChevronDown, ChevronRight, LogOut, Settings, Users, Cpu, LayoutDashboard, Server, BarChart3, Gauge, CreditCard } from 'lucide-react';
+import { ChevronDown, ChevronRight, LogOut, Settings, Users, Cpu, LayoutDashboard, Server, BarChart3, Gauge, CreditCard, Globe } from 'lucide-react';
 import { getAuthUser, logout } from '../../services/auth';
 
 interface MenuItem {
@@ -65,6 +65,12 @@ const AdminLayout: React.FC = () => {
           label: '订阅管理',
           icon: <CreditCard className="w-4 h-4" />,
           path: '/admin/subscriptions'
+        },
+        {
+          id: 'site-settings',
+          label: '站点设置',
+          icon: <Globe className="w-4 h-4" />,
+          path: '/admin/site-settings'
         }
       ]
     }

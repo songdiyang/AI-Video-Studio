@@ -184,15 +184,15 @@ const SubscriptionManagement: React.FC = () => {
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'active':
-        return 'bg-emerald-500/10 text-emerald-400';
+        return 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400';
       case 'trial':
-        return 'bg-blue-500/10 text-blue-400';
+        return 'bg-blue-500/15 text-blue-700 dark:text-blue-400';
       case 'expired':
-        return 'bg-orange-500/10 text-orange-400';
+        return 'bg-orange-500/15 text-orange-700 dark:text-orange-400';
       case 'cancelled':
-        return 'bg-slate-500/10 text-slate-400';
+        return 'bg-slate-500/15 text-slate-600 dark:text-slate-400';
       default:
-        return 'bg-slate-500/10 text-slate-400';
+        return 'bg-slate-500/15 text-slate-600 dark:text-slate-400';
     }
   };
 
@@ -231,14 +231,14 @@ const SubscriptionManagement: React.FC = () => {
               <CreditCard className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-slate-100">订阅管理</h1>
-              <p className="text-sm text-slate-400">管理订阅套餐和用户订阅</p>
+              <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>订阅管理</h1>
+              <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>管理订阅套餐和用户订阅</p>
             </div>
           </div>
           <div className="flex gap-2">
             <Button
               variant="flat"
-              className="bg-slate-700/50 text-slate-300"
+              className="text-default-600 border" style={{ background: 'var(--bg-card)', borderColor: 'var(--border-color)' }}
               startContent={<RefreshCw className="w-4 h-4" />}
               onPress={() => { fetchPlans(); fetchSubscriptions(); }}
             >
@@ -255,19 +255,19 @@ const SubscriptionManagement: React.FC = () => {
         </div>
 
         {/* 套餐管理 */}
-        <Card className="bg-slate-900/80 border border-slate-700/50">
+        <Card className="border" style={{ background: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
           <CardBody className="p-6">
             <div className="flex items-center gap-2 mb-4">
-              <Crown className="w-5 h-5 text-amber-400" />
-              <h2 className="text-lg font-semibold text-slate-100">套餐列表</h2>
+              <Crown className="w-5 h-5 text-amber-500 dark:text-amber-400" />
+              <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>套餐列表</h2>
             </div>
 
             <Table
               aria-label="套餐列表"
               classNames={{
                 wrapper: 'bg-transparent shadow-none',
-                th: 'bg-slate-800/60 text-slate-400 font-semibold',
-                td: 'text-slate-300'
+                th: 'bg-default-100 text-default-600 font-semibold',
+                td: 'text-default-700'
               }}
             >
               <TableHeader>
@@ -288,15 +288,15 @@ const SubscriptionManagement: React.FC = () => {
                   <TableRow key={plan.id}>
                     <TableCell>
                       <div className="flex flex-col">
-                        <span className="font-medium text-slate-200">{plan.display_name}</span>
-                        <span className="text-xs text-slate-500">{plan.name}</span>
+                        <span className="font-medium" style={{ color: 'var(--text-primary)' }}>{plan.display_name}</span>
+                        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{plan.name}</span>
                       </div>
                     </TableCell>
                     <TableCell>
-                      <span className="font-mono text-emerald-400">{formatPrice(plan.price_monthly)}</span>
+                      <span className="font-mono text-emerald-700 dark:text-emerald-400">{formatPrice(plan.price_monthly)}</span>
                     </TableCell>
                     <TableCell>
-                      <span className="font-mono text-emerald-400">{formatPrice(plan.price_yearly)}</span>
+                      <span className="font-mono text-emerald-700 dark:text-emerald-400">{formatPrice(plan.price_yearly)}</span>
                     </TableCell>
                     <TableCell>
                       <span className="font-mono">{plan.max_projects === -1 ? '无限' : plan.max_projects}</span>
@@ -322,7 +322,7 @@ const SubscriptionManagement: React.FC = () => {
                         <Button
                           size="sm"
                           variant="flat"
-                          className="bg-blue-500/10 text-blue-400"
+                          className="bg-blue-500/15 text-blue-700 dark:text-blue-400"
                           startContent={<Edit className="w-3 h-3" />}
                           onPress={() => handleOpenPlanModal(plan)}
                         >
@@ -331,7 +331,7 @@ const SubscriptionManagement: React.FC = () => {
                         <Button
                           size="sm"
                           variant="flat"
-                          className="bg-red-500/10 text-red-400"
+                          className="bg-red-500/15 text-red-700 dark:text-red-400"
                           startContent={<Trash2 className="w-3 h-3" />}
                           onPress={() => handleDeletePlan(plan)}
                         >
@@ -347,13 +347,13 @@ const SubscriptionManagement: React.FC = () => {
         </Card>
 
         {/* 用户订阅总览 */}
-        <Card className="bg-slate-900/80 border border-slate-700/50">
+        <Card className="border" style={{ background: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
           <CardBody className="p-6">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
-                <Users className="w-5 h-5 text-blue-400" />
-                <h2 className="text-lg font-semibold text-slate-100">用户订阅</h2>
-                <Chip size="sm" variant="flat" className="bg-slate-700 text-slate-300">
+                <Users className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>用户订阅</h2>
+                <Chip size="sm" variant="flat" className="bg-default-200 text-default-600">
                   共 {subscriptionsTotal} 条
                 </Chip>
               </div>
@@ -364,7 +364,8 @@ const SubscriptionManagement: React.FC = () => {
                     setStatusFilter(e.target.value);
                     setSubscriptionsPage(1);
                   }}
-                  className="bg-slate-800 border border-slate-700 text-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+                  className="rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+                  style={{ background: 'var(--bg-input)', borderColor: 'var(--border-color)', color: 'var(--text-primary)', border: '1px solid var(--border-color)' }}
                 >
                   <option value="">全部状态</option>
                   <option value="active">生效中</option>
@@ -379,8 +380,8 @@ const SubscriptionManagement: React.FC = () => {
               aria-label="用户订阅列表"
               classNames={{
                 wrapper: 'bg-transparent shadow-none',
-                th: 'bg-slate-800/60 text-slate-400 font-semibold',
-                td: 'text-slate-300'
+                th: 'bg-default-100 text-default-600 font-semibold',
+                td: 'text-default-700'
               }}
             >
               <TableHeader>
@@ -399,10 +400,10 @@ const SubscriptionManagement: React.FC = () => {
                 {subscriptions.map((sub) => (
                   <TableRow key={sub.id}>
                     <TableCell>
-                      <span className="text-slate-200">{sub.user_email}</span>
+                      <span style={{ color: 'var(--text-primary)' }}>{sub.user_email}</span>
                     </TableCell>
                     <TableCell>
-                      <Chip size="sm" variant="flat" className="bg-purple-500/10 text-purple-400">
+                      <Chip size="sm" variant="flat" className="bg-purple-500/15 text-purple-700 dark:text-purple-400">
                         {sub.plan_name}
                       </Chip>
                     </TableCell>
@@ -412,18 +413,18 @@ const SubscriptionManagement: React.FC = () => {
                       </Chip>
                     </TableCell>
                     <TableCell>
-                      <span className="text-slate-400">
+                      <span style={{ color: 'var(--text-secondary)' }}>
                         {sub.billing_cycle === 'yearly' ? '年付' : '月付'}
                       </span>
                     </TableCell>
                     <TableCell>
-                      <span className="text-slate-400">{formatDate(sub.current_period_end)}</span>
+                      <span style={{ color: 'var(--text-secondary)' }}>{formatDate(sub.current_period_end)}</span>
                     </TableCell>
                     <TableCell>
-                      <span className="font-mono text-blue-400">{sub.api_calls_used.toLocaleString()}</span>
+                      <span className="font-mono text-blue-700 dark:text-blue-400">{sub.api_calls_used.toLocaleString()}</span>
                     </TableCell>
                     <TableCell>
-                      <span className="text-slate-500 text-sm">{formatDate(sub.created_at)}</span>
+                      <span className="text-sm" style={{ color: 'var(--text-muted)' }}>{formatDate(sub.created_at)}</span>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -439,7 +440,7 @@ const SubscriptionManagement: React.FC = () => {
                   onChange={setSubscriptionsPage}
                   classNames={{
                     wrapper: 'gap-2',
-                    item: 'bg-slate-800 text-slate-300 hover:bg-slate-700',
+                    item: 'bg-default-100 text-default-700 hover:bg-default-200',
                     cursor: 'bg-purple-600 text-white'
                   }}
                 />
@@ -531,14 +532,14 @@ const SubscriptionManagement: React.FC = () => {
                       value={String(planFormData.sort_order)}
                       onValueChange={(value) => setPlanFormData({ ...planFormData, sort_order: parseInt(value) || 0 })}
                     />
-                    <div className="flex items-center gap-3 p-3 bg-slate-800/50 rounded-lg self-end">
+                    <div className="flex items-center gap-3 p-3 rounded-lg self-end" style={{ background: 'var(--bg-elevated)' }}>
                       <Switch
                         isSelected={planFormData.is_active}
                         onValueChange={(value) => setPlanFormData({ ...planFormData, is_active: value })}
                       />
                       <div>
-                        <p className="text-sm text-slate-200">启用套餐</p>
-                        <p className="text-xs text-slate-400">禁用后用户无法订阅</p>
+                        <p className="text-sm" style={{ color: 'var(--text-primary)' }}>启用套餐</p>
+                        <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>禁用后用户无法订阅</p>
                       </div>
                     </div>
                   </div>

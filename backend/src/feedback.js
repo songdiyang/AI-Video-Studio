@@ -25,11 +25,6 @@ async function ensureFeedbackTable() {
   `);
 }
 
-// 初始化时创建表
-ensureFeedbackTable().catch(err => {
-  console.warn('[Feedback] 创建 feedback 表失败（数据库可能尚未就绪）:', err.message);
-});
-
 // POST /api/feedback - 提交反馈
 router.post('/', authMiddleware, async (req, res) => {
   try {
@@ -136,4 +131,7 @@ router.patch('/:id', authMiddleware, requireAdmin, async (req, res) => {
   }
 });
 
-module.exports = router;
+module.exports = {
+  router,
+  ensureFeedbackTable
+};

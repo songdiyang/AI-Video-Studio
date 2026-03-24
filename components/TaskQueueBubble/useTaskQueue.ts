@@ -69,7 +69,7 @@ export function useTaskQueue(options?: UseTaskQueueOptions): UseTaskQueueReturn 
       if (showLoading || isFirstLoad.current) {
         setLoading(true);
       }
-      const data = await getWorkflowList({ status: 'pending,running' });
+      const data = await getWorkflowList({ status: 'pending,running,failed' });
       const currentJobs = data.jobs || [];
       const currentJobIds = new Set(currentJobs.map((j: WorkflowJob) => j.id));
 

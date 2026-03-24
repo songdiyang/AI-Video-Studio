@@ -19,8 +19,7 @@ interface ModelCategory {
 }
 
 const MODEL_CATEGORIES: ModelCategory[] = [
-  { key: 'text',  label: '文本模型',  filterType: 'TEXT',  placeholder: '用于剧本生成、分镜、角色/场景提取等' },
-  { key: 'image', label: '图片模型',  filterType: 'IMAGE', placeholder: '用于首尾帧、三视图、场景图片生成等' },
+  { key: 'image', label: '图片模型',  filterType: 'IMAGE', placeholder: '用于图片生成、场景图、角色三视图等，文本分析由系统自动调度' },
   { key: 'video', label: '视频模型',  filterType: 'VIDEO', placeholder: '用于分镜视频生成' },
   { key: 'audio', label: '音频模型',  filterType: 'AUDIO', placeholder: '用于配音、音效生成' },
 ];
@@ -56,7 +55,7 @@ const AIModelConfigModal: React.FC<AIModelConfigModalProps> = ({
             </ModalHeader>
             <ModalBody className="space-y-4">
               <p className="text-sm text-slate-400">
-                为不同任务选择对应的 AI 模型，所有创作功能将使用这里的配置。
+                选择生成模型，系统会在不同流程中自动调用对应接口（图生文 / 文生图）。
               </p>
               {availableCategories.map(cat => (
                 <AIModelSelector

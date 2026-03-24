@@ -177,6 +177,29 @@ html.theme-transitioning *::after {
   transition-delay: 0s !important;
 }
 
+/* Excalidraw 画布元素免受主题过渡动画影响，避免 SVG fill/stroke 过渡导致卡顿 */
+html.theme-transitioning .excalidraw,
+html.theme-transitioning .excalidraw *,
+html.theme-transitioning .excalidraw *::before,
+html.theme-transitioning .excalidraw *::after {
+  transition: none !important;
+}
+
+/* Excalidraw 内部样式隔离 —— 防止 Tailwind Preflight 覆盖 Excalidraw 的 SVG/按钮布局 */
+.excalidraw svg {
+  display: inline-block;
+  vertical-align: middle;
+}
+.excalidraw button {
+  border-style: none;
+}
+.excalidraw .Island {
+  box-sizing: border-box;
+}
+.excalidraw label svg {
+  display: inline-block;
+}
+
 @layer base {
   body {
     @apply transition-colors duration-300;
@@ -958,6 +981,7 @@ html.theme-transitioning *::after {
   --z-popup: 60;         /* 弹出层：下拉菜单、Tooltip（高于模态框） */
   --z-toast: 70;         /* 通知层：Toast 消息 */
   --z-nav: 100;          /* 导航层：移动端底部导航 */
+  --z-fullscreen: 110;   /* 全屏编辑器层：覆盖所有UI */
 }
 
 /* 中屏适配 */
@@ -1253,6 +1277,11 @@ html.theme-transitioning *::after {
 .theme-transitioning,
 .theme-transitioning * {
   transition: background-color 0.4s ease, color 0.3s ease, border-color 0.35s ease, box-shadow 0.3s ease !important;
+}
+
+.theme-transitioning .excalidraw,
+.theme-transitioning .excalidraw * {
+  transition: none !important;
 }
 
 /* 10. 交互反馈微动效 */

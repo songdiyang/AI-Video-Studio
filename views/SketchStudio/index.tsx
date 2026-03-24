@@ -14,7 +14,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 
 // 动态导入 SketchEditor 避免首屏加载
-const SketchEditor = React.lazy(() => import('../StoryBoard/SketchModule/components/SketchEditor'));
+const SketchEditor = React.lazy(() => import('./SketchModule/components/SketchEditor'));
 
 const LAST_PROJECT_KEY = 'nanostory_last_project_id';
 

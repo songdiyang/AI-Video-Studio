@@ -284,14 +284,20 @@ const TaskItem: React.FC<TaskItemProps> = ({
         </div>
       </div>
 
-      {/* 失败错误信息 */}
-      {job.status === 'failed' && job.error_message && (
+      {/* 失败/取消错误信息 */}
+      {(job.status === 'failed' || job.status === 'cancelled') && (
         <div 
-          className="mt-1.5 text-xs line-clamp-2"
-          style={{ color: 'var(--danger)' }}
-          title={job.error_message}
+          className="mt-1.5 text-xs line-clamp-2 px-2 py-1 rounded"
+          style={{ 
+            color: job.status === 'failed' ? 'var(--danger)' : 'var(--text-muted)',
+            backgroundColor: job.status === 'failed' ? 'rgba(239, 68, 68, 0.12)' : 'rgba(100, 116, 139, 0.1)',
+            border: `1px solid ${job.status === 'failed' ? 'rgba(239, 68, 68, 0.25)' : 'rgba(100, 116, 139, 0.2)'}`,
+          }}
+          title={job.error_message || undefined}
         >
-          {job.error_message}
+          {job.status === 'failed' 
+            ? `❌ ${job.error_message || '任务执行失败，请检查后重试'}` 
+            : `⚠️ ${job.error_message || '任务已被取消'}`}
         </div>
       )}
     </motion.div>

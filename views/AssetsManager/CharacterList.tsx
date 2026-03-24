@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React from 'react';
 import { Card, CardBody, Button, Chip } from '@heroui/react';
 import { Edit, Trash2, Layers } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -42,36 +42,17 @@ const getGroupColor = (groupId: number, tagGroups: TagGroup[]): string => {
 };
 
 const CharacterList: React.FC<CharacterListProps> = ({ characters, tagGroups, onEdit, onDelete }) => {
-  // 追踪是否是首次加载
-  const [isInitialLoad, setIsInitialLoad] = useState(true);
-  const prevLengthRef = useRef(0);
-
-  useEffect(() => {
-    if (characters.length > 0 && isInitialLoad) {
-      const timer = setTimeout(() => {
-        setIsInitialLoad(false);
-      }, Math.min(characters.length * 50 + 300, 1000));
-      return () => clearTimeout(timer);
-    }
-    // 如果列表被清空再重新加载，重置为首次加载
-    if (characters.length > 0 && prevLengthRef.current === 0) {
-      setIsInitialLoad(true);
-    }
-    prevLengthRef.current = characters.length;
-  }, [characters.length, isInitialLoad]);
-
   return (
     <motion.div 
-      variants={isInitialLoad ? containerVariants : undefined}
-      initial={isInitialLoad ? "hidden" : false}
+      variants={containerVariants}
+      initial="hidden"
       animate="show"
       className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-6"
     >
       {characters.map((character) => (
         <motion.div
           key={character.id}
-          variants={isInitialLoad ? itemVariants : undefined}
-          layout={!isInitialLoad}
+          variants={itemVariants}
         >
           <Card className="bg-[var(--bg-card)] border border-[var(--border-color)] shadow-sm hover:shadow-md hover:shadow-[var(--accent)]/5 transition-shadow">
             <CardBody className="p-4 space-y-3">

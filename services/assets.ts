@@ -238,6 +238,31 @@ export async function deleteCharacter(id: number): Promise<void> {
   }
 }
 
+/**
+ * 上传角色参考图片
+ */
+export async function uploadCharacterImage(
+  characterId: number,
+  file: File
+): Promise<{ image_url: string }> {
+  const token = getAuthToken();
+  const formData = new FormData();
+  formData.append('image', file);
+
+  const response = await fetch(`/api/characters/${characterId}/upload-image`, {
+    method: 'POST',
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    },
+    body: formData
+  });
+  if (!response.ok) {
+    const data = await response.json();
+    throw new Error(data.message || '上传图片失败');
+  }
+  return response.json();
+}
+
 // 场景API
 export async function fetchScenes(): Promise<Scene[]> {
   const token = getAuthToken();

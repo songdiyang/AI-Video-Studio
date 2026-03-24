@@ -288,6 +288,17 @@ export async function getLoginRequirements(email: string): Promise<LoginRequirem
   };
 }
 
+export async function getRegistrationStatus(): Promise<{ enabled: boolean }> {
+  try {
+    const res = await fetch('/api/auth/registration-status');
+    if (!res.ok) return { enabled: true };
+    const data = await res.json();
+    return { enabled: Boolean(data.enabled) };
+  } catch {
+    return { enabled: true };
+  }
+}
+
 export async function register(email: string, password: string): Promise<AuthUser> {
   const resp = await request('register', { email, password });
   return resp.user;

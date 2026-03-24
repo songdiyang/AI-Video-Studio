@@ -129,8 +129,11 @@ const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ isOpen, onClose, on
         
         if (res.ok) {
           const data = await res.json();
-          setNewProjectId(data.projectId || data.id);
+          const pid = data.projectId || data.id;
+          setNewProjectId(pid);
           setCreated(true);
+          // 创建成功后自动关闭向导并跳转
+          setTimeout(() => onComplete(pid), 800);
         }
       } else {
         // 从零开始创建项目
@@ -149,8 +152,11 @@ const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ isOpen, onClose, on
         
         if (res.ok) {
           const data = await res.json();
-          setNewProjectId(data.id || data.project?.id);
+          const pid = data.id || data.project?.id;
+          setNewProjectId(pid);
           setCreated(true);
+          // 创建成功后自动关闭向导并跳转
+          setTimeout(() => onComplete(pid), 800);
         }
       }
     } catch (err) {

@@ -54,6 +54,8 @@ function normalizeComponentType(type) {
     request_count: 'request_count',
     image: 'item_count',
     images: 'item_count',
+    per_image: 'item_count',
+    per_item: 'item_count',
     item: 'item_count',
     items: 'item_count',
     item_count: 'item_count'
@@ -468,8 +470,21 @@ async function ensureBalance(userId, amount) {
   const required = roundMoney(amount);
   if (!required || required <= 0) return null;
 
-  const user = await queryOne('SELECT balance FROM users WHERE id = ?', [userId]);
+  // 管理员调试模型时跳过余额检查（sourceType 由 runAsAdminTool 设置）
+  const context = getAIBillingContext();
+  if (context?.sourceType === 'admin_tool') {
+    return null;
+  }
+
+  // 查询用户余额和角色
+  const user = await queryOne('SELECT balance, role FROM users WHERE id = ?', [userId]);
   const balance = toNumber(user?.balance, 0) || 0;
+
+  // 管理员角色跳过余额检查
+  if (user?.role === 'admin') {
+    return balance;
+  }
+
   if (!user || balance < required) {
     const error = new Error('余额不足，请充值');
     error.code = 'INSUFFICIENT_BALANCE';
@@ -577,6 +592,12 @@ function buildBillingMetadata({ recordId, estimatedUsage, estimatedAmount }) {
 async function applyBalanceCharge(userId, amount) {
   const rounded = roundMoney(amount);
   if (!rounded || rounded <= 0) {
+    return;
+  }
+
+  // 管理员角色跳过扣费
+  const user = await queryOne('SELECT role FROM users WHERE id = ?', [userId]);
+  if (user?.role === 'admin') {
     return;
   }
 

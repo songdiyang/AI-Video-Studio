@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useMemo, useCallback, Component, ReactNode, Suspense, lazy } from 'react';
-import { Button, Select, SelectItem, Tooltip, Badge, Chip } from '@heroui/react';
-import { Wand2, RefreshCw, Upload, Download, Video, ImageIcon, Users, MapPin, Frame, Film, PencilRuler, Sparkles, ChevronUp, ChevronDown, Play } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useCallback, useRef, Component, ReactNode } from 'react';
+import { Button, Select, SelectItem, Tooltip } from '@heroui/react';
+import { Wand2, RefreshCw, Upload, Download, Video, ImageIcon, Users, MapPin, Frame, Film, ChevronDown, Play, PanelRight } from 'lucide-react';
 import { useSceneManager, StoryboardScene } from './useSceneManager';
 import { useAutoStoryboard } from './useAutoStoryboard';
 import { useSceneGeneration } from './useSceneGeneration';
@@ -15,18 +15,12 @@ import SceneList from './SceneList';
 import ResourcePanel from './ResourcePanel';
 import ScenePreviewPanel from './ScenePreviewPanel';
 import { PanelGroup } from '../../components/PanelGroup';
-import ResizablePanel from '../../components/ResizablePanel';
+import ResizablePanel, { ResizablePanelRef } from '../../components/ResizablePanel';
 import { getAuthToken } from '../../services/auth';
 import { useToast } from '../../contexts/ToastContext';
 import { AIModel } from '../../components/AIModelSelector';
 import { normalizeCapabilityOptions } from '../../utils/modelCapabilities';
 import { useKeyboardShortcuts, ShortcutConfig, STORYBOARD_SHORTCUTS_CONFIG, VIDEO_COMPOSITION_SHORTCUTS_CONFIG } from '../../hooks/useKeyboardShortcuts';
-import { generateFromSketch } from '../../services/storyboards';
-
-// 懒加载草图组件
-const SketchManager = lazy(() => import('./SketchModule/components/SketchManager'));
-const SketchEditor = lazy(() => import('./SketchModule/components/SketchEditor'));
-
 // 导入 AnimaticPreview 组件
 import { AnimaticPreview } from './AnimaticPreview';
 
@@ -109,10 +103,8 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
   const [videoDuration, setVideoDuration] = useState<number | null>(null);
   const [isSubmittingCharacterBatch, setIsSubmittingCharacterBatch] = useState(false);
   const [isSubmittingSceneBatch, setIsSubmittingSceneBatch] = useState(false);
-  const [showSketchManager, setShowSketchManager] = useState(false);
-  const [sketchEditorStoryboardId, setSketchEditorStoryboardId] = useState<number | null>(null);
-  const [isBatchSketchGenerating, setIsBatchSketchGenerating] = useState(false);
   const [isAnimaticOpen, setIsAnimaticOpen] = useState(false);
+  const resourcePanelRef = useRef<ResizablePanelRef>(null);
   const { showToast } = useToast();
 
   // O(1) model lookup via Map
@@ -467,73 +459,6 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
       console.error('视频批量生成失败:', error);
     }
   };
-
-  // 批量草图生成
-  const handleBatchSketchGeneration = async () => {
-    const scenesWithSketch = scenes.filter(s => s.sketchUrl);
-    if (scenesWithSketch.length === 0) {
-      showToast('没有分镜含有草图', 'warning');
-      return;
-    }
-
-    setIsBatchSketchGenerating(true);
-    let successCount = 0;
-    let failCount = 0;
-
-    try {
-      showToast(`正在批量生成 ${scenesWithSketch.length} 个草图分镜...`, 'info');
-      
-      for (const scene of scenesWithSketch) {
-        try {
-          await generateFromSketch(scene.id, {
-            controlStrength: scene.controlStrength ?? 0.85,
-            sketchUrl: scene.sketchUrl!,
-            sketchType: scene.sketchType || 'storyboard_sketch',
-          });
-          successCount++;
-        } catch (error) {
-          failCount++;
-          console.error(`[StoryBoard] 草图生成失败, sceneId: ${scene.id}`, error);
-        }
-      }
-
-      if (failCount === 0) {
-        showToast(`成功提交 ${successCount} 个草图生成任务`, 'success');
-      } else {
-        showToast(`提交 ${successCount} 个成功，${failCount} 个失败`, 'warning');
-      }
-    } catch (error: any) {
-      showToast('批量草图生成失败，请稍后重试', 'error');
-      console.error('批量草图生成失败:', error);
-    } finally {
-      setIsBatchSketchGenerating(false);
-    }
-  };
-
-  // 打开草图编辑器
-  const handleOpenSketchEditor = useCallback((storyboardId: number) => {
-    setSketchEditorStoryboardId(storyboardId);
-  }, []);
-
-  // 关闭草图编辑器
-  const handleCloseSketchEditor = useCallback(() => {
-    setSketchEditorStoryboardId(null);
-  }, []);
-
-  // 草图编辑器保存回调
-  const handleSketchEditorSave = useCallback((result: { sketchUrl?: string; sketchData?: unknown }) => {
-    if (sketchEditorStoryboardId && result.sketchUrl) {
-      setScenes(prev => prev.map(s => 
-        s.id === sketchEditorStoryboardId 
-          ? { ...s, sketchUrl: result.sketchUrl, sketchData: result.sketchData } 
-          : s
-      ));
-    }
-    setSketchEditorStoryboardId(null);
-  }, [sketchEditorStoryboardId, setScenes]);
-
-  // 计算有草图的分镜数量
-  const sketchCount = useMemo(() => scenes.filter(s => s.sketchUrl).length, [scenes]);
 
 
   // 8. 批量帧生成
@@ -902,39 +827,6 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
 
             <Divider />
 
-            {/* 草图操作 */}
-            <Tooltip content="草图管理" placement="bottom">
-              <button
-                onClick={() => setShowSketchManager(!showSketchManager)}
-                className={`
-                  h-8 w-8 flex items-center justify-center rounded-md border transition-all duration-150
-                  ${showSketchManager 
-                    ? 'bg-purple-500/20 text-purple-400 border-purple-500/30' 
-                    : 'bg-[var(--bg-card)] hover:bg-[var(--bg-card-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border-[var(--border-color)]'
-                  }
-                `}
-              >
-                <PencilRuler className="w-4 h-4" />
-              </button>
-            </Tooltip>
-            <div className="relative">
-              <IconButton
-                icon={<Sparkles className="w-4 h-4" />}
-                tooltip={`批量草图生成 (${sketchCount} 个有草图)`}
-                onClick={handleBatchSketchGeneration}
-                disabled={!currentScriptId || isBatchSketchGenerating || sketchCount === 0}
-                loading={isBatchSketchGenerating}
-                variant="primary"
-              />
-              {sketchCount > 0 && (
-                <span className="absolute -top-1 -right-1 w-4 h-4 flex items-center justify-center rounded-full bg-purple-500 text-white text-[10px] font-bold">
-                  {sketchCount}
-                </span>
-              )}
-            </div>
-
-            <Divider />
-
             {/* 播放分镜 */}
             {scenes.length > 0 && (
               <Tooltip content="播放分镜预览" placement="bottom">
@@ -970,6 +862,15 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
                 {autoStoryboard.isGenerating ? '生成中...' : '智能分镜'}
               </Button>
             </Tooltip>
+
+            <Divider />
+
+            {/* 资源面板切换 */}
+            <IconButton
+              icon={<PanelRight className="w-4 h-4" />}
+              tooltip="显示/隐藏资源面板"
+              onClick={() => resourcePanelRef.current?.toggle()}
+            />
           </div>
         </div>
 
@@ -1060,56 +961,6 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
       {/* 主内容区 - 三栏布局 */}
       {currentScriptId && (
         <div className="flex-1 overflow-hidden flex flex-col">
-          {/* 草图管理面板（可折叠） */}
-          {showSketchManager && (
-            <div className="flex-shrink-0 border-b border-[var(--border-color)]">
-              <div className="flex items-center justify-between px-4 py-2 bg-[var(--bg-card)]">
-                <div className="flex items-center gap-2">
-                  <PencilRuler className="w-4 h-4 text-purple-400" />
-                  <span className="text-sm font-medium text-[var(--text-primary)]">草图管理</span>
-                  <Chip size="sm" variant="flat" className="bg-purple-500/20 text-purple-400 text-xs">
-                    {sketchCount} / {scenes.length}
-                  </Chip>
-                </div>
-                <button
-                  onClick={() => setShowSketchManager(false)}
-                  className="p-1 rounded hover:bg-[var(--bg-app)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
-                >
-                  <ChevronUp className="w-4 h-4" />
-                </button>
-              </div>
-              <div className="h-[300px] overflow-hidden">
-                <Suspense fallback={
-                  <div className="flex items-center justify-center h-full">
-                    <div className="w-6 h-6 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
-                  </div>
-                }>
-                  <SketchManager
-                    scriptId={currentScriptId}
-                    projectId={currentProjectId || 0}
-                    storyboards={scenes.map(s => ({
-                      id: s.id,
-                      order: s.order,
-                      description: s.description,
-                      sketchUrl: s.sketchUrl,
-                      sketchType: s.sketchType,
-                      sketchData: s.sketchData,
-                      controlStrength: s.controlStrength,
-                      firstFrameUrl: s.startFrame,
-                    }))}
-                    onOpenEditor={handleOpenSketchEditor}
-                    onStoryboardUpdate={(id, updates) => {
-                      setScenes(prev => prev.map(s => 
-                        s.id === id ? { ...s, ...updates } : s
-                      ));
-                    }}
-                    onRefresh={() => currentScriptId && loadStoryboards(currentScriptId)}
-                  />
-                </Suspense>
-              </div>
-            </div>
-          )}
-
           {/* 三栏布局 */}
           <div className="flex-1 overflow-hidden">
             <PanelGroup 
@@ -1150,6 +1001,7 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
             {/* 中央：预览编辑 */}
             <ResizablePanel defaultSize={53} minSize={30} title="预览编辑">
               <ScenePreviewPanel
+                key={selectedScene ?? 'none'}
                 scene={selectedSceneData}
                 sceneIndex={selectedSceneData ? scenes.findIndex(s => s.id === selectedSceneData.id) : -1}
                 projectId={currentProjectId}
@@ -1164,7 +1016,7 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
             </ResizablePanel>
 
             {/* 右侧：资源面板 */}
-            <ResizablePanel defaultSize={25} minSize={15} maxSize={35} title="资源" collapsible>
+            <ResizablePanel ref={resourcePanelRef} defaultSize={25} minSize={15} maxSize={35} title="资源" collapsible>
               <ResourcePanel
                 characters={allCharacters}
                 locations={allLocations}
@@ -1204,23 +1056,6 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
         onOpenChange={setShowBatchDownloadModal}
         scenes={scenes}
       />
-
-      {/* 草图编辑器弹窗 */}
-      {sketchEditorStoryboardId && (
-        <Suspense fallback={
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-            <div className="w-8 h-8 border-3 border-purple-500 border-t-transparent rounded-full animate-spin" />
-          </div>
-        }>
-          <SketchEditor
-            storyboardId={sketchEditorStoryboardId}
-            initialData={scenes.find(s => s.id === sketchEditorStoryboardId)?.sketchData}
-            backgroundImage={scenes.find(s => s.id === sketchEditorStoryboardId)?.startFrame}
-            onSave={handleSketchEditorSave}
-            onClose={handleCloseSketchEditor}
-          />
-        </Suspense>
-      )}
 
       {/* Animatic 预览弹窗 */}
       <AnimaticPreview

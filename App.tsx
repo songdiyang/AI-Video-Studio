@@ -37,6 +37,7 @@ const UserManagement = React.lazy(() => import('./views/admin/UserManagement'));
 const ModelStatsDashboard = React.lazy(() => import('./views/admin/ModelStatsDashboard'));
 const RateLimitManagement = React.lazy(() => import('./views/admin/RateLimitManagement'));
 const SubscriptionManagement = React.lazy(() => import('./views/admin/SubscriptionManagement'));
+const SiteSettings = React.lazy(() => import('./views/admin/SiteSettings'));
 
 // 加载中回退组件
 const LoadingFallback = () => (
@@ -201,6 +202,11 @@ const App: React.FC = () => {
               <Route path="subscriptions" element={
                 <Suspense fallback={<LoadingFallback />}>
                   <SubscriptionManagement />
+                </Suspense>
+              } />
+              <Route path="site-settings" element={
+                <Suspense fallback={<LoadingFallback />}>
+                  <SiteSettings />
                 </Suspense>
               } />
               <Route index element={<Navigate to="/admin/dashboard" replace />} />

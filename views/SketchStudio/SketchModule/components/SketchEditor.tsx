@@ -692,7 +692,7 @@ const SketchEditor: React.FC<SketchEditorProps> = ({
 
   return (
     <div 
-      className="fixed inset-0 z-modal flex flex-col bg-[var(--bg-app)]"
+      className="fixed inset-0 z-fullscreen flex flex-col bg-[var(--bg-app)]"
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -769,7 +769,7 @@ const SketchEditor: React.FC<SketchEditorProps> = ({
         )}
 
         {/* Excalidraw 画布 */}
-        <div className="absolute inset-0 z-content overflow-hidden">
+        <div className="absolute inset-0 z-content">
           <Suspense fallback={<SketchEditorSkeleton />}>
             <Excalidraw
               excalidrawAPI={handleExcalidrawMount}

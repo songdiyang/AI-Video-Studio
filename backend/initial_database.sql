@@ -427,26 +427,29 @@ CREATE TABLE IF NOT EXISTS generation_tasks (
 --   VALUES ('admin', '<bcrypt_hash>', 'admin', 0.000000);
 -- Generate hash: node -e "console.log(require('bcryptjs').hashSync('your-password', 10))"
 
--- 初始化 DeepSeek 模型配置
+-- 初始化 DeepSeek 模型配置（DeepSeek-V3.2）
+-- deepseek-chat: 非思考模式，上下文128K，输出默认4K/最大8K
+-- deepseek-reasoner: 思考模式，上下文128K，输出默认32K/最大64K（由 custom_handler 自动切换）
 -- 注意：api_key 字段需要手动在数据库中更新，或通过管理后台配置
 INSERT INTO ai_model_configs (
   name, category, provider, description, is_active, api_key,
   price_config, request_method, url_template, headers_template,
-  body_template, default_params, response_mapping
+  body_template, default_params, response_mapping, custom_handler
 ) VALUES (
   'DeepSeek Chat',
   'TEXT',
   'deepseek',
-  '高性价比AI文本生成，适合剧本创作和智能对话',
+  'DeepSeek-V3.2 高性价比AI文本生成，支持128K上下文，适合剧本创作和智能对话。支持思考模式与工具调用。',
   1,
   NULL,  -- API Key 留空，首次使用时需在管理后台配置
-  '{"currency":"CNY","charge_on_failure":false,"components":[{"type":"total_tokens","unit":"per_token","price":0.0000014}]}',
+  '{"currency":"CNY","charge_on_failure":false,"components":[{"type":"input_tokens","unit":"per_million_tokens","price":2},{"type":"output_tokens","unit":"per_million_tokens","price":3}]}',
   'POST',
   'https://api.deepseek.com/v1/chat/completions',
   '{"Content-Type": "application/json", "Authorization": "Bearer {{apiKey}}"}',
   '{"model": "deepseek-chat", "messages": "{{messages}}", "max_tokens": "{{maxTokens}}", "temperature": "{{temperature}}"}',
   '{"maxTokens": 8000, "temperature": 0.7}',
-  '{"content": "choices.0.message.content", "tokens": "usage.total_tokens", "finishReason": "choices.0.finish_reason"}'
+  '{"content": "choices.0.message.content", "reasoningContent": "choices.0.message.reasoning_content", "tokens": "usage.total_tokens", "inputTokens": "usage.prompt_tokens", "outputTokens": "usage.completion_tokens", "finishReason": "choices.0.finish_reason"}',
+  'deepseek'
 )
 ON DUPLICATE KEY UPDATE 
   category=VALUES(category),

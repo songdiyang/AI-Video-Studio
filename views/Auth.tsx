@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { Card, CardBody, Button, Input } from '@heroui/react';
 import { User, Lock, ArrowRight, KeyRound, Maximize2, Minimize2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { login, register, loginWithAdminAccess, getLoginRequirements } from '../services/auth';
+import { login, register, loginWithAdminAccess, getLoginRequirements, getRegistrationStatus } from '../services/auth';
 import { useToast } from '../contexts/ToastContext';
 import { useLanguage } from '../contexts/LanguageContext';
 
@@ -22,6 +22,18 @@ const Auth: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<{ username?: string; password?: string }>({});
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [registrationEnabled, setRegistrationEnabled] = useState(true);
+
+  // 获取注册功能开关状态
+  useEffect(() => {
+    getRegistrationStatus().then(({ enabled }) => {
+      setRegistrationEnabled(enabled);
+      // 如果注册已关闭且当前在注册模式，切回登录
+      if (!enabled && mode === 'register') {
+        setMode('login');
+      }
+    });
+  }, []);
 
   // 获取登录前想访问的页面
   const from = (location.state as any)?.from?.pathname || '/';
@@ -234,7 +246,8 @@ const Auth: React.FC = () => {
             </div>
           </motion.div>
 
-          {/* Tab 切换 - 滑块动画 */}
+          {/* Tab 切换 - 滑块动画（注册开放时显示） */}
+          {registrationEnabled ? (
           <div className="flex gap-1 p-1 bg-[var(--bg-input)] rounded-xl border border-[var(--border-color)] relative">
             {/* 滑块 */}
             <motion.div
@@ -267,6 +280,7 @@ const Auth: React.FC = () => {
               {t.auth.registerTab}
             </button>
           </div>
+          ) : null}
 
           {/* 表单 - 切换动画 */}
           <AnimatePresence mode="wait">
@@ -372,6 +386,7 @@ const Auth: React.FC = () => {
           </AnimatePresence>
 
           {/* 底部提示 */}
+          {registrationEnabled ? (
           <div className="pt-4 border-t border-[var(--border-color)]">
             <p className="text-center text-sm text-[var(--text-muted)]">
               {mode === 'login' ? (
@@ -397,6 +412,13 @@ const Auth: React.FC = () => {
               )}
             </p>
           </div>
+          ) : (
+          <div className="pt-4 border-t border-[var(--border-color)]">
+            <p className="text-center text-xs text-[var(--text-muted)]">
+              {t.auth.registrationClosed}
+            </p>
+          </div>
+          )}
         </CardBody>
       </Card>
     </div>

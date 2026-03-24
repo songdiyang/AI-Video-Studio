@@ -33,11 +33,49 @@ function validateUsername(username) {
   return { valid: true };
 }
 
+// 公开接口：获取注册功能是否开放（无需认证）
+router.get('/registration-status', async (req, res) => {
+  try {
+    const config = await queryOne(
+      "SELECT config_value FROM system_configs WHERE config_key = 'enable_registration' AND is_active = 1"
+    );
+    // 默认开放注册（当配置不存在时）
+    let enabled = true;
+    if (config) {
+      try {
+        enabled = JSON.parse(config.config_value) === true;
+      } catch {
+        enabled = true;
+      }
+    }
+    return res.json({ enabled });
+  } catch (err) {
+    console.error('获取注册状态失败:', err);
+    // 出错时默认开放注册
+    return res.json({ enabled: true });
+  }
+});
+
 router.post('/register', async (req, res) => {
   const { email, password } = req.body;
 
   if (!email || !password) {
     return res.status(400).json({ message: 'Username and password are required' });
+  }
+
+  // 检查注册功能是否开放
+  try {
+    const regConfig = await queryOne(
+      "SELECT config_value FROM system_configs WHERE config_key = 'enable_registration' AND is_active = 1"
+    );
+    if (regConfig) {
+      const enabled = JSON.parse(regConfig.config_value);
+      if (enabled !== true) {
+        return res.status(403).json({ message: '注册功能已关闭，请联系管理员' });
+      }
+    }
+  } catch (e) {
+    // 配置读取失败不阻断注册
   }
 
   // 兼容旧的 email 参数名，实际存储为 username

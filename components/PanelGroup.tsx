@@ -191,6 +191,9 @@ const PanelGroup: React.FC<PanelGroupProps> = ({
   // 小屏模式下的活动面板
   const [activeMobilePanel, setActiveMobilePanel] = useState(mobileDefaultPanel);
   
+  // 平板模式下第三面板显示状态
+  const [tabletThirdPanelVisible, setTabletThirdPanelVisible] = useState(false);
+  
   const dragStateRef = useRef<{
     isDragging: boolean;
     dividerIndex: number;
@@ -239,8 +242,27 @@ const PanelGroup: React.FC<PanelGroupProps> = ({
       const data = JSON.parse(stored) as Record<number, PanelState>;
       const map = new Map<number, PanelState>();
       Object.entries(data).forEach(([k, v]) => {
-        map.set(parseInt(k, 10), v);
+        const state = v;
+        // 防腐化：如果未折叠但 size 为 0 或负数，重置为默认值
+        if (!state.collapsed && (state.size <= 0 || isNaN(state.size))) {
+          console.warn(`[PanelGroup] 面板 ${k} 状态异常 (size=${state.size}, collapsed=${state.collapsed})，重置存储`);
+          localStorage.removeItem(key);
+          return null;
+        }
+        map.set(parseInt(k, 10), state);
       });
+      
+      // 检查非折叠面板的总尺寸是否合理
+      let totalNonCollapsed = 0;
+      map.forEach((state) => {
+        if (!state.collapsed) totalNonCollapsed += state.size;
+      });
+      if (totalNonCollapsed > 0 && (totalNonCollapsed < 50 || totalNonCollapsed > 150)) {
+        console.warn(`[PanelGroup] 面板总尺寸异常 (${totalNonCollapsed}%)，重置存储`);
+        localStorage.removeItem(key);
+        return null;
+      }
+      
       return map;
     } catch (e) {
       console.warn('Failed to load panel sizes from localStorage:', e);
@@ -611,9 +633,10 @@ const PanelGroup: React.FC<PanelGroupProps> = ({
       );
     }
     
-    // 平板模式：双栏布局（隐藏第三个面板）
+    // 平板模式：双栏布局（第三个面板可切换显示）
     if (isTablet && childrenArray.length > 2) {
-      const visiblePanels = childrenArray.slice(0, 2);
+      const showThirdPanel = tabletThirdPanelVisible;
+      const visiblePanels = showThirdPanel ? childrenArray : childrenArray.slice(0, 2);
       const totalSize = visiblePanels.reduce((sum, child, index) => {
         const state = panelStates.get(index);
         return sum + (state?.size || 50);
@@ -653,6 +676,25 @@ const PanelGroup: React.FC<PanelGroupProps> = ({
           }
         }
       });
+
+      // 平板模式下的第三面板切换按钮
+      if (!showThirdPanel) {
+        result.push(
+          <div
+            key="tablet-toggle"
+            onClick={() => setTabletThirdPanelVisible(true)}
+            className="flex-shrink-0 w-8 flex flex-col items-center justify-center gap-1.5 cursor-pointer bg-[var(--bg-card)] border-l border-[var(--border-color)] hover:bg-[var(--bg-card-hover)] transition-colors"
+            title={`显示${panelLabels[2] || '第三面板'}`}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[var(--text-muted)]">
+              <polyline points="15 18 9 12 15 6" />
+            </svg>
+            <span className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider" style={{ writingMode: 'vertical-lr', transform: 'rotate(180deg)' }}>
+              {panelLabels[2] || '资源'}
+            </span>
+          </div>
+        );
+      }
       
       return result;
     }

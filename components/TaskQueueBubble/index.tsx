@@ -30,8 +30,7 @@ const SIDEBAR_WIDTH = 56;
 const MIN_PANEL_HEIGHT = 150;
 const MAX_PANEL_HEIGHT = 500;
 const DEFAULT_PANEL_HEIGHT = 250;
-const INDICATOR_WIDTH = 180;
-const INDICATOR_HEIGHT = 32;
+const BUBBLE_SIZE = 48;
 const HEADER_HEIGHT = 36;
 
 // 状态颜色
@@ -135,69 +134,83 @@ const TaskQueueBubble: React.FC = () => {
 
       <AnimatePresence mode="wait">
         {!isExpanded ? (
-          /* 收起态 - 状态指示器 */
+          /* 收起态 - 悬浮球 */
           <motion.button
-            key="indicator"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 10 }}
-            transition={{ duration: 0.2 }}
+            key="bubble"
+            initial={{ scale: 0, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0, opacity: 0 }}
+            transition={{ duration: 0.25, ease: [0.4, 0, 0.2, 1] }}
             onClick={() => {
               setIsExpanded(true);
               fetchJobs(true);
             }}
-            className="fixed z-40 flex items-center gap-2 px-3 rounded-t-lg transition-colors"
+            className="fixed z-40 flex items-center justify-center rounded-full shadow-lg cursor-pointer"
             style={{
-              bottom: STATUS_BAR_HEIGHT,
-              right: 16,
-              width: INDICATOR_WIDTH,
-              height: INDICATOR_HEIGHT,
-              backgroundColor: 'var(--bg-nav)',
-              borderTop: '1px solid var(--border)',
-              borderLeft: '1px solid var(--border)',
-              borderRight: '1px solid var(--border)',
+              bottom: STATUS_BAR_HEIGHT + 16,
+              right: 20,
+              width: BUBBLE_SIZE,
+              height: BUBBLE_SIZE,
+              background: 'linear-gradient(135deg, #f472b6, #60a5fa)',
             }}
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.95 }}
             title="展开任务队列"
           >
-            {/* 任务图标 */}
-            <div className="relative">
-              <ListTodo className="w-4 h-4" style={{ color: 'var(--text-secondary)' }} />
-              {/* 失败任务指示器（优先显示） */}
-              {hasFailedJobs && (
-                <motion.span
-                  animate={{ scale: [1, 1.2, 1] }}
-                  transition={{ duration: 1.5, repeat: Infinity }}
-                  className="absolute -top-1 -right-1 w-2 h-2 rounded-full"
-                  style={{ backgroundColor: 'var(--danger)' }}
-                />
-              )}
-              {/* 活跃任务指示器（仅在无失败任务时显示） */}
-              {!hasFailedJobs && activeCount > 0 && (
-                <motion.span
-                  animate={{ scale: [1, 1.2, 1] }}
-                  transition={{ duration: 2, repeat: Infinity }}
-                  className="absolute -top-1 -right-1 w-2 h-2 rounded-full"
-                  style={{ backgroundColor: 'var(--accent)' }}
-                />
-              )}
-            </div>
+            {/* 图标 */}
+            <ListTodo className="w-5 h-5 text-white" />
 
-            {/* 任务数量 */}
-            <span className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>
-              {activeCount > 0 ? `${activeCount} 任务` : '无任务'}
-            </span>
+            {/* 失败红点 */}
+            {hasFailedJobs && (
+              <motion.span
+                animate={{ scale: [1, 1.3, 1] }}
+                transition={{ duration: 1.2, repeat: Infinity }}
+                className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full text-[10px] font-bold text-white px-1"
+                style={{ backgroundColor: '#ef4444', boxShadow: '0 0 6px rgba(239,68,68,0.5)' }}
+              >
+                {failedCount}
+              </motion.span>
+            )}
 
-            {/* 微型进度条 */}
+            {/* 活跃任务角标（无失败时显示） */}
+            {!hasFailedJobs && activeCount > 0 && (
+              <span
+                className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full text-[10px] font-bold text-white px-1"
+                style={{ backgroundColor: 'var(--accent)' }}
+              >
+                {activeCount}
+              </span>
+            )}
+
+            {/* 环形进度（运行中时） */}
             {activeCount > 0 && (
-              <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--bg-secondary)' }}>
-                <motion.div
-                  className="h-full rounded-full"
-                  style={{ backgroundColor: 'var(--accent)' }}
-                  initial={{ width: 0 }}
-                  animate={{ width: `${overallProgress}%` }}
-                  transition={{ duration: 0.3, ease: 'easeOut' }}
+              <svg
+                className="absolute inset-0"
+                width={BUBBLE_SIZE}
+                height={BUBBLE_SIZE}
+                style={{ transform: 'rotate(-90deg)' }}
+              >
+                <circle
+                  cx={BUBBLE_SIZE / 2}
+                  cy={BUBBLE_SIZE / 2}
+                  r={BUBBLE_SIZE / 2 - 2}
+                  fill="none"
+                  stroke="rgba(255,255,255,0.3)"
+                  strokeWidth={2.5}
                 />
-              </div>
+                <motion.circle
+                  cx={BUBBLE_SIZE / 2}
+                  cy={BUBBLE_SIZE / 2}
+                  r={BUBBLE_SIZE / 2 - 2}
+                  fill="none"
+                  stroke="#fff"
+                  strokeWidth={2.5}
+                  strokeLinecap="round"
+                  strokeDasharray={Math.PI * (BUBBLE_SIZE - 4)}
+                  animate={{ strokeDashoffset: Math.PI * (BUBBLE_SIZE - 4) * (1 - overallProgress / 100) }}
+                  transition={{ duration: 0.4, ease: 'easeOut' }}
+                />
+              </svg>
             )}
           </motion.button>
         ) : (
@@ -325,10 +338,14 @@ const TaskQueueBubble: React.FC = () => {
               }}
             >
               <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                {failedCount > 0 && (
+                  <span style={{ color: 'var(--danger)', fontWeight: 500 }}>{failedCount} 失败</span>
+                )}
+                {failedCount > 0 && runningCount > 0 && ' · '}
                 {runningCount > 0 && `${runningCount} 运行中`}
                 {runningCount > 0 && pendingCount > 0 && ' · '}
                 {pendingCount > 0 && `${pendingCount} 等待中`}
-                {activeCount === 0 && '无活跃任务'}
+                {activeCount === 0 && failedCount === 0 && '无活跃任务'}
               </span>
               {activeCount > 0 && (
                 <span className="text-xs font-medium" style={{ color: 'var(--accent)' }}>

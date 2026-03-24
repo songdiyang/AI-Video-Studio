@@ -1,2 +1,2 @@
-// Re-export from new SketchModule location for backward compatibility
-export { default } from '../SketchModule/components/SketchPanel';
+// Re-export from SketchStudio module for backward compatibility
+export { default } from '../../SketchStudio/SketchModule/components/SketchPanel';

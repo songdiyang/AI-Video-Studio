@@ -159,7 +159,7 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
     }
   };
 
-  // 删除帧
+  // 删除帧（全部）
   const handleDeleteFrames = useCallback(async () => {
     if (!scene) return;
     try {
@@ -181,6 +181,72 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
       showToast('删除失败', 'error');
     }
   }, [scene, onUpdateScene, showToast]);
+
+  // 独立删除首帧
+  const handleDeleteFirstFrame = useCallback(async () => {
+    if (!scene) return;
+    const confirmed = await confirm({
+      title: '删除首帧',
+      message: scene.videoUrl
+        ? '该分镜已生成视频，删除首帧可能需要重新生成视频。\n\n确定要删除首帧吗？尾帧将保留。'
+        : '确定要删除首帧吗？尾帧将保留，下次生成时可以参考尾帧。',
+      type: scene.videoUrl ? 'warning' : 'danger',
+      confirmText: '删除首帧',
+      cancelText: '取消'
+    });
+    if (!confirmed) return;
+    try {
+      const token = getAuthToken();
+      await fetch(`/api/storyboards/${scene.id}/media`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ firstFrameUrl: null })
+      });
+      if (onUpdateScene) {
+        onUpdateScene({ startFrame: undefined, imageUrl: scene.endFrame || undefined });
+      }
+      setShowStartFrame(false); // 切换到尾帧显示
+      showToast('已删除首帧，尾帧已保留', 'success');
+    } catch (err) {
+      console.error('[ScenePreviewPanel] 删除首帧失败:', err);
+      showToast('删除失败', 'error');
+    }
+  }, [scene, onUpdateScene, showToast, confirm]);
+
+  // 独立删除尾帧
+  const handleDeleteLastFrame = useCallback(async () => {
+    if (!scene) return;
+    const confirmed = await confirm({
+      title: '删除尾帧',
+      message: '确定要删除尾帧吗？首帧将保留，下次生成时可以参考首帧。',
+      type: 'danger',
+      confirmText: '删除尾帧',
+      cancelText: '取消'
+    });
+    if (!confirmed) return;
+    try {
+      const token = getAuthToken();
+      await fetch(`/api/storyboards/${scene.id}/media`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ lastFrameUrl: null })
+      });
+      if (onUpdateScene) {
+        onUpdateScene({ endFrame: undefined });
+      }
+      setShowStartFrame(true); // 切换到首帧显示
+      showToast('已删除尾帧，首帧已保留', 'success');
+    } catch (err) {
+      console.error('[ScenePreviewPanel] 删除尾帧失败:', err);
+      showToast('删除失败', 'error');
+    }
+  }, [scene, onUpdateScene, showToast, confirm]);
 
   // 删除视频
   const handleDeleteVideo = useCallback(async () => {
@@ -246,45 +312,84 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
         ) : hasFrames ? (
           // 帧图片预览
           <div className="relative w-full h-full flex items-center justify-center">
-            {currentFrame && (
+            {currentFrame ? (
               <img
                 src={currentFrame}
                 alt={`分镜 ${sceneIndex + 1} - ${showStartFrame ? '首帧' : '尾帧'}`}
                 className="max-w-full max-h-full rounded-lg shadow-2xl object-contain"
                 style={{ maxHeight: 'calc(100% - 2rem)' }}
               />
+            ) : (
+              // 当前帧缺失，显示生成按钮
+              <div className="flex flex-col items-center justify-center text-center">
+                <div className="w-32 h-20 rounded-lg border-2 border-dashed border-[var(--border-color)] flex items-center justify-center mb-3">
+                  <ImageIcon className="w-8 h-8 text-[var(--text-muted)]" />
+                </div>
+                <p className="text-xs text-[var(--text-muted)] mb-3">
+                  {showStartFrame ? '首帧已删除，尾帧已保留' : '尾帧已删除，首帧已保留'}
+                </p>
+                <Button
+                  size="sm"
+                  className="pro-btn-primary"
+                  startContent={<ImageIcon className="w-4 h-4" />}
+                  onPress={handleGenerateImage}
+                  isLoading={isGeneratingImage}
+                  isDisabled={isGeneratingImage}
+                >
+                  生成{showStartFrame ? '首帧' : '尾帧'}（参考{showStartFrame ? '尾帧' : '首帧'}）
+                </Button>
+              </div>
             )}
             
-            {/* 帧切换控制 */}
-            {scene.hasAction && scene.startFrame && scene.endFrame && (
+            {/* 帧切换控制 - 动作镜头始终显示切换器 */}
+            {scene.hasAction && (scene.startFrame || scene.endFrame) && (
               <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-black/60 backdrop-blur-sm rounded-full px-3 py-1.5">
                 <button
                   onClick={() => setShowStartFrame(true)}
                   className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                    showStartFrame ? 'bg-[var(--accent)] text-white' : 'text-white/70 hover:text-white'
+                    showStartFrame
+                      ? (scene.startFrame ? 'bg-[var(--accent)] text-white' : 'bg-red-500/60 text-white')
+                      : (scene.startFrame ? 'text-white/70 hover:text-white' : 'text-red-400/70 hover:text-red-300')
                   }`}
                 >
-                  首帧
+                  首帧{!scene.startFrame ? '(已删)' : ''}
                 </button>
                 <button
                   onClick={() => setShowStartFrame(false)}
                   className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                    !showStartFrame ? 'bg-[var(--accent)] text-white' : 'text-white/70 hover:text-white'
+                    !showStartFrame
+                      ? (scene.endFrame ? 'bg-[var(--accent)] text-white' : 'bg-red-500/60 text-white')
+                      : (scene.endFrame ? 'text-white/70 hover:text-white' : 'text-red-400/70 hover:text-red-300')
                   }`}
                 >
-                  尾帧
+                  尾帧{!scene.endFrame ? '(已删)' : ''}
                 </button>
               </div>
             )}
 
-            {/* 删除帧按钮 */}
-            <button
-              onClick={handleDeleteFrames}
-              className="absolute top-2 right-2 p-2 rounded-lg bg-black/50 hover:bg-red-500/80 text-white transition-colors"
-              title="删除首尾帧"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
+            {/* 删除帧按钮组 */}
+            {currentFrame && (
+              <div className="absolute top-2 right-2 flex items-center gap-1">
+                {/* 独立删除当前帧 */}
+                {scene.hasAction && scene.startFrame && scene.endFrame && (
+                  <button
+                    onClick={showStartFrame ? handleDeleteFirstFrame : handleDeleteLastFrame}
+                    className="p-2 rounded-lg bg-black/50 hover:bg-orange-500/80 text-white transition-colors"
+                    title={`删除${showStartFrame ? '首帧' : '尾帧'}（保留${showStartFrame ? '尾帧' : '首帧'}）`}
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+                {/* 删除全部帧 */}
+                <button
+                  onClick={handleDeleteFrames}
+                  className="p-2 rounded-lg bg-black/50 hover:bg-red-500/80 text-white transition-colors"
+                  title="删除全部帧"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            )}
           </div>
         ) : (
           // 无媒体时的占位

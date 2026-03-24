@@ -148,8 +148,8 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
     imageModel,
     textModel,
     aspectRatio,
-    width = 512,
-    height = 768
+    width = 1920,
+    height = 2880
   } = inputParams;
 
 

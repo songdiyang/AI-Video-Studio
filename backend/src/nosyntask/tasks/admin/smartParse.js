@@ -98,15 +98,20 @@ price_config 允许的 unit：
   "name": "DeepSeek Chat",
   "category": "TEXT",
   "provider": "deepseek",
-  "description": "高性价比文本生成",
+  "description": "DeepSeek-V3.2 高性价比文本生成，支持128K上下文",
   "price_config": {
     "currency": "CNY",
     "charge_on_failure": false,
     "components": [
       {
-        "type": "total_tokens",
-        "unit": "per_token",
-        "price": 0.0000014
+        "type": "input_tokens",
+        "unit": "per_million_tokens",
+        "price": 2
+      },
+      {
+        "type": "output_tokens",
+        "unit": "per_million_tokens",
+        "price": 3
       }
     ]
   },
@@ -128,9 +133,13 @@ price_config 允许的 unit：
   },
   "response_mapping": {
     "content": "choices.0.message.content",
+    "reasoningContent": "choices.0.message.reasoning_content",
     "tokens": "usage.total_tokens",
+    "inputTokens": "usage.prompt_tokens",
+    "outputTokens": "usage.completion_tokens",
     "finishReason": "choices.0.finish_reason"
-  }
+  },
+  "custom_handler": "deepseek"
 }
 
 ### 示例 2：异步图片模型（IMAGE）

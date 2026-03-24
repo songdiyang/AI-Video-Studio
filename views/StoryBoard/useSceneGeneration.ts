@@ -173,7 +173,7 @@ export function useSceneGeneration({
   }, [tasks, clearTask, setScenes]);
 
   // 启动首尾帧生成 workflow
-  const generateImage = async (id: number, prompt: string): Promise<{ success: boolean; error?: string }> => {
+  const generateImage = async (id: number, prompt: string, regenerateTarget?: 'first' | 'last' | 'both'): Promise<{ success: boolean; error?: string }> => {
     try {
       if (isTaskActive(`img_${id}`)) {
         return { success: false, error: '当前镜头正在生成首尾帧，请等待完成后再试' };
@@ -199,12 +199,13 @@ export function useSceneGeneration({
       // 根据是否有动作选择不同的工作流
       if (scene.hasAction) {
         // 有动作：生成首尾帧
-        console.log('[useSceneGeneration] 生成首尾帧（有动作）');
+        console.log('[useSceneGeneration] 生成首尾帧（有动作）, target:', regenerateTarget || 'auto');
         await runTask(`img_${id}`, 'frame_generation', {
           storyboardId: id,
           prompt,
           imageModel,
           textModel,
+          regenerateTarget,
           ...extraParams
         });
       } else {

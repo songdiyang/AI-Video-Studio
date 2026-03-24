@@ -48,14 +48,43 @@ const renderScriptContent = (content: string) => {
       return;
     }
 
-    // 角色对白: **角色名**：“...” 或 **角色名**：“...”
-    const dialogueMatch = trimmedLine.match(/^\*\*(.+?)\*\*[:：]\s*[\u201c"](.+)[\u201d"]$/);
+   // 角色对白 A: **角色名**：（舞台指示）"对白" —— 含动作提示
+    const dialogueWithActionMatch = trimmedLine.match(/^\*\*(.+?)\*\*[:：]\s*([（(].+?[）)])\s*[\u201c"](.+?)[\u201d"]*$/);
+    if (dialogueWithActionMatch) {
+      const [, characterName, action, dialogue] = dialogueWithActionMatch;
+      elements.push(
+        <div key={key++} className="my-3 flex items-start gap-3">
+          <span className="font-bold text-[var(--success)] whitespace-nowrap min-w-[4rem]">{characterName}</span>
+          <span className="text-[var(--text-primary)] leading-relaxed">
+            <span className="text-[var(--warning)] text-sm italic mr-1">（{action.slice(1, -1)}）</span>
+            "{dialogue}"
+          </span>
+        </div>
+      );
+      return;
+    }
+   
+    // 角色对白 B: **角色名**："对白" 或 **角色名**:"对白"
+    const dialogueMatch = trimmedLine.match(/^\*\*(.+?)\*\*[:：]\s*[\u201c"](.+?)[\u201d"]*$/);
     if (dialogueMatch) {
       const [, characterName, dialogue] = dialogueMatch;
       elements.push(
         <div key={key++} className="my-3 flex items-start gap-3">
           <span className="font-bold text-[var(--success)] whitespace-nowrap min-w-[4rem]">{characterName}</span>
-          <span className="text-[var(--text-primary)] leading-relaxed">“{dialogue}”</span>
+          <span className="text-[var(--text-primary)] leading-relaxed">"{dialogue}"</span>
+        </div>
+      );
+      return;
+    }
+   
+    // 角色对白 C: 角色名   "对白" —— 无 ** 标记，名字后跟 2+ 空格/Tab
+    const simpleDialogueMatch = trimmedLine.match(/^([^\s*（("\u201c]{1,10})\s{2,}[\u201c"](.+?)[\u201d"]*$/);
+    if (simpleDialogueMatch) {
+      const [, characterName, dialogue] = simpleDialogueMatch;
+      elements.push(
+        <div key={key++} className="my-3 flex items-start gap-3">
+          <span className="font-bold text-[var(--success)] whitespace-nowrap min-w-[4rem]">{characterName}</span>
+          <span className="text-[var(--text-primary)] leading-relaxed">"{dialogue}"</span>
         </div>
       );
       return;
@@ -79,10 +108,20 @@ const renderScriptContent = (content: string) => {
       return;
     }
 
-    // 普通文本
+    // 普通文本（处理行内 **加粗**）
+    const inlineParts = trimmedLine.split(/(\*\*.+?\*\*)/);
+    const hasInlineBold = inlineParts.length > 1;
     elements.push(
       <p key={key++} className="text-[var(--text-secondary)] my-2 leading-relaxed">
-        {line}
+        {hasInlineBold
+          ? inlineParts.map((part, i) => {
+              const boldMatch = part.match(/^\*\*(.+?)\*\*$/);
+              return boldMatch
+                ? <strong key={i} className="font-bold text-[var(--text-primary)]">{boldMatch[1]}</strong>
+                : part;
+            })
+          : line
+        }
       </p>
     );
   });

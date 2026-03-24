@@ -163,6 +163,20 @@ module.exports = {
     console.log('[Seedance1.5 Handler] 开始处理请求');
     console.log('[Seedance1.5 Handler] 原始参数:', JSON.stringify(params, null, 2));
 
+    // 0. API 密钥处理：优先 model.api_key，其次 params.apiKey，最后环境变量
+    const apiKey = model.api_key || params.apiKey || process.env.SEEDANCE_API_KEY;
+    if (!apiKey) {
+      throw new Error('Seedance API Key 未配置：请在模型配置中设置 API Key 或配置环境变量 SEEDANCE_API_KEY');
+    }
+    // 删除所有大小写变体的 Authorization，避免重复
+    for (const key of Object.keys(rendered.headers)) {
+      if (key.toLowerCase() === 'authorization') {
+        delete rendered.headers[key];
+      }
+    }
+    rendered.headers['Authorization'] = 'Bearer ' + apiKey;
+    console.log('[Seedance1.5 Handler] API Key 已设置, 长度:', apiKey.length);
+
     // 1. 构建 content 数组
     const prompt = params.prompt || '';
     const imageUrls = params.imageUrls || [];

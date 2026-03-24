@@ -618,8 +618,8 @@ const AssetsManager: React.FC = () => {
     if (!matchesTag(c.tags)) return false;
     // 搜索
     const q = searchQuery.toLowerCase();
-    return c.name.toLowerCase().includes(q) ||
-      c.description.toLowerCase().includes(q) ||
+    return (c.name || '').toLowerCase().includes(q) ||
+      (c.description || '').toLowerCase().includes(q) ||
       (c.tags && c.tags.toLowerCase().includes(q)) ||
       (c.project_name && c.project_name.toLowerCase().includes(q));
   });
@@ -627,8 +627,8 @@ const AssetsManager: React.FC = () => {
   const filteredScenes = scenes.filter(s => {
     if (!matchesTag(s.tags)) return false;
     const q = searchQuery.toLowerCase();
-    return s.name.toLowerCase().includes(q) ||
-      s.description.toLowerCase().includes(q) ||
+    return (s.name || '').toLowerCase().includes(q) ||
+      (s.description || '').toLowerCase().includes(q) ||
       (s.tags && s.tags.toLowerCase().includes(q)) ||
       (s.project_name && s.project_name.toLowerCase().includes(q));
   });
@@ -636,13 +636,13 @@ const AssetsManager: React.FC = () => {
   const filteredProps = props.filter(p => {
     if (!matchesTag(p.tags)) return false;
     const q = searchQuery.toLowerCase();
-    return p.name.toLowerCase().includes(q) ||
-      p.description.toLowerCase().includes(q) ||
+    return (p.name || '').toLowerCase().includes(q) ||
+      (p.description || '').toLowerCase().includes(q) ||
       (p.tags && p.tags.toLowerCase().includes(q));
   });
 
   return (
-    <div className="h-full bg-[var(--bg-app)] overflow-hidden p-6">
+    <div className="h-full bg-[var(--bg-app)] overflow-y-auto p-6">
       <div className="max-w-7xl mx-auto space-y-6">
         {/* 头部 */}
         <div className="flex items-center justify-between">
