@@ -416,5 +416,15 @@ module.exports = {
     defaultValue: null,
     description: '道具图片 URL',
     category: 'prop'
+  },
+
+  // ================================================================
+  //  重新生成控制
+  // ================================================================
+  regenerateOnly: {
+    from: 'regenerateOnly',
+    defaultValue: null,
+    description: '仅重新生成指定视图（如 front/side/back），为 null 时生成全部',
+    category: 'control'
   }
 };
