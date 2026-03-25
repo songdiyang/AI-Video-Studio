@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, RotateCcw, ListTodo, Minus, GripHorizontal } from 'lucide-react';
 import { getAuthToken } from '../../services/auth';
+import { consumeWorkflow } from '../../hooks/useWorkflow';
 import { useToast } from '../../contexts/ToastContext';
 import { useTaskQueue } from './useTaskQueue';
 import TaskItem, { getTaskName } from './TaskItem';
@@ -62,6 +63,7 @@ const TaskQueueBubble: React.FC = () => {
   const resizeStartY = useRef(0);
   const resizeStartHeight = useRef(0);
   const { showToast } = useToast();
+  const hasViewedFailures = useRef(false);
 
   const {
     jobs,
@@ -72,6 +74,7 @@ const TaskQueueBubble: React.FC = () => {
     getJobProgress,
   } = useTaskQueue({
     onJobFailed: (job) => {
+      hasViewedFailures.current = false;
       const name = getTaskName(job);
       const reason = job.error_message || '未知错误';
       showToast(`「${name}」执行失败：${reason}`, 'error');
@@ -84,6 +87,7 @@ const TaskQueueBubble: React.FC = () => {
   const failedCount = jobs.filter(j => j.status === 'failed').length;
   const activeCount = runningCount + pendingCount;
   const hasFailedJobs = failedCount > 0;
+  const showFailedBadge = hasFailedJobs && !hasViewedFailures.current;
 
   // 计算整体进度
   const overallProgress = jobs.length > 0
@@ -144,6 +148,7 @@ const TaskQueueBubble: React.FC = () => {
             onClick={() => {
               setIsExpanded(true);
               fetchJobs(true);
+              if (hasFailedJobs) hasViewedFailures.current = true;
             }}
             className="fixed z-40 flex items-center justify-center rounded-full shadow-lg cursor-pointer"
             style={{
@@ -161,7 +166,7 @@ const TaskQueueBubble: React.FC = () => {
             <ListTodo className="w-5 h-5 text-white" />
 
             {/* 失败红点 */}
-            {hasFailedJobs && (
+            {showFailedBadge && (
               <motion.span
                 animate={{ scale: [1, 1.3, 1] }}
                 transition={{ duration: 1.2, repeat: Infinity }}
@@ -173,7 +178,7 @@ const TaskQueueBubble: React.FC = () => {
             )}
 
             {/* 活跃任务角标（无失败时显示） */}
-            {!hasFailedJobs && activeCount > 0 && (
+            {!showFailedBadge && activeCount > 0 && (
               <span
                 className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full text-[10px] font-bold text-white px-1"
                 style={{ backgroundColor: 'var(--accent)' }}
@@ -321,6 +326,14 @@ const TaskQueueBubble: React.FC = () => {
                         statusColor={getStatusColor(job.status)}
                         statusLabel={getStatusLabel(job.status)}
                         onCancelled={() => fetchJobs(false)}
+                        onDismiss={async () => {
+                          try {
+                            await consumeWorkflow(job.id);
+                            fetchJobs(false);
+                          } catch (err) {
+                            console.error('[TaskQueue] 删除任务失败:', err);
+                          }
+                        }}
                         index={index}
                       />
                     ))}

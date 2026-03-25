@@ -94,7 +94,14 @@ router.get('/admin', authMiddleware, requireAdmin, async (req, res) => {
       params
     );
 
-    res.json(feedbacks);
+    // 查询总数用于分页
+    const countParams = params.slice(0, params.length - 2); // 去掉 limit 和 offset
+    const countRow = await queryOne(
+      `SELECT COUNT(*) as total FROM feedback f WHERE ${where}`,
+      countParams
+    );
+
+    res.json({ feedbacks, total: countRow ? countRow.total : 0 });
   } catch (err) {
     console.error('[Feedback] 管理员获取反馈失败:', err);
     res.status(500).json({ error: '获取反馈列表失败' });
@@ -128,6 +135,68 @@ router.patch('/:id', authMiddleware, requireAdmin, async (req, res) => {
   } catch (err) {
     console.error('[Feedback] 更新反馈失败:', err);
     res.status(500).json({ error: '更新反馈失败' });
+  }
+});
+
+// POST /api/feedback/admin/:id/mail - 管理员给反馈用户发站内信
+router.post('/admin/:id/mail', authMiddleware, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { title, content } = req.body;
+
+    if (!title || !content) {
+      return res.status(400).json({ error: '标题和内容不能为空' });
+    }
+
+    const feedback = await queryOne(
+      'SELECT id, user_id FROM feedback WHERE id = ?',
+      [id]
+    );
+    if (!feedback) {
+      return res.status(404).json({ error: '反馈不存在' });
+    }
+
+    await execute(
+      `INSERT INTO internal_mail (sender_type, sender_id, receiver_id, title, content, mail_type, related_feedback_id)
+       VALUES ('admin', ?, ?, ?, ?, 'reply', ?)`,
+      [req.user.id, feedback.user_id, title, content, id]
+    );
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[Feedback] 发送站内信失败:', err);
+    res.status(500).json({ error: '发送站内信失败' });
+  }
+});
+
+// POST /api/feedback/admin/announce - 管理员群发公告站内信
+router.post('/admin/announce', authMiddleware, requireAdmin, async (req, res) => {
+  try {
+    const { title, content } = req.body;
+
+    if (!title || !content) {
+      return res.status(400).json({ error: '公告标题和内容不能为空' });
+    }
+
+    const users = await queryAll('SELECT id FROM users');
+    if (!users || users.length === 0) {
+      return res.status(400).json({ error: '没有可发送的用户' });
+    }
+
+    let sent = 0;
+    for (const user of users) {
+      await execute(
+        `INSERT INTO internal_mail (sender_type, sender_id, receiver_id, title, content, mail_type)
+         VALUES ('admin', ?, ?, ?, ?, 'announce')`,
+        [req.user.id, user.id, title, content]
+      );
+      sent++;
+    }
+
+    res.json({ success: true, total: users.length, sent });
+  } catch (err) {
+    console.error('[Feedback] 群发公告失败:', err);
+    res.status(500).json({ error: '群发公告失败' });
   }
 });
 

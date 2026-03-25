@@ -15,6 +15,7 @@ import OnboardingOverlay from './Onboarding/OnboardingOverlay';
 import DashboardPanel from './WorkflowDashboard/DashboardPanel';
 import { useOnboarding, OnboardingStep } from '../hooks/useOnboarding';
 import NetworkStatusBar from './NetworkStatusBar';
+import InternalMailbox from './InternalMailbox';
 import { useRoutePreload } from '../hooks/useRoutePreload';
 
 interface LayoutProps {
@@ -421,6 +422,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
             >
               <BarChart3 className="w-4 h-4" />
             </button>
+            <InternalMailbox />
             <span className="text-xs text-[var(--text-muted)]">
               {t.nav.studioTitle}
             </span>

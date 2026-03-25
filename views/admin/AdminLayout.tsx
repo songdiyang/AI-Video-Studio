@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { ChevronDown, ChevronRight, LogOut, Settings, Users, Cpu, LayoutDashboard, Server, BarChart3, Gauge, CreditCard, Globe } from 'lucide-react';
+import { ChevronDown, ChevronRight, LogOut, Settings, Users, Cpu, LayoutDashboard, Server, BarChart3, Gauge, CreditCard, Globe, MessageSquare, AlertTriangle } from 'lucide-react';
 import { getAuthUser, logout } from '../../services/auth';
 
 interface MenuItem {
@@ -71,6 +71,18 @@ const AdminLayout: React.FC = () => {
           label: '站点设置',
           icon: <Globe className="w-4 h-4" />,
           path: '/admin/site-settings'
+        },
+        {
+          id: 'feedback',
+          label: '反馈管理',
+          icon: <MessageSquare className="w-4 h-4" />,
+          path: '/admin/feedback'
+        },
+        {
+          id: 'task-errors',
+          label: '任务监控',
+          icon: <AlertTriangle className="w-4 h-4" />,
+          path: '/admin/task-errors'
         }
       ]
     }

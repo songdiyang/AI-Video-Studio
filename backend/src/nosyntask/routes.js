@@ -11,7 +11,7 @@
  */
 
 const express = require('express');
-const { authMiddleware } = require('../middleware');
+const { authMiddleware, requireAdmin } = require('../middleware');
 const { getAvailableWorkflows } = require('./definitions');
 const {
   generationStartService,
@@ -123,6 +123,53 @@ router.get('/active', authMiddleware, async (req, res) => {
   } catch (error) {
     console.error('[Active Workflows]', error);
     res.status(500).json({ message: error.message || '查询活跃工作流失败' });
+  }
+});
+
+/**
+ * 管理员接口 - 获取所有用户的失败工作流
+ */
+router.get('/admin/errors', authMiddleware, requireAdmin, async (req, res) => {
+  try {
+    const { page = 1, limit = 20, workflowType } = req.query;
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+    const { execute } = require('../dbHelper');
+
+    let where = "WHERE wj.status = 'failed'";
+    const params = [];
+    if (workflowType) {
+      where += ' AND wj.workflow_type = ?';
+      params.push(workflowType);
+    }
+
+    const countSql = `SELECT COUNT(*) as total FROM workflow_jobs wj ${where}`;
+    const countResult = await execute(countSql, params);
+    const total = countResult[0].total;
+
+    const dataSql = `
+      SELECT wj.id, wj.user_id, u.email as user_email, wj.workflow_type, wj.status,
+             wj.error_message, wj.input_params, wj.created_at, wj.updated_at, wj.is_consumed
+      FROM workflow_jobs wj
+      LEFT JOIN users u ON u.id = wj.user_id
+      ${where}
+      ORDER BY wj.created_at DESC
+      LIMIT ? OFFSET ?
+    `;
+    const dataParams = [...params, parseInt(limit), offset];
+    const jobs = await execute(dataSql, dataParams);
+
+    res.json({
+      jobs,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        totalPages: Math.ceil(total / parseInt(limit))
+      }
+    });
+  } catch (error) {
+    console.error('[Admin Error Monitor]', error);
+    res.status(500).json({ message: error.message || '获取错误任务失败' });
   }
 });
 

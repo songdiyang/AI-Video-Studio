@@ -148,7 +148,29 @@ router.post('/login', async (req, res) => {
   const username = String(email).trim();
 
   try {
-    const row = await queryOne('SELECT id, password_hash, role FROM users WHERE email = ?', [username]);
+    const row = await queryOne('SELECT id, password_hash, role, is_active FROM users WHERE email = ?', [username]);
+
+    // 检查账号是否被禁用（管理员豁免）
+    if (row && row.is_active === 0 && row.role !== 'admin') {
+      return res.status(403).json({ message: '账号已被禁用，请联系管理员' });
+    }
+
+    // 非管理员用户检查登录开关
+    if (row && row.role !== 'admin') {
+      try {
+        const loginConfig = await queryOne(
+          "SELECT config_value FROM system_configs WHERE config_key = 'enable_login' AND is_active = 1"
+        );
+        if (loginConfig) {
+          const loginEnabled = JSON.parse(loginConfig.config_value);
+          if (loginEnabled !== true) {
+            return res.status(403).json({ message: '系统维护中，暂时禁止登录，请稍后再试' });
+          }
+        }
+      } catch (e) {
+        // 配置读取失败不阻断登录
+      }
+    }
 
     if (!row) {
       return res.status(401).json({ message: '用户名或密码错误' });
@@ -176,6 +198,11 @@ router.post('/login', async (req, res) => {
     }
 
     const token = jwt.sign({ userId: row.id, email: username, role: row.role }, JWT_SECRET, { expiresIn: '7d' });
+
+    // 记录登录IP
+    const loginIp = req.ip || req.connection?.remoteAddress || '';
+    execute('UPDATE users SET last_login_ip = ?, last_active_at = NOW() WHERE id = ?', [loginIp, row.id]).catch(() => {});
+
     return res.json({
       token,
       user: { id: row.id, email: username, role: row.role }

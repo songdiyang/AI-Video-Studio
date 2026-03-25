@@ -77,6 +77,9 @@ class WorkflowQuery {
       }
     }
 
+    // 排除已消费的非活跃任务（failed/cancelled 被用户删除后不再显示）
+    sql += ' AND (is_consumed = 0 OR status IN (\'pending\', \'running\'))';
+
     sql += ' ORDER BY created_at DESC LIMIT ?';
     params.push(limit);
 

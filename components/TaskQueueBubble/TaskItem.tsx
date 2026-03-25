@@ -1,6 +1,6 @@
 import React, { useState, memo } from 'react';
 import { motion } from 'framer-motion';
-import { X, Loader2, Check, AlertCircle, Clock, RotateCcw } from 'lucide-react';
+import { X, Loader2, Check, AlertCircle, Clock, RotateCcw, Trash2 } from 'lucide-react';
 import { WorkflowJob, cancelWorkflow } from '../../hooks/useWorkflow';
 import { useConfirm } from '../../contexts/ConfirmContext';
 
@@ -129,6 +129,7 @@ interface TaskItemProps {
   statusColor: string;
   statusLabel: string;
   onCancelled?: () => void;
+  onDismiss?: () => void;
   index?: number;
 }
 
@@ -138,12 +139,14 @@ const TaskItem: React.FC<TaskItemProps> = ({
   statusColor, 
   statusLabel, 
   onCancelled,
+  onDismiss,
   index = 0 
 }) => {
   const taskName = getTaskName(job);
   const [cancelling, setCancelling] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   const canCancel = job.status === 'pending' || job.status === 'running';
+  const canDismiss = job.status === 'failed' || job.status === 'cancelled';
   const { confirm } = useConfirm();
   const remainingTime = job.created_at ? estimateRemainingTime(progress, job.created_at) : null;
 
@@ -250,6 +253,21 @@ const TaskItem: React.FC<TaskItemProps> = ({
               title="取消任务"
             >
               <X className="w-3.5 h-3.5" />
+            </motion.button>
+          )}
+          {canDismiss && (
+            <motion.button
+              initial={{ opacity: 0 }}
+              animate={{ opacity: isHovered ? 1 : 0 }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onDismiss?.();
+              }}
+              className="p-1 rounded hover:bg-red-500/20 transition-colors"
+              style={{ color: 'var(--text-muted)' }}
+              title="删除任务"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
             </motion.button>
           )}
         </div>

@@ -42,6 +42,8 @@ const adminRoutes = require('./adminRoutes');
 const fileProxyRoutes = require('./scripts/fileProxy');
 const feedbackModule = require('./feedback');
 const feedbackRoutes = feedbackModule.router;
+const internalMailModule = require('./internalMail');
+const internalMailRoutes = internalMailModule.router;
 const sketchProjectRoutes = require('./scripts/sketchProjects');
 const templateRoutes = require('./templates');
 const communityRoutes = require('./community');
@@ -51,6 +53,9 @@ const systemConfigRoutes = require('./systemConfigRoutes');
 const { notificationResponseMiddleware } = require('./notificationResponseMiddleware');
 
 const app = express();
+
+// 信任 Nginx 反代的 X-Forwarded-For 头
+app.set('trust proxy', 1);
 
 // Helmet - 设置安全 HTTP 响应头
 app.use(helmet({
@@ -132,6 +137,7 @@ app.use('/api/workflows', workflowRoutes);
 app.use('/api/ai-models', modelRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/feedback', feedbackRoutes);
+app.use('/api/mail', internalMailRoutes);
 app.use('/api/files', fileProxyRoutes);
 app.use('/api/sketch-projects', sketchProjectRoutes);
 app.use('/api/templates', templateRoutes);
@@ -170,6 +176,14 @@ async function start() {
       await feedbackModule.ensureFeedbackTable();
     } catch (err) {
       console.warn('[Startup] 初始化 feedback 表失败:', err.message);
+    }
+  }
+
+  if (internalMailModule.ensureInternalMailTable) {
+    try {
+      await internalMailModule.ensureInternalMailTable();
+    } catch (err) {
+      console.warn('[Startup] 初始化 internal_mail 表失败:', err.message);
     }
   }
 

@@ -38,6 +38,8 @@ const ModelStatsDashboard = React.lazy(() => import('./views/admin/ModelStatsDas
 const RateLimitManagement = React.lazy(() => import('./views/admin/RateLimitManagement'));
 const SubscriptionManagement = React.lazy(() => import('./views/admin/SubscriptionManagement'));
 const SiteSettings = React.lazy(() => import('./views/admin/SiteSettings'));
+const FeedbackManagement = React.lazy(() => import('./views/admin/FeedbackManagement'));
+const TaskErrorMonitor = React.lazy(() => import('./views/admin/TaskErrorMonitor'));
 
 // 加载中回退组件
 const LoadingFallback = () => (
@@ -207,6 +209,16 @@ const App: React.FC = () => {
               <Route path="site-settings" element={
                 <Suspense fallback={<LoadingFallback />}>
                   <SiteSettings />
+                </Suspense>
+              } />
+              <Route path="feedback" element={
+                <Suspense fallback={<LoadingFallback />}>
+                  <FeedbackManagement />
+                </Suspense>
+              } />
+              <Route path="task-errors" element={
+                <Suspense fallback={<LoadingFallback />}>
+                  <TaskErrorMonitor />
                 </Suspense>
               } />
               <Route index element={<Navigate to="/admin/dashboard" replace />} />

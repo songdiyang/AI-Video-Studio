@@ -1,6 +1,6 @@
 const express = require('express');
 const { queryOne, queryAll, execute } = require('./dbHelper');
-const { authMiddleware, requireAdmin } = require('./middleware');
+const { authMiddleware, requireAdmin, clearTokenInvalidationCache } = require('./middleware');
 
 const router = express.Router();
 
@@ -181,6 +181,59 @@ router.delete('/admin/:id', authMiddleware, requireAdmin, async (req, res) => {
   } catch (error) {
     console.error('[SystemConfig] 删除配置失败:', error);
     res.status(500).json({ message: '删除系统配置失败' });
+  }
+});
+
+/**
+ * 踢出所有在线用户（管理员除外）并禁止登录
+ * POST /api/system-configs/admin/kick-all
+ */
+router.post('/admin/kick-all', authMiddleware, requireAdmin, async (req, res) => {
+  try {
+    const now = Math.floor(Date.now() / 1000); // Unix 秒级时间戳
+
+    // 1. 设置 token_invalidated_before，使所有已签发的非管理员令牌失效
+    const existing = await queryOne(
+      "SELECT id FROM system_configs WHERE config_key = 'token_invalidated_before'"
+    );
+    if (existing) {
+      await execute(
+        'UPDATE system_configs SET config_value = ?, is_active = 1 WHERE id = ?',
+        [JSON.stringify(now), existing.id]
+      );
+    } else {
+      await execute(
+        `INSERT INTO system_configs (config_key, config_name, config_type, config_value, description, is_active)
+         VALUES (?, ?, ?, ?, ?, 1)`,
+        ['token_invalidated_before', '令牌失效时间戳', 'number', JSON.stringify(now), '早于此时间签发的非管理员令牌将被拒绝']
+      );
+    }
+
+    // 2. 同时禁止登录
+    const loginConfig = await queryOne(
+      "SELECT id FROM system_configs WHERE config_key = 'enable_login'"
+    );
+    if (loginConfig) {
+      await execute(
+        'UPDATE system_configs SET config_value = ?, is_active = 1 WHERE id = ?',
+        [JSON.stringify(false), loginConfig.id]
+      );
+    } else {
+      await execute(
+        `INSERT INTO system_configs (config_key, config_name, config_type, config_value, description, is_active)
+         VALUES (?, ?, ?, ?, ?, 1)`,
+        ['enable_login', '允许登录', 'boolean', JSON.stringify(false), '控制非管理员用户是否可以登录']
+      );
+    }
+
+    // 3. 清除缓存使新设置立即生效
+    clearTokenInvalidationCache();
+
+    console.log(`[Admin] 管理员 ${req.user.email} 踢出所有在线用户并禁止登录，时间戳: ${now}`);
+    res.json({ success: true, message: '已踢出所有在线用户并禁止登录', invalidatedBefore: now });
+  } catch (error) {
+    console.error('[SystemConfig] 踢出用户失败:', error);
+    res.status(500).json({ message: '操作失败' });
   }
 });
 

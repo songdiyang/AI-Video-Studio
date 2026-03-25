@@ -255,7 +255,7 @@ router.post('/services/:serviceId/stop', authMiddleware, requireAdmin, async (re
 router.get('/users', authMiddleware, requireAdmin, async (req, res) => {
   try {
     const users = await queryAll(
-      'SELECT id, email, role, balance, created_at, updated_at FROM users ORDER BY id DESC'
+      'SELECT id, email, role, balance, is_active, last_login_ip, last_active_at, created_at, updated_at FROM users ORDER BY id DESC'
     );
     res.json({ users });
   } catch (error) {
@@ -345,6 +345,30 @@ router.delete('/users/:id', authMiddleware, requireAdmin, async (req, res) => {
   } catch (error) {
     console.error('[Admin] Delete user error:', error);
     res.status(500).json({ message: '删除用户失败' });
+  }
+});
+
+// 切换用户启用/禁用状态
+router.patch('/users/:id/toggle-active', authMiddleware, requireAdmin, async (req, res) => {
+  const { id } = req.params;
+  const { is_active } = req.body;
+  
+  try {
+    if (parseInt(id) === req.user.userId) {
+      return res.status(400).json({ message: '不能禁用自己的账户' });
+    }
+    
+    const user = await queryOne('SELECT id, role FROM users WHERE id = ?', [id]);
+    if (!user) {
+      return res.status(404).json({ message: '用户不存在' });
+    }
+    
+    const newStatus = is_active ? 1 : 0;
+    await execute('UPDATE users SET is_active = ? WHERE id = ?', [newStatus, id]);
+    res.json({ message: newStatus ? '账号已启用' : '账号已禁用', is_active: newStatus });
+  } catch (error) {
+    console.error('[Admin] Toggle user active error:', error);
+    res.status(500).json({ message: '操作失败' });
   }
 });
 

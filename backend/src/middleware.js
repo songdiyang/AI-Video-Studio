@@ -79,6 +79,52 @@ function validateAdminAccessRequest(req) {
   return { ok: true };
 }
 
+const { queryOne, execute } = require('./dbHelper');
+
+// --- 用户活跃时间追踪（内存节流，每用户1分钟最多写一次） ---
+const lastActiveCache = new Map(); // userId -> lastUpdateTimestamp
+const ACTIVE_UPDATE_INTERVAL = 60000; // 1分钟
+
+function updateLastActive(userId) {
+  const now = Date.now();
+  const lastUpdate = lastActiveCache.get(userId) || 0;
+  if (now - lastUpdate < ACTIVE_UPDATE_INTERVAL) return;
+  lastActiveCache.set(userId, now);
+  execute('UPDATE users SET last_active_at = NOW() WHERE id = ?', [userId]).catch(() => {});
+}
+
+// 缓存 token_invalidated_before 时间戳，避免每次请求查库
+let cachedInvalidatedBefore = null;
+let cacheExpiry = 0;
+const CACHE_TTL = 5000; // 5秒缓存
+
+async function getTokenInvalidatedBefore() {
+  const now = Date.now();
+  if (cachedInvalidatedBefore !== null && now < cacheExpiry) {
+    return cachedInvalidatedBefore;
+  }
+  try {
+    const config = await queryOne(
+      "SELECT config_value FROM system_configs WHERE config_key = 'token_invalidated_before' AND is_active = 1"
+    );
+    if (config) {
+      cachedInvalidatedBefore = Number(JSON.parse(config.config_value)) || 0;
+    } else {
+      cachedInvalidatedBefore = 0;
+    }
+  } catch (e) {
+    cachedInvalidatedBefore = 0;
+  }
+  cacheExpiry = now + CACHE_TTL;
+  return cachedInvalidatedBefore;
+}
+
+// 外部调用以清除缓存（踢出用户后立即生效）
+function clearTokenInvalidationCache() {
+  cachedInvalidatedBefore = null;
+  cacheExpiry = 0;
+}
+
 function authMiddleware(req, res, next) {
   const authHeader = req.headers['authorization'];
   if (!authHeader) {
@@ -98,7 +144,22 @@ function authMiddleware(req, res, next) {
       email: payload.email,
       role: payload.role || 'user'
     };
-    next();
+
+    // 异步更新用户活跃时间（节流，不阻塞请求）
+    updateLastActive(payload.userId);
+
+    // 非管理员用户检查令牌是否被全局失效
+    if (req.user.role !== 'admin') {
+      const iat = payload.iat || 0;
+      getTokenInvalidatedBefore().then(invalidatedBefore => {
+        if (invalidatedBefore > 0 && iat < invalidatedBefore) {
+          return res.status(401).json({ message: '会话已过期，请重新登录', code: 'SESSION_INVALIDATED' });
+        }
+        next();
+      }).catch(() => next());
+    } else {
+      next();
+    }
   } catch (e) {
     return res.status(401).json({ message: 'Invalid or expired token' });
   }
@@ -121,6 +182,7 @@ module.exports = {
   authMiddleware,
   requireAdmin,
   validateAdminAccessRequest,
+  clearTokenInvalidationCache,
   ADMIN_ACCESS_KEY_HEADER,
   JWT_SECRET: ACTUAL_SECRET
 };
