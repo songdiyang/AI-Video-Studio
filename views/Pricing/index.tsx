@@ -146,7 +146,7 @@ const Pricing: React.FC = () => {
     }
 
     if (plan.name === 'enterprise') {
-      window.open('mailto:contact@nanostory.ai?subject=Enterprise Plan Inquiry', '_blank');
+      window.open('mailto:contact@jiaozianime.com?subject=Enterprise Plan Inquiry', '_blank');
       return;
     }
 

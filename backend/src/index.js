@@ -177,7 +177,7 @@ async function start() {
     console.log('\n' +
       '  ~(=^\u30FB\u03C9\u30FB^)\uFF8D >\uFF9F)))\u5F61\n' +
       '\n' +
-      '  \x1b[36m\u2728 NanoStory Backend \u542F\u52A8\u6210\u529F!\x1b[0m\n' +
+      '  \x1b[36m\u2728 \u997a\u5b50\u52a8\u6f2b Backend \u542F\u52A8\u6210\u529F!\x1b[0m\n' +
       `  \x1b[32m\u2714\x1b[0m \u670D\u52A1\u5730\u5740: http://localhost:${PORT}\n` +
       `  \x1b[32m\u2714\x1b[0m \u8FD0\u884C\u73AF\u5883: ${process.env.NODE_ENV || 'development'}\n` +
       `  \x1b[32m\u2714\x1b[0m \u542F\u52A8\u65F6\u95F4: ${new Date().toLocaleString('zh-CN')}\n`

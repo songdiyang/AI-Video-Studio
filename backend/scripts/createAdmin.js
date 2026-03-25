@@ -5,7 +5,7 @@
  *   node scripts/createAdmin.js <email> <password>
  * 
  * 示例:
- *   node scripts/createAdmin.js admin@nanostory.com admin123456
+ *   node scripts/createAdmin.js admin@jiaozianime.com admin123456
  * 
  * 功能:
  *   - 如果账号已存在，会升级为管理员并更新密码
@@ -29,7 +29,7 @@ async function createAdmin() {
   
   if (args.length < 2) {
     console.log('\n📋 使用方法: node scripts/createAdmin.js <email> <password>\n');
-    console.log('示例: node scripts/createAdmin.js admin@nanostory.com admin123456\n');
+    console.log('示例: node scripts/createAdmin.js admin@jiaozianime.com admin123456\n');
     process.exit(1);
   }
 

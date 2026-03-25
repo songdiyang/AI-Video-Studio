@@ -155,7 +155,7 @@ const AdminLayout: React.FC = () => {
             </div>
             <div>
               <h1 className="text-white font-bold text-lg">管理后台</h1>
-              <p className="text-white/50 text-xs">NanoStory Admin</p>
+              <p className="text-white/50 text-xs">饺子动漫 Admin</p>
             </div>
           </div>
         </div>

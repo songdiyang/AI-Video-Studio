@@ -1,6 +1,6 @@
 <div align="center">
 
-# NanoStory
+# Jiaozi Anime / 饺子动漫 🥟
 
 [English](#english) | [中文](#中文)
 
@@ -24,7 +24,7 @@
 
 ## Overview
 
-**NanoStory** is an open-source AI video creation platform that integrates multiple cutting-edge AI models (DeepSeek, Vidu, Kling, Seedance, etc.) to provide a complete workflow from script generation, storyboard design, to video composition and export.
+**Jiaozi Anime** is an open-source AI video creation platform that integrates multiple cutting-edge AI models (DeepSeek, Vidu, Kling, Seedance, etc.) to provide a complete workflow from script generation, storyboard design, to video composition and export.
 
 The project adopts a front-end and back-end separation architecture, with the back-end based on Node.js + MySQL providing stable API services and an asynchronous task engine, supporting multi-user collaboration, billing system, and admin dashboard.
 
@@ -257,7 +257,7 @@ This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) 
 
 ## 项目概述
 
-**NanoStory** 是一款开源的 AI 视频创作平台，集成多种前沿 AI 大模型（DeepSeek、Vidu、可灵 Kling、Seedance 等），提供从剧本生成、分镜设计、视频合成到导出的完整工作流。
+**饺子动漫** 是一款开源的 AI 视频创作平台，集成多种前沿 AI 大模型（DeepSeek、Vidu、可灵 Kling、Seedance 等），提供从剧本生成、分镜设计、视频合成到导出的完整工作流。
 
 项目采用前后端分离架构，后端基于 Node.js + MySQL 提供稳定的 API 服务和异步任务引擎，支持多用户协作、计费系统与管理后台。
 
@@ -481,8 +481,8 @@ nanostory/
 
 <div align="center">
 
-**[Back to Top / 返回顶部](#nanostory)**
+**[Back to Top / 返回顶部](#jiaozi-anime--饺子动漫-)**
 
-Made with love by NanoStory Team
+Made with love by Jiaozi Anime Team
 
 </div>
