@@ -23,7 +23,7 @@
 
 const handleImageGeneration = require('../base/imageGeneration');
 const handleBaseTextModelCall = require('../base/baseTextModelCall');
-const { execute } = require('../../../dbHelper');
+const { execute, queryOne } = require('../../../dbHelper');
 const { requireVisualStyle } = require('../../../utils/getProjectStyle');
 const { downloadAndStore } = require('../../../utils/fileStorage');
 const { assertUpdated, assertPersistedFields } = require('./persistenceGuard');
@@ -149,12 +149,38 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
     textModel,
     aspectRatio,
     width = 1920,
-    height = 2880
+    height = 2880,
+    regenerateOnly   // 可选：补全模式，如 ['side', 'back']
   } = inputParams;
 
 
   // 项目视觉风格（必填，未设置则报错）
   const style = await requireVisualStyle(projectId);
+
+  // 查询数据库中已有的三视图 URL，用于补全模式
+  let existingViews = { front_view_url: null, side_view_url: null, back_view_url: null };
+  if (characterId) {
+    const row = await queryOne(
+      'SELECT front_view_url, side_view_url, back_view_url FROM characters WHERE id = ?',
+      [characterId]
+    );
+    if (row) existingViews = row;
+  }
+
+  // 判断每个视图是否需要生成
+  const needsGeneration = (viewType) => {
+    // 如果指定了 regenerateOnly，只生成列表中的
+    if (Array.isArray(regenerateOnly) && regenerateOnly.length > 0) {
+      return regenerateOnly.includes(viewType);
+    }
+    // 否则生成所有缺失的
+    const urlMap = { front: 'front_view_url', side: 'side_view_url', back: 'back_view_url' };
+    return !existingViews[urlMap[viewType]];
+  };
+
+  const needFront = needsGeneration('front');
+  const needSide = needsGeneration('side');
+  const needBack = needsGeneration('back');
 
   console.log('[CharacterViews] 开始生成三视图:', {
     characterId,
@@ -164,19 +190,12 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
     aspectRatio: aspectRatio || null,
     width,
     height,
-    style: style.substring(0, 60) + (style.length > 60 ? '...' : '')
-  });
-
-  console.log('[CharacterViews] 工作流输入参数:', {
-    characterId,
-    projectId,
-    imageModel,
-    textModel,
-    aspectRatio: aspectRatio || null,
-    width,
-    height,
-    hasAppearance: !!appearance,
-    hasDescription: !!description
+    style: style.substring(0, 60) + (style.length > 60 ? '...' : ''),
+    regenerateOnly: regenerateOnly || 'all',
+    needFront, needSide, needBack,
+    existingFront: !!existingViews.front_view_url,
+    existingSide: !!existingViews.side_view_url,
+    existingBack: !!existingViews.back_view_url
   });
 
   if (!imageModel) {
@@ -190,42 +209,45 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
 
   if (onProgress) onProgress(5);
 
-  // 生成正面视图
-  console.log('[CharacterViews] 生成正面视图...');
-  const frontPrompt = await generateViewPrompt('front', characterName, appearance, description, style, textModel);
-  const frontResult = await handleImageGeneration({
-    prompt: frontPrompt,
-    imageModel: imageModel,
-    aspectRatio,
-    width,
-    height
-  }, (progress) => {
-    if (onProgress) onProgress(5 + progress * 0.2); // 5% -> 25%
-  });
-  const frontViewUrl = frontResult.image_url;
-  console.log('[CharacterViews] ✅ 正面视图生成完成');
-
-  // 持久化正面视图到 MinIO
-  const persistedFrontUrl = await downloadAndStore(
-    frontViewUrl,
-    `images/characters/${characterId}/front_view`,
-    { fallbackExt: '.png' }
-  );
-
-  // 立即保存正面视图到数据库
-  if (characterId && persistedFrontUrl) {
-    const updateResult = await execute(
-      'UPDATE characters SET front_view_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-      [persistedFrontUrl, characterId]
-    );
-    assertUpdated(updateResult, '[CharacterViews] 正面视图');
-    await assertPersistedFields({
-      table: 'characters',
-      id: characterId,
-      fields: ['front_view_url'],
-      label: '[CharacterViews] 正面视图'
+  // === 正面视图 ===
+  let persistedFrontUrl = existingViews.front_view_url || null;
+  if (needFront) {
+    console.log('[CharacterViews] 生成正面视图...');
+    const frontPrompt = await generateViewPrompt('front', characterName, appearance, description, style, textModel);
+    const frontResult = await handleImageGeneration({
+      prompt: frontPrompt,
+      imageModel: imageModel,
+      aspectRatio,
+      width,
+      height
+    }, (progress) => {
+      if (onProgress) onProgress(5 + progress * 0.2);
     });
-    console.log('[CharacterViews] ✅ 正面视图已保存到数据库');
+    const frontViewUrl = frontResult.image_url;
+    console.log('[CharacterViews] ✅ 正面视图生成完成');
+
+    persistedFrontUrl = await downloadAndStore(
+      frontViewUrl,
+      `images/characters/${characterId}/front_view`,
+      { fallbackExt: '.png' }
+    );
+
+    if (characterId && persistedFrontUrl) {
+      const updateResult = await execute(
+        'UPDATE characters SET front_view_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+        [persistedFrontUrl, characterId]
+      );
+      assertUpdated(updateResult, '[CharacterViews] 正面视图');
+      await assertPersistedFields({
+        table: 'characters',
+        id: characterId,
+        fields: ['front_view_url'],
+        label: '[CharacterViews] 正面视图'
+      });
+      console.log('[CharacterViews] ✅ 正面视图已保存到数据库');
+    }
+  } else {
+    console.log('[CharacterViews] ✅ 正面视图已存在，跳过生成');
   }
 
   if (onProgress) onProgress(30);
@@ -237,54 +259,50 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
     console.log('[CharacterViews] 正面视图将作为参考图传递给后续生成');
   }
 
-  // 生成侧面视图（带正面参考图）
-  console.log('[CharacterViews] 生成侧面视图...');
-  const sidePrompt = await generateViewPrompt('side', characterName, appearance, description, style, textModel);
-  const sideGenParams = {
-    prompt: sidePrompt,
-    imageModel: imageModel,
-    aspectRatio,
-    width,
-    height
-  };
-  console.log('[CharacterViews] 侧面视图图片模型参数:', {
-    imageModel,
-    aspectRatio: aspectRatio || null,
-    width,
-    height,
-    referenceCount: referenceUrls.length
-  });
-  if (referenceUrls.length > 0) {
-    sideGenParams.imageUrls = referenceUrls;
-    console.log('[CharacterViews] 侧面视图参考图:', referenceUrls);
-  }
-  const sideResult = await handleImageGeneration(sideGenParams, (progress) => {
-    if (onProgress) onProgress(30 + progress * 0.25); // 30% -> 55%
-  });
-  const sideViewUrl = sideResult.image_url;
-  console.log('[CharacterViews] ✅ 侧面视图生成完成');
-
-  // 持久化侧面视图到 MinIO
-  const persistedSideUrl = await downloadAndStore(
-    sideViewUrl,
-    `images/characters/${characterId}/side_view`,
-    { fallbackExt: '.png' }
-  );
-
-  // 立即保存侧面视图到数据库
-  if (characterId && persistedSideUrl) {
-    const updateResult = await execute(
-      'UPDATE characters SET side_view_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-      [persistedSideUrl, characterId]
-    );
-    assertUpdated(updateResult, '[CharacterViews] 侧面视图');
-    await assertPersistedFields({
-      table: 'characters',
-      id: characterId,
-      fields: ['side_view_url'],
-      label: '[CharacterViews] 侧面视图'
+  // === 侧面视图 ===
+  let persistedSideUrl = existingViews.side_view_url || null;
+  if (needSide) {
+    console.log('[CharacterViews] 生成侧面视图...');
+    const sidePrompt = await generateViewPrompt('side', characterName, appearance, description, style, textModel);
+    const sideGenParams = {
+      prompt: sidePrompt,
+      imageModel: imageModel,
+      aspectRatio,
+      width,
+      height
+    };
+    if (referenceUrls.length > 0) {
+      sideGenParams.imageUrls = referenceUrls;
+      console.log('[CharacterViews] 侧面视图参考图:', referenceUrls);
+    }
+    const sideResult = await handleImageGeneration(sideGenParams, (progress) => {
+      if (onProgress) onProgress(30 + progress * 0.25);
     });
-    console.log('[CharacterViews] ✅ 侧面视图已保存到数据库');
+    const sideViewUrl = sideResult.image_url;
+    console.log('[CharacterViews] ✅ 侧面视图生成完成');
+
+    persistedSideUrl = await downloadAndStore(
+      sideViewUrl,
+      `images/characters/${characterId}/side_view`,
+      { fallbackExt: '.png' }
+    );
+
+    if (characterId && persistedSideUrl) {
+      const updateResult = await execute(
+        'UPDATE characters SET side_view_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+        [persistedSideUrl, characterId]
+      );
+      assertUpdated(updateResult, '[CharacterViews] 侧面视图');
+      await assertPersistedFields({
+        table: 'characters',
+        id: characterId,
+        fields: ['side_view_url'],
+        label: '[CharacterViews] 侧面视图'
+      });
+      console.log('[CharacterViews] ✅ 侧面视图已保存到数据库');
+    }
+  } else {
+    console.log('[CharacterViews] ✅ 侧面视图已存在，跳过生成');
   }
 
   if (onProgress) onProgress(60);
@@ -294,74 +312,80 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
     referenceUrls.push(persistedSideUrl);
   }
 
-  // 生成背面视图（带正面+侧面参考图）
-  console.log('[CharacterViews] 生成背面视图...');
-  const backPrompt = await generateViewPrompt('back', characterName, appearance, description, style, textModel);
-  const backGenParams = {
-    prompt: backPrompt,
-    imageModel: imageModel,
-    aspectRatio,
-    width,
-    height
-  };
-  console.log('[CharacterViews] 背面视图图片模型参数:', {
-    imageModel,
-    aspectRatio: aspectRatio || null,
-    width,
-    height,
-    referenceCount: referenceUrls.length
-  });
-  if (referenceUrls.length > 0) {
-    backGenParams.imageUrls = referenceUrls;
-    console.log('[CharacterViews] 背面视图参考图:', referenceUrls);
-  }
-  const backResult = await handleImageGeneration(backGenParams, (progress) => {
-    if (onProgress) onProgress(60 + progress * 0.25); // 60% -> 85%
-  });
-  const backViewUrl = backResult.image_url;
-  console.log('[CharacterViews] ✅ 背面视图生成完成');
-
-  // 持久化背面视图到 MinIO
-  const persistedBackUrl = await downloadAndStore(
-    backViewUrl,
-    `images/characters/${characterId}/back_view`,
-    { fallbackExt: '.png' }
-  );
-
-  // 立即保存背面视图到数据库
-  if (characterId && persistedBackUrl) {
-    const updateResult = await execute(
-      'UPDATE characters SET back_view_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-      [persistedBackUrl, characterId]
-    );
-    assertUpdated(updateResult, '[CharacterViews] 背面视图');
-    await assertPersistedFields({
-      table: 'characters',
-      id: characterId,
-      fields: ['back_view_url'],
-      label: '[CharacterViews] 背面视图'
+  // === 背面视图 ===
+  let persistedBackUrl = existingViews.back_view_url || null;
+  if (needBack) {
+    console.log('[CharacterViews] 生成背面视图...');
+    const backPrompt = await generateViewPrompt('back', characterName, appearance, description, style, textModel);
+    const backGenParams = {
+      prompt: backPrompt,
+      imageModel: imageModel,
+      aspectRatio,
+      width,
+      height
+    };
+    if (referenceUrls.length > 0) {
+      backGenParams.imageUrls = referenceUrls;
+      console.log('[CharacterViews] 背面视图参考图:', referenceUrls);
+    }
+    const backResult = await handleImageGeneration(backGenParams, (progress) => {
+      if (onProgress) onProgress(60 + progress * 0.25);
     });
-    console.log('[CharacterViews] ✅ 背面视图已保存到数据库');
+    const backViewUrl = backResult.image_url;
+    console.log('[CharacterViews] ✅ 背面视图生成完成');
+
+    persistedBackUrl = await downloadAndStore(
+      backViewUrl,
+      `images/characters/${characterId}/back_view`,
+      { fallbackExt: '.png' }
+    );
+
+    if (characterId && persistedBackUrl) {
+      const updateResult = await execute(
+        'UPDATE characters SET back_view_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+        [persistedBackUrl, characterId]
+      );
+      assertUpdated(updateResult, '[CharacterViews] 背面视图');
+      await assertPersistedFields({
+        table: 'characters',
+        id: characterId,
+        fields: ['back_view_url'],
+        label: '[CharacterViews] 背面视图'
+      });
+      console.log('[CharacterViews] ✅ 背面视图已保存到数据库');
+    }
+  } else {
+    console.log('[CharacterViews] ✅ 背面视图已存在，跳过生成');
   }
 
   if (onProgress) onProgress(90);
 
   // 将正面视图同时保存为主图片 (image_url)，并标记生成完成
   if (characterId && persistedFrontUrl) {
-    const updateResult = await execute(
-      `UPDATE characters 
-       SET image_url = ?, generation_status = 'completed', updated_at = CURRENT_TIMESTAMP
-       WHERE id = ?`,
-      [persistedFrontUrl, characterId]
-    );
+    // 检查当前 image_url 是否为空或与旧正面视图相同，避免覆盖用户手动上传的图片
+    const currentChar = await queryOne('SELECT image_url FROM characters WHERE id = ?', [characterId]);
+    const shouldUpdateImageUrl = !currentChar?.image_url || needFront;
+    
+    const updateSql = shouldUpdateImageUrl
+      ? `UPDATE characters SET image_url = ?, generation_status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+      : `UPDATE characters SET generation_status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE id = ?`;
+    const updateParams = shouldUpdateImageUrl
+      ? [persistedFrontUrl, characterId]
+      : [characterId];
+
+    const updateResult = await execute(updateSql, updateParams);
     assertUpdated(updateResult, '[CharacterViews] 主图');
-    await assertPersistedFields({
-      table: 'characters',
-      id: characterId,
-      fields: ['image_url'],
-      label: '[CharacterViews] 主图'
-    });
-    console.log('[CharacterViews] ✅ 正面视图已保存为主图片 (image_url)');
+    if (shouldUpdateImageUrl) {
+      await assertPersistedFields({
+        table: 'characters',
+        id: characterId,
+        fields: ['image_url'],
+        label: '[CharacterViews] 主图'
+      });
+      console.log('[CharacterViews] ✅ 正面视图已保存为主图片 (image_url)');
+    } else {
+      console.log('[CharacterViews] ✅ 保留现有主图片，仅更新生成状态');
+    }
   }
 
   if (onProgress) onProgress(95);

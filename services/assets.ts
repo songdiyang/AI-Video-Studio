@@ -483,6 +483,7 @@ export interface GenerateViewsParams {
   imageModel: string;
   textModel?: string;
   aspectRatio?: string;
+  regenerateOnly?: ('front' | 'side' | 'back')[];
 }
 
 export interface GenerateViewsResponse {
@@ -517,6 +518,27 @@ export async function generateCharacterViews(
   if (!response.ok) {
     const result = await response.json();
     throw new Error(result.message || '启动三视图生成失败');
+  }
+  return response.json();
+}
+
+/**
+ * 删除角色单个视图
+ */
+export async function deleteCharacterViewApi(
+  characterId: number,
+  viewType: 'front' | 'side' | 'back'
+): Promise<{ message: string; front_view_url: string | null; side_view_url: string | null; back_view_url: string | null; image_url: string | null }> {
+  const token = getAuthToken();
+  const response = await fetch(`/api/characters/${characterId}/views/${viewType}`, {
+    method: 'DELETE',
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    }
+  });
+  if (!response.ok) {
+    const result = await response.json();
+    throw new Error(result.message || '删除视图失败');
   }
   return response.json();
 }

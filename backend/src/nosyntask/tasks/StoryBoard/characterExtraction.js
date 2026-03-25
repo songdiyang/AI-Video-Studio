@@ -8,6 +8,7 @@ const handleBaseTextModelCall = require('../base/baseTextModelCall');
 const db = require('../../../db');
 const { stripThinkTags, extractCodeBlock, extractJSON, stripInvisible, safeParseJSON } = require('../../../utils/washBody');
 const { getVisualStylePrompt } = require('../../../utils/getProjectStyle');
+const { filterNonCharacters } = require('../../../utils/characterFilter');
 
 async function handleCharacterExtraction(inputParams, onProgress) {
   const { scenes, scriptContent, textModel: modelName, projectId, scriptId, userId } = inputParams;
@@ -66,6 +67,8 @@ ${visualStyleHint}
 ---
 
 请从以下内容中提取所有角色信息，分析每个角色的外貌、性格和简介。
+
+**重要：只提取有具体名字的角色，不要提取泛称群体如“人群”、“路人”、“群众”、“众人”、“行人”、“观众”、“士兵”、“村民”等。**
 
 ${contentForAnalysis}
 
@@ -127,6 +130,18 @@ ${contentForAnalysis}
 
     // 确保返回数组
     characters = Array.isArray(parsed) ? parsed : (parsed.characters || [parsed]);
+    // 过滤非角色群体词
+    characters = characters.filter(c => {
+      const name = c && c.name;
+      if (!name) return false;
+      const { isNonCharacterEntity } = require('../../../utils/characterFilter');
+      if (isNonCharacterEntity(name)) {
+        console.log('[CharacterExtraction] 过滤非角色群体词:', name);
+        return false;
+      }
+      return true;
+    });
+
     console.log('[CharacterExtraction] 成功解析，共', characters.length, '个角色');
 
   } catch (parseError) {

@@ -10,7 +10,8 @@ import {
   generateCharacterViews,
   getCharacterViewStatus,
   downloadCharacterView,
-  downloadAllCharacterViews
+  downloadAllCharacterViews,
+  deleteCharacterViewApi
 } from '../../../services/assets';
 import AIModelSelector, { AIModel } from '../../../components/AIModelSelector';
 import CharacterStateEditor from './CharacterStateEditor';
@@ -100,7 +101,17 @@ const CharacterModal: React.FC<CharacterModalProps> = ({
     return () => clearInterval(interval);
   }, [formData.id, formData.generation_status, onRefreshCharacter]);
 
-  // 一键生成三视图
+  // 计算缺失的视图列表
+  const missingViews = (() => {
+    const missing: ('front' | 'side' | 'back')[] = [];
+    if (!formData.front_view_url) missing.push('front');
+    if (!formData.side_view_url) missing.push('side');
+    if (!formData.back_view_url) missing.push('back');
+    return missing;
+  })();
+  const isComplementMode = missingViews.length > 0 && missingViews.length < 3;
+
+  // 一键生成 / 智能补全三视图
   const handleGenerateViews = useCallback(async () => {
     if (!formData.id) {
       setGenerationError('请先保存角色');
@@ -115,17 +126,22 @@ const CharacterModal: React.FC<CharacterModalProps> = ({
     setGenerationError(null);
 
     try {
-      await generateCharacterViews(formData.id, {
+      // 如果是补全模式，传递缺失的视图列表
+      const params: any = {
         imageModel: localImageModel,
         textModel: selectedTextModel || undefined
-      });
+      };
+      if (isComplementMode) {
+        params.regenerateOnly = missingViews;
+      }
+      await generateCharacterViews(formData.id, params);
       // 更新本地状态以触发轮询
       setFormData({ ...formData, generation_status: 'generating' });
     } catch (error: any) {
       setIsGenerating(false);
       setGenerationError(error.message || '启动生成失败');
     }
-  }, [formData, localImageModel, selectedTextModel, setFormData]);
+  }, [formData, localImageModel, selectedTextModel, setFormData, isComplementMode, missingViews]);
 
   // 下载单个视图
   const handleDownloadView = useCallback(async (viewType: 'front' | 'side' | 'back') => {
@@ -154,14 +170,26 @@ const CharacterModal: React.FC<CharacterModalProps> = ({
     }
   }, [formData]);
 
-  // 删除单个视图
-  const handleDeleteView = useCallback((viewType: 'front' | 'side' | 'back') => {
+  // 删除单个视图（立即同步数据库）
+  const handleDeleteView = useCallback(async (viewType: 'front' | 'side' | 'back') => {
+    if (!formData.id) return;
     const fieldMap = {
       front: 'front_view_url',
       side: 'side_view_url',
       back: 'back_view_url'
     };
-    setFormData({ ...formData, [fieldMap[viewType]]: '' });
+    try {
+      const result = await deleteCharacterViewApi(formData.id, viewType);
+      setFormData({
+        ...formData,
+        [fieldMap[viewType]]: '',
+        ...(viewType === 'front' && result.image_url === null ? { image_url: '' } : {})
+      });
+    } catch (error: any) {
+      console.error('删除视图失败:', error);
+      // 降级：后端失败时仅清除前端状态
+      setFormData({ ...formData, [fieldMap[viewType]]: '' });
+    }
   }, [formData, setFormData]);
 
   // 获取当前的 tag_groups_json 数组
@@ -587,7 +615,7 @@ const CharacterModal: React.FC<CharacterModalProps> = ({
                           isDisabled={isGenerating || !localImageModel}
                           startContent={!isGenerating && <RefreshCw className="w-4 h-4" />}
                         >
-                          {isGenerating ? '生成中...' : '一键生成'}
+                          {isGenerating ? '生成中...' : isComplementMode ? '补全缺失视图' : '一键生成'}
                         </Button>
                       </div>
                     )}

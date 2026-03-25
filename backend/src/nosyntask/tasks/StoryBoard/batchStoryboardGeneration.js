@@ -14,6 +14,7 @@
  */
 
 const handleBaseTextModelCall = require('../base/baseTextModelCall');
+const { filterNonCharacters } = require('../../../utils/characterFilter');
 const { queryOne, execute } = require('../../../dbHelper');
 const { parseScriptScenes } = require('../../../utils/parseScriptScenes');
 const { stripThinkTags, extractCodeBlock, extractJSON, stripInvisible } = require('../../../utils/washBody');
@@ -92,7 +93,7 @@ function postProcessScenes(scenes) {
     
     return {
       ...scene,
-      characters: Array.from(mergedChars),
+      characters: filterNonCharacters(Array.from(mergedChars)),
       duration: scene.duration || DEFAULT_SHOT_DURATION
     };
   });

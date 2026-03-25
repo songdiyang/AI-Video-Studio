@@ -11,6 +11,7 @@
  */
 
 const { queryOne, queryAll } = require('../../dbHelper');
+const { isNonCharacterEntity } = require('../../utils/characterFilter');
 
 module.exports = async (req, res) => {
   try {
@@ -142,6 +143,10 @@ function validateForFrame(sceneId, storyboard, variables, linkedChars, linkedSce
 
   // 1. 检查角色
   for (const name of characterNames) {
+    // 跳过非角色群体词（如"人群"、"路人"等泛称，不需要建立角色关联）
+    if (isNonCharacterEntity(name)) {
+      continue;
+    }
     const char = linkedCharMap[name];
     if (!char) {
       blockingIssues.push(`角色「${name}」未与该分镜建立关联，请先运行智能分镜生成`);

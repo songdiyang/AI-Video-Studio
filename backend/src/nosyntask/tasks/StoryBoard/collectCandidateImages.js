@@ -6,6 +6,7 @@
  */
 
 const { queryOne, queryAll } = require('../../../dbHelper');
+const { isNonCharacterEntity } = require('../../../utils/characterFilter');
 const { queryActiveSceneUrl } = require('./sceneRefUtils');
 const { traced, trace } = require('../../engine/generationTrace');
 
@@ -36,8 +37,12 @@ const collectCandidateImages = traced('收集候选参考图', async function _c
   const allCharacterInfos = [];
 
   if (characterNames.length > 0) {
-    // 查询所有角色
+    // 查询所有角色（跳过非角色群体词）
     for (const charName of characterNames) {
+      if (isNonCharacterEntity(charName)) {
+        console.log(`[CandidateImages] 跳过非角色群体词「${charName}」`);
+        continue;
+      }
       const linkedChar = await queryOne(
         `SELECT c.id, c.name, c.description, c.appearance, c.personality,
                 c.image_url, c.front_view_url, c.side_view_url, c.back_view_url

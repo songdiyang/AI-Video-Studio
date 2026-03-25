@@ -94,7 +94,15 @@ export const useResourceModals = (options: UseResourceModalsOptions = {}) => {
           style: '动漫风格',
           imageModel,
           textModel,
-          aspectRatio
+          aspectRatio,
+          // 智能补全：检测缺失的视图，只生成缺失的
+          ...(selectedResource ? (() => {
+            const missing: string[] = [];
+            if (!selectedResource.frontViewUrl) missing.push('front');
+            if (!selectedResource.sideViewUrl) missing.push('side');
+            if (!selectedResource.backViewUrl) missing.push('back');
+            return missing.length > 0 && missing.length < 3 ? { regenerateOnly: missing } : {};
+          })() : {})
         })
       });
 

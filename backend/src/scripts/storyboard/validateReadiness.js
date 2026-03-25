@@ -8,6 +8,7 @@
  */
 
 const { queryOne, queryAll } = require('../../dbHelper');
+const { isNonCharacterEntity } = require('../../utils/characterFilter');
 
 module.exports = async (req, res) => {
   try {
@@ -73,6 +74,10 @@ async function validateForFrame(res, storyboard, variables) {
     linkedChars.forEach(c => { linkedCharMap[c.name] = c; });
 
     for (const name of characterNames) {
+      // 跳过非角色群体词（如"人群"、"路人"等泛称，不需要建立角色关联）
+      if (isNonCharacterEntity(name)) {
+        continue;
+      }
       const char = linkedCharMap[name];
       if (!char) {
         issues.push({

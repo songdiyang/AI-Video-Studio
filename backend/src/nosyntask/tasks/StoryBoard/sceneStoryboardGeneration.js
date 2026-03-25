@@ -7,6 +7,7 @@
  */
 
 const handleBaseTextModelCall = require('../base/baseTextModelCall');
+const { filterNonCharacters } = require('../../../utils/characterFilter');
 const { stripThinkTags, extractCodeBlock, extractJSON, stripInvisible } = require('../../../utils/washBody');
 
 // 目标时长范围（秒）- 单场景
@@ -108,7 +109,7 @@ function postProcessScenes(scenes) {
     
     return {
       ...scene,
-      characters: Array.from(mergedChars),
+      characters: filterNonCharacters(Array.from(mergedChars)),
       duration: scene.duration || DEFAULT_SHOT_DURATION
     };
   });

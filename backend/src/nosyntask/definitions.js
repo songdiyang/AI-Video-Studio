@@ -383,6 +383,7 @@ const WORKFLOW_DEFINITIONS = {
         buildInput: createBuildInput([
           'characterId', 'characterName', 'appearance', 'personality',
           'description', 'style', 'projectId', 'imageModel', 'textModel', 'aspectRatio',
+          'regenerateOnly',
           { key: 'width', defaultValue: 1920 },
           { key: 'height', defaultValue: 2880 }
         ])

@@ -8,6 +8,7 @@
  */
 
 const handleBaseTextModelCall = require('../base/baseTextModelCall');
+const { filterNonCharacters } = require('../../../utils/characterFilter');
 const { stripThinkTags, extractCodeBlock, extractJSON, stripInvisible } = require('../../../utils/washBody');
 
 // 目标时长范围（秒）
@@ -289,7 +290,7 @@ function postProcessScenes(scenes) {
     
     return {
       ...scene,
-      characters: Array.from(mergedChars),
+      characters: filterNonCharacters(Array.from(mergedChars)),
       // 确保 duration 有默认值
       duration: scene.duration || DEFAULT_SCENE_DURATION
     };
@@ -418,6 +419,7 @@ ${scriptContent}
    - 准确记录每个分镜中出现的角色
    - characters 数组必须包含 description 中提到的所有角色名
    - 空镜头（无角色）的 characters 为空数组 []
+   - 【重要】characters 只填写有具体名字的角色，不要填写泛称群体如"人群"、"路人"、"群众"、"众人"、"行人"、"观众"、"围观者"、"士兵"、"村民"等
 
 3. **道具识别**：
    - 识别画面中的重要道具（如手机、书本、传单、钥匙等）

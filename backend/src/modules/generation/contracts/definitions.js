@@ -109,7 +109,8 @@ const operationContracts = [
         style: { type: 'string' },
         imageModel: { type: 'string', minLength: 1 },
         textModel: { type: 'string' },
-        aspectRatio: { type: 'string' }
+        aspectRatio: { type: 'string' },
+        regenerateOnly: { type: 'array', items: { type: 'string', enum: ['front', 'side', 'back'] } }
       }
     },
     scopeResolver: async ({ actor, input }) => {
@@ -132,7 +133,8 @@ const operationContracts = [
         appearance: resources.character.appearance,
         personality: resources.character.personality,
         description: resources.character.description,
-        style: input.style || null
+        style: input.style || null,
+        regenerateOnly: input.regenerateOnly || null
       },
       options: {
         aspectRatio: input.aspectRatio || null
