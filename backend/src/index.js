@@ -88,7 +88,7 @@ app.use('/api/', apiLimiter);
 // 登录/注册接口更严格的速率限制
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 20, // 每个 IP 每 15 分钟最多 20 次认证请求
+  max: 888, // 每个 IP 每 15 分钟最多 100 次认证请求
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: '认证请求过于频繁，请稍后再试' }
