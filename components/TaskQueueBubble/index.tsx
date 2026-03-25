@@ -227,7 +227,7 @@ const TaskQueueBubble: React.FC = () => {
               left: SIDEBAR_WIDTH,
               right: 0,
               height: panelHeight,
-              backgroundColor: 'var(--bg-secondary)',
+              backgroundColor: 'var(--bg-app)',
               borderTop: '1px solid var(--border)',
             }}
           >
@@ -248,7 +248,7 @@ const TaskQueueBubble: React.FC = () => {
               className="flex items-center justify-between px-4 shrink-0"
               style={{
                 height: HEADER_HEIGHT,
-                backgroundColor: 'var(--bg-nav)',
+                backgroundColor: 'var(--bg-app)',
                 borderBottom: '1px solid var(--border)',
               }}
             >
