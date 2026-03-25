@@ -74,24 +74,25 @@ app.use(helmet({
   crossOriginEmbedderPolicy: false // 允许加载跨域图片资源
 }));
 
-// API 速率限制 - 防止暴力攻击和滥用
+// API 速率限制（已禁用）
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 分钟窗口
-  max: process.env.NODE_ENV === 'production' ? 300 : 2000, // 开发环境放宽限制
+  max: Number.MAX_SAFE_INTEGER, // 无限制
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: '请求过于频繁，请稍后再试' },
-  skip: () => process.env.NODE_ENV !== 'production' // 开发环境跳过限制
+  skip: () => true // 跳过所有限制
 });
 app.use('/api/', apiLimiter);
 
-// 登录/注册接口更严格的速率限制
+// 登录/注册接口速率限制（已禁用）
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 888, // 每个 IP 每 15 分钟最多 100 次认证请求
+  max: Number.MAX_SAFE_INTEGER, // 无限制
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: '认证请求过于频繁，请稍后再试' }
+  message: { error: '认证请求过于频繁，请稍后再试' },
+  skip: () => true // 跳过所有限制
 });
 
 // CORS 配置 - 限制允许的来源
