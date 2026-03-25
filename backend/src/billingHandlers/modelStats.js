@@ -3,7 +3,7 @@
  * 提供各模型的成功率、平均耗时、调用次数等统计信息
  */
 
-const { execute } = require('../db');
+const { execute } = require('../dbHelper');
 
 /**
  * 获取模型性能统计

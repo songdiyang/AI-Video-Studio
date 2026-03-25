@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef, Component, ReactNode } from 'react';
 import { Button, Select, SelectItem, Tooltip } from '@heroui/react';
-import { Wand2, RefreshCw, Upload, Download, Video, ImageIcon, Users, MapPin, Frame, Film, ChevronDown, Play, PanelRight } from 'lucide-react';
+import { Wand2, RefreshCw, Download, Video, ImageIcon, Users, MapPin, Frame, Film, ChevronDown, Play, PanelRight } from 'lucide-react';
 import { useSceneManager, StoryboardScene } from './useSceneManager';
 import { useAutoStoryboard } from './useAutoStoryboard';
 import { useSceneGeneration } from './useSceneGeneration';
@@ -9,7 +9,6 @@ import { useBatchSceneVideoGeneration } from './hooks/useBatchSceneVideoGenerati
 import { useWorkflowRecovery } from './hooks/useWorkflowRecovery';
 import EpisodeSelector from './EpisodeSelector';
 import AutoStoryboardModal from './AutoStoryboardModal';
-import ImportStoryboardModal from './ImportStoryboardModal';
 import BatchDownloadModal from './BatchDownloadModal';
 import SceneList from './SceneList';
 import ResourcePanel from './ResourcePanel';
@@ -96,7 +95,7 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
   const [currentScriptId, setCurrentScriptId] = useState<number | null>(scriptId || null);
   const [currentProjectId, setCurrentProjectId] = useState<number | null>(projectId || null);
   const [currentEpisode, setCurrentEpisode] = useState(episodeNumber);
-  const [showImportModal, setShowImportModal] = useState(false);
+  
   const [showBatchDownloadModal, setShowBatchDownloadModal] = useState(false);
   const [imageAspectRatio, setImageAspectRatio] = useState('');
   const [videoAspectRatio, setVideoAspectRatio] = useState('');
@@ -782,12 +781,6 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
                 variant="success"
               />
             )}
-            <IconButton
-              icon={<Upload className="w-4 h-4" />}
-              tooltip="从 JSON 导入"
-              onClick={() => setShowImportModal(true)}
-              disabled={!currentScriptId}
-            />
 
             <Divider />
 
@@ -1043,12 +1036,6 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
         onConfirm={autoStoryboard.handleConfirmGenerate}
       />
 
-      {/* 导入分镜弹窗 */}
-      <ImportStoryboardModal
-        isOpen={showImportModal}
-        onOpenChange={setShowImportModal}
-        onImport={handleImportScenes}
-      />
 
       {/* 批量下载弹窗 */}
       <BatchDownloadModal

@@ -23,6 +23,7 @@ const UserManagement: React.FC = () => {
 
   const [formData, setFormData] = useState({
     email: '',
+    password: '',
     role: 'user' as 'user' | 'admin',
     balance: 100
   });
@@ -52,6 +53,7 @@ const UserManagement: React.FC = () => {
     setEditingUser(user);
     setFormData({
       email: user.email,
+      password: '',
       role: user.role,
       balance: user.balance
     });
@@ -76,7 +78,10 @@ const UserManagement: React.FC = () => {
         fetchUsers();
         onClose();
         setEditingUser(null);
-        setFormData({ email: '', role: 'user', balance: 100 });
+        setFormData({ email: '', password: '', role: 'user', balance: 100 });
+      } else {
+        const data = await response.json().catch(() => null);
+        alert(data?.message || '保存失败');
       }
     } catch (error) {
       console.error('保存用户失败:', error);
@@ -126,7 +131,7 @@ const UserManagement: React.FC = () => {
           startContent={<Plus className="w-4 h-4" />}
           onPress={() => {
             setEditingUser(null);
-            setFormData({ email: '', role: 'user', balance: 100 });
+            setFormData({ email: '', password: '', role: 'user', balance: 100 });
             onOpen();
           }}
         >
@@ -237,6 +242,19 @@ const UserManagement: React.FC = () => {
                 inputWrapper: "bg-slate-800/60 border border-slate-600/50"
               }}
             />
+
+            {!editingUser && (
+              <Input
+                type="password"
+                label="密码"
+                placeholder="请输入密码"
+                value={formData.password}
+                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                classNames={{
+                  inputWrapper: "bg-slate-800/60 border border-slate-600/50"
+                }}
+              />
+            )}
             
             <div>
               <label className="text-sm font-medium text-slate-400 mb-2 block">角色</label>
