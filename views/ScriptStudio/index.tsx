@@ -540,47 +540,25 @@ const ScriptStudio: React.FC = () => {
             </ResizablePanel>
           </PanelGroup>
         ) : (
-          isAdminUser() ? (
-            <StoryBoard 
-              scriptId={scriptId}
-              projectId={selectedProject?.id || null}
-              episodeNumber={currentEpisode}
-              scripts={scripts}
-              models={aiModels.models}
-              textModel={aiModels.selected.text}
-              imageModel={aiModels.selected.image}
-              videoModel={aiModels.selected.video}
-              onEpisodeChange={(ep, sid) => {
-                setCurrentEpisode(ep);
-                const targetScript = scripts.find(s => s.id === sid);
-                if (targetScript) {
-                  setScriptId(sid);
-                  setContent(targetScript.content);
-                  setTitle(targetScript.title);
-                }
-              }}
-            />
-          ) : (
-            <SimpleStoryBoard
-              scriptId={scriptId}
-              projectId={selectedProject?.id || null}
-              episodeNumber={currentEpisode}
-              scripts={scripts}
-              models={aiModels.models}
-              textModel={aiModels.selected.text}
-              imageModel={aiModels.selected.image}
-              videoModel={aiModels.selected.video}
-              onEpisodeChange={(ep, sid) => {
-                setCurrentEpisode(ep);
-                const targetScript = scripts.find(s => s.id === sid);
-                if (targetScript) {
-                  setScriptId(sid);
-                  setContent(targetScript.content);
-                  setTitle(targetScript.title);
-                }
-              }}
-            />
-          )
+          <StoryBoard 
+            scriptId={scriptId}
+            projectId={selectedProject?.id || null}
+            episodeNumber={currentEpisode}
+            scripts={scripts}
+            models={aiModels.models}
+            textModel={aiModels.selected.text}
+            imageModel={aiModels.selected.image}
+            videoModel={aiModels.selected.video}
+            onEpisodeChange={(ep, sid) => {
+              setCurrentEpisode(ep);
+              const targetScript = scripts.find(s => s.id === sid);
+              if (targetScript) {
+                setScriptId(sid);
+                setContent(targetScript.content);
+                setTitle(targetScript.title);
+              }
+            }}
+          />
         )}
       </div>
 
