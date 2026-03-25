@@ -1,5 +1,5 @@
 import { getAuthToken } from './auth';
-import type { SketchHistoryEntry } from '../views/StoryBoard/SketchModule/types/sketch';
+import type { SketchHistoryEntry } from '../views/SketchStudio/SketchModule/types/sketch';
 
 // 分镜空间描述接口
 export interface CharacterPosition {
