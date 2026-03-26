@@ -6,9 +6,9 @@ const { withAIBillingContext } = require('./aiBillingContext');
 const { getPriceSummary } = require('./aiBillingService');
 const { callAIModel, queryAIModel, getTextModels } = require('./aiModelService');
 const { generationStartService, sendGenerationError } = require('./modules/generation');
-const { listServices, runServiceAction } = require('./coreServiceClient');
 const { getRateLimitStats, reloadRateLimitConfigs } = require('./nosyntask/utils/aiRateLimiter');
 const { getServerStatus } = require('./index');
+const os = require('os');
 
 const router = express.Router();
 
@@ -28,6 +28,7 @@ function serializeModel(model) {
     response_mapping: parseJsonField(model.response_mapping, {}),
     supported_aspect_ratios: parseJsonField(model.supported_aspect_ratios, []),
     supported_durations: parseJsonField(model.supported_durations, []),
+    supported_resolutions: parseJsonField(model.supported_resolutions, []),
     query_headers_template: parseJsonField(model.query_headers_template, null),
     query_body_template: parseJsonField(model.query_body_template, null),
     query_response_mapping: parseJsonField(model.query_response_mapping, null),
@@ -88,18 +89,17 @@ router.get('/service-ports-status', authMiddleware, requireAdmin, async (_req, r
       description: '主后端服务'
     },
     {
-      name: 'Notification Service',
-      port: 4101,
-      url: process.env.NOTIFICATION_SERVICE_URL || 'http://localhost:4101',
-      healthPath: '/health',
-      description: '实时通知服务'
+      name: 'Frontend',
+      port: 3000,
+      url: (process.env.ALLOWED_ORIGINS || 'http://localhost:3000').split(',')[0].trim(),
+      description: '前端应用'
     },
     {
-      name: 'Core Service',
-      port: 4100,
-      url: process.env.CORE_SERVICE_URL || 'http://localhost:4100',
-      healthPath: '/health',
-      description: '核心调度服务'
+      name: 'MySQL',
+      port: process.env.MYSQL_PORT || 3306,
+      url: null, // 通过数据库查询检测
+      dbCheck: true,
+      description: '关系型数据库'
     },
     {
       name: 'MinIO',
@@ -121,9 +121,24 @@ router.get('/service-ports-status', authMiddleware, requireAdmin, async (_req, r
     };
 
     // 当前服务直接返回在线
-    if (!service.url) {
+    if (!service.url && !service.dbCheck) {
       result.status = 'online';
       result.latency = 0;
+      return result;
+    }
+
+    // 数据库通过 SELECT 1 检测
+    if (service.dbCheck) {
+      const dbStart = Date.now();
+      try {
+        await queryOne('SELECT 1');
+        result.latency = Date.now() - dbStart;
+        result.status = 'online';
+      } catch (dbErr) {
+        result.latency = Date.now() - dbStart;
+        result.status = 'offline';
+        result.error = dbErr.message || '连接失败';
+      }
       return result;
     }
 
@@ -200,55 +215,129 @@ router.get('/server-status', authMiddleware, requireAdmin, async (req, res) => {
   }
 });
 
+// ====== 服务仪表盘 - 直接探测各服务健康状态 ======
 router.get('/services', authMiddleware, requireAdmin, async (_req, res) => {
+  const probeWithTimeout = async (url, timeoutMs = 3000) => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const start = Date.now();
+    try {
+      const r = await fetch(url, { method: 'GET', signal: controller.signal });
+      clearTimeout(timer);
+      return { ok: r.ok, latency: Date.now() - start, status: r.status };
+    } catch (err) {
+      clearTimeout(timer);
+      return { ok: false, latency: Date.now() - start, error: err.name === 'AbortError' ? '连接超时' : err.message };
+    }
+  };
+
   try {
-    const data = await listServices();
-    res.json(data);
+    const serverStatus = getServerStatus();
+    const mem = process.memoryUsage();
+
+    // --- 1. Backend（自身） ---
+    const backendService = {
+      serviceId: 'backend',
+      name: 'Backend',
+      description: '主后端 API 服务',
+      status: 'online',
+      latency: 0,
+      uptimeSeconds: Math.floor(serverStatus.uptime / 1000),
+      metrics: {
+        cpuPercent: 0,
+        memoryUsage: mem.rss,
+        memoryLimit: os.totalmem()
+      },
+      metadata: {
+        nodeVersion: serverStatus.nodeVersion,
+        platform: serverStatus.platform,
+        port: serverStatus.port,
+        env: serverStatus.env
+      }
+    };
+    // 简易 CPU 采样：测量 100ms 内 CPU 占用
+    try {
+      const startUsage = process.cpuUsage();
+      const startTime = process.hrtime.bigint();
+      await new Promise(r => setTimeout(r, 100));
+      const elapsed = Number(process.hrtime.bigint() - startTime) / 1e6; // ms
+      const usage = process.cpuUsage(startUsage);
+      const cpuMs = (usage.user + usage.system) / 1000;
+      backendService.metrics.cpuPercent = Number(((cpuMs / elapsed) * 100).toFixed(1));
+    } catch (_) { /* ignore */ }
+
+    // --- 2. Frontend（Vite dev server 或 nginx） ---
+    const frontendUrl = (process.env.ALLOWED_ORIGINS || 'http://localhost:3000').split(',')[0].trim();
+    const frontendProbe = await probeWithTimeout(frontendUrl);
+    const frontendService = {
+      serviceId: 'frontend',
+      name: 'Frontend',
+      description: '前端应用',
+      status: frontendProbe.ok ? 'online' : 'offline',
+      latency: frontendProbe.latency,
+      error: frontendProbe.error || null,
+      metadata: { url: frontendUrl }
+    };
+
+    // --- 3. MySQL ---
+    let dbService;
+    const dbStart = Date.now();
+    try {
+      await queryOne('SELECT 1');
+      dbService = {
+        serviceId: 'mysql',
+        name: 'MySQL',
+        description: '关系型数据库',
+        status: 'online',
+        latency: Date.now() - dbStart,
+        metadata: {
+          host: process.env.MYSQL_HOST || 'localhost',
+          port: process.env.MYSQL_PORT || '3306',
+          database: process.env.MYSQL_DATABASE || 'nanostory'
+        }
+      };
+    } catch (dbErr) {
+      dbService = {
+        serviceId: 'mysql',
+        name: 'MySQL',
+        description: '关系型数据库',
+        status: 'offline',
+        latency: Date.now() - dbStart,
+        error: dbErr.message,
+        metadata: {
+          host: process.env.MYSQL_HOST || 'localhost',
+          port: process.env.MYSQL_PORT || '3306',
+          database: process.env.MYSQL_DATABASE || 'nanostory'
+        }
+      };
+    }
+
+    // --- 4. MinIO ---
+    const minioEndpoint = process.env.MINIO_ENDPOINT || 'localhost';
+    const minioPort = process.env.MINIO_PORT || '9000';
+    const minioUrl = `http://${minioEndpoint}:${minioPort}/minio/health/live`;
+    const minioProbe = await probeWithTimeout(minioUrl);
+    const minioService = {
+      serviceId: 'minio',
+      name: 'MinIO',
+      description: '对象存储服务',
+      status: minioProbe.ok ? 'online' : 'offline',
+      latency: minioProbe.latency,
+      error: minioProbe.error || null,
+      metadata: {
+        endpoint: minioEndpoint,
+        port: minioPort,
+        bucket: process.env.MINIO_BUCKET || 'nanostory'
+      }
+    };
+
+    res.json({
+      services: [backendService, frontendService, dbService, minioService],
+      checkedAt: new Date().toISOString()
+    });
   } catch (error) {
     console.error('[Admin] Get services error:', error);
-    const message = error.status === 401
-      ? '服务控制中心鉴权失败，请检查 SERVICE_SHARED_SECRET 并重建 backend/core-service 容器'
-      : error.message || '获取服务列表失败';
-    res.status(error.status === 401 ? 502 : (error.status || 500)).json({ message });
-  }
-});
-
-router.post('/services/:serviceId/start', authMiddleware, requireAdmin, async (req, res) => {
-  try {
-    const data = await runServiceAction(req.params.serviceId, 'start');
-    res.json({ ...data, message: data?.message || '服务启动命令已发送' });
-  } catch (error) {
-    console.error('[Admin] Start service error:', error);
-    const message = error.status === 401
-      ? '服务控制中心鉴权失败，请检查 SERVICE_SHARED_SECRET 并重建 backend/core-service 容器'
-      : error.message || '启动服务失败';
-    res.status(error.status === 401 ? 502 : (error.status || 500)).json({ message });
-  }
-});
-
-router.post('/services/:serviceId/restart', authMiddleware, requireAdmin, async (req, res) => {
-  try {
-    const data = await runServiceAction(req.params.serviceId, 'restart');
-    res.json({ ...data, message: data?.message || '服务重启命令已发送' });
-  } catch (error) {
-    console.error('[Admin] Restart service error:', error);
-    const message = error.status === 401
-      ? '服务控制中心鉴权失败，请检查 SERVICE_SHARED_SECRET 并重建 backend/core-service 容器'
-      : error.message || '重启服务失败';
-    res.status(error.status === 401 ? 502 : (error.status || 500)).json({ message });
-  }
-});
-
-router.post('/services/:serviceId/stop', authMiddleware, requireAdmin, async (req, res) => {
-  try {
-    const data = await runServiceAction(req.params.serviceId, 'stop');
-    res.json({ ...data, message: data?.message || '服务停止命令已发送' });
-  } catch (error) {
-    console.error('[Admin] Stop service error:', error);
-    const message = error.status === 401
-      ? '服务控制中心鉴权失败，请检查 SERVICE_SHARED_SECRET 并重建 backend/core-service 容器'
-      : error.message || '停止服务失败';
-    res.status(error.status === 401 ? 502 : (error.status || 500)).json({ message });
+    res.status(500).json({ message: '获取服务状态失败' });
   }
 });
 
@@ -406,7 +495,7 @@ router.get('/ai-models', authMiddleware, requireAdmin, async (req, res) => {
       `SELECT id, name, category, provider, description, is_active, api_key,
               price_config, request_method, url_template, headers_template, 
               body_template, default_params, response_mapping,
-              supported_aspect_ratios, supported_durations,
+              supported_aspect_ratios, supported_durations, supported_resolutions,
               query_url_template, query_method, query_headers_template, 
               query_body_template, query_response_mapping,
               query_success_condition, query_fail_condition,
@@ -448,7 +537,7 @@ router.post('/ai-models', authMiddleware, requireAdmin, async (req, res) => {
     name, category, provider, description, is_active, api_key,
     price_config, request_method, url_template, headers_template,
     body_template, default_params, response_mapping,
-    supported_aspect_ratios, supported_durations,
+    supported_aspect_ratios, supported_durations, supported_resolutions,
     query_url_template, query_method, query_headers_template,
     query_body_template, query_response_mapping,
     query_success_condition, query_fail_condition,
@@ -467,14 +556,14 @@ router.post('/ai-models', authMiddleware, requireAdmin, async (req, res) => {
         name, category, provider, description, is_active, api_key,
         price_config, request_method, url_template, headers_template,
         body_template, default_params, response_mapping,
-        supported_aspect_ratios, supported_durations,
+        supported_aspect_ratios, supported_durations, supported_resolutions,
         query_url_template, query_method, query_headers_template,
         query_body_template, query_response_mapping,
         query_success_condition, query_fail_condition,
         query_success_mapping, query_fail_mapping,
         custom_handler, custom_query_handler,
         billing_handler, billing_query_handler
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         name, category, provider, description, is_active ?? 1, api_key,
         stringifyJsonValue(price_config, { preserveNull: true }), request_method || 'POST', url_template,
@@ -482,6 +571,7 @@ router.post('/ai-models', authMiddleware, requireAdmin, async (req, res) => {
         stringifyJsonValue(default_params), stringifyJsonValue(response_mapping),
         stringifyJsonValue(supported_aspect_ratios || []),
         stringifyJsonValue(supported_durations || []),
+        stringifyJsonValue(supported_resolutions || []),
         query_url_template || null, query_method || 'GET',
         stringifyJsonValue(query_headers_template),
         stringifyJsonValue(query_body_template),
@@ -507,7 +597,7 @@ router.put('/ai-models/:id', authMiddleware, requireAdmin, async (req, res) => {
     name, category, provider, description, is_active, api_key,
     price_config, request_method, url_template, headers_template,
     body_template, default_params, response_mapping,
-    supported_aspect_ratios, supported_durations,
+    supported_aspect_ratios, supported_durations, supported_resolutions,
     query_url_template, query_method, query_headers_template,
     query_body_template, query_response_mapping,
     query_success_condition, query_fail_condition,
@@ -527,7 +617,7 @@ router.put('/ai-models/:id', authMiddleware, requireAdmin, async (req, res) => {
         name = ?, category = ?, provider = ?, description = ?, is_active = ?, api_key = ?,
         price_config = ?, request_method = ?, url_template = ?, headers_template = ?,
         body_template = ?, default_params = ?, response_mapping = ?,
-        supported_aspect_ratios = ?, supported_durations = ?,
+        supported_aspect_ratios = ?, supported_durations = ?, supported_resolutions = ?,
         query_url_template = ?, query_method = ?, query_headers_template = ?,
         query_body_template = ?, query_response_mapping = ?,
         query_success_condition = ?, query_fail_condition = ?,
@@ -542,6 +632,7 @@ router.put('/ai-models/:id', authMiddleware, requireAdmin, async (req, res) => {
         stringifyJsonValue(default_params), stringifyJsonValue(response_mapping),
         stringifyJsonValue(supported_aspect_ratios || []),
         stringifyJsonValue(supported_durations || []),
+        stringifyJsonValue(supported_resolutions || []),
         query_url_template, query_method,
         stringifyJsonValue(query_headers_template),
         stringifyJsonValue(query_body_template),

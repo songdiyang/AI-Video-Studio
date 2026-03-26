@@ -102,7 +102,7 @@ ${envBlock ? `【环境状态】\n${envBlock}` : ''}
     prompt,
     textModel,
     maxTokens: 4096,
-    think: true,
+    think: false,
     temperature: 0.3
   });
 

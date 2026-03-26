@@ -13,6 +13,7 @@ interface UseBatchFrameGenerationProps {
   projectId: number | null;
   imageModel: string;
   aspectRatio: string;
+  resolution?: string;
   textModel: string;
   scenes: StoryboardScene[];
   onComplete?: () => void;
@@ -24,6 +25,7 @@ export function useBatchFrameGeneration({
   projectId,
   imageModel,
   aspectRatio,
+  resolution,
   textModel,
   scenes,
   onComplete,
@@ -34,6 +36,7 @@ export function useBatchFrameGeneration({
     projectId,
     model: imageModel,
     aspectRatio,
+    resolution,
     textModel,
     scenes,
     onComplete,

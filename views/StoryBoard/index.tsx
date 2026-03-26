@@ -100,6 +100,8 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
   const [imageAspectRatio, setImageAspectRatio] = useState('');
   const [videoAspectRatio, setVideoAspectRatio] = useState('');
   const [videoDuration, setVideoDuration] = useState<number | null>(null);
+  const [imageResolution, setImageResolution] = useState('');
+  const [videoResolution, setVideoResolution] = useState('');
   const [isSubmittingCharacterBatch, setIsSubmittingCharacterBatch] = useState(false);
   const [isSubmittingSceneBatch, setIsSubmittingSceneBatch] = useState(false);
   const [isAnimaticOpen, setIsAnimaticOpen] = useState(false);
@@ -137,6 +139,14 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
     () => normalizeCapabilityOptions(videoModelConfig?.supportedDurations, 'duration'),
     [videoModelConfig]
   );
+  const imageResolutionOptions = useMemo(
+    () => normalizeCapabilityOptions(imageModelConfig?.supportedResolutions, 'resolution'),
+    [imageModelConfig]
+  );
+  const videoResolutionOptions = useMemo(
+    () => normalizeCapabilityOptions(videoModelConfig?.supportedResolutions, 'resolution'),
+    [videoModelConfig]
+  );
 
   // 同步外部 props - 合并为单个 useEffect 减少渲染开销
   useEffect(() => {
@@ -165,6 +175,18 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
   }, [imageAspectRatioOptions]);
 
   useEffect(() => {
+    if (imageResolutionOptions.length === 0) {
+      setImageResolution('');
+      return;
+    }
+    setImageResolution((current) =>
+      imageResolutionOptions.some((option) => option.value === current)
+        ? current
+        : imageResolutionOptions[0].value
+    );
+  }, [imageResolutionOptions]);
+
+  useEffect(() => {
     if (videoAspectRatioOptions.length === 0) {
       setVideoAspectRatio('');
     } else {
@@ -186,6 +208,18 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
       return matchedOption ? Number(matchedOption.value) : Number(videoDurationOptions[0].value);
     });
   }, [videoAspectRatioOptions, videoDurationOptions]);
+
+  useEffect(() => {
+    if (videoResolutionOptions.length === 0) {
+      setVideoResolution('');
+      return;
+    }
+    setVideoResolution((current) =>
+      videoResolutionOptions.some((option) => option.value === current)
+        ? current
+        : videoResolutionOptions[0].value
+    );
+  }, [videoResolutionOptions]);
 
   // 1. 分镜列表管理
   const {
@@ -303,7 +337,8 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
               imageModel,
               textModel,
               style: '',
-              aspectRatio: imageAspectRatio
+              aspectRatio: imageAspectRatio,
+              resolution: imageResolution || undefined
             })
           });
 
@@ -392,7 +427,8 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
             body: JSON.stringify({
               imageModel,
               textModel,
-              aspectRatio: imageAspectRatio
+              aspectRatio: imageAspectRatio,
+              resolution: imageResolution || undefined
             })
           });
 
@@ -466,6 +502,7 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
     projectId: currentProjectId,
     imageModel,
     aspectRatio: imageAspectRatio,
+    resolution: imageResolution || undefined,
     textModel,
     scenes,
     onComplete: () => {
@@ -485,6 +522,7 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
     textModel,
     aspectRatio: videoAspectRatio,
     duration: videoDuration,
+    resolution: videoResolution || undefined,
     onComplete: () => {
       console.log('[StoryBoard] 批量视频生成完成，重新加载分镜');
       if (currentScriptId) {
@@ -892,6 +930,24 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
                     <SelectItem key={option.value}>{option.label}</SelectItem>
                   ))}
                 </Select>
+                {imageResolutionOptions.length > 0 && (
+                  <Select
+                    size="sm"
+                    aria-label="图片清晰度"
+                    placeholder="清晰度"
+                    selectedKeys={imageResolution ? [imageResolution] : []}
+                    onChange={(e) => setImageResolution(e.target.value)}
+                    className="w-28"
+                    classNames={{
+                      trigger: "h-7 min-h-7 bg-[var(--bg-card)] border-[var(--border-color)]",
+                      value: "text-xs text-[var(--text-secondary)]"
+                    }}
+                  >
+                    {imageResolutionOptions.map((option) => (
+                      <SelectItem key={option.value}>{option.label}</SelectItem>
+                    ))}
+                  </Select>
+                )}
               </div>
             )}
 
@@ -917,6 +973,24 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
                     <SelectItem key={option.value}>{option.label}</SelectItem>
                   ))}
                 </Select>
+                {videoResolutionOptions.length > 0 && (
+                  <Select
+                    size="sm"
+                    aria-label="视频清晰度"
+                    placeholder="清晰度"
+                    selectedKeys={videoResolution ? [videoResolution] : []}
+                    onChange={(e) => setVideoResolution(e.target.value)}
+                    className="w-28"
+                    classNames={{
+                      trigger: "h-7 min-h-7 bg-[var(--bg-card)] border-[var(--border-color)]",
+                      value: "text-xs text-[var(--text-secondary)]"
+                    }}
+                  >
+                    {videoResolutionOptions.map((option) => (
+                      <SelectItem key={option.value}>{option.label}</SelectItem>
+                    ))}
+                  </Select>
+                )}
                 <Select
                   size="sm"
                   aria-label="视频时长"

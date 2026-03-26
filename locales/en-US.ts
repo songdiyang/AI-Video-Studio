@@ -231,6 +231,11 @@ const enUS: Translations = {
     descPlaceholder: 'Describe your project...',
     coverLabel: 'Cover Image URL',
     coverPlaceholder: 'Image URL (optional)',
+    aiGenerateCover: 'AI Generate Cover',
+    aiGeneratingCover: 'Generating Cover...',
+    aiCoverHint: 'Please fill in project name or description first',
+    aiCoverFailed: 'AI cover generation failed',
+    aiCoverSuccess: 'Cover generated successfully',
     statusLabel: 'Project Status',
     // Status
     statusDraft: 'Draft',

@@ -45,24 +45,22 @@ async function handleSaveStoryboards(inputParams, onProgress) {
     console.log('[SaveStoryboards] 已删除旧分镜');
   }
 
-  // 保存新分镜（与 saveFromWorkflow 一致：prompt_template + variables_json）
-  for (let i = 0; i < scenes.length; i++) {
-    const scene = scenes[i];
-    const actualIdx = idxOffset + i;
+  // 批量保存新分镜（单次网络往返替代 N 次）
+  if (scenes.length > 0) {
+    const batchValues = scenes.map((scene, i) => [
+      projectId,
+      scriptId,
+      idxOffset + i,
+      scene.description || scene.prompt_template || '',
+      JSON.stringify(scene.variables || scene)
+    ]);
     await execute(
-      `INSERT INTO storyboards (project_id, script_id, idx, prompt_template, variables_json) 
-       VALUES (?, ?, ?, ?, ?)`,
-      [
-        projectId,
-        scriptId,
-        actualIdx,
-        scene.description || scene.prompt_template || '',
-        JSON.stringify(scene.variables || scene)
-      ]
+      `INSERT INTO storyboards (project_id, script_id, idx, prompt_template, variables_json) VALUES ?`,
+      [batchValues]
     );
   }
 
-  console.log('[SaveStoryboards] 保存了', scenes.length, '个分镜');
+  console.log('[SaveStoryboards] 批量保存了', scenes.length, '个分镜');
   if (onProgress) onProgress(40);
 
   // ============================================
@@ -91,47 +89,33 @@ async function handleSaveStoryboards(inputParams, onProgress) {
 
     console.log('[SaveStoryboards] 从分镜汇总了', locationMap.size, '个场景');
 
-    // 保存场景到数据库
+    // 批量 upsert 场景到数据库（单次网络往返替代 2N 次）
+    const sceneValues = [];
     for (const [locName, data] of locationMap.entries()) {
+      const envDescription = data.descriptions[0] || '';
+      const mood = Array.from(data.emotions).join(', ') || '';
+      const environment = `${locName}场景`;
+      const lighting = '自然光';
+      sceneValues.push([userId, projectId, scriptId, locName, envDescription, mood, environment, lighting, 'auto_extracted']);
+    }
+
+    if (sceneValues.length > 0) {
       try {
-        // 检查场景是否已存在
-        const existing = await queryOne(
-          'SELECT id FROM scenes WHERE project_id = ? AND name = ? AND user_id = ?',
-          [projectId, locName, userId]
+        await execute(
+          `INSERT INTO scenes (user_id, project_id, script_id, name, description, mood, environment, lighting, source)
+           VALUES ?
+           ON DUPLICATE KEY UPDATE
+             description = COALESCE(NULLIF(description, ''), VALUES(description)),
+             mood = COALESCE(NULLIF(mood, ''), VALUES(mood)),
+             environment = COALESCE(NULLIF(environment, ''), VALUES(environment)),
+             lighting = COALESCE(NULLIF(lighting, ''), VALUES(lighting)),
+             script_id = VALUES(script_id),
+             updated_at = CURRENT_TIMESTAMP`,
+          [sceneValues]
         );
-
-        // 从 descriptions 中提取环境描述（取第一个详细的）
-        const envDescription = data.descriptions[0] || '';
-        const mood = Array.from(data.emotions).join(', ') || '';
-
-        // 自动生成 environment 和 lighting 默认值
-        const environment = `${locName}场景`;
-        const lighting = '自然光';
-
-        if (existing) {
-          // 更新现有场景（补充缺失字段）
-          await execute(
-            `UPDATE scenes 
-             SET description = COALESCE(NULLIF(description, ''), ?),
-                 mood = COALESCE(NULLIF(mood, ''), ?),
-                 environment = COALESCE(NULLIF(environment, ''), ?),
-                 lighting = COALESCE(NULLIF(lighting, ''), ?),
-                 script_id = ?,
-                 updated_at = CURRENT_TIMESTAMP
-             WHERE id = ?`,
-            [envDescription, mood, environment, lighting, scriptId, existing.id]
-          );
-        } else {
-          // 插入新场景（包含所有必需字段）
-          await execute(
-            `INSERT INTO scenes (user_id, project_id, script_id, name, description, mood, environment, lighting, source)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'auto_extracted')`,
-            [userId, projectId, scriptId, locName, envDescription, mood, environment, lighting]
-          );
-        }
-        scenesExtracted++;
+        scenesExtracted = sceneValues.length;
       } catch (dbError) {
-        console.error('[SaveStoryboards] 保存场景失败:', locName, dbError.message);
+        console.error('[SaveStoryboards] 批量保存场景失败:', dbError.message);
       }
     }
     console.log('[SaveStoryboards] 场景提取完成:', scenesExtracted);
@@ -158,29 +142,36 @@ async function handleSaveStoryboards(inputParams, onProgress) {
 
     console.log('[SaveStoryboards] 从分镜汇总了', allPropNames.size, '个道具');
 
-    // 保存道具到数据库
-    for (const propName of allPropNames) {
+    // 批量查询已有道具 + 批量插入新道具
+    if (allPropNames.size > 0) {
+      const propNameArr = Array.from(allPropNames);
       try {
-        // 检查道具是否已存在
-        const existing = await queryOne(
-          'SELECT id FROM props WHERE project_id = ? AND name = ? AND user_id = ?',
-          [projectId, propName, userId]
+        // 一次性查询所有已存在的道具
+        const existingProps = await queryAll(
+          `SELECT id, name FROM props WHERE project_id = ? AND user_id = ? AND name IN (?)`,
+          [projectId, userId, propNameArr]
         );
+        for (const p of existingProps) {
+          propNameToId.set(p.name, p.id);
+        }
 
-        if (existing) {
-          propNameToId.set(propName, existing.id);
-        } else {
-          // 插入新道具
-          const result = await execute(
-            `INSERT INTO props (user_id, project_id, name, description, category) 
-             VALUES (?, ?, ?, ?, ?)`,
-            [userId, projectId, propName, `从分镜自动提取的道具：${propName}`, '未分类']
+        // 筛选需要新增的道具
+        const newProps = propNameArr.filter(n => !propNameToId.has(n));
+        if (newProps.length > 0) {
+          const propValues = newProps.map(n => [userId, projectId, n, `从分镜自动提取的道具：${n}`, '未分类']);
+          const insertResult = await execute(
+            `INSERT INTO props (user_id, project_id, name, description, category) VALUES ?`,
+            [propValues]
           );
-          propNameToId.set(propName, result.insertId);
-          propsExtracted++;
+          // 获取批量插入的 id（MySQL 连续自增）
+          const firstId = insertResult.insertId;
+          newProps.forEach((n, i) => {
+            propNameToId.set(n, firstId + i);
+          });
+          propsExtracted = newProps.length;
         }
       } catch (dbError) {
-        console.error('[SaveStoryboards] 保存道具失败:', propName, dbError.message);
+        console.error('[SaveStoryboards] 批量处理道具失败:', dbError.message);
       }
     }
 
@@ -209,27 +200,29 @@ async function handleSaveStoryboards(inputParams, onProgress) {
         [scriptId]
       );
 
+      // 收集所有关联关系后批量插入
+      const linkValues = [];
       for (const sb of storyboards) {
         try {
           const variables = typeof sb.variables_json === 'string' 
             ? JSON.parse(sb.variables_json) 
             : sb.variables_json;
-          
           const sceneProps = variables?.props || [];
-          
           for (const propName of sceneProps) {
             const propId = propNameToId.get(propName?.trim());
             if (propId) {
-              // 插入分镜-道具关联（忽略重复）
-              await execute(
-                `INSERT IGNORE INTO storyboard_props (storyboard_id, prop_id) VALUES (?, ?)`,
-                [sb.id, propId]
-              );
+              linkValues.push([sb.id, propId]);
             }
           }
         } catch (parseErr) {
           // 解析失败，跳过该分镜
         }
+      }
+      if (linkValues.length > 0) {
+        await execute(
+          `INSERT IGNORE INTO storyboard_props (storyboard_id, prop_id) VALUES ?`,
+          [linkValues]
+        );
       }
       console.log('[SaveStoryboards] 分镜-道具关联完成');
     } catch (linkPropErr) {

@@ -100,7 +100,7 @@ const WORKFLOW_DEFINITIONS = {
         // dependencies: [] - 无依赖，立即执行
         buildInput: createBuildInput([
           'scriptContent', 'scriptTitle', 'textModel',
-          { key: 'think', defaultValue: true }
+          { key: 'think', defaultValue: false }
         ])
       },
       {
@@ -129,7 +129,7 @@ const WORKFLOW_DEFINITIONS = {
         handler: handleSceneStateAnalysis,
         dependencies: [1], // 也依赖步骤1，与步骤2并行执行
         buildInput: createBuildInput([
-          'scriptId', 'textModel', { key: 'think', defaultValue: true }
+          'scriptId', 'textModel', { key: 'think', defaultValue: false }
         ])
       }
     ]
@@ -153,7 +153,7 @@ const WORKFLOW_DEFINITIONS = {
         buildInput: createBuildInput([
           'sceneContent', 'sceneName', 'sceneNumber', 'totalScenes',
           'previousSceneContext', 'scriptTitle', 'textModel',
-          { key: 'think', defaultValue: true }
+          { key: 'think', defaultValue: false }
         ])
       },
       {
@@ -321,7 +321,7 @@ const WORKFLOW_DEFINITIONS = {
         targetType: 'storyboard',
         handler: handleBatchFrameGeneration,
         buildInput: createBuildInput([
-          'scriptId', 'imageModel', 'textModel', 'overwriteFrames', 'aspectRatio',
+          'scriptId', 'imageModel', 'textModel', 'overwriteFrames', 'aspectRatio', 'resolution',
           { key: 'maxConcurrency', defaultValue: 20 }
         ])
       }
@@ -343,7 +343,7 @@ const WORKFLOW_DEFINITIONS = {
         targetType: 'storyboard',
         handler: handleParallelFrameGeneration,
         buildInput: createBuildInput([
-          'scriptId', 'imageModel', 'textModel', 'overwriteFrames', 'aspectRatio',
+          'scriptId', 'imageModel', 'textModel', 'overwriteFrames', 'aspectRatio', 'resolution',
           { key: 'maxConcurrency', defaultValue: 5 }  // 默认5个并发，避免API限流
         ])
       }
@@ -361,10 +361,10 @@ const WORKFLOW_DEFINITIONS = {
         targetType: 'storyboard',
         handler: handleBatchSceneVideoGeneration,
         buildInput: createBuildInput([
-          'scriptId', 'videoModel', 'textModel', 'duration', 'aspectRatio',
+          'scriptId', 'videoModel', 'textModel', 'duration', 'aspectRatio', 'resolution',
           'overwriteVideos',
-          { key: 'think', defaultValue: true },
-          { key: 'maxConcurrency', defaultValue: 3 }
+          { key: 'think', defaultValue: false },
+          { key: 'maxConcurrency', defaultValue: 5 }
         ])
       }
     ]
@@ -403,7 +403,7 @@ const WORKFLOW_DEFINITIONS = {
         handler: handleCameraRunGeneration,
         buildInput: createBuildInput([
           'storyboardId', 'textModel',
-          { key: 'think', defaultValue: true }
+          { key: 'think', defaultValue: false }
         ])
       }
     ]

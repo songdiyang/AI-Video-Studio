@@ -1,13 +1,12 @@
 /**
  * 批量分镜生成处理器
- * 将多场景分镜生成整合为单一任务，内部按场景顺序处理
+ * 将多场景分镜生成整合为单一任务，受控并发处理
  * 
  * 特点：
  * 1. 用户界面只显示一个统一任务
- * 2. 后台按场景分割顺序处理
+ * 2. 后台按场景分割，受控并发（默认3路并行）
  * 3. 统一进度反馈（如"场景2/5 生成中"）
- * 4. 保持场景间连贯性（传递上下文）
- * 5. 结果按顺序整合后一次性保存
+ * 4. 结果按场景序号排序后一次性保存
  * 
  * input:  { scriptId, projectId, userId, textModel, clearExisting }
  * output: { totalScenes, totalShots, totalDuration, characters, locations }
@@ -339,73 +338,90 @@ async function handleBatchStoryboardGeneration(inputParams, onProgress) {
     console.log('[BatchStoryboard] 已清理旧分镜');
   }
 
-  // 4. 按场景顺序处理
-  const allStoryboards = [];
+  // 4. 受控并发处理场景（默认 3 路并行）
+  const CONCURRENCY = Math.min(3, totalScenes);
   const allCharacters = new Set();
   const allLocations = new Set();
-  let previousContext = '';
   let totalTokens = 0;
+  let completedScenes = 0;
 
-  for (let i = 0; i < totalScenes; i++) {
-    const scene = parsedScenes[i];
-    const sceneNumber = scene.sceneNumber || (i + 1);
-    const sceneName = scene.sceneName || `场景${sceneNumber}`;
+  // 构建每个场景的任务描述
+  const sceneTasks = parsedScenes.map((scene, i) => ({
+    index: i,
+    sceneNumber: scene.sceneNumber || (i + 1),
+    sceneName: scene.sceneName || `场景${scene.sceneNumber || (i + 1)}`,
+    content: scene.content
+  }));
 
-    // 计算进度：5% 开始，95% 结束，均匀分配
-    const sceneStartProgress = 5 + (i / totalScenes) * 85;
-    const sceneEndProgress = 5 + ((i + 1) / totalScenes) * 85;
+  // 用于存放按索引排列的结果
+  const sceneResults = new Array(totalScenes).fill(null);
 
-    console.log(`[BatchStoryboard] 处理场景 ${sceneNumber}/${totalScenes}: ${sceneName}`);
-    if (onProgress) onProgress(Math.round(sceneStartProgress));
+  // 受控并发执行器
+  const taskQueue = [...sceneTasks];
+  const runWorker = async () => {
+    while (taskQueue.length > 0) {
+      const task = taskQueue.shift();
+      if (!task) break;
 
-    try {
-      const result = await generateSceneStoryboard({
-        sceneContent: scene.content,
-        sceneName,
-        sceneNumber,
-        totalScenes,
-        previousSceneContext: previousContext,
-        scriptTitle: script.title || `第${script.episode_number}集`,
-        textModel,
-        think
-      });
+      console.log(`[BatchStoryboard] 处理场景 ${task.sceneNumber}/${totalScenes}: ${task.sceneName}`);
 
-      // 收集结果
-      // 为每个分镜添加全局序号
-      const globalStartIdx = allStoryboards.length;
-      const sceneShotsWithGlobalIdx = result.scenes.map((shot, shotIdx) => ({
-        ...shot,
-        globalOrder: globalStartIdx + shotIdx + 1,
-        sceneNumber,
-        sceneName
-      }));
+      try {
+        const result = await generateSceneStoryboard({
+          sceneContent: task.content,
+          sceneName: task.sceneName,
+          sceneNumber: task.sceneNumber,
+          totalScenes,
+          previousSceneContext: '', // 并行模式不传递上下文，每个场景独立生成
+          scriptTitle: script.title || `第${script.episode_number}集`,
+          textModel,
+          think
+        });
 
-      allStoryboards.push(...sceneShotsWithGlobalIdx);
-      
-      // 收集角色和场景
-      result.scenes.forEach(shot => {
-        if (Array.isArray(shot.characters)) {
-          shot.characters.forEach(c => allCharacters.add(c));
-        }
-        if (shot.location) {
-          allLocations.add(shot.location);
-        }
-      });
+        // 为分镜标记场景信息（全局序号在排序后计算）
+        sceneResults[task.index] = {
+          scenes: result.scenes.map(shot => ({
+            ...shot,
+            sceneNumber: task.sceneNumber,
+            sceneName: task.sceneName
+          })),
+          tokens: result.tokens || 0
+        };
 
-      // 更新上下文
-      previousContext = result.lastSceneEndState;
-      totalTokens += result.tokens;
+        completedScenes++;
+        const progress = 5 + (completedScenes / totalScenes) * 85;
+        console.log(`[BatchStoryboard] 场景 ${task.sceneNumber} 完成: ${result.scenes.length} 个分镜 (${completedScenes}/${totalScenes})`);
+        if (onProgress) onProgress(Math.round(progress));
 
-      console.log(`[BatchStoryboard] 场景 ${sceneNumber} 完成: ${result.scenes.length} 个分镜`);
-      if (onProgress) onProgress(Math.round(sceneEndProgress));
-
-    } catch (sceneError) {
-      console.error(`[BatchStoryboard] 场景 ${sceneNumber} 生成失败:`, sceneError.message);
-      throw new Error(`场景 ${sceneNumber}(${sceneName}) 生成失败: ${sceneError.message}`);
+      } catch (sceneError) {
+        console.error(`[BatchStoryboard] 场景 ${task.sceneNumber} 生成失败:`, sceneError.message);
+        throw new Error(`场景 ${task.sceneNumber}(${task.sceneName}) 生成失败: ${sceneError.message}`);
+      }
     }
+  };
+
+  // 启动 N 个 worker 并发消费任务队列
+  const workers = Array.from({ length: CONCURRENCY }, () => runWorker());
+  await Promise.all(workers);
+
+  // 按场景顺序合并结果，计算全局序号
+  const allStoryboards = [];
+  for (const result of sceneResults) {
+    if (!result) continue;
+    const globalStartIdx = allStoryboards.length;
+    result.scenes.forEach((shot, shotIdx) => {
+      shot.globalOrder = globalStartIdx + shotIdx + 1;
+      allStoryboards.push(shot);
+      if (Array.isArray(shot.characters)) {
+        shot.characters.forEach(c => allCharacters.add(c));
+      }
+      if (shot.location) {
+        allLocations.add(shot.location);
+      }
+    });
+    totalTokens += result.tokens;
   }
 
-  console.log(`[BatchStoryboard] 所有场景处理完成，共 ${allStoryboards.length} 个分镜`);
+  console.log(`[BatchStoryboard] 所有场景处理完成（${CONCURRENCY}路并发），共 ${allStoryboards.length} 个分镜`);
   if (onProgress) onProgress(92);
 
   // 5. 批量保存所有分镜到数据库（性能优化：使用批量插入替代循环单条插入）

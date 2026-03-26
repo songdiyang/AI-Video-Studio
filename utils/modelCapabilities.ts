@@ -18,7 +18,7 @@ function toArray(value: unknown): RawCapabilityOption[] {
 
 export function normalizeCapabilityOptions(
   value: unknown,
-  type: 'aspectRatio' | 'duration'
+  type: 'aspectRatio' | 'duration' | 'resolution'
 ): ModelCapabilityOption[] {
   const seen = new Set<string>();
   const normalized: ModelCapabilityOption[] = [];
@@ -55,7 +55,7 @@ export function normalizeCapabilityOptions(
 
 export function summarizeCapabilityOptions(
   value: unknown,
-  type: 'aspectRatio' | 'duration'
+  type: 'aspectRatio' | 'duration' | 'resolution'
 ): string {
   const options = normalizeCapabilityOptions(value, type);
   if (options.length === 0) {

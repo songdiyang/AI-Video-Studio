@@ -1,4 +1,3 @@
-import { setNotificationAuthToken } from '../notifications/client';
 
 export interface AuthUser {
   id: number;
@@ -45,7 +44,6 @@ function clearAuthStorage() {
   if (typeof window !== 'undefined') {
     window.sessionStorage.removeItem(ADMIN_ACCESS_KEY_STORAGE_KEY);
   }
-  setNotificationAuthToken(null);
 }
 
 function normalizeRole(role: unknown): 'admin' | 'user' {
@@ -236,7 +234,6 @@ function saveAuth(resp: AuthResponse) {
   localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
   localStorage.removeItem(LEGACY_AUTH_TOKEN_KEY);
   localStorage.setItem(USER_ROLE_KEY, user.role || 'user');
-  setNotificationAuthToken(resp.token);
 
   if (user.role !== 'admin') {
     setAdminAccessKey(null);

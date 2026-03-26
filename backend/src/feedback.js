@@ -14,7 +14,7 @@ async function ensureFeedbackTable() {
       type ENUM('bug', 'feature', 'improvement', 'other') DEFAULT 'other' COMMENT '反馈类型',
       content TEXT NOT NULL COMMENT '反馈内容',
       contact VARCHAR(255) DEFAULT NULL COMMENT '联系方式（可选）',
-      status ENUM('pending', 'reviewing', 'resolved', 'closed') DEFAULT 'pending' COMMENT '处理状态',
+      status ENUM('pending', 'reviewing', 'resolved', 'closed', 'replied') DEFAULT 'pending' COMMENT '处理状态',
       admin_reply TEXT DEFAULT NULL COMMENT '管理员回复',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -23,6 +23,10 @@ async function ensureFeedbackTable() {
       INDEX idx_type (type)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
+  // 迁移：为已有表添加 replied 枚举值
+  try {
+    await execute(`ALTER TABLE feedback MODIFY COLUMN status ENUM('pending', 'reviewing', 'resolved', 'closed', 'replied') DEFAULT 'pending' COMMENT '处理状态'`);
+  } catch (e) { /* 已经是最新结构则忽略 */ }
 }
 
 // POST /api/feedback - 提交反馈
@@ -161,6 +165,9 @@ router.post('/admin/:id/mail', authMiddleware, requireAdmin, async (req, res) =>
        VALUES ('admin', ?, ?, ?, ?, 'reply', ?)`,
       [req.user.id, feedback.user_id, title, content, id]
     );
+
+    // 自动将反馈状态更新为 "已回复"
+    await execute('UPDATE feedback SET status = ? WHERE id = ?', ['replied', id]);
 
     res.json({ success: true });
   } catch (err) {

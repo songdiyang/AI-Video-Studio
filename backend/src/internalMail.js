@@ -1,6 +1,6 @@
 const express = require('express');
 const { queryOne, queryAll, execute } = require('./dbHelper');
-const { authMiddleware } = require('./middleware');
+const { authMiddleware, requireAdmin } = require('./middleware');
 
 const router = express.Router();
 
@@ -112,6 +112,48 @@ router.delete('/:id', authMiddleware, async (req, res) => {
   } catch (err) {
     console.error('[InternalMail] 删除站内信失败:', err);
     res.status(500).json({ error: '删除站内信失败' });
+  }
+});
+
+// POST /api/mail/admin/send - 管理员发送站内信给任意用户
+router.post('/admin/send', authMiddleware, requireAdmin, async (req, res) => {
+  try {
+    const { receiverId, title, content } = req.body;
+    if (!receiverId || !title?.trim() || !content?.trim()) {
+      return res.status(400).json({ error: '接收用户、标题和内容不能为空' });
+    }
+    const user = await queryOne('SELECT id FROM users WHERE id = ?', [receiverId]);
+    if (!user) {
+      return res.status(404).json({ error: '用户不存在' });
+    }
+    await execute(
+      `INSERT INTO internal_mail (sender_type, sender_id, receiver_id, title, content, mail_type)
+       VALUES ('admin', ?, ?, ?, ?, 'system')`,
+      [req.user.id, receiverId, title.trim(), content.trim()]
+    );
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[InternalMail] 管理员发送站内信失败:', err);
+    res.status(500).json({ error: '发送站内信失败' });
+  }
+});
+
+// GET /api/mail/admin/search-users - 管理员搜索用户（用于发送站内信）
+router.get('/admin/search-users', authMiddleware, requireAdmin, async (req, res) => {
+  try {
+    const { q } = req.query;
+    if (!q || q.trim().length < 1) {
+      return res.json([]);
+    }
+    const keyword = `%${q.trim()}%`;
+    const users = await queryAll(
+      `SELECT id, email FROM users WHERE email LIKE ? LIMIT 10`,
+      [keyword]
+    );
+    res.json(users);
+  } catch (err) {
+    console.error('[InternalMail] 搜索用户失败:', err);
+    res.status(500).json({ error: '搜索用户失败' });
   }
 });
 

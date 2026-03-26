@@ -127,11 +127,6 @@ export default defineConfig(({ mode }) => {
             target: 'http://localhost:4000',
             changeOrigin: true,
           },
-          '/notification/socket.io': {
-            target: 'http://localhost:4101',
-            changeOrigin: true,
-            ws: true,
-          },
         },
       },
       build: {

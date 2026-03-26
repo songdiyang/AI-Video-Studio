@@ -15,6 +15,7 @@ export interface AIModel {
   priceSummary?: string;
   supportedAspectRatios?: unknown;
   supportedDurations?: unknown;
+  supportedResolutions?: unknown;
 }
 
 interface AIModelSelectorProps {
@@ -77,6 +78,10 @@ const AIModelSelector: React.FC<AIModelSelectorProps> = ({
           ((selectedModelInfo.type || selectedModelInfo.category)?.toUpperCase() === 'IMAGE' ||
             (selectedModelInfo.type || selectedModelInfo.category)?.toUpperCase() === 'VIDEO')
             ? `比例: ${summarizeCapabilityOptions(selectedModelInfo.supportedAspectRatios, 'aspectRatio')}`
+            : null,
+          ((selectedModelInfo.type || selectedModelInfo.category)?.toUpperCase() === 'IMAGE' ||
+            (selectedModelInfo.type || selectedModelInfo.category)?.toUpperCase() === 'VIDEO')
+            ? `清晰度: ${summarizeCapabilityOptions(selectedModelInfo.supportedResolutions, 'resolution')}`
             : null,
           (selectedModelInfo.type || selectedModelInfo.category)?.toUpperCase() === 'VIDEO'
             ? `时长: ${summarizeCapabilityOptions(selectedModelInfo.supportedDurations, 'duration')}`
@@ -144,6 +149,7 @@ const AIModelSelector: React.FC<AIModelSelectorProps> = ({
                 ((model.type || model.category)?.toUpperCase() === 'VIDEO')) && (
                 <span className="text-[11px] text-slate-500 truncate">
                   比例: {summarizeCapabilityOptions(model.supportedAspectRatios, 'aspectRatio')}
+                  {' · 清晰度: '}{summarizeCapabilityOptions(model.supportedResolutions, 'resolution')}
                   {(model.type || model.category)?.toUpperCase() === 'VIDEO' &&
                     ` · 时长: ${summarizeCapabilityOptions(model.supportedDurations, 'duration')}`}
                 </span>

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardBody, Button, Input, Textarea, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure, Chip, Spinner } from '@heroui/react';
-import { FolderOpen, Plus, Edit, Trash2, Search, BookOpen, Clock, Palette, Sparkles } from 'lucide-react';
+import { FolderOpen, Plus, Edit, Trash2, Search, BookOpen, Clock, Palette, Sparkles, ImagePlus } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Project, fetchProjects, createProject, updateProject, deleteProject } from '../services/projects';
 import { useToast } from '../contexts/ToastContext';
@@ -46,6 +46,7 @@ const Projects: React.FC = () => {
     storyConstraints: ''
   });
   const [aiSuggesting, setAiSuggesting] = useState(false);
+  const [coverGenerating, setCoverGenerating] = useState(false);
   const [showQuickStart, setShowQuickStart] = useState(false);
 
   // 视觉风格预设（键名用于内部标识，翻译后的显示名称从 t 获取）
@@ -198,6 +199,45 @@ const Projects: React.FC = () => {
       showToast(t.projects.aiRecommendFailed, 'error');
     } finally {
       setAiSuggesting(false);
+    }
+  };
+
+  // AI 生成封面图片
+  const handleGenerateCover = async () => {
+    if (!formData.name && !formData.description) {
+      showToast(t.projects.aiCoverHint, 'warning');
+      return;
+    }
+
+    setCoverGenerating(true);
+    try {
+      const token = getAuthToken();
+      const res = await fetch('/api/projects/generate-cover', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({
+          name: formData.name,
+          description: formData.description,
+          visualStylePrompt: formData.visualStylePrompt
+        })
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message || 'AI封面生成失败');
+      }
+
+      const data = await res.json();
+      setFormData(prev => ({ ...prev, cover_url: data.cover_url }));
+      showToast(t.projects.aiCoverSuccess, 'success');
+    } catch (error: any) {
+      console.error('AI封面生成失败:', error);
+      showToast(t.projects.aiCoverFailed, 'error');
+    } finally {
+      setCoverGenerating(false);
     }
   };
 
@@ -582,17 +622,40 @@ const Projects: React.FC = () => {
                     </div>
                   </div>
 
-                  <Input
-                    label={t.projects.coverLabel}
-                    placeholder={t.projects.coverPlaceholder}
-                    value={formData.cover_url}
-                    onValueChange={(val) => setFormData({ ...formData, cover_url: val })}
-                    classNames={{
-                      input: "bg-transparent text-[var(--text-primary)] placeholder:text-[var(--text-muted)]",
-                      label: "text-[var(--text-secondary)] font-medium",
-                      inputWrapper: "bg-[var(--bg-input)] border border-[var(--border-color)] hover:border-[var(--accent)]/30 focus-within:border-[var(--accent)]/40"
-                    }}
-                  />
+                  <div className="flex gap-2 items-end">
+                    <div className="flex-1">
+                      <Input
+                        label={t.projects.coverLabel}
+                        placeholder={t.projects.coverPlaceholder}
+                        value={formData.cover_url}
+                        onValueChange={(val) => setFormData({ ...formData, cover_url: val })}
+                        classNames={{
+                          input: "bg-transparent text-[var(--text-primary)] placeholder:text-[var(--text-muted)]",
+                          label: "text-[var(--text-secondary)] font-medium",
+                          inputWrapper: "bg-[var(--bg-input)] border border-[var(--border-color)] hover:border-[var(--accent)]/30 focus-within:border-[var(--accent)]/40"
+                        }}
+                      />
+                    </div>
+                    <Button
+                      className="min-w-[130px] bg-gradient-to-r from-violet-500/20 to-pink-500/20 border border-violet-500/30 text-violet-300 font-medium hover:from-violet-500/30 hover:to-pink-500/30 transition-all cursor-pointer"
+                      startContent={coverGenerating ? <Spinner size="sm" color="secondary" /> : <ImagePlus className="w-4 h-4" />}
+                      onPress={handleGenerateCover}
+                      isDisabled={coverGenerating}
+                      size="lg"
+                    >
+                      {coverGenerating ? t.projects.aiGeneratingCover : t.projects.aiGenerateCover}
+                    </Button>
+                  </div>
+                  {formData.cover_url && (
+                    <div className="rounded-lg overflow-hidden border border-[var(--border-color)] bg-[var(--bg-input)]">
+                      <img
+                        src={formData.cover_url}
+                        alt="cover preview"
+                        className="w-full h-40 object-cover"
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                      />
+                    </div>
+                  )}
 
                   {/* 视觉风格选择 */}
                   <div>

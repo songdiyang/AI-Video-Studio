@@ -26,7 +26,7 @@ const { assertUpdated, assertPersistedFields } = require('./persistenceGuard');
 // collectReferenceImages 已提取到 collectCandidateImages.js 共享模块
 
 async function handleSingleFrameGeneration(inputParams, onProgress) {
-  const { storyboardId, description, imageModel: modelName, textModel, aspectRatio, prevEndFrameUrl, prevDescription, prevEndState: inputPrevEndState, isFirstScene, sceneState: inputSceneState, environmentChange: inputEnvironmentChange, activeSceneUrl } = inputParams;
+  const { storyboardId, description, imageModel: modelName, textModel, aspectRatio, resolution, prevEndFrameUrl, prevDescription, prevEndState: inputPrevEndState, isFirstScene, sceneState: inputSceneState, environmentChange: inputEnvironmentChange, activeSceneUrl } = inputParams;
 
   if (!storyboardId) {
     throw new Error('缺少必要参数: storyboardId');
@@ -320,6 +320,7 @@ ${extraInfo}
     prompt: promptUsed,
     imageModel: modelName,
     aspectRatio,
+    resolution,
     imageUrls: refResult.selectedUrls.length > 0 ? refResult.selectedUrls : undefined
   });
 

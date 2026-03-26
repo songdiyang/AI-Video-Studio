@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { MessageSquare, Mail, Search, Filter, ChevronLeft, ChevronRight, X, Send, Megaphone, Eye, RefreshCw, Clock, CheckCircle, AlertCircle, XCircle } from 'lucide-react';
+import { MessageSquare, Mail, Search, Filter, ChevronLeft, ChevronRight, X, Send, Megaphone, Eye, RefreshCw, Clock, CheckCircle, AlertCircle, XCircle, MessageCircle, UserSearch } from 'lucide-react';
 import { getAdminAuthHeaders } from '../../services/auth';
 
 interface Feedback {
@@ -9,7 +9,7 @@ interface Feedback {
   type: 'bug' | 'feature' | 'improvement' | 'other';
   content: string;
   contact: string | null;
-  status: 'pending' | 'reviewing' | 'resolved' | 'closed';
+  status: 'pending' | 'reviewing' | 'resolved' | 'closed' | 'replied';
   admin_reply: string | null;
   created_at: string;
   updated_at: string;
@@ -18,6 +18,7 @@ interface Feedback {
 const STATUS_MAP: Record<string, { label: string; color: string; bg: string; icon: React.ReactNode }> = {
   pending: { label: '待处理', color: '#f59e0b', bg: '#fef3c7', icon: <Clock className="w-3.5 h-3.5" /> },
   reviewing: { label: '审核中', color: '#3b82f6', bg: '#dbeafe', icon: <Eye className="w-3.5 h-3.5" /> },
+  replied: { label: '已回复', color: '#8b5cf6', bg: '#ede9fe', icon: <MessageCircle className="w-3.5 h-3.5" /> },
   resolved: { label: '已解决', color: '#10b981', bg: '#d1fae5', icon: <CheckCircle className="w-3.5 h-3.5" /> },
   closed: { label: '已关闭', color: '#6b7280', bg: '#f3f4f6', icon: <XCircle className="w-3.5 h-3.5" /> },
 };
@@ -55,6 +56,16 @@ const FeedbackManagement: React.FC = () => {
   const [announceTitle, setAnnounceTitle] = useState('');
   const [announceContent, setAnnounceContent] = useState('');
   const [sendingAnnounce, setSendingAnnounce] = useState(false);
+
+  // Direct mail modal (给任意用户发站内信)
+  const [showDirectMail, setShowDirectMail] = useState(false);
+  const [directMailTitle, setDirectMailTitle] = useState('');
+  const [directMailContent, setDirectMailContent] = useState('');
+  const [sendingDirectMail, setSendingDirectMail] = useState(false);
+  const [userSearchQuery, setUserSearchQuery] = useState('');
+  const [userSearchResults, setUserSearchResults] = useState<{ id: number; email: string }[]>([]);
+  const [selectedUser, setSelectedUser] = useState<{ id: number; email: string } | null>(null);
+  const [searchingUsers, setSearchingUsers] = useState(false);
 
   const headers = useCallback(() => {
     return {
@@ -126,6 +137,7 @@ const FeedbackManagement: React.FC = () => {
         setMailModal(null);
         setMailTitle('');
         setMailContent('');
+        fetchFeedbacks(); // 刷新列表以显示新状态
       } else {
         const data = await res.json();
         alert(data.error || '发送失败');
@@ -168,6 +180,56 @@ const FeedbackManagement: React.FC = () => {
     setEditReply(fb.admin_reply || '');
   };
 
+  // 搜索用户
+  const handleSearchUsers = async (query: string) => {
+    setUserSearchQuery(query);
+    if (query.trim().length < 1) {
+      setUserSearchResults([]);
+      return;
+    }
+    setSearchingUsers(true);
+    try {
+      const res = await fetch(`/api/mail/admin/search-users?q=${encodeURIComponent(query)}`, { headers: headers() });
+      if (res.ok) {
+        const data = await res.json();
+        setUserSearchResults(data);
+      }
+    } catch (err) {
+      console.error('搜索用户失败:', err);
+    } finally {
+      setSearchingUsers(false);
+    }
+  };
+
+  // 发送站内信给任意用户
+  const handleSendDirectMail = async () => {
+    if (!selectedUser || !directMailTitle.trim() || !directMailContent.trim()) return;
+    setSendingDirectMail(true);
+    try {
+      const res = await fetch('/api/mail/admin/send', {
+        method: 'POST',
+        headers: headers(),
+        body: JSON.stringify({ receiverId: selectedUser.id, title: directMailTitle, content: directMailContent }),
+      });
+      if (res.ok) {
+        alert(`站内信已发送给 ${selectedUser.email}`);
+        setShowDirectMail(false);
+        setDirectMailTitle('');
+        setDirectMailContent('');
+        setSelectedUser(null);
+        setUserSearchQuery('');
+        setUserSearchResults([]);
+      } else {
+        const data = await res.json();
+        alert(data.error || '发送失败');
+      }
+    } catch (err) {
+      console.error('发送站内信失败:', err);
+    } finally {
+      setSendingDirectMail(false);
+    }
+  };
+
   return (
     <div className="p-6 min-h-screen">
       {/* Header */}
@@ -187,6 +249,9 @@ const FeedbackManagement: React.FC = () => {
           </button>
           <button onClick={() => setShowAnnounce(true)} className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-sm transition-all">
             <Megaphone className="w-4 h-4" /> 群发公告
+          </button>
+          <button onClick={() => setShowDirectMail(true)} className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-sm transition-all">
+            <Send className="w-4 h-4" /> 发送站内信
           </button>
         </div>
       </div>
@@ -271,17 +336,19 @@ const FeedbackManagement: React.FC = () => {
                       <button onClick={() => openDetail(fb)} className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors" title="查看详情">
                         <Eye className="w-4 h-4 text-blue-500" />
                       </button>
-                      <button
-                        onClick={() => {
-                          setMailModal({ feedbackId: fb.id, userId: fb.user_id });
-                          setMailTitle(`关于您的反馈 #${fb.id} 的回复`);
-                          setMailContent('');
-                        }}
-                        className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors"
-                        title="发送站内信"
-                      >
-                        <Mail className="w-4 h-4 text-emerald-500" />
-                      </button>
+                      {fb.status !== 'replied' && (
+                        <button
+                          onClick={() => {
+                            setMailModal({ feedbackId: fb.id, userId: fb.user_id });
+                            setMailTitle(`关于您的反馈 #${fb.id} 的回复`);
+                            setMailContent('');
+                          }}
+                          className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors"
+                          title="发送站内信"
+                        >
+                          <Mail className="w-4 h-4 text-emerald-500" />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -461,6 +528,103 @@ const FeedbackManagement: React.FC = () => {
               <button onClick={() => setShowAnnounce(false)} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-sm transition-all">取消</button>
               <button onClick={handleSendAnnounce} disabled={sendingAnnounce || !announceTitle.trim() || !announceContent.trim()} className="flex items-center gap-2 px-4 py-2 bg-amber-500 hover:bg-amber-400 text-white rounded-xl text-sm transition-all disabled:opacity-50">
                 <Megaphone className="w-4 h-4" />{sendingAnnounce ? '发送中...' : '发送公告'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Direct Mail Modal (给任意用户发站内信) */}
+      {showDirectMail && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setShowDirectMail(false)}>
+          <div className="bg-white rounded-2xl w-full max-w-lg mx-4 border border-slate-200 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-5 border-b border-slate-100">
+              <div>
+                <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Send className="w-5 h-5 text-emerald-500" />发送站内信</h2>
+                <p className="text-xs text-slate-400 mt-1">搜索邮箱，发送站内信给任意用户</p>
+              </div>
+              <button onClick={() => setShowDirectMail(false)} className="p-1.5 hover:bg-slate-100 rounded-lg"><X className="w-5 h-5 text-slate-400" /></button>
+            </div>
+            <div className="p-5 space-y-4">
+              {/* 用户搜索 */}
+              <div>
+                <label className="text-sm text-slate-500 mb-1 block">收件用户</label>
+                {selectedUser ? (
+                  <div className="flex items-center justify-between p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600 text-sm font-medium">
+                        {selectedUser.email?.charAt(0)?.toUpperCase() || '?'}
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-slate-700">{selectedUser.email}</p>
+                        <p className="text-xs text-slate-400">ID: {selectedUser.id}</p>
+                      </div>
+                    </div>
+                    <button onClick={() => { setSelectedUser(null); setUserSearchQuery(''); setUserSearchResults([]); }} className="text-xs text-slate-400 hover:text-red-500 transition-colors">重新选择</button>
+                  </div>
+                ) : (
+                  <div className="relative">
+                    <div className="flex items-center gap-2 p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                      <UserSearch className="w-4 h-4 text-slate-400 shrink-0" />
+                      <input
+                        value={userSearchQuery}
+                        onChange={e => handleSearchUsers(e.target.value)}
+                        placeholder="输入邮箱搜索..."
+                        className="flex-1 bg-transparent text-sm text-slate-700 outline-none"
+                      />
+                      {searchingUsers && <div className="w-4 h-4 border-2 border-slate-300 border-t-transparent rounded-full animate-spin" />}
+                    </div>
+                    {userSearchResults.length > 0 && (
+                      <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg max-h-48 overflow-y-auto z-10">
+                        {userSearchResults.map(u => (
+                          <button
+                            key={u.id}
+                            onClick={() => { setSelectedUser(u); setUserSearchResults([]); }}
+                            className="w-full flex items-center gap-2 px-3 py-2.5 hover:bg-slate-50 transition-colors text-left"
+                          >
+                            <div className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 text-xs font-medium shrink-0">
+                              {u.email?.charAt(0)?.toUpperCase() || '?'}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-sm text-slate-700 truncate">{u.email}</p>
+                              <p className="text-xs text-slate-400 truncate">ID: {u.id}</p>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {userSearchQuery.length >= 1 && !searchingUsers && userSearchResults.length === 0 && (
+                      <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg p-3 text-center text-xs text-slate-400 z-10">
+                        未找到匹配用户
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+              <div>
+                <label className="text-sm text-slate-500 mb-1 block">消息标题</label>
+                <input
+                  value={directMailTitle}
+                  onChange={e => setDirectMailTitle(e.target.value)}
+                  placeholder="输入消息标题..."
+                  className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-200 transition-colors"
+                />
+              </div>
+              <div>
+                <label className="text-sm text-slate-500 mb-1 block">消息内容</label>
+                <textarea
+                  value={directMailContent}
+                  onChange={e => setDirectMailContent(e.target.value)}
+                  placeholder="输入消息内容..."
+                  rows={5}
+                  className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 resize-none outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-200 transition-colors"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 p-5 border-t border-slate-100">
+              <button onClick={() => setShowDirectMail(false)} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-sm transition-all">取消</button>
+              <button onClick={handleSendDirectMail} disabled={sendingDirectMail || !selectedUser || !directMailTitle.trim() || !directMailContent.trim()} className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-sm transition-all disabled:opacity-50">
+                <Send className="w-4 h-4" />{sendingDirectMail ? '发送中...' : '发送站内信'}
               </button>
             </div>
           </div>

@@ -27,7 +27,7 @@ const { assertUpdated, assertPersistedFields } = require('./persistenceGuard');
 const { resolveMediaUrl } = require('../base/mediaResultResolver');
 
 async function handleSceneVideoGeneration(inputParams, onProgress) {
-  const { storyboardId, videoModel: modelName, textModel, duration, aspectRatio, think } = inputParams;
+  const { storyboardId, videoModel: modelName, textModel, duration, aspectRatio, resolution, think } = inputParams;
 
   if (!storyboardId) {
     throw new Error('缺少必要参数: storyboardId');
@@ -146,42 +146,50 @@ async function handleSceneVideoGeneration(inputParams, onProgress) {
     }
   }
 
-  // 3.8 生成精细运镜提示词（如果有文本模型）
+  // 3.8 & 3.9 并行生成精细运镜 + 运动分解（两者互不依赖，可同时调用）
   let cameraRunPrompt = '';
-  if (textModel) {
-    try {
-      console.log('[SceneVideoGen] 调用精细运镜生成...');
-      const cameraResult = await handleCameraRunGeneration(
-        { storyboardId, textModel, think },
-        (p) => { if (onProgress) onProgress(10 + p * 0.1); }
-      );
-      cameraRunPrompt = cameraResult.cameraRunPrompt || '';
-      trace('精细运镜生成完成', { prompt: cameraRunPrompt });
-      console.log(`\x1b[32m[SceneVideoGen] 精细运镜提示词: ${cameraRunPrompt}\x1b[0m`);
-    } catch (e) {
-      console.warn('[SceneVideoGen] 精细运镜生成失败，降级使用基础运镜:', e.message);
-    }
-  }
-
-  // 3.9 生成运动分解清单（明确每个元素的运动行为，防止视频幻觉）
   let motionBreakdownText = '';
   if (textModel) {
-    try {
-      trace('开始生成运动分解清单');
-      motionBreakdownText = await generateMotionBreakdown({
-        textModel,
-        description,
-        variables,
-        hasAction,
-        characterAppearance,
-        sceneDetail,
-        startFrameDesc: variables.startFrame || '',
-        endFrameDesc: variables.endFrame || ''
-      });
-      trace('运动分解清单结果', { content: motionBreakdownText });
-    } catch (e) {
-      trace('运动分解生成失败', { error: e.message });
-      console.warn('[SceneVideoGen] 运动分解生成失败，继续生成视频:', e.message);
+    const [cameraResult, motionResult] = await Promise.allSettled([
+      // 精细运镜
+      (async () => {
+        console.log('[SceneVideoGen] 调用精细运镜生成...');
+        const result = await handleCameraRunGeneration(
+          { storyboardId, textModel, think },
+          (p) => { if (onProgress) onProgress(10 + p * 0.05); }
+        );
+        const prompt = result.cameraRunPrompt || '';
+        trace('精细运镜生成完成', { prompt });
+        console.log(`\x1b[32m[SceneVideoGen] 精细运镜提示词: ${prompt}\x1b[0m`);
+        return prompt;
+      })(),
+      // 运动分解
+      (async () => {
+        trace('开始生成运动分解清单');
+        const text = await generateMotionBreakdown({
+          textModel,
+          description,
+          variables,
+          hasAction,
+          characterAppearance,
+          sceneDetail,
+          startFrameDesc: variables.startFrame || '',
+          endFrameDesc: variables.endFrame || ''
+        });
+        trace('运动分解清单结果', { content: text });
+        return text;
+      })()
+    ]);
+
+    if (cameraResult.status === 'fulfilled') {
+      cameraRunPrompt = cameraResult.value;
+    } else {
+      console.warn('[SceneVideoGen] 精细运镜生成失败，降级使用基础运镜:', cameraResult.reason?.message);
+    }
+    if (motionResult.status === 'fulfilled') {
+      motionBreakdownText = motionResult.value;
+    } else {
+      console.warn('[SceneVideoGen] 运动分解生成失败，继续生成视频:', motionResult.reason?.message);
     }
   }
 
@@ -360,14 +368,17 @@ ${extraInfo}
   if (aspectRatio) {
     submitParams.aspectRatio = aspectRatio;
   }
+  if (resolution) {
+    submitParams.resolution = resolution;
+  }
 
   const result = await submitAndPoll(modelName, submitParams, {
-    intervalMs: 5000,
+    intervalMs: 3000,
     maxDurationMs: 3600000,
     logTag: 'SceneVideoGen'
   });
 
-  const resolution = resolveMediaUrl(result, 'video');
+  const mediaResolution = resolveMediaUrl(result, 'video');
   console.log('[SceneVideoGen] 返回字段诊断:', {
     modelName,
     storyboardId,
@@ -375,23 +386,24 @@ ${extraInfo}
     queryKeys: result?._queryResult && typeof result._queryResult === 'object' ? Object.keys(result._queryResult) : [],
     rawQueryKeys: result?._rawQueryResult && typeof result._rawQueryResult === 'object' ? Object.keys(result._rawQueryResult) : [],
     submitKeys: result?._submitResult && typeof result._submitResult === 'object' ? Object.keys(result._submitResult) : [],
-    selectedUrl: resolution.mediaUrl,
-    resolvedFrom: resolution.resolvedFrom,
-    urlCandidates: resolution.candidates,
+    selectedUrl: mediaResolution.mediaUrl,
+    resolvedFrom: mediaResolution.resolvedFrom,
+    urlCandidates: mediaResolution.candidates,
     duration: duration ?? null,
     aspectRatio: aspectRatio || null
   });
 
-  if (!resolution.mediaUrl) {
+  if (!mediaResolution.mediaUrl) {
     throw new Error(`视频模型 "${modelName}" 返回成功但未找到视频 URL，请检查 response_mapping / query_success_mapping 配置`);
   }
 
   if (onProgress) onProgress(90);
 
-  // 5. 持久化视频到 MinIO
+  // 5. 持久化视频到 MinIO（路径含时间戳，避免重新生成时 URL 相同导致 UPDATE affectedRows=0）
+  const videoTimestamp = Date.now();
   const persistedVideoUrl = await downloadAndStore(
-    resolution.mediaUrl,
-    `videos/${storyboardId}/video`,
+    mediaResolution.mediaUrl,
+    `videos/${storyboardId}/video_${videoTimestamp}`,
     { fallbackExt: '.mp4' }
   );
 

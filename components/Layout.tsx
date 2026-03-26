@@ -120,18 +120,37 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     return icons[projectType] || null;
   }, [location.pathname, projectType]);
 
-  // 模拟连接状态检测
+  // 真实后端连接状态检测（每30秒 ping 一次 /api/health）
   useEffect(() => {
-    const checkConnection = () => {
-      setIsConnected(navigator.onLine);
+    let timer: ReturnType<typeof setTimeout>;
+    let mounted = true;
+
+    const ping = async () => {
+      try {
+        const res = await fetch('/api/health', { method: 'GET', signal: AbortSignal.timeout(5000) });
+        if (mounted) setIsConnected(res.ok);
+      } catch {
+        if (mounted) setIsConnected(false);
+      }
     };
-    
-    window.addEventListener('online', checkConnection);
-    window.addEventListener('offline', checkConnection);
-    
+
+    // 浏览器网络恢复时立刻 ping
+    const handleOnline = () => ping();
+    const handleOffline = () => { if (mounted) setIsConnected(false); };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    // 初次 + 定时检测
+    ping();
+    const schedule = () => { timer = setTimeout(async () => { await ping(); if (mounted) schedule(); }, 30000); };
+    schedule();
+
     return () => {
-      window.removeEventListener('online', checkConnection);
-      window.removeEventListener('offline', checkConnection);
+      mounted = false;
+      clearTimeout(timer);
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
     };
   }, []);
 

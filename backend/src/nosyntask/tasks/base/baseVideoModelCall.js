@@ -26,7 +26,8 @@ async function handleBaseVideoModelCall(inputParams, onProgress) {
     imageUrls,
     startFrame,
     endFrame,
-    aspectRatio
+    aspectRatio,
+    resolution
   } = inputParams;
 
   if (!modelName) {
@@ -56,6 +57,7 @@ async function handleBaseVideoModelCall(inputParams, onProgress) {
   if (startFrame)  submitParams.startFrame = startFrame;
   if (endFrame)    submitParams.endFrame = endFrame;
   if (aspectRatio) submitParams.aspectRatio = aspectRatio;
+  if (resolution) submitParams.resolution = resolution;
 
   // 视频生成通常耗时较长，轮询间隔和超时都比图片大
   const result = await submitAndPoll(modelName, submitParams, {
@@ -67,28 +69,28 @@ async function handleBaseVideoModelCall(inputParams, onProgress) {
     logTag: 'BaseVideoModelCall'
   });
 
-  const resolution = resolveMediaUrl(result, 'video');
+  const mediaResolution = resolveMediaUrl(result, 'video');
   console.log('[BaseVideoModelCall] 返回字段诊断:', {
     modelName,
     mappedKeys: result && typeof result === 'object' ? Object.keys(result) : [],
     queryKeys: result?._queryResult && typeof result._queryResult === 'object' ? Object.keys(result._queryResult) : [],
     rawQueryKeys: result?._rawQueryResult && typeof result._rawQueryResult === 'object' ? Object.keys(result._rawQueryResult) : [],
     submitKeys: result?._submitResult && typeof result._submitResult === 'object' ? Object.keys(result._submitResult) : [],
-    selectedUrl: resolution.mediaUrl,
-    resolvedFrom: resolution.resolvedFrom,
-    urlCandidates: resolution.candidates,
+    selectedUrl: mediaResolution.mediaUrl,
+    resolvedFrom: mediaResolution.resolvedFrom,
+    urlCandidates: mediaResolution.candidates,
     aspectRatio: aspectRatio || null,
     duration: duration ?? null
   });
 
-  if (!resolution.mediaUrl) {
+  if (!mediaResolution.mediaUrl) {
     throw new Error(`视频模型 "${modelName}" 返回成功但未找到视频 URL，请检查 response_mapping / query_success_mapping 配置`);
   }
 
   if (onProgress) onProgress(100);
 
   return {
-    video_url: resolution.mediaUrl,
+    video_url: mediaResolution.mediaUrl,
     taskId: result._submitResult?.taskId || null,
     tokens: result._submitResult?.tokens || 0,
     provider: result._submitResult?._model?.provider || 'unknown'

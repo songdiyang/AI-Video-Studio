@@ -50,7 +50,6 @@ const communityRoutes = require('./community');
 const subscriptionRoutes = require('./subscriptions');
 const collaborationRoutes = require('./collaboration');
 const systemConfigRoutes = require('./systemConfigRoutes');
-const { notificationResponseMiddleware } = require('./notificationResponseMiddleware');
 
 const app = express();
 
@@ -116,7 +115,6 @@ app.use(cors({
 
 // 限制请求体大小，防止 DoS
 app.use(express.json({ limit: '100kb' }));
-app.use(notificationResponseMiddleware);
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', env: process.env.NODE_ENV || 'development' });

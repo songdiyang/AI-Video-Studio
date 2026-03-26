@@ -37,7 +37,11 @@ function isNonCharacterEntity(name) {
   if (!name || typeof name !== 'string') return true;
   const trimmed = name.trim();
   if (trimmed === '') return true;
-  return NON_CHARACTER_TERMS.has(trimmed);
+  // 精确匹配
+  if (NON_CHARACTER_TERMS.has(trimmed)) return true;
+  // 去掉“们”后缀再匹配（如“市民们”→“市民”）
+  if (trimmed.endsWith('们') && NON_CHARACTER_TERMS.has(trimmed.slice(0, -1))) return true;
+  return false;
 }
 
 /**

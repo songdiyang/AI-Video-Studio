@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Button, Textarea, Chip } from '@heroui/react';
-import { ImageIcon, Video, Film, Camera, Users, MapPin, Zap, Edit3, Save, X, Play, Trash2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp } from 'lucide-react';
+import { ImageIcon, Video, Film, Camera, Users, MapPin, Zap, Edit3, Save, X, Play, Trash2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ZoomIn, ZoomOut, RotateCw, Maximize2 } from 'lucide-react';
 import { StoryboardScene } from './useSceneManager';
 import { TaskState } from '../../hooks/useTaskRunner';
 import { getAuthToken } from '../../services/auth';
@@ -288,6 +288,40 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
   const hasVideo = !!scene.videoUrl;
   const currentFrame = showStartFrame ? scene.startFrame : scene.endFrame;
 
+  // Lightbox 放大预览状态
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [lightboxZoom, setLightboxZoom] = useState(1);
+  const [lightboxPos, setLightboxPos] = useState({ x: 0, y: 0 });
+  const isDragging = useRef(false);
+  const dragStart = useRef({ x: 0, y: 0, posX: 0, posY: 0 });
+
+  const openLightbox = () => {
+    setLightboxZoom(1);
+    setLightboxPos({ x: 0, y: 0 });
+    setLightboxOpen(true);
+  };
+
+  const handleLightboxWheel = useCallback((e: React.WheelEvent) => {
+    e.stopPropagation();
+    setLightboxZoom(z => Math.min(5, Math.max(0.5, z + (e.deltaY > 0 ? -0.2 : 0.2))));
+  }, []);
+
+  const handleLightboxMouseDown = useCallback((e: React.MouseEvent) => {
+    if (e.button !== 0) return;
+    isDragging.current = true;
+    dragStart.current = { x: e.clientX, y: e.clientY, posX: lightboxPos.x, posY: lightboxPos.y };
+  }, [lightboxPos]);
+
+  const handleLightboxMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!isDragging.current) return;
+    setLightboxPos({
+      x: dragStart.current.posX + (e.clientX - dragStart.current.x),
+      y: dragStart.current.posY + (e.clientY - dragStart.current.y)
+    });
+  }, []);
+
+  const handleLightboxMouseUp = useCallback(() => { isDragging.current = false; }, []);
+
   return (
     <div className="h-full flex flex-col bg-[var(--bg-app)]">
       {/* 预览区域 */}
@@ -313,12 +347,24 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
           // 帧图片预览
           <div className="relative w-full h-full flex items-center justify-center">
             {currentFrame ? (
-              <img
-                src={currentFrame}
-                alt={`分镜 ${sceneIndex + 1} - ${showStartFrame ? '首帧' : '尾帧'}`}
-                className="max-w-full max-h-full rounded-lg shadow-2xl object-contain"
-                style={{ maxHeight: 'calc(100% - 2rem)' }}
-              />
+              <>
+                <img
+                  src={currentFrame}
+                  alt={`分镜 ${sceneIndex + 1} - ${showStartFrame ? '首帧' : '尾帧'}`}
+                  className="max-w-full max-h-full rounded-lg shadow-2xl object-contain cursor-zoom-in"
+                  style={{ maxHeight: 'calc(100% - 2rem)' }}
+                  onClick={openLightbox}
+                  title="点击放大预览"
+                />
+                {/* 放大按钮提示 */}
+                <button
+                  onClick={openLightbox}
+                  className="absolute bottom-4 right-4 p-2 rounded-lg bg-black/50 hover:bg-black/70 text-white/80 hover:text-white transition-colors"
+                  title="放大预览"
+                >
+                  <Maximize2 className="w-4 h-4" />
+                </button>
+              </>
             ) : (
               // 当前帧缺失，显示生成按钮
               <div className="flex flex-col items-center justify-center text-center">
@@ -411,6 +457,62 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
           </div>
         )}
       </div>
+
+      {/* Lightbox 放大预览 */}
+      {lightboxOpen && currentFrame && (
+        <div
+          className="fixed inset-0 z-[9999] bg-black/90 flex items-center justify-center"
+          onClick={() => setLightboxOpen(false)}
+          onWheel={handleLightboxWheel}
+          onMouseMove={handleLightboxMouseMove}
+          onMouseUp={handleLightboxMouseUp}
+          onMouseLeave={handleLightboxMouseUp}
+          style={{ cursor: isDragging.current ? 'grabbing' : 'default' }}
+        >
+          {/* 顶部工具栏 */}
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-black/60 backdrop-blur-sm rounded-full px-4 py-2 z-10" onClick={e => e.stopPropagation()}>
+            <button onClick={() => setLightboxZoom(z => Math.min(5, z + 0.5))} className="p-1.5 rounded-full hover:bg-white/20 text-white/80 hover:text-white transition-colors" title="放大">
+              <ZoomIn className="w-4 h-4" />
+            </button>
+            <span className="text-xs text-white/70 min-w-[3rem] text-center">{Math.round(lightboxZoom * 100)}%</span>
+            <button onClick={() => setLightboxZoom(z => Math.max(0.5, z - 0.5))} className="p-1.5 rounded-full hover:bg-white/20 text-white/80 hover:text-white transition-colors" title="缩小">
+              <ZoomOut className="w-4 h-4" />
+            </button>
+            <div className="w-px h-4 bg-white/20" />
+            <button onClick={() => { setLightboxZoom(1); setLightboxPos({ x: 0, y: 0 }); }} className="p-1.5 rounded-full hover:bg-white/20 text-white/80 hover:text-white transition-colors" title="重置">
+              <RotateCw className="w-4 h-4" />
+            </button>
+            <div className="w-px h-4 bg-white/20" />
+            <button onClick={() => setLightboxOpen(false)} className="p-1.5 rounded-full hover:bg-white/20 text-white/80 hover:text-white transition-colors" title="关闭">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* 图片 */}
+          <img
+            src={currentFrame}
+            alt={`分镜 ${sceneIndex + 1} 放大预览`}
+            className="select-none"
+            style={{
+              transform: `translate(${lightboxPos.x}px, ${lightboxPos.y}px) scale(${lightboxZoom})`,
+              transition: isDragging.current ? 'none' : 'transform 0.15s ease',
+              maxWidth: '90vw',
+              maxHeight: '90vh',
+              objectFit: 'contain',
+              cursor: lightboxZoom > 1 ? (isDragging.current ? 'grabbing' : 'grab') : 'default',
+              borderRadius: '8px'
+            }}
+            onClick={e => e.stopPropagation()}
+            onMouseDown={handleLightboxMouseDown}
+            draggable={false}
+          />
+
+          {/* 底部帧信息 */}
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-xs text-white/50">
+            分镜 #{sceneIndex + 1} · {showStartFrame ? '首帧' : '尾帧'} · 滚轮缩放 · 拖拽平移 · 点击空白关闭
+          </div>
+        </div>
+      )}
 
       {/* 信息和操作区域 */}
       <div className="flex-shrink-0 border-t border-[var(--border-color)] bg-[var(--bg-card)]">

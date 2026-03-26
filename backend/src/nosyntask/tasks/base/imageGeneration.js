@@ -10,7 +10,7 @@ const { submitAndPoll } = require('../pollUtils');
 const { resolveMediaUrl } = require('./mediaResultResolver');
 
 async function handleImageGeneration(inputParams, onProgress) {
-  const { prompt, imageModel: modelName, width, height, aspectRatio, imageUrl, imageUrls, startFrame, endFrame } = inputParams;
+  const { prompt, imageModel: modelName, width, height, aspectRatio, resolution, imageUrl, imageUrls, startFrame, endFrame } = inputParams;
 
   if (!modelName) {
     throw new Error('imageModel 参数是必需的');
@@ -26,6 +26,7 @@ async function handleImageGeneration(inputParams, onProgress) {
   if (width !== undefined && width !== null) submitParams.width = width;
   if (height !== undefined && height !== null) submitParams.height = height;
   if (aspectRatio) submitParams.aspectRatio = aspectRatio;
+  if (resolution) submitParams.resolution = resolution;
 
   if (imageUrl)    submitParams.imageUrl = imageUrl;
   if (imageUrls)   submitParams.imageUrls = imageUrls;
@@ -41,29 +42,29 @@ async function handleImageGeneration(inputParams, onProgress) {
     logTag: 'ImageGen'
   });
 
-  const resolution = resolveMediaUrl(result, 'image');
+  const mediaResolution = resolveMediaUrl(result, 'image');
   console.log('[ImageGen] 返回字段诊断:', {
     modelName,
     mappedKeys: result && typeof result === 'object' ? Object.keys(result) : [],
     queryKeys: result?._queryResult && typeof result._queryResult === 'object' ? Object.keys(result._queryResult) : [],
     rawQueryKeys: result?._rawQueryResult && typeof result._rawQueryResult === 'object' ? Object.keys(result._rawQueryResult) : [],
     submitKeys: result?._submitResult && typeof result._submitResult === 'object' ? Object.keys(result._submitResult) : [],
-    selectedUrl: resolution.mediaUrl,
-    resolvedFrom: resolution.resolvedFrom,
-    urlCandidates: resolution.candidates,
+    selectedUrl: mediaResolution.mediaUrl,
+    resolvedFrom: mediaResolution.resolvedFrom,
+    urlCandidates: mediaResolution.candidates,
     aspectRatio: aspectRatio || null,
     width: width ?? null,
     height: height ?? null
   });
 
-  if (!resolution.mediaUrl) {
+  if (!mediaResolution.mediaUrl) {
     throw new Error(`图片模型 "${modelName}" 返回成功但未找到图片 URL，请检查 response_mapping / query_success_mapping 配置`);
   }
 
   if (onProgress) onProgress(100);
 
   return {
-    image_url: resolution.mediaUrl,
+    image_url: mediaResolution.mediaUrl,
     taskId: result._submitResult?.taskId || null,
     tokens: result._submitResult?.tokens || 0,
     provider: result._submitResult?._model?.provider || 'unknown'

@@ -14,6 +14,7 @@ interface UseBatchSceneVideoGenerationProps {
   videoModel: string;
   textModel: string;
   aspectRatio: string;
+  resolution?: string;
   duration?: number | null;
   scenes?: StoryboardScene[];
   onComplete?: () => void;
@@ -26,6 +27,7 @@ export function useBatchSceneVideoGeneration({
   videoModel,
   textModel,
   aspectRatio,
+  resolution,
   duration,
   scenes = [],
   onComplete,
@@ -36,6 +38,7 @@ export function useBatchSceneVideoGeneration({
     projectId,
     model: videoModel,
     aspectRatio,
+    resolution,
     textModel,
     scenes,
     duration,

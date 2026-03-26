@@ -29,7 +29,7 @@ const { resolveMediaUrl } = require('../base/mediaResultResolver');
 /**
  * 生成单张图片（通过 submitAndPoll 自动处理同步/异步）
  */
-const generateSingleImage = traced('图片生成', async function _generateSingleImage(modelName, prompt, aspectRatio, logTag, imageUrls) {
+const generateSingleImage = traced('图片生成', async function _generateSingleImage(modelName, prompt, aspectRatio, logTag, imageUrls, resolution) {
   const submitParams = {
     prompt,
     aspectRatio
@@ -38,6 +38,9 @@ const generateSingleImage = traced('图片生成', async function _generateSingl
   if (imageUrls && imageUrls.length > 0) {
     submitParams.imageUrls = imageUrls;
   }
+  if (resolution) {
+    submitParams.resolution = resolution;
+  }
 
   const result = await submitAndPoll(modelName, submitParams, {
     intervalMs: 3000,
@@ -45,23 +48,23 @@ const generateSingleImage = traced('图片生成', async function _generateSingl
     logTag: logTag || 'FrameGen'
   });
 
-  const resolution = resolveMediaUrl(result, 'image');
+  const mediaResolution = resolveMediaUrl(result, 'image');
   console.log(`[${logTag || 'FrameGen'}] 返回字段诊断:`, {
     modelName,
     mappedKeys: result && typeof result === 'object' ? Object.keys(result) : [],
     queryKeys: result?._queryResult && typeof result._queryResult === 'object' ? Object.keys(result._queryResult) : [],
     rawQueryKeys: result?._rawQueryResult && typeof result._rawQueryResult === 'object' ? Object.keys(result._rawQueryResult) : [],
     submitKeys: result?._submitResult && typeof result._submitResult === 'object' ? Object.keys(result._submitResult) : [],
-    selectedUrl: resolution.mediaUrl,
-    resolvedFrom: resolution.resolvedFrom,
-    urlCandidates: resolution.candidates,
+    selectedUrl: mediaResolution.mediaUrl,
+    resolvedFrom: mediaResolution.resolvedFrom,
+    urlCandidates: mediaResolution.candidates,
     aspectRatio: aspectRatio || null
   });
 
-  if (!resolution.mediaUrl) {
+  if (!mediaResolution.mediaUrl) {
     throw new Error('任务成功但未找到图片 URL，请检查 response_mapping / query_success_mapping 配置');
   }
-  return resolution.mediaUrl;
+  return mediaResolution.mediaUrl;
 }, {
   extractInput: (modelName, prompt, w, h, logTag, urls) => ({ model: modelName, logTag, refCount: urls?.length || 0, prompt: prompt?.substring(0, 100) }),
   extractOutput: (url) => ({ imageUrl: url })
@@ -347,7 +350,7 @@ ${frameHint}
 });
 
 async function handleFrameGeneration(inputParams, onProgress) {
-  const { storyboardId, prompt, imageModel: modelName, textModel, aspectRatio, prevEndFrameUrl, prevDescription, prevEndState: inputPrevEndState, isFirstScene, sceneState: inputSceneState, environmentChange: inputEnvironmentChange, activeSceneUrl, regenerateTarget } = inputParams;
+  const { storyboardId, prompt, imageModel: modelName, textModel, aspectRatio, resolution, prevEndFrameUrl, prevDescription, prevEndState: inputPrevEndState, isFirstScene, sceneState: inputSceneState, environmentChange: inputEnvironmentChange, activeSceneUrl, regenerateTarget } = inputParams;
 
   if (!storyboardId) {
     throw new Error('缺少必要参数: storyboardId');
@@ -482,7 +485,7 @@ async function handleFrameGeneration(inputParams, onProgress) {
     // 4. 生成首帧
     if (onProgress) onProgress(25);
     console.log('[FrameGen] 开始生成首帧...');
-    const startFrame = await generateSingleImage(modelName, startPrompt, aspectRatio, 'FrameGen-Start', startRefResult.selectedUrls);
+    const startFrame = await generateSingleImage(modelName, startPrompt, aspectRatio, 'FrameGen-Start', startRefResult.selectedUrls, resolution);
 
     // 持久化首帧到 MinIO
     persistedStartFrame = await downloadAndStore(
@@ -544,7 +547,7 @@ async function handleFrameGeneration(inputParams, onProgress) {
     // 7. 生成尾帧
     if (onProgress) onProgress(60);
     console.log('[FrameGen] 开始生成尾帧...');
-    const endFrame = await generateSingleImage(modelName, endPrompt, aspectRatio, 'FrameGen-End', endRefResult.selectedUrls);
+    const endFrame = await generateSingleImage(modelName, endPrompt, aspectRatio, 'FrameGen-End', endRefResult.selectedUrls, resolution);
 
     // 持久化尾帧到 MinIO
     persistedEndFrame = await downloadAndStore(

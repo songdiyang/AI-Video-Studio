@@ -78,6 +78,16 @@ const SimpleStoryBoard: React.FC<SimpleStoryBoardProps> = ({
     return firstOption ? Number(firstOption.value) : null;
   }, [models, videoModel]);
 
+  const imageResolution = useMemo(() => {
+    const model = models.find((item) => item.name === imageModel && (item.type || item.category)?.toUpperCase() === 'IMAGE');
+    return normalizeCapabilityOptions(model?.supportedResolutions, 'resolution')[0]?.value || '';
+  }, [models, imageModel]);
+
+  const videoResolution = useMemo(() => {
+    const model = models.find((item) => item.name === videoModel && (item.type || item.category)?.toUpperCase() === 'VIDEO');
+    return normalizeCapabilityOptions(model?.supportedResolutions, 'resolution')[0]?.value || '';
+  }, [models, videoModel]);
+
   useEffect(() => { if (scriptId !== currentScriptId) setCurrentScriptId(scriptId || null); }, [scriptId]);
   useEffect(() => { if (projectId !== currentProjectId) setCurrentProjectId(projectId || null); }, [projectId]);
   useEffect(() => { if (episodeNumber !== currentEpisode) setCurrentEpisode(episodeNumber); }, [episodeNumber]);
@@ -129,6 +139,7 @@ const SimpleStoryBoard: React.FC<SimpleStoryBoardProps> = ({
     projectId: currentProjectId,
     imageModel,
     aspectRatio: imageAspectRatio,
+    resolution: imageResolution || undefined,
     textModel,
     scenes,
     onComplete: () => {
@@ -146,6 +157,7 @@ const SimpleStoryBoard: React.FC<SimpleStoryBoardProps> = ({
     textModel,
     aspectRatio: videoAspectRatio,
     duration: videoDuration,
+    resolution: videoResolution || undefined,
     onComplete: () => {
       if (currentScriptId) {
         loadStoryboards(currentScriptId);
@@ -217,6 +229,7 @@ const SimpleStoryBoard: React.FC<SimpleStoryBoardProps> = ({
           textModel,
           style: '', // 可以从项目设置中获取
           aspectRatio: imageAspectRatio,
+          resolution: imageResolution || undefined,
         }),
       });
 
@@ -258,6 +271,7 @@ const SimpleStoryBoard: React.FC<SimpleStoryBoardProps> = ({
           imageModel,
           textModel,
           aspectRatio: imageAspectRatio,
+          resolution: imageResolution || undefined,
         }),
       });
 
@@ -317,7 +331,7 @@ const SimpleStoryBoard: React.FC<SimpleStoryBoardProps> = ({
             'Content-Type': 'application/json',
             ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
           },
-          body: JSON.stringify({ imageModel, textModel, style: '', aspectRatio: imageAspectRatio })
+          body: JSON.stringify({ imageModel, textModel, style: '', aspectRatio: imageAspectRatio, resolution: imageResolution || undefined })
         });
         const data = await response.json().catch(() => ({}));
         if (response.ok) {
@@ -373,7 +387,7 @@ const SimpleStoryBoard: React.FC<SimpleStoryBoardProps> = ({
             'Content-Type': 'application/json',
             ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
           },
-          body: JSON.stringify({ imageModel, textModel, aspectRatio: imageAspectRatio })
+          body: JSON.stringify({ imageModel, textModel, aspectRatio: imageAspectRatio, resolution: imageResolution || undefined })
         });
         const data = await response.json().catch(() => ({}));
         if (response.ok) {

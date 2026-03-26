@@ -1,11 +1,12 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Button, Textarea, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Chip } from '@heroui/react';
-import { Play, AlertCircle } from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { Button, Textarea, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Chip, Select, SelectItem, Input, Switch } from '@heroui/react';
+import { Play, AlertCircle, Code2, Eye, Film, Clock, Monitor } from 'lucide-react';
 import { AIModel } from '../types';
 import DebugPanel from './DebugPanel';
 import SimpleMarkdown from './SimpleMarkdown';
 import { getAdminAuthHeaders } from '../../../../services/auth';
 import { useToast } from '../../../../contexts/ToastContext';
+import { ASPECT_RATIO_PRESETS, DURATION_PRESETS, VIDEO_RESOLUTION_PRESETS } from '../types';
 
 interface ModelTestModalProps {
   isOpen: boolean;
@@ -33,16 +34,72 @@ const ModelTestModal: React.FC<ModelTestModalProps> = ({ isOpen, onClose, model 
   const [paramsInput, setParamsInput] = useState('{}');
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<any>(null);
+  const [advancedMode, setAdvancedMode] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const { showToast } = useToast();
+
+  // 视频可视化参数
+  const [videoPrompt, setVideoPrompt] = useState('A cat walking slowly');
+  const [videoDuration, setVideoDuration] = useState('5');
+  const [videoAspectRatio, setVideoAspectRatio] = useState('16:9');
+  const [videoResolution, setVideoResolution] = useState('1080p');
+
+  // 模型支持的参数选项
+  const supportedAspectRatios = useMemo(() => {
+    if (!model?.supported_aspect_ratios) return ASPECT_RATIO_PRESETS.map(p => p.value);
+    const raw = typeof model.supported_aspect_ratios === 'string'
+      ? JSON.parse(model.supported_aspect_ratios || '[]')
+      : model.supported_aspect_ratios;
+    return Array.isArray(raw) && raw.length > 0 ? raw.map((r: any) => typeof r === 'string' ? r : r.value) : ASPECT_RATIO_PRESETS.map(p => p.value);
+  }, [model]);
+
+  const supportedDurations = useMemo(() => {
+    if (!model?.supported_durations) return DURATION_PRESETS.map(p => p.value);
+    const raw = typeof model.supported_durations === 'string'
+      ? JSON.parse(model.supported_durations || '[]')
+      : model.supported_durations;
+    return Array.isArray(raw) && raw.length > 0 ? raw.map((d: any) => typeof d === 'number' ? d : d.value) : DURATION_PRESETS.map(p => p.value);
+  }, [model]);
+
+  const supportedResolutions = useMemo(() => {
+    try {
+      const raw = model?.supported_resolutions;
+      if (!raw) return [];
+      const arr = typeof raw === 'string' ? JSON.parse(raw || '[]') : raw;
+      return Array.isArray(arr) ? arr.map((r: any) => typeof r === 'string' ? r : r.value) : [];
+    } catch { return []; }
+  }, [model]);
+
+  // 同步可视化参数到 JSON
+  const syncVisualToJson = () => {
+    if (!model || model.category !== 'VIDEO') return;
+    const params: any = { prompt: videoPrompt, duration: Number(videoDuration) };
+    if (videoAspectRatio) params.aspectRatio = videoAspectRatio;
+    if (videoResolution && supportedResolutions.length > 0) params.resolution = videoResolution;
+    setParamsInput(JSON.stringify(params, null, 2));
+  };
+
+  useEffect(() => {
+    if (!advancedMode && model?.category === 'VIDEO') {
+      syncVisualToJson();
+    }
+  }, [videoPrompt, videoDuration, videoAspectRatio, videoResolution, advancedMode]);
 
   // 切换模型时重置
   useEffect(() => {
     if (model) {
       setTestResult(null);
       setTesting(false);
+      setAdvancedMode(false);
       const defaults = DEFAULT_PARAMS[model.category] || {};
       setParamsInput(JSON.stringify(defaults, null, 2));
+      // 重置视频可视化参数
+      if (model.category === 'VIDEO') {
+        setVideoPrompt(defaults.prompt || 'A cat walking slowly');
+        setVideoDuration(String(defaults.duration || 5));
+        if (supportedAspectRatios.length > 0) setVideoAspectRatio(supportedAspectRatios[0]);
+        if (supportedResolutions.length > 0) setVideoResolution(supportedResolutions[0]);
+      }
     }
   }, [model?.id]);
 
@@ -119,20 +176,114 @@ const ModelTestModal: React.FC<ModelTestModalProps> = ({ isOpen, onClose, model 
             <div className="w-1/2 border-r border-slate-700/50 p-6 space-y-4 overflow-y-auto">
               {/* 参数输入 */}
               <div>
-                <label className="text-sm font-medium text-slate-300 mb-2 block">
-                  调用参数 (JSON)
-                </label>
-                <Textarea
-                  value={paramsInput}
-                  onChange={(e) => setParamsInput(e.target.value)}
-                  minRows={8}
-                  maxRows={15}
-                  classNames={{
-                    input: "font-mono text-xs",
-                    inputWrapper: "bg-slate-800/60 border-2 border-slate-600/50"
-                  }}
-                  placeholder='{"prompt": "...", "title": "..."}'
-                />
+                {/* 视频模型可视化模式切换 */}
+                {model.category === 'VIDEO' && (
+                  <div className="flex items-center justify-between mb-3">
+                    <label className="text-sm font-medium text-slate-300">
+                      调用参数
+                    </label>
+                    <div className="flex items-center gap-2 bg-slate-800/60 rounded-lg px-3 py-1 border border-slate-700/50">
+                      <Eye className={`w-3.5 h-3.5 ${!advancedMode ? 'text-blue-400' : 'text-slate-500'}`} />
+                      <Switch
+                        size="sm"
+                        isSelected={advancedMode}
+                        onValueChange={setAdvancedMode}
+                        classNames={{ wrapper: "group-data-[selected]:bg-amber-500" }}
+                      />
+                      <Code2 className={`w-3.5 h-3.5 ${advancedMode ? 'text-amber-400' : 'text-slate-500'}`} />
+                      <span className="text-xs text-slate-400">{advancedMode ? 'JSON' : '可视化'}</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* VIDEO 可视化输入 */}
+                {model.category === 'VIDEO' && !advancedMode ? (
+                  <div className="space-y-3">
+                    <Textarea
+                      label="提示词"
+                      value={videoPrompt}
+                      onChange={(e) => setVideoPrompt(e.target.value)}
+                      minRows={3}
+                      maxRows={6}
+                      classNames={{
+                        inputWrapper: "bg-slate-800/60 border-2 border-slate-600/50"
+                      }}
+                      placeholder="描述你想生成的视频内容..."
+                    />
+                    <div className="grid grid-cols-2 gap-3">
+                      <Select
+                        label="视频时长"
+                        selectedKeys={[videoDuration]}
+                        onChange={(e) => setVideoDuration(e.target.value)}
+                        startContent={<Clock className="w-4 h-4 text-blue-400" />}
+                        classNames={{
+                          trigger: "bg-slate-800/60 border-slate-600/50",
+                          label: "text-slate-400",
+                          value: "text-slate-200"
+                        }}
+                      >
+                        {supportedDurations.map((d: number) => (
+                          <SelectItem key={String(d)}>{d}秒</SelectItem>
+                        ))}
+                      </Select>
+                      <Select
+                        label="长宽比"
+                        selectedKeys={[videoAspectRatio]}
+                        onChange={(e) => setVideoAspectRatio(e.target.value)}
+                        startContent={<Film className="w-4 h-4 text-purple-400" />}
+                        classNames={{
+                          trigger: "bg-slate-800/60 border-slate-600/50",
+                          label: "text-slate-400",
+                          value: "text-slate-200"
+                        }}
+                      >
+                        {supportedAspectRatios.map((r: string) => {
+                          const preset = ASPECT_RATIO_PRESETS.find(p => p.value === r);
+                          return <SelectItem key={r}>{preset?.label || r}</SelectItem>;
+                        })}
+                      </Select>
+                    </div>
+                    {supportedResolutions.length > 0 && (
+                      <Select
+                        label="分辨率"
+                        selectedKeys={[videoResolution]}
+                        onChange={(e) => setVideoResolution(e.target.value)}
+                        startContent={<Monitor className="w-4 h-4 text-emerald-400" />}
+                        classNames={{
+                          trigger: "bg-slate-800/60 border-slate-600/50",
+                          label: "text-slate-400",
+                          value: "text-slate-200"
+                        }}
+                      >
+                        {supportedResolutions.map((r: string) => {
+                          const preset = VIDEO_RESOLUTION_PRESETS.find(p => p.value === r);
+                          return <SelectItem key={r}>{preset ? `${preset.label} (${preset.width}×${preset.height})` : r}</SelectItem>;
+                        })}
+                      </Select>
+                    )}
+                    <p className="text-xs text-slate-500">实际 JSON 参数已自动同步，切换到 JSON 模式可查看</p>
+                  </div>
+                ) : (
+                  /* 原始 JSON 编辑器 */
+                  <>
+                    {model.category !== 'VIDEO' && (
+                      <label className="text-sm font-medium text-slate-300 mb-2 block">
+                        调用参数 (JSON)
+                      </label>
+                    )}
+                    <Textarea
+                      value={paramsInput}
+                      onChange={(e) => setParamsInput(e.target.value)}
+                      minRows={8}
+                      maxRows={15}
+                      classNames={{
+                        input: "font-mono text-xs",
+                        inputWrapper: "bg-slate-800/60 border-2 border-slate-600/50"
+                      }}
+                      placeholder='{"prompt": "...", "title": "..."}'
+                    />
+                  </>
+                )}
               </div>
 
               {/* 执行状态 */}

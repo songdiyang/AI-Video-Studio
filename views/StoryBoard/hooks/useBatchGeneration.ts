@@ -46,6 +46,7 @@ export interface UseBatchGenerationProps {
   scenes: StoryboardScene[];
   // Additional params for video generation
   duration?: number | null;
+  resolution?: string;
   onComplete?: () => void;
   onError?: (message: string) => void;
 }
@@ -79,6 +80,7 @@ export function useBatchGeneration(
     textModel,
     scenes,
     duration,
+    resolution,
     onComplete,
     onError
   } = props;
@@ -186,6 +188,8 @@ export function useBatchGeneration(
         validSceneIds: validSceneIds.length > 0 ? validSceneIds : undefined,
       };
       
+      if (resolution) body.resolution = resolution;
+      
       // Add model with correct key
       body[config.modelParamKey] = model;
       // Add overwrite flag with correct key
@@ -217,7 +221,7 @@ export function useBatchGeneration(
       console.error(`${config.logPrefix} 启动失败:`, error);
       onError?.(`${config.startingErrorMessage}，请检查网络连接`);
     }
-  }, [scriptId, model, aspectRatio, textModel, projectId, scenes, duration, recovery, onError, config]);
+  }, [scriptId, model, aspectRatio, textModel, projectId, scenes, duration, resolution, recovery, onError, config]);
 
   return {
     startBatchGeneration,

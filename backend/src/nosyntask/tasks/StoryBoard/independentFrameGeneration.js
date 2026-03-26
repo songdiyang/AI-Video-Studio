@@ -23,7 +23,7 @@ const handleSingleFrameGeneration = require('./singleFrameGeneration');
  * @returns {Promise<{status, type, ...result}>}
  */
 async function generateFrameIndependent(params, onProgress) {
-  const { storyboardId, imageModel, textModel, aspectRatio } = params;
+  const { storyboardId, imageModel, textModel, aspectRatio, resolution } = params;
 
   if (!storyboardId) {
     throw new Error('缺少必要参数: storyboardId');
@@ -62,6 +62,7 @@ async function generateFrameIndependent(params, onProgress) {
     imageModel,
     textModel,
     aspectRatio,
+    resolution,
     // 独立模式的关键：不传递链式参数
     prevEndFrameUrl: null,
     prevDescription: null,
@@ -112,6 +113,7 @@ async function generateFramesParallel(params, onProgress) {
     imageModel,
     textModel,
     aspectRatio,
+    resolution,
     maxConcurrency = 5
   } = params;
 
@@ -145,7 +147,8 @@ async function generateFramesParallel(params, onProgress) {
             storyboardId: sbId,
             imageModel,
             textModel,
-            aspectRatio
+            aspectRatio,
+            resolution
           }, null);  // 单个分镜的进度回调暂不处理
           completed++;
           return result;

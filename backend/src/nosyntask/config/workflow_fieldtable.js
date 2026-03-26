@@ -333,6 +333,12 @@ module.exports = {
     description: '画面比例（如 "16:9"、"9:16"、"1:1"）',
     category: 'generation'
   },
+  resolution: {
+    from: 'resolution',
+    defaultValue: null,
+    description: '清晰度（如 "1024"、"1536"、"2048"、"1080p"、"4K"）',
+    category: 'generation'
+  },
 
   // ================================================================
   //  管理后台

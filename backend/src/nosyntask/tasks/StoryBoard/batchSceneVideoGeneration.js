@@ -47,7 +47,7 @@ async function runPool(tasks, limit, onTaskDone) {
 
 async function handleBatchSceneVideoGeneration(inputParams, onProgress) {
   const {
-    scriptId, videoModel, textModel, duration, aspectRatio,
+    scriptId, videoModel, textModel, duration, aspectRatio, resolution,
     overwriteVideos = false, maxConcurrency = 20, think
   } = inputParams;
 
@@ -108,6 +108,7 @@ async function handleBatchSceneVideoGeneration(inputParams, onProgress) {
         textModel,
         duration,
         aspectRatio,
+        resolution,
         think
       }, null);
     });

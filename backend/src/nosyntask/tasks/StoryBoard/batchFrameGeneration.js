@@ -43,7 +43,7 @@ function getFinalFrameUrl(sb, vars) {
 async function handleBatchFrameGeneration(inputParams, onProgress) {
   const {
     scriptId, imageModel, textModel, overwriteFrames = false,
-    aspectRatio, continueOnError = true  // 新增：默认启用容错模式
+    aspectRatio, resolution, continueOnError = true  // 新增：默认启用容错模式
   } = inputParams;
 
   if (!scriptId) {
@@ -120,6 +120,7 @@ async function handleBatchFrameGeneration(inputParams, onProgress) {
           imageModel,
           textModel,
           aspectRatio,
+          resolution,
           prevEndFrameUrl,
           prevDescription,
           prevEndState,
@@ -135,6 +136,7 @@ async function handleBatchFrameGeneration(inputParams, onProgress) {
           imageModel,
           textModel,
           aspectRatio,
+          resolution,
           prevEndFrameUrl,
           prevDescription,
           prevEndState,

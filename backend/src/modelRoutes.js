@@ -20,7 +20,7 @@ router.get('/', authMiddleware, async (req, res) => {
 
     let query = `
       SELECT id, name, category, provider, description, is_active, price_config,
-             supported_aspect_ratios, supported_durations
+             supported_aspect_ratios, supported_durations, supported_resolutions
       FROM ai_model_configs
       WHERE is_active = 1
     `;
@@ -55,7 +55,8 @@ router.get('/', authMiddleware, async (req, res) => {
           priceConfig,
           priceSummary: getPriceSummary(m.price_config, { modelName: m.name }),
           supportedAspectRatios: parseJsonField(m.supported_aspect_ratios, []),
-          supportedDurations: parseJsonField(m.supported_durations, [])
+          supportedDurations: parseJsonField(m.supported_durations, []),
+          supportedResolutions: parseJsonField(m.supported_resolutions, [])
         };
       })
     });

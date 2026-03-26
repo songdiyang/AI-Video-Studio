@@ -229,6 +229,11 @@ const zhCN = {
     descPlaceholder: '描述你的工程内容...',
     coverLabel: '封面图片URL',
     coverPlaceholder: '图片地址（选填）',
+    aiGenerateCover: 'AI 生成封面',
+    aiGeneratingCover: '封面生成中...',
+    aiCoverHint: '请先填写项目名称或描述',
+    aiCoverFailed: 'AI 封面生成失败',
+    aiCoverSuccess: '封面生成成功',
     statusLabel: '工程状态',
     // 状态
     statusDraft: '草稿',

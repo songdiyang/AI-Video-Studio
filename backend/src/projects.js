@@ -4,6 +4,7 @@ const { authMiddleware } = require('./middleware');
 const { VISUAL_STYLE_PRESETS } = require('./utils/getProjectStyle');
 const { callAIModel } = require('./aiModelService');
 const { withAIBillingContext } = require('./aiBillingContext');
+const { downloadAndStore } = require('./utils/fileStorage');
 const { getEffectiveProjectRole, PERMISSION_LEVELS } = require('./middleware/collaborationAuth');
 
 const router = express.Router();
@@ -102,6 +103,99 @@ router.post('/suggest-settings', authMiddleware, async (req, res) => {
   } catch (error) {
     console.error('[Suggest Settings]', error);
     res.status(error.status || 500).json({ message: error.message || 'AI推荐失败，请稍后重试' });
+  }
+});
+
+// AI 生成封面图片
+router.post('/generate-cover', authMiddleware, async (req, res) => {
+  const userId = req.user.id;
+  const { name, description, visualStylePrompt } = req.body;
+
+  if (!name && !description) {
+    return res.status(400).json({ message: '请提供项目名称或描述' });
+  }
+
+  try {
+    // 1. 用文本模型生成封面图片的英文提示词
+    const textModel = await queryOne(
+      "SELECT name FROM ai_model_configs WHERE category = 'TEXT' AND is_active = 1 ORDER BY id ASC LIMIT 1"
+    );
+    if (!textModel) {
+      return res.status(500).json({ message: '没有可用的文本模型' });
+    }
+
+    const styleHint = visualStylePrompt ? `\nVisual style: ${visualStylePrompt}` : '';
+    const promptForCover = `You are a professional illustrator prompt engineer. Generate a concise English prompt for an AI image model to create a visually striking cover/poster image for the following project.
+
+Project name: ${name || 'Untitled'}
+Project description: ${description || 'No description'}${styleHint}
+
+Requirements:
+1. The prompt should describe a single iconic scene that captures the essence of the project
+2. Include composition, lighting, color palette, and mood descriptors
+3. DO NOT include any text/title/words in the image
+4. Keep the prompt between 50-100 words
+5. Return ONLY the prompt text, no explanations`;
+
+    const textResult = await withAIBillingContext(
+      {
+        userId,
+        projectId: null,
+        sourceType: 'route',
+        operationKey: 'project_generate_cover_prompt',
+        resourceRefs: {}
+      },
+      () => callAIModel(textModel.name, {
+        messages: [{ role: 'user', content: promptForCover }]
+      })
+    );
+
+    let coverPrompt = (textResult.content || textResult.text || textResult.message || '').trim();
+    // 去除可能的 markdown 包裹
+    coverPrompt = coverPrompt.replace(/^```[\s\S]*?\n/, '').replace(/```$/, '').trim();
+
+    // 2. 调用图片模型生成封面
+    const imageModel = await queryOne(
+      "SELECT name FROM ai_model_configs WHERE category = 'IMAGE' AND is_active = 1 ORDER BY id ASC LIMIT 1"
+    );
+    if (!imageModel) {
+      return res.status(500).json({ message: '没有可用的图片模型' });
+    }
+
+    const imageResult = await withAIBillingContext(
+      {
+        userId,
+        projectId: null,
+        sourceType: 'route',
+        operationKey: 'project_generate_cover_image',
+        resourceRefs: {}
+      },
+      () => callAIModel(imageModel.name, {
+        prompt: coverPrompt,
+        size: '1920x1920'
+      })
+    );
+
+    // 提取图片 URL
+    let imageUrl = imageResult.url || imageResult.image_url || imageResult.data?.[0]?.url || '';
+    if (!imageUrl && imageResult.data && Array.isArray(imageResult.data)) {
+      imageUrl = imageResult.data[0]?.url || imageResult.data[0]?.image_url || '';
+    }
+
+    if (!imageUrl) {
+      console.error('[Generate Cover] 未获取到图片 URL, result:', JSON.stringify(imageResult).slice(0, 500));
+      return res.status(500).json({ message: '图片生成成功但未返回图片地址' });
+    }
+
+    // 3. 持久化到 MinIO
+    const timestamp = Date.now();
+    const objectPath = `images/covers/${userId}/${timestamp}_cover`;
+    const persistedUrl = await downloadAndStore(imageUrl, objectPath, { fallbackExt: '.png' });
+
+    res.json({ cover_url: persistedUrl, prompt: coverPrompt });
+  } catch (error) {
+    console.error('[Generate Cover]', error);
+    res.status(error.status || 500).json({ message: error.message || '封面生成失败，请稍后重试' });
   }
 });
 

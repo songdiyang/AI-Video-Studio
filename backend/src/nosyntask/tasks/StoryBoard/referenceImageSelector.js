@@ -132,7 +132,7 @@ ${imageListText}
   const result = await handleBaseTextModelCall({
     prompt,
     textModel,
-    think: true,
+    think: false,
     temperature: 0.4
   });
 
