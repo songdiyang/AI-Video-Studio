@@ -82,7 +82,7 @@ async function initializeDatabase() {
     connectionLimit: 20,        // 从10增加到20
     queueLimit: 0,
     namedPlaceholders: false,
-    timezone: 'Z',
+    timezone: '+08:00',
     // 防止连接超时
     connectTimeout: 60000,
     // 启用保活机制
