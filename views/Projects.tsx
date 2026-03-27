@@ -7,6 +7,7 @@ import { Project, fetchProjects, createProject, updateProject, deleteProject } f
 import { ProjectType } from '../types/projectTypes';
 import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../contexts/ConfirmContext';
+import { useWorkbench } from '../contexts/WorkbenchContext';
 import { getAuthToken } from '../services/auth';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useVirtualList } from '../hooks/useVirtualList';
@@ -22,6 +23,7 @@ const LAST_PROJECT_KEY = 'nanostory_last_project_id';
 const Projects: React.FC = () => {
   const navigate = useNavigate();
   const { t } = useLanguage();
+  const { setCurrentProject } = useWorkbench();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -299,6 +301,8 @@ const Projects: React.FC = () => {
 
   const handleEnterProject = (project: Project) => {
     localStorage.setItem(LAST_PROJECT_KEY, project.id.toString());
+    // 同时更新 WorkbenchContext 中的当前项目，确保工作台能正确加载
+    setCurrentProject(project);
     navigate('/');
   };
 
