@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Megaphone, Send, Clock, CheckCircle, AlertCircle, RefreshCw, Search, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Megaphone, Send, Clock, CheckCircle, AlertCircle, RefreshCw, Search, X, ChevronLeft, ChevronRight, Eye, Trash2 } from 'lucide-react';
 import { getAdminAuthHeaders } from '../../services/auth';
 import { useToast } from '../../contexts/ToastContext';
 
@@ -28,6 +28,12 @@ const AnnouncementManagement: React.FC = () => {
   const [announceTitle, setAnnounceTitle] = useState('');
   const [announceContent, setAnnounceContent] = useState('');
   const [sending, setSending] = useState(false);
+
+  // 详情模态框
+  const [detailModal, setDetailModal] = useState<Announcement | null>(null);
+
+  // 删除确认
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
   const headers = useCallback(() => {
     return {
@@ -101,6 +107,29 @@ const AnnouncementManagement: React.FC = () => {
     });
   };
 
+  // 删除公告
+  const handleDelete = async (id: number) => {
+    if (!confirm('确定要删除这条公告吗？此操作不可恢复。')) return;
+    
+    try {
+      const res = await fetch(`/api/feedback/admin/announcements/${id}`, {
+        method: 'DELETE',
+        headers: headers(),
+      });
+      
+      if (res.ok) {
+        showToast('公告已删除', 'success');
+        fetchAnnouncements(); // 刷新列表
+      } else {
+        const data = await res.json();
+        showToast(data.error || '删除失败', 'error');
+      }
+    } catch (err) {
+      console.error('删除公告失败:', err);
+      showToast('删除失败，请稍后重试', 'error');
+    }
+  };
+
   return (
     <div className="p-6 min-h-screen">
       {/* Header */}
@@ -160,6 +189,7 @@ const AnnouncementManagement: React.FC = () => {
               <th className="px-4 py-3 text-left font-medium">发送情况</th>
               <th className="px-4 py-3 text-left font-medium">发布人</th>
               <th className="px-4 py-3 text-left font-medium">发布时间</th>
+              <th className="px-4 py-3 text-center font-medium">操作</th>
             </tr>
           </thead>
           <tbody>
@@ -208,6 +238,24 @@ const AnnouncementManagement: React.FC = () => {
                     <div className="flex items-center gap-1">
                       <Clock className="w-3 h-3" />
                       {formatDate(item.created_at)}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center justify-center gap-1">
+                      <button
+                        onClick={() => setDetailModal(item)}
+                        className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors"
+                        title="查看详情"
+                      >
+                        <Eye className="w-4 h-4 text-blue-500" />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(item.id)}
+                        className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors"
+                        title="删除公告"
+                      >
+                        <Trash2 className="w-4 h-4 text-red-500" />
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -306,6 +354,94 @@ const AnnouncementManagement: React.FC = () => {
               >
                 <Send className="w-4 h-4" />
                 {sending ? '发送中...' : '发送公告'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 详情模态框 */}
+      {detailModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+          onClick={() => setDetailModal(null)}
+        >
+          <div
+            className="bg-white rounded-2xl w-full max-w-lg mx-4 border border-slate-200 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-5 border-b border-slate-100">
+              <div>
+                <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                  <Eye className="w-5 h-5 text-blue-500" />
+                  公告详情
+                </h2>
+                <p className="text-xs text-slate-400 mt-1">ID: #{detailModal.id}</p>
+              </div>
+              <button
+                onClick={() => setDetailModal(null)}
+                className="p-1.5 hover:bg-slate-100 rounded-lg"
+              >
+                <X className="w-5 h-5 text-slate-400" />
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div>
+                <label className="text-sm text-slate-500 mb-1 block">公告标题</label>
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700">
+                  {detailModal.title}
+                </div>
+              </div>
+              <div>
+                <label className="text-sm text-slate-500 mb-1 block">公告内容</label>
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 whitespace-pre-wrap max-h-60 overflow-y-auto">
+                  {detailModal.content}
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-sm text-slate-500 mb-1 block">发送情况</label>
+                  <div className="flex items-center gap-2 p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                    <CheckCircle className="w-4 h-4 text-emerald-500" />
+                    <span className="text-sm text-slate-700">
+                      {detailModal.sent_count} / {detailModal.total_count}
+                    </span>
+                    <span className="text-xs text-slate-400">
+                      ({Math.round((detailModal.sent_count / detailModal.total_count) * 100)}%)
+                    </span>
+                  </div>
+                </div>
+                <div>
+                  <label className="text-sm text-slate-500 mb-1 block">发布人</label>
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700">
+                    {detailModal.created_by_email || '-'}
+                  </div>
+                </div>
+              </div>
+              <div>
+                <label className="text-sm text-slate-500 mb-1 block">发布时间</label>
+                <div className="flex items-center gap-2 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700">
+                  <Clock className="w-4 h-4 text-slate-400" />
+                  {formatDate(detailModal.created_at)}
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 p-5 border-t border-slate-100">
+              <button
+                onClick={() => setDetailModal(null)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-sm transition-all"
+              >
+                关闭
+              </button>
+              <button
+                onClick={() => {
+                  setDetailModal(null);
+                  handleDelete(detailModal.id);
+                }}
+                className="flex items-center gap-2 px-4 py-2 bg-red-500 hover:bg-red-400 text-white rounded-xl text-sm transition-all"
+              >
+                <Trash2 className="w-4 h-4" />
+                删除公告
               </button>
             </div>
           </div>

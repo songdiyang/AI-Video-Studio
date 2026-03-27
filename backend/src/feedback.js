@@ -257,6 +257,41 @@ router.get('/admin/announcements', authMiddleware, requireAdmin, async (req, res
   }
 });
 
+// DELETE /api/feedback/admin/announcements/:id - 删除公告
+router.delete('/admin/announcements/:id', authMiddleware, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // 获取公告信息（用于确认存在）
+    const announcement = await queryOne(
+      'SELECT id FROM internal_mail WHERE id = ? AND mail_type = "announce"',
+      [id]
+    );
+    
+    if (!announcement) {
+      return res.status(404).json({ error: '公告不存在' });
+    }
+    
+    // 删除该公告（根据标题和内容匹配的所有记录）
+    const targetMail = await queryOne(
+      'SELECT title, content FROM internal_mail WHERE id = ?',
+      [id]
+    );
+    
+    if (targetMail) {
+      await execute(
+        'DELETE FROM internal_mail WHERE title = ? AND content = ? AND mail_type = "announce"',
+        [targetMail.title, targetMail.content]
+      );
+    }
+    
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[Feedback] 删除公告失败:', err);
+    res.status(500).json({ error: '删除公告失败' });
+  }
+});
+
 module.exports = {
   router,
   ensureFeedbackTable
