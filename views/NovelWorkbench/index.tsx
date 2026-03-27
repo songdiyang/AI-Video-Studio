@@ -3,13 +3,14 @@
  * 包含大纲规划、章节管理、文本编辑三个功能模块
  */
 
-import React, { useState, useEffect, useCallback, Suspense, lazy } from 'react';
+import React, { useState, useEffect, useCallback, Suspense, lazy, useMemo } from 'react';
 import { Spinner } from '@heroui/react';
 import { useToast } from '../../contexts/ToastContext';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { getAuthToken } from '../../services/auth';
 import { Project, fetchProject } from '../../services/projects';
 import { NovelChapter, NovelOutline } from '../../types/projectTypes';
+import { useAIModels } from '../../hooks/useAIModels';
 
 // 懒加载子组件
 const OutlinePlanner = lazy(() => import('./OutlinePlanner'));
@@ -42,6 +43,9 @@ const NovelWorkbench: React.FC<NovelWorkbenchProps> = ({ projectId, activeTab })
   const [outlines, setOutlines] = useState<NovelOutline[]>([]);
   const [currentChapterId, setCurrentChapterId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
+  
+  // AI 模型配置（对齐漫剧工作台模式）
+  const { models, selected, isConfigured, loading: modelsLoading } = useAIModels(projectId);
 
   // 加载项目数据
   useEffect(() => {
@@ -139,6 +143,8 @@ const NovelWorkbench: React.FC<NovelWorkbenchProps> = ({ projectId, activeTab })
               outlines={outlines}
               onOutlinesChange={setOutlines}
               onRefresh={refreshOutlines}
+              models={models}
+              textModel={selected.text || ''}
             />
           </Suspense>
         );
@@ -153,6 +159,8 @@ const NovelWorkbench: React.FC<NovelWorkbenchProps> = ({ projectId, activeTab })
               onChaptersChange={setChapters}
               onSelectChapter={handleSelectChapter}
               onRefresh={refreshChapters}
+              models={models}
+              textModel={selected.text || ''}
             />
           </Suspense>
         );
@@ -166,6 +174,8 @@ const NovelWorkbench: React.FC<NovelWorkbenchProps> = ({ projectId, activeTab })
               chapters={chapters}
               onChapterChange={handleSelectChapter}
               onSave={refreshChapters}
+              models={models}
+              textModel={selected.text || ''}
             />
           </Suspense>
         );

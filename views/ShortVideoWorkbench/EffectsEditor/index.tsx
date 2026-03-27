@@ -1,16 +1,19 @@
 /**
  * 特效编辑器组件
  * 转场效果选择、滤镜应用、贴纸/文字叠加
+ * 集成 AI 工作流任务支持
  */
 
-import React, { useState, useCallback } from 'react';
-import { Button, Slider, Tabs, Tab, Input, Select, SelectItem } from '@heroui/react';
+import React, { useState, useCallback, useEffect } from 'react';
+import { Button, Slider, Tabs, Tab, Input, Select, SelectItem, Progress } from '@heroui/react';
 import { 
   Sparkles, Image, Type, Palette, Play, Plus, Trash2, 
-  ChevronUp, ChevronDown, Eye, EyeOff, Copy, Layers
+  ChevronUp, ChevronDown, Eye, EyeOff, Copy, Layers, Wand2, Loader2
 } from 'lucide-react';
 import { VideoEffect, TransitionType, FilterType } from '../../../types/projectTypes';
 import { useToast } from '../../../contexts/ToastContext';
+import type { useAIModels } from '../../../hooks/useAIModels';
+import type { useTaskRunner, TaskState } from '../../../hooks/useTaskRunner';
 
 // ==================== 类型定义 ====================
 
@@ -18,6 +21,9 @@ interface EffectsEditorProps {
   projectId: number;
   effects: VideoEffect[];
   onEffectsChange: (effects: VideoEffect[]) => void;
+  aiModels?: ReturnType<typeof useAIModels>;
+  runTask?: ReturnType<typeof useTaskRunner>['runTask'];
+  tasks?: Record<string, TaskState>;
 }
 
 // ==================== 转场效果配置 ====================
@@ -398,9 +404,54 @@ const EffectsEditor: React.FC<EffectsEditorProps> = ({
   projectId,
   effects,
   onEffectsChange,
+  aiModels,
+  runTask,
+  tasks,
 }) => {
   const { showToast } = useToast();
   const [activePanel, setActivePanel] = useState<'transition' | 'filter' | 'overlay'>('transition');
+  const [renderingEffectId, setRenderingEffectId] = useState<number | null>(null);
+
+  // 获取当前渲染任务状态
+  const taskKey = `effects_${renderingEffectId || 'none'}`;
+  const currentTask = tasks?.[taskKey];
+  const isRendering = currentTask?.status === 'pending' || currentTask?.status === 'running';
+
+  // 监听任务完成
+  useEffect(() => {
+    if (currentTask?.status === 'completed') {
+      showToast('特效渲染完成', 'success');
+      setRenderingEffectId(null);
+    } else if (currentTask?.status === 'failed') {
+      showToast(currentTask.error || '渲染失败', 'error');
+      setRenderingEffectId(null);
+    }
+  }, [currentTask?.status, currentTask?.error, showToast]);
+
+  // AI 渲染特效
+  const handleAIRender = useCallback(async (effectId: number) => {
+    if (!runTask || !aiModels) {
+      showToast('AI 渲染功能暂不可用', 'warning');
+      return;
+    }
+
+    const effect = effects.find(e => e.id === effectId);
+    if (!effect) return;
+
+    setRenderingEffectId(effectId);
+    try {
+      await runTask(`effects_${effectId}`, 'effects_render', {
+        projectId,
+        effectId,
+        effectType: effect.effect_type,
+        effectConfig: effect.effect_config,
+        modelName: aiModels.selected.video || aiModels.selected.image,
+      });
+    } catch (err: any) {
+      showToast(err.message || '启动渲染任务失败', 'error');
+      setRenderingEffectId(null);
+    }
+  }, [runTask, aiModels, effects, projectId, showToast]);
 
   // 添加转场效果
   const handleAddTransition = useCallback((type: TransitionType) => {
@@ -534,6 +585,26 @@ const EffectsEditor: React.FC<EffectsEditorProps> = ({
           />
         </Tabs>
       </div>
+
+      {/* AI 渲染按钮 */}
+      {runTask && effects.length > 0 && (
+        <div className="px-4 py-3 border-b border-[var(--border-color)] bg-[var(--bg-nav)]/50">
+          <Button
+            color="secondary"
+            variant="flat"
+            size="sm"
+            startContent={isRendering ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
+            isDisabled={isRendering}
+            onPress={() => {
+              // 渲染所有特效
+              const firstEffect = effects[0];
+              if (firstEffect) handleAIRender(firstEffect.id);
+            }}
+          >
+            {isRendering ? `渲染中 ${currentTask?.progress || 0}%` : 'AI 渲染预览'}
+          </Button>
+        </div>
+      )}
 
       {/* 内容区 */}
       <div className="flex-1 overflow-y-auto">

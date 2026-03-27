@@ -3,7 +3,7 @@
  * 漫画分页管理、分格布局编辑器、页面预览和排序
  */
 
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Button, Tooltip } from '@heroui/react';
 import { 
   Plus, Trash2, Copy, ChevronLeft, ChevronRight, 
@@ -171,15 +171,24 @@ interface LayoutEditorProps {
   onLayoutChange: (layout: PanelLayoutType[]) => void;
 }
 
+type ResizeHandle = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw' | 'move';
+
 const LayoutEditor: React.FC<LayoutEditorProps> = ({ page, onLayoutChange }) => {
   const [selectedPanel, setSelectedPanel] = useState<string | null>(null);
   const editorRef = useRef<HTMLDivElement>(null);
+  
+  // 拖拽状态
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragHandle, setDragHandle] = useState<ResizeHandle | null>(null);
+  const [dragStartPos, setDragStartPos] = useState({ x: 0, y: 0 });
+  const [dragStartPanel, setDragStartPanel] = useState<PanelLayoutType | null>(null);
   
   const panels = page?.layout_data || LAYOUT_TEMPLATES[0].panels;
   
   // 应用布局模板
   const applyTemplate = (template: LayoutTemplate) => {
     onLayoutChange(template.panels);
+    setSelectedPanel(null);
   };
   
   // 添加新分格
@@ -198,6 +207,166 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ page, onLayoutChange }) => 
   const deletePanel = (panelId: string) => {
     onLayoutChange(panels.filter(p => p.id !== panelId));
     setSelectedPanel(null);
+  };
+  
+  // 计算编辑器内的百分比位置
+  const getPercentPosition = (clientX: number, clientY: number) => {
+    if (!editorRef.current) return { x: 0, y: 0 };
+    const rect = editorRef.current.getBoundingClientRect();
+    const x = Math.max(0, Math.min(100, ((clientX - rect.left) / rect.width) * 100));
+    const y = Math.max(0, Math.min(100, ((clientY - rect.top) / rect.height) * 100));
+    return { x, y };
+  };
+  
+  // 开始拖拽
+  const handleMouseDown = (e: React.MouseEvent, panelId: string, handle: ResizeHandle) => {
+    e.stopPropagation();
+    e.preventDefault();
+    
+    const panel = panels.find(p => p.id === panelId);
+    if (!panel) return;
+    
+    setSelectedPanel(panelId);
+    setIsDragging(true);
+    setDragHandle(handle);
+    setDragStartPos({ x: e.clientX, y: e.clientY });
+    setDragStartPanel({ ...panel });
+  };
+  
+  // 拖拽中
+  const handleMouseMove = useCallback((e: MouseEvent) => {
+    if (!isDragging || !dragStartPanel || !dragHandle || !editorRef.current) return;
+    
+    const rect = editorRef.current.getBoundingClientRect();
+    const deltaX = ((e.clientX - dragStartPos.x) / rect.width) * 100;
+    const deltaY = ((e.clientY - dragStartPos.y) / rect.height) * 100;
+    
+    let newPanel = { ...dragStartPanel };
+    
+    // 根据拖拽手柄类型调整分格
+    switch (dragHandle) {
+      case 'move':
+        newPanel.x = Math.max(0, Math.min(100 - newPanel.width, dragStartPanel.x + deltaX));
+        newPanel.y = Math.max(0, Math.min(100 - newPanel.height, dragStartPanel.y + deltaY));
+        break;
+      case 'n':
+        newPanel.y = Math.max(0, Math.min(dragStartPanel.y + dragStartPanel.height - 10, dragStartPanel.y + deltaY));
+        newPanel.height = dragStartPanel.height - (newPanel.y - dragStartPanel.y);
+        break;
+      case 's':
+        newPanel.height = Math.max(10, Math.min(100 - dragStartPanel.y, dragStartPanel.height + deltaY));
+        break;
+      case 'e':
+        newPanel.width = Math.max(10, Math.min(100 - dragStartPanel.x, dragStartPanel.width + deltaX));
+        break;
+      case 'w':
+        newPanel.x = Math.max(0, Math.min(dragStartPanel.x + dragStartPanel.width - 10, dragStartPanel.x + deltaX));
+        newPanel.width = dragStartPanel.width - (newPanel.x - dragStartPanel.x);
+        break;
+      case 'ne':
+        newPanel.y = Math.max(0, Math.min(dragStartPanel.y + dragStartPanel.height - 10, dragStartPanel.y + deltaY));
+        newPanel.height = dragStartPanel.height - (newPanel.y - dragStartPanel.y);
+        newPanel.width = Math.max(10, Math.min(100 - dragStartPanel.x, dragStartPanel.width + deltaX));
+        break;
+      case 'nw':
+        newPanel.y = Math.max(0, Math.min(dragStartPanel.y + dragStartPanel.height - 10, dragStartPanel.y + deltaY));
+        newPanel.height = dragStartPanel.height - (newPanel.y - dragStartPanel.y);
+        newPanel.x = Math.max(0, Math.min(dragStartPanel.x + dragStartPanel.width - 10, dragStartPanel.x + deltaX));
+        newPanel.width = dragStartPanel.width - (newPanel.x - dragStartPanel.x);
+        break;
+      case 'se':
+        newPanel.height = Math.max(10, Math.min(100 - dragStartPanel.y, dragStartPanel.height + deltaY));
+        newPanel.width = Math.max(10, Math.min(100 - dragStartPanel.x, dragStartPanel.width + deltaX));
+        break;
+      case 'sw':
+        newPanel.height = Math.max(10, Math.min(100 - dragStartPanel.y, dragStartPanel.height + deltaY));
+        newPanel.x = Math.max(0, Math.min(dragStartPanel.x + dragStartPanel.width - 10, dragStartPanel.x + deltaX));
+        newPanel.width = dragStartPanel.width - (newPanel.x - dragStartPanel.x);
+        break;
+    }
+    
+    // 四舍五入到整数
+    newPanel.x = Math.round(newPanel.x);
+    newPanel.y = Math.round(newPanel.y);
+    newPanel.width = Math.round(newPanel.width);
+    newPanel.height = Math.round(newPanel.height);
+    
+    const updatedPanels = panels.map(p => p.id === dragStartPanel.id ? newPanel : p);
+    onLayoutChange(updatedPanels);
+  }, [isDragging, dragStartPanel, dragHandle, dragStartPos, panels, onLayoutChange]);
+  
+  // 结束拖拽
+  const handleMouseUp = useCallback(() => {
+    setIsDragging(false);
+    setDragHandle(null);
+    setDragStartPanel(null);
+  }, []);
+  
+  // 绑定全局鼠标事件
+  useEffect(() => {
+    if (isDragging) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+      return () => {
+        window.removeEventListener('mousemove', handleMouseMove);
+        window.removeEventListener('mouseup', handleMouseUp);
+      };
+    }
+  }, [isDragging, handleMouseMove, handleMouseUp]);
+  
+  // 渲染调整手柄
+  const renderResizeHandles = (panel: PanelLayoutType) => {
+    if (selectedPanel !== panel.id) return null;
+    
+    const handleStyle = "absolute w-3 h-3 bg-[var(--accent)] border-2 border-white rounded-sm shadow-md z-10";
+    const edgeStyle = "absolute bg-transparent hover:bg-[var(--accent)]/30";
+    
+    return (
+      <>
+        {/* 角部手柄 */}
+        <div 
+          className={`${handleStyle} cursor-nw-resize`}
+          style={{ top: -6, left: -6 }}
+          onMouseDown={(e) => handleMouseDown(e, panel.id, 'nw')}
+        />
+        <div 
+          className={`${handleStyle} cursor-ne-resize`}
+          style={{ top: -6, right: -6 }}
+          onMouseDown={(e) => handleMouseDown(e, panel.id, 'ne')}
+        />
+        <div 
+          className={`${handleStyle} cursor-sw-resize`}
+          style={{ bottom: -6, left: -6 }}
+          onMouseDown={(e) => handleMouseDown(e, panel.id, 'sw')}
+        />
+        <div 
+          className={`${handleStyle} cursor-se-resize`}
+          style={{ bottom: -6, right: -6 }}
+          onMouseDown={(e) => handleMouseDown(e, panel.id, 'se')}
+        />
+        {/* 边缘手柄 */}
+        <div 
+          className={`${edgeStyle} cursor-n-resize`}
+          style={{ top: -4, left: 10, right: 10, height: 8 }}
+          onMouseDown={(e) => handleMouseDown(e, panel.id, 'n')}
+        />
+        <div 
+          className={`${edgeStyle} cursor-s-resize`}
+          style={{ bottom: -4, left: 10, right: 10, height: 8 }}
+          onMouseDown={(e) => handleMouseDown(e, panel.id, 's')}
+        />
+        <div 
+          className={`${edgeStyle} cursor-w-resize`}
+          style={{ left: -4, top: 10, bottom: 10, width: 8 }}
+          onMouseDown={(e) => handleMouseDown(e, panel.id, 'w')}
+        />
+        <div 
+          className={`${edgeStyle} cursor-e-resize`}
+          style={{ right: -4, top: 10, bottom: 10, width: 8 }}
+          onMouseDown={(e) => handleMouseDown(e, panel.id, 'e')}
+        />
+      </>
+    );
   };
 
   return (
@@ -224,6 +393,17 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ page, onLayoutChange }) => 
           <Button size="sm" variant="flat" startContent={<Plus className="w-4 h-4" />} onPress={addPanel}>
             添加分格
           </Button>
+          {selectedPanel && (
+            <Button 
+              size="sm" 
+              variant="flat" 
+              color="danger"
+              startContent={<Trash2 className="w-4 h-4" />} 
+              onPress={() => deletePanel(selectedPanel)}
+            >
+              删除分格
+            </Button>
+          )}
         </div>
       </div>
       
@@ -231,39 +411,45 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ page, onLayoutChange }) => 
       <div className="flex-1 p-4 flex items-center justify-center bg-[var(--bg-app)]">
         <div 
           ref={editorRef}
-          className="relative bg-white shadow-xl"
+          className="relative bg-white shadow-xl select-none"
           style={{ width: '300px', height: '400px' }}
+          onClick={() => setSelectedPanel(null)}
         >
           {panels.map((panel) => (
             <div
               key={panel.id}
-              className={`absolute border-2 transition-colors cursor-pointer ${
+              className={`absolute border-2 transition-colors ${
                 selectedPanel === panel.id 
                   ? 'border-[var(--accent)] bg-[var(--accent)]/10' 
                   : 'border-gray-300 hover:border-[var(--accent)]/50'
-              }`}
+              } ${isDragging && selectedPanel === panel.id ? 'cursor-grabbing' : 'cursor-pointer'}`}
               style={{
                 left: `${panel.x}%`,
                 top: `${panel.y}%`,
                 width: `${panel.width}%`,
                 height: `${panel.height}%`,
               }}
-              onClick={() => setSelectedPanel(panel.id)}
+              onClick={(e) => { e.stopPropagation(); setSelectedPanel(panel.id); }}
+              onMouseDown={(e) => { 
+                if (selectedPanel === panel.id) {
+                  handleMouseDown(e, panel.id, 'move');
+                }
+              }}
             >
               {/* 分格序号 */}
-              <div className="absolute top-1 left-1 w-5 h-5 rounded-full bg-[var(--accent)] text-white text-xs flex items-center justify-center">
+              <div className="absolute top-1 left-1 w-5 h-5 rounded-full bg-[var(--accent)] text-white text-xs flex items-center justify-center pointer-events-none">
                 {panels.indexOf(panel) + 1}
               </div>
               
-              {/* 删除按钮 */}
+              {/* 尺寸信息 */}
               {selectedPanel === panel.id && (
-                <button
-                  onClick={(e) => { e.stopPropagation(); deletePanel(panel.id); }}
-                  className="absolute top-1 right-1 p-1 rounded bg-red-500 text-white hover:bg-red-600"
-                >
-                  <Trash2 className="w-3 h-3" />
-                </button>
+                <div className="absolute bottom-1 right-1 text-[10px] text-[var(--accent)] bg-white/80 px-1 rounded pointer-events-none">
+                  {Math.round(panel.width)}×{Math.round(panel.height)}%
+                </div>
               )}
+              
+              {/* 调整手柄 */}
+              {renderResizeHandles(panel)}
             </div>
           ))}
         </div>
@@ -271,7 +457,7 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ page, onLayoutChange }) => 
       
       {/* 提示 */}
       <div className="p-3 border-t border-[var(--border-color)] text-center text-xs text-[var(--text-muted)]">
-        点击分格选中，拖拽边缘调整大小（开发中）
+        点击分格选中，拖拽移动位置，拖拽边缘或角落调整大小
       </div>
     </div>
   );

@@ -26,8 +26,26 @@ const { trace } = require('../../engine/generationTrace');
 const { assertUpdated, assertPersistedFields } = require('./persistenceGuard');
 const { resolveMediaUrl } = require('../base/mediaResultResolver');
 
+/** 安全解析 variables_json，失败时返回空对象 */
+function safeParseVariables(raw) {
+  if (!raw) return {};
+  if (typeof raw === 'object') return raw;
+  try { return JSON.parse(raw); } catch { return {}; }
+}
+
+/**
+ * 分镜视频生成处理器
+ * 
+ * inputParams._context 可选预取上下文（由 batchSceneVideoGeneration 传入以避免重复 DB 查询）：
+ *   { storyboard, variables, visualStyle, prevNeighbor, nextNeighbor }
+ *   角色外貌和场景详情由于每个分镜不同，仍由本函数并行查询
+ * 
+ * input:  { storyboardId, videoModel, textModel, duration, aspectRatio }
+ * output: { videoUrl, model, promptUsed }
+ */
+
 async function handleSceneVideoGeneration(inputParams, onProgress) {
-  const { storyboardId, videoModel: modelName, textModel, duration, aspectRatio, resolution, think } = inputParams;
+  const { storyboardId, videoModel: modelName, textModel, duration, aspectRatio, resolution, think, _context } = inputParams;
 
   if (!storyboardId) {
     throw new Error('缺少必要参数: storyboardId');
@@ -39,27 +57,28 @@ async function handleSceneVideoGeneration(inputParams, onProgress) {
   console.log('[SceneVideoGen] 开始生成视频，storyboardId:', storyboardId);
   if (onProgress) onProgress(5);
 
-  // 1. 查询分镜数据
-  const storyboard = await queryOne(
-    'SELECT * FROM storyboards WHERE id = ?',
-    [storyboardId]
-  );
-  if (!storyboard) {
-    throw new Error(`分镜 ${storyboardId} 不存在`);
+  // 1. 获取分镜数据（优先使用预取上下文）
+  let storyboard, variables, visualStyleValue, prevNeighbor, nextNeighbor;
+
+  if (_context) {
+    // 由批量处理器传入，跳过分镜查询+视觉风格+邻居查询
+    storyboard = _context.storyboard;
+    variables = _context.variables;
+    visualStyleValue = _context.visualStyle;
+    prevNeighbor = _context.prevNeighbor || null;
+    nextNeighbor = _context.nextNeighbor || null;
+    console.log('[SceneVideoGen] 使用预取上下文，跳过基础 DB 查询');
+  } else {
+    // 独立调用：从 DB 查询
+    storyboard = await queryOne(
+      'SELECT * FROM storyboards WHERE id = ?',
+      [storyboardId]
+    );
+    if (!storyboard) {
+      throw new Error(`分镜 ${storyboardId} 不存在`);
+    }
+    variables = safeParseVariables(storyboard.variables_json);
   }
-
-  // 项目视觉风格（必填，未设置则报错）
-  const visualStyle = await requireVisualStyle(storyboard.project_id);
-
-  let variables = {};
-  try {
-    variables = typeof storyboard.variables_json === 'string'
-      ? JSON.parse(storyboard.variables_json || '{}')
-      : (storyboard.variables_json || {});
-  } catch (e) {
-    variables = {};
-  }
-
   const hasAction = variables.hasAction || false;
   const description = storyboard.prompt_template || '';
   const firstFrameUrl = storyboard.first_frame_url || null;
@@ -79,72 +98,125 @@ async function handleSceneVideoGeneration(inputParams, onProgress) {
     console.log('[SceneVideoGen] 静态镜头，首帧:', firstFrameUrl);
   }
 
-  // 3. 查询前后镜头描述（用于视频提示词上下文）
   if (onProgress) onProgress(10);
-  let prevSceneDesc = '';
-  let nextSceneDesc = '';
-  try {
-    const scriptId = storyboard.script_id;
-    const currentIdx = storyboard.idx;
-    if (scriptId != null && currentIdx != null) {
-      const neighbors = await queryAll(
-        'SELECT idx, prompt_template FROM storyboards WHERE script_id = ? AND idx IN (?, ?) ORDER BY idx ASC',
-        [scriptId, currentIdx - 1, currentIdx + 1]
-      );
-      for (const nb of neighbors) {
-        if (nb.idx === currentIdx - 1) prevSceneDesc = nb.prompt_template || '';
-        if (nb.idx === currentIdx + 1) nextSceneDesc = nb.prompt_template || '';
-      }
-    }
-  } catch (e) {
-    console.warn('[SceneVideoGen] 查询前后镜头失败，跳过上下文:', e.message);
-  }
 
-  // 3.5 查询角色外貌和场景详细信息（用于提示词）
+  // 3. 并行查询：视觉风格(仅独立调用) + 前后镜头(仅独立调用) + 角色外貌(批量) + 场景详情
   const charNames = variables.characters || [];
   const hasCharacters = charNames.length > 0;
+  const scriptId = storyboard.script_id;
+  const currentIdx = storyboard.idx;
   let characterAppearance = '';
-  if (hasCharacters) {
-    try {
-      // 查询所有角色的外貌信息（通过关联表）
-      const appearances = [];
-      for (const charName of charNames) {
-        const linkedChar = await queryOne(
-          `SELECT c.name, c.appearance, c.description
-           FROM storyboard_characters sc
-           JOIN characters c ON sc.character_id = c.id
-           WHERE sc.storyboard_id = ? AND c.name = ?`,
-          [storyboardId, charName]
-        );
-        if (linkedChar && linkedChar.appearance) {
-          appearances.push(`${linkedChar.name}: ${linkedChar.appearance}`);
-        }
+  let sceneDetail = '';
+
+  if (!_context) {
+    // 独立调用：需要查询视觉风格和邻居
+    const [vsResult, neighborsResult, charResult, sceneResult] = await Promise.allSettled([
+      requireVisualStyle(storyboard.project_id),
+      (scriptId != null && currentIdx != null)
+        ? queryAll(
+            'SELECT idx, prompt_template, variables_json FROM storyboards WHERE script_id = ? AND idx IN (?, ?) ORDER BY idx ASC',
+            [scriptId, currentIdx - 1, currentIdx + 1]
+          )
+        : Promise.resolve([]),
+      hasCharacters
+        ? queryAll(
+            `SELECT c.name, c.appearance, c.description
+             FROM storyboard_characters sc
+             JOIN characters c ON sc.character_id = c.id
+             WHERE sc.storyboard_id = ? AND c.name IN (${charNames.map(() => '?').join(',')})`,
+            [storyboardId, ...charNames]
+          )
+        : Promise.resolve([]),
+      variables.location
+        ? queryOne(
+            `SELECT s.description, s.environment, s.lighting, s.mood
+             FROM storyboard_scenes ss
+             JOIN scenes s ON ss.scene_id = s.id
+             WHERE ss.storyboard_id = ? AND s.name = ?`,
+            [storyboardId, variables.location]
+          )
+        : Promise.resolve(null)
+    ]);
+
+    if (vsResult.status === 'rejected') throw vsResult.reason;
+    visualStyleValue = vsResult.value;
+
+    prevNeighbor = null;
+    nextNeighbor = null;
+    if (neighborsResult.status === 'fulfilled') {
+      for (const nb of neighborsResult.value) {
+        if (nb.idx === currentIdx - 1) prevNeighbor = nb;
+        if (nb.idx === currentIdx + 1) nextNeighbor = nb;
       }
-      characterAppearance = appearances.join('\n');
+    } else {
+      console.warn('[SceneVideoGen] 查询前后镜头失败，跳过上下文:', neighborsResult.reason?.message);
+    }
+
+    characterAppearance = '';
+    if (charResult.status === 'fulfilled' && charResult.value.length > 0) {
+      characterAppearance = charResult.value
+        .filter(c => c.appearance)
+        .map(c => `${c.name}: ${c.appearance}`)
+        .join('\n');
       console.log('[SceneVideoGen] 查询到角色外貌:', characterAppearance.substring(0, 120));
-    } catch (e) {
-      console.warn('[SceneVideoGen] 查询角色外貌失败:', e.message);
+    } else if (charResult.status === 'rejected') {
+      console.warn('[SceneVideoGen] 查询角色外貌失败:', charResult.reason?.message);
+    }
+
+    sceneDetail = '';
+    if (sceneResult.status === 'fulfilled' && sceneResult.value) {
+      const ls = sceneResult.value;
+      sceneDetail = `场景描述: ${ls.description || ''}\n环境: ${ls.environment || ''}\n光照: ${ls.lighting || ''}\n氛围: ${ls.mood || ''}`;
+      console.log('[SceneVideoGen] 查询到场景详情');
+    } else if (sceneResult.status === 'rejected') {
+      console.warn('[SceneVideoGen] 查询场景详情失败:', sceneResult.reason?.message);
+    }
+  } else {
+    // 预取模式：仅查询角色外貌 + 场景详情（每个分镜不同）
+    const [charResult, sceneResult] = await Promise.allSettled([
+      hasCharacters
+        ? queryAll(
+            `SELECT c.name, c.appearance, c.description
+             FROM storyboard_characters sc
+             JOIN characters c ON sc.character_id = c.id
+             WHERE sc.storyboard_id = ? AND c.name IN (${charNames.map(() => '?').join(',')})`,
+            [storyboardId, ...charNames]
+          )
+        : Promise.resolve([]),
+      variables.location
+        ? queryOne(
+            `SELECT s.description, s.environment, s.lighting, s.mood
+             FROM storyboard_scenes ss
+             JOIN scenes s ON ss.scene_id = s.id
+             WHERE ss.storyboard_id = ? AND s.name = ?`,
+            [storyboardId, variables.location]
+          )
+        : Promise.resolve(null)
+    ]);
+
+    characterAppearance = '';
+    if (charResult.status === 'fulfilled' && charResult.value.length > 0) {
+      characterAppearance = charResult.value
+        .filter(c => c.appearance)
+        .map(c => `${c.name}: ${c.appearance}`)
+        .join('\n');
+      console.log('[SceneVideoGen] 查询到角色外貌:', characterAppearance.substring(0, 120));
+    } else if (charResult.status === 'rejected') {
+      console.warn('[SceneVideoGen] 查询角色外貌失败:', charResult.reason?.message);
+    }
+
+    sceneDetail = '';
+    if (sceneResult.status === 'fulfilled' && sceneResult.value) {
+      const ls = sceneResult.value;
+      sceneDetail = `场景描述: ${ls.description || ''}\n环境: ${ls.environment || ''}\n光照: ${ls.lighting || ''}\n氛围: ${ls.mood || ''}`;
+      console.log('[SceneVideoGen] 查询到场景详情');
+    } else if (sceneResult.status === 'rejected') {
+      console.warn('[SceneVideoGen] 查询场景详情失败:', sceneResult.reason?.message);
     }
   }
 
-  let sceneDetail = '';
-  if (variables.location) {
-    try {
-      const linkedScene = await queryOne(
-        `SELECT s.description, s.environment, s.lighting, s.mood
-         FROM storyboard_scenes ss
-         JOIN scenes s ON ss.scene_id = s.id
-         WHERE ss.storyboard_id = ? AND s.name = ?`,
-        [storyboardId, variables.location]
-      );
-      if (linkedScene) {
-        sceneDetail = `场景描述: ${linkedScene.description || ''}\n环境: ${linkedScene.environment || ''}\n光照: ${linkedScene.lighting || ''}\n氛围: ${linkedScene.mood || ''}`;
-        console.log('[SceneVideoGen] 查询到场景详情');
-      }
-    } catch (e) {
-      console.warn('[SceneVideoGen] 查询场景详情失败:', e.message);
-    }
-  }
+  const prevSceneDesc = prevNeighbor?.prompt_template || '';
+  const nextSceneDesc = nextNeighbor?.prompt_template || '';
 
   // 3.8 & 3.9 并行生成精细运镜 + 运动分解（两者互不依赖，可同时调用）
   let cameraRunPrompt = '';
@@ -155,7 +227,17 @@ async function handleSceneVideoGeneration(inputParams, onProgress) {
       (async () => {
         console.log('[SceneVideoGen] 调用精细运镜生成...');
         const result = await handleCameraRunGeneration(
-          { storyboardId, textModel, think },
+          {
+            storyboardId, textModel, think,
+            _context: {
+              storyboard,
+              variables,
+              visualStyle: visualStyleValue,
+              prevNeighbor: prevNeighbor,
+              nextNeighbor: nextNeighbor,
+              characterAppearance
+            }
+          },
           (p) => { if (onProgress) onProgress(10 + p * 0.05); }
         );
         const prompt = result.cameraRunPrompt || '';
@@ -206,25 +288,20 @@ async function handleSceneVideoGeneration(inputParams, onProgress) {
       ? `对话/台词: ${variables.dialogue}`
       : '【无对白镜头】此镜头没有任何角色对白或语音，视频必须完全没有人声';
     const actionInfo = hasAction ? '这是一个有动作的镜头，需要描述动作的完整过程' : '这是一个静态镜头，画面变化较小';
-    const styleInfo = visualStyle ? `视觉风格: ${visualStyle}` : '';
+    const styleInfo = visualStyleValue ? `视觉风格: ${visualStyleValue}` : '';
     // 上下文传递：传结构化字段（endState/emotion/shotType/location），不传完整描述以避免环境效果污染
     // 保留叙事流、情绪过渡、景别衔接等有价值信息，但过滤掉天气/光照等环境细节
+    // 直接使用并行查询阶段已获取的前后镜头数据（含 variables_json），无需再次查询 DB
     let prevContext = '';
-    if (prevSceneDesc) {
-      try {
-        const prevSb = await queryOne(
-          'SELECT variables_json FROM storyboards WHERE script_id = ? AND idx = ?',
-          [storyboard.script_id, storyboard.idx - 1]
-        );
-        if (prevSb) {
-          const prevVars = typeof prevSb.variables_json === 'string' ? JSON.parse(prevSb.variables_json || '{}') : (prevSb.variables_json || {});
-          const prevEndState = prevVars.endState || '';
-          const prevLoc = prevVars.location || '';
-          const prevEmotion = prevVars.emotion || '';
-          const prevShotType = prevVars.shotType || '';
-          const prevHasAction = prevVars.hasAction || false;
-          const isSameScene = prevLoc && variables.location && prevLoc === variables.location;
-          prevContext = `【上一镜头衔接信息】
+    if (prevNeighbor) {
+      const prevVars = safeParseVariables(prevNeighbor.variables_json);
+      const prevEndState = prevVars.endState || '';
+      const prevLoc = prevVars.location || '';
+      const prevEmotion = prevVars.emotion || '';
+      const prevShotType = prevVars.shotType || '';
+      const prevHasAction = prevVars.hasAction || false;
+      const isSameScene = prevLoc && variables.location && prevLoc === variables.location;
+      prevContext = `【上一镜头衔接信息】
 场景: ${prevLoc}${isSameScene ? '（同一场景，需保持空间连续性）' : '（不同场景，已切换）'}
 景别: ${prevShotType}
 情绪: ${prevEmotion}
@@ -235,28 +312,14 @@ async function handleSceneVideoGeneration(inputParams, onProgress) {
 ② 光线和时间必须连续：上一镜头是深夜则当前不能变白天，黄昏不能变正午
 ③ 持续性环境效果（篝火燃烧、风雪等）必须保持一致
 ④ 一次性瞬时事件（闪电、爆炸闪光等）不得带入当前镜头，除非当前镜头描述中明确提到）`;
-        }
-      } catch (e) {
-        prevContext = '';
-      }
     }
     let nextContext = '';
-    if (nextSceneDesc) {
-      try {
-        const nextSb = await queryOne(
-          'SELECT variables_json FROM storyboards WHERE script_id = ? AND idx = ?',
-          [storyboard.script_id, storyboard.idx + 1]
-        );
-        if (nextSb) {
-          const nextVars = typeof nextSb.variables_json === 'string' ? JSON.parse(nextSb.variables_json || '{}') : (nextSb.variables_json || {});
-          const nextLoc = nextVars.location || '';
-          const nextEmotion = nextVars.emotion || '';
-          const nextShotType = nextVars.shotType || '';
-          nextContext = `【下一镜头预告】场景: ${nextLoc}，景别: ${nextShotType}，氛围: ${nextEmotion}`;
-        }
-      } catch (e) {
-        nextContext = '';
-      }
+    if (nextNeighbor) {
+      const nextVars = safeParseVariables(nextNeighbor.variables_json);
+      const nextLoc = nextVars.location || '';
+      const nextEmotion = nextVars.emotion || '';
+      const nextShotType = nextVars.shotType || '';
+      nextContext = `【下一镜头预告】场景: ${nextLoc}，景别: ${nextShotType}，氛围: ${nextEmotion}`;
     }
     const cameraInfo = cameraRunPrompt
       ? `【精细运镜提示词 - 必须融入】\n${cameraRunPrompt}`
@@ -292,46 +355,44 @@ async function handleSceneVideoGeneration(inputParams, onProgress) {
 
     const extraInfo = [charBlock, locInfo, sceneBlock, shotInfo, emotionInfo, dialogueInfo, actionInfo, cameraInfo, endStateInfo, styleInfo, charConstraint, prevContext, nextContext, motionBreakdownText].filter(Boolean).join('\n');
 
-    const promptRequest = `你是一个专业的视频生成提示词专家。
+    // 条件化规则：仅在相关场景存在时才添加，减少无关 token 消耗
+    const hasEnvEffects = /持续|全程|不间断|暴风雪|下雨|火焰|燃烧|篝火/.test(description);
+    const hasIntensityMarkers = /微弱|轻微|中等|强烈|猛烈|若隐若现|电光/.test(description);
+    const isIndoorScene = /室内|屋内|房间|客厅|卧室|帐篷|洞穴/.test(description) || /室内|屋内/.test(variables.location || '');
+    const hasOutdoorWeather = /风雪|暴风|闪电|降雨|雨/.test(description);
 
-请根据以下分镜描述，生成一个适合视频生成的详细提示词：
+    let conditionalRules = '';
+    if (hasEnvEffects) {
+      conditionalRules += `\n8. [Environment Persistence] Effects described as "持续"/"全程"/"不间断" must use "continuous", "constant", "throughout the entire duration" in the prompt. Never let persistent effects stop mid-video.`;
+    }
+    if (hasIntensityMarkers) {
+      conditionalRules += `\n9. [Intensity Calibration] Translate intensity exactly: "微弱"→"very faint/barely visible", "轻微"→"slight/subtle", "中等"→"moderate", "强烈"→"intense/strong", "若隐若现"→"barely perceptible, extremely faint". "微弱电光"→"very faint distant glow within clouds", NOT "lightning bolt".`;
+    }
+    if (isIndoorScene && hasOutdoorWeather) {
+      conditionalRules += `\n10. [Indoor/Outdoor Isolation] Indoor scenes: outdoor weather effects must be greatly attenuated (outdoor blizzard → only tiny snow particles drifting through cracks). No direct lightning illumination, no outdoor-level storms, no heavy rain indoors. Indoor flames only sway gently.`;
+    }
 
-分镜描述：${description}
+    const promptRequest = `You are a professional video generation prompt expert.
+
+Generate a detailed English prompt for video generation based on the following storyboard:
+
+Storyboard description: ${description}
 ${extraInfo}
 
-要求：
-1. 提示词要描述画面中的运动、动作变化和镜头运动
-2. 【细节保留】角色的每一个外貌细节都必须原样写入提示词：发色、发型、瞳色、服装款式、服装颜色、配饰等，不得省略或概括。例如"黑色双马尾、红色水手服"必须逐项翻译写出，不能简化为"a girl"
-3. 【细节保留】场景的每一个环境细节都必须原样写入提示词：建筑结构、物品摆设、光源方向、色调等，不得省略
-4. 镜头类型决定视角和运镜方式
-5. 如果有前后镜头衔接信息，确保视频开头与上一镜头结束状态自然衔接。注意区分：持续性环境效果（篝火、风雪、时间光线等）应保持连续，一次性瞬时事件（闪电闪光、爆炸冲击波等）不得带入当前镜头，除非当前镜头描述中明确提到
-6. 如果有视觉风格要求，视频必须体现该风格特征
-7. 严格遵守角色约束：有角色时保持与参考图一致，无角色时绝对不能出现人物
-8. 【环境持续性 - 极其重要】
-   - 分镜描述中标注为"持续"/"全程"/"不间断"的环境效果（如暴风雪、下雨、火焰燃烧），必须在提示词中使用 "continuous", "constant", "throughout the entire duration", "never stops" 等关键词，确保整个视频时长内都不停止
-   - 禁止让持续性环境效果中途消失或突然停止
-9. 【强度校准 - 极其重要】
-   - 分镜描述中的强度标注必须精确翻译："微弱"→"very faint/barely visible", "轻微"→"slight/subtle", "中等"→"moderate", "强烈"→"intense/strong", "猛烈"→"violent/fierce"
-   - 特别注意："若隐若现"="barely perceptible, extremely faint"，绝不是dramatic或intense
-   - 闪电的强度必须严格按描述："微弱电光"→"very faint distant glow within clouds"，不是"lightning bolt/flash"
-10. 【室内外环境隔离】
-   - 室内镜头中，室外天气效果必须大幅衰减：室外暴风雪→室内仅有微量雪粒从缝隙飘入
-   - 室内不可能出现：直接的闪电光照、室外级别的暴风雪、大面积降雨
-   - 室内火焰（篝火/蜡烛）受微风影响只会轻微摇曳，不会猛烈晃动或熄灭
-11. 【音频控制 - 极其重要】
-   - 如果标注为「无对白镜头」，提示词中必须加入 "no speech, no voice, no dialogue, silent" 关键词
-   - 涉及口部动作但无对白时："默念"/"默读"/"无声地念" 必须翻译为 "silently mouthing without any audible sound"，绝对不能翻译为 murmuring/muttering/whispering/reciting（这些词都暗示有声音）
-   - "叹息"/"呼吸" 等非语言声音：仅在对白字段明确标注时才可出现
-   - 无对白的镜头中，角色的任何口部动作都必须用 "silently" 修饰
-12. 【运动分解约束 - 极其重要】如果提供了 Motion Breakdown 清单：
-   - MOVING 元素：必须按清单描述的方式运动，不得自行增加或减少运动
-   - STATIC 元素：必须在整个视频中保持静止且全程可见，禁止消失、移动或变形
-   - 禁止出现清单中未列出的新元素（物品/角色/效果）
-   - 角色在任何情况下都不得消失，即使发生剧烈环境事件
-13. 只输出英文提示词，不要其他解释
-14. 【禁止文字/字幕 - 极其重要】视频画面中绝对不能出现任何文字元素。提示词中必须包含 "no text, no subtitles, no captions, no watermark, no title cards, no letters, no words, no typography overlays" 约束，确保画面干净纯粹
+Rules:
+1. Describe motion, action changes, and camera movement in the scene
+2. [Detail Preservation] Every character appearance detail must be translated verbatim: hair color, hairstyle, eye color, clothing style, colors, accessories. e.g. "黑色双马尾、红色水手服" → "black twin-tails, red sailor uniform", never simplify to "a girl"
+3. [Detail Preservation] Every scene environment detail must be preserved: architecture, object placement, light source direction, color tone
+4. Shot type determines perspective and camera movement style
+5. If previous shot context exists, ensure natural transition from its end state. Persistent effects (fire, snow, lighting) must continue; one-time events (lightning flash, explosion) must NOT carry over unless explicitly mentioned
+6. If visual style is specified, the video must reflect that style
+7. Strictly follow character constraints: maintain consistency with reference frame if characters present; absolutely no humans if no-character shot${conditionalRules}
+11. [Audio Control] If marked as "无对白镜头", include "no speech, no voice, no dialogue, silent". For silent mouth movements: use "silently mouthing without any audible sound", NEVER use murmuring/muttering/whispering
+12. [Motion Breakdown] If Motion Breakdown is provided: MOVING elements must move as described, STATIC elements must remain still and visible throughout. No unlisted elements may appear. Characters must never disappear.
+13. Output ONLY English prompt, no explanations
+14. [No Text] Include "no text, no subtitles, no captions, no watermark" constraint
 
-提示词：`;
+Prompt:`;
 
     const result = await handleBaseTextModelCall({
       prompt: promptRequest,

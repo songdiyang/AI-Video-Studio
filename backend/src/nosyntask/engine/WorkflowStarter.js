@@ -30,8 +30,10 @@ class WorkflowStarter {
       throw new Error(`未知的工作流类型: ${workflowType}`);
     }
 
-    const steps = definition.steps;
-    console.log(`[WorkflowStarter] 工作流定义找到: ${workflowType}, 步骤数: ${steps.length}`);
+    const steps = typeof definition.steps === 'function'
+      ? definition.steps(jobParams)
+      : definition.steps;
+    console.log(`[WorkflowStarter] 工作流定义找到: ${workflowType}, 步骤数: ${steps.length}${typeof definition.steps === 'function' ? ' (动态)' : ''}`);
 
     // 1. 创建 workflow_job
     console.log('[WorkflowStarter] 准备插入 workflow_jobs 表...');
@@ -49,16 +51,19 @@ class WorkflowStarter {
     const tasks = [];
     for (let i = 0; i < steps.length; i++) {
       const step = steps[i];
+      // 如果步骤有 displayName，存入 input_params 以便前端显示
+      const initialParams = step.displayName ? JSON.stringify({ displayName: step.displayName }) : null;
       const taskResult = await execute(
         `INSERT INTO generation_tasks 
-         (job_id, step_index, user_id, project_id, task_type, target_type, status, progress) 
-         VALUES (?, ?, ?, ?, ?, ?, 'pending', 0)`,
-        [jobId, i, userId, projectId, step.type, step.targetType]
+         (job_id, step_index, user_id, project_id, task_type, target_type, status, progress, input_params) 
+         VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, ?)`,
+        [jobId, i, userId, projectId, step.type, step.targetType, initialParams]
       );
       tasks.push({
         id: taskResult.insertId,
         stepIndex: i,
         type: step.type,
+        displayName: step.displayName || null,
         status: 'pending'
       });
     }

@@ -249,6 +249,34 @@ const enUS: Translations = {
     storyStylePlaceholder: 'e.g., Shonen action, Mystery thriller...',
     storyConstraintsLabel: 'Story Constraints',
     storyConstraintsPlaceholder: 'e.g., No magic elements, Modern city...',
+    // Manga specific
+    mangaLayoutLabel: 'Manga Layout',
+    mangaLayoutPage: 'Page Manga',
+    mangaLayoutStrip: 'Strip Manga',
+    mangaLayoutFree: 'Free Layout',
+    mangaPanelStyleLabel: 'Panel Style',
+    mangaPanelStylePlaceholder: 'e.g., Regular panels, Irregular panels, Borderless...',
+    // Short Video specific
+    videoDurationLabel: 'Video Duration',
+    videoDuration15: '15s',
+    videoDuration30: '30s',
+    videoDuration60: '1 min',
+    videoDuration180: '3 min',
+    videoAspectLabel: 'Aspect Ratio',
+    videoAspect916: '9:16 Portrait',
+    videoAspect169: '16:9 Landscape',
+    videoAspect11: '1:1 Square',
+    videoStyleLabel: 'Video Style',
+    videoStylePlaceholder: 'e.g., Vlog, Short drama, Educational animation...',
+    // Novel specific
+    novelGenreLabel: 'Novel Genre',
+    novelGenrePlaceholder: 'e.g., Fantasy, Urban, Sci-Fi, Romance...',
+    novelWritingStyleLabel: 'Writing Style',
+    novelWritingStylePlaceholder: 'e.g., Humorous, Literary, Web novel...',
+    novelChapterLengthLabel: 'Chapter Length',
+    novelChapterLengthPlaceholder: 'e.g., 2000-3000 words/chapter',
+    novelTargetLabel: 'Target Audience',
+    novelTargetPlaceholder: 'e.g., Male readers, Female readers, All ages...',
     aiSuggestBtn: 'AI Smart Recommend Settings',
     aiSuggesting: 'AI Analyzing...',
     aiSuggestHint: 'Please fill in project name or description first',
@@ -583,13 +611,20 @@ const enUS: Translations = {
   },
   // Workbench
   workbench: {
-    // Workbench type titles
+    // Workbench type titles (supports both camelCase and snake_case formats)
     comicDrama: 'Comic Drama Workbench',
+    comic_drama: 'Comic Drama Workbench',
     manga: 'Manga Workbench',
     shortVideo: 'Short Video Workbench',
+    short_video: 'Short Video Workbench',
     novel: 'Novel Workbench',
-    // Comic Drama Workbench tabs
+    // Comic Drama Workbench tabs (supports both formats)
     comicDramaTabs: {
+      script: 'Script Generation',
+      storyboard: 'Storyboard Design',
+      composition: 'Video Composition',
+    },
+    comic_dramaTabs: {
       script: 'Script Generation',
       storyboard: 'Storyboard Design',
       composition: 'Video Composition',
@@ -597,12 +632,17 @@ const enUS: Translations = {
     // Manga Workbench tabs
     mangaTabs: {
       script: 'Script',
-      pageLayout: 'Page Layout',
-      drawingTools: 'Drawing Tools',
+      layout: 'Page Layout',
+      drawing: 'Drawing Tools',
     },
-    // Short Video Workbench tabs
+    // Short Video Workbench tabs (supports both formats)
     shortVideoTabs: {
-      videoScript: 'Video Script',
+      script: 'Video Script',
+      timeline: 'Timeline Editor',
+      effects: 'Effects',
+    },
+    short_videoTabs: {
+      script: 'Video Script',
       timeline: 'Timeline Editor',
       effects: 'Effects',
     },

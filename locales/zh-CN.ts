@@ -247,6 +247,34 @@ const zhCN = {
     storyStylePlaceholder: '如：热血少年漫、悬疑推理...',
     storyConstraintsLabel: '剧本约束',
     storyConstraintsPlaceholder: '如：不要魔法元素、现代都市...',
+    // 漫画专属
+    mangaLayoutLabel: '漫画版式',
+    mangaLayoutPage: '页漫',
+    mangaLayoutStrip: '条漫',
+    mangaLayoutFree: '自由排版',
+    mangaPanelStyleLabel: '分格风格',
+    mangaPanelStylePlaceholder: '如：规整分格、不规则分格、无边框...',
+    // 短视频专属
+    videoDurationLabel: '视频时长',
+    videoDuration15: '15秒',
+    videoDuration30: '30秒',
+    videoDuration60: '1分钟',
+    videoDuration180: '3分钟',
+    videoAspectLabel: '画面比例',
+    videoAspect916: '9:16 竖屏',
+    videoAspect169: '16:9 横屏',
+    videoAspect11: '1:1 方形',
+    videoStyleLabel: '视频风格',
+    videoStylePlaceholder: '如：Vlog、剧情短片、科普动画...',
+    // 小说专属
+    novelGenreLabel: '小说题材',
+    novelGenrePlaceholder: '如：玄幻、都市、科幻、言情...',
+    novelWritingStyleLabel: '写作风格',
+    novelWritingStylePlaceholder: '如：轻松幽默、严肃文学、网文爽文...',
+    novelChapterLengthLabel: '章节字数',
+    novelChapterLengthPlaceholder: '如：2000-3000字/章',
+    novelTargetLabel: '目标读者',
+    novelTargetPlaceholder: '如：男频、女频、全年龄...',
     aiSuggestBtn: 'AI 智能推荐项目设置',
     aiSuggesting: 'AI 分析中...',
     aiSuggestHint: '请先填写项目名称或描述',
@@ -581,13 +609,20 @@ const zhCN = {
   },
   // 工作台
   workbench: {
-    // 工作台类型标题
+    // 工作台类型标题（支持 camelCase 和 snake_case 两种格式）
     comicDrama: '漫剧工作台',
+    comic_drama: '漫剧工作台',
     manga: '漫画工作台',
     shortVideo: '短视频工作台',
+    short_video: '短视频工作台',
     novel: '小说工作台',
-    // 漫剧工作台标签页
+    // 漫剧工作台标签页（支持两种格式）
     comicDramaTabs: {
+      script: '剧本生成',
+      storyboard: '分镜设计',
+      composition: '视频合成',
+    },
+    comic_dramaTabs: {
       script: '剧本生成',
       storyboard: '分镜设计',
       composition: '视频合成',
@@ -595,12 +630,17 @@ const zhCN = {
     // 漫画工作台标签页
     mangaTabs: {
       script: '剧本/脚本',
-      pageLayout: '页面布局',
-      drawingTools: '绘图工具',
+      layout: '页面布局',
+      drawing: '绘图工具',
     },
-    // 短视频工作台标签页
+    // 短视频工作台标签页（支持两种格式）
     shortVideoTabs: {
-      videoScript: '视频脚本',
+      script: '视频脚本',
+      timeline: '时间轴编辑',
+      effects: '特效添加',
+    },
+    short_videoTabs: {
+      script: '视频脚本',
       timeline: '时间轴编辑',
       effects: '特效添加',
     },

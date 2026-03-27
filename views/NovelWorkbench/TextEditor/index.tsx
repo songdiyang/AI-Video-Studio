@@ -1,18 +1,21 @@
 /**
  * 文本编辑器组件
- * 富文本编辑器、写作辅助功能、自动保存
+ * 富文本编辑器、写作辅助功能、自动保存、AI 辅助写作
  */
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Button, Tooltip, Chip, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from '@heroui/react';
+import { Button, Tooltip, Chip, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem, Progress } from '@heroui/react';
 import { 
   Save, Wand2, BookOpen, ChevronLeft, ChevronRight, Check, AlertCircle,
   Bold, Italic, Underline, List, ListOrdered, Quote, Heading1, Heading2,
-  AlignLeft, AlignCenter, AlignRight, Undo, Redo, Search, Settings
+  AlignLeft, AlignCenter, AlignRight, Undo, Redo, Search, Settings,
+  Loader2, CheckCircle, XCircle, Sparkles
 } from 'lucide-react';
 import { NovelChapter } from '../../../types/projectTypes';
 import { useToast } from '../../../contexts/ToastContext';
 import { getAuthToken } from '../../../services/auth';
+import { useTaskRunner, TaskState } from '../../../hooks/useTaskRunner';
+import { AIModel } from '../../../components/AIModelSelector';
 
 // ==================== 类型定义 ====================
 
@@ -22,6 +25,9 @@ interface TextEditorProps {
   chapters: NovelChapter[];
   onChapterChange: (chapterId: number) => void;
   onSave: () => void;
+  // AI 模型配置
+  models: AIModel[];
+  textModel: string;
 }
 
 // ==================== 工具栏组件 ====================
@@ -162,15 +168,22 @@ const TextEditor: React.FC<TextEditorProps> = ({
   chapters,
   onChapterChange,
   onSave,
+  models,
+  textModel,
 }) => {
   const { showToast } = useToast();
   const editorRef = useRef<HTMLTextAreaElement>(null);
+  
+  // 集成 useTaskRunner 用于 AI 辅助写作
+  const { tasks, runTask, recoverTasks, clearTask, isRunning } = useTaskRunner({
+    projectId,
+    maxRetries: 1,
+  });
   
   const [content, setContent] = useState('');
   const [saving, setSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [hasChanges, setHasChanges] = useState(false);
-  const [generating, setGenerating] = useState(false);
   
   // 历史记录
   const [history, setHistory] = useState<string[]>([]);
@@ -181,6 +194,22 @@ const TextEditor: React.FC<TextEditorProps> = ({
   const currentIndex = sortedChapters.findIndex(c => c.id === chapter?.id);
   const prevChapter = currentIndex > 0 ? sortedChapters[currentIndex - 1] : null;
   const nextChapter = currentIndex < sortedChapters.length - 1 ? sortedChapters[currentIndex + 1] : null;
+  
+  // AI 任务 key
+  const taskKey = chapter ? `editor_${chapter.id}` : null;
+  const currentTask = taskKey ? tasks[taskKey] : null;
+  
+  // 页面加载时恢复未完成的任务
+  useEffect(() => {
+    recoverTasks(
+      ['novel_paragraph_generation'],
+      (job) => {
+        const params = typeof job.params === 'string' ? JSON.parse(job.params) : job.params;
+        const chapterId = params?.chapterId;
+        return chapterId ? `editor_${chapterId}` : null;
+      }
+    );
+  }, [recoverTasks]);
 
   // 加载章节内容
   useEffect(() => {
@@ -302,37 +331,48 @@ const TextEditor: React.FC<TextEditorProps> = ({
     handleContentChange(newContent);
   };
 
-  // AI 续写
+  // AI 续写（使用 useTaskRunner）
   const handleAIContinue = async () => {
-    if (!chapter) return;
-    
-    setGenerating(true);
-    try {
-      const token = getAuthToken();
-      const res = await fetch(`/api/projects/${projectId}/novel/chapters/${chapter.id}/continue`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ content }),
-      });
+    if (!chapter || !taskKey) return;
       
-      if (res.ok) {
-        const data = await res.json();
-        handleContentChange(content + '\n\n' + (data.continuation || ''));
-        showToast('AI续写完成', 'success');
-      } else {
-        // 模拟续写
-        const mockContinuation = '\n\n他深吸一口气，目光穿过朦胧的晨雾，看向远方那座若隐若现的山峰。心中那股说不清道不明的感觉愈发强烈，仿佛有什么重要的事情正在等待着他。';
-        handleContentChange(content + mockContinuation);
-        showToast('已添加示例续写', 'info');
-      }
-    } catch {
-      showToast('续写失败', 'error');
-    } finally {
-      setGenerating(false);
+    // 检查是否已有任务在运行
+    if (currentTask && (currentTask.status === 'pending' || currentTask.status === 'running')) {
+      showToast('AI 正在生成中，请稍候', 'warning');
+      return;
     }
+      
+    try {
+      await runTask(taskKey, 'novel_paragraph_generation', {
+        chapterId: chapter.id,
+        projectId,
+        existingContent: content,
+        modelName: textModel,
+        action: 'continue',
+      });
+      showToast('AI 续写任务已启动', 'success');
+    } catch (error: any) {
+      // 回退到本地模拟
+      const mockContinuation = '\n\n他深吸一口气，目光穿过朚胧的晨雾，看向远方那座若隐若现的山峰。心中那股说不清道不明的感觉愈发强烈，仿佛有什么重要的事情正在等待着他。';
+      handleContentChange(content + mockContinuation);
+      showToast('已添加示例续写（本地模式）', 'info');
+    }
+  };
+    
+  // 监听 AI 任务完成，自动追加内容
+  useEffect(() => {
+    if (currentTask?.status === 'completed' && currentTask.result) {
+      const generatedText = currentTask.result.text || currentTask.result.content || '';
+      if (generatedText) {
+        handleContentChange(content + '\n\n' + generatedText);
+        showToast('AI 续写完成', 'success');
+      }
+      if (taskKey) clearTask(taskKey);
+    }
+  }, [currentTask?.status, currentTask?.result]);
+    
+  // 清除任务状态
+  const handleClearTask = () => {
+    if (taskKey) clearTask(taskKey);
   };
 
   // 计算字数
@@ -421,12 +461,30 @@ const TextEditor: React.FC<TextEditorProps> = ({
           <Button
             size="sm"
             variant="flat"
-            startContent={<Wand2 className="w-4 h-4" />}
-            isLoading={generating}
+            startContent={currentTask && (currentTask.status === 'pending' || currentTask.status === 'running') 
+              ? <Loader2 className="w-4 h-4 animate-spin" />
+              : <Wand2 className="w-4 h-4" />}
+            isLoading={currentTask && (currentTask.status === 'pending' || currentTask.status === 'running')}
             onPress={handleAIContinue}
           >
-            AI 续写
+            {currentTask && (currentTask.status === 'pending' || currentTask.status === 'running') 
+              ? `生成中 ${currentTask.progress}%`
+              : 'AI 续写'}
           </Button>
+          
+          {/* AI 任务失败提示 */}
+          {currentTask?.status === 'failed' && (
+            <div className="flex items-center gap-1 text-red-500 text-sm">
+              <XCircle className="w-4 h-4" />
+              <span className="truncate max-w-[100px]">{currentTask.error || '生成失败'}</span>
+              <button
+                onClick={handleClearTask}
+                className="text-xs hover:underline ml-1"
+              >
+                关闭
+              </button>
+            </div>
+          )}
 
           {/* 手动保存 */}
           <Button

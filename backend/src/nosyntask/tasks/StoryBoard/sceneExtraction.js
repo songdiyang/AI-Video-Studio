@@ -198,21 +198,30 @@ ${contentForAnalysis}
 
   if (onProgress) onProgress(80);
 
-  // 保存场景到数据库
+  // 保存场景到数据库（批量查询已存在记录 + 分离插入/更新）
   if (projectId && userId && extractedScenes.length > 0) {
     console.log('[SceneExtraction] 保存', extractedScenes.length, '个场景到项目', projectId);
     
-    const { queryOne, execute } = require('../../../dbHelper');
+    const { queryAll, execute } = require('../../../dbHelper');
+    
+    // 批量查询已存在的场景（1 次 DB 查询代替 N 次）
+    const sceneNames = extractedScenes.map(s => s.name).filter(Boolean);
+    let existingMap = new Map();
+    if (sceneNames.length > 0) {
+      const placeholders = sceneNames.map(() => '?').join(',');
+      const existingRows = await queryAll(
+        `SELECT id, name FROM scenes WHERE project_id = ? AND user_id = ? AND name IN (${placeholders})`,
+        [projectId, userId, ...sceneNames]
+      );
+      for (const row of existingRows) {
+        existingMap.set(row.name, row.id);
+      }
+    }
     
     for (const scene of extractedScenes) {
       try {
-        // 检查场景是否已存在（同一项目下的同名场景）
-        const existing = await queryOne(
-          'SELECT id FROM scenes WHERE project_id = ? AND name = ? AND user_id = ?',
-          [projectId, scene.name, userId]
-        );
-        
-        if (existing) {
+        const existingId = existingMap.get(scene.name);
+        if (existingId) {
           // 更新现有场景
           await execute(
             `UPDATE scenes 
@@ -224,7 +233,7 @@ ${contentForAnalysis}
               scene.lighting || '',
               scene.mood || '',
               scriptId || null,
-              existing.id
+              existingId
             ]
           );
           console.log('[SceneExtraction] 更新场景:', scene.name);

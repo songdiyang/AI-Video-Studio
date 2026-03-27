@@ -37,76 +37,97 @@ const collectCandidateImages = traced('收集候选参考图', async function _c
   const allCharacterInfos = [];
 
   if (characterNames.length > 0) {
-    // 查询所有角色（跳过非角色群体词）
-    for (const charName of characterNames) {
+    // 过滤非角色群体词
+    const validCharNames = characterNames.filter(charName => {
       if (isNonCharacterEntity(charName)) {
         console.log(`[CandidateImages] 跳过非角色群体词「${charName}」`);
-        continue;
+        return false;
       }
-      const linkedChar = await queryOne(
+      return true;
+    });
+
+    if (validCharNames.length > 0) {
+      // 批量查询所有角色（1 次 DB 查询代替 N 次）
+      const placeholders = validCharNames.map(() => '?').join(',');
+      const linkedChars = await queryAll(
         `SELECT c.id, c.name, c.description, c.appearance, c.personality,
                 c.image_url, c.front_view_url, c.side_view_url, c.back_view_url
          FROM storyboard_characters sc
          JOIN characters c ON sc.character_id = c.id
-         WHERE sc.storyboard_id = ? AND c.name = ?`,
-        [storyboardId, charName]
+         WHERE sc.storyboard_id = ? AND c.name IN (${placeholders})`,
+        [storyboardId, ...validCharNames]
       );
-      if (!linkedChar) {
-        throw new Error(`角色「${charName}」未与该分镜建立关联。请先运行智能分镜生成以建立资源关联。`);
+
+      // 构建 name → row 映射，O(1) 查找
+      const charMap = new Map();
+      for (const row of linkedChars) {
+        charMap.set(row.name, row);
       }
-      assertNonEmptyString(linkedChar.description, 'description', `角色「${charName}」`);
-      assertNonEmptyString(linkedChar.appearance, 'appearance', `角色「${charName}」`);
-      assertNonEmptyString(linkedChar.personality, 'personality', `角色「${charName}」`);
-      assertNonEmptyString(linkedChar.image_url, 'image_url', `角色「${charName}」`);
 
-      const charInfo = {
-        name: linkedChar.name,
-        appearance: linkedChar.appearance,
-        description: linkedChar.description,
-        personality: linkedChar.personality
-      };
-      allCharacterInfos.push(charInfo);
+      // 校验每个角色是否关联 + 收集 charIds 用于批量查参考图
+      const charIds = [];
+      for (const charName of validCharNames) {
+        const linkedChar = charMap.get(charName);
+        if (!linkedChar) {
+          throw new Error(`角色「${charName}」未与该分镜建立关联。请先运行智能分镜生成以建立资源关联。`);
+        }
+        assertNonEmptyString(linkedChar.description, 'description', `角色「${charName}」`);
+        assertNonEmptyString(linkedChar.appearance, 'appearance', `角色「${charName}」`);
+        assertNonEmptyString(linkedChar.personality, 'personality', `角色「${charName}」`);
+        assertNonEmptyString(linkedChar.image_url, 'image_url', `角色「${charName}」`);
 
-      // 三视图：正面、侧面、背面（全部提供给 AI 选择）
-      const frontUrl = linkedChar.front_view_url || linkedChar.image_url;
-      candidateImages.push({
-        id: `char_${charName}_front`,
-        label: `角色「${charName}」正面图`,
-        url: frontUrl,
-        description: `角色「${charName}」正面视图，用于保持角色外貌一致性（发型、服装、体型），不要复制立绘姿势`
-      });
-
-      if (linkedChar.side_view_url) {
-        candidateImages.push({
-          id: `char_${charName}_side`,
-          label: `角色「${charName}」侧面图`,
-          url: linkedChar.side_view_url,
-          description: `角色「${charName}」侧面视图，适用于侧面、过肩镜头，或角色侧对观众说话的场景`
+        allCharacterInfos.push({
+          name: linkedChar.name,
+          appearance: linkedChar.appearance,
+          description: linkedChar.description,
+          personality: linkedChar.personality
         });
-      }
-      if (linkedChar.back_view_url) {
+        charIds.push(linkedChar.id);
+
+        // 三视图候选
+        const frontUrl = linkedChar.front_view_url || linkedChar.image_url;
         candidateImages.push({
-          id: `char_${charName}_back`,
-          label: `角色「${charName}」背面图`,
-          url: linkedChar.back_view_url,
-          description: `角色「${charName}」背面视图，适用于背面镜头，或角色背对观众的场景`
+          id: `char_${charName}_front`,
+          label: `角色「${charName}」正面图`,
+          url: frontUrl,
+          description: `角色「${charName}」正面视图，用于保持角色外貌一致性（发型、服装、体型），不要复制立绘姿势`
         });
+        if (linkedChar.side_view_url) {
+          candidateImages.push({
+            id: `char_${charName}_side`,
+            label: `角色「${charName}」侧面图`,
+            url: linkedChar.side_view_url,
+            description: `角色「${charName}」侧面视图，适用于侧面、过肩镜头，或角色侧对观众说话的场景`
+          });
+        }
+        if (linkedChar.back_view_url) {
+          candidateImages.push({
+            id: `char_${charName}_back`,
+            label: `角色「${charName}」背面图`,
+            url: linkedChar.back_view_url,
+            description: `角色「${charName}」背面视图，适用于背面镜头，或角色背对观众的场景`
+          });
+        }
+        console.log(`[CandidateImages] 角色「${charName}」三视图: 正面=${!!frontUrl}, 侧面=${!!linkedChar.side_view_url}, 背面=${!!linkedChar.back_view_url}`);
       }
 
-      console.log(`[CandidateImages] 角色「${charName}」三视图: 正面=${!!frontUrl}, 侧面=${!!linkedChar.side_view_url}, 背面=${!!linkedChar.back_view_url}`);
-
-      // 查询用户上传的参考图（三视图 + 其他参考）
-      const charId = linkedChar.id;
-
-      if (charId) {
-        const userRefImages = await queryAll(
-          `SELECT image_url, description, view_type FROM asset_reference_images
-           WHERE asset_type = 'character' AND asset_id = ?
+      // 批量查询所有角色的用户上传参考图（1 次 DB 查询代替 N 次）
+      if (charIds.length > 0) {
+        const refPlaceholders = charIds.map(() => '?').join(',');
+        const allRefImages = await queryAll(
+          `SELECT asset_id, image_url, description, view_type FROM asset_reference_images
+           WHERE asset_type = 'character' AND asset_id IN (${refPlaceholders})
            ORDER BY sort_order ASC`,
-          [charId]
+          charIds
         );
 
-        // 视角类型映射
+        // 按 asset_id 分组
+        const refByCharId = new Map();
+        for (const ref of allRefImages) {
+          if (!refByCharId.has(ref.asset_id)) refByCharId.set(ref.asset_id, []);
+          refByCharId.get(ref.asset_id).push(ref);
+        }
+
         const viewTypeLabels = {
           front: '用户上传正面参考图',
           side: '用户上传侧面参考图',
@@ -120,21 +141,23 @@ const collectCandidateImages = traced('收集候选参考图', async function _c
           other: '用户上传的其他角色参考图，用于补充角色细节'
         };
 
-        for (let i = 0; i < userRefImages.length; i++) {
-          const refImg = userRefImages[i];
-          const vt = refImg.view_type || 'other';
-          const label = `${viewTypeLabels[vt]}（${charName}）`;
-          const desc = refImg.description || viewTypeDescs[vt];
-          candidateImages.push({
-            id: `char_${charName}_user_${vt}_${i}`,
-            label: label,
-            url: refImg.image_url,
-            description: desc
-          });
-        }
-
-        if (userRefImages.length > 0) {
-          console.log(`[CandidateImages] 角色「${charName}」用户上传参考图: ${userRefImages.length} 张`);
+        for (let ci = 0; ci < validCharNames.length; ci++) {
+          const charName = validCharNames[ci];
+          const charId = charIds[ci];
+          const userRefImages = refByCharId.get(charId) || [];
+          for (let i = 0; i < userRefImages.length; i++) {
+            const refImg = userRefImages[i];
+            const vt = refImg.view_type || 'other';
+            candidateImages.push({
+              id: `char_${charName}_user_${vt}_${i}`,
+              label: `${viewTypeLabels[vt]}（${charName}）`,
+              url: refImg.image_url,
+              description: refImg.description || viewTypeDescs[vt]
+            });
+          }
+          if (userRefImages.length > 0) {
+            console.log(`[CandidateImages] 角色「${charName}」用户上传参考图: ${userRefImages.length} 张`);
+          }
         }
       }
     }

@@ -11,6 +11,7 @@ import { useLanguage } from '../../contexts/LanguageContext';
 import { getAuthToken } from '../../services/auth';
 import { Project, fetchProject } from '../../services/projects';
 import { MangaPage, PanelLayout } from '../../types/projectTypes';
+import { useAIModels } from '../../hooks/useAIModels';
 
 // 懒加载子组件
 const PageLayout = lazy(() => import('./PageLayout'));
@@ -211,12 +212,15 @@ const MangaScriptPanel: React.FC<MangaScriptPanelProps> = ({
 const MangaWorkbench: React.FC<MangaWorkbenchProps> = ({ projectId, activeTab }) => {
   const { showToast } = useToast();
   
-  // 状态
+  // 项目和页面状态
   const [project, setProject] = useState<Project | null>(null);
   const [currentEpisode, setCurrentEpisode] = useState(1);
   const [currentPage, setCurrentPage] = useState(1);
   const [pages, setPages] = useState<MangaPage[]>([]);
   const [loading, setLoading] = useState(true);
+  
+  // AI 模型配置
+  const { models, selected, isConfigured, getModelsByType } = useAIModels(projectId);
 
   // 加载项目数据
   useEffect(() => {
@@ -294,6 +298,8 @@ const MangaWorkbench: React.FC<MangaWorkbenchProps> = ({ projectId, activeTab })
               episodeNumber={currentEpisode}
               pageNumber={currentPage}
               page={pages.find(p => p.page_number === currentPage)}
+              models={models}
+              imageModel={selected.image || ''}
             />
           </Suspense>
         );

@@ -19,8 +19,36 @@ const handleBaseTextModelCall = require('../base/baseTextModelCall');
 const { queryOne, queryAll, execute } = require('../../../dbHelper');
 const { requireVisualStyle } = require('../../../utils/getProjectStyle');
 
+/** 安全解析 variables_json */
+function safeParseVariables(raw) {
+  if (!raw) return {};
+  if (typeof raw === 'object') return raw;
+  try { return JSON.parse(raw); } catch { return {}; }
+}
+
+/** 从邻居行构建 shotData */
+function buildShotData(nb) {
+  const nbVars = safeParseVariables(nb.variables_json);
+  return {
+    description: nb.prompt_template || '',
+    shotType: nbVars.shotType || '',
+    endState: nbVars.endState || '',
+    cameraMovement: nbVars.cameraMovement || '',
+    hasAction: nbVars.hasAction || false,
+    emotion: nbVars.emotion || '',
+    firstFrameUrl: nb.first_frame_url || null,
+    lastFrameUrl: nb.last_frame_url || null
+  };
+}
+
+/**
+ * 精细运镜生成
+ * 
+ * inputParams._context 可选预取上下文（由 sceneVideoGeneration 传入以避免重复 DB 查询）：
+ *   { storyboard, variables, visualStyle, prevNeighbor, nextNeighbor, characterAppearance }
+ */
 async function handleCameraRunGeneration(inputParams, onProgress) {
-  const { storyboardId, textModel, think } = inputParams;
+  const { storyboardId, textModel, think, _context } = inputParams;
 
   if (!storyboardId) throw new Error('缺少必要参数: storyboardId');
   if (!textModel) throw new Error('textModel 参数是必需的');
@@ -28,18 +56,68 @@ async function handleCameraRunGeneration(inputParams, onProgress) {
   console.log('[CameraRunGen] 开始生成精细运镜, storyboardId:', storyboardId);
   if (onProgress) onProgress(5);
 
-  // 1. 查询当前分镜数据
-  const storyboard = await queryOne('SELECT * FROM storyboards WHERE id = ?', [storyboardId]);
-  if (!storyboard) throw new Error(`分镜 ${storyboardId} 不存在`);
+  // 1. 优先使用预取上下文，否则从 DB 查询
+  let storyboard, variables, visualStyle, prevShot, nextShot, characterAppearance;
 
-  const visualStyle = await requireVisualStyle(storyboard.project_id);
+  if (_context) {
+    // 由父级传入，跳过全部 DB 查询
+    storyboard = _context.storyboard;
+    variables = _context.variables;
+    visualStyle = _context.visualStyle;
+    characterAppearance = _context.characterAppearance || '';
+    prevShot = _context.prevNeighbor ? buildShotData(_context.prevNeighbor) : null;
+    nextShot = _context.nextNeighbor ? buildShotData(_context.nextNeighbor) : null;
+    console.log('[CameraRunGen] 使用预取上下文，跳过 DB 查询');
+  } else {
+    // 独立调用：并行查询分镜+视觉风格，再查邻居+角色
+    storyboard = await queryOne('SELECT * FROM storyboards WHERE id = ?', [storyboardId]);
+    if (!storyboard) throw new Error(`分镜 ${storyboardId} 不存在`);
 
-  let variables = {};
-  try {
-    variables = typeof storyboard.variables_json === 'string'
-      ? JSON.parse(storyboard.variables_json || '{}')
-      : (storyboard.variables_json || {});
-  } catch (e) { variables = {}; }
+    variables = safeParseVariables(storyboard.variables_json);
+
+    const scriptId = storyboard.script_id;
+    const currentIdx = storyboard.idx;
+    const charNames = variables.characters || [];
+
+    // 并行查询：视觉风格 + 邻居镜头 + 角色外貌
+    const [vsResult, nbResult, charResult] = await Promise.allSettled([
+      requireVisualStyle(storyboard.project_id),
+      (scriptId != null && currentIdx != null)
+        ? queryAll(
+            'SELECT idx, prompt_template, variables_json, first_frame_url, last_frame_url FROM storyboards WHERE script_id = ? AND idx IN (?, ?) ORDER BY idx ASC',
+            [scriptId, currentIdx - 1, currentIdx + 1]
+          )
+        : Promise.resolve([]),
+      charNames.length > 0
+        ? queryAll(
+            `SELECT c.name, c.appearance FROM storyboard_characters sc
+             JOIN characters c ON sc.character_id = c.id
+             WHERE sc.storyboard_id = ? AND c.name IN (${charNames.map(() => '?').join(',')})`,
+            [storyboardId, ...charNames]
+          )
+        : Promise.resolve([])
+    ]);
+
+    if (vsResult.status === 'rejected') throw vsResult.reason;
+    visualStyle = vsResult.value;
+
+    prevShot = null;
+    nextShot = null;
+    if (nbResult.status === 'fulfilled') {
+      for (const nb of nbResult.value) {
+        if (nb.idx === currentIdx - 1) prevShot = buildShotData(nb);
+        if (nb.idx === currentIdx + 1) nextShot = buildShotData(nb);
+      }
+    }
+
+    characterAppearance = '';
+    if (charResult.status === 'fulfilled') {
+      characterAppearance = charResult.value
+        .filter(c => c.appearance)
+        .map(c => `${c.name}: ${c.appearance}`)
+        .join('\n');
+    }
+  }
 
   const description = storyboard.prompt_template || '';
   const hasAction = variables.hasAction || false;
@@ -53,63 +131,8 @@ async function handleCameraRunGeneration(inputParams, onProgress) {
   const duration = variables.duration || (hasAction ? 3 : 2);
   const firstFrameUrl = storyboard.first_frame_url || null;
   const lastFrameUrl = storyboard.last_frame_url || null;
-
-  if (onProgress) onProgress(10);
-
-  // 2. 查询上下文镜头（前一个和后一个）
-  let prevShot = null;
-  let nextShot = null;
-  const scriptId = storyboard.script_id;
-  const currentIdx = storyboard.idx;
-
-  if (scriptId != null && currentIdx != null) {
-    const neighbors = await queryAll(
-      'SELECT idx, prompt_template, variables_json, first_frame_url, last_frame_url FROM storyboards WHERE script_id = ? AND idx IN (?, ?) ORDER BY idx ASC',
-      [scriptId, currentIdx - 1, currentIdx + 1]
-    );
-    for (const nb of neighbors) {
-      let nbVars = {};
-      try {
-        nbVars = typeof nb.variables_json === 'string'
-          ? JSON.parse(nb.variables_json || '{}')
-          : (nb.variables_json || {});
-      } catch (e) { nbVars = {}; }
-
-      const shotData = {
-        description: nb.prompt_template || '',
-        shotType: nbVars.shotType || '',
-        endState: nbVars.endState || '',
-        cameraMovement: nbVars.cameraMovement || '',
-        hasAction: nbVars.hasAction || false,
-        emotion: nbVars.emotion || '',
-        firstFrameUrl: nb.first_frame_url || null,
-        lastFrameUrl: nb.last_frame_url || null
-      };
-
-      if (nb.idx === currentIdx - 1) prevShot = shotData;
-      if (nb.idx === currentIdx + 1) nextShot = shotData;
-    }
-  }
-
-  if (onProgress) onProgress(20);
-
-  // 3. 查询角色外貌信息
   const charNames = variables.characters || [];
-  let characterAppearance = '';
-  if (charNames.length > 0) {
-    try {
-      const linkedChars = await queryAll(
-        `SELECT c.name, c.appearance FROM storyboard_characters sc
-         JOIN characters c ON sc.character_id = c.id
-         WHERE sc.storyboard_id = ?`,
-        [storyboardId]
-      );
-      characterAppearance = linkedChars
-        .filter((char) => charNames.includes(char.name) && char.appearance)
-        .map((char) => `${char.name}: ${char.appearance}`)
-        .join('\n');
-    } catch (e) { /* 忽略 */ }
-  }
+  const currentIdx = storyboard.idx;
 
   if (onProgress) onProgress(30);
 
@@ -158,42 +181,11 @@ ${characterAppearance ? `角色外貌: ${characterAppearance}` : ''}
 - 运镜提示词必须描述从首帧到${lastFrameUrl ? '尾帧' : '镜头结束'}的完整镜头运动过程`
     : '【无参考帧，仅根据描述生成运镜】';
 
-  const fullPrompt = `你是一位资深电影摄影指导（Cinematographer），精通以下运镜理论：
+  const fullPrompt = `You are a senior cinematographer. Generate a precise camera movement prompt for an AI video generator.
 
-【电影运镜知识库】
-1. **推拉运镜（Dolly/Zoom）**：
-   - Dolly In（物理推近）：营造亲密感、紧迫感，观众被"拉入"场景
-   - Dolly Out（物理拉远）：揭示环境、制造疏离感或孤独感
-   - Zoom In/Out（变焦）：不改变透视关系，用于强调或戏剧性揭示
-   - Dolly Zoom（眩晕效果）：推近+变焦拉远（或反向），制造不安感
-
-2. **摇移运镜（Pan/Tilt/Track）**：
-   - Pan（水平摇）：跟随角色视线或扫视环境，速度决定节奏
-   - Tilt（垂直摇）：仰拍展现威严/渺小，俯拍展现全局/脆弱
-   - Track（横移）：平行跟随角色，营造同行感
-   - Arc/Orbit（弧形环绕）：围绕主体旋转，增加戏剧张力
-
-3. **升降运镜（Crane/Jib）**：
-   - Crane Up：从低处升起，揭示全景或表达希望/解放
-   - Crane Down：从高处降落，聚焦细节或表达压迫/命运
-
-4. **手持与稳定器**：
-   - Handheld（手持）：轻微晃动营造纪实感、紧张感
-   - Steadicam（稳定器跟随）：流畅跟随长镜头
-
-5. **运镜节奏原则**：
-   - 慢速运镜：沉思、悲伤、宁静
-   - 中速运镜：叙事、日常
-   - 快速运镜：紧张、动作、惊恐
-   - 突然停止：震惊、发现
-   - 加速运镜：紧迫感递增
-
-6. **镜头衔接运镜原则**：
-   - 上一镜头结束的运动方向应与下一镜头开始的运动方向有逻辑关系
-   - 同方向衔接：流畅连贯
-   - 反方向衔接：制造对比或转折
-   - 静→动：引入新事件
-   - 动→静：情绪沉淀
+Available techniques: Dolly In/Out, Zoom In/Out, Dolly Zoom, Pan, Tilt, Track, Arc/Orbit, Crane Up/Down, Handheld, Steadicam.
+Pacing rules: slow=contemplative/sad, medium=narrative, fast=tension/action, sudden stop=shock, acceleration=urgency.
+Transition logic: match-direction=smooth, reverse-direction=contrast, static→dynamic=new event, dynamic→static=settle.
 
 ---
 
@@ -207,24 +199,21 @@ ${frameRefInfo}
 
 ---
 
-请为当前镜头生成精细的动态运镜提示词。
+Generate the camera movement prompt for the current shot.
 
-【输出要求】
-1. 输出一段英文运镜提示词（camera movement prompt），直接用于视频生成AI
-2. 提示词必须包含：
-   - 镜头运动类型和方向以及旋转角度（如 "slow dolly in", "smooth pan left to right"）
-   - 运动速度和节奏（如 "gradually accelerating", "steady pace"）
-   - 运动的起止状态（如 "starting from a wide establishing shot, ending on a close-up of the character's face"）
-   - 如果有角色动作，描述角色动作与镜头运动的配合关系
-   - 如果有对白，描述嘴型和表情变化
-3. 运镜必须与上一镜头的结束状态自然衔接（如果有上一镜头）
-4. 运镜结束时画面必须呈现 endState 描述的状态
-5. 运镜风格要匹配情绪氛围
-6. 时长约 ${duration} 秒，运镜节奏要匹配这个时长
-7. 不要输出任何解释，只输出英文运镜提示词
-
-【格式】
-直接输出英文提示词，一段话，不要分行，不要编号，不要标题。`;
+【Output Requirements】
+1. Output a single English paragraph, directly usable by video generation AI
+2. Must include:
+   - Camera movement type, direction, and rotation angle (e.g. "slow dolly in", "smooth pan left to right")
+   - Movement speed and pacing (e.g. "gradually accelerating", "steady pace")
+   - Start and end framing states (e.g. "starting from a wide establishing shot, ending on a close-up")
+   - If characters have actions, describe how character motion coordinates with camera movement
+   - If there is dialogue, describe lip movement and expression changes
+3. Camera movement must naturally connect with the previous shot's end state (if available)
+4. The final frame must match the endState description
+5. Camera style must match the emotional tone
+6. Duration ~${duration}s, pace the movement accordingly
+7. Output ONLY the English prompt, no explanations, no line breaks, no numbering`;
 
   if (onProgress) onProgress(40);
 

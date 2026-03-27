@@ -1,14 +1,16 @@
 /**
  * 章节管理组件
- * 章节列表、章节元数据编辑、字数统计
+ * 章节列表、章节元数据编辑、字数统计、AI 章节续写
  */
 
-import React, { useState, useCallback } from 'react';
-import { Button, Input, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure, Chip } from '@heroui/react';
-import { Plus, Trash2, Edit2, GripVertical, FileText, BookOpen, Eye, MoreVertical, Copy, ArrowUp, ArrowDown } from 'lucide-react';
+import React, { useState, useCallback, useEffect } from 'react';
+import { Button, Input, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure, Chip, Progress } from '@heroui/react';
+import { Plus, Trash2, Edit2, GripVertical, FileText, BookOpen, Eye, MoreVertical, Copy, ArrowUp, ArrowDown, Wand2, Loader2, CheckCircle, XCircle } from 'lucide-react';
 import { NovelChapter } from '../../../types/projectTypes';
 import { useToast } from '../../../contexts/ToastContext';
 import { getAuthToken } from '../../../services/auth';
+import { useTaskRunner, TaskState } from '../../../hooks/useTaskRunner';
+import { AIModel } from '../../../components/AIModelSelector';
 
 // ==================== 类型定义 ====================
 
@@ -19,6 +21,9 @@ interface ChapterManagerProps {
   onChaptersChange: (chapters: NovelChapter[]) => void;
   onSelectChapter: (chapterId: number) => void;
   onRefresh: () => void;
+  // AI 模型配置
+  models: AIModel[];
+  textModel: string;
 }
 
 const STATUS_CONFIG: Record<string, { label: string; color: 'default' | 'primary' | 'success' | 'warning' }> = {
@@ -38,6 +43,9 @@ interface ChapterItemProps {
   onMoveUp: () => void;
   onMoveDown: () => void;
   onDuplicate: () => void;
+  onAIContinue: () => void;
+  taskState: TaskState | null;
+  onClearTask: () => void;
   isFirst: boolean;
   isLast: boolean;
 }
@@ -51,11 +59,67 @@ const ChapterItem: React.FC<ChapterItemProps> = ({
   onMoveUp,
   onMoveDown,
   onDuplicate,
+  onAIContinue,
+  taskState,
+  onClearTask,
   isFirst,
   isLast,
 }) => {
   const [showMenu, setShowMenu] = useState(false);
   const statusConfig = STATUS_CONFIG[chapter.status] || STATUS_CONFIG.draft;
+  
+  // 任务状态标识
+  const renderTaskStatus = () => {
+    if (!taskState) return null;
+    
+    switch (taskState.status) {
+      case 'pending':
+      case 'running':
+        return (
+          <div className="mt-2 flex items-center gap-2">
+            <Progress
+              size="sm"
+              value={taskState.progress}
+              color="primary"
+              className="flex-1"
+            />
+            <span className="text-xs text-[var(--text-muted)]">
+              {taskState.progress}%
+            </span>
+          </div>
+        );
+      case 'completed':
+        return (
+          <div className="mt-2 flex items-center gap-2">
+            <CheckCircle className="w-4 h-4 text-green-500" />
+            <span className="text-xs text-green-500">生成完成</span>
+            <button
+              onClick={(e) => { e.stopPropagation(); onClearTask(); }}
+              className="text-xs text-[var(--accent)] hover:underline ml-auto"
+            >
+              刷新查看
+            </button>
+          </div>
+        );
+      case 'failed':
+        return (
+          <div className="mt-2 flex items-center gap-2">
+            <XCircle className="w-4 h-4 text-red-500" />
+            <span className="text-xs text-red-500 truncate flex-1">
+              {taskState.error || '生成失败'}
+            </span>
+            <button
+              onClick={(e) => { e.stopPropagation(); onClearTask(); }}
+              className="text-xs text-[var(--text-muted)] hover:underline"
+            >
+              关闭
+            </button>
+          </div>
+        );
+      default:
+        return null;
+    }
+  };
 
   return (
     <div
@@ -81,6 +145,11 @@ const ChapterItem: React.FC<ChapterItemProps> = ({
             <Chip size="sm" color={statusConfig.color} variant="flat">
               {statusConfig.label}
             </Chip>
+            {taskState && (taskState.status === 'pending' || taskState.status === 'running') && (
+              <Chip size="sm" color="warning" variant="flat" startContent={<Loader2 className="w-3 h-3 animate-spin" />}>
+                生成中
+              </Chip>
+            )}
           </div>
           <h4 className="font-medium text-[var(--text-primary)] truncate mb-1">
             {chapter.title || '无标题'}
@@ -89,6 +158,8 @@ const ChapterItem: React.FC<ChapterItemProps> = ({
             <span>{chapter.word_count.toLocaleString()} 字</span>
             <span>更新于 {new Date(chapter.updated_at).toLocaleDateString()}</span>
           </div>
+          {/* 任务状态显示 */}
+          {renderTaskStatus()}
         </div>
 
         {/* 操作菜单 */}
@@ -112,6 +183,12 @@ const ChapterItem: React.FC<ChapterItemProps> = ({
                   onClick={(e) => { e.stopPropagation(); onEdit(); setShowMenu(false); }}
                 >
                   <Edit2 className="w-4 h-4" /> 编辑
+                </button>
+                <button
+                  className="w-full px-3 py-2 text-left text-sm text-[var(--accent)] hover:bg-[var(--accent)]/10 flex items-center gap-2"
+                  onClick={(e) => { e.stopPropagation(); onAIContinue(); setShowMenu(false); }}
+                >
+                  <Wand2 className="w-4 h-4" /> AI 续写
                 </button>
                 <button
                   className="w-full px-3 py-2 text-left text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-input)] flex items-center gap-2"
@@ -160,9 +237,17 @@ const ChapterManager: React.FC<ChapterManagerProps> = ({
   onChaptersChange,
   onSelectChapter,
   onRefresh,
+  models,
+  textModel,
 }) => {
   const { showToast } = useToast();
   const { isOpen, onOpen, onClose } = useDisclosure();
+  
+  // 集成 useTaskRunner 用于 AI 章节续写
+  const { tasks, runTask, recoverTasks, clearTask, isRunning } = useTaskRunner({
+    projectId,
+    maxRetries: 1,
+  });
   
   const [editingChapter, setEditingChapter] = useState<NovelChapter | null>(null);
   const [formData, setFormData] = useState({
@@ -170,6 +255,19 @@ const ChapterManager: React.FC<ChapterManagerProps> = ({
     notes: '',
   });
   const [saving, setSaving] = useState(false);
+  
+  // 页面加载时恢复未完成的任务
+  useEffect(() => {
+    recoverTasks(
+      ['novel_chapter_generation'],
+      (job) => {
+        // 从 job.params 中提取 chapterId 作为 key
+        const params = typeof job.params === 'string' ? JSON.parse(job.params) : job.params;
+        const chapterId = params?.chapterId;
+        return chapterId ? `chapter_${chapterId}` : null;
+      }
+    );
+  }, [recoverTasks]);
 
   // 排序后的章节
   const sortedChapters = [...chapters].sort((a, b) => a.chapter_number - b.chapter_number);
@@ -288,6 +386,42 @@ const ChapterManager: React.FC<ChapterManagerProps> = ({
     onChaptersChange(updated);
   };
 
+  // AI 章节续写
+  const handleAIContinue = async (chapter: NovelChapter) => {
+    const taskKey = `chapter_${chapter.id}`;
+    
+    // 检查是否已有任务在运行
+    if (tasks[taskKey] && (tasks[taskKey].status === 'pending' || tasks[taskKey].status === 'running')) {
+      showToast('该章节正在生成中，请稍候', 'warning');
+      return;
+    }
+    
+    try {
+      await runTask(taskKey, 'novel_chapter_generation', {
+        chapterId: chapter.id,
+        projectId,
+        chapterNumber: chapter.chapter_number,
+        title: chapter.title,
+        existingContent: chapter.content || '',
+        modelName: textModel,
+      });
+      showToast('AI 续写任务已启动', 'success');
+    } catch (error: any) {
+      showToast(error.message || 'AI 续写启动失败', 'error');
+    }
+  };
+
+  // 获取章节的任务状态
+  const getChapterTaskState = (chapterId: number): TaskState | null => {
+    return tasks[`chapter_${chapterId}`] || null;
+  };
+
+  // 清除章节任务状态
+  const handleClearTask = (chapterId: number) => {
+    clearTask(`chapter_${chapterId}`);
+    onRefresh(); // 刷新章节列表以获取最新内容
+  };
+
   return (
     <div className="h-full flex flex-col">
       {/* 顶部工具栏 */}
@@ -296,6 +430,11 @@ const ChapterManager: React.FC<ChapterManagerProps> = ({
           <div className="flex items-center gap-2">
             <BookOpen className="w-5 h-5 text-[var(--accent)]" />
             <span className="font-medium text-[var(--text-primary)]">章节管理</span>
+            {isRunning && (
+              <Chip size="sm" color="warning" variant="flat" startContent={<Loader2 className="w-3 h-3 animate-spin" />}>
+                AI 生成中
+              </Chip>
+            )}
           </div>
           <Button
             color="primary"
@@ -344,6 +483,9 @@ const ChapterManager: React.FC<ChapterManagerProps> = ({
                 onMoveUp={() => handleMove(chapter.id, 'up')}
                 onMoveDown={() => handleMove(chapter.id, 'down')}
                 onDuplicate={() => handleDuplicate(chapter)}
+                onAIContinue={() => handleAIContinue(chapter)}
+                taskState={getChapterTaskState(chapter.id)}
+                onClearTask={() => handleClearTask(chapter.id)}
                 isFirst={index === 0}
                 isLast={index === sortedChapters.length - 1}
               />

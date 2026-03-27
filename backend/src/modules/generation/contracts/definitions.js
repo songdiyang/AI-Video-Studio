@@ -1,4 +1,4 @@
-const { getSceneCount } = require('../../../utils/parseScriptScenes');
+const { getSceneCount, parseScriptScenes } = require('../../../utils/parseScriptScenes');
 const { HttpError } = require('../utils/httpErrors');
 const {
   requireProjectForUser,
@@ -313,7 +313,8 @@ const operationContracts = [
       };
     },
     defaultsResolver: async ({ input, resources }) => {
-      const totalScenes = getSceneCount(resources.script.content);
+      const parsedScenes = parseScriptScenes(resources.script.content);
+      const totalScenes = parsedScenes.length;
       if (totalScenes === 0) {
         throw new HttpError(400, '未能从剧本中识别出场景');
       }
@@ -325,7 +326,12 @@ const operationContracts = [
         inputs: {
           scriptContent: resources.script.content,
           episodeNumber: resources.script.episode_number,
-          totalScenes
+          totalScenes,
+          parsedScenes: parsedScenes.map((s, i) => ({
+            sceneNumber: s.sceneNumber || (i + 1),
+            sceneName: s.sceneName || `场景${s.sceneNumber || (i + 1)}`,
+            content: s.content
+          }))
         },
         options: {
           clearExisting: input.clearExisting

@@ -95,9 +95,9 @@ export const VIDEO_RESOLUTION_PRESETS = [
 
 // 图片清晰度预设
 export const IMAGE_RESOLUTION_PRESETS = [
-  { label: '标准 1024px', value: '1024' },
-  { label: '高清 1536px', value: '1536' },
-  { label: '超清 2048px', value: '2048' },
+  { label: '1K 标准', value: '1024' },
+  { label: '1.5K 高清', value: '1536' },
+  { label: '2K 超清', value: '2048' },
 ];
 
 // 常用长宽比预设

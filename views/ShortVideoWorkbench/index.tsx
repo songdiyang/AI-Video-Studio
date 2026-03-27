@@ -1,18 +1,23 @@
 /**
  * 短视频工作台
  * 包含视频脚本、时间轴编辑、特效添加三个功能模块
+ * 架构对齐漫剧工作台(ComicDramaWorkbench)
  */
 
 import React, { useState, useEffect, useCallback, Suspense, lazy } from 'react';
 import { Spinner, Button, Textarea, Input, Slider } from '@heroui/react';
-import { FileText, Clock, Sparkles, Play, Pause, Upload, Download, Wand2, Plus, Trash2 } from 'lucide-react';
+import { Wand2 } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { getAuthToken } from '../../services/auth';
 import { Project, fetchProject } from '../../services/projects';
-import { VideoEffect, TransitionType, FilterType } from '../../types/projectTypes';
+import { VideoEffect } from '../../types/projectTypes';
+import { useAIModels } from '../../hooks/useAIModels';
+import { useTaskRunner } from '../../hooks/useTaskRunner';
+import type { VideoClip } from './TimelineEditor';
 
 // 懒加载子组件
+const TimelineEditor = lazy(() => import('./TimelineEditor'));
 const EffectsEditor = lazy(() => import('./EffectsEditor'));
 
 // ==================== 类型定义 ====================
@@ -20,15 +25,6 @@ const EffectsEditor = lazy(() => import('./EffectsEditor'));
 interface ShortVideoWorkbenchProps {
   projectId: number;
   activeTab: string;
-}
-
-interface VideoClip {
-  id: string;
-  name: string;
-  duration: number;
-  thumbnail?: string;
-  videoUrl?: string;
-  startTime: number;
 }
 
 // ==================== 加载占位组件 ====================
@@ -44,9 +40,18 @@ const LoadingFallback: React.FC = () => (
 interface VideoScriptPanelProps {
   projectId: number;
   onScriptGenerated?: (script: string) => void;
+  aiModels?: ReturnType<typeof useAIModels>;
+  runTask?: ReturnType<typeof useTaskRunner>['runTask'];
+  tasks?: ReturnType<typeof useTaskRunner>['tasks'];
 }
 
-const VideoScriptPanel: React.FC<VideoScriptPanelProps> = ({ projectId, onScriptGenerated }) => {
+const VideoScriptPanel: React.FC<VideoScriptPanelProps> = ({
+  projectId,
+  onScriptGenerated,
+  aiModels,
+  runTask,
+  tasks,
+}) => {
   const { showToast } = useToast();
   const [script, setScript] = useState('');
   const [title, setTitle] = useState('');
@@ -54,6 +59,10 @@ const VideoScriptPanel: React.FC<VideoScriptPanelProps> = ({ projectId, onScript
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  const taskKey = `script_${projectId}`;
+  const currentTask = tasks?.[taskKey];
+  const isTaskRunning = currentTask?.status === 'pending' || currentTask?.status === 'running';
 
   // 加载脚本
   useEffect(() => {
@@ -79,6 +88,17 @@ const VideoScriptPanel: React.FC<VideoScriptPanelProps> = ({ projectId, onScript
     loadScript();
   }, [projectId]);
 
+  // 监听任务完成
+  useEffect(() => {
+    if (currentTask?.status === 'completed' && currentTask.result) {
+      setScript(currentTask.result.content || currentTask.result);
+      onScriptGenerated?.(currentTask.result.content || currentTask.result);
+      showToast('脚本生成成功', 'success');
+    } else if (currentTask?.status === 'failed') {
+      showToast(currentTask.error || '生成失败', 'error');
+    }
+  }, [currentTask?.status, currentTask?.result, currentTask?.error, showToast, onScriptGenerated]);
+
   // AI 生成脚本
   const handleGenerate = async () => {
     if (!title.trim()) {
@@ -86,6 +106,22 @@ const VideoScriptPanel: React.FC<VideoScriptPanelProps> = ({ projectId, onScript
       return;
     }
 
+    // 如果有 runTask，使用工作流方式
+    if (runTask) {
+      try {
+        await runTask(taskKey, 'video_script_generation', {
+          title,
+          duration,
+          projectId,
+          modelName: aiModels?.selected.text,
+        });
+      } catch (err: any) {
+        showToast(err.message || '启动生成任务失败', 'error');
+      }
+      return;
+    }
+
+    // 降级：直接调用 API
     setGenerating(true);
     try {
       const token = getAuthToken();
@@ -191,10 +227,10 @@ const VideoScriptPanel: React.FC<VideoScriptPanelProps> = ({ projectId, onScript
           <Button
             color="primary"
             startContent={<Wand2 className="w-4 h-4" />}
-            isLoading={generating}
+            isLoading={generating || isTaskRunning}
             onPress={handleGenerate}
           >
-            AI 生成脚本
+            {isTaskRunning ? `生成中 ${currentTask?.progress || 0}%` : 'AI 生成脚本'}
           </Button>
           <Button
             variant="flat"
@@ -236,170 +272,27 @@ const VideoScriptPanel: React.FC<VideoScriptPanelProps> = ({ projectId, onScript
   );
 };
 
-// ==================== 时间轴编辑面板 ====================
-
-interface TimelineEditorPanelProps {
-  projectId: number;
-  clips: VideoClip[];
-  onClipsChange: (clips: VideoClip[]) => void;
-}
-
-const TimelineEditorPanel: React.FC<TimelineEditorPanelProps> = ({
-  projectId,
-  clips,
-  onClipsChange,
-}) => {
-  const { showToast } = useToast();
-  const [playing, setPlaying] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
-  const [zoom, setZoom] = useState(100);
-
-  // 计算总时长
-  const totalDuration = clips.reduce((sum, clip) => sum + clip.duration, 0);
-
-  // 添加片段
-  const handleAddClip = () => {
-    const newClip: VideoClip = {
-      id: `clip_${Date.now()}`,
-      name: `片段 ${clips.length + 1}`,
-      duration: 5,
-      startTime: totalDuration,
-    };
-    onClipsChange([...clips, newClip]);
-  };
-
-  // 删除片段
-  const handleDeleteClip = (clipId: string) => {
-    onClipsChange(clips.filter(c => c.id !== clipId));
-    if (selectedClipId === clipId) {
-      setSelectedClipId(null);
-    }
-  };
-
-  // 播放/暂停
-  const togglePlay = () => {
-    setPlaying(!playing);
-  };
-
-  return (
-    <div className="h-full flex flex-col">
-      {/* 预览区 */}
-      <div className="h-64 bg-black flex items-center justify-center border-b border-[var(--border-color)]">
-        <div className="text-center text-white">
-          <Play className="w-12 h-12 mx-auto mb-2 opacity-50" />
-          <p className="text-sm opacity-50">视频预览区</p>
-        </div>
-      </div>
-
-      {/* 控制栏 */}
-      <div className="p-3 border-b border-[var(--border-color)] flex items-center justify-between bg-[var(--bg-nav)]">
-        <div className="flex items-center gap-3">
-          <Button size="sm" isIconOnly variant="flat" onPress={togglePlay}>
-            {playing ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-          </Button>
-          <span className="text-sm text-[var(--text-primary)] font-mono">
-            {Math.floor(currentTime / 60).toString().padStart(2, '0')}:
-            {(currentTime % 60).toString().padStart(2, '0')} / 
-            {Math.floor(totalDuration / 60).toString().padStart(2, '0')}:
-            {(totalDuration % 60).toString().padStart(2, '0')}
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-[var(--text-muted)]">缩放:</span>
-          <Slider
-            size="sm"
-            step={10}
-            minValue={50}
-            maxValue={200}
-            value={zoom}
-            onChange={(val) => setZoom(val as number)}
-            className="w-24"
-          />
-          <span className="text-xs text-[var(--text-muted)]">{zoom}%</span>
-        </div>
-      </div>
-
-      {/* 时间轴 */}
-      <div className="flex-1 overflow-auto bg-[var(--bg-app)]">
-        {/* 时间刻度 */}
-        <div className="h-6 border-b border-[var(--border-color)] bg-[var(--bg-nav)] flex items-end px-2">
-          {Array.from({ length: Math.ceil(totalDuration / 5) + 1 }).map((_, i) => (
-            <div
-              key={i}
-              className="flex-shrink-0 text-xs text-[var(--text-muted)] border-l border-[var(--border-color)] pl-1"
-              style={{ width: `${(5 * zoom) / 100 * 10}px` }}
-            >
-              {i * 5}s
-            </div>
-          ))}
-        </div>
-
-        {/* 视频轨道 */}
-        <div className="p-2 min-h-[100px]">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-xs text-[var(--text-muted)] w-16">视频</span>
-            <div className="flex-1 h-16 bg-[var(--bg-input)] rounded-lg relative overflow-hidden">
-              {clips.map((clip) => (
-                <div
-                  key={clip.id}
-                  onClick={() => setSelectedClipId(clip.id)}
-                  className={`absolute top-1 bottom-1 rounded cursor-pointer transition-all ${
-                    selectedClipId === clip.id
-                      ? 'bg-[var(--accent)] ring-2 ring-[var(--accent)]'
-                      : 'bg-blue-600 hover:bg-blue-500'
-                  }`}
-                  style={{
-                    left: `${(clip.startTime / (totalDuration || 1)) * 100}%`,
-                    width: `${(clip.duration / (totalDuration || 1)) * 100}%`,
-                    minWidth: '40px',
-                  }}
-                >
-                  <div className="px-2 py-1 text-xs text-white truncate">
-                    {clip.name}
-                  </div>
-                  {selectedClipId === clip.id && (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleDeleteClip(clip.id); }}
-                      className="absolute top-1 right-1 p-0.5 rounded bg-red-500 hover:bg-red-600"
-                    >
-                      <Trash2 className="w-3 h-3 text-white" />
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-            <Button size="sm" isIconOnly variant="flat" onPress={handleAddClip}>
-              <Plus className="w-4 h-4" />
-            </Button>
-          </div>
-
-          {/* 音频轨道 */}
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-[var(--text-muted)] w-16">音频</span>
-            <div className="flex-1 h-12 bg-[var(--bg-input)] rounded-lg flex items-center justify-center">
-              <span className="text-xs text-[var(--text-muted)]">拖放音频文件或点击添加</span>
-            </div>
-            <Button size="sm" isIconOnly variant="flat">
-              <Plus className="w-4 h-4" />
-            </Button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
 // ==================== 主组件 ====================
 
 const ShortVideoWorkbench: React.FC<ShortVideoWorkbenchProps> = ({ projectId, activeTab }) => {
+  const { t } = useLanguage();
   const { showToast } = useToast();
   
-  // 状态
+  // 项目状态
   const [project, setProject] = useState<Project | null>(null);
   const [clips, setClips] = useState<VideoClip[]>([]);
   const [effects, setEffects] = useState<VideoEffect[]>([]);
   const [loading, setLoading] = useState(true);
+  
+  // AI 模型配置
+  const aiModels = useAIModels(projectId);
+  
+  // 任务运行器
+  const { tasks, runTask, recoverTasks, clearTask, isRunning } = useTaskRunner({
+    projectId,
+    interval: 500,
+    maxRetries: 2,
+  });
 
   // 加载项目数据
   useEffect(() => {
@@ -416,7 +309,27 @@ const ShortVideoWorkbench: React.FC<ShortVideoWorkbenchProps> = ({ projectId, ac
         });
         if (res.ok) {
           const data = await res.json();
-          setClips(data.clips || []);
+          // 转换为 VideoClip 格式
+          const loadedClips: VideoClip[] = (data.clips || []).map((clip: any) => ({
+            id: clip.id || `clip_${Date.now()}_${Math.random()}`,
+            type: clip.type || 'video',
+            name: clip.name || '未命名片段',
+            startTime: clip.startTime || clip.start_time || 0,
+            duration: clip.duration || 5,
+            track: clip.track || 0,
+            thumbnailUrl: clip.thumbnailUrl || clip.thumbnail,
+            color: clip.color,
+          }));
+          setClips(loadedClips);
+        }
+        
+        // 加载特效
+        const effectsRes = await fetch(`/api/projects/${projectId}/video/effects`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (effectsRes.ok) {
+          const effectsData = await effectsRes.json();
+          setEffects(effectsData.effects || []);
         }
       } catch (error) {
         console.error('加载数据失败:', error);
@@ -426,9 +339,62 @@ const ShortVideoWorkbench: React.FC<ShortVideoWorkbenchProps> = ({ projectId, ac
     };
     loadData();
   }, [projectId]);
+  
+  // 恢复未完成的任务
+  useEffect(() => {
+    if (!projectId) return;
+    
+    recoverTasks(
+      ['video_script_generation', 'video_generation', 'effects_render'],
+      (job) => {
+        // 根据工作流参数映射到任务 key
+        const params = typeof job.params === 'string' ? JSON.parse(job.params) : job.params;
+        if (job.workflow_type === 'video_script_generation') {
+          return `script_${projectId}`;
+        } else if (job.workflow_type === 'video_generation') {
+          return `video_${params?.clipId || projectId}`;
+        } else if (job.workflow_type === 'effects_render') {
+          return `effects_${params?.effectId || projectId}`;
+        }
+        return null;
+      }
+    );
+  }, [projectId, recoverTasks]);
+
+  // 处理片段变更
+  const handleClipsChange = useCallback((newClips: VideoClip[]) => {
+    setClips(newClips);
+    
+    // 保存到后端（防抖）
+    const token = getAuthToken();
+    fetch(`/api/projects/${projectId}/video/clips`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ clips: newClips }),
+    }).catch(err => console.error('保存片段失败:', err));
+  }, [projectId]);
+  
+  // 处理特效变更
+  const handleEffectsChange = useCallback((newEffects: VideoEffect[]) => {
+    setEffects(newEffects);
+    
+    // 保存到后端
+    const token = getAuthToken();
+    fetch(`/api/projects/${projectId}/video/effects`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ effects: newEffects }),
+    }).catch(err => console.error('保存特效失败:', err));
+  }, [projectId]);
 
   // 加载中
-  if (loading && !project) {
+  if (loading) {
     return <LoadingFallback />;
   }
 
@@ -436,15 +402,25 @@ const ShortVideoWorkbench: React.FC<ShortVideoWorkbenchProps> = ({ projectId, ac
   const renderContent = () => {
     switch (activeTab) {
       case 'script':
-        return <VideoScriptPanel projectId={projectId} />;
+        return (
+          <VideoScriptPanel
+            projectId={projectId}
+            aiModels={aiModels}
+            runTask={runTask}
+            tasks={tasks}
+          />
+        );
         
       case 'timeline':
         return (
-          <TimelineEditorPanel
-            projectId={projectId}
-            clips={clips}
-            onClipsChange={setClips}
-          />
+          <Suspense fallback={<LoadingFallback />}>
+            <TimelineEditor
+              projectId={projectId}
+              clips={clips}
+              onClipsChange={handleClipsChange}
+              aiModels={aiModels}
+            />
+          </Suspense>
         );
         
       case 'effects':
@@ -453,7 +429,10 @@ const ShortVideoWorkbench: React.FC<ShortVideoWorkbenchProps> = ({ projectId, ac
             <EffectsEditor
               projectId={projectId}
               effects={effects}
-              onEffectsChange={setEffects}
+              onEffectsChange={handleEffectsChange}
+              aiModels={aiModels}
+              runTask={runTask}
+              tasks={tasks}
             />
           </Suspense>
         );

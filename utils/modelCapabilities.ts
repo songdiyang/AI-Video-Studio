@@ -16,6 +16,24 @@ function toArray(value: unknown): RawCapabilityOption[] {
   return Array.isArray(value) ? (value as RawCapabilityOption[]) : [];
 }
 
+const RESOLUTION_LABELS: Record<string, string> = {
+  '512': '0.5K',
+  '720': '720p',
+  '1024': '1K',
+  '1080': '1080p',
+  '1536': '1.5K',
+  '2048': '2K',
+  '2560': '2.5K',
+  '3072': '3K',
+  '4096': '4K',
+};
+
+function formatDefaultLabel(value: string, type: string): string {
+  if (type === 'duration') return `${value} \u79D2`;
+  if (type === 'resolution') return RESOLUTION_LABELS[value] || `${value}px`;
+  return value;
+}
+
 export function normalizeCapabilityOptions(
   value: unknown,
   type: 'aspectRatio' | 'duration' | 'resolution'
@@ -46,7 +64,7 @@ export function normalizeCapabilityOptions(
     seen.add(normalizedValue);
     normalized.push({
       value: normalizedValue,
-      label: rawLabel || (type === 'duration' ? `${normalizedValue} 秒` : normalizedValue)
+      label: rawLabel || formatDefaultLabel(normalizedValue, type)
     });
   }
 

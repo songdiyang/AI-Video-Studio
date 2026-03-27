@@ -20,6 +20,8 @@ export interface WorkflowTask {
   error_message: string | null;
   started_at: string | null;
   completed_at: string | null;
+  /** 前端显示名称（从 input_params.displayName 提取） */
+  displayName?: string;
 }
 
 export interface WorkflowJob {

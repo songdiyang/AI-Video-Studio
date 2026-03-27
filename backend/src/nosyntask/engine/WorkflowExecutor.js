@@ -83,6 +83,15 @@ class WorkflowExecutor {
       return;
     }
 
+    // 解析步骤（支持动态步骤函数）
+    let jobParams = job.input_params;
+    if (typeof jobParams === 'string') {
+      try { jobParams = JSON.parse(jobParams); } catch(e) { jobParams = {}; }
+    }
+    const steps = typeof definition.steps === 'function'
+      ? definition.steps(jobParams || {})
+      : definition.steps;
+
     // 获取所有任务
     const allTasks = await queryAll(
       'SELECT * FROM generation_tasks WHERE job_id = ? ORDER BY step_index ASC',
@@ -97,7 +106,7 @@ class WorkflowExecutor {
       if (task.status !== 'pending') continue;
       if (runningSet.has(task.id)) continue;
 
-      const stepDef = definition.steps[task.step_index];
+      const stepDef = steps[task.step_index];
       if (!stepDef) continue;
 
       // 检查依赖是否满足
@@ -188,12 +197,17 @@ class WorkflowExecutor {
    */
   async executeTask(taskId, stepDef, inputParams, jobId, executionContext = {}) {
     try {
+      // 保留初始化时存储的 displayName
+      const taskInputWithMeta = stepDef.displayName
+        ? { ...inputParams, displayName: stepDef.displayName }
+        : inputParams;
+
       // 更新任务状态为 processing
       await execute(
         `UPDATE generation_tasks 
          SET status = 'processing', input_params = ?, model_name = ?, started_at = NOW(), progress = 10 
          WHERE id = ?`,
-        [JSON.stringify(inputParams), inputParams.textModel || inputParams.imageModel || inputParams.videoModel || inputParams.audioModel || null, taskId]
+        [JSON.stringify(taskInputWithMeta), inputParams.textModel || inputParams.imageModel || inputParams.videoModel || inputParams.audioModel || null, taskId]
       );
 
       console.log(`[WorkflowExecutor] 执行任务: taskId=${taskId}, type=${stepDef.type}`);

@@ -219,6 +219,12 @@ module.exports = {
     description: '同项目所有场景摘要（用于风格一致性分析）',
     category: 'scene'
   },
+  parsedScenes: {
+    from: 'parsedScenes',
+    defaultValue: [],
+    description: '预解析的场景列表（批量分镜动态步骤用，包含 sceneNumber/sceneName/content）',
+    category: 'scene'
+  },
   referenceImageUrl: {
     from: 'referenceImageUrl',
     defaultValue: null,

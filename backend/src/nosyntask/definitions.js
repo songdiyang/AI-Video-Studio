@@ -33,6 +33,8 @@ const {
   handleSaveStoryboards,
   handleSceneStoryboardGeneration,
   handleBatchStoryboardGeneration,
+  handleBatchSceneStep,
+  handleBatchSaveStoryboards,
   handleSketchPreprocess,
   handleSketchToImage,
   handleBatchSketchFrameGeneration,
@@ -170,41 +172,113 @@ const WORKFLOW_DEFINITIONS = {
   },
 
   /**
-   * 批量分镜生成（整合版）
-   * 将多场景分镜生成整合为单一任务显示
+   * 批量分镜生成（动态步骤版）
+   * 根据场景数量动态生成工作流步骤，每个场景是一个独立任务
    * 
-   * 特点：
-   *   - 用户界面只显示一个统一任务
-   *   - 后台按场景分割顺序处理
-   *   - 统一进度反馈
-   *   - 保持场景间连贯性
-   *   - 结果按顺序整合后一次性保存
-   *   - 分镜保存后自动提取角色
+   * 动态步骤结构（以 3 个场景为例）：
+   *   0. batch_scene_0   - 场景1 AI 生成分镜（无依赖，可并行）
+   *   1. batch_scene_1   - 场景2 AI 生成分镜（无依赖，可并行）
+   *   2. batch_scene_2   - 场景3 AI 生成分镜（无依赖，可并行）
+   *   3. batch_save      - 合并保存所有分镜（依赖 0,1,2）
+   *   4. character_extraction - 角色提取（依赖 3）
    */
   batch_storyboard_generation: {
     name: '分镜生成',
-    steps: [
-      {
-        type: 'batch_storyboard_generation',
+    failPolicy: 'continue_independent',
+    steps: (jobParams) => {
+      const { getNormalizedParamValue } = require('../modules/generation/utils/workflowParams');
+      const parsedScenes = getNormalizedParamValue(jobParams, 'parsedScenes') || [];
+      const totalScenes = parsedScenes.length;
+
+      if (totalScenes === 0) {
+        // 回退到原始单步骤模式
+        return [
+          {
+            type: 'batch_storyboard_generation',
+            targetType: 'storyboard',
+            handler: handleBatchStoryboardGeneration,
+            buildInput: createBuildInput([
+              'scriptId', 'projectId', 'userId', 'textModel',
+              { key: 'clearExisting', defaultValue: true },
+              { key: 'think', defaultValue: false }
+            ])
+          },
+          {
+            type: 'character_extraction',
+            targetType: 'characters',
+            handler: handleCharacterExtraction,
+            dependencies: [0],
+            buildInput: createBuildInput([
+              'scriptContent', 'projectId', 'scriptId', 'userId', 'textModel'
+            ])
+          }
+        ];
+      }
+
+      const steps = [];
+
+      // 场景步骤：每个场景是一个独立步骤（无 inter-dependencies，可并行）
+      for (let i = 0; i < totalScenes; i++) {
+        const scene = parsedScenes[i];
+        steps.push({
+          type: `batch_scene_${i}`,
+          targetType: 'storyboard',
+          displayName: `场景${scene.sceneNumber}: ${scene.sceneName}`,
+          handler: handleBatchSceneStep,
+          // 无 dependencies → 可立即执行（受 MAX_CONCURRENT_TASKS 并发限制）
+          buildInput: createBuildInput([
+            { key: 'sceneContent', from: () => scene.content },
+            { key: 'sceneName', from: () => scene.sceneName },
+            { key: 'sceneNumber', from: () => scene.sceneNumber },
+            { key: 'totalScenes', from: () => totalScenes },
+            'scriptTitle', 'textModel',
+            { key: 'think', defaultValue: false }
+          ])
+        });
+      }
+
+      // 保存步骤：依赖所有场景步骤
+      const saveStepIndex = totalScenes;
+      const sceneDeps = Array.from({ length: totalScenes }, (_, i) => i);
+      steps.push({
+        type: 'batch_save',
         targetType: 'storyboard',
-        handler: handleBatchStoryboardGeneration,
+        displayName: '保存分镜',
+        handler: handleBatchSaveStoryboards,
+        dependencies: sceneDeps,
         buildInput: createBuildInput([
-          'scriptId', 'projectId', 'userId', 'textModel',
+          'scriptId', 'projectId', 'userId',
           { key: 'clearExisting', defaultValue: true },
-          { key: 'think', defaultValue: false }
+          {
+            key: 'sceneResults',
+            from: ctx => {
+              // 从所有场景步骤的 previousResults 中收集结果
+              const results = [];
+              for (let j = 0; j < totalScenes; j++) {
+                if (ctx.previousResults[j]) {
+                  results.push(ctx.previousResults[j]);
+                }
+              }
+              return results;
+            }
+          }
         ])
-      },
-      {
-        // 分镜保存后提取角色
+      });
+
+      // 角色提取步骤：依赖保存步骤
+      steps.push({
         type: 'character_extraction',
         targetType: 'characters',
+        displayName: '角色提取',
         handler: handleCharacterExtraction,
-        dependencies: [0],
+        dependencies: [saveStepIndex],
         buildInput: createBuildInput([
           'scriptContent', 'projectId', 'scriptId', 'userId', 'textModel'
         ])
-      }
-    ]
+      });
+
+      return steps;
+    }
   },
 
 
@@ -535,12 +609,16 @@ function getWorkflowDefinition(workflowType) {
  * 获取所有可用的工作流类型
  */
 function getAvailableWorkflows() {
-  return Object.entries(WORKFLOW_DEFINITIONS).map(([key, def]) => ({
-    type: key,
-    name: def.name,
-    totalSteps: def.steps.length,
-    steps: def.steps.map((s, i) => ({ index: i, type: s.type, targetType: s.targetType }))
-  }));
+  return Object.entries(WORKFLOW_DEFINITIONS).map(([key, def]) => {
+    const steps = typeof def.steps === 'function' ? [] : def.steps;
+    return {
+      type: key,
+      name: def.name,
+      totalSteps: steps.length,
+      isDynamic: typeof def.steps === 'function',
+      steps: steps.map((s, i) => ({ index: i, type: s.type, targetType: s.targetType }))
+    };
+  });
 }
 
 module.exports = {

@@ -9,6 +9,7 @@ import { Plus, Trash2, ChevronRight, ChevronDown, Wand2, Save, Edit2, GripVertic
 import { NovelOutline } from '../../../types/projectTypes';
 import { useToast } from '../../../contexts/ToastContext';
 import { getAuthToken } from '../../../services/auth';
+import { AIModel } from '../../../components/AIModelSelector';
 
 // ==================== 类型定义 ====================
 
@@ -17,6 +18,9 @@ interface OutlinePlannerProps {
   outlines: NovelOutline[];
   onOutlinesChange: (outlines: NovelOutline[]) => void;
   onRefresh: () => void;
+  // AI 模型配置
+  models: AIModel[];
+  textModel: string;
 }
 
 type OutlineType = NovelOutline['outline_type'];
@@ -120,6 +124,8 @@ const OutlinePlanner: React.FC<OutlinePlannerProps> = ({
   outlines,
   onOutlinesChange,
   onRefresh,
+  models,
+  textModel,
 }) => {
   const { showToast } = useToast();
   const { isOpen, onOpen, onClose } = useDisclosure();

@@ -13,8 +13,9 @@
  * output: { total, completed, skipped, failed, results[] }
  */
 
-const { queryAll } = require('../../../dbHelper');
+const { queryAll, queryOne } = require('../../../dbHelper');
 const handleSceneVideoGeneration = require('./sceneVideoGeneration');
+const { requireVisualStyle } = require('../../../utils/getProjectStyle');
 
 // ============================================================
 // 并发池：同时运行最多 limit 个 async 任务
@@ -61,9 +62,9 @@ async function handleBatchSceneVideoGeneration(inputParams, onProgress) {
   const concurrency = Math.min(Math.max(Number(maxConcurrency) || 20, 1), 20);
   console.log(`[BatchSceneVideoGen] 开始批量生成视频，scriptId: ${scriptId}, 覆盖: ${overwriteVideos}, 并发: ${concurrency}`);
 
-  // 1. 查询所有分镜
+  // 1. 查询所有分镜（带全字段，供下游复用）
   const storyboards = await queryAll(
-    'SELECT id, prompt_template, variables_json, first_frame_url, last_frame_url, video_url FROM storyboards WHERE script_id = ? ORDER BY idx ASC',
+    'SELECT * FROM storyboards WHERE script_id = ? ORDER BY idx ASC',
     [scriptId]
   );
 
@@ -76,6 +77,23 @@ async function handleBatchSceneVideoGeneration(inputParams, onProgress) {
   let skipped = 0;
   let failed = 0;
   const results = [];
+  
+  // 1.5 预取共享数据：视觉风格（同一项目查 1 次，而非 N 次）
+  const projectId = storyboards[0].project_id;
+  const visualStyle = await requireVisualStyle(projectId);
+  
+  // 构建邻居查找表：按 idx 索引，避免每个分镜单独查询前后镜头
+  const idxMap = new Map();
+  for (const sb of storyboards) {
+    if (sb.idx != null) idxMap.set(sb.idx, sb);
+  }
+  
+  /** 安全解析 variables_json */
+  function safeParseVariables(raw) {
+    if (!raw) return {};
+    if (typeof raw === 'object') return raw;
+    try { return JSON.parse(raw); } catch { return {}; }
+  }
 
   // 2. 构建任务列表：跳过不需要生成的，其余包装成 async 函数
   const taskFns = [];
@@ -83,9 +101,7 @@ async function handleBatchSceneVideoGeneration(inputParams, onProgress) {
 
   for (let i = 0; i < storyboards.length; i++) {
     const sb = storyboards[i];
-    const vars = typeof sb.variables_json === 'string'
-      ? JSON.parse(sb.variables_json || '{}')
-      : (sb.variables_json || {});
+    const vars = safeParseVariables(sb.variables_json);
 
     const hasExistingVideo = !!sb.video_url;
 
@@ -99,9 +115,13 @@ async function handleBatchSceneVideoGeneration(inputParams, onProgress) {
 
     const idx = i;
 
-    // 包装成 async 函数放入池
+    // 包装成 async 函数放入池，传递预取上下文避免重复 DB 查询
     taskFns.push(async () => {
       console.log(`[BatchSceneVideoGen] [${idx + 1}/${total}] 开始生成分镜 ${sb.id} 的视频...`);
+      // 构建邻居上下文
+      const prevNeighbor = (sb.idx != null && idxMap.has(sb.idx - 1)) ? idxMap.get(sb.idx - 1) : null;
+      const nextNeighbor = (sb.idx != null && idxMap.has(sb.idx + 1)) ? idxMap.get(sb.idx + 1) : null;
+
       return await handleSceneVideoGeneration({
         storyboardId: sb.id,
         videoModel,
@@ -109,7 +129,14 @@ async function handleBatchSceneVideoGeneration(inputParams, onProgress) {
         duration,
         aspectRatio,
         resolution,
-        think
+        think,
+        _context: {
+          storyboard: sb,
+          variables: vars,
+          visualStyle,
+          prevNeighbor,
+          nextNeighbor
+        }
       }, null);
     });
 

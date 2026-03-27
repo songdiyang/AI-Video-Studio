@@ -84,18 +84,11 @@ interface WorkbenchContentProps {
 }
 
 const WorkbenchContent: React.FC<WorkbenchContentProps> = ({ projectType, projectId, activeTab }) => {
-  // 漫剧类型直接使用完整的 ScriptStudio（自带标签页和项目管理）
-  if (projectType === 'comic_drama') {
-    return (
-      <Suspense fallback={<WorkbenchLoadingFallback />}>
-        <ScriptStudio />
-      </Suspense>
-    );
-  }
-
-  // 其他类型：根据项目类型渲染对应的工作台
+  // Hook 必须在所有条件分支之前调用（React Rules of Hooks）
   const WorkbenchComponent = useMemo(() => {
     switch (projectType) {
+      case 'comic_drama':
+        return null; // 漫剧类型使用独立的 ScriptStudio
       case 'manga':
         return MangaWorkbench;
       case 'short_video':
@@ -106,6 +99,19 @@ const WorkbenchContent: React.FC<WorkbenchContentProps> = ({ projectType, projec
         return MangaWorkbench;
     }
   }, [projectType]);
+
+  // 漫剧类型直接使用完整的 ScriptStudio（自带标签页和项目管理）
+  if (projectType === 'comic_drama') {
+    return (
+      <Suspense fallback={<WorkbenchLoadingFallback />}>
+        <ScriptStudio />
+      </Suspense>
+    );
+  }
+
+  if (!WorkbenchComponent) {
+    return <WorkbenchLoadingFallback />;
+  }
 
   return (
     <Suspense fallback={<WorkbenchLoadingFallback />}>

@@ -156,22 +156,31 @@ ${contentForAnalysis}
 
   if (onProgress) onProgress(80);
 
-  // 保存角色到数据库（更新所有字段，包括名字）
+  // 保存角色到数据库（批量查询已存在记录 + 分离插入/更新）
   if (projectId && userId) {
     console.log('[CharacterExtraction] 保存', characters.length, '个角色到项目', projectId, '集数', scriptId);
     
-    const { queryOne, execute } = require('../../../dbHelper');
+    const { queryAll, execute } = require('../../../dbHelper');
+    
+    // 批量查询已存在的角色（1 次 DB 查询代替 N 次）
+    const charNames = characters.map(c => c.name).filter(Boolean);
+    let existingMap = new Map();
+    if (charNames.length > 0) {
+      const placeholders = charNames.map(() => '?').join(',');
+      const existingRows = await queryAll(
+        `SELECT id, name FROM characters WHERE project_id = ? AND user_id = ? AND name IN (${placeholders})`,
+        [projectId, userId, ...charNames]
+      );
+      for (const row of existingRows) {
+        existingMap.set(row.name, row.id);
+      }
+    }
     
     for (const character of characters) {
       try {
-        // 检查角色是否已存在（同一项目下的同名角色）
-        const existing = await queryOne(
-          'SELECT id FROM characters WHERE project_id = ? AND name = ? AND user_id = ?',
-          [projectId, character.name, userId]
-        );
-        
-        if (existing) {
-          // 更新现有角色（包括名字，更新所有 AI 提取的字段）
+        const existingId = existingMap.get(character.name);
+        if (existingId) {
+          // 更新现有角色
           await execute(
             `UPDATE characters 
              SET name = ?, appearance = ?, personality = ?, description = ?, script_id = ?, updated_at = CURRENT_TIMESTAMP
@@ -182,12 +191,12 @@ ${contentForAnalysis}
               character.personality || '',
               character.description || '',
               scriptId || null,
-              existing.id
+              existingId
             ]
           );
           console.log('[CharacterExtraction] 更新角色:', character.name, '(所有字段)');
         } else {
-          // 插入新角色（包含所有详细信息）
+          // 插入新角色
           await execute(
             `INSERT INTO characters (user_id, project_id, script_id, name, appearance, personality, description, source)
              VALUES (?, ?, ?, ?, ?, ?, ?, 'ai_extracted')`,
