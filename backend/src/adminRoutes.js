@@ -201,7 +201,7 @@ router.get('/server-status', authMiddleware, requireAdmin, async (req, res) => {
       ADMIN_ACCESS_KEY: process.env.ADMIN_ACCESS_KEY ? '✓ 已配置' : '✗ 未配置',
       MINIO_ENDPOINT: process.env.MINIO_ENDPOINT ? '✓ 已配置' : '✗ 未配置',
       MINIO_BUCKET: process.env.MINIO_BUCKET || '未配置',
-      COMFYUI_BASE_URL: process.env.COMFYUI_BASE_URL || '未配置',
+
     };
     
     res.json({

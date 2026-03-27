@@ -558,7 +558,7 @@ const Settings: React.FC = () => {
           </div>
           <div className="flex justify-between items-center py-2" style={{ borderTop: '1px solid var(--border-color)' }}>
             <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>{t.settings.about.aiEngine}</span>
-            <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>ComfyUI + ControlNet</span>
+            <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>AI Model Service</span>
           </div>
         </div>
       </div>

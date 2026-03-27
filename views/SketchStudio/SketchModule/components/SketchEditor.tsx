@@ -1,6 +1,8 @@
 import React, { Suspense, useRef, useCallback, useState, useEffect, useMemo } from 'react';
 import { X, Loader2, HelpCircle, Download, FileImage, FileCode, Check, Cloud, CloudOff, Upload, FileJson, Pencil } from 'lucide-react';
 import { Tooltip, Button, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem, Input } from '@heroui/react';
+// 导入 Excalidraw CSS - 必须在使用组件前导入
+import '@excalidraw/excalidraw/index.css';
 import SketchToolbar from './SketchToolbar';
 import { useSketchEditor } from '../hooks/useSketchEditor';
 import { useToast } from '../../../../contexts/ToastContext';

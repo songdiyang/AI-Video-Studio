@@ -11,7 +11,7 @@
  *    - sketch_type: 决定使用哪种 ControlNet
  *    - control_strength: 控制强度
  *    - imageUrls: 选中的参考图数组
- * 5. 调用 aiModelService 发起生成请求（使用配置了 comfyui handler 的模型）
+ * 5. 调用 aiModelService 发起生成请求
  * 6. 将生成结果存入 storyboards.first_frame_url
  * 7. 返回结果数据
  *
@@ -234,7 +234,7 @@ ${extraInfo}
   };
 
   // 添加草图控制元数据（供模型处理器使用）
-  // 这些参数会被传递给支持草图控制的模型（如 ComfyUI）
+  // 这些参数会被传递给支持草图控制的模型
   const submitParams = {
     ...generateParams,
     // 草图控制特有参数

@@ -378,7 +378,8 @@ const SceneCard: React.FC<SceneCardProps> = ({
 
             {/* 悬停时显示的操作按钮 */}
             <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
-              {/* 草图按钮 */}
+              {/* 草图按钮 - 已隐藏 */}
+              {/*
               <Tooltip content={scene.sketchUrl ? "编辑草图" : "添加草图"}>
                 <button
                   onClick={(e) => { e.stopPropagation(); onOpenSketchEditor?.(scene.id); }}
@@ -391,6 +392,7 @@ const SceneCard: React.FC<SceneCardProps> = ({
                   {scene.sketchUrl ? <Edit3 className="w-3.5 h-3.5" /> : <><Plus className="w-2 h-2" /><Pencil className="w-3 h-3" /></>}
                 </button>
               </Tooltip>
+              */}
               <button
                 onClick={(e) => { e.stopPropagation(); handleDeleteClick(scene.id); }}
                 className="p-1 rounded hover:bg-red-500/20 text-[var(--text-muted)] hover:text-red-400 transition-colors"

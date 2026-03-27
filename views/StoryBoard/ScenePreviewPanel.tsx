@@ -616,7 +616,8 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
           )}
         </div>
 
-        {/* 草图面板 */}
+        {/* 草图面板 - 已隐藏 */}
+        {/*
         <div className="px-4 py-3 border-t border-[var(--border-color)]">
           <SketchPanel
             storyboardId={scene.id}
@@ -632,6 +633,7 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
             }}
           />
         </div>
+        */}
 
         {/* 镜头语言参数 */}
         <div className="px-4 py-3 border-t border-[var(--border-color)]">
