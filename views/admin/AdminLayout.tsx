@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { ChevronDown, ChevronRight, LogOut, Settings, Users, Cpu, LayoutDashboard, Server, BarChart3, Gauge, CreditCard, Globe, MessageSquare, AlertTriangle } from 'lucide-react';
+import { ChevronDown, ChevronRight, LogOut, Settings, Users, Cpu, LayoutDashboard, Server, BarChart3, Gauge, CreditCard, Globe, MessageSquare, AlertTriangle, Megaphone } from 'lucide-react';
 import { getAuthUser, logout } from '../../services/auth';
 
 interface MenuItem {
@@ -83,6 +83,12 @@ const AdminLayout: React.FC = () => {
           label: '任务监控',
           icon: <AlertTriangle className="w-4 h-4" />,
           path: '/admin/task-errors'
+        },
+        {
+          id: 'announcements',
+          label: '公告管理',
+          icon: <Megaphone className="w-4 h-4" />,
+          path: '/admin/announcements'
         }
       ]
     }

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { MessageSquare, Mail, Search, Filter, ChevronLeft, ChevronRight, X, Send, Megaphone, Eye, RefreshCw, Clock, CheckCircle, AlertCircle, XCircle, MessageCircle, UserSearch } from 'lucide-react';
 import { getAdminAuthHeaders } from '../../services/auth';
+import { useToast } from '../../contexts/ToastContext';
 
 interface Feedback {
   id: number;
@@ -31,6 +32,7 @@ const TYPE_MAP: Record<string, { label: string; color: string }> = {
 };
 
 const FeedbackManagement: React.FC = () => {
+  const { showToast } = useToast();
   const [feedbacks, setFeedbacks] = useState<Feedback[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -160,15 +162,16 @@ const FeedbackManagement: React.FC = () => {
       });
       const data = await res.json();
       if (res.ok) {
-        alert(`公告已发送！成功: ${data.sent}, 共: ${data.total}`);
+        showToast(`公告已发送！成功: ${data.sent}, 共: ${data.total}`, 'success');
         setShowAnnounce(false);
         setAnnounceTitle('');
         setAnnounceContent('');
       } else {
-        alert(data.error || '发送失败');
+        showToast(data.error || '发送失败', 'error');
       }
     } catch (err) {
       console.error('群发公告失败:', err);
+      showToast('群发公告失败，请稍后重试', 'error');
     } finally {
       setSendingAnnounce(false);
     }

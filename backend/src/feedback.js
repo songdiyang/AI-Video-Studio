@@ -207,6 +207,56 @@ router.post('/admin/announce', authMiddleware, requireAdmin, async (req, res) =>
   }
 });
 
+// GET /api/feedback/admin/announcements - 获取公告历史列表
+router.get('/admin/announcements', authMiddleware, requireAdmin, async (req, res) => {
+  try {
+    const { page = 1, limit = 10, q = '' } = req.query;
+    const offset = (Math.max(1, Number(page)) - 1) * Number(limit);
+
+    // 查询公告列表（去重，按标题和内容分组，取最新的一条）
+    let where = "m.mail_type = 'announce' AND m.sender_type = 'admin'";
+    const params = [];
+    if (q) {
+      where += ' AND (m.title LIKE ? OR m.content LIKE ?)';
+      params.push(`%${q}%`, `%${q}%`);
+    }
+
+    // 获取去重后的公告列表
+    const announcements = await queryAll(
+      `SELECT 
+        m.id,
+        m.title,
+        m.content,
+        m.sender_id as created_by,
+        u.email as created_by_email,
+        m.created_at,
+        COUNT(DISTINCT m2.receiver_id) as total_count,
+        COUNT(DISTINCT m2.receiver_id) as sent_count
+       FROM internal_mail m
+       LEFT JOIN users u ON m.sender_id = u.id
+       LEFT JOIN internal_mail m2 ON m.title = m2.title AND m.content = m2.content AND m2.mail_type = 'announce'
+       WHERE ${where}
+       GROUP BY m.title, m.content
+       ORDER BY m.created_at DESC
+       LIMIT ? OFFSET ?`,
+      [...params, Number(limit), offset]
+    );
+
+    // 查询总数（去重后的公告数量）
+    const countRow = await queryOne(
+      `SELECT COUNT(DISTINCT CONCAT(m.title, m.content)) as total 
+       FROM internal_mail m 
+       WHERE ${where}`,
+      params
+    );
+
+    res.json({ announcements, total: countRow ? countRow.total : 0 });
+  } catch (err) {
+    console.error('[Feedback] 获取公告列表失败:', err);
+    res.status(500).json({ error: '获取公告列表失败' });
+  }
+});
+
 module.exports = {
   router,
   ensureFeedbackTable

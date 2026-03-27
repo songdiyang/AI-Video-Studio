@@ -40,6 +40,7 @@ const SubscriptionManagement = React.lazy(() => import('./views/admin/Subscripti
 const SiteSettings = React.lazy(() => import('./views/admin/SiteSettings'));
 const FeedbackManagement = React.lazy(() => import('./views/admin/FeedbackManagement'));
 const TaskErrorMonitor = React.lazy(() => import('./views/admin/TaskErrorMonitor'));
+const AnnouncementManagement = React.lazy(() => import('./views/admin/AnnouncementManagement'));
 
 // 加载中回退组件
 const LoadingFallback = () => (
@@ -219,6 +220,11 @@ const App: React.FC = () => {
               <Route path="task-errors" element={
                 <Suspense fallback={<LoadingFallback />}>
                   <TaskErrorMonitor />
+                </Suspense>
+              } />
+              <Route path="announcements" element={
+                <Suspense fallback={<LoadingFallback />}>
+                  <AnnouncementManagement />
                 </Suspense>
               } />
               <Route index element={<Navigate to="/admin/dashboard" replace />} />
