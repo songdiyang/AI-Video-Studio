@@ -16,6 +16,7 @@ interface UseSceneGenerationOptions {
   videoModel: string;
   videoAspectRatio: string;
   videoDuration: number | null;
+  videoResolution?: string;
 }
 
 function parseJobInputParams(inputParams: WorkflowJob['input_params']) {
@@ -113,7 +114,8 @@ export function useSceneGeneration({
   textModel,
   videoModel,
   videoAspectRatio,
-  videoDuration
+  videoDuration,
+  videoResolution
 }: UseSceneGenerationOptions) {
   const { tasks, runTask, recoverTasks, clearTask, isRunning, isTaskActive } = useTaskRunner({ projectId: projectId || 0 });
 
@@ -254,6 +256,7 @@ export function useSceneGeneration({
         textModel,
         duration: videoDuration,
         aspectRatio: videoAspectRatio,
+        resolution: videoResolution,
         episodeNumber,
         storyboardIndex: sceneIdx + 1,
         isRegenerate: !!scene.videoUrl

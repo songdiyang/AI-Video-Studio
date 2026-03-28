@@ -53,7 +53,7 @@ async function handleBatchFrameGeneration(inputParams, onProgress) {
     throw new Error('imageModel 参数是必需的');
   }
 
-  console.log(`[BatchFrameGen] 开始批量串行生成，scriptId: ${scriptId}, 覆盖: ${overwriteFrames}, 容错: ${continueOnError}`);
+  console.log(`[BatchFrameGen] 开始批量串行生成，scriptId: ${scriptId}, 覆盖: ${overwriteFrames}, 容错: ${continueOnError}, resolution: ${resolution || '未设置'}`);
 
   // 0. 覆盖模式：先批量清除所有分镜的首尾帧，让前端立即看到帧被清除
   if (overwriteFrames) {

@@ -19,6 +19,7 @@ export const BLOCK_COLORS: Record<BlockCategory, { bg: string; border: string; t
   character: { bg: 'bg-rose-100', border: 'border-rose-300', text: 'text-rose-700' },
   scene: { bg: 'bg-emerald-100', border: 'border-emerald-300', text: 'text-emerald-700' },
   action: { bg: 'bg-amber-100', border: 'border-amber-300', text: 'text-amber-700' },
+  reference: { bg: 'bg-purple-100', border: 'border-purple-300', text: 'text-purple-700' },
 };
 
 // ============ 积木块选项配置 ============
@@ -347,6 +348,22 @@ export const BLOCK_DEFINITIONS: Record<BlockType, BlockDefinition> = {
       editable: true,
     },
   },
+  reference_image: {
+    type: 'reference_image',
+    category: 'reference',
+    label: '参考图',
+    description: '引用图片作为参考',
+    icon: '🖼️',
+    color: 'bg-purple-100',
+    defaultData: { imageUrl: '', source: 'upload', description: '' },
+    renderConfig: {
+      width: 200,
+      height: 120,
+      showLabel: true,
+      showIcon: true,
+      editable: true,
+    },
+  },
 };
 
 // ============ 工具函数 ============
@@ -384,6 +401,7 @@ export function getBlockCategories(): { key: BlockCategory; label: string; icon:
     { key: 'character', label: '角色', icon: '👤' },
     { key: 'scene', label: '场景', icon: '🏞️' },
     { key: 'action', label: '动作', icon: '🏃' },
+    { key: 'reference', label: '参考', icon: '🖼️' },
   ];
 }
 

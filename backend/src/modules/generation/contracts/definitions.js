@@ -371,6 +371,7 @@ const operationContracts = [
         textModel: { type: 'string' },
         overwriteFrames: { type: 'boolean', default: false },
         aspectRatio: { type: 'string' },
+        resolution: { type: 'string' },
         maxConcurrency: { type: 'integer', minimum: 1, default: 20 }
       }
     },
@@ -395,6 +396,7 @@ const operationContracts = [
       options: {
         overwriteFrames: input.overwriteFrames,
         aspectRatio: input.aspectRatio || null,
+        resolution: input.resolution || null,
         maxConcurrency: input.maxConcurrency ?? 20
       }
     }),

@@ -15,6 +15,7 @@ import {
   SceneBlock,
   ActionBlock,
   DurationBlock,
+  ReferenceImageBlock,
 } from './blocks';
 
 interface BlockCanvasProps {
@@ -59,22 +60,44 @@ const BlockCanvas: React.FC<BlockCanvasProps> = ({
 
     try {
       const data = JSON.parse(e.dataTransfer.getData('application/json'));
+      const rect = canvasRef.current?.getBoundingClientRect();
+      if (!rect) return;
+
+      // 处理参考图片拖拽
+      if (data.type === 'reference-image') {
+        const newBlock: Block = {
+          id: generateBlockId(),
+          type: 'reference_image',
+          category: 'reference',
+          position: {
+            x: e.clientX - rect.left - 100,
+            y: e.clientY - rect.top - 60,
+          },
+          data: {
+            imageUrl: data.imageUrl,
+            source: data.source,
+            description: data.description || '',
+          },
+        };
+        onBlocksChange([...blocks, newBlock]);
+        onSelectBlock(newBlock.id);
+        return;
+      }
+
+      // 处理普通积木拖拽
       if (data.type) {
-        const rect = canvasRef.current?.getBoundingClientRect();
-        if (rect) {
-          const newBlock: Block = {
-            id: generateBlockId(),
-            type: data.type as BlockType,
-            category: getBlockDefinition(data.type as BlockType).category,
-            position: {
-              x: e.clientX - rect.left - 100,
-              y: e.clientY - rect.top - 30,
-            },
-            data: getBlockDefaultData(data.type as BlockType),
-          };
-          onBlocksChange([...blocks, newBlock]);
-          onSelectBlock(newBlock.id);
-        }
+        const newBlock: Block = {
+          id: generateBlockId(),
+          type: data.type as BlockType,
+          category: getBlockDefinition(data.type as BlockType).category,
+          position: {
+            x: e.clientX - rect.left - 100,
+            y: e.clientY - rect.top - 30,
+          },
+          data: getBlockDefaultData(data.type as BlockType),
+        };
+        onBlocksChange([...blocks, newBlock]);
+        onSelectBlock(newBlock.id);
       }
     } catch (error) {
       console.error('[BlockCanvas] Drop error:', error);
@@ -111,6 +134,15 @@ const BlockCanvas: React.FC<BlockCanvasProps> = ({
         return <ActionBlock block={block as any} isSelected={isSelected} onChange={onChange} />;
       case 'duration':
         return <DurationBlock block={block as any} isSelected={isSelected} onChange={onChange} />;
+      case 'reference_image':
+        return (
+          <ReferenceImageBlock
+            block={block as any}
+            isSelected={isSelected}
+            onChange={onChange}
+            onDelete={() => onDeleteBlock(block.id)}
+          />
+        );
       default:
         return null;
     }

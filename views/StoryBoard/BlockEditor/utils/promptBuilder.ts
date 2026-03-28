@@ -110,26 +110,34 @@ const PROMPT_TEMPLATES: Record<BlockType, (data: BlockData) => string> = {
     if (particle) parts.push(particle);
     return parts.length > 0 ? `带有${parts.join('、')}` : '';
   },
+
+  reference_image: (data) => {
+    const { imageUrl, source, description } = data as { imageUrl: string; source: string; description?: string };
+    if (!imageUrl) return '';
+    const sourceLabel = source === 'scene' ? '场景参考' : source === 'frame' ? '帧参考' : '参考图';
+    return description ? `${sourceLabel}: ${description}` : `${sourceLabel}`;
+  },
 };
 
 // ============ 积木块优先级 ============
 
 const BLOCK_PRIORITY: Record<BlockType, number> = {
   text: 0,
-  scene: 1,
-  environment: 2,
-  character: 3,
-  character_pos: 4,
-  character_attr: 5,
-  action: 6,
-  duration: 7,
-  effect: 8,
-  shot_size: 9,
-  camera_angle: 10,
-  lens_type: 11,
-  depth_of_field: 12,
-  lighting_mood: 13,
-  movement: 14,
+  reference_image: 1,
+  scene: 2,
+  environment: 3,
+  character: 4,
+  character_pos: 5,
+  character_attr: 6,
+  action: 7,
+  duration: 8,
+  effect: 9,
+  shot_size: 10,
+  camera_angle: 11,
+  lens_type: 12,
+  depth_of_field: 13,
+  lighting_mood: 14,
+  movement: 15,
 };
 
 // ============ 提示词构建器类 ============
@@ -157,6 +165,7 @@ export class PromptBuilder {
       characters: [] as number[],
       scenes: [] as number[],
       duration: 3,
+      referenceImages: [] as string[],
     };
 
     for (const block of sortedBlocks) {
@@ -199,7 +208,7 @@ export class PromptBuilder {
    */
   private collectMetadata(
     block: Block,
-    metadata: { shotLanguage: Record<string, unknown>; characters: number[]; scenes: number[]; duration: number }
+    metadata: { shotLanguage: Record<string, unknown>; characters: number[]; scenes: number[]; duration: number; referenceImages: string[] }
   ): void {
     // 收集镜头语言参数
     const shotLanguageKeys: BlockType[] = [
@@ -235,6 +244,14 @@ export class PromptBuilder {
     // 收集时长
     if (block.type === 'duration') {
       metadata.duration = (block.data as { seconds: number }).seconds;
+    }
+
+    // 收集参考图
+    if (block.type === 'reference_image') {
+      const { imageUrl } = block.data as { imageUrl: string };
+      if (imageUrl && !metadata.referenceImages.includes(imageUrl)) {
+        metadata.referenceImages.push(imageUrl);
+      }
     }
   }
 

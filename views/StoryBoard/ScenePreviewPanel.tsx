@@ -350,10 +350,21 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                 <img
                   src={currentFrame}
                   alt={`分镜 ${sceneIndex + 1} - ${showStartFrame ? '首帧' : '尾帧'}`}
-                  className="max-w-full max-h-full rounded-lg shadow-2xl object-contain cursor-zoom-in"
+                  className="max-w-full max-h-full rounded-lg shadow-2xl object-contain cursor-zoom-in hover:ring-2 hover:ring-[var(--accent)]/50 transition-all"
                   style={{ maxHeight: 'calc(100% - 2rem)' }}
                   onClick={openLightbox}
-                  title="点击放大预览"
+                  title="点击放大预览，拖拽到积木编辑器"
+                  draggable
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData('application/json', JSON.stringify({
+                      type: 'reference-image',
+                      imageUrl: currentFrame,
+                      source: 'frame',
+                      frameType: showStartFrame ? 'start' : 'end',
+                      sceneId: scene.id
+                    }));
+                    e.dataTransfer.effectAllowed = 'copy';
+                  }}
                 />
                 {/* 放大按钮提示 */}
                 <button
@@ -565,8 +576,18 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
             <div className="flex items-center gap-2">
               <Blocks className="w-4 h-4 text-[var(--accent)]" />
               <span className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">
-                分镜描述
+                导演空间
               </span>
+              {/* 生成模式状态标签 */}
+              {scene.startFrame && scene.endFrame ? (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-rose-500/20 text-rose-400">
+                  视频生成
+                </span>
+              ) : (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-blue-500/20 text-blue-400">
+                  图片生成
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-2">
               {!isEditingDescription && (
@@ -586,6 +607,10 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                 <BlockEditor
                   storyboardId={scene.id}
                   projectId={projectId || undefined}
+                  availableFrames={{
+                    startFrame: scene.startFrame,
+                    endFrame: scene.endFrame
+                  }}
                   onChange={(state: BlockEditorState) => {
                     setEditedDescription(state.generatedPrompt);
                   }}

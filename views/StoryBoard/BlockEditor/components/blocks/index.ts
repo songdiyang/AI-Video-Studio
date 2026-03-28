@@ -10,3 +10,4 @@ export { default as CharacterBlock } from './CharacterBlock';
 export { default as SceneBlock } from './SceneBlock';
 export { default as ActionBlock } from './ActionBlock';
 export { default as DurationBlock } from './DurationBlock';
+export { default as ReferenceImageBlock } from './ReferenceImageBlock';

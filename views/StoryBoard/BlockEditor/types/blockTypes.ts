@@ -6,21 +6,22 @@
 // ============ 积木块类型枚举 ============
 
 export type BlockType =
-  | 'text'           // 自然语言输入
-  | 'shot_size'      // 镜头类型（景别）
-  | 'camera_angle'   // 镜头角度
-  | 'movement'       // 运镜方式
-  | 'lens_type'      // 镜头类型
-  | 'depth_of_field' // 景深
-  | 'lighting_mood'  // 光影氛围
-  | 'character'      // 角色选择
-  | 'character_attr' // 角色属性
-  | 'character_pos'  // 角色位置
-  | 'scene'          // 场景选择
-  | 'environment'    // 环境参数
-  | 'action'         // 动作类型
-  | 'duration'       // 动作时长
-  | 'effect';        // 动作效果
+  | 'text'            // 自然语言输入
+  | 'shot_size'       // 镜头类型（景别）
+  | 'camera_angle'    // 镜头角度
+  | 'movement'        // 运镜方式
+  | 'lens_type'       // 镜头类型
+  | 'depth_of_field'  // 景深
+  | 'lighting_mood'   // 光影氛围
+  | 'character'       // 角色选择
+  | 'character_attr'  // 角色属性
+  | 'character_pos'   // 角色位置
+  | 'scene'           // 场景选择
+  | 'environment'     // 环境参数
+  | 'action'          // 动作类型
+  | 'duration'        // 动作时长
+  | 'effect'          // 动作效果
+  | 'reference_image'; // 参考图片
 
 // 积木块分类
 export type BlockCategory =
@@ -28,7 +29,8 @@ export type BlockCategory =
   | 'shot'       // 镜头
   | 'character'  // 角色
   | 'scene'      // 场景
-  | 'action';    // 动作
+  | 'action'     // 动作
+  | 'reference'; // 参考
 
 // ============ 积木块基础接口 ============
 
@@ -56,7 +58,8 @@ export type BlockData =
   | EnvironmentBlockData
   | ActionBlockData
   | DurationBlockData
-  | EffectBlockData;
+  | EffectBlockData
+  | ReferenceImageBlockData;
 
 // ============ 各类积木块数据接口 ============
 
@@ -130,6 +133,12 @@ export interface EffectBlockData {
   particle?: string;
 }
 
+export interface ReferenceImageBlockData {
+  imageUrl: string;
+  source: 'scene' | 'frame' | 'upload';
+  description?: string;
+}
+
 // ============ 积木块定义接口 ============
 
 export interface BlockDefinition {
@@ -200,6 +209,7 @@ export interface BlockEditorProps {
   projectId?: number;
   characters?: ProjectCharacter[];
   scenes?: ProjectScene[];
+  availableFrames?: { startFrame?: string; endFrame?: string };
 }
 
 export interface ProjectCharacter {
@@ -238,10 +248,18 @@ export interface GeneratedPrompt {
 // ============ 拖拽相关类型 ============
 
 export interface DragItem {
-  type: 'palette-block' | 'canvas-block';
+  type: 'palette-block' | 'canvas-block' | 'reference-image';
   blockType?: BlockType;
   blockId?: string;
   offset?: { x: number; y: number };
+  imageUrl?: string;
+  source?: 'scene' | 'frame' | 'upload';
+}
+
+export interface DragReferenceImage {
+  type: 'reference-image';
+  imageUrl: string;
+  source: 'scene' | 'frame';
 }
 
 export interface DropResult {

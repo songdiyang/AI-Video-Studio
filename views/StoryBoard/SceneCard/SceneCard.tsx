@@ -299,9 +299,25 @@ const SceneCard: React.FC<SceneCardProps> = ({
               </span>
             </div>
 
-            {/* 缩略图 */}
+            {/* 缩略图 - 支持拖拽到积木编辑器 */}
             {(scene.startFrame || scene.videoUrl) ? (
-              <div className="relative w-16 h-10 flex-shrink-0 rounded overflow-hidden bg-[var(--bg-app)]">
+              <div 
+                className="relative w-16 h-10 flex-shrink-0 rounded overflow-hidden bg-[var(--bg-app)] cursor-grab active:cursor-grabbing hover:ring-2 hover:ring-[var(--accent)]/50 transition-all"
+                draggable={!!scene.startFrame}
+                onDragStart={(e) => {
+                  if (scene.startFrame) {
+                    e.dataTransfer.setData('application/json', JSON.stringify({
+                      type: 'reference-image',
+                      imageUrl: scene.startFrame,
+                      source: 'scene',
+                      sceneId: scene.id,
+                      sceneIndex: index
+                    }));
+                    e.dataTransfer.effectAllowed = 'copy';
+                  }
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
                 {scene.videoUrl ? (
                   <div 
                     className="w-full h-full flex items-center justify-center cursor-pointer bg-gradient-to-br from-rose-500/20 to-purple-500/20"
@@ -315,7 +331,7 @@ const SceneCard: React.FC<SceneCardProps> = ({
                   <LazyImage
                     src={scene.startFrame!}
                     alt={`分镜 ${index + 1} 缩略图`}
-                    className="w-full h-full"
+                    className="w-full h-full pointer-events-none"
                   />
                 )}
                 {/* 生成状态指示 */}

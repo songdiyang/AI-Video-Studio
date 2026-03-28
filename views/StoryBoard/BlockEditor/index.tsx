@@ -22,6 +22,7 @@ const BlockEditor: React.FC<BlockEditorProps> = ({
   projectId,
   characters = [],
   scenes = [],
+  availableFrames,
 }) => {
   const { showToast } = useToast();
 
@@ -161,16 +162,72 @@ const BlockEditor: React.FC<BlockEditorProps> = ({
           }}
         />
 
-        {/* 中央画布 */}
-        <BlockCanvas
-          blocks={state.blocks}
-          selectedBlockId={state.selectedBlockId}
-          characters={projectCharacters}
-          scenes={projectScenes}
-          onBlocksChange={handleBlocksChange}
-          onSelectBlock={handleSelectBlock}
-          onDeleteBlock={handleDeleteBlock}
-        />
+        {/* 中央画布区域 */}
+        <div className="flex flex-1 flex-col">
+          {/* 可拖拽的首尾帧缩略图栏 */}
+          {availableFrames && (availableFrames.startFrame || availableFrames.endFrame) && (
+            <div className="flex items-center gap-3 px-4 py-2 border-b border-[var(--border-color)] bg-[var(--bg-card)]">
+              <span className="text-xs text-[var(--text-muted)]">拖拽参考:</span>
+              {availableFrames.startFrame && (
+                <div
+                  className="relative w-12 h-8 rounded overflow-hidden cursor-grab active:cursor-grabbing hover:ring-2 hover:ring-[var(--accent)]/50 transition-all"
+                  draggable
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData('application/json', JSON.stringify({
+                      type: 'reference-image',
+                      imageUrl: availableFrames.startFrame,
+                      source: 'frame',
+                      frameType: 'start'
+                    }));
+                    e.dataTransfer.effectAllowed = 'copy';
+                  }}
+                  title="拖拽首帧到画布"
+                >
+                  <img
+                    src={availableFrames.startFrame}
+                    alt="首帧"
+                    className="w-full h-full object-cover"
+                  />
+                  <span className="absolute bottom-0 left-0 right-0 text-[8px] text-center text-white bg-black/50">首帧</span>
+                </div>
+              )}
+              {availableFrames.endFrame && (
+                <div
+                  className="relative w-12 h-8 rounded overflow-hidden cursor-grab active:cursor-grabbing hover:ring-2 hover:ring-[var(--accent)]/50 transition-all"
+                  draggable
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData('application/json', JSON.stringify({
+                      type: 'reference-image',
+                      imageUrl: availableFrames.endFrame,
+                      source: 'frame',
+                      frameType: 'end'
+                    }));
+                    e.dataTransfer.effectAllowed = 'copy';
+                  }}
+                  title="拖拽尾帧到画布"
+                >
+                  <img
+                    src={availableFrames.endFrame}
+                    alt="尾帧"
+                    className="w-full h-full object-cover"
+                  />
+                  <span className="absolute bottom-0 left-0 right-0 text-[8px] text-center text-white bg-black/50">尾帧</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 中央画布 */}
+          <BlockCanvas
+            blocks={state.blocks}
+            selectedBlockId={state.selectedBlockId}
+            characters={projectCharacters}
+            scenes={projectScenes}
+            onBlocksChange={handleBlocksChange}
+            onSelectBlock={handleSelectBlock}
+            onDeleteBlock={handleDeleteBlock}
+          />
+        </div>
       </div>
 
       {/* 底部提示词预览 */}

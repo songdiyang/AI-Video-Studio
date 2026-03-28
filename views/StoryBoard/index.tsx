@@ -143,9 +143,14 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
     () => normalizeCapabilityOptions(imageModelConfig?.supportedResolutions, 'resolution'),
     [imageModelConfig]
   );
+  // 视频清晰度使用固定选项（480p/720p/1080p），不依赖模型配置
   const videoResolutionOptions = useMemo(
-    () => normalizeCapabilityOptions(videoModelConfig?.supportedResolutions, 'resolution'),
-    [videoModelConfig]
+    () => [
+      { value: '480p', label: '480p' },
+      { value: '720p', label: '720p' },
+      { value: '1080p', label: '1080p' }
+    ],
+    []
   );
 
   // 同步外部 props - 合并为单个 useEffect 减少渲染开销
@@ -263,7 +268,8 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
     textModel,
     videoModel,
     videoAspectRatio,
-    videoDuration
+    videoDuration,
+    videoResolution
   });
 
   const characterBatchRecovery = useWorkflowRecovery({
@@ -502,7 +508,7 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
     projectId: currentProjectId,
     imageModel,
     aspectRatio: imageAspectRatio,
-    resolution: imageResolution || undefined,
+    resolution: imageResolution || imageResolutionOptions[0]?.value || undefined,
     textModel,
     scenes,
     onComplete: () => {
