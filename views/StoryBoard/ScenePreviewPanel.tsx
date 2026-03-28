@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Button, Textarea, Chip } from '@heroui/react';
-import { ImageIcon, Video, Film, Camera, Users, MapPin, Zap, Edit3, Save, X, Play, Trash2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ZoomIn, ZoomOut, RotateCw, Maximize2 } from 'lucide-react';
+import { ImageIcon, Video, Film, Camera, Users, MapPin, Zap, Edit3, Save, X, Trash2, ZoomIn, ZoomOut, RotateCw, Maximize2, Blocks } from 'lucide-react';
 import { StoryboardScene } from './useSceneManager';
 import { TaskState } from '../../hooks/useTaskRunner';
 import { getAuthToken } from '../../services/auth';
@@ -8,8 +8,8 @@ import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import { validateFrameReadiness, formatValidationMessage } from './utils/validateFrameReadiness';
 import SketchPanel from './SceneCard/SketchPanel';
-import ShotLanguageEditor from './components/ShotLanguageEditor';
-import ShotLanguageBadge from './components/ShotLanguageBadge';
+import BlockEditor from './BlockEditor';
+import { BlockEditorState } from './BlockEditor/types/blockTypes';
 
 interface ScenePreviewPanelProps {
   scene: StoryboardScene | null;
@@ -40,7 +40,6 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
   const [editedDescription, setEditedDescription] = useState('');
   const [isSavingDescription, setIsSavingDescription] = useState(false);
   const [showStartFrame, setShowStartFrame] = useState(true);
-  const [showShotLanguageEditor, setShowShotLanguageEditor] = useState(false);
   const { showToast } = useToast();
   const { confirm } = useConfirm();
 
@@ -560,53 +559,44 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
           </div>
         </div>
 
-        {/* 描述编辑 */}
-        <div className="px-4 py-3">
+        {/* 积木编辑器 - 分镜描述 */}
+        <div className="px-4 py-3 border-t border-[var(--border-color)]">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">
-              分镜描述
-            </span>
-            {!isEditingDescription && (
-              <button
-                onClick={() => setIsEditingDescription(true)}
-                className="p-1 rounded hover:bg-[var(--bg-card-hover)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
-              >
-                <Edit3 className="w-3.5 h-3.5" />
-              </button>
-            )}
+            <div className="flex items-center gap-2">
+              <Blocks className="w-4 h-4 text-[var(--accent)]" />
+              <span className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">
+                分镜描述
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              {!isEditingDescription && (
+                <button
+                  onClick={() => setIsEditingDescription(true)}
+                  className="p-1 rounded hover:bg-[var(--bg-card-hover)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+                >
+                  <Edit3 className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
           </div>
           
           {isEditingDescription ? (
             <div className="space-y-2">
-              <Textarea
-                value={editedDescription}
-                onChange={(e) => setEditedDescription(e.target.value)}
-                minRows={3}
-                maxRows={6}
-                classNames={{
-                  input: "text-sm text-[var(--text-primary)]",
-                  inputWrapper: "bg-[var(--bg-app)] border-[var(--border-color)]"
-                }}
-              />
-              <div className="flex justify-end gap-2">
-                <Button
-                  size="sm"
-                  variant="flat"
-                  onPress={handleCancelEdit}
-                  className="bg-transparent text-[var(--text-muted)]"
-                  startContent={<X className="w-3.5 h-3.5" />}
-                >
-                  取消
-                </Button>
-                <Button
-                  size="sm"
-                  className="pro-btn-primary"
-                  onPress={handleSaveDescription}
-                  isLoading={isSavingDescription}
-                  startContent={<Save className="w-3.5 h-3.5" />}
-                >
-                  保存
-                </Button>
+              <div className="h-[400px]">
+                <BlockEditor
+                  storyboardId={scene.id}
+                  projectId={projectId || undefined}
+                  onChange={(state: BlockEditorState) => {
+                    setEditedDescription(state.generatedPrompt);
+                  }}
+                  onSave={async (state: BlockEditorState) => {
+                    const success = await onUpdateDescription(state.generatedPrompt);
+                    if (success) {
+                      setIsEditingDescription(false);
+                    }
+                    return success;
+                  }}
+                />
               </div>
             </div>
           ) : (
@@ -634,39 +624,6 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
           />
         </div>
         */}
-
-        {/* 镜头语言参数 */}
-        <div className="px-4 py-3 border-t border-[var(--border-color)]">
-          <div className="flex items-center justify-between mb-2">
-            <button
-              onClick={() => setShowShotLanguageEditor(!showShotLanguageEditor)}
-              className="flex items-center gap-2 text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider hover:text-[var(--text-primary)] transition-colors"
-            >
-              <Camera className="w-3.5 h-3.5" />
-              镜头语言参数
-              {showShotLanguageEditor ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-            </button>
-            {scene.shotLanguage && Object.keys(scene.shotLanguage).length > 0 && !showShotLanguageEditor && (
-              <ShotLanguageBadge shotLanguage={scene.shotLanguage} compact />
-            )}
-          </div>
-          {showShotLanguageEditor && (
-            <ShotLanguageEditor
-              storyboardId={scene.id}
-              initialValues={scene.shotLanguage || {}}
-              onChange={(values) => {
-                if (onUpdateScene) {
-                  onUpdateScene({ shotLanguage: values });
-                }
-              }}
-              onSave={(values) => {
-                if (onUpdateScene) {
-                  onUpdateScene({ shotLanguage: values });
-                }
-              }}
-            />
-          )}
-        </div>
 
         {/* 生成操作 */}
         <div className="px-4 py-3 border-t border-[var(--border-color)] flex items-center gap-2">
