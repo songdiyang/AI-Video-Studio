@@ -602,27 +602,25 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
           </div>
           
           {isEditingDescription ? (
-            <div className="space-y-2">
-              <div className="h-[400px]">
-                <BlockEditor
-                  storyboardId={scene.id}
-                  projectId={projectId || undefined}
-                  availableFrames={{
-                    startFrame: scene.startFrame,
-                    endFrame: scene.endFrame
-                  }}
-                  onChange={(state: BlockEditorState) => {
-                    setEditedDescription(state.generatedPrompt);
-                  }}
-                  onSave={async (state: BlockEditorState) => {
-                    const success = await onUpdateDescription(state.generatedPrompt);
-                    if (success) {
-                      setIsEditingDescription(false);
-                    }
-                    return success;
-                  }}
-                />
-              </div>
+            <div className="h-[320px]">
+              <BlockEditor
+                storyboardId={scene.id}
+                projectId={projectId || undefined}
+                availableFrames={{
+                  startFrame: scene.startFrame,
+                  endFrame: scene.endFrame
+                }}
+                onChange={(state: BlockEditorState) => {
+                  setEditedDescription(state.generatedPrompt);
+                }}
+                onSave={async (state: BlockEditorState) => {
+                  const success = await onUpdateDescription(state.generatedPrompt);
+                  if (success) {
+                    setIsEditingDescription(false);
+                  }
+                  return success;
+                }}
+              />
             </div>
           ) : (
             <p className="text-sm text-[var(--text-secondary)] leading-relaxed line-clamp-4">
