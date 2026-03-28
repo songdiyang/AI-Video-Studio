@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Button, Textarea, Chip } from '@heroui/react';
-import { ImageIcon, Video, Film, Camera, Users, MapPin, Zap, Edit3, Save, X, Trash2, ZoomIn, ZoomOut, RotateCw, Maximize2, Blocks } from 'lucide-react';
+import { ImageIcon, Video, Film, Camera, Users, MapPin, Zap, Edit3, Save, X, Trash2, ZoomIn, ZoomOut, RotateCw, Maximize2, Blocks, ChevronDown, ChevronUp } from 'lucide-react';
 import { StoryboardScene } from './useSceneManager';
 import { TaskState } from '../../hooks/useTaskRunner';
 import { getAuthToken } from '../../services/auth';
@@ -40,6 +40,7 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
   const [editedDescription, setEditedDescription] = useState('');
   const [isSavingDescription, setIsSavingDescription] = useState(false);
   const [showStartFrame, setShowStartFrame] = useState(true);
+  const [isDirectorSpaceExpanded, setIsDirectorSpaceExpanded] = useState(true);
   const { showToast } = useToast();
   const { confirm } = useConfirm();
 
@@ -570,9 +571,13 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
           </div>
         </div>
 
-        {/* 积木编辑器 - 分镜描述 */}
-        <div className="px-4 py-3 border-t border-[var(--border-color)]">
-          <div className="flex items-center justify-between mb-2">
+        {/* 导演空间 - 可折叠 */}
+        <div className="border-t border-[var(--border-color)]">
+          {/* 标题栏 - 可点击折叠 */}
+          <button
+            onClick={() => setIsDirectorSpaceExpanded(!isDirectorSpaceExpanded)}
+            className="w-full px-4 py-3 flex items-center justify-between hover:bg-[var(--bg-card-hover)] transition-colors"
+          >
             <div className="flex items-center gap-2">
               <Blocks className="w-4 h-4 text-[var(--accent)]" />
               <span className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">
@@ -590,43 +595,63 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
               )}
             </div>
             <div className="flex items-center gap-2">
-              {!isEditingDescription && (
-                <button
-                  onClick={() => setIsEditingDescription(true)}
-                  className="p-1 rounded hover:bg-[var(--bg-card-hover)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
-                >
-                  <Edit3 className="w-3.5 h-3.5" />
-                </button>
+              {!isDirectorSpaceExpanded && scene.description && (
+                <span className="text-xs text-[var(--text-muted)] truncate max-w-[200px]">
+                  {scene.description.slice(0, 30)}{scene.description.length > 30 ? '...' : ''}
+                </span>
+              )}
+              {isDirectorSpaceExpanded ? (
+                <ChevronDown className="w-4 h-4 text-[var(--text-muted)]" />
+              ) : (
+                <ChevronUp className="w-4 h-4 text-[var(--text-muted)]" />
+              )}
+            </div>
+          </button>
+
+          {/* 可折叠内容区 */}
+          <div
+            className={`overflow-hidden transition-all duration-300 ease-in-out ${
+              isDirectorSpaceExpanded ? 'max-h-[400px] opacity-100' : 'max-h-0 opacity-0'
+            }`}
+          >
+            <div className="px-4 pb-3">
+              {isEditingDescription ? (
+                <div className="h-[320px]">
+                  <BlockEditor
+                    storyboardId={scene.id}
+                    projectId={projectId || undefined}
+                    availableFrames={{
+                      startFrame: scene.startFrame,
+                      endFrame: scene.endFrame
+                    }}
+                    onChange={(state: BlockEditorState) => {
+                      setEditedDescription(state.generatedPrompt);
+                    }}
+                    onSave={async (state: BlockEditorState) => {
+                      const success = await onUpdateDescription(state.generatedPrompt);
+                      if (success) {
+                        setIsEditingDescription(false);
+                      }
+                      return success;
+                    }}
+                  />
+                </div>
+              ) : (
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-sm text-[var(--text-secondary)] leading-relaxed flex-1">
+                    {scene.description || '暂无描述'}
+                  </p>
+                  <button
+                    onClick={() => setIsEditingDescription(true)}
+                    className="p-1.5 rounded hover:bg-[var(--bg-card-hover)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors flex-shrink-0"
+                    title="编辑描述"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               )}
             </div>
           </div>
-          
-          {isEditingDescription ? (
-            <div className="h-[320px]">
-              <BlockEditor
-                storyboardId={scene.id}
-                projectId={projectId || undefined}
-                availableFrames={{
-                  startFrame: scene.startFrame,
-                  endFrame: scene.endFrame
-                }}
-                onChange={(state: BlockEditorState) => {
-                  setEditedDescription(state.generatedPrompt);
-                }}
-                onSave={async (state: BlockEditorState) => {
-                  const success = await onUpdateDescription(state.generatedPrompt);
-                  if (success) {
-                    setIsEditingDescription(false);
-                  }
-                  return success;
-                }}
-              />
-            </div>
-          ) : (
-            <p className="text-sm text-[var(--text-secondary)] leading-relaxed line-clamp-4">
-              {scene.description || '暂无描述'}
-            </p>
-          )}
         </div>
 
         {/* 草图面板 - 已隐藏 */}
