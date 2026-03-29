@@ -30,7 +30,7 @@ const InternalMailbox: React.FC = () => {
   const [selectedMail, setSelectedMail] = useState<InternalMail | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const [position, setPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [position, setPosition] = useState<{ x: number; y: number }>({ x: window.innerWidth - 400, y: 60 });
   const positionInited = useRef(false);
   const dragState = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null);
   const limit = 20;
@@ -90,13 +90,18 @@ const InternalMailbox: React.FC = () => {
         const rect = triggerRef.current.getBoundingClientRect();
         const panelW = 380;
         const panelH = 520;
-        let x = Math.min(rect.right - panelW, window.innerWidth - panelW - 8);
-        x = Math.max(8, x);
-        let y = rect.bottom + 8;
-        if (y + panelH > window.innerHeight - 8) {
-          y = Math.max(8, rect.top - panelH - 8);
+        // 如果 triggerRef 还没有正确的位置信息，使用默认位置
+        if (rect.width === 0 && rect.height === 0) {
+          setPosition({ x: window.innerWidth - 400, y: 60 });
+        } else {
+          let x = Math.min(rect.right - panelW, window.innerWidth - panelW - 8);
+          x = Math.max(8, x);
+          let y = rect.bottom + 8;
+          if (y + panelH > window.innerHeight - 8) {
+            y = Math.max(8, rect.top - panelH - 8);
+          }
+          setPosition({ x, y });
         }
-        setPosition({ x, y });
         positionInited.current = true;
       }
     } else {
