@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Button, Textarea, Chip } from '@heroui/react';
-import { ImageIcon, Video, Film, Camera, Users, MapPin, Zap, Edit3, Save, X, Trash2, ZoomIn, ZoomOut, RotateCw, Maximize2, Blocks, ChevronDown, ChevronUp } from 'lucide-react';
+import { ImageIcon, Video, Film, Camera, Users, MapPin, Zap, X, Trash2, ZoomIn, ZoomOut, RotateCw, Maximize2, Blocks, ChevronDown, ChevronUp } from 'lucide-react';
 import { StoryboardScene } from './useSceneManager';
 import { TaskState } from '../../hooks/useTaskRunner';
 import { getAuthToken } from '../../services/auth';
@@ -36,42 +36,13 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
   imageTask,
   videoTask
 }) => {
-  const [isEditingDescription, setIsEditingDescription] = useState(false);
-  const [editedDescription, setEditedDescription] = useState('');
-  const [isSavingDescription, setIsSavingDescription] = useState(false);
   const [showStartFrame, setShowStartFrame] = useState(true);
   const [isDirectorSpaceExpanded, setIsDirectorSpaceExpanded] = useState(true);
   const { showToast } = useToast();
   const { confirm } = useConfirm();
 
-  // 同步场景描述
-  useEffect(() => {
-    if (scene && !isEditingDescription) {
-      setEditedDescription(scene.description);
-    }
-  }, [scene?.description, scene?.id, isEditingDescription]);
-
   const isGeneratingImage = imageTask?.status === 'pending' || imageTask?.status === 'running';
   const isGeneratingVideo = videoTask?.status === 'pending' || videoTask?.status === 'running';
-
-  // 保存描述
-  const handleSaveDescription = async () => {
-    if (isSavingDescription || !scene) return;
-    
-    setIsSavingDescription(true);
-    const success = await onUpdateDescription(editedDescription);
-    setIsSavingDescription(false);
-    
-    if (success) {
-      setIsEditingDescription(false);
-    }
-  };
-
-  // 取消编辑
-  const handleCancelEdit = () => {
-    setEditedDescription(scene?.description || '');
-    setIsEditingDescription(false);
-  };
 
   // 预检：生成首尾帧前校验
   const validateForFrame = async (): Promise<{ ready: boolean; blocking: boolean; message?: string }> => {
@@ -615,41 +586,23 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
             }`}
           >
             <div className="px-4 pb-3">
-              {isEditingDescription ? (
-                <div className="h-[320px]">
-                  <BlockEditor
-                    storyboardId={scene.id}
-                    projectId={projectId || undefined}
-                    availableFrames={{
-                      startFrame: scene.startFrame,
-                      endFrame: scene.endFrame
-                    }}
-                    onChange={(state: BlockEditorState) => {
-                      setEditedDescription(state.generatedPrompt);
-                    }}
-                    onSave={async (state: BlockEditorState) => {
-                      const success = await onUpdateDescription(state.generatedPrompt);
-                      if (success) {
-                        setIsEditingDescription(false);
-                      }
-                      return success;
-                    }}
-                  />
-                </div>
-              ) : (
-                <div className="flex items-start justify-between gap-2">
-                  <p className="text-sm text-[var(--text-secondary)] leading-relaxed flex-1">
-                    {scene.description || '暂无描述'}
-                  </p>
-                  <button
-                    onClick={() => setIsEditingDescription(true)}
-                    className="p-1.5 rounded hover:bg-[var(--bg-card-hover)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors flex-shrink-0"
-                    title="编辑描述"
-                  >
-                    <Edit3 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              )}
+              <div className="h-[320px]">
+                <BlockEditor
+                  storyboardId={scene.id}
+                  projectId={projectId || undefined}
+                  availableFrames={{
+                    startFrame: scene.startFrame,
+                    endFrame: scene.endFrame
+                  }}
+                  onChange={(state: BlockEditorState) => {
+                    // 编辑器状态变化
+                  }}
+                  onSave={async (state: BlockEditorState) => {
+                    const success = await onUpdateDescription(state.generatedPrompt);
+                    return success;
+                  }}
+                />
+              </div>
             </div>
           </div>
         </div>
