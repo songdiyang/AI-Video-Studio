@@ -205,7 +205,7 @@ export interface BlockEditorProps {
   initialBlocks?: Block[];
   initialConnections?: BlockConnection[];
   onChange?: (state: BlockEditorState) => void;
-  onSave?: (state: BlockEditorState) => void;
+  onSave?: (state: BlockEditorState) => boolean | Promise<boolean>;
   projectId?: number;
   characters?: ProjectCharacter[];
   scenes?: ProjectScene[];

@@ -40,15 +40,18 @@ const BlockEditor: React.FC<BlockEditorProps> = ({
   };
 
   const handleSave = async (prompt: string): Promise<boolean> => {
-    const result = await onSave?.({
-      blocks: [],
-      connections: [],
-      selectedBlockId: null,
-      draggedBlockId: null,
-      generatedPrompt: prompt,
-      isDirty: false,
-    });
-    return result ?? true;
+    if (onSave) {
+      const result = await onSave({
+        blocks: [],
+        connections: [],
+        selectedBlockId: null,
+        draggedBlockId: null,
+        generatedPrompt: prompt,
+        isDirty: false,
+      });
+      return result ?? true;
+    }
+    return true;
   };
 
   return (
