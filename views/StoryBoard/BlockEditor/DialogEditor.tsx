@@ -8,6 +8,7 @@ import { Button, Tabs, Tab } from '@heroui/react';
 import { Save, Trash2, Wand2, Image as ImageIcon, Type, Camera, Users, MapPin, Zap } from 'lucide-react';
 import { useToast } from '../../../contexts/ToastContext';
 import { BLOCK_OPTIONS } from './utils/blockRegistry';
+import { getAuthToken } from '../../../services/auth';
 
 interface DialogEditorProps {
   storyboardId: number;
@@ -16,6 +17,15 @@ interface DialogEditorProps {
   onSave?: (prompt: string) => Promise<boolean> | void;
   projectId?: number;
   availableFrames?: { startFrame?: string; endFrame?: string };
+}
+
+interface Character {
+  id: number;
+  name: string;
+  appearance?: string;
+  personality?: string;
+  description?: string;
+  imageUrl?: string;
 }
 
 interface ReferenceImage {
@@ -48,11 +58,47 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
   const [activeTab, setActiveTab] = useState('shot');
   const [referenceImages, setReferenceImages] = useState<ReferenceImage[]>([]);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
+  const [characters, setCharacters] = useState<Character[]>([]);
+  const [isLoadingCharacters, setIsLoadingCharacters] = useState(false);
 
   // 当文本变化时触发 onChange
   useEffect(() => {
     onChange?.(promptText);
   }, [promptText, onChange]);
+
+  // 加载项目角色
+  useEffect(() => {
+    if (projectId && activeTab === 'character') {
+      loadCharacters();
+    }
+  }, [projectId, activeTab]);
+
+  const loadCharacters = async () => {
+    if (!projectId) return;
+    setIsLoadingCharacters(true);
+    try {
+      const token = getAuthToken();
+      const res = await fetch(`/api/characters/project/${projectId}`, {
+        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const mapped = (data.characters || []).map((c: any) => ({
+          id: c.id,
+          name: c.name,
+          appearance: c.appearance,
+          personality: c.personality,
+          description: c.description,
+          imageUrl: c.image_url || c.imageUrl,
+        }));
+        setCharacters(mapped);
+      }
+    } catch (error) {
+      console.error('[DialogEditor] 加载角色失败:', error);
+    } finally {
+      setIsLoadingCharacters(false);
+    }
+  };
 
   // 插入组件到光标位置
   const insertComponent = useCallback((text: string) => {
@@ -217,6 +263,48 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
       case 'character':
         return (
           <div className="space-y-3">
+            {/* 项目角色列表 */}
+            {projectId && (
+              <div>
+                <div className="text-xs text-[var(--text-muted)] mb-2">剧集角色（可拖拽）</div>
+                {isLoadingCharacters ? (
+                  <div className="text-xs text-[var(--text-muted)] py-2">加载中...</div>
+                ) : characters.length === 0 ? (
+                  <div className="text-xs text-[var(--text-muted)] py-2">暂无角色</div>
+                ) : (
+                  <div className="space-y-2">
+                    {characters.map(char => (
+                      <div
+                        key={char.id}
+                        draggable
+                        onDragStart={(e) => {
+                          e.dataTransfer.setData('application/json', JSON.stringify({
+                            componentType: 'character',
+                            template: `${char.name}，`
+                          }));
+                        }}
+                        onClick={() => insertComponent(`${char.name}，`)}
+                        className="flex items-center gap-2 p-2 rounded bg-rose-500/10 hover:bg-rose-500/20 cursor-grab transition-colors"
+                      >
+                        {char.imageUrl ? (
+                          <img src={char.imageUrl} alt={char.name} className="w-8 h-8 rounded-full object-cover" />
+                        ) : (
+                          <div className="w-8 h-8 rounded-full bg-rose-500/20 flex items-center justify-center text-xs text-rose-600">
+                            {char.name.charAt(0)}
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs font-medium text-rose-700 truncate">{char.name}</div>
+                          {char.appearance && (
+                            <div className="text-[10px] text-rose-500/70 truncate">{char.appearance.slice(0, 20)}...</div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
             <div>
               <div className="text-xs text-[var(--text-muted)] mb-2">位置</div>
               <div className="flex flex-wrap gap-1.5">

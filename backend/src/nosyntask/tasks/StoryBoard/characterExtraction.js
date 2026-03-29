@@ -180,21 +180,20 @@ ${contentForAnalysis}
       try {
         const existingId = existingMap.get(character.name);
         if (existingId) {
-          // 更新现有角色
+          // 更新现有角色（不更新 script_id，保留最初提取的剧集ID，因为角色可能出现在多集）
           await execute(
             `UPDATE characters 
-             SET name = ?, appearance = ?, personality = ?, description = ?, script_id = ?, updated_at = CURRENT_TIMESTAMP
+             SET name = ?, appearance = ?, personality = ?, description = ?, updated_at = CURRENT_TIMESTAMP
              WHERE id = ?`,
             [
               character.name,
               character.appearance || '',
               character.personality || '',
               character.description || '',
-              scriptId || null,
               existingId
             ]
           );
-          console.log('[CharacterExtraction] 更新角色:', character.name, '(所有字段)');
+          console.log('[CharacterExtraction] 更新角色:', character.name, '(保留原script_id)');
         } else {
           // 插入新角色
           await execute(
