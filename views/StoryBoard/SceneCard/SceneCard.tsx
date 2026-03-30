@@ -285,11 +285,14 @@ const SceneCard: React.FC<SceneCardProps> = ({
             ? 'border-l-2 border-l-[var(--accent)] border-y border-r border-[var(--border-color)] bg-[var(--bg-card-hover)]'
             : 'border border-[var(--border-color)] hover:border-[var(--accent)]/30 bg-[var(--bg-card)]'
         }`}
-        isPressable
+        isPressable={false}
         onPress={() => onSelect(scene.id)}
       >
         <CardBody className="p-2">
-          <div className="flex gap-2">
+          <div 
+            className="flex gap-2"
+            onClick={() => onSelect(scene.id)}
+          >
             {/* 紧凑的序号 */}
             <div className="flex flex-col items-center justify-center w-6 flex-shrink-0">
               <span className={`text-xs font-bold ${
