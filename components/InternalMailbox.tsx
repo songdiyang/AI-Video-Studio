@@ -44,6 +44,8 @@ const InternalMailbox: React.FC = () => {
   }, []);
 
   const fetchUnreadCount = useCallback(async () => {
+    const token = getAuthToken();
+    if (!token) return; // 未登录时不获取
     try {
       const res = await fetch('/api/mail/unread-count', { headers: headers() });
       if (res.ok) {
@@ -54,6 +56,8 @@ const InternalMailbox: React.FC = () => {
   }, [headers]);
 
   const fetchMails = useCallback(async () => {
+    const token = getAuthToken();
+    if (!token) return; // 未登录时不获取
     setLoading(true);
     try {
       const res = await fetch(`/api/mail?page=${page}&limit=${limit}`, { headers: headers() });
