@@ -121,12 +121,12 @@ const AnimatedRoutes: React.FC = () => {
         } />
         <Route path="/teams" element={
           <Suspense fallback={<LoadingFallback />}>
-            <PageTransition><Teams /></PageTransition>
+            <PageTransition><ProtectedRoute><Teams /></ProtectedRoute></PageTransition>
           </Suspense>
         } />
         <Route path="/teams/:id" element={
           <Suspense fallback={<LoadingFallback />}>
-            <PageTransition><Teams /></PageTransition>
+            <PageTransition><ProtectedRoute><Teams /></ProtectedRoute></PageTransition>
           </Suspense>
         } />
         <Route path="*" element={<Navigate to="/" replace />} />
