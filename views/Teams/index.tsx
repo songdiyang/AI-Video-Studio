@@ -280,8 +280,13 @@ const Teams: React.FC = () => {
               color="default"
               startContent={<Users className="w-4 h-4" />}
               onPress={() => {
-                console.log('点击加入团队按钮');
-                setShowJoinModal(true);
+                console.log('点击加入团队按钮，当前 showJoinModal:', showJoinModal);
+                const newState = !showJoinModal;
+                console.log('准备设置 showJoinModal 为:', newState);
+                setShowJoinModal(newState);
+                setTimeout(() => {
+                  console.log('1 秒后 showJoinModal 的值:', showJoinModal);
+                }, 1000);
               }}
             >
               加入团队
@@ -611,7 +616,16 @@ const Teams: React.FC = () => {
       </Modal>
 
       {/* 加入团队模态框 */}
-      <Modal isOpen={showJoinModal} onClose={() => setShowJoinModal(false)}>
+      <Modal 
+        isOpen={showJoinModal} 
+        onClose={() => {
+          console.log('关闭模态框，当前 showJoinModal:', showJoinModal);
+          setShowJoinModal(false);
+        }}
+        onOpenChange={(isOpen) => {
+          console.log('模态框 openChange:', isOpen);
+        }}
+      >
         <ModalContent>
           <ModalHeader>加入团队</ModalHeader>
           <ModalBody>
