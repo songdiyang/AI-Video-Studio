@@ -180,7 +180,7 @@ router.get('/:teamId/members', authMiddleware, async (req, res) => {
     }
 
     const members = await queryAll(
-      `SELECT tm.*, u.email, u.avatar_url
+      `SELECT tm.*, u.email
        FROM team_members tm
        LEFT JOIN users u ON tm.user_id = u.id
        WHERE tm.team_id = ?
@@ -245,7 +245,7 @@ router.post('/:teamId/members', authMiddleware, async (req, res) => {
     );
 
     const newMember = await queryOne(
-      `SELECT tm.*, u.email, u.avatar_url
+      `SELECT tm.*, u.email
        FROM team_members tm
        LEFT JOIN users u ON tm.user_id = u.id
        WHERE tm.team_id = ? AND tm.user_id = ?`,
@@ -354,7 +354,7 @@ router.get('/:teamId/projects', authMiddleware, async (req, res) => {
     const projects = await queryAll(
       `SELECT p.*, u.email as creator_name
        FROM projects p
-       LEFT JOIN users u ON p.created_by = u.id
+       LEFT JOIN users u ON p.user_id = u.id
        WHERE p.team_id = ?
        ORDER BY p.updated_at DESC`,
       [teamId]
