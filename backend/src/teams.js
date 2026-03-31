@@ -81,24 +81,33 @@ router.get('/:teamId', authMiddleware, async (req, res) => {
   const { teamId } = req.params;
 
   try {
+    // 验证用户是否是团队成员
+    const member = await queryOne(
+      `SELECT role FROM team_members WHERE team_id = ? AND user_id = ?`,
+      [teamId, userId]
+    );
+
+    if (!member) {
+      return res.status(403).json({ message: '您不是该团队成员' });
+    }
+
     const team = await queryOne(
       `SELECT t.*, 
-       COUNT(tm.user_id) as member_count,
-       (SELECT COUNT(*) FROM projects WHERE team_id = t.id) as project_count
+        u.email as owner_username,
+        u.avatar_url as owner_avatar,
+        (SELECT COUNT(*) FROM team_members WHERE team_id = t.id) as members_count,
+        (SELECT COUNT(*) FROM projects WHERE team_id = t.id) as projects_count
        FROM teams t
-       LEFT JOIN team_members tm ON t.id = tm.team_id
-       WHERE t.id = ? AND (t.owner_id = ? OR EXISTS (
-         SELECT 1 FROM team_members WHERE team_id = t.id AND user_id = ?
-       ))
-       GROUP BY t.id`,
-      [teamId, userId, userId]
+       JOIN users u ON t.owner_id = u.id
+       WHERE t.id = ? AND t.is_active = 1`,
+      [teamId]
     );
 
     if (!team) {
-      return res.status(404).json({ message: '团队不存在或无权访问' });
+      return res.status(404).json({ message: '团队不存在' });
     }
 
-    res.json({ team });
+    res.json({ team, myRole: member.role });
   } catch (error) {
     console.error('[Teams API] 获取团队详情失败:', error);
     res.status(500).json({ message: '获取团队详情失败' });
@@ -184,9 +193,11 @@ router.get('/:teamId/members', authMiddleware, async (req, res) => {
     }
 
     const members = await queryAll(
-      `SELECT tm.*, u.email
+      `SELECT tm.*, u.email, u.email as username, u.avatar_url as avatar,
+              inv.email as invited_by_username
        FROM team_members tm
        LEFT JOIN users u ON tm.user_id = u.id
+       LEFT JOIN users inv ON tm.invited_by = inv.id
        WHERE tm.team_id = ?
        ORDER BY tm.role DESC, tm.joined_at DESC`,
       [teamId]

@@ -54,6 +54,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isDashboardOpen, setIsDashboardOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [userAvatar, setUserAvatar] = useState<string | null>(null);
+  const [userNickname, setUserNickname] = useState<string | null>(null);
   
   // 响应式断点
   const isMobile = useMediaQuery('(max-width: 767px)');
@@ -61,6 +63,45 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   // 路由预加载
   const { preload } = useRoutePreload();
+
+  // 获取用户头像和昵称（从localStorage或API）
+  useEffect(() => {
+    if (!isLoggedIn) {
+      setUserAvatar(null);
+      setUserNickname(null);
+      return;
+    }
+    // 先从 localStorage 读取
+    try {
+      const stored = localStorage.getItem('auth_user');
+      if (stored) {
+        const user = JSON.parse(stored);
+        if (user.avatar_url) setUserAvatar(user.avatar_url);
+        if (user.nickname) setUserNickname(user.nickname);
+      }
+    } catch {}
+    // 再从 API 拉取最新
+    const token = getAuthToken();
+    if (token) {
+      fetch('/api/users/profile', { headers: { Authorization: `Bearer ${token}` } })
+        .then(res => res.ok ? res.json() : null)
+        .then(data => {
+          if (data) {
+            setUserAvatar(data.avatar_url || null);
+            setUserNickname(data.nickname || null);
+            // 同步到 localStorage
+            try {
+              const stored = localStorage.getItem('auth_user');
+              if (stored) {
+                const user = JSON.parse(stored);
+                localStorage.setItem('auth_user', JSON.stringify({ ...user, avatar_url: data.avatar_url, nickname: data.nickname }));
+              }
+            } catch {}
+          }
+        })
+        .catch(() => {});
+    }
+  }, [isLoggedIn]);
 
   // 导航项配置（使用 useMemo 优化，依赖 t 对象）
   const navItems = useMemo(() => [
@@ -355,7 +396,11 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                   className={`pro-nav-item group relative mx-2 ${isTablet ? 'p-2.5' : 'p-3'} rounded-lg flex items-center justify-center transition-all duration-200 text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-white/5 ${isTablet ? 'w-8' : 'w-10'}`}
                   aria-label={t.nav.myAccount}
                 >
-                  <User className={`${isTablet ? 'w-4 h-4' : 'w-5 h-5'}`} />
+                  {userAvatar ? (
+                    <img src={userAvatar} alt="" className={`${isTablet ? 'w-5 h-5' : 'w-6 h-6'} rounded-full object-cover`} />
+                  ) : (
+                    <User className={`${isTablet ? 'w-4 h-4' : 'w-5 h-5'}`} />
+                  )}
                   
                   {/* Tooltip */}
                   <div className="absolute left-full ml-2 px-2.5 py-1.5 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-md text-xs font-medium text-[var(--text-primary)] whitespace-nowrap opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 shadow-lg pointer-events-none">
@@ -376,6 +421,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                   className="text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg py-2.5"
                   startContent={<User className="w-4 h-4 text-slate-500" />}
                   onPress={() => navigate('/user-center')}
+                  description={userNickname || undefined}
                 >
                   {t.nav.userCenter}
                 </DropdownItem>

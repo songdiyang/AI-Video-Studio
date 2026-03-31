@@ -42,6 +42,7 @@ import {
   Mail,
   Upload,
   Download,
+  UserPlus,
 } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
@@ -139,13 +140,19 @@ const Teams: React.FC = () => {
   // 加载团队详情
   const loadTeamDetail = useCallback(async (teamId: number) => {
     try {
-      const { team } = await fetchTeamDetail(teamId);
-      setSelectedTeam(team);
+      const { team, myRole } = await fetchTeamDetail(teamId);
+      setSelectedTeam({ ...team, my_role: myRole || team.my_role });
       // 加载团队项目
       const { projects } = await fetchTeamProjects(teamId);
       setTeamProjects(projects);
     } catch (error) {
-      showToast(error instanceof Error ? error.message : '加载团队详情失败', 'error');
+      const msg = error instanceof Error ? error.message : '加载团队详情失败';
+      // 非成员拦截：后端返回 "您不是该团队成员" 或权限不足
+      if (msg.includes('不是该团队成员') || msg.includes('权限不足')) {
+        showToast('您没有权限访问该团队', 'error');
+      } else {
+        showToast(msg, 'error');
+      }
       navigate('/teams');
     }
   }, [showToast, navigate]);
@@ -832,11 +839,25 @@ const Teams: React.FC = () => {
   
       {/* 内容区 */}
       {activeTab === 'members' ? (
-        <TeamMembersPanel
-          teamId={selectedTeam.id}
-          myRole={selectedTeam.my_role || 'viewer'}
-          onMemberChange={() => loadTeamDetail(selectedTeam.id)}
-        />
+        <div>
+          {canManageMembers(selectedTeam.my_role) && (
+            <div className="flex justify-end mb-4">
+              <Button
+                variant="flat"
+                startContent={<UserPlus className="w-4 h-4" />}
+                onPress={handleGenerateInvite}
+                isLoading={generatingInvite}
+              >
+                邀请成员
+              </Button>
+            </div>
+          )}
+          <TeamMembersPanel
+            teamId={selectedTeam.id}
+            myRole={selectedTeam.my_role || 'viewer'}
+            onMemberChange={() => loadTeamDetail(selectedTeam.id)}
+          />
+        </div>
       ) : activeTab === 'review' ? (
         <div className="space-y-3">
           {loadingRequests ? (
@@ -1162,30 +1183,56 @@ const Teams: React.FC = () => {
                 </p>
               </div>
             ) : (
-              <div className="space-y-2 max-h-[400px] overflow-y-auto">
+              <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
                 {personalProjects.map((project) => (
-                  <Card key={project.id} className="bg-[var(--bg-card)]">
-                    <CardBody className="p-3 flex items-center justify-between">
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-sm text-[var(--text-primary)] truncate">
-                          {project.name}
-                        </p>
-                        {project.description && (
-                          <p className="text-xs text-[var(--text-tertiary)] truncate mt-0.5">
-                            {project.description}
-                          </p>
-                        )}
+                  <Card key={project.id} className="bg-[var(--bg-card)] border border-[var(--border-color)]">
+                    <CardBody className="p-3">
+                      <div className="flex items-center gap-3">
+                        {/* 项目封面 */}
+                        <div className="w-14 h-14 rounded-lg overflow-hidden bg-[var(--bg-input)] flex-shrink-0">
+                          {project.cover_url ? (
+                            <img
+                              src={project.cover_url}
+                              alt={project.name}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-[var(--text-tertiary)]">
+                              <FolderOpen className="w-6 h-6" />
+                            </div>
+                          )}
+                        </div>
+                        {/* 项目信息 */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="font-medium text-sm text-[var(--text-primary)] truncate">
+                              {project.name}
+                            </p>
+                            {project.type && (
+                              <span className="flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] bg-[var(--accent)]/10 text-[var(--accent)]">
+                                {{ comic_drama: '漫剧', short_video: '短视频', manga: '漫画', novel: '小说' }[project.type] || project.type}
+                              </span>
+                            )}
+                          </div>
+                          {project.description && (
+                            <p className="text-xs text-[var(--text-tertiary)] line-clamp-2 mt-1">
+                              {project.description}
+                            </p>
+                          )}
+                        </div>
+                        {/* 移入按钮 */}
+                        <Button
+                          size="sm"
+                          color="primary"
+                          variant="flat"
+                          startContent={<Upload className="w-3 h-3" />}
+                          isLoading={transferring === project.id}
+                          onPress={() => handleImportToTeam(project.id)}
+                          className="flex-shrink-0"
+                        >
+                          移入
+                        </Button>
                       </div>
-                      <Button
-                        size="sm"
-                        color="primary"
-                        variant="flat"
-                        startContent={<Upload className="w-3 h-3" />}
-                        isLoading={transferring === project.id}
-                        onPress={() => handleImportToTeam(project.id)}
-                      >
-                        移入
-                      </Button>
                     </CardBody>
                   </Card>
                 ))}

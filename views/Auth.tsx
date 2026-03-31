@@ -111,7 +111,15 @@ const Auth: React.FC = () => {
 
     // 前端验证
     const newErrors: typeof errors = {};
-    if (username.trim().length < 3) {
+    const trimmedUsername = username.trim();
+    const isEmail = trimmedUsername.includes('@');
+    if (isEmail) {
+      // 邮箱格式验证
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(trimmedUsername)) {
+        newErrors.username = '邮箱格式不正确';
+      }
+    } else if (trimmedUsername.length < 3) {
       newErrors.username = t.auth.usernameMinLength;
     }
     if (password.length < 6) {
@@ -296,7 +304,7 @@ const Auth: React.FC = () => {
               <div className="space-y-1">
                 <Input
                   type="text"
-                  placeholder={t.auth.username}
+                  placeholder={mode === 'register' ? t.auth.username : `${t.auth.username} / 邮箱`}
                   value={username}
                   onValueChange={(v) => {
                     setUsername(v);

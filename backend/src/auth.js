@@ -33,6 +33,26 @@ function validateUsername(username) {
   return { valid: true };
 }
 
+// 邮箱格式验证
+function validateEmail(email) {
+  if (!email || email.length < 5) {
+    return { valid: false, message: '请输入有效的邮箱地址' };
+  }
+  if (email.length > 255) {
+    return { valid: false, message: '邮箱地址过长' };
+  }
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) {
+    return { valid: false, message: '邮箱格式不正确' };
+  }
+  return { valid: true };
+}
+
+// 判断输入是否为邮箱格式
+function isEmailFormat(input) {
+  return input && input.includes('@');
+}
+
 // 公开接口：获取注册功能是否开放（无需认证）
 router.get('/registration-status', async (req, res) => {
   try {
@@ -78,13 +98,21 @@ router.post('/register', async (req, res) => {
     // 配置读取失败不阻断注册
   }
 
-  // 兼容旧的 email 参数名，实际存储为 username
+  // 兼容旧的 email 参数名，实际存储为 username 或邮箱
   const username = String(email).trim();
 
-  // 验证用户名格式
-  const usernameValidation = validateUsername(username);
-  if (!usernameValidation.valid) {
-    return res.status(400).json({ message: usernameValidation.message });
+  // 根据输入格式选择验证方式
+  if (isEmailFormat(username)) {
+    const emailValidation = validateEmail(username);
+    if (!emailValidation.valid) {
+      return res.status(400).json({ message: emailValidation.message });
+    }
+  } else {
+    // 验证用户名格式
+    const usernameValidation = validateUsername(username);
+    if (!usernameValidation.valid) {
+      return res.status(400).json({ message: usernameValidation.message });
+    }
   }
 
   // 验证密码强度

@@ -90,8 +90,8 @@ router.get('/teams', authMiddleware, async (req, res) => {
         tm.role as my_role,
         (SELECT COUNT(*) FROM team_members WHERE team_id = t.id) as members_count,
         (SELECT COUNT(*) FROM projects WHERE team_id = t.id) as projects_count,
-        u.username as owner_username,
-        u.avatar as owner_avatar
+        u.email as owner_username,
+        u.avatar_url as owner_avatar
        FROM teams t
        JOIN team_members tm ON t.id = tm.team_id AND tm.user_id = ?
        JOIN users u ON t.owner_id = u.id
@@ -118,8 +118,8 @@ router.get('/teams/:id', authMiddleware, checkTeamPermission('viewer'), async (r
     const team = await queryOne(
       `SELECT 
         t.*, 
-        u.username as owner_username,
-        u.avatar as owner_avatar,
+        u.email as owner_username,
+        u.avatar_url as owner_avatar,
         (SELECT COUNT(*) FROM team_members WHERE team_id = t.id) as members_count,
         (SELECT COUNT(*) FROM projects WHERE team_id = t.id) as projects_count
        FROM teams t
@@ -226,8 +226,8 @@ router.get('/teams/:id/members', authMiddleware, checkTeamPermission('viewer'), 
     const members = await queryAll(
       `SELECT 
         tm.id, tm.user_id, tm.role, tm.joined_at,
-        u.username, u.avatar, u.email,
-        inv.username as invited_by_username
+        u.email as username, u.avatar_url as avatar, u.email,
+        inv.email as invited_by_username
        FROM team_members tm
        JOIN users u ON tm.user_id = u.id
        LEFT JOIN users inv ON tm.invited_by = inv.id

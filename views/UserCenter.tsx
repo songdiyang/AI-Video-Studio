@@ -1,6 +1,6 @@
-import React, { useEffect, useState, useMemo } from 'react';
-import { Card, CardBody, Button, Chip, Table, TableHeader, TableColumn, TableBody, TableRow, TableCell, Progress, Tooltip } from '@heroui/react';
-import { Wallet, TrendingUp, FolderOpen, FileText, Receipt, AlertTriangle, Sparkles, Clock, Zap, ChevronLeft, ChevronRight, User, Calendar, Activity, RefreshCw, ExternalLink, CreditCard, ArrowUpRight, XCircle } from 'lucide-react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
+import { Card, CardBody, Button, Chip, Table, TableHeader, TableColumn, TableBody, TableRow, TableCell, Progress, Tooltip, Input, Textarea, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter } from '@heroui/react';
+import { Wallet, TrendingUp, FolderOpen, FileText, Receipt, AlertTriangle, Sparkles, Clock, Zap, ChevronLeft, ChevronRight, User, Calendar, Activity, RefreshCw, ExternalLink, CreditCard, ArrowUpRight, XCircle, Camera, Pencil, Save, X } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { getAuthToken, logout } from '../services/auth';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -11,6 +11,9 @@ import { fetchCurrentSubscription, cancelSubscription, type CurrentSubscriptionR
 interface UserProfile {
   id: number;
   email: string;
+  nickname: string | null;
+  avatar_url: string | null;
+  signature: string | null;
   balance: number;
   created_at: string;
 }
@@ -87,6 +90,14 @@ const UserCenter: React.FC = () => {
   const [subscription, setSubscription] = useState<CurrentSubscriptionResponse | null>(null);
   const [subscriptionLoading, setSubscriptionLoading] = useState(false);
   const [cancellingSubscription, setCancellingSubscription] = useState(false);
+
+  // 资料编辑状态
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [editNickname, setEditNickname] = useState('');
+  const [editSignature, setEditSignature] = useState('');
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     void fetchSummaryData();
@@ -304,9 +315,90 @@ const UserCenter: React.FC = () => {
 
   // 获取用户名首字母
   const avatarInitial = useMemo(() => {
-    if (!profile?.email) return 'U';
-    return profile.email.charAt(0).toUpperCase();
-  }, [profile?.email]);
+    const name = profile?.nickname || profile?.email;
+    if (!name) return 'U';
+    return name.charAt(0).toUpperCase();
+  }, [profile?.nickname, profile?.email]);
+
+  // 显示名称
+  const displayName = useMemo(() => {
+    return profile?.nickname || profile?.email || '';
+  }, [profile?.nickname, profile?.email]);
+
+  // 打开资料编辑模态框
+  const openProfileModal = () => {
+    setEditNickname(profile?.nickname || '');
+    setEditSignature(profile?.signature || '');
+    setShowProfileModal(true);
+  };
+
+  // 保存资料
+  const handleSaveProfile = async () => {
+    const token = getAuthToken();
+    if (!token) return;
+
+    setSavingProfile(true);
+    try {
+      const res = await fetch('/api/users/profile', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ nickname: editNickname, signature: editSignature }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message);
+
+      setProfile(data.user);
+      // 同步 localStorage
+      const stored = localStorage.getItem('auth_user');
+      if (stored) {
+        const user = JSON.parse(stored);
+        localStorage.setItem('auth_user', JSON.stringify({ ...user, nickname: data.user.nickname, avatar_url: data.user.avatar_url }));
+      }
+      setShowProfileModal(false);
+      showToast('资料已更新', 'success');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : '更新失败', 'error');
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
+  // 上传头像
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = ''; // 清空以允许重复选择
+
+    const token = getAuthToken();
+    if (!token) return;
+
+    setUploadingAvatar(true);
+    try {
+      const formData = new FormData();
+      formData.append('avatar', file);
+
+      const res = await fetch('/api/users/avatar', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message);
+
+      setProfile(prev => prev ? { ...prev, avatar_url: data.avatar_url } : prev);
+      // 同步 localStorage
+      const stored = localStorage.getItem('auth_user');
+      if (stored) {
+        const user = JSON.parse(stored);
+        localStorage.setItem('auth_user', JSON.stringify({ ...user, avatar_url: data.avatar_url }));
+      }
+      showToast('头像已更新', 'success');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : '上传失败', 'error');
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
 
   if (loading && !profile) {
     return (
@@ -329,10 +421,37 @@ const UserCenter: React.FC = () => {
           
           <div className="relative p-6">
             <div className="flex flex-col md:flex-row md:items-center gap-6">
-              {/* 头像 */}
-              <div className="relative">
-                <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-[var(--accent)] to-purple-500 flex items-center justify-center text-3xl font-bold text-white shadow-lg shadow-[var(--accent)]/20">
-                  {avatarInitial}
+              {/* 头像 - 可点击上传 */}
+              <div className="relative group">
+                <input
+                  ref={avatarInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  className="hidden"
+                  onChange={handleAvatarUpload}
+                />
+                <div
+                  className="w-20 h-20 rounded-2xl overflow-hidden shadow-lg shadow-[var(--accent)]/20 cursor-pointer"
+                  onClick={() => avatarInputRef.current?.click()}
+                >
+                  {profile?.avatar_url ? (
+                    <img src={profile.avatar_url} alt="头像" className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full bg-gradient-to-br from-[var(--accent)] to-purple-500 flex items-center justify-center text-3xl font-bold text-white">
+                      {avatarInitial}
+                    </div>
+                  )}
+                </div>
+                {/* 悬停覆盖层 */}
+                <div
+                  className="absolute inset-0 rounded-2xl bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                  onClick={() => avatarInputRef.current?.click()}
+                >
+                  {uploadingAvatar ? (
+                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <Camera className="w-5 h-5 text-white" />
+                  )}
                 </div>
                 <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-emerald-500 rounded-full flex items-center justify-center border-2 border-[var(--bg-card)]">
                   <Sparkles className="w-3 h-3 text-white" />
@@ -341,12 +460,31 @@ const UserCenter: React.FC = () => {
               
               {/* 用户信息 */}
               <div className="flex-1">
-                <h1 className="text-2xl font-bold text-[var(--text-primary)] mb-1">{t.userCenter.welcomeBack}</h1>
-                <p className="text-[var(--text-secondary)] flex items-center gap-2">
-                  <User className="w-4 h-4" />
-                  {profile?.email}
-                </p>
-                <div className="flex items-center gap-4 mt-3 text-sm text-[var(--text-muted)]">
+                <div className="flex items-center gap-2 mb-1">
+                  <h1 className="text-2xl font-bold text-[var(--text-primary)]">
+                    {displayName}
+                  </h1>
+                  <Button
+                    isIconOnly
+                    size="sm"
+                    variant="light"
+                    className="min-w-6 w-6 h-6"
+                    onPress={openProfileModal}
+                  >
+                    <Pencil className="w-3.5 h-3.5 text-[var(--text-muted)]" />
+                  </Button>
+                </div>
+                {profile?.nickname && (
+                  <p className="text-xs text-[var(--text-muted)] mb-1">
+                    {profile.email}
+                  </p>
+                )}
+                {profile?.signature && (
+                  <p className="text-sm text-[var(--text-secondary)] italic mb-2">
+                    「{profile.signature}」
+                  </p>
+                )}
+                <div className="flex items-center gap-4 text-sm text-[var(--text-muted)]">
                   <span className="flex items-center gap-1.5">
                     <Calendar className="w-4 h-4" />
                     {memberSince} {t.userCenter.joinedAt}
@@ -800,6 +938,56 @@ const UserCenter: React.FC = () => {
           </CardBody>
         </Card>
       </div>
+
+      {/* 资料编辑模态框 */}
+      <Modal isOpen={showProfileModal} onClose={() => setShowProfileModal(false)} size="md">
+        <ModalContent className="bg-[var(--bg-card)] border border-[var(--border-color)]">
+          <ModalHeader className="text-[var(--text-primary)]">编辑个人资料</ModalHeader>
+          <ModalBody className="space-y-4">
+            <Input
+              label="昵称"
+              placeholder="设置你的昵称"
+              value={editNickname}
+              onValueChange={setEditNickname}
+              maxLength={50}
+              description={`${editNickname.length}/50`}
+              classNames={{
+                input: 'bg-transparent text-[var(--text-primary)]',
+                inputWrapper: 'bg-[var(--bg-secondary)] border border-[var(--border-color)]',
+                label: 'text-[var(--text-secondary)]',
+              }}
+            />
+            <Textarea
+              label="个性签名"
+              placeholder="写一句话介绍自己"
+              value={editSignature}
+              onValueChange={setEditSignature}
+              maxLength={200}
+              description={`${editSignature.length}/200`}
+              minRows={2}
+              maxRows={4}
+              classNames={{
+                input: 'bg-transparent text-[var(--text-primary)]',
+                inputWrapper: 'bg-[var(--bg-secondary)] border border-[var(--border-color)]',
+                label: 'text-[var(--text-secondary)]',
+              }}
+            />
+          </ModalBody>
+          <ModalFooter>
+            <Button variant="light" onPress={() => setShowProfileModal(false)}>
+              取消
+            </Button>
+            <Button
+              className="bg-[var(--accent)] text-white"
+              isLoading={savingProfile}
+              onPress={handleSaveProfile}
+              startContent={!savingProfile ? <Save className="w-4 h-4" /> : undefined}
+            >
+              保存
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
     </div>
   );
 };
