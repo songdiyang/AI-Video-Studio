@@ -613,9 +613,7 @@ const Teams: React.FC = () => {
       {/* 加入团队模态框 */}
       <Modal 
         isOpen={showJoinModal} 
-        onOpenChange={setShowJoinModal}
-        placement="center"
-        backdrop="blur"
+        onClose={() => setShowJoinModal(false)}
       >
         <ModalContent>
           <ModalHeader>加入团队</ModalHeader>
