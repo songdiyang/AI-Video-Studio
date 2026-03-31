@@ -3,6 +3,8 @@
  * 提供团队管理、成员管理、项目协作者、邀请系统的 API 调用
  */
 
+import { getAuthToken } from './auth';
+
 // =============================================
 // 类型定义
 // =============================================
@@ -80,7 +82,7 @@ export interface SearchedUser {
 // =============================================
 
 function authHeaders(): HeadersInit {
-  const token = localStorage.getItem('token');
+  const token = getAuthToken();
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
@@ -185,6 +187,15 @@ export async function leaveTeam(teamId: number): Promise<{ message: string }> {
   const res = await fetch(`/api/teams/${teamId}/leave`, {
     method: 'POST',
     headers: authHeaders(),
+  });
+  return handleResponse(res);
+}
+
+export async function joinTeam(inviteCode: string): Promise<{ message: string; team: { id: number; name: string } }> {
+  const res = await fetch('/api/teams/join', {
+    method: 'POST',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ invite_code: inviteCode }),
   });
   return handleResponse(res);
 }
