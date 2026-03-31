@@ -286,7 +286,7 @@ const TeamMembersPanel: React.FC<TeamMembersPanelProps> = ({
                           if (key === 'remove') handleRemoveMember(member);
                         }}
                       >
-                        <DropdownItem key="role" startContent={<Edit className="w-4 h-4" />}>
+                        <DropdownItem key="role" startContent={<Edit className="w-4 h-4" />} as="div">
                           修改角色
                         </DropdownItem>
                         <DropdownItem
@@ -294,6 +294,7 @@ const TeamMembersPanel: React.FC<TeamMembersPanelProps> = ({
                           className="text-danger"
                           color="danger"
                           startContent={<Trash2 className="w-4 h-4" />}
+                          as="div"
                         >
                           移除成员
                         </DropdownItem>
