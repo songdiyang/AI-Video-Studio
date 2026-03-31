@@ -215,6 +215,7 @@ const Teams: React.FC = () => {
 
   // 加入团队
   const handleJoinTeam = async () => {
+    console.log('尝试加入团队，邀请码:', inviteCode);
     if (!inviteCode.trim()) {
       showToast('请输入邀请码', 'error');
       return;
@@ -229,6 +230,7 @@ const Teams: React.FC = () => {
       await loadTeams();
       navigate(`/teams/${team.id}`);
     } catch (error) {
+      console.error('加入团队失败:', error);
       showToast(error instanceof Error ? error.message : '加入失败', 'error');
     } finally {
       setJoining(false);
@@ -277,7 +279,10 @@ const Teams: React.FC = () => {
               variant="bordered"
               color="default"
               startContent={<Users className="w-4 h-4" />}
-              onPress={() => setShowJoinModal(true)}
+              onPress={() => {
+                console.log('点击加入团队按钮');
+                setShowJoinModal(true);
+              }}
             >
               加入团队
             </Button>
