@@ -1,10 +1,10 @@
 {
-  "name": "kmengai-animata",
+  "name": "jiaozi-anime",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.5.1",
   "description": "A local-first AI video shorts creation studio powered by Google Gemini models.",
   "license": "MIT",
-  "author": "Kmeng AI Team",
+  "author": "Jiaozi Anime Team",
   "keywords": [
     "ai",
     "video-generation",
