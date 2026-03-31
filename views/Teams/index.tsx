@@ -47,6 +47,7 @@ import {
   updateTeam,
   deleteTeam,
   leaveTeam,
+  joinTeam,
   generateInvite,
   generateInviteLink,
   canManageMembers,
@@ -78,6 +79,11 @@ const Teams: React.FC = () => {
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [inviteLink, setInviteLink] = useState('');
   const [generatingInvite, setGeneratingInvite] = useState(false);
+
+  // 加入团队模态框
+  const [showJoinModal, setShowJoinModal] = useState(false);
+  const [inviteCode, setInviteCode] = useState('');
+  const [joining, setJoining] = useState(false);
 
   // 加载团队列表
   const loadTeams = useCallback(async () => {
@@ -207,6 +213,28 @@ const Teams: React.FC = () => {
     }
   };
 
+  // 加入团队
+  const handleJoinTeam = async () => {
+    if (!inviteCode.trim()) {
+      showToast('请输入邀请码', 'error');
+      return;
+    }
+
+    try {
+      setJoining(true);
+      const { message, team } = await joinTeam(inviteCode.trim());
+      showToast(message, 'success');
+      setShowJoinModal(false);
+      setInviteCode('');
+      await loadTeams();
+      navigate(`/teams/${team.id}`);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : '加入失败', 'error');
+    } finally {
+      setJoining(false);
+    }
+  };
+
   // 生成邀请链接
   const handleGenerateInvite = async () => {
     if (!selectedTeam) return;
@@ -244,13 +272,23 @@ const Teams: React.FC = () => {
             <h1 className="text-2xl font-bold text-[var(--text-primary)]">我的团队</h1>
             <p className="text-[var(--text-secondary)] mt-1">管理和参与团队协作</p>
           </div>
-          <Button
-            color="primary"
-            startContent={<Plus className="w-4 h-4" />}
-            onPress={() => handleOpenModal()}
-          >
-            创建团队
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              variant="bordered"
+              color="default"
+              startContent={<Users className="w-4 h-4" />}
+              onPress={() => setShowJoinModal(true)}
+            >
+              加入团队
+            </Button>
+            <Button
+              color="primary"
+              startContent={<Plus className="w-4 h-4" />}
+              onPress={() => handleOpenModal()}
+            >
+              创建团队
+            </Button>
+          </div>
         </div>
 
         {loading ? (
@@ -270,12 +308,15 @@ const Teams: React.FC = () => {
             {teams.map((team) => (
               <Card
                 key={team.id}
-                isPressable
-                className="bg-[var(--bg-card)] hover:bg-[var(--bg-elevated)]"
+                isPressable={false}
+                className="bg-[var(--bg-card)] hover:bg-[var(--bg-elevated)] cursor-pointer"
                 onPress={() => navigate(`/teams/${team.id}`)}
               >
                 <CardBody className="p-4">
-                  <div className="flex items-start justify-between mb-3">
+                  <div 
+                    className="flex items-start justify-between mb-3"
+                    onClick={() => navigate(`/teams/${team.id}`)}
+                  >
                     <div className="flex items-center gap-3">
                       <Avatar
                         src={team.avatar_url || undefined}
@@ -559,6 +600,34 @@ const Teams: React.FC = () => {
             </Button>
             <Button color="primary" onPress={handleSave} isLoading={submitting}>
               保存
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+
+      {/* 加入团队模态框 */}
+      <Modal isOpen={showJoinModal} onClose={() => setShowJoinModal(false)}>
+        <ModalContent>
+          <ModalHeader>加入团队</ModalHeader>
+          <ModalBody>
+            <p className="text-sm text-[var(--text-secondary)] mb-4">
+              输入邀请码加入团队
+            </p>
+            <Input
+              label="邀请码"
+              placeholder="输入邀请码"
+              value={inviteCode}
+              onValueChange={(v) => setInviteCode(v.toUpperCase())}
+              isRequired
+              autoFocus
+            />
+          </ModalBody>
+          <ModalFooter>
+            <Button variant="light" onPress={() => setShowJoinModal(false)}>
+              取消
+            </Button>
+            <Button color="primary" onPress={handleJoinTeam} isLoading={joining}>
+              加入团队
             </Button>
           </ModalFooter>
         </ModalContent>
