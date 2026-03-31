@@ -26,6 +26,7 @@ const Community = React.lazy(() => import('./views/Community'));
 const CreatorProfile = React.lazy(() => import('./views/Community/CreatorProfile'));
 const Teams = React.lazy(() => import('./views/Teams'));
 const AcceptInvite = React.lazy(() => import('./views/AcceptInvite'));
+const Extensions = React.lazy(() => import('./views/Extensions'));
 
 // 懒加载管理员模块
 const AdminLogin = React.lazy(() => import('./views/AdminLogin'));
@@ -122,6 +123,11 @@ const AnimatedRoutes: React.FC = () => {
         <Route path="/teams" element={
           <Suspense fallback={<LoadingFallback />}>
             <PageTransition><ProtectedRoute><Teams /></ProtectedRoute></PageTransition>
+          </Suspense>
+        } />
+<Route path="/extensions" element={
+          <Suspense fallback={<LoadingFallback />}>
+            <PageTransition><ProtectedRoute><Extensions /></ProtectedRoute></PageTransition>
           </Suspense>
         } />
         <Route path="/teams/:id" element={

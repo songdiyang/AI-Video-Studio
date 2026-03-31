@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef, Component, ReactNode } from 'react';
 import { Button, Select, SelectItem, Tooltip } from '@heroui/react';
-import { Wand2, RefreshCw, Download, Video, ImageIcon, Users, MapPin, Frame, Film, ChevronDown, Play, PanelRight, GitBranch, MessageSquare } from 'lucide-react';
+import { Wand2, RefreshCw, Download, Video, ImageIcon, Users, MapPin, Frame, Film, ChevronDown, Play, PanelRight, GitBranch, MessageSquare, Lock } from 'lucide-react';
 import { useSceneManager, StoryboardScene } from './useSceneManager';
 import { useAutoStoryboard } from './useAutoStoryboard';
 import { useSceneGeneration } from './useSceneGeneration';
@@ -83,6 +83,12 @@ interface StoryBoardProps {
   imageModel: string;
   videoModel: string;
   onEpisodeChange?: (episodeNumber: number, scriptId: number) => void;
+  projectSettings?: {
+    imageAspectRatio?: string;
+    imageResolution?: string;
+    videoAspectRatio?: string;
+    videoResolution?: string;
+  };
 }
 
 const StoryBoard: React.FC<StoryBoardProps> = ({
@@ -94,18 +100,21 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
   textModel,
   imageModel,
   videoModel,
-  onEpisodeChange
+  onEpisodeChange,
+  projectSettings
 }) => {
   const [currentScriptId, setCurrentScriptId] = useState<number | null>(scriptId || null);
   const [currentProjectId, setCurrentProjectId] = useState<number | null>(projectId || null);
   const [currentEpisode, setCurrentEpisode] = useState(episodeNumber);
   
   const [showBatchDownloadModal, setShowBatchDownloadModal] = useState(false);
-  const [imageAspectRatio, setImageAspectRatio] = useState('');
-  const [videoAspectRatio, setVideoAspectRatio] = useState('');
+  const [imageAspectRatio, setImageAspectRatio] = useState(projectSettings?.imageAspectRatio || '');
+  const [videoAspectRatio, setVideoAspectRatio] = useState(projectSettings?.videoAspectRatio || '');
   const [videoDuration, setVideoDuration] = useState<number | null>(null);
-  const [imageResolution, setImageResolution] = useState('');
-  const [videoResolution, setVideoResolution] = useState('');
+  const [imageResolution, setImageResolution] = useState(projectSettings?.imageResolution || '');
+  const [videoResolution, setVideoResolution] = useState(projectSettings?.videoResolution || '');
+
+  // 项目级参数（只读，由项目设置决定）
   const [isSubmittingCharacterBatch, setIsSubmittingCharacterBatch] = useState(false);
   const [isSubmittingSceneBatch, setIsSubmittingSceneBatch] = useState(false);
   const [isAnimaticOpen, setIsAnimaticOpen] = useState(false);
@@ -173,20 +182,23 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
     }
   }, [scriptId, projectId, episodeNumber, currentScriptId, currentProjectId, currentEpisode]);
 
+  // 图片比例/分辨率由项目设置统一管理，不再随模型选项自动变更
+  // 仅在项目未设置时回退使用模型默认值
   useEffect(() => {
+    if (projectSettings?.imageAspectRatio) return;
     if (imageAspectRatioOptions.length === 0) {
       setImageAspectRatio('');
       return;
     }
-
     setImageAspectRatio((current) =>
       imageAspectRatioOptions.some((option) => option.value === current)
         ? current
         : imageAspectRatioOptions[0].value
     );
-  }, [imageAspectRatioOptions]);
+  }, [imageAspectRatioOptions, projectSettings?.imageAspectRatio]);
 
   useEffect(() => {
+    if (projectSettings?.imageResolution) return;
     if (imageResolutionOptions.length === 0) {
       setImageResolution('');
       return;
@@ -196,17 +208,19 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
         ? current
         : imageResolutionOptions[0].value
     );
-  }, [imageResolutionOptions]);
+  }, [imageResolutionOptions, projectSettings?.imageResolution]);
 
   useEffect(() => {
-    if (videoAspectRatioOptions.length === 0) {
-      setVideoAspectRatio('');
-    } else {
-      setVideoAspectRatio((current) =>
-        videoAspectRatioOptions.some((option) => option.value === current)
-          ? current
-          : videoAspectRatioOptions[0].value
-      );
+    if (!projectSettings?.videoAspectRatio) {
+      if (videoAspectRatioOptions.length === 0) {
+        setVideoAspectRatio('');
+      } else {
+        setVideoAspectRatio((current) =>
+          videoAspectRatioOptions.some((option) => option.value === current)
+            ? current
+            : videoAspectRatioOptions[0].value
+        );
+      }
     }
 
     if (videoDurationOptions.length === 0) {
@@ -219,9 +233,10 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
       const matchedOption = videoDurationOptions.find((option) => option.value === currentValue);
       return matchedOption ? Number(matchedOption.value) : Number(videoDurationOptions[0].value);
     });
-  }, [videoAspectRatioOptions, videoDurationOptions]);
+  }, [videoAspectRatioOptions, videoDurationOptions, projectSettings?.videoAspectRatio]);
 
   useEffect(() => {
+    if (projectSettings?.videoResolution) return;
     if (videoResolutionOptions.length === 0) {
       setVideoResolution('');
       return;
@@ -231,7 +246,7 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
         ? current
         : videoResolutionOptions[0].value
     );
-  }, [videoResolutionOptions]);
+  }, [videoResolutionOptions, projectSettings?.videoResolution]);
 
   // 1. 分镜列表管理
   const {
@@ -962,40 +977,21 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
                 <ImageIcon className="w-3.5 h-3.5 text-cyan-400" />
                 <span className="text-xs text-[var(--text-muted)]">图片:</span>
                 <span className="text-xs font-medium text-[var(--text-secondary)]">{imageModel}</span>
-                <Select
-                  size="sm"
-                  aria-label="图片比例"
-                  placeholder="比例"
-                  selectedKeys={imageAspectRatio ? [imageAspectRatio] : []}
-                  onChange={(e) => setImageAspectRatio(e.target.value)}
-                  className="w-28"
-                  isDisabled={imageAspectRatioOptions.length === 0}
-                  classNames={{
-                    trigger: "h-7 min-h-7 bg-[var(--bg-card)] border-[var(--border-color)]",
-                    value: "text-xs text-[var(--text-secondary)]"
-                  }}
-                >
-                  {imageAspectRatioOptions.map((option) => (
-                    <SelectItem key={option.value}>{option.label}</SelectItem>
-                  ))}
-                </Select>
-                {imageResolutionOptions.length > 0 && (
-                  <Select
-                    size="sm"
-                    aria-label="图片清晰度"
-                    placeholder="清晰度"
-                    selectedKeys={imageResolution ? [imageResolution] : []}
-                    onChange={(e) => setImageResolution(e.target.value)}
-                    className="w-28"
-                    classNames={{
-                      trigger: "h-7 min-h-7 bg-[var(--bg-card)] border-[var(--border-color)]",
-                      value: "text-xs text-[var(--text-secondary)]"
-                    }}
-                  >
-                    {imageResolutionOptions.map((option) => (
-                      <SelectItem key={option.value}>{option.label}</SelectItem>
-                    ))}
-                  </Select>
+                {imageAspectRatio && (
+                  <Tooltip content="在项目设置中修改" placement="bottom">
+                    <div className="flex items-center gap-1 h-7 px-2 rounded-md bg-[var(--bg-card)] border border-[var(--border-color)] opacity-70 cursor-default">
+                      <Lock className="w-3 h-3 text-[var(--text-muted)]" />
+                      <span className="text-xs text-[var(--text-secondary)]">{imageAspectRatio}</span>
+                    </div>
+                  </Tooltip>
+                )}
+                {imageResolution && (
+                  <Tooltip content="在项目设置中修改" placement="bottom">
+                    <div className="flex items-center gap-1 h-7 px-2 rounded-md bg-[var(--bg-card)] border border-[var(--border-color)] opacity-70 cursor-default">
+                      <Lock className="w-3 h-3 text-[var(--text-muted)]" />
+                      <span className="text-xs text-[var(--text-secondary)]">{imageResolution}</span>
+                    </div>
+                  </Tooltip>
                 )}
               </div>
             )}
@@ -1005,40 +1001,21 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
                 <Video className="w-3.5 h-3.5 text-rose-400" />
                 <span className="text-xs text-[var(--text-muted)]">视频:</span>
                 <span className="text-xs font-medium text-[var(--text-secondary)]">{videoModel}</span>
-                <Select
-                  size="sm"
-                  aria-label="视频比例"
-                  placeholder="比例"
-                  selectedKeys={videoAspectRatio ? [videoAspectRatio] : []}
-                  onChange={(e) => setVideoAspectRatio(e.target.value)}
-                  className="w-28"
-                  isDisabled={videoAspectRatioOptions.length === 0}
-                  classNames={{
-                    trigger: "h-7 min-h-7 bg-[var(--bg-card)] border-[var(--border-color)]",
-                    value: "text-xs text-[var(--text-secondary)]"
-                  }}
-                >
-                  {videoAspectRatioOptions.map((option) => (
-                    <SelectItem key={option.value}>{option.label}</SelectItem>
-                  ))}
-                </Select>
-                {videoResolutionOptions.length > 0 && (
-                  <Select
-                    size="sm"
-                    aria-label="视频清晰度"
-                    placeholder="清晰度"
-                    selectedKeys={videoResolution ? [videoResolution] : []}
-                    onChange={(e) => setVideoResolution(e.target.value)}
-                    className="w-28"
-                    classNames={{
-                      trigger: "h-7 min-h-7 bg-[var(--bg-card)] border-[var(--border-color)]",
-                      value: "text-xs text-[var(--text-secondary)]"
-                    }}
-                  >
-                    {videoResolutionOptions.map((option) => (
-                      <SelectItem key={option.value}>{option.label}</SelectItem>
-                    ))}
-                  </Select>
+                {videoAspectRatio && (
+                  <Tooltip content="在项目设置中修改" placement="bottom">
+                    <div className="flex items-center gap-1 h-7 px-2 rounded-md bg-[var(--bg-card)] border border-[var(--border-color)] opacity-70 cursor-default">
+                      <Lock className="w-3 h-3 text-[var(--text-muted)]" />
+                      <span className="text-xs text-[var(--text-secondary)]">{videoAspectRatio}</span>
+                    </div>
+                  </Tooltip>
+                )}
+                {videoResolution && (
+                  <Tooltip content="在项目设置中修改" placement="bottom">
+                    <div className="flex items-center gap-1 h-7 px-2 rounded-md bg-[var(--bg-card)] border border-[var(--border-color)] opacity-70 cursor-default">
+                      <Lock className="w-3 h-3 text-[var(--text-muted)]" />
+                      <span className="text-xs text-[var(--text-secondary)]">{videoResolution}</span>
+                    </div>
+                  </Tooltip>
                 )}
                 <Select
                   size="sm"

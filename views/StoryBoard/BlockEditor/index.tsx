@@ -16,6 +16,7 @@ const BlockEditor: React.FC<BlockEditorProps> = ({
   characters = [],
   scenes = [],
   availableFrames,
+  scriptId,
 }) => {
   // 将积木块转换为提示词文本
   const initialPrompt = initialBlocks
@@ -61,6 +62,7 @@ const BlockEditor: React.FC<BlockEditorProps> = ({
       onChange={handleChange}
       onSave={handleSave}
       projectId={projectId}
+      scriptId={scriptId}
       availableFrames={availableFrames}
     />
   );

@@ -62,6 +62,35 @@ async function updateContent(req, res) {
       params
     );
 
+    // 当 prompt_template 被更新时，自动记录版本历史
+    if (prompt_template !== undefined && prompt_template.trim()) {
+      try {
+        // 获取当前最大版本号
+        const maxVersion = await queryOne(
+          'SELECT MAX(version_number) as max_ver FROM storyboard_prompt_history WHERE storyboard_id = ?',
+          [storyboardId]
+        );
+        const newVersionNumber = (maxVersion?.max_ver || 0) + 1;
+
+        // 将之前的版本设为非当前
+        await execute(
+          'UPDATE storyboard_prompt_history SET is_current = FALSE WHERE storyboard_id = ?',
+          [storyboardId]
+        );
+
+        // 插入新版本记录
+        await execute(
+          `INSERT INTO storyboard_prompt_history 
+           (storyboard_id, prompt_text, version_number, is_current, source, created_by)
+           VALUES (?, ?, ?, TRUE, 'manual', ?)`,
+          [storyboardId, prompt_template, newVersionNumber, userId]
+        );
+      } catch (historyError) {
+        // 版本记录失败不影响主流程
+        console.error('[Storyboard Content] 版本记录失败:', historyError);
+      }
+    }
+
     res.json({
       success: true,
       message: 'Content updated successfully'

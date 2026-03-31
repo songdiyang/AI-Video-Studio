@@ -49,6 +49,7 @@ const templateRoutes = require('./templates');
 const communityRoutes = require('./community');
 const subscriptionRoutes = require('./subscriptions');
 const collaborationRoutes = require('./scripts/collaboration');
+const collaborationApiRoutes = require('./collaboration');
 const versionControlRoutes = require('./scripts/versionControl');
 const approvalsRoutes = require('./scripts/approvals');
 const systemConfigRoutes = require('./systemConfigRoutes');
@@ -149,9 +150,19 @@ app.use('/api/templates', templateRoutes);
 app.use('/api/community', communityRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/teams', teamsRoutes);  // 团队管理路由
-app.use('/api', collaborationRoutes);  // 协作路由
-app.use('/api', versionControlRoutes);  // 版本控制路由
-app.use('/api', approvalsRoutes);  // 审批流程路由
+// 协作路由
+const collaborationRouter = express.Router();
+collaborationRoutes(collaborationRouter);
+app.use('/api', collaborationRouter);
+app.use('/api', collaborationApiRoutes);  // 团队协作API（邀请、审核等）
+// 版本控制路由
+const versionControlRouter = express.Router();
+versionControlRoutes(versionControlRouter);
+app.use('/api', versionControlRouter);
+// 审批流程路由
+const approvalsRouter = express.Router();
+approvalsRoutes(approvalsRouter);
+app.use('/api', approvalsRouter);
 app.use('/api/system-configs', systemConfigRoutes);
 
 // Serve static files for production if needed
@@ -173,7 +184,7 @@ app.get('*', (req, res, next) => {
   });
 });
 
-const PORT = process.env.PORT || 4000;
+const PORT = process.env.PORT || 4001;
 
 async function start() {
   await initializeDatabase();

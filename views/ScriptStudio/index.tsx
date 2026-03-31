@@ -558,6 +558,17 @@ const ScriptStudio: React.FC = () => {
                 setTitle(targetScript.title);
               }
             }}
+            projectSettings={(() => {
+              try {
+                const s = selectedProject?.settings_json ? JSON.parse(selectedProject.settings_json) : {};
+                return {
+                  imageAspectRatio: s.imageAspectRatio || undefined,
+                  imageResolution: s.imageResolution || undefined,
+                  videoAspectRatio: s.videoAspectRatio || undefined,
+                  videoResolution: s.videoResolution || undefined,
+                };
+              } catch { return undefined; }
+            })()}
           />
         )}
       </div>

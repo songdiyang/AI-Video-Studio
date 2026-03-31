@@ -18,6 +18,7 @@ const NON_CHARACTER_TERMS = new Set([
   '僧人', '僧侣', '道士', '和尚',
   '乘客', '旅人', '客人', '宾客', '来宾',
   '工人', '农民', '渔民', '猎人',
+  '顾客', '买家', '卖家', '食客', '住客', '房客', '租客', '访客',
   // 校园/社会泛称
   '同学们', '学生们', '老师们', '孩子们', '小朋友', '少年们',
   '记者', '警察', '医生', '护士',
@@ -26,7 +27,22 @@ const NON_CHARACTER_TERMS = new Set([
   '男人', '女人', '男子', '女子', '男孩', '女孩',
   '众人们', '其他人', '周围的人', '附近的人', '身边的人',
   'NPC', 'npc', '龙套', '配角们', '路人甲', '路人乙',
+  // 复合泛称
+  '少年少女', '其他少年少女', '其他人物', '其他角色', '其他同学',
+  '一群人', '几个人', '数人', '若干人',
+  '男女', '老少', '老幼', '男女老少',
 ]);
+
+// 模式匹配前缀：以这些词开头 + 泛称词 → 视为非角色
+const NON_CHARACTER_PREFIXES = ['其他', '其余', '另外', '别的', '一些', '几个', '几名', '一群', '数个', '数名', '若干', '部分', '剩余', '周围'];
+
+// 模式匹配后缀：泛称词根（去掉"们"后的词根 + 额外词根）
+const NON_CHARACTER_ROOTS = [
+  '少年', '少女', '青年', '小孩', '孩子', '男孩', '女孩', '男子', '女子',
+  '人物', '角色', '同学', '学生', '老师', '路人', '村民', '居民', '市民',
+  '士兵', '卫兵', '侍卫', '商贩', '行人', '观众', '游客', '乘客', '客人', '顾客',
+  '少年少女', '男女', '人', '人们', '群众', '百姓',
+];
 
 /**
  * 判断一个名称是否为非角色群体词
@@ -39,8 +55,20 @@ function isNonCharacterEntity(name) {
   if (trimmed === '') return true;
   // 精确匹配
   if (NON_CHARACTER_TERMS.has(trimmed)) return true;
-  // 去掉“们”后缀再匹配（如“市民们”→“市民”）
+  // 去掉"们"后缀再匹配（如"市民们"→"市民"）
   if (trimmed.endsWith('们') && NON_CHARACTER_TERMS.has(trimmed.slice(0, -1))) return true;
+  // 模式匹配：前缀 + 泛称词根（如"其他少年少女"、"一群士兵"、"几个学生"）
+  for (const prefix of NON_CHARACTER_PREFIXES) {
+    if (trimmed.startsWith(prefix)) {
+      const rest = trimmed.slice(prefix.length).replace(/的$/, '').replace(/们$/, '');
+      if (rest === '' || NON_CHARACTER_TERMS.has(rest)) return true;
+      for (const root of NON_CHARACTER_ROOTS) {
+        if (rest === root || rest.includes(root)) return true;
+      }
+    }
+  }
+  // 包含"等人"/"等角色"后缀的泛称（如"零等人"不匹配，但"少年等人"匹配）
+  if (/^.{0,2}(等人|等角色|等几人)$/.test(trimmed)) return true;
   return false;
 }
 
@@ -63,4 +91,10 @@ module.exports = {
   isNonCharacterEntity,
   filterNonCharacters,
   NON_CHARACTER_TERMS,
+  /**
+   * 角色最小出场分镜数阈值
+   * 只在 ≥ 该数量的分镜中出现的角色才要求生成角色图片/建立关联
+   * 出场次数低于此值的角色被视为"临时角色"，跳过验证以防角色画面崩坏
+   */
+  MIN_CHARACTER_APPEARANCE: 2,
 };

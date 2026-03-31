@@ -207,6 +207,7 @@ export interface BlockEditorProps {
   onChange?: (state: BlockEditorState) => void;
   onSave?: (state: BlockEditorState) => boolean | Promise<boolean>;
   projectId?: number;
+  scriptId?: number;
   characters?: ProjectCharacter[];
   scenes?: ProjectScene[];
   availableFrames?: { startFrame?: string; endFrame?: string };

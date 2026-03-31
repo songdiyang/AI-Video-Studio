@@ -13,7 +13,7 @@ interface LocationsTabProps {
 }
 
 const LocationsTab: React.FC<LocationsTabProps> = ({ scenes, activeSceneIds, onPreview, onGenerateImage }) => {
-  const [previewImage, setPreviewImage] = useState<{ url: string; name: string } | null>(null);
+  const [previewImage, setPreviewImage] = useState<{ url: string; reverseUrl?: string; name: string } | null>(null);
 
   return (
     <div className="space-y-3">
@@ -26,6 +26,7 @@ const LocationsTab: React.FC<LocationsTabProps> = ({ scenes, activeSceneIds, onP
       {scenes.map((scene) => {
         const isGenerating = activeSceneIds.includes(String(scene.id));
         const hasImage = !!scene.image_url;
+        const hasReverseImage = !!scene.reverse_image_url;
         return (
         <Card
           key={scene.id}
@@ -36,20 +37,48 @@ const LocationsTab: React.FC<LocationsTabProps> = ({ scenes, activeSceneIds, onP
           }}
         >
           <CardBody className="p-3">
-            {/* 缩略图区域 */}
+            {/* 缩略图区域 - A面和B面 */}
             {hasImage ? (
-              <div
-                className="relative w-full h-32 rounded-lg overflow-hidden mb-3 group cursor-pointer"
-                onClick={() => setPreviewImage({ url: scene.image_url!, name: scene.name })}
-              >
-                <img
-                  src={scene.image_url!}
-                  alt={scene.name}
-                  className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                />
-                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
-                  <ZoomIn className="w-6 h-6 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+              <div className="flex gap-2 mb-3">
+                {/* A面图片 */}
+                <div
+                  className="relative flex-1 h-32 rounded-lg overflow-hidden group cursor-pointer"
+                  onClick={() => setPreviewImage({ url: scene.image_url!, reverseUrl: scene.reverse_image_url || undefined, name: scene.name })}
+                >
+                  <img
+                    src={scene.image_url!}
+                    alt={`${scene.name} A面`}
+                    className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                  />
+                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
+                    <ZoomIn className="w-5 h-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                  </div>
+                  <span className="absolute bottom-1 left-1 text-[10px] px-1.5 py-0.5 rounded bg-black/50 text-white">A面</span>
                 </div>
+                {/* B面图片 */}
+                {hasReverseImage ? (
+                  <div
+                    className="relative flex-1 h-32 rounded-lg overflow-hidden group cursor-pointer"
+                    onClick={() => setPreviewImage({ url: scene.image_url!, reverseUrl: scene.reverse_image_url!, name: scene.name })}
+                  >
+                    <img
+                      src={scene.reverse_image_url!}
+                      alt={`${scene.name} B面`}
+                      className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                    />
+                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
+                      <ZoomIn className="w-5 h-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                    </div>
+                    <span className="absolute bottom-1 left-1 text-[10px] px-1.5 py-0.5 rounded bg-black/50 text-white">B面</span>
+                  </div>
+                ) : (
+                  <div
+                    className="relative flex-1 h-32 rounded-lg overflow-hidden flex items-center justify-center"
+                    style={{ backgroundColor: 'var(--bg-secondary)' }}
+                  >
+                    <span className="text-xs" style={{ color: 'var(--text-muted)' }}>B面未生成</span>
+                  </div>
+                )}
               </div>
             ) : isGenerating ? (
               <div
@@ -98,7 +127,7 @@ const LocationsTab: React.FC<LocationsTabProps> = ({ scenes, activeSceneIds, onP
                 startContent={<Eye className="w-3 h-3" />}
                 onPress={() => {
                   if (hasImage) {
-                    setPreviewImage({ url: scene.image_url!, name: scene.name });
+                    setPreviewImage({ url: scene.image_url!, reverseUrl: scene.reverse_image_url || undefined, name: scene.name });
                   } else {
                     onPreview({ name: scene.name });
                   }
@@ -139,11 +168,28 @@ const LocationsTab: React.FC<LocationsTabProps> = ({ scenes, activeSceneIds, onP
                   <X className="w-4 h-4 text-white" />
                 </button>
               </div>
-              <img
-                src={previewImage.url}
-                alt={previewImage.name}
-                className="max-w-full max-h-[80vh] rounded-lg shadow-2xl object-contain"
-              />
+              <div className={`flex ${previewImage.reverseUrl ? 'gap-4' : ''}`}>
+                <div className="flex flex-col items-center">
+                  <img
+                    src={previewImage.url}
+                    alt={`${previewImage.name} A面`}
+                    className="max-w-full max-h-[75vh] rounded-lg shadow-2xl object-contain"
+                  />
+                  {previewImage.reverseUrl && (
+                    <span className="mt-2 text-xs text-white/70 bg-white/10 px-2 py-0.5 rounded">A面（正打）</span>
+                  )}
+                </div>
+                {previewImage.reverseUrl && (
+                  <div className="flex flex-col items-center">
+                    <img
+                      src={previewImage.reverseUrl}
+                      alt={`${previewImage.name} B面`}
+                      className="max-w-full max-h-[75vh] rounded-lg shadow-2xl object-contain"
+                    />
+                    <span className="mt-2 text-xs text-white/70 bg-white/10 px-2 py-0.5 rounded">B面（反打）</span>
+                  </div>
+                )}
+              </div>
             </motion.div>
           </motion.div>
         )}

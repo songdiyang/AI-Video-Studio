@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Mail, X, Check, CheckCheck, Trash2, MessageSquare, Megaphone, Bell, ChevronLeft, GripHorizontal } from 'lucide-react';
+import ReactDOM from 'react-dom';
+import { Mail, X, Check, CheckCheck, Trash2, MessageSquare, Megaphone, Bell, ChevronLeft } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getAuthToken } from '../services/auth';
 
@@ -28,10 +29,9 @@ const InternalMailbox: React.FC = () => {
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [selectedMail, setSelectedMail] = useState<InternalMail | null>(null);
+  const [panelPosition, setPanelPosition] = useState<{ x: number; y: number }>({ x: 200, y: 60 });
   const panelRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const [position, setPosition] = useState<{ x: number; y: number }>({ x: window.innerWidth - 400, y: 60 });
-  const positionInited = useRef(false);
   const dragState = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null);
   const limit = 20;
 
@@ -87,57 +87,7 @@ const InternalMailbox: React.FC = () => {
     }
   }, [isOpen, fetchMails]);
 
-  // Initialize panel position near the trigger button when opening
-  useEffect(() => {
-    if (isOpen && triggerRef.current) {
-      if (!positionInited.current) {
-        const rect = triggerRef.current.getBoundingClientRect();
-        const panelW = 380;
-        const panelH = 520;
-        // 如果 triggerRef 还没有正确的位置信息，使用默认位置
-        if (rect.width === 0 && rect.height === 0) {
-          setPosition({ x: window.innerWidth - 400, y: 60 });
-        } else {
-          let x = Math.min(rect.right - panelW, window.innerWidth - panelW - 8);
-          x = Math.max(8, x);
-          let y = rect.bottom + 8;
-          if (y + panelH > window.innerHeight - 8) {
-            y = Math.max(8, rect.top - panelH - 8);
-          }
-          setPosition({ x, y });
-        }
-        positionInited.current = true;
-      }
-    } else {
-      positionInited.current = false;
-    }
-  }, [isOpen]);
 
-  // Drag handlers
-  const onDragStart = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    const panel = panelRef.current;
-    if (!panel) return;
-    const rect = panel.getBoundingClientRect();
-    dragState.current = { startX: e.clientX, startY: e.clientY, origX: rect.left, origY: rect.top };
-
-    const onMove = (ev: MouseEvent) => {
-      if (!dragState.current) return;
-      const dx = ev.clientX - dragState.current.startX;
-      const dy = ev.clientY - dragState.current.startY;
-      setPosition({
-        x: Math.max(0, Math.min(window.innerWidth - 380, dragState.current.origX + dx)),
-        y: Math.max(0, Math.min(window.innerHeight - 100, dragState.current.origY + dy)),
-      });
-    };
-    const onUp = () => {
-      dragState.current = null;
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-    };
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-  }, []);
 
   // Click outside to close
   useEffect(() => {
@@ -197,44 +147,59 @@ const InternalMailbox: React.FC = () => {
     return d.toLocaleDateString('zh-CN');
   };
 
-  return (
-    <div className="relative">
-      {/* Trigger Button */}
-      <button
-        ref={triggerRef}
-        onClick={() => { setIsOpen(!isOpen); setSelectedMail(null); }}
-        className="relative p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-white/5 transition-colors"
-        aria-label="站内信"
-        title="站内信"
-      >
-        <Mail className="w-4 h-4" />
-        {unreadCount > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center leading-none">
-            {unreadCount > 99 ? '99+' : unreadCount}
-          </span>
-        )}
-      </button>
+  // Drag handlers
+  const onDragStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const panel = panelRef.current;
+    if (!panel) return;
+    const rect = panel.getBoundingClientRect();
+    dragState.current = { startX: e.clientX, startY: e.clientY, origX: rect.left, origY: rect.top };
 
-      {/* Mailbox Panel */}
-      <AnimatePresence>
-        {isOpen && (
+    const onMove = (ev: MouseEvent) => {
+      if (!dragState.current) return;
+      const dx = ev.clientX - dragState.current.startX;
+      const dy = ev.clientY - dragState.current.startY;
+      setPanelPosition({
+        x: Math.max(0, Math.min(window.innerWidth - 380, dragState.current.origX + dx)),
+        y: Math.max(0, Math.min(window.innerHeight - 100, dragState.current.origY + dy)),
+      });
+    };
+    const onUp = () => {
+      dragState.current = null;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }, []);
+
+  const panelContent = (
+    <AnimatePresence>
+      {isOpen && (
+        <>
+          {/* Overlay to capture clicks outside */}
+          <div
+            className="fixed inset-0 z-[9998]"
+            onClick={() => { setIsOpen(false); setSelectedMail(null); }}
+          />
           <motion.div
             ref={panelRef}
             initial={{ opacity: 0, scale: 0.96 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.96 }}
             transition={{ duration: 0.2 }}
-            className="fixed w-[380px] max-h-[520px] rounded-2xl overflow-hidden shadow-2xl z-[999] flex flex-col"
+            className="fixed w-[380px] max-h-[520px] rounded-2xl overflow-hidden shadow-2xl z-[9999] flex flex-col"
             style={{
+              top: panelPosition.y,
+              left: panelPosition.x,
               backgroundColor: 'var(--bg-card)',
               border: '1px solid var(--border-color)',
-              left: position.x,
-              top: position.y,
             }}
+            onClick={(e) => e.stopPropagation()}
           >
-            {/* Header with drag handle */}
+            {/* Header */}
             <div
-              className="flex items-center justify-between px-4 py-3 cursor-move select-none"
+              className="flex items-center justify-between px-4 py-3 select-none cursor-move"
               style={{ borderBottom: '1px solid var(--border-color)' }}
               onMouseDown={onDragStart}
             >
@@ -244,7 +209,6 @@ const InternalMailbox: React.FC = () => {
                 </button>
               ) : (
                 <div className="flex items-center gap-2">
-                  <GripHorizontal className="w-4 h-4" style={{ color: 'var(--text-muted)', opacity: 0.4 }} />
                   <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>站内信</span>
                   {unreadCount > 0 && (
                     <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium" style={{ backgroundColor: 'var(--accent-primary)', color: 'white' }}>
@@ -325,10 +289,10 @@ const InternalMailbox: React.FC = () => {
                         {mails.map(mail => {
                           const cfg = MAIL_TYPE_CONFIG[mail.mail_type] || MAIL_TYPE_CONFIG.system;
                           return (
-                            <button
+                            <div
                               key={mail.id}
                               onClick={() => openMail(mail)}
-                              className="w-full text-left px-4 py-3 transition-colors hover:bg-[var(--bg-input)] flex gap-3 items-start"
+                              className="w-full text-left px-4 py-3 transition-colors hover:bg-[var(--bg-input)] flex gap-3 items-start cursor-pointer"
                               style={{ borderBottom: '1px solid var(--border-color)', opacity: mail.is_read ? 0.7 : 1 }}
                             >
                               {/* Unread dot */}
@@ -362,7 +326,7 @@ const InternalMailbox: React.FC = () => {
                               >
                                 <Trash2 className="w-3.5 h-3.5 text-red-400/60 hover:text-red-400" />
                               </button>
-                            </button>
+                            </div>
                           );
                         })}
                         {/* Pagination */}
@@ -394,9 +358,42 @@ const InternalMailbox: React.FC = () => {
               </AnimatePresence>
             </div>
           </motion.div>
+          </>
         )}
       </AnimatePresence>
-    </div>
+  );
+
+  return (
+    <>
+      {/* Trigger Button */}
+      <button
+        ref={triggerRef}
+        onClick={() => {
+          if (!isOpen && triggerRef.current) {
+            const rect = triggerRef.current.getBoundingClientRect();
+            setPanelPosition({
+              y: rect.bottom + 8,
+              x: Math.max(8, rect.left - 150),
+            });
+          }
+          setIsOpen(!isOpen);
+          setSelectedMail(null);
+        }}
+        className="relative p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-white/5 transition-colors"
+        aria-label="站内信"
+        title="站内信"
+      >
+        <Mail className="w-4 h-4" />
+        {unreadCount > 0 && (
+          <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center leading-none">
+            {unreadCount > 99 ? '99+' : unreadCount}
+          </span>
+        )}
+      </button>
+
+      {/* Portal: render panel at document.body to avoid stacking context issues */}
+      {ReactDOM.createPortal(panelContent, document.body)}
+    </>
   );
 };
 

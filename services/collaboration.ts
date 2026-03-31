@@ -77,6 +77,22 @@ export interface SearchedUser {
   email: string | null;
 }
 
+export interface JoinRequest {
+  id: number;
+  team_id: number;
+  team_name: string;
+  user_id: number;
+  user_email?: string;
+  user_avatar?: string;
+  invite_code: string | null;
+  inviter_email?: string;
+  status: 'pending' | 'approved' | 'rejected';
+  reviewed_by?: number;
+  reviewer_email?: string;
+  reviewed_at: string | null;
+  created_at: string;
+}
+
 // =============================================
 // 工具函数
 // =============================================
@@ -282,6 +298,7 @@ export async function acceptInvite(code: string): Promise<{
   target_id: number;
   target_name: string;
   role: string;
+  status?: 'pending';
 }> {
   const res = await fetch(`/api/invites/${code}/accept`, {
     method: 'POST',
@@ -295,6 +312,48 @@ export async function revokeInvite(code: string): Promise<{ message: string }> {
     method: 'DELETE',
     headers: authHeaders(),
   });
+  return handleResponse(res);
+}
+
+// =============================================
+// 团队加入申请审核 API
+// =============================================
+
+export async function fetchJoinRequests(
+  teamId: number,
+  status?: 'pending' | 'approved' | 'rejected'
+): Promise<{ requests: JoinRequest[] }> {
+  const url = status
+    ? `/api/teams/${teamId}/join-requests?status=${status}`
+    : `/api/teams/${teamId}/join-requests`;
+  const res = await fetch(url, { headers: authHeaders() });
+  return handleResponse(res);
+}
+
+export async function approveJoinRequest(
+  teamId: number,
+  requestId: number
+): Promise<{ message: string }> {
+  const res = await fetch(`/api/teams/${teamId}/join-requests/${requestId}/approve`, {
+    method: 'POST',
+    headers: authHeaders(),
+  });
+  return handleResponse(res);
+}
+
+export async function rejectJoinRequest(
+  teamId: number,
+  requestId: number
+): Promise<{ message: string }> {
+  const res = await fetch(`/api/teams/${teamId}/join-requests/${requestId}/reject`, {
+    method: 'POST',
+    headers: authHeaders(),
+  });
+  return handleResponse(res);
+}
+
+export async function fetchMyJoinRequests(): Promise<{ requests: JoinRequest[] }> {
+  const res = await fetch('/api/my-join-requests', { headers: authHeaders() });
   return handleResponse(res);
 }
 

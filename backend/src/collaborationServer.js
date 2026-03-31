@@ -1,3 +1,4 @@
+require('dotenv').config();
 const WebSocket = require('ws');
 const { queryOne, execute } = require('./dbHelper');
 const jwt = require('jsonwebtoken');

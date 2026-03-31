@@ -8,7 +8,34 @@
  */
 
 const { queryOne, queryAll } = require('../../dbHelper');
-const { isNonCharacterEntity } = require('../../utils/characterFilter');
+const { isNonCharacterEntity, MIN_CHARACTER_APPEARANCE } = require('../../utils/characterFilter');
+
+/**
+ * 模糊匹配角色名
+ * 处理 JSON 解析可能导致的角色名差异（如多余空格、标点、后缀等）
+ * @param {string} queryName - 分镜中的角色名
+ * @param {Object[]} linkedChars - 关联的角色列表
+ * @returns {Object|null} 匹配到的角色记录
+ */
+function fuzzyMatchCharacter(queryName, linkedChars) {
+  if (!queryName || !linkedChars || linkedChars.length === 0) return null;
+  const q = queryName.trim();
+  // 1. 精确匹配
+  const exact = linkedChars.find(c => c.name === q);
+  if (exact) return exact;
+  // 2. 忽略空格/标点匹配
+  const normalize = (s) => s.replace(/[\s\u3000·・\-_—–，,。.、！!？?""''「」『』【】（）()《》〈〉]/g, '');
+  const qNorm = normalize(q);
+  const normMatch = linkedChars.find(c => normalize(c.name) === qNorm);
+  if (normMatch) return normMatch;
+  // 3. 包含匹配（角色名包含查询名 或 查询名包含角色名）
+  const containsMatch = linkedChars.find(c => {
+    const cNorm = normalize(c.name);
+    return (cNorm.length >= 2 && qNorm.includes(cNorm)) || (qNorm.length >= 2 && cNorm.includes(qNorm));
+  });
+  if (containsMatch) return containsMatch;
+  return null;
+}
 
 module.exports = async (req, res) => {
   try {
@@ -73,12 +100,32 @@ async function validateForFrame(res, storyboard, variables) {
     const linkedCharMap = {};
     linkedChars.forEach(c => { linkedCharMap[c.name] = c; });
 
+    // 统计同一剧本中每个角色出现的分镜数，低于阈值的视为临时角色跳过
+    const charAppearanceMap = {};
+    const allStoryboards = await queryAll(
+      `SELECT variables_json FROM storyboards WHERE script_id = ?`,
+      [storyboard.script_id]
+    );
+    for (const sb of allStoryboards) {
+      let vars = {};
+      try { vars = typeof sb.variables_json === 'string' ? JSON.parse(sb.variables_json) : (sb.variables_json || {}); } catch { vars = {}; }
+      const chars = vars.characters || [];
+      for (const c of chars) {
+        charAppearanceMap[c] = (charAppearanceMap[c] || 0) + 1;
+      }
+    }
+
     for (const name of characterNames) {
-      // 跳过非角色群体词（如"人群"、"路人"等泛称，不需要建立角色关联）
+      // 跳过非角色群体词（如"人群"、"路人"、"其他少年少女"等泛称，不需要建立角色关联）
       if (isNonCharacterEntity(name)) {
         continue;
       }
-      const char = linkedCharMap[name];
+      // 跳过出场次数不足的临时角色（防止角色画面崩坏）
+      if ((charAppearanceMap[name] || 0) < MIN_CHARACTER_APPEARANCE) {
+        continue;
+      }
+      // 使用模糊匹配查找角色（容忍名称差异）
+      const char = fuzzyMatchCharacter(name, linkedChars);
       if (!char) {
         issues.push({
           type: 'character_not_linked',

@@ -13,18 +13,22 @@ router.get('/', authMiddleware, async (req, res) => {
   const userId = req.user.id;
 
   try {
+    // 使用与 collaboration.js 一致的查询逻辑
+    // 通过 JOIN team_members 来筛选当前用户所属的团队
     const teams = await queryAll(
-      `SELECT t.*, 
-       COUNT(tm.user_id) as member_count,
-       (SELECT COUNT(*) FROM projects WHERE team_id = t.id) as project_count
+      `SELECT 
+        t.id, t.name, t.description, t.avatar_url, t.owner_id, 
+        t.invite_code, t.max_members, t.created_at, t.updated_at,
+        tm.role as my_role,
+        (SELECT COUNT(*) FROM team_members WHERE team_id = t.id) as members_count,
+        (SELECT COUNT(*) FROM projects WHERE team_id = t.id) as projects_count,
+        u.email as owner_username
        FROM teams t
-       LEFT JOIN team_members tm ON t.id = tm.team_id
-       WHERE t.id IN (
-         SELECT team_id FROM team_members WHERE user_id = ? AND role != 'viewer'
-       ) OR t.owner_id = ?
-       GROUP BY t.id
-       ORDER BY t.updated_at DESC`,
-      [userId, userId]
+       JOIN team_members tm ON t.id = tm.team_id AND tm.user_id = ?
+       JOIN users u ON t.owner_id = u.id
+       WHERE t.is_active = 1
+       ORDER BY t.created_at DESC`,
+      [userId]
     );
 
     res.json({ teams });
@@ -367,7 +371,7 @@ router.get('/:teamId/projects', authMiddleware, async (req, res) => {
   }
 });
 
-// POST /api/teams/join - 通过邀请码加入团队
+// POST /api/teams/join - 通过邀请码申请加入团队（需管理员审核）
 router.post('/join', authMiddleware, async (req, res) => {
   const userId = req.user.id;
   const { invite_code } = req.body;
@@ -392,16 +396,6 @@ router.post('/join', authMiddleware, async (req, res) => {
       return res.status(400).json({ message: '邀请码已过期' });
     }
 
-    // 检查成员数量是否已满
-    const memberCount = await queryOne(
-      `SELECT COUNT(*) as count FROM team_members WHERE team_id = ?`,
-      [team.id]
-    );
-
-    if (memberCount.count >= team.max_members) {
-      return res.status(400).json({ message: '团队人数已满' });
-    }
-
     // 检查是否已是成员
     const existingMember = await queryOne(
       `SELECT * FROM team_members WHERE team_id = ? AND user_id = ?`,
@@ -412,18 +406,62 @@ router.post('/join', authMiddleware, async (req, res) => {
       return res.status(400).json({ message: '你已是该团队成员' });
     }
 
-    // 添加成员（默认为 viewer 角色）
-    await execute(
-      `INSERT INTO team_members (team_id, user_id, role, invited_by) VALUES (?, ?, 'viewer', 0)`,
+    // 检查是否已有待审核的申请
+    const pendingRequest = await queryOne(
+      `SELECT id FROM team_join_requests WHERE team_id = ? AND user_id = ? AND status = 'pending'`,
       [team.id, userId]
     );
 
+    if (pendingRequest) {
+      return res.status(400).json({ message: '你已提交过加入申请，请等待管理员审核' });
+    }
+
+    // 检查成员数量是否已满
+    const memberCount = await queryOne(
+      `SELECT COUNT(*) as count FROM team_members WHERE team_id = ?`,
+      [team.id]
+    );
+
+    if (memberCount.count >= team.max_members) {
+      return res.status(400).json({ message: '团队人数已满' });
+    }
+
+    // 创建待审核申请（而非直接加入）
+    await execute(
+      `INSERT INTO team_join_requests (team_id, user_id, invite_code, status)
+       VALUES (?, ?, ?, 'pending')`,
+      [team.id, userId, invite_code]
+    );
+
+    // 通过站内信通知团队管理员/所有者
+    const applicant = await queryOne('SELECT email FROM users WHERE id = ?', [userId]);
+    const admins = await queryAll(
+      `SELECT user_id FROM team_members WHERE team_id = ? AND role IN ('admin', 'owner')`,
+      [team.id]
+    );
+    for (const admin of admins) {
+      try {
+        await execute(
+          `INSERT INTO internal_mail (sender_type, receiver_id, title, content, mail_type)
+           VALUES ('system', ?, ?, ?, 'system')`,
+          [
+            admin.user_id,
+            `新的团队加入申请`,
+            `用户 ${applicant?.email || userId}（ID: ${userId}）通过邀请码申请加入团队「${team.name}」，请前往团队管理页面审核。`
+          ]
+        );
+      } catch (mailErr) {
+        console.warn('[Teams API] 发送站内信通知失败:', mailErr.message);
+      }
+    }
+
     res.json({ 
-      message: '加入团队成功',
+      message: '申请已提交，请等待管理员审核',
       team: {
         id: team.id,
         name: team.name
-      }
+      },
+      status: 'pending'
     });
   } catch (error) {
     console.error('[Teams API] 加入团队失败:', error);

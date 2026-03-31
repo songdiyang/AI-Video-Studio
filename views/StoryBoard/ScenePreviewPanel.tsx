@@ -601,6 +601,8 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                 <BlockEditor
                   storyboardId={scene.id}
                   projectId={projectId || undefined}
+                  scriptId={scriptId || undefined}
+                  initialBlocks={scene.description ? [{ id: 'init-text', type: 'text' as const, category: 'text' as const, data: { text: scene.description }, position: { x: 0, y: 0 } }] : []}
                   availableFrames={{
                     startFrame: scene.startFrame,
                     endFrame: scene.endFrame

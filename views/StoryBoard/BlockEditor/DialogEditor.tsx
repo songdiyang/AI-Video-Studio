@@ -5,10 +5,21 @@
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Button, Tabs, Tab } from '@heroui/react';
-import { Save, Trash2, Wand2, Image as ImageIcon, Type, Camera, Users, MapPin, Zap } from 'lucide-react';
+import { Save, Trash2, Wand2, Type, Camera, Users, MapPin, Zap, History, RotateCcw, GitCompare } from 'lucide-react';
 import { useToast } from '../../../contexts/ToastContext';
 import { BLOCK_OPTIONS } from './utils/blockRegistry';
 import { getAuthToken } from '../../../services/auth';
+
+interface PromptVersion {
+  id: number;
+  storyboard_id: number;
+  prompt_text: string;
+  version_number: number;
+  is_current: boolean;
+  source: 'manual' | 'ai';
+  created_by_name?: string;
+  created_at: string;
+}
 
 interface DialogEditorProps {
   storyboardId: number;
@@ -16,6 +27,7 @@ interface DialogEditorProps {
   onChange?: (prompt: string) => void;
   onSave?: (prompt: string) => Promise<boolean> | void;
   projectId?: number;
+  scriptId?: number;
   availableFrames?: { startFrame?: string; endFrame?: string };
 }
 
@@ -28,11 +40,101 @@ interface Character {
   imageUrl?: string;
 }
 
+interface SceneItem {
+  id: number;
+  name: string;
+  description?: string;
+  environment?: string;
+  lighting?: string;
+  mood?: string;
+  imageUrl?: string;
+  reverseImageUrl?: string;
+}
+
 interface ReferenceImage {
   id: string;
   url: string;
   source: 'frame' | 'scene';
   label: string;
+}
+
+// --- 富文本编辑辅助函数 ---
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function buildCapsuleHtml(refId: string, url: string, label: string): string {
+  const imgHtml = url
+    ? `<img src="${escapeHtml(url)}" style="width:20px;height:20px;border-radius:4px;object-fit:cover;flex-shrink:0" draggable="false"/>`
+    : `<span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:4px;background:rgba(168,85,247,0.15);color:rgb(168,85,247);font-size:12px;flex-shrink:0">📷</span>`;
+  return `<span contenteditable="false" data-ref-id="${escapeHtml(refId)}" style="display:inline-flex;align-items:center;gap:4px;margin:0 2px;padding:2px 8px 2px 4px;border-radius:999px;background:rgba(168,85,247,0.1);border:1px solid rgba(168,85,247,0.3);vertical-align:middle;cursor:default;user-select:none;font-size:12px;line-height:1.4">${imgHtml}<span style="color:rgb(126,34,206);white-space:nowrap">${escapeHtml(label)}</span><span data-delete-ref="${escapeHtml(refId)}" style="margin-left:2px;color:rgba(168,85,247,0.5);cursor:pointer;font-size:14px;line-height:1;flex-shrink:0">×</span></span>`;
+}
+
+function refTextToHtml(text: string, images: ReferenceImage[]): string {
+  if (!text && images.length === 0) return '<br>';
+  const imgMap = new Map(images.map(img => [img.id, img]));
+  const parts = text.split(/(\[参考图:ref-\d+\])/g);
+  const htmlParts = parts.map(part => {
+    const m = part.match(/^\[参考图:(ref-\d+)\]$/);
+    if (m) {
+      const refId = m[1];
+      const img = imgMap.get(refId);
+      return buildCapsuleHtml(refId, img?.url || '', img?.label || '参考图');
+    }
+    return escapeHtml(part).replace(/\n/g, '<br>');
+  });
+  return htmlParts.join('') || '<br>';
+}
+
+function createCapsuleDom(img: ReferenceImage): HTMLSpanElement {
+  const temp = document.createElement('div');
+  temp.innerHTML = buildCapsuleHtml(img.id, img.url, img.label);
+  return temp.firstChild as HTMLSpanElement;
+}
+
+function extractTextFromEditor(editor: HTMLDivElement): string {
+  let result = '';
+  const walk = (node: Node) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      result += node.textContent || '';
+    } else if (node instanceof HTMLElement) {
+      if (node.tagName === 'BR') {
+        result += '\n';
+      } else if (node.dataset?.refId) {
+        result += `[参考图:${node.dataset.refId}]`;
+      } else if (node.tagName === 'DIV') {
+        if (result.length > 0 && !result.endsWith('\n')) {
+          result += '\n';
+        }
+        node.childNodes.forEach(child => walk(child));
+      } else {
+        node.childNodes.forEach(child => walk(child));
+      }
+    }
+  };
+  editor.childNodes.forEach(child => walk(child));
+  if (result.endsWith('\n')) {
+    result = result.slice(0, -1);
+  }
+  return result;
+}
+
+function getRangeFromPoint(x: number, y: number): Range | null {
+  if ((document as any).caretRangeFromPoint) {
+    return (document as any).caretRangeFromPoint(x, y);
+  }
+  const pos = (document as any).caretPositionFromPoint?.(x, y);
+  if (pos) {
+    const range = document.createRange();
+    range.setStart(pos.offsetNode, pos.offset);
+    range.collapse(true);
+    return range;
+  }
+  return null;
 }
 
 const COMPONENT_CATEGORIES = [
@@ -49,10 +151,12 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
   onChange,
   onSave,
   projectId,
+  scriptId,
   availableFrames,
 }) => {
   const { showToast } = useToast();
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const editorRef = useRef<HTMLDivElement>(null);
+  const lastRenderedRef = useRef('');
   const [promptText, setPromptText] = useState(initialPrompt);
   const [isDirty, setIsDirty] = useState(false);
   const [activeTab, setActiveTab] = useState('shot');
@@ -60,6 +164,40 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [characters, setCharacters] = useState<Character[]>([]);
   const [isLoadingCharacters, setIsLoadingCharacters] = useState(false);
+  const [sceneItems, setSceneItems] = useState<SceneItem[]>([]);
+  const [isLoadingScenes, setIsLoadingScenes] = useState(false);
+
+  // 版本管理状态
+  const [showVersionPanel, setShowVersionPanel] = useState(false);
+  const [versions, setVersions] = useState<PromptVersion[]>([]);
+  const [loadingVersions, setLoadingVersions] = useState(false);
+  const [selectedVersion, setSelectedVersion] = useState<PromptVersion | null>(null);
+  const [compareMode, setCompareMode] = useState(false);
+  const [compareVersion, setCompareVersion] = useState<PromptVersion | null>(null);
+
+  // 当 initialPrompt 变化时同步更新（切换分镜时）
+  // 解析参考图占位符元数据，保留标记在文本中，渲染为胶囊
+  useEffect(() => {
+    const refRegex = /\[参考图:(ref-\d+)\]/g;
+    const parsedImages: ReferenceImage[] = [];
+    let match;
+    while ((match = refRegex.exec(initialPrompt)) !== null) {
+      parsedImages.push({
+        id: match[1],
+        url: '',
+        source: 'frame',
+        label: '参考图',
+      });
+    }
+    setPromptText(initialPrompt);
+    setReferenceImages(parsedImages);
+    lastRenderedRef.current = initialPrompt;
+    // 渲染富文本到编辑器
+    if (editorRef.current) {
+      editorRef.current.innerHTML = refTextToHtml(initialPrompt, parsedImages);
+    }
+    setIsDirty(false);
+  }, [initialPrompt]);
 
   // 当文本变化时触发 onChange
   useEffect(() => {
@@ -100,27 +238,71 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
     }
   };
 
-  // 插入组件到光标位置
-  const insertComponent = useCallback((text: string) => {
-    const textarea = textareaRef.current;
-    if (!textarea) return;
+  // 加载项目场景
+  useEffect(() => {
+    if (projectId && activeTab === 'scene') {
+      loadScenes();
+    }
+  }, [projectId, scriptId, activeTab]);
 
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
-    const before = promptText.substring(0, start);
-    const after = promptText.substring(end);
-    
-    const newText = before + text + after;
+  const loadScenes = async () => {
+    if (!projectId) return;
+    setIsLoadingScenes(true);
+    try {
+      const token = getAuthToken();
+      const url = scriptId
+        ? `/api/scenes/project/${projectId}?scriptId=${scriptId}`
+        : `/api/scenes/project/${projectId}`;
+      const res = await fetch(url, {
+        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const mapped = (data.scenes || []).map((s: any) => ({
+          id: s.id,
+          name: s.name,
+          description: s.description,
+          environment: s.environment,
+          lighting: s.lighting,
+          mood: s.mood,
+          imageUrl: s.image_url || s.imageUrl,
+          reverseImageUrl: s.reverse_image_url || s.reverseImageUrl,
+        }));
+        setSceneItems(mapped);
+      }
+    } catch (error) {
+      console.error('[DialogEditor] 加载场景失败:', error);
+    } finally {
+      setIsLoadingScenes(false);
+    }
+  };
+
+  // 插入文本组件到光标位置（contentEditable）
+  const insertComponent = useCallback((text: string) => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    editor.focus();
+
+    const selection = window.getSelection();
+    if (selection && selection.rangeCount > 0) {
+      const range = selection.getRangeAt(0);
+      range.deleteContents();
+      const textNode = document.createTextNode(text);
+      range.insertNode(textNode);
+      range.setStartAfter(textNode);
+      range.setEndAfter(textNode);
+      selection.removeAllRanges();
+      selection.addRange(range);
+    } else {
+      editor.appendChild(document.createTextNode(text));
+    }
+
+    // 同步状态
+    const newText = extractTextFromEditor(editor);
+    lastRenderedRef.current = newText;
     setPromptText(newText);
     setIsDirty(true);
-
-    // 恢复光标位置
-    setTimeout(() => {
-      textarea.focus();
-      const newCursorPos = start + text.length;
-      textarea.setSelectionRange(newCursorPos, newCursorPos);
-    }, 0);
-  }, [promptText]);
+  }, []);
 
   // 处理拖拽进入
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -135,7 +317,7 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
     setIsDraggingOver(false);
   }, []);
 
-  // 处理放置
+  // 处理放置（contentEditable）
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDraggingOver(false);
@@ -144,17 +326,51 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
       const data = JSON.parse(e.dataTransfer.getData('application/json'));
       
       if (data.type === 'reference-image') {
-        // 添加参考图
         const newImage: ReferenceImage = {
           id: `ref-${Date.now()}`,
           url: data.imageUrl,
           source: data.source as 'frame' | 'scene',
-          label: data.frameType === 'start' ? '首帧' : data.frameType === 'end' ? '尾帧' : '参考',
+          label: data.sceneName ? `场景:${data.sceneName}` : data.frameType === 'start' ? '首帧' : data.frameType === 'end' ? '尾帧' : '参考',
         };
         setReferenceImages(prev => [...prev, newImage]);
-        insertComponent(`[参考图:${newImage.id}]`);
+
+        // 在拖放位置插入胶囊元素
+        const editor = editorRef.current;
+        if (editor) {
+          const capsule = createCapsuleDom(newImage);
+          const range = getRangeFromPoint(e.clientX, e.clientY);
+          if (range && editor.contains(range.startContainer)) {
+            range.insertNode(capsule);
+            const sel = window.getSelection();
+            if (sel) {
+              range.setStartAfter(capsule);
+              range.collapse(true);
+              sel.removeAllRanges();
+              sel.addRange(range);
+            }
+          } else {
+            editor.appendChild(capsule);
+          }
+
+          const newText = extractTextFromEditor(editor);
+          lastRenderedRef.current = newText;
+          setPromptText(newText);
+        }
+        setIsDirty(true);
       } else if (data.componentType) {
-        // 插入组件
+        // 在拖放位置插入文本组件
+        const editor = editorRef.current;
+        if (editor) {
+          editor.focus();
+          const range = getRangeFromPoint(e.clientX, e.clientY);
+          if (range && editor.contains(range.startContainer)) {
+            const sel = window.getSelection();
+            if (sel) {
+              sel.removeAllRanges();
+              sel.addRange(range);
+            }
+          }
+        }
         insertComponent(data.template);
       }
     } catch (error) {
@@ -164,9 +380,21 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
 
   // 删除参考图
   const removeReferenceImage = useCallback((id: string) => {
+    // 从 DOM 中移除胶囊
+    const capsule = editorRef.current?.querySelector(`[data-ref-id="${id}"]`);
+    if (capsule) {
+      capsule.remove();
+    }
+    // 同步状态
+    const editor = editorRef.current;
+    if (editor) {
+      const newText = extractTextFromEditor(editor);
+      lastRenderedRef.current = newText;
+      setPromptText(newText);
+    } else {
+      setPromptText(prev => prev.replace(`[参考图:${id}]`, ''));
+    }
     setReferenceImages(prev => prev.filter(img => img.id !== id));
-    // 从文本中移除引用
-    setPromptText(prev => prev.replace(`[参考图:${id}]`, ''));
     setIsDirty(true);
   }, []);
 
@@ -174,6 +402,10 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
   const handleClear = useCallback(() => {
     setPromptText('');
     setReferenceImages([]);
+    lastRenderedRef.current = '';
+    if (editorRef.current) {
+      editorRef.current.innerHTML = '<br>';
+    }
     setIsDirty(true);
     showToast('已清空', 'info');
   }, [showToast]);
@@ -188,6 +420,99 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
       showToast('保存失败', 'error');
     }
   }, [promptText, onSave, showToast]);
+
+  // 加载版本历史
+  const loadVersions = useCallback(async () => {
+    setLoadingVersions(true);
+    try {
+      const token = getAuthToken();
+      const res = await fetch(`/api/storyboards/${storyboardId}/prompt-history`, {
+        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setVersions(data.history || []);
+      }
+    } catch (error) {
+      console.error('[DialogEditor] 加载版本历史失败:', error);
+    } finally {
+      setLoadingVersions(false);
+    }
+  }, [storyboardId]);
+
+  // 打开版本面板
+  const handleOpenVersionPanel = useCallback(() => {
+    setShowVersionPanel(true);
+    setSelectedVersion(null);
+    setCompareMode(false);
+    setCompareVersion(null);
+    loadVersions();
+  }, [loadVersions]);
+
+  // 恢复版本
+  const handleRestoreVersion = useCallback(async (version: PromptVersion) => {
+    try {
+      const token = getAuthToken();
+      const res = await fetch(`/api/storyboards/${storyboardId}/prompt-history/${version.id}/restore`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        }
+      });
+      if (res.ok) {
+        setPromptText(version.prompt_text);
+        setIsDirty(false);
+        onChange?.(version.prompt_text);
+        // 重新渲染编辑器
+        lastRenderedRef.current = version.prompt_text;
+        if (editorRef.current) {
+          editorRef.current.innerHTML = refTextToHtml(version.prompt_text, referenceImages);
+        }
+        showToast(`已恢复到版本 v${version.version_number}`, 'success');
+        setShowVersionPanel(false);
+        loadVersions();
+      } else {
+        showToast('恢复失败', 'error');
+      }
+    } catch (error) {
+      showToast('恢复失败', 'error');
+    }
+  }, [storyboardId, onChange, showToast, loadVersions]);
+
+  // 简单 diff 函数：逐行对比两段文本
+  const computeDiff = useCallback((textA: string, textB: string) => {
+    const linesA = textA.split('\n');
+    const linesB = textB.split('\n');
+    const maxLen = Math.max(linesA.length, linesB.length);
+    const result: { text: string; type: 'same' | 'added' | 'removed' }[] = [];
+
+    for (let i = 0; i < maxLen; i++) {
+      const lineA = i < linesA.length ? linesA[i] : undefined;
+      const lineB = i < linesB.length ? linesB[i] : undefined;
+
+      if (lineA === lineB) {
+        result.push({ text: lineA!, type: 'same' });
+      } else {
+        if (lineA !== undefined) {
+          result.push({ text: lineA, type: 'removed' });
+        }
+        if (lineB !== undefined) {
+          result.push({ text: lineB, type: 'added' });
+        }
+      }
+    }
+    return result;
+  }, []);
+
+  // 格式化时间
+  const formatVersionTime = (dateStr: string) => {
+    const d = new Date(dateStr);
+    return d.toLocaleString('zh-CN', {
+      month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit'
+    });
+  };
 
   // 渲染组件按钮
   const renderComponentButtons = () => {
@@ -352,6 +677,74 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
       case 'scene':
         return (
           <div className="space-y-3">
+            {/* 项目场景列表 */}
+            {projectId && (
+              <div>
+                <div className="text-xs text-[var(--text-muted)] mb-2">项目场景（可拖拽图片）</div>
+                {isLoadingScenes ? (
+                  <div className="text-xs text-[var(--text-muted)] py-2">加载中...</div>
+                ) : sceneItems.length === 0 ? (
+                  <div className="text-xs text-[var(--text-muted)] py-2">暂无场景</div>
+                ) : (
+                  <div className="space-y-2">
+                    {sceneItems.map(scene => (
+                      <div
+                        key={scene.id}
+                        className="flex items-center gap-2 p-2 rounded bg-emerald-500/10 hover:bg-emerald-500/20 transition-colors"
+                      >
+                        {scene.imageUrl ? (
+                          <div
+                            className="relative w-12 h-9 rounded overflow-hidden cursor-grab flex-shrink-0"
+                            draggable
+                            onDragStart={(e) => {
+                              e.dataTransfer.setData('application/json', JSON.stringify({
+                                type: 'reference-image',
+                                imageUrl: scene.imageUrl,
+                                source: 'scene',
+                                sceneName: scene.name
+                              }));
+                            }}
+                          >
+                            <img src={scene.imageUrl} alt={scene.name} className="w-full h-full object-cover" />
+                            <span className="absolute bottom-0 left-0 right-0 text-[7px] text-center text-white bg-black/50">A面</span>
+                          </div>
+                        ) : (
+                          <div className="w-12 h-9 rounded bg-emerald-500/20 flex items-center justify-center text-xs text-emerald-600 flex-shrink-0">
+                            <MapPin size={14} />
+                          </div>
+                        )}
+                        {scene.reverseImageUrl && (
+                          <div
+                            className="relative w-12 h-9 rounded overflow-hidden cursor-grab flex-shrink-0"
+                            draggable
+                            onDragStart={(e) => {
+                              e.dataTransfer.setData('application/json', JSON.stringify({
+                                type: 'reference-image',
+                                imageUrl: scene.reverseImageUrl,
+                                source: 'scene',
+                                sceneName: `${scene.name}(B面)`
+                              }));
+                            }}
+                          >
+                            <img src={scene.reverseImageUrl} alt={`${scene.name} B面`} className="w-full h-full object-cover" />
+                            <span className="absolute bottom-0 left-0 right-0 text-[7px] text-center text-white bg-black/50">B面</span>
+                          </div>
+                        )}
+                        <div
+                          className="flex-1 min-w-0 cursor-pointer"
+                          onClick={() => insertComponent(`${scene.name}场景，`)}
+                        >
+                          <div className="text-xs font-medium text-emerald-700 truncate">{scene.name}</div>
+                          {scene.description && (
+                            <div className="text-[10px] text-emerald-500/70 truncate">{scene.description.slice(0, 20)}...</div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
             <div>
               <div className="text-xs text-[var(--text-muted)] mb-2">光线</div>
               <div className="flex flex-wrap gap-1.5">
@@ -443,7 +836,7 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
   };
 
   return (
-    <div className="flex flex-col h-full bg-[var(--bg-body)] rounded-lg border border-[var(--border-color)] overflow-hidden">
+    <div className="relative flex flex-col h-full bg-[var(--bg-body)] rounded-lg border border-[var(--border-color)] overflow-hidden">
       {/* 头部工具栏 */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-color)] bg-[var(--bg-card)]">
         <div className="flex items-center gap-2">
@@ -456,6 +849,15 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
           )}
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="flat"
+            className="bg-[var(--bg-input)] text-[var(--text-secondary)]"
+            startContent={<History className="w-3.5 h-3.5" />}
+            onPress={handleOpenVersionPanel}
+          >
+            版本
+          </Button>
           <Button
             size="sm"
             variant="flat"
@@ -551,40 +953,59 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
 
         {/* 右侧文本编辑区域 */}
         <div className="flex-1 flex flex-col p-4">
-          {/* 参考图标签展示 */}
-          {referenceImages.length > 0 && (
-            <div className="flex flex-wrap gap-2 mb-3">
-              {referenceImages.map(img => (
-                <div key={img.id} className="flex items-center gap-1 px-2 py-1 rounded bg-purple-500/10 border border-purple-500/30">
-                  <ImageIcon className="w-3 h-3 text-purple-500" />
-                  <span className="text-xs text-purple-600">{img.label}</span>
-                  <button
-                    onClick={() => removeReferenceImage(img.id)}
-                    className="ml-1 text-purple-400 hover:text-purple-600"
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* 文本输入区 */}
+          {/* 富文本编辑区（contentEditable） */}
           <div
             className={`flex-1 relative ${isDraggingOver ? 'ring-2 ring-[var(--accent)]' : ''}`}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
           >
-            <textarea
-              ref={textareaRef}
-              value={promptText}
-              onChange={(e) => {
-                setPromptText(e.target.value);
+            <div
+              ref={editorRef}
+              contentEditable
+              suppressContentEditableWarning
+              onInput={() => {
+                const editor = editorRef.current;
+                if (!editor) return;
+                const newText = extractTextFromEditor(editor);
+                lastRenderedRef.current = newText;
+                setPromptText(newText);
                 setIsDirty(true);
               }}
-              placeholder="点击左侧组件插入，或拖拽组件/参考图到此处..."
-              className="w-full h-full p-4 rounded-lg bg-[var(--bg-input)] border border-[var(--border-color)] text-sm text-[var(--text-primary)] resize-none focus:outline-none focus:border-[var(--accent)]"
+              onPaste={(e) => {
+                e.preventDefault();
+                const text = e.clipboardData.getData('text/plain');
+                const selection = window.getSelection();
+                if (selection && selection.rangeCount > 0) {
+                  const range = selection.getRangeAt(0);
+                  range.deleteContents();
+                  const textNode = document.createTextNode(text);
+                  range.insertNode(textNode);
+                  range.setStartAfter(textNode);
+                  range.collapse(true);
+                  selection.removeAllRanges();
+                  selection.addRange(range);
+                }
+                const editor = editorRef.current;
+                if (editor) {
+                  const newText = extractTextFromEditor(editor);
+                  lastRenderedRef.current = newText;
+                  setPromptText(newText);
+                  setIsDirty(true);
+                }
+              }}
+              onClick={(e) => {
+                const target = e.target as HTMLElement;
+                const deleteRef = target.dataset?.deleteRef;
+                if (deleteRef) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  removeReferenceImage(deleteRef);
+                }
+              }}
+              data-placeholder="点击左侧组件插入，或拖拽组件/参考图到此处..."
+              className="w-full h-full p-4 rounded-lg bg-[var(--bg-input)] border border-[var(--border-color)] text-sm text-[var(--text-primary)] overflow-y-auto focus:outline-none focus:border-[var(--accent)] empty:before:content-[attr(data-placeholder)] empty:before:text-[var(--text-muted)] empty:before:pointer-events-none"
+              style={{ minHeight: '120px', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
             />
             {isDraggingOver && (
               <div className="absolute inset-0 flex items-center justify-center bg-[var(--accent)]/10 rounded-lg pointer-events-none">
@@ -599,6 +1020,188 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
           </div>
         </div>
       </div>
+
+      {/* 版本管理面板（右侧滑出） */}
+      {showVersionPanel && (
+        <div className="absolute inset-0 z-50 flex">
+          {/* 半透明遮罩 */}
+          <div 
+            className="flex-1 bg-black/30"
+            onClick={() => setShowVersionPanel(false)}
+          />
+          {/* 面板 */}
+          <div className="w-[420px] bg-[var(--bg-card)] border-l border-[var(--border-color)] flex flex-col shadow-xl">
+            {/* 面板头部 */}
+            <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-color)]">
+              <div className="flex items-center gap-2">
+                <History className="w-4 h-4 text-[var(--accent)]" />
+                <span className="text-sm font-semibold text-[var(--text-primary)]">版本历史</span>
+                <span className="text-xs text-[var(--text-muted)]">({versions.length})</span>
+              </div>
+              <div className="flex items-center gap-2">
+                {!compareMode ? (
+                  <Button
+                    size="sm"
+                    variant="flat"
+                    startContent={<GitCompare className="w-3.5 h-3.5" />}
+                    onPress={() => { setCompareMode(true); setSelectedVersion(null); setCompareVersion(null); }}
+                    isDisabled={versions.length < 2}
+                    className="text-xs"
+                  >
+                    对比
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="flat"
+                    onPress={() => { setCompareMode(false); setSelectedVersion(null); setCompareVersion(null); }}
+                    className="text-xs"
+                  >
+                    取消对比
+                  </Button>
+                )}
+                <button
+                  onClick={() => setShowVersionPanel(false)}
+                  className="text-[var(--text-muted)] hover:text-[var(--text-primary)] text-lg leading-none"
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+
+            {/* 对比模式提示 */}
+            {compareMode && (
+              <div className="px-4 py-2 bg-blue-500/10 text-xs text-blue-600 border-b border-[var(--border-color)]">
+                {!selectedVersion
+                  ? '请选择第一个版本（旧版本）'
+                  : !compareVersion
+                  ? `已选 v${selectedVersion.version_number}，请选择第二个版本（新版本）`
+                  : `对比: v${selectedVersion.version_number} → v${compareVersion.version_number}`}
+              </div>
+            )}
+
+            {/* 版本列表 / 对比结果 */}
+            <div className="flex-1 overflow-y-auto">
+              {loadingVersions ? (
+                <div className="flex items-center justify-center py-12 text-sm text-[var(--text-muted)]">
+                  加载中...
+                </div>
+              ) : versions.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12">
+                  <History className="w-8 h-8 text-[var(--text-muted)] mb-2" />
+                  <p className="text-sm text-[var(--text-muted)]">暂无版本历史</p>
+                  <p className="text-xs text-[var(--text-muted)] mt-1">保存分镜描述后将自动记录版本</p>
+                </div>
+              ) : compareMode && selectedVersion && compareVersion ? (
+                /* 对比结果视图 */
+                <div className="p-4">
+                  <div className="flex items-center gap-2 mb-3 text-xs text-[var(--text-muted)]">
+                    <span className="px-1.5 py-0.5 rounded bg-red-500/10 text-red-600">v{selectedVersion.version_number} 删除</span>
+                    <span className="px-1.5 py-0.5 rounded bg-green-500/10 text-green-600">v{compareVersion.version_number} 新增</span>
+                  </div>
+                  <div className="rounded border border-[var(--border-color)] overflow-hidden text-xs font-mono">
+                    {computeDiff(selectedVersion.prompt_text, compareVersion.prompt_text).map((line, i) => (
+                      <div
+                        key={i}
+                        className={`px-3 py-1 border-b border-[var(--border-color)] last:border-b-0 whitespace-pre-wrap break-all ${
+                          line.type === 'removed'
+                            ? 'bg-red-500/10 text-red-700'
+                            : line.type === 'added'
+                            ? 'bg-green-500/10 text-green-700'
+                            : 'text-[var(--text-secondary)]'
+                        }`}
+                      >
+                        <span className="inline-block w-4 mr-2 text-[var(--text-muted)] select-none">
+                          {line.type === 'removed' ? '-' : line.type === 'added' ? '+' : ' '}
+                        </span>
+                        {line.text || ' '}
+                      </div>
+                    ))}
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="flat"
+                    className="mt-3"
+                    onPress={() => { setSelectedVersion(null); setCompareVersion(null); }}
+                  >
+                    重新选择
+                  </Button>
+                </div>
+              ) : (
+                /* 版本列表 */
+                <div className="divide-y divide-[var(--border-color)]">
+                  {versions.map((ver) => (
+                    <div
+                      key={ver.id}
+                      className={`px-4 py-3 cursor-pointer transition-colors ${
+                        (selectedVersion?.id === ver.id || compareVersion?.id === ver.id)
+                          ? 'bg-[var(--accent)]/10'
+                          : 'hover:bg-[var(--bg-card-hover)]'
+                      }`}
+                      onClick={() => {
+                        if (compareMode) {
+                          if (!selectedVersion) {
+                            setSelectedVersion(ver);
+                          } else if (!compareVersion && ver.id !== selectedVersion.id) {
+                            setCompareVersion(ver);
+                          }
+                        } else {
+                          setSelectedVersion(selectedVersion?.id === ver.id ? null : ver);
+                        }
+                      }}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-semibold text-[var(--text-primary)]">
+                            v{ver.version_number}
+                          </span>
+                          {ver.is_current && (
+                            <span className="px-1.5 py-0.5 rounded bg-green-500/10 text-green-600 text-[10px]">
+                              当前
+                            </span>
+                          )}
+                          {ver.source === 'ai' && (
+                            <span className="px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-600 text-[10px]">
+                              AI
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[10px] text-[var(--text-muted)]">
+                          {formatVersionTime(ver.created_at)}
+                        </span>
+                      </div>
+                      <p className="text-xs text-[var(--text-secondary)] line-clamp-2 break-all">
+                        {ver.prompt_text.slice(0, 80)}{ver.prompt_text.length > 80 ? '...' : ''}
+                      </p>
+
+                      {/* 选中时显示详细内容和操作 */}
+                      {!compareMode && selectedVersion?.id === ver.id && (
+                        <div className="mt-3 space-y-2">
+                          <div className="p-2 rounded bg-[var(--bg-input)] text-xs text-[var(--text-primary)] max-h-32 overflow-y-auto whitespace-pre-wrap break-all">
+                            {ver.prompt_text}
+                          </div>
+                          {!ver.is_current && (
+                            <Button
+                              size="sm"
+                              color="primary"
+                              variant="flat"
+                              startContent={<RotateCcw className="w-3 h-3" />}
+                              onPress={() => handleRestoreVersion(ver)}
+                              className="w-full text-xs"
+                            >
+                              恢复此版本
+                            </Button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -49,6 +49,75 @@ function isEmptyField(value: unknown): boolean {
   return typeof value !== 'string' || value.trim() === '';
 }
 
+// ============ 非角色群体词过滤（与后端 characterFilter.js 保持一致） ============
+
+const NON_CHARACTER_TERMS = new Set([
+  '人群', '路人', '群众', '众人', '行人', '观众', '围观者', '人们',
+  '群演', '背景人物', '旁人', '陌生人', '过客', '游客', '旅客',
+  '村民', '居民', '市民', '百姓', '民众', '平民',
+  '士兵', '卫兵', '侍卫', '侍女', '仆人', '随从', '下人', '杂兵', '守卫',
+  '商贩', '小贩', '摊贩', '店员', '伙计',
+  '僧人', '僧侣', '道士', '和尚',
+  '乘客', '旅人', '客人', '宾客', '来宾',
+  '工人', '农民', '渔民', '猎人',
+  '顾客', '买家', '卖家', '食客', '住客', '房客', '租客', '访客',
+  '同学们', '学生们', '老师们', '孩子们', '小朋友', '少年们',
+  '记者', '警察', '医生', '护士',
+  '大人', '小孩', '老人', '少女', '少年', '青年', '中年人', '老年人',
+  '男人', '女人', '男子', '女子', '男孩', '女孩',
+  '众人们', '其他人', '周围的人', '附近的人', '身边的人',
+  'NPC', 'npc', '龙套', '配角们', '路人甲', '路人乙',
+  '少年少女', '其他少年少女', '其他人物', '其他角色', '其他同学',
+  '一群人', '几个人', '数人', '若干人', '男女', '老少', '老幼', '男女老少',
+]);
+
+const NON_CHARACTER_PREFIXES = ['其他', '其余', '另外', '别的', '一些', '几个', '几名', '一群', '数个', '数名', '若干', '部分', '剩余', '周围'];
+
+const NON_CHARACTER_ROOTS = [
+  '少年', '少女', '青年', '小孩', '孩子', '男孩', '女孩', '男子', '女子',
+  '人物', '角色', '同学', '学生', '老师', '路人', '村民', '居民', '市民',
+  '士兵', '卫兵', '侍卫', '商贩', '行人', '观众', '游客', '乘客', '客人', '顾客',
+  '少年少女', '男女', '人', '人们', '群众', '百姓',
+];
+
+function isNonCharacterEntity(name: string): boolean {
+  if (!name || typeof name !== 'string') return true;
+  const trimmed = name.trim();
+  if (trimmed === '') return true;
+  if (NON_CHARACTER_TERMS.has(trimmed)) return true;
+  if (trimmed.endsWith('们') && NON_CHARACTER_TERMS.has(trimmed.slice(0, -1))) return true;
+  for (const prefix of NON_CHARACTER_PREFIXES) {
+    if (trimmed.startsWith(prefix)) {
+      const rest = trimmed.slice(prefix.length).replace(/的$/, '').replace(/们$/, '');
+      if (rest === '' || NON_CHARACTER_TERMS.has(rest)) return true;
+      for (const root of NON_CHARACTER_ROOTS) {
+        if (rest === root || rest.includes(root)) return true;
+      }
+    }
+  }
+  if (/^.{0,2}(等人|等角色|等几人)$/.test(trimmed)) return true;
+  return false;
+}
+
+/**
+ * 模糊匹配角色名（与后端 validateReadiness.js 保持一致）
+ */
+function fuzzyMatchCharacter(queryName: string, characters: CharacterRecord[]): CharacterRecord | undefined {
+  const q = queryName.trim();
+  const exact = characters.find(c => c.name === q);
+  if (exact) return exact;
+  const normalize = (s: string) => s.replace(/[\s\u3000·・\-_—–，,。.、！!？?""''「」『』【】（）()《》〈〉]/g, '');
+  const qNorm = normalize(q);
+  const normMatch = characters.find(c => normalize(c.name) === qNorm);
+  if (normMatch) return normMatch;
+  const containsMatch = characters.find(c => {
+    const cNorm = normalize(c.name);
+    return (cNorm.length >= 2 && qNorm.includes(cNorm)) || (qNorm.length >= 2 && cNorm.includes(qNorm));
+  });
+  if (containsMatch) return containsMatch;
+  return undefined;
+}
+
 /**
  * 校验角色字段完整性
  */
@@ -132,6 +201,12 @@ async function fetchProjectScenes(projectId: number, scriptId?: number): Promise
 }
 
 /**
+ * 角色最小出场分镜数阈值（与后端 characterFilter.js 保持一致）
+ * 只在 ≥ 该数量的分镜中出现的角色才要求生成角色图片/建立关联
+ */
+const MIN_CHARACTER_APPEARANCE = 2;
+
+/**
  * 前端首尾帧生成预检（通过后端关联表校验）
  * 
  * @param projectId     项目 ID
@@ -139,13 +214,15 @@ async function fetchProjectScenes(projectId: number, scriptId?: number): Promise
  * @param location      镜头涉及的场景名
  * @param scriptId      可选，剧本 ID
  * @param storyboardId  分镜 ID（用于关联表查询）
+ * @param charAppearanceMap 可选，角色出场次数映射（角色名 -> 出场分镜数）
  */
 export async function validateFrameReadiness(
   projectId: number,
   characters: string[],
   location: string,
   scriptId?: number,
-  storyboardId?: number
+  storyboardId?: number,
+  charAppearanceMap?: Record<string, number>
 ): Promise<ValidationResult> {
   const issues: ValidationIssue[] = [];
 
@@ -203,7 +280,16 @@ export async function validateFrameReadiness(
   ]);
 
   for (const charName of characters) {
-    const charRecord = allCharacters.find(c => c.name === charName);
+    // 跳过非角色群体词
+    if (isNonCharacterEntity(charName)) {
+      continue;
+    }
+    // 跳过出场次数不足的临时角色（防止角色画面崩坏）
+    if (charAppearanceMap && (charAppearanceMap[charName] || 0) < MIN_CHARACTER_APPEARANCE) {
+      continue;
+    }
+    // 使用模糊匹配查找角色（容忍名称差异）
+    const charRecord = fuzzyMatchCharacter(charName, allCharacters);
     if (!charRecord) {
       issues.push({ type: 'character_not_found', message: `角色不存在：${charName}`, blocking: true });
       continue;

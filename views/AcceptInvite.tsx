@@ -35,6 +35,7 @@ const AcceptInvite: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [accepting, setAccepting] = useState(false);
   const [accepted, setAccepted] = useState(false);
+  const [isPending, setIsPending] = useState(false); // 团队邀请需要审核
   const [isLoggedIn, setIsLoggedIn] = useState(false);
 
   // 检查登录状态
@@ -73,18 +74,20 @@ const AcceptInvite: React.FC = () => {
       setAccepting(true);
       const result = await acceptInvite(code);
       setAccepted(true);
-      showToast(`已成功加入${result.type === 'team' ? '团队' : '项目'}：${result.target_name}`, 'success');
 
-      // 延迟跳转
-      setTimeout(() => {
-        if (result.type === 'team') {
-          navigate(`/teams`);
-        } else {
+      // 团队邀请需要审核
+      if (result.status === 'pending' || result.type === 'team') {
+        setIsPending(true);
+        showToast('申请已提交，请等待管理员审核', 'success');
+      } else {
+        showToast(`已成功加入${result.type === 'team' ? '团队' : '项目'}：${result.target_name}`, 'success');
+        // 项目邀请直接跳转
+        setTimeout(() => {
           navigate(`/projects`);
-        }
-      }, 2000);
+        }, 2000);
+      }
     } catch (err) {
-      showToast(err instanceof Error ? err.message : '加入失败', 'error');
+      showToast(err instanceof Error ? err.message : '操作失败', 'error');
     } finally {
       setAccepting(false);
     }
@@ -140,19 +143,47 @@ const AcceptInvite: React.FC = () => {
       <div className="min-h-screen flex items-center justify-center bg-[var(--bg-base)] p-4">
         <Card className="w-full max-w-md bg-[var(--bg-card)]">
           <CardBody className="py-12 text-center">
-            <CheckCircle className="w-16 h-16 mx-auto mb-4 text-success" />
-            <h2 className="text-xl font-semibold text-[var(--text-primary)] mb-2">
-              加入成功！
-            </h2>
-            <p className="text-[var(--text-secondary)] mb-2">
-              您已成功加入{invite?.type === 'team' ? '团队' : '项目'}
-            </p>
-            <p className="text-lg font-medium text-[var(--text-primary)]">
-              {invite?.target_name}
-            </p>
-            <p className="text-sm text-[var(--text-tertiary)] mt-4">
-              正在跳转...
-            </p>
+            {isPending ? (
+              <>
+                <AlertCircle className="w-16 h-16 mx-auto mb-4 text-warning" />
+                <h2 className="text-xl font-semibold text-[var(--text-primary)] mb-2">
+                  申请已提交
+                </h2>
+                <p className="text-[var(--text-secondary)] mb-2">
+                  您申请加入{invite?.type === 'team' ? '团队' : '项目'}
+                </p>
+                <p className="text-lg font-medium text-[var(--text-primary)] mb-4">
+                  {invite?.target_name}
+                </p>
+                <p className="text-sm text-[var(--text-tertiary)]">
+                  请等待管理员审核，审核结果将通过站内信通知您
+                </p>
+                <Button
+                  color="primary"
+                  variant="flat"
+                  className="mt-6"
+                  onPress={() => navigate('/teams')}
+                >
+                  前往团队页面
+                </Button>
+              </>
+            ) : (
+              <>
+                <CheckCircle className="w-16 h-16 mx-auto mb-4 text-success" />
+                <h2 className="text-xl font-semibold text-[var(--text-primary)] mb-2">
+                  加入成功！
+                </h2>
+                <p className="text-[var(--text-secondary)] mb-2">
+                  您已成功加入{invite?.type === 'team' ? '团队' : '项目'}
+                </p>
+                <p className="text-lg font-medium text-[var(--text-primary)]">
+                  {invite?.target_name}
+                </p>
+                <p className="text-sm text-[var(--text-tertiary)] mt-4">
+                  正在跳转...
+                </p>
+              </>
+            )}
           </CardBody>
         </Card>
       </div>

@@ -53,6 +53,11 @@ const Projects: React.FC = () => {
     // 漫画专属
     mangaLayout: '' as '' | 'page' | 'strip' | 'free',
     mangaPanelStyle: '',
+    // 漫剧专属 - 画面参数
+    imageAspectRatio: '',
+    imageResolution: '',
+    videoAspectRatio: '',
+    videoResolution: '',
     // 短视频专属
     videoDuration: '' as '' | '15' | '30' | '60' | '180',
     videoAspect: '' as '' | '9:16' | '16:9' | '1:1',
@@ -158,6 +163,10 @@ const Projects: React.FC = () => {
       storyConstraints: settings.storyConstraints || '',
       mangaLayout: settings.mangaLayout || '',
       mangaPanelStyle: settings.mangaPanelStyle || '',
+      imageAspectRatio: settings.imageAspectRatio || '',
+      imageResolution: settings.imageResolution || '',
+      videoAspectRatio: settings.videoAspectRatio || '',
+      videoResolution: settings.videoResolution || '',
       videoDuration: settings.videoDuration || '',
       videoAspect: settings.videoAspect || '',
       videoStyle: settings.videoStyle || '',
@@ -172,7 +181,8 @@ const Projects: React.FC = () => {
   const handleSave = async () => {
     try {
       const { visualStyle, visualStylePrompt, storyStyle, storyConstraints,
-        mangaLayout, mangaPanelStyle, videoDuration, videoAspect, videoStyle,
+        mangaLayout, mangaPanelStyle, imageAspectRatio, imageResolution,
+        videoAspectRatio, videoResolution, videoDuration, videoAspect, videoStyle,
         novelGenre, novelWritingStyle, novelChapterLength, novelTarget, ...rest } = formData;
       const settingsObj: any = {};
       if (visualStyle) settingsObj.visualStyle = visualStyle;
@@ -182,6 +192,11 @@ const Projects: React.FC = () => {
       // 漫画专属
       if (mangaLayout) settingsObj.mangaLayout = mangaLayout;
       if (mangaPanelStyle) settingsObj.mangaPanelStyle = mangaPanelStyle;
+      // 漫剧专属 - 画面参数
+      if (imageAspectRatio) settingsObj.imageAspectRatio = imageAspectRatio;
+      if (imageResolution) settingsObj.imageResolution = imageResolution;
+      if (videoAspectRatio) settingsObj.videoAspectRatio = videoAspectRatio;
+      if (videoResolution) settingsObj.videoResolution = videoResolution;
       // 短视频专属
       if (videoDuration) settingsObj.videoDuration = videoDuration;
       if (videoAspect) settingsObj.videoAspect = videoAspect;
@@ -788,6 +803,7 @@ const Projects: React.FC = () => {
 
                   {/* ====== 漫剧专属字段 ====== */}
                   {(editProjectType === 'comic_drama') && (
+                  <>
                   <div className="grid grid-cols-2 gap-3">
                     <Input
                       label={t.projects.storyStyleLabel}
@@ -812,6 +828,84 @@ const Projects: React.FC = () => {
                       }}
                     />
                   </div>
+
+                  {/* 画面参数设置 */}
+                  <div className="space-y-3 p-3 rounded-lg border border-[var(--border-color)] bg-[var(--bg-input)]/50">
+                    <p className="text-sm font-medium text-[var(--text-secondary)]">画面参数（项目级锁定，分镜制作中不可更改）</p>
+                    <div>
+                      <label className="text-xs text-[var(--text-muted)] mb-1.5 block">图片画面比例</label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {['1:1', '16:9', '9:16', '4:3', '3:4', '21:9'].map((ratio) => (
+                          <button
+                            key={ratio}
+                            onClick={() => setFormData({ ...formData, imageAspectRatio: formData.imageAspectRatio === ratio ? '' : ratio })}
+                            className={`px-3 py-1 rounded-md border text-xs transition-all cursor-pointer ${
+                              formData.imageAspectRatio === ratio
+                                ? 'bg-[var(--accent)]/15 border-[var(--accent)]/40 text-[var(--accent)] shadow-[0_0_8px_var(--accent-glow)]'
+                                : 'border-[var(--border-color)] bg-[var(--bg-input)] text-[var(--text-muted)] hover:border-[var(--accent)]/30'
+                            }`}
+                          >
+                            {ratio}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-xs text-[var(--text-muted)] mb-1.5 block">图片分辨率</label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {['720p', '1080p', '2K', '4K'].map((res) => (
+                          <button
+                            key={res}
+                            onClick={() => setFormData({ ...formData, imageResolution: formData.imageResolution === res ? '' : res })}
+                            className={`px-3 py-1 rounded-md border text-xs transition-all cursor-pointer ${
+                              formData.imageResolution === res
+                                ? 'bg-[var(--accent)]/15 border-[var(--accent)]/40 text-[var(--accent)] shadow-[0_0_8px_var(--accent-glow)]'
+                                : 'border-[var(--border-color)] bg-[var(--bg-input)] text-[var(--text-muted)] hover:border-[var(--accent)]/30'
+                            }`}
+                          >
+                            {res}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-xs text-[var(--text-muted)] mb-1.5 block">视频画面比例</label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {['16:9', '9:16', '1:1'].map((ratio) => (
+                          <button
+                            key={ratio}
+                            onClick={() => setFormData({ ...formData, videoAspectRatio: formData.videoAspectRatio === ratio ? '' : ratio })}
+                            className={`px-3 py-1 rounded-md border text-xs transition-all cursor-pointer ${
+                              formData.videoAspectRatio === ratio
+                                ? 'bg-[var(--accent)]/15 border-[var(--accent)]/40 text-[var(--accent)] shadow-[0_0_8px_var(--accent-glow)]'
+                                : 'border-[var(--border-color)] bg-[var(--bg-input)] text-[var(--text-muted)] hover:border-[var(--accent)]/30'
+                            }`}
+                          >
+                            {ratio}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-xs text-[var(--text-muted)] mb-1.5 block">视频分辨率</label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {['480p', '720p', '1080p'].map((res) => (
+                          <button
+                            key={res}
+                            onClick={() => setFormData({ ...formData, videoResolution: formData.videoResolution === res ? '' : res })}
+                            className={`px-3 py-1 rounded-md border text-xs transition-all cursor-pointer ${
+                              formData.videoResolution === res
+                                ? 'bg-[var(--accent)]/15 border-[var(--accent)]/40 text-[var(--accent)] shadow-[0_0_8px_var(--accent-glow)]'
+                                : 'border-[var(--border-color)] bg-[var(--bg-input)] text-[var(--text-muted)] hover:border-[var(--accent)]/30'
+                            }`}
+                          >
+                            {res}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  </>
                   )}
 
                   {/* ====== 漫画专属字段 ====== */}

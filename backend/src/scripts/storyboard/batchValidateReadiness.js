@@ -11,7 +11,7 @@
  */
 
 const { queryOne, queryAll } = require('../../dbHelper');
-const { isNonCharacterEntity } = require('../../utils/characterFilter');
+const { isNonCharacterEntity, MIN_CHARACTER_APPEARANCE } = require('../../utils/characterFilter');
 
 module.exports = async (req, res) => {
   try {
@@ -87,7 +87,22 @@ module.exports = async (req, res) => {
       scenesByStoryboard[s.storyboard_id].push(s);
     });
 
-    // 4. 对每个分镜进行校验
+    // 4. 统计同一剧本中每个角色在所有分镜中的出现次数
+    const charAppearanceMap = {};
+    const allScriptStoryboards = await queryAll(
+      `SELECT variables_json FROM storyboards WHERE script_id = ?`,
+      [scriptId]
+    );
+    for (const sb of allScriptStoryboards) {
+      let vars = {};
+      try { vars = typeof sb.variables_json === 'string' ? JSON.parse(sb.variables_json) : (sb.variables_json || {}); } catch { vars = {}; }
+      const chars = vars.characters || [];
+      for (const c of chars) {
+        charAppearanceMap[c] = (charAppearanceMap[c] || 0) + 1;
+      }
+    }
+
+    // 5. 对每个分镜进行校验
     const results = sceneIds.map(sceneId => {
       const storyboard = storyboardMap[sceneId];
       
@@ -114,7 +129,7 @@ module.exports = async (req, res) => {
       const scenes = scenesByStoryboard[sceneId] || [];
 
       if (type === 'frame') {
-        return validateForFrame(sceneId, storyboard, variables, chars, scenes);
+        return validateForFrame(sceneId, storyboard, variables, chars, scenes, charAppearanceMap);
       } else {
         return validateForVideo(sceneId, storyboard, variables);
       }
@@ -130,7 +145,7 @@ module.exports = async (req, res) => {
 /**
  * 校验生成首尾帧的前置条件
  */
-function validateForFrame(sceneId, storyboard, variables, linkedChars, linkedScenes) {
+function validateForFrame(sceneId, storyboard, variables, linkedChars, linkedScenes, charAppearanceMap) {
   const blockingIssues = [];
   const warningIssues = [];
   
@@ -145,6 +160,10 @@ function validateForFrame(sceneId, storyboard, variables, linkedChars, linkedSce
   for (const name of characterNames) {
     // 跳过非角色群体词（如"人群"、"路人"等泛称，不需要建立角色关联）
     if (isNonCharacterEntity(name)) {
+      continue;
+    }
+    // 跳过出场次数不足的临时角色（防止角色画面崩坏）
+    if (charAppearanceMap && (charAppearanceMap[name] || 0) < MIN_CHARACTER_APPEARANCE) {
       continue;
     }
     const char = linkedCharMap[name];

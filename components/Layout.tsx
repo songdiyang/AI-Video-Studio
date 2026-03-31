@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Film, User, Package, LogOut, FolderOpen, Settings, Sparkles, Wifi, WifiOff, Pencil, Moon, Sun, Monitor, Contrast, BarChart3, LayoutTemplate, Users, Maximize, Minimize, BookOpen, Video, Image, UsersRound } from 'lucide-react';
+import { Film, User, Package, LogOut, FolderOpen, Settings, Sparkles, Wifi, WifiOff, Pencil, Moon, Sun, Monitor, Contrast, BarChart3, LayoutTemplate, Users, Maximize, Minimize, BookOpen, Video, Image, UsersRound, Puzzle } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from "@heroui/react";
 import { motion } from 'framer-motion';
@@ -71,6 +71,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     { path: '/sketch', icon: Pencil, label: t.nav.sketch },
     { path: '/templates', icon: LayoutTemplate, label: (t as Record<string, unknown>).templates ? ((t as Record<string, unknown>).templates as Record<string, string>).title : '模板库' },
     { path: '/community', icon: Users, label: (t as Record<string, unknown>).community ? ((t as Record<string, unknown>).community as Record<string, string>).title : '社区' },
+    { path: '/extensions', icon: Puzzle, label: '扩展' },
     { path: '/settings', icon: Settings, label: t.nav.settings },
   ], [t]);
 
