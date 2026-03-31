@@ -828,7 +828,58 @@ router.delete('/:id', authMiddleware, async (req, res) => {
     res.json({ message: '工程删除成功' });
   } catch (error) {
     console.error('[Project Delete]', error);
-    res.status(500).json({ message: '删除工程失败: ' + error.message });
+    res.status(500).json({ message: '删除工程失败：' + error.message });
+  }
+});
+
+// POST /api/projects/:id/invite - 生成项目邀请链接
+router.post('/:id/invite', authMiddleware, async (req, res) => {
+  const userId = req.user.id;
+  const { id } = req.params;
+
+  try {
+    // 检查项目是否存在且用户有权限
+    const project = await queryOne(
+      'SELECT * FROM projects WHERE id = ? AND user_id = ?',
+      [id, userId]
+    );
+
+    if (!project) {
+      return res.status(404).json({ message: '项目不存在或无权访问' });
+    }
+
+    // 生成邀请码
+    const invite_code = Math.random().toString(36).substring(2, 10).toUpperCase();
+    const invite_code_expires_at = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 天后过期
+
+    // 检查是否已有邀请记录
+    const existingInvite = await queryOne(
+      'SELECT * FROM project_invites WHERE project_id = ? AND is_active = 1',
+      [id]
+    );
+
+    if (existingInvite) {
+      // 如果已有有效邀请，直接返回
+      res.json({
+        invite_code: existingInvite.invite_code,
+        expires_at: existingInvite.expires_at
+      });
+    } else {
+      // 创建新的邀请记录
+      await execute(
+        `INSERT INTO project_invites (project_id, invite_code, created_by, expires_at, is_active)
+         VALUES (?, ?, ?, ?, ?)`,
+        [id, invite_code, userId, invite_code_expires_at, 1]
+      );
+
+      res.json({
+        invite_code,
+        expires_at: invite_code_expires_at
+      });
+    }
+  } catch (error) {
+    console.error('[Project Invite] 生成邀请链接失败:', error);
+    res.status(500).json({ message: '生成邀请链接失败' });
   }
 });
 
