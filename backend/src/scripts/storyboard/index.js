@@ -29,6 +29,7 @@ const updateDirectorParams = require('./updateDirectorParams');
 const sketchRoutes = require('./sketch');
 const lockRoutes = require('./lockStoryboard');
 const shotLanguageRoutes = require('./shotLanguage');
+const frameHistoryRoutes = require('./frameHistory');  // 帧历史版本管理
 
 // 注册路由（顺序很重要！具体路由在前，通用路由在后）
 
@@ -46,6 +47,7 @@ updateDirectorParams(router);  // 导演参数更新
 sketchRoutes(router);          // 草图上传与管理
 lockRoutes(router);            // 分镜锁定/解锁
 shotLanguageRoutes(router);    // 镜头语言参数管理
+frameHistoryRoutes(router);    // 帧历史版本管理
 
 getTemplates(router);
 autoGenerate(router);

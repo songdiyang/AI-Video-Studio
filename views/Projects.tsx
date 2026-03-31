@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardBody, Button, Input, Textarea, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure, Chip, Spinner } from '@heroui/react';
-import { FolderOpen, Plus, Edit, Trash2, Search, BookOpen, Clock, Palette, Sparkles, ImagePlus, Users, Link as LinkIcon, Copy } from 'lucide-react';
+import { FolderOpen, Plus, Edit, Trash2, Search, BookOpen, Clock, Palette, Sparkles, ImagePlus } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Project, fetchProjects, createProject, updateProject, deleteProject } from '../services/projects';
+import { Team, fetchTeams } from '../services/collaboration';
 import { ProjectType } from '../types/projectTypes';
 import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../contexts/ConfirmContext';
@@ -44,6 +45,7 @@ const Projects: React.FC = () => {
     description: '',
     cover_url: '',
     status: 'draft' as 'draft' | 'in_progress' | 'completed',
+    team_id: null as number | null,
     visualStyle: '',
     visualStylePrompt: '',
     storyStyle: '',
@@ -65,11 +67,10 @@ const Projects: React.FC = () => {
   const [coverGenerating, setCoverGenerating] = useState(false);
   const [showQuickStart, setShowQuickStart] = useState(false);
   
-  // 邀请相关状态
-  const [showInviteModal, setShowInviteModal] = useState(false);
-  const [inviteLink, setInviteLink] = useState('');
-  const [generatingInvite, setGeneratingInvite] = useState(false);
-  const [selectedProjectForInvite, setSelectedProjectForInvite] = useState<Project | null>(null);
+  // 团队选择
+  const [userTeams, setUserTeams] = useState<Team[]>([]);
+  const [loadingTeams, setLoadingTeams] = useState(false);
+  const [selectedTeamId, setSelectedTeamId] = useState<number | ''>('');
 
   // 视觉风格预设（键名用于内部标识，翻译后的显示名称从 t 获取）
   const VISUAL_STYLE_PRESETS: Record<string, { prompt: string; labelKey: keyof typeof t.projects.presets }> = {
@@ -85,7 +86,21 @@ const Projects: React.FC = () => {
 
   useEffect(() => {
     loadProjects();
+    loadUserTeams();
   }, []);
+
+  // 加载用户团队列表
+  const loadUserTeams = async () => {
+    try {
+      setLoadingTeams(true);
+      const { teams } = await fetchTeams();
+      setUserTeams(teams);
+    } catch (error) {
+      console.error('加载团队失败:', error);
+    } finally {
+      setLoadingTeams(false);
+    }
+  };
 
   // 监听容器高度变化
   useEffect(() => {
@@ -136,6 +151,7 @@ const Projects: React.FC = () => {
       description: project.description,
       cover_url: project.cover_url,
       status: project.status,
+      team_id: project.team_id || null,
       visualStyle: settings.visualStyle || '',
       visualStylePrompt: settings.visualStylePrompt || '',
       storyStyle: settings.storyStyle || '',
@@ -175,7 +191,11 @@ const Projects: React.FC = () => {
       if (novelWritingStyle) settingsObj.novelWritingStyle = novelWritingStyle;
       if (novelChapterLength) settingsObj.novelChapterLength = novelChapterLength;
       if (novelTarget) settingsObj.novelTarget = novelTarget;
-      const saveData = { ...rest, type: editProjectType, settings_json: JSON.stringify(settingsObj) };
+      const saveData: any = { ...rest, type: editProjectType, settings_json: JSON.stringify(settingsObj) };
+      // 只在创建项目时设置 team_id
+      if (!editMode) {
+        saveData.team_id = selectedTeamId || null;
+      }
       if (editMode && currentId) {
         await updateProject(currentId, saveData);
       } else {
@@ -284,48 +304,6 @@ const Projects: React.FC = () => {
       showToast(t.projects.aiCoverFailed, 'error');
     } finally {
       setCoverGenerating(false);
-    }
-  };
-  
-  // 生成项目邀请链接
-  const handleGenerateInvite = async (project: Project) => {
-    setGeneratingInvite(true);
-    try {
-      const token = getAuthToken();
-      const res = await fetch(`/api/projects/${project.id}/invite`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        }
-      });
-  
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.message || '生成邀请链接失败');
-      }
-  
-      const data = await res.json();
-      const inviteUrl = `${window.location.origin}/projects/join?code=${data.invite_code}`;
-      setInviteLink(inviteUrl);
-      setSelectedProjectForInvite(project);
-      setShowInviteModal(true);
-      showToast('邀请链接生成成功', 'success');
-    } catch (error: any) {
-      console.error('生成邀请链接失败:', error);
-      showToast(error.message || '生成邀请链接失败', 'error');
-    } finally {
-      setGeneratingInvite(false);
-    }
-  };
-  
-  // 复制邀请链接
-  const handleCopyInviteLink = async () => {
-    try {
-      await navigator.clipboard.writeText(inviteLink);
-      showToast('邀请链接已复制到剪贴板', 'success');
-    } catch (error) {
-      showToast('复制失败，请手动复制', 'error');
     }
   };
 
@@ -601,14 +579,6 @@ const Projects: React.FC = () => {
                       <Button
                         size="sm"
                         isIconOnly
-                        className="bg-[var(--bg-elevated)] backdrop-blur-sm hover:bg-purple-500/20 shadow-lg border border-[var(--border-color)] cursor-pointer"
-                        onPress={() => handleGenerateInvite(project)}
-                      >
-                        <Users className="w-4 h-4 text-purple-400" />
-                      </Button>
-                      <Button
-                        size="sm"
-                        isIconOnly
                         className="bg-[var(--bg-elevated)] backdrop-blur-sm hover:bg-red-500/20 shadow-lg border border-[var(--border-color)] cursor-pointer"
                         onPress={() => handleDelete(project.id)}
                       >
@@ -699,6 +669,25 @@ const Projects: React.FC = () => {
                   >
                     {aiSuggesting ? t.projects.aiSuggesting : t.projects.aiSuggestBtn}
                   </Button>
+
+                  {/* 团队选择器 */}
+                  {!editMode && userTeams.length > 0 && (
+                    <div>
+                      <label className="text-sm text-[var(--text-secondary)] font-medium mb-2 block">所属团队</label>
+                      <select
+                        value={selectedTeamId}
+                        onChange={(e) => setSelectedTeamId(e.target.value ? Number(e.target.value) : '')}
+                        className="w-full px-3 py-2 rounded-lg bg-[var(--bg-input)] border border-[var(--border-color)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]/40"
+                      >
+                        <option value="">个人项目</option>
+                        {userTeams.map(team => (
+                          <option key={team.id} value={team.id}>
+                            {team.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
 
                   {/* 工程状态 */}
                   <div>
@@ -1012,73 +1001,6 @@ const Projects: React.FC = () => {
           onClose={() => setShowQuickStart(false)}
           onComplete={handleQuickStartComplete}
         />
-
-        {/* 邀请链接模态框 */}
-        <Modal
-          isOpen={showInviteModal}
-          onOpenChange={() => setShowInviteModal(false)}
-          size="md"
-          classNames={{
-            backdrop: 'bg-black/60 backdrop-blur-sm',
-            base: 'bg-[var(--bg-elevated)] border border-[var(--border-color)] shadow-2xl',
-            header: 'border-b border-[var(--border-color)]',
-            body: 'py-6',
-            footer: 'border-t border-[var(--border-color)]',
-            closeButton: 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/10'
-          }}
-        >
-          <ModalContent>
-            {(onClose) => (
-              <>
-                <ModalHeader className="flex flex-col gap-2">
-                  <div className="flex items-center gap-2">
-                    <LinkIcon className="w-5 h-5 text-purple-400" />
-                    <span>邀请加入团队</span>
-                  </div>
-                </ModalHeader>
-                <ModalBody>
-                  <p className="text-sm text-[var(--text-secondary)] mb-2">
-                    项目：<span className="text-[var(--text-primary)] font-medium">{selectedProjectForInvite?.name}</span>
-                  </p>
-                  <p className="text-sm text-[var(--text-muted)] mb-4">
-                    邀请链接将发送给团队成员，需要组长审批后才能加入
-                  </p>
-                  <div className="flex gap-2">
-                    <Input
-                      value={inviteLink}
-                      isReadOnly
-                      classNames={{
-                        input: "bg-transparent text-[var(--text-primary)] text-sm",
-                        inputWrapper: "bg-[var(--bg-input)] border border-[var(--border-color)]"
-                      }}
-                    />
-                    <Button
-                      className="bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 transition-all cursor-pointer"
-                      isIconOnly
-                      onPress={handleCopyInviteLink}
-                    >
-                      <Copy className="w-4 h-4" />
-                    </Button>
-                  </div>
-                  <div className="bg-[var(--bg-info)]/10 border border-[var(--bg-info)]/30 rounded-lg p-3 mt-4">
-                    <p className="text-xs text-[var(--text-info)]">
-                      💡 <strong>提示：</strong>邀请链接默认 7 天后过期。过期后可以重新生成新链接。
-                    </p>
-                  </div>
-                </ModalBody>
-                <ModalFooter>
-                  <Button
-                    variant="bordered"
-                    onPress={() => setShowInviteModal(false)}
-                    className="cursor-pointer"
-                  >
-                    关闭
-                  </Button>
-                </ModalFooter>
-              </>
-            )}
-          </ModalContent>
-        </Modal>
       </div>
     </div>
   );

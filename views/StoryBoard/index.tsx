@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef, Component, ReactNode } from 'react';
 import { Button, Select, SelectItem, Tooltip } from '@heroui/react';
-import { Wand2, RefreshCw, Download, Video, ImageIcon, Users, MapPin, Frame, Film, ChevronDown, Play, PanelRight } from 'lucide-react';
+import { Wand2, RefreshCw, Download, Video, ImageIcon, Users, MapPin, Frame, Film, ChevronDown, Play, PanelRight, GitBranch, MessageSquare } from 'lucide-react';
 import { useSceneManager, StoryboardScene } from './useSceneManager';
 import { useAutoStoryboard } from './useAutoStoryboard';
 import { useSceneGeneration } from './useSceneGeneration';
@@ -22,6 +22,10 @@ import { normalizeCapabilityOptions } from '../../utils/modelCapabilities';
 import { useKeyboardShortcuts, ShortcutConfig, STORYBOARD_SHORTCUTS_CONFIG, VIDEO_COMPOSITION_SHORTCUTS_CONFIG } from '../../hooks/useKeyboardShortcuts';
 // 导入 AnimaticPreview 组件
 import { AnimaticPreview } from './AnimaticPreview';
+// 导入版本控制和协作组件
+import VersionHistoryPanel from './VersionHistoryPanel';
+import TeamCollaborationPanel from './TeamCollaborationPanel';
+import FrameAnnotationPanel from './FrameAnnotationPanel';
 
 interface Script {
   id: number;
@@ -105,6 +109,9 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
   const [isSubmittingCharacterBatch, setIsSubmittingCharacterBatch] = useState(false);
   const [isSubmittingSceneBatch, setIsSubmittingSceneBatch] = useState(false);
   const [isAnimaticOpen, setIsAnimaticOpen] = useState(false);
+  const [isVersionHistoryOpen, setIsVersionHistoryOpen] = useState(false);
+  const [isTeamCollaborationOpen, setIsTeamCollaborationOpen] = useState(false);
+  const [isFrameAnnotationOpen, setIsFrameAnnotationOpen] = useState(false);
   const resourcePanelRef = useRef<ResizablePanelRef>(null);
   const { showToast } = useToast();
 
@@ -828,6 +835,42 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
 
             <Divider />
 
+            {/* 版本控制与协作 */}
+            <IconButton
+              icon={<GitBranch className="w-4 h-4" />}
+              tooltip="版本历史"
+              onClick={() => {
+                if (selectedScene) {
+                  setIsVersionHistoryOpen(true);
+                } else {
+                  showToast('请先选择一个分镜', 'info');
+                }
+              }}
+              disabled={!selectedScene}
+              variant="default"
+            />
+            <IconButton
+              icon={<Users className="w-4 h-4" />}
+              tooltip="团队协作"
+              onClick={() => setIsTeamCollaborationOpen(!isTeamCollaborationOpen)}
+              variant="default"
+            />
+            <IconButton
+              icon={<MessageSquare className="w-4 h-4" />}
+              tooltip="帧批注"
+              onClick={() => {
+                if (selectedScene) {
+                  setIsFrameAnnotationOpen(true);
+                } else {
+                  showToast('请先选择一个分镜', 'info');
+                }
+              }}
+              disabled={!selectedScene}
+              variant="default"
+            />
+
+            <Divider />
+
             {/* 批量生成操作 */}
             <IconButton
               icon={<Users className="w-4 h-4" />}
@@ -1105,6 +1148,41 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
           </PanelGroup>
         </div>
         </div>
+      )}
+
+      {/* 版本控制面板 */}
+      {selectedSceneData && currentProjectId && (
+        <VersionHistoryPanel
+          projectId={currentProjectId}
+          resourceType="storyboard"
+          resourceId={selectedSceneData.id}
+          isOpen={isVersionHistoryOpen}
+          onClose={() => setIsVersionHistoryOpen(false)}
+          onRestoreVersion={(version) => {
+            console.log('[StoryBoard] 版本已恢复:', version);
+            loadStoryboards(currentScriptId!);
+          }}
+        />
+      )}
+
+      {/* 团队协作面板 */}
+      {currentProjectId && (
+        <TeamCollaborationPanel
+          projectId={currentProjectId}
+          isOpen={isTeamCollaborationOpen}
+          onClose={() => setIsTeamCollaborationOpen(false)}
+        />
+      )}
+
+      {/* 帧批注面板 */}
+      {selectedSceneData && currentProjectId && (
+        <FrameAnnotationPanel
+          storyboardId={selectedSceneData.id}
+          projectId={currentProjectId}
+          frameType="first"
+          isOpen={isFrameAnnotationOpen}
+          onClose={() => setIsFrameAnnotationOpen(false)}
+        />
       )}
 
       {/* 自动分镜确认弹窗 */}

@@ -9,6 +9,9 @@ export interface Scene {
   lighting?: string;
   mood?: string;
   image_url?: string;
+  reverse_image_url?: string; // B 面图 URL
+  generation_prompt?: string; // A 面生成提示词
+  reverse_generation_prompt?: string; // B 面生成提示词
   generation_status?: string;
   tags?: string;
 }

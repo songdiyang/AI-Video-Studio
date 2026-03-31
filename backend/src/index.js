@@ -48,10 +48,16 @@ const sketchProjectRoutes = require('./scripts/sketchProjects');
 const templateRoutes = require('./templates');
 const communityRoutes = require('./community');
 const subscriptionRoutes = require('./subscriptions');
-const collaborationRoutes = require('./collaboration');
+const collaborationRoutes = require('./scripts/collaboration');
+const versionControlRoutes = require('./scripts/versionControl');
+const approvalsRoutes = require('./scripts/approvals');
 const systemConfigRoutes = require('./systemConfigRoutes');
+const teamsRoutes = require('./teams');
+const { setupWebSocket } = require('./websocket');
 
 const app = express();
+const http = require('http');
+const server = http.createServer(app);
 
 // 信任 Nginx 反代的 X-Forwarded-For 头
 app.set('trust proxy', 1);
@@ -142,7 +148,10 @@ app.use('/api/sketch-projects', sketchProjectRoutes);
 app.use('/api/templates', templateRoutes);
 app.use('/api/community', communityRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
-app.use('/api', collaborationRoutes);  // 协作路由（/api/teams, /api/invites, /api/users/search）
+app.use('/api/teams', teamsRoutes);  // 团队管理路由
+app.use('/api', collaborationRoutes);  // 协作路由
+app.use('/api', versionControlRoutes);  // 版本控制路由
+app.use('/api', approvalsRoutes);  // 审批流程路由
 app.use('/api/system-configs', systemConfigRoutes);
 
 // Serve static files for production if needed
@@ -186,7 +195,10 @@ async function start() {
     }
   }
 
-  app.listen(PORT, () => {
+  // 设置 WebSocket 服务（集成到 HTTP 服务器）
+  setupWebSocket(app, server);
+
+  server.listen(PORT, () => {
     console.log('\n' +
       '  ~(=^\u30FB\u03C9\u30FB^)\uFF8D >\uFF9F)))\u5F61\n' +
       '\n' +

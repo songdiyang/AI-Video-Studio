@@ -4,6 +4,7 @@ import { ProjectType, mapLegacyProjectType } from '../types/projectTypes';
 export interface Project {
   id: number;
   user_id: number;
+  team_id?: number | null;
   name: string;
   description: string;
   cover_url: string;

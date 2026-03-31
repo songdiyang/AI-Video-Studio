@@ -508,6 +508,21 @@ async function handleFrameGeneration(inputParams, onProgress) {
     });
     console.log('[FrameGen] 首帧已保存:', persistedStartFrame);
     trace('首帧持久化完成', { url: persistedStartFrame, promptUsed: startPrompt, refImages: startRefResult.selectedUrls });
+
+    // 保存首帧到历史版本表
+    try {
+      await execute(
+        `INSERT INTO storyboard_frame_history 
+         (storyboard_id, frame_type, frame_url, generation_prompt, generation_params, version_number, is_current)
+         VALUES (?, 'first', ?, ?, ?, 
+                (SELECT COALESCE(MAX(version_number), 0) + 1 FROM storyboard_frame_history WHERE storyboard_id = ? AND frame_type = 'first'),
+                TRUE)`,
+        [storyboardId, persistedStartFrame, startPrompt, JSON.stringify({ model: modelName, aspectRatio, resolution }), storyboardId]
+      );
+      console.log('[FrameGen] 首帧历史版本已保存');
+    } catch (e) {
+      console.warn('[FrameGen] 保存首帧历史版本失败:', e.message);
+    }
   } else {
     console.log('[FrameGen] 跳过首帧生成，使用已有首帧:', existingFirstFrame);
     if (onProgress) onProgress(40);
@@ -570,6 +585,21 @@ async function handleFrameGeneration(inputParams, onProgress) {
     });
     console.log('[FrameGen] 尾帧已保存:', persistedEndFrame);
     trace('尾帧持久化完成', { url: persistedEndFrame, promptUsed: endPrompt, refImages: endRefResult.selectedUrls });
+
+    // 保存尾帧到历史版本表
+    try {
+      await execute(
+        `INSERT INTO storyboard_frame_history 
+         (storyboard_id, frame_type, frame_url, generation_prompt, generation_params, version_number, is_current)
+         VALUES (?, 'last', ?, ?, ?, 
+                (SELECT COALESCE(MAX(version_number), 0) + 1 FROM storyboard_frame_history WHERE storyboard_id = ? AND frame_type = 'last'),
+                TRUE)`,
+        [storyboardId, persistedEndFrame, endPrompt, JSON.stringify({ model: modelName, aspectRatio, resolution }), storyboardId]
+      );
+      console.log('[FrameGen] 尾帧历史版本已保存');
+    } catch (e) {
+      console.warn('[FrameGen] 保存尾帧历史版本失败:', e.message);
+    }
   } else {
     console.log('[FrameGen] 跳过尾帧生成，使用已有尾帧:', existingLastFrame);
     if (onProgress) onProgress(80);

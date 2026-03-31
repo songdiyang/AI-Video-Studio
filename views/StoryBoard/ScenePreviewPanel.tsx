@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Button, Textarea, Chip } from '@heroui/react';
-import { ImageIcon, Video, Film, Camera, Users, MapPin, Zap, X, Trash2, ZoomIn, ZoomOut, RotateCw, Maximize2, Blocks, ChevronDown, ChevronUp } from 'lucide-react';
+import { ImageIcon, Video, Film, Camera, Users, MapPin, Zap, X, Trash2, ZoomIn, ZoomOut, RotateCw, Maximize2, Blocks, ChevronDown, ChevronUp, History } from 'lucide-react';
 import { StoryboardScene } from './useSceneManager';
 import { TaskState } from '../../hooks/useTaskRunner';
 import { getAuthToken } from '../../services/auth';
@@ -9,6 +9,7 @@ import { useConfirm } from '../../contexts/ConfirmContext';
 import { validateFrameReadiness, formatValidationMessage } from './utils/validateFrameReadiness';
 import SketchPanel from './SceneCard/SketchPanel';
 import BlockEditor from './BlockEditor';
+import FrameHistoryPanel from './FrameHistoryPanel';
 import { BlockEditorState } from './BlockEditor/types/blockTypes';
 
 interface ScenePreviewPanelProps {
@@ -38,6 +39,7 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
 }) => {
   const [showStartFrame, setShowStartFrame] = useState(true);
   const [isDirectorSpaceExpanded, setIsDirectorSpaceExpanded] = useState(true);
+  const [showHistory, setShowHistory] = useState<{ type: 'first' | 'last' | null }>({ type: null });
   const { showToast } = useToast();
   const { confirm } = useConfirm();
 
@@ -338,6 +340,15 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                     e.dataTransfer.effectAllowed = 'copy';
                   }}
                 />
+                {/* 左上角：历史版本按钮 */}
+                <button
+                  onClick={() => setShowHistory({ type: showStartFrame ? 'first' : 'last' })}
+                  className="absolute top-2 left-2 p-2 rounded-lg bg-black/50 hover:bg-black/70 text-white/80 hover:text-white transition-colors flex items-center gap-1.5"
+                  title="查看历史版本"
+                >
+                  <History className="w-4 h-4" />
+                  <span className="text-xs">历史版本</span>
+                </button>
                 {/* 放大按钮提示 */}
                 <button
                   onClick={openLightbox}
@@ -666,6 +677,20 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
           )}
         </div>
       </div>
+
+      {/* 历史版本面板 */}
+      {scene && showHistory.type && (
+        <FrameHistoryPanel
+          storyboardId={scene.id}
+          frameType={showHistory.type}
+          isOpen={!!showHistory.type}
+          onClose={() => setShowHistory({ type: null })}
+          onRestoreVersion={() => {
+            showToast('版本已恢复', 'success');
+            setShowHistory({ type: null });
+          }}
+        />
+      )}
     </div>
   );
 };

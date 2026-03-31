@@ -34,20 +34,81 @@ const SceneImageModal: React.FC<SceneImageModalProps> = ({
             <ModalHeader className="text-slate-100 font-bold">
               <div className="flex items-center gap-2">
                 <ImageIcon className="w-5 h-5 text-emerald-400" />
-                场景图片生成 - {scene?.name}
+                场景图片 - {scene?.name}
+                {scene?.image_url && scene?.reverse_image_url && (
+                  <span className="text-xs px-2 py-1 rounded-full bg-emerald-500/20 text-emerald-400 ml-2">
+                    A/B 面已生成
+                  </span>
+                )}
               </div>
             </ModalHeader>
             <ModalBody>
-              {/* 已生成的图片 */}
+              {/* 已生成的图片 - A/B 面展示 */}
               {scene?.image_url && (
                 <div className="mb-6">
-                  <h3 className="text-sm font-semibold text-slate-300 mb-3">当前场景图片</h3>
-                  <div className="border border-slate-700/50 rounded-lg overflow-hidden">
-                    <img 
-                      src={scene.image_url} 
-                      alt={scene.name} 
-                      className="w-full h-64 object-cover"
-                    />
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-semibold text-slate-300">场景图片</h3>
+                    {scene.reverse_image_url && (
+                      <span className="text-xs text-slate-400 flex items-center gap-1">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                        A/B 双视角
+                      </span>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    {/* A 面图 */}
+                    <div>
+                      <div className="mb-2 flex items-center gap-2">
+                        <span className="text-xs font-medium text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded">A 面（正打）</span>
+                      </div>
+                      <div className="border border-slate-700/50 rounded-lg overflow-hidden bg-slate-800/50">
+                        <img 
+                          src={scene.image_url} 
+                          alt={`${scene.name} - A 面`} 
+                          className="w-full h-48 object-cover hover:scale-105 transition-transform duration-300"
+                        />
+                      </div>
+                      {scene.generation_prompt && (
+                        <div className="mt-2 p-2 bg-slate-800/60 rounded text-xs text-slate-400 max-h-20 overflow-y-auto">
+                          <span className="font-medium">提示词：</span>
+                          {scene.generation_prompt.substring(0, 80)}...
+                        </div>
+                      )}
+                    </div>
+
+                    {/* B 面图（如果有） */}
+                    {scene.reverse_image_url ? (
+                      <div>
+                        <div className="mb-2 flex items-center gap-2">
+                          <span className="text-xs font-medium text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded">B 面（反打）</span>
+                        </div>
+                        <div className="border border-slate-700/50 rounded-lg overflow-hidden bg-slate-800/50">
+                          <img 
+                            src={scene.reverse_image_url} 
+                            alt={`${scene.name} - B 面`} 
+                            className="w-full h-48 object-cover hover:scale-105 transition-transform duration-300"
+                          />
+                        </div>
+                        {scene.reverse_generation_prompt && (
+                          <div className="mt-2 p-2 bg-slate-800/60 rounded text-xs text-slate-400 max-h-20 overflow-y-auto">
+                            <span className="font-medium">提示词：</span>
+                            {scene.reverse_generation_prompt.substring(0, 80)}...
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div>
+                        <div className="mb-2 flex items-center gap-2">
+                          <span className="text-xs font-medium text-slate-500 bg-slate-700/50 px-2 py-0.5 rounded">B 面（未生成）</span>
+                        </div>
+                        <div className="border border-slate-700/50 border-dashed rounded-lg overflow-hidden bg-slate-800/50 h-48 flex items-center justify-center">
+                          <div className="text-center text-slate-500">
+                            <ImageIcon className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                            <p className="text-xs">B 面图暂未生成</p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
