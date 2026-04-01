@@ -3,9 +3,22 @@ import { Card, CardBody, Button, Input, Textarea, Modal, ModalContent, ModalHead
 import { FolderOpen, Plus, Folder } from 'lucide-react';
 import { fetchProjects, createProject, Project } from '../services/projects';
 import { useToast } from '../contexts/ToastContext';
+import UpgradePrompt from './UpgradePrompt';
 
 interface ProjectSelectorProps {
   onSelectProject: (project: Project) => void;
+}
+
+// 升级提示数据类型
+interface UpgradeData {
+  currentPlan: { name: string; displayName: string; level: number };
+  currentUsage: { current: number; max: number };
+  nextPlan?: {
+    name: string;
+    displayName: string;
+    maxProjects: number | string;
+    price?: { monthly: number; yearly: number; firstMonth?: number };
+  };
 }
 
 const ProjectSelector: React.FC<ProjectSelectorProps> = ({ onSelectProject }) => {
@@ -14,6 +27,10 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({ onSelectProject }) =>
   const [newProjectName, setNewProjectName] = useState('');
   const [newProjectDesc, setNewProjectDesc] = useState('');
   const { showToast } = useToast();
+  
+  // 升级提示状态
+  const [showUpgrade, setShowUpgrade] = useState(false);
+  const [upgradeData, setUpgradeData] = useState<UpgradeData | null>(null);
   
   const { isOpen, onOpen, onOpenChange } = useDisclosure();
 
@@ -54,7 +71,20 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({ onSelectProject }) =>
       onSelectProject(project);
     } catch (error: any) {
       console.error('创建项目失败:', error);
-      showToast('创建项目失败，请稍后重试', 'error');
+      
+      // 检查是否是项目数量限制错误
+      if (error.code === 'PROJECT_LIMIT_REACHED' && error.data) {
+        const { currentCount, maxCount, planName, planDisplayName, planLevel, upgrade } = error.data;
+        setUpgradeData({
+          currentPlan: { name: planName, displayName: planDisplayName, level: planLevel },
+          currentUsage: { current: currentCount, max: maxCount },
+          nextPlan: upgrade?.available ? upgrade.nextPlan : undefined
+        });
+        setShowUpgrade(true);
+        onOpenChange(); // 关闭创建弹窗
+      } else {
+        showToast(error.message || '创建项目失败，请稍后重试', 'error');
+      }
     }
   };
 
@@ -192,6 +222,18 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({ onSelectProject }) =>
           )}
         </ModalContent>
       </Modal>
+
+      {/* 升级提示弹窗 */}
+      {upgradeData && (
+        <UpgradePrompt
+          isOpen={showUpgrade}
+          onClose={() => setShowUpgrade(false)}
+          limitType="project"
+          currentPlan={upgradeData.currentPlan}
+          currentUsage={upgradeData.currentUsage}
+          nextPlan={upgradeData.nextPlan}
+        />
+      )}
     </div>
   );
 };

@@ -6,8 +6,21 @@ const { callAIModel } = require('./aiModelService');
 const { withAIBillingContext } = require('./aiBillingContext');
 const { downloadAndStore } = require('./utils/fileStorage');
 const { getEffectiveProjectRole, PERMISSION_LEVELS } = require('./middleware/collaborationAuth');
+const { canCreateProject, getNextPlanInfo, getMembershipInfo } = require('./subscriptionService');
 
 const router = express.Router();
+
+// 获取用户会员信息和项目配额
+router.get('/membership', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const membershipInfo = await getMembershipInfo(userId);
+    res.json(membershipInfo);
+  } catch (error) {
+    console.error('[Membership Info]', error);
+    res.status(500).json({ message: '获取会员信息失败' });
+  }
+});
 
 // 获取视觉风格预设列表
 router.get('/style-presets', authMiddleware, (req, res) => {
@@ -296,6 +309,32 @@ router.post('/', authMiddleware, async (req, res) => {
   }
 
   try {
+    // 检查项目数量限制
+    const projectLimit = await canCreateProject(userId);
+    if (!projectLimit.allowed) {
+      const nextPlan = getNextPlanInfo(projectLimit.planName);
+      return res.status(403).json({
+        code: 'PROJECT_LIMIT_REACHED',
+        message: `您已达到${projectLimit.planDisplayName}的项目数量上限（${projectLimit.maxCount}个）`,
+        data: {
+          currentCount: projectLimit.currentCount,
+          maxCount: projectLimit.maxCount,
+          planName: projectLimit.planName,
+          planDisplayName: projectLimit.planDisplayName,
+          planLevel: projectLimit.planLevel,
+          upgrade: nextPlan ? {
+            available: true,
+            nextPlan: {
+              name: nextPlan.name,
+              displayName: nextPlan.displayName,
+              maxProjects: nextPlan.maxProjects === -1 ? '无限' : nextPlan.maxProjects,
+              price: nextPlan.price
+            }
+          } : { available: false }
+        }
+      });
+    }
+
     // 如果指定了团队，检查用户是否有权限
     if (team_id) {
       const { getTeamRole } = require('./middleware/collaborationAuth');

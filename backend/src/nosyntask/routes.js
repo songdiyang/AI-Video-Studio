@@ -174,6 +174,31 @@ router.get('/admin/errors', authMiddleware, requireAdmin, async (req, res) => {
 });
 
 /**
+ * 管理员接口 - 更新任务处理状态
+ */
+router.patch('/admin/errors/:jobId/status', authMiddleware, requireAdmin, async (req, res) => {
+  try {
+    const { jobId } = req.params;
+    const { is_consumed } = req.body;
+    const { execute } = require('../dbHelper');
+    
+    if (typeof is_consumed !== 'number' && typeof is_consumed !== 'boolean') {
+      return res.status(400).json({ message: '无效的状态值' });
+    }
+    
+    await execute(
+      'UPDATE workflow_jobs SET is_consumed = ? WHERE id = ?',
+      [is_consumed ? 1 : 0, parseInt(jobId)]
+    );
+    
+    res.json({ success: true, message: is_consumed ? '已标记为已处理' : '已标记为待处理' });
+  } catch (error) {
+    console.error('[Admin Update Error Status]', error);
+    res.status(500).json({ message: error.message || '更新状态失败' });
+  }
+});
+
+/**
  * 标记工作流已消费
  */
 router.post('/:jobId/consume', authMiddleware, async (req, res) => {

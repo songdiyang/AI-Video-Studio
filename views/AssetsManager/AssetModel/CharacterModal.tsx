@@ -7,6 +7,7 @@ import {
   TAG_GROUP_COLORS, 
   createTagGroup,
   Character,
+  CharacterState,
   generateCharacterViews,
   getCharacterViewStatus,
   downloadCharacterView,
@@ -764,6 +765,17 @@ const CharacterModal: React.FC<CharacterModalProps> = ({
                   <CharacterStateEditor
                     characterId={editMode && formData.id ? formData.id : null}
                     disabled={!editMode || !formData.id}
+                    onStateActivated={(state: CharacterState) => {
+                      // 当状态被激活时，更新角色主图
+                      if (state.image_url || state.front_view_url) {
+                        setFormData({
+                          ...formData,
+                          image_url: state.image_url || state.front_view_url
+                        });
+                      }
+                      // 刷新角色数据
+                      onRefreshCharacter?.();
+                    }}
                   />
                 </Tab>
 

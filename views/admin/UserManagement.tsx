@@ -196,7 +196,7 @@ const UserManagement: React.FC = () => {
                 <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">用户</th>
                 <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">状态</th>
                 <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">角色</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">余额</th>
+                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">积分</th>
                 <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">登录IP</th>
                 <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">创建时间</th>
                 <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">操作</th>
@@ -247,9 +247,14 @@ const UserManagement: React.FC = () => {
                       </span>
                     </td>
                     <td className="px-4 py-3.5">
-                      <span className="text-sm font-mono font-semibold text-emerald-600">
-                        ¥{typeof user.balance === 'number' ? user.balance.toFixed(2) : Number(user.balance || 0).toFixed(2)}
-                      </span>
+                      <div className="flex flex-col">
+                        <span className="text-sm font-mono font-semibold text-emerald-600">
+                          {Math.floor(typeof user.balance === 'number' ? user.balance : Number(user.balance || 0))} 积分
+                        </span>
+                        <span className="text-xs text-gray-400">
+                          ≈ ¥{((typeof user.balance === 'number' ? user.balance : Number(user.balance || 0)) * 0.02).toFixed(2)}
+                        </span>
+                      </div>
                     </td>
                     <td className="px-4 py-3.5">
                       {user.last_login_ip ? (
@@ -373,16 +378,18 @@ const UserManagement: React.FC = () => {
             </div>
 
             <div>
-              <label className="text-sm font-medium text-gray-700 mb-1.5 block">余额</label>
+              <label className="text-sm font-medium text-gray-700 mb-1.5 block">积分</label>
               <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">¥</span>
                 <input
                   type="number"
-                  placeholder="请输入余额"
+                  placeholder="请输入积分数量"
                   value={String(formData.balance)}
-                  onChange={(e) => setFormData({ ...formData, balance: parseFloat(e.target.value) || 0 })}
-                  className="w-full pl-8 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
+                  onChange={(e) => setFormData({ ...formData, balance: parseInt(e.target.value) || 0 })}
+                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
                 />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs">
+                  ≈ ¥{((formData.balance || 0) * 0.02).toFixed(2)}
+                </span>
               </div>
             </div>
           </ModalBody>

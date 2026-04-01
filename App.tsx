@@ -40,7 +40,7 @@ const RateLimitManagement = React.lazy(() => import('./views/admin/RateLimitMana
 const SubscriptionManagement = React.lazy(() => import('./views/admin/SubscriptionManagement'));
 const SiteSettings = React.lazy(() => import('./views/admin/SiteSettings'));
 const FeedbackManagement = React.lazy(() => import('./views/admin/FeedbackManagement'));
-const TaskErrorMonitor = React.lazy(() => import('./views/admin/TaskErrorMonitor'));
+const ErrorMonitor = React.lazy(() => import('./views/admin/ErrorMonitor'));
 const AnnouncementManagement = React.lazy(() => import('./views/admin/AnnouncementManagement'));
 
 // 加载中回退组件
@@ -223,9 +223,9 @@ const App: React.FC = () => {
                   <FeedbackManagement />
                 </Suspense>
               } />
-              <Route path="task-errors" element={
+              <Route path="error-monitor" element={
                 <Suspense fallback={<LoadingFallback />}>
-                  <TaskErrorMonitor />
+                  <ErrorMonitor />
                 </Suspense>
               } />
               <Route path="announcements" element={

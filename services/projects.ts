@@ -62,7 +62,15 @@ export async function createProject(project: Partial<Project>): Promise<Project>
   });
   if (!response.ok) {
     const data = await response.json();
-    throw new Error(data.message || '创建工程失败');
+    // 创建带有额外属性的错误对象
+    const error = new Error(data.message || '创建工程失败') as Error & { code?: string; data?: any };
+    if (data.code) {
+      error.code = data.code;
+    }
+    if (data.data) {
+      error.data = data.data;
+    }
+    throw error;
   }
   const data = await response.json();
   return data.project;

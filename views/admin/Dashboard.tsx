@@ -714,39 +714,39 @@ const Dashboard: React.FC = () => {
 
       {/* 配置建议 */}
       {systemResources && (
-        <Card className="bg-gradient-to-r from-slate-900/80 to-slate-800/80 border border-slate-700/50">
+        <Card className="bg-white/90 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700/50 shadow-sm">
           <CardBody className="p-5">
             <div className="flex items-center gap-3 mb-3">
-              <Activity className="w-5 h-5 text-cyan-400" />
-              <h3 className="text-sm font-semibold text-slate-100">服务器配置参考</h3>
+              <Activity className="w-5 h-5 text-cyan-500" />
+              <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-100">服务器配置参考</h3>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
-              <div className="bg-slate-800/50 rounded-lg p-3">
-                <p className="text-slate-400 text-xs mb-1">CPU核心</p>
-                <p className="text-slate-100 font-medium">{systemResources.cpu.cores} 核</p>
-                <p className="text-xs text-slate-500 mt-1">
+              <div className="bg-slate-50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600/50 rounded-lg p-3">
+                <p className="text-slate-500 dark:text-slate-400 text-xs mb-1">CPU核心</p>
+                <p className="text-slate-800 dark:text-slate-100 font-medium">{systemResources.cpu.cores} 核</p>
+                <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
                   {systemResources.cpu.usage > 80 ? '建议升级' : systemResources.cpu.usage < 20 ? '资源充足' : '使用正常'}
                 </p>
               </div>
-              <div className="bg-slate-800/50 rounded-lg p-3">
-                <p className="text-slate-400 text-xs mb-1">系统内存</p>
-                <p className="text-slate-100 font-medium">{formatBytes(systemResources.memory.system.total)}</p>
-                <p className="text-xs text-slate-500 mt-1">
+              <div className="bg-slate-50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600/50 rounded-lg p-3">
+                <p className="text-slate-500 dark:text-slate-400 text-xs mb-1">系统内存</p>
+                <p className="text-slate-800 dark:text-slate-100 font-medium">{formatBytes(systemResources.memory.system.total)}</p>
+                <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
                   已用 {systemResources.memory.system.usagePercent}%
                   {systemResources.memory.system.usagePercent > 85 ? ' · 建议扩容' : ''}
                 </p>
               </div>
-              <div className="bg-slate-800/50 rounded-lg p-3">
-                <p className="text-slate-400 text-xs mb-1">数据库</p>
-                <p className="text-slate-100 font-medium">{systemResources.database.sizeMB} MB</p>
-                <p className="text-xs text-slate-500 mt-1">
+              <div className="bg-slate-50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600/50 rounded-lg p-3">
+                <p className="text-slate-500 dark:text-slate-400 text-xs mb-1">数据库</p>
+                <p className="text-slate-800 dark:text-slate-100 font-medium">{systemResources.database.sizeMB} MB</p>
+                <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
                   连接池 {systemResources.database.pool.active + systemResources.database.pool.idle}/20
                 </p>
               </div>
-              <div className="bg-slate-800/50 rounded-lg p-3">
-                <p className="text-slate-400 text-xs mb-1">日均负载</p>
-                <p className="text-slate-100 font-medium">{historyStats?.summary.avgDailyTasks || 0} 任务/天</p>
-                <p className="text-xs text-slate-500 mt-1">
+              <div className="bg-slate-50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600/50 rounded-lg p-3">
+                <p className="text-slate-500 dark:text-slate-400 text-xs mb-1">日均负载</p>
+                <p className="text-slate-800 dark:text-slate-100 font-medium">{historyStats?.summary.avgDailyTasks || 0} 任务/天</p>
+                <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
                   {historyStats?.summary.avgDailyUsers || 0} 活跃用户/天
                 </p>
               </div>

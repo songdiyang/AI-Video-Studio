@@ -8,6 +8,7 @@ const { callAIModel, queryAIModel, getTextModels } = require('./aiModelService')
 const { generationStartService, sendGenerationError } = require('./modules/generation');
 const { getRateLimitStats, reloadRateLimitConfigs } = require('./nosyntask/utils/aiRateLimiter');
 const { getServerStatus } = require('./index');
+const { getSystemErrors, updateSystemErrorStatus, getSystemErrorStats } = require('./systemErrorService');
 const os = require('os');
 
 const router = express.Router();
@@ -1617,6 +1618,61 @@ router.put('/subscriptions/:id', authMiddleware, requireAdmin, async (req, res) 
   } catch (error) {
     console.error('[Admin] Update subscription error:', error);
     res.status(500).json({ message: '更新订阅信息失败' });
+  }
+});
+
+// ============ 系统错误日志管理 ============
+
+/**
+ * 获取系统错误列表
+ */
+router.get('/system-errors', authMiddleware, requireAdmin, async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const errorType = req.query.errorType || null;
+    const isResolved = req.query.isResolved !== undefined 
+      ? req.query.isResolved === 'true' 
+      : null;
+
+    const result = await getSystemErrors({ page, limit, errorType, isResolved });
+    res.json(result);
+  } catch (error) {
+    console.error('[Admin] Get system errors error:', error);
+    res.status(500).json({ message: '获取系统错误列表失败' });
+  }
+});
+
+/**
+ * 获取系统错误统计
+ */
+router.get('/system-errors/stats', authMiddleware, requireAdmin, async (req, res) => {
+  try {
+    const stats = await getSystemErrorStats();
+    res.json({ stats });
+  } catch (error) {
+    console.error('[Admin] Get system error stats error:', error);
+    res.status(500).json({ message: '获取系统错误统计失败' });
+  }
+});
+
+/**
+ * 更新系统错误状态
+ */
+router.patch('/system-errors/:id/status', authMiddleware, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { is_resolved } = req.body;
+    const resolvedBy = req.user?.email || 'admin';
+
+    await updateSystemErrorStatus(parseInt(id), !!is_resolved, resolvedBy);
+    res.json({ 
+      success: true, 
+      message: is_resolved ? '已标记为已解决' : '已标记为待处理' 
+    });
+  } catch (error) {
+    console.error('[Admin] Update system error status error:', error);
+    res.status(500).json({ message: '更新状态失败' });
   }
 });
 

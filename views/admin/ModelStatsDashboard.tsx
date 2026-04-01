@@ -54,9 +54,9 @@ const ModelStatsDashboard: React.FC = () => {
 
   // 计算汇总数据
   const summary = React.useMemo(() => {
-    const totalCalls = stats.reduce((sum, s) => sum + s.totalCalls, 0);
-    const totalSuccess = stats.reduce((sum, s) => sum + s.successCalls, 0);
-    const totalFailed = stats.reduce((sum, s) => sum + s.failedCalls, 0);
+    const totalCalls = stats.reduce((sum, s) => sum + (Number(s.totalCalls) || 0), 0);
+    const totalSuccess = stats.reduce((sum, s) => sum + (Number(s.successCalls) || 0), 0);
+    const totalFailed = stats.reduce((sum, s) => sum + (Number(s.failedCalls) || 0), 0);
     const avgSuccessRate = totalCalls > 0 ? ((totalSuccess / totalCalls) * 100).toFixed(2) : '0';
     const totalCost = stats.reduce((sum, s) => sum + parseFloat(s.totalCost || '0'), 0);
 

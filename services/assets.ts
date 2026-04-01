@@ -143,7 +143,19 @@ export interface CharacterState {
   sort_order: number;
   created_at: string;
   updated_at: string;
+  // 新增外观属性
+  outfit?: string;           // 服装描述
+  age_stage?: string;        // 年龄阶段
+  hairstyle?: string;        // 发型描述
+  accessories?: string;      // 配饰JSON
+  is_active?: boolean;       // 是否激活
+  generation_prompt?: string;
+  generation_status?: 'idle' | 'generating' | 'completed' | 'failed';
 }
+
+// 年龄阶段选项
+export const AGE_STAGES = ['童年', '少年', '青年', '中年', '老年'] as const;
+export type AgeStage = typeof AGE_STAGES[number];
 
 // ============================================================
 // 资产参考图接口
@@ -718,6 +730,98 @@ export async function deleteCharacterState(
     const result = await response.json();
     throw new Error(result.message || '删除角色状态失败');
   }
+}
+
+/**
+ * 激活角色状态
+ */
+export async function activateCharacterState(
+  characterId: number,
+  stateId: number
+): Promise<CharacterState> {
+  const token = getAuthToken();
+  const response = await fetch(`/api/characters/${characterId}/states/${stateId}/activate`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    }
+  });
+  if (!response.ok) {
+    const result = await response.json();
+    throw new Error(result.message || '激活状态失败');
+  }
+  const data = await response.json();
+  return data.state;
+}
+
+/**
+ * 复制角色状态
+ */
+export async function duplicateCharacterState(
+  characterId: number,
+  stateId: number,
+  newName?: string
+): Promise<CharacterState> {
+  const token = getAuthToken();
+  const response = await fetch(`/api/characters/${characterId}/states/${stateId}/duplicate`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    },
+    body: JSON.stringify({ newName })
+  });
+  if (!response.ok) {
+    const result = await response.json();
+    throw new Error(result.message || '复制状态失败');
+  }
+  const data = await response.json();
+  return data.state;
+}
+
+/**
+ * 为角色状态生成三视图
+ */
+export async function generateCharacterStateViews(
+  characterId: number,
+  stateId: number,
+  params: { imageModel: string; textModel?: string; regenerateOnly?: ('front' | 'side' | 'back')[] }
+): Promise<{ state: CharacterState; generationPrompt: string }> {
+  const token = getAuthToken();
+  const response = await fetch(`/api/characters/${characterId}/states/${stateId}/generate-views`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    },
+    body: JSON.stringify(params)
+  });
+  if (!response.ok) {
+    const result = await response.json();
+    throw new Error(result.message || '启动生成失败');
+  }
+  return await response.json();
+}
+
+/**
+ * 获取角色的激活状态
+ */
+export async function getActiveCharacterState(
+  characterId: number
+): Promise<CharacterState | null> {
+  const token = getAuthToken();
+  const response = await fetch(`/api/characters/${characterId}/active-state`, {
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    }
+  });
+  if (!response.ok) {
+    const result = await response.json();
+    throw new Error(result.message || '获取激活状态失败');
+  }
+  const data = await response.json();
+  return data.state;
 }
 
 // ============================================================

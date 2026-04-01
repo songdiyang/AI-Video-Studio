@@ -79,10 +79,10 @@ const AdminLayout: React.FC = () => {
           path: '/admin/feedback'
         },
         {
-          id: 'task-errors',
-          label: '任务监控',
+          id: 'error-monitor',
+          label: '错误监控',
           icon: <AlertTriangle className="w-4 h-4" />,
-          path: '/admin/task-errors'
+          path: '/admin/error-monitor'
         },
         {
           id: 'announcements',

@@ -2,6 +2,7 @@ const { queryOne, queryAll, execute } = require('./dbHelper');
 const { parseJsonField } = require('./utils/parseJsonField');
 const { getAIBillingContext } = require('./aiBillingContext');
 const { getBillingHandler } = require('./billingHandlers');
+const pointsService = require('./pointsService');
 
 const TOKEN_METRICS = new Set(['input_tokens', 'output_tokens', 'total_tokens']);
 const ALLOWED_COMPONENT_TYPES = new Set([
@@ -340,7 +341,9 @@ function extractUsageFromObject(source) {
       source.itemCount,
       source.item_count,
       Array.isArray(source.imageUrls) ? source.imageUrls.length : null,
-      Array.isArray(data?.images) ? data.images.length : null
+      Array.isArray(data?.images) ? data.images.length : null,
+      // 火山引擎 Seedream 格式：data 数组直接包含图片对象
+      Array.isArray(source.data) ? source.data.length : null
     ], 0)
   };
 }
@@ -357,9 +360,15 @@ async function resolveUsage(params) {
   } = params;
 
   const handlerName = useQueryHandler ? model.billing_query_handler : model.billing_handler;
+  console.log(`[AI Billing] resolveUsage - useQueryHandler: ${useQueryHandler}, handlerName: "${handlerName}"`);
   const billingHandler = getBillingHandler(handlerName);
 
   if (useQueryHandler && handlerName && !billingHandler) {
+    console.error(`[AI Billing] 无法加载 billing_query_handler "${handlerName}" - 模型配置:`, {
+      modelName: model.name,
+      billing_handler: model.billing_handler,
+      billing_query_handler: model.billing_query_handler
+    });
     throw new ModelBillingConfigError(`模型 "${model.name}" 的 billing_query_handler "${handlerName}" 未找到`);
   }
 
@@ -466,35 +475,35 @@ function calculatePrice(normalizedPriceConfig, usage) {
   };
 }
 
-async function ensureBalance(userId, amount) {
-  const required = roundMoney(amount);
-  if (!required || required <= 0) return null;
-
+async function ensureBalance(userId, amount, normalizedPriceConfig, usage) {
   // 管理员调试模型时跳过余额检查（sourceType 由 runAsAdminTool 设置）
   const context = getAIBillingContext();
   if (context?.sourceType === 'admin_tool') {
-    return null;
+    return { points: 0, isAdmin: true };
   }
 
-  // 查询用户余额和角色
-  const user = await queryOne('SELECT balance, role FROM users WHERE id = ?', [userId]);
-  const balance = toNumber(user?.balance, 0) || 0;
+  // 计算需要的积分
+  const pointsResult = await pointsService.calculatePointsFromCost(amount);
+  const requiredPoints = pointsResult.points;
 
-  // 管理员角色跳过余额检查
-  if (user?.role === 'admin') {
-    return balance;
+  // 检查积分余额
+  const checkResult = await pointsService.checkPointsBalance(userId, requiredPoints);
+  
+  if (checkResult.isAdmin) {
+    return { points: requiredPoints, isAdmin: true };
   }
 
-  if (!user || balance < required) {
-    const error = new Error('余额不足，请充值');
-    error.code = 'INSUFFICIENT_BALANCE';
+  if (!checkResult.sufficient) {
+    const error = new Error('积分不足');
+    error.code = 'INSUFFICIENT_POINTS';
     error.status = 402;
-    error.required = required;
-    error.current = balance;
+    error.required = requiredPoints;
+    error.current = checkResult.balance;
+    error.pointsValue = pointsResult.pointsValue;
     throw error;
   }
 
-  return balance;
+  return { points: requiredPoints, balance: checkResult.balance };
 }
 
 function getPrimaryUnitPrice(breakdown) {
@@ -512,11 +521,11 @@ function buildResourceRefs(context) {
 async function insertBillingRecord(payload) {
   const result = await execute(
     `INSERT INTO billing_records (
-      user_id, script_id, operation, model_provider, model_tier, tokens, unit_price, amount,
+      user_id, script_id, operation, model_provider, model_tier, tokens, unit_price, amount, points_cost,
       model_name, model_category, source_type, operation_key, workflow_job_id, generation_task_id,
       request_status, charge_status, currency, input_tokens, output_tokens, duration_seconds,
       item_count, price_breakdown_json, usage_snapshot, error_message
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       payload.userId,
       payload.scriptId || null,
@@ -526,6 +535,7 @@ async function insertBillingRecord(payload) {
       payload.tokens || 0,
       payload.unitPrice || 0,
       payload.amount || 0,
+      payload.pointsCost || 0,
       payload.modelName || null,
       payload.modelCategory || null,
       payload.sourceType || null,
@@ -592,27 +602,24 @@ function buildBillingMetadata({ recordId, estimatedUsage, estimatedAmount }) {
 async function applyBalanceCharge(userId, amount) {
   const rounded = roundMoney(amount);
   if (!rounded || rounded <= 0) {
-    return;
+    return { points: 0, deducted: 0 };
   }
 
-  // 管理员角色跳过扣费
-  const user = await queryOne('SELECT role FROM users WHERE id = ?', [userId]);
-  if (user?.role === 'admin') {
-    return;
-  }
-
-  const result = await execute(
-    'UPDATE users SET balance = balance - ? WHERE id = ? AND balance >= ?',
-    [rounded, userId, rounded]
-  );
-
-  if (!result?.affectedRows) {
-    const error = new Error('余额不足，请充值');
-    error.code = 'INSUFFICIENT_BALANCE';
-    error.status = 402;
-    error.required = rounded;
-    throw error;
-  }
+  // 计算实际消耗的积分
+  const pointsResult = await pointsService.calculatePointsFromCost(rounded);
+  
+  // 扣除积分
+  const deductResult = await pointsService.deductPoints(userId, pointsResult.points);
+  
+  return {
+    points: pointsResult.points,
+    rawCost: pointsResult.rawCost,
+    serviceFee: pointsResult.serviceFee,
+    totalPrice: pointsResult.totalPrice,
+    deducted: deductResult.deducted,
+    balanceAfter: deductResult.balanceAfter,
+    isAdmin: deductResult.isAdmin
+  };
 }
 
 async function finalizePendingBillingRecord(recordId, payload) {
@@ -631,7 +638,7 @@ async function finalizePendingBillingRecord(recordId, payload) {
 
   await execute(
     `UPDATE billing_records SET
-      operation = ?, model_provider = ?, model_tier = ?, tokens = ?, unit_price = ?, amount = ?,
+      operation = ?, model_provider = ?, model_tier = ?, tokens = ?, unit_price = ?, amount = ?, points_cost = ?,
       model_name = ?, model_category = ?, source_type = ?, operation_key = ?, workflow_job_id = ?,
       generation_task_id = ?, request_status = ?, charge_status = ?, currency = ?, input_tokens = ?,
       output_tokens = ?, duration_seconds = ?, item_count = ?, price_breakdown_json = ?,
@@ -644,6 +651,7 @@ async function finalizePendingBillingRecord(recordId, payload) {
       payload.tokens || 0,
       payload.unitPrice || 0,
       payload.amount || 0,
+      payload.pointsCost || 0,
       payload.modelName || null,
       payload.modelCategory || null,
       payload.sourceType || null,
@@ -710,8 +718,9 @@ async function finalizeImmediateBilling({
     ? calculatePrice(billingState.normalizedPriceConfig, usage)
     : { amount: 0, breakdown: [] };
 
+  let chargeResult = { points: 0, deducted: 0 };
   if (shouldCharge) {
-    await applyBalanceCharge(billingState.context.userId, price.amount);
+    chargeResult = await applyBalanceCharge(billingState.context.userId, price.amount);
   }
 
   const resourceRefs = buildResourceRefs(billingState.context);
@@ -723,6 +732,7 @@ async function finalizeImmediateBilling({
     tokens: getTokensForLegacy(usage),
     unitPrice: getPrimaryUnitPrice(price.breakdown),
     amount: price.amount,
+    pointsCost: chargeResult.points,
     modelName: model.name,
     modelCategory: model.category,
     sourceType: billingState.context.sourceType,
@@ -739,7 +749,8 @@ async function finalizeImmediateBilling({
     priceBreakdownJson: JSON.stringify(price.breakdown),
     usageSnapshot: JSON.stringify({
       estimatedUsage: billingState.estimatedUsage,
-      actualUsage: usage
+      actualUsage: usage,
+      pointsCharge: chargeResult
     }),
     errorMessage: errorMessage || null
   });
@@ -789,8 +800,9 @@ async function finalizeAsyncBillingFromQuery(model, queryParams, finalResult, re
     ? calculatePrice(normalizedPriceConfig, usage)
     : { amount: 0, breakdown: [] };
 
+  let chargeResult = { points: 0, deducted: 0 };
   if (shouldCharge) {
-    await applyBalanceCharge(context.userId, price.amount);
+    chargeResult = await applyBalanceCharge(context.userId, price.amount);
   }
 
   const resourceRefs = buildResourceRefs(context);
@@ -800,6 +812,7 @@ async function finalizeAsyncBillingFromQuery(model, queryParams, finalResult, re
     tokens: getTokensForLegacy(usage),
     unitPrice: getPrimaryUnitPrice(price.breakdown),
     amount: price.amount,
+    pointsCost: chargeResult.points,
     modelName: model.name,
     modelCategory: model.category,
     sourceType: context.sourceType,
@@ -816,7 +829,8 @@ async function finalizeAsyncBillingFromQuery(model, queryParams, finalResult, re
     priceBreakdownJson: JSON.stringify(price.breakdown),
     usageSnapshot: JSON.stringify({
       estimatedUsage,
-      actualUsage: usage
+      actualUsage: usage,
+      pointsCharge: chargeResult
     }),
     errorMessage: requestStatus === 'failed'
       ? (finalResult?.error || finalResult?.message || finalResult?._raw?.message || null)
@@ -826,6 +840,7 @@ async function finalizeAsyncBillingFromQuery(model, queryParams, finalResult, re
 
   return {
     amount: price.amount,
+    points: chargeResult.points,
     chargeStatus: shouldCharge ? 'charged' : 'skipped'
   };
 }
@@ -865,7 +880,7 @@ async function listBillingRecords(userId, options = {}) {
   const whereClause = filters.length > 0 ? `WHERE ${filters.join(' AND ')}` : '';
   const records = await queryAll(
     `SELECT
-      id, script_id, operation, model_provider, model_tier, tokens, unit_price, amount, created_at,
+      id, script_id, operation, model_provider, model_tier, tokens, unit_price, amount, points_cost, created_at,
       model_name, model_category, source_type, operation_key, workflow_job_id, generation_task_id,
       request_status, charge_status, currency, input_tokens, output_tokens, duration_seconds,
       item_count, price_breakdown_json, usage_snapshot, error_message
@@ -881,11 +896,16 @@ async function listBillingRecords(userId, options = {}) {
     params
   );
 
+  // 积分单价：1积分 = ¥0.02
+  const POINT_VALUE = 0.02;
+
   return {
     records: records.map((record) => ({
       ...record,
       price_breakdown_json: parseJsonField(record.price_breakdown_json, []),
-      usage_snapshot: parseJsonField(record.usage_snapshot, {})
+      usage_snapshot: parseJsonField(record.usage_snapshot, {}),
+      // 前端展示用：积分对应金额
+      points_value: (record.points_cost || 0) * POINT_VALUE
     })),
     total: Number(totalRow?.count || 0),
     limit: Number(limit),
@@ -898,6 +918,7 @@ async function getBillingSummary(userId) {
     `SELECT
       COALESCE(SUM(CASE WHEN charge_status = 'charged' THEN amount ELSE 0 END), 0) AS total_amount,
       COALESCE(SUM(CASE WHEN charge_status = 'charged' THEN tokens ELSE 0 END), 0) AS total_tokens,
+      COALESCE(SUM(CASE WHEN charge_status = 'charged' THEN points_cost ELSE 0 END), 0) AS total_points,
       COUNT(*) AS total_records,
       COALESCE(SUM(CASE WHEN request_status = 'failed' THEN 1 ELSE 0 END), 0) AS failed_records
      FROM billing_records
@@ -905,16 +926,21 @@ async function getBillingSummary(userId) {
     [userId]
   );
 
+  // 积分单价
+  const POINT_VALUE = 0.02;
+
   return {
     total_amount: Number(row?.total_amount || 0),
     total_tokens: Number(row?.total_tokens || 0),
+    total_points: Number(row?.total_points || 0),
+    total_points_value: Number(row?.total_points || 0) * POINT_VALUE,
     total_records: Number(row?.total_records || 0),
     failed_records: Number(row?.failed_records || 0)
   };
 }
 
 async function getBillingStats(userId) {
-  const [summary, videoCount, projectCount, scriptCount] = await Promise.all([
+  const [summary, videoCount, imageCount, projectCount, scriptCount, characterCount, monthlyPoints] = await Promise.all([
     getBillingSummary(userId),
     queryOne(
       `SELECT COUNT(*) AS count
@@ -922,8 +948,22 @@ async function getBillingStats(userId) {
        WHERE user_id = ? AND model_category = 'VIDEO' AND charge_status = 'charged'`,
       [userId]
     ),
+    queryOne(
+      `SELECT COUNT(*) AS count
+       FROM billing_records
+       WHERE user_id = ? AND model_category = 'IMAGE' AND charge_status = 'charged'`,
+      [userId]
+    ),
     queryOne('SELECT COUNT(*) AS count FROM projects WHERE user_id = ?', [userId]),
-    queryOne('SELECT COUNT(*) AS count FROM scripts WHERE user_id = ?', [userId])
+    queryOne('SELECT COUNT(*) AS count FROM scripts WHERE user_id = ?', [userId]),
+    queryOne('SELECT COUNT(*) AS count FROM characters WHERE project_id IN (SELECT id FROM projects WHERE user_id = ?)', [userId]),
+    queryOne(
+      `SELECT COALESCE(SUM(points_cost), 0) AS total
+       FROM billing_records
+       WHERE user_id = ? AND charge_status = 'charged'
+         AND created_at >= DATE_FORMAT(CURDATE(), '%Y-%m-01')`,
+      [userId]
+    )
   ]);
 
   return {
@@ -933,7 +973,10 @@ async function getBillingStats(userId) {
     failedRecords: summary.failed_records,
     scriptCount: Number(scriptCount?.count || 0),
     videoCount: Number(videoCount?.count || 0),
-    projectCount: Number(projectCount?.count || 0)
+    imageCount: Number(imageCount?.count || 0),
+    projectCount: Number(projectCount?.count || 0),
+    characterCount: Number(characterCount?.count || 0),
+    monthlyPointsUsed: Number(monthlyPoints?.total || 0)
   };
 }
 
@@ -1040,5 +1083,7 @@ module.exports = {
   getBillingSummary,
   getBillingStats,
   getBillingStatsByPeriod,
-  getBillingStatsByModel
+  getBillingStatsByModel,
+  // 积分服务
+  pointsService
 };

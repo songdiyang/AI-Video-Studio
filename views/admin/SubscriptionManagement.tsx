@@ -18,6 +18,7 @@ const SubscriptionManagement: React.FC = () => {
   // 套餐管理状态
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
   const [plansLoading, setPlansLoading] = useState(true);
+  const [togglingPlanId, setTogglingPlanId] = useState<number | null>(null);
   const [showPlanModal, setShowPlanModal] = useState(false);
   const [editingPlan, setEditingPlan] = useState<SubscriptionPlan | null>(null);
   const [planFormData, setPlanFormData] = useState({
@@ -171,13 +172,23 @@ const SubscriptionManagement: React.FC = () => {
   };
 
   // 切换套餐启用状态
-  const handleTogglePlanActive = async (plan: SubscriptionPlan) => {
+  const handleTogglePlanActive = async (plan: SubscriptionPlan, newValue?: boolean) => {
+    // 防止重复点击
+    if (togglingPlanId !== null) return;
+    
+    // 如果传入了新值，检查是否真的发生了变化
+    const targetValue = newValue !== undefined ? newValue : !plan.is_active;
+    if (targetValue === plan.is_active) return; // 值没变化，不执行
+    
+    setTogglingPlanId(plan.id);
     try {
-      await adminUpdatePlan(plan.id, { is_active: !plan.is_active });
-      showToast(plan.is_active ? '套餐已禁用' : '套餐已启用', 'success');
+      await adminUpdatePlan(plan.id, { is_active: targetValue });
+      showToast(targetValue ? '套餐已启用' : '套餐已禁用', 'success');
       await fetchPlans();
     } catch (error) {
       showToast(error instanceof Error ? error.message : '操作失败', 'error');
+    } finally {
+      setTogglingPlanId(null);
     }
   };
 
@@ -311,9 +322,11 @@ const SubscriptionManagement: React.FC = () => {
                       <Switch
                         size="sm"
                         isSelected={plan.is_active}
-                        onValueChange={() => handleTogglePlanActive(plan)}
+                        isDisabled={togglingPlanId !== null}
+                        onValueChange={(value) => handleTogglePlanActive(plan, value)}
                         classNames={{
-                          wrapper: 'group-data-[selected=true]:bg-emerald-500'
+                          wrapper: plan.is_active ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600',
+                          thumb: togglingPlanId === plan.id ? 'opacity-50' : ''
                         }}
                       />
                     </TableCell>

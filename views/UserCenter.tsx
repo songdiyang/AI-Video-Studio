@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { Card, CardBody, Button, Chip, Table, TableHeader, TableColumn, TableBody, TableRow, TableCell, Progress, Tooltip, Input, Textarea, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter } from '@heroui/react';
-import { Wallet, TrendingUp, FolderOpen, FileText, Receipt, AlertTriangle, Sparkles, Clock, Zap, ChevronLeft, ChevronRight, User, Calendar, Activity, RefreshCw, ExternalLink, CreditCard, ArrowUpRight, XCircle, Camera, Pencil, Save, X } from 'lucide-react';
+import { Wallet, TrendingUp, FolderOpen, FileText, Receipt, AlertTriangle, Sparkles, Clock, Zap, ChevronLeft, ChevronRight, User, Calendar, Activity, RefreshCw, ExternalLink, CreditCard, ArrowUpRight, XCircle, Camera, Pencil, Save, X, Image, Video, Users } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { getAuthToken, logout } from '../services/auth';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -25,7 +25,10 @@ interface UserStats {
   failedRecords: number;
   scriptCount: number;
   videoCount: number;
+  imageCount: number;
   projectCount: number;
+  characterCount: number;
+  monthlyPointsUsed: number;
 }
 
 interface PriceBreakdownItem {
@@ -54,6 +57,8 @@ interface BillingRecord {
   duration_seconds?: number;
   item_count?: number;
   amount: number;
+  points_cost?: number;
+  points_value?: number;
   error_message?: string | null;
   created_at: string;
   price_breakdown_json?: PriceBreakdownItem[];
@@ -296,13 +301,6 @@ const UserCenter: React.FC = () => {
     return parts.join(' · ');
   };
 
-  // 计算消费比例
-  const spentPercentage = useMemo(() => {
-    if (!profile?.balance || !stats?.totalSpent) return 0;
-    const total = profile.balance + stats.totalSpent;
-    return Math.min(100, (stats.totalSpent / total) * 100);
-  }, [profile?.balance, stats?.totalSpent]);
-
   // 格式化注册日期
   const memberSince = useMemo(() => {
     if (!profile?.created_at) return '';
@@ -496,12 +494,12 @@ const UserCenter: React.FC = () => {
                 </div>
               </div>
               
-              {/* 余额卡片 */}
+              {/* 积分卡片 */}
               <div className="bg-[var(--bg-card)]/80 backdrop-blur-sm rounded-xl p-4 border border-[var(--border-color)] min-w-[200px]">
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2 text-sm text-[var(--text-secondary)]">
                     <Wallet className="w-4 h-4 text-emerald-400" />
-                    {t.userCenter.accountBalance}
+                    积分余额
                   </div>
                   <Button
                     size="sm"
@@ -509,11 +507,12 @@ const UserCenter: React.FC = () => {
                     className="text-[var(--accent)] min-w-0 px-2 h-7"
                     onPress={() => window.open('https://example.com/recharge', '_blank')}
                   >
-                    {t.userCenter.rechargeBtn}
+                    充值
                     <ExternalLink className="w-3 h-3 ml-1" />
                   </Button>
                 </div>
-                <div className="text-3xl font-bold text-emerald-400">{formatMoney(profile?.balance)}</div>
+                <div className="text-3xl font-bold text-emerald-400">{formatInteger(profile?.balance)} <span className="text-base font-normal text-[var(--text-muted)]">积分</span></div>
+                <div className="text-xs text-[var(--text-muted)] mt-1">≈ ¥{((profile?.balance || 0) * 0.02).toFixed(2)}</div>
               </div>
             </div>
           </div>
@@ -521,42 +520,47 @@ const UserCenter: React.FC = () => {
 
         {/* 统计卡片 */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* 累计消费 */}
+          {/* 本月消耗 */}
           <Card className="bg-[var(--bg-card)] border border-[var(--border-color)] shadow-sm hover:shadow-md transition-shadow">
             <CardBody className="p-5">
               <div className="flex items-center justify-between mb-3">
                 <div className="p-2.5 bg-orange-500/10 rounded-xl">
                   <TrendingUp className="w-5 h-5 text-orange-400" />
                 </div>
-                <Tooltip content={t.userCenter.totalSpent}>
-                  <div className="text-xs text-[var(--text-muted)]">{spentPercentage.toFixed(1)}%</div>
+                <Tooltip content={t.userCenter.monthlyPointsTooltip}>
+                  <div className="text-xs text-[var(--text-muted)] cursor-help">{t.userCenter.thisMonth}</div>
                 </Tooltip>
               </div>
-              <div className="text-2xl font-bold text-[var(--text-primary)] mb-1">{formatMoney(stats?.totalSpent)}</div>
-              <div className="text-xs text-[var(--text-muted)]">{t.userCenter.totalSpent}</div>
-              <Progress 
-                value={spentPercentage} 
-                size="sm" 
-                color="warning" 
-                className="mt-3"
-                classNames={{ track: 'bg-orange-500/10' }}
-              />
+              <div className="flex items-baseline gap-1.5 mb-1">
+                <span className="text-2xl font-bold text-[var(--text-primary)]">{formatInteger(stats?.monthlyPointsUsed)}</span>
+                <span className="text-sm text-[var(--text-muted)]">{t.userCenter.points}</span>
+              </div>
+              <div className="text-xs text-[var(--text-muted)]">{t.userCenter.monthlyPoints}</div>
             </CardBody>
           </Card>
 
-          {/* Token 用量 */}
+          {/* 生成作品 */}
           <Card className="bg-[var(--bg-card)] border border-[var(--border-color)] shadow-sm hover:shadow-md transition-shadow">
             <CardBody className="p-5">
               <div className="flex items-center justify-between mb-3">
                 <div className="p-2.5 bg-blue-500/10 rounded-xl">
-                  <Zap className="w-5 h-5 text-blue-400" />
+                  <Sparkles className="w-5 h-5 text-blue-400" />
                 </div>
-                <Tooltip content={t.userCenter.totalTokens}>
-                  <div className="text-xs text-[var(--text-muted)] cursor-help">?</div>
-                </Tooltip>
               </div>
-              <div className="text-2xl font-bold text-[var(--text-primary)] mb-1">{formatInteger(stats?.totalTokens)}</div>
-              <div className="text-xs text-[var(--text-muted)]">{t.userCenter.totalTokens}</div>
+              <div className="flex items-baseline gap-1.5 mb-1">
+                <span className="text-2xl font-bold text-[var(--text-primary)]">{formatInteger((stats?.imageCount || 0) + (stats?.videoCount || 0))}</span>
+                <span className="text-sm text-[var(--text-muted)]">{t.userCenter.works}</span>
+              </div>
+              <div className="flex items-center gap-3 text-xs text-[var(--text-muted)]">
+                <span className="flex items-center gap-1">
+                  <Image className="w-3.5 h-3.5" />
+                  {formatInteger(stats?.imageCount)} {t.userCenter.images}
+                </span>
+                <span className="flex items-center gap-1">
+                  <Video className="w-3.5 h-3.5" />
+                  {formatInteger(stats?.videoCount)} {t.userCenter.videos}
+                </span>
+              </div>
             </CardBody>
           </Card>
 
@@ -579,19 +583,19 @@ const UserCenter: React.FC = () => {
             </CardBody>
           </Card>
 
-          {/* 失败请求 */}
-          <Card className="bg-[var(--bg-card)] border border-rose-500/20 shadow-sm hover:shadow-md transition-shadow">
+          {/* 创作角色 */}
+          <Card className="bg-[var(--bg-card)] border border-[var(--border-color)] shadow-sm hover:shadow-md transition-shadow">
             <CardBody className="p-5">
               <div className="flex items-center justify-between mb-3">
-                <div className="p-2.5 bg-rose-500/10 rounded-xl">
-                  <AlertTriangle className="w-5 h-5 text-rose-400" />
+                <div className="p-2.5 bg-emerald-500/10 rounded-xl">
+                  <Users className="w-5 h-5 text-emerald-400" />
                 </div>
-                {(stats?.failedRecords ?? 0) > 0 && (
-                  <Chip size="sm" className="bg-rose-500/10 text-rose-400 text-xs">{t.userCenter.needsAttention}</Chip>
-                )}
               </div>
-              <div className="text-2xl font-bold text-[var(--text-primary)] mb-1">{formatInteger(stats?.failedRecords)}</div>
-              <div className="text-xs text-[var(--text-muted)]">{t.userCenter.failedRequests}</div>
+              <div className="flex items-baseline gap-1.5 mb-1">
+                <span className="text-2xl font-bold text-[var(--text-primary)]">{formatInteger(stats?.characterCount)}</span>
+                <span className="text-sm text-[var(--text-muted)]">{t.userCenter.characters}</span>
+              </div>
+              <div className="text-xs text-[var(--text-muted)]">{t.userCenter.charactersCreated}</div>
             </CardBody>
           </Card>
         </div>
@@ -895,9 +899,16 @@ const UserCenter: React.FC = () => {
                     </TableCell>
 
                     <TableCell className="text-right">
-                      <span className="font-mono font-bold text-emerald-400">
-                        {formatMoney(record.amount)}
-                      </span>
+                      <div className="flex flex-col items-end">
+                        <span className="font-mono font-bold text-emerald-400">
+                          {record.points_cost ? `${formatInteger(record.points_cost)} 积分` : formatMoney(record.amount)}
+                        </span>
+                        {record.points_cost && (
+                          <span className="text-xs text-[var(--text-muted)]">
+                            ≈ ¥{((record.points_cost || 0) * 0.02).toFixed(2)}
+                          </span>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}

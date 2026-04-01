@@ -8,6 +8,7 @@ import {
 import { ProjectType, PROJECT_TYPES } from '../../types/projectTypes';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { getAuthToken } from '../../services/auth';
+import UpgradePrompt from '../UpgradePrompt';
 
 interface QuickStartWizardProps {
   isOpen: boolean;
@@ -65,6 +66,15 @@ const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ isOpen, onClose, on
   const [creating, setCreating] = useState(false);
   const [created, setCreated] = useState(false);
   const [newProjectId, setNewProjectId] = useState<number | null>(null);
+  const [createError, setCreateError] = useState<string | null>(null);
+
+  // 升级提示状态
+  const [showUpgrade, setShowUpgrade] = useState(false);
+  const [upgradeData, setUpgradeData] = useState<{
+    currentPlan: { name: string; displayName: string; level: number };
+    currentUsage: { current: number; max: number };
+    nextPlan?: { name: string; displayName: string; maxProjects: number | string; price?: any };
+  } | null>(null);
 
   // 重置状态
   useEffect(() => {
@@ -114,6 +124,7 @@ const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ isOpen, onClose, on
     if (!projectName.trim()) return;
     
     setCreating(true);
+    setCreateError(null);
     try {
       const token = getAuthToken();
       
@@ -134,6 +145,9 @@ const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ isOpen, onClose, on
           setCreated(true);
           // 创建成功后自动关闭向导并跳转
           setTimeout(() => onComplete(pid), 800);
+        } else {
+          const errData = await res.json();
+          handleCreateError(errData);
         }
       } else {
         // 从零开始创建项目
@@ -157,12 +171,32 @@ const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ isOpen, onClose, on
           setCreated(true);
           // 创建成功后自动关闭向导并跳转
           setTimeout(() => onComplete(pid), 800);
+        } else {
+          const errData = await res.json();
+          handleCreateError(errData);
         }
       }
     } catch (err) {
       console.error('[CreateProject]', err);
+      setCreateError('创建项目失败，请稍后重试');
     } finally {
       setCreating(false);
+    }
+  };
+
+  // 处理创建错误
+  const handleCreateError = (errData: any) => {
+    if (errData.code === 'PROJECT_LIMIT_REACHED' && errData.data) {
+      const { currentCount, maxCount, planName, planDisplayName, planLevel, upgrade } = errData.data;
+      setUpgradeData({
+        currentPlan: { name: planName, displayName: planDisplayName, level: planLevel },
+        currentUsage: { current: currentCount, max: maxCount },
+        nextPlan: upgrade?.available ? upgrade.nextPlan : undefined
+      });
+      setShowUpgrade(true);
+      onClose(); // 关闭向导
+    } else {
+      setCreateError(errData.message || '创建项目失败');
     }
   };
 
@@ -227,6 +261,7 @@ const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ isOpen, onClose, on
   if (!isOpen) return null;
 
   return (
+    <>
     <AnimatePresence>
       <motion.div
         initial={{ opacity: 0 }}
@@ -608,6 +643,19 @@ const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ isOpen, onClose, on
         </motion.div>
       </motion.div>
     </AnimatePresence>
+
+    {/* 升级提示弹窗 */}
+    {upgradeData && (
+      <UpgradePrompt
+        isOpen={showUpgrade}
+        onClose={() => setShowUpgrade(false)}
+        limitType="project"
+        currentPlan={upgradeData.currentPlan}
+        currentUsage={upgradeData.currentUsage}
+        nextPlan={upgradeData.nextPlan}
+      />
+    )}
+    </>
   );
 };
 

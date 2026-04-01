@@ -55,6 +55,7 @@ const approvalsRoutes = require('./scripts/approvals');
 const systemConfigRoutes = require('./systemConfigRoutes');
 const teamsRoutes = require('./teams');
 const { setupWebSocket } = require('./websocket');
+const { errorHandlerMiddleware, initGlobalErrorHandlers } = require('./globalErrorHandler');
 
 const app = express();
 const http = require('http');
@@ -184,9 +185,15 @@ app.get('*', (req, res, next) => {
   });
 });
 
+// 全局错误处理中间件（必须放在所有路由之后）
+app.use(errorHandlerMiddleware);
+
 const PORT = process.env.PORT || 4001;
 
 async function start() {
+  // 初始化全局错误处理器
+  initGlobalErrorHandlers();
+  
   await initializeDatabase();
 
   // 初始化依赖数据库的表
