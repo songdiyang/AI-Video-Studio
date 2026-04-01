@@ -1,34 +1,21 @@
 const express = require('express');
-const path = require('path');
-const fs = require('fs');
 const multer = require('multer');
 const { queryOne, execute } = require('./dbHelper');
 const { authMiddleware } = require('./middleware');
 const { listBillingRecords, getBillingStats } = require('./aiBillingService');
+const { uploadBuffer, deleteObject, getPublicUrl, isConfigured } = require('./utils/fileStorage');
 
 const router = express.Router();
 
 // ========== 头像上传配置 ==========
 
 const ALLOWED_MIMETYPES = ['image/png', 'image/jpeg', 'image/webp'];
-const EXTENSION_MAP = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' };
+const EXTENSION_MAP = { 'image/png': '.png', 'image/jpeg': '.jpg', 'image/webp': '.webp' };
 const MAX_AVATAR_SIZE = 5 * 1024 * 1024; // 5MB
-const UPLOADS_BASE = path.join(__dirname, '..', 'uploads');
 
-const avatarStorage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const dir = path.join(UPLOADS_BASE, 'avatars');
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    cb(null, dir);
-  },
-  filename: (req, file, cb) => {
-    const ext = EXTENSION_MAP[file.mimetype] || 'png';
-    cb(null, `user_${req.user.id}_${Date.now()}.${ext}`);
-  }
-});
-
+// 使用内存存储，直接上传到 MinIO
 const avatarUpload = multer({
-  storage: avatarStorage,
+  storage: multer.memoryStorage(),
   fileFilter: (req, file, cb) => {
     if (ALLOWED_MIMETYPES.includes(file.mimetype)) cb(null, true);
     else cb(new Error('不支持的文件类型，仅支持 PNG/JPG/WebP 格式'), false);
@@ -118,30 +105,37 @@ router.post('/avatar', authMiddleware, avatarUpload.single('avatar'), async (req
   }
 
   try {
+    // 检查 MinIO 是否配置
+    if (!isConfigured()) {
+      return res.status(500).json({ message: '文件存储服务未配置，请联系管理员' });
+    }
+
     // 获取旧头像路径，用于清理
     const oldUser = await queryOne('SELECT avatar_url FROM users WHERE id = ?', [userId]);
     
-    const avatarUrl = `/uploads/avatars/${req.file.filename}`;
+    // 生成存储路径: avatars/user_{id}_{timestamp}.{ext}
+    const ext = EXTENSION_MAP[req.file.mimetype] || '.png';
+    const objectPath = `avatars/user_${userId}_${Date.now()}${ext}`;
+    
+    // 上传到 MinIO
+    const avatarUrl = await uploadBuffer(req.file.buffer, objectPath, {
+      contentType: req.file.mimetype
+    });
 
+    // 更新数据库
     await execute(
       'UPDATE users SET avatar_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
       [avatarUrl, userId]
     );
 
-    // 清理旧头像文件
-    if (oldUser?.avatar_url && oldUser.avatar_url.startsWith('/uploads/avatars/')) {
-      const oldPath = path.join(UPLOADS_BASE, '..', oldUser.avatar_url);
-      if (fs.existsSync(oldPath)) {
-        fs.unlinkSync(oldPath);
-      }
+    // 清理旧头像文件（如果是 MinIO 上的文件）
+    if (oldUser?.avatar_url && !oldUser.avatar_url.startsWith('/uploads/')) {
+      await deleteObject(oldUser.avatar_url);
     }
 
     console.log('[User Avatar] 上传成功:', { userId, avatarUrl });
     res.json({ message: '头像上传成功', avatar_url: avatarUrl });
   } catch (err) {
-    if (req.file && fs.existsSync(req.file.path)) {
-      fs.unlinkSync(req.file.path);
-    }
     console.error('[User Avatar]', err);
     res.status(500).json({ message: '头像上传失败' });
   }

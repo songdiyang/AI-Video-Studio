@@ -143,6 +143,39 @@ function getPublicUrl(objectName) {
 // ========== 核心 API ==========
 
 /**
+ * 直接上传 Buffer 到 MinIO
+ * 
+ * @param {Buffer} buffer - 文件内容
+ * @param {string} objectPath - MinIO 中的存储路径（含扩展名）
+ *                              例: 'avatars/user_123_1234567890.png'
+ * @param {object} [options] - 可选配置
+ * @param {string} [options.contentType] - 文件 MIME 类型
+ * @returns {Promise<string>} 持久化后的访问 URL
+ */
+async function uploadBuffer(buffer, objectPath, options = {}) {
+  const ready = await ensureReady();
+  if (!ready) {
+    throw new Error('MinIO 存储服务不可用');
+  }
+
+  try {
+    const metaData = {};
+    if (options.contentType) {
+      metaData['Content-Type'] = options.contentType;
+    }
+
+    await minioClient.putObject(CONFIG.bucket, objectPath, buffer, buffer.length, metaData);
+
+    const persistentUrl = getPublicUrl(objectPath);
+    console.log(`[FileStorage] 已上传: ${objectPath} (${(buffer.length / 1024).toFixed(1)}KB)`);
+    return persistentUrl;
+  } catch (err) {
+    console.error(`[FileStorage] 上传失败 (${objectPath}):`, err.message);
+    throw err;
+  }
+}
+
+/**
  * 下载临时 URL 的文件并上传到 MinIO，返回持久化 URL
  * 
  * @param {string} tempUrl - AI 生成返回的临时文件 URL
@@ -260,9 +293,11 @@ async function deleteObject(persistentUrl) {
 }
 
 module.exports = {
+  uploadBuffer,
   downloadAndStore,
   downloadAndStoreMany,
   deleteObject,
+  getPublicUrl,
   isConfigured,
   ensureReady,
 };
