@@ -215,6 +215,212 @@ router.get('/server-status', authMiddleware, requireAdmin, async (req, res) => {
   }
 });
 
+// ====== 系统资源详细监控 ======
+router.get('/system-resources', authMiddleware, requireAdmin, async (req, res) => {
+  try {
+    const mem = process.memoryUsage();
+    const cpus = os.cpus();
+    
+    // CPU 使用率计算
+    let cpuUsage = 0;
+    try {
+      const startUsage = process.cpuUsage();
+      const startTime = process.hrtime.bigint();
+      await new Promise(r => setTimeout(r, 100));
+      const elapsed = Number(process.hrtime.bigint() - startTime) / 1e6;
+      const usage = process.cpuUsage(startUsage);
+      cpuUsage = Number((((usage.user + usage.system) / 1000 / elapsed) * 100).toFixed(1));
+    } catch (_) { /* ignore */ }
+    
+    // 系统整体 CPU 负载
+    const loadAvg = os.loadavg();
+    
+    // 内存信息
+    const totalMem = os.totalmem();
+    const freeMem = os.freemem();
+    const usedMem = totalMem - freeMem;
+    
+    // 数据库连接池统计
+    let dbPoolStats = { active: 0, idle: 0, total: 0, waiting: 0 };
+    try {
+      const { getPoolStats } = require('./db');
+      dbPoolStats = getPoolStats();
+    } catch (_) { /* ignore */ }
+    
+    // 获取今日任务统计
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    
+    const taskStats = await queryOne(`
+      SELECT 
+        COUNT(*) as total,
+        SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
+        SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed,
+        SUM(CASE WHEN status IN ('pending', 'running') THEN 1 ELSE 0 END) as active
+      FROM generation_tasks
+      WHERE created_at >= ?
+    `, [todayStart]);
+    
+    // 获取实时活跃任务
+    const activeTasks = await queryAll(`
+      SELECT model_name, COUNT(*) as count
+      FROM generation_tasks
+      WHERE status IN ('pending', 'running')
+      GROUP BY model_name
+    `);
+    
+    // 获取最近1小时的请求趋势（按5分钟分组）
+    const requestTrend = await queryAll(`
+      SELECT 
+        DATE_FORMAT(created_at, '%H:%i') as time_slot,
+        COUNT(*) as requests
+      FROM billing_records
+      WHERE created_at >= DATE_SUB(NOW(), INTERVAL 1 HOUR)
+      GROUP BY time_slot
+      ORDER BY time_slot ASC
+    `);
+    
+    // 获取存储使用情况（MinIO桶统计需要额外接口，这里先返回数据库大小）
+    let dbSize = { sizeMB: 0 };
+    try {
+      const sizeResult = await queryOne(`
+        SELECT ROUND(SUM(data_length + index_length) / 1024 / 1024, 2) as size_mb
+        FROM information_schema.TABLES
+        WHERE table_schema = ?
+      `, [process.env.MYSQL_DATABASE || 'nanostory']);
+      dbSize.sizeMB = sizeResult?.size_mb || 0;
+    } catch (_) { /* ignore */ }
+    
+    res.json({
+      cpu: {
+        usage: cpuUsage,
+        cores: cpus.length,
+        model: cpus[0]?.model || 'Unknown',
+        loadAvg: {
+          '1m': loadAvg[0]?.toFixed(2),
+          '5m': loadAvg[1]?.toFixed(2),
+          '15m': loadAvg[2]?.toFixed(2),
+        }
+      },
+      memory: {
+        process: {
+          rss: mem.rss,
+          heapUsed: mem.heapUsed,
+          heapTotal: mem.heapTotal,
+          external: mem.external,
+        },
+        system: {
+          total: totalMem,
+          free: freeMem,
+          used: usedMem,
+          usagePercent: Number(((usedMem / totalMem) * 100).toFixed(1)),
+        }
+      },
+      database: {
+        pool: dbPoolStats,
+        sizeMB: dbSize.sizeMB,
+      },
+      tasks: {
+        today: {
+          total: taskStats?.total || 0,
+          completed: taskStats?.completed || 0,
+          failed: taskStats?.failed || 0,
+          active: taskStats?.active || 0,
+        },
+        activeByModel: activeTasks,
+      },
+      requestTrend,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error('[Admin] Get system resources error:', error);
+    res.status(500).json({ message: '获取系统资源失败' });
+  }
+});
+
+// ====== 历史统计数据（用于趋势图） ======
+router.get('/history-stats', authMiddleware, requireAdmin, async (req, res) => {
+  try {
+    const { days = 7 } = req.query;
+    const daysInt = Math.min(parseInt(days) || 7, 30);
+    
+    // 每日任务统计
+    const dailyTasks = await queryAll(`
+      SELECT 
+        DATE(created_at) as date,
+        COUNT(*) as total,
+        SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
+        SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed,
+        SUM(cost) as total_cost
+      FROM generation_tasks
+      WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL ? DAY)
+      GROUP BY DATE(created_at)
+      ORDER BY date ASC
+    `, [daysInt]);
+    
+    // 每日用户活跃统计
+    const dailyUsers = await queryAll(`
+      SELECT 
+        DATE(created_at) as date,
+        COUNT(DISTINCT user_id) as active_users
+      FROM billing_records
+      WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL ? DAY)
+      GROUP BY DATE(created_at)
+      ORDER BY date ASC
+    `, [daysInt]);
+    
+    // 每日模型使用分布
+    const dailyModels = await queryAll(`
+      SELECT 
+        DATE(created_at) as date,
+        model_name,
+        COUNT(*) as calls,
+        SUM(cost) as cost
+      FROM generation_tasks
+      WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL ? DAY)
+      GROUP BY DATE(created_at), model_name
+      ORDER BY date ASC, calls DESC
+    `, [daysInt]);
+    
+    // 新用户注册趋势
+    const newUsers = await queryAll(`
+      SELECT 
+        DATE(created_at) as date,
+        COUNT(*) as count
+      FROM users
+      WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL ? DAY)
+      GROUP BY DATE(created_at)
+      ORDER BY date ASC
+    `, [daysInt]);
+    
+    // 计算汇总
+    const summary = {
+      totalTasks: dailyTasks.reduce((sum, d) => sum + d.total, 0),
+      totalCompleted: dailyTasks.reduce((sum, d) => sum + d.completed, 0),
+      totalFailed: dailyTasks.reduce((sum, d) => sum + d.failed, 0),
+      totalCost: dailyTasks.reduce((sum, d) => sum + parseFloat(d.total_cost || 0), 0).toFixed(4),
+      avgDailyTasks: dailyTasks.length > 0 
+        ? Math.round(dailyTasks.reduce((sum, d) => sum + d.total, 0) / dailyTasks.length) 
+        : 0,
+      avgDailyUsers: dailyUsers.length > 0
+        ? Math.round(dailyUsers.reduce((sum, d) => sum + d.active_users, 0) / dailyUsers.length)
+        : 0,
+    };
+    
+    res.json({
+      period: `${daysInt}天`,
+      summary,
+      dailyTasks,
+      dailyUsers,
+      dailyModels,
+      newUsers,
+    });
+  } catch (error) {
+    console.error('[Admin] Get history stats error:', error);
+    res.status(500).json({ message: '获取历史统计失败' });
+  }
+});
+
 // ====== 服务仪表盘 - 直接探测各服务健康状态 ======
 router.get('/services', authMiddleware, requireAdmin, async (_req, res) => {
   const probeWithTimeout = async (url, timeoutMs = 3000) => {
