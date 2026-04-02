@@ -10,7 +10,7 @@ const { submitAndPoll } = require('../pollUtils');
 const { resolveMediaUrl } = require('./mediaResultResolver');
 
 async function handleImageGeneration(inputParams, onProgress) {
-  const { prompt, imageModel: modelName, width, height, aspectRatio, resolution, imageUrl, imageUrls, startFrame, endFrame } = inputParams;
+  const { prompt, imageModel: modelName, width, height, aspectRatio, resolution, size, imageUrl, imageUrls, startFrame, endFrame } = inputParams;
 
   if (!modelName) {
     throw new Error('imageModel 参数是必需的');
@@ -23,6 +23,7 @@ async function handleImageGeneration(inputParams, onProgress) {
     prompt
   };
 
+  if (size) submitParams.size = size;  // 支持直接传递 size（如 '2k', '3k'）
   if (width !== undefined && width !== null) submitParams.width = width;
   if (height !== undefined && height !== null) submitParams.height = height;
   if (aspectRatio) submitParams.aspectRatio = aspectRatio;

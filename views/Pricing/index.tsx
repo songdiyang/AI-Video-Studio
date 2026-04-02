@@ -44,18 +44,46 @@ const planThemes: Record<string, { gradient: string; border: string; glow: strin
   },
 };
 
-// 默认套餐数据（当后端没有返回数据时使用）
+// 免费版图标
+const freeIcon = <Zap className="w-5 h-5" />;
+
+// 免费版主题
+const freeTheme = {
+  gradient: 'from-emerald-500/20 to-teal-600/10',
+  border: 'border-emerald-500/30',
+  glow: 'hover:shadow-emerald-500/20',
+  badge: 'bg-emerald-500/20 text-emerald-300',
+};
+
+// 默认套餐数据（当后端没有返回数据时使用，应与数据库保持一致）
 const defaultPlans: SubscriptionPlan[] = [
+  {
+    id: 0,
+    name: 'free',
+    display_name: '免费版',
+    price_monthly: 0,
+    price_yearly: 0,
+    first_month_price: null,
+    first_year_price: null,
+    max_projects: 1,
+    max_api_calls_monthly: 5,
+    max_team_members: 1,
+    features_json: ['基础AI工具', '单个项目', '5积分/月', '社区浏览'],
+    sort_order: 0,
+    is_active: true,
+  },
   {
     id: 1,
     name: 'starter',
     display_name: '入门版',
-    price_monthly: 0,
-    price_yearly: 0,
-    max_projects: 3,
-    max_api_calls_monthly: 100,
+    price_monthly: 70,
+    price_yearly: 700,
+    first_month_price: 49,   // 新用户首月特惠
+    first_year_price: 490,   // 新用户首年特惠
+    max_projects: 1,
+    max_api_calls_monthly: 10,
     max_team_members: 1,
-    features_json: ['基础AI生成', '标准模板库', '社区支持'],
+    features_json: ['基础工具全开放', '单部作品管理', '10积分/月', '社区浏览'],
     sort_order: 1,
     is_active: true,
   },
@@ -63,12 +91,14 @@ const defaultPlans: SubscriptionPlan[] = [
     id: 2,
     name: 'creator',
     display_name: '创作者',
-    price_monthly: 49,
-    price_yearly: 470,
-    max_projects: 20,
-    max_api_calls_monthly: 2000,
+    price_monthly: 499,
+    price_yearly: 4999,
+    first_month_price: 99,   // 新用户首月特惠
+    first_year_price: 999,   // 新用户首年特惠
+    max_projects: 5,
+    max_api_calls_monthly: 500,
     max_team_members: 3,
-    features_json: ['高级AI模型', '完整模板库', '优先渲染队列', '项目导出'],
+    features_json: ['完整工作流', '5个项目', '500积分/月', '社区排行榜', '模板库访问'],
     sort_order: 2,
     is_active: true,
   },
@@ -76,12 +106,14 @@ const defaultPlans: SubscriptionPlan[] = [
     id: 3,
     name: 'studio',
     display_name: '工作室',
-    price_monthly: 149,
-    price_yearly: 1430,
+    price_monthly: 1999,
+    price_yearly: 19999,
+    first_month_price: 499,  // 新用户首月特惠
+    first_year_price: 4999,  // 新用户首年特惠
     max_projects: -1,
-    max_api_calls_monthly: 10000,
+    max_api_calls_monthly: 5000,
     max_team_members: 10,
-    features_json: ['全部AI模型', '自定义模板', '团队协作', 'API访问', '优先技术支持'],
+    features_json: ['无限项目', '5000积分/月', '团队协作', '版本控制', '优先支持'],
     sort_order: 3,
     is_active: true,
   },
@@ -91,10 +123,12 @@ const defaultPlans: SubscriptionPlan[] = [
     display_name: '企业版',
     price_monthly: 0,
     price_yearly: 0,
+    first_month_price: null,
+    first_year_price: null,
     max_projects: -1,
     max_api_calls_monthly: -1,
     max_team_members: -1,
-    features_json: ['私有化部署', '定制开发', 'SLA保障', '专属客户经理', '培训服务'],
+    features_json: ['定制化接入', '私有部署选项', '优先技术支持', '行业数据反馈', '专属客户经理'],
     sort_order: 4,
     is_active: true,
   },
@@ -104,11 +138,18 @@ const Pricing: React.FC = () => {
   const navigate = useNavigate();
   const { t } = useLanguage();
   const { showToast } = useToast();
-  const [isYearly, setIsYearly] = useState(true); // 默认年付
+  const [isYearly, setIsYearly] = useState(false); // 默认月付，展示首月优惠
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [subscribing, setSubscribing] = useState<number | null>(null);
   const [hoveredPlan, setHoveredPlan] = useState<number | null>(null);
+
+  // 分离免费版和付费套餐
+  const { freePlan, paidPlans } = useMemo(() => {
+    const free = plans.find(p => p.name.toLowerCase() === 'free' || (p.price_monthly === 0 && p.name.toLowerCase() !== 'enterprise'));
+    const paid = plans.filter(p => p.name.toLowerCase() !== 'free' && (p.price_monthly > 0 || p.name.toLowerCase() === 'enterprise'));
+    return { freePlan: free, paidPlans: paid };
+  }, [plans]);
 
   useEffect(() => {
     loadPlans();
@@ -117,7 +158,12 @@ const Pricing: React.FC = () => {
   const loadPlans = async () => {
     try {
       const data = await fetchPlans();
+      console.log('[Pricing] API 返回的套餐数据:', data);
       if (data && data.length > 0) {
+        // 打印优惠价格信息
+        data.forEach(plan => {
+          console.log(`[Pricing] ${plan.name}: 月价=${plan.price_monthly}, 首月优惠=${plan.first_month_price}, 年价=${plan.price_yearly}, 首年优惠=${plan.first_year_price}`);
+        });
         setPlans(data.sort((a, b) => a.sort_order - b.sort_order));
       } else {
         // 使用默认套餐展示
@@ -169,8 +215,16 @@ const Pricing: React.FC = () => {
     }
   };
 
-  const getPlanIcon = (name: string) => planIcons[name.toLowerCase()] || <Sparkles className="w-5 h-5" />;
-  const getPlanTheme = (name: string) => planThemes[name.toLowerCase()] || planThemes.starter;
+  const getPlanIcon = (name: string) => {
+    const lowName = name.toLowerCase();
+    if (lowName === 'free') return freeIcon;
+    return planIcons[lowName] || <Sparkles className="w-5 h-5" />;
+  };
+  const getPlanTheme = (name: string) => {
+    const lowName = name.toLowerCase();
+    if (lowName === 'free') return freeTheme;
+    return planThemes[lowName] || planThemes.starter;
+  };
 
   const getPlanTranslation = (planName: string) => {
     const key = planName.toLowerCase() as keyof typeof t.pricing;
@@ -295,17 +349,22 @@ const Pricing: React.FC = () => {
             </div>
           </motion.div>
 
-          {/* 套餐卡片 */}
+          {/* 付费套餐卡片 - 4列网格 */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
-            {plans.map((plan, index) => {
+            {paidPlans.map((plan, index) => {
               const planTrans = getPlanTranslation(plan.name);
               const popular = isPopular(plan.name);
               const isEnterprise = plan.name.toLowerCase() === 'enterprise';
+              const isFree = plan.name.toLowerCase() === 'free';
               const price = isYearly ? plan.price_yearly : plan.price_monthly;
               const monthlyPrice = plan.price_monthly;
               const theme = getPlanTheme(plan.name);
               const savings = calculateSavings(plan.price_monthly, plan.price_yearly);
               const isHovered = hoveredPlan === plan.id;
+              
+              // 新用户优惠价格
+              const discountPrice = isYearly ? plan.first_year_price : plan.first_month_price;
+              const hasDiscount = discountPrice != null && discountPrice > 0 && discountPrice < price;
 
               return (
                 <motion.div
@@ -367,7 +426,7 @@ const Pricing: React.FC = () => {
                             <h3 className="text-lg font-bold text-[var(--text-primary)]">
                               {plan.display_name || planTrans.name}
                             </h3>
-                            {isYearly && savings > 0 && !isEnterprise && (
+                            {isYearly && savings > 0 && !isEnterprise && !isFree && (
                               <span className="text-xs font-medium text-emerald-400">
                                 立省 {savings}%
                               </span>
@@ -390,14 +449,44 @@ const Pricing: React.FC = () => {
                               根据企业需求定制
                             </p>
                           </div>
-                        ) : price === 0 ? (
+                        ) : hasDiscount ? (
+                          /* 有新用户优惠价格时的显示 - 原价删除线 + 优惠价格 */
                           <div className="py-2">
-                            <span className="text-4xl font-bold text-[var(--text-primary)]">
-                              免费
-                            </span>
-                            <span className="text-[var(--text-muted)] ml-1">
-                              永久
-                            </span>
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-base text-[var(--text-muted)] line-through decoration-rose-400 decoration-2">
+                                ¥{isYearly ? price : price}
+                              </span>
+                              <span className="text-xs px-2 py-0.5 rounded-full bg-gradient-to-r from-rose-500 to-orange-500 text-white font-bold animate-pulse">
+                                首次优惠
+                              </span>
+                            </div>
+                            <div className="flex items-baseline gap-1">
+                              <span className="text-lg text-[var(--accent)]">¥</span>
+                              <AnimatePresence mode="wait">
+                                <motion.span
+                                  key={isYearly ? 'yearly-discount' : 'monthly-discount'}
+                                  initial={{ opacity: 0, y: -10 }}
+                                  animate={{ opacity: 1, y: 0 }}
+                                  exit={{ opacity: 0, y: 10 }}
+                                  className="text-4xl font-bold text-[var(--accent)]"
+                                >
+                                  {isYearly ? discountPrice : discountPrice}
+                                </motion.span>
+                              </AnimatePresence>
+                              <span className="text-[var(--text-muted)]">
+                                {isYearly ? '/年' : '/月'}
+                              </span>
+                            </div>
+                            {isYearly && (
+                              <div className="text-xs text-emerald-400 mt-1 font-medium">
+                                首年特惠，立省 ¥{price - discountPrice!}
+                              </div>
+                            )}
+                            {!isYearly && (
+                              <div className="text-xs text-emerald-400 mt-1 font-medium">
+                                首月特惠，立省 ¥{price - discountPrice!}
+                              </div>
+                            )}
                           </div>
                         ) : (
                           <div className="py-2">
@@ -411,18 +500,20 @@ const Pricing: React.FC = () => {
                                   exit={{ opacity: 0, y: 10 }}
                                   className="text-4xl font-bold text-[var(--text-primary)]"
                                 >
-                                  {isYearly ? Math.round(price / 12) : price}
+                                  {isYearly ? price : price}
                                 </motion.span>
                               </AnimatePresence>
-                              <span className="text-[var(--text-muted)]">/月</span>
+                              <span className="text-[var(--text-muted)]">
+                                {isYearly ? '/年' : '/月'}
+                              </span>
                             </div>
                             {isYearly && monthlyPrice > 0 && (
                               <div className="flex items-center gap-2 mt-1">
                                 <span className="text-sm text-[var(--text-muted)] line-through">
-                                  ¥{monthlyPrice}/月
+                                  ¥{monthlyPrice * 12}/年
                                 </span>
                                 <span className="text-xs px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-medium">
-                                  年付 ¥{price}
+                                  省 ¥{monthlyPrice * 12 - price}
                                 </span>
                               </div>
                             )}
@@ -446,7 +537,7 @@ const Pricing: React.FC = () => {
                             <Check className="w-3 h-3 text-emerald-400" />
                           </div>
                           <span className="text-[var(--text-secondary)]">
-                            {plan.max_api_calls_monthly === -1 ? '无限' : plan.max_api_calls_monthly.toLocaleString()} AI调用/月
+                            {plan.max_api_calls_monthly === -1 ? '无限' : plan.max_api_calls_monthly.toLocaleString()} 积分/月
                           </span>
                         </div>
                         <div className="flex items-center gap-2.5 text-sm">
@@ -496,6 +587,46 @@ const Pricing: React.FC = () => {
               );
             })}
           </div>
+
+          {/* 免费版横幅 - 显示在付费套餐下方 */}
+          {freePlan && (
+            <motion.div
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.4, duration: 0.4 }}
+              className="mt-8"
+            >
+              <Card className="bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-cyan-500/10 border border-emerald-500/20 overflow-hidden">
+                <CardBody className="p-6 md:p-8">
+                  <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 rounded-xl bg-emerald-500/20 flex items-center justify-center">
+                        {freeIcon}
+                      </div>
+                      <div>
+                        <h3 className="text-xl font-bold text-[var(--text-primary)] flex items-center gap-2">
+                          {freePlan.display_name || '免费版'}
+                          <Chip size="sm" className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30">
+                            永久免费
+                          </Chip>
+                        </h3>
+                        <p className="text-sm text-[var(--text-muted)] mt-1">
+                          {freePlan.max_projects} 个项目 · {freePlan.max_api_calls_monthly} 积分/月 · {freePlan.features_json?.slice(0, 2).join(' · ')}
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 font-semibold px-6"
+                      onPress={() => handleSubscribe(freePlan)}
+                      endContent={<ChevronRight className="w-4 h-4" />}
+                    >
+                      {getPlanTranslation(freePlan.name).cta}
+                    </Button>
+                  </div>
+                </CardBody>
+              </Card>
+            </motion.div>
+          )}
 
           {/* 功能对比表格 */}
           <motion.div

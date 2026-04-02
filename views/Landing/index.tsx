@@ -49,10 +49,10 @@ const FEATURE_COLORS = {
 
 // 定价方案
 const PRICING_PLANS = [
-  { key: 'starter', price: '¥0', features: ['3个项目', '1000次API调用', '基础模板'] },
-  { key: 'creator', price: '¥99', popular: true, features: ['无限项目', '10000次API调用', '全部模板', '优先支持'] },
-  { key: 'studio', price: '¥299', features: ['团队协作', '50000次API调用', '版本控制', 'API接入'] },
-  { key: 'enterprise', price: '联系我们', features: ['私有化部署', '无限API调用', '定制开发', '专属客户经理'] },
+  { key: 'starter', price: '¥0', features: ['3个项目', '1000积分/月', '基础模板'] },
+  { key: 'creator', price: '¥99', popular: true, features: ['无限项目', '10000积分/月', '全部模板', '优先支持'] },
+  { key: 'studio', price: '¥299', features: ['团队协作', '50000积分/月', '版本控制', 'API接入'] },
+  { key: 'enterprise', price: '联系我们', features: ['私有化部署', '无限积分', '定制开发', '专属客户经理'] },
 ];
 
 // 动画组件包装器

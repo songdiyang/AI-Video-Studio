@@ -48,7 +48,7 @@ function getBillingHandler(handlerName) {
 
 // 预加载常用的 billing handlers
 function preloadHandlers() {
-  const commonHandlers = ['volcengine']; // 添加其他常用 handler
+  const commonHandlers = ['volcengine', 'seedance1.5']; // 添加其他常用 handler
   
   for (const name of commonHandlers) {
     const handlerPath = path.join(__dirname, `${name}.js`);

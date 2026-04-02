@@ -7,6 +7,8 @@ export interface SubscriptionPlan {
   display_name: string;
   price_monthly: number;
   price_yearly: number;
+  first_month_price?: number | null;  // 新用户首月优惠价格
+  first_year_price?: number | null;   // 新用户首年优惠价格
   max_projects: number;
   max_api_calls_monthly: number;
   max_team_members: number;

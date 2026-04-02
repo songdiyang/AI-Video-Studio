@@ -458,6 +458,11 @@ const enUS: Translations = {
     yearlyDiscount: 'Save 17%',
     perMonth: '/mo',
     perYear: '/yr',
+    free: {
+      name: 'Free',
+      desc: 'Experience basic features',
+      cta: 'Get Started',
+    },
     starter: {
       name: 'Starter',
       desc: 'Perfect for getting started',

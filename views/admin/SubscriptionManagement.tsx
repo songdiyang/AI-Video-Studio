@@ -26,6 +26,8 @@ const SubscriptionManagement: React.FC = () => {
     display_name: '',
     price_monthly: 0,
     price_yearly: 0,
+    first_month_price: '' as string | number,
+    first_year_price: '' as string | number,
     max_projects: 5,
     max_api_calls_monthly: 1000,
     max_team_members: 1,
@@ -93,6 +95,8 @@ const SubscriptionManagement: React.FC = () => {
         display_name: plan.display_name,
         price_monthly: plan.price_monthly,
         price_yearly: plan.price_yearly,
+        first_month_price: plan.first_month_price ?? '',
+        first_year_price: plan.first_year_price ?? '',
         max_projects: plan.max_projects,
         max_api_calls_monthly: plan.max_api_calls_monthly,
         max_team_members: plan.max_team_members,
@@ -107,6 +111,8 @@ const SubscriptionManagement: React.FC = () => {
         display_name: '',
         price_monthly: 0,
         price_yearly: 0,
+        first_month_price: '',
+        first_year_price: '',
         max_projects: 5,
         max_api_calls_monthly: 1000,
         max_team_members: 1,
@@ -133,7 +139,10 @@ const SubscriptionManagement: React.FC = () => {
 
       const payload = {
         ...planFormData,
-        features_json: featuresArray
+        features_json: featuresArray,
+        // 空字符串转为 null，数字保持原样
+        first_month_price: planFormData.first_month_price === '' ? null : Number(planFormData.first_month_price),
+        first_year_price: planFormData.first_year_price === '' ? null : Number(planFormData.first_year_price)
       };
 
       if (editingPlan) {
@@ -171,24 +180,36 @@ const SubscriptionManagement: React.FC = () => {
     }
   };
 
-  // 切换套餐启用状态
-  const handleTogglePlanActive = async (plan: SubscriptionPlan, newValue?: boolean) => {
-    // 防止重复点击
-    if (togglingPlanId !== null) return;
+  // 切换套餐启用状态（使用 ref 防止重复触发）
+  const toggleInProgressRef = React.useRef(false);
+  const userClickedRef = React.useRef(false);  // 标记是否用户主动点击
+  
+  const handleTogglePlanActive = async (plan: SubscriptionPlan, newValue: boolean) => {
+    // 防止重复点击和重复触发
+    if (togglingPlanId !== null || toggleInProgressRef.current) return;
     
-    // 如果传入了新值，检查是否真的发生了变化
-    const targetValue = newValue !== undefined ? newValue : !plan.is_active;
-    if (targetValue === plan.is_active) return; // 值没变化，不执行
+    // 值没变化，不执行
+    if (newValue === plan.is_active) return;
     
+    // 只有用户主动点击才执行
+    if (!userClickedRef.current) return;
+    userClickedRef.current = false;
+    
+    toggleInProgressRef.current = true;
     setTogglingPlanId(plan.id);
+    
     try {
-      await adminUpdatePlan(plan.id, { is_active: targetValue });
-      showToast(targetValue ? '套餐已启用' : '套餐已禁用', 'success');
+      await adminUpdatePlan(plan.id, { is_active: newValue });
+      showToast(newValue ? '套餐已启用' : '套餐已禁用', 'success');
       await fetchPlans();
     } catch (error) {
       showToast(error instanceof Error ? error.message : '操作失败', 'error');
     } finally {
       setTogglingPlanId(null);
+      // 延迟重置，防止 fetchPlans 后的重渲染再次触发
+      setTimeout(() => {
+        toggleInProgressRef.current = false;
+      }, 500);
     }
   };
 
@@ -286,7 +307,7 @@ const SubscriptionManagement: React.FC = () => {
                 <TableColumn>月价</TableColumn>
                 <TableColumn>年价</TableColumn>
                 <TableColumn>项目上限</TableColumn>
-                <TableColumn>API上限/月</TableColumn>
+                <TableColumn>积分上限/月</TableColumn>
                 <TableColumn>团队成员</TableColumn>
                 <TableColumn>状态</TableColumn>
                 <TableColumn>操作</TableColumn>
@@ -323,6 +344,7 @@ const SubscriptionManagement: React.FC = () => {
                         size="sm"
                         isSelected={plan.is_active}
                         isDisabled={togglingPlanId !== null}
+                        onClick={() => { userClickedRef.current = true; }}
                         onValueChange={(value) => handleTogglePlanActive(plan, value)}
                         classNames={{
                           wrapper: plan.is_active ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600',
@@ -403,7 +425,7 @@ const SubscriptionManagement: React.FC = () => {
                 <TableColumn>状态</TableColumn>
                 <TableColumn>计费周期</TableColumn>
                 <TableColumn>到期日期</TableColumn>
-                <TableColumn>API用量</TableColumn>
+                <TableColumn>积分用量</TableColumn>
                 <TableColumn>订阅时间</TableColumn>
               </TableHeader>
               <TableBody 
@@ -493,15 +515,38 @@ const SubscriptionManagement: React.FC = () => {
                   <div className="grid grid-cols-2 gap-4">
                     <Input
                       type="number"
+                      step="0.01"
                       label="月付价格 (¥)"
                       value={String(planFormData.price_monthly)}
                       onValueChange={(value) => setPlanFormData({ ...planFormData, price_monthly: parseFloat(value) || 0 })}
                     />
                     <Input
                       type="number"
+                      step="0.01"
                       label="年付价格 (¥)"
                       value={String(planFormData.price_yearly)}
                       onValueChange={(value) => setPlanFormData({ ...planFormData, price_yearly: parseFloat(value) || 0 })}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <Input
+                      type="number"
+                      step="0.01"
+                      label="新用户首月优惠价 (¥)"
+                      placeholder="留空表示无优惠"
+                      description="新用户首次订阅时的月付优惠价格"
+                      value={planFormData.first_month_price === '' ? '' : String(planFormData.first_month_price)}
+                      onValueChange={(value) => setPlanFormData({ ...planFormData, first_month_price: value === '' ? '' : parseFloat(value) || 0 })}
+                    />
+                    <Input
+                      type="number"
+                      step="0.01"
+                      label="新用户首年优惠价 (¥)"
+                      placeholder="留空表示无优惠"
+                      description="新用户首次订阅时的年付优惠价格"
+                      value={planFormData.first_year_price === '' ? '' : String(planFormData.first_year_price)}
+                      onValueChange={(value) => setPlanFormData({ ...planFormData, first_year_price: value === '' ? '' : parseFloat(value) || 0 })}
                     />
                   </div>
 
@@ -515,7 +560,7 @@ const SubscriptionManagement: React.FC = () => {
                     />
                     <Input
                       type="number"
-                      label="每月 API 调用上限"
+                      label="每月积分上限"
                       description="-1 表示无限"
                       value={String(planFormData.max_api_calls_monthly)}
                       onValueChange={(value) => setPlanFormData({ ...planFormData, max_api_calls_monthly: parseInt(value) || 0 })}

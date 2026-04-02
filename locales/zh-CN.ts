@@ -456,6 +456,11 @@ const zhCN = {
     yearlyDiscount: '节省 17%',
     perMonth: '/月',
     perYear: '/年',
+    free: {
+      name: '免费版',
+      desc: '体验基础功能',
+      cta: '立即开始',
+    },
     starter: {
       name: '入门版',
       desc: '适合个人创作者起步',
@@ -501,7 +506,7 @@ const zhCN = {
     title: '我的订阅',
     currentPlan: '当前方案',
     planExpiry: '到期时间',
-    apiUsage: 'API 用量',
+    apiUsage: '积分用量',
     apiUsageOf: '已使用 {used} / {total}',
     projectUsage: '项目用量',
     upgrade: '升级',

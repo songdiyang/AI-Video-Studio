@@ -1,6 +1,55 @@
 const dns = require('dns').promises;
 const net = require('net');
+const http = require('http');
+const https = require('https');
 const fetch = require('node-fetch');
+
+// HTTP/HTTPS 连接池（keep-alive 复用连接，减少 TCP 握手开销）
+const httpAgent = new http.Agent({
+  keepAlive: true,
+  keepAliveMsecs: 30000,
+  maxSockets: 50,
+  maxFreeSockets: 10,
+  timeout: 60000
+});
+
+const httpsAgent = new https.Agent({
+  keepAlive: true,
+  keepAliveMsecs: 30000,
+  maxSockets: 50,
+  maxFreeSockets: 10,
+  timeout: 60000
+});
+
+function getAgent(url) {
+  return url.startsWith('https') ? httpsAgent : httpAgent;
+}
+
+// DNS 缓存（5分钟过期）
+const dnsCache = new Map();
+const DNS_CACHE_TTL = 5 * 60 * 1000;
+
+async function cachedDnsLookup(hostname) {
+  const now = Date.now();
+  const cached = dnsCache.get(hostname);
+  if (cached && (now - cached.timestamp) < DNS_CACHE_TTL) {
+    return cached.addresses;
+  }
+  
+  const addresses = await dns.lookup(hostname, { all: true, verbatim: true });
+  dnsCache.set(hostname, { addresses, timestamp: now });
+  
+  // 清理过期缓存（简单策略：超过 1000 条时清理）
+  if (dnsCache.size > 1000) {
+    for (const [key, value] of dnsCache) {
+      if (now - value.timestamp > DNS_CACHE_TTL) {
+        dnsCache.delete(key);
+      }
+    }
+  }
+  
+  return addresses;
+}
 
 const BLOCKED_HOSTNAMES = new Set([
   'localhost',
@@ -205,7 +254,7 @@ async function assertSafeOutboundUrl(rawUrl, options = {}) {
 
   let resolvedAddresses;
   try {
-    resolvedAddresses = await dns.lookup(hostname, { all: true, verbatim: true });
+    resolvedAddresses = await cachedDnsLookup(hostname);
   } catch {
     throw createOutboundError(`${context} 被拒绝：无法解析目标主机`);
   }
@@ -228,6 +277,9 @@ async function safeFetch(rawUrl, options = {}, context = '出站请求') {
   
   const { timeout, ...fetchOptions } = options;
   
+  // 使用连接池 agent
+  const agent = getAgent(safeUrl);
+  
   // 如果设置了 timeout，使用 AbortController 实现超时
   if (timeout && timeout > 0) {
     const controller = new AbortController();
@@ -236,6 +288,7 @@ async function safeFetch(rawUrl, options = {}, context = '出站请求') {
     try {
       const response = await fetch(safeUrl, {
         ...fetchOptions,
+        agent,
         redirect: 'error',
         signal: controller.signal
       });
@@ -252,6 +305,7 @@ async function safeFetch(rawUrl, options = {}, context = '出站请求') {
   
   return fetch(safeUrl, {
     ...fetchOptions,
+    agent,
     redirect: 'error'
   });
 }

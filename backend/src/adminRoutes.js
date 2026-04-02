@@ -1028,14 +1028,34 @@ router.post('/ai-models/:id/test-handler', authMiddleware, requireAdmin, async (
         }
         case 'IMAGE': {
           const handleImageGeneration = require('./nosyntask/tasks/base/imageGeneration');
-          return handleImageGeneration({
+          // Seedream 版本区分
+          const isSeedream45 = /seedream[-_]?(4[-_]?5|4\.5)/i.test(model.name);
+          const isSeedream50 = /seedream[-_]?(5[-_]?0|5\.0)/i.test(model.name);
+          
+          const imageParams = {
             prompt: params?.prompt || 'A cute cat sitting on a windowsill, watercolor style',
             imageModel: model.name,
-            width: params?.width || 1024,
-            height: params?.height || 1024,
             imageUrl: params?.imageUrl || undefined,
             imageUrls: params?.imageUrls || undefined
-          });
+          };
+          
+          // 前端直接传 size 参数时优先使用
+          if (params?.size) {
+            imageParams.size = params.size;
+          } else if (isSeedream50) {
+            // Seedream 5.0 系列使用 '2k' 预设
+            imageParams.size = '2k';
+          } else if (isSeedream45) {
+            // Seedream 4.5 使用大尺寸
+            imageParams.width = params?.width || 1920;
+            imageParams.height = params?.height || 1920;
+          } else {
+            // 其他模型使用默认尺寸
+            imageParams.width = params?.width || 1024;
+            imageParams.height = params?.height || 1024;
+          }
+          
+          return handleImageGeneration(imageParams);
         }
         case 'VIDEO': {
           const handleBaseVideoModelCall = require('./nosyntask/tasks/base/baseVideoModelCall');
@@ -1271,6 +1291,7 @@ router.get('/subscription-plans', authMiddleware, requireAdmin, async (_req, res
   try {
     const plans = await queryAll(
       `SELECT id, name, display_name, price_monthly, price_yearly,
+              first_month_price, first_year_price,
               max_projects, max_api_calls_monthly, max_team_members,
               features_json, is_active, sort_order, created_at, updated_at
        FROM subscription_plans
@@ -1297,6 +1318,7 @@ router.get('/subscription-plans', authMiddleware, requireAdmin, async (_req, res
 router.post('/subscription-plans', authMiddleware, requireAdmin, async (req, res) => {
   const {
     name, display_name, price_monthly, price_yearly,
+    first_month_price, first_year_price,
     max_projects, max_api_calls_monthly, max_team_members,
     features, is_active, sort_order
   } = req.body;
@@ -1318,14 +1340,17 @@ router.post('/subscription-plans', authMiddleware, requireAdmin, async (req, res
     const result = await execute(
       `INSERT INTO subscription_plans 
         (name, display_name, price_monthly, price_yearly,
+         first_month_price, first_year_price,
          max_projects, max_api_calls_monthly, max_team_members,
          features_json, is_active, sort_order)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         name,
         display_name,
         price_monthly || 0,
         price_yearly || 0,
+        first_month_price || null,
+        first_year_price || null,
         max_projects || 5,
         max_api_calls_monthly || 1000,
         max_team_members || 1,
@@ -1353,6 +1378,7 @@ router.put('/subscription-plans/:id', authMiddleware, requireAdmin, async (req, 
   const { id } = req.params;
   const {
     name, display_name, price_monthly, price_yearly,
+    first_month_price, first_year_price,
     max_projects, max_api_calls_monthly, max_team_members,
     features, is_active, sort_order
   } = req.body;
@@ -1413,6 +1439,14 @@ router.put('/subscription-plans/:id', authMiddleware, requireAdmin, async (req, 
     if (sort_order !== undefined) {
       updates.push('sort_order = ?');
       values.push(sort_order);
+    }
+    if (first_month_price !== undefined) {
+      updates.push('first_month_price = ?');
+      values.push(first_month_price === '' || first_month_price === null ? null : first_month_price);
+    }
+    if (first_year_price !== undefined) {
+      updates.push('first_year_price = ?');
+      values.push(first_year_price === '' || first_year_price === null ? null : first_year_price);
     }
 
     if (updates.length === 0) {

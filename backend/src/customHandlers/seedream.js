@@ -14,40 +14,59 @@
 const fetch = require('node-fetch');
 
 /**
+ * Seedream 高版本（4.5+）最低像素要求
+ * 4.5: image size must be at least 3686400 pixels (1920x1920)
+ * 5.0/5.0-lite: 支持 '2k', '3k' 预设值
+ */
+const SEEDREAM_HIGH_MIN_PIXELS = 3686400; // 1920 x 1920
+
+/**
  * 处理和验证参数
  * @param {object} params - 原始参数
+ * @param {string} modelId - 模型 ID，用于判断版本
  * @returns {object} 处理后的请求体扩展字段
  */
-function processParams(params) {
+function processParams(params, modelId) {
   const extra = {};
 
-  // size: 支持 1920x1920, 1920x2880 等
-  // Seedream 4.5 最低像素要求 3,686,400
-  const MIN_PIXELS = 3686400;
-  const DEFAULT_SIZE = '1920x2880'; // 5,529,600 px，满足最低要求
+  // 检测模型版本
+  const isSeedream45 = /seedream[-_]?(4[-_]?5|4\.5)/i.test(modelId || '');
+  const isSeedream50 = /seedream[-_]?(5[-_]?0|5\.0)/i.test(modelId || '');
+  const isSeedreamHighRes = isSeedream45 || isSeedream50;
 
+  // size: 支持 1920x1920, 1920x2880 等，或预设值 '2k', '3k'
   // 优先使用显式 size 参数，其次从 width+height 自动构建
   let size = params.size || params.resolution;
   if (!size && params.width && params.height) {
     size = `${params.width}x${params.height}`;
   }
 
-  // 校验像素数是否满足最低要求，不足则使用安全默认值
-  if (size && size !== '_REMOVE_') {
-    const match = String(size).match(/^(\d+)x(\d+)$/i);
-    if (match) {
-      const pixels = parseInt(match[1]) * parseInt(match[2]);
-      if (pixels < MIN_PIXELS) {
-        console.warn(`[Seedream] size ${size} (${pixels}px) 低于最低要求 ${MIN_PIXELS}px，自动升级为 ${DEFAULT_SIZE}`);
-        size = DEFAULT_SIZE;
-      }
+  // Seedream 5.0 系列：使用 '2k' 预设值（API 不接受具体尺寸如 1920x1920）
+  if (isSeedream50) {
+    // 如果用户没指定或尺寸格式不是预设值，使用 '2k'
+    if (!size || size === '_REMOVE_' || !/^(2k|3k)$/i.test(size)) {
+      console.log(`[Seedream Handler] Seedream 5.0 模型，使用预设尺寸 '2k'`);
+      size = '2k';
     }
-    extra.size = size;
-  } else {
-    // 未指定 size 时使用安全默认值
-    extra.size = DEFAULT_SIZE;
-    console.log(`[Seedream] 未指定 size，使用默认值 ${DEFAULT_SIZE}`);
   }
+  // Seedream 4.5：验证尺寸是否满足最低要求
+  else if (isSeedream45 && size && size !== '_REMOVE_') {
+    const [w, h] = size.split('x').map(Number);
+    if (w && h && w * h < SEEDREAM_HIGH_MIN_PIXELS) {
+      console.log(`[Seedream Handler] Seedream 4.5，尺寸 ${size} (${w * h} 像素) 小于最低要求，自动调整为 1920x1920`);
+      size = '1920x1920';
+    }
+  }
+  // Seedream 4.5 未指定尺寸时
+  else if (isSeedream45 && (!size || size === '_REMOVE_')) {
+    console.log(`[Seedream Handler] Seedream 4.5 模型未指定尺寸，使用默认尺寸 1920x1920`);
+    size = '1920x1920';
+  }
+
+  if (size && size !== '_REMOVE_') {
+    extra.size = size;
+  }
+  // 非 Seedream 4.5 且未指定 size 时不设置，让 API 使用默认值
 
   // seed: 随机种子
   if (params.seed !== undefined && params.seed !== '_REMOVE_') {
@@ -164,7 +183,7 @@ module.exports = {
       model: modelId,
       prompt: params.prompt || '',
       response_format: 'url',
-      ...processParams(params)
+      ...processParams(params, modelId)
     };
 
     // 3. 如果有参考图，添加 image 字段（图生图模式）

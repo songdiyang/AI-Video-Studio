@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { Button, Input, Textarea, Select, SelectItem, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Switch, Chip, Checkbox, Tooltip } from '@heroui/react';
 import { Code2, Sparkles, AlertCircle, CheckCircle, ChevronDown, ChevronUp, Film, Clock, Monitor, Plus, Trash2, Settings2, DollarSign, Sliders } from 'lucide-react';
 import { AIModel, ModelFormData, TEMPLATE_PRESETS, ASPECT_RATIO_PRESETS, DURATION_PRESETS, VIDEO_RESOLUTION_PRESETS, IMAGE_RESOLUTION_PRESETS, TemplatePreset } from './types';
@@ -227,17 +227,28 @@ const VisualKeyValueEditor: React.FC<{
   icon?: React.ReactNode;
   presets?: { key: string; value: any; label: string }[];
 }> = ({ value, onChange, title = '默认参数', icon, presets = COMMON_PARAM_PRESETS }) => {
-  const entries = useMemo<[string, any][]>(() => {
+  // 使用本地状态存储正在编辑的条目（包括空 key）
+  const [localEntries, setLocalEntries] = useState<[string, any][]>([]);
+
+  // 初始化或外部 value 变化时同步
+  useEffect(() => {
     try {
       const parsed = JSON.parse(value);
-      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return [];
-      return Object.entries(parsed);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        setLocalEntries(Object.entries(parsed));
+      } else {
+        setLocalEntries([]);
+      }
     } catch {
-      return [];
+      setLocalEntries([]);
     }
   }, [value]);
 
+  const entries = localEntries;
+
   const emit = (newEntries: [string, any][]) => {
+    setLocalEntries(newEntries);
+    // 只同步有效的条目到父组件
     const obj: Record<string, any> = {};
     for (const [k, v] of newEntries) {
       if (k.trim()) obj[k.trim()] = v;

@@ -19,6 +19,7 @@ router.get('/plans', async (_req, res) => {
   try {
     const plans = await queryAll(
       `SELECT id, name, display_name, price_monthly, price_yearly, 
+              first_month_price, first_year_price,
               max_projects, max_api_calls_monthly, max_team_members, 
               features_json, sort_order
        FROM subscription_plans 

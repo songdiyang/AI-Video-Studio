@@ -30,6 +30,28 @@ const DEFAULT_PARAMS: Record<string, any> = {
   }
 };
 
+// 检测 Seedream 版本
+const isSeedream45 = (modelName: string) => /seedream[-_]?(4[-_]?5|4\.5)/i.test(modelName);
+const isSeedream50 = (modelName: string) => /seedream[-_]?(5[-_]?0|5\.0)/i.test(modelName);
+
+// 根据模型动态获取默认参数
+const getDefaultParams = (category: string, modelName: string) => {
+  const base = { ...DEFAULT_PARAMS[category] };
+  if (category === 'IMAGE') {
+    if (isSeedream50(modelName)) {
+      // Seedream 5.0 系列使用 '2k' 预设值
+      delete base.width;
+      delete base.height;
+      base.size = '2k';
+    } else if (isSeedream45(modelName)) {
+      // Seedream 4.5 使用 1920x1920
+      base.width = 1920;
+      base.height = 1920;
+    }
+  }
+  return base;
+};
+
 const ModelTestModal: React.FC<ModelTestModalProps> = ({ isOpen, onClose, model }) => {
   const [paramsInput, setParamsInput] = useState('{}');
   const [testing, setTesting] = useState(false);
@@ -91,7 +113,7 @@ const ModelTestModal: React.FC<ModelTestModalProps> = ({ isOpen, onClose, model 
       setTestResult(null);
       setTesting(false);
       setAdvancedMode(false);
-      const defaults = DEFAULT_PARAMS[model.category] || {};
+      const defaults = getDefaultParams(model.category, model.name);
       setParamsInput(JSON.stringify(defaults, null, 2));
       // 重置视频可视化参数
       if (model.category === 'VIDEO') {

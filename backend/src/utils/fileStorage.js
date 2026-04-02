@@ -198,7 +198,7 @@ async function downloadAndStore(tempUrl, objectPath, options = {}) {
   }
 
   try {
-    // 1. 下载临时文件
+    // 1. 发起下载请求
     console.log(`[FileStorage] 开始下载文件...`);
     const downloadStart = Date.now();
     
@@ -215,32 +215,58 @@ async function downloadAndStore(tempUrl, objectPath, options = {}) {
     }
 
     const contentType = response.headers.get('content-type') || '';
-    const contentLength = response.headers.get('content-length') || 'unknown';
-    console.log(`[FileStorage] Content-Type: ${contentType}, Content-Length: ${contentLength}`);
+    const contentLength = parseInt(response.headers.get('content-length') || '0', 10);
+    console.log(`[FileStorage] Content-Type: ${contentType}, Content-Length: ${contentLength || 'unknown'}`);
     
-    console.log(`[FileStorage] 开始读取响应体...`);
-    const bufferStart = Date.now();
-    const buffer = await response.buffer();
-    console.log(`[FileStorage] 读取完成: ${(buffer.length / 1024 / 1024).toFixed(2)}MB, 耗时: ${Date.now() - bufferStart}ms`);
-
     // 2. 确定扩展名和完整对象路径
     let ext = guessExtension(tempUrl, contentType);
     if (!ext) ext = options.fallbackExt || '';
     const fullObjectName = objectPath + ext;
 
-    // 3. 上传到 MinIO
-    console.log(`[FileStorage] 开始上传到 MinIO: ${fullObjectName}`);
-    const uploadStart = Date.now();
-    
+    // 3. 设置元数据
     const metaData = {};
     if (contentType) metaData['Content-Type'] = contentType;
 
-    await minioClient.putObject(CONFIG.bucket, fullObjectName, buffer, buffer.length, metaData);
+    // 4. 先完整下载到 buffer，再上传到 MinIO
+    // 注：流式上传虽然理论上更快，但 node-fetch 的 stream 与 MinIO 客户端存在兼容性问题，
+    //     会导致卡顿。对于图片/小视频（< 50MB），buffer 方式更稳定可靠。
+    console.log(`[FileStorage] 开始下载到内存...`);
+    const bufferStart = Date.now();
+    const chunks = [];
+    let downloadedBytes = 0;
+    let lastLogTime = Date.now();
+    const logInterval = 2000; // 每2秒输出一次进度
+    
+    for await (const chunk of response.body) {
+      chunks.push(chunk);
+      downloadedBytes += chunk.length;
+      
+      // 定期输出下载进度（避免刷屏）
+      const now = Date.now();
+      if (now - lastLogTime >= logInterval) {
+        const progress = contentLength > 0 
+          ? `${((downloadedBytes / contentLength) * 100).toFixed(1)}%` 
+          : `${(downloadedBytes / 1024 / 1024).toFixed(2)}MB`;
+        const speed = ((downloadedBytes / 1024 / 1024) / ((now - bufferStart) / 1000)).toFixed(2);
+        console.log(`[FileStorage] 下载中... ${progress} (${speed}MB/s)`);
+        lastLogTime = now;
+      }
+    }
+    const buffer = Buffer.concat(chunks);
+    const actualSize = buffer.length;
+    const downloadTime = Date.now() - bufferStart;
+    const avgSpeed = ((actualSize / 1024 / 1024) / (downloadTime / 1000)).toFixed(2);
+    console.log(`[FileStorage] 下载完成 (${(actualSize / 1024 / 1024).toFixed(2)}MB), 耗时: ${downloadTime}ms, 平均速度: ${avgSpeed}MB/s`);
+
+    // 5. 上传到 MinIO
+    console.log(`[FileStorage] 开始上传到 MinIO: ${fullObjectName}`);
+    const uploadStart = Date.now();
+    await minioClient.putObject(CONFIG.bucket, fullObjectName, buffer, actualSize, metaData);
     console.log(`[FileStorage] 上传完成, 耗时: ${Date.now() - uploadStart}ms`);
 
-    // 4. 返回持久化 URL
+    // 6. 返回持久化 URL
     const persistentUrl = getPublicUrl(fullObjectName);
-    console.log(`[FileStorage] 已持久化: ${fullObjectName} (${(buffer.length / 1024).toFixed(1)}KB)`);
+    console.log(`[FileStorage] 已持久化: ${fullObjectName} (${(actualSize / 1024).toFixed(1)}KB)`);
     return persistentUrl;
   } catch (err) {
     console.error(`[FileStorage] 持久化失败 (${objectPath}):`, err.message);
