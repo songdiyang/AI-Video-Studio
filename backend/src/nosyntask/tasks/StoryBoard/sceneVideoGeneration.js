@@ -436,7 +436,12 @@ Prompt:`;
   const result = await submitAndPoll(modelName, submitParams, {
     intervalMs: 3000,
     maxDurationMs: 3600000,
-    logTag: 'SceneVideoGen'
+    logTag: 'SceneVideoGen',
+    onProgress: onProgress ? (p) => {
+      // 将 submitAndPoll 的 30-90% 进度映射到 20-85%（留 5% 给下载）
+      const mapped = 20 + Math.round((p - 30) * (85 - 20) / (90 - 30));
+      onProgress(Math.min(mapped, 85));
+    } : undefined
   });
 
   const mediaResolution = resolveMediaUrl(result, 'video');

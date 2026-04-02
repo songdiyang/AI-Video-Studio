@@ -188,6 +188,9 @@ async function uploadBuffer(buffer, objectPath, options = {}) {
 async function downloadAndStore(tempUrl, objectPath, options = {}) {
   if (!tempUrl) return tempUrl;
 
+  console.log(`[FileStorage] 开始持久化: ${objectPath}`);
+  console.log(`[FileStorage] 源URL: ${tempUrl.substring(0, 100)}...`);
+
   const ready = await ensureReady();
   if (!ready) {
     console.warn('[FileStorage] MinIO 不可用，返回原始 URL');
@@ -196,17 +199,29 @@ async function downloadAndStore(tempUrl, objectPath, options = {}) {
 
   try {
     // 1. 下载临时文件
+    console.log(`[FileStorage] 开始下载文件...`);
+    const downloadStart = Date.now();
+    
     const response = await safeFetch(
       tempUrl,
-      { timeout: 120000 },
+      { timeout: 300000 }, // 增加到 5 分钟，视频文件可能较大
       '文件持久化下载'
     );
+    
+    console.log(`[FileStorage] HTTP响应状态: ${response.status}, 耗时: ${Date.now() - downloadStart}ms`);
+    
     if (!response.ok) {
       throw new Error(`下载失败: HTTP ${response.status} - ${tempUrl}`);
     }
 
     const contentType = response.headers.get('content-type') || '';
+    const contentLength = response.headers.get('content-length') || 'unknown';
+    console.log(`[FileStorage] Content-Type: ${contentType}, Content-Length: ${contentLength}`);
+    
+    console.log(`[FileStorage] 开始读取响应体...`);
+    const bufferStart = Date.now();
     const buffer = await response.buffer();
+    console.log(`[FileStorage] 读取完成: ${(buffer.length / 1024 / 1024).toFixed(2)}MB, 耗时: ${Date.now() - bufferStart}ms`);
 
     // 2. 确定扩展名和完整对象路径
     let ext = guessExtension(tempUrl, contentType);
@@ -214,10 +229,14 @@ async function downloadAndStore(tempUrl, objectPath, options = {}) {
     const fullObjectName = objectPath + ext;
 
     // 3. 上传到 MinIO
+    console.log(`[FileStorage] 开始上传到 MinIO: ${fullObjectName}`);
+    const uploadStart = Date.now();
+    
     const metaData = {};
     if (contentType) metaData['Content-Type'] = contentType;
 
     await minioClient.putObject(CONFIG.bucket, fullObjectName, buffer, buffer.length, metaData);
+    console.log(`[FileStorage] 上传完成, 耗时: ${Date.now() - uploadStart}ms`);
 
     // 4. 返回持久化 URL
     const persistentUrl = getPublicUrl(fullObjectName);
@@ -225,6 +244,7 @@ async function downloadAndStore(tempUrl, objectPath, options = {}) {
     return persistentUrl;
   } catch (err) {
     console.error(`[FileStorage] 持久化失败 (${objectPath}):`, err.message);
+    console.error(`[FileStorage] 错误详情:`, err.stack);
     // 降级：返回原始 URL，不阻断业务
     return tempUrl;
   }

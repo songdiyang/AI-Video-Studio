@@ -225,8 +225,33 @@ async function assertSafeOutboundUrl(rawUrl, options = {}) {
 
 async function safeFetch(rawUrl, options = {}, context = '出站请求') {
   const safeUrl = await assertSafeOutboundUrl(rawUrl, { context });
+  
+  const { timeout, ...fetchOptions } = options;
+  
+  // 如果设置了 timeout，使用 AbortController 实现超时
+  if (timeout && timeout > 0) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+    
+    try {
+      const response = await fetch(safeUrl, {
+        ...fetchOptions,
+        redirect: 'error',
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+      return response;
+    } catch (err) {
+      clearTimeout(timeoutId);
+      if (err.name === 'AbortError') {
+        throw new Error(`${context} 超时：请求超过 ${Math.round(timeout / 1000)} 秒`);
+      }
+      throw err;
+    }
+  }
+  
   return fetch(safeUrl, {
-    ...options,
+    ...fetchOptions,
     redirect: 'error'
   });
 }

@@ -175,6 +175,9 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
   const [compareMode, setCompareMode] = useState(false);
   const [compareVersion, setCompareVersion] = useState<PromptVersion | null>(null);
 
+  // 图片预览状态
+  const [previewImage, setPreviewImage] = useState<{ url: string; title: string } | null>(null);
+
   // 当 initialPrompt 变化时同步更新（切换分镜时）
   // 解析参考图占位符元数据，保留标记在文本中，渲染为胶囊
   useEffect(() => {
@@ -914,7 +917,7 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
               <div className="flex gap-2">
                 {availableFrames.startFrame && (
                   <div
-                    className="relative w-14 h-10 rounded overflow-hidden cursor-grab"
+                    className="relative w-14 h-10 rounded overflow-hidden cursor-grab group"
                     draggable
                     onDragStart={(e) => {
                       e.dataTransfer.setData('application/json', JSON.stringify({
@@ -924,14 +927,20 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
                         frameType: 'start'
                       }));
                     }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setPreviewImage({ url: availableFrames.startFrame!, title: '首帧预览' });
+                    }}
+                    title="点击预览，拖拽插入"
                   >
                     <img src={availableFrames.startFrame} alt="首帧" className="w-full h-full object-cover" />
                     <span className="absolute bottom-0 left-0 right-0 text-[8px] text-center text-white bg-black/50">首帧</span>
+                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
                   </div>
                 )}
                 {availableFrames.endFrame && (
                   <div
-                    className="relative w-14 h-10 rounded overflow-hidden cursor-grab"
+                    className="relative w-14 h-10 rounded overflow-hidden cursor-grab group"
                     draggable
                     onDragStart={(e) => {
                       e.dataTransfer.setData('application/json', JSON.stringify({
@@ -941,9 +950,15 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
                         frameType: 'end'
                       }));
                     }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setPreviewImage({ url: availableFrames.endFrame!, title: '尾帧预览' });
+                    }}
+                    title="点击预览，拖拽插入"
                   >
                     <img src={availableFrames.endFrame} alt="尾帧" className="w-full h-full object-cover" />
                     <span className="absolute bottom-0 left-0 right-0 text-[8px] text-center text-white bg-black/50">尾帧</span>
+                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
                   </div>
                 )}
               </div>
@@ -1199,6 +1214,29 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
                 </div>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 图片预览模态框 */}
+      {previewImage && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80"
+          onClick={() => setPreviewImage(null)}
+        >
+          <div className="relative max-w-[90vw] max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
+            <div className="absolute -top-8 left-0 text-white text-sm">{previewImage.title}</div>
+            <button
+              className="absolute -top-8 right-0 text-white hover:text-gray-300 text-xl"
+              onClick={() => setPreviewImage(null)}
+            >
+              ✕
+            </button>
+            <img
+              src={previewImage.url}
+              alt={previewImage.title}
+              className="max-w-full max-h-[85vh] object-contain rounded-lg"
+            />
           </div>
         </div>
       )}

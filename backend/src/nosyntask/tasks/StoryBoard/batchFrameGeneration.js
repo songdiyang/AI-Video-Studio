@@ -21,10 +21,11 @@
  * output: { total, completed, skipped, failed, results[] }
  */
 
-const { queryAll, execute } = require('../../../dbHelper');
+const { queryAll, queryOne, execute } = require('../../../dbHelper');
 const handleFrameGeneration = require('./frameGeneration');
 const handleSingleFrameGeneration = require('./singleFrameGeneration');
 const { generateFramesParallel } = require('./independentFrameGeneration');
+const { requireVisualStyle } = require('../../../utils/getProjectStyle');
 
 /**
  * 获取分镜的"最终帧" URL
@@ -75,6 +76,18 @@ async function handleBatchFrameGeneration(inputParams, onProgress) {
     throw new Error('该剧本下没有分镜数据');
   }
 
+  // === 优化：预取项目视觉风格（只查询一次，所有分镜共享） ===
+  const scriptInfo = await queryOne(
+    'SELECT project_id FROM scripts WHERE id = ?',
+    [scriptId]
+  );
+  if (!scriptInfo || !scriptInfo.project_id) {
+    throw new Error('无法获取剧本所属项目信息');
+  }
+  const projectId = scriptInfo.project_id;
+  const visualStyle = await requireVisualStyle(projectId);
+  console.log(`[BatchFrameGen] 预取项目视觉风格完成，projectId: ${projectId}`);
+
   const total = storyboards.length;
   let completed = 0;
   let skipped = 0;
@@ -95,19 +108,36 @@ async function handleBatchFrameGeneration(inputParams, onProgress) {
       ? JSON.parse(sb.variables_json || '{}')
       : (sb.variables_json || {});
     const hasAction = vars.hasAction || false;
-    const hasExistingFrame = !!sb.first_frame_url;
     const description = sb.prompt_template || '';
     const isFirstScene = (i === 0);
 
-    // 跳过已有帧的分镜（但仍然要取其最终帧传递给下一个）
-    if (!overwriteFrames && hasExistingFrame) {
-      console.log(`[BatchFrameGen] [${i + 1}/${total}] 分镜 ${sb.id} 已有帧图片，跳过（传递尾帧给下一镜头）`);
+    // === 优化：智能识别帧缺失情况 ===
+    const hasFirstFrame = !!sb.first_frame_url;
+    const hasLastFrame = !!sb.last_frame_url;
+    
+    // 判断是否需要生成：
+    // - 动作分镜（hasAction=true）：需要首帧和尾帧都存在才算完整
+    // - 静态分镜（hasAction=false）：只需要首帧存在即可（尾帧会自动设为与首帧相同）
+    const isComplete = hasAction 
+      ? (hasFirstFrame && hasLastFrame)  // 动作分镜需要首尾帧都有
+      : hasFirstFrame;                    // 静态分镜只需要首帧
+
+    // 跳过已完整的分镜（但仍然要取其最终帧传递给下一个）
+    if (!overwriteFrames && isComplete) {
+      console.log(`[BatchFrameGen] [${i + 1}/${total}] 分镜 ${sb.id} 帧图片完整，跳过（传递尾帧给下一镜头）`);
       prevEndFrameUrl = getFinalFrameUrl(sb, vars);
       prevDescription = description;
       prevEndState = vars.endState || null;
       skipped++;
       results.push({ storyboardId: sb.id, status: 'skipped' });
       continue;
+    }
+
+    // 记录需要生成的情况
+    if (hasAction && hasFirstFrame && !hasLastFrame) {
+      console.log(`[BatchFrameGen] [${i + 1}/${total}] 分镜 ${sb.id} 动作分镜缺少尾帧，将补充生成`);
+    } else if (hasAction && !hasFirstFrame && hasLastFrame) {
+      console.log(`[BatchFrameGen] [${i + 1}/${total}] 分镜 ${sb.id} 动作分镜缺少首帧，将补充生成`);
     }
 
     try {
@@ -124,7 +154,8 @@ async function handleBatchFrameGeneration(inputParams, onProgress) {
           prevEndFrameUrl,
           prevDescription,
           prevEndState,
-          isFirstScene
+          isFirstScene,
+          visualStyle  // 传递预取的视觉风格
         }, null);
         // 动作镜头的最终帧 = 尾帧
         prevEndFrameUrl = res.endFrame || res.startFrame;
@@ -140,7 +171,8 @@ async function handleBatchFrameGeneration(inputParams, onProgress) {
           prevEndFrameUrl,
           prevDescription,
           prevEndState,
-          isFirstScene
+          isFirstScene,
+          visualStyle  // 传递预取的视觉风格
         }, null);
         // 静态镜头：使用统一的 lastFrameUrl（已与首帧相同）
         prevEndFrameUrl = res.lastFrameUrl || res.firstFrameUrl;

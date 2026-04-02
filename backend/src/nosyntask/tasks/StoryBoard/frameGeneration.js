@@ -350,7 +350,7 @@ ${frameHint}
 });
 
 async function handleFrameGeneration(inputParams, onProgress) {
-  const { storyboardId, prompt, imageModel: modelName, textModel, aspectRatio, resolution, prevEndFrameUrl, prevDescription, prevEndState: inputPrevEndState, isFirstScene, sceneState: inputSceneState, environmentChange: inputEnvironmentChange, activeSceneUrl, regenerateTarget } = inputParams;
+  const { storyboardId, prompt, imageModel: modelName, textModel, aspectRatio, resolution, prevEndFrameUrl, prevDescription, prevEndState: inputPrevEndState, isFirstScene, sceneState: inputSceneState, environmentChange: inputEnvironmentChange, activeSceneUrl, regenerateTarget, visualStyle: inputVisualStyle } = inputParams;
 
   if (!storyboardId) {
     throw new Error('缺少必要参数: storyboardId');
@@ -371,8 +371,11 @@ async function handleFrameGeneration(inputParams, onProgress) {
     throw new Error(`分镜 ${storyboardId} 不存在`);
   }
 
-  // 项目视觉风格（必填，未设置则报错）
-  const visualStyle = await requireVisualStyle(storyboard.project_id);
+  // 项目视觉风格：优先使用传入的预取数据，否则单独查询
+  const visualStyle = inputVisualStyle || await requireVisualStyle(storyboard.project_id);
+  if (inputVisualStyle) {
+    console.log('[FrameGen] 使用预取的视觉风格（跳过DB查询）');
+  }
 
   let variables = {};
   try {
@@ -449,8 +452,148 @@ async function handleFrameGeneration(inputParams, onProgress) {
   let startPrompt = '';
   let endPrompt = '';
 
-  // === 生成首帧（如果需要） ===
-  if (needGenerateFirst) {
+  // === 优化：当同时需要生成首尾帧时，并行生成提示词 ===
+  const bothFramesNeeded = needGenerateFirst && needGenerateLast;
+  
+  if (bothFramesNeeded && textModel) {
+    console.log('[FrameGen] 🚀 优化模式：并行生成首尾帧提示词');
+    if (onProgress) onProgress(13);
+
+    // 并行生成首尾帧提示词
+    const promptOpts = {
+      textModel, description, characterInfo, sceneInfo,
+      shotType: variables.shotType, emotion: variables.emotion,
+      visualStyle, startFrameDesc: variables.startFrame, endFrameDesc: variables.endFrame,
+      dialogue: variables.dialogue, sceneState, environmentChange,
+      directorParams: variables.directorParams, spatialDescription
+    };
+
+    const [startPromptResult, endPromptResult] = await Promise.all([
+      generateFramePrompt({
+        ...promptOpts,
+        frameType: 'start',
+        prevDescription: resolvedPrevDescription || null,
+        prevEndState: resolvedPrevEndState,
+        endState: null
+      }),
+      generateFramePrompt({
+        ...promptOpts,
+        frameType: 'end',
+        prevDescription: null,
+        prevEndState: null,
+        endState: variables.endState
+      })
+    ]);
+
+    startPrompt = startPromptResult;
+    endPrompt = endPromptResult;
+    trace('首帧提示词(并行)', { prompt: startPrompt });
+    trace('尾帧提示词(并行)', { prompt: endPrompt });
+    console.log(`\x1b[32m[FrameGen] 首帧提示词: ${startPrompt.substring(0, 100)}...\x1b[0m`);
+    console.log(`\x1b[32m[FrameGen] 尾帧提示词: ${endPrompt.substring(0, 100)}...\x1b[0m`);
+
+    if (onProgress) onProgress(20);
+
+    // AI 选择首帧参考图
+    const startCandidates = [...candidateImages];
+    const currentShotData = { prompt_template: description, variables_json: variables, first_frame_url: null, last_frame_url: existingLastFrame };
+    const startRefResult = await selectReferenceImages({
+      textModel,
+      frameType: 'start',
+      currentShot: currentShotData,
+      prevShot: prevShotData,
+      availableImages: startCandidates
+    });
+    console.log('[FrameGen] AI 选择首帧参考图:', startRefResult.selectedUrls.length, '张');
+
+    // 生成首帧图片
+    if (onProgress) onProgress(25);
+    console.log('[FrameGen] 开始生成首帧...');
+    const startFrame = await generateSingleImage(modelName, startPrompt, aspectRatio, 'FrameGen-Start', startRefResult.selectedUrls, resolution);
+
+    // 持久化首帧到 MinIO
+    persistedStartFrame = await downloadAndStore(
+      startFrame,
+      `images/frames/${storyboardId}/first_frame`,
+      { fallbackExt: '.png' }
+    );
+    console.log('[FrameGen] 首帧已持久化:', persistedStartFrame);
+    trace('首帧持久化完成', { url: persistedStartFrame, promptUsed: startPrompt, refImages: startRefResult.selectedUrls });
+
+    // AI 选择尾帧参考图（包含刚生成的首帧）
+    if (onProgress) onProgress(55);
+    const endCandidates = [...candidateImages];
+    endCandidates.push({ id: 'current_start_frame', label: '本镜头首帧（刚生成）', url: persistedStartFrame, description: '本镜头的首帧画面，展示动作开始前的状态。尾帧应展示动作结束后的状态，与首帧保持角色、场景、风格的一致性' });
+    const endRefResult = await selectReferenceImages({
+      textModel,
+      frameType: 'end',
+      currentShot: { prompt_template: description, variables_json: variables, first_frame_url: persistedStartFrame, last_frame_url: null },
+      prevShot: prevShotData,
+      availableImages: endCandidates
+    });
+    console.log('[FrameGen] AI 选择尾帧参考图:', endRefResult.selectedUrls.length, '张');
+
+    // 生成尾帧图片
+    if (onProgress) onProgress(60);
+    console.log('[FrameGen] 开始生成尾帧...');
+    const endFrame = await generateSingleImage(modelName, endPrompt, aspectRatio, 'FrameGen-End', endRefResult.selectedUrls, resolution);
+
+    // 持久化尾帧到 MinIO
+    persistedEndFrame = await downloadAndStore(
+      endFrame,
+      `images/frames/${storyboardId}/last_frame`,
+      { fallbackExt: '.png' }
+    );
+    console.log('[FrameGen] 尾帧已持久化:', persistedEndFrame);
+    trace('尾帧持久化完成', { url: persistedEndFrame, promptUsed: endPrompt, refImages: endRefResult.selectedUrls });
+
+    // === 优化：一次性更新数据库 ===
+    if (onProgress) onProgress(85);
+    const updateResult = await execute(
+      'UPDATE storyboards SET first_frame_url = ?, last_frame_url = ? WHERE id = ?',
+      [persistedStartFrame, persistedEndFrame, storyboardId]
+    );
+    assertUpdated(updateResult, '[FrameGen] 首尾帧');
+    await assertPersistedFields({
+      table: 'storyboards',
+      id: storyboardId,
+      fields: ['first_frame_url', 'last_frame_url'],
+      label: '[FrameGen] 首尾帧'
+    });
+    console.log('[FrameGen] 首尾帧已保存到数据库');
+
+    // === 优化：异步保存历史版本（不阻塞主流程） ===
+    setImmediate(async () => {
+      try {
+        await Promise.all([
+          execute(
+            `INSERT INTO storyboard_frame_history 
+             (storyboard_id, frame_type, frame_url, generation_prompt, generation_params, version_number, is_current)
+             VALUES (?, 'first', ?, ?, ?, 
+                    (SELECT COALESCE(MAX(version_number), 0) + 1 FROM storyboard_frame_history WHERE storyboard_id = ? AND frame_type = 'first'),
+                    TRUE)`,
+            [storyboardId, persistedStartFrame, startPrompt, JSON.stringify({ model: modelName, aspectRatio, resolution }), storyboardId]
+          ),
+          execute(
+            `INSERT INTO storyboard_frame_history 
+             (storyboard_id, frame_type, frame_url, generation_prompt, generation_params, version_number, is_current)
+             VALUES (?, 'last', ?, ?, ?, 
+                    (SELECT COALESCE(MAX(version_number), 0) + 1 FROM storyboard_frame_history WHERE storyboard_id = ? AND frame_type = 'last'),
+                    TRUE)`,
+            [storyboardId, persistedEndFrame, endPrompt, JSON.stringify({ model: modelName, aspectRatio, resolution }), storyboardId]
+          )
+        ]);
+        console.log('[FrameGen] 首尾帧历史版本已异步保存');
+      } catch (e) {
+        console.warn('[FrameGen] 异步保存历史版本失败:', e.message);
+      }
+    });
+
+  } else {
+    // === 原有逻辑：单独生成首帧或尾帧 ===
+    
+    // === 生成首帧（如果需要） ===
+    if (needGenerateFirst) {
     // 2.8 AI 选择首帧参考图
     if (onProgress) onProgress(13);
     const startCandidates = [...candidateImages];
@@ -604,6 +747,7 @@ async function handleFrameGeneration(inputParams, onProgress) {
     console.log('[FrameGen] 跳过尾帧生成，使用已有尾帧:', existingLastFrame);
     if (onProgress) onProgress(80);
   }
+  } // 关闭 else 分支（单独生成首帧或尾帧的逻辑）
 
   // modified 镜头：自动生成更新版空镜场景图并存入 DB（供后续 inherit 镜头使用）
   if (sceneState === 'modified' && (variables.location || location)) {

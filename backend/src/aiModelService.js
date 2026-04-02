@@ -28,7 +28,7 @@ function toNumberSafe(val, fallback) {
 }
 
 // ============ 模型配置缓存 ============
-const MODEL_CACHE_TTL = 60000; // 60秒缓存
+const MODEL_CACHE_TTL = 300000; // 5分钟缓存（批量生成时减少DB查询）
 const modelConfigCache = new Map(); // key: modelName, value: { config, expireAt }
 
 async function getCachedModelConfig(modelName) {

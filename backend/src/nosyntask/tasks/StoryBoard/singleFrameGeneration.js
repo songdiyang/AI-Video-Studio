@@ -26,7 +26,7 @@ const { assertUpdated, assertPersistedFields } = require('./persistenceGuard');
 // collectReferenceImages 已提取到 collectCandidateImages.js 共享模块
 
 async function handleSingleFrameGeneration(inputParams, onProgress) {
-  const { storyboardId, description, imageModel: modelName, textModel, aspectRatio, resolution, prevEndFrameUrl, prevDescription, prevEndState: inputPrevEndState, isFirstScene, sceneState: inputSceneState, environmentChange: inputEnvironmentChange, activeSceneUrl } = inputParams;
+  const { storyboardId, description, imageModel: modelName, textModel, aspectRatio, resolution, prevEndFrameUrl, prevDescription, prevEndState: inputPrevEndState, isFirstScene, sceneState: inputSceneState, environmentChange: inputEnvironmentChange, activeSceneUrl, visualStyle: inputVisualStyle } = inputParams;
 
   if (!storyboardId) {
     throw new Error('缺少必要参数: storyboardId');
@@ -48,8 +48,11 @@ async function handleSingleFrameGeneration(inputParams, onProgress) {
     throw new Error(`分镜 ${storyboardId} 不存在`);
   }
 
-  // 项目视觉风格（必填，未设置则报错）
-  const visualStyle = await requireVisualStyle(storyboard.project_id);
+  // 项目视觉风格：优先使用传入的预取数据，否则单独查询
+  const visualStyle = inputVisualStyle || await requireVisualStyle(storyboard.project_id);
+  if (inputVisualStyle) {
+    console.log('[SingleFrameGen] 使用预取的视觉风格（跳过DB查询）');
+  }
 
   let variables = {};
   try {
