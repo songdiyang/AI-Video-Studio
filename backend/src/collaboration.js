@@ -6,7 +6,7 @@
 const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
-const { queryOne, queryAll, execute } = require('./db');
+const { queryOne, queryAll, execute } = require('./dbHelper');
 const { authMiddleware } = require('./middleware');
 const { 
   checkTeamPermission, 

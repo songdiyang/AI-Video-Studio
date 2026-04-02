@@ -839,25 +839,11 @@ const Teams: React.FC = () => {
   
       {/* 内容区 */}
       {activeTab === 'members' ? (
-        <div>
-          {canManageMembers(selectedTeam.my_role) && (
-            <div className="flex justify-end mb-4">
-              <Button
-                variant="flat"
-                startContent={<UserPlus className="w-4 h-4" />}
-                onPress={handleGenerateInvite}
-                isLoading={generatingInvite}
-              >
-                邀请成员
-              </Button>
-            </div>
-          )}
-          <TeamMembersPanel
-            teamId={selectedTeam.id}
-            myRole={selectedTeam.my_role || 'viewer'}
-            onMemberChange={() => loadTeamDetail(selectedTeam.id)}
-          />
-        </div>
+        <TeamMembersPanel
+          teamId={selectedTeam.id}
+          myRole={selectedTeam.my_role || 'viewer'}
+          onMemberChange={() => loadTeamDetail(selectedTeam.id)}
+        />
       ) : activeTab === 'review' ? (
         <div className="space-y-3">
           {loadingRequests ? (

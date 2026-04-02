@@ -24,7 +24,9 @@ async function getTeamRole(userId, teamId) {
   );
 
   if (!team) return null;
-  if (team.owner_id === userId) return 'owner';
+  
+  // 使用 == 进行比较，避免类型不匹配问题（字符串 vs 数字）
+  if (team.owner_id == userId) return 'owner';
 
   // 查询成员角色
   const member = await queryOne(

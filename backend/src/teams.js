@@ -83,14 +83,12 @@ router.get('/:teamId', authMiddleware, async (req, res) => {
   try {
     const team = await queryOne(
       `SELECT t.*, 
-       COUNT(tm.user_id) as member_count,
-       (SELECT COUNT(*) FROM projects WHERE team_id = t.id) as project_count
+       (SELECT COUNT(*) FROM team_members WHERE team_id = t.id) + 1 as members_count,
+       (SELECT COUNT(*) FROM projects WHERE team_id = t.id) as projects_count
        FROM teams t
-       LEFT JOIN team_members tm ON t.id = tm.team_id
        WHERE t.id = ? AND (t.owner_id = ? OR EXISTS (
          SELECT 1 FROM team_members WHERE team_id = t.id AND user_id = ?
-       ))
-       GROUP BY t.id`,
+       ))`,
       [teamId, userId, userId]
     );
 
@@ -98,7 +96,19 @@ router.get('/:teamId', authMiddleware, async (req, res) => {
       return res.status(404).json({ message: '团队不存在或无权访问' });
     }
 
-    res.json({ team });
+    // 计算用户角色
+    let myRole = null;
+    if (team.owner_id == userId) {
+      myRole = 'owner';
+    } else {
+      const member = await queryOne(
+        'SELECT role FROM team_members WHERE team_id = ? AND user_id = ?',
+        [teamId, userId]
+      );
+      myRole = member?.role || null;
+    }
+
+    res.json({ team, myRole });
   } catch (error) {
     console.error('[Teams API] 获取团队详情失败:', error);
     res.status(500).json({ message: '获取团队详情失败' });

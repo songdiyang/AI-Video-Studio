@@ -94,9 +94,6 @@ const TaskQueueBubble: React.FC = () => {
     ? Math.round(jobs.reduce((sum, job) => sum + getJobProgress(job), 0) / jobs.length)
     : 0;
 
-  // 未登录不显示
-  if (!getAuthToken()) return null;
-
   // 面板高度调整
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -131,6 +128,9 @@ const TaskQueueBubble: React.FC = () => {
       };
     }
   }, [isResizing, handleResizeMove, handleResizeEnd]);
+
+  // 未登录不显示 - 必须在所有 Hooks 之后
+  if (!getAuthToken()) return null;
 
   return (
     <>
