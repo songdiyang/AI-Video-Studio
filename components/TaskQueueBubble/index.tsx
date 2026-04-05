@@ -296,6 +296,12 @@ const TaskQueueBubble: React.FC = () => {
             </div>
 
             {/* 任务列表 */}
+            {/* 
+              [虚拟列表评估] 不适用 useVirtualList，原因：
+              1. 使用 AnimatePresence + motion 动画实现任务进出过渡效果，与虚拟列表的绝对定位机制冲突
+              2. 任务队列通常数量有限（运行中 + 等待中），不太可能超过 50 项
+              3. 面板高度由用户拖拽动态调整，虚拟列表需要稳定的容器高度
+            */}
             <div className="flex-1 overflow-y-auto p-3 task-panel-scrollbar">
               {loading && jobs.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full gap-2">

@@ -33,35 +33,45 @@ interface UpgradePromptProps {
 }
 
 const PLAN_ICONS: Record<string, React.ReactNode> = {
-  starter: <span className="text-2xl">🌱</span>,
-  creator: <span className="text-2xl">✨</span>,
-  studio: <span className="text-2xl">🎬</span>,
+  free: <span className="text-2xl">🌱</span>,
+  basic: <span className="text-2xl">🚀</span>,
+  pro: <span className="text-2xl">✨</span>,
+  premium: <span className="text-2xl">🎬</span>,
   enterprise: <span className="text-2xl">🏢</span>
 };
 
 const PLAN_COLORS: Record<string, string> = {
-  starter: 'from-gray-400 to-gray-500',
-  creator: 'from-purple-500 to-indigo-600',
-  studio: 'from-amber-500 to-orange-600',
+  free: 'from-emerald-400 to-teal-500',
+  basic: 'from-gray-400 to-gray-500',
+  pro: 'from-purple-500 to-indigo-600',
+  premium: 'from-amber-500 to-orange-600',
   enterprise: 'from-blue-600 to-cyan-500'
 };
 
 const PLAN_FEATURES: Record<string, string[]> = {
-  creator: [
+  basic: [
     '20 个项目',
-    '2,000 AI 调用/月',
-    '3 位团队成员',
-    '高级 AI 模型',
-    '完整模板库',
-    '优先渲染队列'
+    '10,000 积分/月',
+    '5 位团队成员',
+    '完整工作流',
+    '模板库访问',
+    '社区排行榜'
   ],
-  studio: [
+  pro: [
     '无限项目',
-    '10,000 AI 调用/月',
-    '10 位团队成员',
+    '30,000 积分/月',
+    '15 位团队成员',
+    '高级 AI 模型',
+    '团队协作',
+    '优先支持'
+  ],
+  premium: [
+    '无限项目',
+    '90,000 积分/月',
+    '无限团队成员',
     '全部 AI 模型',
-    '自定义模板',
-    'API 访问权限'
+    'API 访问权限',
+    '专属客服'
   ],
   enterprise: [
     '无限项目',
@@ -98,7 +108,7 @@ const UpgradePrompt: React.FC<UpgradePromptProps> = ({
 
   const message = limitMessages[limitType];
   const features = nextPlan ? PLAN_FEATURES[nextPlan.name] || [] : [];
-  const gradientClass = nextPlan ? PLAN_COLORS[nextPlan.name] : PLAN_COLORS.creator;
+  const gradientClass = nextPlan ? PLAN_COLORS[nextPlan.name] : PLAN_COLORS.pro;
 
   const handleUpgrade = () => {
     // 跳转到订阅页面

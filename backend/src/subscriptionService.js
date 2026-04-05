@@ -6,36 +6,45 @@ const { queryOne, query, execute } = require('./db');
 
 // 会员等级配置（与文档保持一致）
 const PLAN_LIMITS = {
-  // 入门版 (Lv.0) - 免费
-  starter: {
+  // 免费版 (Lv.0)
+  free: {
     level: 0,
-    name: '入门版',
+    name: '免费版',
     maxProjects: 3,
-    monthlyPoints: 100,
+    monthlyPoints: 2000,
     maxTeamMembers: 1,
     features: ['basic_ai', 'standard_templates', 'community_support']
   },
-  // 创作者 (Lv.1)
-  creator: {
+  // 基础版 (Lv.1)
+  basic: {
     level: 1,
-    name: '创作者',
+    name: '基础版',
     maxProjects: 20,
-    monthlyPoints: 2000,
-    maxTeamMembers: 3,
+    monthlyPoints: 10000,
+    maxTeamMembers: 5,
     features: ['advanced_ai', 'full_templates', 'ticket_support', 'priority_queue', 'export']
   },
-  // 工作室 (Lv.2)
-  studio: {
+  // 专业版 (Lv.2)
+  pro: {
     level: 2,
-    name: '工作室',
+    name: '专业版',
     maxProjects: -1, // 无限
-    monthlyPoints: 10000,
-    maxTeamMembers: 10,
+    monthlyPoints: 30000,
+    maxTeamMembers: 15,
     features: ['all_ai', 'custom_templates', 'priority_support', 'team_collab', 'api_access']
   },
-  // 企业版 (Lv.3)
-  enterprise: {
+  // 旗舰版 (Lv.3)
+  premium: {
     level: 3,
+    name: '旗舰版',
+    maxProjects: -1, // 无限
+    monthlyPoints: 90000,
+    maxTeamMembers: -1, // 无限
+    features: ['all_ai', 'full_api_access', 'dedicated_support', 'team_collab', 'all_models']
+  },
+  // 企业版 (Lv.4)
+  enterprise: {
+    level: 4,
     name: '企业版',
     maxProjects: -1, // 无限
     monthlyPoints: -1, // 定制
@@ -45,7 +54,7 @@ const PLAN_LIMITS = {
 };
 
 // 默认计划（未订阅用户）
-const DEFAULT_PLAN = 'starter';
+const DEFAULT_PLAN = 'free';
 
 /**
  * 获取用户当前订阅计划
@@ -138,7 +147,7 @@ async function canCreateProject(userId) {
  * @returns {object|null}
  */
 function getNextPlanInfo(currentPlan) {
-  const planOrder = ['starter', 'creator', 'studio', 'enterprise'];
+  const planOrder = ['free', 'basic', 'pro', 'premium', 'enterprise'];
   const currentIndex = planOrder.indexOf(currentPlan);
   
   if (currentIndex === -1 || currentIndex >= planOrder.length - 1) {
@@ -150,8 +159,9 @@ function getNextPlanInfo(currentPlan) {
   
   // 价格信息
   const prices = {
-    creator: { monthly: 39, yearly: 470, firstMonth: 9.9 },
-    studio: { monthly: 119, yearly: 1430 },
+    basic: { monthly: 99, yearly: 990, firstMonth: 49.9 },
+    pro: { monthly: 299, yearly: 2990 },
+    premium: { monthly: 888, yearly: 8880 },
     enterprise: { monthly: null, yearly: null, custom: true }
   };
   

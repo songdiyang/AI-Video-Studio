@@ -893,16 +893,15 @@ async function listBillingRecords(userId, options = {}) {
     params
   );
 
-  // 积分单价：1积分 = ¥0.02
-  const POINT_VALUE = 0.02;
-
   return {
     records: records.map((record) => ({
       ...record,
       price_breakdown_json: parseJsonField(record.price_breakdown_json, []),
       usage_snapshot: parseJsonField(record.usage_snapshot, {}),
-      // 前端展示用：积分对应金额
-      points_value: (record.points_cost || 0) * POINT_VALUE
+      // 前端展示用：积分对应的内部成本金额
+      points_value: (record.points_cost || 0) * pointsService.POINT_VALUE_CNY,
+      // 前端展示用：积分对应的用户充值售价金额
+      points_purchase_value: (record.points_cost || 0) * pointsService.POINT_PURCHASE_PRICE
     })),
     total: Number(totalRow?.count || 0),
     limit: Number(limit),
@@ -923,14 +922,12 @@ async function getBillingSummary(userId) {
     [userId]
   );
 
-  // 积分单价
-  const POINT_VALUE = 0.02;
-
   return {
     total_amount: Number(row?.total_amount || 0),
     total_tokens: Number(row?.total_tokens || 0),
     total_points: Number(row?.total_points || 0),
-    total_points_value: Number(row?.total_points || 0) * POINT_VALUE,
+    total_points_value: Number(row?.total_points || 0) * pointsService.POINT_VALUE_CNY,
+    total_points_purchase_value: Number(row?.total_points || 0) * pointsService.POINT_PURCHASE_PRICE,
     total_records: Number(row?.total_records || 0),
     failed_records: Number(row?.failed_records || 0)
   };

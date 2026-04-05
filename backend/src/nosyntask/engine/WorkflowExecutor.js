@@ -26,6 +26,14 @@ try {
   // Redis 服务未初始化时忽略
 }
 
+// 尝试加载 Pub/Sub 服务（可选，用于工作流事件异步解耦）
+let PubSubService = null;
+try {
+  PubSubService = require('../../redis-service').PubSubService;
+} catch (e) {
+  // Redis 服务未初始化时忽略
+}
+
 // ============================================
 // 配置常量
 // ============================================
@@ -38,6 +46,8 @@ const MEMORY_CHECK_INTERVAL = 30000;
 const STALE_CLEANUP_INTERVAL = 60000;
 const STALE_THRESHOLD = 3600000; // 1小时
 const JOB_CACHE_TTL = 30; // 秒
+const OCC_MAX_RETRIES = 3;  // 乐观锁最大重试次数
+const OCC_RETRY_DELAY = 50; // 重试间隔基础毫秒
 
 // ============================================
 // 内存管理器
@@ -161,6 +171,50 @@ function executeWithTimeout(fn, timeoutMs) {
         reject(error);
       });
   });
+}
+
+/**
+ * 带乐观锁的工作流状态更新（OCC）
+ * 理论基础：Optimistic Concurrency Control
+ * 
+ * @param {number} jobId - 工作流 ID
+ * @param {object} updates - 要更新的字段 { status: 'completed', ... }
+ * @param {number} currentVersion - 当前已知的版本号
+ * @param {number} maxRetries - 最大重试次数
+ * @returns {object} 更新结果
+ */
+async function updateJobWithVersion(jobId, updates, currentVersion, maxRetries = OCC_MAX_RETRIES) {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    let version = currentVersion;
+    
+    // 重试时需要重新获取最新版本号
+    if (attempt > 0) {
+      const latest = await queryOne('SELECT version FROM workflow_jobs WHERE id = ?', [jobId]);
+      if (!latest) throw new Error(`工作流 ${jobId} 不存在`);
+      version = latest.version;
+      await new Promise(r => setTimeout(r, OCC_RETRY_DELAY * (attempt + 1)));
+    }
+    
+    const setClauses = Object.keys(updates).map(k => `\`${k}\` = ?`).join(', ');
+    const values = [...Object.values(updates), jobId, version];
+    
+    const result = await execute(
+      `UPDATE workflow_jobs SET ${setClauses}, version = version + 1 WHERE id = ? AND version = ?`,
+      values
+    );
+    
+    if (result.affectedRows > 0) {
+      return result;
+    }
+    
+    console.warn(`[OCC] 工作流 ${jobId} 版本冲突 (尝试 ${attempt + 1}/${maxRetries}, 期望版本: ${version})`);
+  }
+  
+  // 所有重试都失败，做最后一次无版本检查的更新（保证业务不被阻塞）
+  console.error(`[OCC] 工作流 ${jobId} 连续 ${maxRetries} 次版本冲突，执行强制更新`);
+  const setClauses = Object.keys(updates).map(k => `\`${k}\` = ?`).join(', ');
+  const values = [...Object.values(updates), jobId];
+  return execute(`UPDATE workflow_jobs SET ${setClauses}, version = version + 1 WHERE id = ?`, values);
 }
 
 // ============================================
@@ -351,13 +405,41 @@ class WorkflowExecutor {
         this.runningTasks.delete(jobId);
         await this.jobStatusManager.completeJob(jobId);
         await this._invalidateJobCache(jobId);
+
+        // 异步发布工作流完成事件（不阻塞主流程）
+        if (PubSubService && PubSubService.isAvailable()) {
+          PubSubService.publish('workflow:completed', {
+            jobId: job.id,
+            userId: job.user_id,
+            status: 'completed',
+            workflowType: job.workflow_type,
+            completedAt: new Date().toISOString()
+          }).catch(err => {
+            console.warn('[PubSub] 发布工作流完成事件失败:', err.message);
+          });
+        }
       } else if (allSettled) {
         // continue_independent 策略下：有失败的但其他都完成了
         const failedTasks = allTasks.filter(t => t.status === 'failed');
+        const failMessage = `${failedTasks.length} 个任务失败，其余任务已完成`;
         this.stepCounters.delete(jobId);
         this.runningTasks.delete(jobId);
-        await this.jobStatusManager.failJob(jobId, `${failedTasks.length} 个任务失败，其余任务已完成`);
+        await this.jobStatusManager.failJob(jobId, failMessage);
         await this._invalidateJobCache(jobId);
+
+        // 异步发布工作流失败事件（不阻塞主流程）
+        if (PubSubService && PubSubService.isAvailable()) {
+          PubSubService.publish('workflow:failed', {
+            jobId: job.id,
+            userId: job.user_id,
+            status: 'failed',
+            workflowType: job.workflow_type,
+            error: failMessage,
+            failedAt: new Date().toISOString()
+          }).catch(err => {
+            console.warn('[PubSub] 发布工作流失败事件失败:', err.message);
+          });
+        }
       }
       return;
     }
@@ -376,12 +458,9 @@ class WorkflowExecutor {
     const tasksToExecute = executableTasks.slice(0, availableSlots);
     console.log(`[WorkflowExecutor] 调度 ${tasksToExecute.length}/${executableTasks.length} 个任务 (并发: ${currentRunningCount + tasksToExecute.length}/${allowedConcurrency}${this.backpressure.isActive ? ' [背压]' : ''}): jobId=${jobId}`);
 
-    // 更新 Job 状态
+    // 更新 Job 状态（使用乐观锁）
     const minStepIndex = Math.min(...tasksToExecute.map(t => t.task.step_index));
-    await execute(
-      `UPDATE workflow_jobs SET status = 'running', current_step_index = ?, started_at = COALESCE(started_at, NOW()) WHERE id = ?`,
-      [minStepIndex, jobId]
-    );
+    await updateJobWithVersion(jobId, { status: 'running', current_step_index: minStepIndex, started_at: job.started_at || new Date() }, job.version || 0);
     await this._invalidateJobCache(jobId);
 
     // 标记任务为正在运行
@@ -538,6 +617,21 @@ class WorkflowExecutor {
 
       await this.jobStatusManager.failJob(jobId, `步骤执行失败: ${error.message}`);
       await this._invalidateJobCache(jobId);
+
+      // 异步发布工作流失败事件（不阻塞主流程）
+      if (PubSubService && PubSubService.isAvailable()) {
+        const failedJob = await queryOne('SELECT * FROM workflow_jobs WHERE id = ?', [jobId]);
+        PubSubService.publish('workflow:failed', {
+          jobId: jobId,
+          userId: failedJob?.user_id,
+          status: 'failed',
+          workflowType: failedJob?.workflow_type,
+          error: error?.message || '未知错误',
+          failedAt: new Date().toISOString()
+        }).catch(err => {
+          console.warn('[PubSub] 发布工作流失败事件失败:', err.message);
+        });
+      }
     }
   }
 

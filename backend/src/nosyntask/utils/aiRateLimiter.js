@@ -10,13 +10,15 @@
  */
 
 const { queryAll, queryOne } = require('../../dbHelper');
+const { CircuitBreaker, CircuitBreakerOpenError } = require('./CircuitBreaker');
 
 // 默认配置（数据库加载前或加载失败时使用）
 const DEFAULT_CONFIG = {
-  max_concurrent_text: 10,
-  max_concurrent_image: 5,
-  max_concurrent_video: 3,
-  timeout_seconds: 300,
+  max_concurrent_text: 15,
+  max_concurrent_image: 15,
+  max_concurrent_video: 15,
+  max_concurrent_poll: 100,  // 轮询阶段独立并发池
+  timeout_seconds: 600,
   retry_delay_ms: 60000,
   max_retries: 3
 };
@@ -27,7 +29,11 @@ let defaultConfig = { ...DEFAULT_CONFIG };
 let configLoaded = false;
 
 /**
- * 简单信号量实现
+ * 公平信号量实现（支持按用户轮流分配槽位）
+ * 
+ * 当多个用户同时排队时，采用 Round-Robin 策略：
+ * 每次释放槽位时，优先选择等待队列中不同用户的任务，
+ * 而不是先到先服务（FIFO），避免一个用户独占所有槽位。
  */
 class Semaphore {
   constructor(maxConcurrent, name = 'unknown') {
@@ -35,6 +41,7 @@ class Semaphore {
     this.name = name;
     this.current = 0;
     this.queue = [];
+    this.lastServedUserIndex = -1; // 上次服务的用户在 uniqueUsers 列表中的索引
     this.stats = {
       acquired: 0,
       released: 0,
@@ -49,40 +56,75 @@ class Semaphore {
     this.maxConcurrent = newMax;
     console.log(`[RateLimiter] ${this.name} 并发限制更新: ${oldMax} -> ${newMax}`);
     
-    // 如果增加了限额，尝试释放等待队列
+    // 如果增加了限额，尝试释放等待队列（使用公平调度）
     while (this.queue.length > 0 && this.current < this.maxConcurrent) {
-      const next = this.queue.shift();
+      const next = this._pickNextFair();
+      if (!next) break;
       this.current++;
       next.resolve();
     }
   }
 
-  async acquire(timeout = 300000) {
+  /**
+   * 从等待队列中公平选取下一个任务
+   * Round-Robin：轮流服务不同用户
+   */
+  _pickNextFair() {
+    if (this.queue.length === 0) return null;
+
+    // 收集队列中所有不同的用户
+    const uniqueUsers = [...new Set(this.queue.map(item => item.userId || 'anonymous'))];
+    
+    if (uniqueUsers.length <= 1) {
+      // 只有一个用户（或全匿名），直接 FIFO
+      return this.queue.shift();
+    }
+
+    // Round-Robin: 从上次服务用户的下一个开始找
+    this.lastServedUserIndex = (this.lastServedUserIndex + 1) % uniqueUsers.length;
+    const targetUser = uniqueUsers[this.lastServedUserIndex];
+
+    // 找到该用户的第一个等待任务
+    const idx = this.queue.findIndex(item => (item.userId || 'anonymous') === targetUser);
+    if (idx !== -1) {
+      return this.queue.splice(idx, 1)[0];
+    }
+
+    // 兜底：直接取队首
+    return this.queue.shift();
+  }
+
+  async acquire(timeout = 300000, userId = null) {
     const startTime = Date.now();
     
     if (this.current < this.maxConcurrent) {
       this.current++;
       this.stats.acquired++;
-      return { acquired: true, waitTime: 0 };
+      return { acquired: true, waitTime: 0, queuePosition: 0 };
     }
 
     // 需要等待
+    const queuePosition = this.queue.length + 1;
     return new Promise((resolve, reject) => {
       const timeoutId = setTimeout(() => {
-        const idx = this.queue.findIndex(item => item.resolve === resolve);
+        const idx = this.queue.findIndex(item => item._id === itemId);
         if (idx !== -1) {
           this.queue.splice(idx, 1);
         }
         reject(new Error(`AI 限流等待超时（${timeout / 1000}秒），当前队列长度: ${this.queue.length}`));
       }, timeout);
 
+      const itemId = `${userId || 'anon'}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+
       this.queue.push({
+        _id: itemId,
+        userId: userId || null,
         resolve: () => {
           clearTimeout(timeoutId);
           const waitTime = Date.now() - startTime;
           this.stats.totalWaitTime += waitTime;
           this.stats.acquired++;
-          resolve({ acquired: true, waitTime });
+          resolve({ acquired: true, waitTime, queuePosition });
         }
       });
 
@@ -95,19 +137,29 @@ class Semaphore {
     this.stats.released++;
     
     if (this.queue.length > 0 && this.current < this.maxConcurrent) {
-      const next = this.queue.shift();
-      this.current++;
-      next.resolve();
+      const next = this._pickNextFair();
+      if (next) {
+        this.current++;
+        next.resolve();
+      }
     }
   }
 
   getStats() {
+    // 统计队列中各用户的等待数
+    const userWaiting = {};
+    for (const item of this.queue) {
+      const uid = item.userId || 'anonymous';
+      userWaiting[uid] = (userWaiting[uid] || 0) + 1;
+    }
+
     return {
       ...this.stats,
       current: this.current,
       waiting: this.queue.length,
       maxConcurrent: this.maxConcurrent,
-      avgWaitTime: this.stats.acquired > 0 ? Math.round(this.stats.totalWaitTime / this.stats.acquired) : 0
+      avgWaitTime: this.stats.acquired > 0 ? Math.round(this.stats.totalWaitTime / this.stats.acquired) : 0,
+      userWaiting
     };
   }
 }
@@ -124,7 +176,8 @@ function getSemaphoresForRole(role) {
     semaphoresByRole[role] = {
       text: new Semaphore(config.max_concurrent_text, `${role}-text`),
       image: new Semaphore(config.max_concurrent_image, `${role}-image`),
-      video: new Semaphore(config.max_concurrent_video, `${role}-video`)
+      video: new Semaphore(config.max_concurrent_video, `${role}-video`),
+      poll: new Semaphore(config.max_concurrent_poll || DEFAULT_CONFIG.max_concurrent_poll, `${role}-poll`)
     };
   }
   return semaphoresByRole[role];
@@ -172,6 +225,9 @@ async function loadConfigsFromDB() {
       semaphoresByRole[role].text.updateMaxConcurrent(config.max_concurrent_text);
       semaphoresByRole[role].image.updateMaxConcurrent(config.max_concurrent_image);
       semaphoresByRole[role].video.updateMaxConcurrent(config.max_concurrent_video);
+      if (semaphoresByRole[role].poll) {
+        semaphoresByRole[role].poll.updateMaxConcurrent(config.max_concurrent_poll || DEFAULT_CONFIG.max_concurrent_poll);
+      }
     }
 
     return true;
@@ -230,7 +286,7 @@ function getSemaphoreForModel(modelName, userRole = 'default') {
 }
 
 /**
- * 带限流的执行包装器
+ * 带限流的执行包装器（完整生命周期：提交+轮询期间持有信号量）
  * @param {string} modelName - 模型名称（用于选择限流器）
  * @param {Function} fn - 要执行的异步函数
  * @param {object} options - 选项
@@ -242,23 +298,92 @@ async function withRateLimit(modelName, fn, options = {}) {
   const { 
     timeout, 
     logTag = 'RateLimiter',
-    userRole = 'default'
+    userRole = 'default',
+    userId = null
   } = options;
   
   const config = getConfigForRole(userRole);
   const actualTimeout = timeout || (config.timeout_seconds * 1000);
   const semaphore = getSemaphoreForModel(modelName, userRole);
   
-  const { waitTime } = await semaphore.acquire(actualTimeout);
+  const { waitTime, queuePosition } = await semaphore.acquire(actualTimeout, userId);
   
   if (waitTime > 1000) {
-    console.log(`[${logTag}] 限流等待 ${Math.round(waitTime / 1000)}s 后获取到执行槽位 (角色: ${userRole})`);
+    console.log(`[${logTag}] 限流等待 ${Math.round(waitTime / 1000)}s 后获取到执行槽位 (角色: ${userRole}, 用户: ${userId || 'unknown'}, 排队位: ${queuePosition})`);
   }
   
   try {
     return await fn();
   } finally {
     semaphore.release();
+  }
+}
+
+/**
+ * 仅提交阶段的限流包装器（提交完成后立即释放信号量）
+ * 用于异步任务：提交请求获取 taskId 后释放并发槽，不在轮询期间占用
+ * @param {string} modelName - 模型名称
+ * @param {Function} fn - 提交函数
+ * @param {object} options - 选项
+ * @returns {Promise<any>}
+ */
+async function withSubmitRateLimit(modelName, fn, options = {}) {
+  await ensureConfigLoaded();
+  
+  const { 
+    timeout, 
+    logTag = 'RateLimiter',
+    userRole = 'default',
+    userId = null
+  } = options;
+  
+  const config = getConfigForRole(userRole);
+  const actualTimeout = timeout || (config.timeout_seconds * 1000);
+  const semaphore = getSemaphoreForModel(modelName, userRole);
+  
+  const { waitTime, queuePosition } = await semaphore.acquire(actualTimeout, userId);
+  
+  if (waitTime > 1000) {
+    console.log(`[${logTag}] [提交] 限流等待 ${Math.round(waitTime / 1000)}s 后获取到提交槽位 (角色: ${userRole}, 用户: ${userId || 'unknown'}, 排队位: ${queuePosition})`);
+  }
+  
+  try {
+    return await fn();
+  } finally {
+    // 提交完成后立即释放，不在轮询期间占用并发槽
+    semaphore.release();
+  }
+}
+
+/**
+ * 轮询阶段的限流包装器（使用独立的 poll 信号量池）
+ * 控制同时进行的轮询请求数量，避免大量轮询耗尽网络/内存资源
+ * @param {Function} fn - 单次轮询函数
+ * @param {object} options - 选项
+ * @returns {Promise<any>}
+ */
+async function withPollRateLimit(fn, options = {}) {
+  await ensureConfigLoaded();
+  
+  const { 
+    timeout = 60000,
+    logTag = 'RateLimiter',
+    userRole = 'default'
+  } = options;
+  
+  const semaphores = getSemaphoresForRole(userRole);
+  const pollSemaphore = semaphores.poll;
+  
+  const { waitTime } = await pollSemaphore.acquire(timeout);
+  
+  if (waitTime > 2000) {
+    console.log(`[${logTag}] [轮询] 限流等待 ${Math.round(waitTime / 1000)}s 后获取到轮询槽位`);
+  }
+  
+  try {
+    return await fn();
+  } finally {
+    pollSemaphore.release();
   }
 }
 
@@ -273,7 +398,8 @@ function getRateLimitStats() {
     roleStats[role] = {
       text: semaphoresByRole[role].text.getStats(),
       image: semaphoresByRole[role].image.getStats(),
-      video: semaphoresByRole[role].video.getStats()
+      video: semaphoresByRole[role].video.getStats(),
+      poll: semaphoresByRole[role].poll ? semaphoresByRole[role].poll.getStats() : null
     };
   }
   
@@ -301,12 +427,50 @@ loadConfigsFromDB().catch(err => {
   console.warn('[RateLimiter] 启动加载配置失败:', err.message);
 });
 
+// ===== 断路器模式 =====
+const circuitBreakers = new Map();
+
+function getCircuitBreaker(modelName) {
+  if (!circuitBreakers.has(modelName)) {
+    circuitBreakers.set(modelName, new CircuitBreaker(
+      async (...args) => args[0](...args.slice(1)),
+      {
+        failureThreshold: 5,
+        resetTimeout: 60000,
+        halfOpenMaxAttempts: 3,
+        onStateChange: (oldState, newState) => {
+          console.log(`[CircuitBreaker] 模型 ${modelName}: ${oldState} -> ${newState}`);
+        }
+      }
+    ));
+  }
+  return circuitBreakers.get(modelName);
+}
+
+async function withCircuitBreaker(modelName, fn, ...args) {
+  const breaker = getCircuitBreaker(modelName);
+  return breaker.call(fn, ...args);
+}
+
+function getCircuitBreakerStats() {
+  const stats = {};
+  for (const [name, breaker] of circuitBreakers) {
+    stats[name] = breaker.getStats();
+  }
+  return stats;
+}
+
 module.exports = {
   withRateLimit,
+  withSubmitRateLimit,
+  withPollRateLimit,
   getSemaphoreForModel,
   getRateLimitStats,
   reloadRateLimitConfigs,
   getConfigForRole,
   getRetryConfig,
-  ensureConfigLoaded
+  ensureConfigLoaded,
+  withCircuitBreaker,
+  getCircuitBreakerStats,
+  CircuitBreakerOpenError
 };

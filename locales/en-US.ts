@@ -463,19 +463,19 @@ const enUS: Translations = {
       desc: 'Experience basic features',
       cta: 'Get Started',
     },
-    starter: {
-      name: 'Starter',
+    basic: {
+      name: 'Basic',
       desc: 'Perfect for getting started',
-      cta: 'Start Free Trial',
+      cta: 'Subscribe Now',
     },
-    creator: {
-      name: 'Creator',
+    pro: {
+      name: 'Pro',
       desc: 'For independent creators',
       cta: 'Subscribe Now',
     },
-    studio: {
-      name: 'Studio',
-      desc: 'For small teams',
+    premium: {
+      name: 'Premium',
+      desc: 'For small teams and studios',
       cta: 'Subscribe Now',
     },
     enterprise: {

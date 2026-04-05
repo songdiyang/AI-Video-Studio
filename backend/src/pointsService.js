@@ -7,13 +7,14 @@
  * 其中：
  *   - 成本(元) = token消耗 × 模型单价
  *   - 服务费率 = 后台可配置，默认 50%
- *   - 积分单价 = ¥0.02/积分（固定）
+ *   - 积分单价 = ¥0.01/积分（固定，1积分=1分钱）
  */
 
 const { queryOne, execute } = require('./dbHelper');
 
 // 积分基础配置（固定）
-const POINT_VALUE_CNY = 0.02;  // 1积分 = ¥0.02
+const POINT_VALUE_CNY = 0.01;  // 1积分 = ¥0.01（1分钱）— 内部成本转换用
+const POINT_PURCHASE_PRICE = 0.02;  // 积分充值售价 ¥0.02/积分（2分钱一积分）— 用户购买充值价格
 
 // 缓存服务费率（避免频繁查库）
 let cachedServiceFeeRate = null;
@@ -84,7 +85,7 @@ async function calculatePointsFromCost(costCNY, options = {}) {
   const totalPrice = rawCost + serviceFee;
   
   // 转换为积分（向上取整，保证不亏）
-  // 注意：浮点精度问题，0.30/0.02=15.000000000000002，需要先 round 再 ceil
+  // 注意：浮点精度问题，0.15/0.01=15.000000000000002，需要先 round 再 ceil
   const rawPoints = totalPrice / POINT_VALUE_CNY;
   // 如果差值小于 0.000001，视为整数
   const roundedPoints = Math.abs(rawPoints - Math.round(rawPoints)) < 0.000001 
@@ -266,17 +267,21 @@ function round6(value) {
  * @returns {Object} 格式化结果
  */
 function formatPointsDisplay(points) {
-  const value = points * POINT_VALUE_CNY;
+  const costValue = points * POINT_VALUE_CNY;
+  const purchaseValue = points * POINT_PURCHASE_PRICE;
   return {
     points,
     pointsLabel: `${points} 积分`,
-    valueLabel: `≈ ¥${value.toFixed(2)}`,
-    valueCNY: round6(value)
+    valueLabel: `≈ ¥${purchaseValue.toFixed(2)}`,
+    valueCNY: round6(costValue),
+    purchaseValueCNY: round6(purchaseValue),
+    purchasePricePerPoint: POINT_PURCHASE_PRICE
   };
 }
 
 module.exports = {
   POINT_VALUE_CNY,
+  POINT_PURCHASE_PRICE,
   getServiceFeeRate,
   clearServiceFeeRateCache,
   calculatePointsFromCost,

@@ -57,6 +57,7 @@ const teamsRoutes = require('./teams');
 const taskAssignmentRoutes = require('./taskAssignment');
 const { setupWebSocket } = require('./websocket');
 const { errorHandlerMiddleware, initGlobalErrorHandlers } = require('./globalErrorHandler');
+const callbackHandler = require('./nosyntask/callbackHandler');
 
 const app = express();
 const http = require('http');
@@ -167,6 +168,8 @@ const approvalsRouter = express.Router();
 approvalsRoutes(approvalsRouter);
 app.use('/api', approvalsRouter);
 app.use('/api/system-configs', systemConfigRoutes);
+// AI 任务回调接口（不需要认证，AI 服务直接回调）
+app.use('/api/callbacks', callbackHandler.router);
 
 // Serve static files for production if needed
 const clientBuildPath = path.join(__dirname, '..', '..', 'dist');
@@ -200,10 +203,56 @@ async function start() {
 
   // 初始化 Redis 缓存（可选，不可用时自动降级为内存模式）
   try {
-    const { initializeRedis, isRedisAvailable } = require('./redis-service');
+    const { initializeRedis, isRedisAvailable, CacheService } = require('./redis-service');
     await initializeRedis();
     if (isRedisAvailable()) {
       console.log('  \x1b[32m✔\x1b[0m Redis 缓存已启用');
+
+      // 缓存预热：加载高频访问数据
+      try {
+        const { queryAll: dbQueryAll } = require('./dbHelper');
+        await CacheService.warmup([
+          {
+            key: 'config:rate_limits',
+            fetchFn: () => dbQueryAll('SELECT * FROM rate_limit_configs'),
+            ttl: 3600
+          },
+          {
+            key: 'config:ai_models',
+            fetchFn: () => dbQueryAll('SELECT * FROM ai_models WHERE status = "active"'),
+            ttl: 3600
+          },
+          {
+            key: 'config:system',
+            fetchFn: () => dbQueryAll('SELECT * FROM system_configs'),
+            ttl: 3600
+          }
+        ]);
+        console.log('  \x1b[32m✔\x1b[0m 缓存预热完成');
+      } catch (err) {
+        console.warn('[Startup] 缓存预热失败（非致命）:', err.message);
+      }
+
+      // 初始化 Pub/Sub 服务（用于工作流事件异步解耦）
+      try {
+        const { PubSubService } = require('./redis-service');
+        const initialized = await PubSubService.initialize();
+        if (initialized) {
+          // 订阅工作流完成事件
+          await PubSubService.subscribe('workflow:completed', async (data) => {
+            console.log(`[PubSub] 工作流完成: job=${data.jobId}, user=${data.userId}, type=${data.workflowType}`);
+            // 未来可扩展：通过 WebSocket 推送通知给前端
+          });
+          // 订阅工作流失败事件
+          await PubSubService.subscribe('workflow:failed', async (data) => {
+            console.log(`[PubSub] 工作流失败: job=${data.jobId}, user=${data.userId}, error=${data.error}`);
+            // 未来可扩展：通过 WebSocket 推送错误通知
+          });
+          console.log('  \x1b[32m✔\x1b[0m Pub/Sub 事件订阅已启用');
+        }
+      } catch (err) {
+        console.warn('[Startup] PubSub 初始化失败（非致命）:', err.message);
+      }
     } else {
       console.log('  \x1b[33m⚠\x1b[0m Redis 未配置，使用内存缓存模式');
     }

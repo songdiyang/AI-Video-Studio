@@ -49,9 +49,10 @@ const FEATURE_COLORS = {
 
 // 定价方案
 const PRICING_PLANS = [
-  { key: 'starter', price: '¥0', features: ['3个项目', '1000积分/月', '基础模板'] },
-  { key: 'creator', price: '¥99', popular: true, features: ['无限项目', '10000积分/月', '全部模板', '优先支持'] },
-  { key: 'studio', price: '¥299', features: ['团队协作', '50000积分/月', '版本控制', 'API接入'] },
+  { key: 'free', price: '¥0', features: ['3个项目', '2,000积分/月', '基础模板'] },
+  { key: 'basic', price: '¥99', features: ['20个项目', '10,000积分/月', '完整工作流', '首月¥49.9'] },
+  { key: 'pro', price: '¥299', popular: true, features: ['无限项目', '30,000积分/月', '团队协作', '优先支持'] },
+  { key: 'premium', price: '¥888', features: ['无限项目', '90,000积分/月', '无限团队', 'API接入'] },
   { key: 'enterprise', price: '联系我们', features: ['私有化部署', '无限积分', '定制开发', '专属客户经理'] },
 ];
 

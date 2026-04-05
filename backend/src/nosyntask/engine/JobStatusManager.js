@@ -18,7 +18,61 @@ try {
   // Redis 服务不可用时忽略
 }
 
+// 尝试加载 Pub/Sub 服务（可选，用于工作流事件异步解耦）
+let PubSubService = null;
+try {
+  PubSubService = require('../../redis-service').PubSubService;
+} catch (e) {
+  // Redis 服务不可用时忽略
+}
+
 const PROGRESS_CACHE_TTL = 30; // 进度缓存 30 秒
+const OCC_MAX_RETRIES = 3;  // 乐观锁最大重试次数
+const OCC_RETRY_DELAY = 50; // 重试间隔基础毫秒
+
+/**
+ * 带乐观锁的工作流状态更新（OCC）
+ * 理论基础：Optimistic Concurrency Control
+ * 
+ * @param {number} jobId - 工作流 ID
+ * @param {object} updates - 要更新的字段 { status: 'completed', ... }
+ * @param {number} currentVersion - 当前已知的版本号
+ * @param {number} maxRetries - 最大重试次数
+ * @returns {object} 更新结果
+ */
+async function updateJobWithVersion(jobId, updates, currentVersion, maxRetries = OCC_MAX_RETRIES) {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    let version = currentVersion;
+    
+    // 重试时需要重新获取最新版本号
+    if (attempt > 0) {
+      const latest = await queryOne('SELECT version FROM workflow_jobs WHERE id = ?', [jobId]);
+      if (!latest) throw new Error(`工作流 ${jobId} 不存在`);
+      version = latest.version;
+      await new Promise(r => setTimeout(r, OCC_RETRY_DELAY * (attempt + 1)));
+    }
+    
+    const setClauses = Object.keys(updates).map(k => `\`${k}\` = ?`).join(', ');
+    const values = [...Object.values(updates), jobId, version];
+    
+    const result = await execute(
+      `UPDATE workflow_jobs SET ${setClauses}, version = version + 1 WHERE id = ? AND version = ?`,
+      values
+    );
+    
+    if (result.affectedRows > 0) {
+      return result;
+    }
+    
+    console.warn(`[OCC] 工作流 ${jobId} 版本冲突 (尝试 ${attempt + 1}/${maxRetries}, 期望版本: ${version})`);
+  }
+  
+  // 所有重试都失败，做最后一次无版本检查的更新（保证业务不被阻塞）
+  console.error(`[OCC] 工作流 ${jobId} 连续 ${maxRetries} 次版本冲突，执行强制更新`);
+  const setClauses = Object.keys(updates).map(k => `\`${k}\` = ?`).join(', ');
+  const values = [...Object.values(updates), jobId];
+  return execute(`UPDATE workflow_jobs SET ${setClauses}, version = version + 1 WHERE id = ?`, values);
+}
 
 class JobStatusManager {
   /**
@@ -76,10 +130,9 @@ class JobStatusManager {
    * 标记工作流完成
    */
   async completeJob(jobId) {
-    await execute(
-      `UPDATE workflow_jobs SET status = 'completed', completed_at = NOW() WHERE id = ?`,
-      [jobId]
-    );
+    // 获取当前版本号
+    const job = await queryOne('SELECT * FROM workflow_jobs WHERE id = ?', [jobId]);
+    await updateJobWithVersion(jobId, { status: 'completed', completed_at: new Date() }, job?.version || 0);
     console.log(`[JobStatusManager] 工作流完成: jobId=${jobId}`);
     
     // 获取最后一个任务的结果
@@ -97,16 +150,28 @@ class JobStatusManager {
       progress: 100,
       result: lastTask?.result_data ? JSON.parse(lastTask.result_data) : null
     });
+
+    // 异步发布工作流完成事件（不阻塞主流程）
+    if (PubSubService && PubSubService.isAvailable()) {
+      PubSubService.publish('workflow:completed', {
+        jobId: jobId,
+        userId: job?.user_id,
+        status: 'completed',
+        workflowType: job?.workflow_type,
+        completedAt: new Date().toISOString()
+      }).catch(err => {
+        console.warn('[PubSub] 发布工作流完成事件失败:', err.message);
+      });
+    }
   }
 
   /**
    * 标记工作流失败
    */
   async failJob(jobId, errorMessage) {
-    await execute(
-      `UPDATE workflow_jobs SET status = 'failed', error_message = ? WHERE id = ?`,
-      [errorMessage, jobId]
-    );
+    // 获取当前版本号
+    const job = await queryOne('SELECT * FROM workflow_jobs WHERE id = ?', [jobId]);
+    await updateJobWithVersion(jobId, { status: 'failed', error_message: errorMessage }, job?.version || 0);
     console.log(`[JobStatusManager] 工作流失败: jobId=${jobId}, error=${errorMessage}`);
     
     // 清除该工作流的进度缓存
@@ -117,6 +182,20 @@ class JobStatusManager {
       status: 'failed',
       error: errorMessage
     });
+
+    // 异步发布工作流失败事件（不阻塞主流程）
+    if (PubSubService && PubSubService.isAvailable()) {
+      PubSubService.publish('workflow:failed', {
+        jobId: jobId,
+        userId: job?.user_id,
+        status: 'failed',
+        workflowType: job?.workflow_type,
+        error: errorMessage || '未知错误',
+        failedAt: new Date().toISOString()
+      }).catch(err => {
+        console.warn('[PubSub] 发布工作流失败事件失败:', err.message);
+      });
+    }
   }
 
   /**

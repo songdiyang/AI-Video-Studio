@@ -1,0 +1,1017 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>饺子动漫 NanoStory — 20账号规模采购清单（积分制计费模型 v6.0）</title>
+<style>
+  @page { size: A4; margin: 18mm 14mm; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "Microsoft YaHei", "PingFang SC", "Helvetica Neue", sans-serif;
+    color: #1a1a2e;
+    background: #f8f9fa;
+    line-height: 1.6;
+    padding: 0;
+  }
+  .page {
+    max-width: 210mm;
+    margin: 0 auto;
+    background: #fff;
+    padding: 36px 44px;
+  }
+  @media print {
+    body { background: #fff; }
+    .page { padding: 0; margin: 0; max-width: 100%; box-shadow: none; }
+    .no-print { display: none; }
+    table { break-inside: avoid; }
+    .note-card { break-inside: avoid; }
+  }
+  @media screen {
+    .page { box-shadow: 0 2px 20px rgba(0,0,0,0.08); margin: 20px auto; border-radius: 4px; }
+  }
+
+  /* Header */
+  .header {
+    text-align: center;
+    padding-bottom: 28px;
+    border-bottom: 3px solid #0052d9;
+    margin-bottom: 28px;
+  }
+  .header .brand {
+    display: inline-flex; align-items: center; gap: 10px;
+    margin-bottom: 6px;
+  }
+  .header .brand .logo-icon {
+    width: 42px; height: 42px; border-radius: 10px;
+    background: linear-gradient(135deg, #0052d9, #722ed1);
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 22px; font-weight: 700;
+    box-shadow: 0 2px 8px rgba(0,82,217,0.25);
+  }
+  .header h1 { font-size: 24px; color: #0052d9; letter-spacing: 2px; margin-bottom: 4px; }
+  .header .subtitle { font-size: 15px; color: #666; font-weight: 400; }
+  .header .meta { margin-top: 10px; font-size: 12px; color: #999; }
+
+  /* Section */
+  .category-section { margin-bottom: 24px; }
+  .category-title {
+    font-size: 16px; color: #fff;
+    background: linear-gradient(135deg, #0052d9, #2b7de9);
+    padding: 9px 18px; border-radius: 6px; margin-bottom: 14px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .category-title .icon { font-size: 18px; }
+  .category-title.purple { background: linear-gradient(135deg, #531dab, #9254de); }
+  .category-title.green { background: linear-gradient(135deg, #389e0d, #52c41a); }
+  .category-title.orange { background: linear-gradient(135deg, #d48806, #faad14); }
+  .category-title.red { background: linear-gradient(135deg, #cf1322, #ff4d4f); }
+
+  /* Data Table */
+  .data-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 16px; }
+  .data-table th {
+    background: #f0f2f5; color: #333; padding: 8px 12px;
+    text-align: left; font-weight: 600; border: 1px solid #e0e0e0;
+  }
+  .data-table td { padding: 7px 12px; border: 1px solid #e0e0e0; color: #444; }
+  .data-table tbody tr:nth-child(even) { background: #fafbfc; }
+  .data-table tbody tr:hover { background: #f0f5ff; }
+  .data-table .money { color: #0052d9; font-weight: 700; font-family: "Consolas", "Menlo", monospace; }
+  .data-table .money-red { color: #cf1322; font-weight: 700; font-family: "Consolas", "Menlo", monospace; }
+  .data-table .money-green { color: #389e0d; font-weight: 700; font-family: "Consolas", "Menlo", monospace; }
+  .data-table .subtotal td {
+    background: #f0f5ff; font-weight: 700; color: #0052d9; border-top: 2px solid #0052d9;
+  }
+  .data-table .total-row td {
+    background: #fff1f0; font-weight: 700; color: #cf1322; border-top: 2px solid #cf1322;
+  }
+  .data-table .profit-row td {
+    background: #f6ffed; font-weight: 700; color: #389e0d; border-top: 2px solid #389e0d;
+  }
+
+  /* Priority Tags */
+  .tag {
+    font-size: 11px; padding: 2px 9px; border-radius: 12px; font-weight: 600; white-space: nowrap;
+    display: inline-block;
+  }
+  .tag-required { background: #fff0f0; color: #d4380d; border: 1px solid #ffccc7; }
+  .tag-recommend { background: #f0f5ff; color: #1d39c4; border: 1px solid #adc6ff; }
+  .tag-optional { background: #f5f5f5; color: #8c8c8c; border: 1px solid #d9d9d9; }
+  .tag-free { background: #f6ffed; color: #389e0d; border: 1px solid #b7eb8f; }
+  .tag-warn { background: #fff0f0; color: #cf1322; border: 1px solid #ffccc7; font-weight: 700; }
+
+  /* Summary Box */
+  .summary-box {
+    margin: 14px 0; padding: 14px 18px;
+    background: linear-gradient(135deg, #f6f9ff, #eef3ff);
+    border-radius: 8px; border: 1px solid #d6e4ff;
+    font-size: 14px; color: #0052d9; font-weight: 700;
+    text-align: center;
+  }
+
+  /* Note Cards */
+  .note-card {
+    margin-bottom: 12px; padding: 16px 18px;
+    border-radius: 6px; font-size: 12.5px; line-height: 1.8;
+    page-break-inside: avoid;
+  }
+  .note-card h4 { font-size: 13px; margin-bottom: 8px; }
+  .note-card ul { padding-left: 18px; }
+  .note-card li { margin-bottom: 4px; }
+  .note-card code {
+    background: rgba(0,0,0,0.06); padding: 1px 5px; border-radius: 3px;
+    font-family: "Consolas", "Menlo", monospace; font-size: 12px;
+  }
+  .note-warn { background: #fffbe6; border: 1px solid #ffe58f; color: #614700; }
+  .note-warn h4 { color: #ad6800; }
+  .note-danger { background: #fff1f0; border: 1px solid #ffccc7; color: #5c0011; }
+  .note-danger h4 { color: #cf1322; }
+  .note-info { background: #f0f5ff; border: 1px solid #adc6ff; color: #003eb3; }
+  .note-info h4 { color: #0052d9; }
+  .note-success { background: #f6ffed; border: 1px solid #b7eb8f; color: #135200; }
+  .note-success h4 { color: #389e0d; }
+
+  /* Priority List */
+  .priority-block {
+    border: 1px solid #e8e8e8; border-radius: 8px;
+    padding: 16px 18px; margin-bottom: 12px;
+    background: #fafbfc; page-break-inside: avoid;
+  }
+  .priority-block:hover { box-shadow: 0 2px 12px rgba(0,82,217,0.08); }
+  .priority-block h5 {
+    font-size: 14px; margin-bottom: 8px; display: flex; align-items: center; gap: 8px;
+  }
+  .priority-block ul { padding-left: 18px; font-size: 13px; color: #444; }
+  .priority-block li { margin-bottom: 3px; }
+  .priority-block .budget {
+    display: inline-block; background: #f0f5ff; color: #0052d9;
+    padding: 2px 10px; border-radius: 4px; font-weight: 700; font-size: 13px;
+    margin-left: 8px;
+  }
+
+  /* Formula Box */
+  .formula-box {
+    margin: 14px 0; padding: 14px 18px;
+    background: #f9f0ff; border: 1px solid #d3adf7; border-radius: 8px;
+    text-align: center; page-break-inside: avoid;
+  }
+  .formula-box .formula {
+    font-family: "Cambria Math", "Times New Roman", serif;
+    font-size: 16px; color: #391085; font-weight: 700;
+    margin-bottom: 8px;
+  }
+  .formula-box .formula-desc {
+    font-size: 12.5px; color: #531dab; line-height: 1.7;
+  }
+
+  /* PnL highlight */
+  .pnl-section {
+    margin: 14px 0; padding: 16px 18px;
+    background: linear-gradient(135deg, #fff1f0, #fff7e6);
+    border: 1px solid #ffccc7; border-radius: 8px;
+  }
+  .pnl-section .pnl-title { font-size: 14px; font-weight: 700; color: #cf1322; margin-bottom: 10px; }
+  .pnl-section .pnl-note { font-size: 12.5px; color: #614700; margin-top: 8px; line-height: 1.7; }
+
+  /* Financial Overview Cards */
+  .finance-overview {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 12px;
+    margin-bottom: 24px;
+    page-break-inside: avoid;
+  }
+  .finance-card {
+    padding: 18px 14px;
+    border-radius: 10px;
+    text-align: center;
+    color: #fff;
+    position: relative;
+    overflow: hidden;
+  }
+  .finance-card::before {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(255,255,255,0.08);
+    border-radius: 50%;
+    width: 120px; height: 120px;
+    top: -30px; right: -30px;
+    left: auto; bottom: auto;
+  }
+  .finance-card .fc-label {
+    font-size: 11px; opacity: 0.9; margin-bottom: 6px; font-weight: 500;
+  }
+  .finance-card .fc-value {
+    font-size: 20px; font-weight: 800;
+    font-family: "Consolas", "Menlo", monospace;
+    letter-spacing: -0.5px;
+  }
+  .finance-card .fc-sub {
+    font-size: 10.5px; opacity: 0.8; margin-top: 4px;
+  }
+  .fc-strategy { background: linear-gradient(135deg, #531dab, #9254de); }
+  .fc-margin { background: linear-gradient(135deg, #0052d9, #2b7de9); }
+  .fc-breakeven { background: linear-gradient(135deg, #d48806, #faad14); color: #5c3a00; }
+  .fc-profit { background: linear-gradient(135deg, #389e0d, #52c41a); }
+  .fc-rate { background: linear-gradient(135deg, #08979c, #36cfc9); }
+  .fc-recharge { background: linear-gradient(135deg, #c41d7f, #eb2f96); }
+
+  /* v3.0: 三列成本卡片 */
+  .cost-trio {
+    display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px;
+    margin-bottom: 14px; page-break-inside: avoid;
+  }
+  .cost-card {
+    border-radius: 10px; padding: 18px 16px; color: #fff;
+    position: relative; overflow: hidden;
+  }
+  .cost-card::after {
+    content: ''; position: absolute; top: -20px; right: -20px;
+    width: 80px; height: 80px; border-radius: 50%;
+    background: rgba(255,255,255,0.1);
+  }
+  .cost-card .cc-icon { font-size: 24px; margin-bottom: 8px; }
+  .cost-card .cc-label { font-size: 12px; opacity: 0.9; margin-bottom: 4px; }
+  .cost-card .cc-value {
+    font-size: 26px; font-weight: 800;
+    font-family: "Consolas", "Menlo", monospace;
+  }
+  .cost-card .cc-sub { font-size: 11px; opacity: 0.75; margin-top: 4px; }
+  .cc-variable { background: linear-gradient(135deg, #0052d9, #2b7de9); }
+  .cc-fixed { background: linear-gradient(135deg, #531dab, #9254de); }
+  .cc-ops { background: linear-gradient(135deg, #d48806, #fa8c16); }
+
+  .cost-total-bar {
+    background: linear-gradient(135deg, #391085, #722ed1);
+    color: #fff; border-radius: 8px; padding: 14px 20px;
+    text-align: center; font-size: 15px; font-weight: 700;
+    margin-bottom: 16px;
+    font-family: "Consolas", "Menlo", monospace;
+  }
+  .cost-total-bar span { font-size: 12px; font-weight: 400; opacity: 0.85; font-family: "Microsoft YaHei", sans-serif; }
+
+  /* Breakeven card */
+  .breakeven-card {
+    margin: 14px 0; padding: 18px;
+    background: linear-gradient(135deg, #f6f9ff, #f9f0ff);
+    border: 2px solid #d3adf7; border-radius: 10px;
+    page-break-inside: avoid;
+  }
+  .breakeven-card .be-title {
+    font-size: 15px; font-weight: 700; color: #531dab; margin-bottom: 12px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .breakeven-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+  }
+  .be-item {
+    background: #fff; border: 1px solid #e8e8e8; border-radius: 8px; padding: 14px;
+    text-align: center;
+  }
+  .be-item .be-label { font-size: 12px; color: #666; margin-bottom: 4px; }
+  .be-item .be-num {
+    font-size: 22px; font-weight: 800; color: #531dab;
+    font-family: "Consolas", "Menlo", monospace;
+  }
+  .be-item .be-desc { font-size: 11px; color: #999; margin-top: 2px; }
+
+  /* 进度条盈亏 */
+  .be-bar-wrap { margin-bottom: 14px; }
+  .be-bar-label { font-size: 12px; color: #666; margin-bottom: 4px; display: flex; justify-content: space-between; }
+  .be-bar-track {
+    height: 22px; background: #f0f2f5; border-radius: 11px; overflow: hidden; position: relative;
+  }
+  .be-bar-fill {
+    height: 100%; border-radius: 11px; display: flex; align-items: center; justify-content: flex-end;
+    padding-right: 8px; font-size: 10px; color: #fff; font-weight: 700;
+    font-family: "Consolas", monospace; transition: width 0.3s;
+  }
+
+  /* Comparison card */
+  .compare-card {
+    margin: 14px 0; padding: 18px;
+    background: linear-gradient(135deg, #f0f5ff, #f9f0ff);
+    border: 2px solid #adc6ff; border-radius: 10px;
+    page-break-inside: avoid;
+  }
+  .compare-card .compare-title {
+    font-size: 15px; font-weight: 700; color: #0052d9; margin-bottom: 12px;
+    display: flex; align-items: center; gap: 8px;
+  }
+
+  /* Strategy card */
+  .strategy-card {
+    margin: 14px 0; padding: 18px;
+    background: linear-gradient(135deg, #f9f0ff, #f0f5ff);
+    border: 2px solid #d3adf7; border-radius: 10px;
+    page-break-inside: avoid;
+  }
+  .strategy-card .strategy-title {
+    font-size: 15px; font-weight: 700; color: #531dab; margin-bottom: 12px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .strategy-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+  }
+  .strategy-item {
+    background: #fff; border: 1px solid #e8e8e8; border-radius: 8px; padding: 14px;
+  }
+  .strategy-item .si-num {
+    font-size: 20px; font-weight: 800; color: #531dab; margin-bottom: 4px;
+    font-family: "Consolas", "Menlo", monospace;
+  }
+  .strategy-item .si-title {
+    font-size: 13px; font-weight: 700; color: #333; margin-bottom: 4px;
+  }
+  .strategy-item .si-desc {
+    font-size: 12px; color: #666; line-height: 1.6;
+  }
+
+  /* Footer */
+  .footer {
+    margin-top: 24px; padding-top: 14px;
+    border-top: 1px solid #e0e0e0; text-align: center; font-size: 11px; color: #aaa;
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ========== Header ========== -->
+  <div class="header">
+    <div class="brand">
+      <div class="logo-icon">N</div>
+    </div>
+    <h1>饺子动漫 NanoStory — 20账号规模采购清单</h1>
+    <div class="subtitle">智能故事创作平台 · 积分制计费模型 · 3x加价 · 双重定价策略 · 盈亏分析</div>
+    <div class="meta">生成日期：2026年4月6日 &nbsp;|&nbsp; 版本：v6.0（积分充值定价模型） &nbsp;|&nbsp; 项目：饺子动画 / NanoStory</div>
+  </div>
+
+  <!-- ========== 财务模型总览 ========== -->
+  <div class="category-section">
+    <div class="category-title" style="background:linear-gradient(135deg,#391085,#722ed1);"><span class="icon">&#x1F4CA;</span> 财务模型总览（积分单价 &yen;0.01 &middot; 充值售价 &yen;0.02 &middot; 3x 加价）</div>
+    <div class="finance-overview">
+      <div class="finance-card fc-strategy">
+        <div class="fc-label">加价倍率</div>
+        <div class="fc-value">3x</div>
+        <div class="fc-sub">成本 &times; 3（服务费率200%）</div>
+      </div>
+      <div class="finance-card fc-margin">
+        <div class="fc-label">积分单价</div>
+        <div class="fc-value">&yen;0.01</div>
+        <div class="fc-sub">系统内部 · 1积分 = 1分钱</div>
+      </div>
+      <div class="finance-card fc-recharge">
+        <div class="fc-label">充值售价</div>
+        <div class="fc-value">&yen;0.02</div>
+        <div class="fc-sub">充值购买 · 订阅2倍溢价</div>
+      </div>
+      <div class="finance-card fc-breakeven">
+        <div class="fc-label">盈亏平衡点</div>
+        <div class="fc-value">95</div>
+        <div class="fc-sub">项目/月（~4.8个/账号/月）</div>
+      </div>
+      <div class="finance-card fc-profit">
+        <div class="fc-label">低活跃即盈利</div>
+        <div class="fc-value">+&yen;636</div>
+        <div class="fc-sub">100项目/月 · 利润率5.6%</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== 一、成本结构全景 ========== -->
+  <div class="category-section">
+    <div class="category-title"><span class="icon">&#x1F4B0;</span> 一、成本结构全景</div>
+
+    <div class="cost-trio">
+      <div class="cost-card cc-variable">
+        <div class="cc-icon">&#x26A1;</div>
+        <div class="cc-label">A. 可变成本（AI API）</div>
+        <div class="cc-value">&yen;23.07</div>
+        <div class="cc-sub">/项目（随使用量变化）</div>
+      </div>
+      <div class="cost-card cc-fixed">
+        <div class="cc-icon">&#x1F5A5;</div>
+        <div class="cc-label">B. 固定成本（基础设施）</div>
+        <div class="cc-value">&yen;2,900</div>
+        <div class="cc-sub">/月（不管有没有用户）</div>
+      </div>
+      <div class="cost-card cc-ops">
+        <div class="cc-icon">&#x1F465;</div>
+        <div class="cc-label">C. 运营成本（人力杂项）</div>
+        <div class="cc-value">&yen;5,500</div>
+        <div class="cc-sub">/月（运维+客服+杂项）</div>
+      </div>
+    </div>
+
+    <div class="cost-total-bar">
+      全部固定成本 D = B + C = &yen;2,900 + &yen;5,500 = <strong style="font-size:20px;">&yen;8,400/月</strong>
+    </div>
+
+    <h5 style="font-size:13px;color:#0052d9;margin-bottom:8px;">B. 固定成本 — 基础设施明细</h5>
+    <table class="data-table">
+      <thead>
+        <tr><th>项目</th><th>月费</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>云服务器 ECS（2&times;4C16G + 1&times;2C8G）</td><td class="money">&yen;1,000</td></tr>
+        <tr><td>云数据库 MySQL</td><td class="money">&yen;400</td></tr>
+        <tr><td>Redis缓存</td><td class="money">&yen;300</td></tr>
+        <tr><td>对象存储 TOS</td><td class="money">&yen;200</td></tr>
+        <tr><td>CDN</td><td class="money">&yen;500</td></tr>
+        <tr><td>云搜索 ES</td><td class="money">&yen;400</td></tr>
+        <tr><td>安全/DNS/SSL</td><td class="money">&yen;100</td></tr>
+        <tr class="subtotal"><td><strong>基础设施小计</strong></td><td class="money"><strong>&yen;2,900</strong></td></tr>
+      </tbody>
+    </table>
+
+    <h5 style="font-size:13px;color:#d48806;margin:14px 0 8px;">C. 运维运营成本明细</h5>
+    <table class="data-table">
+      <thead>
+        <tr><th>项目</th><th>月费</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>运维人员（兼职/外包）</td><td class="money">&yen;3,000</td></tr>
+        <tr><td>客服/运营（兼职）</td><td class="money">&yen;2,000</td></tr>
+        <tr><td>杂项</td><td class="money">&yen;200</td></tr>
+        <tr><td>带宽储备</td><td class="money">&yen;300</td></tr>
+        <tr class="subtotal"><td><strong>运营小计</strong></td><td class="money"><strong>&yen;5,500</strong></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ========== 二、AI模型定价与积分消耗 ========== -->
+  <div class="category-section">
+    <div class="category-title purple"><span class="icon">&#x1F916;</span> 二、AI 模型定价与积分消耗（3x 加价对照）</div>
+
+    <h5 style="font-size:13px;color:#531dab;margin-bottom:8px;">火山引擎 AI 模型官方定价（成本价）</h5>
+    <table class="data-table">
+      <thead>
+        <tr><th>模型</th><th>用途</th><th>成本价</th><th>必要性</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>豆包 Doubao-pro-256k</td><td>长文本剧本</td>
+          <td class="money">~&yen;0.015/次(短) ~&yen;0.025/次(标准) ~&yen;0.055/次(长)</td>
+          <td><span class="tag tag-required">必选</span></td>
+        </tr>
+        <tr>
+          <td>豆包 Doubao-lite-32k</td><td>快速补全</td>
+          <td class="money">~&yen;0.005/次</td>
+          <td><span class="tag tag-required">必选</span></td>
+        </tr>
+        <tr>
+          <td>Seedream 5.0 lite</td><td>文生图</td>
+          <td class="money">&yen;0.22/张</td>
+          <td><span class="tag tag-required">必选</span></td>
+        </tr>
+        <tr>
+          <td>Seedance 1.5 Pro</td><td>图生视频</td>
+          <td class="money">&yen;0.95/秒</td>
+          <td><span class="tag tag-required">必选</span></td>
+        </tr>
+        <tr>
+          <td>DeepSeek-V3</td><td>通用推理</td>
+          <td class="money">~&yen;0.025/次</td>
+          <td><span class="tag tag-optional">可选</span></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h5 style="font-size:13px;color:#531dab;margin:14px 0 8px;">3x 加价后积分消耗对照表</h5>
+    <table class="data-table">
+      <thead>
+        <tr><th>类型</th><th>成本</th><th>售价(&times;3)</th><th>积分(&divide;0.01)</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>文本生成(短)</td>
+          <td class="money">&yen;0.015</td>
+          <td class="money">&yen;0.045</td>
+          <td style="font-family:'Consolas',monospace;font-weight:700;">ceil(4.5) = <strong>5积分</strong></td>
+        </tr>
+        <tr>
+          <td>文本生成(标准)</td>
+          <td class="money">&yen;0.025</td>
+          <td class="money">&yen;0.075</td>
+          <td style="font-family:'Consolas',monospace;font-weight:700;">ceil(7.5) = <strong>8积分</strong></td>
+        </tr>
+        <tr>
+          <td>文本生成(长)</td>
+          <td class="money">&yen;0.055</td>
+          <td class="money">&yen;0.165</td>
+          <td style="font-family:'Consolas',monospace;font-weight:700;">ceil(16.5) = <strong>17积分</strong></td>
+        </tr>
+        <tr>
+          <td>图片生成</td>
+          <td class="money">&yen;0.22</td>
+          <td class="money">&yen;0.66</td>
+          <td style="font-family:'Consolas',monospace;font-weight:700;"><strong>66积分</strong></td>
+        </tr>
+        <tr>
+          <td>视频生成/秒</td>
+          <td class="money">&yen;0.95</td>
+          <td class="money">&yen;2.85</td>
+          <td style="font-family:'Consolas',monospace;font-weight:700;"><strong>285积分</strong></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ========== 三、典型项目消耗 ========== -->
+  <div class="category-section">
+    <div class="category-title green"><span class="icon">&#x1F3AC;</span> 三、典型项目消耗（10角色 + 30分镜 + 15秒视频）</div>
+
+    <table class="data-table">
+      <thead>
+        <tr><th>环节</th><th>数量</th><th>成本</th><th>售价(&times;3)</th><th>积分</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>剧本生成</td>
+          <td>1次</td>
+          <td class="money">&yen;0.015</td>
+          <td class="money">&yen;0.045</td>
+          <td style="font-family:'Consolas',monospace;font-weight:700;">5积分</td>
+        </tr>
+        <tr>
+          <td>角色图像</td>
+          <td>10张</td>
+          <td class="money">&yen;2.20</td>
+          <td class="money">&yen;6.60</td>
+          <td style="font-family:'Consolas',monospace;font-weight:700;">660积分</td>
+        </tr>
+        <tr>
+          <td>分镜图像</td>
+          <td>30张</td>
+          <td class="money">&yen;6.60</td>
+          <td class="money">&yen;19.80</td>
+          <td style="font-family:'Consolas',monospace;font-weight:700;">1,980积分</td>
+        </tr>
+        <tr>
+          <td>视频生成</td>
+          <td>15秒</td>
+          <td class="money">&yen;14.25</td>
+          <td class="money">&yen;42.75</td>
+          <td style="font-family:'Consolas',monospace;font-weight:700;">4,275积分</td>
+        </tr>
+        <tr class="subtotal">
+          <td><strong>总计</strong></td>
+          <td></td>
+          <td class="money"><strong>&yen;23.07</strong></td>
+          <td class="money"><strong>&yen;69.20</strong></td>
+          <td style="font-family:'Consolas',monospace;font-weight:700;"><strong>6,920积分</strong></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="summary-box" style="background:linear-gradient(135deg,#f6ffed,#eef3ff);border-color:#b7eb8f;color:#389e0d;">
+      单项目消耗：6,920积分 = &yen;69.20 &nbsp;|&nbsp; 毛利：&yen;69.20 - &yen;23.07 = <strong>&yen;46.13/项目</strong>（毛利率 66.7%）
+    </div>
+  </div>
+
+  <!-- ========== 四、套餐定价 ========== -->
+  <div class="category-section">
+    <div class="category-title orange"><span class="icon">&#x1F451;</span> 四、套餐定价（积分单价&yen;0.01，3x加价）</div>
+
+    <table class="data-table">
+      <thead>
+        <tr><th>套餐</th><th>月费</th><th>首月特惠</th><th>年费(省2月)</th><th>月度积分</th><th>可做项目数</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>免费版</td>
+          <td class="money-green">免费</td>
+          <td>-</td>
+          <td>-</td>
+          <td style="font-family:'Consolas',monospace;">2,000</td>
+          <td style="font-family:'Consolas',monospace;">~0.29个</td>
+        </tr>
+        <tr>
+          <td>基础版</td>
+          <td class="money">&yen;99</td>
+          <td class="money-green">&yen;49.9</td>
+          <td class="money">&yen;990</td>
+          <td style="font-family:'Consolas',monospace;">10,000</td>
+          <td style="font-family:'Consolas',monospace;">~1.4个</td>
+        </tr>
+        <tr>
+          <td>专业版</td>
+          <td class="money">&yen;299</td>
+          <td>-</td>
+          <td class="money">&yen;2,990</td>
+          <td style="font-family:'Consolas',monospace;">30,000</td>
+          <td style="font-family:'Consolas',monospace;">~4.3个</td>
+        </tr>
+        <tr>
+          <td>旗舰版</td>
+          <td class="money">&yen;888</td>
+          <td>-</td>
+          <td class="money">&yen;8,880</td>
+          <td style="font-family:'Consolas',monospace;">90,000</td>
+          <td style="font-family:'Consolas',monospace;">~13个</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h5 style="font-size:13px;color:#531dab;margin:14px 0 8px;">套餐毛利分析</h5>
+    <table class="data-table">
+      <thead>
+        <tr><th>套餐</th><th>月费</th><th>积分等价AI成本</th><th>套餐毛利</th><th>毛利率</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>基础版</td>
+          <td class="money">&yen;99</td>
+          <td class="money">&yen;33.45</td>
+          <td class="money-green">+&yen;65.55</td>
+          <td style="font-family:'Consolas',monospace;font-weight:700;">66.2%</td>
+        </tr>
+        <tr>
+          <td>专业版</td>
+          <td class="money">&yen;299</td>
+          <td class="money">&yen;100.05</td>
+          <td class="money-green">+&yen;198.95</td>
+          <td style="font-family:'Consolas',monospace;font-weight:700;">66.5%</td>
+        </tr>
+        <tr>
+          <td>旗舰版</td>
+          <td class="money">&yen;888</td>
+          <td class="money">&yen;299.91</td>
+          <td class="money-green">+&yen;588.09</td>
+          <td style="font-family:'Consolas',monospace;font-weight:700;">66.2%</td>
+        </tr>
+        <tr style="background:#fff7e6;">
+          <td><strong>首月特惠</strong></td>
+          <td class="money">&yen;49.9</td>
+          <td class="money">&yen;33.45</td>
+          <td class="money-green">+&yen;16.45</td>
+          <td style="font-family:'Consolas',monospace;font-weight:700;">33.0%</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="summary-box" style="background:linear-gradient(135deg,#f6ffed,#eef3ff);border-color:#b7eb8f;color:#389e0d;">
+      重点：首月特惠&yen;49.9也不亏钱！毛利+&yen;16.45/用户
+    </div>
+
+    <div class="note-card note-info">
+      <h4>&#9654; 说明</h4>
+      <ul>
+        <li>1积分 = &yen;0.01，基础版10,000积分 = &yen;100等价</li>
+        <li>套餐积分总量（10基础+5专业）：10&times;10,000 + 5&times;30,000 = <strong style="font-family:'Consolas',monospace;">250,000积分</strong></li>
+        <li>套餐积分可覆盖：250,000 &divide; 6,920 &asymp; <strong style="font-family:'Consolas',monospace;">36个项目</strong></li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ========== 五、积分充值定价（NEW） ========== -->
+  <div class="category-section">
+    <div class="category-title" style="background:linear-gradient(135deg,#c41d7f,#eb2f96);"><span class="icon">&#x1F4B3;</span> 五、积分充值定价（套餐外额外购买）</div>
+
+    <div class="note-card note-warn" style="margin-bottom:14px;">
+      <h4>&#9654; 核心策略：双重定价</h4>
+      <ul>
+        <li>套餐内积分等价 <strong>&yen;0.01/积分</strong> — 订阅用户享受优惠价</li>
+        <li>充值购买积分 <strong>&yen;0.02/积分</strong> — 套餐用完后溢价购买，是订阅等价的 <strong>2倍</strong></li>
+        <li>核心目的：<strong>引导用户订阅/升级套餐</strong>，而非单纯充值</li>
+      </ul>
+    </div>
+
+    <h5 style="font-size:13px;color:#c41d7f;margin-bottom:8px;">充值 vs 订阅对比</h5>
+    <table class="data-table">
+      <thead>
+        <tr><th>获取方式</th><th>单价</th><th>1个项目(6,920积分)费用</th><th>溢价</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>套餐内积分</td>
+          <td class="money">~&yen;0.01</td>
+          <td class="money">~&yen;69.20</td>
+          <td style="font-family:'Consolas',monospace;font-weight:700;">基准</td>
+        </tr>
+        <tr style="background:#fff0f6;">
+          <td><strong>充值购买</strong></td>
+          <td class="money-red">&yen;0.02</td>
+          <td class="money-red">&yen;138.40</td>
+          <td style="font-family:'Consolas',monospace;font-weight:700;color:#c41d7f;">+100%</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="summary-box" style="background:linear-gradient(135deg,#fff0f6,#f9f0ff);border-color:#ffadd2;color:#c41d7f;">
+      充值边际利润：&yen;138.40 - &yen;23.07 = <strong>&yen;115.33/项目</strong>（边际利润率 83.3%）
+    </div>
+  </div>
+
+  <!-- ========== 六、20账号三档P&L ========== -->
+  <div class="category-section">
+    <div class="category-title red"><span class="icon">&#x1F4CA;</span> 六、20账号三档 P&L（低/中/高活跃度 · 充值&yen;0.02/积分）</div>
+
+    <div class="note-card note-info" style="margin-bottom:10px;">
+      <h4>&#9654; 方案：10基础 + 5专业 + 5免费 &nbsp;|&nbsp; 订阅月收入：10&times;&yen;99 + 5&times;&yen;299 = &yen;2,485/月 &nbsp;|&nbsp; 套餐积分：250,000 &rarr; 覆盖约36个项目</h4>
+    </div>
+
+    <!-- 低活跃 -->
+    <div class="pnl-section" style="background:linear-gradient(135deg,#f6ffed,#fff7e6);border-color:#b7eb8f;margin-bottom:14px;">
+      <div class="pnl-title" style="color:#389e0d;">&#x1F7E2; 低活跃（5项目/账号/月 = 100项目/月）— 终于盈利！</div>
+      <table class="data-table" style="margin-bottom:8px;">
+        <thead><tr><th>项</th><th>金额/月</th></tr></thead>
+        <tbody>
+          <tr><td>AI成本（100 &times; &yen;23.07）</td><td class="money-red">-&yen;2,307</td></tr>
+          <tr><td>套餐积分覆盖项目</td><td style="font-family:'Consolas',monospace;">250,000 &divide; 6,920 &asymp; 36个项目</td></tr>
+          <tr><td>剩余项目需充值（64个）</td><td style="font-family:'Consolas',monospace;">64 &times; 6,920 &times; <strong>&yen;0.02</strong> = &yen;8,858</td></tr>
+          <tr><td>订阅收入</td><td class="money-green">&yen;2,485</td></tr>
+          <tr class="subtotal"><td><strong>总收入</strong></td><td class="money-green"><strong>&yen;11,343</strong></td></tr>
+          <tr><td>固定成本</td><td class="money-red">-&yen;8,400</td></tr>
+          <tr class="total-row"><td><strong>总支出</strong></td><td><strong>-&yen;10,707</strong></td></tr>
+          <tr class="profit-row"><td><strong>月度净利润</strong></td><td><strong>+&yen;636（终于不亏了！）</strong></td></tr>
+          <tr class="profit-row"><td><strong>净利润率</strong></td><td><strong>5.6%</strong></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- 中活跃 -->
+    <div class="pnl-section" style="background:linear-gradient(135deg,#f6ffed,#fff7e6);border-color:#b7eb8f;margin-bottom:14px;">
+      <div class="pnl-title" style="color:#389e0d;">&#x1F7E2; 中活跃（15项目/账号/月 = 300项目/月）</div>
+      <table class="data-table" style="margin-bottom:8px;">
+        <thead><tr><th>项</th><th>金额/月</th></tr></thead>
+        <tbody>
+          <tr><td>AI成本（300 &times; &yen;23.07）</td><td class="money-red">-&yen;6,921</td></tr>
+          <tr><td>套餐积分覆盖</td><td style="font-family:'Consolas',monospace;">&asymp;36个项目</td></tr>
+          <tr><td>剩余项目需充值（264个）</td><td style="font-family:'Consolas',monospace;">264 &times; 6,920 &times; <strong>&yen;0.02</strong> = &yen;36,538</td></tr>
+          <tr><td>订阅收入</td><td class="money-green">&yen;2,485</td></tr>
+          <tr class="subtotal"><td><strong>总收入</strong></td><td class="money-green"><strong>&yen;39,023</strong></td></tr>
+          <tr><td>固定成本</td><td class="money-red">-&yen;8,400</td></tr>
+          <tr class="total-row"><td><strong>总支出</strong></td><td><strong>-&yen;15,321</strong></td></tr>
+          <tr class="profit-row"><td><strong>月度净利润</strong></td><td><strong>+&yen;23,702</strong></td></tr>
+          <tr class="profit-row"><td><strong>净利润率</strong></td><td><strong>60.7%</strong></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- 高活跃 -->
+    <div class="pnl-section" style="background:linear-gradient(135deg,#f6ffed,#eef3ff);border-color:#b7eb8f;">
+      <div class="pnl-title" style="color:#389e0d;">&#x1F7E2; 高活跃（50项目/账号/月 = 1,000项目/月）</div>
+      <table class="data-table" style="margin-bottom:8px;">
+        <thead><tr><th>项</th><th>金额/月</th></tr></thead>
+        <tbody>
+          <tr><td>AI成本（1,000 &times; &yen;23.07）</td><td class="money-red">-&yen;23,070</td></tr>
+          <tr><td>套餐积分覆盖</td><td style="font-family:'Consolas',monospace;">&asymp;36个项目</td></tr>
+          <tr><td>剩余项目需充值（964个）</td><td style="font-family:'Consolas',monospace;">964 &times; 6,920 &times; <strong>&yen;0.02</strong> = &yen;133,418</td></tr>
+          <tr><td>订阅收入</td><td class="money-green">&yen;2,485</td></tr>
+          <tr class="subtotal"><td><strong>总收入</strong></td><td class="money-green"><strong>&yen;135,903</strong></td></tr>
+          <tr><td>固定成本</td><td class="money-red">-&yen;8,400</td></tr>
+          <tr class="total-row"><td><strong>总支出</strong></td><td><strong>-&yen;31,470</strong></td></tr>
+          <tr class="profit-row"><td><strong>月度净利润</strong></td><td><strong>+&yen;104,433</strong></td></tr>
+          <tr class="profit-row"><td><strong>净利润率</strong></td><td><strong>76.8%</strong></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ========== 七、盈亏平衡分析 ========== -->
+  <div class="category-section">
+    <div class="category-title" style="background:linear-gradient(135deg,#531dab,#722ed1);"><span class="icon">&#x2696;</span> 七、盈亏平衡分析</div>
+
+    <div class="breakeven-card">
+      <div class="be-title">&#x1F4CD; 盈亏平衡点计算（充值&yen;0.02/积分）</div>
+      <div class="breakeven-grid">
+        <div class="be-item">
+          <div class="be-label">固定成本 + 套餐内API成本</div>
+          <div class="be-num" style="color:#cf1322;">&yen;9,231</div>
+          <div class="be-desc">&yen;8,400 + 36项目&times;&yen;23.07</div>
+        </div>
+        <div class="be-item">
+          <div class="be-label">订阅收入覆盖</div>
+          <div class="be-num" style="color:#0052d9;">&yen;2,485</div>
+          <div class="be-desc">10基础+5专业 月订阅</div>
+        </div>
+        <div class="be-item">
+          <div class="be-label">每额外项目充值净利</div>
+          <div class="be-num" style="color:#389e0d;">&yen;115.33</div>
+          <div class="be-desc">&yen;138.40 - &yen;23.07</div>
+        </div>
+        <div class="be-item">
+          <div class="be-label">盈亏平衡点</div>
+          <div class="be-num" style="color:#531dab;">95</div>
+          <div class="be-desc">项目/月（~4.8个/账号/月）</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="note-card note-info" style="margin-top:6px;">
+      <h4>&#9654; 计算过程</h4>
+      <ul>
+        <li>订阅收入 <strong style="font-family:'Consolas',monospace;">&yen;2,485</strong> + 套餐积分内的API成本已含在订阅中</li>
+        <li>固定成本&yen;8,400 + 套餐内36项目API成本&yen;831 = <strong style="font-family:'Consolas',monospace;">&yen;9,231</strong></li>
+        <li>订阅收入覆盖：<strong style="font-family:'Consolas',monospace;">&yen;2,485</strong></li>
+        <li>剩余 <strong style="font-family:'Consolas',monospace;">&yen;6,746</strong> 需充值覆盖</li>
+        <li>每额外项目充值净利：6,920 &times; &yen;0.02 - &yen;23.07 = &yen;138.40 - &yen;23.07 = <strong style="font-family:'Consolas',monospace;">&yen;115.33</strong></li>
+        <li>盈亏平衡额外项目：&yen;6,746 &divide; &yen;115.33 &asymp; <strong style="font-family:'Consolas',monospace;">59个</strong></li>
+        <li><strong>总盈亏平衡：36(套餐) + 59 = 约95个项目/月（每人~4.8个/月）</strong></li>
+        <li style="color:#389e0d;font-weight:700;">比v5.0的110个降到95个，降低14%！</li>
+      </ul>
+    </div>
+
+    <div style="margin:14px 0;">
+      <div class="be-bar-wrap">
+        <div class="be-bar-label">
+          <span>&#x1F7E2; 低活跃 100项目/月 &rarr; 盈利！</span>
+          <span style="font-family:'Consolas',monospace;font-weight:700;color:#389e0d;">+&yen;636</span>
+        </div>
+        <div class="be-bar-track">
+          <div class="be-bar-fill" style="width:72%;background:linear-gradient(90deg,#389e0d,#95de64);">100项目</div>
+        </div>
+      </div>
+      <div class="be-bar-wrap">
+        <div class="be-bar-label">
+          <span>&#x1F7E1; 盈亏平衡点</span>
+          <span style="font-family:'Consolas',monospace;font-weight:700;color:#d48806;">95项目/月</span>
+        </div>
+        <div class="be-bar-track">
+          <div class="be-bar-fill" style="width:68%;background:linear-gradient(90deg,#d48806,#fadb14);">95项目 (平衡)</div>
+        </div>
+      </div>
+      <div class="be-bar-wrap">
+        <div class="be-bar-label">
+          <span>&#x1F7E2; 中活跃 300项目/月 &rarr; 大幅盈利</span>
+          <span style="font-family:'Consolas',monospace;font-weight:700;color:#389e0d;">+&yen;23,702</span>
+        </div>
+        <div class="be-bar-track">
+          <div class="be-bar-fill" style="width:100%;background:linear-gradient(90deg,#389e0d,#95de64);">300项目</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 新旧P&L对比 -->
+    <div class="compare-card">
+      <div class="compare-title">&#x1F504; 新旧 P&L 对比（v5.0 &rarr; v6.0）</div>
+      <table class="data-table" style="margin-bottom:0;">
+        <thead>
+          <tr><th>指标</th><th>v5.0（充值&yen;0.01）</th><th>v6.0（充值&yen;0.02）</th><th>变化</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>低活跃净利</td>
+            <td class="money-red">-&yen;3,793</td>
+            <td class="money-green"><strong>+&yen;636</strong></td>
+            <td style="font-weight:700;color:#389e0d;">扭亏为盈！</td>
+          </tr>
+          <tr>
+            <td>中活跃净利</td>
+            <td class="money-green">+&yen;5,433</td>
+            <td class="money-green"><strong>+&yen;23,702</strong></td>
+            <td class="money-green" style="font-weight:700;">+336%</td>
+          </tr>
+          <tr>
+            <td>高活跃净利</td>
+            <td class="money-green">+&yen;37,724</td>
+            <td class="money-green"><strong>+&yen;104,433</strong></td>
+            <td class="money-green" style="font-weight:700;">+177%</td>
+          </tr>
+          <tr>
+            <td>盈亏平衡</td>
+            <td style="font-family:'Consolas',monospace;">110项目/月</td>
+            <td style="font-family:'Consolas',monospace;"><strong>95项目/月</strong></td>
+            <td class="money-green" style="font-weight:700;">-14%</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ========== 八、商业策略分析 ========== -->
+  <div class="category-section">
+    <div class="category-title" style="background:linear-gradient(135deg,#08979c,#36cfc9);"><span class="icon">&#x1F3AF;</span> 八、商业策略分析（双重定价优势）</div>
+
+    <div class="strategy-card">
+      <div class="strategy-title">&#x1F4A1; 双重定价策略四大优势</div>
+      <div class="strategy-grid">
+        <div class="strategy-item">
+          <div class="si-num">01</div>
+          <div class="si-title">套餐锁定用户</div>
+          <div class="si-desc">套餐内积分等价&yen;0.01 — 订阅性价比高，用户倾向续费锁定优惠价格</div>
+        </div>
+        <div class="strategy-item">
+          <div class="si-num">02</div>
+          <div class="si-title">充值溢价激励升级</div>
+          <div class="si-desc">充值积分&yen;0.02 — 额外使用付出100%溢价，激励用户升级更高套餐</div>
+        </div>
+        <div class="strategy-item">
+          <div class="si-num">03</div>
+          <div class="si-title">低活跃即盈利</div>
+          <div class="si-desc">20账号低活跃就能覆盖全部成本，+&yen;636/月净利润，风险极低</div>
+        </div>
+        <div class="strategy-item">
+          <div class="si-num">04</div>
+          <div class="si-title">高活跃利润爆发</div>
+          <div class="si-desc">充值收入边际利润高达 <strong>83.3%</strong>，活跃度越高利润越夸张</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="note-card note-success">
+      <h4>&#9654; 关键数据</h4>
+      <ul>
+        <li>充值边际利润率：<strong style="font-family:'Consolas',monospace;">83.3%</strong>（&yen;115.33 / &yen;138.40）</li>
+        <li>套餐毛利率：<strong style="font-family:'Consolas',monospace;">66.2%~66.5%</strong></li>
+        <li>充值比套餐多赚：<strong style="font-family:'Consolas',monospace;">+&yen;69.20/项目</strong>（&yen;115.33 vs &yen;46.13）</li>
+        <li>这意味着：用户活跃度越高、超出套餐越多，平台利润越丰厚</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ========== 九、采购优先级 ========== -->
+  <div class="category-section">
+    <div class="category-title"><span class="icon">&#x1F4CB;</span> 九、采购优先级</div>
+
+    <div class="priority-block">
+      <h5>
+        <span class="tag tag-required">第一批</span>
+        立即采购，开服必备
+        <span class="budget">预算 ~&yen;3,400/月</span>
+      </h5>
+      <ul>
+        <li>2台 ECS (4C16G) + 1台 ECS (2C8G)</li>
+        <li>MySQL + Redis + TOS 对象存储</li>
+        <li>方舟平台开通（豆包 + Seedream + Seedance）</li>
+      </ul>
+    </div>
+
+    <div class="priority-block">
+      <h5>
+        <span class="tag tag-recommend">第二批</span>
+        用户增长后追加
+        <span class="budget">追加 ~&yen;1,000/月</span>
+      </h5>
+      <ul>
+        <li>CDN 加速 + 负载均衡 ALB</li>
+        <li>ES 搜索引擎</li>
+        <li>弹性伸缩策略</li>
+      </ul>
+    </div>
+
+    <div class="priority-block">
+      <h5>
+        <span class="tag tag-optional">第三批</span>
+        规模化后按需评估
+      </h5>
+      <ul>
+        <li>DDoS 增强防护</li>
+        <li>KMS 密钥管理</li>
+        <li>多可用区容灾</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ========== 十、注意事项 ========== -->
+  <div class="category-section">
+    <div class="category-title" style="background:linear-gradient(135deg,#cf1322,#ff4d4f);"><span class="icon">&#x26A0;</span> 十、注意事项</div>
+
+    <div class="note-card note-danger">
+      <h4>&#9654; 特别注意</h4>
+      <ul>
+        <li><strong>Seedance QPS 限制：</strong>默认只有 3 QPS，需向火山引擎申请提升至 <strong>20+ QPS</strong></li>
+        <li><strong>Webhook 回调：</strong>优先开通，可降低轮询成本约 <strong>92%</strong></li>
+        <li><strong>首月特惠&yen;49.9（赚&yen;16.45/用户），不再亏损</strong></li>
+        <li><strong>服务费率可调：</strong>可通过管理后台"计费配置"页面随时调整服务费率</li>
+        <li><strong>套餐积分说明：</strong>1积分=&yen;0.01，基础版10,000积分=&yen;100等价</li>
+        <li><strong style="color:#c41d7f;">充值定价：</strong>&yen;0.02/积分，是订阅等价的2倍溢价，引导用户订阅</li>
+        <li><strong style="color:#389e0d;">低活跃即可盈利：</strong>盈亏平衡仅需 <strong>95个项目/月（~4.8个/账号/月）</strong></li>
+        <li><strong style="color:#0052d9;">免费版体验：</strong>2,000积分可试做约30张图片或7秒视频，足够体验核心功能</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ========== 十一、积分公式 ========== -->
+  <div class="category-section">
+    <div class="category-title purple"><span class="icon">&#x1F9EE;</span> 十一、积分公式</div>
+
+    <div class="formula-box">
+      <div class="formula">积分 = ceil( AI成本 &times; (1 + 服务费率) &divide; 积分单价 )</div>
+      <div class="formula-desc">
+        <strong>积分单价</strong> = &yen;0.01 &nbsp;|&nbsp;
+        <strong>服务费率</strong> = 200%（加价倍率 3x）&nbsp;|&nbsp;
+        <strong>充值售价</strong> = &yen;0.02/积分
+      </div>
+    </div>
+
+    <div class="formula-box" style="background:#f0f5ff;border-color:#adc6ff;">
+      <div class="formula" style="color:#0052d9;">= ceil( AI成本 &times; 3 &divide; 0.01 ) = ceil( AI成本 &times; 300 )</div>
+      <div class="formula-desc" style="color:#003eb3;">
+        <strong>示例：</strong>图片成本 &yen;0.22 &times; 300 = <strong>66积分</strong> &nbsp;|&nbsp;
+        视频成本 &yen;0.95/秒 &times; 300 = <strong>285积分/秒</strong>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== Footer ========== -->
+  <div class="footer">
+    NanoStory 智能故事创作平台 · 20账号规模采购清单 · 内部参考文件<br>
+    生成日期：2026年4月6日 &nbsp;|&nbsp; 版本：v6.0（积分充值定价模型） &nbsp;|&nbsp; 本清单基于当前模型定价和基础设施报价预估，实际费用以火山引擎官方账单为准。
+  </div>
+
+</div>
+</body>
+</html>

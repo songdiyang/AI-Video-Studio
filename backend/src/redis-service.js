@@ -300,7 +300,13 @@ const CacheService = {
   /**
    * 缓存穿透保护：先读缓存，未命中则执行函数并缓存
    */
-  async getOrSet(key, fetchFn, ttlSeconds = 300) {
+  async getOrSet(key, fetchFn, ttlSeconds = 300, options = {}) {
+    // Bloom Filter 前置检查：快速排除不存在的 key
+    if (options.bloomFilter) {
+      const mightExist = await this.bloomExists(options.bloomFilter, key);
+      if (!mightExist) return options.defaultValue !== undefined ? options.defaultValue : null;
+    }
+
     let value = await this.get(key);
     if (value !== null) return value;
 
@@ -369,6 +375,183 @@ const CacheService = {
     const count = (current ? parseInt(current) : 0) + 1;
     memoryCacheSet(key, String(count), ttlSeconds * 1000);
     return count;
+  },
+
+  // ============================================
+  // Bloom Filter（防缓存穿透）
+  // 理论基础：Bloom, 1970 - Space/Time Trade-offs in Hash Coding
+  // 使用 k 个哈希函数映射到 m 位的位数组，O(1) 时间判断元素不存在
+  // ============================================
+
+  /**
+   * 初始化 Bloom Filter
+   * @param {string} filterName - 过滤器名称
+   * @param {number} expectedItems - 预期元素数量
+   * @param {number} errorRate - 期望误判率（0.01 = 1%）
+   */
+  async bloomInit(filterName, expectedItems = 10000, errorRate = 0.01) {
+    // 计算最优参数：m = -(n * ln(p)) / (ln2)^2, k = (m/n) * ln2
+    const m = Math.ceil(-(expectedItems * Math.log(errorRate)) / (Math.log(2) ** 2));
+    const k = Math.round((m / expectedItems) * Math.log(2));
+    
+    const config = { m, k, expectedItems, errorRate, count: 0 };
+    
+    if (isRedisAvailable()) {
+      try {
+        await redis.set(`bloom:config:${filterName}`, JSON.stringify(config));
+        return config;
+      } catch (e) {
+        console.warn('[Bloom] Redis bloomInit 失败，降级内存:', e.message);
+      }
+    }
+    
+    // 内存降级：使用 Set
+    if (!this._memoryBlooms) this._memoryBlooms = new Map();
+    this._memoryBlooms.set(filterName, { config, set: new Set() });
+    return config;
+  },
+
+  /**
+   * 向 Bloom Filter 添加元素
+   */
+  async bloomAdd(filterName, value) {
+    if (isRedisAvailable()) {
+      try {
+        const configStr = await redis.get(`bloom:config:${filterName}`);
+        if (!configStr) return false;
+        const config = JSON.parse(configStr);
+        
+        const hashes = this._bloomHashes(value, config.k, config.m);
+        const pipeline = redis.pipeline();
+        for (const pos of hashes) {
+          pipeline.setbit(`bloom:bits:${filterName}`, pos, 1);
+        }
+        await pipeline.exec();
+        
+        config.count++;
+        await redis.set(`bloom:config:${filterName}`, JSON.stringify(config));
+        return true;
+      } catch (e) {
+        console.warn('[Bloom] Redis bloomAdd 失败:', e.message);
+      }
+    }
+    
+    // 内存降级
+    if (this._memoryBlooms && this._memoryBlooms.has(filterName)) {
+      this._memoryBlooms.get(filterName).set.add(String(value));
+      return true;
+    }
+    return false;
+  },
+
+  /**
+   * 检查元素是否可能存在于 Bloom Filter
+   * 返回 false = 一定不存在，返回 true = 可能存在（有误判率）
+   */
+  async bloomExists(filterName, value) {
+    if (isRedisAvailable()) {
+      try {
+        const configStr = await redis.get(`bloom:config:${filterName}`);
+        if (!configStr) return true; // 无过滤器时不拦截
+        const config = JSON.parse(configStr);
+        
+        const hashes = this._bloomHashes(value, config.k, config.m);
+        for (const pos of hashes) {
+          const bit = await redis.getbit(`bloom:bits:${filterName}`, pos);
+          if (bit === 0) return false; // 一定不存在
+        }
+        return true; // 可能存在
+      } catch (e) {
+        return true; // 出错时不拦截
+      }
+    }
+    
+    // 内存降级
+    if (this._memoryBlooms && this._memoryBlooms.has(filterName)) {
+      return this._memoryBlooms.get(filterName).set.has(String(value));
+    }
+    return true; // 无过滤器时不拦截
+  },
+
+  /**
+   * 计算多个哈希值（使用双哈希技术模拟 k 个哈希函数）
+   * h_i(x) = (h1(x) + i * h2(x)) mod m
+   */
+  _bloomHashes(value, k, m) {
+    const str = String(value);
+    const h1 = this._fnv1a(str);
+    const h2 = this._djb2(str);
+    const hashes = [];
+    for (let i = 0; i < k; i++) {
+      hashes.push(Math.abs((h1 + i * h2) % m));
+    }
+    return hashes;
+  },
+
+  /** FNV-1a 哈希 */
+  _fnv1a(str) {
+    let hash = 0x811c9dc5;
+    for (let i = 0; i < str.length; i++) {
+      hash ^= str.charCodeAt(i);
+      hash = (hash * 0x01000193) >>> 0;
+    }
+    return hash;
+  },
+
+  /** DJB2 哈希 */
+  _djb2(str) {
+    let hash = 5381;
+    for (let i = 0; i < str.length; i++) {
+      hash = ((hash << 5) + hash) + str.charCodeAt(i);
+      hash = hash >>> 0;
+    }
+    return hash;
+  },
+
+  /**
+   * 缓存预热：批量加载高频数据到缓存
+   * 理论基础：缓存层次理论 —— 预热消除冷启动延迟
+   * 
+   * @param {Array<{key: string, fetchFn: Function, ttl: number}>} warmupTasks
+   * @returns {object} 预热统计
+   */
+  async warmup(warmupTasks) {
+    if (!warmupTasks || warmupTasks.length === 0) return { total: 0 };
+    
+    const startTime = Date.now();
+    console.log(`[CacheWarmup] 开始预热 ${warmupTasks.length} 项缓存...`);
+    
+    const results = await Promise.allSettled(
+      warmupTasks.map(async (task) => {
+        try {
+          const value = await task.fetchFn();
+          if (value !== null && value !== undefined) {
+            await this.set(task.key, value, task.ttl || 3600);
+            return { key: task.key, success: true };
+          }
+          return { key: task.key, success: false, reason: '数据为空' };
+        } catch (err) {
+          return { key: task.key, success: false, reason: err.message };
+        }
+      })
+    );
+    
+    const succeeded = results.filter(r => r.status === 'fulfilled' && r.value.success).length;
+    const failed = results.length - succeeded;
+    const elapsed = Date.now() - startTime;
+    
+    console.log(`[CacheWarmup] 预热完成: 成功 ${succeeded}/${results.length}, 失败 ${failed}, 耗时 ${elapsed}ms`);
+    
+    // 输出失败详情
+    results.forEach(r => {
+      if (r.status === 'fulfilled' && !r.value.success) {
+        console.warn(`[CacheWarmup] 预热失败: ${r.value.key} - ${r.value.reason}`);
+      } else if (r.status === 'rejected') {
+        console.warn(`[CacheWarmup] 预热异常: ${r.reason}`);
+      }
+    });
+    
+    return { total: results.length, succeeded, failed, elapsed };
   },
 
   /**

@@ -1,6 +1,7 @@
 const express = require('express');
 const { queryOne, queryAll, execute } = require('./dbHelper');
 const { authMiddleware, requireAdmin, clearTokenInvalidationCache } = require('./middleware');
+const { clearServiceFeeRateCache } = require('./pointsService');
 
 const router = express.Router();
 
@@ -156,6 +157,13 @@ router.put('/admin/:id', authMiddleware, requireAdmin, async (req, res) => {
     );
 
     const config = await queryOne('SELECT * FROM system_configs WHERE id = ?', [id]);
+
+    // 如果更新的是服务费率，清除缓存使新值立即生效
+    if (config && config.config_key === 'service_fee_rate') {
+      clearServiceFeeRateCache();
+      console.log('[SystemConfig] 服务费率缓存已清除，新值立即生效');
+    }
+
     res.json({ message: '配置更新成功', config });
   } catch (error) {
     console.error('[SystemConfig] 更新配置失败:', error);

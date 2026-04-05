@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useVirtualList } from '../../hooks/useVirtualList';
 import { 
   History, 
   GitBranch, 
@@ -63,6 +64,30 @@ const VersionHistoryPanel: React.FC<VersionHistoryPanelProps> = ({
   const [versionLabel, setVersionLabel] = useState('');
   const [changeSummary, setChangeSummary] = useState('');
   const { showToast } = useToast();
+  const versionListRef = useRef<HTMLDivElement>(null);
+  const [listHeight, setListHeight] = useState(300);
+
+  // 版本项固定高度（包含内边距、边框等）
+  const VERSION_ITEM_HEIGHT = 120;
+
+  // 测量列表容器高度
+  useEffect(() => {
+    if (!versionListRef.current) return;
+    const observer = new ResizeObserver(entries => {
+      for (const entry of entries) {
+        setListHeight(entry.contentRect.height);
+      }
+    });
+    observer.observe(versionListRef.current);
+    return () => observer.disconnect();
+  }, [isOpen]);
+
+  const { virtualItems, containerProps, wrapperProps } = useVirtualList({
+    itemCount: versions.length,
+    itemHeight: VERSION_ITEM_HEIGHT,
+    containerHeight: listHeight,
+    overscan: 5,
+  });
 
   useEffect(() => {
     if (isOpen && resourceId) {
@@ -291,8 +316,8 @@ const VersionHistoryPanel: React.FC<VersionHistoryPanelProps> = ({
             </button>
           </div>
 
-          {/* 版本列表 */}
-          <div className="flex-1 overflow-y-auto p-3 space-y-2">
+          {/* 版本列表 - 使用虚拟列表优化大量版本的渲染性能 */}
+          <div ref={versionListRef} className="flex-1 overflow-hidden">
             {loading ? (
               <div className="text-center py-8 text-[var(--text-muted)]">
                 <Clock className="w-6 h-6 mx-auto mb-2 animate-spin" />
@@ -304,88 +329,105 @@ const VersionHistoryPanel: React.FC<VersionHistoryPanelProps> = ({
                 <p className="text-xs">暂无版本历史</p>
               </div>
             ) : (
-              versions.map((version) => (
-                <div
-                  key={version.id}
-                  className={`relative rounded-lg overflow-hidden border transition-all ${
-                    version.is_current
-                      ? 'border-[var(--accent)] bg-[var(--accent)]/5'
-                      : selectedVersions.includes(version.id)
-                      ? 'border-[var(--accent)] bg-[var(--accent)]/10'
-                      : 'border-[var(--border-color)] bg-[var(--bg-input)] hover:border-[var(--accent)]/50'
-                  }`}
-                >
-                  {/* 选择器 */}
-                  <div className="absolute top-2 left-2 z-10">
-                    <input
-                      type="checkbox"
-                      checked={selectedVersions.includes(version.id)}
-                      onChange={() => toggleVersionSelection(version.id)}
-                      className="w-4 h-4 rounded border-[var(--border-color)] text-[var(--accent)] focus:ring-[var(--accent)] focus:ring-offset-0"
-                    />
-                  </div>
+              <div {...containerProps} className="p-3" style={{ ...containerProps.style, overflow: 'auto' }}>
+                <div {...wrapperProps}>
+                  {virtualItems.map(({ index, offsetTop }) => {
+                    const version = versions[index];
+                    return (
+                      <div
+                        key={version.id}
+                        style={{
+                          position: 'absolute',
+                          top: offsetTop,
+                          left: 12,
+                          right: 12,
+                          height: VERSION_ITEM_HEIGHT - 8,
+                        }}
+                      >
+                        <div
+                          className={`h-full rounded-lg overflow-hidden border transition-all ${
+                            version.is_current
+                              ? 'border-[var(--accent)] bg-[var(--accent)]/5'
+                              : selectedVersions.includes(version.id)
+                              ? 'border-[var(--accent)] bg-[var(--accent)]/10'
+                              : 'border-[var(--border-color)] bg-[var(--bg-input)] hover:border-[var(--accent)]/50'
+                          }`}
+                        >
+                          {/* 选择器 */}
+                          <div className="absolute top-2 left-2 z-10">
+                            <input
+                              type="checkbox"
+                              checked={selectedVersions.includes(version.id)}
+                              onChange={() => toggleVersionSelection(version.id)}
+                              className="w-4 h-4 rounded border-[var(--border-color)] text-[var(--accent)] focus:ring-[var(--accent)] focus:ring-offset-0"
+                            />
+                          </div>
 
-                  {/* 内容 */}
-                  <div className="p-3 pl-8">
-                    <div className="flex items-center justify-between mb-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-semibold text-[var(--text-primary)]">
-                          v{version.version_number}
-                        </span>
-                        {version.version_label && (
-                          <span className="text-[10px] px-1.5 py-0.5 bg-[var(--accent)]/10 text-[var(--accent)] rounded">
-                            {version.version_label}
-                          </span>
-                        )}
-                        {version.is_current && (
-                          <span className="text-[10px] px-1.5 py-0.5 bg-[var(--accent)] text-white rounded flex items-center gap-1">
-                            <Check className="w-3 h-3" />
-                            当前
-                          </span>
-                        )}
+                          {/* 内容 */}
+                          <div className="p-3 pl-8">
+                            <div className="flex items-center justify-between mb-1">
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-semibold text-[var(--text-primary)]">
+                                  v{version.version_number}
+                                </span>
+                                {version.version_label && (
+                                  <span className="text-[10px] px-1.5 py-0.5 bg-[var(--accent)]/10 text-[var(--accent)] rounded">
+                                    {version.version_label}
+                                  </span>
+                                )}
+                                {version.is_current && (
+                                  <span className="text-[10px] px-1.5 py-0.5 bg-[var(--accent)] text-white rounded flex items-center gap-1">
+                                    <Check className="w-3 h-3" />
+                                    当前
+                                  </span>
+                                )}
+                              </div>
+                              <span className="text-[10px] text-[var(--text-muted)]">
+                                {formatTime(version.created_at)}
+                              </span>
+                            </div>
+
+                            {version.change_summary && (
+                              <p className="text-[10px] text-[var(--text-muted)] mb-1 line-clamp-1">
+                                {version.change_summary}
+                              </p>
+                            )}
+
+                            <div className="flex items-center gap-2 text-[10px] text-[var(--text-muted)]">
+                              <span>{version.created_by_name || '未知'}</span>
+                              <span>•</span>
+                              <span>{version.branch_name}</span>
+                            </div>
+
+                            {/* 操作按钮 */}
+                            <div className="flex items-center gap-1 mt-1">
+                              {!version.is_current && (
+                                <button
+                                  onClick={() => handleRestoreVersion(version)}
+                                  className="flex-1 px-2 py-1 bg-[var(--accent)]/10 text-[var(--accent)] text-[10px] rounded hover:bg-[var(--accent)]/20 flex items-center justify-center gap-1"
+                                  title="恢复此版本"
+                                >
+                                  <RotateCcw className="w-3 h-3" />
+                                  恢复
+                                </button>
+                              )}
+                              {!version.is_current && (
+                                <button
+                                  onClick={() => handleDeleteVersion(version.id)}
+                                  className="px-2 py-1 bg-red-500/10 text-red-400 text-[10px] rounded hover:bg-red-500/20"
+                                  title="删除版本"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                      <span className="text-[10px] text-[var(--text-muted)]">
-                        {formatTime(version.created_at)}
-                      </span>
-                    </div>
-
-                    {version.change_summary && (
-                      <p className="text-[10px] text-[var(--text-muted)] mb-2 line-clamp-2">
-                        {version.change_summary}
-                      </p>
-                    )}
-
-                    <div className="flex items-center gap-2 text-[10px] text-[var(--text-muted)]">
-                      <span>{version.created_by_name || '未知'}</span>
-                      <span>•</span>
-                      <span>{version.branch_name}</span>
-                    </div>
-
-                    {/* 操作按钮 */}
-                    <div className="flex items-center gap-1 mt-2">
-                      {!version.is_current && (
-                        <button
-                          onClick={() => handleRestoreVersion(version)}
-                          className="flex-1 px-2 py-1 bg-[var(--accent)]/10 text-[var(--accent)] text-[10px] rounded hover:bg-[var(--accent)]/20 flex items-center justify-center gap-1"
-                          title="恢复此版本"
-                        >
-                          <RotateCcw className="w-3 h-3" />
-                          恢复
-                        </button>
-                      )}
-                      {!version.is_current && (
-                        <button
-                          onClick={() => handleDeleteVersion(version.id)}
-                          className="px-2 py-1 bg-red-500/10 text-red-400 text-[10px] rounded hover:bg-red-500/20"
-                          title="删除版本"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
-                      )}
-                    </div>
-                  </div>
+                    );
+                  })}
                 </div>
-              ))
+              </div>
             )}
           </div>
         </motion.div>

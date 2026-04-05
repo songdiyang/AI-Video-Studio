@@ -16,7 +16,8 @@
 const { callAIModel, queryAIModel } = require('../../aiModelService');
 const { queryOne } = require('../../dbHelper');
 const { mapResponse } = require('../../utils/templateRenderer');
-const { withRateLimit } = require('../utils/aiRateLimiter');
+const { withRateLimit, withSubmitRateLimit, withPollRateLimit } = require('../utils/aiRateLimiter');
+const pollManager = require('../utils/PollManager');
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -257,20 +258,22 @@ function _safeEval(vars, expr) {
  */
 async function submitAndPoll(modelName, submitParams, options = {}) {
   const {
-    intervalMs = 2000,
-    maxDurationMs = 300000,
+    intervalMs = 10000,
+    maxDurationMs = 600000,
     maxNetworkErrors = 5,
     onProgress,
     progressStart = 30,
     progressEnd = 90,
     logTag = 'PollUtils',
     adaptiveInterval = true, // 启用自适应轮询间隔
-    intervalMultiplier = 1.3, // 每次轮询间隔增长系数
-    maxIntervalMs = 10000, // 最大轮询间隔
+    intervalMultiplier = 1.5, // 每次轮询间隔增长系数
+    maxIntervalMs = 30000, // 最大轮询间隔
     enableRateLimit = true // 新增：是否启用全局限流
   } = options;
 
   // === 1. 提交请求（带全局限流 + 429 重试） ===
+  // 优化：使用 withSubmitRateLimit，提交完成后立即释放并发槽
+  // 轮询阶段使用独立的 poll 信号量池，不占用模型提交槽位
   const maxRetries = options.maxRetries || 3;
   const retryDelayMs = options.retryDelayMs || 60000; // 默认 60 秒
   
@@ -283,8 +286,9 @@ async function submitAndPoll(modelName, submitParams, options = {}) {
         return await callAIModel(modelName, submitParams);
       };
       
+      // 提交阶段：获取信号量 → 提交 → 立即释放
       submitResult = enableRateLimit 
-        ? await withRateLimit(modelName, submitFn, { logTag })
+        ? await withSubmitRateLimit(modelName, submitFn, { logTag })
         : await submitFn();
       
       break; // 成功则退出重试循环
@@ -343,115 +347,93 @@ async function submitAndPoll(modelName, submitParams, options = {}) {
     return { status: true, ...mapped, _submitResult: submitResult };
   }
 
-  // === 4. 异步模型：轮询 ===
+  // === 4. 异步模型：使用 PollManager 统一调度轮询 ===
   const { _raw, _model, ...queryFields } = submitResult;
 
-  const startTime = Date.now();
-  let networkErrors = 0;
-  let pollCount = 0;
-  let currentInterval = intervalMs;
+  console.log(`[${logTag}] 异步任务已提交, taskId=${taskId}, 委托给 PollManager 统一调度轮询...`);
 
-  console.log(`[${logTag}] 异步任务已提交, taskId=${taskId}, 开始轮询 (初始间隔=${intervalMs}ms, 自适应=${adaptiveInterval})...`);
+  // 通过 PollManager 注册轮询任务
+  const pollResult = await pollManager.register({
+    modelName,
+    queryFields,
+    intervalMs: intervalMs,
+    maxDurationMs: maxDurationMs,
+    maxNetworkErrors,
+    adaptiveInterval,
+    intervalMultiplier,
+    maxIntervalMs,
+    logTag,
+    onProgress,
+    progressStart,
+    progressEnd,
 
-  while (true) {
-    await sleep(currentInterval);
-    pollCount++;
-    const elapsed = Date.now() - startTime;
+    // 每次轮询结果的判断回调
+    onPollResult: (queryResult) => {
+      const rawData = queryResult._raw || queryResult;
+      const mappedBase = { ...queryResult };
+      delete mappedBase._raw;
 
-    // 自适应增加轮询间隔，减少不必要的请求
-    if (adaptiveInterval && currentInterval < maxIntervalMs) {
-      currentInterval = Math.min(Math.round(currentInterval * intervalMultiplier), maxIntervalMs);
-    }
-
-    // 超时检查
-    if (elapsed > maxDurationMs) {
-      throw new Error(`轮询超时：已等待 ${Math.round(elapsed / 1000)} 秒 (taskId: ${taskId})`);
-    }
-
-    // 更新进度
-    if (onProgress) {
-      const ratio = Math.min(elapsed / maxDurationMs, 1);
-      const progress = Math.round(progressStart + ratio * (progressEnd - progressStart));
-      onProgress(Math.min(progress, progressEnd));
-    }
-
-    // 查询
-    let queryResult;
-    try {
-      queryResult = await queryAIModel(modelName, queryFields);
-      console.log(`[${logTag}] 第 ${pollCount} 次查询原始响应体:`, stringifyForLog(queryResult?._raw || queryResult));
-      networkErrors = 0;
-    } catch (err) {
-      networkErrors++;
-      console.warn(`[${logTag}] 第 ${pollCount} 次查询网络错误 (${networkErrors}/${maxNetworkErrors}):`, err.message);
-      if (networkErrors >= maxNetworkErrors) {
-        throw new Error(`轮询失败：连续 ${networkErrors} 次网络错误: ${err.message}`);
-      }
-      continue;
-    }
-
-    // === 5. 判断状态 ===
-    const rawData = queryResult._raw || queryResult;
-    const mappedBase = { ...queryResult };
-    delete mappedBase._raw;
-
-    // 必须配置条件表达式，否则无法判断状态
-    if (!successCondition && !failCondition) {
-      throw new Error(`模型 "${modelName}" 未配置 query_success_condition / query_fail_condition，无法判断异步任务状态。请在管理后台配置。`);
-    }
-
-    const isSuccess = evaluateCondition(mappedBase, successCondition);
-    const isFail = evaluateCondition(mappedBase, failCondition);
-    const resolvedStatus = isSuccess ? 'success' : isFail ? 'failed' : 'pending';
-
-    console.log(`[${logTag}] 第 ${pollCount} 次查询, status=${resolvedStatus}, elapsed=${Math.round(elapsed / 1000)}s`);
-
-    if (resolvedStatus === 'success') {
-      let mapped;
-      if (successMapping) {
-        mapped = mapResponse(rawData, successMapping);
-      } else {
-        mapped = mappedBase;
-      }
-      const totalMs = Date.now() - startTime;
-      console.log(`[${logTag}] 成功结果字段:`, {
-        model: modelName,
-        taskId,
-        mappedKeys: getObjectKeys(mapped),
-        queryKeys: getObjectKeys(queryResult),
-        rawKeys: getObjectKeys(rawData),
-        urlCandidates: collectUrlCandidates(rawData)
-      });
-      console.log(`[${logTag}] ✅ 任务完成: model=${modelName}, taskId=${taskId}, 耗时=${Math.round(totalMs / 1000)}s, 轮询${pollCount}次`);
-      // 统一返回 status: true + 映射结果
-      return {
-        status: true,
-        ...mapped,
-        _submitResult: submitResult,
-        _queryResult: queryResult,
-        _rawQueryResult: rawData
-      };
-    }
-
-    if (resolvedStatus === 'failed') {
-      // 提取错误信息后直接 throw
-      let errorInfo;
-      if (failMapping) {
-        errorInfo = mapResponse(rawData, failMapping);
-      } else {
-        errorInfo = {
-          error: mappedBase.error || mappedBase.message
-            || rawData?.message || rawData?.data?.message
-            || rawData?.data?.fail_reason
-            || '未知错误'
+      // 必须配置条件表达式
+      if (!successCondition && !failCondition) {
+        return {
+          status: 'failed',
+          error: `模型 "${modelName}" 未配置 query_success_condition / query_fail_condition，无法判断异步任务状态。`
         };
       }
-      const errorMsg = errorInfo.error || errorInfo.message || errorInfo.fail_reason || '未知错误';
-      throw new Error(`${errorMsg} (taskId: ${taskId})`);
-    }
 
-    // pending，继续轮询
-  }
+      const isSuccess = evaluateCondition(mappedBase, successCondition);
+      const isFail = evaluateCondition(mappedBase, failCondition);
+
+      if (isSuccess) {
+        let mapped;
+        if (successMapping) {
+          mapped = mapResponse(rawData, successMapping);
+        } else {
+          mapped = mappedBase;
+        }
+        console.log(`[${logTag}] 成功结果字段:`, {
+          model: modelName,
+          taskId,
+          mappedKeys: getObjectKeys(mapped),
+          urlCandidates: collectUrlCandidates(rawData)
+        });
+        return {
+          status: 'success',
+          data: {
+            status: true,
+            ...mapped,
+            _submitResult: submitResult,
+            _queryResult: queryResult,
+            _rawQueryResult: rawData
+          }
+        };
+      }
+
+      if (isFail) {
+        let errorInfo;
+        if (failMapping) {
+          errorInfo = mapResponse(rawData, failMapping);
+        } else {
+          errorInfo = {
+            error: mappedBase.error || mappedBase.message
+              || rawData?.message || rawData?.data?.message
+              || rawData?.data?.fail_reason
+              || '未知错误'
+          };
+        }
+        const errorMsg = errorInfo.error || errorInfo.message || errorInfo.fail_reason || '未知错误';
+        return {
+          status: 'failed',
+          error: `${errorMsg} (taskId: ${taskId})`
+        };
+      }
+
+      // pending，继续轮询
+      return { status: 'pending' };
+    }
+  });
+
+  return pollResult;
 }
 
 module.exports = {

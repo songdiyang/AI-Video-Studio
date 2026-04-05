@@ -23,7 +23,7 @@ async function migrate() {
     if (existing.length === 0) {
       await pool.query(`
         INSERT INTO system_configs (config_key, config_name, config_type, config_value, description, is_active)
-        VALUES ('service_fee_rate', '服务费率', 'number', '0.5', 'AI消耗服务费率，0.5表示50%。积分 = 成本 × (1 + 服务费率) / 0.02', 1)
+        VALUES ('service_fee_rate', '服务费率', 'number', '0.5', 'AI消耗服务费率，0.5表示50%。积分 = 成本 × (1 + 服务费率) / 0.01', 1)
       `);
       console.log('   ✓ 已添加 service_fee_rate 配置，默认值 0.5 (50%)');
     } else {
@@ -39,9 +39,9 @@ async function migrate() {
     if (pointValue.length === 0) {
       await pool.query(`
         INSERT INTO system_configs (config_key, config_name, config_type, config_value, description, is_active)
-        VALUES ('point_value_cny', '积分单价(元)', 'number', '0.02', '1积分对应的人民币金额，固定值', 1)
+        VALUES ('point_value_cny', '积分单价(元)', 'number', '0.01', '1积分对应的人民币金额(元)，1积分=¥0.01=1分钱', 1)
       `);
-      console.log('   ✓ 已添加 point_value_cny 配置，默认值 0.02 (1积分=¥0.02)');
+      console.log('   ✓ 已添加 point_value_cny 配置，默认值 0.01 (1积分=¥0.01)');
     } else {
       console.log('   - point_value_cny 配置已存在，跳过');
     }
@@ -83,17 +83,17 @@ async function migrate() {
     if (usersWithBalance.length > 0) {
       console.log(`   发现 ${usersWithBalance.length} 个用户有小额余额，可能需要转换为积分`);
       console.log('   提示：如果原来余额单位是"元"，需手动执行：');
-      console.log('   UPDATE users SET balance = balance * 50 WHERE balance > 0;');
-      console.log('   (1元 = 50积分)');
+      console.log('   UPDATE users SET balance = balance * 100 WHERE balance > 0;');
+      console.log('   (1元 = 100积分)');
     } else {
       console.log('   - 无需转换');
     }
     
     console.log('\n迁移完成！ (≧∇≦)');
     console.log('\n当前积分计费规则：');
-    console.log('  - 1 积分 = ¥0.02');
+    console.log('  - 1 积分 = ¥0.01（1分钱）');
     console.log('  - 服务费率 = 50%');
-    console.log('  - 积分 = ceil(成本 × 1.5 / 0.02)');
+    console.log('  - 积分 = ceil(成本 × 1.5 / 0.01)');
     console.log('\n后台可在 system_configs 中调整 service_fee_rate 值');
     
     await db.closeDatabase();

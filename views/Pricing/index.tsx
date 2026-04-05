@@ -10,27 +10,27 @@ import { getAuthToken } from '../../services/auth';
 
 // 默认套餐图标映射
 const planIcons: Record<string, React.ReactNode> = {
-  starter: <Rocket className="w-5 h-5" />,
-  creator: <Sparkles className="w-5 h-5" />,
-  studio: <Crown className="w-5 h-5" />,
+  basic: <Rocket className="w-5 h-5" />,
+  pro: <Sparkles className="w-5 h-5" />,
+  premium: <Crown className="w-5 h-5" />,
   enterprise: <Building2 className="w-5 h-5" />,
 };
 
 // 套餐颜色配置（渐变、边框、发光）
 const planThemes: Record<string, { gradient: string; border: string; glow: string; badge: string }> = {
-  starter: {
+  basic: {
     gradient: 'from-slate-500/20 to-slate-600/10',
     border: 'border-slate-500/30',
     glow: 'hover:shadow-slate-500/20',
     badge: 'bg-slate-500/20 text-slate-300',
   },
-  creator: {
+  pro: {
     gradient: 'from-[var(--accent)]/20 to-purple-600/10',
     border: 'border-[var(--accent)]/50',
     glow: 'hover:shadow-[var(--accent)]/30',
     badge: 'bg-[var(--accent)]/20 text-[var(--accent-light)]',
   },
-  studio: {
+  premium: {
     gradient: 'from-amber-500/20 to-orange-600/10',
     border: 'border-amber-500/40',
     glow: 'hover:shadow-amber-500/25',
@@ -65,55 +65,55 @@ const defaultPlans: SubscriptionPlan[] = [
     price_yearly: 0,
     first_month_price: null,
     first_year_price: null,
-    max_projects: 1,
-    max_api_calls_monthly: 5,
+    max_projects: 3,
+    max_api_calls_monthly: 2000,
     max_team_members: 1,
-    features_json: ['基础AI工具', '单个项目', '5积分/月', '社区浏览'],
+    features_json: ['基础AI工具', '3个项目', '2,000积分/月', '社区浏览'],
     sort_order: 0,
     is_active: true,
   },
   {
     id: 1,
-    name: 'starter',
-    display_name: '入门版',
-    price_monthly: 70,
-    price_yearly: 700,
-    first_month_price: 49,   // 新用户首月特惠
-    first_year_price: 490,   // 新用户首年特惠
-    max_projects: 1,
-    max_api_calls_monthly: 10,
-    max_team_members: 1,
-    features_json: ['基础工具全开放', '单部作品管理', '10积分/月', '社区浏览'],
+    name: 'basic',
+    display_name: '基础版',
+    price_monthly: 99,
+    price_yearly: 990,
+    first_month_price: 49.9,   // 新用户首月特惠
+    first_year_price: null,
+    max_projects: 20,
+    max_api_calls_monthly: 10000,
+    max_team_members: 5,
+    features_json: ['完整工作流', '20个项目', '10,000积分/月', '模板库访问', '社区排行榜'],
     sort_order: 1,
     is_active: true,
   },
   {
     id: 2,
-    name: 'creator',
-    display_name: '创作者',
-    price_monthly: 499,
-    price_yearly: 4999,
-    first_month_price: 99,   // 新用户首月特惠
-    first_year_price: 999,   // 新用户首年特惠
-    max_projects: 5,
-    max_api_calls_monthly: 500,
-    max_team_members: 3,
-    features_json: ['完整工作流', '5个项目', '500积分/月', '社区排行榜', '模板库访问'],
+    name: 'pro',
+    display_name: '专业版',
+    price_monthly: 299,
+    price_yearly: 2990,
+    first_month_price: null,
+    first_year_price: null,
+    max_projects: -1,
+    max_api_calls_monthly: 30000,
+    max_team_members: 15,
+    features_json: ['无限项目', '30,000积分/月', '团队协作', '高级AI模型', '优先支持'],
     sort_order: 2,
     is_active: true,
   },
   {
     id: 3,
-    name: 'studio',
-    display_name: '工作室',
-    price_monthly: 1999,
-    price_yearly: 19999,
-    first_month_price: 499,  // 新用户首月特惠
-    first_year_price: 4999,  // 新用户首年特惠
+    name: 'premium',
+    display_name: '旗舰版',
+    price_monthly: 888,
+    price_yearly: 8880,
+    first_month_price: null,
+    first_year_price: null,
     max_projects: -1,
-    max_api_calls_monthly: 5000,
-    max_team_members: 10,
-    features_json: ['无限项目', '5000积分/月', '团队协作', '版本控制', '优先支持'],
+    max_api_calls_monthly: 90000,
+    max_team_members: -1,
+    features_json: ['无限项目', '90,000积分/月', '无限团队成员', '全部AI模型', 'API访问权限', '专属客服'],
     sort_order: 3,
     is_active: true,
   },
@@ -223,7 +223,7 @@ const Pricing: React.FC = () => {
   const getPlanTheme = (name: string) => {
     const lowName = name.toLowerCase();
     if (lowName === 'free') return freeTheme;
-    return planThemes[lowName] || planThemes.starter;
+    return planThemes[lowName] || planThemes.basic;
   };
 
   const getPlanTranslation = (planName: string) => {
@@ -240,7 +240,7 @@ const Pricing: React.FC = () => {
     return `¥${price.toLocaleString()}`;
   };
 
-  const isPopular = (name: string) => name.toLowerCase() === 'creator';
+  const isPopular = (name: string) => name.toLowerCase() === 'pro';
 
   if (loading) {
     return (

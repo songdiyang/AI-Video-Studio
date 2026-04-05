@@ -42,6 +42,8 @@ const SiteSettings = React.lazy(() => import('./views/admin/SiteSettings'));
 const FeedbackManagement = React.lazy(() => import('./views/admin/FeedbackManagement'));
 const ErrorMonitor = React.lazy(() => import('./views/admin/ErrorMonitor'));
 const AnnouncementManagement = React.lazy(() => import('./views/admin/AnnouncementManagement'));
+const BillingConfig = React.lazy(() => import('./views/admin/BillingConfig'));
+const FrontendSettingsManagement = React.lazy(() => import('./views/admin/FrontendSettingsManagement'));
 
 // 加载中回退组件
 const LoadingFallback = () => (
@@ -231,6 +233,16 @@ const App: React.FC = () => {
               <Route path="announcements" element={
                 <Suspense fallback={<LoadingFallback />}>
                   <AnnouncementManagement />
+                </Suspense>
+              } />
+              <Route path="billing-config" element={
+                <Suspense fallback={<LoadingFallback />}>
+                  <BillingConfig />
+                </Suspense>
+              } />
+              <Route path="system-configs" element={
+                <Suspense fallback={<LoadingFallback />}>
+                  <FrontendSettingsManagement />
                 </Suspense>
               } />
               <Route index element={<Navigate to="/admin/dashboard" replace />} />

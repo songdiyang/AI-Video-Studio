@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>中国AI漫剧/短视频创作平台竞品调研报告 — 饺子动画</title>
+<style>
+  @page { size: A4; margin: 18mm 14mm; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "Microsoft YaHei", "PingFang SC", "Helvetica Neue", sans-serif;
+    color: #1a1a2e; background: #f8f9fa; line-height: 1.6; padding: 0;
+  }
+  .page { max-width: 210mm; margin: 0 auto; background: #fff; padding: 36px 44px; }
+  @media print {
+    body { background: #fff; }
+    .page { padding: 0; margin: 0; max-width: 100%; box-shadow: none; }
+    .no-print { display: none; }
+    table { break-inside: avoid; }
+    .note-card, .competitor-card, .swot-grid, .risk-card { break-inside: avoid; page-break-inside: avoid; }
+  }
+  @media screen {
+    .page { box-shadow: 0 2px 20px rgba(0,0,0,0.08); margin: 20px auto; border-radius: 4px; }
+  }
+  @media (max-width: 768px) {
+    .page { padding: 18px 14px; }
+    .overview-cards, .swot-grid, .timeline-grid, .risk-grid { grid-template-columns: 1fr !important; }
+    .finance-overview { grid-template-columns: repeat(2, 1fr) !important; }
+    .data-table { font-size: 11px; }
+    .data-table th, .data-table td { padding: 5px 6px; }
+  }
+
+  /* Banner */
+  .banner {
+    text-align: center; padding: 40px 30px 32px;
+    background: linear-gradient(135deg, #0052d9, #531dab, #c41d7f);
+    border-radius: 12px; margin-bottom: 28px; color: #fff; position: relative; overflow: hidden;
+  }
+  .banner::before {
+    content: ''; position: absolute; top: -60px; right: -60px;
+    width: 200px; height: 200px; border-radius: 50%;
+    background: rgba(255,255,255,0.06);
+  }
+  .banner::after {
+    content: ''; position: absolute; bottom: -40px; left: -40px;
+    width: 160px; height: 160px; border-radius: 50%;
+    background: rgba(255,255,255,0.04);
+  }
+  .banner h1 { font-size: 26px; letter-spacing: 3px; margin-bottom: 8px; position: relative; }
+  .banner .subtitle { font-size: 14px; opacity: 0.85; position: relative; }
+  .banner .meta { margin-top: 12px; font-size: 12px; opacity: 0.7; position: relative; }
+
+  /* Section */
+  .category-section { margin-bottom: 28px; }
+  .category-title {
+    font-size: 16px; color: #fff;
+    background: linear-gradient(135deg, #0052d9, #2b7de9);
+    padding: 9px 18px; border-radius: 6px; margin-bottom: 14px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .category-title .icon { font-size: 18px; }
+  .category-title.purple { background: linear-gradient(135deg, #531dab, #9254de); }
+  .category-title.green { background: linear-gradient(135deg, #389e0d, #52c41a); }
+  .category-title.orange { background: linear-gradient(135deg, #d48806, #faad14); }
+  .category-title.red { background: linear-gradient(135deg, #cf1322, #ff4d4f); }
+  .category-title.teal { background: linear-gradient(135deg, #08979c, #36cfc9); }
+  .category-title.pink { background: linear-gradient(135deg, #c41d7f, #eb2f96); }
+
+  /* Data Table */
+  .data-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 16px; }
+  .data-table th {
+    background: #f0f2f5; color: #333; padding: 8px 12px;
+    text-align: left; font-weight: 600; border: 1px solid #e0e0e0;
+  }
+  .data-table td { padding: 7px 12px; border: 1px solid #e0e0e0; color: #444; }
+  .data-table tbody tr:nth-child(even) { background: #fafbfc; }
+  .data-table tbody tr:hover { background: #f0f5ff; }
+  .data-table .highlight-col { background: #f0f5ff !important; font-weight: 600; }
+  .data-table .best { color: #389e0d; font-weight: 700; }
+  .data-table .worst { color: #cf1322; font-weight: 700; }
+
+  /* Tags */
+  .tag {
+    font-size: 11px; padding: 2px 9px; border-radius: 12px; font-weight: 600;
+    white-space: nowrap; display: inline-block;
+  }
+  .tag-green { background: #f6ffed; color: #389e0d; border: 1px solid #b7eb8f; }
+  .tag-red { background: #fff0f0; color: #d4380d; border: 1px solid #ffccc7; }
+  .tag-orange { background: #fff7e6; color: #d48806; border: 1px solid #ffe58f; }
+  .tag-blue { background: #f0f5ff; color: #1d39c4; border: 1px solid #adc6ff; }
+  .tag-purple { background: #f9f0ff; color: #531dab; border: 1px solid #d3adf7; }
+
+  /* Summary Box */
+  .summary-box {
+    margin: 14px 0; padding: 16px 20px;
+    background: linear-gradient(135deg, #f6f9ff, #eef3ff);
+    border-radius: 8px; border: 1px solid #d6e4ff;
+    font-size: 14px; color: #0052d9; font-weight: 600; line-height: 1.8;
+  }
+
+  /* Note Cards */
+  .note-card {
+    margin-bottom: 12px; padding: 16px 18px;
+    border-radius: 6px; font-size: 12.5px; line-height: 1.8;
+    page-break-inside: avoid;
+  }
+  .note-card h4 { font-size: 13px; margin-bottom: 8px; }
+  .note-card ul { padding-left: 18px; }
+  .note-card li { margin-bottom: 4px; }
+  .note-warn { background: #fffbe6; border: 1px solid #ffe58f; color: #614700; }
+  .note-warn h4 { color: #ad6800; }
+  .note-danger { background: #fff1f0; border: 1px solid #ffccc7; color: #5c0011; }
+  .note-danger h4 { color: #cf1322; }
+  .note-info { background: #f0f5ff; border: 1px solid #adc6ff; color: #003eb3; }
+  .note-info h4 { color: #0052d9; }
+  .note-success { background: #f6ffed; border: 1px solid #b7eb8f; color: #135200; }
+  .note-success h4 { color: #389e0d; }
+
+  /* Overview Cards */
+  .overview-cards {
+    display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px;
+    margin-bottom: 20px; page-break-inside: avoid;
+  }
+  .ov-card {
+    padding: 18px 14px; border-radius: 10px; text-align: center;
+    color: #fff; position: relative; overflow: hidden;
+  }
+  .ov-card::before {
+    content: ''; position: absolute; top: -30px; right: -30px;
+    width: 100px; height: 100px; border-radius: 50%;
+    background: rgba(255,255,255,0.08);
+  }
+  .ov-card .ov-label { font-size: 11px; opacity: 0.9; margin-bottom: 6px; }
+  .ov-card .ov-value { font-size: 20px; font-weight: 800; font-family: "Consolas","Menlo",monospace; }
+  .ov-card .ov-sub { font-size: 10.5px; opacity: 0.8; margin-top: 4px; }
+  .ov-blue { background: linear-gradient(135deg, #0052d9, #2b7de9); }
+  .ov-purple { background: linear-gradient(135deg, #531dab, #9254de); }
+  .ov-green { background: linear-gradient(135deg, #389e0d, #52c41a); }
+  .ov-orange { background: linear-gradient(135deg, #d48806, #fa8c16); }
+  .ov-pink { background: linear-gradient(135deg, #c41d7f, #eb2f96); }
+
+  /* Progress Bar */
+  .progress-wrap { margin-bottom: 10px; }
+  .progress-label {
+    font-size: 12px; color: #333; margin-bottom: 4px;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .progress-label .score { font-family: "Consolas",monospace; font-weight: 700; }
+  .progress-track {
+    height: 20px; background: #f0f2f5; border-radius: 10px; overflow: hidden; position: relative;
+  }
+  .progress-fill {
+    height: 100%; border-radius: 10px; display: flex; align-items: center;
+    justify-content: flex-end; padding-right: 8px;
+    font-size: 10px; color: #fff; font-weight: 700;
+    font-family: "Consolas",monospace; transition: width 0.3s;
+  }
+  .pg-green { background: linear-gradient(90deg, #389e0d, #95de64); }
+  .pg-blue { background: linear-gradient(90deg, #0052d9, #69b1ff); }
+  .pg-orange { background: linear-gradient(90deg, #d48806, #ffd666); }
+  .pg-red { background: linear-gradient(90deg, #cf1322, #ff7875); }
+  .pg-purple { background: linear-gradient(90deg, #531dab, #b37feb); }
+
+  /* Competitor Card */
+  .competitor-card {
+    margin-bottom: 16px; padding: 20px;
+    border: 1px solid #e8e8e8; border-radius: 10px;
+    background: #fafbfc; page-break-inside: avoid;
+  }
+  .competitor-card:hover { box-shadow: 0 2px 12px rgba(0,82,217,0.08); }
+  .comp-header {
+    display: flex; align-items: center; gap: 14px; margin-bottom: 14px;
+    padding-bottom: 12px; border-bottom: 1px solid #e8e8e8;
+  }
+  .comp-logo {
+    width: 50px; height: 50px; border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 20px; font-weight: 800; flex-shrink: 0;
+  }
+  .comp-header h3 { font-size: 16px; color: #1a1a2e; }
+  .comp-header .comp-desc { font-size: 12px; color: #888; margin-top: 2px; }
+  .comp-features { font-size: 12.5px; color: #444; margin-bottom: 12px; line-height: 1.7; }
+  .comp-features strong { color: #333; }
+  .comp-pricing { font-size: 12.5px; color: #0052d9; margin-bottom: 12px; }
+  .comp-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+
+  /* SWOT */
+  .swot-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 14px;
+    margin-bottom: 16px; page-break-inside: avoid;
+  }
+  .swot-card {
+    border-radius: 10px; padding: 18px; page-break-inside: avoid;
+  }
+  .swot-card h4 { font-size: 15px; font-weight: 700; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
+  .swot-card ol { padding-left: 20px; font-size: 12.5px; line-height: 1.9; }
+  .swot-card li { margin-bottom: 2px; }
+  .swot-s { background: linear-gradient(135deg, #f6ffed, #e8ffd6); border: 2px solid #b7eb8f; }
+  .swot-s h4 { color: #389e0d; }
+  .swot-w { background: linear-gradient(135deg, #fff1f0, #ffe6e0); border: 2px solid #ffccc7; }
+  .swot-w h4 { color: #cf1322; }
+  .swot-o { background: linear-gradient(135deg, #f0f5ff, #e0ecff); border: 2px solid #adc6ff; }
+  .swot-o h4 { color: #0052d9; }
+  .swot-t { background: linear-gradient(135deg, #fff7e6, #fff0cc); border: 2px solid #ffe58f; }
+  .swot-t h4 { color: #d48806; }
+
+  /* Timeline */
+  .timeline-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px;
+    margin-bottom: 16px; page-break-inside: avoid;
+  }
+  .timeline-card {
+    border-radius: 10px; padding: 18px; position: relative;
+    overflow: hidden; color: #fff; page-break-inside: avoid;
+  }
+  .timeline-card::before {
+    content: ''; position: absolute; top: -20px; right: -20px;
+    width: 80px; height: 80px; border-radius: 50%;
+    background: rgba(255,255,255,0.1);
+  }
+  .timeline-card .tl-phase { font-size: 11px; opacity: 0.85; margin-bottom: 4px; }
+  .timeline-card .tl-title { font-size: 15px; font-weight: 700; margin-bottom: 10px; }
+  .timeline-card ul { padding-left: 16px; font-size: 12px; line-height: 1.8; }
+  .timeline-card li { margin-bottom: 2px; }
+  .tl-p0 { background: linear-gradient(135deg, #cf1322, #ff4d4f); }
+  .tl-p1 { background: linear-gradient(135deg, #d48806, #faad14); color: #5c3a00; }
+  .tl-p1 ul, .tl-p1 li { color: #5c3a00; }
+  .tl-p2 { background: linear-gradient(135deg, #0052d9, #2b7de9); }
+
+  /* Risk Cards */
+  .risk-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px;
+    margin-bottom: 16px; page-break-inside: avoid;
+  }
+  .risk-card {
+    border-radius: 10px; padding: 16px; page-break-inside: avoid;
+  }
+  .risk-card h4 { font-size: 14px; font-weight: 700; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+  .risk-card ol { padding-left: 18px; font-size: 12.5px; line-height: 1.8; }
+  .risk-card li { margin-bottom: 2px; }
+  .risk-high { background: #fff1f0; border: 2px solid #ffccc7; }
+  .risk-high h4 { color: #cf1322; }
+  .risk-mid { background: #fff7e6; border: 2px solid #ffe58f; }
+  .risk-mid h4 { color: #d48806; }
+  .risk-low { background: #f0f5ff; border: 2px solid #adc6ff; }
+  .risk-low h4 { color: #0052d9; }
+
+  /* Check/Cross */
+  .ck { color: #389e0d; font-weight: 700; }
+  .cx { color: #cf1322; font-weight: 700; }
+
+  /* Strategy highlight */
+  .strategy-highlight {
+    margin: 14px 0; padding: 20px;
+    background: linear-gradient(135deg, #f9f0ff, #f0f5ff);
+    border: 2px solid #d3adf7; border-radius: 10px;
+    page-break-inside: avoid;
+  }
+  .strategy-highlight h4 { font-size: 15px; font-weight: 700; color: #531dab; margin-bottom: 10px; }
+  .strategy-highlight p { font-size: 13px; color: #444; line-height: 1.8; margin-bottom: 6px; }
+  .strategy-highlight .slogan {
+    font-size: 16px; font-weight: 800; color: #531dab;
+    text-align: center; margin: 12px 0 6px;
+    padding: 10px; background: rgba(83,29,171,0.06); border-radius: 8px;
+  }
+
+  /* Footer */
+  .footer {
+    margin-top: 24px; padding-top: 14px;
+    border-top: 1px solid #e0e0e0; text-align: center; font-size: 11px; color: #aaa;
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ========== Banner ========== -->
+  <div class="banner">
+    <h1>中国AI漫剧/短视频创作平台竞品调研报告</h1>
+    <div class="subtitle">饺子动画 NanoStory &middot; 全链路创作平台竞争分析</div>
+    <div class="meta">报告日期：2026年4月 &nbsp;|&nbsp; 版本：v1.0 &nbsp;|&nbsp; 内部参考文件</div>
+  </div>
+
+  <!-- ========== 一、执行摘要 ========== -->
+  <div class="category-section">
+    <div class="category-title"><span class="icon">&#x1F4CA;</span> 一、执行摘要</div>
+    <div class="summary-box" style="background:linear-gradient(135deg,#f9f0ff,#f0f5ff);border-color:#d3adf7;color:#333;">
+      2026年AI漫剧市场已突破 <strong style="color:#c41d7f;">200亿</strong> 规模，预计年底达 <strong style="color:#c41d7f;">300亿</strong>。
+      主要玩家包括字节跳动（即梦）、快手（可灵）、麻薯动漫等。
+      饺子动画作为 <strong style="color:#531dab;">全流程工作流平台</strong>，具有差异化竞争空间，但窗口期仅 <strong style="color:#cf1322;">3-6个月</strong>。
+    </div>
+    <div class="overview-cards">
+      <div class="ov-card ov-pink">
+        <div class="ov-label">市场规模</div>
+        <div class="ov-value">200亿+</div>
+        <div class="ov-sub">2026年 预计年底300亿</div>
+      </div>
+      <div class="ov-card ov-blue">
+        <div class="ov-label">用户规模</div>
+        <div class="ov-value">2.8亿</div>
+        <div class="ov-sub">漫剧+AI短视频用户</div>
+      </div>
+      <div class="ov-card ov-purple">
+        <div class="ov-label">抖音年播放</div>
+        <div class="ov-value">700亿+</div>
+        <div class="ov-sub">漫剧年播放量</div>
+      </div>
+      <div class="ov-card ov-green">
+        <div class="ov-label">饺子工作流</div>
+        <div class="ov-value">90%</div>
+        <div class="ov-sub">业界最完整</div>
+      </div>
+      <div class="ov-card ov-orange">
+        <div class="ov-label">窗口期</div>
+        <div class="ov-value">3-6月</div>
+        <div class="ov-sub">差异化窗口</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== 二、竞品概览对比表 ========== -->
+  <div class="category-section">
+    <div class="category-title purple"><span class="icon">&#x1F50D;</span> 二、竞品概览对比表</div>
+    <table class="data-table">
+      <thead>
+        <tr><th>维度</th><th>即梦</th><th>可灵</th><th>麻薯动漫</th><th>TapNow</th><th class="highlight-col">饺子动画</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><strong>运营方</strong></td><td>字节跳动</td><td>快手</td><td>独立创业团队</td><td>国际团队</td><td class="highlight-col">国内创业团队</td></tr>
+        <tr><td><strong>主要功能</strong></td><td>文生视频、图生视频、长视频、分镜设计、运镜控制</td><td>文生视频、图生视频、4K生成、运动笔刷、数字人</td><td>漫剧脚本、分镜、自动生成、音视频同步、角色锁定</td><td>多模型编排、分镜拆分、工作流自定义</td><td class="highlight-col">剧本&rarr;角色&rarr;分镜&rarr;图片&rarr;视频&rarr;合成全链路</td></tr>
+        <tr><td><strong>免费额度</strong></td><td>260积分/天</td><td>66积分/天</td><td>有限额度</td><td>有限额度</td><td class="highlight-col best">2000积分/新手</td></tr>
+        <tr><td><strong>基础订阅</strong></td><td class="best">&yen;69/月</td><td>&yen;159/月</td><td>~&yen;59/月</td><td>~&yen;250/月</td><td class="highlight-col">&yen;99/月</td></tr>
+        <tr><td><strong>中端订阅</strong></td><td>&yen;159/月</td><td>&yen;399/月</td><td>-</td><td>企业定价</td><td class="highlight-col">&yen;299/月</td></tr>
+        <tr><td><strong>高端订阅</strong></td><td>&yen;299/月</td><td class="worst">&yen;666/月</td><td>-</td><td>企业定价</td><td class="highlight-col">&yen;888/月</td></tr>
+        <tr><td><strong>角色一致性</strong></td><td class="best">9.7/10</td><td>8/10</td><td class="worst">7/10</td><td>专业级</td><td class="highlight-col">待测试</td></tr>
+        <tr><td><strong>工作流完整度</strong></td><td>50%</td><td class="worst">40%</td><td>60%</td><td>高但复杂</td><td class="highlight-col best">90%</td></tr>
+        <tr><td><strong>上手难度</strong></td><td class="best">简单</td><td>中等</td><td class="best">简单</td><td class="worst">复杂</td><td class="highlight-col">中等</td></tr>
+        <tr><td><strong>定位</strong></td><td>民用+商用均衡</td><td>专业内容生产</td><td>轻量化快速制作</td><td>专业设计工具</td><td class="highlight-col" style="color:#531dab;font-weight:700;">全链路创作平台</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ========== 三、逐个竞品详细分析 ========== -->
+  <div class="category-section">
+    <div class="category-title" style="background:linear-gradient(135deg,#08979c,#36cfc9);"><span class="icon">&#x1F3AF;</span> 三、逐个竞品详细分析</div>
+
+    <!-- 3.1 即梦 -->
+    <div class="competitor-card">
+      <div class="comp-header">
+        <div class="comp-logo" style="background:linear-gradient(135deg,#0052d9,#2b7de9);">即</div>
+        <div>
+          <h3>3.1 即梦（Jimeng）— 字节跳动</h3>
+          <div class="comp-desc">基于 Seedance 2.0 模型的消费级AI视频生成平台</div>
+        </div>
+      </div>
+      <div class="comp-features">
+        <strong>核心功能：</strong>文生视频、图生视频、视频续写（5秒&rarr;3分钟）、运镜控制（12+参数）、原生音视频同步
+      </div>
+      <div class="comp-pricing">
+        <strong>定价：</strong>免费260积分/天 &nbsp;|&nbsp; 1元7天试用 &nbsp;|&nbsp; 基础&yen;69/月 &nbsp;|&nbsp; 中端&yen;159/月 &nbsp;|&nbsp; 高端&yen;299/月
+      </div>
+      <div class="comp-tags">
+        <span class="tag tag-green">角色一致性业界最强(9.7/10)</span>
+        <span class="tag tag-green">原生音视频同步</span>
+        <span class="tag tag-green">生成速度最快</span>
+        <span class="tag tag-green">字节生态支撑</span>
+        <span class="tag tag-green">性价比最优(&yen;69/月)</span>
+        <span class="tag tag-red">工作流不完整（缺剧本和角色设计）</span>
+        <span class="tag tag-red">最高仅2K分辨率</span>
+        <span class="tag tag-orange">API未开放</span>
+        <span class="tag tag-orange">商业化模式待验证</span>
+      </div>
+    </div>
+
+    <!-- 3.2 可灵 -->
+    <div class="competitor-card">
+      <div class="comp-header">
+        <div class="comp-logo" style="background:linear-gradient(135deg,#531dab,#9254de);">可</div>
+        <div>
+          <h3>3.2 可灵（Kling）— 快手</h3>
+          <div class="comp-desc">专业级AI视频生成平台，主打4K原生和电影质感</div>
+        </div>
+      </div>
+      <div class="comp-features">
+        <strong>核心功能：</strong>文生/图生视频、4K原生、运动笔刷、对口型、数字人
+      </div>
+      <div class="comp-pricing">
+        <strong>定价：</strong>免费66积分/天 &nbsp;|&nbsp; 标准&yen;159/月 &nbsp;|&nbsp; 钻石&yen;399~666/月
+      </div>
+      <div class="comp-tags">
+        <span class="tag tag-green">4K原生输出唯一平台</span>
+        <span class="tag tag-green">电影质感最强</span>
+        <span class="tag tag-green">运动笔刷创新</span>
+        <span class="tag tag-green">API定价最低($0.029/秒)</span>
+        <span class="tag tag-red">角色一致性不如即梦(8/10)</span>
+        <span class="tag tag-red">订阅价格高</span>
+        <span class="tag tag-red">工作流支离破碎</span>
+        <span class="tag tag-orange">学习曲线陡峭</span>
+      </div>
+    </div>
+
+    <!-- 3.3 麻薯动漫 -->
+    <div class="competitor-card">
+      <div class="comp-header">
+        <div class="comp-logo" style="background:linear-gradient(135deg,#d48806,#faad14);color:#5c3a00;">麻</div>
+        <div>
+          <h3>3.3 麻薯动漫（MochiAni）</h3>
+          <div class="comp-desc">主打简单高效的AI漫剧快速制作工具</div>
+        </div>
+      </div>
+      <div class="comp-features">
+        <strong>核心功能：</strong>脚本&rarr;分镜&rarr;自动生成、音视频同步、角色锁定、素材库共用
+      </div>
+      <div class="comp-pricing">
+        <strong>定价：</strong>约&yen;59/月可做10集1分钟短漫
+      </div>
+      <div class="comp-tags">
+        <span class="tag tag-green">新手友好一键生成</span>
+        <span class="tag tag-green">成本低廉</span>
+        <span class="tag tag-green">社区素材积累</span>
+        <span class="tag tag-red">角色一致性较弱(7/10)</span>
+        <span class="tag tag-red">知名度低无大厂背书</span>
+        <span class="tag tag-orange">功能深度有限</span>
+        <span class="tag tag-orange">长视频支持不足</span>
+      </div>
+    </div>
+
+    <!-- 3.4 TapNow -->
+    <div class="competitor-card">
+      <div class="comp-header">
+        <div class="comp-logo" style="background:linear-gradient(135deg,#c41d7f,#eb2f96);">T</div>
+        <div>
+          <h3>3.4 TapNow</h3>
+          <div class="comp-desc">面向专业设计师的多模型编排工具</div>
+        </div>
+      </div>
+      <div class="comp-features">
+        <strong>核心功能：</strong>多模型串联、分镜自动拆分、高度定制化
+      </div>
+      <div class="comp-pricing">
+        <strong>定价：</strong>年费约&yen;3000
+      </div>
+      <div class="comp-tags">
+        <span class="tag tag-green">工作流高度定制</span>
+        <span class="tag tag-green">模型组合灵活</span>
+        <span class="tag tag-red">学习曲线陡峭</span>
+        <span class="tag tag-red">国内认可度低</span>
+        <span class="tag tag-red">定价过高</span>
+        <span class="tag tag-orange">分发生态缺失</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== 四、功能维度深度对比 ========== -->
+  <div class="category-section">
+    <div class="category-title green"><span class="icon">&#x2699;</span> 四、功能维度深度对比</div>
+
+    <h5 style="font-size:14px;color:#389e0d;margin-bottom:10px;">AI模型能力对比</h5>
+    <table class="data-table">
+      <thead>
+        <tr><th>能力</th><th>即梦</th><th>可灵</th><th>麻薯</th><th class="highlight-col">饺子动画</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><strong>文生图质量</strong></td><td>8/10</td><td class="best">9/10</td><td>7/10</td><td class="highlight-col">中等</td></tr>
+        <tr><td><strong>图生视频质量</strong></td><td class="best">9/10</td><td>8.5/10</td><td>7/10</td><td class="highlight-col">中等</td></tr>
+        <tr><td><strong>角色一致性</strong></td><td class="best">9.7/10 &#9733;</td><td>8/10</td><td class="worst">7/10</td><td class="highlight-col">待测</td></tr>
+        <tr><td><strong>视频流畅度</strong></td><td class="best">9/10</td><td>8.5/10</td><td>7.5/10</td><td class="highlight-col">中等</td></tr>
+        <tr><td><strong>原生音频</strong></td><td class="ck">有 &#9733;</td><td class="cx">无</td><td class="ck">有</td><td class="highlight-col cx">无</td></tr>
+        <tr><td><strong>4K输出</strong></td><td class="cx">无(2K)</td><td class="ck">有 &#9733;</td><td class="cx">否</td><td class="highlight-col cx">否</td></tr>
+        <tr><td><strong>运动笔刷</strong></td><td class="ck">有</td><td class="ck">有 &#9733;</td><td class="cx">无</td><td class="highlight-col cx">无</td></tr>
+      </tbody>
+    </table>
+
+    <!-- 评分进度条可视化 -->
+    <h5 style="font-size:14px;color:#531dab;margin:16px 0 10px;">角色一致性评分可视化</h5>
+    <div class="progress-wrap">
+      <div class="progress-label"><span>即梦（Jimeng）</span><span class="score" style="color:#389e0d;">9.7/10</span></div>
+      <div class="progress-track"><div class="progress-fill pg-green" style="width:97%;">9.7</div></div>
+    </div>
+    <div class="progress-wrap">
+      <div class="progress-label"><span>可灵（Kling）</span><span class="score" style="color:#0052d9;">8.0/10</span></div>
+      <div class="progress-track"><div class="progress-fill pg-blue" style="width:80%;">8.0</div></div>
+    </div>
+    <div class="progress-wrap">
+      <div class="progress-label"><span>麻薯动漫</span><span class="score" style="color:#d48806;">7.0/10</span></div>
+      <div class="progress-track"><div class="progress-fill pg-orange" style="width:70%;">7.0</div></div>
+    </div>
+    <div class="progress-wrap">
+      <div class="progress-label"><span>饺子动画</span><span class="score" style="color:#531dab;">待测试</span></div>
+      <div class="progress-track"><div class="progress-fill pg-purple" style="width:50%;">待测</div></div>
+    </div>
+
+    <h5 style="font-size:14px;color:#389e0d;margin:20px 0 10px;">工作流完整度对比</h5>
+    <table class="data-table">
+      <thead>
+        <tr><th>环节</th><th>即梦</th><th>可灵</th><th>麻薯</th><th class="highlight-col">饺子动画</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><strong>剧本生成</strong></td><td class="cx">&#x2717;</td><td class="cx">&#x2717;</td><td class="cx">&#x2717;</td><td class="highlight-col ck">&#x2713;</td></tr>
+        <tr><td><strong>角色设计</strong></td><td class="cx">&#x2717;</td><td class="cx">&#x2717;</td><td class="ck">&#x2713;</td><td class="highlight-col ck">&#x2713;</td></tr>
+        <tr><td><strong>分镜制作</strong></td><td class="ck">&#x2713;</td><td class="cx">&#x2717;</td><td class="ck">&#x2713;</td><td class="highlight-col ck">&#x2713;</td></tr>
+        <tr><td><strong>图片生成</strong></td><td class="ck">&#x2713;</td><td class="ck">&#x2713;</td><td class="ck">&#x2713;</td><td class="highlight-col ck">&#x2713;</td></tr>
+        <tr><td><strong>视频生成</strong></td><td class="ck">&#x2713;</td><td class="ck">&#x2713;</td><td class="ck">&#x2713;</td><td class="highlight-col ck">&#x2713;</td></tr>
+        <tr><td><strong>视频合成</strong></td><td class="cx">&#x2717;</td><td class="cx">&#x2717;</td><td class="cx">&#x2717;</td><td class="highlight-col ck">&#x2713;</td></tr>
+        <tr style="font-weight:700;"><td><strong>完整度</strong></td><td>50%</td><td class="worst">40%</td><td>60%</td><td class="highlight-col best">90% &#9733;</td></tr>
+      </tbody>
+    </table>
+
+    <!-- 工作流完整度进度条 -->
+    <div class="progress-wrap">
+      <div class="progress-label"><span>即梦</span><span class="score">50%</span></div>
+      <div class="progress-track"><div class="progress-fill pg-blue" style="width:50%;">50%</div></div>
+    </div>
+    <div class="progress-wrap">
+      <div class="progress-label"><span>可灵</span><span class="score">40%</span></div>
+      <div class="progress-track"><div class="progress-fill pg-orange" style="width:40%;">40%</div></div>
+    </div>
+    <div class="progress-wrap">
+      <div class="progress-label"><span>麻薯动漫</span><span class="score">60%</span></div>
+      <div class="progress-track"><div class="progress-fill pg-blue" style="width:60%;">60%</div></div>
+    </div>
+    <div class="progress-wrap">
+      <div class="progress-label"><span><strong>饺子动画</strong></span><span class="score" style="color:#389e0d;">90% &#9733;</span></div>
+      <div class="progress-track"><div class="progress-fill pg-green" style="width:90%;">90%</div></div>
+    </div>
+  </div>
+
+  <!-- ========== 五、SWOT分析 ========== -->
+  <div class="category-section">
+    <div class="category-title" style="background:linear-gradient(135deg,#391085,#722ed1);"><span class="icon">&#x1F9E9;</span> 五、SWOT分析（饺子动画）</div>
+    <div class="swot-grid">
+      <div class="swot-card swot-s">
+        <h4>&#x1F7E2; S 优势（Strengths）</h4>
+        <ol>
+          <li>全链路工作流业界最完整(90%) &mdash; 竞品都是孤岛式功能</li>
+          <li>火山引擎模型组合(豆包文本+Seedream图片+Seedance视频) &mdash; 避免单一依赖</li>
+          <li>团队协作和项目管理 &mdash; 竞品都是个人向</li>
+          <li>积分定价灵活 &mdash; 免费2000积分 + &yen;0.02充值透明</li>
+          <li>草稿持久化/自动保存、资源绑定、批量工作流</li>
+        </ol>
+      </div>
+      <div class="swot-card swot-w">
+        <h4>&#x1F534; W 劣势（Weaknesses）</h4>
+        <ol>
+          <li>无大厂背书，社区生态初期</li>
+          <li>单模型质量中等（角色一致性不如即梦9.7/10）</li>
+          <li>&yen;99/月比即梦&yen;69贵30%</li>
+          <li>工作流成熟度待市场验证</li>
+          <li>商业模式创新不足</li>
+        </ol>
+      </div>
+      <div class="swot-card swot-o">
+        <h4>&#x1F535; O 机会（Opportunities）</h4>
+        <ol>
+          <li>全链路工作流成刚需 &mdash; 90%用户抱怨工具切换</li>
+          <li>B端工作室市场崛起</li>
+          <li>垂直内容创作细分赛道</li>
+          <li>国际扩展空间</li>
+          <li>API/开放平台化</li>
+        </ol>
+      </div>
+      <div class="swot-card swot-t">
+        <h4>&#x1F7E1; T 威胁（Threats）</h4>
+        <ol>
+          <li>大厂3-6个月内可能补齐工作流</li>
+          <li>生态垄断（抖音/快手优先推自家工具）</li>
+          <li>麻薯等轻量工具持续降价</li>
+          <li>模型同质化</li>
+          <li>政策和版权风险</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== 六、竞争策略建议 ========== -->
+  <div class="category-section">
+    <div class="category-title pink"><span class="icon">&#x1F680;</span> 六、竞争策略建议</div>
+
+    <div class="strategy-highlight">
+      <h4>&#x1F4A1; 差异化定位："全链路工作室操作系统"</h4>
+      <p>&bull; 不与竞品比单项能力</p>
+      <p>&bull; 主张"完整工作流 = 降低总成本 + 提升效率"</p>
+      <div class="slogan">一个99元的饺子 &gt; 五个20元的零食</div>
+    </div>
+
+    <div class="note-card note-info">
+      <h4>&#x1F4B0; 定价心理学</h4>
+      <ul>
+        <li>强调"节省切换工具时间" = 省钱</li>
+        <li>积分赠送：新用户2000积分 = &yen;200项目价值</li>
+        <li>首月&yen;49.9不亏钱（毛利&yen;16.45）</li>
+      </ul>
+    </div>
+
+    <h5 style="font-size:14px;color:#531dab;margin:16px 0 10px;">行动优先级路线图</h5>
+    <div class="timeline-grid">
+      <div class="timeline-card tl-p0">
+        <div class="tl-phase">P0 立即</div>
+        <div class="tl-title">1-3周</div>
+        <ul>
+          <li>录制5分钟"零到出品"完整演示视频</li>
+          <li>优化定价页突出工具整合价值</li>
+          <li>确保2000积分体验完整流程（不超过5步）</li>
+        </ul>
+      </div>
+      <div class="timeline-card tl-p1">
+        <div class="tl-phase">P1 重点</div>
+        <div class="tl-title">1个月</div>
+        <ul>
+          <li>提升角色一致性锁定能力</li>
+          <li>发布竞品对比测评</li>
+          <li>简化一键生成50场景工作流</li>
+        </ul>
+      </div>
+      <div class="timeline-card tl-p2">
+        <div class="tl-phase">P2 持续</div>
+        <div class="tl-title">3个月</div>
+        <ul>
+          <li>推出企业版API</li>
+          <li>国际化准备（日韩/东南亚）</li>
+          <li>建立创作者社群和IP合作</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== 七、市场趋势 ========== -->
+  <div class="category-section">
+    <div class="category-title orange"><span class="icon">&#x1F4C8;</span> 七、市场趋势</div>
+    <div class="note-card note-warn">
+      <h4>&#9654; 2026年关键数据</h4>
+      <ul>
+        <li>2026年AI漫剧市场突破 <strong>200亿</strong>，年底有望达 <strong>300亿</strong></li>
+        <li>漫剧+AI短视频用户预计从 <strong>1.2亿</strong> 增至 <strong>2.8亿</strong></li>
+        <li>抖音年漫剧播放量超 <strong>700亿次</strong></li>
+        <li>竞争从"能做"到"能做精"阶段</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ========== 八、风险预警 ========== -->
+  <div class="category-section">
+    <div class="category-title red"><span class="icon">&#x26A0;</span> 八、风险预警</div>
+    <div class="risk-grid">
+      <div class="risk-card risk-high">
+        <h4>&#x1F534; 高风险</h4>
+        <ol>
+          <li>字节/快手补齐工作流（监测即梦/可灵更新）</li>
+          <li>政策和版权不确定性（Seedance 2.0延迟API前例）</li>
+        </ol>
+      </div>
+      <div class="risk-card risk-mid">
+        <h4>&#x1F7E1; 中风险</h4>
+        <ol>
+          <li>大厂免费/低价冲击</li>
+          <li>模型同质化加剧</li>
+        </ol>
+      </div>
+      <div class="risk-card risk-low">
+        <h4>&#x1F535; 低风险</h4>
+        <ol>
+          <li>单项模型能力不足（可通过升级火山引擎版本改进）</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== 九、结论 ========== -->
+  <div class="category-section">
+    <div class="category-title" style="background:linear-gradient(135deg,#391085,#722ed1);"><span class="icon">&#x1F3C1;</span> 九、结论</div>
+    <div class="summary-box" style="background:linear-gradient(135deg,#f9f0ff,#f6ffed);border-color:#d3adf7;color:#333;font-size:13px;">
+      饺子动画处于<strong style="color:#531dab;">"差异化窗口期"</strong>，全链路工作流是真实需求，窗口期仅 <strong style="color:#cf1322;">3-6个月</strong>。
+    </div>
+    <div class="note-card note-success">
+      <h4>&#9654; 核心行动</h4>
+      <ul>
+        <li><strong>立足工作流完整度，不拼单项</strong> &mdash; 90%完整度是独特壁垒</li>
+        <li><strong>快速获取种子用户</strong> &mdash; 3个月争取2-3万MAU</li>
+        <li><strong>为B端做准备</strong> &mdash; 中期差异化，团队协作+项目管理</li>
+        <li><strong>提前国际化布局</strong> &mdash; 日韩/东南亚市场空白</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ========== 数据来源 ========== -->
+  <div class="footer">
+    <strong>数据来源：</strong>巨量引擎、艾媒咨询、各平台官网、知乎/什么值得买用户反馈、DevTk.AI等专业评测机构<br>
+    饺子动画 NanoStory &middot; 竞品调研报告 &middot; 内部参考文件<br>
+    报告日期：2026年4月 &nbsp;|&nbsp; 版本：v1.0
+  </div>
+
+</div>
+</body>
+</html>

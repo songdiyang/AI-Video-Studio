@@ -7,7 +7,7 @@ const router = express.Router();
 // 默认免费限额（未订阅用户）
 const FREE_LIMITS = {
   max_projects: 3,
-  max_api_calls_monthly: 100,
+  max_api_calls_monthly: 2000,
   max_team_members: 1
 };
 

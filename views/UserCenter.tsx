@@ -71,6 +71,9 @@ interface BillingResponse {
   offset: number;
 }
 
+// 积分充值售价（用户购买价格）
+const POINT_PURCHASE_PRICE = 0.02;
+
 const PAGE_SIZE = 20;
 
 const UserCenter: React.FC = () => {
@@ -512,7 +515,7 @@ const UserCenter: React.FC = () => {
                   </Button>
                 </div>
                 <div className="text-3xl font-bold text-emerald-400">{formatInteger(profile?.balance)} <span className="text-base font-normal text-[var(--text-muted)]">积分</span></div>
-                <div className="text-xs text-[var(--text-muted)] mt-1">≈ ¥{((profile?.balance || 0) * 0.02).toFixed(2)}</div>
+                <div className="text-xs text-[var(--text-muted)] mt-1">≈ ¥{((profile?.balance || 0) * POINT_PURCHASE_PRICE).toFixed(2)}</div>
               </div>
             </div>
           </div>
@@ -905,7 +908,7 @@ const UserCenter: React.FC = () => {
                         </span>
                         {record.points_cost && (
                           <span className="text-xs text-[var(--text-muted)]">
-                            ≈ ¥{((record.points_cost || 0) * 0.02).toFixed(2)}
+                            ≈ ¥{((record.points_cost || 0) * POINT_PURCHASE_PRICE).toFixed(2)}
                           </span>
                         )}
                       </div>

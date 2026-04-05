@@ -188,6 +188,12 @@ const UserManagement: React.FC = () => {
         </div>
 
         {/* Table */}
+        {/* 
+          [虚拟列表评估] 不适用 useVirtualList，原因：
+          1. 使用 <table> 布局，虚拟列表需要绝对定位（position: absolute）与 table 行布局不兼容
+          2. 如需虚拟化需将整个表格重构为 div 布局，改动过大且影响表格对齐和语义化
+          3. 建议后续用户量增长后添加服务端分页替代虚拟化
+        */}
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>

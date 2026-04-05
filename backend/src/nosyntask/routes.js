@@ -21,6 +21,8 @@ const {
 } = require('../modules/generation');
 const engine = require('./engine/index');
 const { generateWorkflowETag, matchesETag } = require('../utils/etag');
+const { getRateLimitStats } = require('./utils/aiRateLimiter');
+const pollManager = require('./utils/PollManager');
 
 const router = express.Router();
 
@@ -286,6 +288,53 @@ router.post('/:jobId/cancel', authMiddleware, async (req, res) => {
   } catch (error) {
     console.error('[Cancel Workflow]', error);
     res.status(500).json({ message: error.message || '取消工作流失败' });
+  }
+});
+
+/**
+ * 获取当前排队和轮询状态（用户端）
+ * 返回当前限流器队列信息和轮询调度器状态，供前端显示排队位置
+ */
+router.get('/queue-status', authMiddleware, (req, res) => {
+  try {
+    const rateLimitStats = getRateLimitStats();
+    const pollStats = pollManager.getStats();
+
+    // 提取用户关心的摘要信息
+    const defaultRole = rateLimitStats.roleStats?.default || {};
+    const summary = {
+      // 提交队列状态
+      submit: {
+        video: {
+          current: defaultRole.video?.current || 0,
+          max: defaultRole.video?.maxConcurrent || 0,
+          waiting: defaultRole.video?.waiting || 0,
+          userWaiting: defaultRole.video?.userWaiting || {}
+        },
+        image: {
+          current: defaultRole.image?.current || 0,
+          max: defaultRole.image?.maxConcurrent || 0,
+          waiting: defaultRole.image?.waiting || 0
+        },
+        text: {
+          current: defaultRole.text?.current || 0,
+          max: defaultRole.text?.maxConcurrent || 0,
+          waiting: defaultRole.text?.waiting || 0
+        }
+      },
+      // 轮询状态
+      poll: {
+        activeTasks: pollStats.currentActiveTasks,
+        totalCompleted: pollStats.totalCompleted,
+        totalFailed: pollStats.totalFailed,
+        peakActiveTasks: pollStats.peakActiveTasks
+      }
+    };
+
+    res.json(summary);
+  } catch (error) {
+    console.error('[Queue Status]', error);
+    res.status(500).json({ message: error.message || '获取排队状态失败' });
   }
 });
 

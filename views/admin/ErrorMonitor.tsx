@@ -218,6 +218,7 @@ const ErrorMonitor: React.FC = () => {
   );
 
   // 渲染任务错误表格
+  // [虚拟列表评估] 不适用 useVirtualList：已实现服务端分页（每页 20 条），无需虚拟化
   const renderTaskErrors = () => (
     <>
       {/* 筛选 */}
@@ -373,6 +374,7 @@ const ErrorMonitor: React.FC = () => {
   );
 
   // 渲染系统错误表格
+  // [虚拟列表评估] 不适用 useVirtualList：已实现服务端分页（每页 20 条），无需虚拟化
   const renderSystemErrors = () => (
     <>
       {/* 筛选 */}

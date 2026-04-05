@@ -461,19 +461,19 @@ const zhCN = {
       desc: '体验基础功能',
       cta: '立即开始',
     },
-    starter: {
-      name: '入门版',
+    basic: {
+      name: '基础版',
       desc: '适合个人创作者起步',
-      cta: '免费试用',
+      cta: '立即订阅',
     },
-    creator: {
-      name: '创作者版',
+    pro: {
+      name: '专业版',
       desc: '适合独立创作者',
       cta: '立即订阅',
     },
-    studio: {
-      name: '工作室版',
-      desc: '适合小型团队',
+    premium: {
+      name: '旗舰版',
+      desc: '适合小型团队和工作室',
       cta: '立即订阅',
     },
     enterprise: {
