@@ -1,10 +1,10 @@
 /**
  * useTaskRunner - 通用异步任务执行 hook
  * 
- * 封装 startWorkflow + useWorkflow 轮询，提供：
+ * 封装 startWorkflow + WebSocket 推送（轮询降级），提供：
  * - runTask(workflowType, params) 启动任务
  * - recoverTasks(workflowTypes, keyMapper) 恢复未消费的活跃任务
- * - 自动轮询进度
+ * - WebSocket 实时推送（优先）/ 轮询降级
  * - 完成/失败回调
  * - 支持同时跟踪多个任务（按 key 区分）
  * - clearTask 时自动 consumeWorkflow
@@ -12,6 +12,7 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { startWorkflow, getWorkflowStatus, getActiveWorkflows, consumeWorkflow, resumeWorkflow, WorkflowJob, ApiError } from './useWorkflow';
+import { useWebSocket, TaskStatusMessage } from './useWebSocket';
 
 export interface TaskState {
   jobId: number;
@@ -28,6 +29,8 @@ interface UseTaskRunnerOptions {
   projectId?: number;
   /** 最大自动重试次数，默认 0（不重试） */
   maxRetries?: number;
+  /** 是否启用 WebSocket（默认 true，不可用时自动降级轮询） */
+  useWebSocketPush?: boolean;
 }
 
 /**
@@ -46,7 +49,7 @@ interface UseTaskRunnerOptions {
  * const task = tasks['img_123']; // { status, progress, result, error }
  */
 export function useTaskRunner(options: UseTaskRunnerOptions = {}) {
-  const { interval = 500, projectId = 0, maxRetries = 0 } = options;
+  const { interval = 500, projectId = 0, maxRetries = 0, useWebSocketPush = true } = options;
 
   const [tasks, setTasks] = useState<Record<string, TaskState>>({});
   const timersRef = useRef<Record<string, ReturnType<typeof setInterval>>>({});
@@ -57,7 +60,68 @@ export function useTaskRunner(options: UseTaskRunnerOptions = {}) {
   const pollCountRef = useRef<Record<string, number>>({});
   const retryCountRef = useRef<Record<string, number>>({});
   const retryTimerRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  // jobId -> key 映射，用于 WebSocket 消息路由
+  const jobIdToKeyRef = useRef<Map<number, string>>(new Map());
+  // stopPolling 的 ref，用于在回调中调用
+  const stopPollingRef = useRef<(key: string) => void>(() => {});
   useEffect(() => { tasksRef.current = tasks; }, [tasks]);
+
+  // 停止某个 key 的轮询
+  const stopPolling = useCallback((key: string) => {
+    if (timersRef.current[key]) {
+      clearInterval(timersRef.current[key]);
+      delete timersRef.current[key];
+    }
+  }, []);
+  
+  // 保持 ref 同步
+  useEffect(() => { stopPollingRef.current = stopPolling; }, [stopPolling]);
+
+  // 处理 WebSocket 任务状态消息
+  const handleTaskStatus = useCallback((data: TaskStatusMessage) => {
+    const key = jobIdToKeyRef.current.get(data.jobId);
+    if (!key) return;
+
+    console.log(`[useTaskRunner] WebSocket 收到任务状态: jobId=${data.jobId}, status=${data.status}, progress=${data.progress}`);
+
+    if (data.status === 'completed') {
+      stopPollingRef.current(key);
+      setTasks(prev => ({
+        ...prev,
+        [key]: {
+          ...prev[key],
+          status: 'completed',
+          progress: 100,
+          result: data.result ?? null
+        }
+      }));
+    } else if (data.status === 'failed') {
+      stopPollingRef.current(key);
+      setTasks(prev => ({
+        ...prev,
+        [key]: {
+          ...prev[key],
+          status: 'failed',
+          error: data.error || '任务失败'
+        }
+      }));
+    } else if (data.progress !== undefined) {
+      setTasks(prev => ({
+        ...prev,
+        [key]: {
+          ...prev[key],
+          status: 'running',
+          progress: data.progress!
+        }
+      }));
+    }
+  }, []);
+
+  // WebSocket 连接
+  const { isConnected: wsConnected, subscribeTask, unsubscribeTask } = useWebSocket({
+    enabled: useWebSocketPush,
+    onTaskStatus: handleTaskStatus
+  });
 
   // 清理所有定时器
   useEffect(() => {
@@ -86,21 +150,17 @@ export function useTaskRunner(options: UseTaskRunnerOptions = {}) {
     }));
   }, []);
 
-  // 停止某个 key 的轮询
-  const stopPolling = useCallback((key: string) => {
-    if (timersRef.current[key]) {
-      clearInterval(timersRef.current[key]);
-      delete timersRef.current[key];
-    }
-  }, []);
-
   // 开始轮询某个 jobId（使用 setTimeout 实现自适应间隔）
-  const startPolling = useCallback((key: string, jobId: number) => {
+  // isBackupMode: true 表示 WebSocket 模式下的低频备用轮询
+  const startPolling = useCallback((key: string, jobId: number, isBackupMode: boolean = false) => {
     stopPolling(key);
     activeKeysRef.current.add(key);
     pollCountRef.current[key] = 0;
     let failCount = 0;
     const MAX_FAIL = 1; // 立即标记失败，不静默重试
+    
+    // WebSocket 备用模式使用更长的轮询间隔（10秒）
+    const backupInterval = 10000;
 
     const poll = async () => {
       // 检查是否已停止
@@ -188,7 +248,8 @@ export function useTaskRunner(options: UseTaskRunnerOptions = {}) {
       
       // 继续下一次轮询（使用自适应间隔）
       if (activeKeysRef.current.has(key)) {
-        timersRef.current[key] = setTimeout(poll, getAdaptiveInterval(key)) as any;
+        const nextInterval = isBackupMode ? backupInterval : getAdaptiveInterval(key);
+        timersRef.current[key] = setTimeout(poll, nextInterval) as any;
       }
     };
 
@@ -225,7 +286,22 @@ export function useTaskRunner(options: UseTaskRunnerOptions = {}) {
     try {
       const { jobId } = await startWorkflow(workflowType, projectId, params);
       updateTask(key, { jobId, status: 'running' });
-      startPolling(key, jobId);
+      
+      // 记录 jobId -> key 映射
+      jobIdToKeyRef.current.set(jobId, key);
+      
+      // 如果 WebSocket 已连接，订阅任务状态推送
+      if (wsConnected) {
+        subscribeTask(jobId);
+        console.log(`[useTaskRunner] WebSocket 已订阅任务: jobId=${jobId}`);
+        // 启动低频轮询作为保底（每10秒一次）
+        startPolling(key, jobId, true);
+      } else {
+        // WebSocket 不可用，使用传统轮询
+        console.log(`[useTaskRunner] WebSocket 不可用，降级使用轮询: jobId=${jobId}`);
+        startPolling(key, jobId, false);
+      }
+      
       return jobId;
     } catch (error: any) {
       if (error instanceof ApiError && error.status === 409 && error.data?.jobId) {
@@ -237,7 +313,14 @@ export function useTaskRunner(options: UseTaskRunnerOptions = {}) {
           result: null,
           error: null
         });
-        startPolling(key, conflictJobId);
+        
+        jobIdToKeyRef.current.set(conflictJobId, key);
+        if (wsConnected) {
+          subscribeTask(conflictJobId);
+          startPolling(key, conflictJobId, true);
+        } else {
+          startPolling(key, conflictJobId, false);
+        }
         return conflictJobId;
       }
 
@@ -248,7 +331,7 @@ export function useTaskRunner(options: UseTaskRunnerOptions = {}) {
       });
       throw error;
     }
-  }, [projectId, updateTask, startPolling]);
+  }, [projectId, updateTask, startPolling, wsConnected, subscribeTask]);
 
   /**
    * 恢复未消费的活跃工作流任务
@@ -294,6 +377,11 @@ export function useTaskRunner(options: UseTaskRunnerOptions = {}) {
   const clearTask = useCallback((key: string) => {
     const task = tasksRef.current[key];
     if (task?.jobId) {
+      // 取消 WebSocket 订阅
+      unsubscribeTask(task.jobId);
+      // 清理映射
+      jobIdToKeyRef.current.delete(task.jobId);
+      // 消费工作流
       consumeWorkflow(task.jobId).catch(err =>
         console.warn('[useTaskRunner] consumeWorkflow 失败:', err)
       );
@@ -310,7 +398,7 @@ export function useTaskRunner(options: UseTaskRunnerOptions = {}) {
       delete next[key];
       return next;
     });
-  }, [stopPolling]);
+  }, [stopPolling, unsubscribeTask]);
 
   const isTaskActive = useCallback((key: string) => activeKeysRef.current.has(key), []);
 

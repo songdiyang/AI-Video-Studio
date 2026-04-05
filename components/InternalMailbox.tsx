@@ -1,16 +1,32 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import ReactDOM from 'react-dom';
-import { Mail, X, Check, CheckCheck, Trash2, MessageSquare, Megaphone, Bell, ChevronLeft } from 'lucide-react';
+import { Mail, X, Check, CheckCheck, Trash2, MessageSquare, Megaphone, Bell, ChevronLeft, ClipboardList, Clock, Flag, ExternalLink, CheckCircle, XCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getAuthToken } from '../services/auth';
+
+interface TaskData {
+  taskId: number;
+  title: string;
+  description: string;
+  priority: 'low' | 'medium' | 'high' | 'urgent';
+  priorityLabel: string;
+  deadline: string | null;
+  teamId: number;
+  teamName: string;
+  projectId: number | null;
+  projectName: string | null;
+  storyboardId: number | null;
+  storyboardInfo: { id: number; scene_number: number } | null;
+}
 
 interface InternalMail {
   id: number;
   sender_type: 'system' | 'admin';
   title: string;
   content: string;
-  mail_type: 'reply' | 'announce' | 'system';
+  mail_type: 'reply' | 'announce' | 'system' | 'task';
   related_feedback_id: number | null;
+  related_task_id: number | null;
   is_read: number;
   created_at: string;
 }
@@ -19,6 +35,14 @@ const MAIL_TYPE_CONFIG: Record<string, { label: string; icon: React.ReactNode; c
   reply: { label: '反馈回复', icon: <MessageSquare className="w-3.5 h-3.5" />, color: 'var(--accent-primary)' },
   announce: { label: '系统公告', icon: <Megaphone className="w-3.5 h-3.5" />, color: '#f59e0b' },
   system: { label: '系统通知', icon: <Bell className="w-3.5 h-3.5" />, color: '#10b981' },
+  task: { label: '任务指派', icon: <ClipboardList className="w-3.5 h-3.5" />, color: '#8b5cf6' },
+};
+
+const PRIORITY_CONFIG: Record<string, { label: string; color: string; bgColor: string }> = {
+  low: { label: '低', color: '#10b981', bgColor: '#10b98118' },
+  medium: { label: '中', color: '#3b82f6', bgColor: '#3b82f618' },
+  high: { label: '高', color: '#f59e0b', bgColor: '#f59e0b18' },
+  urgent: { label: '紧急', color: '#ef4444', bgColor: '#ef444418' },
 };
 
 const InternalMailbox: React.FC = () => {
@@ -29,6 +53,8 @@ const InternalMailbox: React.FC = () => {
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [selectedMail, setSelectedMail] = useState<InternalMail | null>(null);
+  const [taskStatus, setTaskStatus] = useState<Record<number, string>>({});
+  const [taskLoading, setTaskLoading] = useState<number | null>(null);
   const [panelPosition, setPanelPosition] = useState<{ x: number; y: number }>({ x: 200, y: 60 });
   const panelRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -132,6 +158,79 @@ const InternalMailbox: React.FC = () => {
   const openMail = (mail: InternalMail) => {
     setSelectedMail(mail);
     if (!mail.is_read) markAsRead(mail.id);
+  };
+
+  // 解析任务数据
+  const parseTaskData = (content: string): TaskData | null => {
+    try {
+      return JSON.parse(content);
+    } catch {
+      return null;
+    }
+  };
+
+  // 接受任务
+  const acceptTask = async (taskId: number) => {
+    setTaskLoading(taskId);
+    try {
+      const res = await fetch(`/api/tasks/${taskId}/accept`, { 
+        method: 'PATCH', 
+        headers: headers() 
+      });
+      if (res.ok) {
+        setTaskStatus(prev => ({ ...prev, [taskId]: 'accepted' }));
+      } else {
+        const data = await res.json();
+        alert(data.error || '接受任务失败');
+      }
+    } catch (err) {
+      console.error('接受任务失败:', err);
+      alert('接受任务失败');
+    } finally {
+      setTaskLoading(null);
+    }
+  };
+
+  // 拒绝任务
+  const rejectTask = async (taskId: number) => {
+    const reason = prompt('请输入拒绝原因（可选）：');
+    if (reason === null) return; // 用户取消
+
+    setTaskLoading(taskId);
+    try {
+      const res = await fetch(`/api/tasks/${taskId}/reject`, { 
+        method: 'PATCH', 
+        headers: headers(),
+        body: JSON.stringify({ reason })
+      });
+      if (res.ok) {
+        setTaskStatus(prev => ({ ...prev, [taskId]: 'rejected' }));
+      } else {
+        const data = await res.json();
+        alert(data.error || '拒绝任务失败');
+      }
+    } catch (err) {
+      console.error('拒绝任务失败:', err);
+      alert('拒绝任务失败');
+    } finally {
+      setTaskLoading(null);
+    }
+  };
+
+  // 格式化截止时间
+  const formatDeadline = (deadline: string | null) => {
+    if (!deadline) return null;
+    const d = new Date(deadline);
+    const now = new Date();
+    const diff = d.getTime() - now.getTime();
+    const isOverdue = diff < 0;
+    const days = Math.abs(Math.floor(diff / 86400000));
+    
+    return {
+      text: d.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+      isOverdue,
+      urgency: isOverdue ? '已逾期' : days === 0 ? '今天截止' : days <= 3 ? `${days}天后` : null
+    };
   };
 
   const totalPages = Math.max(1, Math.ceil(total / limit));
@@ -257,17 +356,145 @@ const InternalMailbox: React.FC = () => {
                     <h3 className="text-base font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>
                       {selectedMail.title}
                     </h3>
-                    <div className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--text-secondary)' }}>
-                      {selectedMail.content}
-                    </div>
-                    <div className="mt-4 pt-3 flex justify-end" style={{ borderTop: '1px solid var(--border-color)' }}>
-                      <button
-                        onClick={() => deleteMail(selectedMail.id)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-red-400 hover:bg-red-500/10 transition-colors"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" /> 删除
-                      </button>
-                    </div>
+                    
+                    {/* 任务类型特殊展示 */}
+                    {selectedMail.mail_type === 'task' ? (
+                      (() => {
+                        const taskData = parseTaskData(selectedMail.content);
+                        if (!taskData) {
+                          return <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>无法解析任务数据</div>;
+                        }
+                        const deadline = formatDeadline(taskData.deadline);
+                        const priorityCfg = PRIORITY_CONFIG[taskData.priority] || PRIORITY_CONFIG.medium;
+                        const currentStatus = taskStatus[taskData.taskId];
+                        
+                        return (
+                          <div className="space-y-4">
+                            {/* 任务信息卡片 */}
+                            <div className="p-3 rounded-lg" style={{ backgroundColor: 'var(--bg-input)' }}>
+                              {/* 优先级和截止时间 */}
+                              <div className="flex items-center gap-3 mb-3">
+                                <span 
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium"
+                                  style={{ color: priorityCfg.color, backgroundColor: priorityCfg.bgColor }}
+                                >
+                                  <Flag className="w-3 h-3" />
+                                  {priorityCfg.label}优先级
+                                </span>
+                                {deadline && (
+                                  <span 
+                                    className="inline-flex items-center gap-1 text-[10px]"
+                                    style={{ color: deadline.isOverdue ? '#ef4444' : 'var(--text-muted)' }}
+                                  >
+                                    <Clock className="w-3 h-3" />
+                                    {deadline.text}
+                                    {deadline.urgency && (
+                                      <span className="font-medium" style={{ color: deadline.isOverdue ? '#ef4444' : '#f59e0b' }}>
+                                        ({deadline.urgency})
+                                      </span>
+                                    )}
+                                  </span>
+                                )}
+                              </div>
+                              
+                              {/* 任务描述 */}
+                              {taskData.description && (
+                                <div className="text-sm leading-relaxed mb-3" style={{ color: 'var(--text-secondary)' }}>
+                                  {taskData.description}
+                                </div>
+                              )}
+                              
+                              {/* 关联信息 */}
+                              <div className="flex flex-wrap gap-2 text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                                <span>团队: {taskData.teamName}</span>
+                                {taskData.projectName && (
+                                  <span className="inline-flex items-center gap-0.5">
+                                    项目: 
+                                    <a 
+                                      href={`/#/projects/${taskData.projectId}`} 
+                                      className="hover:underline"
+                                      style={{ color: 'var(--accent-primary)' }}
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      {taskData.projectName}
+                                      <ExternalLink className="w-2.5 h-2.5 inline ml-0.5" />
+                                    </a>
+                                  </span>
+                                )}
+                                {taskData.storyboardInfo && (
+                                  <span className="inline-flex items-center gap-0.5">
+                                    分镜: 
+                                    <a 
+                                      href={`/#/projects/${taskData.projectId}/storyboard/${taskData.storyboardId}`}
+                                      className="hover:underline"
+                                      style={{ color: 'var(--accent-primary)' }}
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      第{taskData.storyboardInfo.scene_number}场
+                                      <ExternalLink className="w-2.5 h-2.5 inline ml-0.5" />
+                                    </a>
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            
+                            {/* 任务状态和操作按钮 */}
+                            <div className="flex items-center justify-between pt-3" style={{ borderTop: '1px solid var(--border-color)' }}>
+                              {currentStatus === 'accepted' ? (
+                                <span className="inline-flex items-center gap-1 text-xs font-medium" style={{ color: '#10b981' }}>
+                                  <CheckCircle className="w-4 h-4" /> 已接受任务
+                                </span>
+                              ) : currentStatus === 'rejected' ? (
+                                <span className="inline-flex items-center gap-1 text-xs font-medium" style={{ color: '#ef4444' }}>
+                                  <XCircle className="w-4 h-4" /> 已拒绝任务
+                                </span>
+                              ) : (
+                                <div className="flex gap-2">
+                                  <button
+                                    onClick={() => acceptTask(taskData.taskId)}
+                                    disabled={taskLoading === taskData.taskId}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white transition-colors disabled:opacity-50"
+                                    style={{ backgroundColor: '#10b981' }}
+                                  >
+                                    <CheckCircle className="w-3.5 h-3.5" />
+                                    {taskLoading === taskData.taskId ? '处理中...' : '接受任务'}
+                                  </button>
+                                  <button
+                                    onClick={() => rejectTask(taskData.taskId)}
+                                    disabled={taskLoading === taskData.taskId}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors hover:bg-red-500/10 disabled:opacity-50"
+                                    style={{ color: '#ef4444' }}
+                                  >
+                                    <XCircle className="w-3.5 h-3.5" /> 拒绝
+                                  </button>
+                                </div>
+                              )}
+                              <button
+                                onClick={() => deleteMail(selectedMail.id)}
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-red-400 hover:bg-red-500/10 transition-colors"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" /> 删除
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })()
+                    ) : (
+                      /* 普通消息展示 */
+                      <>
+                        <div className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--text-secondary)' }}>
+                          {selectedMail.content}
+                        </div>
+                        <div className="mt-4 pt-3 flex justify-end" style={{ borderTop: '1px solid var(--border-color)' }}>
+                          <button
+                            onClick={() => deleteMail(selectedMail.id)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-red-400 hover:bg-red-500/10 transition-colors"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" /> 删除
+                          </button>
+                        </div>
+                      </>
+                    )}
                   </motion.div>
                 ) : (
                   /* List View */

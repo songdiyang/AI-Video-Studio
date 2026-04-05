@@ -140,12 +140,18 @@ const hasExpandableSubTasks = (job: WorkflowJob): boolean => {
 
 // 获取子任务显示名称
 const getSubTaskName = (task: WorkflowTask): string => {
-  // 优先使用 displayName
+  // 优先使用 task 上的 displayName 属性（工作流引擎注入）
+  if (task.displayName) return task.displayName;
+  // 其次使用 input_params.displayName（兼容旧模式）
   const params = task.input_params;
   if (params?.displayName) return params.displayName;
   // 回退到 task_type 映射
   if (task.task_type === 'character_extraction') return '角色提取';
   if (task.task_type === 'batch_save') return '保存分镜';
+  if (task.task_type === 'save_storyboards') return '保存分镜';
+  if (task.task_type === 'scene_state_analysis') return '环境分析';
+  if (task.task_type === 'frame_generation') return '首尾帧生成';
+  if (task.task_type === 'single_frame_generation') return '单帧生成';
   if (task.task_type?.startsWith('batch_scene_')) {
     const idx = parseInt(task.task_type.replace('batch_scene_', ''), 10);
     return `场景 ${idx + 1}`;

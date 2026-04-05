@@ -12,6 +12,7 @@ import { useCallback, useState } from 'react';
 import { getAuthToken } from '../../../services/auth';
 import { batchValidateScenes, BatchValidationResult } from '../../../services/storyboards';
 import { useWorkflowRecovery } from './useWorkflowRecovery';
+import { WorkflowTask, WorkflowJob } from '../../../hooks/useWorkflow';
 
 export interface StoryboardScene {
   id?: number;
@@ -49,6 +50,8 @@ export interface UseBatchGenerationProps {
   resolution?: string;
   onComplete?: () => void;
   onError?: (message: string) => void;
+  /** 子任务完成回调（用于实时刷新单个分镜） */
+  onSubTaskCompleted?: (task: WorkflowTask, storyboardId: number | null) => void;
 }
 
 export interface BatchGenerationResult {
@@ -82,7 +85,8 @@ export function useBatchGeneration(
     duration,
     resolution,
     onComplete,
-    onError
+    onError,
+    onSubTaskCompleted
   } = props;
 
   const [skippedScenes, setSkippedScenes] = useState<SkippedSceneInfo[]>([]);
@@ -99,6 +103,13 @@ export function useBatchGeneration(
     onFailed: (failedJob) => {
       console.error(`${config.logPrefix} 批量生成失败:`, failedJob.error_message);
       onError?.(`${config.startingErrorMessage}: ` + (failedJob.error_message || '未知错误'));
+    },
+    onSubTaskCompleted: (task, job) => {
+      // 从任务的 input_params 中获取 storyboardId
+      const params = task.input_params || {};
+      const storyboardId = params.storyboardId || null;
+      console.log(`${config.logPrefix} 子任务完成，分镜ID:`, storyboardId);
+      onSubTaskCompleted?.(task, storyboardId);
     },
     logPrefix: config.logPrefix
   });

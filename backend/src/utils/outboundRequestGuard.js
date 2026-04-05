@@ -18,7 +18,8 @@ const httpsAgent = new https.Agent({
   keepAliveMsecs: 30000,
   maxSockets: 50,
   maxFreeSockets: 10,
-  timeout: 60000
+  timeout: 60000,
+  maxCachedSessions: 100  // TLS session 缓存，减少 TLS 握手开销
 });
 
 function getAgent(url) {
@@ -275,7 +276,8 @@ async function assertSafeOutboundUrl(rawUrl, options = {}) {
 async function safeFetch(rawUrl, options = {}, context = '出站请求') {
   const safeUrl = await assertSafeOutboundUrl(rawUrl, { context });
   
-  const { timeout, ...fetchOptions } = options;
+  // 提取 signal 和 timeout，剩余选项放入 fetchOptions
+  const { timeout, signal: externalSignal, ...fetchOptions } = options;
   
   // 使用连接池 agent
   const agent = getAgent(safeUrl);
@@ -284,6 +286,20 @@ async function safeFetch(rawUrl, options = {}, context = '出站请求') {
   if (timeout && timeout > 0) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
+    
+    // 如果调用方传入了 signal，需要合并内外两个 abort 信号
+    // 这样外部的超时和内部的超时都能生效，谁先触发谁生效
+    if (externalSignal) {
+      // 如果外部 signal 已经被中止，立即触发内部 abort
+      if (externalSignal.aborted) {
+        controller.abort(externalSignal.reason);
+      } else {
+        // 监听外部 signal 的 abort 事件，同步触发内部 abort
+        externalSignal.addEventListener('abort', () => {
+          controller.abort(externalSignal.reason);
+        }, { once: true });
+      }
+    }
     
     try {
       const response = await fetch(safeUrl, {
@@ -297,16 +313,22 @@ async function safeFetch(rawUrl, options = {}, context = '出站请求') {
     } catch (err) {
       clearTimeout(timeoutId);
       if (err.name === 'AbortError') {
+        // 判断是外部中止还是内部超时中止
+        if (externalSignal && externalSignal.aborted) {
+          throw new Error(`${context} 被外部中止`);
+        }
         throw new Error(`${context} 超时：请求超过 ${Math.round(timeout / 1000)} 秒`);
       }
       throw err;
     }
   }
   
+  // 没有 timeout 的情况，如果有外部 signal 则使用它
   return fetch(safeUrl, {
     ...fetchOptions,
     agent,
-    redirect: 'error'
+    redirect: 'error',
+    ...(externalSignal && { signal: externalSignal })
   });
 }
 

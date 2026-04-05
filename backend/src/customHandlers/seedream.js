@@ -76,9 +76,12 @@ function processParams(params, modelId) {
     }
   }
 
-  // watermark: 是否添加水印
+  // watermark: 是否添加水印（默认关闭）
   if (params.watermark !== undefined && params.watermark !== '_REMOVE_') {
     extra.watermark = Boolean(params.watermark);
+  } else {
+    // 默认关闭水印
+    extra.watermark = false;
   }
 
   // response_format: "url" 或 "b64_json"
@@ -114,6 +117,18 @@ function processParams(params, modelId) {
   if (params.logo_info && params.logo_info !== '_REMOVE_') {
     extra.logo_info = typeof params.logo_info === 'string'
       ? JSON.parse(params.logo_info) : params.logo_info;
+  }
+
+  // tools: 工具配置（仅 Seedream 5.0-lite 支持）
+  // 支持 web_search 联网搜索功能
+  if (isSeedream50) {
+    if (params.tools && params.tools !== '_REMOVE_') {
+      extra.tools = typeof params.tools === 'string'
+        ? JSON.parse(params.tools) : params.tools;
+    } else if (params.webSearch || params.web_search) {
+      // 快捷方式：直接传 webSearch: true 启用联网搜索
+      extra.tools = [{ type: 'web_search' }];
+    }
   }
 
   return extra;

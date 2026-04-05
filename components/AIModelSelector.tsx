@@ -70,25 +70,8 @@ const AIModelSelector: React.FC<AIModelSelectorProps> = ({
   // 获取选中模型的详细信息
   const selectedModelInfo = filteredModels.find(m => m.name === selectedModel);
 
-  // 动态生成描述
-  const dynamicDescription = description || (
-    selectedModelInfo
-      ? [
-          `${selectedModelInfo.provider} - ${selectedModelInfo.description || '暂无描述'}`,
-          ((selectedModelInfo.type || selectedModelInfo.category)?.toUpperCase() === 'IMAGE' ||
-            (selectedModelInfo.type || selectedModelInfo.category)?.toUpperCase() === 'VIDEO')
-            ? `比例: ${summarizeCapabilityOptions(selectedModelInfo.supportedAspectRatios, 'aspectRatio')}`
-            : null,
-          ((selectedModelInfo.type || selectedModelInfo.category)?.toUpperCase() === 'IMAGE' ||
-            (selectedModelInfo.type || selectedModelInfo.category)?.toUpperCase() === 'VIDEO')
-            ? `清晰度: ${summarizeCapabilityOptions(selectedModelInfo.supportedResolutions, 'resolution')}`
-            : null,
-          (selectedModelInfo.type || selectedModelInfo.category)?.toUpperCase() === 'VIDEO'
-            ? `时长: ${summarizeCapabilityOptions(selectedModelInfo.supportedDurations, 'duration')}`
-            : null
-        ].filter(Boolean).join(' | ')
-      : placeholder
-  );
+  // 动态生成描述（已简化：不再显示冗长的模型信息）
+  const dynamicDescription = description || placeholder;
 
   return (
     <Select
@@ -142,16 +125,11 @@ const AIModelSelector: React.FC<AIModelSelectorProps> = ({
           <div className="flex items-center justify-between gap-3 py-1">
             <div className="flex flex-col flex-1 min-w-0">
               <span className="font-semibold text-slate-100">{model.name}</span>
-              <span className="text-xs text-slate-400 truncate">
-                {model.provider} {model.description && `· ${model.description}`}
-              </span>
-            {(((model.type || model.category)?.toUpperCase() === 'IMAGE') ||
-                ((model.type || model.category)?.toUpperCase() === 'VIDEO')) && (
-                <span className="text-[11px] text-slate-500 truncate">
-                  比例: {summarizeCapabilityOptions(model.supportedAspectRatios, 'aspectRatio')}
-                  {' · 清晰度: '}{summarizeCapabilityOptions(model.supportedResolutions, 'resolution')}
-                  {(model.type || model.category)?.toUpperCase() === 'VIDEO' &&
-                    ` · 时长: ${summarizeCapabilityOptions(model.supportedDurations, 'duration')}`}
+              {/* 精简描述：只显示第一句或截断到60字符 */}
+              {model.description && (
+                <span className="text-xs text-slate-400 truncate" title={model.description}>
+                  {model.description.split('|')[0].trim().slice(0, 60)}
+                  {model.description.length > 60 ? '...' : ''}
                 </span>
               )}
             </div>

@@ -386,11 +386,51 @@ const WORKFLOW_DEFINITIONS = {
 
   /**
    * 批量分镜帧生成（一键生成一集所有分镜图片）
+   * 
+   * 动态步骤模式：每个分镜作为独立的任务显示在任务栏中
+   * - 如果传入 storyboardItems，则为每个分镜创建独立步骤
+   * - 否则退回到单步骤模式（兼容旧调用方式）
    */
   batch_frame_generation: {
     name: '批量分镜帧生成',
-    steps: [
-      {
+    steps: (jobParams) => {
+      const { storyboardItems, scriptId } = jobParams || {};
+      
+      // 如果传入了分镜列表，为每个分镜创建独立步骤
+      if (Array.isArray(storyboardItems) && storyboardItems.length > 0) {
+        return storyboardItems.map((item, index) => {
+          const hasAction = item.hasAction || false;
+          return {
+            type: hasAction ? 'frame_generation' : 'single_frame_generation',
+            targetType: 'storyboard',
+            targetId: item.id,
+            displayName: `第${item.idx || index + 1}个分镜${hasAction ? '（首尾帧）' : ''}`,
+            handler: hasAction ? handleFrameGeneration : handleSingleFrameGeneration,
+            dependencies: index > 0 ? [index - 1] : [], // 依赖前一个分镜，保持串行
+            buildInput: (context) => {
+              const jp = context.jobParams || {};
+              const prevResult = index > 0 ? context.previousResults?.[index - 1] : null;
+              return {
+                storyboardId: item.id,
+                prompt: item.description || '',
+                description: item.description || '',
+                imageModel: jp.imageModel,
+                textModel: jp.textModel,
+                aspectRatio: jp.aspectRatio,
+                resolution: jp.resolution,
+                visualStyle: jp.visualStyle,
+                prevEndFrameUrl: prevResult?.lastFrameUrl || prevResult?.endFrame || null,
+                prevDescription: prevResult?.description || item.description || null,
+                prevEndState: prevResult?.endState || item.endState || null,
+                isFirstScene: index === 0
+              };
+            }
+          };
+        });
+      }
+      
+      // 兼容模式：单步骤处理所有分镜
+      return [{
         type: 'batch_frame',
         targetType: 'storyboard',
         handler: handleBatchFrameGeneration,
@@ -398,8 +438,8 @@ const WORKFLOW_DEFINITIONS = {
           'scriptId', 'imageModel', 'textModel', 'overwriteFrames', 'aspectRatio', 'resolution',
           { key: 'maxConcurrency', defaultValue: 20 }
         ])
-      }
-    ]
+      }];
+    }
   },
 
   /**

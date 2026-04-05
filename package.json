@@ -35,6 +35,7 @@
     "react-dom": "^19.2.3",
     "react-router-dom": "^7.11.0",
     "socket.io-client": "^4.8.3",
+    "undici": "^7.24.7",
     "yet-another-react-lightbox": "^3.28.0"
   },
   "devDependencies": {

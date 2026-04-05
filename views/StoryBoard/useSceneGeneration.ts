@@ -246,15 +246,14 @@ export function useSceneGeneration({
     if (!videoAspectRatio) {
       return { success: false, error: '当前视频模型未配置可用长宽比' };
     }
-    if (videoDuration === null) {
-      return { success: false, error: '当前视频模型未配置可用时长' };
-    }
+    // 时长由分镜设置决定，使用分镜自身的 duration
+    const sceneDuration = scene.duration || 3;
     try {
       await runTask(`vid_${id}`, 'scene_video', {
         storyboardId: id,
         videoModel,
         textModel,
-        duration: videoDuration,
+        duration: sceneDuration, // 使用分镜的时长
         aspectRatio: videoAspectRatio,
         resolution: videoResolution,
         episodeNumber,

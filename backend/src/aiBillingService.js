@@ -250,13 +250,10 @@ async function estimateUsage(params, model, normalizedPriceConfig) {
   };
 
   if (normalizedPriceConfig.components.some((item) => TOKEN_METRICS.has(item.type))) {
+    // 只估算输入 tokens，输出 tokens 不设上限，由实际使用量决定
     baseUsage.inputTokens = estimateTokensFromText(collectPromptText(params));
-    const outputLimit = getOutputTokenUpperLimit(params, defaultParams);
-    if (outputLimit === null) {
-      throw new ModelBillingConfigError(`模型 "${model.name}" 的 token 计费缺少输出上限（maxTokens/default_params.maxTokens）`);
-    }
-    baseUsage.outputTokens = outputLimit;
-    baseUsage.totalTokens = baseUsage.inputTokens + baseUsage.outputTokens;
+    baseUsage.outputTokens = 0;
+    baseUsage.totalTokens = baseUsage.inputTokens;
   }
 
   if (normalizedPriceConfig.components.some((item) => item.type === 'duration_seconds')) {

@@ -241,6 +241,20 @@ function renderWithFallback(type, template, runtimeParams, fallbackParams, label
   if (txtDerived.message && !mergedData.message)   mergedData.message = txtDerived.message;
   if (txtDerived.messages && !mergedData.messages) mergedData.messages = txtDerived.messages;
 
+  // 尺寸参数派生：size ↔ resolution（双向兼容）
+  // Seedream 5.0 等模型使用 size（如 '2k', '3k'），其他模型可能使用 resolution
+  if (!mergedData.size && mergedData.resolution && mergedData.resolution !== '_REMOVE_') {
+    mergedData.size = mergedData.resolution;
+  }
+  if (!mergedData.resolution && mergedData.size && mergedData.size !== '_REMOVE_') {
+    mergedData.resolution = mergedData.size;
+  }
+  // 如果 size 和 resolution 都没有，但模板需要 size，提供默认值 '2k'（Seedream 5.0 系列默认）
+  // 这在模板校验阶段会检测到需要 size，此时提供兜底值
+  if (!mergedData.size || mergedData.size === '_REMOVE_') {
+    mergedData.size = '2k';
+  }
+
   // 渲染前校验：扫描原始模板中的 {{key}}，检查 mergedData 是否全部覆盖
   const required = findUnrenderedPlaceholders(template);
   const missing = required.filter(key => mergedData[key] === undefined);

@@ -6,6 +6,7 @@
  * 2. 自动轮询进度
  * 3. 完成/失败时自动 consumeWorkflow
  * 4. 支持链式恢复（处理完一个工作流后检查下一个）
+ * 5. 支持子任务完成回调（用于实时刷新单个分镜）
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -13,7 +14,8 @@ import {
   useWorkflow,
   getActiveWorkflows,
   consumeWorkflow,
-  WorkflowJob
+  WorkflowJob,
+  WorkflowTask
 } from '../../../hooks/useWorkflow';
 
 interface UseWorkflowRecoveryOptions {
@@ -29,6 +31,8 @@ interface UseWorkflowRecoveryOptions {
   onFailed?: (job: WorkflowJob) => void;
   /** 工作流恢复回调 */
   onRecovered?: (job: WorkflowJob) => void;
+  /** 子任务完成回调（用于实时刷新单个分镜） */
+  onSubTaskCompleted?: (task: WorkflowTask, job: WorkflowJob) => void;
   /** 额外过滤条件 */
   matchJob?: (job: WorkflowJob) => boolean;
   /** 日志前缀 */
@@ -58,6 +62,7 @@ export function useWorkflowRecovery({
   onCompleted,
   onFailed,
   onRecovered,
+  onSubTaskCompleted,
   matchJob,
   logPrefix = '[WorkflowRecovery]'
 }: UseWorkflowRecoveryOptions) {
@@ -65,10 +70,13 @@ export function useWorkflowRecovery({
   const [isGenerating, setIsGenerating] = useState(false);
 
   // 用 ref 保持回调最新，避免 useWorkflow 闭包过期
-  const callbackRefs = useRef({ onCompleted, onFailed, onRecovered, matchJob });
+  const callbackRefs = useRef({ onCompleted, onFailed, onRecovered, onSubTaskCompleted, matchJob });
   useEffect(() => {
-    callbackRefs.current = { onCompleted, onFailed, onRecovered, matchJob };
-  }, [onCompleted, onFailed, onRecovered, matchJob]);
+    callbackRefs.current = { onCompleted, onFailed, onRecovered, onSubTaskCompleted, matchJob };
+  }, [onCompleted, onFailed, onRecovered, onSubTaskCompleted, matchJob]);
+
+  // 跟踪已完成的子任务 ID（防止重复触发回调）
+  const completedTaskIdsRef = useRef<Set<number>>(new Set());
 
   const matchesJob = useCallback((job: WorkflowJob) => {
     if (!workflowTypes.includes(job.workflow_type)) {
@@ -128,6 +136,19 @@ export function useWorkflowRecovery({
 
   // 使用 useWorkflow 轮询
   const workflow = useWorkflow(jobId, {
+    onProgress: (job) => {
+      // 检测新完成的子任务
+      const { onSubTaskCompleted } = callbackRefs.current;
+      if (onSubTaskCompleted && job.tasks) {
+        for (const task of job.tasks) {
+          if (task.status === 'completed' && !completedTaskIdsRef.current.has(task.id)) {
+            completedTaskIdsRef.current.add(task.id);
+            console.log(`${logPrefix} 子任务完成:`, task.id, task.task_type);
+            onSubTaskCompleted(task, job);
+          }
+        }
+      }
+    },
     onCompleted: async (completedJob) => {
       console.log(`${logPrefix} 工作流完成:`, completedJob.id);
       try {
@@ -138,6 +159,7 @@ export function useWorkflowRecovery({
       } finally {
         setIsGenerating(false);
         setJobId(null);
+        completedTaskIdsRef.current.clear(); // 清空已完成任务集合
         // 链式检查下一个
         await checkAndResume();
       }
@@ -152,6 +174,7 @@ export function useWorkflowRecovery({
       callbackRefs.current.onFailed?.(failedJob);
       setIsGenerating(false);
       setJobId(null);
+      completedTaskIdsRef.current.clear(); // 清空已完成任务集合
       await checkAndResume();
     }
   });

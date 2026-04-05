@@ -20,6 +20,10 @@ const PRICE_AUDIO_VIDEO = 16;   // 有声视频
 const DEFAULT_FPS = 24;
 const DEFAULT_DURATION = 5;
 
+// Seedance 1.5 时长限制
+const MIN_DURATION = 2;   // 最低 2 秒
+const MAX_DURATION = 12;  // 最长 12 秒
+
 /**
  * 计算视频生成所需的 Token 数量
  * 公式：token ≈ (宽度 × 高度 × 帧率 × 秒数) / 1024
@@ -90,8 +94,13 @@ function extractVideoSpecs(params, modelConfig) {
   // 帧率
   const fps = parseInt(params.fps || params.frame_rate || params.frameRate || DEFAULT_FPS) || DEFAULT_FPS;
   
-  // 时长（秒）
-  const durationSeconds = parseFloat(params.duration || params.durationSeconds || params.video_duration || DEFAULT_DURATION) || DEFAULT_DURATION;
+  // 时长（秒）- 严格使用传入的时长，并限制在 2-12 秒范围内
+  let durationSeconds = parseFloat(params.duration || params.durationSeconds || params.video_duration || 0);
+  if (durationSeconds <= 0) {
+    durationSeconds = DEFAULT_DURATION;
+  }
+  // 应用时长限制：最低 2 秒，最长 12 秒
+  durationSeconds = Math.max(MIN_DURATION, Math.min(MAX_DURATION, durationSeconds));
   
   // 是否有音频
   const hasAudio = !!(
@@ -169,6 +178,9 @@ function extractUsageFromResponse(result, requestParams) {
   if (!durationSeconds) durationSeconds = paramsSpecs.durationSeconds;
   if (!hasAudio) hasAudio = paramsSpecs.hasAudio;
   
+  // 时长限制：最低 2 秒，最长 12 秒
+  durationSeconds = Math.max(MIN_DURATION, Math.min(MAX_DURATION, durationSeconds));
+  
   // 3. 如果还是没有宽高，使用默认值（720p）
   if (!width || !height) {
     console.warn('[Seedance1.5 BillingHandler] 无法获取视频分辨率，使用默认 720p (1280x720)');
@@ -243,6 +255,9 @@ module.exports = {
       specs.width = 1280;
       specs.height = 720;
     }
+    
+    // 确保时长限制：最低 2 秒，最长 12 秒
+    specs.durationSeconds = Math.max(MIN_DURATION, Math.min(MAX_DURATION, specs.durationSeconds));
     
     const rawTokens = calculateTokens(specs.width, specs.height, specs.fps, specs.durationSeconds);
     // 有声视频 token 翻倍

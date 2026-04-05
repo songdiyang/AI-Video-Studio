@@ -539,7 +539,30 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
         loadStoryboards(currentScriptId);
       }
     },
-    onError: (msg) => showToast(msg, 'error')
+    onError: (msg) => showToast(msg, 'error'),
+    onSubTaskCompleted: (task, storyboardId) => {
+      // 子任务完成时，从 result_data 中提取帧 URL 并更新分镜状态
+      if (!storyboardId) return;
+      const resultData = task.result_data;
+      if (!resultData) return;
+      
+      // 根据任务类型提取帧 URL
+      const startFrame = resultData.startFrame || resultData.firstFrameUrl;
+      const endFrame = resultData.endFrame || resultData.lastFrameUrl;
+      
+      if (startFrame || endFrame) {
+        console.log(`[StoryBoard] 分镜 ${storyboardId} 帧生成完成，更新显示`);
+        setScenes(prev => prev.map(s => 
+          s.id === storyboardId 
+            ? { 
+                ...s, 
+                startFrame: startFrame || s.startFrame,
+                endFrame: endFrame || s.endFrame
+              } 
+            : s
+        ));
+      }
+    }
   });
 
   // 9. 批量视频生成
@@ -549,7 +572,7 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
     videoModel,
     textModel,
     aspectRatio: videoAspectRatio,
-    duration: videoDuration,
+    duration: undefined, // 时长由分镜设置决定，不传递统一值
     resolution: videoResolution || undefined,
     onComplete: () => {
       console.log('[StoryBoard] 批量视频生成完成，重新加载分镜');
@@ -634,6 +657,12 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
   // 获取选中的分镜数据
   const selectedSceneData = useMemo(() => 
     scenes.find(s => s.id === selectedScene) || null, [scenes, selectedScene]);
+
+  // 获取当前选中分镜的时长（从分镜数据中获取，严格按分镜设置）
+  const currentSceneDuration = useMemo(() => {
+    if (!selectedSceneData) return null;
+    return selectedSceneData.duration || 3;
+  }, [selectedSceneData]);
 
   // 处理分镜描述更新
   const handleUpdateSelectedDescription = async (description: string) => {
@@ -1017,23 +1046,15 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
                     </div>
                   </Tooltip>
                 )}
-                <Select
-                  size="sm"
-                  aria-label="视频时长"
-                  placeholder="时长"
-                  selectedKeys={videoDuration === null ? [] : [String(videoDuration)]}
-                  onChange={(e) => setVideoDuration(Number(e.target.value))}
-                  className="w-24"
-                  isDisabled={videoDurationOptions.length === 0}
-                  classNames={{
-                    trigger: "h-7 min-h-7 bg-[var(--bg-card)] border-[var(--border-color)]",
-                    value: "text-xs text-[var(--text-secondary)]"
-                  }}
-                >
-                  {videoDurationOptions.map((option) => (
-                    <SelectItem key={option.value}>{option.label}</SelectItem>
-                  ))}
-                </Select>
+                {/* 视频时长：锁定显示分镜中的时长，不可编辑 */}
+                <Tooltip content="时长由分镜设置决定" placement="bottom">
+                  <div className="flex items-center gap-1 h-7 px-2 rounded-md bg-[var(--bg-card)] border border-[var(--border-color)] opacity-70 cursor-default">
+                    <Lock className="w-3 h-3 text-[var(--text-muted)]" />
+                    <span className="text-xs text-[var(--text-secondary)]">
+                      {currentSceneDuration ? `${currentSceneDuration}秒` : '待选择分镜'}
+                    </span>
+                  </div>
+                </Tooltip>
               </div>
             )}
           </div>

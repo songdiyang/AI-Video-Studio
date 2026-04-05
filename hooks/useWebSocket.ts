@@ -6,9 +6,22 @@ interface UseWebSocketOptions {
   resourceId?: number;
   enabled?: boolean;
   onMessage?: (data: any) => void;
+  onTaskStatus?: (data: TaskStatusMessage) => void;
   onError?: (error: any) => void;
   onConnect?: () => void;
   onDisconnect?: () => void;
+}
+
+export interface TaskStatusMessage {
+  type: 'task_status';
+  jobId: number;
+  status?: 'pending' | 'running' | 'completed' | 'failed';
+  progress?: number;
+  result?: any;
+  error?: string;
+  taskId?: number;
+  taskStatus?: string;
+  timestamp: number;
 }
 
 interface UseWebSocketReturn {
@@ -17,6 +30,8 @@ interface UseWebSocketReturn {
   send: (data: any) => void;
   joinRoom: (roomId: string) => void;
   leaveRoom: (roomId: string) => void;
+  subscribeTask: (jobId: number) => void;
+  unsubscribeTask: (jobId: number) => void;
   broadcastCursor: (cursor: any) => void;
   broadcastEdit: (edits: any[]) => void;
   onlineUsers: Array<{ sessionId: string; userId: number; username: string }>;
@@ -28,6 +43,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     resourceId,
     enabled = true,
     onMessage,
+    onTaskStatus,
     onError,
     onConnect,
     onDisconnect
@@ -104,6 +120,12 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
             case 'conflict_detected':
               onMessage?.(data);
               break;
+            case 'task_status':
+              onTaskStatus?.(data);
+              break;
+            case 'task_subscribed':
+              console.log('[WebSocket] 任务订阅成功:', data.jobId);
+              break;
             default:
               onMessage?.(data);
           }
@@ -175,12 +197,22 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     send({ type: 'resource_edit', edits });
   }, [send]);
 
+  const subscribeTask = useCallback((jobId: number) => {
+    send({ type: 'subscribe_task', jobId });
+  }, [send]);
+
+  const unsubscribeTask = useCallback((jobId: number) => {
+    send({ type: 'unsubscribe_task', jobId });
+  }, [send]);
+
   return {
     isConnected,
     sessionId,
     send,
     joinRoom,
     leaveRoom,
+    subscribeTask,
+    unsubscribeTask,
     broadcastCursor,
     broadcastEdit,
     onlineUsers

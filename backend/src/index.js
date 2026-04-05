@@ -54,6 +54,7 @@ const versionControlRoutes = require('./scripts/versionControl');
 const approvalsRoutes = require('./scripts/approvals');
 const systemConfigRoutes = require('./systemConfigRoutes');
 const teamsRoutes = require('./teams');
+const taskAssignmentRoutes = require('./taskAssignment');
 const { setupWebSocket } = require('./websocket');
 const { errorHandlerMiddleware, initGlobalErrorHandlers } = require('./globalErrorHandler');
 
@@ -151,6 +152,7 @@ app.use('/api/templates', templateRoutes);
 app.use('/api/community', communityRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/teams', teamsRoutes);  // 团队管理路由
+app.use('/api/tasks', taskAssignmentRoutes);  // 任务指派路由
 // 协作路由
 const collaborationRouter = express.Router();
 collaborationRoutes(collaborationRouter);
@@ -195,6 +197,19 @@ async function start() {
   initGlobalErrorHandlers();
   
   await initializeDatabase();
+
+  // 初始化 Redis 缓存（可选，不可用时自动降级为内存模式）
+  try {
+    const { initializeRedis, isRedisAvailable } = require('./redis-service');
+    await initializeRedis();
+    if (isRedisAvailable()) {
+      console.log('  \x1b[32m✔\x1b[0m Redis 缓存已启用');
+    } else {
+      console.log('  \x1b[33m⚠\x1b[0m Redis 未配置，使用内存缓存模式');
+    }
+  } catch (err) {
+    console.warn('[Startup] Redis 模块加载失败（可选）:', err.message);
+  }
 
   // 初始化依赖数据库的表
   if (feedbackModule.ensureFeedbackTable) {

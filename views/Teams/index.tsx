@@ -43,11 +43,13 @@ import {
   Upload,
   Download,
   UserPlus,
+  ClipboardList,
 } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import { useLanguage } from '../../contexts/LanguageContext';
 import TeamMembersPanel from '../../components/TeamMembersPanel';
+import TaskAssignmentModal from '../../components/TaskAssignmentModal';
 import { createProject, updateProject, fetchProjects, Project } from '../../services/projects';
 import { PROJECT_TYPES, ProjectType } from '../../types/projectTypes';
 import {
@@ -123,6 +125,9 @@ const Teams: React.FC = () => {
   const [personalProjects, setPersonalProjects] = useState<Project[]>([]);
   const [loadingPersonalProjects, setLoadingPersonalProjects] = useState(false);
   const [transferring, setTransferring] = useState<number | null>(null);
+
+  // 任务指派模态框
+  const [showTaskAssignModal, setShowTaskAssignModal] = useState(false);
 
   // 加载团队列表
   const loadTeams = useCallback(async () => {
@@ -839,11 +844,26 @@ const Teams: React.FC = () => {
   
       {/* 内容区 */}
       {activeTab === 'members' ? (
-        <TeamMembersPanel
-          teamId={selectedTeam.id}
-          myRole={selectedTeam.my_role || 'viewer'}
-          onMemberChange={() => loadTeamDetail(selectedTeam.id)}
-        />
+        <div>
+          {/* 成员管理顶部操作栏 */}
+          {canManageMembers(selectedTeam.my_role) && (
+            <div className="flex justify-end gap-2 mb-4">
+              <Button
+                color="secondary"
+                variant="flat"
+                startContent={<ClipboardList className="w-4 h-4" />}
+                onPress={() => setShowTaskAssignModal(true)}
+              >
+                指派任务
+              </Button>
+            </div>
+          )}
+          <TeamMembersPanel
+            teamId={selectedTeam.id}
+            myRole={selectedTeam.my_role || 'viewer'}
+            onMemberChange={() => loadTeamDetail(selectedTeam.id)}
+          />
+        </div>
       ) : activeTab === 'review' ? (
         <div className="space-y-3">
           {loadingRequests ? (
@@ -1232,6 +1252,19 @@ const Teams: React.FC = () => {
           </ModalFooter>
         </ModalContent>
       </Modal>
+
+      {/* 任务指派模态框 */}
+      {selectedTeam && (
+        <TaskAssignmentModal
+          isOpen={showTaskAssignModal}
+          onClose={() => setShowTaskAssignModal(false)}
+          teamId={selectedTeam.id}
+          onSuccess={() => {
+            showToast('任务指派成功', 'success');
+            setShowTaskAssignModal(false);
+          }}
+        />
+      )}
     </div>
   );
 };

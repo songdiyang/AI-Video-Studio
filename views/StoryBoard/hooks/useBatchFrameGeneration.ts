@@ -7,6 +7,7 @@
  */
 
 import { useBatchGeneration, FRAME_GENERATION_CONFIG, StoryboardScene } from './useBatchGeneration';
+import { WorkflowTask } from '../../../hooks/useWorkflow';
 
 interface UseBatchFrameGenerationProps {
   scriptId: number | null;
@@ -18,6 +19,8 @@ interface UseBatchFrameGenerationProps {
   scenes: StoryboardScene[];
   onComplete?: () => void;
   onError?: (message: string) => void;
+  /** 子任务完成回调（用于实时刷新单个分镜） */
+  onSubTaskCompleted?: (task: WorkflowTask, storyboardId: number | null) => void;
 }
 
 export function useBatchFrameGeneration({
@@ -29,7 +32,8 @@ export function useBatchFrameGeneration({
   textModel,
   scenes,
   onComplete,
-  onError
+  onError,
+  onSubTaskCompleted
 }: UseBatchFrameGenerationProps) {
   const result = useBatchGeneration(FRAME_GENERATION_CONFIG, {
     scriptId,
@@ -40,7 +44,8 @@ export function useBatchFrameGeneration({
     textModel,
     scenes,
     onComplete,
-    onError
+    onError,
+    onSubTaskCompleted
   });
 
   // 保持原有接口兼容性

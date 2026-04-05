@@ -413,8 +413,15 @@ Prompt:`;
   if (hasAction && lastFrameUrl) {
     imageUrls.push(lastFrameUrl);
   }
-  trace('构建视频参考图', { imageUrls, duration, aspectRatio });
-  console.log('[SceneVideoGen] imageUrls:', imageUrls);
+  
+  // 优先使用分镜中存储的时长，其次使用传入参数，并限制在 2-12 秒范围内
+  let finalDuration = variables.duration || storyboard.duration || duration;
+  if (finalDuration !== undefined && finalDuration !== null) {
+    finalDuration = Math.max(2, Math.min(12, parseFloat(finalDuration)));
+  }
+  
+  trace('构建视频参考图', { imageUrls, duration: finalDuration, aspectRatio });
+  console.log('[SceneVideoGen] imageUrls:', imageUrls, '时长:', finalDuration);
 
   const submitParams = {
     prompt: promptUsed,
@@ -423,8 +430,8 @@ Prompt:`;
     endFrame: lastFrameUrl || '_REMOVE_'
   };
 
-  if (duration !== undefined && duration !== null) {
-    submitParams.duration = duration;
+  if (finalDuration !== undefined && finalDuration !== null) {
+    submitParams.duration = finalDuration;
   }
   if (aspectRatio) {
     submitParams.aspectRatio = aspectRatio;
@@ -455,7 +462,7 @@ Prompt:`;
     selectedUrl: mediaResolution.mediaUrl,
     resolvedFrom: mediaResolution.resolvedFrom,
     urlCandidates: mediaResolution.candidates,
-    duration: duration ?? null,
+    duration: finalDuration ?? null,
     aspectRatio: aspectRatio || null
   });
 

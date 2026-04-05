@@ -19,7 +19,8 @@ interface ModelCategory {
 }
 
 const MODEL_CATEGORIES: ModelCategory[] = [
-  { key: 'image', label: '图片模型',  filterType: 'IMAGE', placeholder: '用于图片生成、场景图、角色三视图等，文本分析由系统自动调度' },
+  { key: 'text',  label: '文本模型',  filterType: 'TEXT',  placeholder: '用于剧本生成、场景分析、角色提取等' },
+  { key: 'image', label: '图片模型',  filterType: 'IMAGE', placeholder: '用于图片生成、场景图、角色三视图等' },
   { key: 'video', label: '视频模型',  filterType: 'VIDEO', placeholder: '用于分镜视频生成' },
   { key: 'audio', label: '音频模型',  filterType: 'AUDIO', placeholder: '用于配音、音效生成' },
 ];
