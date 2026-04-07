@@ -129,6 +129,9 @@ async function _initPubSubSubscriber() {
         // 收到其他实例的广播消息，本地分发
         _localBroadcastTaskStatus(message.jobId, message.statusData);
       });
+      await PubSubService.subscribe(USER_MESSAGE_CHANNEL, (message) => {
+        _localPushToUser(message.userId, message.data);
+      });
       wsStats.pubsubEnabled = true;
       console.log('[WebSocket] Redis Pub/Sub 跨实例广播已启用');
     }
@@ -478,4 +481,36 @@ function generateSessionId() {
   return `ws_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 }
 
-module.exports = { setupWebSocket, pushTaskStatus, getWsStats };
+/**
+ * 向指定用户的所有连接推送消息
+ * 支持 Redis Pub/Sub 跨实例广播
+ * @param {number} userId - 用户 ID
+ * @param {object} data - 要推送的数据
+ */
+const USER_MESSAGE_CHANNEL = 'ws:user_message';
+
+function pushToUser(userId, data) {
+  // 通过 Redis Pub/Sub 广播到所有实例
+  if (PubSubService && PubSubService.isAvailable()) {
+    PubSubService.publish(USER_MESSAGE_CHANNEL, { userId, data }).catch(() => {
+      _localPushToUser(userId, data);
+    });
+    _localPushToUser(userId, data);
+    return;
+  }
+  _localPushToUser(userId, data);
+}
+
+function _localPushToUser(userId, data) {
+  if (!globalClients) return;
+
+  const message = { ...data, timestamp: Date.now() };
+
+  globalClients.forEach((client) => {
+    if (client.userId === userId && client.ws.readyState === WebSocket.OPEN) {
+      send(client.ws, message);
+    }
+  });
+}
+
+module.exports = { setupWebSocket, pushTaskStatus, pushToUser, getWsStats };

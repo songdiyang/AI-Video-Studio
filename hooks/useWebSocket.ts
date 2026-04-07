@@ -7,6 +7,7 @@ interface UseWebSocketOptions {
   enabled?: boolean;
   onMessage?: (data: any) => void;
   onTaskStatus?: (data: TaskStatusMessage) => void;
+  onBalanceUpdate?: (data: BalanceUpdateMessage) => void;
   onError?: (error: any) => void;
   onConnect?: () => void;
   onDisconnect?: () => void;
@@ -14,7 +15,7 @@ interface UseWebSocketOptions {
 
 export interface TaskStatusMessage {
   type: 'task_status';
-  jobId: number;
+  jobId: string;
   status?: 'pending' | 'running' | 'completed' | 'failed';
   progress?: number;
   result?: any;
@@ -24,14 +25,21 @@ export interface TaskStatusMessage {
   timestamp: number;
 }
 
+export interface BalanceUpdateMessage {
+  type: 'balance_update';
+  balance: number;
+  deducted: number;
+  timestamp: number;
+}
+
 interface UseWebSocketReturn {
   isConnected: boolean;
   sessionId: string | null;
   send: (data: any) => void;
   joinRoom: (roomId: string) => void;
   leaveRoom: (roomId: string) => void;
-  subscribeTask: (jobId: number) => void;
-  unsubscribeTask: (jobId: number) => void;
+  subscribeTask: (jobId: string) => void;
+  unsubscribeTask: (jobId: string) => void;
   broadcastCursor: (cursor: any) => void;
   broadcastEdit: (edits: any[]) => void;
   onlineUsers: Array<{ sessionId: string; userId: number; username: string }>;
@@ -44,6 +52,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     enabled = true,
     onMessage,
     onTaskStatus,
+    onBalanceUpdate,
     onError,
     onConnect,
     onDisconnect
@@ -123,6 +132,9 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
             case 'task_status':
               onTaskStatus?.(data);
               break;
+            case 'balance_update':
+              onBalanceUpdate?.(data);
+              break;
             case 'task_subscribed':
               console.log('[WebSocket] 任务订阅成功:', data.jobId);
               break;
@@ -197,11 +209,11 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     send({ type: 'resource_edit', edits });
   }, [send]);
 
-  const subscribeTask = useCallback((jobId: number) => {
+  const subscribeTask = useCallback((jobId: string) => {
     send({ type: 'subscribe_task', jobId });
   }, [send]);
 
-  const unsubscribeTask = useCallback((jobId: number) => {
+  const unsubscribeTask = useCallback((jobId: string) => {
     send({ type: 'unsubscribe_task', jobId });
   }, [send]);
 

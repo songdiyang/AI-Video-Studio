@@ -3,6 +3,7 @@ const { parseJsonField } = require('./utils/parseJsonField');
 const { getAIBillingContext } = require('./aiBillingContext');
 const { getBillingHandler } = require('./billingHandlers');
 const pointsService = require('./pointsService');
+const { pushToUser } = require('./websocket');
 
 const TOKEN_METRICS = new Set(['input_tokens', 'output_tokens', 'total_tokens']);
 const ALLOWED_COMPONENT_TYPES = new Set([
@@ -607,6 +608,20 @@ async function applyBalanceCharge(userId, amount) {
   
   // 扣除积分
   const deductResult = await pointsService.deductPoints(userId, pointsResult.points);
+  
+  // 通过 WebSocket 推送余额更新
+  if (deductResult.deducted > 0) {
+    try {
+      pushToUser(userId, {
+        type: 'balance_update',
+        balance: deductResult.balanceAfter,
+        deducted: deductResult.deducted
+      });
+    } catch (e) {
+      // 推送失败不影响主流程
+      console.warn('[Billing] WebSocket 余额推送失败:', e.message);
+    }
+  }
   
   return {
     points: pointsResult.points,

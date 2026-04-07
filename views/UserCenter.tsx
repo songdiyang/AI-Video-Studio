@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo, useRef } from 'react';
+import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { Card, CardBody, Button, Chip, Table, TableHeader, TableColumn, TableBody, TableRow, TableCell, Progress, Tooltip, Input, Textarea, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter } from '@heroui/react';
 import { Wallet, TrendingUp, FolderOpen, FileText, Receipt, AlertTriangle, Sparkles, Clock, Zap, ChevronLeft, ChevronRight, User, Calendar, Activity, RefreshCw, ExternalLink, CreditCard, ArrowUpRight, XCircle, Camera, Pencil, Save, X, Image, Video, Users } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -7,6 +7,7 @@ import { useLanguage } from '../contexts/LanguageContext';
 import { useConfirm } from '../contexts/ConfirmContext';
 import { useToast } from '../contexts/ToastContext';
 import { fetchCurrentSubscription, cancelSubscription, type CurrentSubscriptionResponse } from '../services/subscriptions';
+import useWebSocket, { type BalanceUpdateMessage } from '../hooks/useWebSocket';
 
 interface UserProfile {
   id: number;
@@ -107,13 +108,37 @@ const UserCenter: React.FC = () => {
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
 
+  // WebSocket 监听余额更新
+  const handleBalanceUpdate = useCallback((data: BalanceUpdateMessage) => {
+    setProfile(prev => prev ? { ...prev, balance: data.balance } : prev);
+  }, []);
+
+  useWebSocket({
+    enabled: true,
+    onBalanceUpdate: handleBalanceUpdate
+  });
+
   useEffect(() => {
-    void fetchSummaryData();
-    void fetchSubscriptionData();
+    const init = async () => {
+      try {
+        await fetchSummaryData();
+        await fetchSubscriptionData();
+      } catch (error) {
+        console.error('初始化用户数据失败:', error);
+      }
+    };
+    init();
   }, []);
 
   useEffect(() => {
-    void fetchBillingData();
+    const loadBilling = async () => {
+      try {
+        await fetchBillingData();
+      } catch (error) {
+        console.error('加载账单数据失败:', error);
+      }
+    };
+    loadBilling();
   }, [page, chargeStatus, modelCategory, sourceType]);
 
   const redirectToAuth = () => {
@@ -350,10 +375,14 @@ const UserCenter: React.FC = () => {
 
       setProfile(data.user);
       // 同步 localStorage
-      const stored = localStorage.getItem('auth_user');
-      if (stored) {
-        const user = JSON.parse(stored);
-        localStorage.setItem('auth_user', JSON.stringify({ ...user, nickname: data.user.nickname, avatar_url: data.user.avatar_url }));
+      try {
+        const stored = localStorage.getItem('auth_user');
+        if (stored) {
+          const user = JSON.parse(stored);
+          localStorage.setItem('auth_user', JSON.stringify({ ...user, nickname: data.user.nickname, avatar_url: data.user.avatar_url }));
+        }
+      } catch (localErr) {
+        console.error('更新本地用户数据失败:', localErr);
       }
       setShowProfileModal(false);
       showToast('资料已更新', 'success');
@@ -388,10 +417,14 @@ const UserCenter: React.FC = () => {
 
       setProfile(prev => prev ? { ...prev, avatar_url: data.avatar_url } : prev);
       // 同步 localStorage
-      const stored = localStorage.getItem('auth_user');
-      if (stored) {
-        const user = JSON.parse(stored);
-        localStorage.setItem('auth_user', JSON.stringify({ ...user, avatar_url: data.avatar_url }));
+      try {
+        const stored = localStorage.getItem('auth_user');
+        if (stored) {
+          const user = JSON.parse(stored);
+          localStorage.setItem('auth_user', JSON.stringify({ ...user, avatar_url: data.avatar_url }));
+        }
+      } catch (localErr) {
+        console.error('更新本地用户数据失败:', localErr);
       }
       showToast('头像已更新', 'success');
     } catch (err) {
@@ -403,21 +436,21 @@ const UserCenter: React.FC = () => {
 
   if (loading && !profile) {
     return (
-      <div className="h-full flex items-center justify-center bg-[var(--bg-app)]">
+      <div className="h-full flex items-center justify-center bg-(--bg-app)">
         <div className="flex flex-col items-center gap-3">
-          <div className="w-10 h-10 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin" />
-          <div className="text-[var(--text-muted)]">{t.common.loading}</div>
+          <div className="w-10 h-10 border-2 border-(--accent) border-t-transparent rounded-full animate-spin" />
+          <div className="text-(--text-muted)">{t.common.loading}</div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="h-full overflow-auto bg-[var(--bg-app)]">
+    <div className="h-full overflow-auto bg-(--bg-app)">
       <div className="max-w-6xl mx-auto p-6 space-y-6">
         
         {/* 用户信息头部 */}
-        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[var(--accent)]/20 via-purple-500/10 to-blue-500/10 border border-[var(--border-color)]">
+        <div className="relative overflow-hidden rounded-2xl bg-linear-to-br from-(--accent)/20 via-purple-500/10 to-blue-500/10 border border-(--border-color)">
           <div className="absolute inset-0 bg-[url('data:image/svg+xml,%3Csvg%20width%3D%2260%22%20height%3D%2260%22%20viewBox%3D%220%200%2060%2060%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cg%20fill%3D%22none%22%20fill-rule%3D%22evenodd%22%3E%3Cg%20fill%3D%22%23ffffff%22%20fill-opacity%3D%220.03%22%3E%3Cpath%20d%3D%22M36%2034v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6%2034v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6%204V0H4v4H0v2h4v4h2V6h4V4H6z%22%2F%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E')] opacity-50" />
           
           <div className="relative p-6">
@@ -432,13 +465,13 @@ const UserCenter: React.FC = () => {
                   onChange={handleAvatarUpload}
                 />
                 <div
-                  className="w-20 h-20 rounded-2xl overflow-hidden shadow-lg shadow-[var(--accent)]/20 cursor-pointer"
+                  className="w-20 h-20 rounded-2xl overflow-hidden shadow-lg shadow-(--accent)/20 cursor-pointer"
                   onClick={() => avatarInputRef.current?.click()}
                 >
                   {profile?.avatar_url ? (
                     <img src={profile.avatar_url} alt="头像" className="w-full h-full object-cover" />
                   ) : (
-                    <div className="w-full h-full bg-gradient-to-br from-[var(--accent)] to-purple-500 flex items-center justify-center text-3xl font-bold text-white">
+                    <div className="w-full h-full bg-linear-to-br from-(--accent) to-purple-500 flex items-center justify-center text-3xl font-bold text-white">
                       {avatarInitial}
                     </div>
                   )}
@@ -454,7 +487,7 @@ const UserCenter: React.FC = () => {
                     <Camera className="w-5 h-5 text-white" />
                   )}
                 </div>
-                <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-emerald-500 rounded-full flex items-center justify-center border-2 border-[var(--bg-card)]">
+                <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-emerald-500 rounded-full flex items-center justify-center border-2 border-(--bg-card)">
                   <Sparkles className="w-3 h-3 text-white" />
                 </div>
               </div>
@@ -462,7 +495,7 @@ const UserCenter: React.FC = () => {
               {/* 用户信息 */}
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-1">
-                  <h1 className="text-2xl font-bold text-[var(--text-primary)]">
+                  <h1 className="text-2xl font-bold text-(--text-primary)">
                     {displayName}
                   </h1>
                   <Button
@@ -472,20 +505,20 @@ const UserCenter: React.FC = () => {
                     className="min-w-6 w-6 h-6"
                     onPress={openProfileModal}
                   >
-                    <Pencil className="w-3.5 h-3.5 text-[var(--text-muted)]" />
+                    <Pencil className="w-3.5 h-3.5 text-(--text-muted)" />
                   </Button>
                 </div>
                 {profile?.nickname && (
-                  <p className="text-xs text-[var(--text-muted)] mb-1">
+                  <p className="text-xs text-(--text-muted) mb-1">
                     {profile.email}
                   </p>
                 )}
                 {profile?.signature && (
-                  <p className="text-sm text-[var(--text-secondary)] italic mb-2">
+                  <p className="text-sm text-(--text-secondary) italic mb-2">
                     「{profile.signature}」
                   </p>
                 )}
-                <div className="flex items-center gap-4 text-sm text-[var(--text-muted)]">
+                <div className="flex items-center gap-4 text-sm text-(--text-muted)">
                   <span className="flex items-center gap-1.5">
                     <Calendar className="w-4 h-4" />
                     {memberSince} {t.userCenter.joinedAt}
@@ -498,24 +531,24 @@ const UserCenter: React.FC = () => {
               </div>
               
               {/* 积分卡片 */}
-              <div className="bg-[var(--bg-card)]/80 backdrop-blur-sm rounded-xl p-4 border border-[var(--border-color)] min-w-[200px]">
+              <div className="bg-(--bg-card)/80 backdrop-blur-sm rounded-xl p-4 border border-(--border-color) min-w-50">
                 <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2 text-sm text-[var(--text-secondary)]">
+                  <div className="flex items-center gap-2 text-sm text-(--text-secondary)">
                     <Wallet className="w-4 h-4 text-emerald-400" />
                     积分余额
                   </div>
                   <Button
                     size="sm"
                     variant="light"
-                    className="text-[var(--accent)] min-w-0 px-2 h-7"
+                    className="text-(--accent) min-w-0 px-2 h-7"
                     onPress={() => window.open('https://example.com/recharge', '_blank')}
                   >
                     充值
                     <ExternalLink className="w-3 h-3 ml-1" />
                   </Button>
                 </div>
-                <div className="text-3xl font-bold text-emerald-400">{formatInteger(profile?.balance)} <span className="text-base font-normal text-[var(--text-muted)]">积分</span></div>
-                <div className="text-xs text-[var(--text-muted)] mt-1">≈ ¥{((profile?.balance || 0) * POINT_PURCHASE_PRICE).toFixed(2)}</div>
+                <div className="text-3xl font-bold text-emerald-400">{formatInteger(profile?.balance)} <span className="text-base font-normal text-(--text-muted)">积分</span></div>
+                <div className="text-xs text-(--text-muted) mt-1">≈ ¥{((profile?.balance || 0) * POINT_PURCHASE_PRICE).toFixed(2)}</div>
               </div>
             </div>
           </div>
@@ -524,26 +557,26 @@ const UserCenter: React.FC = () => {
         {/* 统计卡片 */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {/* 本月消耗 */}
-          <Card className="bg-[var(--bg-card)] border border-[var(--border-color)] shadow-sm hover:shadow-md transition-shadow">
+          <Card className="bg-(--bg-card) border border-(--border-color) shadow-sm hover:shadow-md transition-shadow">
             <CardBody className="p-5">
               <div className="flex items-center justify-between mb-3">
                 <div className="p-2.5 bg-orange-500/10 rounded-xl">
                   <TrendingUp className="w-5 h-5 text-orange-400" />
                 </div>
                 <Tooltip content={t.userCenter.monthlyPointsTooltip}>
-                  <div className="text-xs text-[var(--text-muted)] cursor-help">{t.userCenter.thisMonth}</div>
+                  <div className="text-xs text-(--text-muted) cursor-help">{t.userCenter.thisMonth}</div>
                 </Tooltip>
               </div>
               <div className="flex items-baseline gap-1.5 mb-1">
-                <span className="text-2xl font-bold text-[var(--text-primary)]">{formatInteger(stats?.monthlyPointsUsed)}</span>
-                <span className="text-sm text-[var(--text-muted)]">{t.userCenter.points}</span>
+                <span className="text-2xl font-bold text-(--text-primary)">{formatInteger(stats?.monthlyPointsUsed)}</span>
+                <span className="text-sm text-(--text-muted)">{t.userCenter.points}</span>
               </div>
-              <div className="text-xs text-[var(--text-muted)]">{t.userCenter.monthlyPoints}</div>
+              <div className="text-xs text-(--text-muted)">{t.userCenter.monthlyPoints}</div>
             </CardBody>
           </Card>
 
           {/* 生成作品 */}
-          <Card className="bg-[var(--bg-card)] border border-[var(--border-color)] shadow-sm hover:shadow-md transition-shadow">
+          <Card className="bg-(--bg-card) border border-(--border-color) shadow-sm hover:shadow-md transition-shadow">
             <CardBody className="p-5">
               <div className="flex items-center justify-between mb-3">
                 <div className="p-2.5 bg-blue-500/10 rounded-xl">
@@ -551,10 +584,10 @@ const UserCenter: React.FC = () => {
                 </div>
               </div>
               <div className="flex items-baseline gap-1.5 mb-1">
-                <span className="text-2xl font-bold text-[var(--text-primary)]">{formatInteger((stats?.imageCount || 0) + (stats?.videoCount || 0))}</span>
-                <span className="text-sm text-[var(--text-muted)]">{t.userCenter.works}</span>
+                <span className="text-2xl font-bold text-(--text-primary)">{formatInteger((stats?.imageCount || 0) + (stats?.videoCount || 0))}</span>
+                <span className="text-sm text-(--text-muted)">{t.userCenter.works}</span>
               </div>
-              <div className="flex items-center gap-3 text-xs text-[var(--text-muted)]">
+              <div className="flex items-center gap-3 text-xs text-(--text-muted)">
                 <span className="flex items-center gap-1">
                   <Image className="w-3.5 h-3.5" />
                   {formatInteger(stats?.imageCount)} {t.userCenter.images}
@@ -568,7 +601,7 @@ const UserCenter: React.FC = () => {
           </Card>
 
           {/* 项目/剧本 */}
-          <Card className="bg-[var(--bg-card)] border border-[var(--border-color)] shadow-sm hover:shadow-md transition-shadow">
+          <Card className="bg-(--bg-card) border border-(--border-color) shadow-sm hover:shadow-md transition-shadow">
             <CardBody className="p-5">
               <div className="flex items-center justify-between mb-3">
                 <div className="p-2.5 bg-purple-500/10 rounded-xl">
@@ -576,10 +609,10 @@ const UserCenter: React.FC = () => {
                 </div>
               </div>
               <div className="flex items-baseline gap-2 mb-1">
-                <span className="text-2xl font-bold text-[var(--text-primary)]">{formatInteger(stats?.projectCount)}</span>
-                <span className="text-sm text-[var(--text-muted)]">{t.userCenter.projectCount}</span>
+                <span className="text-2xl font-bold text-(--text-primary)">{formatInteger(stats?.projectCount)}</span>
+                <span className="text-sm text-(--text-muted)">{t.userCenter.projectCount}</span>
               </div>
-              <div className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
+              <div className="flex items-center gap-2 text-xs text-(--text-muted)">
                 <FileText className="w-3.5 h-3.5" />
                 {formatInteger(stats?.scriptCount)} {t.userCenter.scriptCount}
               </div>
@@ -587,7 +620,7 @@ const UserCenter: React.FC = () => {
           </Card>
 
           {/* 创作角色 */}
-          <Card className="bg-[var(--bg-card)] border border-[var(--border-color)] shadow-sm hover:shadow-md transition-shadow">
+          <Card className="bg-(--bg-card) border border-(--border-color) shadow-sm hover:shadow-md transition-shadow">
             <CardBody className="p-5">
               <div className="flex items-center justify-between mb-3">
                 <div className="p-2.5 bg-emerald-500/10 rounded-xl">
@@ -595,55 +628,55 @@ const UserCenter: React.FC = () => {
                 </div>
               </div>
               <div className="flex items-baseline gap-1.5 mb-1">
-                <span className="text-2xl font-bold text-[var(--text-primary)]">{formatInteger(stats?.characterCount)}</span>
-                <span className="text-sm text-[var(--text-muted)]">{t.userCenter.characters}</span>
+                <span className="text-2xl font-bold text-(--text-primary)">{formatInteger(stats?.characterCount)}</span>
+                <span className="text-sm text-(--text-muted)">{t.userCenter.characters}</span>
               </div>
-              <div className="text-xs text-[var(--text-muted)]">{t.userCenter.charactersCreated}</div>
+              <div className="text-xs text-(--text-muted)">{t.userCenter.charactersCreated}</div>
             </CardBody>
           </Card>
         </div>
 
         {/* 我的订阅 */}
-        <Card className="bg-[var(--bg-card)] border border-[var(--border-color)] shadow-sm">
+        <Card className="bg-(--bg-card) border border-(--border-color) shadow-sm">
           <CardBody className="p-6">
             <div className="flex items-center gap-3 mb-6">
-              <div className="p-2.5 bg-[var(--accent)]/10 rounded-xl">
-                <CreditCard className="w-5 h-5 text-[var(--accent)]" />
+              <div className="p-2.5 bg-(--accent)/10 rounded-xl">
+                <CreditCard className="w-5 h-5 text-(--accent)" />
               </div>
               <div>
-                <h3 className="text-lg font-semibold text-[var(--text-primary)]">{t.subscription.title}</h3>
+                <h3 className="text-lg font-semibold text-(--text-primary)">{t.subscription.title}</h3>
               </div>
             </div>
 
             {subscriptionLoading ? (
               <div className="flex items-center justify-center py-8">
-                <div className="w-6 h-6 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin" />
+                <div className="w-6 h-6 border-2 border-(--accent) border-t-transparent rounded-full animate-spin" />
               </div>
             ) : subscription ? (
               <div className="space-y-6">
                 {/* 订阅信息头部 */}
-                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 p-4 bg-[var(--bg-secondary)] rounded-xl">
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 p-4 bg-(--bg-secondary) rounded-xl">
                   <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[var(--accent)] to-purple-600 flex items-center justify-center">
+                    <div className="w-12 h-12 rounded-xl bg-linear-to-br from-(--accent) to-purple-600 flex items-center justify-center">
                       <Sparkles className="w-6 h-6 text-white" />
                     </div>
                     <div>
                       <div className="flex items-center gap-2">
-                        <span className="text-lg font-semibold text-[var(--text-primary)]">
+                        <span className="text-lg font-semibold text-(--text-primary)">
                           {subscription.plan?.display_name || '免费版'}
                         </span>
                         <Chip size="sm" className={getStatusColor(subscription.subscription?.status || subscription.status)}>
                           {t.subscription.status[(subscription.subscription?.status || subscription.status) as keyof typeof t.subscription.status] || subscription.status}
                         </Chip>
                       </div>
-                      <div className="text-sm text-[var(--text-muted)] mt-1">
+                      <div className="text-sm text-(--text-muted) mt-1">
                         {(subscription.subscription?.status || subscription.status) === 'trial' ? t.subscription.trialEnds : t.subscription.renewsOn}: {subscription.subscription?.current_period_end ? formatExpiryDate(subscription.subscription.current_period_end) : '-'}
                       </div>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
                     <Button
-                      className="bg-[var(--accent)]/10 text-[var(--accent)]"
+                      className="bg-(--accent)/10 text-(--accent)"
                       startContent={<ArrowUpRight className="w-4 h-4" />}
                       onPress={() => navigate('/pricing')}
                     >
@@ -667,10 +700,10 @@ const UserCenter: React.FC = () => {
                 {subscription.usage && (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {/* API 用量 */}
-                    <div className="p-4 bg-[var(--bg-secondary)] rounded-xl">
+                    <div className="p-4 bg-(--bg-secondary) rounded-xl">
                       <div className="flex items-center justify-between mb-3">
-                        <span className="text-sm text-[var(--text-secondary)]">{t.subscription.apiUsage}</span>
-                        <span className="text-sm font-medium text-[var(--text-primary)]">
+                        <span className="text-sm text-(--text-secondary)">{t.subscription.apiUsage}</span>
+                        <span className="text-sm font-medium text-(--text-primary)">
                           {formatInteger(subscription.usage.api_calls_used)} / {subscription.usage.api_calls_limit === -1 ? '∞' : formatInteger(subscription.usage.api_calls_limit)}
                         </span>
                       </div>
@@ -680,17 +713,17 @@ const UserCenter: React.FC = () => {
                         color={subscription.usage.api_calls_limit !== -1 && subscription.usage.api_calls_used / subscription.usage.api_calls_limit > 0.8 ? 'warning' : 'primary'}
                         className="h-2"
                         classNames={{
-                          indicator: 'bg-[var(--accent)]',
-                          track: 'bg-[var(--accent)]/10'
+                          indicator: 'bg-(--accent)',
+                          track: 'bg-(--accent)/10'
                         }}
                       />
                     </div>
 
                     {/* 项目用量 */}
-                    <div className="p-4 bg-[var(--bg-secondary)] rounded-xl">
+                    <div className="p-4 bg-(--bg-secondary) rounded-xl">
                       <div className="flex items-center justify-between mb-3">
-                        <span className="text-sm text-[var(--text-secondary)]">{t.subscription.projectUsage}</span>
-                        <span className="text-sm font-medium text-[var(--text-primary)]">
+                        <span className="text-sm text-(--text-secondary)">{t.subscription.projectUsage}</span>
+                        <span className="text-sm font-medium text-(--text-primary)">
                           {formatInteger(subscription.usage.projects_used)} / {subscription.usage.projects_limit === -1 ? '∞' : formatInteger(subscription.usage.projects_limit)}
                         </span>
                       </div>
@@ -710,16 +743,16 @@ const UserCenter: React.FC = () => {
               </div>
             ) : (
               <div className="text-center py-8">
-                <div className="w-16 h-16 mx-auto mb-4 bg-[var(--bg-secondary)] rounded-full flex items-center justify-center">
-                  <CreditCard className="w-8 h-8 text-[var(--text-muted)]" />
+                <div className="w-16 h-16 mx-auto mb-4 bg-(--bg-secondary) rounded-full flex items-center justify-center">
+                  <CreditCard className="w-8 h-8 text-(--text-muted)" />
                 </div>
-                <p className="text-[var(--text-muted)] mb-4">{t.subscription.noPlan}</p>
+                <p className="text-(--text-muted) mb-4">{t.subscription.noPlan}</p>
                 <Button
-                  className="bg-gradient-to-r from-[var(--accent)] to-purple-600 text-white font-semibold"
+                  className="bg-linear-to-r from-(--accent) to-purple-600 text-white font-semibold"
                   startContent={<ArrowUpRight className="w-4 h-4" />}
                   onPress={() => navigate('/pricing')}
                 >
-                  {t.pricing.starter.cta}
+                  {t.pricing.basic.cta}
                 </Button>
               </div>
             )}
@@ -727,25 +760,25 @@ const UserCenter: React.FC = () => {
         </Card>
 
         {/* 详细账单 */}
-        <Card className="bg-[var(--bg-card)] border border-[var(--border-color)] shadow-sm">
+        <Card className="bg-(--bg-card) border border-(--border-color) shadow-sm">
           <CardBody className="p-0">
             {/* 账单头部 */}
-            <div className="p-5 border-b border-[var(--border-color)]">
+            <div className="p-5 border-b border-(--border-color)">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="p-2.5 bg-[var(--accent)]/10 rounded-xl">
-                    <Receipt className="w-5 h-5 text-[var(--accent)]" />
+                  <div className="p-2.5 bg-(--accent)/10 rounded-xl">
+                    <Receipt className="w-5 h-5 text-(--accent)" />
                   </div>
                   <div>
-                    <h3 className="text-lg font-semibold text-[var(--text-primary)]">{t.userCenter.billingTitle}</h3>
-                    <div className="text-sm text-[var(--text-muted)]">
+                    <h3 className="text-lg font-semibold text-(--text-primary)">{t.userCenter.billingTitle}</h3>
+                    <div className="text-sm text-(--text-muted)">
                       {t.userCenter.billingDesc}
                     </div>
                   </div>
                   <Button
                     size="sm"
                     variant="light"
-                    className="text-[var(--text-secondary)] min-w-0 px-2 h-8 ml-auto"
+                    className="text-(--text-secondary) min-w-0 px-2 h-8 ml-auto"
                     isLoading={recordsLoading}
                     onPress={() => fetchBillingData()}
                   >
@@ -761,7 +794,7 @@ const UserCenter: React.FC = () => {
                       setChargeStatus(e.target.value);
                       setPage(1);
                     }}
-                    className="bg-[var(--bg-secondary)] border border-[var(--border-color)] text-[var(--text-primary)] rounded-lg px-3 py-2 text-sm min-w-[120px] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/50"
+                    className="bg-(--bg-secondary) border border-(--border-color) text-(--text-primary) rounded-lg px-3 py-2 text-sm min-w-30 focus:outline-none focus:ring-2 focus:ring-(--accent)/50"
                   >
                     <option value="">{t.userCenter.filterAllStatus}</option>
                     <option value="charged">{t.userCenter.filterCharged}</option>
@@ -775,7 +808,7 @@ const UserCenter: React.FC = () => {
                       setModelCategory(e.target.value);
                       setPage(1);
                     }}
-                    className="bg-[var(--bg-secondary)] border border-[var(--border-color)] text-[var(--text-primary)] rounded-lg px-3 py-2 text-sm min-w-[120px] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/50"
+                    className="bg-(--bg-secondary) border border-(--border-color) text-(--text-primary) rounded-lg px-3 py-2 text-sm min-w-30 focus:outline-none focus:ring-2 focus:ring-(--accent)/50"
                   >
                     <option value="">{t.userCenter.filterAllModels}</option>
                     <option value="TEXT">{t.userCenter.filterTextModel}</option>
@@ -790,7 +823,7 @@ const UserCenter: React.FC = () => {
                       setSourceType(e.target.value);
                       setPage(1);
                     }}
-                    className="bg-[var(--bg-secondary)] border border-[var(--border-color)] text-[var(--text-primary)] rounded-lg px-3 py-2 text-sm min-w-[120px] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/50"
+                    className="bg-(--bg-secondary) border border-(--border-color) text-(--text-primary) rounded-lg px-3 py-2 text-sm min-w-30 focus:outline-none focus:ring-2 focus:ring-(--accent)/50"
                   >
                     <option value="">{t.userCenter.filterAllSources}</option>
                     <option value="workflow">{t.userCenter.sourceWorkflow}</option>
@@ -808,8 +841,8 @@ const UserCenter: React.FC = () => {
                 className="min-w-full"
                 classNames={{
                   wrapper: 'bg-transparent shadow-none rounded-none',
-                  th: 'bg-[var(--bg-secondary)] text-[var(--text-secondary)] font-medium text-xs uppercase tracking-wider',
-                  td: 'text-[var(--text-primary)] align-top py-4'
+                  th: 'bg-(--bg-secondary) text-(--text-secondary) font-medium text-xs uppercase tracking-wider',
+                  td: 'text-(--text-primary) align-top py-4'
                 }}
               >
                 <TableHeader>
@@ -823,18 +856,18 @@ const UserCenter: React.FC = () => {
               <TableBody emptyContent={
                 recordsLoading ? (
                   <div className="flex items-center justify-center py-8">
-                    <div className="w-6 h-6 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin" />
+                    <div className="w-6 h-6 border-2 border-(--accent) border-t-transparent rounded-full animate-spin" />
                   </div>
                 ) : (
                   <div className="text-center py-12">
-                    <Receipt className="w-12 h-12 mx-auto mb-3 text-[var(--text-muted)] opacity-30" />
-                    <p className="text-[var(--text-muted)]">{t.userCenter.billingEmpty}</p>
+                    <Receipt className="w-12 h-12 mx-auto mb-3 text-(--text-muted) opacity-30" />
+                    <p className="text-(--text-muted)">{t.userCenter.billingEmpty}</p>
                   </div>
                 )
               }>
                 {records.map((record) => (
-                  <TableRow key={record.id} className="hover:bg-[var(--bg-secondary)]/50 transition-colors">
-                    <TableCell className="text-sm text-[var(--text-muted)] whitespace-nowrap">
+                  <TableRow key={record.id} className="hover:bg-(--bg-secondary)/50 transition-colors">
+                    <TableCell className="text-sm text-(--text-muted) whitespace-nowrap">
                       <div className="flex items-center gap-2">
                         <Clock className="w-3.5 h-3.5" />
                         {formatDate(record.created_at)}
@@ -843,10 +876,10 @@ const UserCenter: React.FC = () => {
 
                     <TableCell>
                       <div className="flex flex-col gap-1.5">
-                        <Chip size="sm" className="bg-[var(--accent)]/10 text-[var(--accent)] w-fit">
+                        <Chip size="sm" className="bg-(--accent)/10 text-(--accent) w-fit">
                           {getSourceLabel(record.source_type)}
                         </Chip>
-                        <div className="text-xs text-[var(--text-muted)] truncate max-w-[150px]">
+                        <div className="text-xs text-(--text-muted) truncate max-w-37.5">
                           {record.operation_key || record.operation || '-'}
                         </div>
                       </div>
@@ -854,10 +887,10 @@ const UserCenter: React.FC = () => {
 
                     <TableCell>
                       <div className="flex flex-col gap-0.5">
-                        <div className="font-medium text-[var(--text-primary)]">
+                        <div className="font-medium text-(--text-primary)">
                           {record.model_name || record.model_provider || '-'}
                         </div>
-                        <Chip size="sm" variant="flat" className="w-fit text-xs bg-[var(--bg-secondary)]">
+                        <Chip size="sm" variant="flat" className="w-fit text-xs bg-(--bg-secondary)">
                           {record.model_category || 'UNKNOWN'}
                         </Chip>
                       </div>
@@ -879,24 +912,24 @@ const UserCenter: React.FC = () => {
                         {record.price_breakdown_json && record.price_breakdown_json.length > 0 ? (
                           record.price_breakdown_json.map((item, index) => (
                             <div key={`${record.id}-${index}`} className="text-sm">
-                              <span className="text-[var(--text-primary)]">{item.label || item.type}</span>
-                              <span className="text-[var(--text-muted)]"> × {formatInteger(item.quantity)}</span>
+                              <span className="text-(--text-primary)">{item.label || item.type}</span>
+                              <span className="text-(--text-muted)"> × {formatInteger(item.quantity)}</span>
                               <span className="text-amber-400 font-medium"> = {formatMoney(item.amount)}</span>
                             </div>
                           ))
                         ) : (
-                          <div className="text-sm text-[var(--text-muted)]">-</div>
+                          <div className="text-sm text-(--text-muted)">-</div>
                         )}
 
                         {buildUsageSummary(record) && (
-                          <div className="text-xs text-[var(--text-muted)] flex items-center gap-1">
+                          <div className="text-xs text-(--text-muted) flex items-center gap-1">
                             <Zap className="w-3 h-3" />
                             {buildUsageSummary(record)}
                           </div>
                         )}
 
                         {record.error_message && (
-                          <div className="text-xs text-rose-400 break-words">{record.error_message}</div>
+                          <div className="text-xs text-rose-400 wrap-break-word">{record.error_message}</div>
                         )}
                       </div>
                     </TableCell>
@@ -907,7 +940,7 @@ const UserCenter: React.FC = () => {
                           {record.points_cost ? `${formatInteger(record.points_cost)} 积分` : formatMoney(record.amount)}
                         </span>
                         {record.points_cost && (
-                          <span className="text-xs text-[var(--text-muted)]">
+                          <span className="text-xs text-(--text-muted)">
                             ≈ ¥{((record.points_cost || 0) * POINT_PURCHASE_PRICE).toFixed(2)}
                           </span>
                         )}
@@ -920,9 +953,9 @@ const UserCenter: React.FC = () => {
             </div>
 
             {/* 分页 */}
-            <div className="p-4 border-t border-[var(--border-color)] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-              <div className="text-sm text-[var(--text-muted)]">
-                {t.userCenter.totalRecords} <span className="font-medium text-[var(--text-primary)]">{formatInteger(total)}</span> {t.userCenter.recordsUnit}
+            <div className="p-4 border-t border-(--border-color) flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div className="text-sm text-(--text-muted)">
+                {t.userCenter.totalRecords} <span className="font-medium text-(--text-primary)">{formatInteger(total)}</span> {t.userCenter.recordsUnit}
                 {t.userCenter.pageInfo.replace('{page}', String(page)).replace('{total}', String(totalPages))}
               </div>
 
@@ -930,7 +963,7 @@ const UserCenter: React.FC = () => {
                 <Button
                   size="sm"
                   variant="flat"
-                  className="bg-[var(--bg-secondary)] text-[var(--text-primary)] gap-1"
+                  className="bg-(--bg-secondary) text-(--text-primary) gap-1"
                   isDisabled={page <= 1 || recordsLoading}
                   onPress={() => setPage((prev) => Math.max(1, prev - 1))}
                 >
@@ -940,7 +973,7 @@ const UserCenter: React.FC = () => {
                 <Button
                   size="sm"
                   variant="flat"
-                  className="bg-[var(--bg-secondary)] text-[var(--text-primary)] gap-1"
+                  className="bg-(--bg-secondary) text-(--text-primary) gap-1"
                   isDisabled={page >= totalPages || recordsLoading}
                   onPress={() => setPage((prev) => Math.min(totalPages, prev + 1))}
                 >
@@ -955,8 +988,8 @@ const UserCenter: React.FC = () => {
 
       {/* 资料编辑模态框 */}
       <Modal isOpen={showProfileModal} onClose={() => setShowProfileModal(false)} size="md">
-        <ModalContent className="bg-[var(--bg-card)] border border-[var(--border-color)]">
-          <ModalHeader className="text-[var(--text-primary)]">编辑个人资料</ModalHeader>
+        <ModalContent className="bg-(--bg-card) border border-(--border-color)">
+          <ModalHeader className="text-(--text-primary)">编辑个人资料</ModalHeader>
           <ModalBody className="space-y-4">
             <Input
               label="昵称"
@@ -966,9 +999,9 @@ const UserCenter: React.FC = () => {
               maxLength={50}
               description={`${editNickname.length}/50`}
               classNames={{
-                input: 'bg-transparent text-[var(--text-primary)]',
-                inputWrapper: 'bg-[var(--bg-secondary)] border border-[var(--border-color)]',
-                label: 'text-[var(--text-secondary)]',
+                input: 'bg-transparent text-(--text-primary)',
+                inputWrapper: 'bg-(--bg-secondary) border border-(--border-color)',
+                label: 'text-(--text-secondary)',
               }}
             />
             <Textarea
@@ -981,9 +1014,9 @@ const UserCenter: React.FC = () => {
               minRows={2}
               maxRows={4}
               classNames={{
-                input: 'bg-transparent text-[var(--text-primary)]',
-                inputWrapper: 'bg-[var(--bg-secondary)] border border-[var(--border-color)]',
-                label: 'text-[var(--text-secondary)]',
+                input: 'bg-transparent text-(--text-primary)',
+                inputWrapper: 'bg-(--bg-secondary) border border-(--border-color)',
+                label: 'text-(--text-secondary)',
               }}
             />
           </ModalBody>
@@ -992,7 +1025,7 @@ const UserCenter: React.FC = () => {
               取消
             </Button>
             <Button
-              className="bg-[var(--accent)] text-white"
+              className="bg-(--accent) text-white"
               isLoading={savingProfile}
               onPress={handleSaveProfile}
               startContent={!savingProfile ? <Save className="w-4 h-4" /> : undefined}
