@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Button, Input, Textarea, Select, SelectItem, Popover, PopoverTrigger, PopoverContent, Tabs, Tab } from '@heroui/react';
-import { Plus, X, Tag, Download, RefreshCw, Trash2, Image as ImageIcon, User, Layers } from 'lucide-react';
+import { Plus, X, Tag, Download, RefreshCw, Trash2, Image as ImageIcon, User, Layers, FileImage, ExternalLink } from 'lucide-react';
 import { 
   TagGroup, 
   CharacterTagGroupEntry, 
@@ -741,6 +741,53 @@ const CharacterModal: React.FC<CharacterModalProps> = ({
                       </div>
                     </div>
 
+                    {/* 角色设定图展示区 */}
+                    {formData.character_sheet_url && (
+                      <div className="space-y-2 mt-2">
+                        <div className="flex items-center justify-between">
+                          <label className="text-sm font-medium text-slate-400 flex items-center gap-1.5">
+                            <FileImage className="w-4 h-4" />
+                            角色设定图
+                          </label>
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              variant="flat"
+                              className="bg-blue-500/20 text-blue-400 hover:bg-blue-500/30"
+                              startContent={<ExternalLink className="w-3 h-3" />}
+                              onPress={() => window.open(formData.character_sheet_url, '_blank')}
+                            >
+                              查看大图
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="flat"
+                              className="bg-green-500/20 text-green-400 hover:bg-green-500/30"
+                              startContent={<Download className="w-3 h-3" />}
+                              onPress={() => downloadCharacterView(formData.character_sheet_url, `${formData.name || '角色'}_设定图.png`)}
+                            >
+                              下载
+                            </Button>
+                          </div>
+                        </div>
+                        <div className="relative group border border-slate-700 rounded-lg overflow-hidden bg-slate-800/50">
+                          <img
+                            src={formData.character_sheet_url}
+                            alt="角色设定图"
+                            className="w-full object-contain rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
+                            style={{ maxHeight: '200px' }}
+                            onClick={() => window.open(formData.character_sheet_url, '_blank')}
+                          />
+                        </div>
+                      </div>
+                    )}
+                    {isGenerating && !formData.character_sheet_url && (
+                      <div className="text-xs text-slate-500 text-center mt-2 flex items-center justify-center gap-1.5">
+                        <FileImage className="w-3.5 h-3.5" />
+                        三视图生成完成后将自动合成角色设定图
+                      </div>
+                    )}
+
                     {/* 编辑模式下的提示 */}
                     {!editMode && !hasAnyView && (
                       <p className="text-xs text-slate-500 text-center">
@@ -808,7 +855,7 @@ const CharacterModal: React.FC<CharacterModalProps> = ({
                 取消
               </Button>
               <Button 
-                className="bg-gradient-to-r from-blue-500 to-violet-600 text-white font-semibold shadow-lg shadow-blue-500/20"
+                className="bg-linear-to-r from-blue-500 to-violet-600 text-white font-semibold shadow-lg shadow-blue-500/20"
                 onPress={onSave}
               >
                 保存

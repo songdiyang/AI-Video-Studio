@@ -851,4 +851,5 @@ module.exports = {
   getPublicUrl,
   isConfigured,
   ensureReady,
+  smartDownload,
 };

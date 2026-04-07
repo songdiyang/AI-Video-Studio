@@ -31,6 +31,7 @@ export interface Character {
   front_view_url?: string;
   side_view_url?: string;
   back_view_url?: string;
+  character_sheet_url?: string;
   generation_status?: 'idle' | 'generating' | 'completed' | 'failed';
   generation_prompt?: string;
   tags: string;

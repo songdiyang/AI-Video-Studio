@@ -25,8 +25,9 @@ const handleImageGeneration = require('../base/imageGeneration');
 const handleBaseTextModelCall = require('../base/baseTextModelCall');
 const { execute, queryOne } = require('../../../dbHelper');
 const { requireVisualStyle } = require('../../../utils/getProjectStyle');
-const { downloadAndStore } = require('../../../utils/fileStorage');
+const { downloadAndStore, uploadBuffer } = require('../../../utils/fileStorage');
 const { assertUpdated, assertPersistedFields } = require('./persistenceGuard');
+const composeCharacterSheet = require('../../../utils/composeCharacterSheet');
 
 // 白膜模式服装提示词
 const BASE_MODEL_OUTFIT = {
@@ -388,7 +389,42 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
     console.log('[CharacterViews] ✅ 背面视图已存在，跳过生成');
   }
 
-  if (onProgress) onProgress(90);
+  if (onProgress) onProgress(85);
+
+  // === 合成角色设定图 ===
+  let characterSheetUrl = null;
+  try {
+    console.log('[CharacterViews] 开始合成角色设定图...');
+    const sheetBuffer = await composeCharacterSheet({
+      frontViewUrl: persistedFrontUrl,
+      sideViewUrl: persistedSideUrl,
+      backViewUrl: persistedBackUrl,
+      characterName,
+      appearance,
+      personality,
+      description,
+      style
+    });
+
+    // 上传到 MinIO
+    const sheetObjectPath = `images/characters/${characterId}/character_sheet.png`;
+    characterSheetUrl = await uploadBuffer(sheetBuffer, sheetObjectPath, { contentType: 'image/png' });
+    console.log('[CharacterViews] ✅ 角色设定图已上传:', characterSheetUrl);
+
+    // 更新数据库
+    if (characterId && characterSheetUrl) {
+      await execute(
+        'UPDATE characters SET character_sheet_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+        [characterSheetUrl, characterId]
+      );
+      console.log('[CharacterViews] ✅ 角色设定图 URL 已保存到数据库');
+    }
+  } catch (sheetErr) {
+    // 合成失败不影响三视图的正常流程
+    console.error('[CharacterViews] ⚠️ 角色设定图合成失败（不影响三视图）:', sheetErr.message);
+  }
+
+  if (onProgress) onProgress(92);
 
   // 将正面视图同时保存为主图片 (image_url)，并标记生成完成
   if (characterId && persistedFrontUrl) {
@@ -427,6 +463,7 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
     sideViewUrl: persistedSideUrl,
     backViewUrl: persistedBackUrl,
     imageUrl: persistedFrontUrl, // 主图片使用正面视图
+    characterSheetUrl: characterSheetUrl,
     imageModel,
     textModel,
     aspectRatio: aspectRatio || null
