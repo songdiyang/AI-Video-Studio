@@ -21,10 +21,12 @@ export interface CharacterTagGroupEntry {
 export interface Character {
   id: number;
   user_id: number;
+  project_id?: number;
   name: string;
   description: string;
   appearance: string;
   personality: string;
+  gender?: 'male' | 'female' | 'unknown';
   image_url: string;
   front_view_url?: string;
   side_view_url?: string;
@@ -133,9 +135,12 @@ export interface PropGenerationStatusResponse {
 export interface CharacterState {
   id: number;
   character_id: number;
+  is_base_model?: boolean;    // 是否为基础白膜状态
+  costume_id?: number | null; // 关联的服装ID
   name: string;
   description: string;
   appearance: string;
+  gender?: 'male' | 'female' | 'unknown';
   image_url: string;
   front_view_url: string;
   side_view_url: string;
@@ -248,6 +253,23 @@ export async function deleteCharacter(id: number): Promise<void> {
     const data = await response.json();
     throw new Error(data.message || '删除角色失败');
   }
+}
+
+/**
+ * 获取单个角色详情
+ */
+export async function fetchCharacter(characterId: number): Promise<Character> {
+  const token = getAuthToken();
+  const response = await fetch(`/api/characters/${characterId}`, {
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    }
+  });
+  if (!response.ok) {
+    throw new Error('获取角色详情失败');
+  }
+  const data = await response.json();
+  return data.character;
 }
 
 /**
@@ -786,7 +808,7 @@ export async function duplicateCharacterState(
 export async function generateCharacterStateViews(
   characterId: number,
   stateId: number,
-  params: { imageModel: string; textModel?: string; regenerateOnly?: ('front' | 'side' | 'back')[] }
+  params: { imageModel: string; textModel?: string; regenerateOnly?: ('front' | 'side' | 'back')[]; referenceImage?: string }
 ): Promise<{ state: CharacterState; generationPrompt: string }> {
   const token = getAuthToken();
   const response = await fetch(`/api/characters/${characterId}/states/${stateId}/generate-views`, {

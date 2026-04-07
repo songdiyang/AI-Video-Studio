@@ -1,6 +1,6 @@
 import React from 'react';
 import { Card, CardBody, Button } from '@heroui/react';
-import { Layers, Eye, Loader2, User } from 'lucide-react';
+import { Layers, Eye, Loader2, User, RefreshCw } from 'lucide-react';
 import { Character } from './types';
 
 interface CharacterCardProps {
@@ -9,6 +9,7 @@ interface CharacterCardProps {
   isGenerating?: boolean;
   onGenerateViews: (charName: string, characterId: number) => void;
   onShowDetail: (character: Character) => void;
+  onOpenLifecycle?: (character: Character) => void;
 }
 
 const CharacterCard: React.FC<CharacterCardProps> = ({
@@ -16,13 +17,23 @@ const CharacterCard: React.FC<CharacterCardProps> = ({
   scenes,
   isGenerating = false,
   onGenerateViews,
-  onShowDetail
+  onShowDetail,
+  onOpenLifecycle
 }) => {
+  // 双击打开生命周期管理界面
+  const handleDoubleClick = () => {
+    onOpenLifecycle?.(character);
+  };
+
   return (
-    <Card className="bg-slate-800/60 shadow-sm hover:shadow-md hover:shadow-blue-500/5 transition-shadow border border-slate-700/50">
+    <Card 
+      className="bg-slate-800/60 shadow-sm hover:shadow-md hover:shadow-blue-500/5 transition-shadow border border-slate-700/50 cursor-pointer"
+      isPressable
+      onPress={handleDoubleClick}
+    >
       <CardBody className="p-4">
         <div className="flex items-start gap-3 mb-3">
-          <div className="w-12 h-12 rounded-full bg-blue-500/10 flex items-center justify-center flex-shrink-0 border border-blue-500/20">
+          <div className="w-12 h-12 rounded-full bg-blue-500/10 flex items-center justify-center shrink-0 border border-blue-500/20">
             {character.imageUrl ? (
               <img src={character.imageUrl} alt={character.name} className="w-full h-full rounded-full object-cover" />
             ) : (

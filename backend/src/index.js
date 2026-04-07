@@ -35,6 +35,7 @@ const characterRoutes = require('./scripts/Characters');
 const sceneRoutes = require('./scripts/Scenes');
 const propsRoutes = require('./scripts/Props');
 const assetsRoutes = require('./scripts/Assets');
+const costumeRoutes = require('./scripts/Costumes');
 const projectRoutes = require('./projects');
 const workflowRoutes = require('./nosyntask/routes');
 const modelRoutes = require('./modelRoutes');
@@ -140,6 +141,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/characters', characterRoutes);
 app.use('/api/scenes', sceneRoutes);
 app.use('/api/props', propsRoutes);
+app.use('/api/costumes', costumeRoutes);
 app.use('/api', assetsRoutes);  // 参考图路由（/api/reference-images）
 app.use('/api/projects', projectRoutes);
 app.use('/api/workflows', workflowRoutes);

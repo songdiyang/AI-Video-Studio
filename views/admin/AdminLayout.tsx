@@ -177,7 +177,7 @@ const AdminLayout: React.FC = () => {
 
   return (
     <div className="flex h-screen bg-[#0a0a0f]">
-      <aside className="w-64 bg-gradient-to-b from-[#1a1035] via-[#2d1f4e] to-[#4a3070] shadow-xl flex flex-col">
+      <aside className="w-64 bg-linear-to-b from-[#1a1035] via-[#2d1f4e] to-[#4a3070] shadow-xl flex flex-col">
         <div className="p-6">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-white/10 backdrop-blur rounded-xl flex items-center justify-center">
@@ -196,7 +196,7 @@ const AdminLayout: React.FC = () => {
 
         <div className="p-4">
           <div className="flex items-center gap-3 px-3 py-3 bg-white/10 backdrop-blur rounded-xl mb-3">
-            <div className="w-9 h-9 bg-gradient-to-r from-blue-400 to-violet-500 rounded-full flex items-center justify-center">
+            <div className="w-9 h-9 bg-linear-to-r from-blue-400 to-violet-500 rounded-full flex items-center justify-center">
               <span className="text-white text-sm font-semibold">
                 {userEmail.charAt(0).toUpperCase()}
               </span>

@@ -25,10 +25,10 @@ const planThemes: Record<string, { gradient: string; border: string; glow: strin
     badge: 'bg-slate-500/20 text-slate-300',
   },
   pro: {
-    gradient: 'from-[var(--accent)]/20 to-purple-600/10',
-    border: 'border-[var(--accent)]/50',
-    glow: 'hover:shadow-[var(--accent)]/30',
-    badge: 'bg-[var(--accent)]/20 text-[var(--accent-light)]',
+    gradient: 'from-(--accent)/20 to-purple-600/10',
+    border: 'border-(--accent)/50',
+    glow: 'hover:shadow-(--accent)/30',
+    badge: 'bg-(--accent)/20 text-(--accent-light)',
   },
   premium: {
     gradient: 'from-amber-500/20 to-orange-600/10',
@@ -232,7 +232,8 @@ const Pricing: React.FC = () => {
     if (typeof planTranslation === 'object' && planTranslation !== null) {
       return planTranslation as { name: string; desc: string; cta: string };
     }
-    return { name: planName, desc: '', cta: t.pricing.creator.cta };
+    // 如果没有找到对应的翻译，使用 basic 的 cta 作为默认值
+    return { name: planName, desc: '', cta: t.pricing.basic.cta };
   };
 
   const formatPrice = (price: number) => {
@@ -244,23 +245,23 @@ const Pricing: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[var(--bg-app)]">
+      <div className="min-h-screen flex items-center justify-center bg-(--bg-app)">
         <div className="flex flex-col items-center gap-4">
           <div className="relative">
-            <div className="w-12 h-12 border-2 border-[var(--accent)]/30 rounded-full" />
-            <div className="absolute inset-0 w-12 h-12 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin" />
+            <div className="w-12 h-12 border-2 border-(--accent)/30 rounded-full" />
+            <div className="absolute inset-0 w-12 h-12 border-2 border-(--accent) border-t-transparent rounded-full animate-spin" />
           </div>
-          <div className="text-[var(--text-muted)] text-sm">{t.common.loading}</div>
+          <div className="text-(--text-muted) text-sm">{t.common.loading}</div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[var(--bg-app)] relative overflow-hidden">
+    <div className="min-h-screen bg-(--bg-app) relative overflow-hidden">
       {/* 背景装饰 */}
       <div className="absolute inset-0 pointer-events-none">
-        <div className="absolute top-0 left-1/4 w-96 h-96 bg-[var(--accent)]/5 rounded-full blur-3xl" />
+        <div className="absolute top-0 left-1/4 w-96 h-96 bg-(--accent)/5 rounded-full blur-3xl" />
         <div className="absolute top-1/3 right-1/4 w-80 h-80 bg-purple-500/5 rounded-full blur-3xl" />
         <div className="absolute bottom-1/4 left-1/3 w-72 h-72 bg-amber-500/5 rounded-full blur-3xl" />
       </div>
@@ -277,18 +278,18 @@ const Pricing: React.FC = () => {
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               transition={{ delay: 0.1 }}
-              className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-[var(--accent)]/10 border border-[var(--accent)]/20 mb-6"
+              className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-(--accent)/10 border border-(--accent)/20 mb-6"
             >
-              <Zap className="w-4 h-4 text-[var(--accent)]" />
-              <span className="text-sm font-medium text-[var(--accent)]">
+              <Zap className="w-4 h-4 text-(--accent)" />
+              <span className="text-sm font-medium text-(--accent)">
                 限时优惠 · 年付立省20%
               </span>
             </motion.div>
             
-            <h1 className="text-3xl md:text-5xl lg:text-6xl font-bold text-[var(--text-primary)] mb-4 md:mb-6">
+            <h1 className="text-3xl md:text-5xl lg:text-6xl font-bold text-(--text-primary) mb-4 md:mb-6">
               {t.pricing.title}
             </h1>
-            <p className="text-base md:text-lg text-[var(--text-secondary)] max-w-2xl mx-auto leading-relaxed">
+            <p className="text-base md:text-lg text-(--text-secondary) max-w-2xl mx-auto leading-relaxed">
               {t.pricing.subtitle}
             </p>
           </motion.div>
@@ -300,21 +301,21 @@ const Pricing: React.FC = () => {
             transition={{ delay: 0.15 }}
             className="flex items-center justify-center mb-10 md:mb-14"
           >
-            <div className="inline-flex items-center p-1 rounded-xl bg-[var(--bg-card)] border border-[var(--border-color)] shadow-lg">
+            <div className="inline-flex items-center p-1 rounded-xl bg-(--bg-card) border border-(--border-color) shadow-lg">
               <button
                 onClick={() => setIsYearly(false)}
                 className={`
                   relative px-5 md:px-6 py-2.5 rounded-lg text-sm font-semibold transition-all duration-300
                   ${!isYearly 
                     ? 'text-white' 
-                    : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+                    : 'text-(--text-muted) hover:text-(--text-secondary)'
                   }
                 `}
               >
                 {!isYearly && (
                   <motion.div
                     layoutId="billingToggle"
-                    className="absolute inset-0 bg-gradient-to-r from-[var(--accent)] to-[var(--accent-dark)] rounded-lg"
+                    className="absolute inset-0 bg-linear-to-r from-(--accent) to-(--accent-dark) rounded-lg"
                     transition={{ type: 'spring', bounce: 0.2, duration: 0.5 }}
                   />
                 )}
@@ -327,14 +328,14 @@ const Pricing: React.FC = () => {
                   relative px-5 md:px-6 py-2.5 rounded-lg text-sm font-semibold transition-all duration-300 flex items-center gap-2
                   ${isYearly 
                     ? 'text-white' 
-                    : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+                    : 'text-(--text-muted) hover:text-(--text-secondary)'
                   }
                 `}
               >
                 {isYearly && (
                   <motion.div
                     layoutId="billingToggle"
-                    className="absolute inset-0 bg-gradient-to-r from-[var(--accent)] to-[var(--accent-dark)] rounded-lg"
+                    className="absolute inset-0 bg-linear-to-r from-(--accent) to-(--accent-dark) rounded-lg"
                     transition={{ type: 'spring', bounce: 0.2, duration: 0.5 }}
                   />
                 )}
@@ -384,7 +385,7 @@ const Pricing: React.FC = () => {
                       transition={{ delay: 0.3 }}
                       className="absolute -top-3 left-1/2 -translate-x-1/2 z-20"
                     >
-                      <div className="flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-gradient-to-r from-[var(--accent)] to-purple-600 text-white text-xs font-bold shadow-lg shadow-[var(--accent)]/30">
+                      <div className="flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-linear-to-r from-(--accent) to-purple-600 text-white text-xs font-bold shadow-lg shadow-(--accent)/30">
                         <Star className="w-3.5 h-3.5 fill-current" />
                         <span>{t.pricing.popular}</span>
                       </div>
@@ -395,8 +396,8 @@ const Pricing: React.FC = () => {
                     className={`
                       relative h-full overflow-hidden transition-all duration-500
                       ${popular
-                        ? `bg-gradient-to-b ${theme.gradient} border-2 ${theme.border} shadow-xl shadow-[var(--accent)]/10`
-                        : `bg-[var(--bg-card)]/80 backdrop-blur-sm border border-[var(--border-color)] ${theme.glow}`
+                        ? `bg-linear-to-b ${theme.gradient} border-2 ${theme.border} shadow-xl shadow-(--accent)/10`
+                        : `bg-(--bg-card)/80 backdrop-blur-sm border border-(--border-color) ${theme.glow}`
                       }
                       ${isHovered ? 'scale-[1.02] shadow-2xl' : ''}
                     `}
@@ -404,7 +405,7 @@ const Pricing: React.FC = () => {
                     {/* 背景装饰 */}
                     {popular && (
                       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-                        <div className="absolute -top-24 -right-24 w-48 h-48 bg-[var(--accent)]/10 rounded-full blur-3xl" />
+                        <div className="absolute -top-24 -right-24 w-48 h-48 bg-(--accent)/10 rounded-full blur-3xl" />
                         <div className="absolute -bottom-12 -left-12 w-32 h-32 bg-purple-500/10 rounded-full blur-2xl" />
                       </div>
                     )}
@@ -416,14 +417,14 @@ const Pricing: React.FC = () => {
                           <div className={`
                             w-10 h-10 rounded-xl flex items-center justify-center
                             ${popular 
-                              ? 'bg-gradient-to-br from-[var(--accent)] to-purple-600 text-white shadow-lg shadow-[var(--accent)]/30' 
+                              ? 'bg-linear-to-br from-(--accent) to-purple-600 text-white shadow-lg shadow-(--accent)/30' 
                               : `${theme.badge}`
                             }
                           `}>
                             {getPlanIcon(plan.name)}
                           </div>
                           <div>
-                            <h3 className="text-lg font-bold text-[var(--text-primary)]">
+                            <h3 className="text-lg font-bold text-(--text-primary)">
                               {plan.display_name || planTrans.name}
                             </h3>
                             {isYearly && savings > 0 && !isEnterprise && !isFree && (
@@ -433,7 +434,7 @@ const Pricing: React.FC = () => {
                             )}
                           </div>
                         </div>
-                        <p className="text-sm text-[var(--text-muted)] leading-relaxed">
+                        <p className="text-sm text-(--text-muted) leading-relaxed">
                           {planTrans.desc}
                         </p>
                       </div>
@@ -442,10 +443,10 @@ const Pricing: React.FC = () => {
                       <div className="mb-6">
                         {isEnterprise ? (
                           <div className="py-2">
-                            <span className="text-2xl font-bold text-[var(--text-primary)]">
+                            <span className="text-2xl font-bold text-(--text-primary)">
                               定制方案
                             </span>
-                            <p className="text-sm text-[var(--text-muted)] mt-1">
+                            <p className="text-sm text-(--text-muted) mt-1">
                               根据企业需求定制
                             </p>
                           </div>
@@ -453,27 +454,27 @@ const Pricing: React.FC = () => {
                           /* 有新用户优惠价格时的显示 - 原价删除线 + 优惠价格 */
                           <div className="py-2">
                             <div className="flex items-center gap-2 mb-1">
-                              <span className="text-base text-[var(--text-muted)] line-through decoration-rose-400 decoration-2">
+                              <span className="text-base text-(--text-muted) line-through decoration-rose-400 decoration-2">
                                 ¥{isYearly ? price : price}
                               </span>
-                              <span className="text-xs px-2 py-0.5 rounded-full bg-gradient-to-r from-rose-500 to-orange-500 text-white font-bold animate-pulse">
+                              <span className="text-xs px-2 py-0.5 rounded-full bg-linear-to-r from-rose-500 to-orange-500 text-white font-bold animate-pulse">
                                 首次优惠
                               </span>
                             </div>
                             <div className="flex items-baseline gap-1">
-                              <span className="text-lg text-[var(--accent)]">¥</span>
+                              <span className="text-lg text-(--accent)">¥</span>
                               <AnimatePresence mode="wait">
                                 <motion.span
                                   key={isYearly ? 'yearly-discount' : 'monthly-discount'}
                                   initial={{ opacity: 0, y: -10 }}
                                   animate={{ opacity: 1, y: 0 }}
                                   exit={{ opacity: 0, y: 10 }}
-                                  className="text-4xl font-bold text-[var(--accent)]"
+                                  className="text-4xl font-bold text-(--accent)"
                                 >
                                   {isYearly ? discountPrice : discountPrice}
                                 </motion.span>
                               </AnimatePresence>
-                              <span className="text-[var(--text-muted)]">
+                              <span className="text-(--text-muted)">
                                 {isYearly ? '/年' : '/月'}
                               </span>
                             </div>
@@ -491,25 +492,25 @@ const Pricing: React.FC = () => {
                         ) : (
                           <div className="py-2">
                             <div className="flex items-baseline gap-1">
-                              <span className="text-lg text-[var(--text-muted)]">¥</span>
+                              <span className="text-lg text-(--text-muted)">¥</span>
                               <AnimatePresence mode="wait">
                                 <motion.span
                                   key={isYearly ? 'yearly' : 'monthly'}
                                   initial={{ opacity: 0, y: -10 }}
                                   animate={{ opacity: 1, y: 0 }}
                                   exit={{ opacity: 0, y: 10 }}
-                                  className="text-4xl font-bold text-[var(--text-primary)]"
+                                  className="text-4xl font-bold text-(--text-primary)"
                                 >
                                   {isYearly ? price : price}
                                 </motion.span>
                               </AnimatePresence>
-                              <span className="text-[var(--text-muted)]">
+                              <span className="text-(--text-muted)">
                                 {isYearly ? '/年' : '/月'}
                               </span>
                             </div>
                             {isYearly && monthlyPrice > 0 && (
                               <div className="flex items-center gap-2 mt-1">
-                                <span className="text-sm text-[var(--text-muted)] line-through">
+                                <span className="text-sm text-(--text-muted) line-through">
                                   ¥{monthlyPrice * 12}/年
                                 </span>
                                 <span className="text-xs px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-medium">
@@ -525,40 +526,40 @@ const Pricing: React.FC = () => {
                       <div className="flex-1 space-y-2.5 mb-6">
                         {/* 核心指标 */}
                         <div className="flex items-center gap-2.5 text-sm">
-                          <div className="w-5 h-5 rounded-full bg-emerald-500/15 flex items-center justify-center flex-shrink-0">
+                          <div className="w-5 h-5 rounded-full bg-emerald-500/15 flex items-center justify-center shrink-0">
                             <Check className="w-3 h-3 text-emerald-400" />
                           </div>
-                          <span className="text-[var(--text-secondary)]">
+                          <span className="text-(--text-secondary)">
                             {plan.max_projects === -1 ? '无限' : plan.max_projects} 个项目
                           </span>
                         </div>
                         <div className="flex items-center gap-2.5 text-sm">
-                          <div className="w-5 h-5 rounded-full bg-emerald-500/15 flex items-center justify-center flex-shrink-0">
+                          <div className="w-5 h-5 rounded-full bg-emerald-500/15 flex items-center justify-center shrink-0">
                             <Check className="w-3 h-3 text-emerald-400" />
                           </div>
-                          <span className="text-[var(--text-secondary)]">
+                          <span className="text-(--text-secondary)">
                             {plan.max_api_calls_monthly === -1 ? '无限' : plan.max_api_calls_monthly.toLocaleString()} 积分/月
                           </span>
                         </div>
                         <div className="flex items-center gap-2.5 text-sm">
-                          <div className="w-5 h-5 rounded-full bg-emerald-500/15 flex items-center justify-center flex-shrink-0">
+                          <div className="w-5 h-5 rounded-full bg-emerald-500/15 flex items-center justify-center shrink-0">
                             <Check className="w-3 h-3 text-emerald-400" />
                           </div>
-                          <span className="text-[var(--text-secondary)]">
+                          <span className="text-(--text-secondary)">
                             {plan.max_team_members === -1 ? '无限' : plan.max_team_members} 位团队成员
                           </span>
                         </div>
                         
                         {/* 分割线 */}
-                        <div className="my-3 border-t border-[var(--border-color)]/50" />
+                        <div className="my-3 border-t border-(--border-color)/50" />
                         
                         {/* 额外功能 */}
                         {plan.features_json?.slice(0, 4).map((feature, i) => (
                           <div key={i} className="flex items-center gap-2.5 text-sm">
-                            <div className="w-5 h-5 rounded-full bg-[var(--accent)]/10 flex items-center justify-center flex-shrink-0">
-                              <Check className="w-3 h-3 text-[var(--accent)]" />
+                            <div className="w-5 h-5 rounded-full bg-(--accent)/10 flex items-center justify-center shrink-0">
+                              <Check className="w-3 h-3 text-(--accent)" />
                             </div>
-                            <span className="text-[var(--text-secondary)]">{feature}</span>
+                            <span className="text-(--text-secondary)">{feature}</span>
                           </div>
                         ))}
                       </div>
@@ -568,10 +569,10 @@ const Pricing: React.FC = () => {
                         className={`
                           w-full font-semibold h-11 text-sm transition-all duration-300
                           ${popular
-                            ? 'bg-gradient-to-r from-[var(--accent)] to-purple-600 text-white shadow-lg shadow-[var(--accent)]/25 hover:shadow-xl hover:shadow-[var(--accent)]/30 hover:brightness-110'
+                            ? 'bg-linear-to-r from-(--accent) to-purple-600 text-white shadow-lg shadow-(--accent)/25 hover:shadow-xl hover:shadow-(--accent)/30 hover:brightness-110'
                             : isEnterprise
-                              ? 'bg-transparent text-[var(--text-primary)] border-2 border-[var(--border-color)] hover:border-[var(--accent)]/50 hover:bg-[var(--accent)]/5'
-                              : 'bg-[var(--accent)]/10 text-[var(--accent)] hover:bg-[var(--accent)]/20 border border-[var(--accent)]/30'
+                              ? 'bg-transparent text-(--text-primary) border-2 border-(--border-color) hover:border-(--accent)/50 hover:bg-(--accent)/5'
+                              : 'bg-(--accent)/10 text-(--accent) hover:bg-(--accent)/20 border border-(--accent)/30'
                           }
                         `}
                         isLoading={subscribing === plan.id}
@@ -596,7 +597,7 @@ const Pricing: React.FC = () => {
               transition={{ delay: 0.4, duration: 0.4 }}
               className="mt-8"
             >
-              <Card className="bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-cyan-500/10 border border-emerald-500/20 overflow-hidden">
+              <Card className="bg-linear-to-r from-emerald-500/10 via-teal-500/10 to-cyan-500/10 border border-emerald-500/20 overflow-hidden">
                 <CardBody className="p-6 md:p-8">
                   <div className="flex flex-col md:flex-row items-center justify-between gap-6">
                     <div className="flex items-center gap-4">
@@ -604,13 +605,13 @@ const Pricing: React.FC = () => {
                         {freeIcon}
                       </div>
                       <div>
-                        <h3 className="text-xl font-bold text-[var(--text-primary)] flex items-center gap-2">
+                        <h3 className="text-xl font-bold text-(--text-primary) flex items-center gap-2">
                           {freePlan.display_name || '免费版'}
                           <Chip size="sm" className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30">
                             永久免费
                           </Chip>
                         </h3>
-                        <p className="text-sm text-[var(--text-muted)] mt-1">
+                        <p className="text-sm text-(--text-muted) mt-1">
                           {freePlan.max_projects} 个项目 · {freePlan.max_api_calls_monthly} 积分/月 · {freePlan.features_json?.slice(0, 2).join(' · ')}
                         </p>
                       </div>
@@ -636,31 +637,31 @@ const Pricing: React.FC = () => {
             className="mt-16 md:mt-20"
           >
             <div className="text-center mb-8">
-              <h2 className="text-2xl md:text-3xl font-bold text-[var(--text-primary)] mb-3">
+              <h2 className="text-2xl md:text-3xl font-bold text-(--text-primary) mb-3">
                 {t.pricing.compareFeatures}
               </h2>
-              <p className="text-[var(--text-muted)]">
+              <p className="text-(--text-muted)">
                 详细了解各套餐的功能差异
               </p>
             </div>
             
-            <Card className="bg-[var(--bg-card)]/80 backdrop-blur-sm border border-[var(--border-color)] overflow-hidden shadow-xl">
+            <Card className="bg-(--bg-card)/80 backdrop-blur-sm border border-(--border-color) overflow-hidden shadow-xl">
               <CardBody className="p-0">
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[640px]">
+                  <table className="w-full min-w-160">
                     <thead>
-                      <tr className="border-b-2 border-[var(--border-color)]">
-                        <th className="text-left p-4 md:p-5 text-[var(--text-secondary)] font-semibold bg-[var(--bg-elevated)]/50">
+                      <tr className="border-b-2 border-(--border-color)">
+                        <th className="text-left p-4 md:p-5 text-(--text-secondary) font-semibold bg-(--bg-elevated)/50">
                           功能特性
                         </th>
                         {plans.map(plan => (
-                          <th key={plan.id} className={`p-4 md:p-5 text-center ${isPopular(plan.name) ? 'bg-[var(--accent)]/5' : 'bg-[var(--bg-elevated)]/50'}`}>
+                          <th key={plan.id} className={`p-4 md:p-5 text-center ${isPopular(plan.name) ? 'bg-(--accent)/5' : 'bg-(--bg-elevated)/50'}`}>
                             <div className="flex flex-col items-center gap-1">
-                              <span className={`text-sm font-bold ${isPopular(plan.name) ? 'text-[var(--accent)]' : 'text-[var(--text-primary)]'}`}>
+                              <span className={`text-sm font-bold ${isPopular(plan.name) ? 'text-(--accent)' : 'text-(--text-primary)'}`}>
                                 {plan.display_name}
                               </span>
                               {isPopular(plan.name) && (
-                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-[var(--accent)]/20 text-[var(--accent)] font-medium">
+                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-(--accent)/20 text-(--accent) font-medium">
                                   推荐
                                 </span>
                               )}
@@ -669,7 +670,7 @@ const Pricing: React.FC = () => {
                         ))}
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-[var(--border-color)]/50">
+                    <tbody className="divide-y divide-(--border-color)/50">
                       {[
                         { key: 'fullWorkflow', label: t.pricing.features.fullWorkflow, all: true },
                         { key: 'templateAccess', label: t.pricing.features.templateAccess, all: true },
@@ -679,12 +680,12 @@ const Pricing: React.FC = () => {
                         { key: 'customModels', label: '自定义AI模型', fromIndex: 3 },
                         { key: 'privateDeploy', label: t.pricing.features.privateDeploy, onlyLast: true },
                       ].map((feature, rowIdx) => (
-                        <tr key={feature.key} className="hover:bg-[var(--bg-elevated)]/30 transition-colors">
-                          <td className="p-4 md:p-5 text-[var(--text-secondary)] text-sm">
+                        <tr key={feature.key} className="hover:bg-(--bg-elevated)/30 transition-colors">
+                          <td className="p-4 md:p-5 text-(--text-secondary) text-sm">
                             <div className="flex items-center gap-2">
                               <span>{feature.label}</span>
                               <Tooltip content="了解更多" placement="top">
-                                <HelpCircle className="w-3.5 h-3.5 text-[var(--text-muted)] cursor-help opacity-50 hover:opacity-100" />
+                                <HelpCircle className="w-3.5 h-3.5 text-(--text-muted) cursor-help opacity-50 hover:opacity-100" />
                               </Tooltip>
                             </div>
                           </td>
@@ -695,15 +696,15 @@ const Pricing: React.FC = () => {
                             return (
                               <td 
                                 key={plan.id} 
-                                className={`p-4 md:p-5 text-center ${isPopular(plan.name) ? 'bg-[var(--accent)]/5' : ''}`}
+                                className={`p-4 md:p-5 text-center ${isPopular(plan.name) ? 'bg-(--accent)/5' : ''}`}
                               >
                                 {hasFeature ? (
                                   <div className="w-6 h-6 rounded-full bg-emerald-500/15 flex items-center justify-center mx-auto">
                                     <Check className="w-3.5 h-3.5 text-emerald-400" />
                                   </div>
                                 ) : (
-                                  <div className="w-6 h-6 rounded-full bg-[var(--bg-elevated)] flex items-center justify-center mx-auto">
-                                    <X className="w-3.5 h-3.5 text-[var(--text-muted)]" />
+                                  <div className="w-6 h-6 rounded-full bg-(--bg-elevated) flex items-center justify-center mx-auto">
+                                    <X className="w-3.5 h-3.5 text-(--text-muted)" />
                                   </div>
                                 )}
                               </td>
@@ -726,10 +727,10 @@ const Pricing: React.FC = () => {
             className="mt-16 md:mt-20"
           >
             <div className="text-center mb-10">
-              <h2 className="text-2xl md:text-3xl font-bold text-[var(--text-primary)] mb-3">
+              <h2 className="text-2xl md:text-3xl font-bold text-(--text-primary) mb-3">
                 常见问题
               </h2>
-              <p className="text-[var(--text-muted)]">
+              <p className="text-(--text-muted)">
                 关于定价和订阅的常见问题解答
               </p>
             </div>
@@ -747,13 +748,13 @@ const Pricing: React.FC = () => {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.65 + idx * 0.05 }}
                 >
-                  <Card className="bg-[var(--bg-card)]/60 backdrop-blur-sm border border-[var(--border-color)] hover:border-[var(--accent)]/30 transition-colors">
+                  <Card className="bg-(--bg-card)/60 backdrop-blur-sm border border-(--border-color) hover:border-(--accent)/30 transition-colors">
                     <CardBody className="p-5">
-                      <h3 className="text-[var(--text-primary)] font-semibold mb-2 flex items-start gap-2">
-                        <HelpCircle className="w-5 h-5 text-[var(--accent)] flex-shrink-0 mt-0.5" />
+                      <h3 className="text-(--text-primary) font-semibold mb-2 flex items-start gap-2">
+                        <HelpCircle className="w-5 h-5 text-(--accent) shrink-0 mt-0.5" />
                         {faq.q}
                       </h3>
-                      <p className="text-sm text-[var(--text-muted)] leading-relaxed pl-7">
+                      <p className="text-sm text-(--text-muted) leading-relaxed pl-7">
                         {faq.a}
                       </p>
                     </CardBody>
@@ -770,19 +771,19 @@ const Pricing: React.FC = () => {
             transition={{ delay: 0.7 }}
             className="mt-16 md:mt-20 text-center pb-8"
           >
-            <Card className="bg-gradient-to-br from-[var(--accent)]/10 to-purple-600/10 border border-[var(--accent)]/20 max-w-2xl mx-auto">
+            <Card className="bg-linear-to-br from-(--accent)/10 to-purple-600/10 border border-(--accent)/20 max-w-2xl mx-auto">
               <CardBody className="p-8 md:p-10">
                 <div className="flex items-center justify-center gap-2 mb-4">
-                  <Shield className="w-6 h-6 text-[var(--accent)]" />
-                  <span className="text-lg font-semibold text-[var(--text-primary)]">
+                  <Shield className="w-6 h-6 text-(--accent)" />
+                  <span className="text-lg font-semibold text-(--text-primary)">
                     7天无理由退款保障
                   </span>
                 </div>
-                <p className="text-[var(--text-muted)] mb-6">
+                <p className="text-(--text-muted) mb-6">
                   不满意？7天内无条件全额退款，让您零风险体验
                 </p>
                 <Button
-                  className="bg-gradient-to-r from-[var(--accent)] to-purple-600 text-white font-semibold px-8 h-11 shadow-lg shadow-[var(--accent)]/25"
+                  className="bg-linear-to-r from-(--accent) to-purple-600 text-white font-semibold px-8 h-11 shadow-lg shadow-(--accent)/25"
                   onPress={() => !getAuthToken() && navigate('/auth', { state: { from: '/pricing' } })}
                 >
                   立即开始免费试用

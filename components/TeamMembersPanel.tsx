@@ -231,18 +231,18 @@ const TeamMembersPanel: React.FC<TeamMembersPanelProps> = ({
       )}
 
       {/* 成员列表 */}
-      <Card className="bg-[var(--bg-card)]">
+      <Card className="bg-(--bg-card)">
         <CardBody className="p-0">
           {members.length === 0 ? (
             <div className="py-8 text-center">
-              <p className="text-[var(--text-secondary)]">暂无成员</p>
+              <p className="text-(--text-secondary)">暂无成员</p>
             </div>
           ) : (
-            <div className="divide-y divide-[var(--border-color)]">
+            <div className="divide-y divide-(--border-color)">
               {members.map((member) => (
                 <div
                   key={member.id}
-                  className="flex items-center justify-between p-4 hover:bg-[var(--bg-elevated)] transition-colors"
+                  className="flex items-center justify-between p-4 hover:bg-(--bg-elevated) transition-colors"
                 >
                   <div className="flex items-center gap-3">
                     <Avatar
@@ -252,7 +252,7 @@ const TeamMembersPanel: React.FC<TeamMembersPanelProps> = ({
                     />
                     <div>
                       <div className="flex items-center gap-2">
-                        <span className="font-medium text-[var(--text-primary)]">
+                        <span className="font-medium text-(--text-primary)">
                           {member.username}
                         </span>
                         <Chip
@@ -265,7 +265,7 @@ const TeamMembersPanel: React.FC<TeamMembersPanelProps> = ({
                         </Chip>
                       </div>
                       {member.invited_by_username && member.role !== 'owner' && (
-                        <p className="text-xs text-[var(--text-tertiary)] mt-0.5">
+                        <p className="text-xs text-(--text-tertiary) mt-0.5">
                           由 {member.invited_by_username} 邀请
                         </p>
                       )}

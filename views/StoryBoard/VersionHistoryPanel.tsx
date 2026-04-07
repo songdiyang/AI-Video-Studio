@@ -111,6 +111,10 @@ const VersionHistoryPanel: React.FC<VersionHistoryPanelProps> = ({
         // 提取所有分支
         const uniqueBranches = Array.from(new Set(data.versions.map((v: Version) => v.branch_name))) as string[];
         setBranches(uniqueBranches);
+        // 如果当前选中的分支不在列表中，自动切换到第一个可用分支
+        if (uniqueBranches.length > 0 && !uniqueBranches.includes(selectedBranch)) {
+          setSelectedBranch(uniqueBranches[0]);
+        }
       }
     } catch (error) {
       console.error('[VersionHistoryPanel] 加载版本失败:', error);
@@ -248,25 +252,25 @@ const VersionHistoryPanel: React.FC<VersionHistoryPanelProps> = ({
           initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 1, x: 0 }}
           exit={{ opacity: 0, x: 20 }}
-          className="absolute top-0 right-0 w-80 h-full bg-[var(--bg-card)] border-l border-[var(--border-color)] shadow-lg z-20 overflow-hidden flex flex-col"
+          className="absolute top-0 right-0 w-80 h-full bg-(--bg-card) border-l border-(--border-color) shadow-lg z-20 overflow-hidden flex flex-col"
         >
           {/* 头部 */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-color)] bg-[var(--bg-app)]">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-(--border-color) bg-(--bg-app)">
             <div className="flex items-center gap-2">
-              <GitBranch className="w-4 h-4 text-[var(--accent)]" />
+              <GitBranch className="w-4 h-4 text-(--accent)" />
               <span className="text-sm font-semibold">版本历史</span>
             </div>
-            <button onClick={onClose} className="p-1 hover:bg-[var(--bg-input)] rounded">
+            <button onClick={onClose} className="p-1 hover:bg-(--bg-input) rounded">
               <X className="w-4 h-4" />
             </button>
           </div>
 
           {/* 分支选择器 */}
-          <div className="px-4 py-2 border-b border-[var(--border-color)]">
+          <div className="px-4 py-2 border-b border-(--border-color)">
             <select
               value={selectedBranch}
               onChange={(e) => setSelectedBranch(e.target.value)}
-              className="w-full px-3 py-1.5 text-xs bg-[var(--bg-input)] border border-[var(--border-color)] rounded focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+              className="w-full px-3 py-1.5 text-xs bg-(--bg-input) border border-(--border-color) rounded focus:outline-none focus:ring-2 focus:ring-(--accent)"
             >
               {branches.map(branch => (
                 <option key={branch} value={branch}>{branch === 'main' ? '主分支' : branch}</option>
@@ -275,9 +279,9 @@ const VersionHistoryPanel: React.FC<VersionHistoryPanelProps> = ({
           </div>
 
           {/* 新建版本 */}
-          <div className="px-4 py-3 border-b border-[var(--border-color)] bg-[var(--bg-input)]/50">
+          <div className="px-4 py-3 border-b border-(--border-color) bg-(--bg-input)/50">
             <div className="flex items-center gap-2 mb-2">
-              <Plus className="w-3 h-3 text-[var(--accent)]" />
+              <Plus className="w-3 h-3 text-(--accent)" />
               <span className="text-xs font-medium">创建新版本</span>
             </div>
             <input
@@ -285,30 +289,30 @@ const VersionHistoryPanel: React.FC<VersionHistoryPanelProps> = ({
               placeholder="版本标签（如：初稿、修改版）"
               value={versionLabel}
               onChange={(e) => setVersionLabel(e.target.value)}
-              className="w-full px-2 py-1.5 text-xs bg-[var(--bg-input)] border border-[var(--border-color)] rounded mb-2 focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
+              className="w-full px-2 py-1.5 text-xs bg-(--bg-input) border border-(--border-color) rounded mb-2 focus:outline-none focus:ring-1 focus:ring-(--accent)"
             />
             <textarea
               placeholder="变更说明（可选）"
               value={changeSummary}
               onChange={(e) => setChangeSummary(e.target.value)}
               rows={2}
-              className="w-full px-2 py-1.5 text-xs bg-[var(--bg-input)] border border-[var(--border-color)] rounded resize-none focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
+              className="w-full px-2 py-1.5 text-xs bg-(--bg-input) border border-(--border-color) rounded resize-none focus:outline-none focus:ring-1 focus:ring-(--accent)"
             />
             <button
               onClick={handleCreateVersion}
               disabled={creatingVersion || !versionLabel.trim()}
-              className="w-full mt-2 px-3 py-1.5 text-xs bg-[var(--accent)] text-white rounded hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
+              className="w-full mt-2 px-3 py-1.5 text-xs bg-(--accent) text-white rounded hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
             >
               {creatingVersion ? '创建中...' : '创建版本'}
             </button>
           </div>
 
           {/* 操作按钮 */}
-          <div className="px-4 py-2 border-b border-[var(--border-color)] flex items-center gap-2">
+          <div className="px-4 py-2 border-b border-(--border-color) flex items-center gap-2">
             <button
               onClick={handleCompareVersions}
               disabled={selectedVersions.length !== 2}
-              className="flex-1 px-2 py-1 text-xs bg-[var(--bg-input)] border border-[var(--border-color)] rounded hover:bg-[var(--bg-hover)] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1"
+              className="flex-1 px-2 py-1 text-xs bg-(--bg-input) border border-(--border-color) rounded hover:bg-(--bg-hover) disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1"
               title="对比选中的两个版本"
             >
               <GitCompare className="w-3 h-3" />
@@ -319,12 +323,12 @@ const VersionHistoryPanel: React.FC<VersionHistoryPanelProps> = ({
           {/* 版本列表 - 使用虚拟列表优化大量版本的渲染性能 */}
           <div ref={versionListRef} className="flex-1 overflow-hidden">
             {loading ? (
-              <div className="text-center py-8 text-[var(--text-muted)]">
+              <div className="text-center py-8 text-(--text-muted)">
                 <Clock className="w-6 h-6 mx-auto mb-2 animate-spin" />
                 <p className="text-xs">加载中...</p>
               </div>
             ) : versions.length === 0 ? (
-              <div className="text-center py-8 text-[var(--text-muted)]">
+              <div className="text-center py-8 text-(--text-muted)">
                 <History className="w-8 h-8 mx-auto mb-2 opacity-30" />
                 <p className="text-xs">暂无版本历史</p>
               </div>
@@ -333,6 +337,7 @@ const VersionHistoryPanel: React.FC<VersionHistoryPanelProps> = ({
                 <div {...wrapperProps}>
                   {virtualItems.map(({ index, offsetTop }) => {
                     const version = versions[index];
+                    if (!version) return null;
                     return (
                       <div
                         key={version.id}
@@ -347,10 +352,10 @@ const VersionHistoryPanel: React.FC<VersionHistoryPanelProps> = ({
                         <div
                           className={`h-full rounded-lg overflow-hidden border transition-all ${
                             version.is_current
-                              ? 'border-[var(--accent)] bg-[var(--accent)]/5'
+                              ? 'border-(--accent) bg-(--accent)/5'
                               : selectedVersions.includes(version.id)
-                              ? 'border-[var(--accent)] bg-[var(--accent)]/10'
-                              : 'border-[var(--border-color)] bg-[var(--bg-input)] hover:border-[var(--accent)]/50'
+                              ? 'border-(--accent) bg-(--accent)/10'
+                              : 'border-(--border-color) bg-(--bg-input) hover:border-(--accent)/50'
                           }`}
                         >
                           {/* 选择器 */}
@@ -359,7 +364,7 @@ const VersionHistoryPanel: React.FC<VersionHistoryPanelProps> = ({
                               type="checkbox"
                               checked={selectedVersions.includes(version.id)}
                               onChange={() => toggleVersionSelection(version.id)}
-                              className="w-4 h-4 rounded border-[var(--border-color)] text-[var(--accent)] focus:ring-[var(--accent)] focus:ring-offset-0"
+                              className="w-4 h-4 rounded border-(--border-color) text-(--accent) focus:ring-(--accent) focus:ring-offset-0"
                             />
                           </div>
 
@@ -367,33 +372,33 @@ const VersionHistoryPanel: React.FC<VersionHistoryPanelProps> = ({
                           <div className="p-3 pl-8">
                             <div className="flex items-center justify-between mb-1">
                               <div className="flex items-center gap-2">
-                                <span className="text-xs font-semibold text-[var(--text-primary)]">
+                                <span className="text-xs font-semibold text-(--text-primary)">
                                   v{version.version_number}
                                 </span>
                                 {version.version_label && (
-                                  <span className="text-[10px] px-1.5 py-0.5 bg-[var(--accent)]/10 text-[var(--accent)] rounded">
+                                  <span className="text-[10px] px-1.5 py-0.5 bg-(--accent)/10 text-(--accent) rounded">
                                     {version.version_label}
                                   </span>
                                 )}
                                 {version.is_current && (
-                                  <span className="text-[10px] px-1.5 py-0.5 bg-[var(--accent)] text-white rounded flex items-center gap-1">
+                                  <span className="text-[10px] px-1.5 py-0.5 bg-(--accent) text-white rounded flex items-center gap-1">
                                     <Check className="w-3 h-3" />
                                     当前
                                   </span>
                                 )}
                               </div>
-                              <span className="text-[10px] text-[var(--text-muted)]">
+                              <span className="text-[10px] text-(--text-muted)">
                                 {formatTime(version.created_at)}
                               </span>
                             </div>
 
                             {version.change_summary && (
-                              <p className="text-[10px] text-[var(--text-muted)] mb-1 line-clamp-1">
+                              <p className="text-[10px] text-(--text-muted) mb-1 line-clamp-1">
                                 {version.change_summary}
                               </p>
                             )}
 
-                            <div className="flex items-center gap-2 text-[10px] text-[var(--text-muted)]">
+                            <div className="flex items-center gap-2 text-[10px] text-(--text-muted)">
                               <span>{version.created_by_name || '未知'}</span>
                               <span>•</span>
                               <span>{version.branch_name}</span>
@@ -404,7 +409,7 @@ const VersionHistoryPanel: React.FC<VersionHistoryPanelProps> = ({
                               {!version.is_current && (
                                 <button
                                   onClick={() => handleRestoreVersion(version)}
-                                  className="flex-1 px-2 py-1 bg-[var(--accent)]/10 text-[var(--accent)] text-[10px] rounded hover:bg-[var(--accent)]/20 flex items-center justify-center gap-1"
+                                  className="flex-1 px-2 py-1 bg-(--accent)/10 text-(--accent) text-[10px] rounded hover:bg-(--accent)/20 flex items-center justify-center gap-1"
                                   title="恢复此版本"
                                 >
                                   <RotateCcw className="w-3 h-3" />

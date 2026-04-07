@@ -2,7 +2,7 @@
  * 订阅服务 - 管理用户会员等级和权限检查
  */
 
-const { queryOne, query, execute } = require('./db');
+const { queryOne, queryAll, execute } = require('./dbHelper');
 
 // 会员等级配置（与文档保持一致）
 const PLAN_LIMITS = {

@@ -23,6 +23,7 @@ const engine = require('./engine/index');
 const { generateWorkflowETag, matchesETag } = require('../utils/etag');
 const { getRateLimitStats } = require('./utils/aiRateLimiter');
 const pollManager = require('./utils/PollManager');
+const { encodeId, decodeId, safeDecodeId, encodeJobIds } = require('../utils/workflowId');
 
 const router = express.Router();
 
@@ -54,7 +55,13 @@ router.get('/', authMiddleware, async (req, res) => {
       limit: limit ? parseInt(limit) : undefined
     });
 
-    res.json({ jobs });
+    // 转换ID为16进制
+    const encodedJobs = jobs.map(job => ({
+      ...job,
+      id: encodeId(job.id)
+    }));
+
+    res.json({ jobs: encodedJobs });
   } catch (error) {
     console.error('[Get Workflows]', error);
     res.status(500).json({ message: error.message || '获取工作流列表失败' });
@@ -98,8 +105,11 @@ router.post('/', authMiddleware, async (req, res) => {
     });
 
     res.json({
-      jobId: result.jobId,
-      tasks: result.tasks,
+      jobId: encodeId(result.jobId),
+      tasks: result.tasks.map(t => ({
+        ...t,
+        id: encodeId(t.id)
+      })),
       message: '工作流已启动'
     });
   } catch (error) {
@@ -121,7 +131,14 @@ router.get('/active', authMiddleware, async (req, res) => {
       userId,
       projectId: parseInt(projectId)
     });
-    res.json({ jobs });
+
+    // 转换ID为16进制
+    const encodedJobs = jobs.map(job => ({
+      ...job,
+      id: encodeId(job.id)
+    }));
+
+    res.json({ jobs: encodedJobs });
   } catch (error) {
     console.error('[Active Workflows]', error);
     res.status(500).json({ message: error.message || '查询活跃工作流失败' });
@@ -160,8 +177,14 @@ router.get('/admin/errors', authMiddleware, requireAdmin, async (req, res) => {
     const dataParams = [...params, parseInt(limit), offset];
     const jobs = await execute(dataSql, dataParams);
 
+    // 转换ID为16进制
+    const encodedJobs = jobs.map(job => ({
+      ...job,
+      id: encodeId(job.id)
+    }));
+
     res.json({
-      jobs,
+      jobs: encodedJobs,
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),
@@ -182,6 +205,7 @@ router.patch('/admin/errors/:jobId/status', authMiddleware, requireAdmin, async 
   try {
     const { jobId } = req.params;
     const { is_consumed } = req.body;
+    const numericJobId = decodeId(jobId);
     const { execute } = require('../dbHelper');
     
     if (typeof is_consumed !== 'number' && typeof is_consumed !== 'boolean') {
@@ -190,7 +214,7 @@ router.patch('/admin/errors/:jobId/status', authMiddleware, requireAdmin, async 
     
     await execute(
       'UPDATE workflow_jobs SET is_consumed = ? WHERE id = ?',
-      [is_consumed ? 1 : 0, parseInt(jobId)]
+      [is_consumed ? 1 : 0, numericJobId]
     );
     
     res.json({ success: true, message: is_consumed ? '已标记为已处理' : '已标记为待处理' });
@@ -207,10 +231,11 @@ router.post('/:jobId/consume', authMiddleware, async (req, res) => {
   try {
     const userId = req.user.id;
     const { jobId } = req.params;
+    const numericJobId = decodeId(jobId);
     const { execute } = require('../dbHelper');
     await execute(
       'UPDATE workflow_jobs SET is_consumed = 1 WHERE id = ? AND user_id = ?',
-      [parseInt(jobId), userId]
+      [numericJobId, userId]
     );
     res.json({ success: true });
   } catch (error) {
@@ -227,8 +252,9 @@ router.get('/:jobId', authMiddleware, async (req, res) => {
   try {
     const userId = req.user.id;
     const { jobId } = req.params;
+    const numericJobId = decodeId(jobId);
 
-    const job = await generationQueryService.getJob(parseInt(jobId));
+    const job = await generationQueryService.getJob(numericJobId);
 
     // 验证所有权
     if (job.user_id !== userId) {
@@ -246,7 +272,8 @@ router.get('/:jobId', authMiddleware, async (req, res) => {
       return res.status(304).end();
     }
 
-    res.json(job);
+    // 转换ID为16进制后返回
+    res.json(encodeJobIds(job));
   } catch (error) {
     console.error('[Get Workflow Status]', error);
     res.status(500).json({ message: error.message || '获取工作流状态失败' });
@@ -260,15 +287,16 @@ router.post('/:jobId/resume', authMiddleware, async (req, res) => {
   try {
     const userId = req.user.id;
     const { jobId } = req.params;
+    const numericJobId = decodeId(jobId);
 
     // 验证所有权
-    const job = await engine.getJobStatus(parseInt(jobId));
+    const job = await engine.getJobStatus(numericJobId);
     if (job.user_id !== userId) {
       return res.status(403).json({ message: '无权访问此工作流' });
     }
 
-    const result = await engine.resumeWorkflow(parseInt(jobId));
-    res.json(result);
+    const result = await engine.resumeWorkflow(numericJobId);
+    res.json(encodeJobIds(result));
   } catch (error) {
     console.error('[Resume Workflow]', error);
     res.status(500).json({ message: error.message || '恢复工作流失败' });
@@ -282,9 +310,10 @@ router.post('/:jobId/cancel', authMiddleware, async (req, res) => {
   try {
     const userId = req.user.id;
     const { jobId } = req.params;
+    const numericJobId = decodeId(jobId);
 
-    const result = await engine.cancelWorkflow(parseInt(jobId), userId);
-    res.json(result);
+    const result = await engine.cancelWorkflow(numericJobId, userId);
+    res.json(encodeJobIds(result));
   } catch (error) {
     console.error('[Cancel Workflow]', error);
     res.status(500).json({ message: error.message || '取消工作流失败' });

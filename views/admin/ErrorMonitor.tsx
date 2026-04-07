@@ -4,7 +4,7 @@ import { getAdminAuthHeaders } from '../../services/auth';
 
 // ============ 任务错误相关类型 ============
 interface TaskErrorJob {
-  id: number;
+  id: string;
   user_id: number;
   user_email: string;
   workflow_type: string;
@@ -85,8 +85,8 @@ const ErrorMonitor: React.FC = () => {
   const [taskPagination, setTaskPagination] = useState<Pagination>({ page: 1, limit: 20, total: 0, totalPages: 0 });
   const [taskLoading, setTaskLoading] = useState(false);
   const [taskTypeFilter, setTaskTypeFilter] = useState('');
-  const [taskExpandedId, setTaskExpandedId] = useState<number | null>(null);
-  const [taskUpdatingId, setTaskUpdatingId] = useState<number | null>(null);
+  const [taskExpandedId, setTaskExpandedId] = useState<string | null>(null);
+  const [taskUpdatingId, setTaskUpdatingId] = useState<string | null>(null);
 
   // 系统错误状态
   const [systemErrors, setSystemErrors] = useState<SystemError[]>([]);
@@ -114,7 +114,7 @@ const ErrorMonitor: React.FC = () => {
     }
   }, [taskTypeFilter]);
 
-  const handleUpdateTaskStatus = async (jobId: number, newStatus: boolean) => {
+  const handleUpdateTaskStatus = async (jobId: string, newStatus: boolean) => {
     setTaskUpdatingId(jobId);
     try {
       const res = await fetch(`/api/workflows/admin/errors/${jobId}/status`, {
@@ -242,10 +242,10 @@ const ErrorMonitor: React.FC = () => {
       </div>
 
       {/* 表格 */}
-      <div className="rounded-xl border border-white/10 overflow-hidden bg-white/[0.03]">
+      <div className="rounded-xl border border-white/10 overflow-hidden bg-white/3">
         <table className="w-full">
           <thead>
-            <tr className="border-b border-white/10 bg-white/[0.05]">
+            <tr className="border-b border-white/10 bg-white/5">
               <th className="text-left px-4 py-3 text-xs font-semibold text-white/50 uppercase tracking-wider">ID</th>
               <th className="text-left px-4 py-3 text-xs font-semibold text-white/50 uppercase tracking-wider">用户</th>
               <th className="text-left px-4 py-3 text-xs font-semibold text-white/50 uppercase tracking-wider">任务类型</th>
@@ -272,7 +272,7 @@ const ErrorMonitor: React.FC = () => {
               taskErrors.map(job => (
                 <React.Fragment key={job.id}>
                   <tr
-                    className="border-b border-white/5 hover:bg-white/[0.03] cursor-pointer transition-colors"
+                    className="border-b border-white/5 hover:bg-white/3 cursor-pointer transition-colors"
                     onClick={() => setTaskExpandedId(taskExpandedId === job.id ? null : job.id)}
                   >
                     <td className="px-4 py-3 text-sm text-white/70 font-mono">#{job.id}</td>
@@ -316,7 +316,7 @@ const ErrorMonitor: React.FC = () => {
                     </td>
                   </tr>
                   {taskExpandedId === job.id && (
-                    <tr className="bg-white/[0.02]">
+                    <tr className="bg-white/2">
                       <td colSpan={6} className="px-6 py-4">
                         <div className="text-sm space-y-2">
                           <div>
@@ -398,10 +398,10 @@ const ErrorMonitor: React.FC = () => {
       </div>
 
       {/* 表格 */}
-      <div className="rounded-xl border border-white/10 overflow-hidden bg-white/[0.03]">
+      <div className="rounded-xl border border-white/10 overflow-hidden bg-white/3">
         <table className="w-full">
           <thead>
-            <tr className="border-b border-white/10 bg-white/[0.05]">
+            <tr className="border-b border-white/10 bg-white/5">
               <th className="text-left px-4 py-3 text-xs font-semibold text-white/50 uppercase tracking-wider">ID</th>
               <th className="text-left px-4 py-3 text-xs font-semibold text-white/50 uppercase tracking-wider">类型</th>
               <th className="text-left px-4 py-3 text-xs font-semibold text-white/50 uppercase tracking-wider">来源</th>
@@ -428,7 +428,7 @@ const ErrorMonitor: React.FC = () => {
               systemErrors.map(error => (
                 <React.Fragment key={error.id}>
                   <tr
-                    className="border-b border-white/5 hover:bg-white/[0.03] cursor-pointer transition-colors"
+                    className="border-b border-white/5 hover:bg-white/3 cursor-pointer transition-colors"
                     onClick={() => setSystemExpandedId(systemExpandedId === error.id ? null : error.id)}
                   >
                     <td className="px-4 py-3 text-sm text-white/70 font-mono">#{error.id}</td>
@@ -443,7 +443,7 @@ const ErrorMonitor: React.FC = () => {
                         {ERROR_TYPE_NAMES[error.error_type] || error.error_type}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-sm text-white/70 max-w-[200px] truncate">
+                    <td className="px-4 py-3 text-sm text-white/70 max-w-50 truncate">
                       {error.error_source || '-'}
                     </td>
                     <td className="px-4 py-3 text-sm text-red-400 max-w-xs truncate">
@@ -480,7 +480,7 @@ const ErrorMonitor: React.FC = () => {
                     </td>
                   </tr>
                   {systemExpandedId === error.id && (
-                    <tr className="bg-white/[0.02]">
+                    <tr className="bg-white/2">
                       <td colSpan={6} className="px-6 py-4">
                         <div className="text-sm space-y-3">
                           <div>

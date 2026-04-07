@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Button, Input, Tabs, Tab, useDisclosure, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Popover, PopoverTrigger, PopoverContent } from '@heroui/react';
-import { Users, MapPin, FileText, Plus, Search, Tag, Settings, X, Edit2, ChevronDown, ChevronRight } from 'lucide-react';
+import { Users, MapPin, FileText, Plus, Search, Tag, Settings, X, Edit2, ChevronDown, ChevronRight, Shirt } from 'lucide-react';
 import { getAuthToken } from '../../services/auth';
 import { useSceneImageGeneration } from '../StoryBoard/hooks/useSceneImageGeneration';
 import SceneDetailModal from '../StoryBoard/ResourcePanel/SceneDetailModal';
@@ -13,15 +13,17 @@ import {
   fetchTagGroups, createTagGroup, updateTagGroup, deleteTagGroup,
   TAG_GROUP_COLORS
 } from '../../services/assets';
+import { Costume, fetchCostumes, createCostume, updateCostume, deleteCostume, COSTUME_CATEGORIES } from '../../services/costumes';
 import CharacterList from './CharacterList';
 import SceneList from './SceneList';
 import PropList from './PropList';
-import { CharacterModal, SceneModal, PropModal } from './AssetModel';
+import CostumeList from './CostumeList';
+import { CharacterModal, SceneModal, PropModal, CostumeModal } from './AssetModel';
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import { AIModel } from '../../components/AIModelSelector';
 
-type TabType = 'characters' | 'scenes' | 'props';
+type TabType = 'characters' | 'scenes' | 'props' | 'costumes';
 
 // 标签分组管理面板组件
 interface TagGroupManagerProps {
@@ -146,7 +148,7 @@ const TagGroupManager: React.FC<TagGroupManagerProps> = ({ isOpen, onOpenChange,
                 <Popover>
                   <PopoverTrigger>
                     <button
-                      className="w-10 h-10 rounded-full flex-shrink-0 shadow-md hover:scale-105 transition-transform"
+                      className="w-10 h-10 rounded-full shrink-0 shadow-md hover:scale-105 transition-transform"
                       style={{ 
                         backgroundColor: newColor,
                         boxShadow: `0 2px 8px ${newColor}40`
@@ -154,7 +156,7 @@ const TagGroupManager: React.FC<TagGroupManagerProps> = ({ isOpen, onOpenChange,
                     />
                   </PopoverTrigger>
                   <PopoverContent className="bg-white border border-slate-200 p-3 shadow-lg rounded-xl">
-                    <div className="flex flex-wrap gap-2 max-w-[200px]">
+                    <div className="flex flex-wrap gap-2 max-w-50">
                       {TAG_GROUP_COLORS.map((color) => (
                         <button
                           key={color}
@@ -184,7 +186,7 @@ const TagGroupManager: React.FC<TagGroupManagerProps> = ({ isOpen, onOpenChange,
               </div>
 
               {/* 分组列表 */}
-              <div className="space-y-2 max-h-[400px] overflow-y-auto">
+              <div className="space-y-2 max-h-100 overflow-y-auto">
                 {tagGroups.length === 0 ? (
                   <div className="text-center text-slate-400 py-12">
                     暂无标签分组，点击上方添加
@@ -199,12 +201,12 @@ const TagGroupManager: React.FC<TagGroupManagerProps> = ({ isOpen, onOpenChange,
                           <Popover>
                             <PopoverTrigger>
                               <button
-                                className="w-6 h-6 rounded-full flex-shrink-0"
+                                className="w-6 h-6 rounded-full shrink-0"
                                 style={{ backgroundColor: editColor }}
                               />
                             </PopoverTrigger>
                             <PopoverContent className="bg-slate-800 border border-slate-700 p-2">
-                              <div className="flex flex-wrap gap-2 max-w-[200px]">
+                              <div className="flex flex-wrap gap-2 max-w-50">
                                 {TAG_GROUP_COLORS.map((color) => (
                                   <button
                                     key={color}
@@ -243,7 +245,7 @@ const TagGroupManager: React.FC<TagGroupManagerProps> = ({ isOpen, onOpenChange,
                       ) : (
                         <>
                           <span
-                            className="w-5 h-5 rounded-full flex-shrink-0"
+                            className="w-5 h-5 rounded-full shrink-0"
                             style={{ 
                               backgroundColor: group.color,
                               boxShadow: `0 0 0 2px ${group.color}30`,
@@ -292,6 +294,7 @@ const AssetsManager: React.FC = () => {
   const [characters, setCharacters] = useState<Character[]>([]);
   const [scenes, setScenes] = useState<Scene[]>([]);
   const [props, setProps] = useState<Prop[]>([]);
+  const [costumes, setCostumes] = useState<Costume[]>([]);
   const [tagGroups, setTagGroups] = useState<TagGroup[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -393,6 +396,15 @@ const AssetsManager: React.FC = () => {
       } else if (activeTab === 'scenes') {
         const data = await fetchScenes();
         setScenes(data);
+      } else if (activeTab === 'costumes') {
+        // 获取当前项目的服装，需要从第一个角色获取project_id
+        const projectId = characters.length > 0 ? (characters[0] as any).project_id : null;
+        if (projectId) {
+          const data = await fetchCostumes(projectId);
+          setCostumes(data);
+        } else {
+          setCostumes([]);
+        }
       } else {
         const data = await fetchProps();
         setProps(data);
@@ -409,6 +421,7 @@ const AssetsManager: React.FC = () => {
       case 'characters': return '角色';
       case 'scenes': return '场景';
       case 'props': return '道具';
+      case 'costumes': return '服装';
     }
   };
 
@@ -431,7 +444,7 @@ const AssetsManager: React.FC = () => {
     onOpen();
   };
 
-  const handleEdit = (item: Character | Scene | Prop) => {
+  const handleEdit = (item: Character | Scene | Prop | Costume) => {
     setEditMode(true);
     setCurrentId(item.id);
     setFormData(item);
@@ -467,6 +480,18 @@ const AssetsManager: React.FC = () => {
         } else {
           await createScene(formData);
         }
+      } else if (activeTab === 'costumes') {
+        if (editMode && currentId) {
+          await updateCostume(currentId, formData);
+        } else {
+          // 创建服装需要project_id
+          const projectId = characters.length > 0 ? (characters[0] as any).project_id : null;
+          if (!projectId) {
+            showToast('无法创建服装：缺少项目ID', 'error');
+            return;
+          }
+          await createCostume({ ...formData, project_id: projectId });
+        }
       } else {
         if (editMode && currentId) {
           await updateProp(currentId, formData);
@@ -496,6 +521,8 @@ const AssetsManager: React.FC = () => {
         await deleteCharacter(id);
       } else if (activeTab === 'scenes') {
         await deleteScene(id);
+      } else if (activeTab === 'costumes') {
+        await deleteCostume(id);
       } else {
         await deleteProp(id);
       }
@@ -642,7 +669,7 @@ const AssetsManager: React.FC = () => {
   });
 
   return (
-    <div className="h-full bg-[var(--bg-app)] overflow-y-auto p-6">
+    <div className="h-full bg-(--bg-app) overflow-y-auto p-6">
       <div className="max-w-7xl mx-auto space-y-6">
         {/* 头部 */}
         <div className="flex items-center justify-between">
@@ -673,10 +700,10 @@ const AssetsManager: React.FC = () => {
           placeholder="搜索资产..."
           value={searchQuery}
           onValueChange={setSearchQuery}
-          startContent={<Search className="w-4 h-4 text-[var(--text-muted)]" />}
+          startContent={<Search className="w-4 h-4 text-(--text-muted)" />}
           classNames={{
-            input: "bg-transparent text-[var(--text-primary)] placeholder:text-[var(--text-muted)]",
-            inputWrapper: "bg-[var(--bg-input)] border border-[var(--border-color)] hover:border-[var(--accent)]/30 focus-within:border-[var(--accent)]/50 shadow-sm transition-all"
+            input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted)",
+            inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 focus-within:border-(--accent)/50 shadow-sm transition-all"
           }}
         />
 
@@ -684,12 +711,12 @@ const AssetsManager: React.FC = () => {
         {activeTab === 'characters' && Object.keys(groupedTags).length > 0 && (
           <div className="space-y-2">
             <div className="flex items-center gap-2">
-              <Tag className="w-3.5 h-3.5 text-[var(--text-muted)]" />
-              <span className="text-xs text-[var(--text-muted)]">分组标签筛选</span>
+              <Tag className="w-3.5 h-3.5 text-(--text-muted)" />
+              <span className="text-xs text-(--text-muted)">分组标签筛选</span>
               {activeGroupFilter && (
                 <button
                   onClick={() => setActiveGroupFilter(null)}
-                  className="px-2 py-0.5 rounded-full text-xs font-medium bg-[var(--danger)]/15 text-[var(--danger)] border border-[var(--danger)]/30 hover:bg-[var(--danger)]/25 transition-all"
+                  className="px-2 py-0.5 rounded-full text-xs font-medium bg-(--danger)/15 text-(--danger) border border-(--danger)/30 hover:bg-(--danger)/25 transition-all"
                 >
                   清除分组筛选
                 </button>
@@ -703,7 +730,7 @@ const AssetsManager: React.FC = () => {
                   <div key={groupId} className="space-y-1">
                     <button
                       onClick={() => toggleGroupExpand(groupId)}
-                      className="flex items-center gap-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+                      className="flex items-center gap-2 text-sm text-(--text-secondary) hover:text-(--text-primary) transition-colors"
                     >
                       {isExpanded ? (
                         <ChevronDown className="w-3 h-3" />
@@ -718,7 +745,7 @@ const AssetsManager: React.FC = () => {
                         }}
                       />
                       <span>{groupName}</span>
-                      <span className="text-xs text-[var(--text-muted)]">({tags.size})</span>
+                      <span className="text-xs text-(--text-muted)">({tags.size})</span>
                     </button>
                     {isExpanded && (
                       <div className="flex flex-wrap gap-1.5 pl-6">
@@ -756,11 +783,11 @@ const AssetsManager: React.FC = () => {
         {/* 普通标签过滤 */}
         {allTags.length > 0 && (
           <div className="flex items-center gap-2 flex-wrap">
-            <Tag className="w-3.5 h-3.5 text-[var(--text-muted)] flex-shrink-0" />
+            <Tag className="w-3.5 h-3.5 text-(--text-muted) shrink-0" />
             {activeTag && (
               <button
                 onClick={() => setActiveTag(null)}
-                className="px-2.5 py-1 rounded-full text-xs font-medium bg-[var(--danger)]/15 text-[var(--danger)] border border-[var(--danger)]/30 hover:bg-[var(--danger)]/25 transition-all"
+                className="px-2.5 py-1 rounded-full text-xs font-medium bg-(--danger)/15 text-(--danger) border border-(--danger)/30 hover:bg-(--danger)/25 transition-all"
               >
                 清除筛选
               </button>
@@ -771,8 +798,8 @@ const AssetsManager: React.FC = () => {
                 onClick={() => setActiveTag(activeTag === tag ? null : tag)}
                 className={`px-2.5 py-1 rounded-full text-xs font-medium transition-all ${
                   activeTag === tag
-                    ? 'bg-[var(--accent)]/20 text-[var(--accent-light)] border border-[var(--accent)]/40 shadow-sm shadow-[var(--accent-glow)]'
-                    : 'bg-white/5 text-[var(--text-muted)] border border-white/10 hover:bg-white/10 hover:text-[var(--text-secondary)]'
+                    ? 'bg-(--accent)/20 text-(--accent-light) border border-(--accent)/40 shadow-(--accent-glow)'
+                    : 'bg-white/5 text-(--text-muted) border border-white/10 hover:bg-white/10 hover:text-(--text-secondary)'
                 }`}
               >
                 {tag} <span className="opacity-60">({count})</span>
@@ -786,9 +813,9 @@ const AssetsManager: React.FC = () => {
           selectedKey={activeTab}
           onSelectionChange={(key) => setActiveTab(key as TabType)}
           classNames={{
-            tabList: "bg-[var(--bg-card)] border border-[var(--border-color)] shadow-sm",
-            tab: "text-[var(--text-muted)] data-[selected=true]:text-[var(--accent-light)] font-medium",
-            cursor: "bg-gradient-to-r from-[var(--accent)] to-[var(--accent-light)] h-0.5 shadow-[0_0_10px_var(--accent-glow)]"
+            tabList: "bg-(--bg-card) border border-(--border-color) shadow-sm",
+            tab: "text-(--text-muted) data-[selected=true]:text-(--accent-light) font-medium",
+            cursor: "bg-linear-to-r from-(--accent) to-(--accent-light) h-0.5 shadow-(--accent-glow)"
           }}
         >
           <Tab
@@ -841,6 +868,22 @@ const AssetsManager: React.FC = () => {
               onDelete={handleDelete} 
             />
           </Tab>
+
+          <Tab
+            key="costumes"
+            title={
+              <div className="flex items-center gap-2">
+                <Shirt className="w-4 h-4" />
+                <span>服装 ({costumes.length})</span>
+              </div>
+            }
+          >
+            <CostumeList 
+              costumes={costumes} 
+              onEdit={handleEdit} 
+              onDelete={handleDelete} 
+            />
+          </Tab>
         </Tabs>
 
         {/* 编辑/新增对话框 */}
@@ -874,6 +917,17 @@ const AssetsManager: React.FC = () => {
         
         {activeTab === 'props' && (
           <PropModal
+            isOpen={isOpen}
+            onOpenChange={onOpenChange}
+            editMode={editMode}
+            formData={formData}
+            setFormData={setFormData}
+            onSave={handleSave}
+          />
+        )}
+
+        {activeTab === 'costumes' && (
+          <CostumeModal
             isOpen={isOpen}
             onOpenChange={onOpenChange}
             editMode={editMode}

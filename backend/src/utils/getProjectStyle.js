@@ -22,7 +22,12 @@ const VISUAL_STYLE_PRESETS = {
   '赛博朋克': 'cyberpunk, neon lights, dark atmosphere, futuristic, high contrast, sci-fi aesthetic',
   '美漫风格': 'American comic style, bold outlines, dynamic shading, superhero aesthetic, vivid colors',
   '像素风': 'pixel art style, retro game aesthetic, 16-bit, clean pixels, nostalgic',
-  '国风水墨': 'Chinese ink painting style, traditional brush strokes, elegant, minimalist, oriental aesthetic'
+  '国风水墨': 'Chinese ink painting style, traditional brush strokes, elegant, minimalist, oriental aesthetic',
+  '天宫赐福': 'Chinese xianxia fantasy style, ancient celestial palace, flowing silk hanfu robes, golden and crimson accents, divine aura glow, ink-wash cloud backgrounds, ethereal lighting, ornate hair accessories, delicate facial features, heavenly atmosphere, traditional Chinese mythology aesthetic',
+  '日本少女漫画': 'Japanese shoujo manga style, large sparkling eyes with star highlights, delicate bishoujo features, soft pastel pink and lavender palette, floral screen tone backgrounds, romantic atmosphere, flowing hair with ribbon accessories, decorative sparkle effects, gentle blush cheeks, dreamy soft-focus lighting',
+  '乙女游戏': 'otome game CG illustration style, romantic visual novel aesthetic, elegant bishounen characters, soft gradient shading, warm golden hour lighting, sparkle and petal particle effects, detailed Victorian-inspired costume design, emotional expressive eyes, luxurious interior backgrounds, gentle color harmony',
+  '日乙游戏': 'Japanese otome game style, high-quality anime CG rendering, bishounen characters with refined features, cherry blossom and seasonal motifs, gentle warm color palette, detailed school uniform or traditional costume design, soft ambient lighting, visual novel composition, delicate hand-drawn line art, subtle emotional expressions',
+  '龙族国漫': 'modern Chinese donghua animation style, dynamic cinematic composition, urban fantasy setting, detailed contemporary character design with Chinese elements, vibrant saturated colors, dramatic action lighting, sleek hair and costume rendering, bold contrast shadows, epic atmospheric perspective, high-energy visual impact'
 };
 
 /**

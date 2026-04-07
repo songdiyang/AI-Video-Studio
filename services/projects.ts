@@ -12,6 +12,8 @@ export interface Project {
   status: 'draft' | 'in_progress' | 'completed';
   settings_json: string;
   use_models?: Record<string, string>;
+  /** 项目来源标识，API 返回时标记 'own' 表示自己创建的项目 */
+  source?: string;
   created_at: string;
   updated_at: string;
 }

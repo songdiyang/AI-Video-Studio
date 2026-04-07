@@ -31,6 +31,24 @@ const OCC_MAX_RETRIES = 3;  // 乐观锁最大重试次数
 const OCC_RETRY_DELAY = 50; // 重试间隔基础毫秒
 
 /**
+ * 将日期转换为 MySQL DATETIME 兼容格式 'YYYY-MM-DD HH:mm:ss'
+ * MySQL 不接受 ISO 8601 带 T 和 Z 的格式
+ * @param {Date|string|null} date - 日期对象或日期字符串
+ * @returns {string|null} MySQL 兼容的日期字符串，或 null
+ */
+function toMySQLDatetime(date) {
+  if (!date) return null;
+  const d = date instanceof Date ? date : new Date(date);
+  if (isNaN(d.getTime())) return null;
+  return d.getFullYear() + '-' +
+    String(d.getMonth() + 1).padStart(2, '0') + '-' +
+    String(d.getDate()).padStart(2, '0') + ' ' +
+    String(d.getHours()).padStart(2, '0') + ':' +
+    String(d.getMinutes()).padStart(2, '0') + ':' +
+    String(d.getSeconds()).padStart(2, '0');
+}
+
+/**
  * 带乐观锁的工作流状态更新（OCC）
  * 理论基础：Optimistic Concurrency Control
  * 
@@ -132,7 +150,7 @@ class JobStatusManager {
   async completeJob(jobId) {
     // 获取当前版本号
     const job = await queryOne('SELECT * FROM workflow_jobs WHERE id = ?', [jobId]);
-    await updateJobWithVersion(jobId, { status: 'completed', completed_at: new Date() }, job?.version || 0);
+    await updateJobWithVersion(jobId, { status: 'completed', completed_at: toMySQLDatetime(new Date()) }, job?.version || 0);
     console.log(`[JobStatusManager] 工作流完成: jobId=${jobId}`);
     
     // 获取最后一个任务的结果
@@ -148,7 +166,9 @@ class JobStatusManager {
     pushTaskStatus(jobId, {
       status: 'completed',
       progress: 100,
-      result: lastTask?.result_data ? JSON.parse(lastTask.result_data) : null
+      result: lastTask?.result_data
+        ? (typeof lastTask.result_data === 'string' ? JSON.parse(lastTask.result_data) : lastTask.result_data)
+        : null
     });
 
     // 异步发布工作流完成事件（不阻塞主流程）

@@ -196,7 +196,7 @@ const BillingConfig: React.FC = () => {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-amber-500 to-orange-600 rounded-xl flex items-center justify-center shadow-lg shadow-amber-500/20">
+            <div className="w-10 h-10 bg-linear-to-br from-amber-500 to-orange-600 rounded-xl flex items-center justify-center shadow-lg shadow-amber-500/20">
               <Calculator className="w-5 h-5 text-white" />
             </div>
             计费配置
@@ -217,7 +217,7 @@ const BillingConfig: React.FC = () => {
       {/* 上半部分：费率配置 + 积分单价 */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* 服务费率配置 */}
-        <Card className="lg:col-span-2 bg-white/[0.03] border border-white/[0.06] shadow-none">
+        <Card className="lg:col-span-2 bg-white/3 border border-white/6 shadow-none">
           <CardBody className="p-6 space-y-6">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -264,7 +264,7 @@ const BillingConfig: React.FC = () => {
                   onPress={handleSaveFeeRate}
                   isLoading={saving}
                   isDisabled={!hasChanges}
-                  className="bg-gradient-to-r from-violet-600 to-purple-600 shadow-lg shadow-violet-600/20"
+                  className="bg-linear-to-r from-violet-600 to-purple-600 shadow-lg shadow-violet-600/20"
                 >
                   保存费率
                 </Button>
@@ -290,7 +290,7 @@ const BillingConfig: React.FC = () => {
               />
 
               <div className="flex items-center gap-2 text-xs text-white/40">
-                <Info className="w-3 h-3 flex-shrink-0" />
+                <Info className="w-3 h-3 shrink-0" />
                 <span>公式：积分 = ⌈成本 × (1 + 服务费率) ÷ 积分单价⌉，后端限制范围 0~200%，超过请谨慎设置</span>
               </div>
             </div>
@@ -298,7 +298,7 @@ const BillingConfig: React.FC = () => {
         </Card>
 
         {/* 积分单价显示 */}
-        <Card className="bg-white/[0.03] border border-white/[0.06] shadow-none">
+        <Card className="bg-white/3 border border-white/6 shadow-none">
           <CardBody className="p-6 flex flex-col justify-between">
             <div className="flex items-center gap-3 mb-4">
               <div className="w-8 h-8 bg-amber-500/20 rounded-lg flex items-center justify-center">
@@ -307,11 +307,11 @@ const BillingConfig: React.FC = () => {
               <h2 className="text-white font-semibold text-lg">积分单价</h2>
             </div>
             <div className="space-y-4">
-              <div className="bg-white/[0.03] rounded-xl p-4 border border-white/[0.06]">
+              <div className="bg-white/3 rounded-xl p-4 border border-white/6">
                 <div className="text-3xl font-bold text-white">¥0.01</div>
                 <div className="text-white/40 text-sm mt-1">每积分内部成本价</div>
               </div>
-              <div className="bg-amber-500/[0.06] rounded-xl p-4 border border-amber-500/20">
+              <div className="bg-amber-500/6 rounded-xl p-4 border border-amber-500/20">
                 <div className="text-3xl font-bold text-amber-400">¥0.02</div>
                 <div className="text-white/40 text-sm mt-1">每积分充值售价（用户购买价）</div>
               </div>
@@ -344,7 +344,7 @@ const BillingConfig: React.FC = () => {
       </div>
 
       {/* 实时预览表格 */}
-      <Card className="bg-white/[0.03] border border-white/[0.06] shadow-none">
+      <Card className="bg-white/3 border border-white/6 shadow-none">
         <CardBody className="p-6">
           <div className="flex items-center gap-3 mb-6">
             <div className="w-8 h-8 bg-cyan-500/20 rounded-lg flex items-center justify-center">
@@ -359,7 +359,7 @@ const BillingConfig: React.FC = () => {
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
-                <tr className="border-b border-white/[0.06]">
+                <tr className="border-b border-white/6">
                   <th className="text-left text-white/50 text-xs font-medium py-3 px-4">AI 服务</th>
                   <th className="text-right text-white/50 text-xs font-medium py-3 px-4">成本</th>
                   <th className="text-right text-white/50 text-xs font-medium py-3 px-4">服务费</th>
@@ -373,7 +373,7 @@ const BillingConfig: React.FC = () => {
                   return (
                     <tr
                       key={idx}
-                      className={`border-b border-white/[0.04] transition-colors hover:bg-white/[0.02] ${isProject ? 'bg-white/[0.02]' : ''}`}
+                      className={`border-b border-white/4 transition-colors hover:bg-white/2 ${isProject ? 'bg-white/2' : ''}`}
                     >
                       <td className={`py-3.5 px-4 text-sm ${isProject ? 'text-white font-semibold' : 'text-white/80'}`}>
                         {isProject && <span className="inline-block w-1.5 h-1.5 bg-amber-400 rounded-full mr-2 relative -top-px" />}
@@ -407,7 +407,7 @@ const BillingConfig: React.FC = () => {
       </Card>
 
       {/* 成本覆盖计算器 */}
-      <Card className="bg-white/[0.03] border border-white/[0.06] shadow-none">
+      <Card className="bg-white/3 border border-white/6 shadow-none">
         <CardBody className="p-6 space-y-6">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 bg-emerald-500/20 rounded-lg flex items-center justify-center">
@@ -451,7 +451,7 @@ const BillingConfig: React.FC = () => {
                 />
               </div>
 
-              <Divider className="bg-white/[0.06]" />
+              <Divider className="bg-white/6" />
 
               <div className="space-y-3">
                 <div className="flex justify-between text-sm">
@@ -475,8 +475,8 @@ const BillingConfig: React.FC = () => {
             <div className="space-y-4">
               <div className={`rounded-xl p-5 border ${
                 coverageCalc.canCoverCost
-                  ? 'bg-emerald-500/[0.06] border-emerald-500/20'
-                  : 'bg-red-500/[0.06] border-red-500/20'
+                  ? 'bg-emerald-500/6 border-emerald-500/20'
+                  : 'bg-red-500/6 border-red-500/20'
               }`}>
                 <div className="flex items-center gap-2 mb-3">
                   {coverageCalc.canCoverCost ? (
@@ -503,7 +503,7 @@ const BillingConfig: React.FC = () => {
                       -¥{monthlyFixedCost.toFixed(2)}
                     </span>
                   </div>
-                  <Divider className="bg-white/[0.08]" />
+                  <Divider className="bg-white/8" />
                   <div className="flex justify-between">
                     <span className="text-white/50">月度净收入</span>
                     <span className={`font-mono font-bold text-base ${
@@ -515,7 +515,7 @@ const BillingConfig: React.FC = () => {
                 </div>
               </div>
 
-              <div className="bg-white/[0.03] rounded-xl p-4 border border-white/[0.06]">
+              <div className="bg-white/3 rounded-xl p-4 border border-white/6">
                 <div className="flex items-center gap-2 mb-2">
                   <AlertTriangle className="w-4 h-4 text-amber-400" />
                   <span className="text-white/70 font-semibold text-sm">盈亏平衡点</span>

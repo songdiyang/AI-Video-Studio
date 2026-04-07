@@ -60,14 +60,14 @@ const CharacterViewsModal: React.FC<CharacterViewsModalProps> = ({
               </div>
             </ModalHeader>
             <ModalBody>
-              {(selectedResource?.frontViewUrl || selectedResource?.sideViewUrl || selectedResource?.backViewUrl || isGenerating) && (
+              {selectedResource && (selectedResource?.frontViewUrl || selectedResource?.sideViewUrl || selectedResource?.backViewUrl || isGenerating) && (
                 <div className="mb-6">
                   <h3 className="text-sm font-semibold text-slate-300 mb-3">已生成的三视图</h3>
                   <div className="grid grid-cols-3 gap-4">
                     {/* 正面视图 */}
                     <div className="border border-slate-700/50 rounded-lg p-2">
                       <p className="text-xs text-slate-400 mb-2">正面视图</p>
-                      {selectedResource.frontViewUrl ? (
+                      {selectedResource?.frontViewUrl ? (
                         <div className="relative group cursor-pointer" onClick={() => openViewPreview(0)}>
                           <img src={selectedResource.frontViewUrl} alt="正面视图" className="w-full h-48 object-cover rounded" />
                           <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded flex items-center justify-center">
@@ -76,7 +76,7 @@ const CharacterViewsModal: React.FC<CharacterViewsModalProps> = ({
                         </div>
                       ) : (
                         <div className="w-full h-48 bg-slate-800/60 rounded flex items-center justify-center text-slate-500 text-sm">
-                          {isGenerating || selectedResource.generationStatus === 'generating' ? '生成中...' : '未生成'}
+                          {isGenerating || selectedResource?.generationStatus === 'generating' ? '生成中...' : '未生成'}
                         </div>
                       )}
                     </div>
@@ -84,7 +84,7 @@ const CharacterViewsModal: React.FC<CharacterViewsModalProps> = ({
                     {/* 侧面视图 */}
                     <div className="border border-slate-700/50 rounded-lg p-2">
                       <p className="text-xs text-slate-400 mb-2">侧面视图</p>
-                      {selectedResource.sideViewUrl ? (
+                      {selectedResource?.sideViewUrl ? (
                         <div className="relative group cursor-pointer" onClick={() => openViewPreview(1)}>
                           <img src={selectedResource.sideViewUrl} alt="侧面视图" className="w-full h-48 object-cover rounded" />
                           <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded flex items-center justify-center">
@@ -93,7 +93,7 @@ const CharacterViewsModal: React.FC<CharacterViewsModalProps> = ({
                         </div>
                       ) : (
                         <div className="w-full h-48 bg-slate-800/60 rounded flex items-center justify-center text-slate-500 text-sm">
-                          {isGenerating || selectedResource.generationStatus === 'generating' ? '生成中...' : '未生成'}
+                          {isGenerating || selectedResource?.generationStatus === 'generating' ? '生成中...' : '未生成'}
                         </div>
                       )}
                     </div>
@@ -101,7 +101,7 @@ const CharacterViewsModal: React.FC<CharacterViewsModalProps> = ({
                     {/* 背面视图 */}
                     <div className="border border-slate-700/50 rounded-lg p-2">
                       <p className="text-xs text-slate-400 mb-2">背面视图</p>
-                      {selectedResource.backViewUrl ? (
+                      {selectedResource?.backViewUrl ? (
                         <div className="relative group cursor-pointer" onClick={() => openViewPreview(2)}>
                           <img src={selectedResource.backViewUrl} alt="背面视图" className="w-full h-48 object-cover rounded" />
                           <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded flex items-center justify-center">
@@ -110,7 +110,7 @@ const CharacterViewsModal: React.FC<CharacterViewsModalProps> = ({
                         </div>
                       ) : (
                         <div className="w-full h-48 bg-slate-800/60 rounded flex items-center justify-center text-slate-500 text-sm">
-                          {isGenerating || selectedResource.generationStatus === 'generating' ? '生成中...' : '未生成'}
+                          {isGenerating || selectedResource?.generationStatus === 'generating' ? '生成中...' : '未生成'}
                         </div>
                       )}
                     </div>
@@ -126,7 +126,7 @@ const CharacterViewsModal: React.FC<CharacterViewsModalProps> = ({
                 {imageModel ? (
                   <p className="text-sm text-slate-500">使用图片模型：<span className="font-medium text-slate-300">{imageModel}</span></p>
                 ) : (
-                  <p className="text-sm text-amber-600">请先点击右上角「AI 模型」按钮选择图片模型</p>
+                  <p className="text-sm text-amber-600">暂无可用的图片生成模型，请在右上角「AI 模型」中配置</p>
                 )}
                 {imageAspectRatio ? (
                   <p className="text-sm text-slate-500 mt-1">图片比例：<span className="font-medium text-slate-300">{imageAspectRatio}</span></p>
@@ -180,7 +180,7 @@ const CharacterViewsModal: React.FC<CharacterViewsModalProps> = ({
             <ModalFooter>
               <Button variant="light" onPress={onCloseModal}>关闭</Button>
               <Button 
-                className="bg-gradient-to-r from-purple-500 to-violet-600 text-white font-semibold shadow-lg shadow-purple-500/20"
+                className="bg-linear-to-r from-purple-500 to-violet-600 text-white font-semibold shadow-lg shadow-purple-500/20"
                 startContent={<Wand2 className="w-4 h-4" />}
                 onPress={() => onGenerate(selectedResource?.name || '', imageModel, textModel, imageAspectRatio, characterId)}
                 isLoading={isGenerating}

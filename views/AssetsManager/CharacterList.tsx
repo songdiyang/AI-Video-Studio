@@ -54,19 +54,23 @@ const CharacterList: React.FC<CharacterListProps> = ({ characters, tagGroups, on
           key={character.id}
           variants={itemVariants}
         >
-          <Card className="bg-[var(--bg-card)] border border-[var(--border-color)] shadow-sm hover:shadow-md hover:shadow-[var(--accent)]/5 transition-shadow">
+          <Card 
+            className="bg-(--bg-card) border border-(--border-color) shadow-sm hover:shadow-md hover:shadow-(--accent)/5 transition-shadow cursor-pointer"
+            isPressable
+            onPress={() => onEdit(character)}
+          >
             <CardBody className="p-4 space-y-3">
               <div className="flex items-start justify-between">
-                <h3 className="text-lg font-semibold text-[var(--text-primary)]">{character.name}</h3>
+                <h3 className="text-lg font-semibold text-(--text-primary)">{character.name}</h3>
                 <div className="flex gap-1">
                   <Button 
                     size="sm" 
                     isIconOnly 
                     variant="light" 
                     onPress={() => onEdit(character)} 
-                    className="hover:bg-[var(--accent)]/10"
+                    className="hover:bg-(--accent)/10"
                   >
-                    <Edit className="w-4 h-4 text-[var(--accent)]" />
+                    <Edit className="w-4 h-4 text-(--accent)" />
                   </Button>
                   <Button 
                     size="sm" 
@@ -79,7 +83,7 @@ const CharacterList: React.FC<CharacterListProps> = ({ characters, tagGroups, on
                   </Button>
                 </div>
               </div>
-              <p className="text-sm text-[var(--text-secondary)] line-clamp-2">{character.description}</p>
+              <p className="text-sm text-(--text-secondary) line-clamp-2">{character.description}</p>
               <div className="flex flex-wrap gap-2">
                 {character.project_name && (
                   <Chip 
@@ -129,7 +133,7 @@ const CharacterList: React.FC<CharacterListProps> = ({ characters, tagGroups, on
                     key={`plain-${idx}`} 
                     size="sm" 
                     variant="flat" 
-                    className="bg-[var(--accent)]/10 text-[var(--accent)] font-medium"
+                    className="bg-(--accent)/10 text-(--accent) font-medium"
                   >
                     {tag.trim()}
                   </Chip>

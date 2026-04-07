@@ -33,7 +33,7 @@ export interface StoryboardTemplate {
   category: string;
 }
 
-function authHeaders() {
+function authHeaders(): Record<string, string> {
   const token = getAuthToken();
   return token
     ? {
@@ -255,7 +255,7 @@ export async function generateFromSketch(
     sketchUrl?: string;
     sketchType?: string;
   }
-): Promise<{ jobId: number; tasks: any[] }> {
+): Promise<{ jobId: string; tasks: any[] }> {
   const res = await fetch('/api/workflows', {
     method: 'POST',
     headers: {
@@ -279,7 +279,7 @@ export async function generateFromSketch(
     throw new Error(data?.message || 'Failed to start sketch frame generation');
   }
 
-  return data as { jobId: number; tasks: any[] };
+  return data as { jobId: string; tasks: any[] };
 }
 
 // ============================================================

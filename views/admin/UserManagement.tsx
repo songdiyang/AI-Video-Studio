@@ -221,7 +221,7 @@ const UserManagement: React.FC = () => {
                     <td className="px-4 py-3.5 text-sm text-gray-500 font-mono">{user.id}</td>
                     <td className="px-4 py-3.5">
                       <div className="flex items-center gap-3">
-                        <div className="relative flex-shrink-0">
+                        <div className="relative shrink-0">
                           <div className="w-9 h-9 bg-blue-50 rounded-full flex items-center justify-center">
                             <User className="w-4 h-4 text-blue-500" />
                           </div>
@@ -237,7 +237,7 @@ const UserManagement: React.FC = () => {
                     </td>
                     <td className="px-4 py-3.5">
                       <div className="flex items-center gap-1.5">
-                        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${status.online ? 'bg-emerald-400' : 'bg-gray-300'}`} />
+                        <span className={`w-2 h-2 rounded-full shrink-0 ${status.online ? 'bg-emerald-400' : 'bg-gray-300'}`} />
                         <span className={`text-xs whitespace-nowrap ${status.online ? 'text-emerald-600 font-medium' : 'text-gray-400'}`}>
                           {status.label}
                         </span>
@@ -265,7 +265,7 @@ const UserManagement: React.FC = () => {
                     <td className="px-4 py-3.5">
                       {user.last_login_ip ? (
                         <div className="flex items-center gap-1.5">
-                          <Globe className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                          <Globe className="w-3.5 h-3.5 text-gray-400 shrink-0" />
                           <span className="text-xs font-mono text-gray-500">{user.last_login_ip}</span>
                         </div>
                       ) : (

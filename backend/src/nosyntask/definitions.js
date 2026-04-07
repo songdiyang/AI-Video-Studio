@@ -209,6 +209,7 @@ const WORKFLOW_DEFINITIONS = {
             handler: handleCharacterExtraction,
             dependencies: [0],
             buildInput: createBuildInput([
+              { key: 'scenes', from: ctx => ctx.previousResults[0]?.scenes || [] },
               'scriptContent', 'projectId', 'scriptId', 'userId', 'textModel'
             ])
           }
@@ -273,6 +274,19 @@ const WORKFLOW_DEFINITIONS = {
         handler: handleCharacterExtraction,
         dependencies: [saveStepIndex],
         buildInput: createBuildInput([
+          {
+            key: 'scenes',
+            from: ctx => {
+              // 从所有场景步骤的 previousResults 中汇总 scenes
+              const allScenes = [];
+              for (let j = 0; j < totalScenes; j++) {
+                if (ctx.previousResults[j]?.scenes) {
+                  allScenes.push(...ctx.previousResults[j].scenes);
+                }
+              }
+              return allScenes;
+            }
+          },
           'scriptContent', 'projectId', 'scriptId', 'userId', 'textModel'
         ])
       });

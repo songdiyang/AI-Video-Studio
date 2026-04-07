@@ -12,6 +12,7 @@ interface CharactersTabProps {
   onGenerateViews: (charName: string, characterId: number) => void;
   onShowDetail: (character: Character) => void;
   onPreview?: (character: Character) => void;
+  onOpenLifecycle?: (character: Character) => void;
 }
 
 const CharactersTab: React.FC<CharactersTabProps> = ({
@@ -22,7 +23,8 @@ const CharactersTab: React.FC<CharactersTabProps> = ({
   activeCharacterIds = [],
   onGenerateViews,
   onShowDetail,
-  onPreview
+  onPreview,
+  onOpenLifecycle
 }) => {
   return (
     <div className="space-y-3">
@@ -46,6 +48,7 @@ const CharactersTab: React.FC<CharactersTabProps> = ({
             isGenerating={activeCharacterIds.includes(String(char.id))}
             onGenerateViews={onGenerateViews}
             onShowDetail={onShowDetail}
+            onOpenLifecycle={onOpenLifecycle}
           />
         ))
       ) : characters.length > 0 ? (

@@ -278,7 +278,7 @@ const InternalMailbox: React.FC = () => {
         <>
           {/* Overlay to capture clicks outside */}
           <div
-            className="fixed inset-0 z-[9998]"
+            className="fixed inset-0 z-9998"
             onClick={() => { setIsOpen(false); setSelectedMail(null); }}
           />
           <motion.div
@@ -287,7 +287,7 @@ const InternalMailbox: React.FC = () => {
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.96 }}
             transition={{ duration: 0.2 }}
-            className="fixed w-[380px] max-h-[520px] rounded-2xl overflow-hidden shadow-2xl z-[9999] flex flex-col"
+            className="fixed w-95 max-h-130 rounded-2xl overflow-hidden shadow-2xl z-9999 flex flex-col"
             style={{
               top: panelPosition.y,
               left: panelPosition.x,
@@ -318,11 +318,11 @@ const InternalMailbox: React.FC = () => {
               )}
               <div className="flex items-center gap-1">
                 {!selectedMail && unreadCount > 0 && (
-                  <button onClick={markAllRead} className="p-1.5 rounded-lg hover:bg-[var(--bg-input)] transition-colors" title="全部已读">
+                  <button onClick={markAllRead} className="p-1.5 rounded-lg hover:bg-(--bg-input) transition-colors" title="全部已读">
                     <CheckCheck className="w-4 h-4" style={{ color: 'var(--text-muted)' }} />
                   </button>
                 )}
-                <button onClick={() => { setIsOpen(false); setSelectedMail(null); }} className="p-1.5 rounded-lg hover:bg-[var(--bg-input)] transition-colors">
+                <button onClick={() => { setIsOpen(false); setSelectedMail(null); }} className="p-1.5 rounded-lg hover:bg-(--bg-input) transition-colors">
                   <X className="w-4 h-4" style={{ color: 'var(--text-muted)' }} />
                 </button>
               </div>
@@ -519,13 +519,13 @@ const InternalMailbox: React.FC = () => {
                             <div
                               key={mail.id}
                               onClick={() => openMail(mail)}
-                              className="w-full text-left px-4 py-3 transition-colors hover:bg-[var(--bg-input)] flex gap-3 items-start cursor-pointer"
+                              className="w-full text-left px-4 py-3 transition-colors hover:bg-(--bg-input) flex gap-3 items-start cursor-pointer"
                               style={{ borderBottom: '1px solid var(--border-color)', opacity: mail.is_read ? 0.7 : 1 }}
                             >
                               {/* Unread dot */}
                               <div className="mt-1.5 shrink-0">
                                 {!mail.is_read ? (
-                                  <span className="block w-2 h-2 rounded-full bg-[var(--accent-primary)]" />
+                                  <span className="block w-2 h-2 rounded-full bg-(--accent-primary)" />
                                 ) : (
                                   <span className="block w-2 h-2 rounded-full" style={{ backgroundColor: 'var(--border-color)' }} />
                                 )}
@@ -606,13 +606,13 @@ const InternalMailbox: React.FC = () => {
           setIsOpen(!isOpen);
           setSelectedMail(null);
         }}
-        className="relative p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-white/5 transition-colors"
+        className="relative p-1.5 rounded-lg text-(--text-muted) hover:text-(--text-primary) hover:bg-white/5 transition-colors"
         aria-label="站内信"
         title="站内信"
       >
         <Mail className="w-4 h-4" />
         {unreadCount > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center leading-none">
+          <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center leading-none">
             {unreadCount > 99 ? '99+' : unreadCount}
           </span>
         )}

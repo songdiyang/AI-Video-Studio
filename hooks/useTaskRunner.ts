@@ -15,7 +15,7 @@ import { startWorkflow, getWorkflowStatus, getActiveWorkflows, consumeWorkflow, 
 import { useWebSocket, TaskStatusMessage } from './useWebSocket';
 
 export interface TaskState {
-  jobId: number;
+  jobId: string;
   status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
   progress: number;
   result: any | null;
@@ -61,7 +61,7 @@ export function useTaskRunner(options: UseTaskRunnerOptions = {}) {
   const retryCountRef = useRef<Record<string, number>>({});
   const retryTimerRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   // jobId -> key 映射，用于 WebSocket 消息路由
-  const jobIdToKeyRef = useRef<Map<number, string>>(new Map());
+  const jobIdToKeyRef = useRef<Map<string, string>>(new Map());
   // stopPolling 的 ref，用于在回调中调用
   const stopPollingRef = useRef<(key: string) => void>(() => {});
   useEffect(() => { tasksRef.current = tasks; }, [tasks]);
@@ -152,7 +152,7 @@ export function useTaskRunner(options: UseTaskRunnerOptions = {}) {
 
   // 开始轮询某个 jobId（使用 setTimeout 实现自适应间隔）
   // isBackupMode: true 表示 WebSocket 模式下的低频备用轮询
-  const startPolling = useCallback((key: string, jobId: number, isBackupMode: boolean = false) => {
+  const startPolling = useCallback((key: string, jobId: string, isBackupMode: boolean = false) => {
     stopPolling(key);
     activeKeysRef.current.add(key);
     pollCountRef.current[key] = 0;
@@ -268,7 +268,7 @@ export function useTaskRunner(options: UseTaskRunnerOptions = {}) {
     key: string,
     workflowType: string,
     params: Record<string, any>
-  ): Promise<number> => {
+  ): Promise<string> => {
     if (activeKeysRef.current.has(key)) {
       throw new Error('任务正在进行中，请等待当前任务结束');
     }
@@ -276,7 +276,7 @@ export function useTaskRunner(options: UseTaskRunnerOptions = {}) {
     activeKeysRef.current.add(key);
     // 初始化状态
     updateTask(key, {
-      jobId: 0,
+      jobId: '',
       status: 'pending',
       progress: 0,
       result: null,
@@ -305,7 +305,7 @@ export function useTaskRunner(options: UseTaskRunnerOptions = {}) {
       return jobId;
     } catch (error: any) {
       if (error instanceof ApiError && error.status === 409 && error.data?.jobId) {
-        const conflictJobId = Number(error.data.jobId);
+        const conflictJobId = String(error.data.jobId);
         updateTask(key, {
           jobId: conflictJobId,
           status: 'running',

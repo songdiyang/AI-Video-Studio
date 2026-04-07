@@ -210,7 +210,7 @@ const FrontendSettingsManagement: React.FC = () => {
         {/* 头部 */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/25">
+            <div className="w-12 h-12 bg-linear-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/25">
               <Monitor className="w-6 h-6 text-white" />
             </div>
             <div>
@@ -219,7 +219,7 @@ const FrontendSettingsManagement: React.FC = () => {
             </div>
           </div>
           <Button
-            className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-semibold shadow-lg shadow-indigo-500/25"
+            className="bg-linear-to-r from-indigo-500 to-purple-600 text-white font-semibold shadow-lg shadow-indigo-500/25"
             startContent={<Plus className="w-4 h-4" />}
             onPress={() => handleOpenModal()}
           >
@@ -426,7 +426,7 @@ const FrontendSettingsManagement: React.FC = () => {
                   取消
                 </Button>
                 <Button
-                  className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-semibold shadow-lg shadow-indigo-500/25"
+                  className="bg-linear-to-r from-indigo-500 to-purple-600 text-white font-semibold shadow-lg shadow-indigo-500/25"
                   startContent={<Save className="w-4 h-4" />}
                   onPress={handleSave}
                 >

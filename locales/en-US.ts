@@ -290,6 +290,12 @@ const enUS: Translations = {
       americanComic: 'American Comic',
       pixelArt: 'Pixel Art',
       chineseInk: 'Chinese Ink',
+      heavenBlessing: 'Xianxia Fantasy',
+      shoujoManga: 'Shoujo Manga',
+      otomeGame: 'Otome Game',
+      japaneseOtome: 'JP Otome',
+      chineseDonghua: 'Chinese Donghua',
+      custom: 'Custom',
     },
     // Messages
     loadFailed: 'Failed to load projects',

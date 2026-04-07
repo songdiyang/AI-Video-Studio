@@ -25,7 +25,7 @@ export function useScriptGeneration({
   onSuccess,
   onError
 }: UseScriptGenerationProps) {
-  const [generatingJobId, setGeneratingJobId] = useState<number | null>(null);
+  const [generatingJobId, setGeneratingJobId] = useState<string | null>(null);
   const [generatingScriptId, setGeneratingScriptId] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [showEpisodeModal, setShowEpisodeModal] = useState(false);

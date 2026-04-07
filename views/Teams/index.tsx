@@ -54,10 +54,12 @@ import { createProject, updateProject, fetchProjects, Project } from '../../serv
 import { PROJECT_TYPES, ProjectType } from '../../types/projectTypes';
 import {
   Team,
+  TeamMember,
   JoinRequest,
   fetchTeams,
   fetchTeamDetail,
   fetchTeamProjects,
+  fetchTeamMembers,
   createTeam,
   updateTeam,
   deleteTeam,
@@ -128,6 +130,7 @@ const Teams: React.FC = () => {
 
   // 任务指派模态框
   const [showTaskAssignModal, setShowTaskAssignModal] = useState(false);
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
 
   // 加载团队列表
   const loadTeams = useCallback(async () => {
@@ -145,11 +148,15 @@ const Teams: React.FC = () => {
   // 加载团队详情
   const loadTeamDetail = useCallback(async (teamId: number) => {
     try {
+      setLoading(true);
       const { team, myRole } = await fetchTeamDetail(teamId);
       setSelectedTeam({ ...team, my_role: myRole || team.my_role });
       // 加载团队项目
       const { projects } = await fetchTeamProjects(teamId);
       setTeamProjects(projects);
+      // 加载团队成员
+      const { members } = await fetchTeamMembers(teamId);
+      setTeamMembers(members);
     } catch (error) {
       const msg = error instanceof Error ? error.message : '加载团队详情失败';
       // 非成员拦截：后端返回 "您不是该团队成员" 或权限不足
@@ -159,6 +166,8 @@ const Teams: React.FC = () => {
         showToast(msg, 'error');
       }
       navigate('/teams');
+    } finally {
+      setLoading(false);
     }
   }, [showToast, navigate]);
 
@@ -286,7 +295,7 @@ const Teams: React.FC = () => {
       setShowJoinModal(false);
       setInviteCode('');
       // 刷新邀请历史
-      loadMyJoinRequests();
+      loadMyJoinRequests().catch(err => console.error('刷新邀请历史失败:', err));
       await loadTeams();
     } catch (error) {
       showToast(error instanceof Error ? error.message : '加入失败', 'error');
@@ -360,7 +369,7 @@ const Teams: React.FC = () => {
       setLoadingPersonalProjects(true);
       const projects = await fetchProjects();
       // 只显示用户自己创建的、未关联团队的项目
-      setPersonalProjects(projects.filter(p => (p as any).source === 'own' && !p.team_id));
+      setPersonalProjects(projects.filter(p => p.source === 'own' && !p.team_id));
     } catch (error) {
       showToast('加载个人项目失败', 'error');
     } finally {
@@ -373,7 +382,7 @@ const Teams: React.FC = () => {
     if (!selectedTeam) return;
     try {
       setTransferring(projectId);
-      await updateProject(projectId, { team_id: selectedTeam.id } as any);
+      await updateProject(projectId, { team_id: selectedTeam.id });
       showToast('项目已移入团队，所有成员可编辑', 'success');
       // 刷新
       const { projects } = await fetchTeamProjects(selectedTeam.id);
@@ -399,7 +408,7 @@ const Teams: React.FC = () => {
     });
     if (!confirmed) return;
     try {
-      await updateProject(projectId, { team_id: null } as any);
+      await updateProject(projectId, { team_id: null });
       showToast('项目已移出到个人', 'success');
       const { projects } = await fetchTeamProjects(selectedTeam.id);
       setTeamProjects(projects);
@@ -485,9 +494,15 @@ const Teams: React.FC = () => {
   // 团队详情加载时获取待审核数量
   useEffect(() => {
     if (selectedTeam && canManageMembers(selectedTeam.my_role)) {
-      fetchJoinRequests(selectedTeam.id, 'pending').then(({ requests }) => {
-        setPendingCount(requests.length);
-      }).catch(() => {});
+      const loadPendingCount = async () => {
+        try {
+          const { requests } = await fetchJoinRequests(selectedTeam.id, 'pending');
+          setPendingCount(requests.length);
+        } catch (error) {
+          console.error('获取待审核数量失败:', error);
+        }
+      };
+      loadPendingCount();
     }
   }, [selectedTeam]);
 
@@ -509,8 +524,8 @@ const Teams: React.FC = () => {
       <div className="p-6 max-w-6xl mx-auto">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-[var(--text-primary)]">我的团队</h1>
-            <p className="text-[var(--text-secondary)] mt-1">管理和参与团队协作</p>
+            <h1 className="text-2xl font-bold text-(--text-primary)">我的团队</h1>
+            <p className="text-(--text-secondary) mt-1">管理和参与团队协作</p>
           </div>
           <div className="flex gap-2">
             <Button
@@ -536,11 +551,11 @@ const Teams: React.FC = () => {
             <Spinner size="lg" />
           </div>
         ) : teams.length === 0 ? (
-          <Card className="bg-[var(--bg-card)]">
+          <Card className="bg-(--bg-card)">
             <CardBody className="py-12 text-center">
-              <Users className="w-12 h-12 mx-auto mb-4 text-[var(--text-tertiary)]" />
-              <p className="text-[var(--text-secondary)]">还没有加入任何团队</p>
-              <p className="text-sm text-[var(--text-tertiary)] mt-1">创建一个团队或通过邀请链接加入</p>
+              <Users className="w-12 h-12 mx-auto mb-4 text-(--text-tertiary)" />
+              <p className="text-(--text-secondary)">还没有加入任何团队</p>
+              <p className="text-sm text-(--text-tertiary) mt-1">创建一个团队或通过邀请链接加入</p>
             </CardBody>
           </Card>
         ) : (
@@ -549,7 +564,7 @@ const Teams: React.FC = () => {
               <Card
                 key={team.id}
                 isPressable={false}
-                className="bg-[var(--bg-card)] hover:bg-[var(--bg-elevated)] cursor-pointer"
+                className="bg-(--bg-card) hover:bg-(--bg-elevated) cursor-pointer"
                 onPress={() => navigate(`/teams/${team.id}`)}
               >
                 <CardBody className="p-4">
@@ -564,7 +579,7 @@ const Teams: React.FC = () => {
                         className="w-12 h-12"
                       />
                       <div>
-                        <h3 className="font-semibold text-[var(--text-primary)]">{team.name}</h3>
+                        <h3 className="font-semibold text-(--text-primary)">{team.name}</h3>
                         <div className="flex items-center gap-2 mt-1">
                           <Chip size="sm" variant="flat" color={team.my_role === 'owner' ? 'warning' : 'default'}>
                             {team.my_role === 'owner' && <Crown className="w-3 h-3 mr-1" />}
@@ -605,11 +620,11 @@ const Teams: React.FC = () => {
                     </Dropdown>
                   </div>
                   {team.description && (
-                    <p className="text-sm text-[var(--text-secondary)] line-clamp-2 mb-3">
+                    <p className="text-sm text-(--text-secondary) line-clamp-2 mb-3">
                       {team.description}
                     </p>
                   )}
-                  <div className="flex items-center gap-4 text-sm text-[var(--text-tertiary)]">
+                  <div className="flex items-center gap-4 text-sm text-(--text-tertiary)">
                     <span className="flex items-center gap-1">
                       <Users className="w-4 h-4" />
                       {team.members_count} 成员
@@ -628,7 +643,7 @@ const Teams: React.FC = () => {
         {/* 邀请历史 */}
         {myJoinRequests.length > 0 && (
           <div className="mt-8">
-            <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-4 flex items-center gap-2">
+            <h2 className="text-lg font-semibold text-(--text-primary) mb-4 flex items-center gap-2">
               <Mail className="w-5 h-5" />
               我的申请记录
             </h2>
@@ -639,7 +654,7 @@ const Teams: React.FC = () => {
                 </div>
               ) : (
                 myJoinRequests.map((req) => (
-                  <Card key={req.id} className="bg-[var(--bg-card)]">
+                  <Card key={req.id} className="bg-(--bg-card)">
                     <CardBody className="p-4 flex items-center justify-between">
                       <div className="flex items-center gap-3">
                         <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
@@ -655,7 +670,7 @@ const Teams: React.FC = () => {
                           )}
                         </div>
                         <div>
-                          <p className="text-sm text-[var(--text-primary)]">
+                          <p className="text-sm text-(--text-primary)">
                             {req.inviter_email ? (
                               <><span className="font-medium">{req.inviter_email}</span> 邀请您加入团队 </>
                             ) : (
@@ -663,7 +678,7 @@ const Teams: React.FC = () => {
                             )}
                             <span className="font-semibold">{req.team_name}</span>
                           </p>
-                          <p className="text-xs text-[var(--text-tertiary)] mt-0.5">
+                          <p className="text-xs text-(--text-tertiary) mt-0.5">
                             {formatTime(req.created_at)}
                           </p>
                         </div>
@@ -722,7 +737,7 @@ const Teams: React.FC = () => {
           <ModalContent>
             <ModalHeader>加入团队</ModalHeader>
             <ModalBody>
-              <p className="text-sm text-[var(--text-secondary)] mb-4">
+              <p className="text-sm text-(--text-secondary) mb-4">
                 输入邀请码加入团队
               </p>
               <Input
@@ -767,14 +782,14 @@ const Teams: React.FC = () => {
         />
         <div className="flex-1">
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold text-[var(--text-primary)]">{selectedTeam.name}</h1>
+            <h1 className="text-2xl font-bold text-(--text-primary)">{selectedTeam.name}</h1>
             <Chip size="sm" variant="flat" color={selectedTeam.my_role === 'owner' ? 'warning' : 'default'}>
               {selectedTeam.my_role === 'owner' && <Crown className="w-3 h-3 mr-1" />}
               {ROLE_LABELS[selectedTeam.my_role || 'viewer']}
             </Chip>
           </div>
           {selectedTeam.description && (
-            <p className="text-[var(--text-secondary)] mt-1">{selectedTeam.description}</p>
+            <p className="text-(--text-secondary) mt-1">{selectedTeam.description}</p>
           )}
         </div>
         <div className="flex gap-2">
@@ -871,24 +886,24 @@ const Teams: React.FC = () => {
               <Spinner size="lg" />
             </div>
           ) : joinRequests.length === 0 ? (
-            <Card className="bg-[var(--bg-card)]">
+            <Card className="bg-(--bg-card)">
               <CardBody className="py-12 text-center">
-                <ShieldCheck className="w-10 h-10 mx-auto mb-3 text-[var(--text-tertiary)]" />
-                <p className="text-[var(--text-secondary)]">暂无加入申请</p>
+                <ShieldCheck className="w-10 h-10 mx-auto mb-3 text-(--text-tertiary)" />
+                <p className="text-(--text-secondary)">暂无加入申请</p>
               </CardBody>
             </Card>
           ) : (
             joinRequests.map((req) => (
-              <Card key={req.id} className="bg-[var(--bg-card)]">
+              <Card key={req.id} className="bg-(--bg-card)">
                 <CardBody className="p-4">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <Avatar name={req.user_email} className="w-10 h-10" />
                       <div>
-                        <p className="text-sm font-medium text-[var(--text-primary)]">
+                        <p className="text-sm font-medium text-(--text-primary)">
                           {req.user_email}
                         </p>
-                        <p className="text-xs text-[var(--text-tertiary)]">
+                        <p className="text-xs text-(--text-tertiary)">
                           用户 ID: {req.user_id} · {formatTime(req.created_at)}
                           {req.invite_code && (
                             <span className="ml-2">· 通过邀请码加入</span>
@@ -957,11 +972,11 @@ const Teams: React.FC = () => {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {teamProjects.length === 0 ? (
-            <Card className="col-span-full bg-[var(--bg-card)]">
+            <Card className="col-span-full bg-(--bg-card)">
               <CardBody className="py-8 text-center">
-                <FolderOpen className="w-10 h-10 mx-auto mb-3 text-[var(--text-tertiary)]" />
-                <p className="text-[var(--text-secondary)]">团队还没有项目</p>
-                <p className="text-sm text-[var(--text-tertiary)] mt-1">
+                <FolderOpen className="w-10 h-10 mx-auto mb-3 text-(--text-tertiary)" />
+                <p className="text-(--text-secondary)">团队还没有项目</p>
+                <p className="text-sm text-(--text-tertiary) mt-1">
                   点击上方"新增工程"按钮创建团队项目，或导入个人项目
                 </p>
               </CardBody>
@@ -971,12 +986,12 @@ const Teams: React.FC = () => {
               <Card
                 key={project.id}
                 isPressable={false}
-                className="bg-[var(--bg-card)] hover:bg-[var(--bg-elevated)]"
+                className="bg-(--bg-card) hover:bg-(--bg-elevated)"
               >
                 <CardBody className="p-4">
                   <div className="flex items-start justify-between mb-1">
                     <h3 
-                      className="font-semibold text-[var(--text-primary)] cursor-pointer hover:underline flex-1"
+                      className="font-semibold text-(--text-primary) cursor-pointer hover:underline flex-1"
                       onClick={() => navigate(`/projects/${project.id}`)}
                     >
                       {project.title}
@@ -1004,11 +1019,11 @@ const Teams: React.FC = () => {
                     </Dropdown>
                   </div>
                   {project.description && (
-                    <p className="text-sm text-[var(--text-secondary)] line-clamp-2 mb-2">
+                    <p className="text-sm text-(--text-secondary) line-clamp-2 mb-2">
                       {project.description}
                     </p>
                   )}
-                  <p className="text-xs text-[var(--text-tertiary)]">
+                  <p className="text-xs text-(--text-tertiary)">
                     创建者: {project.owner_username}
                   </p>
                 </CardBody>
@@ -1024,7 +1039,7 @@ const Teams: React.FC = () => {
         <ModalContent>
           <ModalHeader>邀请链接</ModalHeader>
           <ModalBody>
-            <p className="text-sm text-[var(--text-secondary)] mb-4">
+            <p className="text-sm text-(--text-secondary) mb-4">
               分享此链接邀请他人加入团队，链接7天内有效，最多可使用10次。
             </p>
             <div className="flex gap-2">
@@ -1091,7 +1106,7 @@ const Teams: React.FC = () => {
         <ModalContent>
           <ModalHeader>加入团队</ModalHeader>
           <ModalBody>
-            <p className="text-sm text-[var(--text-secondary)] mb-4">
+            <p className="text-sm text-(--text-secondary) mb-4">
               输入邀请码加入团队
             </p>
             <Input
@@ -1122,7 +1137,7 @@ const Teams: React.FC = () => {
         <ModalContent>
           <ModalHeader>新增团队工程</ModalHeader>
           <ModalBody>
-            <p className="text-sm text-[var(--text-secondary)] mb-2">
+            <p className="text-sm text-(--text-secondary) mb-2">
               在团队「{selectedTeam?.name}」中创建工程，所有团队成员均可编辑。
             </p>
             <Input
@@ -1173,7 +1188,7 @@ const Teams: React.FC = () => {
         <ModalContent>
           <ModalHeader>导入个人项目到团队</ModalHeader>
           <ModalBody>
-            <p className="text-sm text-[var(--text-secondary)] mb-3">
+            <p className="text-sm text-(--text-secondary) mb-3">
               选择个人项目移入团队「{selectedTeam?.name}」，移入后所有团队成员均可编辑。
             </p>
             {loadingPersonalProjects ? (
@@ -1182,20 +1197,20 @@ const Teams: React.FC = () => {
               </div>
             ) : personalProjects.length === 0 ? (
               <div className="py-8 text-center">
-                <FolderOpen className="w-10 h-10 mx-auto mb-3 text-[var(--text-tertiary)]" />
-                <p className="text-[var(--text-secondary)]">没有可导入的个人项目</p>
-                <p className="text-xs text-[var(--text-tertiary)] mt-1">
+                <FolderOpen className="w-10 h-10 mx-auto mb-3 text-(--text-tertiary)" />
+                <p className="text-(--text-secondary)">没有可导入的个人项目</p>
+                <p className="text-xs text-(--text-tertiary) mt-1">
                   所有个人项目都已关联到团队
                 </p>
               </div>
             ) : (
-              <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
+              <div className="space-y-2 max-h-100 overflow-y-auto pr-1">
                 {personalProjects.map((project) => (
-                  <Card key={project.id} className="bg-[var(--bg-card)] border border-[var(--border-color)]">
+                  <Card key={project.id} className="bg-(--bg-card) border border-(--border-color)">
                     <CardBody className="p-3">
                       <div className="flex items-center gap-3">
                         {/* 项目封面 */}
-                        <div className="w-14 h-14 rounded-lg overflow-hidden bg-[var(--bg-input)] flex-shrink-0">
+                        <div className="w-14 h-14 rounded-lg overflow-hidden bg-(--bg-input) shrink-0">
                           {project.cover_url ? (
                             <img
                               src={project.cover_url}
@@ -1203,7 +1218,7 @@ const Teams: React.FC = () => {
                               className="w-full h-full object-cover"
                             />
                           ) : (
-                            <div className="w-full h-full flex items-center justify-center text-[var(--text-tertiary)]">
+                            <div className="w-full h-full flex items-center justify-center text-(--text-tertiary)">
                               <FolderOpen className="w-6 h-6" />
                             </div>
                           )}
@@ -1211,17 +1226,17 @@ const Teams: React.FC = () => {
                         {/* 项目信息 */}
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
-                            <p className="font-medium text-sm text-[var(--text-primary)] truncate">
+                            <p className="font-medium text-sm text-(--text-primary) truncate">
                               {project.name}
                             </p>
                             {project.type && (
-                              <span className="flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] bg-[var(--accent)]/10 text-[var(--accent)]">
+                              <span className="shrink-0 px-1.5 py-0.5 rounded text-[10px] bg-(--accent)/10 text-(--accent)">
                                 {{ comic_drama: '漫剧', short_video: '短视频', manga: '漫画', novel: '小说' }[project.type] || project.type}
                               </span>
                             )}
                           </div>
                           {project.description && (
-                            <p className="text-xs text-[var(--text-tertiary)] line-clamp-2 mt-1">
+                            <p className="text-xs text-(--text-tertiary) line-clamp-2 mt-1">
                               {project.description}
                             </p>
                           )}
@@ -1234,7 +1249,7 @@ const Teams: React.FC = () => {
                           startContent={<Upload className="w-3 h-3" />}
                           isLoading={transferring === project.id}
                           onPress={() => handleImportToTeam(project.id)}
-                          className="flex-shrink-0"
+                          className="shrink-0"
                         >
                           移入
                         </Button>
@@ -1259,6 +1274,8 @@ const Teams: React.FC = () => {
           isOpen={showTaskAssignModal}
           onClose={() => setShowTaskAssignModal(false)}
           teamId={selectedTeam.id}
+          teamName={selectedTeam.name}
+          members={teamMembers}
           onSuccess={() => {
             showToast('任务指派成功', 'success');
             setShowTaskAssignModal(false);

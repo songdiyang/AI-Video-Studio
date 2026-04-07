@@ -13,8 +13,8 @@ interface TeamMember {
   user_id: number;
   role: string;
   username: string;
-  email: string;
-  avatar?: string;
+  email: string | null;
+  avatar?: string | null;
 }
 
 interface Project {
@@ -134,7 +134,7 @@ const TaskAssignmentModal: React.FC<TaskAssignmentModalProps> = ({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/50 z-[100]"
+            className="fixed inset-0 bg-black/50 z-100"
             onClick={onClose}
           />
           
@@ -143,7 +143,7 @@ const TaskAssignmentModal: React.FC<TaskAssignmentModalProps> = ({
             initial={{ opacity: 0, scale: 0.95, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
-            className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-lg z-[101] rounded-2xl overflow-hidden shadow-2xl"
+            className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-lg z-101 rounded-2xl overflow-hidden shadow-2xl"
             style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)' }}
           >
             {/* Header */}
@@ -166,7 +166,7 @@ const TaskAssignmentModal: React.FC<TaskAssignmentModalProps> = ({
               </div>
               <button
                 onClick={onClose}
-                className="p-2 rounded-lg hover:bg-[var(--bg-input)] transition-colors"
+                className="p-2 rounded-lg hover:bg-(--bg-input) transition-colors"
               >
                 <X className="w-5 h-5" style={{ color: 'var(--text-muted)' }} />
               </button>
@@ -201,7 +201,7 @@ const TaskAssignmentModal: React.FC<TaskAssignmentModalProps> = ({
                   <option value="">选择团队成员...</option>
                   {assignableMembers.map((member) => (
                     <option key={member.user_id} value={member.user_id}>
-                      {member.username || member.email} ({member.role})
+                      {member.username || member.email || '未命名用户'} ({member.role})
                     </option>
                   ))}
                 </select>

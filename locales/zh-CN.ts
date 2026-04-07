@@ -288,6 +288,12 @@ const zhCN = {
       americanComic: '美漫风格',
       pixelArt: '像素风',
       chineseInk: '国风水墨',
+      heavenBlessing: '天宫赐福',
+      shoujoManga: '少女漫画',
+      otomeGame: '乙女游戏',
+      japaneseOtome: '日乙游戏',
+      chineseDonghua: '龙族国漫',
+      custom: '自定义',
     },
     // 消息
     loadFailed: '加载工程失败',

@@ -121,20 +121,20 @@ const TemplateGallery: React.FC = () => {
   };
 
   return (
-    <div className="h-full bg-[var(--bg-app)] overflow-auto p-6">
+    <div className="h-full bg-(--bg-app) overflow-auto p-6">
       <div className="max-w-7xl mx-auto space-y-6">
         {/* 头部标题区 */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="relative">
-              <div className="absolute inset-0 bg-gradient-to-br from-[var(--accent)]/30 to-purple-500/30 rounded-xl blur-lg opacity-60" />
-              <div className="relative p-2.5 bg-gradient-to-br from-[var(--accent)]/20 to-purple-500/30 rounded-xl border border-[var(--accent)]/30">
-                <LayoutGrid className="w-6 h-6 text-[var(--accent)]" />
+              <div className="absolute inset-0 bg-linear-to-br from-(--accent)/30 to-purple-500/30 rounded-xl blur-lg opacity-60" />
+              <div className="relative p-2.5 bg-linear-to-br from-(--accent)/20 to-purple-500/30 rounded-xl border border-(--accent)/30">
+                <LayoutGrid className="w-6 h-6 text-(--accent)" />
               </div>
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-[var(--text-primary)]">{t.templates.title}</h1>
-              <p className="text-sm text-[var(--text-muted)]">{t.templates.subtitle}</p>
+              <h1 className="text-2xl font-bold text-(--text-primary)">{t.templates.title}</h1>
+              <p className="text-sm text-(--text-muted)">{t.templates.subtitle}</p>
             </div>
           </div>
 
@@ -144,10 +144,10 @@ const TemplateGallery: React.FC = () => {
               placeholder={t.templates.search}
               value={searchInput}
               onValueChange={setSearchInput}
-              startContent={<Search className="w-4 h-4 text-[var(--text-muted)]" />}
+              startContent={<Search className="w-4 h-4 text-(--text-muted)" />}
               classNames={{
-                input: "bg-transparent text-[var(--text-primary)] placeholder:text-[var(--text-muted)]",
-                inputWrapper: "bg-[var(--bg-input)] border border-[var(--border-color)] hover:border-[var(--accent)]/30 focus-within:border-[var(--accent)]/50 shadow-sm transition-all"
+                input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted)",
+                inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 focus-within:border-(--accent)/50 shadow-sm transition-all"
               }}
             />
           </div>
@@ -164,8 +164,8 @@ const TemplateGallery: React.FC = () => {
               }}
               className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
                 category === cat
-                  ? 'bg-[var(--accent)]/20 text-[var(--accent)] border border-[var(--accent)]/40 shadow-sm'
-                  : 'bg-[var(--bg-card)] text-[var(--text-muted)] border border-[var(--border-color)] hover:bg-[var(--bg-input)] hover:text-[var(--text-secondary)]'
+                  ? 'bg-(--accent)/20 text-(--accent) border border-(--accent)/40 shadow-sm'
+                  : 'bg-(--bg-card) text-(--text-muted) border border-(--border-color) hover:bg-(--bg-input) hover:text-(--text-secondary)'
               }`}
             >
               {getCategoryLabel(cat)}
@@ -175,7 +175,7 @@ const TemplateGallery: React.FC = () => {
 
         {/* 排序切换 */}
         <div className="flex items-center gap-2">
-          <span className="text-sm text-[var(--text-muted)]">排序：</span>
+          <span className="text-sm text-(--text-muted)">排序：</span>
           {SORT_OPTIONS.map((s) => (
             <button
               key={s}
@@ -185,8 +185,8 @@ const TemplateGallery: React.FC = () => {
               }}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
                 sort === s
-                  ? 'bg-[var(--accent)]/15 text-[var(--accent)]'
-                  : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-white/5'
+                  ? 'bg-(--accent)/15 text-(--accent)'
+                  : 'text-(--text-muted) hover:text-(--text-secondary) hover:bg-white/5'
               }`}
             >
               {s === 'popular' && <TrendingUp className="w-3.5 h-3.5" />}
@@ -201,7 +201,7 @@ const TemplateGallery: React.FC = () => {
         {loading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {Array.from({ length: 8 }).map((_, i) => (
-              <div key={i} className="bg-[var(--bg-card)] rounded-2xl border border-[var(--border-color)] overflow-hidden">
+              <div key={i} className="bg-(--bg-card) rounded-2xl border border-(--border-color) overflow-hidden">
                 <Skeleton className="h-40" />
                 <div className="p-4 space-y-3">
                   <Skeleton className="h-5 w-3/4" />
@@ -214,11 +214,11 @@ const TemplateGallery: React.FC = () => {
         ) : templates.length === 0 ? (
           /* 空状态 */
           <div className="text-center py-16">
-            <div className="w-20 h-20 mx-auto bg-[var(--bg-card)] rounded-full flex items-center justify-center mb-4 border border-[var(--border-color)]">
-              <LayoutGrid className="w-10 h-10 text-[var(--text-muted)]" />
+            <div className="w-20 h-20 mx-auto bg-(--bg-card) rounded-full flex items-center justify-center mb-4 border border-(--border-color)">
+              <LayoutGrid className="w-10 h-10 text-(--text-muted)" />
             </div>
-            <p className="text-[var(--text-secondary)] font-medium">{t.templates.empty}</p>
-            <p className="text-[var(--text-muted)] text-sm mt-1">尝试更换筛选条件</p>
+            <p className="text-(--text-secondary) font-medium">{t.templates.empty}</p>
+            <p className="text-(--text-muted) text-sm mt-1">尝试更换筛选条件</p>
           </div>
         ) : (
           <AnimatePresence mode="wait">
@@ -236,10 +236,10 @@ const TemplateGallery: React.FC = () => {
                   variants={cardVariants}
                   initial="hidden"
                   animate="visible"
-                  className="group bg-[var(--bg-card)] rounded-2xl border border-[var(--border-color)] overflow-hidden hover:border-[var(--accent)]/30 hover:shadow-lg hover:shadow-[var(--accent)]/5 transition-all duration-300"
+                  className="group bg-(--bg-card) rounded-2xl border border-(--border-color) overflow-hidden hover:border-(--accent)/30 hover:shadow-lg hover:shadow-(--accent)/5 transition-all duration-300"
                 >
                   {/* 缩略图 */}
-                  <div className="relative h-40 bg-gradient-to-br from-[var(--bg-input)] to-[var(--bg-card)] overflow-hidden">
+                  <div className="relative h-40 bg-linear-to-br from-(--bg-input) to-(--bg-card) overflow-hidden">
                     {template.thumbnailUrl ? (
                       <img
                         src={template.thumbnailUrl}
@@ -248,7 +248,7 @@ const TemplateGallery: React.FC = () => {
                       />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center">
-                        <LayoutGrid className="w-12 h-12 text-[var(--text-muted)]/30" />
+                        <LayoutGrid className="w-12 h-12 text-(--text-muted)/30" />
                       </div>
                     )}
                     
@@ -257,7 +257,7 @@ const TemplateGallery: React.FC = () => {
                       <div className="absolute top-3 left-3">
                         <Chip
                           size="sm"
-                          className="bg-gradient-to-r from-amber-500/90 to-orange-500/90 text-white text-xs font-medium shadow-lg"
+                          className="bg-linear-to-r from-amber-500/90 to-orange-500/90 text-white text-xs font-medium shadow-lg"
                           startContent={<Sparkles className="w-3 h-3" />}
                         >
                           {t.templates.official}
@@ -280,19 +280,19 @@ const TemplateGallery: React.FC = () => {
                   {/* 信息区域 */}
                   <div className="p-4 space-y-3">
                     <div>
-                      <h3 className="text-base font-semibold text-[var(--text-primary)] line-clamp-1 group-hover:text-[var(--accent)] transition-colors">
+                      <h3 className="text-base font-semibold text-(--text-primary) line-clamp-1 group-hover:text-(--accent) transition-colors">
                         {template.name}
                       </h3>
-                      <p className="text-sm text-[var(--text-muted)] line-clamp-2 mt-1 min-h-[40px]">
+                      <p className="text-sm text-(--text-muted) line-clamp-2 mt-1 min-h-10">
                         {template.description || '暂无描述'}
                       </p>
                     </div>
 
                     {/* 创建者信息 */}
                     {template.creatorEmail && (
-                      <div className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
+                      <div className="flex items-center gap-2 text-xs text-(--text-muted)">
                         <span>{t.templates.createdBy}:</span>
-                        <span className="text-[var(--text-secondary)]">
+                        <span className="text-(--text-secondary)">
                           {template.creatorEmail.split('@')[0]}
                         </span>
                       </div>
@@ -301,7 +301,7 @@ const TemplateGallery: React.FC = () => {
                     {/* 操作按钮 */}
                     <Button
                       size="sm"
-                      className="w-full bg-[var(--accent)]/15 text-[var(--accent)] font-medium hover:bg-[var(--accent)]/25 border border-[var(--accent)]/30 transition-all"
+                      className="w-full bg-(--accent)/15 text-(--accent) font-medium hover:bg-(--accent)/25 border border-(--accent)/30 transition-all"
                       onPress={() => handleUseTemplate(template)}
                       isLoading={usingTemplateId === template.id}
                       isDisabled={usingTemplateId !== null}
@@ -323,11 +323,11 @@ const TemplateGallery: React.FC = () => {
               variant="flat"
               isDisabled={page === 1 || loading}
               onPress={() => setPage(p => p - 1)}
-              className="bg-[var(--bg-card)] text-[var(--text-secondary)] border border-[var(--border-color)]"
+              className="bg-(--bg-card) text-(--text-secondary) border border-(--border-color)"
             >
               上一页
             </Button>
-            <span className="text-sm text-[var(--text-muted)] px-4">
+            <span className="text-sm text-(--text-muted) px-4">
               {page} / {totalPages}
             </span>
             <Button
@@ -335,7 +335,7 @@ const TemplateGallery: React.FC = () => {
               variant="flat"
               isDisabled={page === totalPages || loading}
               onPress={() => setPage(p => p + 1)}
-              className="bg-[var(--bg-card)] text-[var(--text-secondary)] border border-[var(--border-color)]"
+              className="bg-(--bg-card) text-(--text-secondary) border border-(--border-color)"
             >
               下一页
             </Button>

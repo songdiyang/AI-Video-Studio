@@ -66,7 +66,7 @@ export function useWorkflowRecovery({
   matchJob,
   logPrefix = '[WorkflowRecovery]'
 }: UseWorkflowRecoveryOptions) {
-  const [jobId, setJobId] = useState<number | null>(null);
+  const [jobId, setJobId] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
 
   // 用 ref 保持回调最新，避免 useWorkflow 闭包过期
@@ -76,7 +76,7 @@ export function useWorkflowRecovery({
   }, [onCompleted, onFailed, onRecovered, onSubTaskCompleted, matchJob]);
 
   // 跟踪已完成的子任务 ID（防止重复触发回调）
-  const completedTaskIdsRef = useRef<Set<number>>(new Set());
+  const completedTaskIdsRef = useRef<Set<string>>(new Set());
 
   const matchesJob = useCallback((job: WorkflowJob) => {
     if (!workflowTypes.includes(job.workflow_type)) {
@@ -180,7 +180,7 @@ export function useWorkflowRecovery({
   });
 
   // 手动启动新任务（设置 jobId 后自动开始轮询）
-  const startJob = useCallback((newJobId: number) => {
+  const startJob = useCallback((newJobId: string) => {
     setJobId(newJobId);
     setIsGenerating(true);
   }, []);

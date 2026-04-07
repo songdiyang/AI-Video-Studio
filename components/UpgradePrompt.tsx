@@ -136,21 +136,21 @@ const UpgradePrompt: React.FC<UpgradePromptProps> = ({
 
           {/* 弹窗内容 */}
           <motion.div
-            className="relative w-full max-w-md bg-[var(--bg-primary)] rounded-2xl shadow-2xl overflow-hidden"
+            className="relative w-full max-w-md bg-(--bg-primary) rounded-2xl shadow-2xl overflow-hidden"
             initial={{ scale: 0.9, opacity: 0, y: 20 }}
             animate={{ scale: 1, opacity: 1, y: 0 }}
             exit={{ scale: 0.9, opacity: 0, y: 20 }}
             transition={{ type: 'spring', damping: 25, stiffness: 300 }}
           >
             {/* 顶部渐变装饰 */}
-            <div className={`h-2 bg-gradient-to-r ${gradientClass}`} />
+            <div className={`h-2 bg-linear-to-r ${gradientClass}`} />
 
             {/* 关闭按钮 */}
             <button
               onClick={onClose}
-              className="absolute top-4 right-4 p-2 rounded-full hover:bg-[var(--bg-secondary)] transition-colors"
+              className="absolute top-4 right-4 p-2 rounded-full hover:bg-(--bg-secondary) transition-colors"
             >
-              <X className="w-5 h-5 text-[var(--text-muted)]" />
+              <X className="w-5 h-5 text-(--text-muted)" />
             </button>
 
             {/* 内容区域 */}
@@ -160,25 +160,25 @@ const UpgradePrompt: React.FC<UpgradePromptProps> = ({
                 <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-amber-100 dark:bg-amber-900/30 mb-4">
                   <Zap className="w-8 h-8 text-amber-500" />
                 </div>
-                <h2 className="text-xl font-bold text-[var(--text-primary)] mb-2">
+                <h2 className="text-xl font-bold text-(--text-primary) mb-2">
                   {message.title}
                 </h2>
-                <p className="text-sm text-[var(--text-muted)]">
+                <p className="text-sm text-(--text-muted)">
                   {message.desc}
                 </p>
               </div>
 
               {/* 当前状态 */}
-              <div className="mb-6 p-4 rounded-xl bg-[var(--bg-secondary)]">
+              <div className="mb-6 p-4 rounded-xl bg-(--bg-secondary)">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm text-[var(--text-muted)]">当前使用</span>
-                  <span className="text-sm font-medium text-[var(--text-primary)]">
+                  <span className="text-sm text-(--text-muted)">当前使用</span>
+                  <span className="text-sm font-medium text-(--text-primary)">
                     {currentUsage.current} / {currentUsage.max}
                   </span>
                 </div>
-                <div className="h-2 rounded-full bg-[var(--bg-tertiary)] overflow-hidden">
+                <div className="h-2 rounded-full bg-(--bg-tertiary) overflow-hidden">
                   <div
-                    className="h-full rounded-full bg-gradient-to-r from-red-500 to-orange-500"
+                    className="h-full rounded-full bg-linear-to-r from-red-500 to-orange-500"
                     style={{ width: '100%' }}
                   />
                 </div>
@@ -186,7 +186,7 @@ const UpgradePrompt: React.FC<UpgradePromptProps> = ({
 
               {/* 升级推荐 */}
               {nextPlan && (
-                <div className={`p-4 rounded-xl bg-gradient-to-br ${gradientClass} text-white mb-6`}>
+                <div className={`p-4 rounded-xl bg-linear-to-br ${gradientClass} text-white mb-6`}>
                   <div className="flex items-center gap-3 mb-3">
                     {PLAN_ICONS[nextPlan.name]}
                     <div>
@@ -209,7 +209,7 @@ const UpgradePrompt: React.FC<UpgradePromptProps> = ({
                   <div className="grid grid-cols-2 gap-2">
                     {features.slice(0, 6).map((feature, i) => (
                       <div key={i} className="flex items-center gap-2 text-sm">
-                        <Check className="w-4 h-4 flex-shrink-0" />
+                        <Check className="w-4 h-4 shrink-0" />
                         <span className="opacity-90">{feature}</span>
                       </div>
                     ))}
@@ -221,13 +221,13 @@ const UpgradePrompt: React.FC<UpgradePromptProps> = ({
               <div className="flex gap-3">
                 <button
                   onClick={onClose}
-                  className="flex-1 px-4 py-3 rounded-xl border border-[var(--border-primary)] text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)] transition-colors"
+                  className="flex-1 px-4 py-3 rounded-xl border border-(--border-primary) text-(--text-secondary) hover:bg-(--bg-secondary) transition-colors"
                 >
                   稍后再说
                 </button>
                 <button
                   onClick={handleUpgrade}
-                  className={`flex-1 px-4 py-3 rounded-xl bg-gradient-to-r ${gradientClass} text-white font-medium flex items-center justify-center gap-2 hover:opacity-90 transition-opacity`}
+                  className={`flex-1 px-4 py-3 rounded-xl bg-linear-to-r ${gradientClass} text-white font-medium flex items-center justify-center gap-2 hover:opacity-90 transition-opacity`}
                 >
                   <span>升级套餐</span>
                   <ArrowRight className="w-4 h-4" />
@@ -235,7 +235,7 @@ const UpgradePrompt: React.FC<UpgradePromptProps> = ({
               </div>
 
               {/* 底部提示 */}
-              <p className="mt-4 text-xs text-center text-[var(--text-muted)]">
+              <p className="mt-4 text-xs text-center text-(--text-muted)">
                 升级后立即生效，享受更多创作空间
               </p>
             </div>

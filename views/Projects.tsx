@@ -86,7 +86,13 @@ const Projects: React.FC = () => {
     'cyberpunk': { prompt: 'cyberpunk, neon lights, dark atmosphere, futuristic, high contrast, sci-fi aesthetic', labelKey: 'cyberpunk' },
     'americanComic': { prompt: 'American comic style, bold outlines, dynamic shading, superhero aesthetic, vivid colors', labelKey: 'americanComic' },
     'pixelArt': { prompt: 'pixel art style, retro game aesthetic, 16-bit, clean pixels, nostalgic', labelKey: 'pixelArt' },
-    'chineseInk': { prompt: 'Chinese ink painting style, traditional brush strokes, elegant, minimalist, oriental aesthetic', labelKey: 'chineseInk' }
+    'chineseInk': { prompt: 'Chinese ink painting style, traditional brush strokes, elegant, minimalist, oriental aesthetic', labelKey: 'chineseInk' },
+    'heavenBlessing': { prompt: 'Chinese xianxia fantasy style, ancient celestial palace, flowing silk hanfu robes, golden and crimson accents, divine aura glow, ink-wash cloud backgrounds, ethereal lighting, ornate hair accessories, delicate facial features, heavenly atmosphere, traditional Chinese mythology aesthetic', labelKey: 'heavenBlessing' },
+    'shoujoManga': { prompt: 'Japanese shoujo manga style, large sparkling eyes with star highlights, delicate bishoujo features, soft pastel pink and lavender palette, floral screen tone backgrounds, romantic atmosphere, flowing hair with ribbon accessories, decorative sparkle effects, gentle blush cheeks, dreamy soft-focus lighting', labelKey: 'shoujoManga' },
+    'otomeGame': { prompt: 'otome game CG illustration style, romantic visual novel aesthetic, elegant bishounen characters, soft gradient shading, warm golden hour lighting, sparkle and petal particle effects, detailed Victorian-inspired costume design, emotional expressive eyes, luxurious interior backgrounds, gentle color harmony', labelKey: 'otomeGame' },
+    'japaneseOtome': { prompt: 'Japanese otome game style, high-quality anime CG rendering, bishounen characters with refined features, cherry blossom and seasonal motifs, gentle warm color palette, detailed school uniform or traditional costume design, soft ambient lighting, visual novel composition, delicate hand-drawn line art, subtle emotional expressions', labelKey: 'japaneseOtome' },
+    'chineseDonghua': { prompt: 'modern Chinese donghua animation style, dynamic cinematic composition, urban fantasy setting, detailed contemporary character design with Chinese elements, vibrant saturated colors, dramatic action lighting, sleek hair and costume rendering, bold contrast shadows, epic atmospheric perspective, high-energy visual impact', labelKey: 'chineseDonghua' },
+    'custom': { prompt: '', labelKey: 'custom' }
   };
 
   useEffect(() => {
@@ -227,6 +233,19 @@ const Projects: React.FC = () => {
   const handleSelectVisualStyle = (styleKey: string) => {
     if (formData.visualStyle === styleKey) {
       setFormData({ ...formData, visualStyle: '', visualStylePrompt: '' });
+    } else if (styleKey === 'custom') {
+      setFormData({
+        ...formData,
+        visualStyle: 'custom',
+        visualStylePrompt: ''
+      });
+      setTimeout(() => {
+        const el = document.getElementById('visual-style-custom-input');
+        if (el) {
+          const input = el.tagName === 'INPUT' ? el : el.querySelector('input');
+          if (input) (input as HTMLInputElement).focus();
+        }
+      }, 100);
     } else {
       setFormData({
         ...formData,
@@ -313,6 +332,17 @@ const Projects: React.FC = () => {
   
       const data = await res.json();
       setFormData(prev => ({ ...prev, cover_url: data.cover_url }));
+
+      // 编辑模式下自动将封面持久化到数据库
+      if (editMode && currentId && data.cover_url) {
+        try {
+          await updateProject(currentId, { cover_url: data.cover_url });
+          await loadProjects();
+        } catch (e) {
+          console.warn('[Cover] 自动保存封面失败，将在手动保存时一并提交:', e);
+        }
+      }
+
       showToast(t.projects.aiCoverSuccess, 'success');
     } catch (error: any) {
       console.error('AI 封面生成失败:', error);
@@ -415,20 +445,20 @@ const Projects: React.FC = () => {
   };
 
   return (
-    <div className="h-full bg-[var(--bg-app)] overflow-auto p-6">
+    <div className="h-full bg-(--bg-app) overflow-auto p-6">
       <div className="max-w-7xl mx-auto space-y-6">
         {/* 头部 */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="relative">
-              <div className="absolute inset-0 bg-gradient-to-br from-[var(--accent)]/30 to-[var(--accent-dark)]/30 rounded-xl blur-lg opacity-60" />
-              <div className="relative p-2.5 bg-gradient-to-br from-[var(--accent)]/20 to-[var(--accent-dark)]/30 rounded-xl border border-[var(--accent)]/30">
-                <FolderOpen className="w-6 h-6 text-[var(--accent)]" />
+              <div className="absolute inset-0 bg-linear-to-br from-(--accent)/30 to-(--accent-dark)/30 rounded-xl blur-lg opacity-60" />
+              <div className="relative p-2.5 bg-linear-to-br from-(--accent)/20 to-(--accent-dark)/30 rounded-xl border border-(--accent)/30">
+                <FolderOpen className="w-6 h-6 text-(--accent)" />
               </div>
             </div>
             <div>
               <h1 className="text-2xl font-bold pro-title">{t.projects.title}</h1>
-              <p className="text-sm text-[var(--text-muted)]">{t.projects.subtitle}</p>
+              <p className="text-sm text-(--text-muted)">{t.projects.subtitle}</p>
             </div>
           </div>
           <Button
@@ -445,23 +475,23 @@ const Projects: React.FC = () => {
           placeholder={t.projects.searchPlaceholder}
           value={searchQuery}
           onValueChange={setSearchQuery}
-          startContent={<Search className="w-4 h-4 text-[var(--text-muted)]" />}
+          startContent={<Search className="w-4 h-4 text-(--text-muted)" />}
           classNames={{
-            input: "bg-transparent text-[var(--text-primary)] placeholder:text-[var(--text-muted)]",
-            inputWrapper: "bg-[var(--bg-input)] border border-[var(--border-color)] hover:border-[var(--accent)]/30 focus-within:border-[var(--accent)]/40 shadow-sm"
+            input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted)",
+            inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 focus-within:border-(--accent)/40 shadow-sm"
           }}
         />
 
         {/* 工程列表 */}
         {loading ? (
-          <div className="text-center py-12 text-[var(--text-muted)]">{t.common.loading}</div>
+          <div className="text-center py-12 text-(--text-muted)">{t.common.loading}</div>
         ) : filteredProjects.length === 0 ? (
           <div className="text-center py-12">
-            <div className="w-20 h-20 mx-auto bg-[var(--bg-card)] rounded-full flex items-center justify-center mb-4 border border-[var(--border-color)]">
-              <FolderOpen className="w-10 h-10 text-[var(--text-muted)]" />
+            <div className="w-20 h-20 mx-auto bg-(--bg-card) rounded-full flex items-center justify-center mb-4 border border-(--border-color)">
+              <FolderOpen className="w-10 h-10 text-(--text-muted)" />
             </div>
-            <p className="text-[var(--text-secondary)] font-medium">{t.projects.emptyTitle}</p>
-            <p className="text-[var(--text-muted)] text-sm mt-1">{t.projects.emptyDesc}</p>
+            <p className="text-(--text-secondary) font-medium">{t.projects.emptyTitle}</p>
+            <p className="text-(--text-muted) text-sm mt-1">{t.projects.emptyDesc}</p>
           </div>
         ) : useVirtual ? (
           /* 虚拟列表模式（项目数 > 20） */
@@ -497,14 +527,14 @@ const Projects: React.FC = () => {
                         <CardBody className="p-0 h-full flex flex-col">
                           {/* 封面区域 */}
                           <div 
-                            className="h-28 bg-gradient-to-br from-[var(--bg-card)] to-[var(--bg-input)] relative overflow-hidden rounded-t-2xl flex-shrink-0"
+                            className="h-28 bg-linear-to-br from-(--bg-card) to-(--bg-input) relative overflow-hidden rounded-t-2xl shrink-0"
                             onDoubleClick={() => handleEnterProject(project)}
                           >
                             {project.cover_url ? (
                               <img src={project.cover_url} alt={project.name} className="w-full h-full object-cover" />
                             ) : (
                               <div className="w-full h-full flex items-center justify-center">
-                                <BookOpen className="w-10 h-10 text-[var(--accent)]/30" />
+                                <BookOpen className="w-10 h-10 text-(--accent)/30" />
                               </div>
                             )}
                             {/* 操作按钮 */}
@@ -512,15 +542,15 @@ const Projects: React.FC = () => {
                               <Button
                                 size="sm"
                                 isIconOnly
-                                className="bg-[var(--bg-elevated)] backdrop-blur-sm hover:bg-[var(--bg-card)] shadow-lg border border-[var(--border-color)] cursor-pointer"
+                                className="bg-(--bg-elevated) backdrop-blur-sm hover:bg-(--bg-card) shadow-lg border border-(--border-color) cursor-pointer"
                                 onPress={() => handleEdit(project)}
                               >
-                                <Edit className="w-4 h-4 text-[var(--text-primary)]" />
+                                <Edit className="w-4 h-4 text-(--text-primary)" />
                               </Button>
                               <Button
                                 size="sm"
                                 isIconOnly
-                                className="bg-[var(--bg-elevated)] backdrop-blur-sm hover:bg-red-500/20 shadow-lg border border-[var(--border-color)] cursor-pointer"
+                                className="bg-(--bg-elevated) backdrop-blur-sm hover:bg-red-500/20 shadow-lg border border-(--border-color) cursor-pointer"
                                 onPress={() => handleDelete(project.id)}
                               >
                                 <Trash2 className="w-4 h-4 text-red-400" />
@@ -532,8 +562,8 @@ const Projects: React.FC = () => {
                           <div className="p-3 flex-1 flex flex-col justify-between">
                             <div className="space-y-1">
                               <div className="flex items-start justify-between gap-2">
-                                <h3 className="text-base font-semibold text-[var(--text-primary)] line-clamp-1">{project.name}</h3>
-                                <div className="flex items-center gap-1 flex-shrink-0">
+                                <h3 className="text-base font-semibold text-(--text-primary) line-clamp-1">{project.name}</h3>
+                                <div className="flex items-center gap-1 shrink-0">
                                   <Chip size="sm" className={getProjectTypeColor(project.type)}>
                                     {getProjectTypeLabel(project.type)}
                                   </Chip>
@@ -542,11 +572,11 @@ const Projects: React.FC = () => {
                                   </Chip>
                                 </div>
                               </div>
-                              <p className="text-xs text-[var(--text-muted)] line-clamp-2">
+                              <p className="text-xs text-(--text-muted) line-clamp-2">
                                 {project.description || t.projects.noDescription}
                               </p>
                             </div>
-                            <div className="flex items-center gap-1 text-xs text-[var(--text-muted)] pt-1 border-t border-[var(--border-color)]">
+                            <div className="flex items-center gap-1 text-xs text-(--text-muted) pt-1 border-t border-(--border-color)">
                               <Clock className="w-3 h-3" />
                               <span>{t.projects.updatedAt} {formatDate(project.updated_at)}</span>
                             </div>
@@ -571,14 +601,14 @@ const Projects: React.FC = () => {
                 <CardBody className="p-0">
                   {/* 封面区域 */}
                   <div 
-                    className="h-32 bg-gradient-to-br from-[var(--bg-card)] to-[var(--bg-input)] relative overflow-hidden rounded-t-2xl"
+                    className="h-32 bg-linear-to-br from-(--bg-card) to-(--bg-input) relative overflow-hidden rounded-t-2xl"
                     onDoubleClick={() => handleEnterProject(project)}
                   >
                     {project.cover_url ? (
                       <img src={project.cover_url} alt={project.name} className="w-full h-full object-cover" />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center">
-                        <BookOpen className="w-12 h-12 text-[var(--accent)]/30" />
+                        <BookOpen className="w-12 h-12 text-(--accent)/30" />
                       </div>
                     )}
                     {/* 操作按钮 */}
@@ -586,15 +616,15 @@ const Projects: React.FC = () => {
                       <Button
                         size="sm"
                         isIconOnly
-                        className="bg-[var(--bg-elevated)] backdrop-blur-sm hover:bg-[var(--bg-card)] shadow-lg border border-[var(--border-color)] cursor-pointer"
+                        className="bg-(--bg-elevated) backdrop-blur-sm hover:bg-(--bg-card) shadow-lg border border-(--border-color) cursor-pointer"
                         onPress={() => handleEdit(project)}
                       >
-                        <Edit className="w-4 h-4 text-[var(--text-primary)]" />
+                        <Edit className="w-4 h-4 text-(--text-primary)" />
                       </Button>
                       <Button
                         size="sm"
                         isIconOnly
-                        className="bg-[var(--bg-elevated)] backdrop-blur-sm hover:bg-red-500/20 shadow-lg border border-[var(--border-color)] cursor-pointer"
+                        className="bg-(--bg-elevated) backdrop-blur-sm hover:bg-red-500/20 shadow-lg border border-(--border-color) cursor-pointer"
                         onPress={() => handleDelete(project.id)}
                       >
                         <Trash2 className="w-4 h-4 text-red-400" />
@@ -605,8 +635,8 @@ const Projects: React.FC = () => {
                   {/* 信息区域 */}
                   <div className="p-4 space-y-2">
                     <div className="flex items-start justify-between gap-2">
-                      <h3 className="text-lg font-semibold text-[var(--text-primary)] line-clamp-1">{project.name}</h3>
-                      <div className="flex items-center gap-1 flex-shrink-0">
+                      <h3 className="text-lg font-semibold text-(--text-primary) line-clamp-1">{project.name}</h3>
+                      <div className="flex items-center gap-1 shrink-0">
                         <Chip size="sm" className={getProjectTypeColor(project.type)}>
                           {getProjectTypeLabel(project.type)}
                         </Chip>
@@ -615,10 +645,10 @@ const Projects: React.FC = () => {
                         </Chip>
                       </div>
                     </div>
-                    <p className="text-sm text-[var(--text-muted)] line-clamp-2 min-h-[40px]">
+                    <p className="text-sm text-(--text-muted) line-clamp-2 min-h-10">
                       {project.description || t.projects.noDescription}
                     </p>
-                    <div className="flex items-center gap-1 text-xs text-[var(--text-muted)] pt-2 border-t border-[var(--border-color)]">
+                    <div className="flex items-center gap-1 text-xs text-(--text-muted) pt-2 border-t border-(--border-color)">
                       <Clock className="w-3 h-3" />
                       <span>{t.projects.updatedAt} {formatDate(project.updated_at)}</span>
                     </div>
@@ -636,17 +666,17 @@ const Projects: React.FC = () => {
           size="lg"
           classNames={{
             backdrop: 'bg-black/60 backdrop-blur-sm',
-            base: 'bg-[var(--bg-elevated)] border border-[var(--border-color)] shadow-2xl',
-            header: 'border-b border-[var(--border-color)]',
+            base: 'bg-(--bg-elevated) border border-(--border-color) shadow-2xl',
+            header: 'border-b border-(--border-color)',
             body: 'py-6',
-            footer: 'border-t border-[var(--border-color)]',
-            closeButton: 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/10'
+            footer: 'border-t border-(--border-color)',
+            closeButton: 'text-(--text-secondary) hover:text-(--text-primary) hover:bg-white/10'
           }}
         >
           <ModalContent>
             {(onClose) => (
               <>
-                <ModalHeader className="text-[var(--text-primary)] font-bold">
+                <ModalHeader className="text-(--text-primary) font-bold">
                   {editMode ? t.projects.editTitle : t.projects.createTitle}
                 </ModalHeader>
                 <ModalBody className="space-y-4">
@@ -656,9 +686,9 @@ const Projects: React.FC = () => {
                     value={formData.name}
                     onValueChange={(val) => setFormData({ ...formData, name: val })}
                     classNames={{
-                      input: "bg-transparent text-[var(--text-primary)] placeholder:text-[var(--text-muted)]",
-                      label: "text-[var(--text-secondary)] font-medium",
-                      inputWrapper: "bg-[var(--bg-input)] border border-[var(--border-color)] hover:border-[var(--accent)]/30 focus-within:border-[var(--accent)]/40"
+                      input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted)",
+                      label: "text-(--text-secondary) font-medium",
+                      inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 focus-within:border-(--accent)/40"
                     }}
                   />
                   
@@ -669,15 +699,15 @@ const Projects: React.FC = () => {
                     onValueChange={(val) => setFormData({ ...formData, description: val })}
                     minRows={3}
                     classNames={{
-                      input: "bg-transparent text-[var(--text-primary)] placeholder:text-[var(--text-muted)]",
-                      label: "text-[var(--text-secondary)] font-medium",
-                      inputWrapper: "bg-[var(--bg-input)] border border-[var(--border-color)] hover:border-[var(--accent)]/30 focus-within:border-[var(--accent)]/40"
+                      input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted)",
+                      label: "text-(--text-secondary) font-medium",
+                      inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 focus-within:border-(--accent)/40"
                     }}
                   />
 
                   {/* AI 智能推荐按钮 */}
                   <Button
-                    className="w-full bg-gradient-to-r from-violet-500/20 to-purple-500/20 border border-violet-500/30 text-violet-300 font-medium hover:from-violet-500/30 hover:to-purple-500/30 transition-all cursor-pointer"
+                    className="w-full bg-linear-to-r from-violet-500/20 to-purple-500/20 border border-violet-500/30 text-violet-300 font-medium hover:from-violet-500/30 hover:to-purple-500/30 transition-all cursor-pointer"
                     startContent={aiSuggesting ? <Spinner size="sm" color="secondary" /> : <Sparkles className="w-4 h-4" />}
                     onPress={handleAiSuggest}
                     isDisabled={aiSuggesting}
@@ -688,11 +718,11 @@ const Projects: React.FC = () => {
                   {/* 团队选择器 */}
                   {!editMode && userTeams.length > 0 && (
                     <div>
-                      <label className="text-sm text-[var(--text-secondary)] font-medium mb-2 block">所属团队</label>
+                      <label className="text-sm text-(--text-secondary) font-medium mb-2 block">所属团队</label>
                       <select
                         value={selectedTeamId}
                         onChange={(e) => setSelectedTeamId(e.target.value ? Number(e.target.value) : '')}
-                        className="w-full px-3 py-2 rounded-lg bg-[var(--bg-input)] border border-[var(--border-color)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]/40"
+                        className="w-full px-3 py-2 rounded-lg bg-(--bg-input) border border-(--border-color) text-(--text-primary) focus:outline-none focus:border-(--accent)/40"
                       >
                         <option value="">个人项目</option>
                         {userTeams.map(team => (
@@ -706,7 +736,7 @@ const Projects: React.FC = () => {
 
                   {/* 工程状态 */}
                   <div>
-                    <label className="text-sm text-[var(--text-secondary)] font-medium mb-2 block">{t.projects.statusLabel}</label>
+                    <label className="text-sm text-(--text-secondary) font-medium mb-2 block">{t.projects.statusLabel}</label>
                     <div className="flex gap-2">
                       {(['draft', 'in_progress', 'completed'] as const).map((status) => (
                         <button
@@ -715,7 +745,7 @@ const Projects: React.FC = () => {
                           className={`px-4 py-2 rounded-lg border transition-all cursor-pointer ${
                             formData.status === status
                               ? getStatusColor(status)
-                              : 'border-[var(--border-color)] bg-[var(--bg-input)] text-[var(--text-muted)] hover:border-[var(--border-color)]'
+                              : 'border-(--border-color) bg-(--bg-input) text-(--text-muted) hover:border-(--border-color)'
                           }`}
                         >
                           {getStatusText(status)}
@@ -732,14 +762,14 @@ const Projects: React.FC = () => {
                         value={formData.cover_url}
                         onValueChange={(val) => setFormData({ ...formData, cover_url: val })}
                         classNames={{
-                          input: "bg-transparent text-[var(--text-primary)] placeholder:text-[var(--text-muted)]",
-                          label: "text-[var(--text-secondary)] font-medium",
-                          inputWrapper: "bg-[var(--bg-input)] border border-[var(--border-color)] hover:border-[var(--accent)]/30 focus-within:border-[var(--accent)]/40"
+                          input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted)",
+                          label: "text-(--text-secondary) font-medium",
+                          inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 focus-within:border-(--accent)/40"
                         }}
                       />
                     </div>
                     <Button
-                      className="min-w-[130px] bg-gradient-to-r from-violet-500/20 to-pink-500/20 border border-violet-500/30 text-violet-300 font-medium hover:from-violet-500/30 hover:to-pink-500/30 transition-all cursor-pointer"
+                      className="min-w-32.5 bg-linear-to-r from-violet-500/20 to-pink-500/20 border border-violet-500/30 text-violet-300 font-medium hover:from-violet-500/30 hover:to-pink-500/30 transition-all cursor-pointer"
                       startContent={coverGenerating ? <Spinner size="sm" color="secondary" /> : <ImagePlus className="w-4 h-4" />}
                       onPress={handleGenerateCover}
                       isDisabled={coverGenerating}
@@ -749,7 +779,7 @@ const Projects: React.FC = () => {
                     </Button>
                   </div>
                   {formData.cover_url && (
-                    <div className="rounded-lg overflow-hidden border border-[var(--border-color)] bg-[var(--bg-input)]">
+                    <div className="rounded-lg overflow-hidden border border-(--border-color) bg-(--bg-input)">
                       <img
                         src={formData.cover_url}
                         alt="cover preview"
@@ -762,10 +792,10 @@ const Projects: React.FC = () => {
                   {/* 视觉风格选择 - 小说类型不需要 */}
                   {editProjectType !== 'novel' && (
                   <div>
-                    <label className="text-sm text-[var(--text-secondary)] font-medium mb-2 flex items-center gap-1.5">
-                      <Palette className="w-4 h-4 text-[var(--accent)]" />
+                    <label className="text-sm text-(--text-secondary) font-medium mb-2 flex items-center gap-1.5">
+                      <Palette className="w-4 h-4 text-(--accent)" />
                       {t.projects.visualStyleLabel}
-                      <span className="text-xs text-[var(--text-muted)] font-normal">{t.projects.visualStyleHint}</span>
+                      <span className="text-xs text-(--text-muted) font-normal">{t.projects.visualStyleHint}</span>
                     </label>
                     <div className="grid grid-cols-4 gap-2 mt-2">
                       {Object.entries(VISUAL_STYLE_PRESETS).map(([styleKey, { labelKey }]) => (
@@ -774,8 +804,8 @@ const Projects: React.FC = () => {
                           onClick={() => handleSelectVisualStyle(styleKey)}
                           className={`px-3 py-2 rounded-lg border text-xs font-medium transition-all cursor-pointer ${
                             formData.visualStyle === styleKey
-                              ? 'bg-[var(--accent)]/15 border-[var(--accent)]/40 text-[var(--accent)] shadow-[0_0_10px_var(--accent-glow)]'
-                              : 'border-[var(--border-color)] bg-[var(--bg-input)] text-[var(--text-muted)] hover:border-[var(--accent)]/30 hover:bg-[var(--accent)]/5'
+                              ? 'bg-(--accent)/15 border-(--accent)/40 text-(--accent) shadow-[0_0_10px_var(--accent-glow)]'
+                              : 'border-(--border-color) bg-(--bg-input) text-(--text-muted) hover:border-(--accent)/30 hover:bg-(--accent)/5'
                           }`}
                         >
                           {t.projects.presets[labelKey]}
@@ -783,19 +813,20 @@ const Projects: React.FC = () => {
                       ))}
                     </div>
                     {formData.visualStyle && (
-                      <p className="text-xs text-[var(--text-muted)] mt-1.5 truncate" title={formData.visualStylePrompt}>
+                      <p className="text-xs text-(--text-muted) mt-1.5 truncate" title={formData.visualStylePrompt}>
                         Prompt: {formData.visualStylePrompt}
                       </p>
                     )}
                     <Input
+                      id="visual-style-custom-input"
                       size="sm"
                       placeholder={t.projects.visualStylePromptPlaceholder}
                       value={formData.visualStylePrompt}
                       onValueChange={(val) => setFormData({ ...formData, visualStylePrompt: val })}
                       className="mt-2"
                       classNames={{
-                        input: "bg-transparent text-[var(--text-primary)] placeholder:text-[var(--text-muted)] text-xs",
-                        inputWrapper: "bg-[var(--bg-input)] border border-[var(--border-color)] hover:border-[var(--accent)]/30 h-8 min-h-8"
+                        input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted) text-xs",
+                        inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 h-8 min-h-8"
                       }}
                     />
                   </div>
@@ -811,9 +842,9 @@ const Projects: React.FC = () => {
                       value={formData.storyStyle}
                       onValueChange={(val) => setFormData({ ...formData, storyStyle: val })}
                       classNames={{
-                        input: "bg-transparent text-[var(--text-primary)] placeholder:text-[var(--text-muted)]",
-                        label: "text-[var(--text-secondary)] font-medium",
-                        inputWrapper: "bg-[var(--bg-input)] border border-[var(--border-color)] hover:border-[var(--accent)]/30 focus-within:border-[var(--accent)]/40"
+                        input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted)",
+                        label: "text-(--text-secondary) font-medium",
+                        inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 focus-within:border-(--accent)/40"
                       }}
                     />
                     <Input
@@ -822,18 +853,18 @@ const Projects: React.FC = () => {
                       value={formData.storyConstraints}
                       onValueChange={(val) => setFormData({ ...formData, storyConstraints: val })}
                       classNames={{
-                        input: "bg-transparent text-[var(--text-primary)] placeholder:text-[var(--text-muted)]",
-                        label: "text-[var(--text-secondary)] font-medium",
-                        inputWrapper: "bg-[var(--bg-input)] border border-[var(--border-color)] hover:border-[var(--accent)]/30 focus-within:border-[var(--accent)]/40"
+                        input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted)",
+                        label: "text-(--text-secondary) font-medium",
+                        inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 focus-within:border-(--accent)/40"
                       }}
                     />
                   </div>
 
                   {/* 画面参数设置 */}
-                  <div className="space-y-3 p-3 rounded-lg border border-[var(--border-color)] bg-[var(--bg-input)]/50">
-                    <p className="text-sm font-medium text-[var(--text-secondary)]">画面参数（项目级锁定，分镜制作中不可更改）</p>
+                  <div className="space-y-3 p-3 rounded-lg border border-(--border-color) bg-(--bg-input)/50">
+                    <p className="text-sm font-medium text-(--text-secondary)">画面参数（项目级锁定，分镜制作中不可更改）</p>
                     <div>
-                      <label className="text-xs text-[var(--text-muted)] mb-1.5 block">图片画面比例</label>
+                      <label className="text-xs text-(--text-muted) mb-1.5 block">图片画面比例</label>
                       <div className="flex flex-wrap gap-1.5">
                         {['1:1', '16:9', '9:16', '4:3', '3:4', '21:9'].map((ratio) => (
                           <button
@@ -841,8 +872,8 @@ const Projects: React.FC = () => {
                             onClick={() => setFormData({ ...formData, imageAspectRatio: formData.imageAspectRatio === ratio ? '' : ratio })}
                             className={`px-3 py-1 rounded-md border text-xs transition-all cursor-pointer ${
                               formData.imageAspectRatio === ratio
-                                ? 'bg-[var(--accent)]/15 border-[var(--accent)]/40 text-[var(--accent)] shadow-[0_0_8px_var(--accent-glow)]'
-                                : 'border-[var(--border-color)] bg-[var(--bg-input)] text-[var(--text-muted)] hover:border-[var(--accent)]/30'
+                                ? 'bg-(--accent)/15 border-(--accent)/40 text-(--accent) shadow-[0_0_8px_var(--accent-glow)]'
+                                : 'border-(--border-color) bg-(--bg-input) text-(--text-muted) hover:border-(--accent)/30'
                             }`}
                           >
                             {ratio}
@@ -851,7 +882,7 @@ const Projects: React.FC = () => {
                       </div>
                     </div>
                     <div>
-                      <label className="text-xs text-[var(--text-muted)] mb-1.5 block">图片分辨率</label>
+                      <label className="text-xs text-(--text-muted) mb-1.5 block">图片分辨率</label>
                       <div className="flex flex-wrap gap-1.5">
                         {['720p', '1080p', '2K', '4K'].map((res) => (
                           <button
@@ -859,8 +890,8 @@ const Projects: React.FC = () => {
                             onClick={() => setFormData({ ...formData, imageResolution: formData.imageResolution === res ? '' : res })}
                             className={`px-3 py-1 rounded-md border text-xs transition-all cursor-pointer ${
                               formData.imageResolution === res
-                                ? 'bg-[var(--accent)]/15 border-[var(--accent)]/40 text-[var(--accent)] shadow-[0_0_8px_var(--accent-glow)]'
-                                : 'border-[var(--border-color)] bg-[var(--bg-input)] text-[var(--text-muted)] hover:border-[var(--accent)]/30'
+                                ? 'bg-(--accent)/15 border-(--accent)/40 text-(--accent) shadow-[0_0_8px_var(--accent-glow)]'
+                                : 'border-(--border-color) bg-(--bg-input) text-(--text-muted) hover:border-(--accent)/30'
                             }`}
                           >
                             {res}
@@ -869,7 +900,7 @@ const Projects: React.FC = () => {
                       </div>
                     </div>
                     <div>
-                      <label className="text-xs text-[var(--text-muted)] mb-1.5 block">视频画面比例</label>
+                      <label className="text-xs text-(--text-muted) mb-1.5 block">视频画面比例</label>
                       <div className="flex flex-wrap gap-1.5">
                         {['16:9', '9:16', '1:1'].map((ratio) => (
                           <button
@@ -877,8 +908,8 @@ const Projects: React.FC = () => {
                             onClick={() => setFormData({ ...formData, videoAspectRatio: formData.videoAspectRatio === ratio ? '' : ratio })}
                             className={`px-3 py-1 rounded-md border text-xs transition-all cursor-pointer ${
                               formData.videoAspectRatio === ratio
-                                ? 'bg-[var(--accent)]/15 border-[var(--accent)]/40 text-[var(--accent)] shadow-[0_0_8px_var(--accent-glow)]'
-                                : 'border-[var(--border-color)] bg-[var(--bg-input)] text-[var(--text-muted)] hover:border-[var(--accent)]/30'
+                                ? 'bg-(--accent)/15 border-(--accent)/40 text-(--accent) shadow-[0_0_8px_var(--accent-glow)]'
+                                : 'border-(--border-color) bg-(--bg-input) text-(--text-muted) hover:border-(--accent)/30'
                             }`}
                           >
                             {ratio}
@@ -887,7 +918,7 @@ const Projects: React.FC = () => {
                       </div>
                     </div>
                     <div>
-                      <label className="text-xs text-[var(--text-muted)] mb-1.5 block">视频分辨率</label>
+                      <label className="text-xs text-(--text-muted) mb-1.5 block">视频分辨率</label>
                       <div className="flex flex-wrap gap-1.5">
                         {['480p', '720p', '1080p'].map((res) => (
                           <button
@@ -895,8 +926,8 @@ const Projects: React.FC = () => {
                             onClick={() => setFormData({ ...formData, videoResolution: formData.videoResolution === res ? '' : res })}
                             className={`px-3 py-1 rounded-md border text-xs transition-all cursor-pointer ${
                               formData.videoResolution === res
-                                ? 'bg-[var(--accent)]/15 border-[var(--accent)]/40 text-[var(--accent)] shadow-[0_0_8px_var(--accent-glow)]'
-                                : 'border-[var(--border-color)] bg-[var(--bg-input)] text-[var(--text-muted)] hover:border-[var(--accent)]/30'
+                                ? 'bg-(--accent)/15 border-(--accent)/40 text-(--accent) shadow-[0_0_8px_var(--accent-glow)]'
+                                : 'border-(--border-color) bg-(--bg-input) text-(--text-muted) hover:border-(--accent)/30'
                             }`}
                           >
                             {res}
@@ -912,7 +943,7 @@ const Projects: React.FC = () => {
                   {(editProjectType === 'manga') && (
                   <>
                     <div>
-                      <label className="text-sm text-[var(--text-secondary)] font-medium mb-2 block">{t.projects.mangaLayoutLabel}</label>
+                      <label className="text-sm text-(--text-secondary) font-medium mb-2 block">{t.projects.mangaLayoutLabel}</label>
                       <div className="flex gap-2">
                         {([['page', t.projects.mangaLayoutPage], ['strip', t.projects.mangaLayoutStrip], ['free', t.projects.mangaLayoutFree]] as const).map(([key, label]) => (
                           <button
@@ -920,8 +951,8 @@ const Projects: React.FC = () => {
                             onClick={() => setFormData({ ...formData, mangaLayout: formData.mangaLayout === key ? '' : key as any })}
                             className={`px-4 py-2 rounded-lg border transition-all cursor-pointer ${
                               formData.mangaLayout === key
-                                ? 'bg-[var(--accent)]/15 border-[var(--accent)]/40 text-[var(--accent)] shadow-[0_0_10px_var(--accent-glow)]'
-                                : 'border-[var(--border-color)] bg-[var(--bg-input)] text-[var(--text-muted)] hover:border-[var(--accent)]/30'
+                                ? 'bg-(--accent)/15 border-(--accent)/40 text-(--accent) shadow-[0_0_10px_var(--accent-glow)]'
+                                : 'border-(--border-color) bg-(--bg-input) text-(--text-muted) hover:border-(--accent)/30'
                             }`}
                           >
                             {label}
@@ -936,9 +967,9 @@ const Projects: React.FC = () => {
                         value={formData.mangaPanelStyle}
                         onValueChange={(val) => setFormData({ ...formData, mangaPanelStyle: val })}
                         classNames={{
-                          input: "bg-transparent text-[var(--text-primary)] placeholder:text-[var(--text-muted)]",
-                          label: "text-[var(--text-secondary)] font-medium",
-                          inputWrapper: "bg-[var(--bg-input)] border border-[var(--border-color)] hover:border-[var(--accent)]/30 focus-within:border-[var(--accent)]/40"
+                          input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted)",
+                          label: "text-(--text-secondary) font-medium",
+                          inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 focus-within:border-(--accent)/40"
                         }}
                       />
                       <Input
@@ -947,9 +978,9 @@ const Projects: React.FC = () => {
                         value={formData.storyStyle}
                         onValueChange={(val) => setFormData({ ...formData, storyStyle: val })}
                         classNames={{
-                          input: "bg-transparent text-[var(--text-primary)] placeholder:text-[var(--text-muted)]",
-                          label: "text-[var(--text-secondary)] font-medium",
-                          inputWrapper: "bg-[var(--bg-input)] border border-[var(--border-color)] hover:border-[var(--accent)]/30 focus-within:border-[var(--accent)]/40"
+                          input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted)",
+                          label: "text-(--text-secondary) font-medium",
+                          inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 focus-within:border-(--accent)/40"
                         }}
                       />
                     </div>
@@ -960,7 +991,7 @@ const Projects: React.FC = () => {
                   {(editProjectType === 'short_video') && (
                   <>
                     <div>
-                      <label className="text-sm text-[var(--text-secondary)] font-medium mb-2 block">{t.projects.videoDurationLabel}</label>
+                      <label className="text-sm text-(--text-secondary) font-medium mb-2 block">{t.projects.videoDurationLabel}</label>
                       <div className="flex gap-2">
                         {([['15', t.projects.videoDuration15], ['30', t.projects.videoDuration30], ['60', t.projects.videoDuration60], ['180', t.projects.videoDuration180]] as const).map(([key, label]) => (
                           <button
@@ -968,8 +999,8 @@ const Projects: React.FC = () => {
                             onClick={() => setFormData({ ...formData, videoDuration: formData.videoDuration === key ? '' : key as any })}
                             className={`px-4 py-2 rounded-lg border transition-all cursor-pointer ${
                               formData.videoDuration === key
-                                ? 'bg-[var(--accent)]/15 border-[var(--accent)]/40 text-[var(--accent)] shadow-[0_0_10px_var(--accent-glow)]'
-                                : 'border-[var(--border-color)] bg-[var(--bg-input)] text-[var(--text-muted)] hover:border-[var(--accent)]/30'
+                                ? 'bg-(--accent)/15 border-(--accent)/40 text-(--accent) shadow-[0_0_10px_var(--accent-glow)]'
+                                : 'border-(--border-color) bg-(--bg-input) text-(--text-muted) hover:border-(--accent)/30'
                             }`}
                           >
                             {label}
@@ -978,7 +1009,7 @@ const Projects: React.FC = () => {
                       </div>
                     </div>
                     <div>
-                      <label className="text-sm text-[var(--text-secondary)] font-medium mb-2 block">{t.projects.videoAspectLabel}</label>
+                      <label className="text-sm text-(--text-secondary) font-medium mb-2 block">{t.projects.videoAspectLabel}</label>
                       <div className="flex gap-2">
                         {([['9:16', t.projects.videoAspect916], ['16:9', t.projects.videoAspect169], ['1:1', t.projects.videoAspect11]] as const).map(([key, label]) => (
                           <button
@@ -986,8 +1017,8 @@ const Projects: React.FC = () => {
                             onClick={() => setFormData({ ...formData, videoAspect: formData.videoAspect === key ? '' : key as any })}
                             className={`px-4 py-2 rounded-lg border transition-all cursor-pointer ${
                               formData.videoAspect === key
-                                ? 'bg-[var(--accent)]/15 border-[var(--accent)]/40 text-[var(--accent)] shadow-[0_0_10px_var(--accent-glow)]'
-                                : 'border-[var(--border-color)] bg-[var(--bg-input)] text-[var(--text-muted)] hover:border-[var(--accent)]/30'
+                                ? 'bg-(--accent)/15 border-(--accent)/40 text-(--accent) shadow-[0_0_10px_var(--accent-glow)]'
+                                : 'border-(--border-color) bg-(--bg-input) text-(--text-muted) hover:border-(--accent)/30'
                             }`}
                           >
                             {label}
@@ -1002,9 +1033,9 @@ const Projects: React.FC = () => {
                         value={formData.videoStyle}
                         onValueChange={(val) => setFormData({ ...formData, videoStyle: val })}
                         classNames={{
-                          input: "bg-transparent text-[var(--text-primary)] placeholder:text-[var(--text-muted)]",
-                          label: "text-[var(--text-secondary)] font-medium",
-                          inputWrapper: "bg-[var(--bg-input)] border border-[var(--border-color)] hover:border-[var(--accent)]/30 focus-within:border-[var(--accent)]/40"
+                          input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted)",
+                          label: "text-(--text-secondary) font-medium",
+                          inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 focus-within:border-(--accent)/40"
                         }}
                       />
                       <Input
@@ -1013,9 +1044,9 @@ const Projects: React.FC = () => {
                         value={formData.storyStyle}
                         onValueChange={(val) => setFormData({ ...formData, storyStyle: val })}
                         classNames={{
-                          input: "bg-transparent text-[var(--text-primary)] placeholder:text-[var(--text-muted)]",
-                          label: "text-[var(--text-secondary)] font-medium",
-                          inputWrapper: "bg-[var(--bg-input)] border border-[var(--border-color)] hover:border-[var(--accent)]/30 focus-within:border-[var(--accent)]/40"
+                          input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted)",
+                          label: "text-(--text-secondary) font-medium",
+                          inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 focus-within:border-(--accent)/40"
                         }}
                       />
                     </div>
@@ -1032,9 +1063,9 @@ const Projects: React.FC = () => {
                         value={formData.novelGenre}
                         onValueChange={(val) => setFormData({ ...formData, novelGenre: val })}
                         classNames={{
-                          input: "bg-transparent text-[var(--text-primary)] placeholder:text-[var(--text-muted)]",
-                          label: "text-[var(--text-secondary)] font-medium",
-                          inputWrapper: "bg-[var(--bg-input)] border border-[var(--border-color)] hover:border-[var(--accent)]/30 focus-within:border-[var(--accent)]/40"
+                          input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted)",
+                          label: "text-(--text-secondary) font-medium",
+                          inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 focus-within:border-(--accent)/40"
                         }}
                       />
                       <Input
@@ -1043,9 +1074,9 @@ const Projects: React.FC = () => {
                         value={formData.novelWritingStyle}
                         onValueChange={(val) => setFormData({ ...formData, novelWritingStyle: val })}
                         classNames={{
-                          input: "bg-transparent text-[var(--text-primary)] placeholder:text-[var(--text-muted)]",
-                          label: "text-[var(--text-secondary)] font-medium",
-                          inputWrapper: "bg-[var(--bg-input)] border border-[var(--border-color)] hover:border-[var(--accent)]/30 focus-within:border-[var(--accent)]/40"
+                          input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted)",
+                          label: "text-(--text-secondary) font-medium",
+                          inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 focus-within:border-(--accent)/40"
                         }}
                       />
                     </div>
@@ -1056,9 +1087,9 @@ const Projects: React.FC = () => {
                         value={formData.novelChapterLength}
                         onValueChange={(val) => setFormData({ ...formData, novelChapterLength: val })}
                         classNames={{
-                          input: "bg-transparent text-[var(--text-primary)] placeholder:text-[var(--text-muted)]",
-                          label: "text-[var(--text-secondary)] font-medium",
-                          inputWrapper: "bg-[var(--bg-input)] border border-[var(--border-color)] hover:border-[var(--accent)]/30 focus-within:border-[var(--accent)]/40"
+                          input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted)",
+                          label: "text-(--text-secondary) font-medium",
+                          inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 focus-within:border-(--accent)/40"
                         }}
                       />
                       <Input
@@ -1067,9 +1098,9 @@ const Projects: React.FC = () => {
                         value={formData.novelTarget}
                         onValueChange={(val) => setFormData({ ...formData, novelTarget: val })}
                         classNames={{
-                          input: "bg-transparent text-[var(--text-primary)] placeholder:text-[var(--text-muted)]",
-                          label: "text-[var(--text-secondary)] font-medium",
-                          inputWrapper: "bg-[var(--bg-input)] border border-[var(--border-color)] hover:border-[var(--accent)]/30 focus-within:border-[var(--accent)]/40"
+                          input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted)",
+                          label: "text-(--text-secondary) font-medium",
+                          inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 focus-within:border-(--accent)/40"
                         }}
                       />
                     </div>
@@ -1077,7 +1108,7 @@ const Projects: React.FC = () => {
                   )}
                 </ModalBody>
                 <ModalFooter className="gap-2">
-                  <Button variant="flat" onPress={onClose} className="bg-white/5 text-[var(--text-secondary)] font-semibold hover:bg-white/10 border border-white/10 cursor-pointer">
+                  <Button variant="flat" onPress={onClose} className="bg-white/5 text-(--text-secondary) font-semibold hover:bg-white/10 border border-white/10 cursor-pointer">
                     {t.common.cancel}
                   </Button>
                   <Button className="pro-btn-primary" onPress={handleSave}>

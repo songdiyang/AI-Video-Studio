@@ -2,18 +2,24 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Button, Input, Textarea, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure, Card, CardBody, Select, SelectItem, Tooltip } from '@heroui/react';
 import { Plus, Edit2, Trash2, ChevronDown, ChevronRight, Image as ImageIcon, Star, Copy, RefreshCw, Shirt, Calendar, Scissors } from 'lucide-react';
 import {
+  Character,
   CharacterState,
+  fetchCharacter,
   fetchCharacterStates,
   createCharacterState,
   updateCharacterState,
   deleteCharacterState,
   activateCharacterState,
   duplicateCharacterState,
+  generateCharacterStateViews,
   AGE_STAGES
 } from '../../../services/assets';
 import ReferenceImageManager from './ReferenceImageManager';
 import { useToast } from '../../../contexts/ToastContext';
 import { useConfirm } from '../../../contexts/ConfirmContext';
+import { useAIModels } from '../../../hooks/useAIModels';
+import AIModelSelector from '../../../components/AIModelSelector';
+import { getAuthToken } from '../../../services/auth';
 
 interface CharacterStateEditorProps {
   characterId: number | null;
@@ -27,10 +33,29 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
   onStateActivated
 }) => {
   const [states, setStates] = useState<CharacterState[]>([]);
+  const [character, setCharacter] = useState<Character | null>(null);
   const [loading, setLoading] = useState(false);
   const [expandedStates, setExpandedStates] = useState<Set<number>>(new Set());
   const [activatingId, setActivatingId] = useState<number | null>(null);
   const [duplicatingId, setDuplicatingId] = useState<number | null>(null);
+  const [generatingId, setGeneratingId] = useState<number | null>(null);
+  
+  // 使用AI模型hook
+  const { models, selected, setSelected } = useAIModels(null);
+  
+  // AI生成对话框状态
+  const [isGenerateModalOpen, setIsGenerateModalOpen] = useState(false);
+  const [generatingState, setGeneratingState] = useState<CharacterState | null>(null);
+  const [naturalLanguageInput, setNaturalLanguageInput] = useState('');
+  const [analyzing, setAnalyzing] = useState(false);
+  const [generatedTags, setGeneratedTags] = useState<{
+    name: string;
+    age_stage: string;
+    outfit: string;
+    hairstyle: string;
+    accessories: string;
+    appearance: string;
+  } | null>(null);
   
   // 编辑状态表单
   const [editingState, setEditingState] = useState<CharacterState | null>(null);
@@ -54,15 +79,19 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
   const { confirm } = useConfirm();
   const { isOpen, onOpen, onOpenChange } = useDisclosure();
 
-  // 加载状态列表
+  // 加载角色详情和状态列表
   const loadStates = useCallback(async () => {
     if (!characterId) return;
     setLoading(true);
     try {
-      const data = await fetchCharacterStates(characterId);
-      setStates(data);
+      const [characterData, statesData] = await Promise.all([
+        fetchCharacter(characterId),
+        fetchCharacterStates(characterId)
+      ]);
+      setCharacter(characterData);
+      setStates(statesData);
     } catch (error: any) {
-      console.error('加载角色状态失败:', error);
+      console.error('加载角色数据失败:', error);
     } finally {
       setLoading(false);
     }
@@ -199,6 +228,153 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
     }
   };
 
+  // 打开AI生成对话框
+  const openGenerateModal = (state: CharacterState) => {
+    setGeneratingState(state);
+    setNaturalLanguageInput('');
+    setGeneratedTags(null);
+    setIsGenerateModalOpen(true);
+  };
+
+  // AI分析自然语言描述
+  const analyzeDescription = async () => {
+    if (!naturalLanguageInput.trim()) {
+      showToast('请输入状态描述', 'error');
+      return;
+    }
+    if (!selected.text) {
+      showToast('请先选择文本分析模型', 'error');
+      return;
+    }
+
+    setAnalyzing(true);
+    try {
+      const token = getAuthToken();
+      const response = await fetch('/api/ai/analyze-character-state', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({
+          description: naturalLanguageInput,
+          characterName: character?.name,
+          characterAppearance: character?.appearance,
+          textModel: selected.text
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('分析失败');
+      }
+
+      const data = await response.json();
+      setGeneratedTags(data.tags);
+      showToast('分析完成', 'success');
+    } catch (error: any) {
+      showToast(error.message || '分析失败', 'error');
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  // 确认生成图片
+  const confirmGenerate = async () => {
+    if (!generatingState || !selected.image) {
+      showToast('请选择图像生成模型', 'error');
+      return;
+    }
+
+    setGeneratingId(generatingState.id);
+    setIsGenerateModalOpen(false);
+    
+    try {
+      // 先更新状态标签
+      if (generatedTags) {
+        await updateCharacterState(characterId!, generatingState.id, {
+          name: generatedTags.name || generatingState.name,
+          age_stage: generatedTags.age_stage,
+          outfit: generatedTags.outfit,
+          hairstyle: generatedTags.hairstyle,
+          accessories: generatedTags.accessories,
+          appearance: generatedTags.appearance
+        });
+      }
+
+      // 启动图片生成
+      await generateCharacterStateViews(characterId!, generatingState.id, {
+        imageModel: selected.image,
+        textModel: selected.text || undefined,
+        referenceImage: character?.image_url || character?.front_view_url
+      });
+      
+      showToast('三视图生成任务已启动', 'success');
+      await loadStates();
+      pollGenerationStatus(generatingState.id);
+    } catch (error: any) {
+      showToast(error.message || '生成失败', 'error');
+      setGeneratingId(null);
+    }
+  };
+
+  // 原有的AI生成函数（保留用于直接生成）
+  const handleGenerateViews = async (state: CharacterState) => {
+    if (!selected.image) {
+      showToast('请先选择图像生成模型', 'error');
+      return;
+    }
+    
+    setGeneratingId(state.id);
+    try {
+      await generateCharacterStateViews(characterId!, state.id, {
+        imageModel: selected.image,
+        textModel: selected.text || undefined
+      });
+      showToast('三视图生成任务已启动', 'success');
+      pollGenerationStatus(state.id);
+    } catch (error: any) {
+      showToast(error.message || '生成失败', 'error');
+      setGeneratingId(null);
+    }
+  };
+
+  // 轮询生成状态
+  const pollGenerationStatus = async (stateId: number) => {
+    const maxAttempts = 60; // 最多轮询60次（约5分钟）
+    let attempts = 0;
+    
+    const checkStatus = async () => {
+      try {
+        const states = await fetchCharacterStates(characterId!);
+        const state = states.find(s => s.id === stateId);
+        
+        if (state?.generation_status === 'completed') {
+          setStates(states);
+          setGeneratingId(null);
+          showToast('三视图生成完成', 'success');
+          return;
+        } else if (state?.generation_status === 'failed') {
+          setGeneratingId(null);
+          showToast('三视图生成失败', 'error');
+          return;
+        }
+        
+        attempts++;
+        if (attempts < maxAttempts) {
+          setTimeout(checkStatus, 5000); // 每5秒检查一次
+        } else {
+          setGeneratingId(null);
+          showToast('生成超时，请稍后刷新查看', 'warning');
+        }
+      } catch (error) {
+        setGeneratingId(null);
+        console.error('轮询生成状态失败:', error);
+      }
+    };
+    
+    checkStatus();
+  };
+
   if (!characterId) {
     return (
       <div className="text-center py-8 text-slate-500">
@@ -314,7 +490,7 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                       </div>
                       <div className="flex items-center gap-2 text-xs text-slate-500">
                         {state.age_stage && <span>{state.age_stage}</span>}
-                        {state.outfit && <span className="truncate max-w-[100px]">{state.outfit}</span>}
+                        {state.outfit && <span className="truncate max-w-25">{state.outfit}</span>}
                         {!state.age_stage && !state.outfit && state.description && (
                           <span className="truncate">{state.description}</span>
                         )}
@@ -434,32 +610,60 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                       )}
                       
                       {/* 三视图 */}
-                      {hasViews && (
-                        <div className="grid grid-cols-3 gap-2">
-                          {state.front_view_url && (
-                            <div className="space-y-1">
-                              <p className="text-xs text-slate-500 text-center">正面</p>
-                              <div className="aspect-square bg-slate-800/60 rounded-lg overflow-hidden border border-slate-700/50">
-                                <img src={state.front_view_url} alt="正面" className="w-full h-full object-cover" />
+                      {(hasViews || state.generation_status === 'generating') && (
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <h5 className="text-xs font-medium text-slate-400">三视图</h5>
+                            {state.generation_status === 'generating' && (
+                              <span className="text-xs text-amber-400 flex items-center gap-1">
+                                <RefreshCw className="w-3 h-3 animate-spin" />
+                                生成中...
+                              </span>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-3 gap-2">
+                            {state.front_view_url && (
+                              <div className="space-y-1">
+                                <p className="text-xs text-slate-500 text-center">正面</p>
+                                <div className="aspect-square bg-slate-800/60 rounded-lg overflow-hidden border border-slate-700/50">
+                                  <img src={state.front_view_url} alt="正面" className="w-full h-full object-cover" />
+                                </div>
                               </div>
-                            </div>
-                          )}
-                          {state.side_view_url && (
-                            <div className="space-y-1">
-                              <p className="text-xs text-slate-500 text-center">侧面</p>
-                              <div className="aspect-square bg-slate-800/60 rounded-lg overflow-hidden border border-slate-700/50">
-                                <img src={state.side_view_url} alt="侧面" className="w-full h-full object-cover" />
+                            )}
+                            {state.side_view_url && (
+                              <div className="space-y-1">
+                                <p className="text-xs text-slate-500 text-center">侧面</p>
+                                <div className="aspect-square bg-slate-800/60 rounded-lg overflow-hidden border border-slate-700/50">
+                                  <img src={state.side_view_url} alt="侧面" className="w-full h-full object-cover" />
+                                </div>
                               </div>
-                            </div>
-                          )}
-                          {state.back_view_url && (
-                            <div className="space-y-1">
-                              <p className="text-xs text-slate-500 text-center">背面</p>
-                              <div className="aspect-square bg-slate-800/60 rounded-lg overflow-hidden border border-slate-700/50">
-                                <img src={state.back_view_url} alt="背面" className="w-full h-full object-cover" />
+                            )}
+                            {state.back_view_url && (
+                              <div className="space-y-1">
+                                <p className="text-xs text-slate-500 text-center">背面</p>
+                                <div className="aspect-square bg-slate-800/60 rounded-lg overflow-hidden border border-slate-700/50">
+                                  <img src={state.back_view_url} alt="背面" className="w-full h-full object-cover" />
+                                </div>
                               </div>
-                            </div>
-                          )}
+                            )}
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* AI生成三视图按钮 */}
+                      {!disabled && state.generation_status !== 'generating' && (
+                        <div className="space-y-2">
+                          <Button
+                            size="sm"
+                            color="primary"
+                            variant="flat"
+                            className="w-full bg-linear-to-r from-purple-500/20 to-pink-500/20 text-purple-300 border border-purple-500/30"
+                            startContent={<RefreshCw className="w-4 h-4" />}
+                            onPress={() => openGenerateModal(state)}
+                            isLoading={generatingId === state.id}
+                          >
+                            {hasViews ? '重新生成三视图' : 'AI生成三视图'}
+                          </Button>
                         </div>
                       )}
                       
@@ -693,10 +897,170 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                   取消
                 </Button>
                 <Button
-                  className="bg-gradient-to-r from-blue-500 to-violet-600 text-white font-semibold"
+                  className="bg-linear-to-r from-blue-500 to-violet-600 text-white font-semibold"
                   onPress={handleSave}
                 >
                   保存
+                </Button>
+              </ModalFooter>
+            </>
+          )}
+        </ModalContent>
+      </Modal>
+
+      {/* AI生成对话框 */}
+      <Modal
+        isOpen={isGenerateModalOpen}
+        onOpenChange={() => setIsGenerateModalOpen(false)}
+        size="2xl"
+        scrollBehavior="inside"
+        classNames={{
+          base: "bg-slate-900/95 backdrop-blur-xl border border-slate-700/50",
+          header: "border-b border-slate-700/50",
+          body: "py-4"
+        }}
+      >
+        <ModalContent>
+          {(onClose) => (
+            <>
+              <ModalHeader className="text-slate-100">
+                <div className="flex items-center gap-2">
+                  <RefreshCw className="w-5 h-5 text-purple-400" />
+                  AI生成角色状态图片
+                </div>
+              </ModalHeader>
+              <ModalBody className="space-y-4">
+                {/* 角色参考图 */}
+                {character && (character.image_url || character.front_view_url) && (
+                  <div className="flex items-center gap-3 p-3 bg-slate-800/50 rounded-lg border border-slate-700/50">
+                    <img
+                      src={character.image_url || character.front_view_url}
+                      alt={character.name}
+                      className="w-16 h-16 rounded-lg object-cover border border-slate-600"
+                    />
+                    <div>
+                      <p className="text-sm font-medium text-slate-200">参考角色：{character.name}</p>
+                      <p className="text-xs text-slate-500">将基于此角色生成新的状态图片</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* 自然语言输入 */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-300">
+                    描述这个角色状态
+                  </label>
+                  <Textarea
+                    placeholder="例如：这是角色童年时期的样子，穿着蓝色的学生制服，头发扎成双马尾，戴着一副圆框眼镜..."
+                    value={naturalLanguageInput}
+                    onValueChange={setNaturalLanguageInput}
+                    minRows={4}
+                    classNames={{
+                      input: "bg-transparent text-slate-100",
+                      inputWrapper: "bg-slate-800/60 border border-slate-600/50"
+                    }}
+                  />
+                  <p className="text-xs text-slate-500">
+                    用自然语言描述角色的状态、服装、发型等特征，AI会自动分析并生成图片
+                  </p>
+                </div>
+
+                {/* 模型选择 */}
+                <div className="grid grid-cols-2 gap-3">
+                  <AIModelSelector
+                    label="文本分析模型"
+                    placeholder="选择文本模型"
+                    models={models}
+                    selectedModel={selected.text}
+                    onModelChange={(model) => setSelected('text', model)}
+                    filterType="TEXT"
+                    size="sm"
+                    isRequired
+                  />
+                  <AIModelSelector
+                    label="图像生成模型"
+                    placeholder="选择图像模型"
+                    models={models}
+                    selectedModel={selected.image}
+                    onModelChange={(model) => setSelected('image', model)}
+                    filterType="IMAGE"
+                    size="sm"
+                    isRequired
+                  />
+                </div>
+
+                {/* 分析按钮 */}
+                <Button
+                  color="secondary"
+                  variant="flat"
+                  className="w-full bg-linear-to-r from-blue-500/20 to-cyan-500/20 text-blue-300 border border-blue-500/30"
+                  startContent={analyzing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                  onPress={analyzeDescription}
+                  isLoading={analyzing}
+                  isDisabled={!naturalLanguageInput.trim() || !selected.text}
+                >
+                  {analyzing ? 'AI分析中...' : 'AI分析描述'}
+                </Button>
+
+                {/* 分析结果展示 */}
+                {generatedTags && (
+                  <div className="space-y-3 p-4 bg-slate-800/50 rounded-lg border border-slate-700/50">
+                    <h4 className="text-sm font-medium text-slate-300 flex items-center gap-2">
+                      <Star className="w-4 h-4 text-amber-400" />
+                      AI分析结果
+                    </h4>
+                    <div className="grid grid-cols-2 gap-3">
+                      {generatedTags.name && (
+                        <div className="space-y-1">
+                          <label className="text-xs text-slate-500">状态名称</label>
+                          <p className="text-sm text-slate-200 bg-slate-800 px-2 py-1 rounded">{generatedTags.name}</p>
+                        </div>
+                      )}
+                      {generatedTags.age_stage && (
+                        <div className="space-y-1">
+                          <label className="text-xs text-slate-500">年龄阶段</label>
+                          <p className="text-sm text-slate-200 bg-slate-800 px-2 py-1 rounded">{generatedTags.age_stage}</p>
+                        </div>
+                      )}
+                      {generatedTags.outfit && (
+                        <div className="space-y-1">
+                          <label className="text-xs text-slate-500">服装</label>
+                          <p className="text-sm text-slate-200 bg-slate-800 px-2 py-1 rounded">{generatedTags.outfit}</p>
+                        </div>
+                      )}
+                      {generatedTags.hairstyle && (
+                        <div className="space-y-1">
+                          <label className="text-xs text-slate-500">发型</label>
+                          <p className="text-sm text-slate-200 bg-slate-800 px-2 py-1 rounded">{generatedTags.hairstyle}</p>
+                        </div>
+                      )}
+                      {generatedTags.accessories && (
+                        <div className="space-y-1 col-span-2">
+                          <label className="text-xs text-slate-500">配饰</label>
+                          <p className="text-sm text-slate-200 bg-slate-800 px-2 py-1 rounded">{generatedTags.accessories}</p>
+                        </div>
+                      )}
+                      {generatedTags.appearance && (
+                        <div className="space-y-1 col-span-2">
+                          <label className="text-xs text-slate-500">外貌特征</label>
+                          <p className="text-sm text-slate-200 bg-slate-800 px-2 py-1 rounded">{generatedTags.appearance}</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </ModalBody>
+              <ModalFooter>
+                <Button variant="light" onPress={onClose} className="text-slate-400">
+                  取消
+                </Button>
+                <Button
+                  className="bg-linear-to-r from-purple-500 to-pink-600 text-white font-semibold"
+                  onPress={confirmGenerate}
+                  isDisabled={!generatedTags || !selected.image}
+                  startContent={<RefreshCw className="w-4 h-4" />}
+                >
+                  生成图片
                 </Button>
               </ModalFooter>
             </>

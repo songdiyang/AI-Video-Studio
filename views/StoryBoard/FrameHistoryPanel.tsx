@@ -138,17 +138,17 @@ const FrameHistoryPanel: React.FC<FrameHistoryPanelProps> = ({
           initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 1, x: 0 }}
           exit={{ opacity: 0, x: 20 }}
-          className="absolute top-0 left-0 w-64 h-full bg-[var(--bg-card)] border-r border-[var(--border-color)] shadow-lg z-10 overflow-hidden"
+          className="absolute top-0 left-0 w-64 h-full bg-(--bg-card) border-r border-(--border-color) shadow-lg z-10 overflow-hidden"
         >
           {/* 头部 */}
-          <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--border-color)]">
+          <div className="flex items-center justify-between px-3 py-2 border-b border-(--border-color)">
             <div className="flex items-center gap-2">
-              <History className="w-4 h-4 text-[var(--accent)]" />
+              <History className="w-4 h-4 text-(--accent)" />
               <span className="text-xs font-semibold">
                 {frameType === 'first' ? '首帧' : '尾帧'}历史
               </span>
             </div>
-            <button onClick={onClose} className="p-1 hover:bg-[var(--bg-input)] rounded">
+            <button onClick={onClose} className="p-1 hover:bg-(--bg-input) rounded">
               <span className="text-xs">×</span>
             </button>
           </div>
@@ -156,12 +156,12 @@ const FrameHistoryPanel: React.FC<FrameHistoryPanelProps> = ({
           {/* 版本列表 - 使用虚拟列表优化大量帧历史的渲染性能 */}
           <div ref={listRef} className="flex-1 overflow-hidden">
             {loading ? (
-              <div className="text-center py-8 text-[var(--text-muted)]">
+              <div className="text-center py-8 text-(--text-muted)">
                 <Clock className="w-6 h-6 mx-auto mb-2 animate-spin" />
                 <p className="text-xs">加载中...</p>
               </div>
             ) : versions.length === 0 ? (
-              <div className="text-center py-8 text-[var(--text-muted)]">
+              <div className="text-center py-8 text-(--text-muted)">
                 <Image className="w-8 h-8 mx-auto mb-2 opacity-30" />
                 <p className="text-xs">暂无历史版本</p>
               </div>
@@ -184,19 +184,19 @@ const FrameHistoryPanel: React.FC<FrameHistoryPanelProps> = ({
                         <div
                           className={`h-full rounded-lg overflow-hidden border ${
                             version.is_current
-                              ? 'border-[var(--accent)] bg-[var(--accent)]/5'
-                              : 'border-[var(--border-color)] bg-[var(--bg-input)]'
+                              ? 'border-(--accent) bg-(--accent)/5'
+                              : 'border-(--border-color) bg-(--bg-input)'
                           }`}
                         >
                           {/* 缩略图 */}
-                          <div className="h-[120px] bg-[var(--bg-app)] relative group">
+                          <div className="h-30 bg-(--bg-app) relative group">
                             <img
                               src={version.frame_url}
                               alt={`版本 ${version.version_number}`}
                               className="w-full h-full object-cover"
                             />
                             {version.is_current && (
-                              <div className="absolute top-1 right-1 bg-[var(--accent)] text-white text-[10px] px-1.5 py-0.5 rounded flex items-center gap-1">
+                              <div className="absolute top-1 right-1 bg-(--accent) text-white text-[10px] px-1.5 py-0.5 rounded flex items-center gap-1">
                                 <Check className="w-3 h-3" />
                                 当前
                               </div>
@@ -207,12 +207,12 @@ const FrameHistoryPanel: React.FC<FrameHistoryPanelProps> = ({
                           <div className="p-2">
                             <div className="flex items-center justify-between mb-1">
                               <span className="text-xs font-medium">版本 {version.version_number}</span>
-                              <span className="text-[10px] text-[var(--text-muted)]">
+                              <span className="text-[10px] text-(--text-muted)">
                                 {formatTime(version.created_at)}
                               </span>
                             </div>
                             {version.generation_prompt && (
-                              <p className="text-[10px] text-[var(--text-muted)] line-clamp-1 mb-1">
+                              <p className="text-[10px] text-(--text-muted) line-clamp-1 mb-1">
                                 {version.generation_prompt.substring(0, 60)}...
                               </p>
                             )}
@@ -222,7 +222,7 @@ const FrameHistoryPanel: React.FC<FrameHistoryPanelProps> = ({
                               {!version.is_current && (
                                 <button
                                   onClick={() => handleRestore(version.id)}
-                                  className="flex-1 px-2 py-1 bg-[var(--accent)]/10 text-[var(--accent)] text-[10px] rounded hover:bg-[var(--accent)]/20 flex items-center justify-center gap-1"
+                                  className="flex-1 px-2 py-1 bg-(--accent)/10 text-(--accent) text-[10px] rounded hover:bg-(--accent)/20 flex items-center justify-center gap-1"
                                   title="恢复此版本"
                                 >
                                   <RotateCcw className="w-3 h-3" />

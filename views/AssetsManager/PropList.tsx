@@ -53,21 +53,23 @@ const PropList: React.FC<PropListProps> = ({ props, onEdit, onDelete }) => {
   const renderPropCard = (prop: Prop, style?: React.CSSProperties) => (
     <Card 
       key={prop.id} 
-      className="bg-[var(--bg-card)] border border-[var(--border-color)] shadow-sm hover:shadow-md hover:shadow-[var(--accent)]/5 transition-shadow h-full"
+      className="bg-(--bg-card) border border-(--border-color) shadow-sm hover:shadow-md hover:shadow-(--accent)/5 transition-shadow h-full cursor-pointer"
       style={style}
+      isPressable
+      onPress={() => onEdit(prop)}
     >
       <CardBody className="p-4 space-y-3">
         <div className="flex items-start justify-between">
-          <h3 className="text-lg font-semibold text-[var(--text-primary)]">{prop.name}</h3>
+          <h3 className="text-lg font-semibold text-(--text-primary)">{prop.name}</h3>
           <div className="flex gap-1">
             <Button 
               size="sm" 
               isIconOnly 
               variant="light" 
               onPress={() => onEdit(prop)} 
-              className="hover:bg-[var(--accent)]/10"
+              className="hover:bg-(--accent)/10"
             >
-              <Edit className="w-4 h-4 text-[var(--accent)]" />
+              <Edit className="w-4 h-4 text-(--accent)" />
             </Button>
             <Button 
               size="sm" 
@@ -80,7 +82,7 @@ const PropList: React.FC<PropListProps> = ({ props, onEdit, onDelete }) => {
             </Button>
           </div>
         </div>
-        <p className="text-sm text-[var(--text-secondary)] line-clamp-2">{prop.description}</p>
+        <p className="text-sm text-(--text-secondary) line-clamp-2">{prop.description}</p>
         {prop.category && (
           <Chip size="sm" variant="flat" className="bg-amber-500/10 text-amber-400 font-medium">
             {prop.category}

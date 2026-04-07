@@ -101,7 +101,12 @@ const SceneList: React.FC<SceneListProps> = ({ scenes, onEdit, onDelete, onViewD
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-6">
         {scenes.map((scene) => (
-          <Card key={scene.id} className="bg-[var(--bg-card)] border border-[var(--border-color)] shadow-sm hover:shadow-md hover:shadow-[var(--accent)]/5 transition-shadow">
+          <Card 
+            key={scene.id} 
+            className="bg-(--bg-card) border border-(--border-color) shadow-sm hover:shadow-md hover:shadow-(--accent)/5 transition-shadow cursor-pointer"
+            isPressable
+            onPress={() => onEdit(scene)}
+          >
             <CardBody className="p-4 space-y-3">
               {/* 草图预览区域 */}
               {scene.sketch_url && (
@@ -109,7 +114,7 @@ const SceneList: React.FC<SceneListProps> = ({ scenes, onEdit, onDelete, onViewD
                   <img
                     src={scene.sketch_url}
                     alt={`${scene.name} 草图`}
-                    className="w-full h-32 object-cover rounded-lg border border-[var(--border-color)] cursor-pointer"
+                    className="w-full h-32 object-cover rounded-lg border border-(--border-color) cursor-pointer"
                     onClick={() => setPreviewScene(scene)}
                   />
                   <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex items-center justify-center gap-2">
@@ -140,7 +145,7 @@ const SceneList: React.FC<SceneListProps> = ({ scenes, onEdit, onDelete, onViewD
               )}
 
               <div className="flex items-start justify-between">
-                <h3 className="text-lg font-semibold text-[var(--text-primary)]">{scene.name}</h3>
+                <h3 className="text-lg font-semibold text-(--text-primary)">{scene.name}</h3>
                 <div className="flex gap-1">
                   {/* 草图操作按钮 */}
                   <Tooltip content={scene.sketch_url ? '更换草图' : '上传草图'}>
@@ -175,9 +180,9 @@ const SceneList: React.FC<SceneListProps> = ({ scenes, onEdit, onDelete, onViewD
                     isIconOnly 
                     variant="light" 
                     onPress={() => onEdit(scene)} 
-                    className="hover:bg-[var(--accent)]/10"
+                    className="hover:bg-(--accent)/10"
                   >
-                    <Edit className="w-4 h-4 text-[var(--accent)]" />
+                    <Edit className="w-4 h-4 text-(--accent)" />
                   </Button>
                   <Button 
                     size="sm" 
@@ -190,7 +195,7 @@ const SceneList: React.FC<SceneListProps> = ({ scenes, onEdit, onDelete, onViewD
                   </Button>
                 </div>
               </div>
-              <p className="text-sm text-[var(--text-secondary)] line-clamp-2">{scene.description}</p>
+              <p className="text-sm text-(--text-secondary) line-clamp-2">{scene.description}</p>
               <div className="flex flex-wrap gap-2">
                 {scene.project_name && (
                   <Chip 

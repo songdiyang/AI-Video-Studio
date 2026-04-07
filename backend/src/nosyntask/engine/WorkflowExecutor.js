@@ -139,6 +139,24 @@ class BackpressureController {
 // 工具函数
 // ============================================
 
+/**
+ * 将日期转换为 MySQL DATETIME 兼容格式 'YYYY-MM-DD HH:mm:ss'
+ * MySQL 不接受 ISO 8601 带 T 和 Z 的格式
+ * @param {Date|string|null} date - 日期对象或日期字符串
+ * @returns {string|null} MySQL 兼容的日期字符串，或 null
+ */
+function toMySQLDatetime(date) {
+  if (!date) return null;
+  const d = date instanceof Date ? date : new Date(date);
+  if (isNaN(d.getTime())) return null;
+  return d.getFullYear() + '-' +
+    String(d.getMonth() + 1).padStart(2, '0') + '-' +
+    String(d.getDate()).padStart(2, '0') + ' ' +
+    String(d.getHours()).padStart(2, '0') + ':' +
+    String(d.getMinutes()).padStart(2, '0') + ':' +
+    String(d.getSeconds()).padStart(2, '0');
+}
+
 function extractResourceRefs(inputParams, executionContext = {}) {
   const refs = {};
   for (const key of ['scriptId', 'storyboardId', 'sceneId', 'characterId', 'projectId']) {
@@ -460,7 +478,7 @@ class WorkflowExecutor {
 
     // 更新 Job 状态（使用乐观锁）
     const minStepIndex = Math.min(...tasksToExecute.map(t => t.task.step_index));
-    await updateJobWithVersion(jobId, { status: 'running', current_step_index: minStepIndex, started_at: job.started_at || new Date() }, job.version || 0);
+    await updateJobWithVersion(jobId, { status: 'running', current_step_index: minStepIndex, started_at: toMySQLDatetime(job.started_at || new Date()) }, job.version || 0);
     await this._invalidateJobCache(jobId);
 
     // 标记任务为正在运行

@@ -105,7 +105,7 @@ const AIModelSelector: React.FC<AIModelSelectorProps> = ({
           <div className="flex items-center justify-between gap-2 w-full">
             <span className="font-semibold truncate">{model.name}</span>
             {getPriceText(model) && (
-              <div className="flex items-center gap-1 px-2 py-0.5 bg-gradient-to-r from-amber-500/10 to-orange-500/10 border border-amber-500/20 rounded shrink-0">
+              <div className="flex items-center gap-1 px-2 py-0.5 bg-linear-to-r from-amber-500/10 to-orange-500/10 border border-amber-500/20 rounded shrink-0">
                 <Coins className="w-3 h-3 text-amber-400" />
                 <span className="text-xs font-medium text-amber-300 whitespace-nowrap">
                   {getPriceText(model)}
@@ -134,7 +134,7 @@ const AIModelSelector: React.FC<AIModelSelectorProps> = ({
               )}
             </div>
             {getPriceText(model) && (
-              <div className="flex items-center gap-1.5 px-2.5 py-1 bg-gradient-to-r from-amber-500/10 to-orange-500/10 border border-amber-500/20 rounded-md shrink-0">
+              <div className="flex items-center gap-1.5 px-2.5 py-1 bg-linear-to-r from-amber-500/10 to-orange-500/10 border border-amber-500/20 rounded-md shrink-0">
                 <Coins className="w-3.5 h-3.5 text-amber-400" />
                 <span className="text-xs font-medium text-amber-300 whitespace-nowrap">
                   {getPriceText(model)}

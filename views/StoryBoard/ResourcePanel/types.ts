@@ -14,6 +14,8 @@ export interface Character {
   generationStatus?: string;  // 生成状态
   states?: CharacterState[];  // 角色状态列表
   statesCount?: number;  // 状态数量
+  projectId?: number;  // 所属项目ID
+  gender?: 'male' | 'female' | 'unknown';  // 性别
 }
 
 // 角色状态接口
@@ -28,6 +30,9 @@ export interface CharacterState {
   side_view_url?: string;
   back_view_url?: string;
   sort_order?: number;
+  is_base_model?: boolean;    // 是否为基础白膜状态
+  is_active?: boolean;        // 是否为当前激活状态
+  generation_status?: 'idle' | 'generating' | 'completed' | 'failed';
 }
 
 export interface ResourceItem {
@@ -51,6 +56,7 @@ export interface ResourcePanelProps {
   imageModel: string;
   imageAspectRatio: string;
   textModel: string;
+  models?: { name: string; type: string; supportedAspectRatios?: unknown }[];
 }
 
 export type TabType = 'characters' | 'locations' | 'props';

@@ -83,8 +83,8 @@ const Landing: React.FC = () => {
       <section className="relative min-h-screen flex items-center justify-center px-4 py-20 overflow-hidden">
         {/* 背景装饰 */}
         <div className="absolute inset-0 pointer-events-none">
-          <div className="absolute top-0 left-1/4 w-[600px] h-[600px] bg-[var(--accent)]/10 rounded-full blur-[120px]" />
-          <div className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-[var(--accent-secondary)]/10 rounded-full blur-[100px]" />
+          <div className="absolute top-0 left-1/4 w-150 h-150 bg-(--accent)/10 rounded-full blur-[120px]" />
+          <div className="absolute bottom-0 right-1/4 w-125 h-125 bg-(--accent-secondary)/10 rounded-full blur-[100px]" />
           {/* 网格背景 */}
           <div 
             className="absolute inset-0 opacity-[0.03]"
@@ -109,9 +109,9 @@ const Landing: React.FC = () => {
               className="flex justify-center mb-8"
             >
               <div className="relative">
-                <div className="absolute inset-0 bg-gradient-to-br from-[var(--accent)]/40 to-[var(--accent-dark)]/40 rounded-2xl blur-xl" />
+                <div className="absolute inset-0 bg-linear-to-br from-(--accent)/40 to-(--accent-dark)/40 rounded-2xl blur-xl" />
                 <div 
-                  className="relative p-4 bg-gradient-to-br from-[var(--accent)] to-[var(--accent-dark)] rounded-2xl"
+                  className="relative p-4 bg-linear-to-br from-(--accent) to-(--accent-dark) rounded-2xl"
                   style={{ boxShadow: '0 20px 40px -10px var(--accent-glow)' }}
                 >
                   <Sparkles className="w-10 h-10 text-white" />
@@ -186,7 +186,7 @@ const Landing: React.FC = () => {
               className="w-6 h-10 rounded-full border-2 flex items-start justify-center pt-2"
               style={{ borderColor: 'var(--border-color)' }}
             >
-              <div className="w-1.5 h-3 rounded-full bg-[var(--accent)]" />
+              <div className="w-1.5 h-3 rounded-full bg-(--accent)" />
             </motion.div>
           </motion.div>
         </div>
@@ -229,7 +229,7 @@ const Landing: React.FC = () => {
                     borderColor: 'var(--border-color)',
                   }}
                 >
-                  <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${colorClass} flex items-center justify-center mb-4 group-hover:scale-110 transition-transform`}>
+                  <div className={`w-12 h-12 rounded-xl bg-linear-to-br ${colorClass} flex items-center justify-center mb-4 group-hover:scale-110 transition-transform`}>
                     <Icon className="w-6 h-6 text-white" />
                   </div>
                   <h3 className="text-lg font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
@@ -344,7 +344,7 @@ const Landing: React.FC = () => {
                   variants={fadeInUp}
                   whileHover={{ y: -4 }}
                   className={`relative p-6 rounded-2xl border transition-all ${
-                    plan.popular ? 'border-[var(--accent)]' : ''
+                    plan.popular ? 'border-(--accent)' : ''
                   }`}
                   style={{
                     backgroundColor: 'var(--bg-card)',
@@ -375,7 +375,7 @@ const Landing: React.FC = () => {
                   <ul className="space-y-3 mb-6">
                     {plan.features.map((feature, idx) => (
                       <li key={idx} className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
-                        <Check className="w-4 h-4 text-[var(--accent)]" />
+                        <Check className="w-4 h-4 text-(--accent)" />
                         {feature}
                       </li>
                     ))}
@@ -421,8 +421,8 @@ const Landing: React.FC = () => {
       <section className="relative py-24 px-4 overflow-hidden">
         {/* 背景渐变 */}
         <div className="absolute inset-0">
-          <div className="absolute inset-0 bg-gradient-to-br from-[var(--accent)]/20 to-[var(--accent-dark)]/20" />
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-[var(--accent)]/10 rounded-full blur-[120px]" />
+          <div className="absolute inset-0 bg-linear-to-br from-(--accent)/20 to-(--accent-dark)/20" />
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-200 h-200 bg-(--accent)/10 rounded-full blur-[120px]" />
         </div>
 
         <AnimatedSection className="relative z-10 max-w-3xl mx-auto text-center">
@@ -462,7 +462,7 @@ const Landing: React.FC = () => {
           <div className="flex flex-col md:flex-row items-center justify-between gap-6">
             {/* Logo */}
             <div className="flex items-center gap-3">
-              <div className="p-2 bg-gradient-to-br from-[var(--accent)] to-[var(--accent-dark)] rounded-lg">
+              <div className="p-2 bg-linear-to-br from-(--accent) to-(--accent-dark) rounded-lg">
                 <Sparkles className="w-5 h-5 text-white" />
               </div>
               <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>
@@ -476,7 +476,7 @@ const Landing: React.FC = () => {
                 <Link
                   key={key}
                   to={key === 'about' ? '/about' : key === 'pricing' ? '/pricing' : key === 'community' ? '/community' : `/${key}`}
-                  className="text-sm transition-colors hover:text-[var(--accent)]"
+                  className="text-sm transition-colors hover:text-(--accent)"
                   style={{ color: 'var(--text-muted)' }}
                 >
                   {t.landing?.footer?.links?.[key] || key}

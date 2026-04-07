@@ -14,6 +14,7 @@ const uploadImage = require('./uploadImage');
 const tagGroups = require('./tagGroups');
 const states = require('./states');
 const voiceConfig = require('./voiceConfig');
+const costumes = require('./costumes');
 
 // 注册路由（顺序很重要！具体路由在前，通用路由在后）
 tagGroups(router);  // 标签分组路由优先（/tag-groups）
@@ -24,6 +25,7 @@ generateViews(router);
 uploadImage(router);   // 角色图片上传路由（/:id/upload-image）
 states(router);  // 角色状态路由（/:id/states）
 voiceConfig(router);  // 角色声音配置路由（/:id/voice）
+costumes(router);  // 角色服装关联路由（/:id/costumes）
 create(router);
 update(router);
 deleteCharacter(router);

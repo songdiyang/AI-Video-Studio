@@ -28,10 +28,28 @@ const { requireVisualStyle } = require('../../../utils/getProjectStyle');
 const { downloadAndStore } = require('../../../utils/fileStorage');
 const { assertUpdated, assertPersistedFields } = require('./persistenceGuard');
 
+// 白膜模式服装提示词
+const BASE_MODEL_OUTFIT = {
+  male: 'wearing white tank top and white shorts, simple white undergarments, plain white clothing',
+  female: 'wearing white tube top and white shorts, simple white undergarments, plain white clothing',
+  unknown: 'wearing simple white clothing, plain white outfit'
+};
+
 /**
  * 使用 AI 生成视图提示词
+ * @param {string} view - 视图类型: front, side, back
+ * @param {string} characterName - 角色名称
+ * @param {string} appearance - 外貌特征
+ * @param {string} description - 描述
+ * @param {string} style - 风格
+ * @param {string} textModel - 文本模型
+ * @param {object} options - 额外选项
+ * @param {boolean} options.isBaseModel - 是否为白膜模式
+ * @param {string} options.gender - 性别: male, female, unknown
  */
-async function generateViewPrompt(view, characterName, appearance, description, style, textModel) {
+async function generateViewPrompt(view, characterName, appearance, description, style, textModel, options = {}) {
+  const { isBaseModel = false, gender = 'unknown' } = options;
+  
   const viewConfig = {
     front: {
       desc: '正面视图',
@@ -53,6 +71,14 @@ async function generateViewPrompt(view, characterName, appearance, description, 
   const cfg = viewConfig[view] || viewConfig.front;
 
   console.log(`[CharacterViews] 使用 AI 生成${cfg.desc}提示词...`);
+  
+  // 白膜模式下的服装提示词
+  const baseModelOutfitPrompt = isBaseModel ? BASE_MODEL_OUTFIT[gender] || BASE_MODEL_OUTFIT.unknown : '';
+  const baseModelNote = isBaseModel 
+    ? `\n\n【白膜模式】此角色正在生成基础白膜版本，服装必须统一为：${baseModelOutfitPrompt}。
+请保留角色的OC设定（外貌特征、面部特征、身体符合设定），但服装部分必须替换为上述白膜服装。
+不要在提示词中包含任何其他服装描述。`
+    : '';
 
   // 侧面/背面时强调与正面图严格一致
   const isNonFront = view !== 'front';
@@ -86,7 +112,7 @@ async function generateViewPrompt(view, characterName, appearance, description, 
 角色描述：${description || '无'}
 风格要求：${style || '动漫风格'}
 视角要求：${cfg.angle}, ${cfg.pose}
-${isNonFront ? '\n【再次强调】提示词中必须完整重复上面的「外貌特征」中的每一个细节（发型、发色、服装款式、服装细节、配饰等），只是视角从正面变为' + cfg.desc + '。不要省略任何外貌描述，不要自行想象或修改任何服装/发型细节。' : ''}
+${isNonFront ? '\n【再次强调】提示词中必须完整重复上面的「外貌特征」中的每一个细节（发型、发色、服装款式、服装细节、配饰等），只是视角从正面变为' + cfg.desc + '。不要省略任何外貌描述，不要自行想象或修改任何服装/发型细节。' : ''}${baseModelNote}
 请直接输出英文提示词，不要包含任何解释。`;
 
   // 调用基础文本模型（侧面/背面降低 temperature 减少发挥空间，严格跟随正面特征）
@@ -150,7 +176,9 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
     aspectRatio,
     width = 1920,
     height = 2880,
-    regenerateOnly   // 可选：补全模式，如 ['side', 'back']
+    regenerateOnly,   // 可选：补全模式，如 ['side', 'back']
+    isBaseModel = false,  // 白膜模式
+    gender = 'unknown'    // 性别：male, female, unknown
   } = inputParams;
 
 
@@ -195,7 +223,9 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
     needFront, needSide, needBack,
     existingFront: !!existingViews.front_view_url,
     existingSide: !!existingViews.side_view_url,
-    existingBack: !!existingViews.back_view_url
+    existingBack: !!existingViews.back_view_url,
+    isBaseModel,
+    gender
   });
 
   if (!imageModel) {
@@ -213,7 +243,7 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
   let persistedFrontUrl = existingViews.front_view_url || null;
   if (needFront) {
     console.log('[CharacterViews] 生成正面视图...');
-    const frontPrompt = await generateViewPrompt('front', characterName, appearance, description, style, textModel);
+    const frontPrompt = await generateViewPrompt('front', characterName, appearance, description, style, textModel, { isBaseModel, gender });
     const frontResult = await handleImageGeneration({
       prompt: frontPrompt,
       imageModel: imageModel,
@@ -263,7 +293,7 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
   let persistedSideUrl = existingViews.side_view_url || null;
   if (needSide) {
     console.log('[CharacterViews] 生成侧面视图...');
-    const sidePrompt = await generateViewPrompt('side', characterName, appearance, description, style, textModel);
+    const sidePrompt = await generateViewPrompt('side', characterName, appearance, description, style, textModel, { isBaseModel, gender });
     const sideGenParams = {
       prompt: sidePrompt,
       imageModel: imageModel,
@@ -316,7 +346,7 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
   let persistedBackUrl = existingViews.back_view_url || null;
   if (needBack) {
     console.log('[CharacterViews] 生成背面视图...');
-    const backPrompt = await generateViewPrompt('back', characterName, appearance, description, style, textModel);
+    const backPrompt = await generateViewPrompt('back', characterName, appearance, description, style, textModel, { isBaseModel, gender });
     const backGenParams = {
       prompt: backPrompt,
       imageModel: imageModel,

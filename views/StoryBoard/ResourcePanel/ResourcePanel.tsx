@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Button } from '@heroui/react';
 import { Save } from 'lucide-react';
 import { ResourcePanelProps, TabType } from './types';
@@ -10,6 +10,7 @@ import LocationsTab from './LocationsTab';
 import PropsTab from './PropsTab';
 import CharacterViewsModal from './CharacterViewsModal';
 import CharacterDetailModal from './CharacterDetailModal';
+import CharacterLifecyclePanel from './CharacterLifecyclePanel';
 import SceneDetailModal from './SceneDetailModal';
 import SceneImageModal from './SceneImageModal';
 import { useResourceModals } from './useResourceModals';
@@ -18,6 +19,7 @@ import { getAuthToken } from '../../../services/auth';
 import { deleteCharacter, uploadCharacterImage } from '../../../services/assets';
 import { useToast } from '../../../contexts/ToastContext';
 import { useWorkflowTargetMonitor } from '../hooks/useWorkflowTargetMonitor';
+import { normalizeCapabilityOptions } from '../../../utils/modelCapabilities';
 
 const ResourcePanel: React.FC<ResourcePanelProps> = ({ 
   characters, 
@@ -28,9 +30,27 @@ const ResourcePanel: React.FC<ResourcePanelProps> = ({
   imageModel,
   imageAspectRatio,
   textModel,
+  models = [],
 }) => {
   const [activeTab, setActiveTab] = useState<TabType>('characters');
   const { showToast } = useToast();
+
+  // 当用户未手动选择图片模型时，自动从可用模型列表中选取第一个 IMAGE 模型作为 fallback
+  const effectiveImageModel = useMemo(() => {
+    if (imageModel) return imageModel;
+    const firstImageModel = models.find(m => m.type === 'IMAGE');
+    return firstImageModel?.name || '';
+  }, [imageModel, models]);
+
+  // 当使用 fallback 模型时，也要计算其对应的 aspectRatio
+  const effectiveImageAspectRatio = useMemo(() => {
+    if (imageAspectRatio) return imageAspectRatio;
+    if (!effectiveImageModel) return '';
+    const model = models.find(m => m.name === effectiveImageModel);
+    if (!model?.supportedAspectRatios) return '';
+    const options = normalizeCapabilityOptions(model.supportedAspectRatios, 'aspectRatio');
+    return options.length > 0 ? options[0].value : '';
+  }, [imageAspectRatio, effectiveImageModel, models]);
   
   const { dbCharacters, isLoadingCharacters, loadCharacters } = useCharacterData(projectId, scriptId);
   const { dbScenes, isLoadingScenes, loadScenes } = useSceneData(projectId, scriptId);
@@ -39,13 +59,17 @@ const ResourcePanel: React.FC<ResourcePanelProps> = ({
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [viewsCharacterId, setViewsCharacterId] = useState<number | undefined>(undefined);
   
+  // 生命周期管理面板状态
+  const [isLifecycleOpen, setIsLifecycleOpen] = useState(false);
+  const [lifecycleCharacter, setLifecycleCharacter] = useState<Character | null>(null);
+  
   const [selectedScene, setSelectedScene] = useState<Scene | null>(null);
   const [isSceneDetailModalOpen, setIsSceneDetailModalOpen] = useState(false);
   const [isSceneImageModalOpen, setIsSceneImageModalOpen] = useState(false);
 
   useEffect(() => {
     setSelectedCharacter((prev) => {
-      if (!prev?.id) {
+      if (!prev || !prev.id) {
         return prev;
       }
 
@@ -55,7 +79,7 @@ const ResourcePanel: React.FC<ResourcePanelProps> = ({
 
   useEffect(() => {
     setSelectedScene((prev) => {
-      if (!prev?.id) {
+      if (!prev || !prev.id) {
         return prev;
       }
 
@@ -112,6 +136,17 @@ const ResourcePanel: React.FC<ResourcePanelProps> = ({
   const closeDetailModal = () => {
     setIsDetailModalOpen(false);
     setSelectedCharacter(null);
+  };
+
+  // 打开生命周期管理面板
+  const handleOpenLifecycle = (character: Character) => {
+    setLifecycleCharacter(character);
+    setIsLifecycleOpen(true);
+  };
+
+  const closeLifecyclePanel = () => {
+    setIsLifecycleOpen(false);
+    // 不清除lifecycleCharacter，保持状态以支持动画过渡
   };
 
   const handleGenerateViewsWrapper = (charName: string, characterId: number) => {
@@ -193,7 +228,7 @@ const ResourcePanel: React.FC<ResourcePanelProps> = ({
 
   const handleGenerateSceneImage = async (sceneId: number, imageModelName: string) => {
     try {
-      if (!imageAspectRatio) {
+      if (!effectiveImageAspectRatio) {
         throw new Error('当前图片模型未配置可用长宽比');
       }
 
@@ -207,7 +242,7 @@ const ResourcePanel: React.FC<ResourcePanelProps> = ({
         body: JSON.stringify({ 
           imageModel: imageModelName, 
           textModel,
-          aspectRatio: imageAspectRatio
+          aspectRatio: effectiveImageAspectRatio
         })
       });
 
@@ -234,15 +269,15 @@ const ResourcePanel: React.FC<ResourcePanelProps> = ({
   };
 
   return (
-    <div className="h-full flex flex-col bg-[var(--bg-app)]">
+    <div className="h-full flex flex-col bg-(--bg-app)">
       {/* 头部 */}
-      <div className="flex-shrink-0 px-3 py-2 border-b border-[var(--border-color)]">
+      <div className="shrink-0 px-3 py-2 border-b border-(--border-color)">
         <div className="flex items-center justify-between mb-2">
           <TabButtons activeTab={activeTab} onTabChange={setActiveTab} />
           <Button
             size="sm"
             variant="flat"
-            className="h-7 px-2 text-xs bg-[var(--bg-card)] text-[var(--text-muted)] hover:text-[var(--text-primary)] border border-[var(--border-color)]"
+            className="h-7 px-2 text-xs bg-(--bg-card) text-(--text-muted) hover:text-(--text-primary) border border-(--border-color)"
             startContent={<Save className="w-3 h-3" />}
             onPress={handleRefreshResources}
           >
@@ -262,17 +297,18 @@ const ResourcePanel: React.FC<ResourcePanelProps> = ({
             activeCharacterIds={characterViewMonitor.activeTargetIds}
             onGenerateViews={handleGenerateViewsWrapper}
             onShowDetail={handleShowDetail}
+            onOpenLifecycle={handleOpenLifecycle}
           />
         )}
 
         {activeTab === 'locations' && (
           <>
             {isLoadingScenes ? (
-              <div className="text-center py-8 text-[var(--text-muted)]">
+              <div className="text-center py-8 text-(--text-muted)">
                 <p className="text-sm">加载场景中...</p>
               </div>
             ) : dbScenes.length === 0 ? (
-              <div className="text-center py-8 text-[var(--text-muted)]">
+              <div className="text-center py-8 text-(--text-muted)">
                 <p className="text-sm">暂无场景数据</p>
                 <p className="text-xs mt-2">智能分镜生成后会自动提取场景</p>
               </div>
@@ -307,9 +343,9 @@ const ResourcePanel: React.FC<ResourcePanelProps> = ({
         generatedPrompts={generatedPrompts}
         onGenerate={handleGenerateViews}
         characterId={viewsCharacterId}
-        imageModel={imageModel}
+        imageModel={effectiveImageModel}
         textModel={textModel}
-        imageAspectRatio={imageAspectRatio}
+        imageAspectRatio={effectiveImageAspectRatio}
       />
 
       <CharacterDetailModal
@@ -328,7 +364,7 @@ const ResourcePanel: React.FC<ResourcePanelProps> = ({
         scene={selectedScene}
         onGenerateImage={handleGenerateSceneImage}
         isGenerating={sceneImageMonitor.isTargetActive(selectedScene?.id)}
-        imageModel={imageModel}
+        imageModel={effectiveImageModel}
       />
 
       <SceneImageModal
@@ -337,7 +373,15 @@ const ResourcePanel: React.FC<ResourcePanelProps> = ({
         scene={selectedScene}
         isGenerating={sceneImageMonitor.isTargetActive(selectedScene?.id)}
         onGenerate={handleGenerateSceneImage}
-        imageModel={imageModel}
+        imageModel={effectiveImageModel}
+      />
+
+      {/* 角色生命周期管理面板 */}
+      <CharacterLifecyclePanel
+        isOpen={isLifecycleOpen}
+        onClose={closeLifecyclePanel}
+        character={lifecycleCharacter}
+        onRefresh={loadCharacters}
       />
     </div>
   );

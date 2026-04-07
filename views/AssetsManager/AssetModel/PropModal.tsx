@@ -246,7 +246,7 @@ const PropModal: React.FC<PropModalProps> = ({
                 />
               </Tabs>
 
-              <div className="mt-4 min-h-[400px]">
+              <div className="mt-4 min-h-100">
                 {/* 基础信息 */}
                 {activeTab === 'basic' && (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

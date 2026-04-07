@@ -57,9 +57,9 @@ class StoryboardErrorBoundary extends Component<
   render() {
     if (this.state.hasError) {
       return (
-        <div className="flex flex-col items-center justify-center h-full gap-4 bg-[var(--bg-app)]">
-          <p className="text-lg font-medium text-[var(--text-secondary)]">Something went wrong loading the storyboard.</p>
-          <p className="text-sm text-[var(--text-muted)]">{this.state.error?.message}</p>
+        <div className="flex flex-col items-center justify-center h-full gap-4 bg-(--bg-app)">
+          <p className="text-lg font-medium text-(--text-secondary)">Something went wrong loading the storyboard.</p>
+          <p className="text-sm text-(--text-muted)">{this.state.error?.message}</p>
           <button
             onClick={() => this.setState({ hasError: false, error: null })}
             className="pro-btn-primary px-4 py-2"
@@ -809,8 +809,8 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
     variant?: 'default' | 'primary' | 'success' | 'warning' | 'danger';
   }> = ({ icon, tooltip, onClick, disabled, loading, variant = 'default' }) => {
     const variantClasses = {
-      default: 'bg-[var(--bg-card)] hover:bg-[var(--bg-card-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border-[var(--border-color)]',
-      primary: 'bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white border-transparent',
+      default: 'bg-(--bg-card) hover:bg-(--bg-card-hover) text-(--text-secondary) hover:text-(--text-primary) border-(--border-color)',
+      primary: 'bg-(--accent) hover:bg-(--accent-hover) text-white border-transparent',
       success: 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border-emerald-500/30',
       warning: 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 border-amber-500/30',
       danger: 'bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 border-rose-500/30'
@@ -837,13 +837,13 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
 
   // 分隔线组件
   const Divider = () => (
-    <div className="w-px h-6 bg-[var(--border-color)]" />
+    <div className="w-px h-6 bg-(--border-color)" />
   );
 
   return (
-    <div className="h-full flex flex-col bg-[var(--bg-app)]">
+    <div className="h-full flex flex-col bg-(--bg-app)">
       {/* 顶部工具栏 */}
-      <div className="flex-shrink-0 border-b border-[var(--border-color)] bg-[var(--bg-card)]">
+      <div className="shrink-0 border-b border-(--border-color) bg-(--bg-card)">
         {/* 第一行：集数选择 + 操作按钮 */}
         <div className="h-11 px-4 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
@@ -853,7 +853,7 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
               onSelect={handleEpisodeSelect}
             />
             {scenes.length > 0 && (
-              <span className="text-xs text-[var(--text-muted)] px-2 py-0.5 rounded bg-[var(--bg-app)]">
+              <span className="text-xs text-(--text-muted) px-2 py-0.5 rounded bg-(--bg-app)">
                 {scenes.length} 个分镜
               </span>
             )}
@@ -1000,25 +1000,25 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
 
         {/* 第二行：模型设置（仅当有模型时显示） */}
         {(imageModel || videoModel) && (
-          <div className="h-10 px-4 flex items-center gap-4 border-t border-[var(--border-color)] bg-[var(--bg-app)]">
+          <div className="h-10 px-4 flex items-center gap-4 border-t border-(--border-color) bg-(--bg-app)">
             {imageModel && (
               <div className="flex items-center gap-2">
                 <ImageIcon className="w-3.5 h-3.5 text-cyan-400" />
-                <span className="text-xs text-[var(--text-muted)]">图片:</span>
-                <span className="text-xs font-medium text-[var(--text-secondary)]">{imageModel}</span>
+                <span className="text-xs text-(--text-muted)">图片:</span>
+                <span className="text-xs font-medium text-(--text-secondary)">{imageModel}</span>
                 {imageAspectRatio && (
                   <Tooltip content="在项目设置中修改" placement="bottom">
-                    <div className="flex items-center gap-1 h-7 px-2 rounded-md bg-[var(--bg-card)] border border-[var(--border-color)] opacity-70 cursor-default">
-                      <Lock className="w-3 h-3 text-[var(--text-muted)]" />
-                      <span className="text-xs text-[var(--text-secondary)]">{imageAspectRatio}</span>
+                    <div className="flex items-center gap-1 h-7 px-2 rounded-md bg-(--bg-card) border border-(--border-color) opacity-70 cursor-default">
+                      <Lock className="w-3 h-3 text-(--text-muted)" />
+                      <span className="text-xs text-(--text-secondary)">{imageAspectRatio}</span>
                     </div>
                   </Tooltip>
                 )}
                 {imageResolution && (
                   <Tooltip content="在项目设置中修改" placement="bottom">
-                    <div className="flex items-center gap-1 h-7 px-2 rounded-md bg-[var(--bg-card)] border border-[var(--border-color)] opacity-70 cursor-default">
-                      <Lock className="w-3 h-3 text-[var(--text-muted)]" />
-                      <span className="text-xs text-[var(--text-secondary)]">{imageResolution}</span>
+                    <div className="flex items-center gap-1 h-7 px-2 rounded-md bg-(--bg-card) border border-(--border-color) opacity-70 cursor-default">
+                      <Lock className="w-3 h-3 text-(--text-muted)" />
+                      <span className="text-xs text-(--text-secondary)">{imageResolution}</span>
                     </div>
                   </Tooltip>
                 )}
@@ -1028,29 +1028,29 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
             {videoModel && (
               <div className="flex items-center gap-2">
                 <Video className="w-3.5 h-3.5 text-rose-400" />
-                <span className="text-xs text-[var(--text-muted)]">视频:</span>
-                <span className="text-xs font-medium text-[var(--text-secondary)]">{videoModel}</span>
+                <span className="text-xs text-(--text-muted)">视频:</span>
+                <span className="text-xs font-medium text-(--text-secondary)">{videoModel}</span>
                 {videoAspectRatio && (
                   <Tooltip content="在项目设置中修改" placement="bottom">
-                    <div className="flex items-center gap-1 h-7 px-2 rounded-md bg-[var(--bg-card)] border border-[var(--border-color)] opacity-70 cursor-default">
-                      <Lock className="w-3 h-3 text-[var(--text-muted)]" />
-                      <span className="text-xs text-[var(--text-secondary)]">{videoAspectRatio}</span>
+                    <div className="flex items-center gap-1 h-7 px-2 rounded-md bg-(--bg-card) border border-(--border-color) opacity-70 cursor-default">
+                      <Lock className="w-3 h-3 text-(--text-muted)" />
+                      <span className="text-xs text-(--text-secondary)">{videoAspectRatio}</span>
                     </div>
                   </Tooltip>
                 )}
                 {videoResolution && (
                   <Tooltip content="在项目设置中修改" placement="bottom">
-                    <div className="flex items-center gap-1 h-7 px-2 rounded-md bg-[var(--bg-card)] border border-[var(--border-color)] opacity-70 cursor-default">
-                      <Lock className="w-3 h-3 text-[var(--text-muted)]" />
-                      <span className="text-xs text-[var(--text-secondary)]">{videoResolution}</span>
+                    <div className="flex items-center gap-1 h-7 px-2 rounded-md bg-(--bg-card) border border-(--border-color) opacity-70 cursor-default">
+                      <Lock className="w-3 h-3 text-(--text-muted)" />
+                      <span className="text-xs text-(--text-secondary)">{videoResolution}</span>
                     </div>
                   </Tooltip>
                 )}
                 {/* 视频时长：锁定显示分镜中的时长，不可编辑 */}
                 <Tooltip content="时长由分镜设置决定" placement="bottom">
-                  <div className="flex items-center gap-1 h-7 px-2 rounded-md bg-[var(--bg-card)] border border-[var(--border-color)] opacity-70 cursor-default">
-                    <Lock className="w-3 h-3 text-[var(--text-muted)]" />
-                    <span className="text-xs text-[var(--text-secondary)]">
+                  <div className="flex items-center gap-1 h-7 px-2 rounded-md bg-(--bg-card) border border-(--border-color) opacity-70 cursor-default">
+                    <Lock className="w-3 h-3 text-(--text-muted)" />
+                    <span className="text-xs text-(--text-secondary)">
                       {currentSceneDuration ? `${currentSceneDuration}秒` : '待选择分镜'}
                     </span>
                   </div>
@@ -1065,9 +1065,9 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
       {!currentScriptId && (
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center">
-            <Wand2 className="w-16 h-16 mx-auto mb-4 text-[var(--text-muted)] opacity-30" />
-            <p className="text-lg font-medium text-[var(--text-secondary)]">请先生成剧本</p>
-            <p className="text-sm mt-1 text-[var(--text-muted)]">生成剧本后，可以自动将剧本转换为分镜</p>
+            <Wand2 className="w-16 h-16 mx-auto mb-4 text-(--text-muted) opacity-30" />
+            <p className="text-lg font-medium text-(--text-secondary)">请先生成剧本</p>
+            <p className="text-sm mt-1 text-(--text-muted)">生成剧本后，可以自动将剧本转换为分镜</p>
           </div>
         </div>
       )}
@@ -1141,6 +1141,7 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
                 imageModel={imageModel}
                 imageAspectRatio={imageAspectRatio}
                 textModel={textModel}
+                models={models}
               />
             </ResizablePanel>
           </PanelGroup>

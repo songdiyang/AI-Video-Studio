@@ -163,17 +163,17 @@ const Auth: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[var(--bg-app)] px-4 relative overflow-hidden">
+    <div className="min-h-screen flex items-center justify-center bg-(--bg-app) px-4 relative overflow-hidden">
       {/* 装饰背景元素 */}
       <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
-        <div className="absolute -top-40 -right-40 w-96 h-96 bg-[var(--accent-secondary)]/10 rounded-full blur-3xl animate-float"></div>
-        <div className="absolute -bottom-40 -left-40 w-96 h-96 bg-[var(--accent)]/10 rounded-full blur-3xl animate-float-delay"></div>
-        <div className="absolute top-1/3 left-1/4 w-64 h-64 bg-[var(--accent)]/5 rounded-full blur-2xl"></div>
+        <div className="absolute -top-40 -right-40 w-96 h-96 bg-(--accent-secondary)/10 rounded-full blur-3xl animate-float"></div>
+        <div className="absolute -bottom-40 -left-40 w-96 h-96 bg-(--accent)/10 rounded-full blur-3xl animate-float-delay"></div>
+        <div className="absolute top-1/3 left-1/4 w-64 h-64 bg-(--accent)/5 rounded-full blur-2xl"></div>
         {/* 星点装饰 */}
         {Array.from({ length: 20 }).map((_, i) => (
           <div
             key={i}
-            className="absolute w-1 h-1 bg-[var(--accent)]/40 rounded-full animate-twinkle"
+            className="absolute w-1 h-1 bg-(--accent)/40 rounded-full animate-twinkle"
             style={{
               left: `${Math.random() * 100}%`,
               top: `${Math.random() * 100}%`,
@@ -187,7 +187,7 @@ const Auth: React.FC = () => {
       {/* 全屏按钮 */}
       <button
         onClick={toggleFullscreen}
-        className="absolute top-4 right-4 z-20 p-2 rounded-lg bg-[var(--bg-input)]/80 border border-[var(--border-color)] text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:border-[var(--accent)]/30 transition-all duration-200 backdrop-blur-sm"
+        className="absolute top-4 right-4 z-20 p-2 rounded-lg bg-(--bg-input)/80 border border-(--border-color) text-(--text-muted) hover:text-(--text-primary) hover:border-(--accent)/30 transition-all duration-200 backdrop-blur-sm"
         title={isFullscreen ? '退出全屏' : '全屏模式'}
       >
         {isFullscreen ? (
@@ -208,18 +208,18 @@ const Auth: React.FC = () => {
           >
             <div className="relative inline-block">
               {/* 外层光晕 */}
-              <div className="absolute inset-0 bg-gradient-to-br from-[var(--accent)]/30 to-[var(--accent-dark)]/30 rounded-2xl blur-2xl animate-pulse-slow" />
+              <div className="absolute inset-0 bg-linear-to-br from-(--accent)/30 to-(--accent-dark)/30 rounded-2xl blur-2xl animate-pulse-slow" />
               {/* 内层光晕 */}
-              <div className="absolute inset-0 bg-gradient-to-br from-[var(--accent)]/20 to-[var(--accent-dark)]/20 rounded-2xl blur-xl" />
+              <div className="absolute inset-0 bg-linear-to-br from-(--accent)/20 to-(--accent-dark)/20 rounded-2xl blur-xl" />
               {/* Logo 容器 */}
               <div 
-                className="relative inline-flex items-center justify-center w-18 h-18 bg-gradient-to-br from-[var(--accent)] to-[var(--accent-dark)] rounded-2xl transition-transform duration-300 hover:scale-105"
+                className="relative inline-flex items-center justify-center w-18 h-18 bg-linear-to-br from-(--accent) to-(--accent-dark) rounded-2xl transition-transform duration-300 hover:scale-105"
                 style={{ boxShadow: '0 10px 25px -5px var(--accent-glow), 0 8px 10px -6px var(--accent-glow)' }}
               >
                 {/* 饺子图标 */}
                 <svg 
                   viewBox="0 0 48 48" 
-                  className="w-9 h-9 text-[var(--text-inverse)]"
+                  className="w-9 h-9 text-(--text-inverse)"
                   fill="currentColor"
                 >
                   {/* 饺子主体 - 半月形 */}
@@ -248,7 +248,7 @@ const Auth: React.FC = () => {
               <h1 className="text-3xl font-black tracking-tight pro-title">
                 {t.auth.title}
               </h1>
-              <p className="text-sm text-[var(--text-muted)] font-medium">
+              <p className="text-sm text-(--text-muted) font-medium">
                 {t.auth.subtitle}
               </p>
             </div>
@@ -256,11 +256,11 @@ const Auth: React.FC = () => {
 
           {/* Tab 切换 - 滑块动画（注册开放时显示） */}
           {registrationEnabled ? (
-          <div className="flex gap-1 p-1 bg-[var(--bg-input)] rounded-xl border border-[var(--border-color)] relative">
+          <div className="flex gap-1 p-1 bg-(--bg-input) rounded-xl border border-(--border-color) relative">
             {/* 滑块 */}
             <motion.div
               layoutId="auth-tab-indicator"
-              className="absolute inset-y-1 rounded-lg bg-gradient-to-r from-[var(--accent)]/20 to-[var(--accent-light)]/20 border border-[var(--accent)]/30 shadow-[0_0_15px_var(--accent-glow)]"
+              className="absolute inset-y-1 rounded-lg bg-linear-to-r from-(--accent)/20 to-(--accent-light)/20 border border-(--accent)/30 shadow-[0_0_15px_var(--accent-glow)]"
               style={{
                 left: mode === 'login' ? '4px' : 'calc(50%)',
                 width: 'calc(50% - 4px)'
@@ -271,8 +271,8 @@ const Auth: React.FC = () => {
               onClick={() => setMode('login')}
               className={`flex-1 py-2.5 text-sm font-semibold rounded-lg transition-all duration-200 cursor-pointer relative z-10 ${
                 mode === 'login'
-                  ? 'text-[var(--accent)]'
-                  : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+                  ? 'text-(--accent)'
+                  : 'text-(--text-muted) hover:text-(--text-secondary)'
               }`}
             >
               {t.auth.loginTab}
@@ -281,8 +281,8 @@ const Auth: React.FC = () => {
               onClick={() => setMode('register')}
               className={`flex-1 py-2.5 text-sm font-semibold rounded-lg transition-all duration-200 cursor-pointer relative z-10 ${
                 mode === 'register'
-                  ? 'text-[var(--accent)]'
-                  : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+                  ? 'text-(--accent)'
+                  : 'text-(--text-muted) hover:text-(--text-secondary)'
               }`}
             >
               {t.auth.registerTab}
@@ -310,7 +310,7 @@ const Auth: React.FC = () => {
                     setUsername(v);
                     setErrors(prev => ({ ...prev, username: undefined }));
                   }}
-                  startContent={<User className="w-4 h-4 text-[var(--text-muted)]" />}
+                  startContent={<User className="w-4 h-4 text-(--text-muted)" />}
                   variant="flat"
                   radius="lg"
                   size="lg"
@@ -318,8 +318,8 @@ const Auth: React.FC = () => {
                   errorMessage={errors.username}
                   classNames={{
                     base: 'bg-transparent',
-                    input: 'bg-transparent text-[var(--text-primary)] placeholder:text-[var(--text-muted)]',
-                    inputWrapper: `bg-[var(--bg-input)] border hover:border-[var(--accent)]/30 data-[focus=true]:border-[var(--accent)]/50 shadow-sm transition-colors ${errors.username ? 'border-[var(--danger)]' : 'border-[var(--border-color)]'}`,
+                    input: 'bg-transparent text-(--text-primary) placeholder:text-(--text-muted)',
+                    inputWrapper: `bg-(--bg-input) border hover:border-(--accent)/30 data-[focus=true]:border-(--accent)/50 shadow-sm transition-colors ${errors.username ? 'border-(--danger)' : 'border-(--border-color)'}`,
                   }}
                 />
               </div>
@@ -333,7 +333,7 @@ const Auth: React.FC = () => {
                     setPassword(v);
                     setErrors(prev => ({ ...prev, password: undefined }));
                   }}
-                  startContent={<Lock className="w-4 h-4 text-[var(--text-muted)]" />}
+                  startContent={<Lock className="w-4 h-4 text-(--text-muted)" />}
                   variant="flat"
                   radius="lg"
                   size="lg"
@@ -341,8 +341,8 @@ const Auth: React.FC = () => {
                   errorMessage={errors.password}
                   classNames={{
                     base: 'bg-transparent',
-                    input: 'bg-transparent text-[var(--text-primary)] placeholder:text-[var(--text-muted)]',
-                    inputWrapper: `bg-[var(--bg-input)] border hover:border-[var(--accent)]/30 data-[focus=true]:border-[var(--accent)]/50 shadow-sm transition-colors ${errors.password ? 'border-[var(--danger)]' : 'border-[var(--border-color)]'}`,
+                    input: 'bg-transparent text-(--text-primary) placeholder:text-(--text-muted)',
+                    inputWrapper: `bg-(--bg-input) border hover:border-(--accent)/30 data-[focus=true]:border-(--accent)/50 shadow-sm transition-colors ${errors.password ? 'border-(--danger)' : 'border-(--border-color)'}`,
                   }}
                 />
               </div>
@@ -354,19 +354,19 @@ const Auth: React.FC = () => {
                     placeholder={t.auth.adminAccessKey}
                     value={adminAccessKey}
                     onValueChange={setAdminAccessKey}
-                    startContent={<KeyRound className="w-4 h-4 text-[var(--accent)]" />}
+                    startContent={<KeyRound className="w-4 h-4 text-(--accent)" />}
                     variant="flat"
                     radius="lg"
                     size="lg"
                     classNames={{
                       base: 'bg-transparent',
-                      input: 'bg-transparent text-[var(--text-primary)] placeholder:text-[var(--text-muted)]',
-                      inputWrapper: 'bg-[var(--bg-input)] border border-[var(--accent)]/50 hover:border-[var(--accent)] data-[focus=true]:border-[var(--accent)] shadow-[0_0_10px_rgba(59,130,246,0.15)]',
+                      input: 'bg-transparent text-(--text-primary) placeholder:text-(--text-muted)',
+                      inputWrapper: 'bg-(--bg-input) border border-(--accent)/50 hover:border-(--accent) data-[focus=true]:border-(--accent) shadow-[0_0_10px_rgba(59,130,246,0.15)]',
                     }}
                   />
                   <div className="flex items-center gap-2 px-1">
-                    <div className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] animate-pulse" />
-                    <p className="text-xs text-[var(--accent)] font-medium">
+                    <div className="w-1.5 h-1.5 rounded-full bg-(--accent) animate-pulse" />
+                    <p className="text-xs text-(--accent) font-medium">
                       {t.auth.adminAccountDetected}
                     </p>
                   </div>
@@ -374,8 +374,8 @@ const Auth: React.FC = () => {
               ) : null}
 
               {mode === 'login' && checkingLoginRequirements ? (
-                <div className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
-                  <div className="w-3 h-3 border-2 border-[var(--text-muted)]/30 border-t-[var(--accent)] rounded-full animate-spin" />
+                <div className="flex items-center gap-2 text-xs text-(--text-muted)">
+                  <div className="w-3 h-3 border-2 border-(--text-muted)/30 border-t-(--accent) rounded-full animate-spin" />
                   {t.auth.checkingPermissions}
                 </div>
               ) : null}
@@ -384,7 +384,7 @@ const Auth: React.FC = () => {
                 type="submit"
                 size="lg"
                 radius="lg"
-                className="w-full font-bold bg-gradient-to-br from-[var(--accent)] to-[var(--accent-dark)] text-[var(--text-inverse)] transition-all cursor-pointer glow-accent group"
+                className="w-full font-bold bg-linear-to-br from-(--accent) to-(--accent-dark) text-(--text-inverse) transition-all cursor-pointer glow-accent group"
                 endContent={<ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />}
                 isLoading={loading}
               >
@@ -395,14 +395,14 @@ const Auth: React.FC = () => {
 
           {/* 底部提示 */}
           {registrationEnabled ? (
-          <div className="pt-4 border-t border-[var(--border-color)]">
-            <p className="text-center text-sm text-[var(--text-muted)]">
+          <div className="pt-4 border-t border-(--border-color)">
+            <p className="text-center text-sm text-(--text-muted)">
               {mode === 'login' ? (
                 <>
                   {t.auth.firstTime}
                   <button
                     onClick={() => setMode('register')}
-                    className="ml-1.5 text-[var(--accent)] hover:text-[var(--accent-light)] font-semibold transition-colors cursor-pointer hover:underline underline-offset-2"
+                    className="ml-1.5 text-(--accent) hover:text-(--accent-light) font-semibold transition-colors cursor-pointer hover:underline underline-offset-2"
                   >
                     {t.auth.goRegister}
                   </button>
@@ -412,7 +412,7 @@ const Auth: React.FC = () => {
                   {t.auth.hasAccount}
                   <button
                     onClick={() => setMode('login')}
-                    className="ml-1.5 text-[var(--accent)] hover:text-[var(--accent-light)] font-semibold transition-colors cursor-pointer hover:underline underline-offset-2"
+                    className="ml-1.5 text-(--accent) hover:text-(--accent-light) font-semibold transition-colors cursor-pointer hover:underline underline-offset-2"
                   >
                     {t.auth.goLogin}
                   </button>
@@ -421,8 +421,8 @@ const Auth: React.FC = () => {
             </p>
           </div>
           ) : (
-          <div className="pt-4 border-t border-[var(--border-color)]">
-            <p className="text-center text-xs text-[var(--text-muted)]">
+          <div className="pt-4 border-t border-(--border-color)">
+            <p className="text-center text-xs text-(--text-muted)">
               {t.auth.registrationClosed}
             </p>
           </div>

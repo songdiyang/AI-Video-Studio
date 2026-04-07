@@ -6,8 +6,8 @@ import { getAuthToken } from '../services/auth';
 // ============================================================
 
 export interface WorkflowTask {
-  id: number;
-  job_id: number;
+  id: string;
+  job_id: string;
   step_index: number;
   task_type: string;
   target_type: string;
@@ -25,7 +25,7 @@ export interface WorkflowTask {
 }
 
 export interface WorkflowJob {
-  id: number;
+  id: string;
   user_id: number;
   project_id: number;
   workflow_type: string;
@@ -124,7 +124,7 @@ export async function startWorkflow(
   workflowType: string,
   projectId: number,
   params: Record<string, any>
-): Promise<{ jobId: number; tasks: any[] }> {
+): Promise<{ jobId: string; tasks: any[] }> {
   return fetchApi('/api/workflows', {
     method: 'POST',
     body: JSON.stringify({ workflowType, projectId, params })
@@ -132,17 +132,17 @@ export async function startWorkflow(
 }
 
 /** 获取工作流状态 */
-export async function getWorkflowStatus(jobId: number): Promise<WorkflowJob> {
+export async function getWorkflowStatus(jobId: string): Promise<WorkflowJob> {
   return fetchApi(`/api/workflows/${jobId}`);
 }
 
 /** 恢复工作流 */
-export async function resumeWorkflow(jobId: number) {
+export async function resumeWorkflow(jobId: string) {
   return fetchApi(`/api/workflows/${jobId}/resume`, { method: 'POST' });
 }
 
 /** 取消工作流 */
-export async function cancelWorkflow(jobId: number) {
+export async function cancelWorkflow(jobId: string) {
   return fetchApi(`/api/workflows/${jobId}/cancel`, { method: 'POST' });
 }
 
@@ -166,7 +166,7 @@ export async function getActiveWorkflows(projectId: number): Promise<{ jobs: Wor
 }
 
 /** 标记工作流已消费 */
-export async function consumeWorkflow(jobId: number): Promise<void> {
+export async function consumeWorkflow(jobId: string): Promise<void> {
   await fetchApi(`/api/workflows/${jobId}/consume`, { method: 'POST' });
 }
 
@@ -175,7 +175,7 @@ export async function consumeWorkflow(jobId: number): Promise<void> {
 // 轮询工作流状态，自动在完成/失败时停止
 // ============================================================
 
-export function useWorkflow(jobId: number | null, options: UseWorkflowOptions = {}) {
+export function useWorkflow(jobId: string | null, options: UseWorkflowOptions = {}) {
   // 性能优化：默认轮询间隔从 500ms 降低到 300ms，加快响应速度
   const { interval = 300, onCompleted, onFailed, onProgress } = options;
 

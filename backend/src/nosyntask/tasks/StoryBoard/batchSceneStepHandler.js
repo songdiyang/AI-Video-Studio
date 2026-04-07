@@ -182,7 +182,7 @@ ${sceneContent}
 【分镜转化要求】
 
 1. **对话识别**：每句对白独立一个镜头，说话人用近景/特写
-2. **角色识别**：准确记录每个分镜中出现的角色，characters 数组必须完整
+2. **角色识别（重要）**：characters 数组必须包含 description 中提到的所有角色名，包括有对话的主要角色、只有动作的配角、以及非人类角色（怪物、动物、变异生物等）。不要遗漏任何在画面中出现的具名角色。只填写有具体名字的角色，不要填写泛称群体如"人群"、"路人"等。同一角色在多个分镜中使用相同名字
 3. **场景连贯**：${sceneNumber === 1 ? '作为第一个场景，用远景/全景建立环境' : '注意与上一场景的自然过渡'}
 4. **表情与动作**：用简单自然的语言描述角色的微表情和细微动作
 5. **endState 记录**：简要记录镜头结束时角色的位置、姿势、表情
@@ -286,6 +286,7 @@ ${sceneContent}
   if (onProgress) onProgress(100);
 
   console.log(`[BatchSceneStep] 场景 ${sceneNumber}(${sceneName}) 完成: ${scenes.length} 个分镜, ${totalDuration}秒`);
+  console.log(`[BatchSceneStep] 场景角色汇总:`, [...new Set(scenes.flatMap(s => s.characters || []))]);
 
   return {
     scenes,
