@@ -115,7 +115,7 @@ const SceneCardMetadata: React.FC<SceneCardMetadataProps> = ({ scene, onUpdateSp
 
       {/* 首尾帧 */}
       {scene.hasAction && (scene.startFrame || scene.endFrame) && (
-        <div className="bg-gradient-to-r from-orange-500/10 to-amber-500/10 rounded-lg p-3 border border-orange-500/20">
+        <div className="bg-linear-to-r from-orange-500/10 to-amber-500/10 rounded-lg p-3 border border-orange-500/20">
           <div className="flex items-center gap-2 mb-2">
             <Video className="w-4 h-4 text-orange-400" />
             <span className="text-xs font-bold text-orange-300">动作帧（用于生成视频）</span>

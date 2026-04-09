@@ -43,8 +43,8 @@ const OptionGrid: React.FC<OptionGridProps> = ({
           }}
           className={`p-2 rounded text-left transition-all duration-150 border ${
             isSelected
-              ? 'bg-[var(--accent)] text-white border-[var(--accent)] shadow-sm shadow-[var(--accent)]/20'
-              : 'bg-[var(--bg-input)] text-[var(--text-primary)] border-[var(--border-color)] hover:border-[var(--accent)]/50 hover:bg-[var(--bg-card-hover)]'
+              ? 'bg-(--accent) text-white border-(--accent) shadow-sm shadow-(--accent)/20'
+              : 'bg-(--bg-input) text-(--text-primary) border-(--border-color) hover:border-(--accent)/50 hover:bg-(--bg-card-hover)'
           }`}
         >
           <div className="text-xs font-medium leading-tight">{opt.label}</div>
