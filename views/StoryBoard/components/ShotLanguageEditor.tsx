@@ -1,14 +1,26 @@
 /**
  * 镜头参数编辑器
- * 简洁易用的镜头参数设置组件
+ * 专业影视镜头参数设置组件 - Tab式布局
+ * 
+ * Tab 1 "摄像机"：焦距、距离、运动、景深、构图、角度
+ * Tab 2 "打光"：光源、方向、质量、色温、对比度
+ * Tab 3 "构图"：景别、轴线、屏幕方向、转场、时长
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Button, Select, SelectItem, Input, Card, CardBody, Slider } from '@heroui/react';
-import { Camera, Wand2, Save, RotateCcw, Clock } from 'lucide-react';
+import { Button, Tabs, Tab, Card, CardBody, Input } from '@heroui/react';
+import { Camera, Sun, Grid3X3, Wand2, Save, RotateCcw, Clock, Film, User } from 'lucide-react';
 import { useToast } from '../../../contexts/ToastContext';
-import { ShotLanguage, ShotPreset, DEFAULT_SHOT_PRESETS } from '../../../types/shotLanguage';
+import {
+  ShotLanguage,
+  ShotPreset,
+  DEFAULT_SHOT_PRESETS,
+  MONTAGE_TYPE_OPTIONS,
+  migrateShotLanguage,
+} from '../../../types/shotLanguage';
 import { getAuthToken } from '../../../services/auth';
+import CameraParametersPanel from './CameraParametersPanel';
+import LightingParametersPanel from './LightingParametersPanel';
 
 interface ShotLanguageEditorProps {
   storyboardId: number;
@@ -18,48 +30,72 @@ interface ShotLanguageEditorProps {
   compact?: boolean;
 }
 
-// 简化的选项定义
-const SIMPLE_OPTIONS = {
+// 构图Tab使用的选项定义
+const COMPOSITION_OPTIONS = {
   shotSize: [
-    { value: 'extreme_close_up', label: '超近景', desc: '聚焦细节，如眼睛、手指' },
-    { value: 'close_up', label: '近景', desc: '面部表情，情感表达' },
+    { value: 'extreme_close_up', label: '大特写', desc: '聚焦细节，如眼睛、手指' },
+    { value: 'close_up', label: '特写', desc: '面部表情，情感表达' },
     { value: 'medium_close_up', label: '中近景', desc: '头部和肩部' },
-    { value: 'medium', label: '中景', desc: '上半身，常用对话镜头' },
-    { value: 'medium_long', label: '中远景', desc: '大部分身体' },
-    { value: 'full', label: '全景', desc: '完整人物' },
-    { value: 'long', label: '远景', desc: '人物与环境' },
-    { value: 'extreme_long', label: '超远景', desc: '宏大场面' },
+    { value: 'medium_shot', label: '中景', desc: '上半身，常用对话镜头' },
+    { value: 'medium_long_shot', label: '中全景', desc: '大部分身体' },
+    { value: 'long_shot', label: '全景', desc: '完整人物' },
+    { value: 'extreme_long_shot', label: '大远景', desc: '宏大场面' },
   ],
-  cameraAngle: [
-    { value: 'eye_level', label: '平视', desc: '自然、平等的视角' },
-    { value: 'low', label: '仰视', desc: '使人物显得高大、威严' },
-    { value: 'high', label: '俯视', desc: '使人物显得渺小、脆弱' },
-    { value: 'birds_eye', label: '鸟瞰', desc: '从上方俯瞰全局' },
+  axisPosition: [
+    { value: 'left', label: '左侧', desc: '主体在轴线左侧' },
+    { value: 'right', label: '右侧', desc: '主体在轴线右侧' },
+    { value: 'on_axis', label: '轴线上', desc: '主体在轴线上' },
   ],
-  movement: [
-    { value: 'static', label: '固定', desc: '镜头保持不动' },
-    { value: 'pan', label: '横摇', desc: '镜头左右转动' },
-    { value: 'tilt', label: '纵摇', desc: '镜头上下转动' },
-    { value: 'zoom_in', label: '推近', desc: '逐渐放大' },
-    { value: 'zoom_out', label: '拉远', desc: '逐渐缩小' },
-    { value: 'dolly', label: '推拉', desc: '镜头前后移动' },
-    { value: 'tracking', label: '跟踪', desc: '跟随人物移动' },
+  screenDirection: [
+    { value: 'left_to_right', label: '左→右', desc: '从左向右运动' },
+    { value: 'right_to_left', label: '右→左', desc: '从右向左运动' },
+    { value: 'towards_camera', label: '朝向镜头', desc: '向观众方向运动' },
+    { value: 'away_from_camera', label: '远离镜头', desc: '远离观众方向运动' },
   ],
-  mood: [
-    { value: 'bright', label: '明亮', desc: '阳光、温暖、积极' },
-    { value: 'dark', label: '暗调', desc: '神秘、压抑、紧张' },
-    { value: 'warm', label: '暖色', desc: '温馨、浪漫' },
-    { value: 'cool', label: '冷色', desc: '冷静、疏离' },
-    { value: 'dramatic', label: '戏剧性', desc: '强烈明暗对比' },
-    { value: 'soft', label: '柔和', desc: '均匀柔光' },
-  ],
-  transition: [
+  transitionType: [
     { value: 'cut', label: '硬切', desc: '直接切换' },
     { value: 'fade', label: '淡入淡出', desc: '渐隐渐显' },
     { value: 'dissolve', label: '叠化', desc: '两镜头渐变' },
-    { value: 'wipe', label: '划变', desc: '新画面推入' },
+    { value: 'wipe', label: '划像', desc: '新画面推入' },
+    { value: 'match_cut', label: '匹配剪辑', desc: '相似元素切换' },
+  ],
+  montageType: [
+    { value: 'narrative', label: '叙事', desc: '按时间顺序讲述故事' },
+    { value: 'expressive', label: '表现', desc: '镜头对比表达情感' },
+    { value: 'cross_cutting', label: '交叉', desc: '多场景交替并行' },
+    { value: 'metaphorical', label: '隐喻', desc: '镜头组合象征意义' },
+    { value: 'accumulative', label: '积累', desc: '重复镜头强化主题' },
   ],
 };
+
+/** 选项按钮网格组件 */
+const OptionGrid: React.FC<{
+  options: Array<{ value: string; label: string; desc?: string }>;
+  selected?: string;
+  onSelect: (value: string) => void;
+  columns?: number;
+}> = ({ options, selected, onSelect, columns = 3 }) => (
+  <div className={`grid gap-1.5`} style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}>
+    {options.map((opt) => (
+      <button
+        key={opt.value}
+        onClick={() => onSelect(opt.value)}
+        className={`p-2 rounded text-left transition-colors border ${
+          selected === opt.value
+            ? 'bg-[var(--accent)] text-white border-[var(--accent)]'
+            : 'bg-[var(--bg-input)] text-[var(--text-primary)] border-[var(--border-color)] hover:border-[var(--accent)]/50 hover:bg-[var(--bg-card-hover)]'
+        }`}
+      >
+        <div className="text-xs font-medium">{opt.label}</div>
+        {opt.desc && (
+          <div className={`text-[10px] mt-0.5 ${selected === opt.value ? 'text-white/70' : 'text-[var(--text-muted)]'}`}>
+            {opt.desc}
+          </div>
+        )}
+      </button>
+    ))}
+  </div>
+);
 
 const ShotLanguageEditor: React.FC<ShotLanguageEditorProps> = ({
   storyboardId,
@@ -69,13 +105,14 @@ const ShotLanguageEditor: React.FC<ShotLanguageEditorProps> = ({
   compact = false,
 }) => {
   const { showToast } = useToast();
-  const [values, setValues] = useState<ShotLanguage>(initialValues);
+  const [values, setValues] = useState<ShotLanguage>(() => migrateShotLanguage(initialValues));
   const [saving, setSaving] = useState(false);
   const [showPresets, setShowPresets] = useState(false);
+  const [activeTab, setActiveTab] = useState<string>('camera');
 
-  // 同步外部初始值
+  // 同步外部初始值（带迁移）
   useEffect(() => {
-    setValues(initialValues);
+    setValues(migrateShotLanguage(initialValues));
   }, [initialValues]);
 
   const handleChange = useCallback((field: keyof ShotLanguage, value: string | number | undefined) => {
@@ -112,8 +149,9 @@ const ShotLanguageEditor: React.FC<ShotLanguageEditorProps> = ({
   };
 
   const applyPreset = (preset: ShotPreset) => {
-    setValues(preset.shotLanguage);
-    onChange?.(preset.shotLanguage);
+    const migrated = migrateShotLanguage(preset.shotLanguage);
+    setValues(migrated);
+    onChange?.(migrated);
     setShowPresets(false);
     showToast(`已应用预设: ${preset.name}`, 'success');
   };
@@ -123,33 +161,46 @@ const ShotLanguageEditor: React.FC<ShotLanguageEditorProps> = ({
     onChange?.({});
   };
 
-  // 紧凑模式 - 仅显示关键参数
+  // 紧凑模式 - 仅显示景别+视角+焦距
   if (compact) {
     return (
       <div className="flex items-center gap-2 flex-wrap">
-        <Select
-          size="sm"
-          placeholder="画面大小"
-          selectedKeys={values.shotSize ? [values.shotSize] : []}
+        <select
+          className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200"
+          value={values.shotSize || ''}
           onChange={(e) => handleChange('shotSize', e.target.value)}
-          classNames={{ trigger: 'bg-slate-800 border-slate-700 w-24' }}
         >
-          {SIMPLE_OPTIONS.shotSize.map((opt) => (
-            <SelectItem key={opt.value}>{opt.label}</SelectItem>
+          <option value="">画面大小</option>
+          {COMPOSITION_OPTIONS.shotSize.map((opt) => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
           ))}
-        </Select>
+        </select>
 
-        <Select
-          size="sm"
-          placeholder="视角"
-          selectedKeys={values.cameraHeight ? [values.cameraHeight] : []}
+        <select
+          className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200"
+          value={values.cameraHeight || ''}
           onChange={(e) => handleChange('cameraHeight', e.target.value)}
-          classNames={{ trigger: 'bg-slate-800 border-slate-700 w-20' }}
         >
-          {SIMPLE_OPTIONS.cameraAngle.map((opt) => (
-            <SelectItem key={opt.value}>{opt.label}</SelectItem>
-          ))}
-        </Select>
+          <option value="">视角</option>
+          <option value="eye_level">平视</option>
+          <option value="low_angle">仰视</option>
+          <option value="high_angle">俯视</option>
+          <option value="bird_eye">鸟瞰</option>
+        </select>
+
+        <select
+          className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200"
+          value={values.focalLength || ''}
+          onChange={(e) => handleChange('focalLength', e.target.value)}
+        >
+          <option value="">焦距</option>
+          <option value="ultra_wide">超广角</option>
+          <option value="wide">广角</option>
+          <option value="standard">标准</option>
+          <option value="portrait">人像</option>
+          <option value="telephoto">长焦</option>
+          <option value="macro">微距</option>
+        </select>
 
         <Input
           type="number"
@@ -224,140 +275,133 @@ const ShotLanguageEditor: React.FC<ShotLanguageEditorProps> = ({
         </Card>
       )}
 
-      {/* 简洁参数设置 */}
-      <div className="space-y-4">
-        {/* 画面大小 */}
-        <div className="space-y-2">
-          <label className="text-xs text-[var(--text-secondary)] font-medium">画面大小（人物占画面比例）</label>
-          <div className="grid grid-cols-4 gap-1.5">
-            {SIMPLE_OPTIONS.shotSize.map((opt) => (
-              <button
-                key={opt.value}
-                onClick={() => handleChange('shotSize', opt.value)}
-                className={`p-2 rounded text-center transition-colors border ${
-                  values.shotSize === opt.value
-                    ? 'bg-[var(--accent)] text-white border-[var(--accent)]'
-                    : 'bg-[var(--bg-input)] text-[var(--text-primary)] border-[var(--border-color)] hover:border-[var(--accent)]/50 hover:bg-[var(--bg-card-hover)]'
-                }`}
-              >
-                <div className="text-xs font-medium">{opt.label}</div>
-              </button>
-            ))}
+      {/* Tab式参数面板 */}
+      <Tabs
+        selectedKey={activeTab}
+        onSelectionChange={(key) => setActiveTab(key as string)}
+        variant="underlined"
+        classNames={{
+          tabList: 'gap-6 w-full relative p-0 border-b border-[var(--border-color)]',
+          tab: 'text-[var(--text-muted)] data-[selected=true]:text-[var(--accent)] font-medium px-2 py-2',
+          tabContent: 'group-data-[selected=true]:text-[var(--accent)]',
+          cursor: 'bg-[var(--accent)]',
+        }}
+      >
+        <Tab
+          key="camera"
+          title={
+            <div className="flex items-center gap-1.5">
+              <Camera className="w-3.5 h-3.5" />
+              <span>摄像机</span>
+            </div>
+          }
+        >
+          <div className="pt-4">
+            <CameraParametersPanel values={values} onChange={handleChange} />
           </div>
-        </div>
+        </Tab>
 
-        {/* 视角 */}
-        <div className="space-y-2">
-          <label className="text-xs text-[var(--text-secondary)] font-medium">视角（摄像机高度）</label>
-          <div className="grid grid-cols-4 gap-1.5">
-            {SIMPLE_OPTIONS.cameraAngle.map((opt) => (
-              <button
-                key={opt.value}
-                onClick={() => handleChange('cameraHeight', opt.value)}
-                className={`p-2 rounded text-center transition-colors border ${
-                  values.cameraHeight === opt.value
-                    ? 'bg-[var(--accent)] text-white border-[var(--accent)]'
-                    : 'bg-[var(--bg-input)] text-[var(--text-primary)] border-[var(--border-color)] hover:border-[var(--accent)]/50 hover:bg-[var(--bg-card-hover)]'
-                }`}
-              >
-                <div className="text-xs font-medium">{opt.label}</div>
-                <div className="text-[10px] text-[var(--text-muted)]">{opt.desc}</div>
-              </button>
-            ))}
+        <Tab
+          key="lighting"
+          title={
+            <div className="flex items-center gap-1.5">
+              <Sun className="w-3.5 h-3.5" />
+              <span>打光</span>
+            </div>
+          }
+        >
+          <div className="pt-4">
+            <LightingParametersPanel values={values} onChange={handleChange} />
           </div>
-        </div>
+        </Tab>
 
-        {/* 镜头运动 */}
-        <div className="space-y-2">
-          <label className="text-xs text-[var(--text-secondary)] font-medium">镜头运动</label>
-          <div className="grid grid-cols-4 gap-1.5">
-            {SIMPLE_OPTIONS.movement.slice(0, 4).map((opt) => (
-              <button
-                key={opt.value}
-                onClick={() => handleChange('cameraMovement', opt.value)}
-                className={`p-2 rounded text-center transition-colors border ${
-                  values.cameraMovement === opt.value
-                    ? 'bg-[var(--accent)] text-white border-[var(--accent)]'
-                    : 'bg-[var(--bg-input)] text-[var(--text-primary)] border-[var(--border-color)] hover:border-[var(--accent)]/50 hover:bg-[var(--bg-card-hover)]'
-                }`}
-              >
-                <div className="text-xs font-medium">{opt.label}</div>
-              </button>
-            ))}
-          </div>
-          <div className="grid grid-cols-3 gap-1.5">
-            {SIMPLE_OPTIONS.movement.slice(4).map((opt) => (
-              <button
-                key={opt.value}
-                onClick={() => handleChange('cameraMovement', opt.value)}
-                className={`p-2 rounded text-center transition-colors border ${
-                  values.cameraMovement === opt.value
-                    ? 'bg-[var(--accent)] text-white border-[var(--accent)]'
-                    : 'bg-[var(--bg-input)] text-[var(--text-primary)] border-[var(--border-color)] hover:border-[var(--accent)]/50 hover:bg-[var(--bg-card-hover)]'
-                }`}
-              >
-                <div className="text-xs font-medium">{opt.label}</div>
-              </button>
-            ))}
-          </div>
-        </div>
+        <Tab
+          key="composition"
+          title={
+            <div className="flex items-center gap-1.5">
+              <Grid3X3 className="w-3.5 h-3.5" />
+              <span>构图</span>
+            </div>
+          }
+        >
+          <div className="pt-4 space-y-5">
+            {/* 景别 */}
+            <div className="space-y-2">
+              <label className="text-xs text-[var(--text-secondary)] font-medium">景别（画面大小）</label>
+              <OptionGrid
+                options={COMPOSITION_OPTIONS.shotSize}
+                selected={values.shotSize}
+                onSelect={(v) => handleChange('shotSize', v)}
+                columns={4}
+              />
+            </div>
 
-        {/* 氛围与时长 */}
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <label className="text-xs text-[var(--text-secondary)] font-medium">画面氛围</label>
-            <Select
-              size="sm"
-              placeholder="选择氛围..."
-              selectedKeys={values.lightingMood ? [values.lightingMood] : []}
-              onChange={(e) => handleChange('lightingMood', e.target.value)}
-              classNames={{ trigger: 'bg-[var(--bg-input)] border-[var(--border-color)]' }}
-            >
-              {SIMPLE_OPTIONS.mood.map((opt) => (
-                <SelectItem key={opt.value}>{opt.label} - {opt.desc}</SelectItem>
-              ))}
-            </Select>
-          </div>
+            {/* 轴线位置 */}
+            <div className="space-y-2">
+              <label className="text-xs text-[var(--text-secondary)] font-medium">轴线位置</label>
+              <OptionGrid
+                options={COMPOSITION_OPTIONS.axisPosition}
+                selected={values.axisPosition}
+                onSelect={(v) => handleChange('axisPosition', v)}
+                columns={3}
+              />
+            </div>
 
-          <div className="space-y-2">
-            <label className="text-xs text-[var(--text-secondary)] font-medium flex items-center gap-1">
-              <Clock className="w-3 h-3" /> 时长
-            </label>
-            <Input
-              type="number"
-              size="sm"
-              step="0.5"
-              min="0.5"
-              max="30"
-              placeholder="秒"
-              value={values.shotDuration?.toString() || ''}
-              onChange={(e) => handleChange('shotDuration', parseFloat(e.target.value) || undefined)}
-              classNames={{ inputWrapper: 'bg-[var(--bg-input)] border-[var(--border-color)]' }}
-              endContent={<span className="text-xs text-[var(--text-muted)]">秒</span>}
-            />
-          </div>
-        </div>
+            {/* 屏幕方向 */}
+            <div className="space-y-2">
+              <label className="text-xs text-[var(--text-secondary)] font-medium">屏幕方向</label>
+              <OptionGrid
+                options={COMPOSITION_OPTIONS.screenDirection}
+                selected={values.screenDirection}
+                onSelect={(v) => handleChange('screenDirection', v)}
+                columns={4}
+              />
+            </div>
 
-        {/* 转场 */}
-        <div className="space-y-2">
-          <label className="text-xs text-[var(--text-secondary)] font-medium">转场效果</label>
-          <div className="grid grid-cols-4 gap-1.5">
-            {SIMPLE_OPTIONS.transition.map((opt) => (
-              <button
-                key={opt.value}
-                onClick={() => handleChange('transitionType', opt.value)}
-                className={`p-2 rounded text-center transition-colors border ${
-                  values.transitionType === opt.value
-                    ? 'bg-[var(--accent)] text-white border-[var(--accent)]'
-                    : 'bg-[var(--bg-input)] text-[var(--text-primary)] border-[var(--border-color)] hover:border-[var(--accent)]/50 hover:bg-[var(--bg-card-hover)]'
-                }`}
-              >
-                <div className="text-xs font-medium">{opt.label}</div>
-              </button>
-            ))}
+            {/* 转场效果 */}
+            <div className="space-y-2">
+              <label className="text-xs text-[var(--text-secondary)] font-medium">转场效果</label>
+              <OptionGrid
+                options={COMPOSITION_OPTIONS.transitionType}
+                selected={values.transitionType}
+                onSelect={(v) => handleChange('transitionType', v)}
+                columns={3}
+              />
+            </div>
+
+            {/* 时长 */}
+            <div className="space-y-2">
+              <label className="text-xs text-[var(--text-secondary)] font-medium flex items-center gap-1">
+                <Clock className="w-3 h-3" /> 镜头时长
+              </label>
+              <Input
+                type="number"
+                size="sm"
+                step="0.5"
+                min="0.5"
+                max="30"
+                placeholder="秒"
+                value={values.shotDuration?.toString() || ''}
+                onChange={(e) => handleChange('shotDuration', parseFloat(e.target.value) || undefined)}
+                classNames={{ inputWrapper: 'bg-[var(--bg-input)] border-[var(--border-color)]' }}
+                endContent={<span className="text-xs text-[var(--text-muted)]">秒</span>}
+              />
+            </div>
+
+            {/* 焦点位置 */}
+            <div className="space-y-2">
+              <label className="text-xs text-[var(--text-secondary)] font-medium">焦点位置</label>
+              <Input
+                size="sm"
+                placeholder="描述焦点位置，如：角色左眼"
+                value={values.focusPoint || ''}
+                onChange={(e) => handleChange('focusPoint', e.target.value)}
+                classNames={{ inputWrapper: 'bg-[var(--bg-input)] border-[var(--border-color)]' }}
+              />
+            </div>
           </div>
-        </div>
-      </div>
+        </Tab>
+      </Tabs>
     </div>
   );
 };

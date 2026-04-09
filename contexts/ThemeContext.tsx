@@ -79,11 +79,17 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     root.classList.remove('theme-dark', 'theme-light', 'theme-high-contrast');
     root.classList.add(`theme-${actualTheme}`);
 
-    // HeroUI 需要 dark class
+    // HeroUI 需要 dark class；高对比度也基于深色
     if (actualTheme === 'dark' || actualTheme === 'high-contrast') {
       root.classList.add('dark');
+      // HeroUI 高对比度主题需要额外 class
+      if (actualTheme === 'high-contrast') {
+        root.classList.add('high-contrast');
+      } else {
+        root.classList.remove('high-contrast');
+      }
     } else {
-      root.classList.remove('dark');
+      root.classList.remove('dark', 'high-contrast');
     }
   }, [theme]);
 

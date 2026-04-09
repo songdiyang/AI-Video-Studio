@@ -16,13 +16,18 @@ export interface BillingRecord {
   created_at: string;
 }
 
-function authHeaders() {
+export interface BalanceInfo {
+  balance: number;
+  monthlyQuota: number;
+  monthlyUsed: number;
+  planName: string;
+  planDisplayName: string;
+  periodEnd: string | null;
+}
+
+function authHeaders(): Record<string, string> {
   const token = getAuthToken();
-  return token
-    ? {
-        Authorization: `Bearer ${token}`,
-      }
-    : {};
+  return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
 export async function fetchBillingSummary(): Promise<BillingSummary> {
@@ -53,4 +58,19 @@ export async function fetchBillingHistory(): Promise<BillingRecord[]> {
   }
 
   return (await res.json()) as BillingRecord[];
+}
+
+export async function fetchBalance(): Promise<BalanceInfo> {
+  const res = await fetch('/api/users/balance', {
+    headers: {
+      ...authHeaders(),
+    },
+  });
+
+  if (!res.ok) {
+    const data = await res.json().catch(() => null);
+    throw new Error(data?.message || 'Failed to load balance');
+  }
+
+  return (await res.json()) as BalanceInfo;
 }

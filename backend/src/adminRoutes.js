@@ -1665,11 +1665,12 @@ router.get('/system-errors', authMiddleware, requireAdmin, async (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
     const errorType = req.query.errorType || null;
+    const search = req.query.search || null;
     const isResolved = req.query.isResolved !== undefined 
       ? req.query.isResolved === 'true' 
       : null;
 
-    const result = await getSystemErrors({ page, limit, errorType, isResolved });
+    const result = await getSystemErrors({ page, limit, errorType, isResolved, search });
     res.json(result);
   } catch (error) {
     console.error('[Admin] Get system errors error:', error);

@@ -234,7 +234,7 @@ ${sceneContent}
 - characters: 出场角色数组
 - location: 场景地点
 - emotion: 情绪氛围
-- cameraMovement: 镜头运动（"static"/"push_in"/"pull_out"/"pan_left"/"pan_right"）
+- cameraMovement: 镜头运动（"static"/"push"/"pull"/"pan"/"tilt"/"track"/"dolly"/"zoom"/"orbit"/"dolly_zoom"/"crane"/"handheld"/"steadicam"/"whip_pan"）
 
 只输出 JSON 数组，不要其他内容。`;
 

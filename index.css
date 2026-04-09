@@ -6,33 +6,38 @@
 /* =========== 专业影视制作软件风格主题系统 =========== */
 /* 参考 Premiere Pro / DaVinci Resolve 的专业NLE软件风格 */
 
-/* 专业暗色主题（默认） */
+/* 专业暗色主题（默认）- Deep Charcoal Gray */
+/* 参考 VS Code Dark+ / JetBrains Darcula 配色方案 */
+/* 中性炭灰色基底，极低饱和度，专业沉稳 */
 :root, .theme-dark {
-  /* 核心背景色 - 冷色深色系 */
-  --bg-body: linear-gradient(180deg, #1a1a2e 0%, #16213e 50%, #0f0f1a 100%);
-  --bg-app: #1e1e2e;
-  --bg-nav: rgba(22, 33, 62, 0.92);
-  --bg-card: rgba(30, 30, 46, 0.85);
-  --bg-card-hover: rgba(37, 37, 56, 0.95);
-  --bg-input: rgba(26, 26, 46, 0.7);
-  --bg-elevated: rgba(30, 30, 46, 0.75);
+  /* 核心背景色 - 深炭灰色系（近中性，微暖底减少蓝光疲劳） */
+  --bg-body: linear-gradient(180deg, #18181c 0%, #1a1a1e 50%, #111113 100%);
+  --bg-app: #1a1a1e;
+  --bg-nav: rgba(22, 22, 27, 0.95);
+  --bg-card: rgba(30, 30, 35, 0.92);
+  --bg-card-hover: rgba(38, 38, 44, 0.95);
+  --bg-input: rgba(20, 20, 24, 0.8);
+  --bg-elevated: rgba(30, 30, 35, 0.85);
   
-  /* 边框 - 冷蓝灰色调 */
-  --border-color: rgba(100, 120, 180, 0.15);
-  --border-subtle: rgba(100, 120, 180, 0.08);
+  /* 边框 - 中性灰色调 */
+  --border-color: rgba(140, 140, 155, 0.15);
+  --border-subtle: rgba(140, 140, 155, 0.08);
   --border-glow: rgba(59, 130, 246, 0.35);
   
-  /* 文字 - 冷白/冷灰色调 */
-  --text-primary: #e0e0e8;
-  --text-secondary: #8890a0;
-  --text-muted: #5a6070;
-  --text-inverse: #1e1e2e;
+  /* 文字 - 暖白/中灰（WCAG AAA 对比度） */
+  /* #d4d4dc on #1a1a1e → 11.2:1 (AAA)  */
+  /* #9898a4 on #1a1a1e → 5.5:1  (AA)   */
+  /* #64646e on #1a1a1e → 3.1:1  (AA lg) */
+  --text-primary: #d4d4dc;
+  --text-secondary: #9898a4;
+  --text-muted: #64646e;
+  --text-inverse: #1a1a1e;
   
-  /* 强调色 - 科技蓝 */
-  --accent: #3b82f6;
-  --accent-light: #60a5fa;
-  --accent-dark: #2563eb;
-  --accent-glow: rgba(59, 130, 246, 0.4);
+  /* 强调色 - 科技蓝（在深炭灰底上更明亮醒目） */
+  --accent: #4e8ef7;
+  --accent-light: #6ea4fa;
+  --accent-dark: #2f6fe0;
+  --accent-glow: rgba(78, 142, 247, 0.35);
   
   /* 兼容旧的 --gold 变量名（过渡期） */
   --gold: var(--accent);
@@ -40,30 +45,30 @@
   --gold-dark: var(--accent-dark);
   --gold-glow: var(--accent-glow);
   
-  /* 功能色 */
-  --accent-primary: #06b6d4;
-  --accent-secondary: #8b5cf6;
-  --success: #10b981;
-  --success-glow: rgba(16, 185, 129, 0.3);
-  --warning: #f59e0b;
-  --warning-glow: rgba(245, 158, 11, 0.3);
-  --danger: #ef4444;
-  --danger-glow: rgba(239, 68, 68, 0.3);
+  /* 功能色（在深灰底上适当提亮以保证可辨识） */
+  --accent-primary: #22c5d6;
+  --accent-secondary: #9d6eff;
+  --success: #22c55e;
+  --success-glow: rgba(34, 197, 94, 0.25);
+  --warning: #f5a623;
+  --warning-glow: rgba(245, 166, 35, 0.25);
+  --danger: #f25555;
+  --danger-glow: rgba(242, 85, 85, 0.25);
   
-  /* 滚动条 - 冷灰蓝色调 */
-  --scrollbar-track: rgba(22, 33, 62, 0.6);
-  --scrollbar-thumb: rgba(100, 120, 180, 0.35);
-  --scrollbar-thumb-hover: rgba(100, 120, 180, 0.55);
+  /* 滚动条 - 中性灰 */
+  --scrollbar-track: rgba(20, 20, 24, 0.7);
+  --scrollbar-thumb: rgba(120, 120, 135, 0.3);
+  --scrollbar-thumb-hover: rgba(120, 120, 135, 0.5);
   
-  /* 玻璃拟态 - 冷色调半透明 */
-  --glass-bg: rgba(30, 30, 46, 0.65);
+  /* 玻璃拟态 - 深炭灰半透明 */
+  --glass-bg: rgba(24, 24, 28, 0.75);
   --glass-blur: blur(20px);
-  --glass-border: rgba(100, 120, 180, 0.12);
-  --glass-highlight: rgba(255, 255, 255, 0.04);
+  --glass-border: rgba(140, 140, 155, 0.1);
+  --glass-highlight: rgba(255, 255, 255, 0.03);
   
   /* 阴影 */
-  --shadow-color: rgba(0, 0, 0, 0.5);
-  --shadow-glow: rgba(59, 130, 246, 0.15);
+  --shadow-color: rgba(0, 0, 0, 0.6);
+  --shadow-glow: rgba(78, 142, 247, 0.12);
 }
 
 /* 专业浅色主题 */

@@ -15,6 +15,8 @@ import { validateFrameReadiness, formatValidationMessage } from '../utils/valida
 import { useToast } from '../../../contexts/ToastContext';
 import { useConfirm } from '../../../contexts/ConfirmContext';
 import { SpatialDescription } from '../useSceneManager';
+import type { StoryboardValidationIssue } from '../utils/validateStoryboardContent';
+import { getWorstSeverity } from '../utils/validateStoryboardContent';
 
 export interface SceneCardProps {
   scene: StoryboardScene;
@@ -35,6 +37,7 @@ export interface SceneCardProps {
   onOpenSketchEditor?: (id: number) => void;
   imageTask?: TaskState;
   videoTask?: TaskState;
+  validationIssues?: StoryboardValidationIssue[];
 }
 
 const SceneCard: React.FC<SceneCardProps> = ({
@@ -55,7 +58,8 @@ const SceneCard: React.FC<SceneCardProps> = ({
   onUpdateScene,
   onOpenSketchEditor,
   imageTask,
-  videoTask
+  videoTask,
+  validationIssues
 }) => {
   const [isEditingDescription, setIsEditingDescription] = useState(false);
   const [editedDescription, setEditedDescription] = useState(scene.description);
@@ -277,6 +281,11 @@ const SceneCard: React.FC<SceneCardProps> = ({
     }
   };
 
+    // 计算检验标记的严重程度
+    const validationSeverity = validationIssues && validationIssues.length > 0
+      ? getWorstSeverity(validationIssues)
+      : null;
+  
   return (
     <>
       <Card
@@ -294,12 +303,22 @@ const SceneCard: React.FC<SceneCardProps> = ({
             onClick={() => onSelect(scene.id)}
           >
             {/* 紧凑的序号 */}
-            <div className="flex flex-col items-center justify-center w-6 flex-shrink-0">
+            <div className="flex flex-col items-center justify-center w-6 flex-shrink-0 relative">
               <span className={`text-xs font-bold ${
                 isSelected ? 'text-[var(--accent)]' : 'text-[var(--text-muted)]'
               }`}>
                 {index + 1}
               </span>
+              {/* 检验标记 */}
+              {validationSeverity && (
+                <span
+                  className={`absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full ${
+                    validationSeverity === 'error' ? 'bg-rose-500' :
+                    validationSeverity === 'warning' ? 'bg-amber-500' : 'bg-sky-500'
+                  }`}
+                  title={validationIssues!.map(i => i.message).join('\n')}
+                />
+              )}
             </div>
 
             {/* 缩略图 - 支持拖拽到积木编辑器 */}

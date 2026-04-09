@@ -12,9 +12,21 @@
  * output: { total, updated, results[] }
  */
 
-const { queryAll, execute, queryOne } = require('../../../dbHelper');
+const { queryAll, execute } = require('../../../dbHelper');
 const handleBaseTextModelCall = require('../base/baseTextModelCall');
 const { washForJSON } = require('../../../utils/washBody');
+
+// AI 调用超时时间（默认 90 秒）
+const AI_CALL_TIMEOUT = parseInt(process.env.SCENE_STATE_AI_TIMEOUT, 10) || 90000;
+
+function withTimeout(promise, ms, errorMessage) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(errorMessage)), ms)
+    )
+  ]);
+}
 
 async function handleSceneStateAnalysis(inputParams, onProgress) {
   const { scriptId, textModel, think } = inputParams;
@@ -108,13 +120,17 @@ ${shotsText}
   console.log('[SceneStateAnalysis] 分析', shotsForAnalysis.length, '个镜头的环境状态...');
   if (onProgress) onProgress(20);
 
-  // 4. 调用文本模型
-  const result = await handleBaseTextModelCall({
-    prompt: fullPrompt,
-    textModel,
-    think,
-    temperature: 0.2
-  });
+  // 4. 调用文本模型（带超时保护）
+  const result = await withTimeout(
+    handleBaseTextModelCall({
+      prompt: fullPrompt,
+      textModel,
+      think,
+      temperature: 0.2
+    }),
+    AI_CALL_TIMEOUT,
+    `场景状态分析 AI 调用超时（${Math.round(AI_CALL_TIMEOUT / 1000)}秒）`
+  );
 
   if (onProgress) onProgress(60);
 
@@ -135,12 +151,16 @@ ${shotsText}
   // 5.1 空结果回退：关闭 thinking 重试一次
   if (analysisResults.length === 0 && think) {
     console.log('[SceneStateAnalysis] 思考模式输出为空，关闭 thinking 重试...');
-    const retryResult = await handleBaseTextModelCall({
-      prompt: fullPrompt,
-      textModel,
-      think: false,
-      temperature: 0.2
-    });
+    const retryResult = await withTimeout(
+      handleBaseTextModelCall({
+        prompt: fullPrompt,
+        textModel,
+        think: false,
+        temperature: 0.2
+      }),
+      AI_CALL_TIMEOUT,
+      `场景状态分析重试 AI 调用超时（${Math.round(AI_CALL_TIMEOUT / 1000)}秒）`
+    );
     try {
       const retryParsed = washForJSON(retryResult.content);
       if (Array.isArray(retryParsed)) {
@@ -154,10 +174,29 @@ ${shotsText}
 
   if (onProgress) onProgress(70);
 
-  // 6. 写入每个分镜的 variables_json
+  // 6. 批量写入每个分镜的 variables_json（优化：1次批量查询 + 批量更新）
   let updated = 0;
   const results = [];
 
+  // 6.1 批量预加载所有分镜的 variables_json（1次查询替代N次）
+  const sbIds = shotsForAnalysis.map(s => s.storyboardId);
+  const existingStoryboards = await queryAll(
+    `SELECT id, variables_json FROM storyboards WHERE id IN (${sbIds.map(() => '?').join(',')})`,
+    sbIds
+  );
+  const storyboardMap = new Map();
+  for (const sb of existingStoryboards) {
+    let vars = {};
+    try {
+      vars = typeof sb.variables_json === 'string'
+        ? JSON.parse(sb.variables_json || '{}')
+        : (sb.variables_json || {});
+    } catch (e) { vars = {}; }
+    storyboardMap.set(sb.id, vars);
+  }
+
+  // 6.2 在内存中合并分析结果
+  const updateBatch = []; // [newVariablesJson, storyboardId]
   for (const shot of shotsForAnalysis) {
     const analysis = analysisResults.find(a => a.order === shot.order);
     if (!analysis) {
@@ -166,44 +205,57 @@ ${shotsText}
       continue;
     }
 
-    // 验证 scene_state 值的合法性
     const validStates = ['normal', 'modified', 'inherit'];
     const sceneState = validStates.includes(analysis.scene_state) ? analysis.scene_state : 'normal';
 
+    const vars = storyboardMap.get(shot.storyboardId) || {};
+    vars.scene_state = sceneState;
+    vars.environment_change = analysis.environment_change || 'none';
+    vars.visual_anchor = analysis.visual_anchor || '';
+
+    updateBatch.push([JSON.stringify(vars), shot.storyboardId]);
+    results.push({
+      storyboardId: shot.storyboardId,
+      order: shot.order,
+      status: 'pending_update',
+      scene_state: sceneState,
+      environment_change: vars.environment_change
+    });
+  }
+
+  // 6.3 批量更新（分组执行，避免单条 SQL 过长）
+  const BATCH_SIZE = 50;
+  for (let i = 0; i < updateBatch.length; i += BATCH_SIZE) {
+    const batch = updateBatch.slice(i, i + BATCH_SIZE);
     try {
-      // 读取当前 variables_json
-      const sb = await queryOne('SELECT variables_json FROM storyboards WHERE id = ?', [shot.storyboardId]);
-      let vars = {};
-      try {
-        vars = typeof sb.variables_json === 'string'
-          ? JSON.parse(sb.variables_json || '{}')
-          : (sb.variables_json || {});
-      } catch (e) { vars = {}; }
-
-      // 写入新字段
-      vars.scene_state = sceneState;
-      vars.environment_change = analysis.environment_change || 'none';
-      vars.visual_anchor = analysis.visual_anchor || '';
-
+      // 使用 CASE WHEN 批量更新，减少 DB 往返
+      const ids = batch.map(b => b[1]);
+      const caseClauses = batch.map(b => `WHEN ${b[1]} THEN ?`).join(' ');
+      const values = batch.map(b => b[0]); // 新的 variables_json 值
       await execute(
-        'UPDATE storyboards SET variables_json = ? WHERE id = ?',
-        [JSON.stringify(vars), shot.storyboardId]
+        `UPDATE storyboards SET variables_json = CASE id ${caseClauses} END WHERE id IN (${ids.map(() => '?').join(',')})`,
+        [...values, ...ids]
       );
-
-      updated++;
-      results.push({
-        storyboardId: shot.storyboardId,
-        order: shot.order,
-        status: 'updated',
-        scene_state: sceneState,
-        environment_change: vars.environment_change
-      });
-
-      console.log(`[SceneStateAnalysis] 镜头${shot.order} → ${sceneState} | ${vars.environment_change}`);
-    } catch (err) {
-      console.error(`[SceneStateAnalysis] 镜头${shot.order} 写入失败:`, err.message);
-      results.push({ storyboardId: shot.storyboardId, order: shot.order, status: 'failed', error: err.message });
+      updated += batch.length;
+    } catch (batchErr) {
+      console.error('[SceneStateAnalysis] 批量更新失败，回退逐条更新:', batchErr.message);
+      // 回退：逐条更新
+      for (const [varsJson, sbId] of batch) {
+        try {
+          await execute('UPDATE storyboards SET variables_json = ? WHERE id = ?', [varsJson, sbId]);
+          updated++;
+        } catch (singleErr) {
+          console.error(`[SceneStateAnalysis] 更新分镜 ${sbId} 失败:`, singleErr.message);
+          const resultItem = results.find(r => r.storyboardId === sbId);
+          if (resultItem) resultItem.status = 'failed';
+        }
+      }
     }
+  }
+
+  // 标记所有结果为 updated
+  for (const r of results) {
+    if (r.status === 'pending_update') r.status = 'updated';
   }
 
   if (onProgress) onProgress(100);

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Film, User, Package, LogOut, FolderOpen, Settings, Sparkles, Wifi, WifiOff, Pencil, Moon, Sun, Monitor, Contrast, BarChart3, LayoutTemplate, Users, Maximize, Minimize, BookOpen, Video, Image, UsersRound, Puzzle } from 'lucide-react';
+import { Film, User, Package, LogOut, FolderOpen, Settings, Sparkles, Wifi, WifiOff, Pencil, Moon, Sun, Monitor, Contrast, BarChart3, LayoutTemplate, Users, Maximize, Minimize, BookOpen, Video, Image, UsersRound, Puzzle, Coins } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from "@heroui/react";
 import { motion } from 'framer-motion';
@@ -16,6 +16,10 @@ import DashboardPanel from './WorkflowDashboard/DashboardPanel';
 import { useOnboarding, OnboardingStep } from '../hooks/useOnboarding';
 import NetworkStatusBar from './NetworkStatusBar';
 import InternalMailbox from './InternalMailbox';
+import LowBalanceBanner from './LowBalanceBanner';
+import PointsRechargeModal from './PointsRechargeModal';
+import InsufficientPointsModal from './InsufficientPointsModal';
+import { usePoints } from '../contexts/PointsContext';
 import { useRoutePreload } from '../hooks/useRoutePreload';
 
 interface LayoutProps {
@@ -47,6 +51,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const { t, language, setLanguage } = useLanguage();
   const { theme, setTheme } = useTheme();
   const { projectType, currentProject } = useWorkbench();
+  const { balance, isLowBalance, loading: pointsLoading, balanceAsCNY, openRechargeModal, isRechargeModalOpen, closeRechargeModal } = usePoints();
   const isAuth = location.pathname === '/auth';
   const isLoggedIn = !!getAuthToken();
   const [isConnected, setIsConnected] = useState(true);
@@ -153,7 +158,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     }
     
     const icons: Record<string, React.ReactNode> = {
-      'comic_drama': <Film className="w-4 h-4 text-[var(--accent)]" />,
+      'comic_drama': <Film className="w-4 h-4 text-(--accent)" />,
       'manga': <Image className="w-4 h-4 text-purple-400" />,
       'short_video': <Video className="w-4 h-4 text-pink-400" />,
       'novel': <BookOpen className="w-4 h-4 text-emerald-400" />,
@@ -311,7 +316,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   // Auth 页面不显示导航
   if (isAuth) {
     return (
-      <div className="flex flex-col h-screen w-screen overflow-hidden bg-[var(--bg-app)]">
+      <div className="flex flex-col h-screen w-screen overflow-hidden bg-(--bg-app)">
         <main className="flex-1 overflow-hidden">
           {children}
         </main>
@@ -320,13 +325,13 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   }
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[var(--bg-app)]">
+    <div className="flex h-screen w-screen overflow-hidden bg-(--bg-app)">
       {/* 左侧侧边栏 - 小屏隐藏 */}
-      <aside data-onboarding="sidebar" className={`pro-sidebar flex flex-col bg-[var(--bg-nav)] border-r border-[var(--border-color)] hide-on-mobile ${isTablet ? 'w-12' : 'w-14'}`}>
+      <aside data-onboarding="sidebar" className={`pro-sidebar flex flex-col bg-(--bg-nav) border-r border-(--border-color) hide-on-mobile ${isTablet ? 'w-12' : 'w-14'}`}>
         {/* Logo */}
-        <div className={`${isTablet ? 'h-12' : 'h-14'} flex items-center justify-center border-b border-[var(--border-color)]`}>
+        <div className={`${isTablet ? 'h-12' : 'h-14'} flex items-center justify-center border-b border-(--border-color)`}>
           <Link to="/" className="group relative" tabIndex={0}>
-            <div className={`relative ${isTablet ? 'p-1.5' : 'p-2'} bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg shadow-lg transition-all duration-200 group-hover:shadow-blue-500/30 group-hover:scale-105`}>
+            <div className={`relative ${isTablet ? 'p-1.5' : 'p-2'} bg-linear-to-br from-blue-500 to-blue-600 rounded-lg shadow-lg transition-all duration-200 group-hover:shadow-blue-500/30 group-hover:scale-105`}>
               <Sparkles className={`${isTablet ? 'w-4 h-4' : 'w-5 h-5'} text-white`} />
             </div>
           </Link>
@@ -360,13 +365,13 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 onMouseEnter={() => preload(item.path)}
                 className={`pro-nav-item group relative mx-2 ${isTablet ? 'p-2.5' : 'p-3'} rounded-lg flex items-center justify-center transition-all duration-200
                   ${isActive 
-                    ? 'bg-[var(--accent)]/15 text-[var(--accent)]' 
-                    : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-white/5'
+                    ? 'bg-(--accent)/15 text-(--accent)' 
+                    : 'text-(--text-muted) hover:text-(--text-primary) hover:bg-white/5'
                   }`}
               >
                 {/* 激活态左侧指示条 */}
                 {isActive && (
-                  <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-[var(--accent)] rounded-r" />
+                  <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-(--accent) rounded-r" />
                 )}
                 
                 <div className={`transition-transform duration-150 ${isActive ? 'scale-110' : 'hover:scale-110 active:scale-95'}`}>
@@ -374,13 +379,13 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 </div>
                 
                 {/* Tooltip */}
-                <div className="absolute left-full ml-2 px-2.5 py-1.5 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-md text-xs font-medium text-[var(--text-primary)] whitespace-nowrap opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 shadow-lg">
+                <div className="absolute left-full ml-2 px-2.5 py-1.5 bg-(--bg-card) border border-(--border-color) rounded-md text-xs font-medium text-(--text-primary) whitespace-nowrap opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 shadow-lg">
                   {item.label}
-                  <span className="ml-2 text-[var(--text-muted)]">
+                  <span className="ml-2 text-(--text-muted)">
                     {t.nav.shortcutPrefix}{index + 1}
                   </span>
                   {/* 小三角 */}
-                  <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1 w-2 h-2 bg-[var(--bg-card)] border-l border-b border-[var(--border-color)] rotate-45" />
+                  <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1 w-2 h-2 bg-(--bg-card) border-l border-b border-(--border-color) rotate-45" />
                 </div>
               </Link>
             );
@@ -388,12 +393,12 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         </nav>
 
         {/* 底部用户菜单 */}
-        <div className="py-2 border-t border-[var(--border-color)]">
+        <div className="py-2 border-t border-(--border-color)">
           {isLoggedIn ? (
             <Dropdown placement="right-end">
               <DropdownTrigger>
                 <button 
-                  className={`pro-nav-item group relative mx-2 ${isTablet ? 'p-2.5' : 'p-3'} rounded-lg flex items-center justify-center transition-all duration-200 text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-white/5 ${isTablet ? 'w-8' : 'w-10'}`}
+                  className={`pro-nav-item group relative mx-2 ${isTablet ? 'p-2.5' : 'p-3'} rounded-lg flex items-center justify-center transition-all duration-200 text-(--text-muted) hover:text-(--text-primary) hover:bg-white/5 ${isTablet ? 'w-8' : 'w-10'}`}
                   aria-label={t.nav.myAccount}
                 >
                   {userAvatar ? (
@@ -403,9 +408,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                   )}
                   
                   {/* Tooltip */}
-                  <div className="absolute left-full ml-2 px-2.5 py-1.5 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-md text-xs font-medium text-[var(--text-primary)] whitespace-nowrap opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 shadow-lg pointer-events-none">
+                  <div className="absolute left-full ml-2 px-2.5 py-1.5 bg-(--bg-card) border border-(--border-color) rounded-md text-xs font-medium text-(--text-primary) whitespace-nowrap opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 shadow-lg pointer-events-none">
                     {t.nav.myAccount}
-                    <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1 w-2 h-2 bg-[var(--bg-card)] border-l border-b border-[var(--border-color)] rotate-45" />
+                    <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1 w-2 h-2 bg-(--bg-card) border-l border-b border-(--border-color) rotate-45" />
                   </div>
                 </button>
               </DropdownTrigger>
@@ -439,15 +444,15 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           ) : (
             <button
               onClick={handleAccountClick}
-              className={`pro-nav-item group relative mx-2 ${isTablet ? 'p-2.5' : 'p-3'} rounded-lg flex items-center justify-center transition-all duration-200 text-[var(--accent)] hover:bg-[var(--accent)]/10 ${isTablet ? 'w-8' : 'w-10'}`}
+              className={`pro-nav-item group relative mx-2 ${isTablet ? 'p-2.5' : 'p-3'} rounded-lg flex items-center justify-center transition-all duration-200 text-(--accent) hover:bg-(--accent)/10 ${isTablet ? 'w-8' : 'w-10'}`}
               aria-label={t.common.login}
             >
               <User className={`${isTablet ? 'w-4 h-4' : 'w-5 h-5'}`} />
               
               {/* Tooltip */}
-              <div className="absolute left-full ml-2 px-2.5 py-1.5 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-md text-xs font-medium text-[var(--text-primary)] whitespace-nowrap opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 shadow-lg">
+              <div className="absolute left-full ml-2 px-2.5 py-1.5 bg-(--bg-card) border border-(--border-color) rounded-md text-xs font-medium text-(--text-primary) whitespace-nowrap opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 shadow-lg">
                 {t.common.login}
-                <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1 w-2 h-2 bg-[var(--bg-card)] border-l border-b border-[var(--border-color)] rotate-45" />
+                <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1 w-2 h-2 bg-(--bg-card) border-l border-b border-(--border-color) rotate-45" />
               </div>
             </button>
           )}
@@ -460,7 +465,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         <NetworkStatusBar />
         
         {/* 顶部工具栏 - 小屏简化 */}
-        <header className="pro-toolbar h-10 items-center justify-between px-4 bg-[var(--bg-nav)]/50 border-b border-[var(--border-color)] hide-on-mobile flex">
+        <header className="pro-toolbar h-10 items-center justify-between px-4 bg-(--bg-nav)/50 border-b border-(--border-color) hide-on-mobile flex">
           {/* 左侧：当前页面标题 */}
           <div className="flex items-center gap-3">
             {workbenchIcon && (
@@ -468,11 +473,11 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 {workbenchIcon}
               </div>
             )}
-            <h1 className="text-sm font-semibold text-[var(--text-primary)]">
+            <h1 className="text-sm font-semibold text-(--text-primary)">
               {currentPageTitle}
             </h1>
             {currentProject && location.pathname === '/' && (
-              <span className="text-xs text-[var(--text-muted)] px-2 py-0.5 bg-[var(--bg-card)] rounded">
+              <span className="text-xs text-(--text-muted) px-2 py-0.5 bg-(--bg-card) rounded">
                 {currentProject.name}
               </span>
             )}
@@ -482,14 +487,31 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           <div className="flex items-center gap-4">
             <button
               onClick={() => setIsDashboardOpen(true)}
-              className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-white/5 transition-colors"
+              className="p-1.5 rounded-lg text-(--text-muted) hover:text-(--text-primary) hover:bg-white/5 transition-colors"
               aria-label={(t as Record<string, unknown>).dashboard ? ((t as Record<string, unknown>).dashboard as Record<string, string>).title : '工作流概览'}
               title={(t as Record<string, unknown>).dashboard ? ((t as Record<string, unknown>).dashboard as Record<string, string>).title : '工作流概览'}
             >
               <BarChart3 className="w-4 h-4" />
             </button>
+            {/* 积分余额显示 */}
+            {isLoggedIn && (
+              <button
+                onClick={openRechargeModal}
+                className="group flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-all duration-200 hover:bg-white/5"
+                title={`积分余额: ${balance.toLocaleString()} (≈¥${balanceAsCNY.toFixed(2)})`}
+              >
+                <Coins className={`w-3.5 h-3.5 ${isLowBalance ? 'text-amber-400' : 'text-(--accent)'}`} />
+                {pointsLoading ? (
+                  <span className="text-(--text-muted)">--</span>
+                ) : (
+                  <span className={isLowBalance ? 'text-amber-400' : 'text-(--text-secondary)'}>
+                    {balance.toLocaleString()}
+                  </span>
+                )}
+              </button>
+            )}
             <InternalMailbox />
-            <span className="text-xs text-[var(--text-muted)]">
+            <span className="text-xs text-(--text-muted)">
               {t.nav.studioTitle}
             </span>
           </div>
@@ -497,12 +519,12 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
         {/* 小屏简化工具栏 */}
         {isMobile && (
-          <header className="pro-toolbar h-12 flex items-center justify-center px-4 bg-[var(--bg-nav)] border-b border-[var(--border-color)]">
+          <header className="pro-toolbar h-12 flex items-center justify-center px-4 bg-(--bg-nav) border-b border-(--border-color)">
             <Link to="/" className="flex items-center gap-2">
-              <div className="p-1.5 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg">
+              <div className="p-1.5 bg-linear-to-br from-blue-500 to-blue-600 rounded-lg">
                 <Sparkles className="w-4 h-4 text-white" />
               </div>
-              <span className="text-sm font-semibold text-[var(--text-primary)]">
+              <span className="text-sm font-semibold text-(--text-primary)">
                 {t.nav.studioName}
               </span>
             </Link>
@@ -510,18 +532,18 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         )}
 
         {/* 主内容区 */}
-        <main className={`flex-1 overflow-hidden bg-[var(--bg-app)] ${isMobile ? 'main-content-mobile' : ''}`}>
+        <main className={`flex-1 overflow-hidden bg-(--bg-app) ${isMobile ? 'main-content-mobile' : ''}`}>
           {children}
         </main>
 
         {/* 底部状态栏 - 小屏隐藏 */}
-        <footer className="pro-statusbar h-7 items-center justify-between px-4 bg-[var(--bg-nav)] border-t border-[var(--border-color)] hide-on-mobile flex">
+        <footer className="pro-statusbar h-7 items-center justify-between px-4 bg-(--bg-nav) border-t border-(--border-color) hide-on-mobile flex">
           {/* 左侧：连接状态 */}
           <div className="flex items-center gap-2">
             {isConnected ? (
               <>
                 <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                <span className="text-xs text-[var(--text-muted)]">{t.nav.connected}</span>
+                <span className="text-xs text-(--text-muted)">{t.nav.connected}</span>
               </>
             ) : (
               <>
@@ -535,7 +557,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           <div className="flex items-center">
             <button 
               onClick={() => setShowShortcutsHelp(true)}
-              className="text-xs text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors"
+              className="text-xs text-(--text-muted) hover:text-(--text-secondary) transition-colors"
               aria-label={t.nav.showShortcuts}
               data-onboarding="shortcuts-hint"
             >
@@ -545,7 +567,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           
           {/* 右侧：版本信息 */}
           <div className="flex items-center gap-4">
-            <span className="text-xs text-[var(--text-muted)]">v1.0.0</span>
+            <span className="text-xs text-(--text-muted)">v1.0.0</span>
           </div>
         </footer>
       </div>
@@ -625,10 +647,19 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         onSkip={onboarding.skip}
       />
 
+      {/* 低余额警告横幅 */}
+      {isLoggedIn && <LowBalanceBanner />}
+
+      {/* 积分充值弹窗 */}
+      <PointsRechargeModal isOpen={isRechargeModalOpen} onClose={closeRechargeModal} />
+
+      {/* 积分不足拦截弹窗 */}
+      <InsufficientPointsModal />
+
       {/* 右上角全屏按钮 */}
       <button
         onClick={toggleFullscreen}
-        className="fixed top-3 right-3 z-50 p-2 rounded-lg bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-card-hover)] transition-colors shadow-lg"
+        className="fixed top-3 right-3 z-50 p-2 rounded-lg bg-(--bg-card) border border-(--border-color) text-(--text-muted) hover:text-(--text-primary) hover:bg-(--bg-card-hover) transition-colors shadow-lg"
         aria-label={isFullscreen ? t.settings?.appearance?.exitFullscreen || '退出全屏' : t.settings?.appearance?.enterFullscreen || '全屏'}
         title={isFullscreen ? t.settings?.appearance?.exitFullscreen || '退出全屏' : t.settings?.appearance?.enterFullscreen || '全屏'}
       >

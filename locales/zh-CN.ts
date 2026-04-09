@@ -416,6 +416,7 @@ const zhCN = {
       generateVideo: '生成选中的分镜视频',
       duplicateScene: '复制选中的分镜',
       selectAll: '全选分镜',
+      validateStoryboard: '检验分镜',
       // Animatic
       playPause: '播放/暂停',
       prevFrame: '上一个分镜',

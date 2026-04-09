@@ -11,11 +11,13 @@
 const handleBaseTextModelCall = require('../base/baseTextModelCall');
 const { filterNonCharacters } = require('../../../utils/characterFilter');
 const { stripThinkTags, extractCodeBlock, extractJSON, stripInvisible } = require('../../../utils/washBody');
+const { getBatchSceneDurationConfig } = require('../../../durationConfigService');
 
-// 时长常量
-const MIN_SCENE_DURATION = 15;
-const MAX_SCENE_DURATION = 60;
+// 默认值（当数据库配置不可用时回退使用）
+const DEFAULT_MIN_SCENE_DURATION = 15;
+const DEFAULT_MAX_SCENE_DURATION = 60;
 const DEFAULT_SHOT_DURATION = 2;
+const DEFAULT_TOLERANCE = 2;
 
 /**
  * 从分镜描述中提取角色名称（严格模式）
@@ -32,36 +34,68 @@ function extractCharactersFromDescription(description, knownCharacters = new Set
 }
 
 /**
- * 调整分镜时长
+ * 分镜时长校验与调整
+ * @param {Array} scenes 分镜数组
+ * @param {number} minDuration 最小总时长
+ * @param {number} maxDuration 最大总时长
+ * @param {number} tolerance 偏差容忍值（秒）
+ * @returns {{ scenes: Array, totalDuration: number, adjusted: boolean, needsRegeneration: boolean }}
  */
-function adjustSceneDurations(scenes) {
-  if (!scenes || scenes.length === 0) return { scenes: [], totalDuration: 0 };
+function adjustSceneDurations(scenes, minDuration, maxDuration, tolerance = 2) {
+  if (!scenes || scenes.length === 0) return { scenes: [], totalDuration: 0, adjusted: false, needsRegeneration: false };
   
   let totalDuration = scenes.reduce((sum, s) => sum + (s.duration || DEFAULT_SHOT_DURATION), 0);
+  console.log('[BatchSceneStep] 原始总时长:', totalDuration, '秒, 允许范围:', minDuration, '-', maxDuration, '秒, 容忍偏差:', tolerance, '秒');
   
-  if (totalDuration >= MIN_SCENE_DURATION && totalDuration <= MAX_SCENE_DURATION) {
-    return { scenes, totalDuration };
+  if (totalDuration >= minDuration && totalDuration <= maxDuration) {
+    console.log('[BatchSceneStep] 时长在合理范围内，无需调整');
+    return { scenes, totalDuration, adjusted: false, needsRegeneration: false };
   }
   
-  if (totalDuration < MIN_SCENE_DURATION) {
-    const scaleFactor = MIN_SCENE_DURATION / totalDuration;
-    scenes = scenes.map(s => ({
-      ...s,
-      duration: Math.round((s.duration || DEFAULT_SHOT_DURATION) * scaleFactor)
-    }));
-    totalDuration = scenes.reduce((sum, s) => sum + s.duration, 0);
+  let deviation = 0;
+  if (totalDuration < minDuration) {
+    deviation = minDuration - totalDuration;
+  } else if (totalDuration > maxDuration) {
+    deviation = totalDuration - maxDuration;
   }
   
-  if (totalDuration > MAX_SCENE_DURATION) {
-    const scaleFactor = MAX_SCENE_DURATION / totalDuration;
-    scenes = scenes.map(s => ({
-      ...s,
-      duration: Math.max(1, Math.round((s.duration || DEFAULT_SHOT_DURATION) * scaleFactor))
-    }));
-    totalDuration = scenes.reduce((sum, s) => sum + s.duration, 0);
+  console.log('[BatchSceneStep] 时长偏差:', deviation, '秒');
+  
+  if (deviation > tolerance) {
+    console.log('[BatchSceneStep] 时长严重超出范围（偏差', deviation, '秒 > 容忍值', tolerance, '秒），需要重新生成');
+    return { scenes, totalDuration, adjusted: false, needsRegeneration: true };
   }
   
-  return { scenes, totalDuration };
+  console.log('[BatchSceneStep] 偏差在容忍范围内，执行比例缩放调整');
+  
+  let targetDuration = totalDuration < minDuration ? minDuration : maxDuration;
+  const scaleFactor = targetDuration / totalDuration;
+  scenes = scenes.map(s => ({
+    ...s,
+    duration: Math.max(1, Math.round((s.duration || DEFAULT_SHOT_DURATION) * scaleFactor))
+  }));
+  
+  totalDuration = scenes.reduce((sum, s) => sum + s.duration, 0);
+  
+  const diff = targetDuration - totalDuration;
+  if (diff !== 0 && scenes.length > 0) {
+    let maxIdx = 0;
+    let maxDur = scenes[0].duration;
+    for (let i = 1; i < scenes.length; i++) {
+      if (scenes[i].duration > maxDur) {
+        maxDur = scenes[i].duration;
+        maxIdx = i;
+      }
+    }
+    const newDur = scenes[maxIdx].duration + diff;
+    if (newDur >= 1) {
+      scenes[maxIdx] = { ...scenes[maxIdx], duration: newDur };
+      totalDuration = targetDuration;
+    }
+  }
+  
+  console.log('[BatchSceneStep] 比例缩放调整后总时长:', totalDuration, '秒');
+  return { scenes, totalDuration, adjusted: true, needsRegeneration: false };
 }
 
 /**
@@ -158,6 +192,22 @@ async function handleBatchSceneStep(inputParams, onProgress) {
 
   if (onProgress) onProgress(10);
 
+  // 获取时长配置
+  let durationConfig;
+  try {
+    durationConfig = await getBatchSceneDurationConfig();
+  } catch (e) {
+    console.warn('[BatchSceneStep] 获取时长配置失败，使用默认值:', e.message);
+    durationConfig = {
+      minDuration: DEFAULT_MIN_SCENE_DURATION,
+      maxDuration: DEFAULT_MAX_SCENE_DURATION,
+      tolerance: DEFAULT_TOLERANCE
+    };
+  }
+
+  const minDur = durationConfig.minDuration;
+  const maxDur = durationConfig.maxDuration;
+
   // 构建提示词
   const fullPrompt = `你是一个分镜师，将场景内容转化为分镜。
 
@@ -168,7 +218,7 @@ async function handleBatchSceneStep(inputParams, onProgress) {
 - 描述简洁明了，避免过度艺术加工
 - 专注于场景内容的视觉化呈现
 
-**时长目标**：本场景所有分镜的 duration 总和应在 15-60 秒之间
+**时长目标**：本场景所有分镜的 duration 总和应在 ${minDur}-${maxDur} 秒之间
 
 **输出格式**：严格 JSON 数组，不要添加其他文字
 
@@ -201,7 +251,7 @@ ${sceneContent}
 - characters: 出场角色数组
 - location: 场景地点
 - emotion: 情绪氛围
-- cameraMovement: 镜头运动（"static"/"push_in"/"pull_out"/"pan_left"/"pan_right"）
+- cameraMovement: 镜头运动（"static"/"push"/"pull"/"pan"/"tilt"/"track"/"dolly"/"zoom"/"orbit"/"dolly_zoom"/"crane"/"handheld"/"steadicam"/"whip_pan"）
 
 只输出 JSON 数组，不要其他内容。`;
 
@@ -268,8 +318,28 @@ ${sceneContent}
 
   // 后处理
   scenes = postProcessScenes(scenes);
-  const { scenes: adjustedScenes, totalDuration } = adjustSceneDurations(scenes);
-  scenes = adjustedScenes;
+  
+  // 时长校验与调整
+  let durationResult = adjustSceneDurations(
+    scenes, 
+    durationConfig.minDuration, 
+    durationConfig.maxDuration, 
+    durationConfig.tolerance
+  );
+  
+  // 如果严重超出范围，降级为强制比例缩放
+  if (durationResult.needsRegeneration) {
+    console.log(`[BatchSceneStep] 场景 ${sceneNumber} 时长严重超出范围，强制比例缩放`);
+    durationResult = adjustSceneDurations(
+      durationResult.scenes,
+      durationConfig.minDuration,
+      durationConfig.maxDuration,
+      Infinity
+    );
+  }
+  
+  scenes = durationResult.scenes;
+  const totalDuration = durationResult.totalDuration;
 
   // 标记场景信息
   scenes = scenes.map(shot => ({

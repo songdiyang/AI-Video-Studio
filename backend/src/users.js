@@ -141,6 +141,58 @@ router.post('/avatar', authMiddleware, avatarUpload.single('avatar'), async (req
   }
 });
 
+// 获取积分余额和月度配额信息（轻量接口，供全局积分栏使用）
+router.get('/balance', authMiddleware, async (req, res) => {
+  const userId = req.user.id;
+
+  try {
+    const user = await queryOne(
+      'SELECT balance FROM users WHERE id = ?',
+      [userId]
+    );
+    if (!user) {
+      return res.status(404).json({ message: '用户不存在' });
+    }
+
+    // 获取当前订阅信息
+    let monthlyQuota = 2000; // 免费版默认
+    let monthlyUsed = 0;
+    let planName = 'free';
+    let planDisplayName = '免费版';
+    let periodEnd = null;
+
+    const sub = await queryOne(
+      `SELECT s.current_period_start, s.current_period_end, s.api_calls_used,
+              p.name AS plan_name, p.display_name, p.max_api_calls_monthly
+       FROM user_subscriptions s
+       JOIN subscription_plans p ON p.id = s.plan_id
+       WHERE s.user_id = ? AND s.status = 'active'
+       ORDER BY s.id DESC LIMIT 1`,
+      [userId]
+    );
+
+    if (sub) {
+      monthlyQuota = sub.max_api_calls_monthly === -1 ? -1 : (sub.max_api_calls_monthly || 2000);
+      monthlyUsed = sub.api_calls_used || 0;
+      planName = sub.plan_name || 'free';
+      planDisplayName = sub.display_name || '免费版';
+      periodEnd = sub.current_period_end || null;
+    }
+
+    res.json({
+      balance: parseInt(user.balance) || 0,
+      monthlyQuota,
+      monthlyUsed,
+      planName,
+      planDisplayName,
+      periodEnd
+    });
+  } catch (error) {
+    console.error('[User Balance]', error);
+    res.status(500).json({ message: '获取积分余额失败' });
+  }
+});
+
 // 获取消费记录
 router.get('/billing', authMiddleware, async (req, res) => {
   const userId = req.user.id;

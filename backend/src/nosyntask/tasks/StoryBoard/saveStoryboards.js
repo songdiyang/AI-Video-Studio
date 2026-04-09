@@ -191,31 +191,27 @@ async function handleSaveStoryboards(inputParams, onProgress) {
 
   if (onProgress) onProgress(90);
 
-  // 建立分镜与道具的关联
+  // 建立分镜与道具的关联（优化：使用内存中的 scenes 数据，无需重新查询 DB）
   if (propNameToId.size > 0) {
     try {
-      // 获取该剧本的所有分镜
+      // 直接使用内存中的 scenes 数据（已经保存到 DB 且有对应的 idx 顺序）
+      // 但需要获取 DB 中的 storyboard id，因为批量 INSERT 时 id 是自增的
       const storyboards = await queryAll(
-        'SELECT id, idx, variables_json FROM storyboards WHERE script_id = ? ORDER BY idx',
+        'SELECT id, idx FROM storyboards WHERE script_id = ? ORDER BY idx',
         [scriptId]
       );
 
       // 收集所有关联关系后批量插入
       const linkValues = [];
-      for (const sb of storyboards) {
-        try {
-          const variables = typeof sb.variables_json === 'string' 
-            ? JSON.parse(sb.variables_json) 
-            : sb.variables_json;
-          const sceneProps = variables?.props || [];
-          for (const propName of sceneProps) {
-            const propId = propNameToId.get(propName?.trim());
-            if (propId) {
-              linkValues.push([sb.id, propId]);
-            }
+      for (let i = 0; i < storyboards.length && i < scenes.length; i++) {
+        const sb = storyboards[i];
+        const scene = scenes[i]; // scenes 按 idx 顺序，与 storyboards 对应
+        const sceneProps = scene?.props || [];
+        for (const propName of sceneProps) {
+          const propId = propNameToId.get(propName?.trim());
+          if (propId) {
+            linkValues.push([sb.id, propId]);
           }
-        } catch (parseErr) {
-          // 解析失败，跳过该分镜
         }
       }
       if (linkValues.length > 0) {

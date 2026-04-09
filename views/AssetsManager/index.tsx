@@ -14,7 +14,9 @@ import {
   TAG_GROUP_COLORS
 } from '../../services/assets';
 import { Costume, fetchCostumes, createCostume, updateCostume, deleteCostume, COSTUME_CATEGORIES } from '../../services/costumes';
+import { LayoutGrid, ListTree } from 'lucide-react';
 import CharacterList from './CharacterList';
+import CharacterTreeView from './CharacterTreeView';
 import SceneList from './SceneList';
 import PropList from './PropList';
 import CostumeList from './CostumeList';
@@ -22,6 +24,8 @@ import { CharacterModal, SceneModal, PropModal, CostumeModal } from './AssetMode
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import { AIModel } from '../../components/AIModelSelector';
+import type { Character as TreeCharacter } from '../StoryBoard/ResourcePanel/types';
+import type { CharacterState } from '../../services/assets';
 
 type TabType = 'characters' | 'scenes' | 'props' | 'costumes';
 
@@ -289,6 +293,26 @@ const TagGroupManager: React.FC<TagGroupManagerProps> = ({ isOpen, onOpenChange,
   );
 };
 
+// 将 services/assets 的 Character(snake_case) 转换为 types.ts 的 Character(camelCase)
+function toTreeCharacter(c: Character): TreeCharacter {
+  return {
+    id: c.id,
+    name: c.name,
+    appearance: c.appearance,
+    personality: c.personality,
+    description: c.description,
+    imageUrl: c.image_url,
+    frontViewUrl: c.front_view_url,
+    sideViewUrl: c.side_view_url,
+    backViewUrl: c.back_view_url,
+    characterSheetUrl: c.character_sheet_url,
+    generationStatus: c.generation_status,
+    statesCount: c.states_count,
+    projectId: c.project_id,
+    gender: c.gender,
+  };
+}
+
 const AssetsManager: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabType>('characters');
   const [characters, setCharacters] = useState<Character[]>([]);
@@ -299,6 +323,8 @@ const AssetsManager: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTag, setActiveTag] = useState<string | null>(null);
+  // 角色视图模式：网格/树形
+  const [characterViewMode, setCharacterViewMode] = useState<'grid' | 'tree'>('grid');
   // 分组筛选状态：{ groupId: number, tag: string } | null
   const [activeGroupFilter, setActiveGroupFilter] = useState<{ groupId: number; tag: string } | null>(null);
   // 展开的分组
@@ -827,12 +853,72 @@ const AssetsManager: React.FC = () => {
               </div>
             }
           >
-            <CharacterList 
-              characters={filteredCharacters} 
-              tagGroups={tagGroups}
-              onEdit={handleEdit} 
-              onDelete={handleDelete} 
-            />
+            {/* 视图切换按钮组 */}
+            <div className="flex items-center justify-between mt-4 mb-2">
+              <span className="text-sm text-(--text-muted)">
+                共 {filteredCharacters.length} 个角色
+              </span>
+              <div className="flex items-center gap-1 bg-(--bg-card) rounded-lg p-0.5 border border-(--border-color)">
+                <button
+                  className={`px-2.5 py-1.5 rounded-md text-sm transition-colors flex items-center gap-1.5 ${
+                    characterViewMode === 'grid'
+                      ? 'bg-amber-500/20 text-amber-400'
+                      : 'text-(--text-muted) hover:text-(--text-secondary)'
+                  }`}
+                  onClick={() => setCharacterViewMode('grid')}
+                  title="网格视图"
+                >
+                  <LayoutGrid className="w-4 h-4" />
+                  <span className="hidden sm:inline">网格</span>
+                </button>
+                <button
+                  className={`px-2.5 py-1.5 rounded-md text-sm transition-colors flex items-center gap-1.5 ${
+                    characterViewMode === 'tree'
+                      ? 'bg-amber-500/20 text-amber-400'
+                      : 'text-(--text-muted) hover:text-(--text-secondary)'
+                  }`}
+                  onClick={() => setCharacterViewMode('tree')}
+                  title="树形视图"
+                >
+                  <ListTree className="w-4 h-4" />
+                  <span className="hidden sm:inline">树形</span>
+                </button>
+              </div>
+            </div>
+
+            {/* 根据视图模式渲染不同内容 */}
+            {characterViewMode === 'grid' ? (
+              <CharacterList 
+                characters={filteredCharacters} 
+                tagGroups={tagGroups}
+                onEdit={handleEdit} 
+                onDelete={handleDelete} 
+              />
+            ) : (
+              <CharacterTreeView
+                characters={filteredCharacters.map(toTreeCharacter)}
+                projectId={filteredCharacters[0]?.project_id ?? 0}
+                onSelectCharacter={(treeChar) => {
+                  // 找到原始 snake_case 角色数据用于编辑
+                  const original = characters.find(c => c.id === treeChar.id);
+                  if (original) handleEdit(original);
+                }}
+                onEditCharacter={(treeChar) => {
+                  const original = characters.find(c => c.id === treeChar.id);
+                  if (original) handleEdit(original);
+                }}
+                onEditState={(treeChar, _state) => {
+                  // 打开 CharacterModal，进入状态管理 Tab
+                  const original = characters.find(c => c.id === treeChar.id);
+                  if (original) handleEdit(original);
+                }}
+                onStateActivated={() => {
+                  // 状态激活后刷新角色列表
+                  loadData();
+                }}
+                className="mt-2 max-h-[calc(100vh-380px)]"
+              />
+            )}
           </Tab>
 
           <Tab

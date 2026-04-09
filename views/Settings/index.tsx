@@ -31,12 +31,12 @@ const THEME_PRESETS: ThemePreset[] = [
     nameKey: 'dark',
     icon: <Moon className="w-5 h-5" />,
     preview: {
-      bg: '#0a0a0f',
-      nav: '#0f172a',
-      card: '#1e293b',
-      text: '#e2e8f0',
-      accent: '#6366f1',
-      border: '#334155',
+      bg: '#111113',
+      nav: '#16161a',
+      card: '#222226',
+      text: '#d4d4dc',
+      accent: '#4e8ef7',
+      border: '#32323a',
     },
   },
   {
@@ -91,7 +91,7 @@ const ThemePreviewMini: React.FC<{ preset: ThemePreset; isActive: boolean }> = (
     
     return (
       <div
-        className="w-full aspect-[16/10] rounded-lg overflow-hidden relative border-2 transition-all"
+        className="w-full aspect-16/10 rounded-lg overflow-hidden relative border-2 transition-all"
         style={{
           borderColor: isActive ? p.accent : p.border,
           boxShadow: isActive ? `0 0 16px ${p.accent}44` : 'none',

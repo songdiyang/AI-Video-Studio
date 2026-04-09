@@ -10,11 +10,13 @@
 const handleBaseTextModelCall = require('../base/baseTextModelCall');
 const { filterNonCharacters } = require('../../../utils/characterFilter');
 const { stripThinkTags, extractCodeBlock, extractJSON, stripInvisible } = require('../../../utils/washBody');
+const { getStoryboardDurationConfig } = require('../../../durationConfigService');
 
-// 目标时长范围（秒）
-const MIN_TOTAL_DURATION = 60;  // 1分钟
-const MAX_TOTAL_DURATION = 180; // 3分钟
-const DEFAULT_SCENE_DURATION = 2; // 默认单个分镜时长
+// 默认值（当数据库配置不可用时回退使用）
+const DEFAULT_MIN_TOTAL_DURATION = 60;
+const DEFAULT_MAX_TOTAL_DURATION = 180;
+const DEFAULT_SCENE_DURATION = 2;
+const DEFAULT_TOLERANCE = 2; // 偏差容忍值（秒）
 
 /**
  * 从分镜描述中提取角色名称
@@ -202,46 +204,82 @@ function isCommonWord(word) {
 }
 
 /**
- * 计算分镜总时长并在需要时调整
- * @param {Array} scenes - 分镜数组
- * @returns {Object} { scenes: 调整后的分镜, totalDuration: 总时长 }
+ * 分镜时长校验与调整
+ * @param {Array} scenes 分镜数组
+ * @param {number} minDuration 最小总时长
+ * @param {number} maxDuration 最大总时长
+ * @param {number} tolerance 偏差容忍值（秒）
+ * @returns {{ scenes: Array, totalDuration: number, adjusted: boolean, needsRegeneration: boolean }}
  */
-function adjustSceneDurations(scenes) {
-  if (!scenes || scenes.length === 0) return { scenes: [], totalDuration: 0 };
+function adjustSceneDurations(scenes, minDuration, maxDuration, tolerance = 2) {
+  if (!scenes || scenes.length === 0) return { scenes: [], totalDuration: 0, adjusted: false, needsRegeneration: false };
   
-  // 计算当前总时长
+  // 第1步：计算当前总时长
   let totalDuration = scenes.reduce((sum, s) => sum + (s.duration || DEFAULT_SCENE_DURATION), 0);
-  console.log('[StoryboardGen] 原始总时长:', totalDuration, '秒');
+  console.log('[StoryboardGen] 原始总时长:', totalDuration, '秒, 允许范围:', minDuration, '-', maxDuration, '秒, 容忍偏差:', tolerance, '秒');
   
-  // 如果在合理范围内，直接返回
-  if (totalDuration >= MIN_TOTAL_DURATION && totalDuration <= MAX_TOTAL_DURATION) {
-    console.log('[StoryboardGen] 时长在合理范围内');
-    return { scenes, totalDuration };
+  // 第2步：检查是否在合理范围内
+  if (totalDuration >= minDuration && totalDuration <= maxDuration) {
+    console.log('[StoryboardGen] 时长在合理范围内，无需调整');
+    return { scenes, totalDuration, adjusted: false, needsRegeneration: false };
   }
   
-  // 如果时长过短，增加每个分镜的时长
-  if (totalDuration < MIN_TOTAL_DURATION) {
-    const scaleFactor = MIN_TOTAL_DURATION / totalDuration;
-    scenes = scenes.map(s => ({
-      ...s,
-      duration: Math.round((s.duration || DEFAULT_SCENE_DURATION) * scaleFactor)
-    }));
-    totalDuration = scenes.reduce((sum, s) => sum + s.duration, 0);
-    console.log('[StoryboardGen] 时长过短，调整后:', totalDuration, '秒');
+  // 第3步：计算偏差量
+  let deviation = 0;
+  if (totalDuration < minDuration) {
+    deviation = minDuration - totalDuration;
+  } else if (totalDuration > maxDuration) {
+    deviation = totalDuration - maxDuration;
   }
   
-  // 如果时长过长，减少每个分镜的时长（最低1秒）
-  if (totalDuration > MAX_TOTAL_DURATION) {
-    const scaleFactor = MAX_TOTAL_DURATION / totalDuration;
-    scenes = scenes.map(s => ({
-      ...s,
-      duration: Math.max(1, Math.round((s.duration || DEFAULT_SCENE_DURATION) * scaleFactor))
-    }));
-    totalDuration = scenes.reduce((sum, s) => sum + s.duration, 0);
-    console.log('[StoryboardGen] 时长过长，调整后:', totalDuration, '秒');
+  console.log('[StoryboardGen] 时长偏差:', deviation, '秒');
+  
+  // 第4步：判断偏差大小
+  if (deviation > tolerance) {
+    // 严重超出范围 - 需要重新生成
+    console.log('[StoryboardGen] 时长严重超出范围（偏差', deviation, '秒 > 容忍值', tolerance, '秒），需要重新生成');
+    return { scenes, totalDuration, adjusted: false, needsRegeneration: true };
   }
   
-  return { scenes, totalDuration };
+  // 第5步：偏差在容忍范围内，按比例缩放调整
+  console.log('[StoryboardGen] 偏差在容忍范围内，执行比例缩放调整');
+  
+  let targetDuration;
+  if (totalDuration < minDuration) {
+    targetDuration = minDuration;
+  } else {
+    targetDuration = maxDuration;
+  }
+  
+  const scaleFactor = targetDuration / totalDuration;
+  scenes = scenes.map(s => ({
+    ...s,
+    duration: Math.max(1, Math.round((s.duration || DEFAULT_SCENE_DURATION) * scaleFactor))
+  }));
+  
+  // 重新计算调整后的总时长
+  totalDuration = scenes.reduce((sum, s) => sum + s.duration, 0);
+  
+  // 如果四舍五入后总时长仍有微小差异，在最长的分镜上补偿
+  const diff = targetDuration - totalDuration;
+  if (diff !== 0 && scenes.length > 0) {
+    let maxIdx = 0;
+    let maxDur = scenes[0].duration;
+    for (let i = 1; i < scenes.length; i++) {
+      if (scenes[i].duration > maxDur) {
+        maxDur = scenes[i].duration;
+        maxIdx = i;
+      }
+    }
+    const newDur = scenes[maxIdx].duration + diff;
+    if (newDur >= 1) {
+      scenes[maxIdx] = { ...scenes[maxIdx], duration: newDur };
+      totalDuration = targetDuration;
+    }
+  }
+  
+  console.log('[StoryboardGen] 比例缩放调整后总时长:', totalDuration, '秒');
+  return { scenes, totalDuration, adjusted: true, needsRegeneration: false };
 }
 
 /**
@@ -377,6 +415,9 @@ function withTimeout(promise, ms, errorMessage) {
   ]);
 }
 
+// AI 调用超时时间（默认 120 秒，比 WorkflowExecutor 的 TASK_TIMEOUT 短，给后处理留余量）
+const AI_CALL_TIMEOUT = parseInt(process.env.STORYBOARD_AI_TIMEOUT, 10) || 120000;
+
 async function handleStoryboardGeneration(inputParams, onProgress) {
   const { scriptContent, scriptTitle, textModel: modelName, think } = inputParams;
 
@@ -390,6 +431,19 @@ async function handleStoryboardGeneration(inputParams, onProgress) {
 
   if (onProgress) onProgress(10);
 
+  // 从数据库读取时长配置
+  let durationConfig;
+  try {
+    durationConfig = await getStoryboardDurationConfig();
+  } catch (e) {
+    console.warn('[StoryboardGen] 获取时长配置失败，使用默认值:', e.message);
+    durationConfig = {
+      minDuration: DEFAULT_MIN_TOTAL_DURATION,
+      maxDuration: DEFAULT_MAX_TOTAL_DURATION,
+      tolerance: DEFAULT_TOLERANCE
+    };
+  }
+
   const fullPrompt = `你是一个分镜师，将剧本内容转化为分镜。
 
 **核心原则：忠实于剧本**
@@ -397,7 +451,7 @@ async function handleStoryboardGeneration(inputParams, onProgress) {
 - 描述简洁明了，避免过度艺术加工
 - 专注于剧本内容的视觉化呈现
 
-**时长目标**：所有分镜的 duration 总和应在 60-180 秒之间（即1-3分钟）
+**时长目标**：所有分镜的 duration 总和应在 ${durationConfig.minDuration}-${durationConfig.maxDuration} 秒之间
 
 **输出格式**：严格 JSON 数组，不要添加其他文字
 
@@ -459,7 +513,7 @@ ${scriptContent}
 - props: 画面中的重要道具数组（如 ["手机", "传单", "书本"]）
 - location: 场景地点
 - emotion: 情绪氛围
-- cameraMovement: 镜头运动（"static"/"push_in"/"pull_out"/"pan_left"/"pan_right"）
+- cameraMovement: 镜头运动（"static"/"push"/"pull"/"pan"/"tilt"/"track"/"dolly"/"zoom"/"orbit"/"dolly_zoom"/"crane"/"handheld"/"steadicam"/"whip_pan"）
 
 [示例】
 [
@@ -470,13 +524,17 @@ ${scriptContent}
 
 只输出 JSON 数组，不要其他内容。`;
 
-  const result = await handleBaseTextModelCall({
-    prompt: fullPrompt,
-    textModel: modelName,
-    maxTokens: 8192,
-    temperature: 0.3,
-    think
-  }, onProgress);
+  const result = await withTimeout(
+    handleBaseTextModelCall({
+      prompt: fullPrompt,
+      textModel: modelName,
+      maxTokens: 8192,
+      temperature: 0.3,
+      think
+    }, onProgress),
+    AI_CALL_TIMEOUT,
+    `分镜生成 AI 调用超时（${Math.round(AI_CALL_TIMEOUT / 1000)}秒），请稍后重试`
+  );
 
   if (onProgress) onProgress(80);
 
@@ -543,9 +601,77 @@ ${scriptContent}
   // 后处理：修复角色列表遗漏
   scenes = postProcessScenes(scenes);
 
-  // 时长调整：确保总时长在 1-3 分钟范围内
-  const { scenes: adjustedScenes, totalDuration } = adjustSceneDurations(scenes);
-  scenes = adjustedScenes;
+  // 时长校验与调整（支持重试）
+  let durationResult = adjustSceneDurations(
+    scenes, 
+    durationConfig.minDuration, 
+    durationConfig.maxDuration, 
+    durationConfig.tolerance
+  );
+
+  // 如果需要重新生成（严重超出范围），最多重试1次
+  if (durationResult.needsRegeneration) {
+    console.log('[StoryboardGen] 时长严重超出范围，触发重新生成（第1次重试）');
+    if (onProgress) {
+      onProgress({ message: '分镜时长不符合要求，正在重新生成...' });
+    }
+    
+    try {
+      const retryResult = await withTimeout(
+        handleBaseTextModelCall({
+          prompt: fullPrompt,
+          textModel: modelName,
+          maxTokens: 8192,
+          temperature: 0.3,
+          think
+        }, onProgress),
+        AI_CALL_TIMEOUT,
+        `分镜重试生成 AI 调用超时（${Math.round(AI_CALL_TIMEOUT / 1000)}秒）`
+      );
+
+      let retryJsonStr = stripThinkTags(retryResult.content);
+      retryJsonStr = extractCodeBlock(retryJsonStr);
+      retryJsonStr = stripInvisible(retryJsonStr).trim();
+      
+      let retryScenes = [];
+      try {
+        retryScenes = JSON.parse(retryJsonStr);
+      } catch (_) {
+        try {
+          const { jsonrepair } = await import('jsonrepair');
+          retryScenes = JSON.parse(jsonrepair(retryJsonStr));
+        } catch (_) { /* 重试解析失败 */ }
+      }
+
+      if (Array.isArray(retryScenes) && retryScenes.length > 0) {
+        retryScenes = postProcessScenes(retryScenes);
+        durationResult = adjustSceneDurations(
+          retryScenes,
+          durationConfig.minDuration,
+          durationConfig.maxDuration,
+          durationConfig.tolerance
+        );
+        console.log('[StoryboardGen] 重试生成完成，时长:', durationResult.totalDuration, '秒');
+      }
+    } catch (retryError) {
+      console.warn('[StoryboardGen] 重试生成失败:', retryError.message);
+    }
+    
+    // 如果重试后仍然超出范围，降级为强制比例缩放
+    if (durationResult.needsRegeneration) {
+      console.log('[StoryboardGen] 重试后仍超出范围，强制比例缩放');
+      const forcedResult = adjustSceneDurations(
+        durationResult.scenes,
+        durationConfig.minDuration,
+        durationConfig.maxDuration,
+        Infinity  // tolerance设为无穷大，强制走比例缩放逻辑
+      );
+      durationResult = forcedResult;
+    }
+  }
+
+  scenes = durationResult.scenes;
+  const totalDuration = durationResult.totalDuration;
 
   if (onProgress) onProgress(100);
 

@@ -150,7 +150,7 @@ router.get('/active', authMiddleware, async (req, res) => {
  */
 router.get('/admin/errors', authMiddleware, requireAdmin, async (req, res) => {
   try {
-    const { page = 1, limit = 20, workflowType } = req.query;
+    const { page = 1, limit = 20, workflowType, search } = req.query;
     const offset = (parseInt(page) - 1) * parseInt(limit);
     const { execute } = require('../dbHelper');
 
@@ -160,8 +160,13 @@ router.get('/admin/errors', authMiddleware, requireAdmin, async (req, res) => {
       where += ' AND wj.workflow_type = ?';
       params.push(workflowType);
     }
+    if (search && String(search).trim()) {
+      const keyword = `%${String(search).trim()}%`;
+      where += ' AND (wj.error_message LIKE ? OR wj.workflow_type LIKE ? OR u.email LIKE ?)';
+      params.push(keyword, keyword, keyword);
+    }
 
-    const countSql = `SELECT COUNT(*) as total FROM workflow_jobs wj ${where}`;
+    const countSql = `SELECT COUNT(*) as total FROM workflow_jobs wj LEFT JOIN users u ON u.id = wj.user_id ${where}`;
     const countResult = await execute(countSql, params);
     const total = countResult[0].total;
 

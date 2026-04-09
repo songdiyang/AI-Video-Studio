@@ -5,6 +5,10 @@ const WORKFLOW_CONFLICT_RULES = {
     paramKey: 'characterId',
     workflowTypes: ['character_views_generation']
   },
+  character_state_views_generation: {
+    paramKey: 'stateId',
+    workflowTypes: ['character_state_views_generation']
+  },
   scene_image_generation: {
     paramKey: 'sceneId',
     workflowTypes: ['scene_image_generation']

@@ -360,7 +360,7 @@ const WORKFLOW_DEFINITIONS = {
         targetType: 'storyboard',
         handler: handleSceneVideoGeneration,
         buildInput: createBuildInput([
-          'storyboardId', 'videoModel', 'textModel', 'duration', 'aspectRatio'
+          'storyboardId', 'videoModel', 'textModel', 'duration', 'aspectRatio', 'resolution'
         ])
       }
     ]
@@ -511,7 +511,31 @@ const WORKFLOW_DEFINITIONS = {
         buildInput: createBuildInput([
           'characterId', 'characterName', 'appearance', 'personality',
           'description', 'style', 'projectId', 'imageModel', 'textModel', 'aspectRatio',
+          'regenerateOnly', 'isBaseModel', 'gender',
+          { key: 'width', defaultValue: 1920 },
+          { key: 'height', defaultValue: 2880 }
+        ])
+      }
+    ]
+  },
+
+  /**
+   * 角色状态三视图生成
+   * 支持状态级别的服装/发型/配饰/年龄阶段等外貌属性
+   */
+  character_state_views_generation: {
+    name: '角色状态三视图生成',
+    steps: [
+      {
+        type: 'character_state_views_generation',
+        targetType: 'character_state',
+        handler: handleCharacterViewsGeneration,
+        buildInput: createBuildInput([
+          'characterId', 'characterName', 'appearance', 'personality',
+          'description', 'style', 'projectId', 'imageModel', 'textModel', 'aspectRatio',
           'regenerateOnly',
+          'stateId', 'outfit', 'hairstyle', 'accessories', 'ageStage',
+          'isBaseModel', 'gender',
           { key: 'width', defaultValue: 1920 },
           { key: 'height', defaultValue: 2880 }
         ])

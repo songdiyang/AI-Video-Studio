@@ -6,7 +6,8 @@ const {
   requireCharacterForUser,
   requireSceneForUser,
   listScenesForProject,
-  requireStoryboardForUser
+  requireStoryboardForUser,
+  requireStateForUser
 } = require('./repositories');
 
 function createCommand({ operationKey, workflowType, actor, scope, models, inputs, options }) {
@@ -134,7 +135,8 @@ const operationContracts = [
         personality: resources.character.personality,
         description: resources.character.description,
         style: input.style || null,
-        regenerateOnly: input.regenerateOnly || null
+        regenerateOnly: input.regenerateOnly || null,
+        gender: resources.character.gender || 'unknown'
       },
       options: {
         aspectRatio: input.aspectRatio || null
@@ -158,6 +160,95 @@ const operationContracts = [
       message: '三视图生成已启动',
       jobId: result.jobId,
       characterId: command.scope.characterId,
+      status: 'generating'
+    })
+  },
+  {
+    operationKey: 'character_state_views_generate',
+    workflowType: 'character_state_views_generation',
+    requestSchema: {
+      type: 'object',
+      required: ['characterId', 'stateId', 'imageModel'],
+      properties: {
+        characterId: { type: 'integer', minimum: 1 },
+        stateId: { type: 'integer', minimum: 1 },
+        style: { type: 'string' },
+        imageModel: { type: 'string', minLength: 1 },
+        textModel: { type: 'string' },
+        aspectRatio: { type: 'string' },
+        regenerateOnly: { type: 'array', items: { type: 'string', enum: ['front', 'side', 'back'] } }
+      }
+    },
+    scopeResolver: async ({ actor, input }) => {
+      const { character, state } = await requireStateForUser(input.stateId, input.characterId, actor.userId);
+      return {
+        scope: {
+          projectId: character.project_id,
+          characterId: character.id,
+          stateId: state.id
+        },
+        resources: { character, state }
+      };
+    },
+    defaultsResolver: async ({ input, resources }) => {
+      const { character, state } = resources;
+      // 组装外貌描述：角色基础外貌 + 状态级别属性
+      const stateAppearanceParts = [];
+      if (state.age_stage) stateAppearanceParts.push(`年龄阶段: ${state.age_stage}`);
+      if (state.outfit) stateAppearanceParts.push(`服装: ${state.outfit}`);
+      if (state.hairstyle) stateAppearanceParts.push(`发型: ${state.hairstyle}`);
+      if (state.accessories) stateAppearanceParts.push(`配饰: ${state.accessories}`);
+      // 状态自有 appearance 优先于角色 appearance
+      const baseAppearance = state.appearance || character.appearance || '';
+      const composedAppearance = stateAppearanceParts.length > 0
+        ? `${baseAppearance}${baseAppearance ? '；' : ''}${stateAppearanceParts.join('；')}`
+        : baseAppearance;
+
+      return {
+        models: {
+          imageModel: input.imageModel,
+          textModel: input.textModel || null
+        },
+        inputs: {
+          characterId: character.id,
+          characterName: character.name,
+          appearance: composedAppearance,
+          personality: character.personality,
+          description: state.description || character.description,
+          style: input.style || null,
+          regenerateOnly: input.regenerateOnly || null,
+          stateId: state.id,
+          outfit: state.outfit || '',
+          hairstyle: state.hairstyle || '',
+          accessories: state.accessories || '',
+          ageStage: state.age_stage || '',
+          isBaseModel: state.is_base_model ? true : false,
+          gender: state.gender || character.gender || 'unknown'
+        },
+        options: {
+          aspectRatio: input.aspectRatio || null
+        }
+      };
+    },
+    conflictKeyResolver: ({ scope }) => ({
+      key: 'stateId',
+      value: scope.stateId
+    }),
+    toJobParams: ({ contract, actor, scope, resolved }) =>
+      createCommand({
+        operationKey: contract.operationKey,
+        workflowType: contract.workflowType,
+        actor,
+        scope,
+        models: resolved.models,
+        inputs: resolved.inputs,
+        options: resolved.options
+      }),
+    responseMapper: ({ result, command }) => ({
+      message: '状态三视图生成已启动',
+      jobId: result.jobId,
+      characterId: command.scope.characterId,
+      stateId: command.scope.stateId,
       status: 'generating'
     })
   },
@@ -494,6 +585,7 @@ const operationContracts = [
         duration: { type: 'number', minimum: 0 },
         aspectRatio: { type: 'string' },
         overwriteVideos: { type: 'boolean', default: false },
+        resolution: { type: 'string' },
         maxConcurrency: { type: 'integer', minimum: 1, default: 3 }
       }
     },
@@ -513,10 +605,11 @@ const operationContracts = [
         textModel: input.textModel || null
       },
       inputs: {
-        episodeNumber: resources.script.episode_number
+        episodeNumber: resources.script.episode_number,
+        duration: input.duration ?? null,
+        resolution: input.resolution || null
       },
       options: {
-        duration: input.duration ?? null,
         aspectRatio: input.aspectRatio || null,
         overwriteVideos: input.overwriteVideos,
         maxConcurrency: input.maxConcurrency ?? 3
@@ -685,6 +778,7 @@ const operationContracts = [
         textModel: { type: 'string' },
         duration: { type: 'number', minimum: 0 },
         aspectRatio: { type: 'string' },
+        resolution: { type: 'string' },
         episodeNumber: { type: 'integer', minimum: 1 },
         storyboardIndex: { type: 'integer', minimum: 1 },
         isRegenerate: { type: 'boolean', default: false }
@@ -708,10 +802,11 @@ const operationContracts = [
       },
       inputs: {
         episodeNumber: input.episodeNumber ?? null,
-        storyboardIndex: input.storyboardIndex ?? null
+        storyboardIndex: input.storyboardIndex ?? null,
+        duration: input.duration ?? null,
+        resolution: input.resolution || null
       },
       options: {
-        duration: input.duration ?? null,
         aspectRatio: input.aspectRatio || null,
         isRegenerate: Boolean(input.isRegenerate)
       }

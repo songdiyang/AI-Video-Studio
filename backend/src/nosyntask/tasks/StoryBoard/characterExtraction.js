@@ -10,6 +10,18 @@ const { stripThinkTags, extractCodeBlock, extractJSON, stripInvisible, safeParse
 const { getVisualStylePrompt } = require('../../../utils/getProjectStyle');
 const { filterNonCharacters } = require('../../../utils/characterFilter');
 
+// AI 调用超时时间（默认 90 秒）
+const AI_CALL_TIMEOUT = parseInt(process.env.CHARACTER_EXTRACTION_AI_TIMEOUT, 10) || 90000;
+
+function withTimeout(promise, ms, errorMessage) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(errorMessage)), ms)
+    )
+  ]);
+}
+
 async function handleCharacterExtraction(inputParams, onProgress) {
   const { scenes, scriptContent, textModel: modelName, projectId, scriptId, userId } = inputParams;
 
@@ -98,11 +110,15 @@ ${contentForAnalysis}
 
   if (onProgress) onProgress(30);
 
-  const result = await handleBaseTextModelCall({
-    prompt: fullPrompt,
-    textModel: modelName,
-    temperature: 0.3
-  }, onProgress);
+  const result = await withTimeout(
+    handleBaseTextModelCall({
+      prompt: fullPrompt,
+      textModel: modelName,
+      temperature: 0.3
+    }, onProgress),
+    AI_CALL_TIMEOUT,
+    `角色提取 AI 调用超时（${Math.round(AI_CALL_TIMEOUT / 1000)}秒）`
+  );
 
   if (onProgress) onProgress(70);
 
@@ -226,7 +242,7 @@ ${contentForAnalysis}
   const validation = { matched: [], missing: [], filtered: [] };
   if (scenes && scenes.length > 0 && projectId && userId) {
     const { isNonCharacterEntity } = require('../../../utils/characterFilter');
-    const { queryAll: qaHelper, execute: exHelper } = require('../../../dbHelper');
+    const { execute: exHelper } = require('../../../dbHelper');
     
     // 从分镜 scenes.characters 收集所有角色名
     const sceneCharNames = new Set();
@@ -298,11 +314,15 @@ ${missingContext}
 - 如果是非人类角色（动物、怪物等），必须描述体型、毛色/皮肤、特征部位等
 - 禁止使用模糊描述，必须具体到视觉细节`;
 
-        const missingResult = await handleBaseTextModelCall({
-          prompt: missingPrompt,
-          textModel: modelName,
-          temperature: 0.3
-        });
+        const missingResult = await withTimeout(
+          handleBaseTextModelCall({
+            prompt: missingPrompt,
+            textModel: modelName,
+            temperature: 0.3
+          }),
+          AI_CALL_TIMEOUT,
+          `遗漏角色 AI 补充调用超时（${Math.round(AI_CALL_TIMEOUT / 1000)}秒）`
+        );
 
         // 解析 AI 返回的遗漏角色详情
         let missingJsonStr = stripThinkTags(missingResult.content);
@@ -328,31 +348,28 @@ ${missingContext}
 
       for (const name of missingNames) {
         try {
-          // 检查数据库是否已有该角色
-          const existing = await qaHelper(
-            'SELECT id, name FROM characters WHERE project_id = ? AND user_id = ? AND name = ?',
-            [projectId, userId, name]
-          );
+          // 批量查询已用 existingMap，直接查 Map 代替逐条 DB 查询
+          const existingId = existingMap.get(name);
 
-          if (existing.length > 0) {
+          if (existingId) {
             // 已在数据库中，用 AI 详情更新并加入返回列表
             const detail = missingCharDetails.get(name) || {};
             if (detail.appearance) {
               await exHelper(
                 `UPDATE characters SET appearance = ?, personality = ?, description = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-                [detail.appearance || '', detail.personality || '', detail.description || '', existing[0].id]
+                [detail.appearance || '', detail.personality || '', detail.description || '', existingId]
               );
             }
             characters.push({
-              id: existing[0].id,
-              name: existing[0].name,
+              id: existingId,
+              name,
               appearance: detail.appearance || '',
               personality: detail.personality || '',
               description: detail.description || '(分镜交叉校验补充)',
               _crossValidated: true
             });
-            validation.missing.push({ name, id: existing[0].id, source: 'db_existing' });
-            console.log('[CharacterExtraction] 校验补充已有角色:', name, 'id=', existing[0].id, detail.appearance ? '(含AI详情)' : '');
+            validation.missing.push({ name, id: existingId, source: 'db_existing' });
+            console.log('[CharacterExtraction] 校验补充已有角色:', name, 'id=', existingId, detail.appearance ? '(含AI详情)' : '');
           } else {
             // 插入新角色记录（含 AI 生成的详情）
             const detail = missingCharDetails.get(name) || {};

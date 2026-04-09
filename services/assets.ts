@@ -157,6 +157,40 @@ export interface CharacterState {
   is_active?: boolean;       // 是否激活
   generation_prompt?: string;
   generation_status?: 'idle' | 'generating' | 'completed' | 'failed';
+  // 状态分类和标签
+  state_category?: StateCategory;  // 状态分类
+  tags?: string;                   // 状态标签JSON数组
+}
+
+// 状态分类类型
+export type StateCategory = 'daily' | 'costume' | 'time' | 'effect';
+
+// 状态分类配置
+export const STATE_CATEGORIES: { key: StateCategory; label: string; color: string; icon: string }[] = [
+  { key: 'daily', label: '日常状态', color: 'blue', icon: 'User' },
+  { key: 'costume', label: '服装变化', color: 'pink', icon: 'Shirt' },
+  { key: 'time', label: '时间相关', color: 'purple', icon: 'Clock' },
+  { key: 'effect', label: '效果状态', color: 'amber', icon: 'Sparkles' },
+];
+
+// 角色状态变更历史记录
+export interface CharacterStateHistoryEntry {
+  id: number;
+  character_id: number;
+  state_id: number;
+  action: 'created' | 'updated' | 'activated' | 'deactivated' | 'deleted' | 'duplicated';
+  changes: Record<string, { from: any; to: any }> | null;
+  snapshot: Partial<CharacterState> | null;
+  performed_by: number;
+  created_at: string;
+}
+
+// 历史查询响应
+export interface CharacterStateHistoryResponse {
+  history: CharacterStateHistoryEntry[];
+  total: number;
+  limit: number;
+  offset: number;
 }
 
 // 年龄阶段选项
@@ -687,6 +721,30 @@ export async function fetchCharacterStates(characterId: number): Promise<Charact
 }
 
 /**
+ * 按分类获取角色状态
+ */
+export async function fetchCharacterStatesByCategory(
+  characterId: number,
+  category?: StateCategory
+): Promise<{ states: CharacterState[]; grouped: Record<string, CharacterState[]> }> {
+  const token = getAuthToken();
+  const queryParams = new URLSearchParams();
+  if (category) queryParams.append('category', category);
+
+  const url = `/api/characters/${characterId}/states/by-category${queryParams.toString() ? '?' + queryParams.toString() : ''}`;
+  const response = await fetch(url, {
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    }
+  });
+  if (!response.ok) {
+    const result = await response.json();
+    throw new Error(result.message || '获取角色状态分类失败');
+  }
+  return response.json();
+}
+
+/**
  * 创建角色状态
  */
 export async function createCharacterState(
@@ -805,12 +863,13 @@ export async function duplicateCharacterState(
 
 /**
  * 为角色状态生成三视图
+ * 后端会自动从角色和状态数据中组装外貌属性（appearance/outfit/hairstyle/accessories/age_stage）
  */
 export async function generateCharacterStateViews(
   characterId: number,
   stateId: number,
-  params: { imageModel: string; textModel?: string; regenerateOnly?: ('front' | 'side' | 'back')[]; referenceImage?: string }
-): Promise<{ state: CharacterState; generationPrompt: string }> {
+  params: { imageModel: string; textModel?: string; regenerateOnly?: ('front' | 'side' | 'back')[] }
+): Promise<{ message: string; jobId: string; characterId: number; stateId: number; status: string }> {
   const token = getAuthToken();
   const response = await fetch(`/api/characters/${characterId}/states/${stateId}/generate-views`, {
     method: 'POST',
@@ -845,6 +904,42 @@ export async function getActiveCharacterState(
   }
   const data = await response.json();
   return data.state;
+}
+
+/**
+ * 获取角色状态变更历史
+ */
+export async function fetchCharacterStateHistory(
+  characterId: number,
+  params?: { stateId?: number; action?: string; limit?: number; offset?: number }
+): Promise<CharacterStateHistoryResponse> {
+  const token = getAuthToken();
+  const queryParams = new URLSearchParams();
+  if (params?.action) queryParams.append('action', params.action);
+  if (params?.limit) queryParams.append('limit', String(params.limit));
+  if (params?.offset) queryParams.append('offset', String(params.offset));
+
+  const queryString = queryParams.toString();
+  let url: string;
+
+  if (params?.stateId) {
+    url = `/api/characters/${characterId}/states/${params.stateId}/history`;
+  } else {
+    url = `/api/characters/${characterId}/states/history`;
+  }
+
+  if (queryString) url += `?${queryString}`;
+
+  const response = await fetch(url, {
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    }
+  });
+  if (!response.ok) {
+    const result = await response.json();
+    throw new Error(result.message || '获取状态历史失败');
+  }
+  return response.json();
 }
 
 // ============================================================

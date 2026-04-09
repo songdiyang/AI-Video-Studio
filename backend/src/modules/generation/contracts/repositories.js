@@ -78,11 +78,33 @@ async function requireStoryboardForUser(storyboardId, userId) {
   return storyboard;
 }
 
+async function requireStateForUser(stateId, characterId, userId) {
+  // 先验证角色归属
+  const character = await queryOne(
+    'SELECT id, name, appearance, personality, description, project_id, gender FROM characters WHERE id = ? AND user_id = ?',
+    [characterId, userId]
+  );
+  if (!character) {
+    throw new HttpError(404, '角色不存在或无权访问');
+  }
+
+  const state = await queryOne(
+    'SELECT * FROM character_states WHERE id = ? AND character_id = ?',
+    [stateId, characterId]
+  );
+  if (!state) {
+    throw new HttpError(404, '角色状态不存在');
+  }
+
+  return { character, state };
+}
+
 module.exports = {
   requireProjectForUser,
   requireScriptForUser,
   requireCharacterForUser,
   requireSceneForUser,
   listScenesForProject,
-  requireStoryboardForUser
+  requireStoryboardForUser,
+  requireStateForUser
 };

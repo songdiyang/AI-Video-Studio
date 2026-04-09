@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { AlertTriangle, Search, Filter, ChevronLeft, ChevronRight, RefreshCw, Clock, XCircle, Check, CheckCircle, Server, Layers } from 'lucide-react';
 import { getAdminAuthHeaders } from '../../services/auth';
 
@@ -87,6 +87,9 @@ const ErrorMonitor: React.FC = () => {
   const [taskTypeFilter, setTaskTypeFilter] = useState('');
   const [taskExpandedId, setTaskExpandedId] = useState<string | null>(null);
   const [taskUpdatingId, setTaskUpdatingId] = useState<string | null>(null);
+  const [taskSearch, setTaskSearch] = useState('');
+  const [taskSearchInput, setTaskSearchInput] = useState('');
+  const taskSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // 系统错误状态
   const [systemErrors, setSystemErrors] = useState<SystemError[]>([]);
@@ -95,6 +98,9 @@ const ErrorMonitor: React.FC = () => {
   const [systemTypeFilter, setSystemTypeFilter] = useState('');
   const [systemExpandedId, setSystemExpandedId] = useState<number | null>(null);
   const [systemUpdatingId, setSystemUpdatingId] = useState<number | null>(null);
+  const [systemSearch, setSystemSearch] = useState('');
+  const [systemSearchInput, setSystemSearchInput] = useState('');
+  const systemSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ============ 任务错误 API ============
   const fetchTaskErrors = useCallback(async (page = 1) => {
@@ -102,6 +108,7 @@ const ErrorMonitor: React.FC = () => {
     try {
       const params = new URLSearchParams({ page: String(page), limit: '20' });
       if (taskTypeFilter) params.append('workflowType', taskTypeFilter);
+      if (taskSearch.trim()) params.append('search', taskSearch.trim());
       const res = await fetch(`/api/workflows/admin/errors?${params}`, { headers: getAdminAuthHeaders() });
       if (!res.ok) throw new Error('请求失败');
       const data = await res.json();
@@ -112,7 +119,7 @@ const ErrorMonitor: React.FC = () => {
     } finally {
       setTaskLoading(false);
     }
-  }, [taskTypeFilter]);
+  }, [taskTypeFilter, taskSearch]);
 
   const handleUpdateTaskStatus = async (jobId: string, newStatus: boolean) => {
     setTaskUpdatingId(jobId);
@@ -139,6 +146,7 @@ const ErrorMonitor: React.FC = () => {
     try {
       const params = new URLSearchParams({ page: String(page), limit: '20' });
       if (systemTypeFilter) params.append('errorType', systemTypeFilter);
+      if (systemSearch.trim()) params.append('search', systemSearch.trim());
       const res = await fetch(`/api/admin/system-errors?${params}`, { headers: getAdminAuthHeaders() });
       if (!res.ok) throw new Error('请求失败');
       const data = await res.json();
@@ -149,7 +157,7 @@ const ErrorMonitor: React.FC = () => {
     } finally {
       setSystemLoading(false);
     }
-  }, [systemTypeFilter]);
+  }, [systemTypeFilter, systemSearch]);
 
   const handleUpdateSystemStatus = async (errorId: number, newStatus: boolean) => {
     setSystemUpdatingId(errorId);
@@ -169,6 +177,44 @@ const ErrorMonitor: React.FC = () => {
       setSystemUpdatingId(null);
     }
   };
+
+  // 任务搜索防抖处理
+  const handleTaskSearchChange = useCallback((value: string) => {
+    setTaskSearchInput(value);
+    if (taskSearchTimer.current) clearTimeout(taskSearchTimer.current);
+    taskSearchTimer.current = setTimeout(() => {
+      setTaskSearch(value);
+    }, 400);
+  }, []);
+
+  const clearTaskSearch = useCallback(() => {
+    setTaskSearchInput('');
+    setTaskSearch('');
+    if (taskSearchTimer.current) clearTimeout(taskSearchTimer.current);
+  }, []);
+
+  // 系统错误搜索防抖处理
+  const handleSystemSearchChange = useCallback((value: string) => {
+    setSystemSearchInput(value);
+    if (systemSearchTimer.current) clearTimeout(systemSearchTimer.current);
+    systemSearchTimer.current = setTimeout(() => {
+      setSystemSearch(value);
+    }, 400);
+  }, []);
+
+  const clearSystemSearch = useCallback(() => {
+    setSystemSearchInput('');
+    setSystemSearch('');
+    if (systemSearchTimer.current) clearTimeout(systemSearchTimer.current);
+  }, []);
+
+  // 清理定时器
+  useEffect(() => {
+    return () => {
+      if (taskSearchTimer.current) clearTimeout(taskSearchTimer.current);
+      if (systemSearchTimer.current) clearTimeout(systemSearchTimer.current);
+    };
+  }, []);
 
   // 初始加载
   useEffect(() => {
@@ -222,7 +268,28 @@ const ErrorMonitor: React.FC = () => {
   const renderTaskErrors = () => (
     <>
       {/* 筛选 */}
-      <div className="flex items-center gap-3 mb-4">
+      <div className="flex items-center gap-3 mb-4 flex-wrap">
+        {/* 搜索框 */}
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 border border-white/10 flex-1 min-w-60 max-w-96">
+          <Search className="w-4 h-4 text-white/40 shrink-0" />
+          <input
+            type="text"
+            value={taskSearchInput}
+            onChange={e => handleTaskSearchChange(e.target.value)}
+            placeholder="搜索错误信息、用户、任务类型..."
+            className="bg-transparent text-sm text-white/80 outline-none flex-1 placeholder:text-white/30"
+          />
+          {taskSearchInput && (
+            <button
+              onClick={clearTaskSearch}
+              className="p-0.5 rounded hover:bg-white/10 transition-colors"
+              aria-label="清空搜索"
+            >
+              <XCircle className="w-4 h-4 text-white/40 hover:text-white/60" />
+            </button>
+          )}
+        </div>
+
         <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 border border-white/10">
           <Filter className="w-4 h-4 text-white/40" />
           <select
@@ -237,7 +304,7 @@ const ErrorMonitor: React.FC = () => {
           </select>
         </div>
         <span className="text-sm text-white/40">
-          共 {taskPagination.total} 条错误记录
+          共 {taskPagination.total} 条{taskSearch ? '匹配' : '错误'}记录
         </span>
       </div>
 
@@ -265,7 +332,7 @@ const ErrorMonitor: React.FC = () => {
             ) : taskErrors.length === 0 ? (
               <tr>
                 <td colSpan={6} className="text-center py-12 text-white/40">
-                  暂无任务错误记录
+                  {taskSearch ? `未找到匹配「${taskSearch}」的错误记录` : '暂无任务错误记录'}
                 </td>
               </tr>
             ) : (
@@ -378,7 +445,28 @@ const ErrorMonitor: React.FC = () => {
   const renderSystemErrors = () => (
     <>
       {/* 筛选 */}
-      <div className="flex items-center gap-3 mb-4">
+      <div className="flex items-center gap-3 mb-4 flex-wrap">
+        {/* 搜索框 */}
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 border border-white/10 flex-1 min-w-60 max-w-96">
+          <Search className="w-4 h-4 text-white/40 shrink-0" />
+          <input
+            type="text"
+            value={systemSearchInput}
+            onChange={e => handleSystemSearchChange(e.target.value)}
+            placeholder="搜索错误信息、类型、来源、URL..."
+            className="bg-transparent text-sm text-white/80 outline-none flex-1 placeholder:text-white/30"
+          />
+          {systemSearchInput && (
+            <button
+              onClick={clearSystemSearch}
+              className="p-0.5 rounded hover:bg-white/10 transition-colors"
+              aria-label="清空搜索"
+            >
+              <XCircle className="w-4 h-4 text-white/40 hover:text-white/60" />
+            </button>
+          )}
+        </div>
+
         <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 border border-white/10">
           <Filter className="w-4 h-4 text-white/40" />
           <select
@@ -393,7 +481,7 @@ const ErrorMonitor: React.FC = () => {
           </select>
         </div>
         <span className="text-sm text-white/40">
-          共 {systemPagination.total} 条错误记录
+          共 {systemPagination.total} 条{systemSearch ? '匹配' : '错误'}记录
         </span>
       </div>
 
@@ -421,7 +509,7 @@ const ErrorMonitor: React.FC = () => {
             ) : systemErrors.length === 0 ? (
               <tr>
                 <td colSpan={6} className="text-center py-12 text-white/40">
-                  暂无系统错误记录
+                  {systemSearch ? `未找到匹配「${systemSearch}」的错误记录` : '暂无系统错误记录'}
                 </td>
               </tr>
             ) : (

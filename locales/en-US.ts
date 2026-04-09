@@ -418,6 +418,7 @@ const enUS: Translations = {
       generateVideo: 'Generate video for selected scene',
       duplicateScene: 'Duplicate selected scene',
       selectAll: 'Select all scenes',
+      validateStoryboard: 'Validate Storyboard',
       // Animatic
       playPause: 'Play/Pause',
       prevFrame: 'Previous scene',

@@ -98,16 +98,18 @@ export const CAMERA_FOCAL_LENGTH_OPTIONS = [
 
 export const CAMERA_MOVEMENT_OPTIONS = [
   { value: 'static', label: '静止', desc: '固定机位，稳定观察' },
-  { value: 'push_in', label: '推', desc: '向主体靠近，强调、聚焦注意力' },
-  { value: 'pull_out', label: '拉', desc: '远离主体，揭示环境、扩大视野' },
+  { value: 'push', label: '推', desc: '向主体靠近，强调、聚焦注意力' },
+  { value: 'pull', label: '拉', desc: '远离主体，揭示环境、扩大视野' },
   { value: 'pan', label: '摇', desc: '水平旋转，跟随动作或展示环境' },
   { value: 'tilt', label: '俯仰', desc: '垂直旋转，展示高度或引导视线' },
   { value: 'track', label: '跟', desc: '平行移动跟随主体' },
   { value: 'dolly', label: '移', desc: '向前/后移动整个机位' },
+  { value: 'zoom', label: '变焦', desc: '变焦推拉，不移动机位' },
   { value: 'crane', label: '升降', desc: '垂直升降，改变视角高度' },
   { value: 'handheld', label: '手持', desc: '轻微抖动，真实感、临场感' },
   { value: 'steadicam', label: '稳定器', desc: '流畅移动，电影感' },
   { value: 'orbit', label: '环绕', desc: '围绕主体360°移动' },
+  { value: 'dolly_zoom', label: '希区柯克变焦', desc: '推拉+反向变焦，空间扭曲' },
   { value: 'whip_pan', label: '甩镜', desc: '快速摇摄产生模糊，转场常用' },
 ];
 

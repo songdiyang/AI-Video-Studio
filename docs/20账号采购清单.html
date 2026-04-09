@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>饺子动漫 NanoStory — 20账号规模采购清单（积分制计费模型 v6.0）</title>
+<title>饺子动漫 NanoStory — 20账号规模采购清单（可执行版 v7.0）</title>
 <style>
   @page { size: A4; margin: 18mm 14mm; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -26,12 +26,12 @@
     .no-print { display: none; }
     table { break-inside: avoid; }
     .note-card { break-inside: avoid; }
+    .order-card { break-inside: avoid; }
   }
   @media screen {
     .page { box-shadow: 0 2px 20px rgba(0,0,0,0.08); margin: 20px auto; border-radius: 4px; }
   }
 
-  /* Header */
   .header {
     text-align: center;
     padding-bottom: 28px;
@@ -49,11 +49,10 @@
     color: #fff; font-size: 22px; font-weight: 700;
     box-shadow: 0 2px 8px rgba(0,82,217,0.25);
   }
-  .header h1 { font-size: 24px; color: #0052d9; letter-spacing: 2px; margin-bottom: 4px; }
-  .header .subtitle { font-size: 15px; color: #666; font-weight: 400; }
+  .header h1 { font-size: 22px; color: #0052d9; letter-spacing: 2px; margin-bottom: 4px; }
+  .header .subtitle { font-size: 14px; color: #666; font-weight: 400; }
   .header .meta { margin-top: 10px; font-size: 12px; color: #999; }
 
-  /* Section */
   .category-section { margin-bottom: 24px; }
   .category-title {
     font-size: 16px; color: #fff;
@@ -67,7 +66,6 @@
   .category-title.orange { background: linear-gradient(135deg, #d48806, #faad14); }
   .category-title.red { background: linear-gradient(135deg, #cf1322, #ff4d4f); }
 
-  /* Data Table */
   .data-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 16px; }
   .data-table th {
     background: #f0f2f5; color: #333; padding: 8px 12px;
@@ -85,31 +83,43 @@
   .data-table .total-row td {
     background: #fff1f0; font-weight: 700; color: #cf1322; border-top: 2px solid #cf1322;
   }
-  .data-table .profit-row td {
-    background: #f6ffed; font-weight: 700; color: #389e0d; border-top: 2px solid #389e0d;
-  }
+  .data-table .free td { color: #389e0d; }
 
-  /* Priority Tags */
   .tag {
     font-size: 11px; padding: 2px 9px; border-radius: 12px; font-weight: 600; white-space: nowrap;
     display: inline-block;
   }
-  .tag-required { background: #fff0f0; color: #d4380d; border: 1px solid #ffccc7; }
-  .tag-recommend { background: #f0f5ff; color: #1d39c4; border: 1px solid #adc6ff; }
-  .tag-optional { background: #f5f5f5; color: #8c8c8c; border: 1px solid #d9d9d9; }
+  .tag-p1 { background: #fff0f0; color: #d4380d; border: 1px solid #ffccc7; }
+  .tag-p2 { background: #fff7e6; color: #d48806; border: 1px solid #ffe58f; }
+  .tag-p3 { background: #f0f5ff; color: #1d39c4; border: 1px solid #adc6ff; }
   .tag-free { background: #f6ffed; color: #389e0d; border: 1px solid #b7eb8f; }
-  .tag-warn { background: #fff0f0; color: #cf1322; border: 1px solid #ffccc7; font-weight: 700; }
 
-  /* Summary Box */
-  .summary-box {
-    margin: 14px 0; padding: 14px 18px;
-    background: linear-gradient(135deg, #f6f9ff, #eef3ff);
-    border-radius: 8px; border: 1px solid #d6e4ff;
-    font-size: 14px; color: #0052d9; font-weight: 700;
-    text-align: center;
+  .order-card {
+    border: 1px solid #e8e8e8; border-radius: 8px;
+    padding: 16px 18px; margin-bottom: 12px;
+    background: #fafbfc; page-break-inside: avoid;
+  }
+  .order-card:hover { box-shadow: 0 2px 12px rgba(0,82,217,0.08); }
+  .order-header {
+    display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;
+  }
+  .order-name { font-size: 15px; font-weight: 700; color: #1a1a2e; }
+  .order-price {
+    font-size: 16px; font-weight: 800; color: #0052d9;
+    font-family: "Consolas", "Menlo", monospace;
+  }
+  .order-desc { font-size: 12.5px; color: #666; margin-bottom: 10px; }
+  .order-specs { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  .order-specs th {
+    background: #f0f2f5; color: #333; padding: 5px 10px;
+    text-align: left; font-weight: 600; border: 1px solid #e0e0e0;
+  }
+  .order-specs td { padding: 5px 10px; border: 1px solid #e0e0e0; color: #444; }
+  .order-note {
+    margin-top: 8px; font-size: 11.5px; color: #0052d9; background: #f0f5ff;
+    padding: 6px 10px; border-radius: 4px; border-left: 3px solid #0052d9;
   }
 
-  /* Note Cards */
   .note-card {
     margin-bottom: 12px; padding: 16px 18px;
     border-radius: 6px; font-size: 12.5px; line-height: 1.8;
@@ -131,52 +141,26 @@
   .note-success { background: #f6ffed; border: 1px solid #b7eb8f; color: #135200; }
   .note-success h4 { color: #389e0d; }
 
-  /* Priority List */
-  .priority-block {
-    border: 1px solid #e8e8e8; border-radius: 8px;
-    padding: 16px 18px; margin-bottom: 12px;
-    background: #fafbfc; page-break-inside: avoid;
-  }
-  .priority-block:hover { box-shadow: 0 2px 12px rgba(0,82,217,0.08); }
-  .priority-block h5 {
-    font-size: 14px; margin-bottom: 8px; display: flex; align-items: center; gap: 8px;
-  }
-  .priority-block ul { padding-left: 18px; font-size: 13px; color: #444; }
-  .priority-block li { margin-bottom: 3px; }
-  .priority-block .budget {
-    display: inline-block; background: #f0f5ff; color: #0052d9;
-    padding: 2px 10px; border-radius: 4px; font-weight: 700; font-size: 13px;
-    margin-left: 8px;
-  }
-
-  /* Formula Box */
-  .formula-box {
+  .summary-box {
     margin: 14px 0; padding: 14px 18px;
-    background: #f9f0ff; border: 1px solid #d3adf7; border-radius: 8px;
-    text-align: center; page-break-inside: avoid;
-  }
-  .formula-box .formula {
-    font-family: "Cambria Math", "Times New Roman", serif;
-    font-size: 16px; color: #391085; font-weight: 700;
-    margin-bottom: 8px;
-  }
-  .formula-box .formula-desc {
-    font-size: 12.5px; color: #531dab; line-height: 1.7;
+    background: linear-gradient(135deg, #f6f9ff, #eef3ff);
+    border-radius: 8px; border: 1px solid #d6e4ff;
+    font-size: 14px; color: #0052d9; font-weight: 700;
+    text-align: center;
   }
 
-  /* PnL highlight */
-  .pnl-section {
-    margin: 14px 0; padding: 16px 18px;
-    background: linear-gradient(135deg, #fff1f0, #fff7e6);
-    border: 1px solid #ffccc7; border-radius: 8px;
+  .cost-total-bar {
+    background: linear-gradient(135deg, #391085, #722ed1);
+    color: #fff; border-radius: 8px; padding: 14px 20px;
+    text-align: center; font-size: 15px; font-weight: 700;
+    margin-bottom: 16px;
+    font-family: "Consolas", "Menlo", monospace;
   }
-  .pnl-section .pnl-title { font-size: 14px; font-weight: 700; color: #cf1322; margin-bottom: 10px; }
-  .pnl-section .pnl-note { font-size: 12.5px; color: #614700; margin-top: 8px; line-height: 1.7; }
+  .cost-total-bar span { font-size: 12px; font-weight: 400; opacity: 0.85; font-family: "Microsoft YaHei", sans-serif; }
 
-  /* Financial Overview Cards */
   .finance-overview {
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     gap: 12px;
     margin-bottom: 24px;
     page-break-inside: avoid;
@@ -189,15 +173,6 @@
     position: relative;
     overflow: hidden;
   }
-  .finance-card::before {
-    content: '';
-    position: absolute; top: 0; left: 0; right: 0; bottom: 0;
-    background: rgba(255,255,255,0.08);
-    border-radius: 50%;
-    width: 120px; height: 120px;
-    top: -30px; right: -30px;
-    left: auto; bottom: auto;
-  }
   .finance-card .fc-label {
     font-size: 11px; opacity: 0.9; margin-bottom: 6px; font-weight: 500;
   }
@@ -209,125 +184,7 @@
   .finance-card .fc-sub {
     font-size: 10.5px; opacity: 0.8; margin-top: 4px;
   }
-  .fc-strategy { background: linear-gradient(135deg, #531dab, #9254de); }
-  .fc-margin { background: linear-gradient(135deg, #0052d9, #2b7de9); }
-  .fc-breakeven { background: linear-gradient(135deg, #d48806, #faad14); color: #5c3a00; }
-  .fc-profit { background: linear-gradient(135deg, #389e0d, #52c41a); }
-  .fc-rate { background: linear-gradient(135deg, #08979c, #36cfc9); }
-  .fc-recharge { background: linear-gradient(135deg, #c41d7f, #eb2f96); }
 
-  /* v3.0: 三列成本卡片 */
-  .cost-trio {
-    display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px;
-    margin-bottom: 14px; page-break-inside: avoid;
-  }
-  .cost-card {
-    border-radius: 10px; padding: 18px 16px; color: #fff;
-    position: relative; overflow: hidden;
-  }
-  .cost-card::after {
-    content: ''; position: absolute; top: -20px; right: -20px;
-    width: 80px; height: 80px; border-radius: 50%;
-    background: rgba(255,255,255,0.1);
-  }
-  .cost-card .cc-icon { font-size: 24px; margin-bottom: 8px; }
-  .cost-card .cc-label { font-size: 12px; opacity: 0.9; margin-bottom: 4px; }
-  .cost-card .cc-value {
-    font-size: 26px; font-weight: 800;
-    font-family: "Consolas", "Menlo", monospace;
-  }
-  .cost-card .cc-sub { font-size: 11px; opacity: 0.75; margin-top: 4px; }
-  .cc-variable { background: linear-gradient(135deg, #0052d9, #2b7de9); }
-  .cc-fixed { background: linear-gradient(135deg, #531dab, #9254de); }
-  .cc-ops { background: linear-gradient(135deg, #d48806, #fa8c16); }
-
-  .cost-total-bar {
-    background: linear-gradient(135deg, #391085, #722ed1);
-    color: #fff; border-radius: 8px; padding: 14px 20px;
-    text-align: center; font-size: 15px; font-weight: 700;
-    margin-bottom: 16px;
-    font-family: "Consolas", "Menlo", monospace;
-  }
-  .cost-total-bar span { font-size: 12px; font-weight: 400; opacity: 0.85; font-family: "Microsoft YaHei", sans-serif; }
-
-  /* Breakeven card */
-  .breakeven-card {
-    margin: 14px 0; padding: 18px;
-    background: linear-gradient(135deg, #f6f9ff, #f9f0ff);
-    border: 2px solid #d3adf7; border-radius: 10px;
-    page-break-inside: avoid;
-  }
-  .breakeven-card .be-title {
-    font-size: 15px; font-weight: 700; color: #531dab; margin-bottom: 12px;
-    display: flex; align-items: center; gap: 8px;
-  }
-  .breakeven-grid {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
-  }
-  .be-item {
-    background: #fff; border: 1px solid #e8e8e8; border-radius: 8px; padding: 14px;
-    text-align: center;
-  }
-  .be-item .be-label { font-size: 12px; color: #666; margin-bottom: 4px; }
-  .be-item .be-num {
-    font-size: 22px; font-weight: 800; color: #531dab;
-    font-family: "Consolas", "Menlo", monospace;
-  }
-  .be-item .be-desc { font-size: 11px; color: #999; margin-top: 2px; }
-
-  /* 进度条盈亏 */
-  .be-bar-wrap { margin-bottom: 14px; }
-  .be-bar-label { font-size: 12px; color: #666; margin-bottom: 4px; display: flex; justify-content: space-between; }
-  .be-bar-track {
-    height: 22px; background: #f0f2f5; border-radius: 11px; overflow: hidden; position: relative;
-  }
-  .be-bar-fill {
-    height: 100%; border-radius: 11px; display: flex; align-items: center; justify-content: flex-end;
-    padding-right: 8px; font-size: 10px; color: #fff; font-weight: 700;
-    font-family: "Consolas", monospace; transition: width 0.3s;
-  }
-
-  /* Comparison card */
-  .compare-card {
-    margin: 14px 0; padding: 18px;
-    background: linear-gradient(135deg, #f0f5ff, #f9f0ff);
-    border: 2px solid #adc6ff; border-radius: 10px;
-    page-break-inside: avoid;
-  }
-  .compare-card .compare-title {
-    font-size: 15px; font-weight: 700; color: #0052d9; margin-bottom: 12px;
-    display: flex; align-items: center; gap: 8px;
-  }
-
-  /* Strategy card */
-  .strategy-card {
-    margin: 14px 0; padding: 18px;
-    background: linear-gradient(135deg, #f9f0ff, #f0f5ff);
-    border: 2px solid #d3adf7; border-radius: 10px;
-    page-break-inside: avoid;
-  }
-  .strategy-card .strategy-title {
-    font-size: 15px; font-weight: 700; color: #531dab; margin-bottom: 12px;
-    display: flex; align-items: center; gap: 8px;
-  }
-  .strategy-grid {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
-  }
-  .strategy-item {
-    background: #fff; border: 1px solid #e8e8e8; border-radius: 8px; padding: 14px;
-  }
-  .strategy-item .si-num {
-    font-size: 20px; font-weight: 800; color: #531dab; margin-bottom: 4px;
-    font-family: "Consolas", "Menlo", monospace;
-  }
-  .strategy-item .si-title {
-    font-size: 13px; font-weight: 700; color: #333; margin-bottom: 4px;
-  }
-  .strategy-item .si-desc {
-    font-size: 12px; color: #666; line-height: 1.6;
-  }
-
-  /* Footer */
   .footer {
     margin-top: 24px; padding-top: 14px;
     border-top: 1px solid #e0e0e0; text-align: center; font-size: 11px; color: #aaa;
@@ -337,679 +194,686 @@
 <body>
 <div class="page">
 
-  <!-- ========== Header ========== -->
   <div class="header">
     <div class="brand">
       <div class="logo-icon">N</div>
     </div>
     <h1>饺子动漫 NanoStory — 20账号规模采购清单</h1>
-    <div class="subtitle">智能故事创作平台 · 积分制计费模型 · 3x加价 · 双重定价策略 · 盈亏分析</div>
-    <div class="meta">生成日期：2026年4月6日 &nbsp;|&nbsp; 版本：v6.0（积分充值定价模型） &nbsp;|&nbsp; 项目：饺子动画 / NanoStory</div>
+    <div class="subtitle">可执行版 · 明确产品 + 规格 + 价格 + 下单指引 · 火山引擎华东2（上海）</div>
+    <div class="meta">生成日期：2026年4月6日 &nbsp;|&nbsp; 版本：v7.0（可执行采购版） &nbsp;|&nbsp; 项目：饺子动画 / NanoStory</div>
   </div>
 
-  <!-- ========== 财务模型总览 ========== -->
+  <!-- ========== 总览 ========== -->
   <div class="category-section">
-    <div class="category-title" style="background:linear-gradient(135deg,#391085,#722ed1);"><span class="icon">&#x1F4CA;</span> 财务模型总览（积分单价 &yen;0.01 &middot; 充值售价 &yen;0.02 &middot; 3x 加价）</div>
+    <div class="category-title"><span class="icon">&#x1F4CA;</span> 预算总览</div>
     <div class="finance-overview">
-      <div class="finance-card fc-strategy">
-        <div class="fc-label">加价倍率</div>
-        <div class="fc-value">3x</div>
-        <div class="fc-sub">成本 &times; 3（服务费率200%）</div>
+      <div class="finance-card" style="background:linear-gradient(135deg,#0052d9,#2b7de9);">
+        <div class="fc-label">第一批（开服必备）</div>
+        <div class="fc-value">&yen;2,634</div>
+        <div class="fc-sub">/月 · 7项</div>
       </div>
-      <div class="finance-card fc-margin">
-        <div class="fc-label">积分单价</div>
-        <div class="fc-value">&yen;0.01</div>
-        <div class="fc-sub">系统内部 · 1积分 = 1分钱</div>
+      <div class="finance-card" style="background:linear-gradient(135deg,#d48806,#faad14);color:#5c3a00;">
+        <div class="fc-label">第二批（增长期）</div>
+        <div class="fc-value">&yen;1,050</div>
+        <div class="fc-sub">/月 · 4项</div>
       </div>
-      <div class="finance-card fc-recharge">
-        <div class="fc-label">充值售价</div>
-        <div class="fc-value">&yen;0.02</div>
-        <div class="fc-sub">充值购买 · 订阅2倍溢价</div>
+      <div class="finance-card" style="background:linear-gradient(135deg,#389e0d,#52c41a);">
+        <div class="fc-label">免费项</div>
+        <div class="fc-value">8项</div>
+        <div class="fc-sub">VPC/DNS/SSL/监控等</div>
       </div>
-      <div class="finance-card fc-breakeven">
-        <div class="fc-label">盈亏平衡点</div>
-        <div class="fc-value">95</div>
-        <div class="fc-sub">项目/月（~4.8个/账号/月）</div>
-      </div>
-      <div class="finance-card fc-profit">
-        <div class="fc-label">低活跃即盈利</div>
-        <div class="fc-value">+&yen;636</div>
-        <div class="fc-sub">100项目/月 · 利润率5.6%</div>
+      <div class="finance-card" style="background:linear-gradient(135deg,#531dab,#9254de);">
+        <div class="fc-label">满配总计</div>
+        <div class="fc-value">&yen;3,684</div>
+        <div class="fc-sub">/月（低于原估&yen;2,900）</div>
       </div>
     </div>
   </div>
 
-  <!-- ========== 一、成本结构全景 ========== -->
+  <!-- ========== 一、第一批：开服必备 ========== -->
   <div class="category-section">
-    <div class="category-title"><span class="icon">&#x1F4B0;</span> 一、成本结构全景</div>
+    <div class="category-title"><span class="icon">&#x1F680;</span> 一、第一批 — 开服必备（立即购买）</div>
 
-    <div class="cost-trio">
-      <div class="cost-card cc-variable">
-        <div class="cc-icon">&#x26A1;</div>
-        <div class="cc-label">A. 可变成本（AI API）</div>
-        <div class="cc-value">&yen;23.07</div>
-        <div class="cc-sub">/项目（随使用量变化）</div>
+    <!-- ECS #1 应用主服务器 -->
+    <div class="order-card">
+      <div class="order-header">
+        <div class="order-name">&#x2460; 云服务器 ECS — 应用主服务器</div>
+        <div class="order-price">&yen;540/月</div>
       </div>
-      <div class="cost-card cc-fixed">
-        <div class="cc-icon">&#x1F5A5;</div>
-        <div class="cc-label">B. 固定成本（基础设施）</div>
-        <div class="cc-value">&yen;2,900</div>
-        <div class="cc-sub">/月（不管有没有用户）</div>
+      <div class="order-desc">运行 Node.js 后端（Express Master + 4 Worker 进程集群）、Vite 前端构建产物。</div>
+      <table class="order-specs">
+        <tr><th>配置项</th><th>选择值</th><th>备注</th></tr>
+        <tr><td>产品</td><td>云服务器 ECS</td><td>控制台 &rarr; 云服务器 &rarr; 创建实例</td></tr>
+        <tr><td>计费类型</td><td><strong>包年包月</strong></td><td>比按量省 30~50%</td></tr>
+        <tr><td>地域</td><td><strong>华东2（上海） · 可用区A</strong></td><td>与数据库同可用区</td></tr>
+        <tr><td>实例规格</td><td><strong>通用型 g3a · ecs.g3a.xlarge</strong></td><td><strong>4 vCPU / 16 GiB</strong></td></tr>
+        <tr><td>系统盘</td><td>ESSD PL0 · 60GB</td><td>系统+应用部署</td></tr>
+        <tr><td>数据盘</td><td>ESSD PL0 · 100GB</td><td>日志、临时文件、uploads</td></tr>
+        <tr><td>镜像</td><td>Ubuntu 22.04 LTS 64位</td><td>或 CentOS 8</td></tr>
+        <tr><td>公网IP</td><td><strong>绑定弹性公网IP (EIP)</strong></td><td>见下方 EIP 项</td></tr>
+      </table>
+      <div class="order-note">&#9654; 下单路径：控制台 &rarr; 云服务器 ECS &rarr; 创建实例 &rarr; 自定义购买 &rarr; 选"通用型" &rarr; g3a.xlarge</div>
+    </div>
+
+    <!-- ECS #2 微服务/备用 -->
+    <div class="order-card">
+      <div class="order-header">
+        <div class="order-name">&#x2461; 云服务器 ECS — 微服务 + Nginx</div>
+        <div class="order-price">&yen;234/月</div>
       </div>
-      <div class="cost-card cc-ops">
-        <div class="cc-icon">&#x1F465;</div>
-        <div class="cc-label">C. 运营成本（人力杂项）</div>
-        <div class="cc-value">&yen;5,500</div>
-        <div class="cc-sub">/月（运维+客服+杂项）</div>
+      <div class="order-desc">运行微服务（通知/核心服务）、Nginx 反向代理、定时任务。</div>
+      <table class="order-specs">
+        <tr><th>配置项</th><th>选择值</th><th>备注</th></tr>
+        <tr><td>计费类型</td><td><strong>包年包月</strong></td><td></td></tr>
+        <tr><td>地域</td><td><strong>华东2（上海） · 可用区A</strong></td><td>同可用区</td></tr>
+        <tr><td>实例规格</td><td><strong>通用型 g3a · ecs.g3a.large</strong></td><td><strong>2 vCPU / 8 GiB</strong></td></tr>
+        <tr><td>系统盘</td><td>ESSD PL0 · 40GB</td><td></td></tr>
+        <tr><td>数据盘</td><td>无（或 ESSD PL0 · 40GB）</td><td>按需</td></tr>
+        <tr><td>镜像</td><td>Ubuntu 22.04 LTS 64位</td><td></td></tr>
+        <tr><td>公网IP</td><td><strong>绑定弹性公网IP (EIP)</strong></td><td>见下方 EIP 项</td></tr>
+      </table>
+      <div class="order-note">&#9654; 火山引擎控制台 ECS 创建页面 &yen;234.00/月 对应的就是此规格（2C8G 通用型）</div>
+    </div>
+
+    <!-- EIP + 带宽 -->
+    <div class="order-card" style="border-color:#1890ff;">
+      <div class="order-header">
+        <div class="order-name">&#x2462; 弹性公网IP (EIP) + 带宽 &times; 2</div>
+        <div class="order-price">&yen;230/月</div>
       </div>
+      <div class="order-desc">为两台 ECS 分别绑定 EIP，提供公网访问能力。<strong>这就是「宽带」的具体产品。</strong></div>
+      <table class="order-specs">
+        <tr><th>配置项</th><th>选择值（主服务器）</th><th>选择值（微服务）</th></tr>
+        <tr><td>产品</td><td colspan="2"><strong>弹性公网IP (EIP)</strong></td></tr>
+        <tr><td>计费类型</td><td colspan="2"><strong>包年包月</strong></td></tr>
+        <tr><td>地域</td><td colspan="2"><strong>华东2（上海）</strong></td></tr>
+        <tr><td>线路类型</td><td colspan="2"><strong>BGP（多线）</strong> — 三大运营商自动切换</td></tr>
+        <tr><td>带宽上限</td><td><strong>10 Mbps</strong>（API + WebSocket）</td><td><strong>5 Mbps</strong>（微服务流量较少）</td></tr>
+        <tr><td>参考价</td><td class="money">~&yen;155/月</td><td class="money">~&yen;75/月</td></tr>
+        <tr><td>数量</td><td>1个</td><td>1个</td></tr>
+      </table>
+      <div class="order-note">&#9654; 下单路径：控制台 &rarr; 私有网络 &rarr; 弹性公网IP &rarr; 申请弹性公网IP &rarr; 选 BGP 多线 &rarr; 设带宽 &rarr; 绑定到对应 ECS<br>
+      &#9654; <strong>带宽换算：</strong>10Mbps = 1.25MB/s 下载速度，日均支撑约 ~13TB 流量。20用户场景绰绰有余。<br>
+      &#9654; <strong>省钱技巧：</strong>若后期上 CLB 负载均衡，可改用「共享带宽包」统一管理多 EIP，更省。</div>
+    </div>
+
+    <!-- MySQL -->
+    <div class="order-card">
+      <div class="order-header">
+        <div class="order-name">&#x2463; 云数据库 MySQL（veDB MySQL）</div>
+        <div class="order-price">&yen;680/月</div>
+      </div>
+      <div class="order-desc">项目主数据库，承载用户、项目、分镜、角色、计费记录等 28+ 张表。</div>
+      <table class="order-specs">
+        <tr><th>配置项</th><th>选择值</th><th>备注</th></tr>
+        <tr><td>产品</td><td><strong>veDB MySQL 版</strong>（或 RDS MySQL）</td><td>计算存储分离</td></tr>
+        <tr><td>计费类型</td><td><strong>包年包月</strong></td><td></td></tr>
+        <tr><td>地域</td><td><strong>华东2（上海） · 可用区A</strong></td><td>与 ECS 同可用区！</td></tr>
+        <tr><td>实例规格</td><td><strong>4 vCPU / 16 GB</strong></td><td>连接池 150 并发足够</td></tr>
+        <tr><td>MySQL 版本</td><td><strong>MySQL 8.0</strong></td><td></td></tr>
+        <tr><td>存储空间</td><td><strong>100 GB（自动扩容）</strong></td><td>veDB 存储按用量付费</td></tr>
+        <tr><td>网络</td><td>VPC 内网访问</td><td><strong>不开公网！</strong></td></tr>
+        <tr><td>自动备份</td><td>开启（每日全量 + binlog）</td><td>免费保留 7 天</td></tr>
+      </table>
+      <div class="order-note">&#9654; 下单路径：控制台 &rarr; 云数据库 &rarr; veDB MySQL &rarr; 创建实例 &rarr; 选同 VPC 同可用区<br>
+      &#9654; <strong>重要：</strong>不要开启公网访问！通过 ECS 内网 3306 端口连接即可，安全且无延迟。</div>
+    </div>
+
+    <!-- Redis -->
+    <div class="order-card">
+      <div class="order-header">
+        <div class="order-name">&#x2464; 缓存数据库 Redis</div>
+        <div class="order-price">&yen;350/月</div>
+      </div>
+      <div class="order-desc">缓存 + 任务队列（Bull）+ WebSocket 跨实例 Pub/Sub + 分布式锁。</div>
+      <table class="order-specs">
+        <tr><th>配置项</th><th>选择值</th><th>备注</th></tr>
+        <tr><td>产品</td><td><strong>缓存数据库 Redis 版</strong></td><td></td></tr>
+        <tr><td>计费类型</td><td><strong>包年包月</strong></td><td></td></tr>
+        <tr><td>地域</td><td><strong>华东2（上海） · 可用区A</strong></td><td>与 ECS 同可用区</td></tr>
+        <tr><td>架构</td><td><strong>主从版</strong></td><td>高可用自动故障切换</td></tr>
+        <tr><td>内存规格</td><td><strong>4 GB</strong></td><td>8 分片队列+缓存+Pub/Sub</td></tr>
+        <tr><td>Redis 版本</td><td><strong>7.0</strong></td><td>兼容 ioredis 5.x</td></tr>
+        <tr><td>网络</td><td>VPC 内网访问</td><td><strong>不开公网！</strong></td></tr>
+        <tr><td>持久化</td><td>开启 AOF</td><td>任务队列不丢失</td></tr>
+      </table>
+      <div class="order-note">&#9654; 下单路径：控制台 &rarr; 缓存数据库 Redis &rarr; 创建实例 &rarr; 主从版 &rarr; 4GB &rarr; 同 VPC</div>
+    </div>
+
+    <!-- TOS -->
+    <div class="order-card">
+      <div class="order-header">
+        <div class="order-name">&#x2465; 对象存储 TOS</div>
+        <div class="order-price">&yen;200/月</div>
+      </div>
+      <div class="order-desc">存储 AI 生成图片、视频、用户头像等全部媒体文件。替代自建 MinIO。</div>
+      <table class="order-specs">
+        <tr><th>配置项</th><th>选择值</th><th>备注</th></tr>
+        <tr><td>产品</td><td><strong>对象存储 TOS</strong></td><td>按量付费（存储+请求+流量）</td></tr>
+        <tr><td>地域</td><td><strong>华东2（上海）</strong></td><td>与 ECS 同区，内网传输免费</td></tr>
+        <tr><td>存储桶 1</td><td><code>nanostory-prod</code>（标准存储）</td><td>高频读写资源</td></tr>
+        <tr><td>存储桶 2</td><td><code>nanostory-archive</code>（低频存储）</td><td>30天未访问自动降冷</td></tr>
+        <tr><td>预估容量</td><td>~500GB/月增长</td><td>20用户场景</td></tr>
+        <tr><td>预估月费</td><td>&yen;150~250/月</td><td>存储&yen;0.12/GB + 请求费 + 出流量</td></tr>
+      </table>
+      <div class="order-note">&#9654; TOS 为按量付费，无需预购。创建存储桶即可使用。<br>
+      &#9654; <strong>ECS 内网访问 TOS 流量免费！</strong>仅用户直接下载时计公网出流量。配合 CDN 可大幅降低。</div>
+    </div>
+
+    <!-- AI 模型开通 -->
+    <div class="order-card" style="border-color:#722ed1;">
+      <div class="order-header">
+        <div class="order-name">&#x2466; 火山方舟 AI 模型（按量付费）</div>
+        <div class="order-price">&yen;400/月（预估）</div>
+      </div>
+      <div class="order-desc">AI 能力核心 — 文本生成 + 图片生成 + 视频生成。按实际 API 调用量付费。</div>
+      <table class="order-specs">
+        <tr><th>模型</th><th>用途</th><th>单价</th><th>操作</th></tr>
+        <tr><td><strong>豆包 Doubao-pro-256k</strong></td><td>长文本剧本生成</td><td>~&yen;0.015~0.055/次</td><td>方舟控制台开通</td></tr>
+        <tr><td><strong>豆包 Doubao-lite-32k</strong></td><td>快速补全</td><td>~&yen;0.005/次</td><td>方舟控制台开通</td></tr>
+        <tr><td><strong>Seedream 5.0 lite</strong></td><td>文生图/图生图</td><td>&yen;0.22/张</td><td>方舟控制台开通</td></tr>
+        <tr><td><strong>Seedance 1.5 Pro</strong></td><td>图生视频</td><td>&yen;0.95/秒</td><td>方舟控制台开通</td></tr>
+        <tr><td>DeepSeek-V3（可选）</td><td>通用推理</td><td>~&yen;0.025/次</td><td>方舟已托管</td></tr>
+      </table>
+      <div class="order-note">&#9654; 下单路径：console.volcengine.com &rarr; 火山方舟 &rarr; 模型广场 &rarr; 逐个开通推理端点<br>
+      &#9654; <strong>关键！</strong>Seedance 默认 QPS=3，<strong>务必提工单申请提升至 20+ QPS</strong>，否则视频生成严重排队。<br>
+      &#9654; AI 费用为可变成本，月费取决于活跃度。20用户低活跃约&yen;400/月，中活跃约&yen;2,000/月。</div>
     </div>
 
     <div class="cost-total-bar">
-      全部固定成本 D = B + C = &yen;2,900 + &yen;5,500 = <strong style="font-size:20px;">&yen;8,400/月</strong>
+      第一批合计：&yen;540 + &yen;234 + &yen;230 + &yen;680 + &yen;350 + &yen;200 + &yen;400 = <strong style="font-size:22px;">&yen;2,634/月</strong>
+      <br><span>（含可变的 AI 费用 &yen;400，实际可能更低或更高）</span>
+    </div>
+  </div>
+
+  <!-- ========== 二、第二批：增长期追加 ========== -->
+  <div class="category-section">
+    <div class="category-title orange"><span class="icon">&#x1F4C8;</span> 二、第二批 — 增长期追加（用户突破 10 人后）</div>
+
+    <div class="order-card">
+      <div class="order-header">
+        <div class="order-name">&#x2467; CDN 内容分发网络</div>
+        <div class="order-price">&yen;500/月</div>
+      </div>
+      <div class="order-desc">加速图片/视频媒体文件边缘分发，降低 TOS 出流量费，用户体验提升明显。</div>
+      <table class="order-specs">
+        <tr><th>配置项</th><th>选择值</th></tr>
+        <tr><td>产品</td><td><strong>内容分发网络 CDN</strong></td></tr>
+        <tr><td>加速域名</td><td><code>cdn.your-domain.com</code>（绑 TOS 源站）</td></tr>
+        <tr><td>缓存策略</td><td>图片/视频 30 天，HTML/JS 按版本号</td></tr>
+        <tr><td>HTTPS</td><td>强制 HTTPS + HTTP/2 + Brotli 压缩</td></tr>
+        <tr><td>预估流量</td><td>2~5 TB/月</td></tr>
+        <tr><td>计费</td><td>按量（流量计费 &yen;0.21/GB）或包月流量包</td></tr>
+      </table>
+      <div class="order-note">&#9654; CDN 可将图片加载从 200ms 降至 20ms，视频秒开。同时 TOS 出流量降低 40~60%。</div>
     </div>
 
-    <h5 style="font-size:13px;color:#0052d9;margin-bottom:8px;">B. 固定成本 — 基础设施明细</h5>
-    <table class="data-table">
-      <thead>
-        <tr><th>项目</th><th>月费</th></tr>
-      </thead>
-      <tbody>
-        <tr><td>云服务器 ECS（2&times;4C16G + 1&times;2C8G）</td><td class="money">&yen;1,000</td></tr>
-        <tr><td>云数据库 MySQL</td><td class="money">&yen;400</td></tr>
-        <tr><td>Redis缓存</td><td class="money">&yen;300</td></tr>
-        <tr><td>对象存储 TOS</td><td class="money">&yen;200</td></tr>
-        <tr><td>CDN</td><td class="money">&yen;500</td></tr>
-        <tr><td>云搜索 ES</td><td class="money">&yen;400</td></tr>
-        <tr><td>安全/DNS/SSL</td><td class="money">&yen;100</td></tr>
-        <tr class="subtotal"><td><strong>基础设施小计</strong></td><td class="money"><strong>&yen;2,900</strong></td></tr>
-      </tbody>
-    </table>
+    <div class="order-card">
+      <div class="order-header">
+        <div class="order-name">&#x2468; 负载均衡 CLB / ALB</div>
+        <div class="order-price">&yen;150/月</div>
+      </div>
+      <div class="order-desc">多台 ECS 之间的流量分发，支持 HTTP/HTTPS/WebSocket，高可用入口。</div>
+      <table class="order-specs">
+        <tr><th>配置项</th><th>选择值</th></tr>
+        <tr><td>产品</td><td><strong>应用型负载均衡 ALB</strong></td></tr>
+        <tr><td>监听器</td><td>HTTPS:443 &rarr; 后端 4001，WSS &rarr; WebSocket 4001</td></tr>
+        <tr><td>健康检查</td><td>HTTP /api/health 间隔 10s</td></tr>
+        <tr><td>会话保持</td><td>基于 Cookie（WebSocket 长连接兼容）</td></tr>
+        <tr><td>带宽</td><td>复用 EIP 或新增「共享带宽包」</td></tr>
+      </table>
+      <div class="order-note">&#9654; 上 CLB 后，可将两台 ECS 的 EIP 回收，改为 CLB 绑定一个 EIP + 共享带宽包 15Mbps（更省钱）。</div>
+    </div>
 
-    <h5 style="font-size:13px;color:#d48806;margin:14px 0 8px;">C. 运维运营成本明细</h5>
+    <div class="order-card">
+      <div class="order-header">
+        <div class="order-name">&#x2469; 云搜索引擎 Elasticsearch</div>
+        <div class="order-price">&yen;400/月</div>
+      </div>
+      <div class="order-desc">全文搜索，用于项目内容检索、社区作品搜索、模板搜索。</div>
+      <table class="order-specs">
+        <tr><th>配置项</th><th>选择值</th></tr>
+        <tr><td>实例规格</td><td>2C8G &times; 2 节点</td></tr>
+        <tr><td>存储</td><td>50GB SSD</td></tr>
+        <tr><td>版本</td><td>Elasticsearch 8.x</td></tr>
+      </table>
+    </div>
+
+    <div class="order-card" style="border-color:#531dab;">
+      <div class="order-header">
+        <div class="order-name">&#x246A; ECS 第二台应用服务器（扩容）</div>
+        <div class="order-price">+&yen;540/月</div>
+      </div>
+      <div class="order-desc">当单台 4C16G 不够用时，加第二台 + CLB 负载均衡。可用弹性伸缩 AS 自动化。</div>
+      <table class="order-specs">
+        <tr><th>配置项</th><th>选择值</th></tr>
+        <tr><td>规格</td><td>与 &#x2460; 相同（ecs.g3a.xlarge 4C16G）</td></tr>
+        <tr><td>触发条件</td><td>CPU &gt;70% 持续 3 分钟</td></tr>
+      </table>
+      <div class="order-note">&#9654; 20 用户低活跃时一般不需要。当同时在线超过 10 人频繁生成时考虑。</div>
+    </div>
+
+    <div class="summary-box" style="background:linear-gradient(135deg,#fff7e6,#fffbe6);border-color:#ffe58f;color:#d48806;">
+      第二批追加合计：&yen;500 + &yen;150 + &yen;400 = <strong>&yen;1,050/月</strong>（扩容 ECS 按需，不计入常规预算）
+    </div>
+  </div>
+
+  <!-- ========== 三、免费项 ========== -->
+  <div class="category-section">
+    <div class="category-title green"><span class="icon">&#x2705;</span> 三、免费项 — 必须配置但不花钱</div>
+
     <table class="data-table">
       <thead>
-        <tr><th>项目</th><th>月费</th></tr>
+        <tr><th>序号</th><th>产品</th><th>用途</th><th>费用</th><th>操作</th></tr>
       </thead>
       <tbody>
-        <tr><td>运维人员（兼职/外包）</td><td class="money">&yen;3,000</td></tr>
-        <tr><td>客服/运营（兼职）</td><td class="money">&yen;2,000</td></tr>
-        <tr><td>杂项</td><td class="money">&yen;200</td></tr>
-        <tr><td>带宽储备</td><td class="money">&yen;300</td></tr>
-        <tr class="subtotal"><td><strong>运营小计</strong></td><td class="money"><strong>&yen;5,500</strong></td></tr>
+        <tr class="free">
+          <td>1</td>
+          <td><strong>私有网络 VPC</strong></td>
+          <td>所有云资源的安全内网，ECS/数据库/Redis 必须在同一 VPC</td>
+          <td><span class="tag tag-free">免费</span></td>
+          <td>创建 ECS 前先创建 VPC，网段 10.0.0.0/16</td>
+        </tr>
+        <tr class="free">
+          <td>2</td>
+          <td><strong>安全组</strong></td>
+          <td>防火墙规则：只放行 22/80/443/4001 端口</td>
+          <td><span class="tag tag-free">免费</span></td>
+          <td>创建 ECS 时配置，或后续在安全组管理</td>
+        </tr>
+        <tr class="free">
+          <td>3</td>
+          <td><strong>云解析 DNS</strong></td>
+          <td>域名解析，A 记录指向 EIP（或 CLB）</td>
+          <td><span class="tag tag-free">免费</span></td>
+          <td>控制台 &rarr; 云解析 DNS &rarr; 添加域名 &rarr; 添加解析记录</td>
+        </tr>
+        <tr class="free">
+          <td>4</td>
+          <td><strong>SSL 证书（DV 免费版）</strong></td>
+          <td>HTTPS 加密通信，保护 Token/API Key 传输</td>
+          <td><span class="tag tag-free">免费</span></td>
+          <td>证书中心 &rarr; 申请免费 DV 证书 &rarr; 部署到 ECS Nginx 或 CLB</td>
+        </tr>
+        <tr class="free">
+          <td>5</td>
+          <td><strong>DDoS 基础防护</strong></td>
+          <td>网络层 DDoS 防护，5Gbps 清洗</td>
+          <td><span class="tag tag-free">免费</span></td>
+          <td>自动生效，无需配置</td>
+        </tr>
+        <tr class="free">
+          <td>6</td>
+          <td><strong>云监控</strong></td>
+          <td>监控 ECS/DB/Redis CPU、内存、磁盘、网络</td>
+          <td><span class="tag tag-free">免费</span></td>
+          <td>控制台 &rarr; 云监控 &rarr; 设置告警规则</td>
+        </tr>
+        <tr class="free">
+          <td>7</td>
+          <td><strong>访问控制 IAM</strong></td>
+          <td>子账号权限管理，运维人员用子账号</td>
+          <td><span class="tag tag-free">免费</span></td>
+          <td>控制台 &rarr; 访问控制 &rarr; 创建子用户</td>
+        </tr>
+        <tr class="free">
+          <td>8</td>
+          <td><strong>弹性伸缩 AS</strong></td>
+          <td>CPU &gt;70% 自动加 ECS，&lt;30% 自动缩</td>
+          <td><span class="tag tag-free">免费</span></td>
+          <td>控制台 &rarr; 弹性伸缩（仅 ECS 产生费用，AS 服务本身免费）</td>
+        </tr>
       </tbody>
     </table>
   </div>
 
-  <!-- ========== 二、AI模型定价与积分消耗 ========== -->
+  <!-- ========== 四、带宽详细说明 ========== -->
   <div class="category-section">
-    <div class="category-title purple"><span class="icon">&#x1F916;</span> 二、AI 模型定价与积分消耗（3x 加价对照）</div>
-
-    <h5 style="font-size:13px;color:#531dab;margin-bottom:8px;">火山引擎 AI 模型官方定价（成本价）</h5>
-    <table class="data-table">
-      <thead>
-        <tr><th>模型</th><th>用途</th><th>成本价</th><th>必要性</th></tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>豆包 Doubao-pro-256k</td><td>长文本剧本</td>
-          <td class="money">~&yen;0.015/次(短) ~&yen;0.025/次(标准) ~&yen;0.055/次(长)</td>
-          <td><span class="tag tag-required">必选</span></td>
-        </tr>
-        <tr>
-          <td>豆包 Doubao-lite-32k</td><td>快速补全</td>
-          <td class="money">~&yen;0.005/次</td>
-          <td><span class="tag tag-required">必选</span></td>
-        </tr>
-        <tr>
-          <td>Seedream 5.0 lite</td><td>文生图</td>
-          <td class="money">&yen;0.22/张</td>
-          <td><span class="tag tag-required">必选</span></td>
-        </tr>
-        <tr>
-          <td>Seedance 1.5 Pro</td><td>图生视频</td>
-          <td class="money">&yen;0.95/秒</td>
-          <td><span class="tag tag-required">必选</span></td>
-        </tr>
-        <tr>
-          <td>DeepSeek-V3</td><td>通用推理</td>
-          <td class="money">~&yen;0.025/次</td>
-          <td><span class="tag tag-optional">可选</span></td>
-        </tr>
-      </tbody>
-    </table>
-
-    <h5 style="font-size:13px;color:#531dab;margin:14px 0 8px;">3x 加价后积分消耗对照表</h5>
-    <table class="data-table">
-      <thead>
-        <tr><th>类型</th><th>成本</th><th>售价(&times;3)</th><th>积分(&divide;0.01)</th></tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>文本生成(短)</td>
-          <td class="money">&yen;0.015</td>
-          <td class="money">&yen;0.045</td>
-          <td style="font-family:'Consolas',monospace;font-weight:700;">ceil(4.5) = <strong>5积分</strong></td>
-        </tr>
-        <tr>
-          <td>文本生成(标准)</td>
-          <td class="money">&yen;0.025</td>
-          <td class="money">&yen;0.075</td>
-          <td style="font-family:'Consolas',monospace;font-weight:700;">ceil(7.5) = <strong>8积分</strong></td>
-        </tr>
-        <tr>
-          <td>文本生成(长)</td>
-          <td class="money">&yen;0.055</td>
-          <td class="money">&yen;0.165</td>
-          <td style="font-family:'Consolas',monospace;font-weight:700;">ceil(16.5) = <strong>17积分</strong></td>
-        </tr>
-        <tr>
-          <td>图片生成</td>
-          <td class="money">&yen;0.22</td>
-          <td class="money">&yen;0.66</td>
-          <td style="font-family:'Consolas',monospace;font-weight:700;"><strong>66积分</strong></td>
-        </tr>
-        <tr>
-          <td>视频生成/秒</td>
-          <td class="money">&yen;0.95</td>
-          <td class="money">&yen;2.85</td>
-          <td style="font-family:'Consolas',monospace;font-weight:700;"><strong>285积分</strong></td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
-
-  <!-- ========== 三、典型项目消耗 ========== -->
-  <div class="category-section">
-    <div class="category-title green"><span class="icon">&#x1F3AC;</span> 三、典型项目消耗（10角色 + 30分镜 + 15秒视频）</div>
-
-    <table class="data-table">
-      <thead>
-        <tr><th>环节</th><th>数量</th><th>成本</th><th>售价(&times;3)</th><th>积分</th></tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>剧本生成</td>
-          <td>1次</td>
-          <td class="money">&yen;0.015</td>
-          <td class="money">&yen;0.045</td>
-          <td style="font-family:'Consolas',monospace;font-weight:700;">5积分</td>
-        </tr>
-        <tr>
-          <td>角色图像</td>
-          <td>10张</td>
-          <td class="money">&yen;2.20</td>
-          <td class="money">&yen;6.60</td>
-          <td style="font-family:'Consolas',monospace;font-weight:700;">660积分</td>
-        </tr>
-        <tr>
-          <td>分镜图像</td>
-          <td>30张</td>
-          <td class="money">&yen;6.60</td>
-          <td class="money">&yen;19.80</td>
-          <td style="font-family:'Consolas',monospace;font-weight:700;">1,980积分</td>
-        </tr>
-        <tr>
-          <td>视频生成</td>
-          <td>15秒</td>
-          <td class="money">&yen;14.25</td>
-          <td class="money">&yen;42.75</td>
-          <td style="font-family:'Consolas',monospace;font-weight:700;">4,275积分</td>
-        </tr>
-        <tr class="subtotal">
-          <td><strong>总计</strong></td>
-          <td></td>
-          <td class="money"><strong>&yen;23.07</strong></td>
-          <td class="money"><strong>&yen;69.20</strong></td>
-          <td style="font-family:'Consolas',monospace;font-weight:700;"><strong>6,920积分</strong></td>
-        </tr>
-      </tbody>
-    </table>
-
-    <div class="summary-box" style="background:linear-gradient(135deg,#f6ffed,#eef3ff);border-color:#b7eb8f;color:#389e0d;">
-      单项目消耗：6,920积分 = &yen;69.20 &nbsp;|&nbsp; 毛利：&yen;69.20 - &yen;23.07 = <strong>&yen;46.13/项目</strong>（毛利率 66.7%）
-    </div>
-  </div>
-
-  <!-- ========== 四、套餐定价 ========== -->
-  <div class="category-section">
-    <div class="category-title orange"><span class="icon">&#x1F451;</span> 四、套餐定价（积分单价&yen;0.01，3x加价）</div>
-
-    <table class="data-table">
-      <thead>
-        <tr><th>套餐</th><th>月费</th><th>首月特惠</th><th>年费(省2月)</th><th>月度积分</th><th>可做项目数</th></tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>免费版</td>
-          <td class="money-green">免费</td>
-          <td>-</td>
-          <td>-</td>
-          <td style="font-family:'Consolas',monospace;">2,000</td>
-          <td style="font-family:'Consolas',monospace;">~0.29个</td>
-        </tr>
-        <tr>
-          <td>基础版</td>
-          <td class="money">&yen;99</td>
-          <td class="money-green">&yen;49.9</td>
-          <td class="money">&yen;990</td>
-          <td style="font-family:'Consolas',monospace;">10,000</td>
-          <td style="font-family:'Consolas',monospace;">~1.4个</td>
-        </tr>
-        <tr>
-          <td>专业版</td>
-          <td class="money">&yen;299</td>
-          <td>-</td>
-          <td class="money">&yen;2,990</td>
-          <td style="font-family:'Consolas',monospace;">30,000</td>
-          <td style="font-family:'Consolas',monospace;">~4.3个</td>
-        </tr>
-        <tr>
-          <td>旗舰版</td>
-          <td class="money">&yen;888</td>
-          <td>-</td>
-          <td class="money">&yen;8,880</td>
-          <td style="font-family:'Consolas',monospace;">90,000</td>
-          <td style="font-family:'Consolas',monospace;">~13个</td>
-        </tr>
-      </tbody>
-    </table>
-
-    <h5 style="font-size:13px;color:#531dab;margin:14px 0 8px;">套餐毛利分析</h5>
-    <table class="data-table">
-      <thead>
-        <tr><th>套餐</th><th>月费</th><th>积分等价AI成本</th><th>套餐毛利</th><th>毛利率</th></tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>基础版</td>
-          <td class="money">&yen;99</td>
-          <td class="money">&yen;33.45</td>
-          <td class="money-green">+&yen;65.55</td>
-          <td style="font-family:'Consolas',monospace;font-weight:700;">66.2%</td>
-        </tr>
-        <tr>
-          <td>专业版</td>
-          <td class="money">&yen;299</td>
-          <td class="money">&yen;100.05</td>
-          <td class="money-green">+&yen;198.95</td>
-          <td style="font-family:'Consolas',monospace;font-weight:700;">66.5%</td>
-        </tr>
-        <tr>
-          <td>旗舰版</td>
-          <td class="money">&yen;888</td>
-          <td class="money">&yen;299.91</td>
-          <td class="money-green">+&yen;588.09</td>
-          <td style="font-family:'Consolas',monospace;font-weight:700;">66.2%</td>
-        </tr>
-        <tr style="background:#fff7e6;">
-          <td><strong>首月特惠</strong></td>
-          <td class="money">&yen;49.9</td>
-          <td class="money">&yen;33.45</td>
-          <td class="money-green">+&yen;16.45</td>
-          <td style="font-family:'Consolas',monospace;font-weight:700;">33.0%</td>
-        </tr>
-      </tbody>
-    </table>
-
-    <div class="summary-box" style="background:linear-gradient(135deg,#f6ffed,#eef3ff);border-color:#b7eb8f;color:#389e0d;">
-      重点：首月特惠&yen;49.9也不亏钱！毛利+&yen;16.45/用户
-    </div>
+    <div class="category-title" style="background:linear-gradient(135deg,#08979c,#36cfc9);"><span class="icon">&#x1F310;</span> 四、带宽 / 网络 详细说明</div>
 
     <div class="note-card note-info">
-      <h4>&#9654; 说明</h4>
+      <h4>&#9654; 火山引擎的「带宽」= 弹性公网IP (EIP) 的带宽</h4>
       <ul>
-        <li>1积分 = &yen;0.01，基础版10,000积分 = &yen;100等价</li>
-        <li>套餐积分总量（10基础+5专业）：10&times;10,000 + 5&times;30,000 = <strong style="font-family:'Consolas',monospace;">250,000积分</strong></li>
-        <li>套餐积分可覆盖：250,000 &divide; 6,920 &asymp; <strong style="font-family:'Consolas',monospace;">36个项目</strong></li>
-      </ul>
-    </div>
-  </div>
-
-  <!-- ========== 五、积分充值定价（NEW） ========== -->
-  <div class="category-section">
-    <div class="category-title" style="background:linear-gradient(135deg,#c41d7f,#eb2f96);"><span class="icon">&#x1F4B3;</span> 五、积分充值定价（套餐外额外购买）</div>
-
-    <div class="note-card note-warn" style="margin-bottom:14px;">
-      <h4>&#9654; 核心策略：双重定价</h4>
-      <ul>
-        <li>套餐内积分等价 <strong>&yen;0.01/积分</strong> — 订阅用户享受优惠价</li>
-        <li>充值购买积分 <strong>&yen;0.02/积分</strong> — 套餐用完后溢价购买，是订阅等价的 <strong>2倍</strong></li>
-        <li>核心目的：<strong>引导用户订阅/升级套餐</strong>，而非单纯充值</li>
+        <li>ECS 本身不自带公网带宽，需单独购买 <strong>弹性公网IP (EIP)</strong> 并绑定</li>
+        <li>EIP 的带宽 = 你的服务器的公网带宽上限（上行+下行共享）</li>
+        <li><strong>10 Mbps</strong> = 理论下载速度 1.25 MB/s，日均可传输约 ~135 GB</li>
+        <li>VPC 内网通信（ECS &harr; MySQL / Redis / TOS）<strong>不占公网带宽、不收流量费</strong></li>
       </ul>
     </div>
 
-    <h5 style="font-size:13px;color:#c41d7f;margin-bottom:8px;">充值 vs 订阅对比</h5>
     <table class="data-table">
       <thead>
-        <tr><th>获取方式</th><th>单价</th><th>1个项目(6,920积分)费用</th><th>溢价</th></tr>
+        <tr><th>场景</th><th>走向</th><th>是否占公网带宽</th><th>是否收流量费</th></tr>
       </thead>
       <tbody>
         <tr>
-          <td>套餐内积分</td>
-          <td class="money">~&yen;0.01</td>
-          <td class="money">~&yen;69.20</td>
-          <td style="font-family:'Consolas',monospace;font-weight:700;">基准</td>
+          <td>用户浏览器 &rarr; ECS（API 请求）</td>
+          <td>公网入方向</td>
+          <td>占带宽（入向免费）</td>
+          <td><strong>不收</strong>（入流量免费）</td>
         </tr>
-        <tr style="background:#fff0f6;">
-          <td><strong>充值购买</strong></td>
-          <td class="money-red">&yen;0.02</td>
-          <td class="money-red">&yen;138.40</td>
-          <td style="font-family:'Consolas',monospace;font-weight:700;color:#c41d7f;">+100%</td>
+        <tr>
+          <td>ECS &rarr; 用户浏览器（API 响应）</td>
+          <td>公网出方向</td>
+          <td><strong>占带宽</strong></td>
+          <td>包月已含 / 按量 &yen;0.80/GB</td>
+        </tr>
+        <tr style="background:#f6ffed;">
+          <td>ECS &rarr; MySQL / Redis</td>
+          <td>VPC 内网</td>
+          <td><strong>不占</strong></td>
+          <td><strong>不收</strong></td>
+        </tr>
+        <tr style="background:#f6ffed;">
+          <td>ECS &rarr; TOS（读写文件）</td>
+          <td>VPC 内网</td>
+          <td><strong>不占</strong></td>
+          <td><strong>不收</strong></td>
+        </tr>
+        <tr>
+          <td>ECS &rarr; 火山方舟 AI API</td>
+          <td>公网出方向</td>
+          <td>占带宽（但数据量小）</td>
+          <td>极少（文本请求 KB 级）</td>
+        </tr>
+        <tr>
+          <td>用户 &rarr; TOS 直接下载图片/视频</td>
+          <td>TOS 公网出</td>
+          <td>不占 ECS 带宽</td>
+          <td>TOS 出流量 &yen;0.50/GB</td>
+        </tr>
+        <tr style="background:#f0f5ff;">
+          <td>用户 &rarr; CDN &rarr; TOS（配 CDN 后）</td>
+          <td>CDN 边缘</td>
+          <td>不占 ECS 带宽</td>
+          <td>CDN 流量 &yen;0.21/GB（更便宜）</td>
         </tr>
       </tbody>
     </table>
 
-    <div class="summary-box" style="background:linear-gradient(135deg,#fff0f6,#f9f0ff);border-color:#ffadd2;color:#c41d7f;">
-      充值边际利润：&yen;138.40 - &yen;23.07 = <strong>&yen;115.33/项目</strong>（边际利润率 83.3%）
-    </div>
-  </div>
-
-  <!-- ========== 六、20账号三档P&L ========== -->
-  <div class="category-section">
-    <div class="category-title red"><span class="icon">&#x1F4CA;</span> 六、20账号三档 P&L（低/中/高活跃度 · 充值&yen;0.02/积分）</div>
-
-    <div class="note-card note-info" style="margin-bottom:10px;">
-      <h4>&#9654; 方案：10基础 + 5专业 + 5免费 &nbsp;|&nbsp; 订阅月收入：10&times;&yen;99 + 5&times;&yen;299 = &yen;2,485/月 &nbsp;|&nbsp; 套餐积分：250,000 &rarr; 覆盖约36个项目</h4>
-    </div>
-
-    <!-- 低活跃 -->
-    <div class="pnl-section" style="background:linear-gradient(135deg,#f6ffed,#fff7e6);border-color:#b7eb8f;margin-bottom:14px;">
-      <div class="pnl-title" style="color:#389e0d;">&#x1F7E2; 低活跃（5项目/账号/月 = 100项目/月）— 终于盈利！</div>
-      <table class="data-table" style="margin-bottom:8px;">
-        <thead><tr><th>项</th><th>金额/月</th></tr></thead>
-        <tbody>
-          <tr><td>AI成本（100 &times; &yen;23.07）</td><td class="money-red">-&yen;2,307</td></tr>
-          <tr><td>套餐积分覆盖项目</td><td style="font-family:'Consolas',monospace;">250,000 &divide; 6,920 &asymp; 36个项目</td></tr>
-          <tr><td>剩余项目需充值（64个）</td><td style="font-family:'Consolas',monospace;">64 &times; 6,920 &times; <strong>&yen;0.02</strong> = &yen;8,858</td></tr>
-          <tr><td>订阅收入</td><td class="money-green">&yen;2,485</td></tr>
-          <tr class="subtotal"><td><strong>总收入</strong></td><td class="money-green"><strong>&yen;11,343</strong></td></tr>
-          <tr><td>固定成本</td><td class="money-red">-&yen;8,400</td></tr>
-          <tr class="total-row"><td><strong>总支出</strong></td><td><strong>-&yen;10,707</strong></td></tr>
-          <tr class="profit-row"><td><strong>月度净利润</strong></td><td><strong>+&yen;636（终于不亏了！）</strong></td></tr>
-          <tr class="profit-row"><td><strong>净利润率</strong></td><td><strong>5.6%</strong></td></tr>
-        </tbody>
-      </table>
-    </div>
-
-    <!-- 中活跃 -->
-    <div class="pnl-section" style="background:linear-gradient(135deg,#f6ffed,#fff7e6);border-color:#b7eb8f;margin-bottom:14px;">
-      <div class="pnl-title" style="color:#389e0d;">&#x1F7E2; 中活跃（15项目/账号/月 = 300项目/月）</div>
-      <table class="data-table" style="margin-bottom:8px;">
-        <thead><tr><th>项</th><th>金额/月</th></tr></thead>
-        <tbody>
-          <tr><td>AI成本（300 &times; &yen;23.07）</td><td class="money-red">-&yen;6,921</td></tr>
-          <tr><td>套餐积分覆盖</td><td style="font-family:'Consolas',monospace;">&asymp;36个项目</td></tr>
-          <tr><td>剩余项目需充值（264个）</td><td style="font-family:'Consolas',monospace;">264 &times; 6,920 &times; <strong>&yen;0.02</strong> = &yen;36,538</td></tr>
-          <tr><td>订阅收入</td><td class="money-green">&yen;2,485</td></tr>
-          <tr class="subtotal"><td><strong>总收入</strong></td><td class="money-green"><strong>&yen;39,023</strong></td></tr>
-          <tr><td>固定成本</td><td class="money-red">-&yen;8,400</td></tr>
-          <tr class="total-row"><td><strong>总支出</strong></td><td><strong>-&yen;15,321</strong></td></tr>
-          <tr class="profit-row"><td><strong>月度净利润</strong></td><td><strong>+&yen;23,702</strong></td></tr>
-          <tr class="profit-row"><td><strong>净利润率</strong></td><td><strong>60.7%</strong></td></tr>
-        </tbody>
-      </table>
-    </div>
-
-    <!-- 高活跃 -->
-    <div class="pnl-section" style="background:linear-gradient(135deg,#f6ffed,#eef3ff);border-color:#b7eb8f;">
-      <div class="pnl-title" style="color:#389e0d;">&#x1F7E2; 高活跃（50项目/账号/月 = 1,000项目/月）</div>
-      <table class="data-table" style="margin-bottom:8px;">
-        <thead><tr><th>项</th><th>金额/月</th></tr></thead>
-        <tbody>
-          <tr><td>AI成本（1,000 &times; &yen;23.07）</td><td class="money-red">-&yen;23,070</td></tr>
-          <tr><td>套餐积分覆盖</td><td style="font-family:'Consolas',monospace;">&asymp;36个项目</td></tr>
-          <tr><td>剩余项目需充值（964个）</td><td style="font-family:'Consolas',monospace;">964 &times; 6,920 &times; <strong>&yen;0.02</strong> = &yen;133,418</td></tr>
-          <tr><td>订阅收入</td><td class="money-green">&yen;2,485</td></tr>
-          <tr class="subtotal"><td><strong>总收入</strong></td><td class="money-green"><strong>&yen;135,903</strong></td></tr>
-          <tr><td>固定成本</td><td class="money-red">-&yen;8,400</td></tr>
-          <tr class="total-row"><td><strong>总支出</strong></td><td><strong>-&yen;31,470</strong></td></tr>
-          <tr class="profit-row"><td><strong>月度净利润</strong></td><td><strong>+&yen;104,433</strong></td></tr>
-          <tr class="profit-row"><td><strong>净利润率</strong></td><td><strong>76.8%</strong></td></tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
-
-  <!-- ========== 七、盈亏平衡分析 ========== -->
-  <div class="category-section">
-    <div class="category-title" style="background:linear-gradient(135deg,#531dab,#722ed1);"><span class="icon">&#x2696;</span> 七、盈亏平衡分析</div>
-
-    <div class="breakeven-card">
-      <div class="be-title">&#x1F4CD; 盈亏平衡点计算（充值&yen;0.02/积分）</div>
-      <div class="breakeven-grid">
-        <div class="be-item">
-          <div class="be-label">固定成本 + 套餐内API成本</div>
-          <div class="be-num" style="color:#cf1322;">&yen;9,231</div>
-          <div class="be-desc">&yen;8,400 + 36项目&times;&yen;23.07</div>
-        </div>
-        <div class="be-item">
-          <div class="be-label">订阅收入覆盖</div>
-          <div class="be-num" style="color:#0052d9;">&yen;2,485</div>
-          <div class="be-desc">10基础+5专业 月订阅</div>
-        </div>
-        <div class="be-item">
-          <div class="be-label">每额外项目充值净利</div>
-          <div class="be-num" style="color:#389e0d;">&yen;115.33</div>
-          <div class="be-desc">&yen;138.40 - &yen;23.07</div>
-        </div>
-        <div class="be-item">
-          <div class="be-label">盈亏平衡点</div>
-          <div class="be-num" style="color:#531dab;">95</div>
-          <div class="be-desc">项目/月（~4.8个/账号/月）</div>
-        </div>
-      </div>
-    </div>
-
-    <div class="note-card note-info" style="margin-top:6px;">
-      <h4>&#9654; 计算过程</h4>
+    <div class="note-card note-warn">
+      <h4>&#9654; 带宽选择建议</h4>
       <ul>
-        <li>订阅收入 <strong style="font-family:'Consolas',monospace;">&yen;2,485</strong> + 套餐积分内的API成本已含在订阅中</li>
-        <li>固定成本&yen;8,400 + 套餐内36项目API成本&yen;831 = <strong style="font-family:'Consolas',monospace;">&yen;9,231</strong></li>
-        <li>订阅收入覆盖：<strong style="font-family:'Consolas',monospace;">&yen;2,485</strong></li>
-        <li>剩余 <strong style="font-family:'Consolas',monospace;">&yen;6,746</strong> 需充值覆盖</li>
-        <li>每额外项目充值净利：6,920 &times; &yen;0.02 - &yen;23.07 = &yen;138.40 - &yen;23.07 = <strong style="font-family:'Consolas',monospace;">&yen;115.33</strong></li>
-        <li>盈亏平衡额外项目：&yen;6,746 &divide; &yen;115.33 &asymp; <strong style="font-family:'Consolas',monospace;">59个</strong></li>
-        <li><strong>总盈亏平衡：36(套餐) + 59 = 约95个项目/月（每人~4.8个/月）</strong></li>
-        <li style="color:#389e0d;font-weight:700;">比v5.0的110个降到95个，降低14%！</li>
-      </ul>
-    </div>
-
-    <div style="margin:14px 0;">
-      <div class="be-bar-wrap">
-        <div class="be-bar-label">
-          <span>&#x1F7E2; 低活跃 100项目/月 &rarr; 盈利！</span>
-          <span style="font-family:'Consolas',monospace;font-weight:700;color:#389e0d;">+&yen;636</span>
-        </div>
-        <div class="be-bar-track">
-          <div class="be-bar-fill" style="width:72%;background:linear-gradient(90deg,#389e0d,#95de64);">100项目</div>
-        </div>
-      </div>
-      <div class="be-bar-wrap">
-        <div class="be-bar-label">
-          <span>&#x1F7E1; 盈亏平衡点</span>
-          <span style="font-family:'Consolas',monospace;font-weight:700;color:#d48806;">95项目/月</span>
-        </div>
-        <div class="be-bar-track">
-          <div class="be-bar-fill" style="width:68%;background:linear-gradient(90deg,#d48806,#fadb14);">95项目 (平衡)</div>
-        </div>
-      </div>
-      <div class="be-bar-wrap">
-        <div class="be-bar-label">
-          <span>&#x1F7E2; 中活跃 300项目/月 &rarr; 大幅盈利</span>
-          <span style="font-family:'Consolas',monospace;font-weight:700;color:#389e0d;">+&yen;23,702</span>
-        </div>
-        <div class="be-bar-track">
-          <div class="be-bar-fill" style="width:100%;background:linear-gradient(90deg,#389e0d,#95de64);">300项目</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- 新旧P&L对比 -->
-    <div class="compare-card">
-      <div class="compare-title">&#x1F504; 新旧 P&L 对比（v5.0 &rarr; v6.0）</div>
-      <table class="data-table" style="margin-bottom:0;">
-        <thead>
-          <tr><th>指标</th><th>v5.0（充值&yen;0.01）</th><th>v6.0（充值&yen;0.02）</th><th>变化</th></tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>低活跃净利</td>
-            <td class="money-red">-&yen;3,793</td>
-            <td class="money-green"><strong>+&yen;636</strong></td>
-            <td style="font-weight:700;color:#389e0d;">扭亏为盈！</td>
-          </tr>
-          <tr>
-            <td>中活跃净利</td>
-            <td class="money-green">+&yen;5,433</td>
-            <td class="money-green"><strong>+&yen;23,702</strong></td>
-            <td class="money-green" style="font-weight:700;">+336%</td>
-          </tr>
-          <tr>
-            <td>高活跃净利</td>
-            <td class="money-green">+&yen;37,724</td>
-            <td class="money-green"><strong>+&yen;104,433</strong></td>
-            <td class="money-green" style="font-weight:700;">+177%</td>
-          </tr>
-          <tr>
-            <td>盈亏平衡</td>
-            <td style="font-family:'Consolas',monospace;">110项目/月</td>
-            <td style="font-family:'Consolas',monospace;"><strong>95项目/月</strong></td>
-            <td class="money-green" style="font-weight:700;">-14%</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
-
-  <!-- ========== 八、商业策略分析 ========== -->
-  <div class="category-section">
-    <div class="category-title" style="background:linear-gradient(135deg,#08979c,#36cfc9);"><span class="icon">&#x1F3AF;</span> 八、商业策略分析（双重定价优势）</div>
-
-    <div class="strategy-card">
-      <div class="strategy-title">&#x1F4A1; 双重定价策略四大优势</div>
-      <div class="strategy-grid">
-        <div class="strategy-item">
-          <div class="si-num">01</div>
-          <div class="si-title">套餐锁定用户</div>
-          <div class="si-desc">套餐内积分等价&yen;0.01 — 订阅性价比高，用户倾向续费锁定优惠价格</div>
-        </div>
-        <div class="strategy-item">
-          <div class="si-num">02</div>
-          <div class="si-title">充值溢价激励升级</div>
-          <div class="si-desc">充值积分&yen;0.02 — 额外使用付出100%溢价，激励用户升级更高套餐</div>
-        </div>
-        <div class="strategy-item">
-          <div class="si-num">03</div>
-          <div class="si-title">低活跃即盈利</div>
-          <div class="si-desc">20账号低活跃就能覆盖全部成本，+&yen;636/月净利润，风险极低</div>
-        </div>
-        <div class="strategy-item">
-          <div class="si-num">04</div>
-          <div class="si-title">高活跃利润爆发</div>
-          <div class="si-desc">充值收入边际利润高达 <strong>83.3%</strong>，活跃度越高利润越夸张</div>
-        </div>
-      </div>
-    </div>
-
-    <div class="note-card note-success">
-      <h4>&#9654; 关键数据</h4>
-      <ul>
-        <li>充值边际利润率：<strong style="font-family:'Consolas',monospace;">83.3%</strong>（&yen;115.33 / &yen;138.40）</li>
-        <li>套餐毛利率：<strong style="font-family:'Consolas',monospace;">66.2%~66.5%</strong></li>
-        <li>充值比套餐多赚：<strong style="font-family:'Consolas',monospace;">+&yen;69.20/项目</strong>（&yen;115.33 vs &yen;46.13）</li>
-        <li>这意味着：用户活跃度越高、超出套餐越多，平台利润越丰厚</li>
+        <li><strong>开服初期（20人）：</strong>主服务器 10Mbps + 微服务 5Mbps = &yen;230/月 足够</li>
+        <li><strong>省钱方案：</strong>都选 5Mbps（&yen;150/月），不够再升级（支持在线升配）</li>
+        <li><strong>上 CLB 后：</strong>取消两台 ECS 的独立 EIP，改 CLB 绑定 1 个 EIP + 共享带宽包 15Mbps（~&yen;200/月，更灵活）</li>
+        <li><strong>核心原则：</strong>媒体文件走 CDN/TOS 直连，不经过 ECS。ECS 带宽只承载 API + WebSocket 数据。</li>
       </ul>
     </div>
   </div>
 
-  <!-- ========== 九、采购优先级 ========== -->
+  <!-- ========== 五、域名与备案 ========== -->
   <div class="category-section">
-    <div class="category-title"><span class="icon">&#x1F4CB;</span> 九、采购优先级</div>
+    <div class="category-title purple"><span class="icon">&#x1F3F7;</span> 五、域名 + 备案（别忘了！）</div>
 
-    <div class="priority-block">
-      <h5>
-        <span class="tag tag-required">第一批</span>
-        立即采购，开服必备
-        <span class="budget">预算 ~&yen;3,400/月</span>
-      </h5>
-      <ul>
-        <li>2台 ECS (4C16G) + 1台 ECS (2C8G)</li>
-        <li>MySQL + Redis + TOS 对象存储</li>
-        <li>方舟平台开通（豆包 + Seedream + Seedance）</li>
-      </ul>
-    </div>
-
-    <div class="priority-block">
-      <h5>
-        <span class="tag tag-recommend">第二批</span>
-        用户增长后追加
-        <span class="budget">追加 ~&yen;1,000/月</span>
-      </h5>
-      <ul>
-        <li>CDN 加速 + 负载均衡 ALB</li>
-        <li>ES 搜索引擎</li>
-        <li>弹性伸缩策略</li>
-      </ul>
-    </div>
-
-    <div class="priority-block">
-      <h5>
-        <span class="tag tag-optional">第三批</span>
-        规模化后按需评估
-      </h5>
-      <ul>
-        <li>DDoS 增强防护</li>
-        <li>KMS 密钥管理</li>
-        <li>多可用区容灾</li>
-      </ul>
-    </div>
-  </div>
-
-  <!-- ========== 十、注意事项 ========== -->
-  <div class="category-section">
-    <div class="category-title" style="background:linear-gradient(135deg,#cf1322,#ff4d4f);"><span class="icon">&#x26A0;</span> 十、注意事项</div>
+    <table class="data-table">
+      <thead>
+        <tr><th>项目</th><th>操作</th><th>费用</th><th>耗时</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>域名注册</strong></td>
+          <td>火山引擎 或 阿里云「万网」注册 .com / .cn 域名</td>
+          <td class="money">&yen;55~75/年</td>
+          <td>即时</td>
+        </tr>
+        <tr>
+          <td><strong>ICP 备案</strong></td>
+          <td>通过火山引擎「ICP 备案」提交企业/个人备案</td>
+          <td><span class="tag tag-free">免费</span></td>
+          <td><strong>7~20 个工作日</strong></td>
+        </tr>
+        <tr>
+          <td><strong>公安备案</strong></td>
+          <td>ICP 通过后 30 天内在「全国互联网安全管理服务平台」登记</td>
+          <td><span class="tag tag-free">免费</span></td>
+          <td>1~5 个工作日</td>
+        </tr>
+      </tbody>
+    </table>
 
     <div class="note-card note-danger">
-      <h4>&#9654; 特别注意</h4>
+      <h4>&#9654; 重要！备案是前置条件</h4>
       <ul>
-        <li><strong>Seedance QPS 限制：</strong>默认只有 3 QPS，需向火山引擎申请提升至 <strong>20+ QPS</strong></li>
-        <li><strong>Webhook 回调：</strong>优先开通，可降低轮询成本约 <strong>92%</strong></li>
-        <li><strong>首月特惠&yen;49.9（赚&yen;16.45/用户），不再亏损</strong></li>
-        <li><strong>服务费率可调：</strong>可通过管理后台"计费配置"页面随时调整服务费率</li>
-        <li><strong>套餐积分说明：</strong>1积分=&yen;0.01，基础版10,000积分=&yen;100等价</li>
-        <li><strong style="color:#c41d7f;">充值定价：</strong>&yen;0.02/积分，是订阅等价的2倍溢价，引导用户订阅</li>
-        <li><strong style="color:#389e0d;">低活跃即可盈利：</strong>盈亏平衡仅需 <strong>95个项目/月（~4.8个/账号/月）</strong></li>
-        <li><strong style="color:#0052d9;">免费版体验：</strong>2,000积分可试做约30张图片或7秒视频，足够体验核心功能</li>
+        <li>未备案的域名<strong>不能</strong>绑定国内 ECS/CLB/CDN，否则会被拦截</li>
+        <li><strong>建议现在就提交备案</strong>，与采购服务器同步进行，不影响开发</li>
+        <li>备案期间可用 IP 直连访问开发环境，备案通过后切换域名</li>
+        <li>火山引擎要求至少有一台包年包月 ECS 才能提交备案</li>
       </ul>
     </div>
   </div>
 
-  <!-- ========== 十一、积分公式 ========== -->
+  <!-- ========== 六、费用汇总 ========== -->
   <div class="category-section">
-    <div class="category-title purple"><span class="icon">&#x1F9EE;</span> 十一、积分公式</div>
+    <div class="category-title red"><span class="icon">&#x1F4B0;</span> 六、月度费用汇总</div>
 
-    <div class="formula-box">
-      <div class="formula">积分 = ceil( AI成本 &times; (1 + 服务费率) &divide; 积分单价 )</div>
-      <div class="formula-desc">
-        <strong>积分单价</strong> = &yen;0.01 &nbsp;|&nbsp;
-        <strong>服务费率</strong> = 200%（加价倍率 3x）&nbsp;|&nbsp;
-        <strong>充值售价</strong> = &yen;0.02/积分
-      </div>
-    </div>
+    <table class="data-table">
+      <thead>
+        <tr><th>序号</th><th>项目</th><th>规格</th><th>月费</th><th>批次</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>1</td>
+          <td>ECS 主服务器</td>
+          <td>g3a.xlarge 4C16G</td>
+          <td class="money">&yen;540</td>
+          <td><span class="tag tag-p1">第一批</span></td>
+        </tr>
+        <tr>
+          <td>2</td>
+          <td>ECS 微服务器</td>
+          <td>g3a.large 2C8G</td>
+          <td class="money">&yen;234</td>
+          <td><span class="tag tag-p1">第一批</span></td>
+        </tr>
+        <tr>
+          <td>3</td>
+          <td>弹性公网IP &times;2（带宽）</td>
+          <td>BGP 10Mbps + 5Mbps</td>
+          <td class="money">&yen;230</td>
+          <td><span class="tag tag-p1">第一批</span></td>
+        </tr>
+        <tr>
+          <td>4</td>
+          <td>veDB MySQL</td>
+          <td>4C16G + 100GB</td>
+          <td class="money">&yen;680</td>
+          <td><span class="tag tag-p1">第一批</span></td>
+        </tr>
+        <tr>
+          <td>5</td>
+          <td>Redis 缓存</td>
+          <td>4GB 主从版</td>
+          <td class="money">&yen;350</td>
+          <td><span class="tag tag-p1">第一批</span></td>
+        </tr>
+        <tr>
+          <td>6</td>
+          <td>对象存储 TOS</td>
+          <td>按量（~500GB）</td>
+          <td class="money">&yen;200</td>
+          <td><span class="tag tag-p1">第一批</span></td>
+        </tr>
+        <tr>
+          <td>7</td>
+          <td>火山方舟 AI API</td>
+          <td>按量（低活跃）</td>
+          <td class="money">&yen;400</td>
+          <td><span class="tag tag-p1">第一批</span></td>
+        </tr>
+        <tr class="subtotal">
+          <td></td>
+          <td colspan="2"><strong>第一批小计</strong></td>
+          <td class="money"><strong>&yen;2,634</strong></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>8</td>
+          <td>CDN</td>
+          <td>2~5TB/月 流量</td>
+          <td class="money">&yen;500</td>
+          <td><span class="tag tag-p2">第二批</span></td>
+        </tr>
+        <tr>
+          <td>9</td>
+          <td>负载均衡 ALB</td>
+          <td>应用型</td>
+          <td class="money">&yen;150</td>
+          <td><span class="tag tag-p2">第二批</span></td>
+        </tr>
+        <tr>
+          <td>10</td>
+          <td>Elasticsearch</td>
+          <td>2C8G &times; 2 节点</td>
+          <td class="money">&yen;400</td>
+          <td><span class="tag tag-p2">第二批</span></td>
+        </tr>
+        <tr class="subtotal">
+          <td></td>
+          <td colspan="2"><strong>第二批追加</strong></td>
+          <td class="money"><strong>&yen;1,050</strong></td>
+          <td></td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>VPC / 安全组 / DNS / SSL / DDoS / 监控 / IAM / AS</td>
+          <td>共 8 项</td>
+          <td class="money-green"><strong>免费</strong></td>
+          <td><span class="tag tag-free">免费</span></td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>域名</td>
+          <td>.com 域名</td>
+          <td class="money">&yen;~6/月</td>
+          <td>年付 &yen;65</td>
+        </tr>
+        <tr class="total-row">
+          <td></td>
+          <td colspan="2"><strong>满配总计（第一批 + 第二批）</strong></td>
+          <td><strong>&yen;3,690/月</strong></td>
+          <td></td>
+        </tr>
+      </tbody>
+    </table>
 
-    <div class="formula-box" style="background:#f0f5ff;border-color:#adc6ff;">
-      <div class="formula" style="color:#0052d9;">= ceil( AI成本 &times; 3 &divide; 0.01 ) = ceil( AI成本 &times; 300 )</div>
-      <div class="formula-desc" style="color:#003eb3;">
-        <strong>示例：</strong>图片成本 &yen;0.22 &times; 300 = <strong>66积分</strong> &nbsp;|&nbsp;
-        视频成本 &yen;0.95/秒 &times; 300 = <strong>285积分/秒</strong>
-      </div>
+    <div class="note-card note-success">
+      <h4>&#9654; 省钱建议</h4>
+      <ul>
+        <li><strong>年付优惠：</strong>包年包月选年付，通常打 <strong>8.5 折</strong>，ECS+MySQL+Redis 年付可省 &yen;3,000+/年</li>
+        <li><strong>新用户优惠：</strong>火山引擎新用户首购有大额折扣，建议用新账号</li>
+        <li><strong>带宽降配：</strong>初期都选 5Mbps（&yen;150/月），不够再在线升级</li>
+        <li><strong>MySQL 降配：</strong>初期可选 2C4G（~&yen;350/月），20用户足够</li>
+        <li><strong>最低启动预算（极致省钱）：</strong>ECS 4C16G + 2C8G + EIP 5Mbps&times;2 + MySQL 2C4G + Redis 2GB + TOS + AI = <strong>约 &yen;1,800/月</strong></li>
+      </ul>
     </div>
   </div>
 
-  <!-- ========== Footer ========== -->
+  <!-- ========== 七、下单顺序 ========== -->
+  <div class="category-section">
+    <div class="category-title" style="background:linear-gradient(135deg,#08979c,#36cfc9);"><span class="icon">&#x1F4CB;</span> 七、下单操作顺序（Step by Step）</div>
+
+    <table class="data-table">
+      <thead>
+        <tr><th>步骤</th><th>操作</th><th>控制台路径</th><th>注意事项</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>1</strong></td>
+          <td>注册火山引擎账号 + 实名认证</td>
+          <td>volcengine.com &rarr; 注册</td>
+          <td>企业认证享更多优惠</td>
+        </tr>
+        <tr>
+          <td><strong>2</strong></td>
+          <td>创建 VPC + 子网</td>
+          <td>控制台 &rarr; 私有网络 &rarr; 创建VPC</td>
+          <td>网段 10.0.0.0/16，可用区选华东2-A</td>
+        </tr>
+        <tr>
+          <td><strong>3</strong></td>
+          <td>创建安全组</td>
+          <td>控制台 &rarr; 安全组 &rarr; 创建</td>
+          <td>入站：22(SSH)/80/443/4001，出站：全放行</td>
+        </tr>
+        <tr>
+          <td><strong>4</strong></td>
+          <td>购买 ECS &times;2</td>
+          <td>控制台 &rarr; ECS &rarr; 创建实例</td>
+          <td>选同 VPC 同子网，暂不买公网 IP</td>
+        </tr>
+        <tr>
+          <td><strong>5</strong></td>
+          <td>申请 EIP &times;2 并绑定 ECS</td>
+          <td>控制台 &rarr; 弹性公网IP &rarr; 申请</td>
+          <td>BGP 多线，主 10Mbps + 备 5Mbps</td>
+        </tr>
+        <tr>
+          <td><strong>6</strong></td>
+          <td>创建 veDB MySQL</td>
+          <td>控制台 &rarr; 云数据库 &rarr; veDB MySQL</td>
+          <td><strong>同 VPC 同可用区！不开公网！</strong></td>
+        </tr>
+        <tr>
+          <td><strong>7</strong></td>
+          <td>创建 Redis</td>
+          <td>控制台 &rarr; 缓存数据库 Redis</td>
+          <td><strong>同 VPC 同可用区！不开公网！</strong></td>
+        </tr>
+        <tr>
+          <td><strong>8</strong></td>
+          <td>创建 TOS 存储桶</td>
+          <td>控制台 &rarr; 对象存储 TOS</td>
+          <td>同区域（华东2-上海），设跨域 CORS</td>
+        </tr>
+        <tr>
+          <td><strong>9</strong></td>
+          <td>开通火山方舟 AI 模型</td>
+          <td>控制台 &rarr; 火山方舟 &rarr; 模型广场</td>
+          <td>逐个开通推理端点，记录 Endpoint ID</td>
+        </tr>
+        <tr>
+          <td><strong>10</strong></td>
+          <td>提交 ICP 备案</td>
+          <td>控制台 &rarr; 备案中心</td>
+          <td>提交后等 7~20 个工作日</td>
+        </tr>
+        <tr>
+          <td><strong>11</strong></td>
+          <td>部署应用</td>
+          <td>SSH 登录 ECS</td>
+          <td>安装 Node.js 18+, PM2, Nginx, 拉代码</td>
+        </tr>
+        <tr>
+          <td><strong>12</strong></td>
+          <td>配置 .env 环境变量</td>
+          <td>ECS 内部</td>
+          <td>填入 MySQL/Redis/TOS/方舟 的内网地址和密钥</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ========== 注意事项 ========== -->
+  <div class="category-section">
+    <div class="category-title red"><span class="icon">&#x26A0;</span> 八、特别注意事项</div>
+
+    <div class="note-card note-danger">
+      <h4>&#9654; 必须注意</h4>
+      <ul>
+        <li><strong>所有资源选同一地域（华东2-上海）、同一可用区（A）、同一 VPC</strong> — 否则内网不通！</li>
+        <li><strong>数据库和 Redis 不要开公网</strong> — 内网访问延迟 &lt;0.5ms 且安全</li>
+        <li><strong>Seedance QPS 默认只有 3</strong> — 开服前务必提工单申请提升至 20+</li>
+        <li><strong>备案需要 7~20 个工作日</strong> — 立刻提交，别等服务器都部署好了才想起来</li>
+        <li><strong>ECS 密码要记好</strong> — 或者更推荐用 SSH 密钥对登录（更安全）</li>
+        <li><strong>安全组别全放行</strong> — 只开必要端口：22/80/443/4001</li>
+      </ul>
+    </div>
+  </div>
+
   <div class="footer">
-    NanoStory 智能故事创作平台 · 20账号规模采购清单 · 内部参考文件<br>
-    生成日期：2026年4月6日 &nbsp;|&nbsp; 版本：v6.0（积分充值定价模型） &nbsp;|&nbsp; 本清单基于当前模型定价和基础设施报价预估，实际费用以火山引擎官方账单为准。
+    NanoStory 智能故事创作平台 · 20账号规模采购清单（可执行版） · 内部参考文件<br>
+    生成日期：2026年4月6日 &nbsp;|&nbsp; 版本：v7.0 &nbsp;|&nbsp; 价格为火山引擎官网参考价，实际以下单结算页为准。包年打折后更便宜。
   </div>
 
 </div>

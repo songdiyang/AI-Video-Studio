@@ -1,12 +1,41 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Button, Chip, Select, SelectItem } from '@heroui/react';
-import { User, Wand2, Layers, Volume2, Trash2, Upload, ImagePlus, ZoomIn, X } from 'lucide-react';
+import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Button, Chip } from '@heroui/react';
+import { User, Wand2, Layers, Volume2, Trash2, Upload, ImagePlus, ZoomIn, X, Star, Plus, Pencil, Copy, StarOff, Clock, Filter, ChevronDown, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Character, CharacterState } from './types';
-import { fetchCharacterStates } from '../../../services/assets';
+import { fetchCharacterStates, activateCharacterState, fetchCharacterStateHistory } from '../../../services/assets';
+import type { CharacterStateHistoryEntry } from '../../../services/assets';
 import { getAuthToken } from '../../../services/auth';
 import { usePreview } from '../../../components/PreviewProvider';
 import CharacterVoiceModal, { VoiceConfig } from './CharacterVoiceModal';
+
+// 历史操作类型配置：图标、颜色、中文描述
+const ACTION_CONFIG: Record<string, { icon: React.ElementType; color: string; bgColor: string; label: string }> = {
+  created: { icon: Plus, color: 'text-green-400', bgColor: 'bg-green-500', label: '创建了' },
+  updated: { icon: Pencil, color: 'text-blue-400', bgColor: 'bg-blue-500', label: '更新了' },
+  activated: { icon: Star, color: 'text-amber-400', bgColor: 'bg-amber-500', label: '激活了' },
+  deactivated: { icon: StarOff, color: 'text-slate-400', bgColor: 'bg-slate-500', label: '取消激活了' },
+  deleted: { icon: Trash2, color: 'text-red-400', bgColor: 'bg-red-500', label: '删除了' },
+  duplicated: { icon: Copy, color: 'text-purple-400', bgColor: 'bg-purple-500', label: '复制了' },
+};
+
+// 筛选选项
+const FILTER_OPTIONS = [
+  { value: '', label: '全部' },
+  { value: 'created', label: '创建' },
+  { value: 'updated', label: '更新' },
+  { value: 'activated', label: '激活' },
+  { value: 'deactivated', label: '取消激活' },
+  { value: 'deleted', label: '删除' },
+  { value: 'duplicated', label: '复制' },
+];
+
+// 格式化时间
+const formatTime = (dateStr: string) => {
+  const d = new Date(dateStr);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
 
 interface CharacterDetailModalProps {
   isOpen: boolean;
@@ -17,6 +46,7 @@ interface CharacterDetailModalProps {
   onDelete?: (characterId: number) => void;
   onUploadImage?: (characterId: number, file: File) => Promise<void>;
   onGenerateViews?: (characterId: number) => void;
+  onAddState?: (characterId: number) => void;
 }
 
 const CharacterDetailModal: React.FC<CharacterDetailModalProps> = ({
@@ -27,32 +57,69 @@ const CharacterDetailModal: React.FC<CharacterDetailModalProps> = ({
   onGenerateImage,
   onDelete,
   onUploadImage,
-  onGenerateViews
+  onGenerateViews,
+  onAddState
 }) => {
   const [states, setStates] = useState<CharacterState[]>([]);
-  const [selectedStateId, setSelectedStateId] = useState<number | null>(null);
+  const [selectedState, setSelectedState] = useState<CharacterState | null>(null);
   const [voiceConfig, setVoiceConfig] = useState<VoiceConfig | null>(null);
   const [showVoiceModal, setShowVoiceModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  // 状态管理增强
+  const [showHistory, setShowHistory] = useState(false);
+  const [historyData, setHistoryData] = useState<CharacterStateHistoryEntry[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyTotal, setHistoryTotal] = useState(0);
+  const [historyFilter, setHistoryFilter] = useState<string>('');
+  const [activating, setActivating] = useState(false);
+  const [showFilterDropdown, setShowFilterDropdown] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const stateScrollRef = useRef<HTMLDivElement>(null);
+  const [scrollState, setScrollState] = useState({ canScrollLeft: false, canScrollRight: false });
   const { openPreview } = usePreview();
 
   // 加载角色状态
   useEffect(() => {
     if (character?.id && isOpen) {
       fetchCharacterStates(character.id)
-        .then(setStates)
+        .then((loadedStates) => {
+          setStates(loadedStates);
+          // 默认选中激活状态
+          const active = loadedStates.find(s => s.is_active);
+          if (active) setSelectedState(active);
+        })
         .catch(err => console.error('加载角色状态失败:', err));
       fetchVoiceConfig(character.id);
     } else {
       setStates([]);
-      setSelectedStateId(null);
+      setSelectedState(null);
       setVoiceConfig(null);
       setShowDeleteConfirm(false);
+      setShowHistory(false);
+      setHistoryData([]);
+      setHistoryFilter('');
     }
   }, [character?.id, isOpen]);
+
+  // 监测滚动状态，更新渐变遮罩
+  const updateScrollState = useCallback(() => {
+    const el = stateScrollRef.current;
+    if (!el) return;
+    setScrollState({
+      canScrollLeft: el.scrollLeft > 0,
+      canScrollRight: el.scrollLeft + el.clientWidth < el.scrollWidth - 1,
+    });
+  }, []);
+
+  useEffect(() => {
+    const el = stateScrollRef.current;
+    if (!el) return;
+    updateScrollState();
+    el.addEventListener('scroll', updateScrollState);
+    return () => el.removeEventListener('scroll', updateScrollState);
+  }, [states, updateScrollState]);
 
   // 获取声音配置
   const fetchVoiceConfig = async (characterId: number) => {
@@ -70,10 +137,72 @@ const CharacterDetailModal: React.FC<CharacterDetailModalProps> = ({
     }
   };
 
-  // 获取当前显示的状态
-  const currentState = selectedStateId 
-    ? states.find(s => s.id === selectedStateId) 
-    : null;
+  // 获取当前选中状态用于显示
+  const currentState = selectedState;
+
+  // 激活状态处理
+  const handleActivateState = useCallback(async () => {
+    if (!character?.id || !selectedState) return;
+    setActivating(true);
+    try {
+      await activateCharacterState(character.id, selectedState.id);
+      // 刷新状态列表
+      const refreshed = await fetchCharacterStates(character.id);
+      setStates(refreshed);
+      const newActive = refreshed.find(s => s.id === selectedState.id);
+      if (newActive) setSelectedState(newActive);
+    } catch (err) {
+      console.error('激活状态失败:', err);
+    } finally {
+      setActivating(false);
+    }
+  }, [character?.id, selectedState]);
+
+  // 加载历史记录
+  const loadHistory = useCallback(async (reset = false) => {
+    if (!character?.id) return;
+    setHistoryLoading(true);
+    try {
+      const offset = reset ? 0 : historyData.length;
+      const res = await fetchCharacterStateHistory(character.id, {
+        action: historyFilter || undefined,
+        limit: 20,
+        offset,
+      });
+      setHistoryData(prev => reset ? res.history : [...prev, ...res.history]);
+      setHistoryTotal(res.total);
+    } catch (err) {
+      console.error('加载历史记录失败:', err);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [character?.id, historyFilter, historyData.length]);
+
+  // 切换历史面板时加载数据
+  const toggleHistory = useCallback(() => {
+    setShowHistory(prev => {
+      const next = !prev;
+      if (next && historyData.length === 0) {
+        // 延迟加载
+        setTimeout(() => loadHistory(true), 0);
+      }
+      return next;
+    });
+  }, [historyData.length, loadHistory]);
+
+  // 筛选变化时重新加载
+  useEffect(() => {
+    if (showHistory) {
+      loadHistory(true);
+    }
+  }, [historyFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 获取历史记录中的状态名称
+  const getStateName = useCallback((entry: CharacterStateHistoryEntry) => {
+    if (entry.snapshot?.name) return entry.snapshot.name;
+    const found = states.find(s => s.id === entry.state_id);
+    return found?.name || `状态#${entry.state_id}`;
+  }, [states]);
 
   // 文件上传处理
   const handleFileSelect = useCallback(async (file: File) => {
@@ -96,17 +225,28 @@ const CharacterDetailModal: React.FC<CharacterDetailModalProps> = ({
     if (file) handleFileSelect(file);
   }, [handleFileSelect]);
 
-  // 三视图预览
+  // 三视图预览 - 优先使用选中状态的视图
   const openViewPreview = (startIndex: number) => {
     const slides: { src: string; alt?: string }[] = [];
+    // 使用选中状态的视图（如果有），否则使用角色主视图
+    const frontUrl = currentState?.front_view_url || character?.frontViewUrl;
+    const sideUrl = currentState?.side_view_url || character?.sideViewUrl;
+    const backUrl = currentState?.back_view_url || character?.backViewUrl;
     const views = [
-      { url: character?.frontViewUrl, label: '正面视图' },
-      { url: character?.sideViewUrl, label: '侧面视图' },
-      { url: character?.backViewUrl, label: '背面视图' },
+      { url: frontUrl, label: '正面视图' },
+      { url: sideUrl, label: '侧面视图' },
+      { url: backUrl, label: '背面视图' },
     ];
     views.forEach(v => { if (v.url) slides.push({ src: v.url, alt: v.label }); });
     if (slides.length > 0) openPreview(slides, Math.min(startIndex, slides.length - 1));
   };
+
+  // 计算当前显示用的三视图 URL（状态优先）
+  const displayFrontViewUrl = currentState?.front_view_url || character?.frontViewUrl;
+  const displaySideViewUrl = currentState?.side_view_url || character?.sideViewUrl;
+  const displayBackViewUrl = currentState?.back_view_url || character?.backViewUrl;
+  // 如果选中状态没有三视图但有 image_url，可作为候选展示
+  const stateImageFallback = currentState?.image_url && !currentState.front_view_url && !currentState.side_view_url && !currentState.back_view_url;
 
   if (!character) return null;
 
@@ -269,25 +409,34 @@ const CharacterDetailModal: React.FC<CharacterDetailModalProps> = ({
                   />
                 </div>
 
-                {/* 三视图 */}
-                {(character.frontViewUrl || character.sideViewUrl || character.backViewUrl || character.characterSheetUrl) && (
+                {/* 三视图 - 支持状态对比预览 */}
+                {(displayFrontViewUrl || displaySideViewUrl || displayBackViewUrl || character.characterSheetUrl || stateImageFallback) && (
                   <div className="rounded-lg p-4 border" style={{ backgroundColor: 'rgba(99,102,241,0.05)', borderColor: 'rgba(99,102,241,0.2)' }}>
                     <h4 className="text-sm font-bold mb-3 flex items-center gap-2" style={{ color: 'var(--text-secondary)' }}>
                       <span className="w-1 h-4 bg-indigo-500 rounded" />
-                      角色三视图
+                      {currentState ? `${currentState.name} - 三视图` : '角色三视图'}
                     </h4>
+                    {/* 状态仅有 image_url 时，显示状态形象图 */}
+                    {stateImageFallback && (
+                      <div className="mb-3">
+                        <p className="text-xs font-medium mb-1" style={{ color: 'var(--text-muted)' }}>状态形象</p>
+                        <div className="w-32 h-32 rounded-lg overflow-hidden border transition-opacity duration-300" style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border)' }}>
+                          <img src={currentState!.image_url!} alt={currentState!.name} className="w-full h-full object-cover" />
+                        </div>
+                      </div>
+                    )}
                     <div className="grid grid-cols-2 gap-3">
-                      {[{ url: character.frontViewUrl, label: '正面', idx: 0 },
-                        { url: character.sideViewUrl, label: '侧面', idx: 1 },
-                        { url: character.backViewUrl, label: '背面', idx: 2 }].filter(v => v.url).map(view => (
+                      {[{ url: displayFrontViewUrl, label: '正面', idx: 0 },
+                        { url: displaySideViewUrl, label: '侧面', idx: 1 },
+                        { url: displayBackViewUrl, label: '背面', idx: 2 }].filter(v => v.url).map(view => (
                         <div key={view.label} className="space-y-1">
                           <p className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>{view.label}</p>
                           <div
-                            className="aspect-square rounded-lg overflow-hidden border group cursor-pointer relative"
+                            className="aspect-square rounded-lg overflow-hidden border group cursor-pointer relative transition-opacity duration-300"
                             style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border)' }}
                             onClick={() => openViewPreview(view.idx)}
                           >
-                            <img src={view.url!} alt={view.label} className="w-full h-full object-cover" />
+                            <img src={view.url!} alt={view.label} className="w-full h-full object-cover transition-opacity duration-300" />
                             <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
                               <ZoomIn className="w-5 h-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
                             </div>
@@ -338,32 +487,230 @@ const CharacterDetailModal: React.FC<CharacterDetailModalProps> = ({
                   )}
                 </div>
 
-                {/* 状态选择器 */}
+                {/* 状态管理 - 卡片式选择器 */}
                 {states.length > 0 && (
-                  <div className="rounded-lg p-4 border" style={{ backgroundColor: 'rgba(168,85,247,0.05)', borderColor: 'rgba(168,85,247,0.2)' }}>
-                    <div className="flex items-center gap-2 mb-2">
-                      <Layers className="w-4 h-4" style={{ color: 'rgb(168,85,247)' }} />
-                      <h4 className="text-sm font-bold" style={{ color: 'var(--text-secondary)' }}>角色状态</h4>
-                      <Chip size="sm" variant="flat" style={{ backgroundColor: 'rgba(168,85,247,0.1)', color: 'rgb(168,85,247)' }}>
-                        {states.length} 个状态
-                      </Chip>
+                  <div className="rounded-lg p-4 border" style={{ backgroundColor: 'rgba(245,158,11,0.05)', borderColor: 'rgba(245,158,11,0.2)' }}>
+                    {/* 标题行 */}
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <Layers className="w-4 h-4 text-amber-400" />
+                        <h4 className="text-sm font-bold" style={{ color: 'var(--text-secondary)' }}>状态管理</h4>
+                        <Chip size="sm" variant="flat" className="bg-amber-500/10 text-amber-400">
+                          {states.length} 个状态
+                        </Chip>
+                      </div>
+                      {onAddState && (
+                        <button
+                          onClick={() => onAddState(character.id)}
+                          className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-500/15 text-amber-400 hover:bg-amber-500/25 transition-colors text-xs font-medium"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          新建
+                        </button>
+                      )}
                     </div>
-                    <Select
-                      size="sm"
-                      placeholder="选择状态查看"
-                      selectedKeys={selectedStateId ? [selectedStateId.toString()] : []}
-                      onSelectionChange={(keys) => {
-                        const key = Array.from(keys)[0] as string;
-                        setSelectedStateId(key ? parseInt(key) : null);
-                      }}
-                    >
-                      {[
-                        <SelectItem key="default" textValue="默认状态">默认状态</SelectItem>,
-                        ...states.map((state) => (
-                          <SelectItem key={state.id.toString()} textValue={state.name}>{state.name}</SelectItem>
-                        ))
-                      ]}
-                    </Select>
+
+                    {/* 水平滑动卡片容器 */}
+                    <div className="relative">
+                      {/* 左侧渐变遮罩 */}
+                      {scrollState.canScrollLeft && (
+                        <div className="absolute left-0 top-0 bottom-0 w-8 z-10 pointer-events-none" style={{ background: 'linear-gradient(to right, rgba(15,23,42,0.8), transparent)' }} />
+                      )}
+                      {/* 右侧渐变遮罩 */}
+                      {scrollState.canScrollRight && (
+                        <div className="absolute right-0 top-0 bottom-0 w-8 z-10 pointer-events-none" style={{ background: 'linear-gradient(to left, rgba(15,23,42,0.8), transparent)' }} />
+                      )}
+
+                      <div
+                        ref={stateScrollRef}
+                        className="flex gap-2.5 overflow-x-auto pb-2 scrollbar-hide"
+                        style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+                      >
+                        {states.map((state) => {
+                          const isSelected = selectedState?.id === state.id;
+                          const isActive = state.is_active;
+                          const thumbUrl = state.image_url || state.front_view_url;
+                          return (
+                            <div
+                              key={state.id}
+                              onClick={() => setSelectedState(state)}
+                              className={`shrink-0 w-24 p-2 rounded-lg border cursor-pointer transition-all relative ${
+                                isSelected
+                                  ? 'ring-2 ring-amber-500 border-amber-500/50 bg-slate-800/80'
+                                  : 'bg-slate-800/50 border-slate-700 hover:border-slate-500'
+                              }`}
+                            >
+                              {/* 激活标记 */}
+                              {isActive && (
+                                <div className="absolute top-1 right-1 text-amber-400">
+                                  <Star className="w-3.5 h-3.5 fill-current" />
+                                </div>
+                              )}
+                              {/* 缩略图 */}
+                              <div className="w-16 h-16 mx-auto rounded-md overflow-hidden mb-1.5 border border-slate-700/50">
+                                {thumbUrl ? (
+                                  <img src={thumbUrl} alt={state.name} className="w-full h-full object-cover" />
+                                ) : (
+                                  <div className="w-full h-full bg-slate-700/50 flex items-center justify-center">
+                                    <User className="w-6 h-6 text-slate-500" />
+                                  </div>
+                                )}
+                              </div>
+                              {/* 状态名称 */}
+                              <p className="text-xs text-center truncate font-medium" style={{ color: isSelected ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
+                                {state.name}
+                              </p>
+                              {/* 年龄阶段标签 */}
+                              {state.age_stage && (
+                                <p className="text-center mt-0.5">
+                                  <span className="inline-block text-[10px] px-1.5 py-0.5 rounded-full bg-slate-700/60 text-slate-400">
+                                    {state.age_stage}
+                                  </span>
+                                </p>
+                              )}
+                              {/* 激活标识文字 */}
+                              {isActive && (
+                                <p className="text-[10px] text-center text-amber-400 font-medium mt-0.5">★ 激活</p>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* 操作按钮栏 */}
+                    <div className="flex items-center gap-2 mt-3 pt-3 border-t border-slate-700/50">
+                      {/* 激活按钮 - 仅在选中非激活状态时显示 */}
+                      {selectedState && !selectedState.is_active && (
+                        <button
+                          onClick={handleActivateState}
+                          disabled={activating}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 transition-colors text-sm disabled:opacity-50"
+                        >
+                          {activating ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Star className="w-3.5 h-3.5" />
+                          )}
+                          激活此状态
+                        </button>
+                      )}
+                      {/* 查看历史按钮 */}
+                      <button
+                        onClick={toggleHistory}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-colors text-sm ${
+                          showHistory ? 'bg-slate-600/50 text-slate-200' : 'bg-slate-700/50 text-slate-300 hover:bg-slate-700'
+                        }`}
+                      >
+                        <Clock className="w-3.5 h-3.5" />
+                        {showHistory ? '收起历史' : '查看历史'}
+                      </button>
+                    </div>
+
+                    {/* 历史记录面板 */}
+                    <AnimatePresence>
+                      {showHistory && (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: 'auto' }}
+                          exit={{ opacity: 0, height: 0 }}
+                          className="overflow-hidden"
+                        >
+                          <div className="mt-4 pt-3 border-t border-slate-700/50">
+                            {/* 历史头部：标题+筛选 */}
+                            <div className="flex items-center justify-between mb-3">
+                              <h5 className="text-xs font-bold text-slate-300">变更历史</h5>
+                              {/* 筛选下拉 */}
+                              <div className="relative">
+                                <button
+                                  onClick={() => setShowFilterDropdown(!showFilterDropdown)}
+                                  className="flex items-center gap-1 px-2 py-1 rounded-md bg-slate-700/50 text-slate-400 hover:bg-slate-700 transition-colors text-xs"
+                                >
+                                  <Filter className="w-3 h-3" />
+                                  {FILTER_OPTIONS.find(o => o.value === historyFilter)?.label || '全部'}
+                                  <ChevronDown className="w-3 h-3" />
+                                </button>
+                                {showFilterDropdown && (
+                                  <div className="absolute right-0 top-full mt-1 z-20 min-w-25 rounded-lg bg-slate-800 border border-slate-700 shadow-xl py-1">
+                                    {FILTER_OPTIONS.map(opt => (
+                                      <button
+                                        key={opt.value}
+                                        onClick={() => {
+                                          setHistoryFilter(opt.value);
+                                          setShowFilterDropdown(false);
+                                        }}
+                                        className={`w-full text-left px-3 py-1.5 text-xs hover:bg-slate-700/50 transition-colors ${
+                                          historyFilter === opt.value ? 'text-amber-400' : 'text-slate-300'
+                                        }`}
+                                      >
+                                        {opt.label}
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* 时间线 */}
+                            <div className="relative max-h-64 overflow-y-auto" style={{ scrollbarWidth: 'thin' }}>
+                              {/* 竖线 */}
+                              {historyData.length > 0 && (
+                                <div className="absolute left-3 top-0 bottom-0 w-px bg-slate-600" />
+                              )}
+
+                              {historyData.length === 0 && !historyLoading && (
+                                <p className="text-xs text-slate-500 text-center py-4">暂无历史记录</p>
+                              )}
+
+                              {historyData.map((entry) => {
+                                const cfg = ACTION_CONFIG[entry.action] || ACTION_CONFIG.updated;
+                                const IconComp = cfg.icon;
+                                const stateName = getStateName(entry);
+                                return (
+                                  <div key={entry.id} className="relative pl-8 pb-4 last:pb-0">
+                                    {/* 圆点 */}
+                                    <div className={`absolute left-1.5 w-3 h-3 rounded-full border-2 border-slate-900 ${cfg.bgColor}`} style={{ top: '2px' }} />
+                                    {/* 内容 */}
+                                    <div>
+                                      <div className="flex items-center gap-1.5 mb-0.5">
+                                        <IconComp className={`w-3 h-3 ${cfg.color}`} />
+                                        <span className="text-xs text-slate-300">
+                                          {cfg.label}「<span className="font-medium text-slate-200">{stateName}</span>」状态
+                                        </span>
+                                      </div>
+                                      <p className="text-[10px] text-slate-500">{formatTime(entry.created_at)}</p>
+                                      {/* 变更详情（仅 updated 类型） */}
+                                      {entry.action === 'updated' && entry.changes && (
+                                        <div className="mt-1 text-[10px] text-slate-400 bg-slate-800/60 rounded px-2 py-1">
+                                          修改: {Object.keys(entry.changes).join('、')}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+
+                              {/* 加载中 */}
+                              {historyLoading && (
+                                <div className="flex items-center justify-center py-3">
+                                  <Loader2 className="w-4 h-4 animate-spin text-slate-400" />
+                                </div>
+                              )}
+                            </div>
+
+                            {/* 加载更多 */}
+                            {!historyLoading && historyData.length < historyTotal && (
+                              <button
+                                onClick={() => loadHistory(false)}
+                                className="w-full mt-2 py-1.5 text-xs text-slate-400 hover:text-slate-200 bg-slate-800/40 hover:bg-slate-800/60 rounded-md transition-colors"
+                              >
+                                加载更多 ({historyData.length}/{historyTotal})
+                              </button>
+                            )}
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
                   </div>
                 )}
 

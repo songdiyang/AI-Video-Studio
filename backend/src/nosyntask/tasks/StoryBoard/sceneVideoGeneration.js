@@ -417,7 +417,10 @@ Prompt:`;
   // 优先使用分镜中存储的时长，其次使用传入参数，并限制在 2-12 秒范围内
   let finalDuration = variables.duration || storyboard.duration || duration;
   if (finalDuration !== undefined && finalDuration !== null) {
-    finalDuration = Math.max(2, Math.min(12, parseFloat(finalDuration)));
+    const parsed = parseFloat(finalDuration);
+    finalDuration = isNaN(parsed) ? 5 : Math.max(2, Math.min(12, parsed));
+  } else {
+    finalDuration = 5; // 无时长参数时默认5秒
   }
   
   trace('构建视频参考图', { imageUrls, duration: finalDuration, aspectRatio });

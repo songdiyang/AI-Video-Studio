@@ -47,9 +47,13 @@ const BASE_MODEL_OUTFIT = {
  * @param {object} options - 额外选项
  * @param {boolean} options.isBaseModel - 是否为白膜模式
  * @param {string} options.gender - 性别: male, female, unknown
+ * @param {string} options.outfit - 服装描述（状态级别）
+ * @param {string} options.hairstyle - 发型描述（状态级别）
+ * @param {string} options.accessories - 配饰描述（状态级别）
+ * @param {string} options.ageStage - 年龄阶段（状态级别）
  */
 async function generateViewPrompt(view, characterName, appearance, description, style, textModel, options = {}) {
-  const { isBaseModel = false, gender = 'unknown' } = options;
+  const { isBaseModel = false, gender = 'unknown', outfit, hairstyle, accessories, ageStage } = options;
   
   const viewConfig = {
     front: {
@@ -93,6 +97,16 @@ async function generateViewPrompt(view, characterName, appearance, description, 
    - 提示词中必须逐项重复正面图的外貌特征描述，确保每个细节都被包含`
     : '';
 
+  // 组装完整的外貌描述：基础外貌 + 状态级别属性（服装/发型/配饰/年龄阶段）
+  const stateAppearanceParts = [];
+  if (ageStage) stateAppearanceParts.push(`年龄阶段: ${ageStage}`);
+  if (outfit) stateAppearanceParts.push(`服装: ${outfit}`);
+  if (hairstyle) stateAppearanceParts.push(`发型: ${hairstyle}`);
+  if (accessories) stateAppearanceParts.push(`配饰: ${accessories}`);
+  const composedAppearance = stateAppearanceParts.length > 0
+    ? `${appearance || ''}${appearance ? '；' : ''}${stateAppearanceParts.join('；')}`
+    : appearance;
+
   const fullPrompt = `你是一个专业的角色设计图提示词专家。你的任务是生成用于 AI 绘图的单个角色参考图提示词。
 
 核心要求（必须严格遵守）：
@@ -109,7 +123,7 @@ async function generateViewPrompt(view, characterName, appearance, description, 
 请为以下角色生成「${cfg.desc}」的提示词（画面中只有这一个角色）：
 
 角色名称：${characterName || '未命名角色'}
-外貌特征：${appearance || '无'}
+外貌特征：${composedAppearance || '无'}
 角色描述：${description || '无'}
 风格要求：${style || '动漫风格'}
 视角要求：${cfg.angle}, ${cfg.pose}
@@ -179,7 +193,13 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
     height = 2880,
     regenerateOnly,   // 可选：补全模式，如 ['side', 'back']
     isBaseModel = false,  // 白膜模式
-    gender = 'unknown'    // 性别：male, female, unknown
+    gender = 'unknown',   // 性别：male, female, unknown
+    // 状态级别外貌属性
+    stateId = null,       // 角色状态 ID（为状态生成时传入）
+    outfit = '',          // 服装描述
+    hairstyle = '',       // 发型描述
+    accessories = '',     // 配饰描述
+    ageStage = ''         // 年龄阶段
   } = inputParams;
 
 
@@ -188,7 +208,15 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
 
   // 查询数据库中已有的三视图 URL，用于补全模式
   let existingViews = { front_view_url: null, side_view_url: null, back_view_url: null };
-  if (characterId) {
+  if (stateId) {
+    // 状态级别：从 character_states 表读取
+    const row = await queryOne(
+      'SELECT front_view_url, side_view_url, back_view_url FROM character_states WHERE id = ?',
+      [stateId]
+    );
+    if (row) existingViews = row;
+  } else if (characterId) {
+    // 角色级别：从 characters 表读取
     const row = await queryOne(
       'SELECT front_view_url, side_view_url, back_view_url FROM characters WHERE id = ?',
       [characterId]
@@ -214,6 +242,7 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
   console.log('[CharacterViews] 开始生成三视图:', {
     characterId,
     characterName,
+    stateId: stateId || 'N/A',
     imageModel,
     textModel,
     aspectRatio: aspectRatio || null,
@@ -226,7 +255,10 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
     existingSide: !!existingViews.side_view_url,
     existingBack: !!existingViews.back_view_url,
     isBaseModel,
-    gender
+    gender,
+    outfit: outfit || 'N/A',
+    hairstyle: hairstyle || 'N/A',
+    ageStage: ageStage || 'N/A'
   });
 
   if (!imageModel) {
@@ -240,11 +272,23 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
 
   if (onProgress) onProgress(5);
 
+  // 判断写入目标：状态级别 vs 角色级别
+  const isStateGeneration = !!stateId;
+  const targetTable = isStateGeneration ? 'character_states' : 'characters';
+  const targetId = isStateGeneration ? stateId : characterId;
+  const storageBase = isStateGeneration
+    ? `images/characters/${characterId}/states/${stateId}`
+    : `images/characters/${characterId}`;
+
+  console.log(`[CharacterViews] 生成模式: ${isStateGeneration ? '状态级别(stateId=' + stateId + ')' : '角色级别'}`);
+
   // === 正面视图 ===
   let persistedFrontUrl = existingViews.front_view_url || null;
+  let lastGeneratedPrompt = ''; // 记录最新的英文提示词，用于存储到 generation_prompt
   if (needFront) {
     console.log('[CharacterViews] 生成正面视图...');
-    const frontPrompt = await generateViewPrompt('front', characterName, appearance, description, style, textModel, { isBaseModel, gender });
+    const frontPrompt = await generateViewPrompt('front', characterName, appearance, description, style, textModel, { isBaseModel, gender, outfit, hairstyle, accessories, ageStage });
+    lastGeneratedPrompt = frontPrompt; // 保存英文提示词
     const frontResult = await handleImageGeneration({
       prompt: frontPrompt,
       imageModel: imageModel,
@@ -259,23 +303,23 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
 
     persistedFrontUrl = await downloadAndStore(
       frontViewUrl,
-      `images/characters/${characterId}/front_view`,
+      `${storageBase}/front_view`,
       { fallbackExt: '.png' }
     );
 
-    if (characterId && persistedFrontUrl) {
+    if (targetId && persistedFrontUrl) {
       const updateResult = await execute(
-        'UPDATE characters SET front_view_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-        [persistedFrontUrl, characterId]
+        `UPDATE ${targetTable} SET front_view_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+        [persistedFrontUrl, targetId]
       );
       assertUpdated(updateResult, '[CharacterViews] 正面视图');
       await assertPersistedFields({
-        table: 'characters',
-        id: characterId,
+        table: targetTable,
+        id: targetId,
         fields: ['front_view_url'],
         label: '[CharacterViews] 正面视图'
       });
-      console.log('[CharacterViews] ✅ 正面视图已保存到数据库');
+      console.log(`[CharacterViews] ✅ 正面视图已保存到 ${targetTable}`);
     }
   } else {
     console.log('[CharacterViews] ✅ 正面视图已存在，跳过生成');
@@ -294,7 +338,7 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
   let persistedSideUrl = existingViews.side_view_url || null;
   if (needSide) {
     console.log('[CharacterViews] 生成侧面视图...');
-    const sidePrompt = await generateViewPrompt('side', characterName, appearance, description, style, textModel, { isBaseModel, gender });
+    const sidePrompt = await generateViewPrompt('side', characterName, appearance, description, style, textModel, { isBaseModel, gender, outfit, hairstyle, accessories, ageStage });
     const sideGenParams = {
       prompt: sidePrompt,
       imageModel: imageModel,
@@ -314,23 +358,23 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
 
     persistedSideUrl = await downloadAndStore(
       sideViewUrl,
-      `images/characters/${characterId}/side_view`,
+      `${storageBase}/side_view`,
       { fallbackExt: '.png' }
     );
 
-    if (characterId && persistedSideUrl) {
+    if (targetId && persistedSideUrl) {
       const updateResult = await execute(
-        'UPDATE characters SET side_view_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-        [persistedSideUrl, characterId]
+        `UPDATE ${targetTable} SET side_view_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+        [persistedSideUrl, targetId]
       );
       assertUpdated(updateResult, '[CharacterViews] 侧面视图');
       await assertPersistedFields({
-        table: 'characters',
-        id: characterId,
+        table: targetTable,
+        id: targetId,
         fields: ['side_view_url'],
         label: '[CharacterViews] 侧面视图'
       });
-      console.log('[CharacterViews] ✅ 侧面视图已保存到数据库');
+      console.log(`[CharacterViews] ✅ 侧面视图已保存到 ${targetTable}`);
     }
   } else {
     console.log('[CharacterViews] ✅ 侧面视图已存在，跳过生成');
@@ -347,7 +391,7 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
   let persistedBackUrl = existingViews.back_view_url || null;
   if (needBack) {
     console.log('[CharacterViews] 生成背面视图...');
-    const backPrompt = await generateViewPrompt('back', characterName, appearance, description, style, textModel, { isBaseModel, gender });
+    const backPrompt = await generateViewPrompt('back', characterName, appearance, description, style, textModel, { isBaseModel, gender, outfit, hairstyle, accessories, ageStage });
     const backGenParams = {
       prompt: backPrompt,
       imageModel: imageModel,
@@ -367,23 +411,23 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
 
     persistedBackUrl = await downloadAndStore(
       backViewUrl,
-      `images/characters/${characterId}/back_view`,
+      `${storageBase}/back_view`,
       { fallbackExt: '.png' }
     );
 
-    if (characterId && persistedBackUrl) {
+    if (targetId && persistedBackUrl) {
       const updateResult = await execute(
-        'UPDATE characters SET back_view_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-        [persistedBackUrl, characterId]
+        `UPDATE ${targetTable} SET back_view_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+        [persistedBackUrl, targetId]
       );
       assertUpdated(updateResult, '[CharacterViews] 背面视图');
       await assertPersistedFields({
-        table: 'characters',
-        id: characterId,
+        table: targetTable,
+        id: targetId,
         fields: ['back_view_url'],
         label: '[CharacterViews] 背面视图'
       });
-      console.log('[CharacterViews] ✅ 背面视图已保存到数据库');
+      console.log(`[CharacterViews] ✅ 背面视图已保存到 ${targetTable}`);
     }
   } else {
     console.log('[CharacterViews] ✅ 背面视图已存在，跳过生成');
@@ -395,24 +439,25 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
   let characterSheetUrl = null;
   try {
     console.log('[CharacterViews] 开始合成角色设定图...');
+    const composedAppearance = [appearance, outfit ? `服装: ${outfit}` : '', hairstyle ? `发型: ${hairstyle}` : '', accessories ? `配饰: ${accessories}` : '', ageStage ? `年龄: ${ageStage}` : ''].filter(Boolean).join('；');
     const sheetBuffer = await composeCharacterSheet({
       frontViewUrl: persistedFrontUrl,
       sideViewUrl: persistedSideUrl,
       backViewUrl: persistedBackUrl,
       characterName,
-      appearance,
+      appearance: composedAppearance || appearance,
       personality,
       description,
       style
     });
 
     // 上传到 MinIO
-    const sheetObjectPath = `images/characters/${characterId}/character_sheet.png`;
+    const sheetObjectPath = `${storageBase}/character_sheet.png`;
     characterSheetUrl = await uploadBuffer(sheetBuffer, sheetObjectPath, { contentType: 'image/png' });
     console.log('[CharacterViews] ✅ 角色设定图已上传:', characterSheetUrl);
 
-    // 更新数据库
-    if (characterId && characterSheetUrl) {
+    // 更新数据库 - 仅角色级别保存 character_sheet_url
+    if (!isStateGeneration && characterId && characterSheetUrl) {
       await execute(
         'UPDATE characters SET character_sheet_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
         [characterSheetUrl, characterId]
@@ -426,31 +471,54 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
 
   if (onProgress) onProgress(92);
 
-  // 将正面视图同时保存为主图片 (image_url)，并标记生成完成
-  if (characterId && persistedFrontUrl) {
-    // 检查当前 image_url 是否为空或与旧正面视图相同，避免覆盖用户手动上传的图片
-    const currentChar = await queryOne('SELECT image_url FROM characters WHERE id = ?', [characterId]);
-    const shouldUpdateImageUrl = !currentChar?.image_url || needFront;
-    
-    const updateSql = shouldUpdateImageUrl
-      ? `UPDATE characters SET image_url = ?, generation_status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE id = ?`
-      : `UPDATE characters SET generation_status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE id = ?`;
-    const updateParams = shouldUpdateImageUrl
-      ? [persistedFrontUrl, characterId]
-      : [characterId];
+  // 标记生成完成
+  if (isStateGeneration) {
+    // 状态级别：更新 character_states 的 generation_status 和 image_url
+    if (stateId && persistedFrontUrl) {
+      const currentState = await queryOne('SELECT image_url FROM character_states WHERE id = ?', [stateId]);
+      const shouldUpdateImageUrl = !currentState?.image_url || needFront;
+      const updateSql = shouldUpdateImageUrl
+        ? `UPDATE character_states SET image_url = ?, generation_status = 'completed', generation_prompt = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+        : `UPDATE character_states SET generation_status = 'completed', generation_prompt = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`;
+      const updateParams = shouldUpdateImageUrl
+        ? [persistedFrontUrl, lastGeneratedPrompt || composedAppearance || '', stateId]
+        : [lastGeneratedPrompt || composedAppearance || '', stateId];
 
-    const updateResult = await execute(updateSql, updateParams);
-    assertUpdated(updateResult, '[CharacterViews] 主图');
-    if (shouldUpdateImageUrl) {
-      await assertPersistedFields({
-        table: 'characters',
-        id: characterId,
-        fields: ['image_url'],
-        label: '[CharacterViews] 主图'
-      });
-      console.log('[CharacterViews] ✅ 正面视图已保存为主图片 (image_url)');
-    } else {
-      console.log('[CharacterViews] ✅ 保留现有主图片，仅更新生成状态');
+      const updateResult = await execute(updateSql, updateParams);
+      assertUpdated(updateResult, '[CharacterViews] 状态主图');
+      console.log('[CharacterViews] ✅ 状态三视图生成完成，generation_status=completed');
+    } else if (stateId) {
+      await execute(
+        `UPDATE character_states SET generation_status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+        [stateId]
+      );
+    }
+  } else {
+    // 角色级别：更新 characters 的 generation_status
+    if (characterId && persistedFrontUrl) {
+      const currentChar = await queryOne('SELECT image_url FROM characters WHERE id = ?', [characterId]);
+      const shouldUpdateImageUrl = !currentChar?.image_url || needFront;
+      
+      const updateSql = shouldUpdateImageUrl
+        ? `UPDATE characters SET image_url = ?, generation_status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+        : `UPDATE characters SET generation_status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE id = ?`;
+      const updateParams = shouldUpdateImageUrl
+        ? [persistedFrontUrl, characterId]
+        : [characterId];
+
+      const updateResult = await execute(updateSql, updateParams);
+      assertUpdated(updateResult, '[CharacterViews] 主图');
+      if (shouldUpdateImageUrl) {
+        await assertPersistedFields({
+          table: 'characters',
+          id: characterId,
+          fields: ['image_url'],
+          label: '[CharacterViews] 主图'
+        });
+        console.log('[CharacterViews] ✅ 正面视图已保存为主图片 (image_url)');
+      } else {
+        console.log('[CharacterViews] ✅ 保留现有主图片，仅更新生成状态');
+      }
     }
   }
 
@@ -466,7 +534,9 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
     characterSheetUrl: characterSheetUrl,
     imageModel,
     textModel,
-    aspectRatio: aspectRatio || null
+    aspectRatio: aspectRatio || null,
+    stateId: stateId || null,
+    isStateGeneration
   };
 
   console.log('[CharacterViews] ✅ 三视图生成完成');

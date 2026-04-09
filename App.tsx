@@ -10,6 +10,7 @@ import { WorkbenchProvider } from './contexts/WorkbenchContext';
 import TaskQueueBubble from './components/TaskQueueBubble';
 import Skeleton from './components/Skeleton';
 import ErrorBoundary from './components/ErrorBoundary';
+import { PointsProvider } from './contexts/PointsContext';
 
 // 懒加载主要视图组件
 const DynamicWorkbench = React.lazy(() => import('./components/DynamicWorkbench'));
@@ -252,9 +253,11 @@ const App: React.FC = () => {
             <Route path="*" element={
               <ProtectedRoute>
                 <WorkbenchProvider>
-                  <Layout>
-                    <AnimatedRoutes />
-                  </Layout>
+                  <PointsProvider>
+                    <Layout>
+                      <AnimatedRoutes />
+                    </Layout>
+                  </PointsProvider>
                 </WorkbenchProvider>
               </ProtectedRoute>
             } />

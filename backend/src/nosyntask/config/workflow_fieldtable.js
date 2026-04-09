@@ -259,6 +259,48 @@ module.exports = {
     description: '性格特点描述',
     category: 'character'
   },
+  stateId: {
+    from: 'stateId',
+    defaultValue: null,
+    description: '角色状态 ID（状态级别生成时使用）',
+    category: 'character'
+  },
+  outfit: {
+    from: 'outfit',
+    defaultValue: '',
+    description: '服装描述（状态级别）',
+    category: 'character'
+  },
+  hairstyle: {
+    from: 'hairstyle',
+    defaultValue: '',
+    description: '发型描述（状态级别）',
+    category: 'character'
+  },
+  accessories: {
+    from: 'accessories',
+    defaultValue: '',
+    description: '配饰描述（状态级别）',
+    category: 'character'
+  },
+  ageStage: {
+    from: 'ageStage',
+    defaultValue: '',
+    description: '年龄阶段（状态级别）',
+    category: 'character'
+  },
+  isBaseModel: {
+    from: 'isBaseModel',
+    defaultValue: false,
+    description: '是否为白膜模式（角色三视图生成）',
+    category: 'character'
+  },
+  gender: {
+    from: 'gender',
+    defaultValue: 'unknown',
+    description: '性别：male, female, unknown',
+    category: 'character'
+  },
 
   // ================================================================
   //  批量控制

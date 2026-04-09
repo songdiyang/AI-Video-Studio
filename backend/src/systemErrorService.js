@@ -96,7 +96,7 @@ async function logSystemError(params) {
 /**
  * 查询系统错误列表（管理员接口）
  */
-async function getSystemErrors({ page = 1, limit = 20, errorType = null, isResolved = null }) {
+async function getSystemErrors({ page = 1, limit = 20, errorType = null, isResolved = null, search = null }) {
   const offset = (page - 1) * limit;
   const conditions = ['1=1'];
   const params = [];
@@ -109,6 +109,12 @@ async function getSystemErrors({ page = 1, limit = 20, errorType = null, isResol
   if (isResolved !== null) {
     conditions.push('is_resolved = ?');
     params.push(isResolved ? 1 : 0);
+  }
+
+  if (search && String(search).trim()) {
+    const keyword = `%${String(search).trim()}%`;
+    conditions.push('(error_message LIKE ? OR error_type LIKE ? OR error_source LIKE ? OR user_email LIKE ? OR request_url LIKE ?)');
+    params.push(keyword, keyword, keyword, keyword, keyword);
   }
 
   const whereClause = conditions.join(' AND ');

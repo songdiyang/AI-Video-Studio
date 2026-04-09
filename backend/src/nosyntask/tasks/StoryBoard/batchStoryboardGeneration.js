@@ -17,11 +17,13 @@ const { filterNonCharacters } = require('../../../utils/characterFilter');
 const { queryOne, execute } = require('../../../dbHelper');
 const { parseScriptScenes } = require('../../../utils/parseScriptScenes');
 const { stripThinkTags, extractCodeBlock, extractJSON, stripInvisible } = require('../../../utils/washBody');
+const { getBatchSceneDurationConfig } = require('../../../durationConfigService');
 
-// 时长常量
-const MIN_SCENE_DURATION = 15;
-const MAX_SCENE_DURATION = 60;
+// 默认值（当数据库配置不可用时回退使用）
+const DEFAULT_MIN_SCENE_DURATION = 15;
+const DEFAULT_MAX_SCENE_DURATION = 60;
 const DEFAULT_SHOT_DURATION = 2;
+const DEFAULT_TOLERANCE = 2;
 
 /**
  * 从分镜描述中提取角色名称（严格模式）
@@ -38,36 +40,68 @@ function extractCharactersFromDescription(description, knownCharacters = new Set
 }
 
 /**
- * 调整分镜时长
+ * 分镜时长校验与调整
+ * @param {Array} scenes 分镜数组
+ * @param {number} minDuration 最小总时长
+ * @param {number} maxDuration 最大总时长
+ * @param {number} tolerance 偏差容忍值（秒）
+ * @returns {{ scenes: Array, totalDuration: number, adjusted: boolean, needsRegeneration: boolean }}
  */
-function adjustSceneDurations(scenes) {
-  if (!scenes || scenes.length === 0) return { scenes: [], totalDuration: 0 };
+function adjustSceneDurations(scenes, minDuration, maxDuration, tolerance = 2) {
+  if (!scenes || scenes.length === 0) return { scenes: [], totalDuration: 0, adjusted: false, needsRegeneration: false };
   
   let totalDuration = scenes.reduce((sum, s) => sum + (s.duration || DEFAULT_SHOT_DURATION), 0);
+  console.log('[BatchStoryboard] 原始总时长:', totalDuration, '秒, 允许范围:', minDuration, '-', maxDuration, '秒, 容忍偏差:', tolerance, '秒');
   
-  if (totalDuration >= MIN_SCENE_DURATION && totalDuration <= MAX_SCENE_DURATION) {
-    return { scenes, totalDuration };
+  if (totalDuration >= minDuration && totalDuration <= maxDuration) {
+    console.log('[BatchStoryboard] 时长在合理范围内，无需调整');
+    return { scenes, totalDuration, adjusted: false, needsRegeneration: false };
   }
   
-  if (totalDuration < MIN_SCENE_DURATION) {
-    const scaleFactor = MIN_SCENE_DURATION / totalDuration;
-    scenes = scenes.map(s => ({
-      ...s,
-      duration: Math.round((s.duration || DEFAULT_SHOT_DURATION) * scaleFactor)
-    }));
-    totalDuration = scenes.reduce((sum, s) => sum + s.duration, 0);
+  let deviation = 0;
+  if (totalDuration < minDuration) {
+    deviation = minDuration - totalDuration;
+  } else if (totalDuration > maxDuration) {
+    deviation = totalDuration - maxDuration;
   }
   
-  if (totalDuration > MAX_SCENE_DURATION) {
-    const scaleFactor = MAX_SCENE_DURATION / totalDuration;
-    scenes = scenes.map(s => ({
-      ...s,
-      duration: Math.max(1, Math.round((s.duration || DEFAULT_SHOT_DURATION) * scaleFactor))
-    }));
-    totalDuration = scenes.reduce((sum, s) => sum + s.duration, 0);
+  console.log('[BatchStoryboard] 时长偏差:', deviation, '秒');
+  
+  if (deviation > tolerance) {
+    console.log('[BatchStoryboard] 时长严重超出范围（偏差', deviation, '秒 > 容忍值', tolerance, '秒），需要重新生成');
+    return { scenes, totalDuration, adjusted: false, needsRegeneration: true };
   }
   
-  return { scenes, totalDuration };
+  console.log('[BatchStoryboard] 偏差在容忍范围内，执行比例缩放调整');
+  
+  let targetDuration = totalDuration < minDuration ? minDuration : maxDuration;
+  const scaleFactor = targetDuration / totalDuration;
+  scenes = scenes.map(s => ({
+    ...s,
+    duration: Math.max(1, Math.round((s.duration || DEFAULT_SHOT_DURATION) * scaleFactor))
+  }));
+  
+  totalDuration = scenes.reduce((sum, s) => sum + s.duration, 0);
+  
+  const diff = targetDuration - totalDuration;
+  if (diff !== 0 && scenes.length > 0) {
+    let maxIdx = 0;
+    let maxDur = scenes[0].duration;
+    for (let i = 1; i < scenes.length; i++) {
+      if (scenes[i].duration > maxDur) {
+        maxDur = scenes[i].duration;
+        maxIdx = i;
+      }
+    }
+    const newDur = scenes[maxIdx].duration + diff;
+    if (newDur >= 1) {
+      scenes[maxIdx] = { ...scenes[maxIdx], duration: newDur };
+      totalDuration = targetDuration;
+    }
+  }
+  
+  console.log('[BatchStoryboard] 比例缩放调整后总时长:', totalDuration, '秒');
+  return { scenes, totalDuration, adjusted: true, needsRegeneration: false };
 }
 
 /**
@@ -155,8 +189,13 @@ async function generateSceneStoryboard(params) {
     previousSceneContext,
     scriptTitle, 
     textModel: modelName, 
-    think 
+    think,
+    durationConfig
   } = params;
+
+  const minDur = durationConfig ? durationConfig.minDuration : DEFAULT_MIN_SCENE_DURATION;
+  const maxDur = durationConfig ? durationConfig.maxDuration : DEFAULT_MAX_SCENE_DURATION;
+  const tolerance = durationConfig ? durationConfig.tolerance : DEFAULT_TOLERANCE;
 
   // 构建上下文信息
   let contextInfo = '';
@@ -177,7 +216,7 @@ ${previousSceneContext}
 - 描述简洁明了，避免过度艺术加工
 - 专注于场景内容的视觉化呈现
 ${contextInfo}
-**时长目标**：本场景所有分镜的 duration 总和应在 15-60 秒之间
+**时长目标**：本场景所有分镜的 duration 总和应在 ${minDur}-${maxDur} 秒之间
 
 **输出格式**：严格 JSON 数组，不要添加其他文字
 
@@ -210,7 +249,7 @@ ${sceneContent}
 - characters: 出场角色数组
 - location: 场景地点
 - emotion: 情绪氛围
-- cameraMovement: 镜头运动（"static"/"push_in"/"pull_out"/"pan_left"/"pan_right"）
+- cameraMovement: 镜头运动（"static"/"push"/"pull"/"pan"/"tilt"/"track"/"dolly"/"zoom"/"orbit"/"dolly_zoom"/"crane"/"handheld"/"steadicam"/"whip_pan"）
 
 只输出 JSON 数组，不要其他内容。`;
 
@@ -272,8 +311,20 @@ ${sceneContent}
 
   // 后处理
   scenes = postProcessScenes(scenes);
-  const { scenes: adjustedScenes, totalDuration } = adjustSceneDurations(scenes);
-  scenes = adjustedScenes;
+  
+  // 时长校验与调整
+  let durationResult = adjustSceneDurations(scenes, minDur, maxDur, tolerance);
+  
+  // 如果严重超出范围，降级为强制比例缩放（批量模式不重试AI，避免耗时过长）
+  if (durationResult.needsRegeneration) {
+    console.log(`[BatchStoryboard] 场景 ${sceneNumber} 时长严重超出范围，强制比例缩放`);
+    durationResult = adjustSceneDurations(
+      durationResult.scenes, minDur, maxDur, Infinity
+    );
+  }
+  
+  scenes = durationResult.scenes;
+  const totalDuration = durationResult.totalDuration;
 
   // 获取最后一个分镜的结束状态
   const lastSceneEndState = scenes.length > 0 
@@ -332,6 +383,19 @@ async function handleBatchStoryboardGeneration(inputParams, onProgress) {
   console.log(`[BatchStoryboard] 识别到 ${totalScenes} 个场景，开始处理...`);
   if (onProgress) onProgress(5);
 
+  // 获取时长配置
+  let durationConfig;
+  try {
+    durationConfig = await getBatchSceneDurationConfig();
+  } catch (e) {
+    console.warn('[BatchStoryboard] 获取时长配置失败，使用默认值:', e.message);
+    durationConfig = {
+      minDuration: DEFAULT_MIN_SCENE_DURATION,
+      maxDuration: DEFAULT_MAX_SCENE_DURATION,
+      tolerance: DEFAULT_TOLERANCE
+    };
+  }
+
   // 3. 清理旧分镜（如果需要）
   if (clearExisting) {
     await execute('DELETE FROM storyboards WHERE script_id = ?', [scriptId]);
@@ -374,7 +438,8 @@ async function handleBatchStoryboardGeneration(inputParams, onProgress) {
           previousSceneContext: '', // 并行模式不传递上下文，每个场景独立生成
           scriptTitle: script.title || `第${script.episode_number}集`,
           textModel,
-          think
+          think,
+          durationConfig
         });
 
         // 为分镜标记场景信息（全局序号在排序后计算）

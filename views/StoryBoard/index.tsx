@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef, Component, ReactNode } from 'react';
 import { Button, Select, SelectItem, Tooltip } from '@heroui/react';
-import { Wand2, RefreshCw, Download, Video, ImageIcon, Users, MapPin, Frame, Film, ChevronDown, Play, PanelRight, GitBranch, MessageSquare, Lock } from 'lucide-react';
+import { Wand2, RefreshCw, Download, Video, ImageIcon, Users, MapPin, Frame, Film, ChevronDown, Play, PanelRight, GitBranch, MessageSquare, Lock, ShieldCheck } from 'lucide-react';
 import { useSceneManager, StoryboardScene } from './useSceneManager';
 import { useAutoStoryboard } from './useAutoStoryboard';
 import { useSceneGeneration } from './useSceneGeneration';
@@ -26,6 +26,8 @@ import { AnimaticPreview } from './AnimaticPreview';
 import VersionHistoryPanel from './VersionHistoryPanel';
 import TeamCollaborationPanel from './TeamCollaborationPanel';
 import FrameAnnotationPanel from './FrameAnnotationPanel';
+import StoryboardValidationPanel from './components/StoryboardValidationPanel';
+import { validateStoryboardContent, getIssuesForScene, StoryboardValidationResult } from './utils/validateStoryboardContent';
 
 interface Script {
   id: number;
@@ -121,6 +123,9 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
   const [isVersionHistoryOpen, setIsVersionHistoryOpen] = useState(false);
   const [isTeamCollaborationOpen, setIsTeamCollaborationOpen] = useState(false);
   const [isFrameAnnotationOpen, setIsFrameAnnotationOpen] = useState(false);
+  const [isValidationOpen, setIsValidationOpen] = useState(false);
+  const [validationResult, setValidationResult] = useState<StoryboardValidationResult | null>(null);
+  const [isValidating, setIsValidating] = useState(false);
   const resourcePanelRef = useRef<ResizablePanelRef>(null);
   const { showToast } = useToast();
 
@@ -523,6 +528,56 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
     }
   };
 
+  // 分镜内容检验
+  const handleValidateStoryboard = useCallback(() => {
+    if (scenes.length === 0) {
+      showToast('没有分镜数据可供检验', 'warning');
+      return;
+    }
+    setIsValidating(true);
+    // 使用 setTimeout 让 UI 先更新显示 loading 状态
+    setTimeout(() => {
+      try {
+        const result = validateStoryboardContent(scenes);
+        setValidationResult(result);
+        setIsValidationOpen(true);
+        setIsValidating(false);
+        if (result.issueCount === 0) {
+          showToast('所有分镜检验通过', 'success');
+        } else {
+          const { emptyShots, duplicateShots, continuityErrors } = result.summary;
+          const parts: string[] = [];
+          if (emptyShots > 0) parts.push(`${emptyShots} 个空镜头`);
+          if (duplicateShots > 0) parts.push(`${duplicateShots} 组重复`);
+          if (continuityErrors > 0) parts.push(`${continuityErrors} 处连续性错误`);
+          showToast(`发现 ${parts.join('、')}，共 ${result.issueCount} 个问题`, 'warning');
+        }
+      } catch (error: any) {
+        console.error('[StoryBoard] 分镜检验失败:', error);
+        showToast('分镜检验失败: ' + error.message, 'error');
+        setIsValidating(false);
+      }
+    }, 50);
+  }, [scenes, showToast]);
+
+  const handleRevalidate = useCallback(() => {
+    handleValidateStoryboard();
+  }, [handleValidateStoryboard]);
+
+  // 构建每个分镜的检验问题映射
+  const sceneValidationMap = useMemo(() => {
+    if (!validationResult) return new Map<number, StoryboardValidationResult['issues'][0][]>();
+    const map = new Map<number, StoryboardValidationResult['issues'][0][]>();
+    for (const issue of validationResult.issues) {
+      for (const id of issue.storyboardIds) {
+        const existing = map.get(id) || [];
+        existing.push(issue);
+        map.set(id, existing);
+      }
+    }
+    return map;
+  }, [validationResult]);
+
 
   // 8. 批量帧生成
   const batchFrameGen = useBatchFrameGeneration({
@@ -915,6 +970,18 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
 
             <Divider />
 
+            {/* 分镜检验 */}
+            <IconButton
+              icon={<ShieldCheck className="w-4 h-4" />}
+              tooltip="检验分镜"
+              onClick={handleValidateStoryboard}
+              disabled={scenes.length === 0 || isValidating}
+              loading={isValidating}
+              variant="primary"
+            />
+
+            <Divider />
+
             {/* 批量生成操作 */}
             <IconButton
               icon={<Users className="w-4 h-4" />}
@@ -1109,6 +1176,7 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
                 isBatchGeneratingVideo={batchSceneVideoGen.isGenerating}
                 batchVideoProgress={batchSceneVideoGen.progress}
                 isLoading={isLoading}
+                sceneValidationMap={sceneValidationMap}
               />
             </ResizablePanel>
 
@@ -1182,6 +1250,20 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
           isOpen={isFrameAnnotationOpen}
           onClose={() => setIsFrameAnnotationOpen(false)}
         />
+      )}
+
+      {/* 分镜检验面板 */}
+      {isValidationOpen && (
+        <div className="fixed right-0 top-0 h-full w-80 z-40 shadow-xl">
+          <StoryboardValidationPanel
+            isOpen={isValidationOpen}
+            result={validationResult}
+            isValidating={isValidating}
+            onClose={() => setIsValidationOpen(false)}
+            onRevalidate={handleRevalidate}
+            onSelectScene={(id) => setSelectedScene(id)}
+          />
+        </div>
       )}
 
       {/* 自动分镜确认弹窗 */}

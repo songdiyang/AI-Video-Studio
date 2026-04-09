@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import SceneCard from './SceneCard';
 import { StoryboardScene } from './useSceneManager';
 import { TaskState } from '../../hooks/useTaskRunner';
+import type { StoryboardValidationIssue } from './utils/validateStoryboardContent';
 import { useImagePreloader, useScrollIndex } from './hooks/useImagePreloader';
 
 interface SceneListProps {
@@ -29,6 +30,7 @@ interface SceneListProps {
   onBatchGenerateVideo?: (overwriteVideos: boolean) => void;
   isBatchGeneratingVideo?: boolean;
   batchVideoProgress?: number;
+  sceneValidationMap?: Map<number, StoryboardValidationIssue[]>;
 }
 
 // 列表容器动画配置
@@ -97,7 +99,8 @@ const SceneList: React.FC<SceneListProps> = ({
   batchProgress = 0,
   onBatchGenerateVideo,
   isBatchGeneratingVideo = false,
-  batchVideoProgress = 0
+  batchVideoProgress = 0,
+  sceneValidationMap
 }) => {
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
@@ -278,6 +281,7 @@ const SceneList: React.FC<SceneListProps> = ({
                   onUpdateScene={onUpdateScene}
                   imageTask={tasks[`img_${scene.id}`]}
                   videoTask={tasks[`vid_${scene.id}`]}
+                  validationIssues={sceneValidationMap?.get(scene.id)}
                 />
               </motion.div>
             ))}

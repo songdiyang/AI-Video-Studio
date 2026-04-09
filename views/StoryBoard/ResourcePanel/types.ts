@@ -33,6 +33,16 @@ export interface CharacterState {
   is_base_model?: boolean;    // 是否为基础白膜状态
   is_active?: boolean;        // 是否为当前激活状态
   generation_status?: 'idle' | 'generating' | 'completed' | 'failed';
+  // 外观属性
+  outfit?: string;
+  age_stage?: string;
+  hairstyle?: string;
+  accessories?: string;
+  generation_prompt?: string;
+  gender?: 'male' | 'female' | 'unknown';
+  // 状态分类和标签
+  state_category?: 'daily' | 'costume' | 'time' | 'effect';
+  tags?: string;  // 状态标签JSON数组
 }
 
 export interface ResourceItem {
@@ -60,3 +70,13 @@ export interface ResourcePanelProps {
 }
 
 export type TabType = 'characters' | 'locations' | 'props';
+
+// 角色树形节点类型（用于树形视图组件）
+export interface CharacterTreeNode {
+  id: number;
+  type: 'character';
+  character: Character;
+  states: CharacterState[];
+  activeStateId?: number;
+  isExpanded: boolean;
+}
