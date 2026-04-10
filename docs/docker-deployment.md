@@ -6,10 +6,14 @@
 - `backend`：Node.js API 服务
 - `minio`：对象存储，数据持久化到本地目录
 
+如果你要启用产物热更新，再看 [hot-update.md](./hot-update.md)。
+
 ## 设计约束
 
 - 前端不会在容器里构建
 - 如果 `./dist` 不存在，Nginx 会返回提示页，提醒先在宿主机构建
+- 如果 `./runtime/frontend/current` 存在，Nginx 会优先使用热更新产物
+- 如果 `./runtime/backend/current` 存在，Backend 会优先从热更新目录启动
 - Docker Hub 镜像通过 `DOCKER_IMAGE_PREFIX` 使用加速前缀
 - npm 通过 `NPM_REGISTRY` 和仓库内 `.npmrc` 使用镜像源
 - `backend` 容器直接读取现有的 [backend/.env](../backend/.env)
@@ -84,6 +88,8 @@ npm run build
 
 这一步必须在宿主机执行，产物会输出到 `./dist`，然后由 Nginx 直接挂载。
 
+如果后续接入热更新，前端会优先读取 `./runtime/frontend/current`，但在第一次发布前，`./dist` 仍然保留为兼容回退目录。
+
 ### 4. 启动容器
 
 ```bash
@@ -103,6 +109,8 @@ chmod +x scripts/docker-up.sh
 
 - MinIO：`${DOCKER_DATA_ROOT}/minio`
 - Backend logs：`./backend/logs`
+- Backend uploads：`./runtime/backend-data/uploads`
+- Runtime releases：`./runtime/frontend`、`./runtime/backend`
 
 这些目录会由 Docker 自动创建。
 
@@ -128,6 +136,8 @@ docker compose --env-file docker-compose.env logs -f
 docker compose --env-file docker-compose.env restart nginx
 ```
 
+如果你已经接入热更新，则不再建议直接手工覆盖 `dist`，而是上传 CI 产物给 `hot_update` 服务。
+
 ### 停止并删除容器
 
 ```bash
@@ -146,7 +156,7 @@ docker compose --env-file docker-compose.env down
 
 ### 关于 `dist` 缺失
 
-如果你直接启动 `nginx` 容器但没有 `./dist/index.html`，页面会显示一段明确提示，告诉你先在宿主机执行：
+如果你直接启动 `nginx` 容器但既没有 `./runtime/frontend/current/index.html`，也没有 `./dist/index.html`，页面会显示一段明确提示，告诉你先在宿主机执行：
 
 ```bash
 npm install

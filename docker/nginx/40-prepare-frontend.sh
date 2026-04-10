@@ -3,12 +3,19 @@ set -eu
 
 SITE_ROOT="${NGINX_SITE_ROOT:-/usr/share/nginx/site}"
 DIST_DIR="${FRONTEND_DIST_DIR:-/srv/frontend-dist}"
+LEGACY_DIST_DIR="${LEGACY_FRONTEND_DIST_DIR:-/srv/frontend-dist-legacy}"
 
 rm -rf "${SITE_ROOT}"
 
 if [ -f "${DIST_DIR}/index.html" ]; then
   ln -s "${DIST_DIR}" "${SITE_ROOT}"
   echo "[nginx] serving frontend dist from ${DIST_DIR}"
+  exit 0
+fi
+
+if [ -f "${LEGACY_DIST_DIR}/index.html" ]; then
+  ln -s "${LEGACY_DIST_DIR}" "${SITE_ROOT}"
+  echo "[nginx] serving legacy frontend dist from ${LEGACY_DIST_DIR}"
   exit 0
 fi
 
@@ -70,12 +77,12 @@ npm run build
 docker-compose --env-file docker-compose.env up -d --build</pre>
     <p>期望挂载目录：</p>
     <ul>
-      <li>宿主机 <code>./dist</code></li>
-      <li>容器内 <code>/srv/frontend-dist</code></li>
+      <li>热更新目录：宿主机 <code>./runtime/frontend/current</code>，容器内 <code>/srv/frontend-runtime/current</code></li>
+      <li>兼容目录：宿主机 <code>./dist</code>，容器内 <code>/srv/frontend-dist-legacy</code></li>
     </ul>
   </div>
 </body>
 </html>
 EOF
 
-echo "[nginx] frontend dist missing at ${DIST_DIR}, serving reminder page"
+echo "[nginx] frontend dist missing at ${DIST_DIR} and ${LEGACY_DIST_DIR}, serving reminder page"

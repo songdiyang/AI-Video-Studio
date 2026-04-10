@@ -15,6 +15,7 @@ const fs = require('fs');
 const multer = require('multer');
 const { queryOne, queryAll, execute } = require('../../dbHelper');
 const { getPool } = require('../../db');
+const { getUploadsBase } = require('../../utils/uploadsBase');
 
 // 允许的文件 MIME 类型
 const ALLOWED_MIMETYPES = ['image/png', 'image/jpeg', 'image/webp'];
@@ -30,7 +31,7 @@ const EXTENSION_MAP = {
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
 
 // 获取 uploads 目录的基础路径
-const UPLOADS_BASE = path.join(__dirname, '..', '..', '..', 'uploads');
+const UPLOADS_BASE = getUploadsBase();
 
 // 配置 multer 存储
 const storage = multer.diskStorage({
@@ -500,4 +501,3 @@ module.exports = function(router) {
   // 导出为图片
   router.post('/:id/export', authMiddleware, exportSketch);
 };
-

@@ -229,6 +229,7 @@ nanostory/
 
 - [Async Engine Guide](ASYNC_ENGINE_GUIDE.md) — Task engine architecture and usage
 - [Docker Deployment](docs/docker-deployment.md) — Nginx + Backend + MinIO deployment
+- [Hot Update](docs/hot-update.md) — CI release bundle validation and runtime rollout
 - [Security Policy](SECURITY.md) — Security guidelines and reporting
 
 ## Contributing
@@ -461,6 +462,8 @@ nanostory/
 ## 项目文档
 
 - [异步引擎使用指南](ASYNC_ENGINE_GUIDE.md) — 任务引擎架构与使用方法
+- [Docker 部署](docs/docker-deployment.md) — Nginx + Backend + MinIO 部署方案
+- [热更新](docs/hot-update.md) — CI 产物打包、验签与运行时切换
 - [安全策略](SECURITY.md) — 安全指南与漏洞报告
 
 ## 参与贡献

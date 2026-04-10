@@ -59,6 +59,7 @@ const taskAssignmentRoutes = require('./taskAssignment');
 const { setupWebSocket } = require('./websocket');
 const { errorHandlerMiddleware, initGlobalErrorHandlers } = require('./globalErrorHandler');
 const callbackHandler = require('./nosyntask/callbackHandler');
+const { getUploadsBase } = require('./utils/uploadsBase');
 
 const app = express();
 const http = require('http');
@@ -178,7 +179,7 @@ const clientBuildPath = path.join(__dirname, '..', '..', 'dist');
 app.use(express.static(clientBuildPath));
 
 // Serve uploads directory for sketch files
-const uploadsPath = path.join(__dirname, '..', 'uploads');
+const uploadsPath = getUploadsBase();
 app.use('/uploads', express.static(uploadsPath));
 
 app.get('*', (req, res, next) => {

@@ -12,6 +12,7 @@ const fs = require('fs');
 const multer = require('multer');
 const { queryOne, execute, query } = require('../../dbHelper');
 const { getPool } = require('../../db');
+const { getUploadsBase } = require('../../utils/uploadsBase');
 
 // 最大历史版本数量（超过后删除最旧的）
 const MAX_HISTORY_VERSIONS = 50;
@@ -33,7 +34,7 @@ const EXTENSION_MAP = {
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
 // 获取 uploads 目录的基础路径
-const UPLOADS_BASE = path.join(__dirname, '..', '..', '..', 'uploads');
+const UPLOADS_BASE = getUploadsBase();
 
 // 配置 multer 存储
 const storage = multer.diskStorage({
@@ -659,4 +660,3 @@ module.exports = function(router) {
   router.get('/:storyboardId/sketch/history/:version', authMiddleware, getSketchHistoryVersion);
   router.post('/:storyboardId/sketch/restore/:version', authMiddleware, restoreSketchVersion);
 };
-

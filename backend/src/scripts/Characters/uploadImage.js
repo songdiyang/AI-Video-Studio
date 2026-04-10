@@ -7,11 +7,12 @@ const fs = require('fs');
 const multer = require('multer');
 const { queryOne, execute } = require('../../dbHelper');
 const { authMiddleware } = require('../../middleware');
+const { getUploadsBase } = require('../../utils/uploadsBase');
 
 const ALLOWED_MIMETYPES = ['image/png', 'image/jpeg', 'image/webp'];
 const EXTENSION_MAP = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' };
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
-const UPLOADS_BASE = path.join(__dirname, '..', '..', '..', 'uploads');
+const UPLOADS_BASE = getUploadsBase();
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {

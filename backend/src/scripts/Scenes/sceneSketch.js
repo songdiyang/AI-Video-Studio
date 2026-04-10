@@ -10,6 +10,7 @@ const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
 const { queryOne, execute } = require('../../dbHelper');
+const { getUploadsBase } = require('../../utils/uploadsBase');
 
 // 允许的文件 MIME 类型
 const ALLOWED_MIMETYPES = ['image/png', 'image/jpeg', 'image/webp'];
@@ -25,7 +26,7 @@ const EXTENSION_MAP = {
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
 // 获取 uploads 目录的基础路径
-const UPLOADS_BASE = path.join(__dirname, '..', '..', '..', 'uploads');
+const UPLOADS_BASE = getUploadsBase();
 
 // 配置 multer 存储
 const storage = multer.diskStorage({
@@ -240,4 +241,3 @@ module.exports = function(router) {
   // 获取场景草图
   router.get('/:sceneId/sketch', authMiddleware, getSceneSketch);
 };
-

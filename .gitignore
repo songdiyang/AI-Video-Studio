@@ -5,6 +5,7 @@ backend/node_modules/
 # Build output
 dist/
 build/
+artifacts/
 
 # Environment files
 .env
@@ -33,6 +34,16 @@ Thumbs.db
 
 # Docker persistent data
 docker-data/
+runtime/frontend/current
+runtime/frontend/releases/*
+!runtime/frontend/releases/.gitkeep
+runtime/backend/current
+runtime/backend/releases/*
+!runtime/backend/releases/.gitkeep
+runtime/backend-data/*
+!runtime/backend-data/.gitkeep
+runtime/hot-update/*
+!runtime/hot-update/.gitkeep
 
 
 # Temporary files
