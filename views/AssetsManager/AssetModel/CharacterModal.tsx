@@ -586,7 +586,11 @@ const CharacterModal: React.FC<CharacterModalProps> = ({
                         <img 
                           src={formData.image_url} 
                           alt={formData.name || '角色图片'} 
-                          className="w-full h-48 object-cover rounded-lg border border-slate-700/50 shadow-sm"
+                          className="w-full h-48 object-cover rounded-lg border border-slate-700/50 shadow-sm bg-slate-800/60"
+                          onError={(e) => {
+                            // 图片加载失败时，清空 image_url 显示占位符
+                            setFormData({ ...formData, image_url: '' });
+                          }}
                         />
                         <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all rounded-lg flex items-center justify-center">
                           <Button
@@ -620,7 +624,11 @@ const CharacterModal: React.FC<CharacterModalProps> = ({
                         <img 
                           src={formData.concept_image_url} 
                           alt="概念分解图" 
-                          className="w-full aspect-video object-cover"
+                          className="w-full aspect-video object-cover bg-slate-800/60"
+                          onError={(e) => {
+                            // 图片加载失败时，清空 concept_image_url
+                            setFormData({ ...formData, concept_image_url: '' });
+                          }}
                         />
                         <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all flex items-center justify-center gap-2">
                           <Button
@@ -758,7 +766,14 @@ const CharacterModal: React.FC<CharacterModalProps> = ({
                         <div className="text-center text-xs text-slate-400 py-1 bg-slate-800/80">正面</div>
                         {formData.front_view_url ? (
                           <>
-                            <img src={formData.front_view_url} alt="正面视图" className="w-full aspect-square object-cover" />
+                            <img 
+                              src={formData.front_view_url} 
+                              alt="正面视图" 
+                              className="w-full aspect-square object-cover bg-slate-800/60"
+                              onError={(e) => {
+                                setFormData({ ...formData, front_view_url: '' });
+                              }}
+                            />
                             <div className="absolute inset-0 top-6 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1">
                               <button 
                                 onClick={() => handleDownloadView('front')} 
@@ -792,7 +807,14 @@ const CharacterModal: React.FC<CharacterModalProps> = ({
                         <div className="text-center text-xs text-slate-400 py-1 bg-slate-800/80">侧面</div>
                         {formData.side_view_url ? (
                           <>
-                            <img src={formData.side_view_url} alt="侧面视图" className="w-full aspect-square object-cover" />
+                            <img 
+                              src={formData.side_view_url} 
+                              alt="侧面视图" 
+                              className="w-full aspect-square object-cover bg-slate-800/60"
+                              onError={(e) => {
+                                setFormData({ ...formData, side_view_url: '' });
+                              }}
+                            />
                             <div className="absolute inset-0 top-6 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1">
                               <button 
                                 onClick={() => handleDownloadView('side')} 
@@ -826,7 +848,14 @@ const CharacterModal: React.FC<CharacterModalProps> = ({
                         <div className="text-center text-xs text-slate-400 py-1 bg-slate-800/80">背面</div>
                         {formData.back_view_url ? (
                           <>
-                            <img src={formData.back_view_url} alt="背面视图" className="w-full aspect-square object-cover" />
+                            <img 
+                              src={formData.back_view_url} 
+                              alt="背面视图" 
+                              className="w-full aspect-square object-cover bg-slate-800/60"
+                              onError={(e) => {
+                                setFormData({ ...formData, back_view_url: '' });
+                              }}
+                            />
                             <div className="absolute inset-0 top-6 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1">
                               <button 
                                 onClick={() => handleDownloadView('back')} 
