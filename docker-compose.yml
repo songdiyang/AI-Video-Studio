@@ -179,6 +179,7 @@ services:
     volumes:
       - ./runtime:/app/runtime
       - /var/run/docker.sock:/var/run/docker.sock
+      - /usr/bin/docker:/usr/bin/docker:ro
 
   frontend-dev:
     profiles:

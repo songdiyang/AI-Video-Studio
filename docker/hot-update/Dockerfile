@@ -10,11 +10,7 @@ ENV NODE_ENV=production
 COPY hot_update/package*.json ./
 
 RUN npm config set registry "${NPM_REGISTRY}" \
-  && npm ci --omit=dev \
-  && apt-get update \
-  && apt-get install -y --no-install-recommends docker.io \
-  && apt-get clean \
-  && rm -rf /var/lib/apt/lists/*
+  && npm ci --omit=dev
 
 COPY hot_update/src ./src
 
