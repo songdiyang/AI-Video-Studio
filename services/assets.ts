@@ -562,6 +562,18 @@ export interface GenerateViewsResponse {
   status: 'generating';
 }
 
+export interface GenerateConceptParams {
+  imageModel: string;
+  textModel?: string;
+}
+
+export interface GenerateConceptResponse {
+  message: string;
+  jobId: string;
+  characterId: number;
+  status: 'generating';
+}
+
 export interface GenerationStatusResponse {
   status: 'idle' | 'generating' | 'completed' | 'failed';
   progress?: string;
@@ -587,6 +599,29 @@ export async function generateCharacterViews(
   if (!response.ok) {
     const result = await response.json();
     throw new Error(result.message || '启动三视图生成失败');
+  }
+  return response.json();
+}
+
+/**
+ * 生成角色概念分解图
+ */
+export async function generateConceptBreakdown(
+  characterId: number,
+  params: GenerateConceptParams
+): Promise<GenerateConceptResponse> {
+  const token = getAuthToken();
+  const response = await fetch(`/api/characters/${characterId}/generate-concept`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    },
+    body: JSON.stringify(params)
+  });
+  if (!response.ok) {
+    const result = await response.json();
+    throw new Error(result.message || '启动概念分解图生成失败');
   }
   return response.json();
 }

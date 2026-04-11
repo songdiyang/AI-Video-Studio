@@ -243,7 +243,7 @@ const enUS: Translations = {
     namePlaceholder: 'Enter project name',
     descLabel: 'Project Description',
     descPlaceholder: 'Describe your project...',
-    coverLabel: 'Cover Image URL',
+    coverLabel: 'Cover Image',
     coverPlaceholder: 'Image URL (optional)',
     aiGenerateCover: 'AI Generate Cover',
     aiGeneratingCover: 'Generating Cover...',

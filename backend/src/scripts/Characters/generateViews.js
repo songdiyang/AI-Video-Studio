@@ -29,6 +29,44 @@ module.exports = (router) => {
     }
   });
 
+  // POST /:id/generate-concept - 生成角色概念分解图
+  router.post('/:id/generate-concept', authMiddleware, async (req, res) => {
+    const userId = req.user.id;
+    const characterId = Number(req.params.id);
+
+    try {
+      // 查询角色现有的三视图 URL，作为参考传入
+      const character = await queryOne(
+        'SELECT front_view_url, side_view_url, back_view_url FROM characters WHERE id = ? AND user_id = ?',
+        [characterId, userId]
+      );
+      if (!character) {
+        return res.status(404).json({ message: '角色不存在' });
+      }
+
+      const result = await generationStartService.start({
+        operationKey: 'character_concept_breakdown',
+        rawInput: {
+          characterId,
+          frontViewUrl: character.front_view_url || null,
+          sideViewUrl: character.side_view_url || null,
+          backViewUrl: character.back_view_url || null,
+          ...req.body
+        },
+        actor: { userId }
+      });
+
+      res.json(result.response || {
+        message: '概念分解图生成已启动',
+        jobId: result.jobId,
+        characterId,
+        status: 'generating'
+      });
+    } catch (error) {
+      sendGenerationError(res, error, '生成概念分解图失败', '[Generate Concept Breakdown]');
+    }
+  });
+
   // DELETE /:id/views/:viewType - 删除单个视图
   router.delete('/:id/views/:viewType', authMiddleware, async (req, res) => {
     const userId = req.user.id;

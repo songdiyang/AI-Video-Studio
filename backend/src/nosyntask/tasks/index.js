@@ -31,6 +31,7 @@ const handleSketchPreprocess = require('./StoryBoard/sketchPreprocess');
 const handleSketchToImage = require('./StoryBoard/sketchToImage');
 const handleBatchSketchFrameGeneration = require('./StoryBoard/batchSketchFrameGeneration');
 const { handlePropPromptGeneration, handlePropImageGeneration } = require('./StoryBoard/propGeneration');
+const handleConceptBreakdownGeneration = require('./StoryBoard/conceptBreakdownGeneration');
 
 module.exports = {
   handleScriptGeneration,
@@ -61,5 +62,6 @@ module.exports = {
   handleSketchToImage,
   handleBatchSketchFrameGeneration,
   handlePropPromptGeneration,
-  handlePropImageGeneration
+  handlePropImageGeneration,
+  handleConceptBreakdownGeneration
 };

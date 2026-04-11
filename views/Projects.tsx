@@ -769,12 +769,12 @@ const Projects: React.FC = () => {
         <Modal
           isOpen={isOpen}
           onOpenChange={onOpenChange}
-          size="lg"
+          size="2xl"
           classNames={{
             backdrop: 'bg-black/60 backdrop-blur-sm',
             base: 'bg-(--bg-elevated) border border-(--border-color) shadow-2xl',
             header: 'border-b border-(--border-color)',
-            body: 'py-6',
+            body: 'py-4 px-5',
             footer: 'border-t border-(--border-color)',
             closeButton: 'text-(--text-secondary) hover:text-(--text-primary) hover:bg-white/10'
           }}
@@ -783,470 +783,485 @@ const Projects: React.FC = () => {
             {(onClose) => (
               <>
                 <ModalHeader className="text-(--text-primary) font-bold">
-                  {editMode ? t.projects.editTitle : t.projects.createTitle}
+                  {editMode ? `${formData.name || t.projects.editTitle} - 设置` : t.projects.createTitle}
                 </ModalHeader>
-                <ModalBody className="space-y-4">
-                  <Input
-                    label={t.projects.nameLabel}
-                    placeholder={t.projects.namePlaceholder}
-                    value={formData.name}
-                    onValueChange={(val) => setFormData({ ...formData, name: val })}
-                    classNames={{
-                      input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted)",
-                      label: "text-(--text-secondary) font-medium",
-                      inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 focus-within:border-(--accent)/40"
-                    }}
-                  />
-                  
-                  <Textarea
-                    label={t.projects.descLabel}
-                    placeholder={t.projects.descPlaceholder}
-                    value={formData.description}
-                    onValueChange={(val) => setFormData({ ...formData, description: val })}
-                    minRows={3}
-                    classNames={{
-                      input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted)",
-                      label: "text-(--text-secondary) font-medium",
-                      inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 focus-within:border-(--accent)/40"
-                    }}
-                  />
-
-                  {/* AI 智能推荐按钮 */}
-                  <Button
-                    className="w-full bg-linear-to-r from-violet-500/20 to-purple-500/20 border border-violet-500/30 text-violet-600 dark:text-violet-300 font-medium hover:from-violet-500/30 hover:to-purple-500/30 transition-all cursor-pointer"
-                    startContent={aiSuggesting ? <Spinner size="sm" color="secondary" /> : <Sparkles className="w-4 h-4" />}
-                    onPress={handleAiSuggest}
-                    isDisabled={aiSuggesting}
-                  >
-                    {aiSuggesting ? t.projects.aiSuggesting : t.projects.aiSuggestBtn}
-                  </Button>
-
-                  {/* 团队选择器 */}
-                  {!editMode && userTeams.length > 0 && (
-                    <div>
-                      <label className="text-sm text-(--text-secondary) font-medium mb-2 block">所属团队</label>
-                      <select
-                        value={selectedTeamId}
-                        onChange={(e) => setSelectedTeamId(e.target.value ? Number(e.target.value) : '')}
-                        className="w-full px-3 py-2 rounded-lg bg-(--bg-input) border border-(--border-color) text-(--text-primary) focus:outline-none focus:border-(--accent)/40"
-                      >
-                        <option value="">个人项目</option>
-                        {userTeams.map(team => (
-                          <option key={team.id} value={team.id}>
-                            {team.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-
-                  {/* 工程状态 */}
-                  <div>
-                    <label className="text-sm text-(--text-secondary) font-medium mb-2 block">{t.projects.statusLabel}</label>
-                    <div className="flex gap-2">
-                      {(['draft', 'in_progress', 'completed'] as const).map((status) => (
-                        <button
-                          key={status}
-                          onClick={() => setFormData({ ...formData, status })}
-                          className={`px-4 py-2 rounded-lg border transition-all cursor-pointer ${
-                            formData.status === status
-                              ? getStatusColor(status)
-                              : 'border-(--border-color) bg-(--bg-input) text-(--text-muted) hover:border-(--border-color)'
-                          }`}
-                        >
-                          {getStatusText(status)}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* 封面图片 */}
-                  <div>
-                    <label className="text-sm text-(--text-secondary) font-medium mb-2 block">{t.projects.coverLabel}</label>
-                    <div className="flex gap-2">
-                      <input
-                        ref={coverInputRef}
-                        type="file"
-                        accept="image/png,image/jpeg,image/webp"
-                        className="hidden"
-                        onChange={handleUploadCover}
-                      />
-                      <Button
-                        className="flex-1 bg-(--bg-input) border border-(--border-color) text-(--text-secondary) hover:border-(--accent)/30 hover:bg-(--accent)/5 font-medium transition-all cursor-pointer"
-                        startContent={coverUploading ? <Spinner size="sm" /> : <Upload className="w-4 h-4" />}
-                        onPress={() => coverInputRef.current?.click()}
-                        isDisabled={coverUploading}
-                      >
-                        {coverUploading ? '上传中...' : '上传封面图片'}
-                      </Button>
-                      <Button
-                        className="flex-1 bg-linear-to-r from-violet-500/20 to-pink-500/20 border border-violet-500/30 text-violet-600 dark:text-violet-300 font-medium hover:from-violet-500/30 hover:to-pink-500/30 transition-all cursor-pointer"
-                        startContent={coverGenerating ? <Spinner size="sm" color="secondary" /> : <ImagePlus className="w-4 h-4" />}
-                        onPress={handleGenerateCover}
-                        isDisabled={coverGenerating}
-                      >
-                        {coverGenerating ? t.projects.aiGeneratingCover : t.projects.aiGenerateCover}
-                      </Button>
-                    </div>
-                    {formData.cover_url && (
-                      <div className="mt-2 rounded-lg overflow-hidden border border-(--border-color) bg-(--bg-input) relative group">
-                        <img
-                          src={formData.cover_url}
-                          alt="cover preview"
-                          className="w-full h-40 object-cover"
-                          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                <ModalBody>
+                  <div className="flex gap-5 min-h-0">
+                    {/* 左栏 - 封面与视觉风格（约38.2%黄金比例） */}
+                    <div className="w-[38.2%] shrink-0 flex flex-col gap-4">
+                      {/* 封面图片 */}
+                      <div>
+                        <label className="text-sm text-(--text-secondary) font-medium mb-2 block">{t.projects.coverLabel}</label>
+                        {formData.cover_url ? (
+                          <div className="rounded-xl overflow-hidden border border-(--border-color) bg-(--bg-input) relative group aspect-[16/10]">
+                            <img
+                              src={formData.cover_url}
+                              alt="cover preview"
+                              className="w-full h-full object-cover"
+                              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                            />
+                            <button
+                              onClick={() => setFormData(prev => ({ ...prev, cover_url: '' }))}
+                              className="absolute top-2 right-2 w-6 h-6 rounded-full bg-black/50 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer text-xs"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="rounded-xl border border-dashed border-(--border-color) bg-(--bg-input)/50 flex items-center justify-center aspect-[16/10]">
+                            <div className="text-center text-(--text-muted)">
+                              <ImagePlus className="w-8 h-8 mx-auto mb-1 opacity-40" />
+                              <p className="text-xs">暂无封面</p>
+                            </div>
+                          </div>
+                        )}
+                        <input
+                          ref={coverInputRef}
+                          type="file"
+                          accept="image/png,image/jpeg,image/webp"
+                          className="hidden"
+                          onChange={handleUploadCover}
                         />
-                        <button
-                          onClick={() => setFormData(prev => ({ ...prev, cover_url: '' }))}
-                          className="absolute top-2 right-2 w-6 h-6 rounded-full bg-black/50 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer text-xs"
-                        >
-                          ×
-                        </button>
+                        <div className="flex gap-2 mt-2">
+                          <Button
+                            className="flex-1 bg-(--bg-input) border border-(--border-color) text-(--text-secondary) hover:border-(--accent)/30 hover:bg-(--accent)/5 font-medium transition-all cursor-pointer text-sm h-9"
+                            startContent={coverUploading ? <Spinner size="sm" /> : <Upload className="w-3.5 h-3.5" />}
+                            onPress={() => coverInputRef.current?.click()}
+                            isDisabled={coverUploading}
+                          >
+                            {coverUploading ? '上传中...' : '上传图片'}
+                          </Button>
+                          <Button
+                            className="flex-1 bg-linear-to-r from-violet-500/20 to-pink-500/20 border border-violet-500/30 text-violet-600 dark:text-violet-300 font-medium hover:from-violet-500/30 hover:to-pink-500/30 transition-all cursor-pointer text-sm h-9"
+                            startContent={coverGenerating ? <Spinner size="sm" color="secondary" /> : <Sparkles className="w-3.5 h-3.5" />}
+                            onPress={handleGenerateCover}
+                            isDisabled={coverGenerating}
+                          >
+                            {coverGenerating ? t.projects.aiGeneratingCover : 'AI生成'}
+                          </Button>
+                        </div>
                       </div>
-                    )}
+
+                      {/* 视觉风格选择 - 小说类型不需要 */}
+                      {editProjectType !== 'novel' && (
+                      <div>
+                        <label className="text-sm text-(--text-secondary) font-medium mb-2 flex items-center gap-1.5">
+                          <Palette className="w-4 h-4 text-(--accent)" />
+                          {t.projects.visualStyleLabel}
+                          <span className="text-xs text-(--text-muted) font-normal">{t.projects.visualStyleHint}</span>
+                        </label>
+                        <div className="grid grid-cols-2 gap-1.5">
+                          {Object.entries(VISUAL_STYLE_PRESETS).map(([styleKey, { labelKey }]) => (
+                            <button
+                              key={styleKey}
+                              onClick={() => handleSelectVisualStyle(styleKey)}
+                              className={`px-2 py-1.5 rounded-lg border text-xs font-medium transition-all cursor-pointer ${
+                                formData.visualStyle === styleKey
+                                  ? 'bg-(--accent)/15 border-(--accent)/40 text-(--accent) shadow-[0_0_10px_var(--accent-glow)]'
+                                  : 'border-(--border-color) bg-(--bg-input) text-(--text-secondary) hover:border-(--accent)/30 hover:bg-(--accent)/5'
+                              }`}
+                            >
+                              {t.projects.presets[labelKey]}
+                            </button>
+                          ))}
+                        </div>
+                        {formData.visualStyle && (
+                          <p className="text-xs text-(--text-muted) mt-1.5 truncate" title={formData.visualStylePrompt}>
+                            Prompt: {formData.visualStylePrompt}
+                          </p>
+                        )}
+                        <Input
+                          id="visual-style-custom-input"
+                          size="sm"
+                          placeholder={t.projects.visualStylePromptPlaceholder}
+                          value={formData.visualStylePrompt}
+                          onValueChange={(val) => setFormData({ ...formData, visualStylePrompt: val })}
+                          className="mt-1.5"
+                          classNames={{
+                            input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted) text-xs",
+                            inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 h-8 min-h-8"
+                          }}
+                        />
+                      </div>
+                      )}
+                    </div>
+
+                    {/* 右栏 - 项目设置（约61.8%黄金比例） */}
+                    <div className="flex-1 flex flex-col gap-3.5 overflow-y-auto max-h-[70vh] pr-1">
+                      <Input
+                        label={t.projects.nameLabel}
+                        placeholder={t.projects.namePlaceholder}
+                        value={formData.name}
+                        onValueChange={(val) => setFormData({ ...formData, name: val })}
+                        classNames={{
+                          input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted)",
+                          label: "text-(--text-secondary) font-medium",
+                          inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 focus-within:border-(--accent)/40"
+                        }}
+                      />
+                      
+                      <Textarea
+                        label={t.projects.descLabel}
+                        placeholder={t.projects.descPlaceholder}
+                        value={formData.description}
+                        onValueChange={(val) => setFormData({ ...formData, description: val })}
+                        minRows={2}
+                        classNames={{
+                          input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted)",
+                          label: "text-(--text-secondary) font-medium",
+                          inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 focus-within:border-(--accent)/40"
+                        }}
+                      />
+
+                      {/* AI 智能推荐按钮 */}
+                      <Button
+                        className="w-full bg-linear-to-r from-violet-500/20 to-purple-500/20 border border-violet-500/30 text-violet-600 dark:text-violet-300 font-medium hover:from-violet-500/30 hover:to-purple-500/30 transition-all cursor-pointer text-sm h-9"
+                        startContent={aiSuggesting ? <Spinner size="sm" color="secondary" /> : <Sparkles className="w-3.5 h-3.5" />}
+                        onPress={handleAiSuggest}
+                        isDisabled={aiSuggesting}
+                      >
+                        {aiSuggesting ? t.projects.aiSuggesting : t.projects.aiSuggestBtn}
+                      </Button>
+
+                      {/* 团队选择器 */}
+                      {!editMode && userTeams.length > 0 && (
+                        <div>
+                          <label className="text-sm text-(--text-secondary) font-medium mb-2 block">所属团队</label>
+                          <select
+                            value={selectedTeamId}
+                            onChange={(e) => setSelectedTeamId(e.target.value ? Number(e.target.value) : '')}
+                            className="w-full px-3 py-2 rounded-lg bg-(--bg-input) border border-(--border-color) text-(--text-primary) focus:outline-none focus:border-(--accent)/40"
+                          >
+                            <option value="">个人项目</option>
+                            {userTeams.map(team => (
+                              <option key={team.id} value={team.id}>
+                                {team.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+
+                      {/* 工程状态 */}
+                      <div>
+                        <label className="text-sm text-(--text-secondary) font-medium mb-2 block">{t.projects.statusLabel}</label>
+                        <div className="flex gap-2">
+                          {(['draft', 'in_progress', 'completed'] as const).map((status) => (
+                            <button
+                              key={status}
+                              onClick={() => setFormData({ ...formData, status })}
+                              className={`px-4 py-2 rounded-lg border transition-all cursor-pointer ${
+                                formData.status === status
+                                  ? getStatusColor(status)
+                                  : 'border-(--border-color) bg-(--bg-input) text-(--text-muted) hover:border-(--border-color)'
+                              }`}
+                            >
+                              {getStatusText(status)}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* AI 输出语言选择 */}
+                      <div>
+                        <label className="text-sm text-(--text-secondary) font-medium mb-2 flex items-center gap-1.5">
+                          <Globe className="w-4 h-4 text-(--accent)" />
+                          {t.projects.outputLanguageLabel}
+                          <span className="text-xs text-(--text-muted) font-normal">{t.projects.outputLanguageHint}</span>
+                        </label>
+                        <div className="grid grid-cols-4 gap-1.5">
+                          {Object.entries(t.projects.outputLanguages).map(([code, name]) => (
+                            <button
+                              key={code}
+                              onClick={() => setFormData({ ...formData, outputLanguage: code })}
+                              className={`px-2 py-1.5 rounded-lg border text-xs font-medium transition-all cursor-pointer ${
+                                formData.outputLanguage === code
+                                  ? 'bg-(--accent)/15 border-(--accent)/40 text-(--accent) shadow-[0_0_10px_var(--accent-glow)]'
+                                  : 'border-(--border-color) bg-(--bg-input) text-(--text-secondary) hover:border-(--accent)/30 hover:bg-(--accent)/5'
+                              }`}
+                            >
+                              {name}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* ====== 漫剧专属字段 ====== */}
+                      {(editProjectType === 'comic_drama') && (
+                      <>
+                      <div className="grid grid-cols-2 gap-3">
+                        <Input
+                          label={t.projects.storyStyleLabel}
+                          placeholder={t.projects.storyStylePlaceholder}
+                          value={formData.storyStyle}
+                          onValueChange={(val) => setFormData({ ...formData, storyStyle: val })}
+                          classNames={{
+                            input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted)",
+                            label: "text-(--text-secondary) font-medium",
+                            inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 focus-within:border-(--accent)/40"
+                          }}
+                        />
+                        <Input
+                          label={t.projects.storyConstraintsLabel}
+                          placeholder={t.projects.storyConstraintsPlaceholder}
+                          value={formData.storyConstraints}
+                          onValueChange={(val) => setFormData({ ...formData, storyConstraints: val })}
+                          classNames={{
+                            input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted)",
+                            label: "text-(--text-secondary) font-medium",
+                            inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 focus-within:border-(--accent)/40"
+                          }}
+                        />
+                      </div>
+
+                      {/* 画面参数设置 */}
+                      <div className="space-y-2.5 p-3 rounded-lg border border-(--border-color) bg-(--bg-input)/50">
+                        <p className="text-sm font-medium text-(--text-secondary)">画面参数（项目级锁定，分镜制作中不可更改）</p>
+                        <div>
+                          <label className="text-xs text-(--text-muted) mb-1.5 block">图片画面比例</label>
+                          <div className="flex flex-wrap gap-1.5">
+                            {['1:1', '16:9', '9:16', '4:3', '3:4', '21:9'].map((ratio) => (
+                              <button
+                                key={ratio}
+                                onClick={() => setFormData({ ...formData, imageAspectRatio: formData.imageAspectRatio === ratio ? '' : ratio })}
+                                className={`px-3 py-1 rounded-md border text-xs transition-all cursor-pointer ${
+                                  formData.imageAspectRatio === ratio
+                                    ? 'bg-(--accent)/15 border-(--accent)/40 text-(--accent) shadow-[0_0_8px_var(--accent-glow)]'
+                                    : 'border-(--border-color) bg-(--bg-input) text-(--text-muted) hover:border-(--accent)/30'
+                                }`}
+                              >
+                                {ratio}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <div>
+                          <label className="text-xs text-(--text-muted) mb-1.5 block">图片分辨率</label>
+                          <div className="flex flex-wrap gap-1.5">
+                            {['720p', '1080p', '2K', '4K'].map((res) => (
+                              <button
+                                key={res}
+                                onClick={() => setFormData({ ...formData, imageResolution: formData.imageResolution === res ? '' : res })}
+                                className={`px-3 py-1 rounded-md border text-xs transition-all cursor-pointer ${
+                                  formData.imageResolution === res
+                                    ? 'bg-(--accent)/15 border-(--accent)/40 text-(--accent) shadow-[0_0_8px_var(--accent-glow)]'
+                                    : 'border-(--border-color) bg-(--bg-input) text-(--text-muted) hover:border-(--accent)/30'
+                                }`}
+                              >
+                                {res}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <div>
+                          <label className="text-xs text-(--text-muted) mb-1.5 block">视频画面比例</label>
+                          <div className="flex flex-wrap gap-1.5">
+                            {['16:9', '9:16', '1:1'].map((ratio) => (
+                              <button
+                                key={ratio}
+                                onClick={() => setFormData({ ...formData, videoAspectRatio: formData.videoAspectRatio === ratio ? '' : ratio })}
+                                className={`px-3 py-1 rounded-md border text-xs transition-all cursor-pointer ${
+                                  formData.videoAspectRatio === ratio
+                                    ? 'bg-(--accent)/15 border-(--accent)/40 text-(--accent) shadow-[0_0_8px_var(--accent-glow)]'
+                                    : 'border-(--border-color) bg-(--bg-input) text-(--text-muted) hover:border-(--accent)/30'
+                                }`}
+                              >
+                                {ratio}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <div>
+                          <label className="text-xs text-(--text-muted) mb-1.5 block">视频分辨率</label>
+                          <div className="flex flex-wrap gap-1.5">
+                            {['480p', '720p', '1080p'].map((res) => (
+                              <button
+                                key={res}
+                                onClick={() => setFormData({ ...formData, videoResolution: formData.videoResolution === res ? '' : res })}
+                                className={`px-3 py-1 rounded-md border text-xs transition-all cursor-pointer ${
+                                  formData.videoResolution === res
+                                    ? 'bg-(--accent)/15 border-(--accent)/40 text-(--accent) shadow-[0_0_8px_var(--accent-glow)]'
+                                    : 'border-(--border-color) bg-(--bg-input) text-(--text-muted) hover:border-(--accent)/30'
+                                }`}
+                              >
+                                {res}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                      </>
+                      )}
+
+                      {/* ====== 漫画专属字段 ====== */}
+                      {(editProjectType === 'manga') && (
+                      <>
+                        <div>
+                          <label className="text-sm text-(--text-secondary) font-medium mb-2 block">{t.projects.mangaLayoutLabel}</label>
+                          <div className="flex gap-2">
+                            {([['page', t.projects.mangaLayoutPage], ['strip', t.projects.mangaLayoutStrip], ['free', t.projects.mangaLayoutFree]] as const).map(([key, label]) => (
+                              <button
+                                key={key}
+                                onClick={() => setFormData({ ...formData, mangaLayout: formData.mangaLayout === key ? '' : key as any })}
+                                className={`px-4 py-2 rounded-lg border transition-all cursor-pointer ${
+                                  formData.mangaLayout === key
+                                    ? 'bg-(--accent)/15 border-(--accent)/40 text-(--accent) shadow-[0_0_10px_var(--accent-glow)]'
+                                    : 'border-(--border-color) bg-(--bg-input) text-(--text-muted) hover:border-(--accent)/30'
+                                }`}
+                              >
+                                {label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <Input
+                            label={t.projects.mangaPanelStyleLabel}
+                            placeholder={t.projects.mangaPanelStylePlaceholder}
+                            value={formData.mangaPanelStyle}
+                            onValueChange={(val) => setFormData({ ...formData, mangaPanelStyle: val })}
+                            classNames={{
+                              input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted)",
+                              label: "text-(--text-secondary) font-medium",
+                              inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 focus-within:border-(--accent)/40"
+                            }}
+                          />
+                          <Input
+                            label={t.projects.storyStyleLabel}
+                            placeholder={t.projects.storyStylePlaceholder}
+                            value={formData.storyStyle}
+                            onValueChange={(val) => setFormData({ ...formData, storyStyle: val })}
+                            classNames={{
+                              input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted)",
+                              label: "text-(--text-secondary) font-medium",
+                              inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 focus-within:border-(--accent)/40"
+                            }}
+                          />
+                        </div>
+                      </>
+                      )}
+
+                      {/* ====== 短视频专属字段 ====== */}
+                      {(editProjectType === 'short_video') && (
+                      <>
+                        <div>
+                          <label className="text-sm text-(--text-secondary) font-medium mb-2 block">{t.projects.videoDurationLabel}</label>
+                          <div className="flex gap-2">
+                            {([['15', t.projects.videoDuration15], ['30', t.projects.videoDuration30], ['60', t.projects.videoDuration60], ['180', t.projects.videoDuration180]] as const).map(([key, label]) => (
+                              <button
+                                key={key}
+                                onClick={() => setFormData({ ...formData, videoDuration: formData.videoDuration === key ? '' : key as any })}
+                                className={`px-4 py-2 rounded-lg border transition-all cursor-pointer ${
+                                  formData.videoDuration === key
+                                    ? 'bg-(--accent)/15 border-(--accent)/40 text-(--accent) shadow-[0_0_10px_var(--accent-glow)]'
+                                    : 'border-(--border-color) bg-(--bg-input) text-(--text-muted) hover:border-(--accent)/30'
+                                }`}
+                              >
+                                {label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <div>
+                          <label className="text-sm text-(--text-secondary) font-medium mb-2 block">{t.projects.videoAspectLabel}</label>
+                          <div className="flex gap-2">
+                            {([['9:16', t.projects.videoAspect916], ['16:9', t.projects.videoAspect169], ['1:1', t.projects.videoAspect11]] as const).map(([key, label]) => (
+                              <button
+                                key={key}
+                                onClick={() => setFormData({ ...formData, videoAspect: formData.videoAspect === key ? '' : key as any })}
+                                className={`px-4 py-2 rounded-lg border transition-all cursor-pointer ${
+                                  formData.videoAspect === key
+                                    ? 'bg-(--accent)/15 border-(--accent)/40 text-(--accent) shadow-[0_0_10px_var(--accent-glow)]'
+                                    : 'border-(--border-color) bg-(--bg-input) text-(--text-muted) hover:border-(--accent)/30'
+                                }`}
+                              >
+                                {label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <Input
+                            label={t.projects.videoStyleLabel}
+                            placeholder={t.projects.videoStylePlaceholder}
+                            value={formData.videoStyle}
+                            onValueChange={(val) => setFormData({ ...formData, videoStyle: val })}
+                            classNames={{
+                              input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted)",
+                              label: "text-(--text-secondary) font-medium",
+                              inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 focus-within:border-(--accent)/40"
+                            }}
+                          />
+                          <Input
+                            label={t.projects.storyStyleLabel}
+                            placeholder={t.projects.storyStylePlaceholder}
+                            value={formData.storyStyle}
+                            onValueChange={(val) => setFormData({ ...formData, storyStyle: val })}
+                            classNames={{
+                              input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted)",
+                              label: "text-(--text-secondary) font-medium",
+                              inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 focus-within:border-(--accent)/40"
+                            }}
+                          />
+                        </div>
+                      </>
+                      )}
+
+                      {/* ====== 小说专属字段 ====== */}
+                      {(editProjectType === 'novel') && (
+                      <>
+                        <div className="grid grid-cols-2 gap-3">
+                          <Input
+                            label={t.projects.novelGenreLabel}
+                            placeholder={t.projects.novelGenrePlaceholder}
+                            value={formData.novelGenre}
+                            onValueChange={(val) => setFormData({ ...formData, novelGenre: val })}
+                            classNames={{
+                              input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted)",
+                              label: "text-(--text-secondary) font-medium",
+                              inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 focus-within:border-(--accent)/40"
+                            }}
+                          />
+                          <Input
+                            label={t.projects.novelWritingStyleLabel}
+                            placeholder={t.projects.novelWritingStylePlaceholder}
+                            value={formData.novelWritingStyle}
+                            onValueChange={(val) => setFormData({ ...formData, novelWritingStyle: val })}
+                            classNames={{
+                              input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted)",
+                              label: "text-(--text-secondary) font-medium",
+                              inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 focus-within:border-(--accent)/40"
+                            }}
+                          />
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <Input
+                            label={t.projects.novelChapterLengthLabel}
+                            placeholder={t.projects.novelChapterLengthPlaceholder}
+                            value={formData.novelChapterLength}
+                            onValueChange={(val) => setFormData({ ...formData, novelChapterLength: val })}
+                            classNames={{
+                              input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted)",
+                              label: "text-(--text-secondary) font-medium",
+                              inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 focus-within:border-(--accent)/40"
+                            }}
+                          />
+                          <Input
+                            label={t.projects.novelTargetLabel}
+                            placeholder={t.projects.novelTargetPlaceholder}
+                            value={formData.novelTarget}
+                            onValueChange={(val) => setFormData({ ...formData, novelTarget: val })}
+                            classNames={{
+                              input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted)",
+                              label: "text-(--text-secondary) font-medium",
+                              inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 focus-within:border-(--accent)/40"
+                            }}
+                          />
+                        </div>
+                      </>
+                      )}
+                    </div>
                   </div>
-
-                  {/* 视觉风格选择 - 小说类型不需要 */}
-                  {editProjectType !== 'novel' && (
-                  <div>
-                    <label className="text-sm text-(--text-secondary) font-medium mb-2 flex items-center gap-1.5">
-                      <Palette className="w-4 h-4 text-(--accent)" />
-                      {t.projects.visualStyleLabel}
-                      <span className="text-xs text-(--text-muted) font-normal">{t.projects.visualStyleHint}</span>
-                    </label>
-                    <div className="grid grid-cols-4 gap-2 mt-2">
-                      {Object.entries(VISUAL_STYLE_PRESETS).map(([styleKey, { labelKey }]) => (
-                        <button
-                          key={styleKey}
-                          onClick={() => handleSelectVisualStyle(styleKey)}
-                          className={`px-3 py-2 rounded-lg border text-xs font-medium transition-all cursor-pointer ${
-                            formData.visualStyle === styleKey
-                              ? 'bg-(--accent)/15 border-(--accent)/40 text-(--accent) shadow-[0_0_10px_var(--accent-glow)]'
-                              : 'border-(--border-color) bg-(--bg-input) text-(--text-secondary) hover:border-(--accent)/30 hover:bg-(--accent)/5'
-                          }`}
-                        >
-                          {t.projects.presets[labelKey]}
-                        </button>
-                      ))}
-                    </div>
-                    {formData.visualStyle && (
-                      <p className="text-xs text-(--text-muted) mt-1.5 truncate" title={formData.visualStylePrompt}>
-                        Prompt: {formData.visualStylePrompt}
-                      </p>
-                    )}
-                    <Input
-                      id="visual-style-custom-input"
-                      size="sm"
-                      placeholder={t.projects.visualStylePromptPlaceholder}
-                      value={formData.visualStylePrompt}
-                      onValueChange={(val) => setFormData({ ...formData, visualStylePrompt: val })}
-                      className="mt-2"
-                      classNames={{
-                        input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted) text-xs",
-                        inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 h-8 min-h-8"
-                      }}
-                    />
-                  </div>
-                  )}
-
-                  {/* AI 输出语言选择 - 所有类型通用 */}
-                  <div>
-                    <label className="text-sm text-(--text-secondary) font-medium mb-2 flex items-center gap-1.5">
-                      <Globe className="w-4 h-4 text-(--accent)" />
-                      {t.projects.outputLanguageLabel}
-                      <span className="text-xs text-(--text-muted) font-normal">{t.projects.outputLanguageHint}</span>
-                    </label>
-                    <div className="grid grid-cols-4 gap-2 mt-2">
-                      {Object.entries(t.projects.outputLanguages).map(([code, name]) => (
-                        <button
-                          key={code}
-                          onClick={() => setFormData({ ...formData, outputLanguage: code })}
-                          className={`px-3 py-2 rounded-lg border text-xs font-medium transition-all cursor-pointer ${
-                            formData.outputLanguage === code
-                              ? 'bg-(--accent)/15 border-(--accent)/40 text-(--accent) shadow-[0_0_10px_var(--accent-glow)]'
-                              : 'border-(--border-color) bg-(--bg-input) text-(--text-muted) hover:border-(--accent)/30 hover:bg-(--accent)/5'
-                          }`}
-                        >
-                          {name}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* ====== 漫剧专属字段 ====== */}
-                  {(editProjectType === 'comic_drama') && (
-                  <>
-                  <div className="grid grid-cols-2 gap-3">
-                    <Input
-                      label={t.projects.storyStyleLabel}
-                      placeholder={t.projects.storyStylePlaceholder}
-                      value={formData.storyStyle}
-                      onValueChange={(val) => setFormData({ ...formData, storyStyle: val })}
-                      classNames={{
-                        input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted)",
-                        label: "text-(--text-secondary) font-medium",
-                        inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 focus-within:border-(--accent)/40"
-                      }}
-                    />
-                    <Input
-                      label={t.projects.storyConstraintsLabel}
-                      placeholder={t.projects.storyConstraintsPlaceholder}
-                      value={formData.storyConstraints}
-                      onValueChange={(val) => setFormData({ ...formData, storyConstraints: val })}
-                      classNames={{
-                        input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted)",
-                        label: "text-(--text-secondary) font-medium",
-                        inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 focus-within:border-(--accent)/40"
-                      }}
-                    />
-                  </div>
-
-                  {/* 画面参数设置 */}
-                  <div className="space-y-3 p-3 rounded-lg border border-(--border-color) bg-(--bg-input)/50">
-                    <p className="text-sm font-medium text-(--text-secondary)">画面参数（项目级锁定，分镜制作中不可更改）</p>
-                    <div>
-                      <label className="text-xs text-(--text-muted) mb-1.5 block">图片画面比例</label>
-                      <div className="flex flex-wrap gap-1.5">
-                        {['1:1', '16:9', '9:16', '4:3', '3:4', '21:9'].map((ratio) => (
-                          <button
-                            key={ratio}
-                            onClick={() => setFormData({ ...formData, imageAspectRatio: formData.imageAspectRatio === ratio ? '' : ratio })}
-                            className={`px-3 py-1 rounded-md border text-xs transition-all cursor-pointer ${
-                              formData.imageAspectRatio === ratio
-                                ? 'bg-(--accent)/15 border-(--accent)/40 text-(--accent) shadow-[0_0_8px_var(--accent-glow)]'
-                                : 'border-(--border-color) bg-(--bg-input) text-(--text-muted) hover:border-(--accent)/30'
-                            }`}
-                          >
-                            {ratio}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <div>
-                      <label className="text-xs text-(--text-muted) mb-1.5 block">图片分辨率</label>
-                      <div className="flex flex-wrap gap-1.5">
-                        {['720p', '1080p', '2K', '4K'].map((res) => (
-                          <button
-                            key={res}
-                            onClick={() => setFormData({ ...formData, imageResolution: formData.imageResolution === res ? '' : res })}
-                            className={`px-3 py-1 rounded-md border text-xs transition-all cursor-pointer ${
-                              formData.imageResolution === res
-                                ? 'bg-(--accent)/15 border-(--accent)/40 text-(--accent) shadow-[0_0_8px_var(--accent-glow)]'
-                                : 'border-(--border-color) bg-(--bg-input) text-(--text-muted) hover:border-(--accent)/30'
-                            }`}
-                          >
-                            {res}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <div>
-                      <label className="text-xs text-(--text-muted) mb-1.5 block">视频画面比例</label>
-                      <div className="flex flex-wrap gap-1.5">
-                        {['16:9', '9:16', '1:1'].map((ratio) => (
-                          <button
-                            key={ratio}
-                            onClick={() => setFormData({ ...formData, videoAspectRatio: formData.videoAspectRatio === ratio ? '' : ratio })}
-                            className={`px-3 py-1 rounded-md border text-xs transition-all cursor-pointer ${
-                              formData.videoAspectRatio === ratio
-                                ? 'bg-(--accent)/15 border-(--accent)/40 text-(--accent) shadow-[0_0_8px_var(--accent-glow)]'
-                                : 'border-(--border-color) bg-(--bg-input) text-(--text-muted) hover:border-(--accent)/30'
-                            }`}
-                          >
-                            {ratio}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <div>
-                      <label className="text-xs text-(--text-muted) mb-1.5 block">视频分辨率</label>
-                      <div className="flex flex-wrap gap-1.5">
-                        {['480p', '720p', '1080p'].map((res) => (
-                          <button
-                            key={res}
-                            onClick={() => setFormData({ ...formData, videoResolution: formData.videoResolution === res ? '' : res })}
-                            className={`px-3 py-1 rounded-md border text-xs transition-all cursor-pointer ${
-                              formData.videoResolution === res
-                                ? 'bg-(--accent)/15 border-(--accent)/40 text-(--accent) shadow-[0_0_8px_var(--accent-glow)]'
-                                : 'border-(--border-color) bg-(--bg-input) text-(--text-muted) hover:border-(--accent)/30'
-                            }`}
-                          >
-                            {res}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                  </>
-                  )}
-
-                  {/* ====== 漫画专属字段 ====== */}
-                  {(editProjectType === 'manga') && (
-                  <>
-                    <div>
-                      <label className="text-sm text-(--text-secondary) font-medium mb-2 block">{t.projects.mangaLayoutLabel}</label>
-                      <div className="flex gap-2">
-                        {([['page', t.projects.mangaLayoutPage], ['strip', t.projects.mangaLayoutStrip], ['free', t.projects.mangaLayoutFree]] as const).map(([key, label]) => (
-                          <button
-                            key={key}
-                            onClick={() => setFormData({ ...formData, mangaLayout: formData.mangaLayout === key ? '' : key as any })}
-                            className={`px-4 py-2 rounded-lg border transition-all cursor-pointer ${
-                              formData.mangaLayout === key
-                                ? 'bg-(--accent)/15 border-(--accent)/40 text-(--accent) shadow-[0_0_10px_var(--accent-glow)]'
-                                : 'border-(--border-color) bg-(--bg-input) text-(--text-muted) hover:border-(--accent)/30'
-                            }`}
-                          >
-                            {label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <Input
-                        label={t.projects.mangaPanelStyleLabel}
-                        placeholder={t.projects.mangaPanelStylePlaceholder}
-                        value={formData.mangaPanelStyle}
-                        onValueChange={(val) => setFormData({ ...formData, mangaPanelStyle: val })}
-                        classNames={{
-                          input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted)",
-                          label: "text-(--text-secondary) font-medium",
-                          inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 focus-within:border-(--accent)/40"
-                        }}
-                      />
-                      <Input
-                        label={t.projects.storyStyleLabel}
-                        placeholder={t.projects.storyStylePlaceholder}
-                        value={formData.storyStyle}
-                        onValueChange={(val) => setFormData({ ...formData, storyStyle: val })}
-                        classNames={{
-                          input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted)",
-                          label: "text-(--text-secondary) font-medium",
-                          inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 focus-within:border-(--accent)/40"
-                        }}
-                      />
-                    </div>
-                  </>
-                  )}
-
-                  {/* ====== 短视频专属字段 ====== */}
-                  {(editProjectType === 'short_video') && (
-                  <>
-                    <div>
-                      <label className="text-sm text-(--text-secondary) font-medium mb-2 block">{t.projects.videoDurationLabel}</label>
-                      <div className="flex gap-2">
-                        {([['15', t.projects.videoDuration15], ['30', t.projects.videoDuration30], ['60', t.projects.videoDuration60], ['180', t.projects.videoDuration180]] as const).map(([key, label]) => (
-                          <button
-                            key={key}
-                            onClick={() => setFormData({ ...formData, videoDuration: formData.videoDuration === key ? '' : key as any })}
-                            className={`px-4 py-2 rounded-lg border transition-all cursor-pointer ${
-                              formData.videoDuration === key
-                                ? 'bg-(--accent)/15 border-(--accent)/40 text-(--accent) shadow-[0_0_10px_var(--accent-glow)]'
-                                : 'border-(--border-color) bg-(--bg-input) text-(--text-muted) hover:border-(--accent)/30'
-                            }`}
-                          >
-                            {label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <div>
-                      <label className="text-sm text-(--text-secondary) font-medium mb-2 block">{t.projects.videoAspectLabel}</label>
-                      <div className="flex gap-2">
-                        {([['9:16', t.projects.videoAspect916], ['16:9', t.projects.videoAspect169], ['1:1', t.projects.videoAspect11]] as const).map(([key, label]) => (
-                          <button
-                            key={key}
-                            onClick={() => setFormData({ ...formData, videoAspect: formData.videoAspect === key ? '' : key as any })}
-                            className={`px-4 py-2 rounded-lg border transition-all cursor-pointer ${
-                              formData.videoAspect === key
-                                ? 'bg-(--accent)/15 border-(--accent)/40 text-(--accent) shadow-[0_0_10px_var(--accent-glow)]'
-                                : 'border-(--border-color) bg-(--bg-input) text-(--text-muted) hover:border-(--accent)/30'
-                            }`}
-                          >
-                            {label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <Input
-                        label={t.projects.videoStyleLabel}
-                        placeholder={t.projects.videoStylePlaceholder}
-                        value={formData.videoStyle}
-                        onValueChange={(val) => setFormData({ ...formData, videoStyle: val })}
-                        classNames={{
-                          input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted)",
-                          label: "text-(--text-secondary) font-medium",
-                          inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 focus-within:border-(--accent)/40"
-                        }}
-                      />
-                      <Input
-                        label={t.projects.storyStyleLabel}
-                        placeholder={t.projects.storyStylePlaceholder}
-                        value={formData.storyStyle}
-                        onValueChange={(val) => setFormData({ ...formData, storyStyle: val })}
-                        classNames={{
-                          input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted)",
-                          label: "text-(--text-secondary) font-medium",
-                          inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 focus-within:border-(--accent)/40"
-                        }}
-                      />
-                    </div>
-                  </>
-                  )}
-
-                  {/* ====== 小说专属字段 ====== */}
-                  {(editProjectType === 'novel') && (
-                  <>
-                    <div className="grid grid-cols-2 gap-3">
-                      <Input
-                        label={t.projects.novelGenreLabel}
-                        placeholder={t.projects.novelGenrePlaceholder}
-                        value={formData.novelGenre}
-                        onValueChange={(val) => setFormData({ ...formData, novelGenre: val })}
-                        classNames={{
-                          input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted)",
-                          label: "text-(--text-secondary) font-medium",
-                          inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 focus-within:border-(--accent)/40"
-                        }}
-                      />
-                      <Input
-                        label={t.projects.novelWritingStyleLabel}
-                        placeholder={t.projects.novelWritingStylePlaceholder}
-                        value={formData.novelWritingStyle}
-                        onValueChange={(val) => setFormData({ ...formData, novelWritingStyle: val })}
-                        classNames={{
-                          input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted)",
-                          label: "text-(--text-secondary) font-medium",
-                          inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 focus-within:border-(--accent)/40"
-                        }}
-                      />
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <Input
-                        label={t.projects.novelChapterLengthLabel}
-                        placeholder={t.projects.novelChapterLengthPlaceholder}
-                        value={formData.novelChapterLength}
-                        onValueChange={(val) => setFormData({ ...formData, novelChapterLength: val })}
-                        classNames={{
-                          input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted)",
-                          label: "text-(--text-secondary) font-medium",
-                          inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 focus-within:border-(--accent)/40"
-                        }}
-                      />
-                      <Input
-                        label={t.projects.novelTargetLabel}
-                        placeholder={t.projects.novelTargetPlaceholder}
-                        value={formData.novelTarget}
-                        onValueChange={(val) => setFormData({ ...formData, novelTarget: val })}
-                        classNames={{
-                          input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted)",
-                          label: "text-(--text-secondary) font-medium",
-                          inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 focus-within:border-(--accent)/40"
-                        }}
-                      />
-                    </div>
-                  </>
-                  )}
                 </ModalBody>
                 <ModalFooter className="gap-2">
                   <Button variant="flat" onPress={onClose} className="bg-white/5 text-(--text-secondary) font-semibold hover:bg-white/10 border border-white/10 cursor-pointer">

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Button, Input, Textarea, Select, SelectItem, Popover, PopoverTrigger, PopoverContent, Tabs, Tab } from '@heroui/react';
-import { Plus, X, Tag, Download, RefreshCw, Trash2, Image as ImageIcon, User, Layers, FileImage, ExternalLink } from 'lucide-react';
+import { Plus, X, Tag, Download, RefreshCw, Trash2, Image as ImageIcon, User, Layers, Sparkles, Upload } from 'lucide-react';
 import { 
   TagGroup, 
   CharacterTagGroupEntry, 
@@ -9,6 +9,7 @@ import {
   Character,
   CharacterState,
   generateCharacterViews,
+  generateConceptBreakdown,
   getCharacterViewStatus,
   downloadCharacterView,
   downloadAllCharacterViews,
@@ -60,6 +61,9 @@ const CharacterModal: React.FC<CharacterModalProps> = ({
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationError, setGenerationError] = useState<string | null>(null);
   const [localImageModel, setLocalImageModel] = useState(selectedImageModel);
+
+  // 生成类型选择: 'three_view' | 'concept'
+  const [generationType, setGenerationType] = useState<'three_view' | 'concept'>('three_view');
 
   // Tab 状态
   const [activeTab, setActiveTab] = useState<string>('basic');
@@ -143,6 +147,33 @@ const CharacterModal: React.FC<CharacterModalProps> = ({
       setGenerationError(error.message || '启动生成失败');
     }
   }, [formData, localImageModel, selectedTextModel, setFormData, isComplementMode, missingViews]);
+
+  // 生成概念分解图
+  const handleGenerateConcept = useCallback(async () => {
+    if (!formData.id) {
+      setGenerationError('请先保存角色');
+      return;
+    }
+    if (!localImageModel) {
+      setGenerationError('请选择图片模型');
+      return;
+    }
+
+    setIsGenerating(true);
+    setGenerationError(null);
+
+    try {
+      await generateConceptBreakdown(formData.id, {
+        imageModel: localImageModel,
+        textModel: selectedTextModel || undefined
+      });
+      // 更新本地状态以触发轮询
+      setFormData({ ...formData, generation_status: 'generating' });
+    } catch (error: any) {
+      setIsGenerating(false);
+      setGenerationError(error.message || '启动概念分解图生成失败');
+    }
+  }, [formData, localImageModel, selectedTextModel, setFormData]);
 
   // 下载单个视图
   const handleDownloadView = useCallback(async (viewType: 'front' | 'side' | 'back') => {
@@ -578,6 +609,40 @@ const CharacterModal: React.FC<CharacterModalProps> = ({
                     )}
                   </div>
 
+                  {/* 概念分解图预览 */}
+                  {formData.concept_image_url && (
+                    <div>
+                      <label className="text-sm font-medium text-slate-400 mb-2 flex items-center gap-1.5">
+                        <Layers className="w-4 h-4" />
+                        概念分解图
+                      </label>
+                      <div className="relative group rounded-lg overflow-hidden border border-slate-700/50">
+                        <img 
+                          src={formData.concept_image_url} 
+                          alt="概念分解图" 
+                          className="w-full aspect-video object-cover"
+                        />
+                        <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all flex items-center justify-center gap-2">
+                          <Button
+                            size="sm"
+                            className="opacity-0 group-hover:opacity-100 transition-opacity bg-blue-500 text-white"
+                            startContent={<Download className="w-3 h-3" />}
+                            onPress={() => downloadCharacterView(formData.concept_image_url, `${formData.name || '角色'}_概念分解图.png`)}
+                          >
+                            下载
+                          </Button>
+                          <Button
+                            size="sm"
+                            className="opacity-0 group-hover:opacity-100 transition-opacity bg-red-500 text-white"
+                            onPress={() => setFormData({ ...formData, concept_image_url: '' })}
+                          >
+                            删除
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {/* 三视图区域 */}
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
@@ -602,28 +667,71 @@ const CharacterModal: React.FC<CharacterModalProps> = ({
 
                     {/* 模型选择和生成按钮 */}
                     {editMode && formData.id && (
-                      <div className="flex gap-2 items-end">
-                        <div className="flex-1">
-                          <AIModelSelector
-                            label="图片模型"
-                            placeholder="选择图片模型"
-                            models={aiModels}
-                            selectedModel={localImageModel}
-                            onModelChange={setLocalImageModel}
-                            filterType="IMAGE"
-                            size="sm"
-                            isDisabled={isGenerating}
-                          />
+                      <div className="space-y-2">
+                        <AIModelSelector
+                          label="图片模型"
+                          placeholder="选择图片模型"
+                          models={aiModels}
+                          selectedModel={localImageModel}
+                          onModelChange={setLocalImageModel}
+                          filterType="IMAGE"
+                          size="sm"
+                          isDisabled={isGenerating}
+                        />
+                        {/* 生成类型选择 */}
+                        <div className="flex gap-1.5">
+                          <button
+                            onClick={() => setGenerationType('three_view')}
+                            className={`flex-1 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all cursor-pointer ${
+                              generationType === 'three_view'
+                                ? 'bg-indigo-500/20 border-indigo-500/40 text-indigo-400'
+                                : 'border-slate-600/50 bg-slate-800/60 text-slate-400 hover:border-slate-500/50'
+                            }`}
+                          >
+                            <div className="flex items-center justify-center gap-1">
+                              <ImageIcon className="w-3 h-3" />
+                              三视图
+                            </div>
+                          </button>
+                          <button
+                            onClick={() => setGenerationType('concept')}
+                            className={`flex-1 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all cursor-pointer ${
+                              generationType === 'concept'
+                                ? 'bg-purple-500/20 border-purple-500/40 text-purple-400'
+                                : 'border-slate-600/50 bg-slate-800/60 text-slate-400 hover:border-slate-500/50'
+                            }`}
+                          >
+                            <div className="flex items-center justify-center gap-1">
+                              <Layers className="w-3 h-3" />
+                              概念分解图
+                            </div>
+                          </button>
                         </div>
+                        {/* 生成说明 */}
+                        <p className="text-[10px] text-slate-500 px-1">
+                          {generationType === 'three_view'
+                            ? '生成正面、侧面、背面三视图，用于角色一致性参考'
+                            : '生成全景式角色深度概念分解图（16:9），含服装拆解、表情、道具等'}
+                        </p>
                         <Button
                           size="md"
-                          className="bg-indigo-600 hover:bg-indigo-700 text-white shrink-0"
-                          onPress={handleGenerateViews}
+                          className={`w-full text-white shrink-0 ${
+                            generationType === 'concept'
+                              ? 'bg-purple-600 hover:bg-purple-700'
+                              : 'bg-indigo-600 hover:bg-indigo-700'
+                          }`}
+                          onPress={generationType === 'concept' ? handleGenerateConcept : handleGenerateViews}
                           isLoading={isGenerating}
                           isDisabled={isGenerating || !localImageModel}
-                          startContent={!isGenerating && <RefreshCw className="w-4 h-4" />}
+                          startContent={!isGenerating && (generationType === 'concept' ? <Layers className="w-4 h-4" /> : <RefreshCw className="w-4 h-4" />)}
                         >
-                          {isGenerating ? '生成中...' : isComplementMode ? '补全缺失视图' : '一键生成'}
+                          {isGenerating
+                            ? '生成中...'
+                            : generationType === 'concept'
+                              ? '生成概念分解图'
+                              : isComplementMode
+                                ? '补全缺失视图'
+                                : '一键生成三视图'}
                         </Button>
                       </div>
                     )}
@@ -748,53 +856,6 @@ const CharacterModal: React.FC<CharacterModalProps> = ({
                       </div>
                     </div>
 
-                    {/* 角色设定图展示区 */}
-                    {formData.character_sheet_url && (
-                      <div className="space-y-2 mt-2">
-                        <div className="flex items-center justify-between">
-                          <label className="text-sm font-medium text-slate-400 flex items-center gap-1.5">
-                            <FileImage className="w-4 h-4" />
-                            角色设定图
-                          </label>
-                          <div className="flex gap-2">
-                            <Button
-                              size="sm"
-                              variant="flat"
-                              className="bg-blue-500/20 text-blue-400 hover:bg-blue-500/30"
-                              startContent={<ExternalLink className="w-3 h-3" />}
-                              onPress={() => window.open(formData.character_sheet_url, '_blank')}
-                            >
-                              查看大图
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="flat"
-                              className="bg-green-500/20 text-green-400 hover:bg-green-500/30"
-                              startContent={<Download className="w-3 h-3" />}
-                              onPress={() => downloadCharacterView(formData.character_sheet_url, `${formData.name || '角色'}_设定图.png`)}
-                            >
-                              下载
-                            </Button>
-                          </div>
-                        </div>
-                        <div className="relative group border border-slate-700 rounded-lg overflow-hidden bg-slate-800/50">
-                          <img
-                            src={formData.character_sheet_url}
-                            alt="角色设定图"
-                            className="w-full object-contain rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
-                            style={{ maxHeight: '200px' }}
-                            onClick={() => window.open(formData.character_sheet_url, '_blank')}
-                          />
-                        </div>
-                      </div>
-                    )}
-                    {isGenerating && !formData.character_sheet_url && (
-                      <div className="text-xs text-slate-500 text-center mt-2 flex items-center justify-center gap-1.5">
-                        <FileImage className="w-3.5 h-3.5" />
-                        三视图生成完成后将自动合成角色设定图
-                      </div>
-                    )}
-
                     {/* 编辑模式下的提示 */}
                     {!editMode && !hasAnyView && (
                       <p className="text-xs text-slate-500 text-center">
@@ -862,7 +923,7 @@ const CharacterModal: React.FC<CharacterModalProps> = ({
                 取消
               </Button>
               <Button 
-                className="bg-linear-to-r from-blue-500 to-violet-600 text-white font-semibold shadow-lg shadow-blue-500/20"
+                className="bg-gradient-to-r from-blue-500 to-violet-600 text-white font-semibold shadow-lg shadow-blue-500/20"
                 onPress={onSave}
               >
                 保存

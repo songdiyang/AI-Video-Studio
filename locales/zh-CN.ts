@@ -241,7 +241,7 @@ const zhCN = {
     namePlaceholder: '输入工程名称',
     descLabel: '工程描述',
     descPlaceholder: '描述你的工程内容...',
-    coverLabel: '封面图片URL',
+    coverLabel: '封面图片',
     coverPlaceholder: '图片地址（选填）',
     aiGenerateCover: 'AI 生成封面',
     aiGeneratingCover: '封面生成中...',

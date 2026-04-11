@@ -39,7 +39,8 @@ const {
   handleSketchToImage,
   handleBatchSketchFrameGeneration,
   handlePropPromptGeneration,
-  handlePropImageGeneration
+  handlePropImageGeneration,
+  handleConceptBreakdownGeneration
 } = require('./tasks');
 
 // 独立帧生成模块（支持并发）
@@ -538,6 +539,25 @@ const WORKFLOW_DEFINITIONS = {
           'isBaseModel', 'gender',
           { key: 'width', defaultValue: 1920 },
           { key: 'height', defaultValue: 2880 }
+        ])
+      }
+    ]
+  },
+
+  /**
+   * 角色概念分解图生成
+   */
+  character_concept_breakdown: {
+    name: '角色概念分解图生成',
+    steps: [
+      {
+        type: 'character_concept_breakdown',
+        targetType: 'character',
+        handler: handleConceptBreakdownGeneration,
+        buildInput: createBuildInput([
+          'characterId', 'characterName', 'appearance', 'personality',
+          'description', 'style', 'projectId', 'imageModel', 'textModel',
+          'frontViewUrl', 'sideViewUrl', 'backViewUrl'
         ])
       }
     ]

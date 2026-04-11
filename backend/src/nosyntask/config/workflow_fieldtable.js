@@ -259,46 +259,22 @@ module.exports = {
     description: '性格特点描述',
     category: 'character'
   },
-  stateId: {
-    from: 'stateId',
+  frontViewUrl: {
+    from: 'frontViewUrl',
     defaultValue: null,
-    description: '角色状态 ID（状态级别生成时使用）',
+    description: '角色正面视图URL（用于概念分解图参考）',
     category: 'character'
   },
-  outfit: {
-    from: 'outfit',
-    defaultValue: '',
-    description: '服装描述（状态级别）',
+  sideViewUrl: {
+    from: 'sideViewUrl',
+    defaultValue: null,
+    description: '角色侧面视图URL（用于概念分解图参考）',
     category: 'character'
   },
-  hairstyle: {
-    from: 'hairstyle',
-    defaultValue: '',
-    description: '发型描述（状态级别）',
-    category: 'character'
-  },
-  accessories: {
-    from: 'accessories',
-    defaultValue: '',
-    description: '配饰描述（状态级别）',
-    category: 'character'
-  },
-  ageStage: {
-    from: 'ageStage',
-    defaultValue: '',
-    description: '年龄阶段（状态级别）',
-    category: 'character'
-  },
-  isBaseModel: {
-    from: 'isBaseModel',
-    defaultValue: false,
-    description: '是否为白膜模式（角色三视图生成）',
-    category: 'character'
-  },
-  gender: {
-    from: 'gender',
-    defaultValue: 'unknown',
-    description: '性别：male, female, unknown',
+  backViewUrl: {
+    from: 'backViewUrl',
+    defaultValue: null,
+    description: '角色背面视图URL（用于概念分解图参考）',
     category: 'character'
   },
 
