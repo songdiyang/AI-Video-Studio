@@ -259,6 +259,48 @@ module.exports = {
     description: '性格特点描述',
     category: 'character'
   },
+  stateId: {
+    from: 'stateId',
+    defaultValue: null,
+    description: '角色状态 ID',
+    category: 'character'
+  },
+  isBaseModel: {
+    from: 'isBaseModel',
+    defaultValue: false,
+    description: '是否生成白膜基础形态',
+    category: 'character'
+  },
+  gender: {
+    from: 'gender',
+    defaultValue: 'unknown',
+    description: '角色性别（male | female | unknown）',
+    category: 'character'
+  },
+  outfit: {
+    from: 'outfit',
+    defaultValue: '',
+    description: '角色状态服装描述',
+    category: 'character'
+  },
+  hairstyle: {
+    from: 'hairstyle',
+    defaultValue: '',
+    description: '角色状态发型描述',
+    category: 'character'
+  },
+  accessories: {
+    from: 'accessories',
+    defaultValue: '',
+    description: '角色状态配饰描述',
+    category: 'character'
+  },
+  ageStage: {
+    from: 'ageStage',
+    defaultValue: '',
+    description: '角色年龄阶段描述',
+    category: 'character'
+  },
   frontViewUrl: {
     from: 'frontViewUrl',
     defaultValue: null,
