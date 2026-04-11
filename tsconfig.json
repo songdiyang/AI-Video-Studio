@@ -29,6 +29,7 @@
     "noEmit": true
   },
   "exclude": [
-    "backend/**"
+    "backend/**",
+    "runtime/**"
   ]
 }
