@@ -113,6 +113,12 @@ services:
 
   core-service-agent:
     container_name: nanostory-core-service-agent
+    build:
+      context: .
+      dockerfile: docker/core-service/Dockerfile
+      args:
+        BASE_IMAGE: ${DOCKER_IMAGE_PREFIX:-docker.m.daocloud.io/}node:20-bookworm-slim
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com/}
     image: nanostory-core-service:local
     restart: unless-stopped
     depends_on:
