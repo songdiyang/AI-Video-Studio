@@ -62,8 +62,9 @@ const CharacterModal: React.FC<CharacterModalProps> = ({
   const [generationError, setGenerationError] = useState<string | null>(null);
   const [localImageModel, setLocalImageModel] = useState(selectedImageModel);
 
-  // 生成类型选择: 'three_view' | 'concept'
-  const [generationType, setGenerationType] = useState<'three_view' | 'concept'>('three_view');
+  // 概念分解图生成状态
+  const [isGeneratingConcept, setIsGeneratingConcept] = useState(false);
+  const [conceptGenerationError, setConceptGenerationError] = useState<string | null>(null);
 
   // Tab 状态
   const [activeTab, setActiveTab] = useState<string>('basic');
@@ -105,6 +106,33 @@ const CharacterModal: React.FC<CharacterModalProps> = ({
 
     return () => clearInterval(interval);
   }, [formData.id, formData.generation_status, onRefreshCharacter]);
+
+  // 轮询概念分解图生成状态
+  useEffect(() => {
+    if (!formData.id || formData.concept_generation_status !== 'generating') {
+      setIsGeneratingConcept(false);
+      return;
+    }
+
+    setIsGeneratingConcept(true);
+    const interval = setInterval(async () => {
+      try {
+        const status = await getCharacterViewStatus(formData.id);
+        if (status.status === 'completed' || status.status === 'failed') {
+          clearInterval(interval);
+          setIsGeneratingConcept(false);
+          if (status.status === 'failed') {
+            setConceptGenerationError('生成失败，请重试');
+          }
+          onRefreshCharacter?.();
+        }
+      } catch (error) {
+        console.error('查询概念分解图生成状态失败:', error);
+      }
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [formData.id, formData.concept_generation_status, onRefreshCharacter]);
 
   // 计算缺失的视图列表
   const missingViews = (() => {
@@ -148,19 +176,19 @@ const CharacterModal: React.FC<CharacterModalProps> = ({
     }
   }, [formData, localImageModel, selectedTextModel, setFormData, isComplementMode, missingViews]);
 
-  // 生成概念分解图
+  // 生成/重新生成概念分解图
   const handleGenerateConcept = useCallback(async () => {
     if (!formData.id) {
-      setGenerationError('请先保存角色');
+      setConceptGenerationError('请先保存角色');
       return;
     }
     if (!localImageModel) {
-      setGenerationError('请选择图片模型');
+      setConceptGenerationError('请选择图片模型');
       return;
     }
 
-    setIsGenerating(true);
-    setGenerationError(null);
+    setIsGeneratingConcept(true);
+    setConceptGenerationError(null);
 
     try {
       await generateConceptBreakdown(formData.id, {
@@ -168,10 +196,10 @@ const CharacterModal: React.FC<CharacterModalProps> = ({
         textModel: selectedTextModel || undefined
       });
       // 更新本地状态以触发轮询
-      setFormData({ ...formData, generation_status: 'generating' });
+      setFormData({ ...formData, concept_generation_status: 'generating' });
     } catch (error: any) {
-      setIsGenerating(false);
-      setGenerationError(error.message || '启动概念分解图生成失败');
+      setIsGeneratingConcept(false);
+      setConceptGenerationError(error.message || '启动概念分解图生成失败');
     }
   }, [formData, localImageModel, selectedTextModel, setFormData]);
 
@@ -579,56 +607,50 @@ const CharacterModal: React.FC<CharacterModalProps> = ({
 
                 {/* 右侧：图片显示 */}
                 <div className="space-y-4">
-                  <div>
-                    <label className="text-sm font-medium text-slate-400 mb-2 block">角色图片</label>
-                    {formData.image_url ? (
-                      <div className="relative group">
-                        <img 
-                          src={formData.image_url} 
-                          alt={formData.name || '角色图片'} 
-                          className="w-full h-48 object-cover rounded-lg border border-slate-700/50 shadow-sm bg-slate-800/60"
-                          onError={(e) => {
-                            // 图片加载失败时，清空 image_url 显示占位符
-                            setFormData({ ...formData, image_url: '' });
-                          }}
-                        />
-                        <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all rounded-lg flex items-center justify-center">
-                          <Button
-                            size="sm"
-                            className="opacity-0 group-hover:opacity-100 transition-opacity bg-red-500 text-white"
-                            onPress={() => setFormData({ ...formData, image_url: '' })}
-                          >
-                            移除图片
-                          </Button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="w-full h-48 bg-slate-800/60 rounded-lg border-2 border-dashed border-slate-600/50 flex flex-col items-center justify-center text-slate-500">
-                        <svg className="w-10 h-10 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                        </svg>
-                        <p className="text-sm">暂无图片</p>
-                        <p className="text-xs mt-1">生成三视图后自动设置</p>
+                  {/* 角色深度概念分解图 */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium text-slate-400 flex items-center gap-1.5">
+                        <Layers className="w-4 h-4" />
+                        角色深度概念分解图
+                      </label>
+                      {/* 重新生成按钮（已有图片时显示） */}
+                      {editMode && formData.id && formData.concept_image_url && (
+                        <Button
+                          size="sm"
+                          variant="flat"
+                          className="bg-purple-500/20 text-purple-400 hover:bg-purple-500/30"
+                          startContent={<RefreshCw className={`w-3 h-3 ${isGeneratingConcept ? 'animate-spin' : ''}`} />}
+                          onPress={handleGenerateConcept}
+                          isDisabled={isGeneratingConcept}
+                        >
+                          {isGeneratingConcept ? '重新生成中...' : '重新生成'}
+                        </Button>
+                      )}
+                    </div>
+
+                    {/* 概念分解图错误提示 */}
+                    {conceptGenerationError && (
+                      <div className="text-xs text-red-400 bg-red-500/10 px-2 py-1 rounded">
+                        {conceptGenerationError}
                       </div>
                     )}
-                  </div>
 
-                  {/* 概念分解图预览 */}
-                  {formData.concept_image_url && (
-                    <div>
-                      <label className="text-sm font-medium text-slate-400 mb-2 flex items-center gap-1.5">
-                        <Layers className="w-4 h-4" />
-                        概念分解图
-                      </label>
+                    {/* 概念分解图生成进度 */}
+                    {isGeneratingConcept && (
+                      <div className="text-xs text-purple-400 animate-pulse flex items-center gap-2">
+                        <div className="w-3 h-3 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
+                        正在生成概念分解图，请稍候...
+                      </div>
+                    )}
+
+                    {formData.concept_image_url ? (
                       <div className="relative group rounded-lg overflow-hidden border border-slate-700/50">
                         <img 
                           src={formData.concept_image_url} 
-                          alt="概念分解图" 
+                          alt="角色深度概念分解图" 
                           className="w-full aspect-video object-cover bg-slate-800/60"
-                          onError={(e) => {
-                            // 图片加载失败时，清空 concept_image_url
-                            setFormData({ ...formData, concept_image_url: '' });
-                          }}
+                          onError={() => setFormData({ ...formData, concept_image_url: '' })}
                         />
                         <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all flex items-center justify-center gap-2">
                           <Button
@@ -648,8 +670,29 @@ const CharacterModal: React.FC<CharacterModalProps> = ({
                           </Button>
                         </div>
                       </div>
-                    </div>
-                  )}
+                    ) : (
+                      <div className="w-full aspect-video bg-slate-800/60 rounded-lg border-2 border-dashed border-slate-600/50 flex flex-col items-center justify-center text-slate-500 gap-3">
+                        <Layers className="w-10 h-10" />
+                        <div className="text-center">
+                          <p className="text-sm mb-1">暂无概念分解图</p>
+                          <p className="text-xs text-slate-600">点击下方按钮生成</p>
+                        </div>
+                        {/* 生成按钮（无图时显示） */}
+                        {editMode && formData.id && (
+                          <Button
+                            size="sm"
+                            className="bg-purple-600 hover:bg-purple-700 text-white"
+                            startContent={<Layers className="w-3 h-3" />}
+                            isLoading={isGeneratingConcept}
+                            isDisabled={isGeneratingConcept || !localImageModel}
+                            onPress={handleGenerateConcept}
+                          >
+                            {isGeneratingConcept ? '生成中...' : '生成概念分解图'}
+                          </Button>
+                        )}
+                      </div>
+                    )}
+                  </div>
 
                   {/* 三视图区域 */}
                   <div className="space-y-3">
@@ -659,6 +702,19 @@ const CharacterModal: React.FC<CharacterModalProps> = ({
                         角色三视图
                       </label>
                       <div className="flex gap-2">
+                        {/* 重新生成按钮（已有视图时显示） */}
+                        {editMode && formData.id && hasAnyView && (
+                          <Button
+                            size="sm"
+                            variant="flat"
+                            className="bg-indigo-500/20 text-indigo-400 hover:bg-indigo-500/30"
+                            startContent={<RefreshCw className={`w-3 h-3 ${isGenerating ? 'animate-spin' : ''}`} />}
+                            onPress={handleGenerateViews}
+                            isDisabled={isGenerating}
+                          >
+                            {isGenerating ? '重新生成中...' : '重新生成'}
+                          </Button>
+                        )}
                         {hasAnyView && (
                           <Button
                             size="sm"
@@ -686,60 +742,19 @@ const CharacterModal: React.FC<CharacterModalProps> = ({
                           size="sm"
                           isDisabled={isGenerating}
                         />
-                        {/* 生成类型选择 */}
-                        <div className="flex gap-1.5">
-                          <button
-                            onClick={() => setGenerationType('three_view')}
-                            className={`flex-1 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all cursor-pointer ${
-                              generationType === 'three_view'
-                                ? 'bg-indigo-500/20 border-indigo-500/40 text-indigo-400'
-                                : 'border-slate-600/50 bg-slate-800/60 text-slate-400 hover:border-slate-500/50'
-                            }`}
-                          >
-                            <div className="flex items-center justify-center gap-1">
-                              <ImageIcon className="w-3 h-3" />
-                              三视图
-                            </div>
-                          </button>
-                          <button
-                            onClick={() => setGenerationType('concept')}
-                            className={`flex-1 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all cursor-pointer ${
-                              generationType === 'concept'
-                                ? 'bg-purple-500/20 border-purple-500/40 text-purple-400'
-                                : 'border-slate-600/50 bg-slate-800/60 text-slate-400 hover:border-slate-500/50'
-                            }`}
-                          >
-                            <div className="flex items-center justify-center gap-1">
-                              <Layers className="w-3 h-3" />
-                              概念分解图
-                            </div>
-                          </button>
-                        </div>
-                        {/* 生成说明 */}
-                        <p className="text-[10px] text-slate-500 px-1">
-                          {generationType === 'three_view'
-                            ? '生成正面、侧面、背面三视图，用于角色一致性参考'
-                            : '生成全景式角色深度概念分解图（16:9），含服装拆解、表情、道具等'}
-                        </p>
                         <Button
                           size="md"
-                          className={`w-full text-white shrink-0 ${
-                            generationType === 'concept'
-                              ? 'bg-purple-600 hover:bg-purple-700'
-                              : 'bg-indigo-600 hover:bg-indigo-700'
-                          }`}
-                          onPress={generationType === 'concept' ? handleGenerateConcept : handleGenerateViews}
+                          className="w-full bg-indigo-600 hover:bg-indigo-700 text-white shrink-0"
+                          onPress={handleGenerateViews}
                           isLoading={isGenerating}
                           isDisabled={isGenerating || !localImageModel}
-                          startContent={!isGenerating && (generationType === 'concept' ? <Layers className="w-4 h-4" /> : <RefreshCw className="w-4 h-4" />)}
+                          startContent={!isGenerating && <RefreshCw className="w-4 h-4" />}
                         >
                           {isGenerating
                             ? '生成中...'
-                            : generationType === 'concept'
-                              ? '生成概念分解图'
-                              : isComplementMode
-                                ? '补全缺失视图'
-                                : '一键生成三视图'}
+                            : isComplementMode
+                              ? '补全缺失视图'
+                              : '一键生成三视图'}
                         </Button>
                       </div>
                     )}
