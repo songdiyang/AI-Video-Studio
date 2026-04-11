@@ -10,11 +10,8 @@
 const handleBaseTextModelCall = require('../base/baseTextModelCall');
 const { filterNonCharacters } = require('../../../utils/characterFilter');
 const { stripThinkTags, extractCodeBlock, extractJSON, stripInvisible } = require('../../../utils/washBody');
-<<<<<<< HEAD
 const { getStoryboardDurationConfig } = require('../../../durationConfigService');
-=======
 const { queryAll } = require('../../../dbHelper');
->>>>>>> 41b2bc9c (feat: 多项功能优化与修复)
 
 // 默认值（当数据库配置不可用时回退使用）
 const DEFAULT_MIN_TOTAL_DURATION = 60;
@@ -435,7 +432,6 @@ async function handleStoryboardGeneration(inputParams, onProgress) {
 
   if (onProgress) onProgress(10);
 
-<<<<<<< HEAD
   // 从数据库读取时长配置
   let durationConfig;
   try {
@@ -447,7 +443,8 @@ async function handleStoryboardGeneration(inputParams, onProgress) {
       maxDuration: DEFAULT_MAX_TOTAL_DURATION,
       tolerance: DEFAULT_TOLERANCE
     };
-=======
+  }
+
   // 查询项目中已有的角色及外观特征（如果有）
   let characterAppearanceSection = '';
   if (projectId) {
@@ -474,7 +471,6 @@ ${charLines}
     } catch (e) {
       console.warn('[StoryboardGen] 查询角色外观失败（忽略）:', e.message);
     }
->>>>>>> 41b2bc9c (feat: 多项功能优化与修复)
   }
 
   const fullPrompt = `你是一个分镜师，将剧本内容转化为分镜。

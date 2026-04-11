@@ -11,11 +11,8 @@
 const handleBaseTextModelCall = require('../base/baseTextModelCall');
 const { filterNonCharacters } = require('../../../utils/characterFilter');
 const { stripThinkTags, extractCodeBlock, extractJSON, stripInvisible } = require('../../../utils/washBody');
-<<<<<<< HEAD
 const { getBatchSceneDurationConfig } = require('../../../durationConfigService');
-=======
 const { queryAll } = require('../../../dbHelper');
->>>>>>> 41b2bc9c (feat: 多项功能优化与修复)
 
 // 默认值（当数据库配置不可用时回退使用）
 const DEFAULT_MIN_SCENE_DURATION = 15;
@@ -197,7 +194,6 @@ async function handleBatchSceneStep(inputParams, onProgress) {
 
   if (onProgress) onProgress(10);
 
-<<<<<<< HEAD
   // 获取时长配置
   let durationConfig;
   try {
@@ -214,7 +210,6 @@ async function handleBatchSceneStep(inputParams, onProgress) {
   const minDur = durationConfig.minDuration;
   const maxDur = durationConfig.maxDuration;
 
-=======
   // 查询项目中已有的角色及外观特征
   let characterAppearanceSection = '';
   if (projectId) {
@@ -238,8 +233,6 @@ ${charLines}
       console.warn(`[BatchScene ${sceneNumber}] 查询角色外观失败（忽略）:`, e.message);
     }
   }
-
->>>>>>> 41b2bc9c (feat: 多项功能优化与修复)
   // 构建提示词
   const fullPrompt = `你是一个分镜师，将场景内容转化为分镜。
 

@@ -103,7 +103,6 @@ async function generateViewPrompt(view, characterName, appearance, description, 
    - 提示词中必须逐项重复正面图的外貌特征描述，确保每个细节都被包含`
     : '';
 
-<<<<<<< HEAD
   // 组装完整的外貌描述：基础外貌 + 状态级别属性（服装/发型/配饰/年龄阶段）
   const stateAppearanceParts = [];
   if (ageStage) stateAppearanceParts.push(`年龄阶段: ${ageStage}`);
@@ -113,11 +112,10 @@ async function generateViewPrompt(view, characterName, appearance, description, 
   const composedAppearance = stateAppearanceParts.length > 0
     ? `${appearance || ''}${appearance ? '；' : ''}${stateAppearanceParts.join('；')}`
     : appearance;
-=======
+
   const clothingRule = isBaseModel
     ? `4. 【白膜模式】角色必须是裸体基础形态，不能包含任何服装、装饰品或装备。只描述人体的基本结构（肤色、体型、肌肉轮廓）和面部/头发特征。必须包含: ${baseModelBodyPrompt}`
     : '4. 必须包含角色的完整外貌特征（服装、发型、体型、配饰、肤色等），越详细越好。每一个服装细节都必须逐项写出：衣服的款式、颜色、材质、层次（内衣/外衣/披风/盔甲等）、领口样式、袖口样式、腰带、鞋子等';
->>>>>>> 41b2bc9c (feat: 多项功能优化与修复)
 
   const fullPrompt = `你是一个专业的角色设计图提示词专家。你的任务是生成用于 AI 绘图的单个角色参考图提示词。
 

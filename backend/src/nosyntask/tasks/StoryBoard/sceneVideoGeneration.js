@@ -431,14 +431,10 @@ Prompt:`;
   // 优先使用分镜中存储的时长，其次使用传入参数，并限制在 4-12 秒范围内（Seedance 1.5 Pro 官方限定 4-12s）
   let finalDuration = variables.duration || storyboard.duration || duration;
   if (finalDuration !== undefined && finalDuration !== null) {
-<<<<<<< HEAD
     const parsed = parseFloat(finalDuration);
-    finalDuration = isNaN(parsed) ? 5 : Math.max(2, Math.min(12, parsed));
+    finalDuration = isNaN(parsed) ? 5 : Math.max(4, Math.min(12, parsed));
   } else {
     finalDuration = 5; // 无时长参数时默认5秒
-=======
-    finalDuration = Math.max(4, Math.min(12, parseFloat(finalDuration)));
->>>>>>> 41b2bc9c (feat: 多项功能优化与修复)
   }
   
   trace('构建视频参考图', { imageUrls, duration: finalDuration, aspectRatio });
