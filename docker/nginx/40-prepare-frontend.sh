@@ -2,24 +2,54 @@
 set -eu
 
 SITE_ROOT="${NGINX_SITE_ROOT:-/usr/share/nginx/site}"
-DIST_DIR="${FRONTEND_DIST_DIR:-/srv/frontend-dist}"
-LEGACY_DIST_DIR="${LEGACY_FRONTEND_DIST_DIR:-/srv/frontend-dist-legacy}"
+FRONTEND_MODE="${NGINX_FRONTEND_MODE:-static}"
+DIST_DIR="${FRONTEND_DIST_DIR:-/srv/frontend-runtime/current}"
+FRONTEND_UPSTREAM="${FRONTEND_UPSTREAM:-http://frontend-dev:5173}"
+FRONTEND_SNIPPET="/etc/nginx/snippets/frontend-location.conf"
+
+mkdir -p "$(dirname "${FRONTEND_SNIPPET}")"
+
+write_proxy_snippet() {
+  cat > "${FRONTEND_SNIPPET}" <<EOF
+location / {
+    proxy_pass ${FRONTEND_UPSTREAM};
+    proxy_http_version 1.1;
+    proxy_buffering off;
+    proxy_set_header Host \$host;
+    proxy_set_header X-Real-IP \$remote_addr;
+    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto \$scheme;
+    proxy_set_header Upgrade \$http_upgrade;
+    proxy_set_header Connection "upgrade";
+}
+EOF
+}
+
+write_static_snippet() {
+  cat > "${FRONTEND_SNIPPET}" <<'EOF'
+location / {
+    try_files $uri $uri/ /index.html;
+}
+EOF
+}
+
+if [ "${FRONTEND_MODE}" = "proxy" ]; then
+  write_proxy_snippet
+  echo "[nginx] proxying frontend to ${FRONTEND_UPSTREAM}"
+  exit 0
+fi
 
 rm -rf "${SITE_ROOT}"
 
 if [ -f "${DIST_DIR}/index.html" ]; then
   ln -s "${DIST_DIR}" "${SITE_ROOT}"
-  echo "[nginx] serving frontend dist from ${DIST_DIR}"
-  exit 0
-fi
-
-if [ -f "${LEGACY_DIST_DIR}/index.html" ]; then
-  ln -s "${LEGACY_DIST_DIR}" "${SITE_ROOT}"
-  echo "[nginx] serving legacy frontend dist from ${LEGACY_DIST_DIR}"
+  write_static_snippet
+  echo "[nginx] serving frontend runtime from ${DIST_DIR}"
   exit 0
 fi
 
 mkdir -p "${SITE_ROOT}"
+write_static_snippet
 
 cat > "${SITE_ROOT}/index.html" <<'EOF'
 <!doctype html>
@@ -70,19 +100,15 @@ cat > "${SITE_ROOT}/index.html" <<'EOF'
 </head>
 <body>
   <div class="panel">
-    <h1>未检测到前端 dist 构建产物</h1>
-    <p>Nginx 容器不会在容器内构建前端。请先在宿主机完成构建，再重新启动或重建 Nginx 容器。</p>
-    <pre>npm install
-npm run build
-docker-compose --env-file docker-compose.env up -d --build</pre>
-    <p>期望挂载目录：</p>
-    <ul>
-      <li>热更新目录：宿主机 <code>./runtime/frontend/current</code>，容器内 <code>/srv/frontend-runtime/current</code></li>
-      <li>兼容目录：宿主机 <code>./dist</code>，容器内 <code>/srv/frontend-dist-legacy</code></li>
-    </ul>
+    <h1>未检测到前端运行时版本</h1>
+    <p>当前仓库只支持通过运行时发布目录启动前端。请先生成 release bundle 并执行 bootstrap。</p>
+    <pre>npm run build:release
+npm run release:bootstrap
+npm run docker:up</pre>
+    <p>期望目录：宿主机 <code>./runtime/frontend/current</code>，容器内 <code>/srv/frontend-runtime/current</code></p>
   </div>
 </body>
 </html>
 EOF
 
-echo "[nginx] frontend dist missing at ${DIST_DIR} and ${LEGACY_DIST_DIR}, serving reminder page"
+echo "[nginx] frontend runtime missing at ${DIST_DIR}, serving reminder page"

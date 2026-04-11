@@ -121,7 +121,7 @@ const AIModels: React.FC = () => {
   const [apiDoc, setApiDoc] = useState('');
   const [jsonConfig, setJsonConfig] = useState('');
   const [parsing, setParsing] = useState(false);
-  const [parseJobId, setParseJobId] = useState<number | null>(null);
+  const [parseJobId, setParseJobId] = useState<string | null>(null);
 
   // 工作流轮询：智能解析完成后自动填充表单
   const { job: parseJob, isRunning: isParseRunning, overallProgress: parseProgress } = useWorkflow(parseJobId, {
@@ -346,7 +346,7 @@ const AIModels: React.FC = () => {
       const data = await response.json();
 
       if (response.ok && data.jobId) {
-        setParseJobId(data.jobId);
+        setParseJobId(String(data.jobId));
       } else {
         setParsing(false);
         showToast('启动解析任务失败，请稍后重试', 'error');

@@ -19,34 +19,20 @@ source backend/migrations/add_version_control_collaboration.sql
 source d:/Application/饺子动画/nanostory/backend/migrations/add_version_control_collaboration.sql
 ```
 
-## 2. 安装依赖
+## 2. 构建与启动
+
+当前仓库只保留 Docker Compose 作为正式启动方式。
 
 ```bash
-cd backend
-npm install
+cp docker-compose.env.example docker-compose.env
+cp backend/.env.example backend/.env
+
+npm run build:release
+npm run release:bootstrap
+npm run docker:up
 ```
 
-已添加的依赖：
-- `ws` - WebSocket 服务器
-- `concurrently` - 并行运行多个命令
-
-## 3. 启动服务
-
-### 方式 1：同时启动 HTTP 和 WebSocket（推荐）
-
-```bash
-npm run start:all
-```
-
-### 方式 2：分别启动
-
-```bash
-# 终端 1：HTTP 服务
-npm run dev
-
-# 终端 2：WebSocket 服务
-npm run ws
-```
+协作 WebSocket 已集成到后端 HTTP 服务，通过 `/ws` 暴露，不再单独启动独立的 `ws` 进程。
 
 ## 4. 配置环境变量（可选）
 
@@ -67,7 +53,7 @@ JWT_SECRET=your-secret-key
 打开浏览器控制台，运行：
 
 ```javascript
-const ws = new WebSocket('ws://localhost:4001');
+const ws = new WebSocket('ws://localhost/ws');
 ws.onopen = () => {
   console.log('WebSocket 已连接');
   // 发送认证
@@ -220,7 +206,7 @@ function NotificationBell() {
 ### WebSocket 无法连接
 
 检查：
-1. WebSocket 服务是否启动：`netstat -an | grep 4001`
+1. 后端服务是否启动：`curl http://localhost/api/health`
 2. 防火墙是否阻止端口
 3. JWT_SECRET 是否配置
 

@@ -3,31 +3,14 @@ server {
     server_name _;
 
     resolver 127.0.0.11 ipv6=off valid=30s;
-    set $backend_upstream ${BACKEND_UPSTREAM};
-    set $notification_upstream ${NOTIFICATION_UPSTREAM};
 
     root ${NGINX_SITE_ROOT};
     index index.html;
 
-    client_max_body_size 100m;
-
-    # 静态资源缓存控制 - 带哈希的文件长期缓存
-    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
-        expires 1y;
-        add_header Cache-Control "public, immutable";
-        add_header X-Content-Type-Options "nosniff";
-        try_files $uri =404;
-    }
-
-    # HTML 文件不缓存，确保始终获取最新版本
-    location ~* \.html$ {
-        expires -1;
-        add_header Cache-Control "no-cache, no-store, must-revalidate";
-        add_header Pragma "no-cache";
-    }
+    client_max_body_size ${CLIENT_MAX_BODY_SIZE};
 
     location /api/ {
-        proxy_pass $backend_upstream;
+        proxy_pass http://backend:4000;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -37,8 +20,8 @@ server {
         proxy_set_header Connection "upgrade";
     }
 
-    location /notification/socket.io/ {
-        proxy_pass $notification_upstream;
+    location /ws {
+        proxy_pass http://backend:4000;
         proxy_http_version 1.1;
         proxy_buffering off;
         proxy_set_header Host $host;
@@ -49,7 +32,29 @@ server {
         proxy_set_header Connection "upgrade";
     }
 
-    location / {
-        try_files $uri $uri/ /index.html;
+    location /notification/socket.io/ {
+        proxy_pass http://notification-service:4101;
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
     }
+
+    location /hot-update/ {
+        proxy_pass http://hot-update:4205/;
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 600s;
+        proxy_send_timeout 600s;
+    }
+
+    include /etc/nginx/snippets/frontend-location.conf;
 }

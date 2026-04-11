@@ -5,8 +5,7 @@
  * 与 Master 进程（HTTP/WebSocket 服务）分离，避免阻塞 HTTP 响应。
  * 
  * 启动方式：
- * - 由 cluster 模式的 Master 进程 fork
- * - 也可以通过 PM2 单独启动: pm2 start worker.js -i 4
+ * - 由主服务进程在当前运行模型下拉起
  * 
  * 通信方式：
  * - Redis Pub/Sub（推荐，跨进程/跨机器）

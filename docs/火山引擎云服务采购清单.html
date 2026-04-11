@@ -581,7 +581,7 @@
     <ul>
       <li><strong>Web 应用防火墙 WAF</strong> — 对 AI prompt 注入识别能力有限，已通过代码层参数校验 + JSON Schema + 黑名单词库实现更精准的防护。</li>
       <li><strong>消息队列 RocketMQ / Kafka</strong> — Redis Bull 队列（8 分片 + 优先级调度）已足够，MQ 增加运维复杂度但并发提升有限。</li>
-      <li><strong>容器服务 VKE (K8s)</strong> — PM2 + 多 Worker + 弹性伸缩 AS 已满足需求，K8s 编排收益在当前规模下不显著。</li>
+      <li><strong>容器服务 VKE (K8s)</strong> — 当前单机 Docker Compose 部署模型已满足需求，K8s 编排收益在当前规模下不显著。</li>
       <li><strong>Serverless 函数服务</strong> — 工作流引擎需长时间运行（视频生成 3~10 分钟），与 Serverless 短执行时间模型不匹配。</li>
       <li><strong>全站加速 DCDN</strong> — 用户和服务器均在国内，API 动态加速收益微小。</li>
     </ul>

@@ -175,6 +175,7 @@ const Projects: React.FC = () => {
       name: project.name,
       description: project.description,
       cover_url: project.cover_url,
+      _coverFile: null,
       status: project.status,
       team_id: project.team_id || null,
       visualStyle: settings.visualStyle || '',

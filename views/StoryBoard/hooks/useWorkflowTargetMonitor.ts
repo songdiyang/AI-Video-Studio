@@ -41,7 +41,7 @@ export function useWorkflowTargetMonitor({
   onFailed,
 }: UseWorkflowTargetMonitorOptions) {
   const [activeTargetIds, setActiveTargetIds] = useState<string[]>([]);
-  const handledJobsRef = useRef<Set<number>>(new Set());
+  const handledJobsRef = useRef<Set<string>>(new Set());
   const callbacksRef = useRef({ onCompleted, onFailed });
   
   // 稳定化 workflowTypes 引用，避免无限循环
@@ -80,11 +80,12 @@ export function useWorkflowTargetMonitor({
       if (job.status !== 'completed' && job.status !== 'failed') {
         continue;
       }
-      if (handledJobsRef.current.has(job.id)) {
+      const jobId = String(job.id);
+      if (handledJobsRef.current.has(jobId)) {
         continue;
       }
 
-      handledJobsRef.current.add(job.id);
+      handledJobsRef.current.add(jobId);
 
       try {
         if (job.status === 'completed') {
@@ -94,7 +95,7 @@ export function useWorkflowTargetMonitor({
         }
       } finally {
         try {
-          await consumeWorkflow(job.id);
+          await consumeWorkflow(jobId);
         } catch (error) {
           console.error('[useWorkflowTargetMonitor] consumeWorkflow 失败:', error);
         }

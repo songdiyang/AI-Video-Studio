@@ -19,7 +19,14 @@
     "dev": "vite",
     "build": "npm run type-check && vite build",
     "preview": "vite preview",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "docker:dev": "node scripts/docker-compose.mjs dev",
+    "docker:up": "node scripts/docker-compose.mjs up",
+    "docker:down": "node scripts/docker-compose.mjs down",
+    "docker:logs": "node scripts/docker-compose.mjs logs",
+    "build:release": "node scripts/build-release.mjs",
+    "release:bootstrap": "node scripts/release-bootstrap.mjs",
+    "release:upload": "node scripts/release-upload.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

@@ -80,7 +80,7 @@ const AcceptInvite: React.FC = () => {
         setIsPending(true);
         showToast('申请已提交，请等待管理员审核', 'success');
       } else {
-        showToast(`已成功加入${result.type === 'team' ? '团队' : '项目'}：${result.target_name}`, 'success');
+        showToast(`已成功加入项目：${result.target_name}`, 'success');
         // 项目邀请直接跳转
         setTimeout(() => {
           navigate(`/projects`);

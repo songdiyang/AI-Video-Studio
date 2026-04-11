@@ -131,35 +131,54 @@ Built-in asynchronous task engine for handling time-consuming AI generation task
 
 | Requirement | Version |
 |:------------|:--------|
-| Node.js | 18+ |
+| Docker Engine | 24+ |
+| Docker Compose | v2 |
 | MySQL | 8.0+ |
 | Browser | Chrome / Edge (recommended) |
 
 ### Installation
 
 ```bash
-# Clone the repository
 git clone https://github.com/Dirinkbottle/nanostory.git
 cd nanostory
 
-# Install frontend dependencies
-npm install
+# Prepare Docker env
+cp docker-compose.env.example docker-compose.env
 
-# Install backend dependencies
-cd backend && npm install
-
-# Configure environment variables
-cp .env.example .env
-# Edit .env with your database credentials
+# Prepare backend env
+cp backend/.env.example backend/.env
+# Edit backend/.env with your database credentials
 
 # Initialize database
-mysql -u root -p nanostory < initial_database.sql
+mysql -u root -p nanostory < backend/initial_database.sql
 
-# Start backend server (Port 4000)
-npm run dev
+# Build release bundle
+npm run build:release
 
-# In a new terminal, start frontend (Port 3000)
-cd .. && npm run dev
+# Bootstrap runtime/current
+npm run release:bootstrap
+
+# Start the Docker stack
+npm run docker:up
+```
+
+### Common Commands
+
+```bash
+# Start the standard stack
+npm run docker:up
+
+# Start the dev profile (nginx -> Vite dev server)
+npm run docker:dev
+
+# Tail compose logs
+npm run docker:logs
+
+# Stop the stack
+npm run docker:down
+
+# Upload the latest bundle through hot_update
+npm run release:upload
 ```
 
 ### Environment Configuration
@@ -179,7 +198,7 @@ JWT_SECRET=your-super-secret-jwt-key-min-32-chars
 
 # Server
 PORT=4000
-ALLOWED_ORIGINS=http://localhost:3000
+ALLOWED_ORIGINS=http://localhost
 NODE_ENV=development
 ```
 
@@ -228,8 +247,7 @@ nanostory/
 ## Documentation
 
 - [Async Engine Guide](ASYNC_ENGINE_GUIDE.md) — Task engine architecture and usage
-- [Docker Deployment](docs/docker-deployment.md) — Nginx + Backend + MinIO deployment
-- [Hot Update](docs/hot-update.md) — CI release bundle validation and runtime rollout
+- [Docker Deployment](docs/docker-deployment.md) — Docker Compose, runtime bootstrap, and hot update workflow
 - [Security Policy](SECURITY.md) — Security guidelines and reporting
 
 ## Contributing
@@ -376,24 +394,43 @@ This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) 
 git clone https://github.com/Dirinkbottle/nanostory.git
 cd nanostory
 
-# 安装前端依赖
-npm install
+# 准备 Compose 环境变量
+cp docker-compose.env.example docker-compose.env
 
-# 安装后端依赖
-cd backend && npm install
-
-# 配置环境变量
-cp .env.example .env
-# 编辑 .env 填入数据库配置
+# 准备后端环境变量
+cp backend/.env.example backend/.env
+# 编辑 backend/.env 填入数据库配置
 
 # 初始化数据库
-mysql -u root -p nanostory < initial_database.sql
+mysql -u root -p nanostory < backend/initial_database.sql
 
-# 启动后端服务（端口 4000）
-npm run dev
+# 构建 release bundle
+npm run build:release
 
-# 新开终端，启动前端（端口 3000）
-cd .. && npm run dev
+# 写入 runtime/current
+npm run release:bootstrap
+
+# 启动 Docker 栈
+npm run docker:up
+```
+
+### 常用命令
+
+```bash
+# 启动标准栈
+npm run docker:up
+
+# 启动开发模式（nginx -> Vite dev server）
+npm run docker:dev
+
+# 查看日志
+npm run docker:logs
+
+# 停止服务
+npm run docker:down
+
+# 通过 hot_update 上传最新 bundle
+npm run release:upload
 ```
 
 ### 环境变量配置
@@ -413,7 +450,7 @@ JWT_SECRET=your-super-secret-jwt-key-min-32-chars
 
 # 服务配置
 PORT=4000
-ALLOWED_ORIGINS=http://localhost:3000
+ALLOWED_ORIGINS=http://localhost
 NODE_ENV=development
 ```
 
@@ -462,8 +499,7 @@ nanostory/
 ## 项目文档
 
 - [异步引擎使用指南](ASYNC_ENGINE_GUIDE.md) — 任务引擎架构与使用方法
-- [Docker 部署](docs/docker-deployment.md) — Nginx + Backend + MinIO 部署方案
-- [热更新](docs/hot-update.md) — CI 产物打包、验签与运行时切换
+- [Docker 部署](docs/docker-deployment.md) — Docker Compose、运行时 bootstrap 与 hot update 工作流
 - [安全策略](SECURITY.md) — 安全指南与漏洞报告
 
 ## 参与贡献
