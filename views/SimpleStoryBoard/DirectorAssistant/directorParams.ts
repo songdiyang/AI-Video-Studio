@@ -186,15 +186,15 @@ export const ATMOSPHERE_COLOR_GRADE_OPTIONS = [
 ];
 
 export const ATMOSPHERE_VISUAL_STYLE_OPTIONS = [
-  { value: 'anime', label: '动漫', desc: '日式动画风格' },
-  { value: 'photorealistic', label: '照片级', desc: '极度真实的渲染' },
-  { value: 'painterly', label: '绘画感', desc: '油画或水彩质感' },
-  { value: 'comic', label: '漫画', desc: '线条明确，分格风格' },
-  { value: 'minimalist', label: '极简', desc: '简洁元素，留白多' },
-  { value: 'expressionist', label: '表现主义', desc: '扭曲夸张，情感外化' },
-  { value: 'cyberpunk', label: '赛博朋克', desc: '霓虹、科技、暗黑未来' },
-  { value: 'fantasy', label: '奇幻', desc: '魔法世界，瑰丽色彩' },
-  { value: 'steampunk', label: '蒸汽朋克', desc: '维多利亚+蒸汽机械' },
+  { value: '动漫', label: '动漫', desc: '日式动画风格' },
+  { value: '照片级', label: '照片级', desc: '极度真实的渲染' },
+  { value: '绘画感', label: '绘画感', desc: '油画或水彩质感' },
+  { value: '漫画', label: '漫画', desc: '线条明确，分格风格' },
+  { value: '极简', label: '极简', desc: '简洁元素，留白多' },
+  { value: '表现主义', label: '表现主义', desc: '扭曲夸张，情感外化' },
+  { value: '赛博朋克', label: '赛博朋克', desc: '霓虹、科技、暗黑未来' },
+  { value: '奇幻', label: '奇幻', desc: '魔法世界，瑰丽色彩' },
+  { value: '蒸汽朋克', label: '蒸汽朋克', desc: '维多利亚+蒸汽机械' },
 ];
 
 // ============================================================
@@ -255,34 +255,34 @@ export function directorParamsToText(params: DirectorParams): string {
 }
 
 /**
- * 将导演参数转换为英文提示词
+ * 将导演参数转换为中文提示词
  */
 export function directorParamsToPrompt(params: DirectorParams): string {
   const parts: string[] = [];
   
-  // Lighting
+  // 光线
   const lighting = params.lighting;
-  parts.push(`${lighting.direction} lighting`);
-  parts.push(`${lighting.quality} light quality`);
-  parts.push(`${lighting.color} color temperature`);
-  parts.push(`${lighting.intensity} lighting`);
+  parts.push(`${getOptionLabel(LIGHTING_DIRECTION_OPTIONS, lighting.direction)}光`);
+  parts.push(`${getOptionLabel(LIGHTING_QUALITY_OPTIONS, lighting.quality)}光质`);
+  parts.push(`${getOptionLabel(LIGHTING_COLOR_OPTIONS, lighting.color)}色温`);
+  parts.push(`${getOptionLabel(LIGHTING_INTENSITY_OPTIONS, lighting.intensity)}光照`);
   
-  // Camera
+  // 镜头
   const camera = params.camera;
-  parts.push(`${camera.focalLength} lens`);
+  parts.push(`${getOptionLabel(CAMERA_FOCAL_LENGTH_OPTIONS, camera.focalLength)}镜头`);
   if (camera.movement !== 'static') {
-    parts.push(`${camera.movement} camera movement`);
+    parts.push(`${getOptionLabel(CAMERA_MOVEMENT_OPTIONS, camera.movement)}运镜`);
   }
-  parts.push(`${camera.depthOfField} depth of field`);
-  parts.push(`${camera.composition} composition`);
-  parts.push(`${camera.angle} angle`);
+  parts.push(`${getOptionLabel(CAMERA_DOF_OPTIONS, camera.depthOfField)}景深`);
+  parts.push(`${getOptionLabel(CAMERA_COMPOSITION_OPTIONS, camera.composition)}构图`);
+  parts.push(`${getOptionLabel(CAMERA_ANGLE_OPTIONS, camera.angle)}视角`);
   
-  // Atmosphere
+  // 氛围
   const atmosphere = params.atmosphere;
-  parts.push(`${atmosphere.mood} mood`);
-  parts.push(`${atmosphere.texture} style`);
-  parts.push(`${atmosphere.colorGrade} color grading`);
-  parts.push(`${atmosphere.visualStyle} visual style`);
+  parts.push(`${getOptionLabel(ATMOSPHERE_MOOD_OPTIONS, atmosphere.mood)}情绪`);
+  parts.push(`${getOptionLabel(ATMOSPHERE_TEXTURE_OPTIONS, atmosphere.texture)}质感`);
+  parts.push(`${getOptionLabel(ATMOSPHERE_COLOR_GRADE_OPTIONS, atmosphere.colorGrade)}调色`);
+  parts.push(`${atmosphere.visualStyle}视觉风格`);
   
   return parts.join(', ');
 }

@@ -1,0 +1,49 @@
+/**
+ * 帧历史版本保存工具
+ * 供所有帧生成处理器共用：frameGeneration, singleFrameGeneration, sketchToImage 等
+ */
+
+const { queryOne, execute } = require('../../../dbHelper');
+
+/**
+ * 保存帧到历史版本表
+ * 先将旧版本标记为非当前，再插入新版本
+ * 
+ * @param {number} storyboardId - 分镜 ID
+ * @param {'first'|'last'} frameType - 帧类型
+ * @param {string} frameUrl - 帧图片 URL
+ * @param {string} prompt - 生成提示词
+ * @param {object} params - 生成参数（model, aspectRatio, resolution 等）
+ * @returns {number} 新版本号
+ */
+async function saveFrameHistory(storyboardId, frameType, frameUrl, prompt, params) {
+  if (!storyboardId || !frameType || !frameUrl) {
+    console.warn('[FrameHistory] 跳过保存：缺少必要参数', { storyboardId, frameType, hasUrl: !!frameUrl });
+    return 0;
+  }
+
+  // 1. 查询当前最大版本号
+  const maxRow = await queryOne(
+    'SELECT COALESCE(MAX(version_number), 0) as max_ver FROM storyboard_frame_history WHERE storyboard_id = ? AND frame_type = ?',
+    [storyboardId, frameType]
+  );
+  const newVersion = (maxRow?.max_ver || 0) + 1;
+
+  // 2. 将旧版本标记为非当前
+  await execute(
+    'UPDATE storyboard_frame_history SET is_current = FALSE WHERE storyboard_id = ? AND frame_type = ? AND is_current = TRUE',
+    [storyboardId, frameType]
+  );
+
+  // 3. 插入新版本（设为当前）
+  await execute(
+    `INSERT INTO storyboard_frame_history 
+     (storyboard_id, frame_type, frame_url, generation_prompt, generation_params, version_number, is_current)
+     VALUES (?, ?, ?, ?, ?, ?, TRUE)`,
+    [storyboardId, frameType, frameUrl, prompt, JSON.stringify(params || {}), newVersion]
+  );
+
+  return newVersion;
+}
+
+module.exports = { saveFrameHistory };

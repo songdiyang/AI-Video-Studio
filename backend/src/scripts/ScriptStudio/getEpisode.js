@@ -9,6 +9,10 @@ async function getEpisode(req, res) {
   const userId = req.user.id;
   const { projectId, episodeNumber } = req.params;
 
+  if (!projectId || !episodeNumber) {
+    return res.status(400).json({ message: '缺少必要参数 projectId 或 episodeNumber' });
+  }
+
   try {
     const project = await queryOne('SELECT id FROM projects WHERE id = ? AND user_id = ?', [projectId, userId]);
     if (!project) {
@@ -21,10 +25,11 @@ async function getEpisode(req, res) {
       [projectId, episodeNumber, userId]
     );
 
-    return res.json({ script });
+    // 即使 script 为 null 也返回 200（表示该集不存在，前端可正常处理）
+    return res.json({ script: script || null });
   } catch (err) {
-    console.error('DB error fetching episode:', err);
-    return res.status(500).json({ message: '获取剧本失败' });
+    console.error('[getEpisode] DB error:', { projectId, episodeNumber, userId, error: err.message });
+    return res.status(500).json({ message: '获取剧本失败：' + err.message });
   }
 }
 

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardBody, Button, Input, Textarea, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure, Chip, Spinner } from '@heroui/react';
-import { FolderOpen, Plus, Edit, Trash2, Search, BookOpen, Clock, Palette, Sparkles, ImagePlus } from 'lucide-react';
+import { FolderOpen, Plus, Edit, Trash2, Search, BookOpen, Clock, Palette, Sparkles, ImagePlus, Globe, Upload } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Project, fetchProjects, createProject, updateProject, deleteProject } from '../services/projects';
 import { Team, fetchTeams } from '../services/collaboration';
@@ -13,6 +13,7 @@ import { getAuthToken } from '../services/auth';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useVirtualList } from '../hooks/useVirtualList';
 import QuickStartWizard from '../components/QuickStartWizard';
+import UpgradePrompt from '../components/UpgradePrompt';
 
 // 虚拟列表启用阈值
 const VIRTUAL_LIST_THRESHOLD = 20;
@@ -44,6 +45,7 @@ const Projects: React.FC = () => {
     name: '',
     description: '',
     cover_url: '',
+    _coverFile: null as File | null,
     status: 'draft' as 'draft' | 'in_progress' | 'completed',
     team_id: null as number | null,
     visualStyle: '',
@@ -66,10 +68,14 @@ const Projects: React.FC = () => {
     novelGenre: '',
     novelWritingStyle: '',
     novelChapterLength: '',
-    novelTarget: ''
+    novelTarget: '',
+    // AI 输出语言
+    outputLanguage: 'en' as string
   });
   const [aiSuggesting, setAiSuggesting] = useState(false);
   const [coverGenerating, setCoverGenerating] = useState(false);
+  const [coverUploading, setCoverUploading] = useState(false);
+  const coverInputRef = useRef<HTMLInputElement>(null);
   const [showQuickStart, setShowQuickStart] = useState(false);
   
   // 团队选择
@@ -77,21 +83,29 @@ const Projects: React.FC = () => {
   const [loadingTeams, setLoadingTeams] = useState(false);
   const [selectedTeamId, setSelectedTeamId] = useState<number | ''>('');
 
+  // 升级提示状态
+  const [showUpgrade, setShowUpgrade] = useState(false);
+  const [upgradeData, setUpgradeData] = useState<{
+    currentPlan: { name: string; displayName: string; level: number };
+    currentUsage: { current: number; max: number };
+    nextPlan?: { name: string; displayName: string; maxProjects: number | string; price?: { monthly: number; yearly: number; firstMonth?: number } };
+  } | null>(null);
+
   // 视觉风格预设（键名用于内部标识，翻译后的显示名称从 t 获取）
   const VISUAL_STYLE_PRESETS: Record<string, { prompt: string; labelKey: keyof typeof t.projects.presets }> = {
-    'animeJapanese': { prompt: 'anime style, cel shading, vibrant colors, clean lines, manga aesthetic, Japanese animation', labelKey: 'animeJapanese' },
-    'realisticFilm': { prompt: 'photorealistic, cinematic lighting, film grain, realistic proportions, movie still, natural colors', labelKey: 'realisticFilm' },
-    'render3D': { prompt: '3D render, Pixar style, soft lighting, subsurface scattering, smooth shading, CGI quality', labelKey: 'render3D' },
-    'watercolor': { prompt: 'watercolor illustration, soft edges, pastel colors, storybook style, hand-painted texture', labelKey: 'watercolor' },
-    'cyberpunk': { prompt: 'cyberpunk, neon lights, dark atmosphere, futuristic, high contrast, sci-fi aesthetic', labelKey: 'cyberpunk' },
-    'americanComic': { prompt: 'American comic style, bold outlines, dynamic shading, superhero aesthetic, vivid colors', labelKey: 'americanComic' },
-    'pixelArt': { prompt: 'pixel art style, retro game aesthetic, 16-bit, clean pixels, nostalgic', labelKey: 'pixelArt' },
-    'chineseInk': { prompt: 'Chinese ink painting style, traditional brush strokes, elegant, minimalist, oriental aesthetic', labelKey: 'chineseInk' },
-    'heavenBlessing': { prompt: 'Chinese xianxia fantasy style, ancient celestial palace, flowing silk hanfu robes, golden and crimson accents, divine aura glow, ink-wash cloud backgrounds, ethereal lighting, ornate hair accessories, delicate facial features, heavenly atmosphere, traditional Chinese mythology aesthetic', labelKey: 'heavenBlessing' },
-    'shoujoManga': { prompt: 'Japanese shoujo manga style, large sparkling eyes with star highlights, delicate bishoujo features, soft pastel pink and lavender palette, floral screen tone backgrounds, romantic atmosphere, flowing hair with ribbon accessories, decorative sparkle effects, gentle blush cheeks, dreamy soft-focus lighting', labelKey: 'shoujoManga' },
-    'otomeGame': { prompt: 'otome game CG illustration style, romantic visual novel aesthetic, elegant bishounen characters, soft gradient shading, warm golden hour lighting, sparkle and petal particle effects, detailed Victorian-inspired costume design, emotional expressive eyes, luxurious interior backgrounds, gentle color harmony', labelKey: 'otomeGame' },
-    'japaneseOtome': { prompt: 'Japanese otome game style, high-quality anime CG rendering, bishounen characters with refined features, cherry blossom and seasonal motifs, gentle warm color palette, detailed school uniform or traditional costume design, soft ambient lighting, visual novel composition, delicate hand-drawn line art, subtle emotional expressions', labelKey: 'japaneseOtome' },
-    'chineseDonghua': { prompt: 'modern Chinese donghua animation style, dynamic cinematic composition, urban fantasy setting, detailed contemporary character design with Chinese elements, vibrant saturated colors, dramatic action lighting, sleek hair and costume rendering, bold contrast shadows, epic atmospheric perspective, high-energy visual impact', labelKey: 'chineseDonghua' },
+    'animeJapanese': { prompt: '动漫风格, 赛璐珞上色, 鲜艳色彩, 干净线条, 漫画美学, 日式动画', labelKey: 'animeJapanese' },
+    'realisticFilm': { prompt: '照片写实, 电影级打光, 胶片质感, 真实比例, 电影剧照, 自然色调', labelKey: 'realisticFilm' },
+    'render3D': { prompt: '3D渲染, 皮克斯风格, 柔和光照, 次表面散射, 平滑着色, CG品质', labelKey: 'render3D' },
+    'watercolor': { prompt: '水彩插画, 柔和边缘, 粉彩色调, 绘本风格, 手绘纹理', labelKey: 'watercolor' },
+    'cyberpunk': { prompt: '赛博朋克, 霓虹灯光, 暗黑氛围, 未来科幻, 高对比度, 科幻美学', labelKey: 'cyberpunk' },
+    'americanComic': { prompt: '美式漫画风格, 粗犷描边, 动感明暗, 超级英雄美学, 鲜明色彩', labelKey: 'americanComic' },
+    'pixelArt': { prompt: '像素画风格, 复古游戏美学, 16位像素, 干净像素点, 怀旧风', labelKey: 'pixelArt' },
+    'chineseInk': { prompt: '中国水墨画风格, 传统笔触, 典雅, 留白极简, 东方美学', labelKey: 'chineseInk' },
+    'heavenBlessing': { prompt: '中国仙侠奇幻风格, 古代天宫殿堂, 飘逸丝绸汉服, 金红色调点缀, 神圣光晕, 水墨云雾背景, 空灵光效, 精致发饰, 柔美面部特征, 天界氛围, 中国传统神话美学', labelKey: 'heavenBlessing' },
+    'shoujoManga': { prompt: '日本少女漫画风格, 大而闪亮的星光瞳孔, 精致美少女特征, 柔粉淡紫色调, 花卉网点背景, 浪漫氛围, 飘逸秀发配缎带, 装饰性闪光特效, 柔和腮红, 梦幻柔焦光效', labelKey: 'shoujoManga' },
+    'otomeGame': { prompt: '乙女游戏CG插画风格, 浪漫视觉小说美学, 优雅美少年角色, 柔和渐变上色, 温暖黄昏光照, 闪光花瓣粒子特效, 精致维多利亚风服装设计, 情感丰富的眼部表现, 华丽室内背景, 柔和色彩和谐', labelKey: 'otomeGame' },
+    'japaneseOtome': { prompt: '日式乙女游戏风格, 高品质动漫CG渲染, 精致美少年角色, 樱花与季节性元素, 温柔暖色调, 精细校服或传统服饰设计, 柔和环境光, 视觉小说构图, 细腻手绘线条, 含蓄情感表达', labelKey: 'japaneseOtome' },
+    'chineseDonghua': { prompt: '现代中国动画风格, 动感电影级构图, 都市奇幻场景, 融合中国元素的现代角色设计, 鲜艳饱和色彩, 戏剧性动作光效, 流畅发丝与服装渲染, 大胆对比阴影, 史诗级大气透视, 高能量视觉冲击', labelKey: 'chineseDonghua' },
     'custom': { prompt: '', labelKey: 'custom' }
   };
 
@@ -179,7 +193,8 @@ const Projects: React.FC = () => {
       novelGenre: settings.novelGenre || '',
       novelWritingStyle: settings.novelWritingStyle || '',
       novelChapterLength: settings.novelChapterLength || '',
-      novelTarget: settings.novelTarget || ''
+      novelTarget: settings.novelTarget || '',
+      outputLanguage: settings.outputLanguage || 'en'
     });
     onOpen();
   };
@@ -189,7 +204,7 @@ const Projects: React.FC = () => {
       const { visualStyle, visualStylePrompt, storyStyle, storyConstraints,
         mangaLayout, mangaPanelStyle, imageAspectRatio, imageResolution,
         videoAspectRatio, videoResolution, videoDuration, videoAspect, videoStyle,
-        novelGenre, novelWritingStyle, novelChapterLength, novelTarget, ...rest } = formData;
+        novelGenre, novelWritingStyle, novelChapterLength, novelTarget, outputLanguage, _coverFile, ...rest } = formData;
       const settingsObj: any = {};
       if (visualStyle) settingsObj.visualStyle = visualStyle;
       if (visualStylePrompt) settingsObj.visualStylePrompt = visualStylePrompt;
@@ -212,6 +227,8 @@ const Projects: React.FC = () => {
       if (novelWritingStyle) settingsObj.novelWritingStyle = novelWritingStyle;
       if (novelChapterLength) settingsObj.novelChapterLength = novelChapterLength;
       if (novelTarget) settingsObj.novelTarget = novelTarget;
+      // AI 输出语言
+      if (outputLanguage) settingsObj.outputLanguage = outputLanguage;
       const saveData: any = { ...rest, type: editProjectType, settings_json: JSON.stringify(settingsObj) };
       // 只在创建项目时设置 team_id
       if (!editMode) {
@@ -220,13 +237,41 @@ const Projects: React.FC = () => {
       if (editMode && currentId) {
         await updateProject(currentId, saveData);
       } else {
-        await createProject(saveData);
+        const newProject = await createProject(saveData);
+        // 新建项目后，如果有待上传的封面文件，立即上传
+        if (newProject?.id && formData._coverFile) {
+          try {
+            const token = getAuthToken();
+            const fd = new FormData();
+            fd.append('cover', formData._coverFile);
+            await fetch(`/api/projects/${newProject.id}/cover`, {
+              method: 'POST',
+              headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+              body: fd
+            });
+            setFormData(prev => ({ ...prev, _coverFile: null }));
+          } catch (e) {
+            console.warn('[Cover] 新建项目封面上传失败:', e);
+          }
+        }
       }
       await loadProjects();
       onOpenChange();
     } catch (error: any) {
       console.error('保存工程失败:', error);
-      showToast(t.projects.saveFailed, 'error');
+      // 项目数量达到上限时弹出升级提示
+      if (error.code === 'PROJECT_LIMIT_REACHED' && error.data) {
+        const { currentCount, maxCount, planName, planDisplayName, planLevel, upgrade } = error.data;
+        setUpgradeData({
+          currentPlan: { name: planName, displayName: planDisplayName, level: planLevel },
+          currentUsage: { current: currentCount, max: maxCount },
+          nextPlan: upgrade?.available ? upgrade.nextPlan : undefined
+        });
+        setShowUpgrade(true);
+        onOpenChange(); // 关闭创建弹窗
+      } else {
+        showToast(error.message || t.projects.saveFailed, 'error');
+      }
     }
   };
 
@@ -321,7 +366,9 @@ const Projects: React.FC = () => {
         body: JSON.stringify({
           name: formData.name,
           description: formData.description,
-          visualStylePrompt: formData.visualStylePrompt
+          visualStylePrompt: formData.visualStylePrompt,
+          storyStyle: formData.storyStyle,
+          storyConstraints: formData.storyConstraints
         })
       });
   
@@ -352,12 +399,71 @@ const Projects: React.FC = () => {
     }
   };
 
+  // 本地上传封面图片
+  const handleUploadCover = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // 前端验证文件类型
+    const allowedTypes = ['image/png', 'image/jpeg', 'image/webp'];
+    if (!allowedTypes.includes(file.type)) {
+      showToast('仅支持 PNG/JPG/WebP 格式', 'error');
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      showToast('图片大小不能超过 10MB', 'error');
+      return;
+    }
+
+    // 编辑模式且有项目 ID 时直接上传到服务器
+    if (editMode && currentId) {
+      setCoverUploading(true);
+      try {
+        const token = getAuthToken();
+        const formDataUpload = new FormData();
+        formDataUpload.append('cover', file);
+        const res = await fetch(`/api/projects/${currentId}/cover`, {
+          method: 'POST',
+          headers: {
+            ...(token ? { Authorization: `Bearer ${token}` } : {})
+          },
+          body: formDataUpload
+        });
+
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.message || '封面上传失败');
+        }
+
+        const data = await res.json();
+        setFormData(prev => ({ ...prev, cover_url: data.coverUrl }));
+        await loadProjects();
+        showToast('封面上传成功', 'success');
+      } catch (error: any) {
+        console.error('封面上传失败:', error);
+        showToast(error.message || '封面上传失败', 'error');
+      } finally {
+        setCoverUploading(false);
+        // 清空 input 以允许重复选择同一文件
+        if (coverInputRef.current) coverInputRef.current.value = '';
+      }
+    } else {
+      // 新建模式：用 URL.createObjectURL 预览，保存 File 对象待提交时上传
+      const previewUrl = URL.createObjectURL(file);
+      setFormData(prev => ({ ...prev, cover_url: previewUrl, _coverFile: file as any }));
+      showToast('封面已选择，保存项目时将自动上传', 'success');
+    }
+  };
+
   const handleDelete = async (id: number) => {
     const confirmed = await confirm({
       title: t.projects.deleteConfirmTitle,
-      message: t.projects.deleteConfirmMessage,
+      message: t.projects.deleteConfirmMessage + '\n\n此操作不可逆，删除后数据将永久丢失。',
       type: 'danger',
-      confirmText: t.common.delete
+      confirmText: t.common.delete,
+      checkbox: {
+        label: '我理解删除操作不可逆转'
+      }
     });
     if (!confirmed) return;
     
@@ -707,7 +813,7 @@ const Projects: React.FC = () => {
 
                   {/* AI 智能推荐按钮 */}
                   <Button
-                    className="w-full bg-linear-to-r from-violet-500/20 to-purple-500/20 border border-violet-500/30 text-violet-300 font-medium hover:from-violet-500/30 hover:to-purple-500/30 transition-all cursor-pointer"
+                    className="w-full bg-linear-to-r from-violet-500/20 to-purple-500/20 border border-violet-500/30 text-violet-600 dark:text-violet-300 font-medium hover:from-violet-500/30 hover:to-purple-500/30 transition-all cursor-pointer"
                     startContent={aiSuggesting ? <Spinner size="sm" color="secondary" /> : <Sparkles className="w-4 h-4" />}
                     onPress={handleAiSuggest}
                     isDisabled={aiSuggesting}
@@ -754,40 +860,51 @@ const Projects: React.FC = () => {
                     </div>
                   </div>
 
-                  <div className="flex gap-2 items-end">
-                    <div className="flex-1">
-                      <Input
-                        label={t.projects.coverLabel}
-                        placeholder={t.projects.coverPlaceholder}
-                        value={formData.cover_url}
-                        onValueChange={(val) => setFormData({ ...formData, cover_url: val })}
-                        classNames={{
-                          input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted)",
-                          label: "text-(--text-secondary) font-medium",
-                          inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 focus-within:border-(--accent)/40"
-                        }}
+                  {/* 封面图片 */}
+                  <div>
+                    <label className="text-sm text-(--text-secondary) font-medium mb-2 block">{t.projects.coverLabel}</label>
+                    <div className="flex gap-2">
+                      <input
+                        ref={coverInputRef}
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp"
+                        className="hidden"
+                        onChange={handleUploadCover}
                       />
+                      <Button
+                        className="flex-1 bg-(--bg-input) border border-(--border-color) text-(--text-secondary) hover:border-(--accent)/30 hover:bg-(--accent)/5 font-medium transition-all cursor-pointer"
+                        startContent={coverUploading ? <Spinner size="sm" /> : <Upload className="w-4 h-4" />}
+                        onPress={() => coverInputRef.current?.click()}
+                        isDisabled={coverUploading}
+                      >
+                        {coverUploading ? '上传中...' : '上传封面图片'}
+                      </Button>
+                      <Button
+                        className="flex-1 bg-linear-to-r from-violet-500/20 to-pink-500/20 border border-violet-500/30 text-violet-600 dark:text-violet-300 font-medium hover:from-violet-500/30 hover:to-pink-500/30 transition-all cursor-pointer"
+                        startContent={coverGenerating ? <Spinner size="sm" color="secondary" /> : <ImagePlus className="w-4 h-4" />}
+                        onPress={handleGenerateCover}
+                        isDisabled={coverGenerating}
+                      >
+                        {coverGenerating ? t.projects.aiGeneratingCover : t.projects.aiGenerateCover}
+                      </Button>
                     </div>
-                    <Button
-                      className="min-w-32.5 bg-linear-to-r from-violet-500/20 to-pink-500/20 border border-violet-500/30 text-violet-300 font-medium hover:from-violet-500/30 hover:to-pink-500/30 transition-all cursor-pointer"
-                      startContent={coverGenerating ? <Spinner size="sm" color="secondary" /> : <ImagePlus className="w-4 h-4" />}
-                      onPress={handleGenerateCover}
-                      isDisabled={coverGenerating}
-                      size="lg"
-                    >
-                      {coverGenerating ? t.projects.aiGeneratingCover : t.projects.aiGenerateCover}
-                    </Button>
+                    {formData.cover_url && (
+                      <div className="mt-2 rounded-lg overflow-hidden border border-(--border-color) bg-(--bg-input) relative group">
+                        <img
+                          src={formData.cover_url}
+                          alt="cover preview"
+                          className="w-full h-40 object-cover"
+                          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                        />
+                        <button
+                          onClick={() => setFormData(prev => ({ ...prev, cover_url: '' }))}
+                          className="absolute top-2 right-2 w-6 h-6 rounded-full bg-black/50 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer text-xs"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    )}
                   </div>
-                  {formData.cover_url && (
-                    <div className="rounded-lg overflow-hidden border border-(--border-color) bg-(--bg-input)">
-                      <img
-                        src={formData.cover_url}
-                        alt="cover preview"
-                        className="w-full h-40 object-cover"
-                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                      />
-                    </div>
-                  )}
 
                   {/* 视觉风格选择 - 小说类型不需要 */}
                   {editProjectType !== 'novel' && (
@@ -805,7 +922,7 @@ const Projects: React.FC = () => {
                           className={`px-3 py-2 rounded-lg border text-xs font-medium transition-all cursor-pointer ${
                             formData.visualStyle === styleKey
                               ? 'bg-(--accent)/15 border-(--accent)/40 text-(--accent) shadow-[0_0_10px_var(--accent-glow)]'
-                              : 'border-(--border-color) bg-(--bg-input) text-(--text-muted) hover:border-(--accent)/30 hover:bg-(--accent)/5'
+                              : 'border-(--border-color) bg-(--bg-input) text-(--text-secondary) hover:border-(--accent)/30 hover:bg-(--accent)/5'
                           }`}
                         >
                           {t.projects.presets[labelKey]}
@@ -831,6 +948,30 @@ const Projects: React.FC = () => {
                     />
                   </div>
                   )}
+
+                  {/* AI 输出语言选择 - 所有类型通用 */}
+                  <div>
+                    <label className="text-sm text-(--text-secondary) font-medium mb-2 flex items-center gap-1.5">
+                      <Globe className="w-4 h-4 text-(--accent)" />
+                      {t.projects.outputLanguageLabel}
+                      <span className="text-xs text-(--text-muted) font-normal">{t.projects.outputLanguageHint}</span>
+                    </label>
+                    <div className="grid grid-cols-4 gap-2 mt-2">
+                      {Object.entries(t.projects.outputLanguages).map(([code, name]) => (
+                        <button
+                          key={code}
+                          onClick={() => setFormData({ ...formData, outputLanguage: code })}
+                          className={`px-3 py-2 rounded-lg border text-xs font-medium transition-all cursor-pointer ${
+                            formData.outputLanguage === code
+                              ? 'bg-(--accent)/15 border-(--accent)/40 text-(--accent) shadow-[0_0_10px_var(--accent-glow)]'
+                              : 'border-(--border-color) bg-(--bg-input) text-(--text-muted) hover:border-(--accent)/30 hover:bg-(--accent)/5'
+                          }`}
+                        >
+                          {name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
 
                   {/* ====== 漫剧专属字段 ====== */}
                   {(editProjectType === 'comic_drama') && (
@@ -1126,6 +1267,18 @@ const Projects: React.FC = () => {
           onClose={() => setShowQuickStart(false)}
           onComplete={handleQuickStartComplete}
         />
+
+        {/* 升级提示弹窗 */}
+        {upgradeData && (
+          <UpgradePrompt
+            isOpen={showUpgrade}
+            onClose={() => setShowUpgrade(false)}
+            limitType="project"
+            currentPlan={upgradeData.currentPlan}
+            currentUsage={upgradeData.currentUsage}
+            nextPlan={upgradeData.nextPlan}
+          />
+        )}
       </div>
     </div>
   );

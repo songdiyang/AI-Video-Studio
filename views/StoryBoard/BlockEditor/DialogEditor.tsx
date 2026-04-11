@@ -5,7 +5,7 @@
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Button, Tabs, Tab } from '@heroui/react';
-import { Save, Trash2, Wand2, Type, Camera, Users, MapPin, Zap, History, RotateCcw, GitCompare } from 'lucide-react';
+import { Save, Trash2, Wand2, Type, Camera, Users, MapPin, Zap, History, RotateCcw, GitCompare, Sparkles, Undo2, Loader2, MessageCircle, Plus, X as XIcon } from 'lucide-react';
 import { useToast } from '../../../contexts/ToastContext';
 import { BLOCK_OPTIONS } from './utils/blockRegistry';
 import { getAuthToken } from '../../../services/auth';
@@ -21,6 +21,11 @@ interface PromptVersion {
   created_at: string;
 }
 
+interface DialogueLine {
+  character: string;
+  line: string;
+}
+
 interface DialogEditorProps {
   storyboardId: number;
   initialPrompt?: string;
@@ -29,6 +34,10 @@ interface DialogEditorProps {
   projectId?: number;
   scriptId?: number;
   availableFrames?: { startFrame?: string; endFrame?: string };
+  dialogue?: string;
+  dialogues?: DialogueLine[];
+  sceneCharacters?: string[] | { id: number; name: string }[];
+  onUpdateDialogues?: (dialogues: DialogueLine[]) => Promise<boolean>;
 }
 
 interface Character {
@@ -141,6 +150,7 @@ const COMPONENT_CATEGORIES = [
   { key: 'text', label: '文本', icon: Type },
   { key: 'shot', label: '镜头', icon: Camera },
   { key: 'character', label: '角色', icon: Users },
+  { key: 'dialogue', label: '台词', icon: MessageCircle },
   { key: 'scene', label: '场景', icon: MapPin },
   { key: 'action', label: '动作', icon: Zap },
 ];
@@ -153,6 +163,10 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
   projectId,
   scriptId,
   availableFrames,
+  dialogue: initialDialogue = '',
+  dialogues: initialDialogues = [],
+  sceneCharacters = [],
+  onUpdateDialogues,
 }) => {
   const { showToast } = useToast();
   const editorRef = useRef<HTMLDivElement>(null);
@@ -178,6 +192,94 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
   // 图片预览状态
   const [previewImage, setPreviewImage] = useState<{ url: string; title: string } | null>(null);
 
+  // AI 优化状态
+  const [isOptimizing, setIsOptimizing] = useState(false);
+  const [preOptimizeText, setPreOptimizeText] = useState<string | null>(null);
+
+  // 台词编辑状态
+  const [editingDialogues, setEditingDialogues] = useState<DialogueLine[]>([]);
+  const [isDialogueDirty, setIsDialogueDirty] = useState(false);
+  const [isSavingDialogues, setIsSavingDialogues] = useState(false);
+
+  // 获取当前分镜的角色名列表
+  const getCharacterNames = (): string[] => {
+    if (!sceneCharacters || sceneCharacters.length === 0) return [];
+    return sceneCharacters.map((c: any) => typeof c === 'string' ? c : c.name);
+  };
+
+  // 初始化台词编辑状态
+  useEffect(() => {
+    if (initialDialogues && initialDialogues.length > 0) {
+      setEditingDialogues(initialDialogues.map(d => ({ ...d })));
+    } else if (initialDialogue) {
+      // 从扁平字符串推断：如果只有一个角色，归属给该角色
+      const charNames = getCharacterNames();
+      if (charNames.length === 1) {
+        setEditingDialogues([{ character: charNames[0], line: initialDialogue }]);
+      } else {
+        setEditingDialogues([{ character: '', line: initialDialogue }]);
+      }
+    } else {
+      setEditingDialogues([]);
+    }
+    setIsDialogueDirty(false);
+  }, [storyboardId]); // 切换分镜时重新初始化
+
+  // AI 优化分镜描述
+  const handleOptimize = async () => {
+    const text = promptText.trim();
+    if (!text || isOptimizing) return;
+
+    setIsOptimizing(true);
+    try {
+      const token = getAuthToken();
+      const res = await fetch(`/api/storyboards/${storyboardId}/optimize-prompt`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ prompt: text })
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || '优化失败');
+      }
+      const data = await res.json();
+      if (data.optimized) {
+        // 保存原始文本用于撤回
+        setPreOptimizeText(text);
+        // 更新编辑器内容
+        setPromptText(data.optimized);
+        if (editorRef.current) {
+          editorRef.current.innerHTML = refTextToHtml(data.optimized, referenceImages);
+          lastRenderedRef.current = data.optimized;
+        }
+        setIsDirty(true);
+        onChange?.(data.optimized);
+        showToast('AI 优化完成', 'success');
+      }
+    } catch (error: any) {
+      showToast(error.message || 'AI 优化失败', 'error');
+    } finally {
+      setIsOptimizing(false);
+    }
+  };
+
+  // 撤回优化
+  const handleUndoOptimize = () => {
+    if (preOptimizeText === null) return;
+    setPromptText(preOptimizeText);
+    if (editorRef.current) {
+      editorRef.current.innerHTML = refTextToHtml(preOptimizeText, referenceImages);
+      lastRenderedRef.current = preOptimizeText;
+    }
+    setIsDirty(true);
+    onChange?.(preOptimizeText);
+    setPreOptimizeText(null);
+    showToast('已撤回优化', 'info');
+  };
+
   // 当 initialPrompt 变化时同步更新（切换分镜时）
   // 解析参考图占位符元数据，保留标记在文本中，渲染为胶囊
   useEffect(() => {
@@ -194,6 +296,7 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
     }
     setPromptText(initialPrompt);
     setReferenceImages(parsedImages);
+    setPreOptimizeText(null);  // 切换分镜时重置优化撤回状态
     lastRenderedRef.current = initialPrompt;
     // 渲染富文本到编辑器
     if (editorRef.current) {
@@ -517,6 +620,43 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
     });
   };
 
+  // --- 台词编辑操作 ---
+  const handleAddDialogueLine = () => {
+    const charNames = getCharacterNames();
+    const defaultChar = charNames.length > 0 ? charNames[0] : '';
+    setEditingDialogues(prev => [...prev, { character: defaultChar, line: '' }]);
+    setIsDialogueDirty(true);
+  };
+
+  const handleUpdateDialogueLine = (index: number, field: 'character' | 'line', value: string) => {
+    setEditingDialogues(prev => prev.map((d, i) => i === index ? { ...d, [field]: value } : d));
+    setIsDialogueDirty(true);
+  };
+
+  const handleRemoveDialogueLine = (index: number) => {
+    setEditingDialogues(prev => prev.filter((_, i) => i !== index));
+    setIsDialogueDirty(true);
+  };
+
+  const handleSaveDialogues = async () => {
+    if (!onUpdateDialogues) return;
+    setIsSavingDialogues(true);
+    try {
+      // 过滤掉空台词
+      const filtered = editingDialogues.filter(d => d.line.trim());
+      const success = await onUpdateDialogues(filtered);
+      if (success) {
+        setEditingDialogues(filtered);
+        setIsDialogueDirty(false);
+        showToast('台词已保存', 'success');
+      }
+    } catch {
+      showToast('保存台词失败', 'error');
+    } finally {
+      setIsSavingDialogues(false);
+    }
+  };
+
   // 渲染组件按钮
   const renderComponentButtons = () => {
     switch (activeTab) {
@@ -580,6 +720,28 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
                         template: opt.value === 'static' ? '镜头固定，' : `镜头${opt.label}，`
                       }));
                     }}
+                  >
+                    {opt.icon} {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-[var(--text-muted)] mb-2">焦距</div>
+              <div className="flex flex-wrap gap-1.5">
+                {BLOCK_OPTIONS.lensType.map(opt => (
+                  <button
+                    key={opt.value}
+                    onClick={() => insertComponent(`${opt.label}镜头，`)}
+                    className="px-2 py-1 rounded bg-blue-500/10 text-blue-600 text-xs hover:bg-blue-500/20 transition-colors"
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData('application/json', JSON.stringify({
+                        componentType: 'lensType',
+                        template: `${opt.label}镜头，`
+                      }));
+                    }}
+                    title={opt.description}
                   >
                     {opt.icon} {opt.label}
                   </button>
@@ -818,6 +980,103 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
             </div>
           </div>
         );
+      case 'dialogue': {
+        const charNames = getCharacterNames();
+        return (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="text-xs text-[var(--text-muted)]">角色台词</div>
+              {isDialogueDirty && (
+                <button
+                  onClick={handleSaveDialogues}
+                  disabled={isSavingDialogues}
+                  className="flex items-center gap-1 px-2 py-0.5 rounded bg-[var(--accent)] text-white text-[10px] hover:opacity-90 transition-opacity disabled:opacity-50"
+                >
+                  {isSavingDialogues ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                  保存台词
+                </button>
+              )}
+            </div>
+
+            {editingDialogues.length === 0 ? (
+              <div className="text-xs text-[var(--text-muted)] py-4 text-center">
+                暂无台词
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {editingDialogues.map((dl, idx) => (
+                  <div key={idx} className="rounded-lg bg-[var(--bg-input)] border border-[var(--border-color)] p-2 space-y-1.5">
+                    <div className="flex items-center gap-1.5">
+                      {charNames.length > 0 ? (
+                        <select
+                          value={dl.character}
+                          onChange={(e) => handleUpdateDialogueLine(idx, 'character', e.target.value)}
+                          className="flex-1 text-xs px-2 py-1 rounded bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
+                        >
+                          <option value="">选择角色</option>
+                          {charNames.map(name => (
+                            <option key={name} value={name}>{name}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          type="text"
+                          value={dl.character}
+                          onChange={(e) => handleUpdateDialogueLine(idx, 'character', e.target.value)}
+                          placeholder="角色名"
+                          className="flex-1 text-xs px-2 py-1 rounded bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)]"
+                        />
+                      )}
+                      <button
+                        onClick={() => handleRemoveDialogueLine(idx)}
+                        className="p-1 text-red-400 hover:text-red-500 hover:bg-red-500/10 rounded transition-colors"
+                        title="删除此行台词"
+                      >
+                        <XIcon className="w-3 h-3" />
+                      </button>
+                    </div>
+                    <textarea
+                      value={dl.line}
+                      onChange={(e) => handleUpdateDialogueLine(idx, 'line', e.target.value)}
+                      placeholder="输入台词内容..."
+                      rows={2}
+                      className="w-full text-xs px-2 py-1.5 rounded bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)] resize-none"
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <button
+              onClick={handleAddDialogueLine}
+              className="w-full flex items-center justify-center gap-1 py-1.5 rounded-lg border border-dashed border-[var(--border-color)] text-xs text-[var(--text-muted)] hover:text-[var(--accent)] hover:border-[var(--accent)] transition-colors"
+            >
+              <Plus className="w-3 h-3" />
+              添加台词
+            </button>
+
+            {charNames.length > 0 && editingDialogues.length === 0 && (
+              <div className="pt-1">
+                <div className="text-[10px] text-[var(--text-muted)] mb-1.5">快速添加角色台词</div>
+                <div className="flex flex-wrap gap-1">
+                  {charNames.map(name => (
+                    <button
+                      key={name}
+                      onClick={() => {
+                        setEditingDialogues(prev => [...prev, { character: name, line: '' }]);
+                        setIsDialogueDirty(true);
+                      }}
+                      className="px-2 py-1 rounded bg-cyan-500/10 text-cyan-600 text-[10px] hover:bg-cyan-500/20 transition-colors"
+                    >
+                      + {name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      }
       case 'text':
         return (
           <div className="space-y-3">
@@ -1029,9 +1288,72 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
             )}
           </div>
 
-          {/* 提示 */}
-          <div className="mt-2 text-xs text-[var(--text-muted)]">
-            提示：点击左侧组件直接插入，或拖拽组件到文本区域
+          {/* 角色台词显示区（始终可见） */}
+          {(editingDialogues.length > 0 || initialDialogue) && (
+            <div className="mt-2 rounded-lg border border-cyan-500/20 bg-cyan-500/5 px-3 py-2">
+              <div className="flex items-center justify-between mb-1.5">
+                <div className="flex items-center gap-1.5 text-xs font-medium text-cyan-600">
+                  <MessageCircle className="w-3.5 h-3.5" />
+                  角色台词
+                </div>
+                <button
+                  onClick={() => setActiveTab('dialogue')}
+                  className="text-[10px] text-cyan-500 hover:text-cyan-600 transition-colors"
+                >
+                  编辑
+                </button>
+              </div>
+              {editingDialogues.length > 0 ? (
+                <div className="space-y-1">
+                  {editingDialogues.map((dl, idx) => (
+                    <div key={idx} className="text-xs">
+                      {dl.character ? (
+                        <span>
+                          <span className="text-cyan-600 font-medium">{dl.character}：</span>
+                          <span className="text-[var(--text-secondary)] italic">{dl.line || '（空台词）'}</span>
+                        </span>
+                      ) : (
+                        <span className="text-[var(--text-secondary)] italic">{dl.line}</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : initialDialogue ? (
+                <div className="text-xs text-[var(--text-secondary)] italic">{initialDialogue}</div>
+              ) : null}
+            </div>
+          )}
+
+          {/* 提示 + AI优化按钮 */}
+          <div className="mt-2 flex items-center justify-between">
+            <div className="text-xs text-[var(--text-muted)]">
+              提示：点击左侧组件直接插入，或拖拽组件到文本区域
+            </div>
+            {/* AI 优化 / 撤回按钮 */}
+            {preOptimizeText !== null ? (
+              <button
+                onClick={handleUndoOptimize}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-500/10 text-amber-600 text-xs hover:bg-amber-500/20 transition-colors shrink-0"
+                title="撤回优化，恢复原文"
+              >
+                <Undo2 className="w-3.5 h-3.5" />
+                撤回
+              </button>
+            ) : (
+              <button
+                onClick={handleOptimize}
+                disabled={isOptimizing || !promptText.trim()}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-purple-500/10 text-purple-600 text-xs hover:bg-purple-500/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+                title="AI 优化描述"
+              >
+                {isOptimizing ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Sparkles className="w-3.5 h-3.5" />
+                )}
+                {isOptimizing ? '优化中...' : 'AI 优化'}
+              </button>
+            )}
           </div>
         </div>
       </div>

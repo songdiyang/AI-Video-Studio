@@ -301,7 +301,7 @@ export function useAnimaticPlayer({
     } else {
       videoRef.current.pause();
     }
-  }, [isPlaying, isVideoMode, playbackSpeed]);
+  }, [isPlaying, isVideoMode, playbackSpeed, currentIndex]);
   
   // 组件卸载时清理
   useEffect(() => {

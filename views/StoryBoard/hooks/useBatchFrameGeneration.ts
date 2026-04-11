@@ -21,6 +21,8 @@ interface UseBatchFrameGenerationProps {
   onError?: (message: string) => void;
   /** 子任务完成回调（用于实时刷新单个分镜） */
   onSubTaskCompleted?: (task: WorkflowTask, storyboardId: number | null) => void;
+  /** 批量生成启动回调（返回有效分镜ID列表） */
+  onBatchStarted?: (validSceneIds: number[], type: 'frame' | 'video') => void;
 }
 
 export function useBatchFrameGeneration({
@@ -33,7 +35,8 @@ export function useBatchFrameGeneration({
   scenes,
   onComplete,
   onError,
-  onSubTaskCompleted
+  onSubTaskCompleted,
+  onBatchStarted
 }: UseBatchFrameGenerationProps) {
   const result = useBatchGeneration(FRAME_GENERATION_CONFIG, {
     scriptId,
@@ -45,7 +48,8 @@ export function useBatchFrameGeneration({
     scenes,
     onComplete,
     onError,
-    onSubTaskCompleted
+    onSubTaskCompleted,
+    onBatchStarted
   });
 
   // 保持原有接口兼容性

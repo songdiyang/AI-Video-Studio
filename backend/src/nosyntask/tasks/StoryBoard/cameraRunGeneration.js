@@ -17,7 +17,7 @@
 
 const handleBaseTextModelCall = require('../base/baseTextModelCall');
 const { queryOne, queryAll, execute } = require('../../../dbHelper');
-const { requireVisualStyle } = require('../../../utils/getProjectStyle');
+const { requireVisualStyle, getOutputLanguage } = require('../../../utils/getProjectStyle');
 
 /** 安全解析 variables_json */
 function safeParseVariables(raw) {
@@ -57,7 +57,7 @@ async function handleCameraRunGeneration(inputParams, onProgress) {
   if (onProgress) onProgress(5);
 
   // 1. 优先使用预取上下文，否则从 DB 查询
-  let storyboard, variables, visualStyle, prevShot, nextShot, characterAppearance;
+  let storyboard, variables, visualStyle, prevShot, nextShot, characterAppearance, outputLang;
 
   if (_context) {
     // 由父级传入，跳过全部 DB 查询
@@ -67,6 +67,7 @@ async function handleCameraRunGeneration(inputParams, onProgress) {
     characterAppearance = _context.characterAppearance || '';
     prevShot = _context.prevNeighbor ? buildShotData(_context.prevNeighbor) : null;
     nextShot = _context.nextNeighbor ? buildShotData(_context.nextNeighbor) : null;
+    outputLang = _context.outputLang || { languageCode: 'en', languageName: 'English', promptInstruction: 'Output ONLY in English.' };
     console.log('[CameraRunGen] 使用预取上下文，跳过 DB 查询');
   } else {
     // 独立调用：并行查询分镜+视觉风格，再查邻居+角色
@@ -79,8 +80,8 @@ async function handleCameraRunGeneration(inputParams, onProgress) {
     const currentIdx = storyboard.idx;
     const charNames = variables.characters || [];
 
-    // 并行查询：视觉风格 + 邻居镜头 + 角色外貌
-    const [vsResult, nbResult, charResult] = await Promise.allSettled([
+    // 并行查询：视觉风格 + 邻居镜头 + 角色外貌 + 输出语言
+    const [vsResult, nbResult, charResult, langResult] = await Promise.allSettled([
       requireVisualStyle(storyboard.project_id),
       (scriptId != null && currentIdx != null)
         ? queryAll(
@@ -95,7 +96,8 @@ async function handleCameraRunGeneration(inputParams, onProgress) {
              WHERE sc.storyboard_id = ? AND c.name IN (${charNames.map(() => '?').join(',')})`,
             [storyboardId, ...charNames]
           )
-        : Promise.resolve([])
+        : Promise.resolve([]),
+      getOutputLanguage(storyboard.project_id)
     ]);
 
     if (vsResult.status === 'rejected') throw vsResult.reason;
@@ -117,6 +119,8 @@ async function handleCameraRunGeneration(inputParams, onProgress) {
         .map(c => `${c.name}: ${c.appearance}`)
         .join('\n');
     }
+
+    outputLang = langResult.status === 'fulfilled' ? langResult.value : { languageCode: 'en', languageName: 'English', promptInstruction: 'Output ONLY in English.' };
   }
 
   const description = storyboard.prompt_template || '';
@@ -127,7 +131,12 @@ async function handleCameraRunGeneration(inputParams, onProgress) {
   const endState = variables.endState || '';
   const startFrameDesc = variables.startFrame || '';
   const endFrameDesc = variables.endFrame || '';
-  const dialogue = variables.dialogue || '';
+  let dialogue = '';
+  if (variables.dialogues && Array.isArray(variables.dialogues) && variables.dialogues.length > 0) {
+    dialogue = variables.dialogues.map(d => `${d.character}：${d.line}`).join('；');
+  } else {
+    dialogue = variables.dialogue || '';
+  }
   const duration = variables.duration || (hasAction ? 3 : 2);
   const firstFrameUrl = storyboard.first_frame_url || null;
   const lastFrameUrl = storyboard.last_frame_url || null;
@@ -213,7 +222,8 @@ Generate the camera movement prompt for the current shot.
 4. The final frame must match the endState description
 5. Camera style must match the emotional tone
 6. Duration ~${duration}s, pace the movement accordingly
-7. Output ONLY the English prompt, no explanations, no line breaks, no numbering`;
+7. Output ONLY the ${outputLang.languageName} prompt, no explanations, no line breaks, no numbering
+8. [Language Purity] ${outputLang.promptInstruction} Translate all source terms to the target language faithfully.`;
 
   if (onProgress) onProgress(40);
 

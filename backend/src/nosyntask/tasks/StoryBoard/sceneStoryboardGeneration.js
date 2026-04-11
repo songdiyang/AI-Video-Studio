@@ -9,6 +9,7 @@
 const handleBaseTextModelCall = require('../base/baseTextModelCall');
 const { filterNonCharacters } = require('../../../utils/characterFilter');
 const { stripThinkTags, extractCodeBlock, extractJSON, stripInvisible } = require('../../../utils/washBody');
+const { queryAll } = require('../../../dbHelper');
 
 // 目标时长范围（秒）- 单场景
 const MIN_SCENE_DURATION = 15;  // 单场景最少15秒
@@ -169,6 +170,7 @@ async function handleSceneStoryboardGeneration(inputParams, onProgress) {
     previousSceneContext,
     scriptTitle, 
     textModel: modelName, 
+    projectId,
     think 
   } = inputParams;
 
@@ -181,6 +183,30 @@ async function handleSceneStoryboardGeneration(inputParams, onProgress) {
   }
 
   if (onProgress) onProgress(10);
+
+  // 查询项目中已有的角色及外观特征
+  let characterAppearanceSection = '';
+  if (projectId) {
+    try {
+      const existingChars = await queryAll(
+        `SELECT name, appearance, description FROM characters WHERE project_id = ? AND appearance IS NOT NULL AND appearance != ''`,
+        [projectId]
+      );
+      if (existingChars.length > 0) {
+        const charLines = existingChars.map(c =>
+          `- ${c.name}：${c.appearance}${c.description ? `（${c.description}）` : ''}`
+        ).join('\n');
+        characterAppearanceSection = `
+**【角色外观特征表】**
+以下角色有固定外观特征，在 description 中提到角色时须包含其关键外观特征（发型、服装等），而非仅写角色名。characters 数组仍使用角色名。
+${charLines}
+
+`;
+      }
+    } catch (e) {
+      console.warn(`[SceneStoryboard] 查询角色外观失败（忽略）:`, e.message);
+    }
+  }
 
   // 构建上下文信息
   let contextInfo = '';
@@ -211,7 +237,7 @@ ${contextInfo}
 ${sceneContent}
 
 ---
-
+${characterAppearanceSection}
 【分镜转化要求】
 
 1. **对话识别**：每句对白独立一个镜头，说话人用近景/特写
@@ -230,6 +256,7 @@ ${sceneContent}
 - endFrame: 动作结束时的画面（仅当hasAction=true时）
 - endState: 镜头结束时的状态
 - dialogue: 对白内容（没有则留空）
+- dialogues: 结构化对白数组，格式为 [{"character": "角色名", "line": "台词内容"}]，没有对白则为空数组 []
 - duration: 时长（秒，一般2-4秒）
 - characters: 出场角色数组
 - location: 场景地点

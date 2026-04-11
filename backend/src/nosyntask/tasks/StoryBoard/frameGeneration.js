@@ -18,13 +18,14 @@ const { submitAndPoll } = require('../pollUtils');
 const { execute, queryOne, queryAll } = require('../../../dbHelper');
 const { downloadAndStore } = require('../../../utils/fileStorage');
 const handleBaseTextModelCall = require('../base/baseTextModelCall');
-const { requireVisualStyle } = require('../../../utils/getProjectStyle');
+const { requireVisualStyle, getOutputLanguage } = require('../../../utils/getProjectStyle');
 const { generateUpdatedSceneImage } = require('./sceneRefUtils');
 const { selectReferenceImages } = require('./referenceImageSelector');
 const { collectCandidateImages, appendContextCandidates } = require('./collectCandidateImages');
 const { traced, trace } = require('../../engine/generationTrace');
 const { assertUpdated, assertPersistedFields } = require('./persistenceGuard');
 const { resolveMediaUrl } = require('../base/mediaResultResolver');
+const { saveFrameHistory } = require('./saveFrameHistory');
 
 /**
  * 生成单张图片（通过 submitAndPoll 自动处理同步/异步）
@@ -92,7 +93,7 @@ const generateSingleImage = traced('图片生成', async function _generateSingl
  * @param {object} [opts.directorParams] - 导演参数（光线、镜头、氛围）
  */
 const generateFramePrompt = traced('生成帧提示词', async function _generateFramePrompt(opts) {
-  const { textModel, description, frameType, characterInfo, sceneInfo, shotType, emotion, prevDescription, visualStyle, startFrameDesc, endFrameDesc, dialogue, prevEndState, endState, sceneState, environmentChange, directorParams, spatialDescription } = opts;
+  const { textModel, description, frameType, characterInfo, sceneInfo, shotType, emotion, prevDescription, visualStyle, startFrameDesc, endFrameDesc, dialogue, prevEndState, endState, sceneState, environmentChange, directorParams, spatialDescription, outputLang, startPromptForRef } = opts;
 
   // 角色信息：有角色时提供详细外貌，无角色时明确排除
   let charBlock;
@@ -170,13 +171,32 @@ ${sceneConstraint}`
   const emotionInfo = emotion ? `情绪/氛围: ${emotion}` : '';
   const styleInfo = visualStyle ? `视觉风格: ${visualStyle}` : '';
 
-  // 首尾帧文字描述（分镜阶段 AI 生成的）
-  const frameDescBlock = frameType === 'start'
-    ? (startFrameDesc ? `【首帧参考描述】${startFrameDesc}` : '')
-    : (endFrameDesc ? `【尾帧参考描述】${endFrameDesc}` : '');
+  // 首尾帧文字描述（分镜阶段 AI 生成的）+ 交叉参考
+  let frameDescBlock;
+  if (frameType === 'start') {
+    const parts = [];
+    if (startFrameDesc) parts.push(`【首帧参考描述】${startFrameDesc}`);
+    // 交叉参考：告诉首帧生成器尾帧应该是什么样，以便形成对比
+    if (endFrameDesc) parts.push(`【对比参考 - 尾帧预期状态】${endFrameDesc}\n（↑ 上面是动作完成后的预期状态，你生成的首帧必须展示动作开始前的状态，与之形成鲜明对比）`);
+    frameDescBlock = parts.join('\n');
+  } else {
+    const parts = [];
+    if (endFrameDesc) parts.push(`【尾帧参考描述】${endFrameDesc}`);
+    // 交叉参考：告诉尾帧生成器首帧是什么样，以便形成对比
+    if (startFrameDesc) parts.push(`【对比参考 - 首帧状态】${startFrameDesc}\n（↑ 上面是动作开始前的状态，你生成的尾帧必须展示动作完成后的状态，与之形成鲜明对比）`);
+    // 如果有已生成的首帧提示词，提供更精确的对比参考
+    if (startPromptForRef) parts.push(`【已生成的首帧提示词 - 尾帧必须与此形成最大视觉差异】\n${startPromptForRef.substring(0, 500)}\n（↑ 上面是首帧的实际提示词内容。尾帧应展示动作完成后的截然不同的姿态和位置，确保两帧之间有明显、可辨识的变化）`);
+    frameDescBlock = parts.join('\n');
+  }
 
   // 对白信息（帮助 AI 理解角色表情和嘴型）
-  const dialogueBlock = dialogue ? `【角色对白】"${dialogue}"（请根据对白内容调整角色的面部表情和嘴型状态）` : '';
+  let dialogueBlock = '';
+  if (opts.dialogues && Array.isArray(opts.dialogues) && opts.dialogues.length > 0) {
+    const lines = opts.dialogues.map(d => `${d.character}："${d.line}"`).join('\n');
+    dialogueBlock = `【角色对白】\n${lines}\n（请根据对白内容调整对应角色的面部表情和嘴型状态，说话中的角色嘴巴应微张）`;
+  } else if (dialogue) {
+    dialogueBlock = `【角色对白】"${dialogue}"（请根据对白内容调整角色的面部表情和嘴型状态）`;
+  }
 
   // 上一镜头结束状态（首帧必须与此衔接）
   const prevEndStateBlock = (frameType === 'start' && prevEndState)
@@ -193,21 +213,49 @@ ${sceneConstraint}`
   }
 
   // 每帧只描述一个冻结瞬间，不提及另一帧的存在
+  // 动作分解分析 + 差异化指导
   let frameHint;
   if (frameType === 'start') {
-    frameHint = `【画面定格要求】
-请描述一个完全静止的瞬间画面（frozen moment），如同按下暂停键截取的一帧：
-- 从分镜描述中提取动作发生之前的静止状态
-- 明确角色此刻的姿势、位置、朝向、表情
-- 只描述这一个瞬间的画面，不要暗示任何即将发生的动作或运动趋势
-- 例如：分镜描述"角色从椅子上站起来走向门口" → 提示词只描述"角色正坐在椅子上，双手自然放在扶手上，目光平视前方"`;
+    frameHint = `【动作分解分析 - 必须首先完成】
+在生成提示词之前，你必须先分析分镜描述中的动作：
+1. 识别动作：从分镜描述中提取所有动作和状态变化（如"站起来"、"走向"、"拿起"、"转身"等）
+2. 确定初始状态：想象动作开始前的那一刻（T=0），角色的精确姿势、位置、朝向是什么
+3. 想象最终状态：动作完成后（T=end），角色的姿势、位置、朝向会变成什么样
+4. 你的任务是描述 T=0 的画面：动作尚未开始，角色处于准备/静止状态
+
+【画面定格要求 - 首帧：动作起始前的静止瞬间】
+这是动作序列的第一帧，必须展示动作开始之前的状态：
+- 从分镜描述中提取所有动作，然后描述这些动作发生之前角色的姿态
+- 角色处于初始位置和初始姿势，尚未开始任何运动
+- 明确描述角色此刻的具体姿势（sitting/standing/crouching/lying等）、四肢位置、身体朝向、面部表情
+- 只描述这一个静止瞬间，绝对不要暗示任何即将发生的动作或运动趋势
+- ⚠️ 这一帧必须与尾帧形成最大视觉差异：如果尾帧角色站在门口，首帧角色就应该坐在椅子上；如果尾帧角色手持物品，首帧角色的双手应该是空的或放在别处
+
+具体示例：
+- 分镜"角色从椅子上站起来走向门口" → 首帧："角色正坐在椅子上，背部靠着椅背，双手自然放在大腿上，目光平视前方"（注意：不要描述"准备站起来"或"即将站起来"）
+- 分镜"角色拿起桌上的剑转身面对敌人" → 首帧："角色面朝桌子站立，双手垂在身体两侧，剑平放在桌面上"（注意：角色还没拿剑，手是空的）
+- 分镜"角色猛地回头看向窗外" → 首帧："角色背对窗户，面朝室内，目光注视着面前的方向"（注意：还没有回头的动作）`;
   } else {
-    frameHint = `【画面定格要求】
-请描述一个完全静止的瞬间画面（frozen moment），如同按下暂停键截取的一帧：
-- 从分镜描述中提取动作完成之后的静止状态
-- 明确角色此刻的姿势、位置、朝向、表情
-- 只描述这一个瞬间的画面，不要回顾任何之前的动作过程
-- 例如：分镜描述"角色从椅子上站起来走向门口" → 提示词只描述"角色站在门口，右手搭在门把手上，身体面向门外，表情平静"
+    frameHint = `【动作分解分析 - 必须首先完成】
+在生成提示词之前，你必须先分析分镜描述中的动作：
+1. 识别动作：从分镜描述中提取所有动作和状态变化（如"站起来"、"走向"、"拿起"、"转身"等）
+2. 想象初始状态：动作开始前（T=0），角色的姿势、位置、朝向是什么
+3. 确定最终状态：动作完成后（T=end），角色的精确姿势、位置、朝向变成了什么
+4. 你的任务是描述 T=end 的画面：所有动作已经完成，角色处于最终/结果状态
+
+【画面定格要求 - 尾帧：动作完成后的结果瞬间】
+这是动作序列的最后一帧，必须展示所有动作完成之后的状态：
+- 从分镜描述中提取所有动作，然后描述这些动作全部完成后角色的最终姿态
+- 角色已到达最终位置和最终姿势，所有动作已完成
+- 明确描述角色此刻的具体姿势（sitting/standing/crouching/lying等）、四肢位置、身体朝向、面部表情
+- 只描述这一个静止瞬间，不要回顾任何之前的动作过程
+- ⚠️ 这一帧必须与首帧形成最大视觉差异：角色的位置、姿势、朝向中至少有两项必须与首帧明显不同
+- ⚠️ 变化必须是可见的、显著的：不能只是微妙的表情变化，必须有身体姿态或位置的明显改变
+
+具体示例：
+- 分镜"角色从椅子上站起来走向门口" → 尾帧："角色站在门口，右手搭在门把手上，身体面向门外方向，背对之前坐着的椅子"（注意：位置从椅子移动到了门口，姿势从坐变成了站）
+- 分镜"角色拿起桌上的剑转身面对敌人" → 尾帧："角色右手紧握剑柄，剑身朝下，身体已转向远离桌子的方向，面朝前方，目光警惕"（注意：手中已持剑，身体朝向已改变）
+- 分镜"角色猛地回头看向窗外" → 尾帧："角色身体朝向窗户方向，头部转向窗外，目光注视着窗外的方向"（注意：朝向完全改变，从背对窗户变成面朝窗户）
 
 【关于参考图的说明】
 参考图用于提取角色外貌（发型、服装、体型）和场景环境信息，确保画面中的角色和场景与参考图一致。
@@ -305,6 +353,13 @@ ${parts.join('\n')}
 - 绝对不能在提示词中出现以下概念：before/after、transition、sequence、comparison、split、side by side、multiple panels、diptych、collage
 - 不要使用暗示运动过程的动词（如 rising, turning, reaching），只用描述静止姿态的词（如 seated, standing, holding）
 
+【首尾帧差异化核心原则 - 极其重要】
+你正在生成的是${frameType === 'start' ? '首帧（动作开始前）' : '尾帧（动作完成后）'}的提示词。
+- ${frameType === 'start' ? '首帧必须展示动作发生前的起始状态，角色处于初始位置和姿势' : '尾帧必须展示动作完成后的最终状态，角色已到达终点位置和最终姿势'}
+- 首帧和尾帧之间的差异必须是显而易见的：仅凭看这两张图片就能推断出中间发生了什么动作
+- 差异维度：位置变化（从A移动到B）、姿势变化（从坐到站）、朝向变化（从面朝X到面朝Y）、手持物品变化（空手到持物）、表情变化
+- 至少两个维度必须有明显变化，不能让两帧看起来几乎相同
+
 【内容安全规则 - 必须遵守】
 - 所有内容必须健康、正面、适合全年龄观看
 - 避免任何可能被误判为敏感的描述：
@@ -322,18 +377,19 @@ ${extraInfo}
 ${frameHint}
 
 要求：
-1. 【最重要】提取分镜描述中动作${frameType === 'start' ? '发生前' : '完成后'}的一个静止姿态，用静态语言描述
-2. 明确描述角色此刻的具体姿势（seated/standing/crouching/lying 等）、肢体位置、身体朝向
-3. 【细节保留】角色的每一个外貌细节都必须原样写入提示词：发色、发型、瞳色、服装款式、服装颜色、配饰等，不得省略或概括。例如"黑色双马尾、红色水手服、蓝色百褶裙"必须逐项写出，不能简化为"a girl in school uniform"
-4. 【细节保留】场景中从当前摄像机角度可见的环境细节都必须写入提示词：建筑结构、物品摆设、光源方向、色调等。摄像机背后的元素不应出现在描述中
-5. 镜头类型决定构图（如特写聚焦面部，远景展示全貌）
-6. 如果有上一镜头信息，确保画面与上一镜头自然衔接
-7. 如果有视觉风格要求，提示词必须体现该风格特征
-8. 严格遵守角色约束：有角色时与参考图一致，无角色时绝对不能出现人物
-9. 【内容安全】确保所有描述健康、正面，避免任何可能触发内容审核的词汇或概念
-10. 提示词开头必须加 "single image, single scene, one unified viewpoint,"，末尾必须加 ", one single frame, NOT split screen, NOT side by side, NOT comparison, NOT multiple panels"
-11. 【禁止文字/字幕】画面中绝对不能出现任何文字、字幕、标题、水印。提示词中必须包含 "no text, no subtitles, no captions, no watermark, no letters, no words" 约束
-12. 只输出英文提示词，不要其他解释
+1. 【最重要 - 动作分解】先分析分镜描述中的所有动作，然后提取动作${frameType === 'start' ? '发生前' : '完成后'}的一个静止姿态，用静态语言描述。${frameType === 'start' ? '描述角色在动作尚未开始时的初始状态' : '描述角色在所有动作完成后的最终状态'}
+2. 【姿态精确】明确描述角色此刻的具体姿势（seated/standing/crouching/lying 等）、肢体位置（手臂、腿、头部的具体位置和方向）、身体朝向（面朝哪个方向、背对什么）
+3. 【首尾帧差异化】${frameType === 'start' ? '如果分镜中角色最终会移动到某处，首帧中角色必须在起始位置；如果角色最终会持有某物，首帧中角色的手必须是空的或放在其他位置' : '如果分镜中角色从某处出发，尾帧中角色必须已到达目的地；如果角色要拿起某物，尾帧中角色必须已经持有该物品'}
+4. 【细节保留】角色的每一个外貌细节都必须原样写入提示词：发色、发型、瞳色、服装款式、服装颜色、配饰等，不得省略或概括。例如"黑色双马尾、红色水手服、蓝色百褶裙"必须逐项写出，不能简化为"a girl in school uniform"
+5. 【细节保留】场景中从当前摄像机角度可见的环境细节都必须写入提示词：建筑结构、物品摆设、光源方向、色调等。摄像机背后的元素不应出现在描述中
+6. 镜头类型决定构图（如特写聚焦面部，远景展示全貌）
+7. 如果有上一镜头信息，确保画面与上一镜头自然衔接
+8. 如果有视觉风格要求，提示词必须体现该风格特征
+9. 严格遵守角色约束：有角色时与参考图一致，无角色时绝对不能出现人物
+10. 【内容安全】确保所有描述健康、正面，避免任何可能触发内容审核的词汇或概念
+11. 提示词开头必须加 "single image, single scene, one unified viewpoint,"，末尾必须加 ", one single frame, NOT split screen, NOT side by side, NOT comparison, NOT multiple panels"
+12. 【禁止文字/字幕】画面中绝对不能出现任何文字、字幕、标题、水印。提示词中必须包含 "no text, no subtitles, no captions, no watermark, no letters, no words, no written text in any language" 约束
+13. 【语言纯净】${outputLang ? outputLang.promptInstruction : '只输出纯英文提示词，不要其他解释。'} 将所有源素材忠实翻译为目标语言，不要混合语言。
 
 提示词：`;
 
@@ -376,6 +432,9 @@ async function handleFrameGeneration(inputParams, onProgress) {
   if (inputVisualStyle) {
     console.log('[FrameGen] 使用预取的视觉风格（跳过DB查询）');
   }
+
+  // 获取项目输出语言设置
+  const outputLang = await getOutputLanguage(storyboard.project_id);
 
   let variables = {};
   try {
@@ -464,8 +523,8 @@ async function handleFrameGeneration(inputParams, onProgress) {
       textModel, description, characterInfo, sceneInfo,
       shotType: variables.shotType, emotion: variables.emotion,
       visualStyle, startFrameDesc: variables.startFrame, endFrameDesc: variables.endFrame,
-      dialogue: variables.dialogue, sceneState, environmentChange,
-      directorParams: variables.directorParams, spatialDescription
+      dialogue: variables.dialogue, dialogues: variables.dialogues, sceneState, environmentChange,
+      directorParams: variables.directorParams, spatialDescription, outputLang
     };
 
     const [startPromptResult, endPromptResult] = await Promise.all([
@@ -565,23 +624,10 @@ async function handleFrameGeneration(inputParams, onProgress) {
     // === 优化：异步保存历史版本（不阻塞主流程） ===
     setImmediate(async () => {
       try {
+        const genParams = { model: modelName, aspectRatio, resolution };
         await Promise.all([
-          execute(
-            `INSERT INTO storyboard_frame_history 
-             (storyboard_id, frame_type, frame_url, generation_prompt, generation_params, version_number, is_current)
-             VALUES (?, 'first', ?, ?, ?, 
-                    (SELECT COALESCE(MAX(version_number), 0) + 1 FROM storyboard_frame_history WHERE storyboard_id = ? AND frame_type = 'first'),
-                    TRUE)`,
-            [storyboardId, persistedStartFrame, startPrompt, JSON.stringify({ model: modelName, aspectRatio, resolution }), storyboardId]
-          ),
-          execute(
-            `INSERT INTO storyboard_frame_history 
-             (storyboard_id, frame_type, frame_url, generation_prompt, generation_params, version_number, is_current)
-             VALUES (?, 'last', ?, ?, ?, 
-                    (SELECT COALESCE(MAX(version_number), 0) + 1 FROM storyboard_frame_history WHERE storyboard_id = ? AND frame_type = 'last'),
-                    TRUE)`,
-            [storyboardId, persistedEndFrame, endPrompt, JSON.stringify({ model: modelName, aspectRatio, resolution }), storyboardId]
-          )
+          saveFrameHistory(storyboardId, 'first', persistedStartFrame, startPrompt, genParams),
+          saveFrameHistory(storyboardId, 'last', persistedEndFrame, endPrompt, genParams)
         ]);
         console.log('[FrameGen] 首尾帧历史版本已异步保存');
       } catch (e) {
@@ -616,7 +662,7 @@ async function handleFrameGeneration(inputParams, onProgress) {
     startPrompt = description;
     if (textModel) {
       console.log('[FrameGen] 使用文本模型生成首帧提示词...');
-      startPrompt = await generateFramePrompt({ textModel, description, frameType: 'start', characterInfo, sceneInfo, shotType: variables.shotType, emotion: variables.emotion, prevDescription: resolvedPrevDescription || null, visualStyle, startFrameDesc: variables.startFrame, endFrameDesc: variables.endFrame, dialogue: variables.dialogue, prevEndState: resolvedPrevEndState, endState: variables.endState, sceneState, environmentChange, directorParams: variables.directorParams, spatialDescription });
+      startPrompt = await generateFramePrompt({ textModel, description, frameType: 'start', characterInfo, sceneInfo, shotType: variables.shotType, emotion: variables.emotion, prevDescription: resolvedPrevDescription || null, visualStyle, startFrameDesc: variables.startFrame, endFrameDesc: variables.endFrame, dialogue: variables.dialogue, dialogues: variables.dialogues, prevEndState: resolvedPrevEndState, endState: variables.endState, sceneState, environmentChange, directorParams: variables.directorParams, spatialDescription, outputLang });
       trace('首帧提示词', { prompt: startPrompt });
       console.log(`\x1b[32m[FrameGen] 首帧提示词: ${startPrompt}\x1b[0m`);
     } else {
@@ -654,15 +700,8 @@ async function handleFrameGeneration(inputParams, onProgress) {
 
     // 保存首帧到历史版本表
     try {
-      await execute(
-        `INSERT INTO storyboard_frame_history 
-         (storyboard_id, frame_type, frame_url, generation_prompt, generation_params, version_number, is_current)
-         VALUES (?, 'first', ?, ?, ?, 
-                (SELECT COALESCE(MAX(version_number), 0) + 1 FROM storyboard_frame_history WHERE storyboard_id = ? AND frame_type = 'first'),
-                TRUE)`,
-        [storyboardId, persistedStartFrame, startPrompt, JSON.stringify({ model: modelName, aspectRatio, resolution }), storyboardId]
-      );
-      console.log('[FrameGen] 首帧历史版本已保存');
+      const ver = await saveFrameHistory(storyboardId, 'first', persistedStartFrame, startPrompt, { model: modelName, aspectRatio, resolution });
+      console.log(`[FrameGen] 首帧历史版本已保存 (v${ver})`);
     } catch (e) {
       console.warn('[FrameGen] 保存首帧历史版本失败:', e.message);
     }
@@ -678,7 +717,7 @@ async function handleFrameGeneration(inputParams, onProgress) {
     endPrompt = description;
     if (textModel) {
       console.log('[FrameGen] 使用文本模型生成尾帧提示词...');
-      endPrompt = await generateFramePrompt({ textModel, description, frameType: 'end', characterInfo, sceneInfo, shotType: variables.shotType, emotion: variables.emotion, prevDescription: null, visualStyle, startFrameDesc: variables.startFrame, endFrameDesc: variables.endFrame, dialogue: variables.dialogue, prevEndState: null, endState: variables.endState, sceneState, environmentChange, directorParams: variables.directorParams, spatialDescription });
+      endPrompt = await generateFramePrompt({ textModel, description, frameType: 'end', characterInfo, sceneInfo, shotType: variables.shotType, emotion: variables.emotion, prevDescription: null, visualStyle, startFrameDesc: variables.startFrame, endFrameDesc: variables.endFrame, dialogue: variables.dialogue, dialogues: variables.dialogues, prevEndState: null, endState: variables.endState, sceneState, environmentChange, directorParams: variables.directorParams, spatialDescription, outputLang, startPromptForRef: startPrompt });
       trace('尾帧提示词', { prompt: endPrompt });
       console.log(`\x1b[32m[FrameGen] 尾帧提示词: ${endPrompt}\x1b[0m`);
     } else {
@@ -731,15 +770,8 @@ async function handleFrameGeneration(inputParams, onProgress) {
 
     // 保存尾帧到历史版本表
     try {
-      await execute(
-        `INSERT INTO storyboard_frame_history 
-         (storyboard_id, frame_type, frame_url, generation_prompt, generation_params, version_number, is_current)
-         VALUES (?, 'last', ?, ?, ?, 
-                (SELECT COALESCE(MAX(version_number), 0) + 1 FROM storyboard_frame_history WHERE storyboard_id = ? AND frame_type = 'last'),
-                TRUE)`,
-        [storyboardId, persistedEndFrame, endPrompt, JSON.stringify({ model: modelName, aspectRatio, resolution }), storyboardId]
-      );
-      console.log('[FrameGen] 尾帧历史版本已保存');
+      const ver = await saveFrameHistory(storyboardId, 'last', persistedEndFrame, endPrompt, { model: modelName, aspectRatio, resolution });
+      console.log(`[FrameGen] 尾帧历史版本已保存 (v${ver})`);
     } catch (e) {
       console.warn('[FrameGen] 保存尾帧历史版本失败:', e.message);
     }

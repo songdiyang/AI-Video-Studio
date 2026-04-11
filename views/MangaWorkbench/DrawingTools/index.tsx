@@ -553,8 +553,8 @@ const AIPanel: React.FC<AIPanelProps> = ({ projectId, imageModel }) => {
     
     return (
       <div className={`mt-2 p-2 rounded-lg text-xs ${
-        task.status === 'completed' ? 'bg-green-500/10 text-green-400' :
-        task.status === 'failed' ? 'bg-red-500/10 text-red-400' :
+        task.status === 'completed' ? 'bg-green-500/10 text-green-600 dark:text-green-400' :
+        task.status === 'failed' ? 'bg-red-500/10 text-red-600 dark:text-red-400' :
         'bg-[var(--accent)]/10 text-[var(--accent)]'
       }`}>
         <div className="flex items-center justify-between">

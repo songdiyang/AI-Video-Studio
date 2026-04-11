@@ -11,6 +11,31 @@
 const fetch = require('node-fetch');
 
 /**
+ * 将 API 原始错误消息映射为用户友好的中文提示
+ */
+function friendlyErrorMessage(statusCode, rawMsg) {
+  const msg = (rawMsg || '').toLowerCase();
+
+  if (msg.includes('sensitive') || msg.includes('安全') || msg.includes('违规')) {
+    return '提示词或参考图片可能包含敏感内容，请修改后重试。如果您认为内容没有问题，可以尝试换一种描述方式。';
+  }
+  if (msg.includes('rate limit') || msg.includes('too many') || msg.includes('429') || msg.includes('频率')) {
+    return 'API 请求过于频繁，请稍后再试。';
+  }
+  if (msg.includes('quota') || msg.includes('余额') || msg.includes('insufficient')) {
+    return 'API 配额不足，请联系管理员检查账户余额。';
+  }
+  if (msg.includes('invalid') && msg.includes('image')) {
+    return '参考图片无效或无法访问，请检查图片链接是否正确。';
+  }
+  if (msg.includes('timeout') || msg.includes('timed out')) {
+    return 'API 处理超时，请稍后重试。';
+  }
+  // 未匹配到已知模式，返回原始消息
+  return rawMsg;
+}
+
+/**
  * 构建 content 数组
  * @param {string} prompt - 文本提示词
  * @param {string[]} imageUrls - 图片 URL 数组
@@ -67,8 +92,8 @@ function processParams(params) {
   const processed = {};
 
   // ratio: 16:9, 4:3, 1:1, 3:4, 9:16, 21:9, adaptive
-  // 兼容 aspectRatio 参数名
-  const ratio = params.ratio || params.aspectRatio;
+  // 兼容 aspectRatio 参数名（优先使用 aspectRatio，因为 ratio 可能来自 default_params 而非用户选择）
+  const ratio = params.aspectRatio || params.ratio;
   if (ratio && ratio !== '_REMOVE_') {
     const validRatios = ['16:9', '4:3', '1:1', '3:4', '9:16', '21:9', 'adaptive'];
     if (validRatios.includes(ratio)) {
@@ -90,12 +115,18 @@ function processParams(params) {
     }
   }
 
-  // duration: 4-12 或 -1（自动选择）
+  // duration: 4-12 或 -1（自动选择），官方限定最短4秒
   // 注意：i2v 模式和首尾帧模式都支持 duration
   if (params.duration !== undefined && params.duration !== '_REMOVE_') {
     const duration = parseInt(params.duration);
-    if (duration === -1 || (duration >= 4 && duration <= 12)) {
+    if (duration === -1) {
       processed.duration = duration;
+    } else if (duration >= 4 && duration <= 12) {
+      processed.duration = duration;
+    } else if (duration > 0 && duration < 4) {
+      // 低于4秒的自动提升到4秒（官方最低限制）
+      console.log(`[Seedance1.5] duration ${duration}s 低于最低限制，自动提升到 4s`);
+      processed.duration = 4;
     } else {
       console.warn(`[Seedance1.5] 无效的 duration: ${params.duration}，使用默认值 5`);
       processed.duration = 5;
@@ -238,7 +269,8 @@ module.exports = {
 
     if (!response.ok) {
       const errorMsg = data.error?.message || data.message || data.msg || JSON.stringify(data);
-      throw new Error(`Seedance 1.5 API 错误 (${response.status}): ${errorMsg}`);
+      const userMsg = friendlyErrorMessage(response.status, errorMsg);
+      throw new Error(`Seedance 1.5 视频生成失败: ${userMsg}`);
     }
 
     return data;

@@ -9,8 +9,10 @@ const POLLING_MINIMIZED = 15000; // When panel is collapsed
 
 // 需要在完成后刷新页面的任务类型
 const REFRESH_ON_COMPLETE_TYPES = [
+  'frame_generation',            // 分镜首尾帧生成
   'single_frame_generation',     // 分镜单帧生成
-  'batch_frame_generation',      // 批量分镜帧生成
+  'batch_frame_generation',      // 批量分镜帧生成（兼容旧任务）
+  'scene_video',                 // 分镜视频生成
   'scene_image_generation',      // 场景图片生成
   'character_views_generation',  // 角色三视图生成
 ];
@@ -36,10 +38,10 @@ export function useTaskQueue(options?: UseTaskQueueOptions): UseTaskQueueReturn 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isFirstLoad = useRef(true);
   // 跟踪上一次的任务ID集合，用于检测任务完成
-  const prevJobIdsRef = useRef<Set<number>>(new Set());
-  const prevJobTypesRef = useRef<Map<number, string>>(new Map());
+  const prevJobIdsRef = useRef<Set<string>>(new Set());
+  const prevJobTypesRef = useRef<Map<string, string>>(new Map());
   // 跟踪任务状态，用于检测失败
-  const prevStatusRef = useRef<Map<number, string>>(new Map());
+  const prevStatusRef = useRef<Map<string, string>>(new Map());
   const currentIntervalRef = useRef<number>(POLLING_IDLE);
   // 指数退避相关
   const staleCountRef = useRef(0); // 连续无变化次数
@@ -75,7 +77,7 @@ export function useTaskQueue(options?: UseTaskQueueOptions): UseTaskQueueReturn 
 
       // 检测已完成的任务（之前存在但现在不在列表中）
       if (!isFirstLoad.current) {
-        const completedJobIds: number[] = [];
+        const completedJobIds: string[] = [];
         prevJobIdsRef.current.forEach(id => {
           if (!currentJobIds.has(id)) {
             completedJobIds.push(id);

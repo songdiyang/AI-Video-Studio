@@ -221,18 +221,23 @@ function validateForVideo(sceneId, storyboard, variables) {
   const blockingIssues = [];
   const warningIssues = [];
 
-  // 1. 检查首帧
-  if (!storyboard.first_frame_url) {
-    blockingIssues.push('缺少首帧图片，请先生成首尾帧');
-  }
-
-  // 2. 如果是动作镜头，检查尾帧
   const hasAction = variables.hasAction || false;
-  if (hasAction && !storyboard.last_frame_url) {
-    blockingIssues.push('动作镜头缺少尾帧图片，请先生成首尾帧');
+
+  // 1. 静态镜头必须有首帧；动作镜头首尾帧为可选参考
+  if (hasAction) {
+    if (!storyboard.first_frame_url) {
+      warningIssues.push('动作镜头缺少首帧图片，将使用纯提示词生成视频');
+    }
+    if (!storyboard.last_frame_url) {
+      warningIssues.push('动作镜头缺少尾帧图片，视频结束画面由AI自由发挥');
+    }
+  } else {
+    if (!storyboard.first_frame_url) {
+      blockingIssues.push('缺少首帧图片，请先生成帧图片');
+    }
   }
 
-  // 3. 检查提示词
+  // 2. 检查提示词
   if (!storyboard.prompt_template || storyboard.prompt_template.trim() === '') {
     blockingIssues.push('分镜缺少描述/提示词');
   }

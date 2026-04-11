@@ -34,11 +34,17 @@ export interface SpatialDescription {
   environmentDepth?: string;
 }
 
+export interface DialogueLine {
+  character: string;
+  line: string;
+}
+
 export interface StoryboardScene {
   id: number;
   order: number;
   description: string;
   dialogue: string;
+  dialogues: DialogueLine[];
   duration: number;
   imageUrl?: string;
   videoUrl?: string;
@@ -175,6 +181,7 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
               order: item.index || index + 1,
               description: item.prompt_template || '',
               dialogue: vars.dialogue || '',
+              dialogues: Array.isArray(vars.dialogues) ? vars.dialogues : [],
               duration: vars.duration || 3,
               imageUrl: item.image_ref || undefined,
               videoUrl: item.video_url || vars.videoUrl || undefined,
@@ -248,6 +255,7 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
       order: idx + 1,
       description: '',
       dialogue: '',
+      dialogues: [],
       duration: 5,
       characters: [],
       props: [],
@@ -398,6 +406,41 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
     persistReorder(newScenes);
   };
 
+  // 更新结构化台词并保存到后端
+  const updateDialogues = async (id: number, dialogues: DialogueLine[]) => {
+    const previousScene = scenes.find((scene) => scene.id === id);
+    if (!previousScene) return false;
+
+    // 先更新本地状态
+    const flatDialogue = dialogues.length > 0 ? dialogues.map(d => d.line).join('；') : '';
+    setScenes(prev => prev.map(s => s.id === id ? { ...s, dialogues, dialogue: flatDialogue } : s));
+
+    try {
+      const token = getAuthToken();
+      const res = await fetch(`/api/storyboards/${id}/content`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ dialogues })
+      });
+
+      if (!res.ok) {
+        throw new Error('保存台词失败');
+      }
+      return true;
+    } catch (error: any) {
+      // 回滚
+      setScenes(prev => prev.map(s =>
+        s.id === id ? { ...s, dialogues: previousScene.dialogues, dialogue: previousScene.dialogue } : s
+      ));
+      console.error('保存台词失败:', error);
+      showToast('保存台词失败，请稍后重试', 'error');
+      return false;
+    }
+  };
+
   // 将排序持久化到后端
   const persistReorder = async (orderedScenes: StoryboardScene[]) => {
     if (!scriptId) return;
@@ -433,6 +476,7 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
     deleteScene,
     moveScene,
     updateDescription,
+    updateDialogues,
     updateDirectorParams,
     reorderScenes
   };

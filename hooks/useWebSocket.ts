@@ -70,7 +70,9 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     if (!enabled) return;
 
     try {
-      const wsUrl = `ws://localhost:4001`;
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const host = window.location.host;
+      const wsUrl = `${protocol}//${host}/ws`;
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 

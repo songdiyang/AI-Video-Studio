@@ -680,6 +680,99 @@ html.theme-transitioning .excalidraw *::after {
 
 /* =========== 浅色主题简化覆盖 =========== */
 
+/* 管理后台强制深色 —— 排除 admin 区域受浅色主题影响 */
+.admin-forced-dark,
+.admin-forced-dark * {
+  --bg-app: #0a0a0f;
+  --bg-card: rgba(255, 255, 255, 0.1);
+  --bg-nav: #0a0a0f;
+  --bg-input: rgba(255, 255, 255, 0.15);
+  --bg-elevated: rgba(255, 255, 255, 0.08);
+  --text-primary: #ffffff;
+  --text-secondary: rgba(255, 255, 255, 0.8);
+  --text-muted: rgba(255, 255, 255, 0.6);
+  --border-color: rgba(255, 255, 255, 0.15);
+  color-scheme: dark;
+}
+
+/* 管理后台 HeroUI 组件强制深色主题 */
+.theme-light .admin-forced-dark [class*="inputWrapper"] {
+  background-color: rgba(255, 255, 255, 0.15) !important;
+  border-color: rgba(255, 255, 255, 0.2) !important;
+  color: white !important;
+}
+.theme-light .admin-forced-dark [class*="inputWrapper"] input,
+.theme-light .admin-forced-dark [class*="inputWrapper"] select,
+.theme-light .admin-forced-dark [class*="inputWrapper"] textarea {
+  color: white !important;
+}
+.theme-light .admin-forced-dark [data-slot="trigger"] {
+  background-color: rgba(255, 255, 255, 0.15) !important;
+  border-color: rgba(255, 255, 255, 0.2) !important;
+  color: white !important;
+}
+.theme-light .admin-forced-dark [data-slot="listbox"] {
+  background-color: #1a1a2e !important;
+  border-color: rgba(255, 255, 255, 0.15) !important;
+}
+.theme-light .admin-forced-dark [data-focus="true"] {
+  border-color: rgba(139, 92, 246, 0.6) !important;
+}
+/* HeroUI Table 强制深色 */
+.theme-light .admin-forced-dark table {
+  color: rgba(255, 255, 255, 0.9) !important;
+}
+.theme-light .admin-forced-dark table th {
+  color: rgba(255, 255, 255, 0.7) !important;
+  background-color: rgba(255, 255, 255, 0.08) !important;
+}
+.theme-light .admin-forced-dark table td {
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+.theme-light .admin-forced-dark table tr {
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+/* HeroUI Card / Chip / Button 深色覆盖 */
+.theme-light .admin-forced-dark [data-slot="base"].bg-default-100,
+.theme-light .admin-forced-dark .bg-default-100 {
+  background-color: rgba(255, 255, 255, 0.08) !important;
+}
+.theme-light .admin-forced-dark [data-slot="base"].bg-default-200,
+.theme-light .admin-forced-dark .bg-default-200 {
+  background-color: rgba(255, 255, 255, 0.12) !important;
+}
+.theme-light .admin-forced-dark .text-default-600 {
+  color: rgba(255, 255, 255, 0.7) !important;
+}
+.theme-light .admin-forced-dark .text-default-700 {
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+.theme-light .admin-forced-dark .text-default-500 {
+  color: rgba(255, 255, 255, 0.6) !important;
+}
+/* HeroUI Modal 深色覆盖 */
+.theme-light .admin-forced-dark [role="dialog"] {
+  background-color: #1a1a2e !important;
+  color: rgba(255, 255, 255, 0.9) !important;
+}
+.theme-light .admin-forced-dark [role="dialog"] [data-slot="header"],
+.theme-light .admin-forced-dark [role="dialog"] [data-slot="body"],
+.theme-light .admin-forced-dark [role="dialog"] [data-slot="footer"] {
+  color: rgba(255, 255, 255, 0.9) !important;
+}
+/* HeroUI Switch / Pagination 深色覆盖 */
+.theme-light .admin-forced-dark [data-slot="wrapper"].bg-default-200 {
+  background-color: rgba(255, 255, 255, 0.15) !important;
+}
+.theme-light .admin-forced-dark [data-slot="label"] {
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+/* select option 深色背景 */
+.admin-forced-dark select option {
+  background-color: #1a1a2e !important;
+  color: white !important;
+}
+
 /* 背景色覆盖 */
 .theme-light .bg-slate-900,
 .theme-light .bg-\[\#0a0a0f\],

@@ -411,6 +411,12 @@ const SceneCard: React.FC<SceneCardProps> = ({
                     视频
                   </span>
                 )}
+                {isGeneratingVideo && !scene.videoUrl && (
+                  <span className="text-[10px] px-1 py-0.5 rounded bg-rose-500/20 text-rose-400 flex items-center gap-0.5">
+                    <div className="w-2 h-2 border border-rose-400 border-t-transparent rounded-full animate-spin" />
+                    视频
+                  </span>
+                )}
               </div>
             </div>
 

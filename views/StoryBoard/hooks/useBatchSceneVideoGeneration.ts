@@ -7,6 +7,7 @@
  */
 
 import { useBatchGeneration, VIDEO_GENERATION_CONFIG, StoryboardScene } from './useBatchGeneration';
+import { WorkflowTask } from '../../../hooks/useWorkflow';
 
 interface UseBatchSceneVideoGenerationProps {
   scriptId: number | null;
@@ -19,6 +20,10 @@ interface UseBatchSceneVideoGenerationProps {
   scenes?: StoryboardScene[];
   onComplete?: () => void;
   onError?: (message: string) => void;
+  /** 子任务完成回调（用于实时刷新单个分镜） */
+  onSubTaskCompleted?: (task: WorkflowTask, storyboardId: number | null) => void;
+  /** 批量生成启动回调（返回有效分镜ID列表） */
+  onBatchStarted?: (validSceneIds: number[], type: 'frame' | 'video') => void;
 }
 
 export function useBatchSceneVideoGeneration({
@@ -31,7 +36,9 @@ export function useBatchSceneVideoGeneration({
   duration,
   scenes = [],
   onComplete,
-  onError
+  onError,
+  onSubTaskCompleted,
+  onBatchStarted
 }: UseBatchSceneVideoGenerationProps) {
   const result = useBatchGeneration(VIDEO_GENERATION_CONFIG, {
     scriptId,
@@ -43,7 +50,9 @@ export function useBatchSceneVideoGeneration({
     scenes,
     duration,
     onComplete,
-    onError
+    onError,
+    onSubTaskCompleted,
+    onBatchStarted
   });
 
   // 保持原有接口兼容性

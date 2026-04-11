@@ -37,16 +37,12 @@ function decodeId(hexId) {
   
   const str = String(hexId).toLowerCase();
   
-  // 兼容旧版纯数字ID（前端可能传入数字或数字字符串）
-  if (/^\d+$/.test(str)) {
-    return parseInt(str, 10);
-  }
-  
-  // 16进制转换
+  // 验证合法的16进制字符串
   if (!/^[0-9a-f]+$/.test(str)) {
     throw new Error(`Invalid hex workflow ID: ${hexId}`);
   }
   
+  // 统一按16进制解析（encodeId 生成的都是16进制）
   return parseInt(str, 16);
 }
 

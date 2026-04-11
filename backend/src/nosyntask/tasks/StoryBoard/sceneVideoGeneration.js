@@ -19,7 +19,7 @@ const { submitAndPoll } = require('../pollUtils');
 const { execute, queryOne, queryAll } = require('../../../dbHelper');
 const { downloadAndStore } = require('../../../utils/fileStorage');
 const handleBaseTextModelCall = require('../base/baseTextModelCall');
-const { requireVisualStyle } = require('../../../utils/getProjectStyle');
+const { requireVisualStyle, getOutputLanguage } = require('../../../utils/getProjectStyle');
 const handleCameraRunGeneration = require('./cameraRunGeneration');
 const { generateMotionBreakdown } = require('./motionBreakdown');
 const { trace } = require('../../engine/generationTrace');
@@ -85,12 +85,15 @@ async function handleSceneVideoGeneration(inputParams, onProgress) {
   const lastFrameUrl = storyboard.last_frame_url || null;
   trace('查询分镜数据', { storyboardId, idx: storyboard.idx, hasAction, location: variables.location, hasFirstFrame: !!firstFrameUrl, hasLastFrame: !!lastFrameUrl });
 
-  // 2. 校验帧完整性
+  // 2. 校验帧完整性（静态镜头必须有首帧；动作镜头首尾帧为可选参考）
   if (hasAction) {
-    if (!firstFrameUrl || !lastFrameUrl) {
-      throw new Error('动作镜头必须包含首帧和尾帧，请先生成首尾帧');
+    if (firstFrameUrl && lastFrameUrl) {
+      console.log('[SceneVideoGen] 动作镜头，首帧:', firstFrameUrl, '尾帧:', lastFrameUrl);
+    } else if (firstFrameUrl) {
+      console.log('[SceneVideoGen] 动作镜头，仅有首帧（尾帧缺失，不强制依赖）:', firstFrameUrl);
+    } else {
+      console.log('[SceneVideoGen] 动作镜头，无首尾帧，使用纯提示词生成视频');
     }
-    console.log('[SceneVideoGen] 动作镜头，首帧:', firstFrameUrl, '尾帧:', lastFrameUrl);
   } else {
     if (!firstFrameUrl) {
       throw new Error('静态镜头必须包含首帧，请先生成帧图片');
@@ -235,7 +238,8 @@ async function handleSceneVideoGeneration(inputParams, onProgress) {
               visualStyle: visualStyleValue,
               prevNeighbor: prevNeighbor,
               nextNeighbor: nextNeighbor,
-              characterAppearance
+              characterAppearance,
+              outputLang
             }
           },
           (p) => { if (onProgress) onProgress(10 + p * 0.05); }
@@ -284,9 +288,15 @@ async function handleSceneVideoGeneration(inputParams, onProgress) {
     const locInfo = variables.location ? `场景: ${variables.location}` : '无特定场景';
     const shotInfo = variables.shotType ? `镜头类型: ${variables.shotType}` : '';
     const emotionInfo = variables.emotion ? `情绪/氛围: ${variables.emotion}` : '';
-    const dialogueInfo = variables.dialogue
-      ? `对话/台词: ${variables.dialogue}`
-      : '【无对白镜头】此镜头没有任何角色对白或语音，视频必须完全没有人声';
+    let dialogueInfo;
+    if (variables.dialogues && Array.isArray(variables.dialogues) && variables.dialogues.length > 0) {
+      const lines = variables.dialogues.map(d => `${d.character}："${d.line}"`).join('\n');
+      dialogueInfo = `对话/台词:\n${lines}`;
+    } else if (variables.dialogue) {
+      dialogueInfo = `对话/台词: ${variables.dialogue}`;
+    } else {
+      dialogueInfo = '【无对白镜头】此镜头没有任何角色对白或语音，视频必须完全没有人声';
+    }
     const actionInfo = hasAction ? '这是一个有动作的镜头，需要描述动作的完整过程' : '这是一个静态镜头，画面变化较小';
     const styleInfo = visualStyleValue ? `视觉风格: ${visualStyleValue}` : '';
     // 上下文传递：传结构化字段（endState/emotion/shotType/location），不传完整描述以避免环境效果污染
@@ -355,6 +365,9 @@ async function handleSceneVideoGeneration(inputParams, onProgress) {
 
     const extraInfo = [charBlock, locInfo, sceneBlock, shotInfo, emotionInfo, dialogueInfo, actionInfo, cameraInfo, endStateInfo, styleInfo, charConstraint, prevContext, nextContext, motionBreakdownText].filter(Boolean).join('\n');
 
+    // 获取项目输出语言设置
+    const outputLang = await getOutputLanguage(storyboard.project_id);
+
     // 条件化规则：仅在相关场景存在时才添加，减少无关 token 消耗
     const hasEnvEffects = /持续|全程|不间断|暴风雪|下雨|火焰|燃烧|篝火/.test(description);
     const hasIntensityMarkers = /微弱|轻微|中等|强烈|猛烈|若隐若现|电光/.test(description);
@@ -374,7 +387,7 @@ async function handleSceneVideoGeneration(inputParams, onProgress) {
 
     const promptRequest = `You are a professional video generation prompt expert.
 
-Generate a detailed English prompt for video generation based on the following storyboard:
+Generate a detailed ${outputLang.languageName} prompt for video generation based on the following storyboard:
 
 Storyboard description: ${description}
 ${extraInfo}
@@ -389,8 +402,8 @@ Rules:
 7. Strictly follow character constraints: maintain consistency with reference frame if characters present; absolutely no humans if no-character shot${conditionalRules}
 11. [Audio Control] If marked as "无对白镜头", include "no speech, no voice, no dialogue, silent". For silent mouth movements: use "silently mouthing without any audible sound", NEVER use murmuring/muttering/whispering
 12. [Motion Breakdown] If Motion Breakdown is provided: MOVING elements must move as described, STATIC elements must remain still and visible throughout. No unlisted elements may appear. Characters must never disappear.
-13. Output ONLY English prompt, no explanations
-14. [No Text] Include "no text, no subtitles, no captions, no watermark" constraint
+13. [Language Purity] ${outputLang.promptInstruction} Translate ALL source material faithfully into the target language. Do not mix languages.
+14. [No Text] Include "no text, no subtitles, no captions, no watermark, no written words in any language" constraint
 
 Prompt:`;
 
@@ -409,18 +422,23 @@ Prompt:`;
 
   // 5. 构建 imageUrls 并生成视频
   if (onProgress) onProgress(20);
-  const imageUrls = [firstFrameUrl];
+  const imageUrls = [];
+  if (firstFrameUrl) imageUrls.push(firstFrameUrl);
   if (hasAction && lastFrameUrl) {
     imageUrls.push(lastFrameUrl);
   }
   
-  // 优先使用分镜中存储的时长，其次使用传入参数，并限制在 2-12 秒范围内
+  // 优先使用分镜中存储的时长，其次使用传入参数，并限制在 4-12 秒范围内（Seedance 1.5 Pro 官方限定 4-12s）
   let finalDuration = variables.duration || storyboard.duration || duration;
   if (finalDuration !== undefined && finalDuration !== null) {
+<<<<<<< HEAD
     const parsed = parseFloat(finalDuration);
     finalDuration = isNaN(parsed) ? 5 : Math.max(2, Math.min(12, parsed));
   } else {
     finalDuration = 5; // 无时长参数时默认5秒
+=======
+    finalDuration = Math.max(4, Math.min(12, parseFloat(finalDuration)));
+>>>>>>> 41b2bc9c (feat: 多项功能优化与修复)
   }
   
   trace('构建视频参考图', { imageUrls, duration: finalDuration, aspectRatio });
@@ -428,10 +446,18 @@ Prompt:`;
 
   const submitParams = {
     prompt: promptUsed,
-    imageUrls,
-    startFrame: firstFrameUrl,
-    endFrame: lastFrameUrl || '_REMOVE_'
   };
+
+  // 仅在有参考图时传递
+  if (imageUrls.length > 0) {
+    submitParams.imageUrls = imageUrls;
+    submitParams.startFrame = firstFrameUrl || '_REMOVE_';
+  }
+  if (lastFrameUrl) {
+    submitParams.endFrame = lastFrameUrl;
+  } else {
+    submitParams.endFrame = '_REMOVE_';
+  }
 
   if (finalDuration !== undefined && finalDuration !== null) {
     submitParams.duration = finalDuration;

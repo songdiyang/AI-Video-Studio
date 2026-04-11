@@ -63,11 +63,19 @@ const SceneCardContent: React.FC<SceneCardContentProps> = ({
                 <Edit2 className="w-3 h-3" />
               </button>
             </div>
-            {scene.dialogue && (
+            {scene.dialogues && scene.dialogues.length > 0 ? (
+              <div className="mt-1 space-y-0.5">
+                {scene.dialogues.map((d: any, i: number) => (
+                  <p key={i} className="text-xs text-slate-500 italic">
+                    <span className="text-slate-400 font-medium not-italic">{d.character}：</span>{d.line}
+                  </p>
+                ))}
+              </div>
+            ) : scene.dialogue ? (
               <p className="text-xs text-slate-500 mt-1 italic">
                 {scene.dialogue}
               </p>
-            )}
+            ) : null}
           </div>
         )}
       </div>

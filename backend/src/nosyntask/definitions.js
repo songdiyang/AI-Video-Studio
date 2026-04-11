@@ -101,7 +101,7 @@ const WORKFLOW_DEFINITIONS = {
         handler: handleStoryboardGeneration,
         // dependencies: [] - 无依赖，立即执行
         buildInput: createBuildInput([
-          'scriptContent', 'scriptTitle', 'textModel',
+          'scriptContent', 'scriptTitle', 'textModel', 'projectId',
           { key: 'think', defaultValue: false }
         ])
       },
@@ -154,7 +154,7 @@ const WORKFLOW_DEFINITIONS = {
         handler: handleSceneStoryboardGeneration,
         buildInput: createBuildInput([
           'sceneContent', 'sceneName', 'sceneNumber', 'totalScenes',
-          'previousSceneContext', 'scriptTitle', 'textModel',
+          'previousSceneContext', 'scriptTitle', 'textModel', 'projectId',
           { key: 'think', defaultValue: false }
         ])
       },
@@ -232,7 +232,7 @@ const WORKFLOW_DEFINITIONS = {
             { key: 'sceneName', from: () => scene.sceneName },
             { key: 'sceneNumber', from: () => scene.sceneNumber },
             { key: 'totalScenes', from: () => totalScenes },
-            'scriptTitle', 'textModel',
+            'scriptTitle', 'textModel', 'projectId',
             { key: 'think', defaultValue: false }
           ])
         });

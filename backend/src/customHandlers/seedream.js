@@ -14,11 +14,77 @@
 const fetch = require('node-fetch');
 
 /**
+ * 将 API 原始错误消息映射为用户友好的中文提示
+ */
+function friendlyErrorMessage(statusCode, rawMsg) {
+  const msg = (rawMsg || '').toLowerCase();
+
+  if (msg.includes('sensitive') || msg.includes('安全') || msg.includes('违规')) {
+    return '提示词或参考图片可能包含敏感内容，请修改后重试。如果您认为内容没有问题，可以尝试换一种描述方式。';
+  }
+  if (msg.includes('rate limit') || msg.includes('too many') || msg.includes('429') || msg.includes('频率')) {
+    return 'API 请求过于频繁，请稍后再试。';
+  }
+  if (msg.includes('quota') || msg.includes('余额') || msg.includes('insufficient')) {
+    return 'API 配额不足，请联系管理员检查账户余额。';
+  }
+  if (msg.includes('invalid') && msg.includes('image')) {
+    return '参考图片无效或无法访问，请检查图片链接是否正确。';
+  }
+  if (msg.includes('timeout') || msg.includes('timed out')) {
+    return 'API 处理超时，请稍后重试。';
+  }
+  return rawMsg;
+}
+
+/**
  * Seedream 高版本（4.5+）最低像素要求
  * 4.5: image size must be at least 3686400 pixels (1920x1920)
  * 5.0/5.0-lite: 支持 '2k', '3k' 预设值
  */
 const SEEDREAM_HIGH_MIN_PIXELS = 3686400; // 1920 x 1920
+
+/**
+ * aspectRatio → 像素尺寸映射表（Seedream 4.5，满足最低 3,686,400 像素要求）
+ * 所有尺寸 w*h ≥ 3,686,400
+ */
+const ASPECT_RATIO_SIZE_MAP_45 = {
+  '16:9':  '2560x1440',   // 3,686,400
+  '9:16':  '1440x2560',   // 3,686,400
+  '1:1':   '1920x1920',   // 3,686,400
+  '4:3':   '2240x1680',   // 3,763,200
+  '3:4':   '1680x2240',   // 3,763,200
+  '3:2':   '2400x1600',   // 3,840,000
+  '2:3':   '1600x2400',   // 3,840,000
+  '21:9':  '2880x1232',   // 3,548,160 → 补偿到 2880x1280
+  '9:21':  '1232x2880',   // 同上 → 1280x2880
+};
+// 修正边界值
+ASPECT_RATIO_SIZE_MAP_45['21:9'] = '2880x1280';
+ASPECT_RATIO_SIZE_MAP_45['9:21'] = '1280x2880';
+
+/**
+ * 根据 aspectRatio 字符串动态计算满足最低像素要求的尺寸
+ * @param {string} aspectRatio - 如 "16:9", "9:16"
+ * @param {number} minPixels - 最低像素数
+ * @returns {string|null} "WxH" 格式尺寸，无法解析则返回 null
+ */
+function computeSizeFromRatio(aspectRatio, minPixels) {
+  const match = aspectRatio.match(/^(\d+):(\d+)$/);
+  if (!match) return null;
+  const rw = parseInt(match[1]);
+  const rh = parseInt(match[2]);
+  if (!rw || !rh) return null;
+  // w/h = rw/rh, w*h >= minPixels
+  // w = rw*k, h = rh*k, w*h = rw*rh*k² >= minPixels → k = ceil(sqrt(minPixels/(rw*rh)))
+  const k = Math.ceil(Math.sqrt(minPixels / (rw * rh)));
+  let w = rw * k;
+  let h = rh * k;
+  // 对齐到 8 像素（GPU 友好）
+  w = Math.ceil(w / 8) * 8;
+  h = Math.ceil(h / 8) * 8;
+  return `${w}x${h}`;
+}
 
 /**
  * 处理和验证参数
@@ -34,6 +100,10 @@ function processParams(params, modelId) {
   const isSeedream50 = /seedream[-_]?(5[-_]?0|5\.0)/i.test(modelId || '');
   const isSeedreamHighRes = isSeedream45 || isSeedream50;
 
+  // ========== aspectRatio → size 转换（核心修复） ==========
+  // 用户传入的 aspectRatio（如 "16:9", "9:16"）必须优先于 DB 默认的 size
+  const aspectRatio = params.aspectRatio;
+
   // size: 支持 1920x1920, 1920x2880 等，或预设值 '2k', '3k'
   // 优先使用显式 size 参数，其次从 width+height 自动构建
   let size = params.size || params.resolution;
@@ -41,26 +111,55 @@ function processParams(params, modelId) {
     size = `${params.width}x${params.height}`;
   }
 
-  // Seedream 5.0 系列：使用 '2k' 预设值（API 不接受具体尺寸如 1920x1920）
+  // Seedream 5.0 系列
   if (isSeedream50) {
-    // 如果用户没指定或尺寸格式不是预设值，使用 '2k'
+    // 5.0 使用 '2k'/'3k' 预设值
     if (!size || size === '_REMOVE_' || !/^(2k|3k)$/i.test(size)) {
-      console.log(`[Seedream Handler] Seedream 5.0 模型，使用预设尺寸 '2k'`);
       size = '2k';
     }
+    // 如果有 aspectRatio，作为 ratio 参数传递给 API（Seedream 5.0 支持 ratio 字段）
+    if (aspectRatio && aspectRatio !== '_REMOVE_' && /^\d+:\d+$/.test(aspectRatio)) {
+      extra.ratio = aspectRatio;
+      console.log(`[Seedream Handler] Seedream 5.0，设置 ratio=${aspectRatio}, size=${size}`);
+    } else {
+      console.log(`[Seedream Handler] Seedream 5.0 模型，使用预设尺寸 '${size}'，无 aspectRatio`);
+    }
   }
-  // Seedream 4.5：验证尺寸是否满足最低要求
-  else if (isSeedream45 && size && size !== '_REMOVE_') {
-    const [w, h] = size.split('x').map(Number);
-    if (w && h && w * h < SEEDREAM_HIGH_MIN_PIXELS) {
-      console.log(`[Seedream Handler] Seedream 4.5，尺寸 ${size} (${w * h} 像素) 小于最低要求，自动调整为 1920x1920`);
+  // Seedream 4.5
+  else if (isSeedream45) {
+    // 如果有 aspectRatio，优先用它计算尺寸（覆盖 DB 默认 size）
+    if (aspectRatio && aspectRatio !== '_REMOVE_' && /^\d+:\d+$/.test(aspectRatio)) {
+      const mappedSize = ASPECT_RATIO_SIZE_MAP_45[aspectRatio] || computeSizeFromRatio(aspectRatio, SEEDREAM_HIGH_MIN_PIXELS);
+      if (mappedSize) {
+        console.log(`[Seedream Handler] Seedream 4.5，aspectRatio=${aspectRatio} → size=${mappedSize}（覆盖默认 ${size || '无'}）`);
+        size = mappedSize;
+      } else {
+        console.warn(`[Seedream Handler] Seedream 4.5，无法解析 aspectRatio="${aspectRatio}"，使用现有 size=${size}`);
+      }
+    }
+    // 验证尺寸是否满足最低要求
+    if (size && size !== '_REMOVE_') {
+      const [w, h] = size.split('x').map(Number);
+      if (w && h && w * h < SEEDREAM_HIGH_MIN_PIXELS) {
+        console.log(`[Seedream Handler] Seedream 4.5，尺寸 ${size} (${w * h} 像素) 小于最低要求，自动调整为 1920x1920`);
+        size = '1920x1920';
+      }
+    } else {
+      console.log(`[Seedream Handler] Seedream 4.5 模型未指定尺寸，使用默认尺寸 1920x1920`);
       size = '1920x1920';
     }
   }
-  // Seedream 4.5 未指定尺寸时
-  else if (isSeedream45 && (!size || size === '_REMOVE_')) {
-    console.log(`[Seedream Handler] Seedream 4.5 模型未指定尺寸，使用默认尺寸 1920x1920`);
-    size = '1920x1920';
+  // 其他 Seedream 版本（3.0 等）
+  else {
+    // 如果有 aspectRatio 但没有 size，尝试用 aspectRatio 计算合理尺寸
+    if (aspectRatio && aspectRatio !== '_REMOVE_' && /^\d+:\d+$/.test(aspectRatio) && (!size || size === '_REMOVE_')) {
+      const defaultMinPixels = 1024 * 1024; // 低版本模型用较小尺寸
+      const computed = computeSizeFromRatio(aspectRatio, defaultMinPixels);
+      if (computed) {
+        console.log(`[Seedream Handler] aspectRatio=${aspectRatio} → size=${computed}`);
+        size = computed;
+      }
+    }
   }
 
   if (size && size !== '_REMOVE_') {
@@ -251,7 +350,8 @@ module.exports = {
 
     if (!response.ok) {
       const errorMsg = data.error?.message || data.message || data.msg || JSON.stringify(data);
-      throw new Error(`Seedream API 错误 (${response.status}): ${errorMsg}`);
+      const userMsg = friendlyErrorMessage(response.status, errorMsg);
+      throw new Error(`Seedream 图片生成失败: ${userMsg}`);
     }
 
     return data;

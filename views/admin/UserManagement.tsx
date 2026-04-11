@@ -156,7 +156,7 @@ const UserManagement: React.FC = () => {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">用户管理</h1>
-          <p className="text-gray-500 text-sm mt-1">管理系统所有用户账户</p>
+          <p className="text-gray-600 text-sm mt-1">管理系统所有用户账户</p>
         </div>
         <button
           onClick={() => {
@@ -176,13 +176,13 @@ const UserManagement: React.FC = () => {
         {/* Search */}
         <div className="p-4 border-b border-gray-100">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
             <input
               type="text"
               placeholder="搜索用户邮箱..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-colors"
+              className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-colors"
             />
           </div>
         </div>
@@ -198,27 +198,27 @@ const UserManagement: React.FC = () => {
           <table className="w-full">
             <thead>
               <tr className="border-b border-gray-100">
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">ID</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">用户</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">状态</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">角色</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">积分</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">登录IP</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">创建时间</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">操作</th>
+                <th className="text-left text-xs font-semibold text-gray-600 uppercase tracking-wider px-4 py-3">ID</th>
+                <th className="text-left text-xs font-semibold text-gray-600 uppercase tracking-wider px-4 py-3">用户</th>
+                <th className="text-left text-xs font-semibold text-gray-600 uppercase tracking-wider px-4 py-3">状态</th>
+                <th className="text-left text-xs font-semibold text-gray-600 uppercase tracking-wider px-4 py-3">角色</th>
+                <th className="text-left text-xs font-semibold text-gray-600 uppercase tracking-wider px-4 py-3">积分</th>
+                <th className="text-left text-xs font-semibold text-gray-600 uppercase tracking-wider px-4 py-3">登录IP</th>
+                <th className="text-left text-xs font-semibold text-gray-600 uppercase tracking-wider px-4 py-3">创建时间</th>
+                <th className="text-left text-xs font-semibold text-gray-600 uppercase tracking-wider px-4 py-3">操作</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={8} className="text-center py-12 text-gray-400 text-sm">加载中...</td></tr>
+                <tr><td colSpan={8} className="text-center py-12 text-gray-500 text-sm">加载中...</td></tr>
               ) : filteredUsers.length === 0 ? (
-                <tr><td colSpan={8} className="text-center py-12 text-gray-400 text-sm">暂无用户</td></tr>
+                <tr><td colSpan={8} className="text-center py-12 text-gray-500 text-sm">暂无用户</td></tr>
               ) : filteredUsers.map((user) => {
                 const status = getOnlineStatus(user.last_active_at);
                 const isDisabled = !user.is_active;
                 return (
                   <tr key={user.id} className={`border-b border-gray-50 hover:bg-gray-50/80 transition-colors ${isDisabled ? 'opacity-60' : ''}`}>
-                    <td className="px-4 py-3.5 text-sm text-gray-500 font-mono">{user.id}</td>
+                    <td className="px-4 py-3.5 text-sm text-gray-600 font-mono">{user.id}</td>
                     <td className="px-4 py-3.5">
                       <div className="flex items-center gap-3">
                         <div className="relative shrink-0">
@@ -238,7 +238,7 @@ const UserManagement: React.FC = () => {
                     <td className="px-4 py-3.5">
                       <div className="flex items-center gap-1.5">
                         <span className={`w-2 h-2 rounded-full shrink-0 ${status.online ? 'bg-emerald-400' : 'bg-gray-300'}`} />
-                        <span className={`text-xs whitespace-nowrap ${status.online ? 'text-emerald-600 font-medium' : 'text-gray-400'}`}>
+                        <span className={`text-xs whitespace-nowrap ${status.online ? 'text-emerald-600 font-medium' : 'text-gray-500'}`}>
                           {status.label}
                         </span>
                       </div>
@@ -257,7 +257,7 @@ const UserManagement: React.FC = () => {
                         <span className="text-sm font-mono font-semibold text-emerald-600">
                           {Math.floor(typeof user.balance === 'number' ? user.balance : Number(user.balance || 0))} 积分
                         </span>
-                        <span className="text-xs text-gray-400">
+                        <span className="text-xs text-gray-500">
                           ≈ ¥{((typeof user.balance === 'number' ? user.balance : Number(user.balance || 0)) * 0.02).toFixed(2)}
                         </span>
                       </div>
@@ -265,14 +265,14 @@ const UserManagement: React.FC = () => {
                     <td className="px-4 py-3.5">
                       {user.last_login_ip ? (
                         <div className="flex items-center gap-1.5">
-                          <Globe className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                          <span className="text-xs font-mono text-gray-500">{user.last_login_ip}</span>
+                          <Globe className="w-3.5 h-3.5 text-gray-500 shrink-0" />
+                          <span className="text-xs font-mono text-gray-600">{user.last_login_ip}</span>
                         </div>
                       ) : (
-                        <span className="text-xs text-gray-300">-</span>
+                        <span className="text-xs text-gray-500">-</span>
                       )}
                     </td>
-                    <td className="px-4 py-3.5 text-xs text-gray-400 whitespace-nowrap">
+                    <td className="px-4 py-3.5 text-xs text-gray-600 whitespace-nowrap">
                       {formatDate(user.created_at)}
                     </td>
                     <td className="px-4 py-3.5">
@@ -313,7 +313,7 @@ const UserManagement: React.FC = () => {
         </div>
 
         {/* Footer Stats */}
-        <div className="px-4 py-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-400">
+        <div className="px-4 py-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-600">
           <span>共 {filteredUsers.length} 位用户</span>
           <span>
             {filteredUsers.filter(u => {
@@ -338,7 +338,7 @@ const UserManagement: React.FC = () => {
                 placeholder="请输入邮箱或用户名"
                 value={formData.email}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
+                className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
               />
             </div>
 
@@ -350,7 +350,7 @@ const UserManagement: React.FC = () => {
                   placeholder="请输入密码"
                   value={formData.password}
                   onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                  className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
+                  className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
                 />
               </div>
             )}
@@ -363,22 +363,22 @@ const UserManagement: React.FC = () => {
                   className={`flex-1 px-4 py-3 rounded-lg border-2 transition-all text-left ${
                     formData.role === 'user'
                       ? 'border-blue-500 bg-blue-50 text-blue-700'
-                      : 'border-gray-200 bg-gray-50 text-gray-500 hover:border-gray-300'
+                      : 'border-gray-200 bg-gray-50 text-gray-600 hover:border-gray-300'
                   }`}
                 >
                   <p className="font-semibold text-sm">普通用户</p>
-                  <p className="text-xs mt-0.5 opacity-70">标准权限</p>
+                  <p className="text-xs mt-0.5 text-current/80">标准权限</p>
                 </button>
                 <button
                   onClick={() => setFormData({ ...formData, role: 'admin' })}
                   className={`flex-1 px-4 py-3 rounded-lg border-2 transition-all text-left ${
                     formData.role === 'admin'
                       ? 'border-purple-500 bg-purple-50 text-purple-700'
-                      : 'border-gray-200 bg-gray-50 text-gray-500 hover:border-gray-300'
+                      : 'border-gray-200 bg-gray-50 text-gray-600 hover:border-gray-300'
                   }`}
                 >
                   <p className="font-semibold text-sm">管理员</p>
-                  <p className="text-xs mt-0.5 opacity-70">完整权限</p>
+                  <p className="text-xs mt-0.5 text-current/80">完整权限</p>
                 </button>
               </div>
             </div>
@@ -391,9 +391,9 @@ const UserManagement: React.FC = () => {
                   placeholder="请输入积分数量"
                   value={String(formData.balance)}
                   onChange={(e) => setFormData({ ...formData, balance: parseInt(e.target.value) || 0 })}
-                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
+                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
                 />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs">
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 text-xs">
                   ≈ ¥{((formData.balance || 0) * 0.02).toFixed(2)}
                 </span>
               </div>

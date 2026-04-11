@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback, memo } from 'react';
 import Skeleton from './Skeleton';
+import { cacheMedia } from '../services/mediaCache';
 
 /**
  * 懒加载 hook - 使用 Intersection Observer 实现图片懒加载
@@ -86,6 +87,8 @@ const LazyImage: React.FC<LazyImageProps> = ({
   const handleLoad = () => {
     setLoaded(true);
     setError(false);
+    // 图片加载成功后异步缓存到本地
+    if (src) cacheMedia(src).catch(() => {});
   };
 
   const handleError = () => {

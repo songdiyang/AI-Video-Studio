@@ -1,13 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Settings as SettingsIcon, Moon, Sun, Eye, Check, Send, 
-  Palette, MessageSquare, Info, ChevronRight, Sparkles, Monitor, Globe, RotateCcw, Maximize, Minimize
+  Palette, MessageSquare, Info, ChevronRight, Sparkles, Monitor, Globe, RotateCcw, Maximize, Minimize, HardDrive, Trash2
 } from 'lucide-react';
 import { useTheme, ThemeType } from '../../contexts/ThemeContext';
 import { useLanguage, LanguageType } from '../../contexts/LanguageContext';
 import { getAuthToken } from '../../services/auth';
 import { useToast } from '../../contexts/ToastContext';
+import { getCacheStats, clearMediaCache, formatCacheSize, isCacheSupported } from '../../services/mediaCache';
 
 type FeedbackType = 'bug' | 'feature' | 'improvement' | 'other';
 
@@ -221,6 +222,7 @@ interface SettingSection {
 const SETTING_SECTIONS: SettingSection[] = [
   { id: 'appearance', icon: <Palette className="w-4 h-4" /> },
   { id: 'language', icon: <Globe className="w-4 h-4" /> },
+  { id: 'storage', icon: <HardDrive className="w-4 h-4" /> },
   { id: 'feedback', icon: <MessageSquare className="w-4 h-4" /> },
   { id: 'about', icon: <Info className="w-4 h-4" /> },
 ];
@@ -237,6 +239,32 @@ const Settings: React.FC = () => {
   const [contact, setContact] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+
+  // 缓存管理状态
+  const [cacheStats, setCacheStats] = useState<{ count: number; size: number } | null>(null);
+  const [isClearing, setIsClearing] = useState(false);
+  const [cacheLoading, setCacheLoading] = useState(false);
+
+  // 加载缓存统计
+  const loadCacheStats = useCallback(async () => {
+    if (!isCacheSupported()) return;
+    setCacheLoading(true);
+    try {
+      const stats = await getCacheStats();
+      setCacheStats(stats);
+    } catch {
+      setCacheStats({ count: 0, size: 0 });
+    } finally {
+      setCacheLoading(false);
+    }
+  }, []);
+
+  // 进入 storage 区域时加载统计
+  useEffect(() => {
+    if (activeSection === 'storage') {
+      loadCacheStats();
+    }
+  }, [activeSection, loadCacheStats]);
 
   // 监听全屏状态变化
   useEffect(() => {
@@ -550,15 +578,7 @@ const Settings: React.FC = () => {
         <div className="space-y-3">
           <div className="flex justify-between items-center py-2">
             <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>{t.settings.about.version}</span>
-            <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>1.0.0</span>
-          </div>
-          <div className="flex justify-between items-center py-2" style={{ borderTop: '1px solid var(--border-color)' }}>
-            <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>{t.settings.about.techStack}</span>
-            <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>React + Vite + Express</span>
-          </div>
-          <div className="flex justify-between items-center py-2" style={{ borderTop: '1px solid var(--border-color)' }}>
-            <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>{t.settings.about.aiEngine}</span>
-            <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>AI Model Service</span>
+            <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>1.0.0-alpha</span>
           </div>
         </div>
       </div>
@@ -575,15 +595,19 @@ const Settings: React.FC = () => {
         <ul className="space-y-2 text-sm" style={{ color: 'var(--text-muted)' }}>
           <li className="flex items-center gap-2">
             <ChevronRight className="w-4 h-4" style={{ color: 'var(--accent-primary)' }} />
-            {t.settings.about.multiLang}
+            {(t.settings.about as any).comicWorkbench || '漫画工作台'}
           </li>
           <li className="flex items-center gap-2">
             <ChevronRight className="w-4 h-4" style={{ color: 'var(--accent-primary)' }} />
-            {t.settings.about.customShortcuts}
+            {(t.settings.about as any).novelWorkbench || '小说工作台'}
           </li>
           <li className="flex items-center gap-2">
             <ChevronRight className="w-4 h-4" style={{ color: 'var(--accent-primary)' }} />
-            {t.settings.about.editorPrefs}
+            {(t.settings.about as any).shortVideoWorkbench || '短视频工作台'}
+          </li>
+          <li className="flex items-center gap-2">
+            <ChevronRight className="w-4 h-4" style={{ color: 'var(--accent-primary)' }} />
+            {(t.settings.about as any).musicWorkbench || '音乐工作台'}
           </li>
         </ul>
       </div>
@@ -670,11 +694,122 @@ const Settings: React.FC = () => {
     </div>
   );
 
+  // 渲染存储管理区域
+  const renderStorageSection = () => {
+    const st = (t.settings as any).storage || {};
+    const supported = isCacheSupported();
+
+    const handleClearCache = async () => {
+      setIsClearing(true);
+      try {
+        const success = await clearMediaCache();
+        if (success) {
+          showToast(st.clearSuccess || '缓存已清除', 'success');
+          setCacheStats({ count: 0, size: 0 });
+        } else {
+          showToast(st.clearFailed || '清除缓存失败', 'error');
+        }
+      } catch {
+        showToast(st.clearFailed || '清除缓存失败', 'error');
+      } finally {
+        setIsClearing(false);
+      }
+    };
+
+    return (
+      <div className="space-y-6">
+        <div>
+          <h3 className="text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>
+            {st.title || '本地缓存'}
+          </h3>
+          <p className="text-xs mb-6" style={{ color: 'var(--text-muted)' }}>
+            {st.description || '图片和视频会自动缓存到浏览器本地，加快下次打开速度。'}
+          </p>
+
+          {!supported ? (
+            <div 
+              className="rounded-xl p-4 text-center text-sm"
+              style={{ backgroundColor: 'var(--bg-input)', color: 'var(--text-muted)' }}
+            >
+              {st.notSupported || '当前浏览器不支持本地缓存'}
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {/* 缓存统计卡片 */}
+              <div className="grid grid-cols-2 gap-4">
+                <div 
+                  className="rounded-xl p-4"
+                  style={{ backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-color)' }}
+                >
+                  <div className="flex items-center gap-2 mb-2">
+                    <HardDrive className="w-4 h-4" style={{ color: 'var(--accent-primary)' }} />
+                    <span className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>
+                      {st.cacheSize || '缓存大小'}
+                    </span>
+                  </div>
+                  <div className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>
+                    {cacheLoading 
+                      ? (st.calculating || '计算中...')
+                      : cacheStats 
+                        ? formatCacheSize(cacheStats.size)
+                        : '0 B'
+                    }
+                  </div>
+                </div>
+                <div 
+                  className="rounded-xl p-4"
+                  style={{ backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-color)' }}
+                >
+                  <div className="flex items-center gap-2 mb-2">
+                    <Sparkles className="w-4 h-4" style={{ color: 'var(--accent-primary)' }} />
+                    <span className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>
+                      {st.cacheCount || '已缓存'}
+                    </span>
+                  </div>
+                  <div className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>
+                    {cacheLoading 
+                      ? (st.calculating || '计算中...')
+                      : cacheStats
+                        ? `${cacheStats.count} ${st.cacheCountUnit || '个文件'}`
+                        : `0 ${st.cacheCountUnit || '个文件'}`
+                    }
+                  </div>
+                </div>
+              </div>
+
+              {/* 清除缓存按钮 */}
+              <button
+                onClick={handleClearCache}
+                disabled={isClearing || (cacheStats?.count === 0 && !cacheLoading)}
+                className="flex items-center gap-2 px-4 py-3 rounded-xl transition-all w-full justify-center font-medium text-sm"
+                style={{
+                  backgroundColor: isClearing ? 'var(--bg-input)' : 'rgba(239, 68, 68, 0.1)',
+                  color: isClearing ? 'var(--text-muted)' : '#ef4444',
+                  border: '1px solid rgba(239, 68, 68, 0.2)',
+                  cursor: (isClearing || (cacheStats?.count === 0 && !cacheLoading)) ? 'not-allowed' : 'pointer',
+                  opacity: (cacheStats?.count === 0 && !cacheLoading) ? 0.5 : 1,
+                }}
+              >
+                {isClearing ? (
+                  <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <Trash2 className="w-4 h-4" />
+                )}
+                {isClearing ? (st.clearing || '清除中...') : (st.clearCache || '清除缓存')}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   // 渲染当前激活的区域
   const renderActiveSection = () => {
     switch (activeSection) {
       case 'appearance': return renderAppearanceSection();
       case 'language': return renderLanguageSection();
+      case 'storage': return renderStorageSection();
       case 'feedback': return renderFeedbackSection();
       case 'about': return renderAboutSection();
       default: return renderAppearanceSection();

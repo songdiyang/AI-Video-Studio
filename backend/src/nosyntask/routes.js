@@ -321,7 +321,15 @@ router.post('/:jobId/cancel', authMiddleware, async (req, res) => {
     res.json(encodeJobIds(result));
   } catch (error) {
     console.error('[Cancel Workflow]', error);
-    res.status(500).json({ message: error.message || '取消工作流失败' });
+    const msg = error.message || '取消工作流失败';
+    // 工作流不存在或已完成时返回 404/409 而非 500
+    if (msg.includes('不存在') || msg.includes('无权访问')) {
+      return res.status(404).json({ message: msg });
+    }
+    if (msg.includes('已完成')) {
+      return res.status(409).json({ message: msg });
+    }
+    res.status(500).json({ message: msg });
   }
 });
 

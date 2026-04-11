@@ -10,7 +10,11 @@
 const handleBaseTextModelCall = require('../base/baseTextModelCall');
 const { filterNonCharacters } = require('../../../utils/characterFilter');
 const { stripThinkTags, extractCodeBlock, extractJSON, stripInvisible } = require('../../../utils/washBody');
+<<<<<<< HEAD
 const { getStoryboardDurationConfig } = require('../../../durationConfigService');
+=======
+const { queryAll } = require('../../../dbHelper');
+>>>>>>> 41b2bc9c (feat: 多项功能优化与修复)
 
 // 默认值（当数据库配置不可用时回退使用）
 const DEFAULT_MIN_TOTAL_DURATION = 60;
@@ -419,7 +423,7 @@ function withTimeout(promise, ms, errorMessage) {
 const AI_CALL_TIMEOUT = parseInt(process.env.STORYBOARD_AI_TIMEOUT, 10) || 120000;
 
 async function handleStoryboardGeneration(inputParams, onProgress) {
-  const { scriptContent, scriptTitle, textModel: modelName, think } = inputParams;
+  const { scriptContent, scriptTitle, textModel: modelName, projectId, think } = inputParams;
 
   if (!scriptContent || scriptContent.trim() === '') {
     throw new Error('剧本内容为空，无法生成分镜');
@@ -431,6 +435,7 @@ async function handleStoryboardGeneration(inputParams, onProgress) {
 
   if (onProgress) onProgress(10);
 
+<<<<<<< HEAD
   // 从数据库读取时长配置
   let durationConfig;
   try {
@@ -442,6 +447,34 @@ async function handleStoryboardGeneration(inputParams, onProgress) {
       maxDuration: DEFAULT_MAX_TOTAL_DURATION,
       tolerance: DEFAULT_TOLERANCE
     };
+=======
+  // 查询项目中已有的角色及外观特征（如果有）
+  let characterAppearanceSection = '';
+  if (projectId) {
+    try {
+      const existingChars = await queryAll(
+        `SELECT name, appearance, description FROM characters WHERE project_id = ? AND appearance IS NOT NULL AND appearance != ''`,
+        [projectId]
+      );
+      if (existingChars.length > 0) {
+        const charLines = existingChars.map(c =>
+          `- ${c.name}：${c.appearance}${c.description ? `（${c.description}）` : ''}`
+        ).join('\n');
+        characterAppearanceSection = `
+
+**【项目角色外观特征表】**
+以下是本项目中已定义的角色及其固定外观特征，在生成分镜描述时：
+- 每次提到角色时，必须在 description 中包含该角色的关键外观特征（如发型、服装等），而不是仅写角色名
+- 例如：不要写"小明走进房间"，而要写"穿黑色西装的短发男生走进房间"或"小明（穿黑色西装的短发男生）走进房间"
+- characters 数组中仍然使用角色名
+${charLines}
+`;
+        console.log(`[StoryboardGen] 已注入 ${existingChars.length} 个角色外观特征`);
+      }
+    } catch (e) {
+      console.warn('[StoryboardGen] 查询角色外观失败（忽略）:', e.message);
+    }
+>>>>>>> 41b2bc9c (feat: 多项功能优化与修复)
   }
 
   const fullPrompt = `你是一个分镜师，将剧本内容转化为分镜。
@@ -461,7 +494,7 @@ async function handleStoryboardGeneration(inputParams, onProgress) {
 ${scriptContent}
 
 ---
-
+${characterAppearanceSection}
 【分镜转化要求】
 
 1. **对话识别**：
@@ -508,6 +541,7 @@ ${scriptContent}
 - endFrame: 动作结束时的画面（仅当hasAction=true时）
 - endState: 镜头结束时的状态（角色位置、姿势、表情）
 - dialogue: 对白内容（没有则留空）
+- dialogues: 结构化对白数组，格式为 [{"character": "角色名", "line": "台词内容"}]，多人对话时按说话顺序排列。没有对白则为空数组 []
 - duration: 时长（秒，一般2-4秒）
 - characters: 出场角色数组（【重要】必须包含 description 中的所有角色名）
 - props: 画面中的重要道具数组（如 ["手机", "传单", "书本"]）

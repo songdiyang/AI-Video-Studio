@@ -52,6 +52,7 @@ import TeamMembersPanel from '../../components/TeamMembersPanel';
 import TaskAssignmentModal from '../../components/TaskAssignmentModal';
 import { createProject, updateProject, fetchProjects, Project } from '../../services/projects';
 import { PROJECT_TYPES, ProjectType } from '../../types/projectTypes';
+import UpgradePrompt from '../../components/UpgradePrompt';
 import {
   Team,
   TeamMember,
@@ -121,6 +122,14 @@ const Teams: React.FC = () => {
   const [newProjectDesc, setNewProjectDesc] = useState('');
   const [newProjectType, setNewProjectType] = useState<ProjectType>('comic_drama');
   const [creatingProject, setCreatingProject] = useState(false);
+  
+    // 升级提示状态
+    const [showUpgrade, setShowUpgrade] = useState(false);
+    const [upgradeData, setUpgradeData] = useState<{
+      currentPlan: { name: string; displayName: string; level: number };
+      currentUsage: { current: number; max: number };
+      nextPlan?: { name: string; displayName: string; maxProjects: number | string; price?: { monthly: number; yearly: number; firstMonth?: number } };
+    } | null>(null);
 
   // 导入个人项目到团队
   const [showImportModal, setShowImportModal] = useState(false);
@@ -356,8 +365,19 @@ const Teams: React.FC = () => {
       setTeamProjects(projects);
       // 跳转到新项目
       navigate(`/projects/${project.id}`);
-    } catch (error) {
-      showToast(error instanceof Error ? error.message : '创建工程失败', 'error');
+    } catch (error: any) {
+      // 项目数量达到上限时弹出升级提示
+      if (error.code === 'PROJECT_LIMIT_REACHED' && error.data) {
+        const { currentCount, maxCount, planName, planDisplayName, planLevel, upgrade } = error.data;
+        setUpgradeData({
+          currentPlan: { name: planName, displayName: planDisplayName, level: planLevel },
+          currentUsage: { current: currentCount, max: maxCount },
+          nextPlan: upgrade?.available ? upgrade.nextPlan : undefined
+        });
+        setShowUpgrade(true);
+      } else {
+        showToast(error.message || '创建工程失败', 'error');
+      }
     } finally {
       setCreatingProject(false);
     }
@@ -1280,6 +1300,18 @@ const Teams: React.FC = () => {
             showToast('任务指派成功', 'success');
             setShowTaskAssignModal(false);
           }}
+        />
+      )}
+
+      {/* 升级提示弹窗 */}
+      {upgradeData && (
+        <UpgradePrompt
+          isOpen={showUpgrade}
+          onClose={() => setShowUpgrade(false)}
+          limitType="project"
+          currentPlan={upgradeData.currentPlan}
+          currentUsage={upgradeData.currentUsage}
+          nextPlan={upgradeData.nextPlan}
         />
       )}
     </div>

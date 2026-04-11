@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { AlertTriangle, Search, Filter, ChevronLeft, ChevronRight, RefreshCw, Clock, XCircle, Check, CheckCircle, Server, Layers } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { AlertTriangle, Search, Filter, ChevronLeft, ChevronRight, RefreshCw, Clock, XCircle, X, CheckCircle, Server, Layers } from 'lucide-react';
 import { getAdminAuthHeaders } from '../../services/auth';
 
 // ============ 任务错误相关类型 ============
@@ -87,9 +87,7 @@ const ErrorMonitor: React.FC = () => {
   const [taskTypeFilter, setTaskTypeFilter] = useState('');
   const [taskExpandedId, setTaskExpandedId] = useState<string | null>(null);
   const [taskUpdatingId, setTaskUpdatingId] = useState<string | null>(null);
-  const [taskSearch, setTaskSearch] = useState('');
-  const [taskSearchInput, setTaskSearchInput] = useState('');
-  const taskSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [taskSearchQuery, setTaskSearchQuery] = useState('');
 
   // 系统错误状态
   const [systemErrors, setSystemErrors] = useState<SystemError[]>([]);
@@ -98,9 +96,7 @@ const ErrorMonitor: React.FC = () => {
   const [systemTypeFilter, setSystemTypeFilter] = useState('');
   const [systemExpandedId, setSystemExpandedId] = useState<number | null>(null);
   const [systemUpdatingId, setSystemUpdatingId] = useState<number | null>(null);
-  const [systemSearch, setSystemSearch] = useState('');
-  const [systemSearchInput, setSystemSearchInput] = useState('');
-  const systemSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [systemSearchQuery, setSystemSearchQuery] = useState('');
 
   // ============ 任务错误 API ============
   const fetchTaskErrors = useCallback(async (page = 1) => {
@@ -108,7 +104,6 @@ const ErrorMonitor: React.FC = () => {
     try {
       const params = new URLSearchParams({ page: String(page), limit: '20' });
       if (taskTypeFilter) params.append('workflowType', taskTypeFilter);
-      if (taskSearch.trim()) params.append('search', taskSearch.trim());
       const res = await fetch(`/api/workflows/admin/errors?${params}`, { headers: getAdminAuthHeaders() });
       if (!res.ok) throw new Error('请求失败');
       const data = await res.json();
@@ -119,7 +114,7 @@ const ErrorMonitor: React.FC = () => {
     } finally {
       setTaskLoading(false);
     }
-  }, [taskTypeFilter, taskSearch]);
+  }, [taskTypeFilter]);
 
   const handleUpdateTaskStatus = async (jobId: string, newStatus: boolean) => {
     setTaskUpdatingId(jobId);
@@ -146,7 +141,6 @@ const ErrorMonitor: React.FC = () => {
     try {
       const params = new URLSearchParams({ page: String(page), limit: '20' });
       if (systemTypeFilter) params.append('errorType', systemTypeFilter);
-      if (systemSearch.trim()) params.append('search', systemSearch.trim());
       const res = await fetch(`/api/admin/system-errors?${params}`, { headers: getAdminAuthHeaders() });
       if (!res.ok) throw new Error('请求失败');
       const data = await res.json();
@@ -157,7 +151,7 @@ const ErrorMonitor: React.FC = () => {
     } finally {
       setSystemLoading(false);
     }
-  }, [systemTypeFilter, systemSearch]);
+  }, [systemTypeFilter]);
 
   const handleUpdateSystemStatus = async (errorId: number, newStatus: boolean) => {
     setSystemUpdatingId(errorId);
@@ -178,44 +172,6 @@ const ErrorMonitor: React.FC = () => {
     }
   };
 
-  // 任务搜索防抖处理
-  const handleTaskSearchChange = useCallback((value: string) => {
-    setTaskSearchInput(value);
-    if (taskSearchTimer.current) clearTimeout(taskSearchTimer.current);
-    taskSearchTimer.current = setTimeout(() => {
-      setTaskSearch(value);
-    }, 400);
-  }, []);
-
-  const clearTaskSearch = useCallback(() => {
-    setTaskSearchInput('');
-    setTaskSearch('');
-    if (taskSearchTimer.current) clearTimeout(taskSearchTimer.current);
-  }, []);
-
-  // 系统错误搜索防抖处理
-  const handleSystemSearchChange = useCallback((value: string) => {
-    setSystemSearchInput(value);
-    if (systemSearchTimer.current) clearTimeout(systemSearchTimer.current);
-    systemSearchTimer.current = setTimeout(() => {
-      setSystemSearch(value);
-    }, 400);
-  }, []);
-
-  const clearSystemSearch = useCallback(() => {
-    setSystemSearchInput('');
-    setSystemSearch('');
-    if (systemSearchTimer.current) clearTimeout(systemSearchTimer.current);
-  }, []);
-
-  // 清理定时器
-  useEffect(() => {
-    return () => {
-      if (taskSearchTimer.current) clearTimeout(taskSearchTimer.current);
-      if (systemSearchTimer.current) clearTimeout(systemSearchTimer.current);
-    };
-  }, []);
-
   // 初始加载
   useEffect(() => {
     if (activeTab === 'task') {
@@ -227,13 +183,13 @@ const ErrorMonitor: React.FC = () => {
 
   // 渲染标签页
   const renderTabs = () => (
-    <div className="flex items-center gap-1 p-1 rounded-xl bg-white/5 border border-white/10">
+    <div className="flex items-center gap-1 p-1 rounded-xl bg-white/10 border border-white/15">
       <button
         onClick={() => setActiveTab('task')}
         className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
           activeTab === 'task'
             ? 'bg-red-500/20 text-red-400'
-            : 'text-white/60 hover:text-white/80 hover:bg-white/5'
+            : 'text-white/80 hover:text-white hover:bg-white/10'
         }`}
       >
         <Layers className="w-4 h-4" />
@@ -249,7 +205,7 @@ const ErrorMonitor: React.FC = () => {
         className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
           activeTab === 'system'
             ? 'bg-orange-500/20 text-orange-400'
-            : 'text-white/60 hover:text-white/80 hover:bg-white/5'
+            : 'text-white/80 hover:text-white hover:bg-white/10'
         }`}
       >
         <Server className="w-4 h-4" />
@@ -265,33 +221,20 @@ const ErrorMonitor: React.FC = () => {
 
   // 渲染任务错误表格
   // [虚拟列表评估] 不适用 useVirtualList：已实现服务端分页（每页 20 条），无需虚拟化
-  const renderTaskErrors = () => (
+  const renderTaskErrors = () => {
+    const query = taskSearchQuery.trim().toLowerCase();
+    const filteredTaskErrors = query
+      ? taskErrors.filter(job =>
+          (job.error_message || '').toLowerCase().includes(query)
+        )
+      : taskErrors;
+
+    return (
     <>
       {/* 筛选 */}
       <div className="flex items-center gap-3 mb-4 flex-wrap">
-        {/* 搜索框 */}
-        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 border border-white/10 flex-1 min-w-60 max-w-96">
-          <Search className="w-4 h-4 text-white/40 shrink-0" />
-          <input
-            type="text"
-            value={taskSearchInput}
-            onChange={e => handleTaskSearchChange(e.target.value)}
-            placeholder="搜索错误信息、用户、任务类型..."
-            className="bg-transparent text-sm text-white/80 outline-none flex-1 placeholder:text-white/30"
-          />
-          {taskSearchInput && (
-            <button
-              onClick={clearTaskSearch}
-              className="p-0.5 rounded hover:bg-white/10 transition-colors"
-              aria-label="清空搜索"
-            >
-              <XCircle className="w-4 h-4 text-white/40 hover:text-white/60" />
-            </button>
-          )}
-        </div>
-
-        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 border border-white/10">
-          <Filter className="w-4 h-4 text-white/40" />
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/10 border border-white/15">
+          <Filter className="w-4 h-4 text-white/70" />
           <select
             value={taskTypeFilter}
             onChange={e => setTaskTypeFilter(e.target.value)}
@@ -303,43 +246,71 @@ const ErrorMonitor: React.FC = () => {
             ))}
           </select>
         </div>
-        <span className="text-sm text-white/40">
-          共 {taskPagination.total} 条{taskSearch ? '匹配' : '错误'}记录
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/10 border border-white/15 flex-1 min-w-[200px] max-w-md">
+          <Search className="w-4 h-4 text-white/70 shrink-0" />
+          <input
+            type="text"
+            value={taskSearchQuery}
+            onChange={e => setTaskSearchQuery(e.target.value)}
+            placeholder="搜索错误信息关键词..."
+            className="bg-transparent text-sm text-white/80 outline-none w-full placeholder:text-white/40"
+          />
+          {taskSearchQuery && (
+            <button
+              onClick={() => setTaskSearchQuery('')}
+              className="shrink-0 p-0.5 rounded hover:bg-white/10 transition-colors"
+            >
+              <X className="w-3.5 h-3.5 text-white/60" />
+            </button>
+          )}
+        </div>
+        <span className="text-sm text-white/70">
+          {query
+            ? `匹配 ${filteredTaskErrors.length} / ${taskErrors.length} 条（共 ${taskPagination.total} 条）`
+            : `共 ${taskPagination.total} 条错误记录`
+          }
         </span>
       </div>
 
       {/* 表格 */}
-      <div className="rounded-xl border border-white/10 overflow-hidden bg-white/3">
+      <div className="rounded-xl border border-white/10 overflow-hidden bg-white/[0.06]">
         <table className="w-full">
           <thead>
-            <tr className="border-b border-white/10 bg-white/5">
-              <th className="text-left px-4 py-3 text-xs font-semibold text-white/50 uppercase tracking-wider">ID</th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-white/50 uppercase tracking-wider">用户</th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-white/50 uppercase tracking-wider">任务类型</th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-white/50 uppercase tracking-wider">错误信息</th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-white/50 uppercase tracking-wider">时间</th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-white/50 uppercase tracking-wider">状态</th>
+            <tr className="border-b border-white/10 bg-white/10">
+              <th className="text-left px-4 py-3 text-xs font-semibold text-white/80 uppercase tracking-wider">ID</th>
+              <th className="text-left px-4 py-3 text-xs font-semibold text-white/80 uppercase tracking-wider">用户</th>
+              <th className="text-left px-4 py-3 text-xs font-semibold text-white/80 uppercase tracking-wider">任务类型</th>
+              <th className="text-left px-4 py-3 text-xs font-semibold text-white/80 uppercase tracking-wider">错误信息</th>
+              <th className="text-left px-4 py-3 text-xs font-semibold text-white/80 uppercase tracking-wider">时间</th>
+              <th className="text-left px-4 py-3 text-xs font-semibold text-white/80 uppercase tracking-wider">状态</th>
             </tr>
           </thead>
           <tbody>
             {taskLoading && taskErrors.length === 0 ? (
               <tr>
-                <td colSpan={6} className="text-center py-12 text-white/40">
+                <td colSpan={6} className="text-center py-12 text-white/70">
                   <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2" />
                   加载中...
                 </td>
               </tr>
             ) : taskErrors.length === 0 ? (
               <tr>
-                <td colSpan={6} className="text-center py-12 text-white/40">
-                  {taskSearch ? `未找到匹配「${taskSearch}」的错误记录` : '暂无任务错误记录'}
+                <td colSpan={6} className="text-center py-12 text-white/70">
+                  暂无任务错误记录
+                </td>
+              </tr>
+            ) : filteredTaskErrors.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="text-center py-12 text-white/70">
+                  <Search className="w-5 h-5 mx-auto mb-2 opacity-50" />
+                  未找到匹配「{taskSearchQuery}」的错误记录
                 </td>
               </tr>
             ) : (
-              taskErrors.map(job => (
+              filteredTaskErrors.map(job => (
                 <React.Fragment key={job.id}>
                   <tr
-                    className="border-b border-white/5 hover:bg-white/3 cursor-pointer transition-colors"
+                    className="border-b border-white/10 hover:bg-white/[0.06] cursor-pointer transition-colors"
                     onClick={() => setTaskExpandedId(taskExpandedId === job.id ? null : job.id)}
                   >
                     <td className="px-4 py-3 text-sm text-white/70 font-mono">#{job.id}</td>
@@ -352,7 +323,7 @@ const ErrorMonitor: React.FC = () => {
                     <td className="px-4 py-3 text-sm text-red-400 max-w-xs truncate">
                       {job.error_message || '未知错误'}
                     </td>
-                    <td className="px-4 py-3 text-xs text-white/50">
+                    <td className="px-4 py-3 text-xs text-white/80">
                       <div className="flex items-center gap-1">
                         <Clock className="w-3 h-3" />
                         {formatDate(job.created_at)}
@@ -383,21 +354,21 @@ const ErrorMonitor: React.FC = () => {
                     </td>
                   </tr>
                   {taskExpandedId === job.id && (
-                    <tr className="bg-white/2">
+                    <tr className="bg-white/[0.06]">
                       <td colSpan={6} className="px-6 py-4">
                         <div className="text-sm space-y-2">
                           <div>
-                            <span className="text-white/40">完整错误：</span>
+                            <span className="text-white/70">完整错误：</span>
                             <span className="text-red-400">{job.error_message || '无'}</span>
                           </div>
                           <div>
-                            <span className="text-white/40">更新时间：</span>
+                            <span className="text-white/70">更新时间：</span>
                             <span className="text-white/70">{formatDate(job.updated_at)}</span>
                           </div>
                           {job.input_params && (
                             <div>
-                              <span className="text-white/40">输入参数：</span>
-                              <pre className="mt-1 text-xs text-white/60 bg-black/30 p-3 rounded-lg overflow-x-auto max-h-40">
+                              <span className="text-white/70">输入参数：</span>
+                              <pre className="mt-1 text-xs text-white/80 bg-black/30 p-3 rounded-lg overflow-x-auto max-h-40">
                                 {typeof job.input_params === 'string' ? job.input_params : JSON.stringify(job.input_params, null, 2)}
                               </pre>
                             </div>
@@ -416,21 +387,21 @@ const ErrorMonitor: React.FC = () => {
       {/* 分页 */}
       {taskPagination.totalPages > 1 && (
         <div className="flex items-center justify-between mt-4">
-          <span className="text-sm text-white/40">
+          <span className="text-sm text-white/70">
             第 {taskPagination.page} / {taskPagination.totalPages} 页
           </span>
           <div className="flex items-center gap-2">
             <button
               onClick={() => fetchTaskErrors(taskPagination.page - 1)}
               disabled={taskPagination.page <= 1}
-              className="p-2 rounded-lg bg-white/5 text-white/60 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              className="p-2 rounded-lg bg-white/10 text-white/80 hover:bg-white/15 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
             <button
               onClick={() => fetchTaskErrors(taskPagination.page + 1)}
               disabled={taskPagination.page >= taskPagination.totalPages}
-              className="p-2 rounded-lg bg-white/5 text-white/60 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              className="p-2 rounded-lg bg-white/10 text-white/80 hover:bg-white/15 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             >
               <ChevronRight className="w-4 h-4" />
             </button>
@@ -438,37 +409,26 @@ const ErrorMonitor: React.FC = () => {
         </div>
       )}
     </>
-  );
+    );
+  };
 
   // 渲染系统错误表格
   // [虚拟列表评估] 不适用 useVirtualList：已实现服务端分页（每页 20 条），无需虚拟化
-  const renderSystemErrors = () => (
+  const renderSystemErrors = () => {
+    const query = systemSearchQuery.trim().toLowerCase();
+    const filteredSystemErrors = query
+      ? systemErrors.filter(error =>
+          (error.error_message || '').toLowerCase().includes(query) ||
+          (error.error_stack || '').toLowerCase().includes(query)
+        )
+      : systemErrors;
+
+    return (
     <>
       {/* 筛选 */}
       <div className="flex items-center gap-3 mb-4 flex-wrap">
-        {/* 搜索框 */}
-        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 border border-white/10 flex-1 min-w-60 max-w-96">
-          <Search className="w-4 h-4 text-white/40 shrink-0" />
-          <input
-            type="text"
-            value={systemSearchInput}
-            onChange={e => handleSystemSearchChange(e.target.value)}
-            placeholder="搜索错误信息、类型、来源、URL..."
-            className="bg-transparent text-sm text-white/80 outline-none flex-1 placeholder:text-white/30"
-          />
-          {systemSearchInput && (
-            <button
-              onClick={clearSystemSearch}
-              className="p-0.5 rounded hover:bg-white/10 transition-colors"
-              aria-label="清空搜索"
-            >
-              <XCircle className="w-4 h-4 text-white/40 hover:text-white/60" />
-            </button>
-          )}
-        </div>
-
-        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 border border-white/10">
-          <Filter className="w-4 h-4 text-white/40" />
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/10 border border-white/15">
+          <Filter className="w-4 h-4 text-white/70" />
           <select
             value={systemTypeFilter}
             onChange={e => setSystemTypeFilter(e.target.value)}
@@ -480,43 +440,71 @@ const ErrorMonitor: React.FC = () => {
             ))}
           </select>
         </div>
-        <span className="text-sm text-white/40">
-          共 {systemPagination.total} 条{systemSearch ? '匹配' : '错误'}记录
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/10 border border-white/15 flex-1 min-w-[200px] max-w-md">
+          <Search className="w-4 h-4 text-white/70 shrink-0" />
+          <input
+            type="text"
+            value={systemSearchQuery}
+            onChange={e => setSystemSearchQuery(e.target.value)}
+            placeholder="搜索错误信息或堆栈关键词..."
+            className="bg-transparent text-sm text-white/80 outline-none w-full placeholder:text-white/40"
+          />
+          {systemSearchQuery && (
+            <button
+              onClick={() => setSystemSearchQuery('')}
+              className="shrink-0 p-0.5 rounded hover:bg-white/10 transition-colors"
+            >
+              <X className="w-3.5 h-3.5 text-white/60" />
+            </button>
+          )}
+        </div>
+        <span className="text-sm text-white/70">
+          {query
+            ? `匹配 ${filteredSystemErrors.length} / ${systemErrors.length} 条（共 ${systemPagination.total} 条）`
+            : `共 ${systemPagination.total} 条错误记录`
+          }
         </span>
       </div>
 
       {/* 表格 */}
-      <div className="rounded-xl border border-white/10 overflow-hidden bg-white/3">
+      <div className="rounded-xl border border-white/10 overflow-hidden bg-white/[0.06]">
         <table className="w-full">
           <thead>
-            <tr className="border-b border-white/10 bg-white/5">
-              <th className="text-left px-4 py-3 text-xs font-semibold text-white/50 uppercase tracking-wider">ID</th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-white/50 uppercase tracking-wider">类型</th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-white/50 uppercase tracking-wider">来源</th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-white/50 uppercase tracking-wider">错误信息</th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-white/50 uppercase tracking-wider">时间</th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-white/50 uppercase tracking-wider">状态</th>
+            <tr className="border-b border-white/10 bg-white/10">
+              <th className="text-left px-4 py-3 text-xs font-semibold text-white/80 uppercase tracking-wider">ID</th>
+              <th className="text-left px-4 py-3 text-xs font-semibold text-white/80 uppercase tracking-wider">类型</th>
+              <th className="text-left px-4 py-3 text-xs font-semibold text-white/80 uppercase tracking-wider">来源</th>
+              <th className="text-left px-4 py-3 text-xs font-semibold text-white/80 uppercase tracking-wider">错误信息</th>
+              <th className="text-left px-4 py-3 text-xs font-semibold text-white/80 uppercase tracking-wider">时间</th>
+              <th className="text-left px-4 py-3 text-xs font-semibold text-white/80 uppercase tracking-wider">状态</th>
             </tr>
           </thead>
           <tbody>
             {systemLoading && systemErrors.length === 0 ? (
               <tr>
-                <td colSpan={6} className="text-center py-12 text-white/40">
+                <td colSpan={6} className="text-center py-12 text-white/70">
                   <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2" />
                   加载中...
                 </td>
               </tr>
             ) : systemErrors.length === 0 ? (
               <tr>
-                <td colSpan={6} className="text-center py-12 text-white/40">
-                  {systemSearch ? `未找到匹配「${systemSearch}」的错误记录` : '暂无系统错误记录'}
+                <td colSpan={6} className="text-center py-12 text-white/70">
+                  暂无系统错误记录
+                </td>
+              </tr>
+            ) : filteredSystemErrors.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="text-center py-12 text-white/70">
+                  <Search className="w-5 h-5 mx-auto mb-2 opacity-50" />
+                  未找到匹配「{systemSearchQuery}」的错误记录
                 </td>
               </tr>
             ) : (
-              systemErrors.map(error => (
+              filteredSystemErrors.map(error => (
                 <React.Fragment key={error.id}>
                   <tr
-                    className="border-b border-white/5 hover:bg-white/3 cursor-pointer transition-colors"
+                    className="border-b border-white/10 hover:bg-white/[0.06] cursor-pointer transition-colors"
                     onClick={() => setSystemExpandedId(systemExpandedId === error.id ? null : error.id)}
                   >
                     <td className="px-4 py-3 text-sm text-white/70 font-mono">#{error.id}</td>
@@ -537,7 +525,7 @@ const ErrorMonitor: React.FC = () => {
                     <td className="px-4 py-3 text-sm text-red-400 max-w-xs truncate">
                       {error.error_message || '未知错误'}
                     </td>
-                    <td className="px-4 py-3 text-xs text-white/50">
+                    <td className="px-4 py-3 text-xs text-white/80">
                       <div className="flex items-center gap-1">
                         <Clock className="w-3 h-3" />
                         {formatDate(error.created_at)}
@@ -568,24 +556,24 @@ const ErrorMonitor: React.FC = () => {
                     </td>
                   </tr>
                   {systemExpandedId === error.id && (
-                    <tr className="bg-white/2">
+                    <tr className="bg-white/[0.06]">
                       <td colSpan={6} className="px-6 py-4">
                         <div className="text-sm space-y-3">
                           <div>
-                            <span className="text-white/40">完整错误：</span>
+                            <span className="text-white/70">完整错误：</span>
                             <span className="text-red-400">{error.error_message || '无'}</span>
                           </div>
                           {error.error_stack && (
                             <div>
-                              <span className="text-white/40">错误堆栈：</span>
-                              <pre className="mt-1 text-xs text-white/60 bg-black/30 p-3 rounded-lg overflow-x-auto max-h-40 whitespace-pre-wrap">
+                              <span className="text-white/70">错误堆栈：</span>
+                              <pre className="mt-1 text-xs text-white/80 bg-black/30 p-3 rounded-lg overflow-x-auto max-h-40 whitespace-pre-wrap">
                                 {error.error_stack}
                               </pre>
                             </div>
                           )}
                           {error.request_url && (
                             <div>
-                              <span className="text-white/40">请求：</span>
+                              <span className="text-white/70">请求：</span>
                               <span className="text-white/70 font-mono">
                                 {error.request_method} {error.request_url}
                               </span>
@@ -593,23 +581,23 @@ const ErrorMonitor: React.FC = () => {
                           )}
                           {error.user_email && (
                             <div>
-                              <span className="text-white/40">用户：</span>
+                              <span className="text-white/70">用户：</span>
                               <span className="text-white/70">{error.user_email}</span>
                             </div>
                           )}
                           {error.resolved_by && (
                             <div>
-                              <span className="text-white/40">处理人：</span>
+                              <span className="text-white/70">处理人：</span>
                               <span className="text-white/70">{error.resolved_by}</span>
                               {error.resolved_at && (
-                                <span className="text-white/50 ml-2">({formatDate(error.resolved_at)})</span>
+                                <span className="text-white/80 ml-2">({formatDate(error.resolved_at)})</span>
                               )}
                             </div>
                           )}
                           {error.extra_context && Object.keys(error.extra_context).length > 0 && (
                             <div>
-                              <span className="text-white/40">额外信息：</span>
-                              <pre className="mt-1 text-xs text-white/60 bg-black/30 p-3 rounded-lg overflow-x-auto max-h-32">
+                              <span className="text-white/70">额外信息：</span>
+                              <pre className="mt-1 text-xs text-white/80 bg-black/30 p-3 rounded-lg overflow-x-auto max-h-32">
                                 {JSON.stringify(error.extra_context, null, 2)}
                               </pre>
                             </div>
@@ -628,21 +616,21 @@ const ErrorMonitor: React.FC = () => {
       {/* 分页 */}
       {systemPagination.totalPages > 1 && (
         <div className="flex items-center justify-between mt-4">
-          <span className="text-sm text-white/40">
+          <span className="text-sm text-white/70">
             第 {systemPagination.page} / {systemPagination.totalPages} 页
           </span>
           <div className="flex items-center gap-2">
             <button
               onClick={() => fetchSystemErrors(systemPagination.page - 1)}
               disabled={systemPagination.page <= 1}
-              className="p-2 rounded-lg bg-white/5 text-white/60 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              className="p-2 rounded-lg bg-white/10 text-white/80 hover:bg-white/15 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
             <button
               onClick={() => fetchSystemErrors(systemPagination.page + 1)}
               disabled={systemPagination.page >= systemPagination.totalPages}
-              className="p-2 rounded-lg bg-white/5 text-white/60 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              className="p-2 rounded-lg bg-white/10 text-white/80 hover:bg-white/15 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             >
               <ChevronRight className="w-4 h-4" />
             </button>
@@ -650,7 +638,8 @@ const ErrorMonitor: React.FC = () => {
         </div>
       )}
     </>
-  );
+    );
+  };
 
   return (
     <div className="p-6 min-h-screen" style={{ backgroundColor: '#0a0a0f' }}>
@@ -663,7 +652,7 @@ const ErrorMonitor: React.FC = () => {
             </div>
             <div>
               <h1 className="text-xl font-bold text-white">错误监控</h1>
-              <p className="text-sm text-white/50">监控任务错误和系统错误</p>
+              <p className="text-sm text-white/80">监控任务错误和系统错误</p>
             </div>
           </div>
           <div className="flex items-center gap-3">

@@ -66,6 +66,16 @@ function normalizeFrameResult(result: any) {
   return { startFrame, endFrame };
 }
 
+/**
+ * 为 URL 添加缓存破坏参数，确保浏览器加载最新内容
+ * 帧图片使用固定 MinIO 路径，重新生成后 URL 不变，需要强制刷新缓存
+ */
+function bustCache(url: string | null | undefined): string | null {
+  if (!url) return null;
+  const separator = url.includes('?') ? '&' : '?';
+  return `${url}${separator}v=${Date.now()}`;
+}
+
 async function persistStoryboardMedia(storyboardId: number, payload: Record<string, unknown>) {
   const token = getAuthToken();
 
@@ -153,19 +163,25 @@ export function useSceneGeneration({
       if (key.startsWith('img_')) {
         const { startFrame, endFrame } = normalizeFrameResult(task.result);
         if (startFrame) {
+          // 添加缓存破坏参数，确保浏览器加载最新帧图片
+          const freshStartFrame = bustCache(startFrame)!;
+          const freshEndFrame = bustCache(endFrame);
           setScenes(prev => prev.map(s =>
             s.id === sceneId
-              ? { ...s, startFrame, endFrame, imageUrl: startFrame }
+              ? { ...s, startFrame: freshStartFrame, endFrame: freshEndFrame, imageUrl: freshStartFrame }
               : s
           ));
+          // 保存到数据库时使用原始 URL（不含缓存参数）
           void persistStoryboardMedia(sceneId, { imageUrl: startFrame, startFrame, endFrame });
         }
       } else if (key.startsWith('vid_')) {
         const videoUrl = task.result.video_url || task.result.videoUrl || task.result.url;
         if (videoUrl) {
+          const freshVideoUrl = bustCache(videoUrl)!;
           setScenes(prev => prev.map(s =>
-            s.id === sceneId ? { ...s, videoUrl } : s
+            s.id === sceneId ? { ...s, videoUrl: freshVideoUrl } : s
           ));
+          // 保存到数据库时使用原始 URL
           void persistStoryboardMedia(sceneId, { videoUrl });
         }
       }

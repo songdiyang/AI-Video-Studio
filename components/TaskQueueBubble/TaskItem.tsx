@@ -249,8 +249,13 @@ const TaskItem: React.FC<TaskItemProps> = ({
     try {
       await cancelWorkflow(job.id);
       onCancelled?.();
-    } catch (err) {
-      console.error('[TaskItem] 取消失败:', err);
+    } catch (err: any) {
+      // 404 表示工作流已不存在（可能已被清理），视为取消成功
+      if (err?.status === 404 || err?.message?.includes('不存在')) {
+        onCancelled?.();
+      } else {
+        console.error('[TaskItem] 取消失败:', err);
+      }
     } finally {
       setCancelling(false);
     }

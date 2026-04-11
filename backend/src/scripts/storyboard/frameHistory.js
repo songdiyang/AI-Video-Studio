@@ -1,9 +1,9 @@
 const { queryAll, queryOne, execute } = require('../../dbHelper');
 const { authMiddleware } = require('../../middleware');
 
-// GET /storyboards/:storyboardId/frame-history - 获取分镜的帧历史版本
+// GET /:storyboardId/frame-history - 获取分镜的帧历史版本
 module.exports = (router) => {
-  router.get('/storyboards/:storyboardId/frame-history', authMiddleware, async (req, res) => {
+  router.get('/:storyboardId/frame-history', authMiddleware, async (req, res) => {
     const userId = req.user.id;
     const { storyboardId } = req.params;
     const { frameType } = req.query; // 'first' | 'last' | 'all'
@@ -39,8 +39,8 @@ module.exports = (router) => {
     }
   });
 
-  // POST /storyboards/:storyboardId/frame-history - 保存新的帧版本
-  router.post('/storyboards/:storyboardId/frame-history', authMiddleware, async (req, res) => {
+  // POST /:storyboardId/frame-history - 保存新的帧版本
+  router.post('/:storyboardId/frame-history', authMiddleware, async (req, res) => {
     const userId = req.user.id;
     const { storyboardId } = req.params;
     const { frameType, frameUrl, generationPrompt, generationParams } = req.body;
@@ -103,8 +103,8 @@ module.exports = (router) => {
     }
   });
 
-  // PUT /storyboards/:storyboardId/frame-history/:historyId/restore - 恢复历史版本
-  router.put('/storyboards/:storyboardId/frame-history/:historyId/restore', authMiddleware, async (req, res) => {
+  // PUT /:storyboardId/frame-history/:historyId/restore - 恢复历史版本
+  router.put('/:storyboardId/frame-history/:historyId/restore', authMiddleware, async (req, res) => {
     const { storyboardId, historyId } = req.params;
 
     try {
@@ -145,8 +145,8 @@ module.exports = (router) => {
     }
   });
 
-  // DELETE /storyboards/:storyboardId/frame-history/:historyId - 删除历史版本
-  router.delete('/storyboards/:storyboardId/frame-history/:historyId', authMiddleware, async (req, res) => {
+  // DELETE /:storyboardId/frame-history/:historyId - 删除历史版本
+  router.delete('/:storyboardId/frame-history/:historyId', authMiddleware, async (req, res) => {
     const { storyboardId, historyId } = req.params;
 
     try {

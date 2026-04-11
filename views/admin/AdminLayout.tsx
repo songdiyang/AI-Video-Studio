@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { ChevronDown, ChevronRight, LogOut, Settings, Users, Cpu, LayoutDashboard, Server, BarChart3, Gauge, CreditCard, Globe, MessageSquare, AlertTriangle, Megaphone, Calculator, Wrench } from 'lucide-react';
+import { ChevronDown, ChevronRight, LogOut, Settings, Users, Cpu, LayoutDashboard, Server, BarChart3, Gauge, CreditCard, Globe, MessageSquare, AlertTriangle, Megaphone, Calculator } from 'lucide-react';
 import { getAuthUser, logout } from '../../services/auth';
 
 interface MenuItem {
@@ -73,12 +73,6 @@ const AdminLayout: React.FC = () => {
           path: '/admin/billing-config'
         },
         {
-          id: 'system-configs',
-          label: '系统配置',
-          icon: <Wrench className="w-4 h-4" />,
-          path: '/admin/system-configs'
-        },
-        {
           id: 'site-settings',
           label: '站点设置',
           icon: <Globe className="w-4 h-4" />,
@@ -148,7 +142,7 @@ const AdminLayout: React.FC = () => {
             ${level === 0 ? 'mb-1' : 'mb-1'}
             ${active 
               ? 'bg-white/10 text-white backdrop-blur-sm' 
-              : 'text-white/90 hover:bg-white/5 hover:text-white'
+              : 'text-white/90 hover:bg-white/10 hover:text-white'
             }
             ${level > 0 ? 'ml-6' : ''}
           `}
@@ -176,7 +170,7 @@ const AdminLayout: React.FC = () => {
   };
 
   return (
-    <div className="flex h-screen bg-[#0a0a0f]">
+    <div className="admin-forced-dark dark flex h-screen" data-theme="dark" style={{ backgroundColor: '#0a0a0f' }}>
       <aside className="w-64 bg-linear-to-b from-[#1a1035] via-[#2d1f4e] to-[#4a3070] shadow-xl flex flex-col">
         <div className="p-6">
           <div className="flex items-center gap-3">
@@ -185,7 +179,7 @@ const AdminLayout: React.FC = () => {
             </div>
             <div>
               <h1 className="text-white font-bold text-lg">管理后台</h1>
-              <p className="text-white/50 text-xs">饺子动漫 Admin</p>
+              <p className="text-white/70 text-xs">饺子动漫 Admin</p>
             </div>
           </div>
         </div>
@@ -203,7 +197,7 @@ const AdminLayout: React.FC = () => {
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-white text-sm font-medium truncate">{userEmail}</p>
-              <p className="text-white/50 text-xs">管理员</p>
+              <p className="text-white/70 text-xs">管理员</p>
             </div>
           </div>
           
@@ -217,7 +211,7 @@ const AdminLayout: React.FC = () => {
         </div>
       </aside>
 
-      <main className="flex-1 overflow-auto bg-[#0a0a0f]">
+      <main className="flex-1 overflow-auto" style={{ backgroundColor: '#0a0a0f' }}>
         <Outlet />
       </main>
     </div>

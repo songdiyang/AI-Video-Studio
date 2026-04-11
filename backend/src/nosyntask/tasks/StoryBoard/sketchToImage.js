@@ -28,6 +28,7 @@ const { selectReferenceImages } = require('./referenceImageSelector');
 const { collectCandidateImages, appendContextCandidates } = require('./collectCandidateImages');
 const { traced, trace } = require('../../engine/generationTrace');
 const { assertUpdated, assertPersistedFields } = require('./persistenceGuard');
+const { saveFrameHistory } = require('./saveFrameHistory');
 
 /**
  * 草图转图片主函数
@@ -182,7 +183,13 @@ const handleSketchToImage = traced('草图转图片', async function _handleSket
 
     const styleInfo = visualStyle ? `视觉风格: ${visualStyle}` : '';
     const shotInfo = variables.shotType ? `镜头类型: ${variables.shotType}` : '';
-    const dialogueBlock = variables.dialogue ? `【角色对白】"${variables.dialogue}"` : '';
+    let dialogueBlock = '';
+    if (variables.dialogues && Array.isArray(variables.dialogues) && variables.dialogues.length > 0) {
+      const lines = variables.dialogues.map(d => `${d.character}："${d.line}"`).join('\n');
+      dialogueBlock = `【角色对白】\n${lines}`;
+    } else if (variables.dialogue) {
+      dialogueBlock = `【角色对白】"${variables.dialogue}"`;
+    }
 
     const extraInfo = [charBlock, sceneBlock, styleInfo, shotInfo, dialogueBlock, charConstraint].filter(Boolean).join('\n');
 
@@ -282,6 +289,16 @@ ${extraInfo}
     label: '[SketchToImage] 草图帧'
   });
   trace('帧持久化完成', { firstFrameUrl: persistedUrl, lastFrameUrl: persistedUrl });
+
+  // 保存到帧历史版本表（草图帧：首尾帧相同）
+  try {
+    const genParams = { model: modelName, aspectRatio, sketchType, controlStrength };
+    const ver = await saveFrameHistory(storyboardId, 'first', persistedUrl, promptUsed, genParams);
+    await saveFrameHistory(storyboardId, 'last', persistedUrl, promptUsed, genParams);
+    console.log(`[SketchToImage] 帧历史版本已保存 (v${ver})`);
+  } catch (e) {
+    console.warn('[SketchToImage] 保存帧历史版本失败:', e.message);
+  }
 
   if (onProgress) onProgress(100);
   console.log('[SketchToImage] 草图转图片完成');

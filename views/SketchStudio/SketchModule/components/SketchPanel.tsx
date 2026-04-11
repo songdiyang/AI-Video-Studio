@@ -376,8 +376,8 @@ const SketchPanel: React.FC<SketchPanelProps> = ({
             <>
               <ModalHeader className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <SplitSquareVertical className="w-5 h-5 text-purple-400" />
-                  <span className="text-sm">草图 vs AI生成结果</span>
+                  <SplitSquareVertical className="w-5 h-5 text-purple-500 dark:text-purple-400" />
+                  <span className="text-sm text-[var(--text-primary)]">草图 vs AI生成结果</span>
                 </div>
               </ModalHeader>
               <ModalBody className="p-4">
@@ -385,9 +385,9 @@ const SketchPanel: React.FC<SketchPanelProps> = ({
                   {/* 草图原稿 */}
                   <div className="flex-1 flex flex-col">
                     <div className="flex items-center gap-2 mb-2">
-                      <Pencil className="w-4 h-4 text-purple-400" />
+                      <Pencil className="w-4 h-4 text-purple-500 dark:text-purple-400" />
                       <span className="text-xs font-medium text-[var(--text-secondary)]">草图原稿</span>
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-400">
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-600 dark:text-purple-400">
                         {sketchType === 'stick_figure' && '火柴人草稿'}
                         {sketchType === 'storyboard_sketch' && '分镜草图'}
                         {sketchType === 'detailed_lineart' && '精细线稿'}
@@ -407,9 +407,9 @@ const SketchPanel: React.FC<SketchPanelProps> = ({
                   {/* AI生成结果 */}
                   <div className="flex-1 flex flex-col">
                     <div className="flex items-center gap-2 mb-2">
-                      <ImageIcon className="w-4 h-4 text-emerald-400" />
+                      <ImageIcon className="w-4 h-4 text-emerald-500 dark:text-emerald-400" />
                       <span className="text-xs font-medium text-[var(--text-secondary)]">AI生成结果</span>
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400">
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-600 dark:text-emerald-400">
                         控制强度: {Math.round((controlStrength || 0.85) * 100)}%
                       </span>
                     </div>

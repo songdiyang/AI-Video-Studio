@@ -139,9 +139,8 @@ export function useScriptGeneration({
         return;
       }
       
-      try {
-        console.log('[useScriptGeneration] 开始保存工作流结果...');
-        // 保存工作流结果到 scripts 表
+      // 保存重试逻辑（最多重试2次）
+      const attemptSave = async (attempt: number): Promise<any> => {
         const token = getAuthToken();
         const res = await fetch('/api/scripts/save-from-workflow', {
           method: 'POST',
@@ -156,14 +155,31 @@ export function useScriptGeneration({
         });
 
         const data = await res.json();
-        console.log('[useScriptGeneration] 保存响应:', data);
+        console.log(`[useScriptGeneration] 保存响应 (尝试${attempt}):`, data);
         
         if (res.status === 402) {
-          return;
+          return { skip: true };
         }
 
         if (!res.ok) {
-          throw new Error('保存失败');
+          // 500 错误且还有重试机会时，等待后重试
+          if (res.status >= 500 && attempt < 3) {
+            console.warn(`[useScriptGeneration] 保存失败 (${res.status})，${attempt}秒后重试...`);
+            await new Promise(r => setTimeout(r, attempt * 1000));
+            return attemptSave(attempt + 1);
+          }
+          throw new Error(data.message || data.detail || '保存失败');
+        }
+
+        return data;
+      };
+
+      try {
+        console.log('[useScriptGeneration] 开始保存工作流结果...');
+        const data = await attemptSave(1);
+        
+        if (data?.skip) {
+          return;
         }
 
         console.log('[useScriptGeneration] 保存成功，刷新剧本列表...');
@@ -172,16 +188,18 @@ export function useScriptGeneration({
           await loadProjectScript(selectedProject.id, data.episodeNumber);
         }
         
-        console.log('[useScriptGeneration] 标记工作流已消费...');
         // 标记工作流已消费
         await consumeWorkflow(completedJob.id);
         
-        console.log('[useScriptGeneration] 完成！');
         // 检查是否还有其他活跃工作流
-        console.log('[useScriptGeneration] 检查是否有其他活跃工作流...');
         await checkAndResumeNextWorkflow();
       } catch (error: any) {
         console.error('保存剧本失败:', error);
+        onError?.(`剧本生成完成但保存失败: ${error.message}`);
+        // 即使保存失败，也刷新列表（可能状态已被后端重置为 draft）
+        if (selectedProject) {
+          await loadProjectScript(selectedProject.id);
+        }
         // 即使保存失败，也检查下一个工作流
         await checkAndResumeNextWorkflow();
       } finally {
@@ -250,6 +268,11 @@ export function useScriptGeneration({
         localStorage.setItem(LAST_PROJECT_KEY, newProject.id.toString());
       } catch (error: any) {
         console.error('自动创建工程失败:', error);
+        if (error.code === 'PROJECT_LIMIT_REACHED') {
+          onError?.(error.message || '项目数量已达上限，请删除不需要的项目后重试');
+        } else {
+          onError?.(error.message || '创建工程失败');
+        }
         return;
       }
     }

@@ -154,7 +154,7 @@ const SiteSettings: React.FC = () => {
         </div>
 
         {/* 用户注册开关 */}
-        <div className="rounded-xl border border-white/10 bg-white/[0.03] overflow-hidden">
+        <div className="rounded-xl border border-white/10 bg-white/[0.08] overflow-hidden">
           <div className="px-5 py-4 border-b border-white/10">
             <h2 className="text-base font-semibold text-white flex items-center gap-2">
               <UserPlus className="w-4 h-4 text-emerald-400" />
@@ -203,7 +203,7 @@ const SiteSettings: React.FC = () => {
         </div>
 
         {/* 用户登录开关 */}
-        <div className="rounded-xl border border-white/10 bg-white/[0.03] overflow-hidden">
+        <div className="rounded-xl border border-white/10 bg-white/[0.08] overflow-hidden">
           <div className="px-5 py-4 border-b border-white/10">
             <h2 className="text-base font-semibold text-white flex items-center gap-2">
               <LogIn className="w-4 h-4 text-blue-400" />

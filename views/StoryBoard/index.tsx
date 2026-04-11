@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef, Component, ReactNode } from 'react';
 import { Button, Select, SelectItem, Tooltip } from '@heroui/react';
-import { Wand2, RefreshCw, Download, Video, ImageIcon, Users, MapPin, Frame, Film, ChevronDown, Play, PanelRight, GitBranch, MessageSquare, Lock, ShieldCheck } from 'lucide-react';
-import { useSceneManager, StoryboardScene } from './useSceneManager';
+import { Wand2, RefreshCw, Download, Video, ImageIcon, Users, MapPin, Frame, Film, ChevronDown, Play, PanelRight, GitBranch, MessageSquare, Lock } from 'lucide-react';
+import { useSceneManager, StoryboardScene, DialogueLine } from './useSceneManager';
 import { useAutoStoryboard } from './useAutoStoryboard';
 import { useSceneGeneration } from './useSceneGeneration';
-import { useBatchFrameGeneration } from './hooks/useBatchFrameGeneration';
-import { useBatchSceneVideoGeneration } from './hooks/useBatchSceneVideoGeneration';
 import { useWorkflowRecovery } from './hooks/useWorkflowRecovery';
+import { batchValidateScenes } from '../../services/storyboards';
 import EpisodeSelector from './EpisodeSelector';
 import AutoStoryboardModal from './AutoStoryboardModal';
 import BatchDownloadModal from './BatchDownloadModal';
@@ -26,8 +25,6 @@ import { AnimaticPreview } from './AnimaticPreview';
 import VersionHistoryPanel from './VersionHistoryPanel';
 import TeamCollaborationPanel from './TeamCollaborationPanel';
 import FrameAnnotationPanel from './FrameAnnotationPanel';
-import StoryboardValidationPanel from './components/StoryboardValidationPanel';
-import { validateStoryboardContent, getIssuesForScene, StoryboardValidationResult } from './utils/validateStoryboardContent';
 
 interface Script {
   id: number;
@@ -123,11 +120,12 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
   const [isVersionHistoryOpen, setIsVersionHistoryOpen] = useState(false);
   const [isTeamCollaborationOpen, setIsTeamCollaborationOpen] = useState(false);
   const [isFrameAnnotationOpen, setIsFrameAnnotationOpen] = useState(false);
-  const [isValidationOpen, setIsValidationOpen] = useState(false);
-  const [validationResult, setValidationResult] = useState<StoryboardValidationResult | null>(null);
-  const [isValidating, setIsValidating] = useState(false);
   const resourcePanelRef = useRef<ResizablePanelRef>(null);
   const { showToast } = useToast();
+
+  // 批量生成提交状态追踪
+  const [isBatchFrameSubmitting, setIsBatchFrameSubmitting] = useState(false);
+  const [isBatchVideoSubmitting, setIsBatchVideoSubmitting] = useState(false);
 
   // O(1) model lookup via Map
   const modelMap = useMemo(() => {
@@ -264,6 +262,7 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
     addScene,
     deleteScene,
     updateDescription,
+    updateDialogues,
     moveScene,
     reorderScenes
   } = useSceneManager(currentScriptId, currentProjectId);
@@ -284,7 +283,7 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
   });
 
   // 5. 场景图片/视频生成
-  const { generateImage, generateVideo, tasks } = useSceneGeneration({
+  const { generateImage, generateVideo, tasks, isRunning } = useSceneGeneration({
     projectId: currentProjectId,
     scriptId: currentScriptId,
     episodeNumber: currentEpisode,
@@ -499,144 +498,152 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
     }
   };
 
-  const handleBatchFrameGeneration = async () => {
+  const handleBatchFrameGeneration = async (overwrite = false) => {
     if (!currentScriptId) {
       showToast('请先选择剧本', 'warning');
       return;
     }
+    if (!imageModel) {
+      showToast('请先选择图片模型', 'warning');
+      return;
+    }
+    if (!imageAspectRatio) {
+      showToast('当前图片模型未配置可用长宽比', 'warning');
+      return;
+    }
+    if (scenes.length === 0) {
+      showToast('没有分镜可生成', 'warning');
+      return;
+    }
 
+    setIsBatchFrameSubmitting(true);
     try {
-      showToast('正在启动首尾帧批量生成...', 'info');
-      await batchFrameGen.startBatchGeneration(false);
+      // 根据覆盖模式过滤分镜
+      let targetScenes = scenes.filter(s => s.id != null);
+      if (!overwrite) {
+        // 跳过已有帧的分镜
+        targetScenes = targetScenes.filter(s => {
+          if (s.hasAction) return !(s.startFrame && s.endFrame);
+          return !s.startFrame;
+        });
+      }
+
+      if (targetScenes.length === 0) {
+        showToast('所有分镜已有帧图片，无需生成', 'info');
+        return;
+      }
+
+      // 批量预检
+      const sceneIds = targetScenes.map(s => s.id!);
+      let validSceneIds = sceneIds;
+      try {
+        const validation = await batchValidateScenes(sceneIds, currentScriptId, 'frame');
+        validSceneIds = validation.results.filter(r => r.ready).map(r => r.sceneId);
+        const skippedCount = validation.results.filter(r => !r.ready).length;
+        if (skippedCount > 0) {
+          showToast(`${skippedCount} 个分镜因资源不完整被跳过`, 'warning');
+        }
+      } catch (err) {
+        console.warn('[BatchFrame] 预检失败，尝试全部生成:', err);
+      }
+
+      if (validSceneIds.length === 0) {
+        showToast('所有分镜都因资源不完整被跳过', 'error');
+        return;
+      }
+
+      // 逐个提交独立任务
+      let startedCount = 0;
+      let skippedCount = 0;
+      for (const sceneId of validSceneIds) {
+        const scene = scenes.find(s => s.id === sceneId);
+        if (!scene) continue;
+        const prompt = scene.description || '';
+        const result = await generateImage(sceneId, prompt);
+        if (result.success) {
+          startedCount++;
+        } else {
+          skippedCount++;
+          console.warn(`[BatchFrame] 分镜 ${sceneId} 跳过: ${result.error}`);
+        }
+      }
+
+      showToast(`已启动 ${startedCount} 个分镜的帧生成任务${skippedCount > 0 ? `，${skippedCount} 个跳过` : ''}`, 'info');
     } catch (error: any) {
       showToast('首尾帧批量生成失败，请稍后重试', 'error');
       console.error('首尾帧批量生成失败:', error);
+    } finally {
+      setIsBatchFrameSubmitting(false);
     }
   };
 
-  const handleBatchVideoGeneration = async () => {
+  const handleBatchVideoGeneration = async (overwrite = false) => {
     if (!currentScriptId || scenes.length === 0) {
       showToast('请先生成分镜', 'warning');
       return;
     }
+    if (!videoModel) {
+      showToast('请先选择视频生成模型', 'warning');
+      return;
+    }
+    if (!videoAspectRatio) {
+      showToast('当前视频模型未配置可用长宽比', 'warning');
+      return;
+    }
+
+    setIsBatchVideoSubmitting(true);
     try {
-      showToast(`正在批量生成 ${scenes.length} 个分镜的视频...`, 'info');
-      await batchSceneVideoGen.startBatchVideoGeneration(false);
+      // 根据覆盖模式过滤分镜
+      let targetScenes = scenes.filter(s => s.id != null);
+      if (!overwrite) {
+        targetScenes = targetScenes.filter(s => !s.videoUrl);
+      }
+
+      if (targetScenes.length === 0) {
+        showToast('所有分镜已有视频，无需生成', 'info');
+        return;
+      }
+
+      // 批量预检
+      const sceneIds = targetScenes.map(s => s.id!);
+      let validSceneIds = sceneIds;
+      try {
+        const validation = await batchValidateScenes(sceneIds, currentScriptId, 'video');
+        validSceneIds = validation.results.filter(r => r.ready).map(r => r.sceneId);
+        const skippedCount = validation.results.filter(r => !r.ready).length;
+        if (skippedCount > 0) {
+          showToast(`${skippedCount} 个分镜因资源不完整被跳过`, 'warning');
+        }
+      } catch (err) {
+        console.warn('[BatchVideo] 预检失败，尝试全部生成:', err);
+      }
+
+      if (validSceneIds.length === 0) {
+        showToast('所有分镜都因资源不完整被跳过', 'error');
+        return;
+      }
+
+      // 逐个提交独立任务
+      let startedCount = 0;
+      let skippedCount = 0;
+      for (const sceneId of validSceneIds) {
+        const result = await generateVideo(sceneId);
+        if (result.success) {
+          startedCount++;
+        } else {
+          skippedCount++;
+          console.warn(`[BatchVideo] 分镜 ${sceneId} 跳过: ${result.error}`);
+        }
+      }
+
+      showToast(`已启动 ${startedCount} 个分镜的视频生成任务${skippedCount > 0 ? `，${skippedCount} 个跳过` : ''}`, 'info');
     } catch (error: any) {
       showToast('视频批量生成失败，请稍后重试', 'error');
       console.error('视频批量生成失败:', error);
+    } finally {
+      setIsBatchVideoSubmitting(false);
     }
   };
-
-  // 分镜内容检验
-  const handleValidateStoryboard = useCallback(() => {
-    if (scenes.length === 0) {
-      showToast('没有分镜数据可供检验', 'warning');
-      return;
-    }
-    setIsValidating(true);
-    // 使用 setTimeout 让 UI 先更新显示 loading 状态
-    setTimeout(() => {
-      try {
-        const result = validateStoryboardContent(scenes);
-        setValidationResult(result);
-        setIsValidationOpen(true);
-        setIsValidating(false);
-        if (result.issueCount === 0) {
-          showToast('所有分镜检验通过', 'success');
-        } else {
-          const { emptyShots, duplicateShots, continuityErrors } = result.summary;
-          const parts: string[] = [];
-          if (emptyShots > 0) parts.push(`${emptyShots} 个空镜头`);
-          if (duplicateShots > 0) parts.push(`${duplicateShots} 组重复`);
-          if (continuityErrors > 0) parts.push(`${continuityErrors} 处连续性错误`);
-          showToast(`发现 ${parts.join('、')}，共 ${result.issueCount} 个问题`, 'warning');
-        }
-      } catch (error: any) {
-        console.error('[StoryBoard] 分镜检验失败:', error);
-        showToast('分镜检验失败: ' + error.message, 'error');
-        setIsValidating(false);
-      }
-    }, 50);
-  }, [scenes, showToast]);
-
-  const handleRevalidate = useCallback(() => {
-    handleValidateStoryboard();
-  }, [handleValidateStoryboard]);
-
-  // 构建每个分镜的检验问题映射
-  const sceneValidationMap = useMemo(() => {
-    if (!validationResult) return new Map<number, StoryboardValidationResult['issues'][0][]>();
-    const map = new Map<number, StoryboardValidationResult['issues'][0][]>();
-    for (const issue of validationResult.issues) {
-      for (const id of issue.storyboardIds) {
-        const existing = map.get(id) || [];
-        existing.push(issue);
-        map.set(id, existing);
-      }
-    }
-    return map;
-  }, [validationResult]);
-
-
-  // 8. 批量帧生成
-  const batchFrameGen = useBatchFrameGeneration({
-    scriptId: currentScriptId,
-    projectId: currentProjectId,
-    imageModel,
-    aspectRatio: imageAspectRatio,
-    resolution: imageResolution || imageResolutionOptions[0]?.value || undefined,
-    textModel,
-    scenes,
-    onComplete: () => {
-      console.log('[StoryBoard] 批量帧生成完成，重新加载分镜');
-      if (currentScriptId) {
-        loadStoryboards(currentScriptId);
-      }
-    },
-    onError: (msg) => showToast(msg, 'error'),
-    onSubTaskCompleted: (task, storyboardId) => {
-      // 子任务完成时，从 result_data 中提取帧 URL 并更新分镜状态
-      if (!storyboardId) return;
-      const resultData = task.result_data;
-      if (!resultData) return;
-      
-      // 根据任务类型提取帧 URL
-      const startFrame = resultData.startFrame || resultData.firstFrameUrl;
-      const endFrame = resultData.endFrame || resultData.lastFrameUrl;
-      
-      if (startFrame || endFrame) {
-        console.log(`[StoryBoard] 分镜 ${storyboardId} 帧生成完成，更新显示`);
-        setScenes(prev => prev.map(s => 
-          s.id === storyboardId 
-            ? { 
-                ...s, 
-                startFrame: startFrame || s.startFrame,
-                endFrame: endFrame || s.endFrame
-              } 
-            : s
-        ));
-      }
-    }
-  });
-
-  // 9. 批量视频生成
-  const batchSceneVideoGen = useBatchSceneVideoGeneration({
-    scriptId: currentScriptId,
-    projectId: currentProjectId,
-    videoModel,
-    textModel,
-    aspectRatio: videoAspectRatio,
-    duration: undefined, // 时长由分镜设置决定，不传递统一值
-    resolution: videoResolution || undefined,
-    onComplete: () => {
-      console.log('[StoryBoard] 批量视频生成完成，重新加载分镜');
-      if (currentScriptId) {
-        loadStoryboards(currentScriptId);
-      }
-    },
-    onError: (msg) => showToast(msg, 'error')
-  });
 
 
   // 4. 集数切换
@@ -895,6 +902,8 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
     <div className="w-px h-6 bg-(--border-color)" />
   );
 
+  // 任务状态直接来自 useSceneGeneration（每个分镜独立任务）
+
   return (
     <div className="h-full flex flex-col bg-(--bg-app)">
       {/* 顶部工具栏 */}
@@ -970,18 +979,6 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
 
             <Divider />
 
-            {/* 分镜检验 */}
-            <IconButton
-              icon={<ShieldCheck className="w-4 h-4" />}
-              tooltip="检验分镜"
-              onClick={handleValidateStoryboard}
-              disabled={scenes.length === 0 || isValidating}
-              loading={isValidating}
-              variant="primary"
-            />
-
-            <Divider />
-
             {/* 批量生成操作 */}
             <IconButton
               icon={<Users className="w-4 h-4" />}
@@ -1003,16 +1000,16 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
               icon={<Frame className="w-4 h-4" />}
               tooltip="批量生成首尾帧"
               onClick={handleBatchFrameGeneration}
-              disabled={!currentScriptId || batchFrameGen.isGenerating}
-              loading={batchFrameGen.isGenerating}
+              disabled={!currentScriptId || isBatchFrameSubmitting || isRunning}
+              loading={isBatchFrameSubmitting}
               variant="warning"
             />
             <IconButton
               icon={<Film className="w-4 h-4" />}
               tooltip="批量生成视频"
               onClick={handleBatchVideoGeneration}
-              disabled={!currentScriptId || batchSceneVideoGen.isGenerating}
-              loading={batchSceneVideoGen.isGenerating}
+              disabled={!currentScriptId || isBatchVideoSubmitting || isRunning}
+              loading={isBatchVideoSubmitting}
               variant="danger"
             />
 
@@ -1169,14 +1166,13 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
                   setScenes(prev => prev.map(s => s.id === id ? { ...s, ...updates } : s));
                 }}
                 tasks={tasks}
-                onBatchGenerate={(overwrite) => batchFrameGen.startBatchGeneration(overwrite)}
-                isBatchGenerating={batchFrameGen.isGenerating}
-                batchProgress={batchFrameGen.progress}
-                onBatchGenerateVideo={(overwrite) => batchSceneVideoGen.startBatchVideoGeneration(overwrite)}
-                isBatchGeneratingVideo={batchSceneVideoGen.isGenerating}
-                batchVideoProgress={batchSceneVideoGen.progress}
+                onBatchGenerate={(overwrite) => handleBatchFrameGeneration(overwrite)}
+                isBatchGenerating={isBatchFrameSubmitting || isRunning}
+                batchProgress={0}
+                onBatchGenerateVideo={(overwrite) => handleBatchVideoGeneration(overwrite)}
+                isBatchGeneratingVideo={isBatchVideoSubmitting || isRunning}
+                batchVideoProgress={0}
                 isLoading={isLoading}
-                sceneValidationMap={sceneValidationMap}
               />
             </ResizablePanel>
 
@@ -1189,6 +1185,10 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
                 projectId={currentProjectId}
                 scriptId={currentScriptId}
                 onUpdateDescription={handleUpdateSelectedDescription}
+                onUpdateDialogues={async (dialogues) => {
+                  if (selectedScene) return await updateDialogues(selectedScene, dialogues);
+                  return false;
+                }}
                 onGenerateImage={generateImage}
                 onGenerateVideo={generateVideo}
                 onUpdateScene={handleUpdateSelectedScene}
@@ -1250,20 +1250,6 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
           isOpen={isFrameAnnotationOpen}
           onClose={() => setIsFrameAnnotationOpen(false)}
         />
-      )}
-
-      {/* 分镜检验面板 */}
-      {isValidationOpen && (
-        <div className="fixed right-0 top-0 h-full w-80 z-40 shadow-xl">
-          <StoryboardValidationPanel
-            isOpen={isValidationOpen}
-            result={validationResult}
-            isValidating={isValidating}
-            onClose={() => setIsValidationOpen(false)}
-            onRevalidate={handleRevalidate}
-            onSelectScene={(id) => setSelectedScene(id)}
-          />
-        </div>
       )}
 
       {/* 自动分镜确认弹窗 */}

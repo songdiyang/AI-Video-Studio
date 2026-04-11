@@ -6,7 +6,7 @@ const { queryOne, queryAll, execute } = require('./dbHelper');
 
 // 会员等级配置（与文档保持一致）
 const PLAN_LIMITS = {
-  // 免费版 (Lv.0)
+  // 免费版 / 入门版 (Lv.0)
   free: {
     level: 0,
     name: '免费版',
@@ -15,7 +15,7 @@ const PLAN_LIMITS = {
     maxTeamMembers: 1,
     features: ['basic_ai', 'standard_templates', 'community_support']
   },
-  // 基础版 (Lv.1)
+  // 基础版 / 创作者 (Lv.1)
   basic: {
     level: 1,
     name: '基础版',
@@ -24,7 +24,7 @@ const PLAN_LIMITS = {
     maxTeamMembers: 5,
     features: ['advanced_ai', 'full_templates', 'ticket_support', 'priority_queue', 'export']
   },
-  // 专业版 (Lv.2)
+  // 专业版 / 工作室版 (Lv.2)
   pro: {
     level: 2,
     name: '专业版',
@@ -53,6 +53,23 @@ const PLAN_LIMITS = {
   }
 };
 
+// 数据库计划名 → 代码计划名别名映射
+// 数据库: starter / creator / studio / enterprise
+// 代码:   free    / basic   / pro    / enterprise
+const PLAN_ALIASES = {
+  starter: 'free',
+  creator: 'basic',
+  studio: 'pro',
+};
+
+/**
+ * 规范化计划名：将数据库中的别名映射为代码中的标准名
+ */
+function normalizePlanName(planName) {
+  const lower = (planName || '').toLowerCase();
+  return PLAN_ALIASES[lower] || lower;
+}
+
 // 默认计划（未订阅用户）
 const DEFAULT_PLAN = 'free';
 
@@ -74,12 +91,14 @@ async function getUserSubscription(userId) {
     `, [userId]);
 
     if (subscription && subscription.plan_name) {
-      const planName = subscription.plan_name.toLowerCase();
+      const rawPlanName = subscription.plan_name.toLowerCase();
+      const planName = normalizePlanName(rawPlanName);
       const planConfig = PLAN_LIMITS[planName] || PLAN_LIMITS[DEFAULT_PLAN];
       return {
         planName,
         planConfig,
-        subscription
+        subscription,
+        rawPlanName // 保留原始名称用于调试
       };
     }
 
@@ -147,10 +166,27 @@ async function canCreateProject(userId) {
  * @returns {object|null}
  */
 function getNextPlanInfo(currentPlan) {
+  // 先规范化当前计划名（处理数据库别名）
+  const normalizedPlan = normalizePlanName(currentPlan);
   const planOrder = ['free', 'basic', 'pro', 'premium', 'enterprise'];
-  const currentIndex = planOrder.indexOf(currentPlan);
+  const currentIndex = planOrder.indexOf(normalizedPlan);
   
   if (currentIndex === -1 || currentIndex >= planOrder.length - 1) {
+    // 未知计划名或已是最高级，默认推荐 basic
+    if (currentIndex === -1 && normalizedPlan !== 'free') {
+      console.warn(`[SubscriptionService] 未知计划名: ${currentPlan} (normalized: ${normalizedPlan})，回退推荐 basic`);
+    }
+    if (currentIndex === -1) {
+      // 未知计划，推荐 basic
+      const nextPlanConfig = PLAN_LIMITS['basic'];
+      return {
+        name: 'basic',
+        displayName: nextPlanConfig.name,
+        maxProjects: nextPlanConfig.maxProjects,
+        monthlyPoints: nextPlanConfig.monthlyPoints,
+        price: { monthly: 99, yearly: 990, firstMonth: 49.9 }
+      };
+    }
     return null;
   }
   

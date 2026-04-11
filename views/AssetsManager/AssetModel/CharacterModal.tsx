@@ -352,17 +352,24 @@ const CharacterModal: React.FC<CharacterModalProps> = ({
                     }}
                   />
 
-                  <Input
-                    label="外貌"
-                    placeholder="外貌特征"
-                    value={formData.appearance}
-                    onValueChange={(val) => setFormData({ ...formData, appearance: val })}
-                    classNames={{
-                      input: "bg-transparent text-slate-100 placeholder:text-slate-500",
-                      label: "text-slate-400 font-medium",
-                      inputWrapper: "bg-slate-800/60 border border-slate-600/50 hover:border-blue-500/50 shadow-sm"
-                    }}
-                  />
+                  <div className="space-y-1.5">
+                    <Textarea
+                      label="外观特征（AI生成核心参数）"
+                      placeholder={"请详细描述角色的固定外观特征，AI 将以此识别角色。\n示例：穿黑色西装的短发男生、扎高马尾穿白衬衫的女生\n\n建议包含：发型发色、服装款式颜色、配饰、体型、肤色、年龄特征等"}
+                      value={formData.appearance}
+                      onValueChange={(val) => setFormData({ ...formData, appearance: val })}
+                      minRows={3}
+                      maxRows={6}
+                      classNames={{
+                        input: "bg-transparent text-slate-100 placeholder:text-slate-500",
+                        label: "text-amber-400 font-medium",
+                        inputWrapper: "bg-slate-800/60 border border-amber-500/30 hover:border-amber-500/50 shadow-sm"
+                      }}
+                    />
+                    <p className="text-[10px] text-amber-400/70 px-1">
+                      此字段是 AI 识别角色的核心依据，请确保描述唯一、具体且固定
+                    </p>
+                  </div>
 
                   <Input
                     label="性格"

@@ -7,8 +7,8 @@ const { queryAll, queryOne, execute } = require('../../dbHelper');
 const { authMiddleware } = require('../../middleware');
 
 module.exports = (router) => {
-  // GET /storyboards/:storyboardId/prompt-history - 获取提示词版本列表
-  router.get('/storyboards/:storyboardId/prompt-history', authMiddleware, async (req, res) => {
+  // GET /:storyboardId/prompt-history - 获取提示词版本列表
+  router.get('/:storyboardId/prompt-history', authMiddleware, async (req, res) => {
     const { storyboardId } = req.params;
 
     try {
@@ -28,8 +28,8 @@ module.exports = (router) => {
     }
   });
 
-  // POST /storyboards/:storyboardId/prompt-history - 手动保存新版本
-  router.post('/storyboards/:storyboardId/prompt-history', authMiddleware, async (req, res) => {
+  // POST /:storyboardId/prompt-history - 手动保存新版本
+  router.post('/:storyboardId/prompt-history', authMiddleware, async (req, res) => {
     const userId = req.user.id;
     const { storyboardId } = req.params;
     const { promptText, source = 'manual' } = req.body;
@@ -82,8 +82,8 @@ module.exports = (router) => {
     }
   });
 
-  // PUT /storyboards/:storyboardId/prompt-history/:historyId/restore - 恢复历史版本
-  router.put('/storyboards/:storyboardId/prompt-history/:historyId/restore', authMiddleware, async (req, res) => {
+  // PUT /:storyboardId/prompt-history/:historyId/restore - 恢复历史版本
+  router.put('/:storyboardId/prompt-history/:historyId/restore', authMiddleware, async (req, res) => {
     const { storyboardId, historyId } = req.params;
 
     try {

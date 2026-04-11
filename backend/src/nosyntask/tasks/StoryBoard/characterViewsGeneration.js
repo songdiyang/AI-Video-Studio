@@ -29,11 +29,11 @@ const { downloadAndStore, uploadBuffer } = require('../../../utils/fileStorage')
 const { assertUpdated, assertPersistedFields } = require('./persistenceGuard');
 const composeCharacterSheet = require('../../../utils/composeCharacterSheet');
 
-// 白膜模式服装提示词
-const BASE_MODEL_OUTFIT = {
-  male: 'wearing white tank top and white shorts, simple white undergarments, plain white clothing',
-  female: 'wearing white tube top and white shorts, simple white undergarments, plain white clothing',
-  unknown: 'wearing simple white clothing, plain white outfit'
+// 白膜模式：基础人体形态提示词（不包含任何服装/装饰/装备）
+const BASE_MODEL_BODY = {
+  male: 'nude male body, bare skin, no clothing, no accessories, no equipment, anatomical reference, clean body silhouette, natural skin tone, muscular anatomy visible',
+  female: 'nude female body, bare skin, no clothing, no accessories, no equipment, anatomical reference, clean body silhouette, natural skin tone, body anatomy visible',
+  unknown: 'nude body, bare skin, no clothing, no accessories, no equipment, anatomical reference, clean body silhouette, natural skin tone'
 };
 
 /**
@@ -77,12 +77,18 @@ async function generateViewPrompt(view, characterName, appearance, description, 
 
   console.log(`[CharacterViews] 使用 AI 生成${cfg.desc}提示词...`);
   
-  // 白膜模式下的服装提示词
-  const baseModelOutfitPrompt = isBaseModel ? BASE_MODEL_OUTFIT[gender] || BASE_MODEL_OUTFIT.unknown : '';
+  // 白膜模式下的基础人体形态提示词
+  const baseModelBodyPrompt = isBaseModel ? BASE_MODEL_BODY[gender] || BASE_MODEL_BODY.unknown : '';
   const baseModelNote = isBaseModel 
-    ? `\n\n【白膜模式】此角色正在生成基础白膜版本，服装必须统一为：${baseModelOutfitPrompt}。
-请保留角色的OC设定（外貌特征、面部特征、身体符合设定），但服装部分必须替换为上述白膜服装。
-不要在提示词中包含任何其他服装描述。`
+    ? `\n\n【白膜模式 - 基础人体形态】此角色正在生成基础白膜版本，要求生成纯粹的人体基础形态：
+- 身体描述必须为：${baseModelBodyPrompt}
+- 绝对不能包含任何服装（衣服、裤子、裙子、鞋子等）
+- 绝对不能包含任何装饰品（首饰、帽子、眼镜、发饰等）
+- 绝对不能包含任何装备（武器、背包、道具等）
+- 保留角色的面部特征（脸型、眼睛、鼻子、嘴巴等）和发型发色
+- 保留角色的体型比例（身高、体型、肤色等）
+- 只展示人体的基本结构、肌肉轮廓和皮肤
+- 此基础形态将作为后续添加服装和装饰的基础参考`
     : '';
 
   // 侧面/背面时强调与正面图严格一致
@@ -97,6 +103,7 @@ async function generateViewPrompt(view, characterName, appearance, description, 
    - 提示词中必须逐项重复正面图的外貌特征描述，确保每个细节都被包含`
     : '';
 
+<<<<<<< HEAD
   // 组装完整的外貌描述：基础外貌 + 状态级别属性（服装/发型/配饰/年龄阶段）
   const stateAppearanceParts = [];
   if (ageStage) stateAppearanceParts.push(`年龄阶段: ${ageStage}`);
@@ -106,6 +113,11 @@ async function generateViewPrompt(view, characterName, appearance, description, 
   const composedAppearance = stateAppearanceParts.length > 0
     ? `${appearance || ''}${appearance ? '；' : ''}${stateAppearanceParts.join('；')}`
     : appearance;
+=======
+  const clothingRule = isBaseModel
+    ? `4. 【白膜模式】角色必须是裸体基础形态，不能包含任何服装、装饰品或装备。只描述人体的基本结构（肤色、体型、肌肉轮廓）和面部/头发特征。必须包含: ${baseModelBodyPrompt}`
+    : '4. 必须包含角色的完整外貌特征（服装、发型、体型、配饰、肤色等），越详细越好。每一个服装细节都必须逐项写出：衣服的款式、颜色、材质、层次（内衣/外衣/披风/盔甲等）、领口样式、袖口样式、腰带、鞋子等';
+>>>>>>> 41b2bc9c (feat: 多项功能优化与修复)
 
   const fullPrompt = `你是一个专业的角色设计图提示词专家。你的任务是生成用于 AI 绘图的单个角色参考图提示词。
 
@@ -113,7 +125,7 @@ async function generateViewPrompt(view, characterName, appearance, description, 
 1. 提示词必须用英文输出，逗号分隔的关键词格式
 2. 【最重要】画面中只能有一个角色，绝对不能出现多个人物、多个角度、多个姿势。禁止使用 "character sheet"、"reference sheet"、"turnaround"、"multiple views"、"multiple poses" 等会导致多人物的关键词
 3. 必须包含：single character, solo, one person, pure white background, solid white background, full body, standing pose, even soft lighting
-4. 必须包含角色的完整外貌特征（服装、发型、体型、配饰、肤色等），越详细越好。每一个服装细节都必须逐项写出：衣服的款式、颜色、材质、层次（内衣/外衣/披风/盔甲等）、领口样式、袖口样式、腰带、鞋子等
+${clothingRule}
 5. 绝对不要加入任何场景、背景元素、故事情节、地面阴影、其他人物
 6. 保持中性自然表情，不要加入夸张情绪
 7. 长度控制在 80-150 个单词${consistencyBlock}

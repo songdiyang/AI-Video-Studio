@@ -20,8 +20,8 @@ const PRICE_AUDIO_VIDEO = 16;   // 有声视频
 const DEFAULT_FPS = 24;
 const DEFAULT_DURATION = 5;
 
-// Seedance 1.5 时长限制
-const MIN_DURATION = 2;   // 最低 2 秒
+// Seedance 1.5 时长限制（官方限定 4-12 秒）
+const MIN_DURATION = 4;   // 最低 4 秒
 const MAX_DURATION = 12;  // 最长 12 秒
 
 /**

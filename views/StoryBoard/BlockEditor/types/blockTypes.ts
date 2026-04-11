@@ -200,6 +200,11 @@ export type Block = BlockBase;
 
 // ============ 编辑器属性 ============
 
+export interface DialogueLine {
+  character: string;
+  line: string;
+}
+
 export interface BlockEditorProps {
   storyboardId: number;
   initialBlocks?: Block[];
@@ -208,9 +213,12 @@ export interface BlockEditorProps {
   onSave?: (state: BlockEditorState) => boolean | Promise<boolean>;
   projectId?: number;
   scriptId?: number;
-  characters?: ProjectCharacter[];
+  characters?: ProjectCharacter[] | string[];
   scenes?: ProjectScene[];
   availableFrames?: { startFrame?: string; endFrame?: string };
+  dialogue?: string;
+  dialogues?: DialogueLine[];
+  onUpdateDialogues?: (dialogues: DialogueLine[]) => Promise<boolean>;
 }
 
 export interface ProjectCharacter {

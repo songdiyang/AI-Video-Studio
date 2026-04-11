@@ -1,12 +1,27 @@
 const express = require('express');
+const multer = require('multer');
 const { queryOne, queryAll, execute } = require('./dbHelper');
 const { authMiddleware } = require('./middleware');
 const { VISUAL_STYLE_PRESETS } = require('./utils/getProjectStyle');
 const { callAIModel } = require('./aiModelService');
 const { withAIBillingContext } = require('./aiBillingContext');
-const { downloadAndStore } = require('./utils/fileStorage');
+const { uploadBuffer, downloadAndStore, deleteObject, isConfigured } = require('./utils/fileStorage');
 const { getEffectiveProjectRole, PERMISSION_LEVELS } = require('./middleware/collaborationAuth');
 const { canCreateProject, getNextPlanInfo, getMembershipInfo } = require('./subscriptionService');
+
+// ========== 封面上传配置 ==========
+const ALLOWED_COVER_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
+const COVER_EXT_MAP = { 'image/png': '.png', 'image/jpeg': '.jpg', 'image/webp': '.webp' };
+const MAX_COVER_SIZE = 10 * 1024 * 1024; // 10MB
+
+const coverUpload = multer({
+  storage: multer.memoryStorage(),
+  fileFilter: (req, file, cb) => {
+    if (ALLOWED_COVER_TYPES.includes(file.mimetype)) cb(null, true);
+    else cb(new Error('不支持的文件类型，仅支持 PNG/JPG/WebP 格式'), false);
+  },
+  limits: { fileSize: MAX_COVER_SIZE }
+});
 
 const router = express.Router();
 
@@ -122,7 +137,7 @@ router.post('/suggest-settings', authMiddleware, async (req, res) => {
 // AI 生成封面图片
 router.post('/generate-cover', authMiddleware, async (req, res) => {
   const userId = req.user.id;
-  const { name, description, visualStylePrompt } = req.body;
+  const { name, description, visualStylePrompt, storyStyle, storyConstraints } = req.body;
 
   if (!name && !description) {
     return res.status(400).json({ message: '请提供项目名称或描述' });
@@ -138,17 +153,20 @@ router.post('/generate-cover', authMiddleware, async (req, res) => {
     }
 
     const styleHint = visualStylePrompt ? `\nVisual style: ${visualStylePrompt}` : '';
+    const storyStyleHint = storyStyle ? `\nNarrative style: ${storyStyle}` : '';
+    const constraintsHint = storyConstraints ? `\nStory constraints: ${storyConstraints}` : '';
     const promptForCover = `You are a professional illustrator prompt engineer. Generate a concise English prompt for an AI image model to create a visually striking cover/poster image for the following project.
 
 Project name: ${name || 'Untitled'}
-Project description: ${description || 'No description'}${styleHint}
+Project description: ${description || 'No description'}${styleHint}${storyStyleHint}${constraintsHint}
 
 Requirements:
 1. The prompt should describe a single iconic scene that captures the essence of the project
 2. Include composition, lighting, color palette, and mood descriptors
-3. DO NOT include any text/title/words in the image
-4. Keep the prompt between 50-100 words
-5. Return ONLY the prompt text, no explanations`;
+3. The cover must visually reflect the narrative style and story constraints if provided
+4. DO NOT include any text/title/words in the image
+5. Keep the prompt between 50-100 words
+6. Return ONLY the prompt text, no explanations`;
 
     const textResult = await withAIBillingContext(
       {
@@ -357,6 +375,47 @@ router.post('/', authMiddleware, async (req, res) => {
   } catch (error) {
     console.error('[Project Create]', error);
     res.status(500).json({ message: '创建工程失败' });
+  }
+});
+
+// 上传项目封面图片
+router.post('/:id/cover', authMiddleware, coverUpload.single('cover'), async (req, res) => {
+  const userId = req.user.id;
+  const projectId = req.params.id;
+
+  if (!req.file) {
+    return res.status(400).json({ message: '请选择要上传的封面图片' });
+  }
+
+  try {
+    // 检查项目权限
+    const userRole = await getEffectiveProjectRole(userId, projectId);
+    if (!userRole || PERMISSION_LEVELS[userRole] < PERMISSION_LEVELS['editor']) {
+      return res.status(403).json({ message: '您没有编辑该项目的权限' });
+    }
+
+    if (!isConfigured()) {
+      return res.status(500).json({ message: '文件存储服务未配置，请联系管理员' });
+    }
+
+    // 上传到 MinIO: covers/project_{id}_{timestamp}.{ext}
+    const ext = COVER_EXT_MAP[req.file.mimetype] || '.png';
+    const objectPath = `covers/project_${projectId}_${Date.now()}${ext}`;
+    const coverUrl = await uploadBuffer(req.file.buffer, objectPath, {
+      contentType: req.file.mimetype
+    });
+
+    // 更新数据库
+    await execute(
+      'UPDATE projects SET cover_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      [coverUrl, projectId]
+    );
+
+    const project = await queryOne('SELECT * FROM projects WHERE id = ?', [projectId]);
+    res.json({ message: '封面上传成功', coverUrl, project });
+  } catch (error) {
+    console.error('[Project Cover Upload]', error);
+    res.status(500).json({ message: '封面上传失败：' + error.message });
   }
 });
 

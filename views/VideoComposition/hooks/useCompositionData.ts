@@ -61,7 +61,12 @@ export function useCompositionData(projectId: number | null) {
               let dialogue = '';
               try {
                 const vars = JSON.parse(sb.variables_json || '{}');
-                dialogue = vars.dialogue || '';
+                // 优先使用结构化台词
+                if (Array.isArray(vars.dialogues) && vars.dialogues.length > 0) {
+                  dialogue = vars.dialogues.map((d: any) => `${d.character}：${d.line}`).join('\n');
+                } else {
+                  dialogue = vars.dialogue || '';
+                }
               } catch { /* ignore */ }
 
               return {

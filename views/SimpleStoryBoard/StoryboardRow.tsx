@@ -176,9 +176,17 @@ const StoryboardRow: React.FC<StoryboardRowProps> = ({
             <p className="text-xs leading-relaxed line-clamp-4" style={{ color: 'var(--text-primary)' }}>
               {scene.description || '暂无描述'}
             </p>
-            {scene.dialogue && (
+            {scene.dialogues && scene.dialogues.length > 0 ? (
+              <div className="mt-1 space-y-0.5">
+                {scene.dialogues.map((d: any, i: number) => (
+                  <p key={i} className="text-[10px] italic truncate" style={{ color: 'var(--text-muted)' }}>
+                    💬 <span style={{ color: 'var(--text-secondary)', fontStyle: 'normal', fontWeight: 500 }}>{d.character}：</span>{d.line}
+                  </p>
+                ))}
+              </div>
+            ) : scene.dialogue ? (
               <p className="text-[10px] mt-1 italic truncate" style={{ color: 'var(--text-muted)' }}>💬 {scene.dialogue}</p>
-            )}
+            ) : null}
             <button
               onClick={() => { setDraft(scene.description); setEditing(true); }}
               className="absolute top-0 right-0 p-1 opacity-0 group-hover/desc:opacity-100 transition-opacity"

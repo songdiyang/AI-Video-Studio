@@ -304,6 +304,7 @@ const AnimaticPreview: React.FC<AnimaticPreviewProps> = ({
               ref={videoRef}
               src={currentStoryboard?.videoUrl}
               className="max-w-full max-h-full object-contain"
+              autoPlay={isPlaying}
               onEnded={onVideoEnded}
               onTimeUpdate={handleVideoTimeUpdate}
               playsInline

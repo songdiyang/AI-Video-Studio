@@ -52,11 +52,12 @@ export const BLOCK_OPTIONS: Record<string, BlockOption[]> = {
     { value: 'zoom', label: '变焦', description: '改变焦距', icon: '🔭' },
   ],
   lensType: [
-    { value: 'wide', label: '广角', description: '视野宽广，有透视变形', icon: '📐' },
-    { value: 'standard', label: '标准', description: '接近人眼视角', icon: '👁️' },
-    { value: 'telephoto', label: '长焦', description: '压缩空间，背景虚化', icon: '🔭' },
-    { value: 'macro', label: '微距', description: '拍摄特写细节', icon: '🔬' },
-    { value: 'fisheye', label: '鱼眼', description: '超广角，强烈变形', icon: '🐟' },
+    { value: 'ultra_wide', label: '超广角', description: '14-24mm，夸张透视，宏大场景', icon: '🌐' },
+    { value: 'wide', label: '广角', description: '24-35mm，环境交代，空间感', icon: '📐' },
+    { value: 'standard', label: '标准', description: '35-50mm，接近人眼视角，自然真实', icon: '👁️' },
+    { value: 'portrait', label: '人像', description: '85-135mm，压缩背景，优美虚化', icon: '🧑' },
+    { value: 'telephoto', label: '长焦', description: '200mm+，压缩空间感，孤立主体', icon: '🔭' },
+    { value: 'macro', label: '微距', description: '超近距离拍摄，细节放大', icon: '🔬' },
   ],
   depthOfField: [
     { value: 'shallow', label: '浅景深', description: '背景虚化，突出主体', icon: '🌸' },

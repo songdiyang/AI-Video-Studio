@@ -421,7 +421,12 @@ async function submitAndPoll(modelName, submitParams, options = {}) {
               || '未知错误'
           };
         }
-        const errorMsg = errorInfo.error || errorInfo.message || errorInfo.fail_reason || '未知错误';
+        let errorMsg = errorInfo.error || errorInfo.message || errorInfo.fail_reason || '未知错误';
+        // 友好化已知错误消息
+        const lc = errorMsg.toLowerCase();
+        if (lc.includes('sensitive') || lc.includes('安全') || lc.includes('违规')) {
+          errorMsg = '提示词或参考图片可能包含敏感内容，请修改后重试';
+        }
         return {
           status: 'failed',
           error: `${errorMsg} (taskId: ${taskId})`

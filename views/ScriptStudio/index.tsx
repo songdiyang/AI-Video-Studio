@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Tabs, Tab, Button, useDisclosure, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter } from '@heroui/react';
+import { Tabs, Tab, Button, useDisclosure, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Checkbox } from '@heroui/react';
 import { FileText, Film, Bot, Clapperboard } from 'lucide-react';
 import { PanelGroup } from '../../components/PanelGroup';
 import ResizablePanel from '../../components/ResizablePanel';
@@ -100,6 +100,7 @@ const ScriptStudio: React.FC = () => {
   const [deleteResult, setDeleteResult] = useState<{ type: 'confirm' | 'success' | 'orphans' | 'error'; message: string }>({ type: 'confirm', message: '' });
   const [orphanCharacters, setOrphanCharacters] = useState<{ id: number; name: string; image_url?: string }[]>([]);
   const [orphanScenes, setOrphanScenes] = useState<{ id: number; name: string; image_url?: string }[]>([]);
+  const [deleteCheckboxChecked, setDeleteCheckboxChecked] = useState(false);
 
   // 全局 AI 模型管理
   const aiModels = useAIModels(selectedProject?.id);
@@ -307,6 +308,7 @@ const ScriptStudio: React.FC = () => {
   const handleDelete = async () => {
     // 打开确认弹窗
     setDeleteResult({ type: 'confirm', message: '' });
+    setDeleteCheckboxChecked(false);
     openDeleteModal();
   };
 
@@ -631,7 +633,18 @@ const ScriptStudio: React.FC = () => {
           </ModalHeader>
           <ModalBody>
             {deleteResult.type === 'confirm' && (
-              <p className="text-[var(--text-secondary)]">确定要删除该集剧本吗？将同时删除该集的所有分镜、帧图片和视频，此操作无法恢复。</p>
+              <>
+                <p className="text-[var(--text-secondary)]">确定要删除该集剧本吗？将同时删除该集的所有分镜、帧图片和视频，<span className="text-red-500 dark:text-red-400 font-semibold">此操作不可逆，删除后数据将永久丢失</span>。</p>
+                <div className="mt-4">
+                  <Checkbox
+                    isSelected={deleteCheckboxChecked}
+                    onValueChange={setDeleteCheckboxChecked}
+                    size="sm"
+                  >
+                    <span className="text-sm text-[var(--text-secondary)]">我理解删除操作不可逆转</span>
+                  </Checkbox>
+                </div>
+              </>
             )}
             {deleteResult.type === 'orphans' && (
               <div className="space-y-3">
@@ -663,17 +676,17 @@ const ScriptStudio: React.FC = () => {
               </div>
             )}
             {deleteResult.type === 'success' && (
-              <p className="text-emerald-400">{deleteResult.message}</p>
+              <p className="text-emerald-500 dark:text-emerald-400">{deleteResult.message}</p>
             )}
             {deleteResult.type === 'error' && (
-              <p className="text-red-400">{deleteResult.message}</p>
+              <p className="text-red-500 dark:text-red-400">{deleteResult.message}</p>
             )}
           </ModalBody>
           <ModalFooter className="gap-2">
             {deleteResult.type === 'confirm' && (
               <>
                 <Button variant="flat" className="pro-btn cursor-pointer" onPress={closeDeleteModal}>取消</Button>
-                <Button className="bg-gradient-to-br from-red-500 to-red-600 text-white shadow-lg shadow-red-500/30 cursor-pointer" onPress={confirmDelete} isLoading={scriptLoading}>确认删除</Button>
+                <Button className="bg-gradient-to-br from-red-500 to-red-600 text-white shadow-lg shadow-red-500/30 cursor-pointer" onPress={confirmDelete} isLoading={scriptLoading} isDisabled={!deleteCheckboxChecked}>确认删除</Button>
               </>
             )}
             {deleteResult.type === 'orphans' && (

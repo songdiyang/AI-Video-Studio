@@ -22,6 +22,7 @@ const { selectReferenceImages } = require('./referenceImageSelector');
 const { collectCandidateImages, appendContextCandidates } = require('./collectCandidateImages');
 const { traced, trace } = require('../../engine/generationTrace');
 const { assertUpdated, assertPersistedFields } = require('./persistenceGuard');
+const { saveFrameHistory } = require('./saveFrameHistory');
 
 // collectReferenceImages 已提取到 collectCandidateImages.js 共享模块
 
@@ -189,7 +190,13 @@ ${sceneConstraint}`
     const prevContext = resolvedPrevDescription
       ? `上一个镜头描述：${resolvedPrevDescription}\n注意：当前画面需要自然衔接上一个镜头的结束状态，保持角色、场景、光线的连续性。`
       : '';
-    const dialogueBlock = variables.dialogue ? `【角色对白】"${variables.dialogue}"（请根据对白内容调整角色的面部表情和嘴型状态）` : '';
+    let dialogueBlock = '';
+    if (variables.dialogues && Array.isArray(variables.dialogues) && variables.dialogues.length > 0) {
+      const lines = variables.dialogues.map(d => `${d.character}："${d.line}"`).join('\n');
+      dialogueBlock = `【角色对白】\n${lines}\n（请根据对白内容调整对应角色的面部表情和嘴型状态，说话中的角色嘴巴应微张）`;
+    } else if (variables.dialogue) {
+      dialogueBlock = `【角色对白】"${variables.dialogue}"（请根据对白内容调整角色的面部表情和嘴型状态）`;
+    }
 
     // 摄像机空间推理（反打镜头感知）
     let cameraPositionBlock = '';
@@ -355,6 +362,17 @@ ${extraInfo}
     label: '[SingleFrameGen] 静态镜头首尾帧'
   });
   trace('首尾帧持久化完成（静态镜头）', { firstFrameUrl: persistedUrl, lastFrameUrl: persistedUrl });
+
+  // 保存到帧历史版本表（静态镜头：首尾帧相同，只保存一条 first 类型）
+  try {
+    const genParams = { model: modelName, aspectRatio, resolution };
+    const ver = await saveFrameHistory(storyboardId, 'first', persistedUrl, promptUsed, genParams);
+    // 静态镜头的 last 帧也单独保存一条历史，便于用户在尾帧历史中也能看到
+    await saveFrameHistory(storyboardId, 'last', persistedUrl, promptUsed, genParams);
+    console.log(`[SingleFrameGen] 帧历史版本已保存 (v${ver})`);
+  } catch (e) {
+    console.warn('[SingleFrameGen] 保存帧历史版本失败:', e.message);
+  }
 
   // modified 镜头：自动生成更新版空镜场景图并存入 DB（供后续 inherit 镜头使用）
   if (sceneState === 'modified' && (variables.location || location)) {

@@ -1,6 +1,6 @@
 /**
  * PATCH /api/storyboards/:storyboardId/content
- * 更新单个分镜的描述内容和空间描述
+ * 更新单个分镜的描述内容、空间描述和结构化台词
  */
 
 const { queryOne, execute } = require('../../dbHelper');
@@ -8,15 +8,15 @@ const { queryOne, execute } = require('../../dbHelper');
 async function updateContent(req, res) {
   const userId = req.user.id;
   const storyboardId = Number(req.params.storyboardId);
-  const { prompt_template, spatial_description } = req.body || {};
+  const { prompt_template, spatial_description, dialogues } = req.body || {};
 
   if (!storyboardId) {
     return res.status(400).json({ message: 'Invalid storyboard id' });
   }
 
   // 至少需要传递一个字段
-  if (prompt_template === undefined && spatial_description === undefined) {
-    return res.status(400).json({ message: '需要提供 prompt_template 或 spatial_description 中的至少一个字段' });
+  if (prompt_template === undefined && spatial_description === undefined && dialogues === undefined) {
+    return res.status(400).json({ message: '需要提供 prompt_template、spatial_description 或 dialogues 中的至少一个字段' });
   }
 
   // 验证 prompt_template 类型（如果传递了）
@@ -24,9 +24,14 @@ async function updateContent(req, res) {
     return res.status(400).json({ message: 'prompt_template 必须是字符串' });
   }
 
+  // 验证 dialogues 格式
+  if (dialogues !== undefined && !Array.isArray(dialogues)) {
+    return res.status(400).json({ message: 'dialogues 必须是数组' });
+  }
+
   try {
     const storyboard = await queryOne(
-      `SELECT s.id
+      `SELECT s.id, s.variables_json
        FROM storyboards s
        JOIN scripts sc ON s.script_id = sc.id
        WHERE s.id = ? AND sc.user_id = ?`,
@@ -55,12 +60,33 @@ async function updateContent(req, res) {
       params.push(spatialDescJson);
     }
 
-    params.push(storyboardId);
+    // 处理 dialogues：更新到 variables_json 中
+    if (dialogues !== undefined) {
+      let vars = {};
+      try {
+        vars = JSON.parse(storyboard.variables_json || '{}');
+      } catch { /* ignore */ }
 
-    await execute(
-      `UPDATE storyboards SET ${updates.join(', ')} WHERE id = ?`,
-      params
-    );
+      // 更新结构化台词字段
+      vars.dialogues = dialogues;
+      // 同时更新 dialogue 扁平字符串（向后兼容）
+      if (dialogues.length > 0) {
+        vars.dialogue = dialogues.map(d => d.line).join('；');
+      } else {
+        vars.dialogue = '';
+      }
+
+      updates.push('variables_json = ?');
+      params.push(JSON.stringify(vars));
+    }
+
+    if (updates.length > 0) {
+      params.push(storyboardId);
+      await execute(
+        `UPDATE storyboards SET ${updates.join(', ')} WHERE id = ?`,
+        params
+      );
+    }
 
     // 当 prompt_template 被更新时，自动记录版本历史
     if (prompt_template !== undefined && prompt_template.trim()) {

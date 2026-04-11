@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
-import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Button } from "@heroui/react";
+import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Button, Checkbox } from "@heroui/react";
 import { AlertTriangle } from 'lucide-react';
 
 interface ConfirmOptions {
@@ -8,6 +8,10 @@ interface ConfirmOptions {
   confirmText?: string;
   cancelText?: string;
   type?: 'danger' | 'warning' | 'info';
+  /** 可选的确认复选框配置，勾选后确认按钮才可用 */
+  checkbox?: {
+    label: string;
+  };
 }
 
 interface ConfirmContextType {
@@ -32,11 +36,13 @@ export const ConfirmProvider: React.FC<ConfirmProviderProps> = ({ children }) =>
   const [isOpen, setIsOpen] = useState(false);
   const [options, setOptions] = useState<ConfirmOptions | null>(null);
   const [resolveRef, setResolveRef] = useState<((value: boolean) => void) | null>(null);
+  const [checkboxChecked, setCheckboxChecked] = useState(false);
 
   const confirm = useCallback((opts: ConfirmOptions): Promise<boolean> => {
     return new Promise((resolve) => {
       setOptions(opts);
       setResolveRef(() => resolve);
+      setCheckboxChecked(false);
       setIsOpen(true);
     });
   }, []);
@@ -64,11 +70,11 @@ export const ConfirmProvider: React.FC<ConfirmProviderProps> = ({ children }) =>
         size="sm"
         classNames={{
           backdrop: 'bg-black/60 backdrop-blur-sm',
-          base: 'bg-gradient-to-br from-[#1a1d35] to-[#121428] border border-[rgba(255,255,255,0.08)] shadow-2xl',
-          header: 'border-b border-[rgba(255,255,255,0.06)]',
+          base: 'bg-[var(--bg-card,#fff)] border border-[var(--border-color,#e5e7eb)] shadow-2xl',
+          header: 'border-b border-[var(--border-color,#e5e7eb)]',
           body: 'py-6',
-          footer: 'border-t border-[rgba(255,255,255,0.06)]',
-          closeButton: 'text-[#a8a29e] hover:text-[#e8e4dc] hover:bg-white/10'
+          footer: 'border-t border-[var(--border-color,#e5e7eb)]',
+          closeButton: 'text-[var(--text-secondary,#6b7280)] hover:text-[var(--text-primary,#111827)] hover:bg-black/5'
         }}
       >
         <ModalContent>
@@ -77,25 +83,39 @@ export const ConfirmProvider: React.FC<ConfirmProviderProps> = ({ children }) =>
               <ModalHeader className="flex items-center gap-3">
                 <div className={`
                   w-10 h-10 rounded-xl flex items-center justify-center
-                  ${options?.type === 'danger' ? 'bg-red-500/20 text-red-400' : ''}
-                  ${options?.type === 'warning' ? 'bg-amber-500/20 text-amber-400' : ''}
-                  ${options?.type === 'info' ? 'bg-cyan-500/20 text-cyan-400' : ''}
+                  ${options?.type === 'danger' ? 'bg-red-500/15 text-red-500' : ''}
+                  ${options?.type === 'warning' ? 'bg-amber-500/15 text-amber-500' : ''}
+                  ${options?.type === 'info' ? 'bg-cyan-500/15 text-cyan-500' : ''}
                 `}>
                   <AlertTriangle className="w-5 h-5" />
                 </div>
-                <span className="text-[#e8e4dc] font-bold text-lg">
+                <span className="text-[var(--text-primary,#111827)] font-bold text-lg">
                   {options?.title || '确认操作'}
                 </span>
               </ModalHeader>
               <ModalBody>
-                <p className="text-[#a8a29e] whitespace-pre-wrap leading-relaxed">
+                <p className="text-[var(--text-secondary,#4b5563)] whitespace-pre-wrap leading-relaxed">
                   {options?.message}
                 </p>
+                {options?.checkbox && (
+                  <div className="mt-4">
+                    <Checkbox
+                      isSelected={checkboxChecked}
+                      onValueChange={setCheckboxChecked}
+                      size="sm"
+                      classNames={{
+                        label: 'text-sm text-[var(--text-secondary,#4b5563)]',
+                      }}
+                    >
+                      {options.checkbox.label}
+                    </Checkbox>
+                  </div>
+                )}
               </ModalBody>
               <ModalFooter className="gap-2">
                 <Button 
                   variant="flat" 
-                  className="bg-white/5 text-[#a8a29e] hover:bg-white/10 border border-white/10 cursor-pointer"
+                  className="bg-black/5 text-[var(--text-secondary,#4b5563)] hover:bg-black/10 border border-[var(--border-color,#e5e7eb)] cursor-pointer"
                   onPress={handleCancel}
                 >
                   {options?.cancelText || '取消'}
@@ -106,11 +126,12 @@ export const ConfirmProvider: React.FC<ConfirmProviderProps> = ({ children }) =>
                     ${options?.type === 'danger' 
                       ? 'bg-gradient-to-br from-red-500 to-red-600 text-white shadow-lg shadow-red-500/30 hover:shadow-red-500/50' 
                       : options?.type === 'warning'
-                        ? 'bg-gradient-to-br from-amber-500 to-yellow-600 text-[#1a1d35] shadow-lg shadow-amber-500/30 hover:shadow-amber-500/50'
+                        ? 'bg-gradient-to-br from-amber-500 to-yellow-600 text-white shadow-lg shadow-amber-500/30 hover:shadow-amber-500/50'
                         : 'bg-gradient-to-br from-cyan-500 to-blue-600 text-white shadow-lg shadow-cyan-500/30 hover:shadow-cyan-500/50'
                     }
                   `}
                   onPress={handleConfirm}
+                  isDisabled={!!options?.checkbox && !checkboxChecked}
                 >
                   {options?.confirmText || '确定'}
                 </Button>

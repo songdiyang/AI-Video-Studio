@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Button, Textarea, Chip } from '@heroui/react';
-import { ImageIcon, Video, Film, Camera, Users, MapPin, Zap, X, Trash2, ZoomIn, ZoomOut, RotateCw, Maximize2, Blocks, ChevronDown, ChevronUp, History } from 'lucide-react';
-import { StoryboardScene } from './useSceneManager';
+import { ImageIcon, Video, Film, Camera, Users, MapPin, Zap, X, Trash2, ZoomIn, ZoomOut, RotateCw, Maximize2, Blocks, ChevronDown, ChevronUp, History, Loader2 } from 'lucide-react';
+import { StoryboardScene, DialogueLine } from './useSceneManager';
 import { TaskState } from '../../hooks/useTaskRunner';
 import { getAuthToken } from '../../services/auth';
 import { useToast } from '../../contexts/ToastContext';
@@ -18,6 +18,7 @@ interface ScenePreviewPanelProps {
   projectId?: number | null;
   scriptId?: number | null;
   onUpdateDescription: (description: string) => Promise<boolean>;
+  onUpdateDialogues?: (dialogues: DialogueLine[]) => Promise<boolean>;
   onGenerateImage: (id: number, prompt: string) => Promise<{ success: boolean; error?: string }>;
   onGenerateVideo: (id: number) => Promise<{ success: boolean; error?: string }>;
   onUpdateScene?: (updates: Partial<StoryboardScene>) => void;
@@ -31,6 +32,7 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
   projectId,
   scriptId,
   onUpdateDescription,
+  onUpdateDialogues,
   onGenerateImage,
   onGenerateVideo,
   onUpdateScene,
@@ -38,13 +40,21 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
   videoTask
 }) => {
   const [showStartFrame, setShowStartFrame] = useState(true);
-  const [isDirectorSpaceExpanded, setIsDirectorSpaceExpanded] = useState(true);
+  const [isDirectorSpaceExpanded, setIsDirectorSpaceExpanded] = useState(false);
   const [showHistory, setShowHistory] = useState<{ type: 'first' | 'last' | null }>({ type: null });
   const { showToast } = useToast();
   const { confirm } = useConfirm();
 
   const isGeneratingImage = imageTask?.status === 'pending' || imageTask?.status === 'running';
   const isGeneratingVideo = videoTask?.status === 'pending' || videoTask?.status === 'running';
+  const isGenerating = isGeneratingImage || isGeneratingVideo;
+
+  // 生成进度百分比
+  const generatingProgress = isGeneratingImage
+    ? (imageTask?.progress ?? 0)
+    : isGeneratingVideo
+      ? (videoTask?.progress ?? 0)
+      : 0;
 
   // 预检：生成首尾帧前校验
   const validateForFrame = async (): Promise<{ ready: boolean; blocking: boolean; message?: string }> => {
@@ -298,7 +308,28 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
   return (
     <div className="h-full flex flex-col bg-[var(--bg-app)]">
       {/* 预览区域 */}
-      <div className="flex-1 flex items-center justify-center p-4 min-h-0">
+      <div className="flex-1 flex items-center justify-center p-4 min-h-0 relative">
+        {/* 生成中遮罩层 */}
+        {isGenerating && (
+          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/60 backdrop-blur-sm rounded-lg">
+            <Loader2 className="w-10 h-10 text-[var(--accent)] animate-spin mb-3" />
+            <p className="text-sm font-medium text-white mb-2">
+              {isGeneratingImage ? '正在生成首尾帧...' : '正在生成视频...'}
+            </p>
+            {generatingProgress > 0 && (
+              <div className="w-48 flex flex-col items-center gap-1.5">
+                <div className="w-full h-1.5 bg-white/20 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-[var(--accent)] rounded-full transition-all duration-500 ease-out"
+                    style={{ width: `${Math.min(100, generatingProgress)}%` }}
+                  />
+                </div>
+                <span className="text-xs text-white/70">{Math.round(generatingProgress)}%</span>
+              </div>
+            )}
+            <p className="text-xs text-white/50 mt-2">请勿关闭页面</p>
+          </div>
+        )}
         {hasVideo ? (
           // 视频预览
           <div className="relative w-full h-full flex items-center justify-center">
@@ -310,7 +341,10 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
             />
             <button
               onClick={handleDeleteVideo}
-              className="absolute top-2 right-2 p-2 rounded-lg bg-black/50 hover:bg-red-500/80 text-white transition-colors"
+              disabled={isGenerating}
+              className={`absolute top-2 right-2 p-2 rounded-lg bg-black/50 text-white transition-colors ${
+                isGenerating ? 'opacity-40 cursor-not-allowed' : 'hover:bg-red-500/80'
+              }`}
               title="删除视频"
             >
               <Trash2 className="w-4 h-4" />
@@ -343,7 +377,10 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                 {/* 左上角：历史版本按钮 */}
                 <button
                   onClick={() => setShowHistory({ type: showStartFrame ? 'first' : 'last' })}
-                  className="absolute top-2 left-2 p-2 rounded-lg bg-black/50 hover:bg-black/70 text-white/80 hover:text-white transition-colors flex items-center gap-1.5"
+                  disabled={isGenerating}
+                  className={`absolute top-2 left-2 p-2 rounded-lg bg-black/50 text-white/80 transition-colors flex items-center gap-1.5 ${
+                    isGenerating ? 'opacity-40 cursor-not-allowed' : 'hover:bg-black/70 hover:text-white'
+                  }`}
                   title="查看历史版本"
                 >
                   <History className="w-4 h-4" />
@@ -413,7 +450,10 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                 {scene.hasAction && scene.startFrame && scene.endFrame && (
                   <button
                     onClick={showStartFrame ? handleDeleteFirstFrame : handleDeleteLastFrame}
-                    className="p-2 rounded-lg bg-black/50 hover:bg-orange-500/80 text-white transition-colors"
+                    disabled={isGenerating}
+                    className={`p-2 rounded-lg bg-black/50 text-white transition-colors ${
+                      isGenerating ? 'opacity-40 cursor-not-allowed' : 'hover:bg-orange-500/80'
+                    }`}
                     title={`删除${showStartFrame ? '首帧' : '尾帧'}（保留${showStartFrame ? '尾帧' : '首帧'}）`}
                   >
                     <X className="w-4 h-4" />
@@ -422,7 +462,10 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                 {/* 删除全部帧 */}
                 <button
                   onClick={handleDeleteFrames}
-                  className="p-2 rounded-lg bg-black/50 hover:bg-red-500/80 text-white transition-colors"
+                  disabled={isGenerating}
+                  className={`p-2 rounded-lg bg-black/50 text-white transition-colors ${
+                    isGenerating ? 'opacity-40 cursor-not-allowed' : 'hover:bg-red-500/80'
+                  }`}
                   title="删除全部帧"
                 >
                   <Trash2 className="w-4 h-4" />
@@ -607,6 +650,10 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                     startFrame: scene.startFrame,
                     endFrame: scene.endFrame
                   }}
+                  dialogue={scene.dialogue}
+                  dialogues={scene.dialogues}
+                  characters={scene.characters}
+                  onUpdateDialogues={onUpdateDialogues}
                   onChange={(state: BlockEditorState) => {
                     // 编辑器状态变化
                   }}
@@ -687,7 +734,18 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
           frameType={showHistory.type}
           isOpen={!!showHistory.type}
           onClose={() => setShowHistory({ type: null })}
-          onRestoreVersion={() => {
+          onRestoreVersion={(_versionId, frameUrl, restoredFrameType) => {
+            // 用恢复的帧 URL 更新场景数据，让预览立即刷新
+            if (frameUrl && onUpdateScene) {
+              const updates: Partial<StoryboardScene> = {};
+              if (restoredFrameType === 'first') {
+                updates.startFrame = frameUrl;
+                updates.imageUrl = frameUrl; // imageUrl 通常与首帧一致
+              } else {
+                updates.endFrame = frameUrl;
+              }
+              onUpdateScene(updates);
+            }
             showToast('版本已恢复', 'success');
             setShowHistory({ type: null });
           }}

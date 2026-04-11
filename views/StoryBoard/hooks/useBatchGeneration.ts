@@ -52,6 +52,8 @@ export interface UseBatchGenerationProps {
   onError?: (message: string) => void;
   /** 子任务完成回调（用于实时刷新单个分镜） */
   onSubTaskCompleted?: (task: WorkflowTask, storyboardId: number | null) => void;
+  /** 批量生成启动回调（返回有效分镜ID列表，用于显示 per-scene 生成状态） */
+  onBatchStarted?: (validSceneIds: number[], type: 'frame' | 'video') => void;
 }
 
 export interface BatchGenerationResult {
@@ -86,7 +88,8 @@ export function useBatchGeneration(
     resolution,
     onComplete,
     onError,
-    onSubTaskCompleted
+    onSubTaskCompleted,
+    onBatchStarted
   } = props;
 
   const [skippedScenes, setSkippedScenes] = useState<SkippedSceneInfo[]>([]);
@@ -225,6 +228,8 @@ export function useBatchGeneration(
       if (data.jobId && (res.ok || res.status === 409)) {
         console.log(`${config.logPrefix} 任务已启动, jobId:`, data.jobId);
         recovery.startJob(data.jobId);
+        // 通知调用方批量生成已启动，传递有效分镜 ID 列表
+        onBatchStarted?.(validSceneIds, config.type);
       } else {
         onError?.(data.message || config.startingErrorMessage);
       }
@@ -232,7 +237,7 @@ export function useBatchGeneration(
       console.error(`${config.logPrefix} 启动失败:`, error);
       onError?.(`${config.startingErrorMessage}，请检查网络连接`);
     }
-  }, [scriptId, model, aspectRatio, textModel, projectId, scenes, duration, resolution, recovery, onError, config]);
+  }, [scriptId, model, aspectRatio, textModel, projectId, scenes, duration, resolution, recovery, onError, onBatchStarted, config]);
 
   return {
     startBatchGeneration,
