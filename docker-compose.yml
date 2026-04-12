@@ -9,62 +9,21 @@ services:
     image: nanostory-nginx:local
     restart: unless-stopped
     depends_on:
-      backend:
-        condition: service_started
       notification-service:
         condition: service_started
       hot-update:
         condition: service_started
     environment:
       NGINX_FRONTEND_MODE: ${NGINX_FRONTEND_MODE:-static}
-      FRONTEND_DIST_DIR: /srv/frontend-runtime/current
+      FRONTEND_DIST_DIR: /srv/frontend-dist
       FRONTEND_UPSTREAM: ${FRONTEND_UPSTREAM:-http://frontend-dev:5173}
       NGINX_SITE_ROOT: /usr/share/nginx/site
       CLIENT_MAX_BODY_SIZE: ${CLIENT_MAX_BODY_SIZE:-800m}
     ports:
       - "${HTTP_PORT:-80}:80"
     volumes:
+      - ./dist:/srv/frontend-dist:ro
       - ./runtime/frontend:/srv/frontend-runtime:ro
-
-  backend:
-    container_name: nanostory-backend
-    build:
-      context: .
-      dockerfile: docker/backend/Dockerfile
-      args:
-        BASE_IMAGE: ${DOCKER_IMAGE_PREFIX:-docker.m.daocloud.io/}node:20-bookworm-slim
-    image: nanostory-backend:local
-    restart: unless-stopped
-    depends_on:
-      minio:
-        condition: service_started
-      notification-service:
-        condition: service_started
-      core-service-control:
-        condition: service_started
-    env_file:
-      - ./backend/.env
-    environment:
-      TZ: ${TZ:-Asia/Shanghai}
-      PORT: ${BACKEND_INTERNAL_PORT:-4000}
-      BACKEND_SERVICE_ID: ${BACKEND_SERVICE_ID:-backend}
-      CORE_SERVICE_URL: ${CORE_SERVICE_URL:-http://core-service-control:4100}
-      NOTIFICATION_SERVICE_URL: ${NOTIFICATION_SERVICE_URL:-http://notification-service:4101}
-      SERVICE_SHARED_SECRET: ${SERVICE_SHARED_SECRET:-change-this-shared-secret}
-      MINIO_ENDPOINT: minio
-      MINIO_PORT: 9000
-      MINIO_USE_SSL: "false"
-      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
-      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-change-this-minio-password}
-      MINIO_BUCKET: ${MINIO_BUCKET:-nanostory}
-      MINIO_PUBLIC_URL: ${MINIO_PUBLIC_URL:-http://localhost:9000/nanostory}
-      BACKEND_RUNTIME_DIR: /srv/backend-runtime/current
-      UPLOADS_BASE_DIR: /srv/backend-data/uploads
-    ports:
-      - "${BACKEND_PORT:-4000}:${BACKEND_INTERNAL_PORT:-4000}"
-    volumes:
-      - ./runtime/backend:/srv/backend-runtime:ro
-      - ./runtime/backend-data:/srv/backend-data
 
   notification-service:
     container_name: nanostory-notification-service
@@ -175,7 +134,7 @@ services:
       HOT_UPDATE_NONCE_TTL_MS: ${HOT_UPDATE_NONCE_TTL_MS:-600000}
       HOT_UPDATE_UPLOAD_MAX_BYTES: ${HOT_UPDATE_UPLOAD_MAX_BYTES:-734003200}
       HOT_UPDATE_KEEP_RELEASES: ${HOT_UPDATE_KEEP_RELEASES:-5}
-      HOT_UPDATE_BACKEND_RESTART_CMD: ${HOT_UPDATE_BACKEND_RESTART_CMD:-docker restart nanostory-backend}
+      HOT_UPDATE_BACKEND_RESTART_CMD: ${HOT_UPDATE_BACKEND_RESTART_CMD:-/usr/bin/pm2 restart nanostory-backend}
     volumes:
       - ./runtime:/app/runtime
       - /var/run/docker.sock:/var/run/docker.sock

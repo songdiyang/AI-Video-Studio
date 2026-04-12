@@ -9,7 +9,7 @@ module.exports = (router) => {
 
     try {
       const members = await queryAll(
-        `SELECT tc.*, u.email, u.username, u.avatar_url
+        `SELECT tc.*, u.email, IFNULL(NULLIF(u.nickname, ''), u.email) as username, u.avatar_url
          FROM team_collaborators tc
          LEFT JOIN users u ON tc.user_id = u.id
          WHERE tc.project_id = ? AND tc.status = 'active'
@@ -139,7 +139,7 @@ module.exports = (router) => {
 
     try {
       let sql = `
-        SELECT a.*, u.username as created_by_name, u.avatar_url
+        SELECT a.*, IFNULL(NULLIF(u.nickname, ''), u.email) as created_by_name, u.avatar_url
         FROM frame_annotations a
         LEFT JOIN users u ON a.created_by = u.id
         WHERE a.storyboard_id = ?
@@ -164,7 +164,7 @@ module.exports = (router) => {
       const annotationIds = annotations.map(a => a.id);
       if (annotationIds.length > 0) {
         const replies = await queryAll(
-          `SELECT a.*, u.username as created_by_name
+          `SELECT a.*, IFNULL(NULLIF(u.nickname, ''), u.email) as created_by_name
            FROM frame_annotations a
            LEFT JOIN users u ON a.created_by = u.id
            WHERE a.reply_to IN (?)
@@ -272,7 +272,7 @@ module.exports = (router) => {
 
     try {
       let sql = `
-        SELECT al.*, u.username, u.email
+        SELECT al.*, IFNULL(NULLIF(u.nickname, ''), u.email) as username, u.email
         FROM audit_logs al
         LEFT JOIN users u ON al.user_id = u.id
         WHERE al.project_id = ?

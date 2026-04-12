@@ -149,6 +149,20 @@ export async function updateTeam(
   return handleResponse(res);
 }
 
+export async function uploadTeamAvatar(
+  teamId: number,
+  file: File
+): Promise<{ message: string; avatar_url: string }> {
+  const formData = new FormData();
+  formData.append('avatar', file);
+  const res = await fetch(`/api/teams/${teamId}/avatar`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: formData,
+  });
+  return handleResponse(res);
+}
+
 export async function deleteTeam(teamId: number): Promise<{ message: string }> {
   const res = await fetch(`/api/teams/${teamId}`, {
     method: 'DELETE',

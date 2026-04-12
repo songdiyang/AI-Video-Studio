@@ -67,7 +67,7 @@ router.post('/assign', authMiddleware, async (req, res) => {
 
     // 检查接收者是否是团队成员
     const assigneeMember = await queryOne(
-      `SELECT tm.user_id, u.email as username 
+      `SELECT tm.user_id, IFNULL(NULLIF(u.nickname, ''), u.email) as username 
        FROM team_members tm 
        JOIN users u ON tm.user_id = u.id 
        WHERE tm.team_id = ? AND tm.user_id = ?`,

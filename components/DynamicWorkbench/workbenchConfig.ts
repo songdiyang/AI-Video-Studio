@@ -189,6 +189,9 @@ export const COMPONENT_PATHS: Record<string, string> = {
   OutlinePlanner: 'views/NovelWorkbench/OutlinePlanner',
   ChapterManager: 'views/NovelWorkbench/ChapterManager',
   TextEditor: 'views/NovelWorkbench/TextEditor',
+  CharacterManager: 'views/NovelWorkbench/CharacterManager',
+  SceneManager: 'views/NovelWorkbench/SceneManager',
+  WorldViewEditor: 'views/NovelWorkbench/WorldViewEditor',
 };
 
 export default {

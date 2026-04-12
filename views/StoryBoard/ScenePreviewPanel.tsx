@@ -45,6 +45,12 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
   const { showToast } = useToast();
   const { confirm } = useConfirm();
 
+  // 追踪编辑器当前文本（可能未保存）
+  const [currentEditorText, setCurrentEditorText] = useState<string>('');
+  useEffect(() => {
+    if (scene?.description) setCurrentEditorText(scene.description);
+  }, [scene?.id, scene?.description]);
+
   const isGeneratingImage = imageTask?.status === 'pending' || imageTask?.status === 'running';
   const isGeneratingVideo = videoTask?.status === 'pending' || videoTask?.status === 'running';
   const isGenerating = isGeneratingImage || isGeneratingVideo;
@@ -101,9 +107,37 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
     }
   };
 
+  // 生成前先保存当前编辑器文本
+  const saveBeforeGenerate = async (): Promise<boolean> => {
+    if (!scene) return false;
+    const textToSave = currentEditorText.trim();
+    if (!textToSave) {
+      showToast('分镜描述不能为空', 'error');
+      return false;
+    }
+    // 如果文本与已保存的不同，先保存
+    if (textToSave !== scene.description) {
+      try {
+        const success = await onUpdateDescription(textToSave);
+        if (!success) {
+          showToast('保存分镜描述失败', 'error');
+          return false;
+        }
+      } catch {
+        showToast('保存分镜描述失败', 'error');
+        return false;
+      }
+    }
+    return true;
+  };
+
   // 生成首尾帧
   const handleGenerateImage = async () => {
     if (!scene) return;
+
+    // 先保存当前编辑器文本
+    const saved = await saveBeforeGenerate();
+    if (!saved) return;
     
     const check = await validateForFrame();
     if (!check.ready) {
@@ -120,7 +154,8 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
       if (!proceed) return;
     }
     
-    const result = await onGenerateImage(scene.id, scene.description);
+    // 使用当前编辑器文本（而非 scene.description）
+    const result = await onGenerateImage(scene.id, currentEditorText.trim());
     if (!result.success) {
       showToast(result.error || '图片生成失败', 'error');
     }
@@ -129,6 +164,10 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
   // 生成视频
   const handleGenerateVideo = async () => {
     if (!scene) return;
+
+    // 先保存当前编辑器文本
+    const saved = await saveBeforeGenerate();
+    if (!saved) return;
     
     const check = await validateForVideo();
     if (!check.ready) {
@@ -655,7 +694,10 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                   characters={scene.characters}
                   onUpdateDialogues={onUpdateDialogues}
                   onChange={(state: BlockEditorState) => {
-                    // 编辑器状态变化
+                    // 同步编辑器当前文本到组件状态
+                    if (state.generatedPrompt !== undefined) {
+                      setCurrentEditorText(state.generatedPrompt);
+                    }
                   }}
                   onSave={async (state: BlockEditorState) => {
                     const success = await onUpdateDescription(state.generatedPrompt);

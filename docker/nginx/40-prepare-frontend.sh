@@ -28,6 +28,8 @@ EOF
 write_static_snippet() {
   cat > "${FRONTEND_SNIPPET}" <<'EOF'
 location / {
+    add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+    add_header Pragma "no-cache" always;
     try_files $uri $uri/ /index.html;
 }
 EOF

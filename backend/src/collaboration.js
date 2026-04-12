@@ -90,7 +90,7 @@ router.get('/teams', authMiddleware, async (req, res) => {
         tm.role as my_role,
         (SELECT COUNT(*) FROM team_members WHERE team_id = t.id) as members_count,
         (SELECT COUNT(*) FROM projects WHERE team_id = t.id) as projects_count,
-        u.email as owner_username,
+        IFNULL(NULLIF(u.nickname, ''), u.email) as owner_username,
         u.avatar_url as owner_avatar
        FROM teams t
        JOIN team_members tm ON t.id = tm.team_id AND tm.user_id = ?
@@ -118,7 +118,7 @@ router.get('/teams/:id', authMiddleware, checkTeamPermission('viewer'), async (r
     const team = await queryOne(
       `SELECT 
         t.*, 
-        u.email as owner_username,
+        IFNULL(NULLIF(u.nickname, ''), u.email) as owner_username,
         u.avatar_url as owner_avatar,
         (SELECT COUNT(*) FROM team_members WHERE team_id = t.id) as members_count,
         (SELECT COUNT(*) FROM projects WHERE team_id = t.id) as projects_count
@@ -225,8 +225,8 @@ router.get('/teams/:id/members', authMiddleware, checkTeamPermission('viewer'), 
   try {
     const members = await queryAll(
       `SELECT 
-        tm.id, tm.user_id, tm.role, tm.joined_at,
-        u.email as username, u.avatar_url as avatar, u.email,
+        tm.id, tm.user_id, tm.role, tm.joined_at, tm.invited_by,
+        IFNULL(NULLIF(u.nickname, ''), u.email) as username, u.avatar_url as avatar, u.email,
         inv.email as invited_by_username
        FROM team_members tm
        JOIN users u ON tm.user_id = u.id
@@ -266,8 +266,8 @@ router.post('/teams/:id/members', authMiddleware, checkTeamPermission('admin'), 
   try {
     // 查找用户
     const targetUser = await queryOne(
-      'SELECT id, username FROM users WHERE username = ?',
-      [username]
+      `SELECT id, IFNULL(NULLIF(nickname, ''), email) as username FROM users WHERE nickname = ? OR email = ?`,
+      [username, username]
     );
 
     if (!targetUser) {
@@ -434,7 +434,7 @@ router.get('/teams/:id/projects', authMiddleware, checkTeamPermission('viewer'),
       `SELECT 
         p.id, p.title, p.description, p.cover_image, p.project_type,
         p.created_at, p.updated_at,
-        u.username as owner_username
+        IFNULL(NULLIF(u.nickname, ''), u.email) as owner_username
        FROM projects p
        JOIN users u ON p.user_id = u.id
        WHERE p.team_id = ?
@@ -463,7 +463,7 @@ router.get('/projects/:id/collaborators', authMiddleware, checkProjectPermission
   try {
     // 获取项目所有者信息
     const project = await queryOne(
-      `SELECT p.user_id, p.team_id, u.username, u.avatar, u.email
+      `SELECT p.user_id, p.team_id, IFNULL(NULLIF(u.nickname, ''), u.email) as username, u.avatar_url as avatar, u.email
        FROM projects p
        JOIN users u ON p.user_id = u.id
        WHERE p.id = ?`,
@@ -474,8 +474,8 @@ router.get('/projects/:id/collaborators', authMiddleware, checkProjectPermission
     const collaborators = await queryAll(
       `SELECT 
         pc.id, pc.user_id, pc.role, pc.added_at,
-        u.username, u.avatar, u.email,
-        adder.username as added_by_username
+        IFNULL(NULLIF(u.nickname, ''), u.email) as username, u.avatar_url as avatar, u.email,
+        IFNULL(NULLIF(adder.nickname, ''), adder.email) as added_by_username
        FROM project_collaborators pc
        JOIN users u ON pc.user_id = u.id
        LEFT JOIN users adder ON pc.added_by = adder.id
@@ -524,8 +524,8 @@ router.post('/projects/:id/collaborators', authMiddleware, checkProjectPermissio
   try {
     // 查找用户
     const targetUser = await queryOne(
-      'SELECT id, username FROM users WHERE username = ?',
-      [username]
+      `SELECT id, IFNULL(NULLIF(nickname, ''), email) as username FROM users WHERE nickname = ? OR email = ?`,
+      [username, username]
     );
 
     if (!targetUser) {
@@ -704,7 +704,7 @@ router.get('/invites/:code', async (req, res) => {
     const invite = await queryOne(
       `SELECT 
         ci.*, 
-        u.username as created_by_username
+        IFNULL(NULLIF(u.nickname, ''), u.email) as created_by_username
        FROM collaboration_invites ci
        JOIN users u ON ci.created_by = u.id
        WHERE ci.invite_code = ? AND ci.is_active = 1`,
@@ -1166,9 +1166,9 @@ router.get('/users/search', authMiddleware, async (req, res) => {
 
   try {
     const users = await queryAll(
-      `SELECT id, username, avatar, email
+      `SELECT id, IFNULL(NULLIF(nickname, ''), email) as username, avatar_url as avatar, email
        FROM users
-       WHERE username LIKE ? OR email LIKE ?
+       WHERE nickname LIKE ? OR email LIKE ?
        LIMIT 10`,
       [`%${q}%`, `%${q}%`]
     );
@@ -1177,7 +1177,7 @@ router.get('/users/search', authMiddleware, async (req, res) => {
     const safeUsers = users.map(u => ({
       id: u.id,
       username: u.username,
-      avatar: u.avatar,
+      avatar: u.avatar_url || u.avatar,
       email: u.email ? u.email.replace(/(.{2}).*(@.*)/, '$1***$2') : null
     }));
 

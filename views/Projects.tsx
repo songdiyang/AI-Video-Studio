@@ -485,9 +485,10 @@ const Projects: React.FC = () => {
   };
 
   // 快速开始向导完成后
-  const handleQuickStartComplete = (projectId: number) => {
+  const handleQuickStartComplete = async (projectId: number) => {
     setShowQuickStart(false);
     localStorage.setItem(LAST_PROJECT_KEY, projectId.toString());
+    await loadProjects();
     navigate('/');
   };
 

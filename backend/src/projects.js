@@ -237,7 +237,7 @@ router.get('/', authMiddleware, async (req, res) => {
   try {
     // 1. 获取用户自己的项目
     const ownProjects = await queryAll(
-      `SELECT p.*, 'owner' as my_role, u.email as owner_username
+      `SELECT p.*, 'owner' as my_role, IFNULL(NULLIF(u.nickname, ''), u.email) as owner_username
        FROM projects p
        JOIN users u ON p.user_id = u.id
        WHERE p.user_id = ?`,
@@ -246,7 +246,7 @@ router.get('/', authMiddleware, async (req, res) => {
 
     // 2. 获取用户作为协作者的项目
     const collaboratedProjects = await queryAll(
-      `SELECT p.*, pc.role as my_role, u.email as owner_username
+      `SELECT p.*, pc.role as my_role, IFNULL(NULLIF(u.nickname, ''), u.email) as owner_username
        FROM projects p
        JOIN project_collaborators pc ON p.id = pc.project_id AND pc.user_id = ?
        JOIN users u ON p.user_id = u.id`,
@@ -255,7 +255,7 @@ router.get('/', authMiddleware, async (req, res) => {
 
     // 3. 获取用户团队的项目（排除已在上述列表中的）
     const teamProjects = await queryAll(
-      `SELECT p.*, tm.role as my_role, u.email as owner_username, t.name as team_name
+      `SELECT p.*, tm.role as my_role, IFNULL(NULLIF(u.nickname, ''), u.email) as owner_username, t.name as team_name
        FROM projects p
        JOIN teams t ON p.team_id = t.id AND t.is_active = 1
        JOIN team_members tm ON t.id = tm.team_id AND tm.user_id = ?
@@ -298,7 +298,7 @@ router.get('/:id', authMiddleware, async (req, res) => {
     }
 
     const project = await queryOne(
-      `SELECT p.*, u.email as owner_username, t.name as team_name
+      `SELECT p.*, IFNULL(NULLIF(u.nickname, ''), u.email) as owner_username, t.name as team_name
        FROM projects p
        JOIN users u ON p.user_id = u.id
        LEFT JOIN teams t ON p.team_id = t.id

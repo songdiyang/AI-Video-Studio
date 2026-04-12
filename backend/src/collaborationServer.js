@@ -71,7 +71,7 @@ class CollaborationServer {
     try {
       const { token } = data;
       const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret');
-      const user = await queryOne('SELECT id, email, username FROM users WHERE id = ?', [decoded.userId]);
+      const user = await queryOne(`SELECT id, email, IFNULL(NULLIF(nickname, ''), email) as username FROM users WHERE id = ?`, [decoded.userId]);
       
       if (!user) return false;
 

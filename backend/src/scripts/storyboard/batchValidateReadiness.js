@@ -222,18 +222,27 @@ function validateForVideo(sceneId, storyboard, variables) {
   const warningIssues = [];
 
   const hasAction = variables.hasAction || false;
+  const hasFirstFrame = !!storyboard.first_frame_url;
+  const hasLastFrame = !!storyboard.last_frame_url;
+  const hasAnyFrame = hasFirstFrame || hasLastFrame;
 
-  // 1. 静态镜头必须有首帧；动作镜头首尾帧为可选参考
+  // 1. 至少需要一张帧图片（动作镜头允许纯提示词）
   if (hasAction) {
-    if (!storyboard.first_frame_url) {
-      warningIssues.push('动作镜头缺少首帧图片，将使用纯提示词生成视频');
-    }
-    if (!storyboard.last_frame_url) {
-      warningIssues.push('动作镜头缺少尾帧图片，视频结束画面由AI自由发挥');
+    if (!hasFirstFrame && !hasLastFrame) {
+      warningIssues.push('动作镜头缺少帧图片，将使用纯提示词生成视频');
+    } else {
+      if (!hasFirstFrame) {
+        warningIssues.push('缺少首帧图片，将使用尾帧作为参考图');
+      }
+      if (!hasLastFrame) {
+        warningIssues.push('动作镜头缺少尾帧图片，视频结束画面由AI自由发挥');
+      }
     }
   } else {
-    if (!storyboard.first_frame_url) {
-      blockingIssues.push('缺少首帧图片，请先生成帧图片');
+    if (!hasAnyFrame) {
+      blockingIssues.push('缺少帧图片，请先生成至少一张首帧或尾帧');
+    } else if (!hasFirstFrame) {
+      warningIssues.push('缺少首帧图片，将使用尾帧作为参考图');
     }
   }
 

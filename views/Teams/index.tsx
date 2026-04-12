@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   Card,
@@ -44,6 +44,7 @@ import {
   Download,
   UserPlus,
   ClipboardList,
+  Camera,
 } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
@@ -75,6 +76,7 @@ import {
   approveJoinRequest,
   rejectJoinRequest,
   fetchMyJoinRequests,
+  uploadTeamAvatar,
 } from '../../services/collaboration';
 
 const Teams: React.FC = () => {
@@ -140,6 +142,10 @@ const Teams: React.FC = () => {
   // 任务指派模态框
   const [showTaskAssignModal, setShowTaskAssignModal] = useState(false);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+
+  // 团队头像上传
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+  const [uploadingAvatarTeamId, setUploadingAvatarTeamId] = useState<number | null>(null);
 
   // 加载团队列表
   const loadTeams = useCallback(async () => {
@@ -526,6 +532,34 @@ const Teams: React.FC = () => {
     }
   }, [selectedTeam]);
 
+  // 上传团队头像
+  const handleAvatarUpload = async (teamId: number, file: File) => {
+    try {
+      setUploadingAvatarTeamId(teamId);
+      const { avatar_url } = await uploadTeamAvatar(teamId, file);
+      showToast('团队头像更新成功', 'success');
+      // 刷新列表和详情
+      await loadTeams();
+      if (selectedTeam?.id === teamId) {
+        loadTeamDetail(teamId);
+      }
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : '头像上传失败', 'error');
+    } finally {
+      setUploadingAvatarTeamId(null);
+      if (avatarInputRef.current) avatarInputRef.current.value = '';
+    }
+  };
+
+  // 点击头像触发文件选择
+  const triggerAvatarUpload = (teamId: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (avatarInputRef.current) {
+      avatarInputRef.current.dataset.teamId = String(teamId);
+      avatarInputRef.current.click();
+    }
+  };
+
   // 格式化时间
   const formatTime = (dateStr: string) => {
     const d = new Date(dateStr);
@@ -542,6 +576,18 @@ const Teams: React.FC = () => {
   if (!selectedTeam) {
     return (
       <div className="p-6 max-w-6xl mx-auto">
+        {/* 隐藏的文件输入 */}
+        <input
+          ref={avatarInputRef}
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            const teamId = avatarInputRef.current?.dataset.teamId;
+            if (file && teamId) handleAvatarUpload(Number(teamId), file);
+          }}
+        />
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold text-(--text-primary)">我的团队</h1>
@@ -584,33 +630,83 @@ const Teams: React.FC = () => {
               <Card
                 key={team.id}
                 isPressable={false}
-                className="bg-(--bg-card) hover:bg-(--bg-elevated) cursor-pointer"
-                onPress={() => navigate(`/teams/${team.id}`)}
+                className="
+                  bg-(--bg-card) border border-(--border-subtle)
+                  shadow-[0_2px_8px_var(--shadow-color)]
+                  cursor-pointer
+                  transition-all duration-250 ease-[cubic-bezier(0.4,0,0.2,1)]
+                  hover:shadow-[0_8px_24px_var(--shadow-color),0_0_12px_var(--shadow-glow)]
+                  hover:border-[rgba(78,142,247,0.25)]
+                  hover:-translate-y-0.5
+                  group
+                "
               >
-                <CardBody className="p-4">
-                  <div 
+                <CardBody className="p-5">
+                  {/* 上部：头像 + 信息 + 菜单 */}
+                  <div
                     className="flex items-start justify-between mb-3"
                     onClick={() => navigate(`/teams/${team.id}`)}
                   >
-                    <div className="flex items-center gap-3">
-                      <Avatar
-                        src={team.avatar_url || undefined}
-                        name={team.name}
-                        className="w-12 h-12"
-                      />
-                      <div>
-                        <h3 className="font-semibold text-(--text-primary)">{team.name}</h3>
-                        <div className="flex items-center gap-2 mt-1">
-                          <Chip size="sm" variant="flat" color={team.my_role === 'owner' ? 'warning' : 'default'}>
-                            {team.my_role === 'owner' && <Crown className="w-3 h-3 mr-1" />}
+                    <div className="flex items-center gap-3.5">
+                      {/* 头像 + 强调色装饰背景 */}
+                      <div
+                        className={`relative${team.my_role === 'owner' ? ' cursor-pointer group/avatar' : ''}`}
+                        onClick={team.my_role === 'owner' ? (e) => triggerAvatarUpload(team.id, e) : undefined}
+                        title={team.my_role === 'owner' ? '点击更换团队头像' : undefined}
+                      >
+                        <div className="absolute -inset-1 rounded-full bg-(--accent)/8 group-hover:bg-(--accent)/15 transition-colors duration-300" />
+                        <Avatar
+                          src={team.avatar_url || undefined}
+                          name={team.name}
+                          className="w-12 h-12 relative z-[1] ring-2 ring-(--bg-card)"
+                        />
+                        {team.my_role === 'owner' && (
+                          <div className="absolute inset-0 z-[2] flex items-center justify-center rounded-full bg-black/0 group-hover/avatar:bg-black/40 transition-all duration-200">
+                            {uploadingAvatarTeamId === team.id ? (
+                              <Spinner size="sm" color="white" />
+                            ) : (
+                              <Camera className="w-4 h-4 text-white opacity-0 group-hover/avatar:opacity-100 transition-opacity duration-200" />
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <h3 className="font-semibold text-base text-(--text-primary) truncate leading-tight">{team.name}</h3>
+                        <div className="flex items-center gap-2 mt-1.5">
+                          {/* 角色标签 */}
+                          <span
+                            className={
+                              `inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ` +
+                              (team.my_role === 'owner'
+                                ? 'bg-[var(--warning-glow)] text-[var(--warning)] ring-1 ring-[var(--warning)]/20'
+                                : team.my_role === 'admin'
+                                  ? 'bg-(--accent)/10 text-(--accent) ring-1 ring-(--accent)/20'
+                                  : 'bg-(--bg-input) text-(--text-secondary) ring-1 ring-(--border-subtle)'
+                              )
+                            }
+                          >
+                            {team.my_role === 'owner' && <Crown className="w-3.5 h-3.5 shrink-0" />}
                             {ROLE_LABELS[team.my_role || 'viewer']}
-                          </Chip>
+                          </span>
                         </div>
                       </div>
                     </div>
+                    {/* 下拉菜单按钮 */}
                     <Dropdown>
                       <DropdownTrigger>
-                        <Button isIconOnly size="sm" variant="light" onClick={(e) => e.stopPropagation()}>
+                        <Button
+                          isIconOnly
+                          size="sm"
+                          variant="light"
+                          className="
+                            text-(--text-muted)
+                            hover:text-(--text-secondary)
+                            hover:bg-(--bg-input)
+                            rounded-lg
+                            transition-all duration-150
+                          "
+                          onClick={(e) => e.stopPropagation()}
+                        >
                           <MoreVertical className="w-4 h-4" />
                         </Button>
                       </DropdownTrigger>
@@ -639,20 +735,26 @@ const Teams: React.FC = () => {
                       </DropdownMenu>
                     </Dropdown>
                   </div>
+
+                  {/* 描述 */}
                   {team.description && (
-                    <p className="text-sm text-(--text-secondary) line-clamp-2 mb-3">
+                    <p className="text-sm text-(--text-secondary) line-clamp-2 mb-3 leading-relaxed" onClick={() => navigate(`/teams/${team.id}`)}>
                       {team.description}
                     </p>
                   )}
-                  <div className="flex items-center gap-4 text-sm text-(--text-tertiary)">
-                    <span className="flex items-center gap-1">
-                      <Users className="w-4 h-4" />
-                      {team.members_count} 成员
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <FolderOpen className="w-4 h-4" />
-                      {team.projects_count} 项目
-                    </span>
+
+                  {/* 分割线 + 统计信息 */}
+                  <div className="pt-3 mt-1 border-t border-(--border-subtle)" onClick={() => navigate(`/teams/${team.id}`)}>
+                    <div className="flex items-center gap-3">
+                      <span className="inline-flex items-center gap-1.5 text-sm text-(--text-secondary) bg-(--bg-input)/60 rounded-md px-2 py-1">
+                        <Users className="w-3.5 h-3.5 text-(--accent)/70" />
+                        <span className="font-medium text-(--text-primary)">{team.members_count}</span> 成员
+                      </span>
+                      <span className="inline-flex items-center gap-1.5 text-sm text-(--text-secondary) bg-(--bg-input)/60 rounded-md px-2 py-1">
+                        <FolderOpen className="w-3.5 h-3.5 text-(--accent)/70" />
+                        <span className="font-medium text-(--text-primary)">{team.projects_count}</span> 项目
+                      </span>
+                    </div>
                   </div>
                 </CardBody>
               </Card>
@@ -786,37 +888,79 @@ const Teams: React.FC = () => {
   // 团队详情视图
   return (
     <div className="p-6 max-w-6xl mx-auto">
+      {/* 隐藏的文件输入（详情视图） */}
+      <input
+        ref={avatarInputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          const teamId = avatarInputRef.current?.dataset.teamId;
+          if (file && teamId) handleAvatarUpload(Number(teamId), file);
+        }}
+      />
       {/* 头部 */}
       <div className="flex items-center gap-4 mb-6">
         <Button
           isIconOnly
           variant="light"
+          className="text-(--text-secondary) hover:text-(--text-primary) hover:bg-(--bg-input) rounded-lg transition-all duration-150"
           onPress={() => navigate('/teams')}
         >
           <ArrowLeft className="w-5 h-5" />
         </Button>
-        <Avatar
-          src={selectedTeam.avatar_url || undefined}
-          name={selectedTeam.name}
-          className="w-14 h-14"
-        />
-        <div className="flex-1">
-          <div className="flex items-center gap-2">
+        {/* 头像 + 强调色装饰 */}
+        <div
+          className={`relative${selectedTeam.my_role === 'owner' ? ' cursor-pointer group/avatar' : ''}`}
+          onClick={selectedTeam.my_role === 'owner' ? (e) => triggerAvatarUpload(selectedTeam.id, e) : undefined}
+          title={selectedTeam.my_role === 'owner' ? '点击更换团队头像' : undefined}
+        >
+          <div className="absolute -inset-1.5 rounded-full bg-(--accent)/8" />
+          <Avatar
+            src={selectedTeam.avatar_url || undefined}
+            name={selectedTeam.name}
+            className="w-14 h-14 relative z-[1] ring-2 ring-(--bg-card)"
+          />
+          {selectedTeam.my_role === 'owner' && (
+            <div className="absolute inset-0 z-[2] flex items-center justify-center rounded-full bg-black/0 group-hover/avatar:bg-black/40 transition-all duration-200">
+              {uploadingAvatarTeamId === selectedTeam.id ? (
+                <Spinner size="sm" color="white" />
+              ) : (
+                <Camera className="w-5 h-5 text-white opacity-0 group-hover/avatar:opacity-100 transition-opacity duration-200" />
+              )}
+            </div>
+          )}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2.5">
             <h1 className="text-2xl font-bold text-(--text-primary)">{selectedTeam.name}</h1>
-            <Chip size="sm" variant="flat" color={selectedTeam.my_role === 'owner' ? 'warning' : 'default'}>
-              {selectedTeam.my_role === 'owner' && <Crown className="w-3 h-3 mr-1" />}
+            {/* 角色标签 - 与列表卡片风格一致 */}
+            <span
+              className={
+                `inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium ` +
+                (selectedTeam.my_role === 'owner'
+                  ? 'bg-[var(--warning-glow)] text-[var(--warning)] ring-1 ring-[var(--warning)]/20'
+                  : selectedTeam.my_role === 'admin'
+                    ? 'bg-(--accent)/10 text-(--accent) ring-1 ring-(--accent)/20'
+                    : 'bg-(--bg-input) text-(--text-secondary) ring-1 ring-(--border-subtle)'
+                )
+              }
+            >
+              {selectedTeam.my_role === 'owner' && <Crown className="w-3.5 h-3.5 shrink-0" />}
               {ROLE_LABELS[selectedTeam.my_role || 'viewer']}
-            </Chip>
+            </span>
           </div>
           {selectedTeam.description && (
-            <p className="text-(--text-secondary) mt-1">{selectedTeam.description}</p>
+            <p className="text-(--text-secondary) mt-1 text-sm leading-relaxed">{selectedTeam.description}</p>
           )}
         </div>
         <div className="flex gap-2">
           {canManageMembers(selectedTeam.my_role) && (
             <>
               <Button
-                variant="flat"
+                variant="bordered"
+                className="border-(--border-color) text-(--text-secondary) hover:text-(--text-primary) hover:border-(--accent)/40 hover:bg-(--accent)/5 transition-all duration-200"
                 startContent={<LinkIcon className="w-4 h-4" />}
                 onPress={handleGenerateInvite}
                 isLoading={generatingInvite}
@@ -824,7 +968,8 @@ const Teams: React.FC = () => {
                 邀请链接
               </Button>
               <Button
-                variant="flat"
+                variant="bordered"
+                className="border-(--border-color) text-(--text-secondary) hover:text-(--text-primary) hover:border-(--accent)/40 hover:bg-(--accent)/5 transition-all duration-200"
                 startContent={<Settings className="w-4 h-4" />}
                 onPress={() => handleOpenModal(selectedTeam)}
               >
@@ -880,23 +1025,11 @@ const Teams: React.FC = () => {
       {/* 内容区 */}
       {activeTab === 'members' ? (
         <div>
-          {/* 成员管理顶部操作栏 */}
-          {canManageMembers(selectedTeam.my_role) && (
-            <div className="flex justify-end gap-2 mb-4">
-              <Button
-                color="secondary"
-                variant="flat"
-                startContent={<ClipboardList className="w-4 h-4" />}
-                onPress={() => setShowTaskAssignModal(true)}
-              >
-                指派任务
-              </Button>
-            </div>
-          )}
           <TeamMembersPanel
             teamId={selectedTeam.id}
             myRole={selectedTeam.my_role || 'viewer'}
             onMemberChange={() => loadTeamDetail(selectedTeam.id)}
+            onAssignTask={canManageMembers(selectedTeam.my_role) ? () => setShowTaskAssignModal(true) : undefined}
           />
         </div>
       ) : activeTab === 'review' ? (
@@ -906,15 +1039,16 @@ const Teams: React.FC = () => {
               <Spinner size="lg" />
             </div>
           ) : joinRequests.length === 0 ? (
-            <Card className="bg-(--bg-card)">
+            <Card className="bg-(--bg-card) border border-(--border-subtle) shadow-[0_2px_8px_var(--shadow-color)]">
               <CardBody className="py-12 text-center">
-                <ShieldCheck className="w-10 h-10 mx-auto mb-3 text-(--text-tertiary)" />
+                <ShieldCheck className="w-10 h-10 mx-auto mb-3 text-(--text-muted)" />
                 <p className="text-(--text-secondary)">暂无加入申请</p>
+                <p className="text-xs text-(--text-muted) mt-1">当有人申请加入团队时将在此显示</p>
               </CardBody>
             </Card>
           ) : (
             joinRequests.map((req) => (
-              <Card key={req.id} className="bg-(--bg-card)">
+              <Card key={req.id} className="bg-(--bg-card) border border-(--border-subtle) shadow-[0_2px_8px_var(--shadow-color)] hover:border-(--border-color) transition-colors duration-150">
                 <CardBody className="p-4">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
@@ -923,7 +1057,7 @@ const Teams: React.FC = () => {
                         <p className="text-sm font-medium text-(--text-primary)">
                           {req.user_email}
                         </p>
-                        <p className="text-xs text-(--text-tertiary)">
+                        <p className="text-xs text-(--text-muted)">
                           用户 ID: {req.user_id} · {formatTime(req.created_at)}
                           {req.invite_code && (
                             <span className="ml-2">· 通过邀请码加入</span>
@@ -973,7 +1107,8 @@ const Teams: React.FC = () => {
         <div>
           <div className="flex justify-end gap-2 mb-4">
             <Button
-              variant="flat"
+              variant="bordered"
+              className="border-(--border-color) text-(--text-secondary) hover:text-(--text-primary) hover:border-(--accent)/40 hover:bg-(--accent)/5 transition-all duration-200"
               startContent={<Upload className="w-4 h-4" />}
               onPress={() => {
                 loadPersonalProjects();
@@ -1006,19 +1141,32 @@ const Teams: React.FC = () => {
               <Card
                 key={project.id}
                 isPressable={false}
-                className="bg-(--bg-card) hover:bg-(--bg-elevated)"
+                className="
+                  bg-(--bg-card) border border-(--border-subtle)
+                  shadow-[0_2px_8px_var(--shadow-color)]
+                  cursor-pointer
+                  transition-all duration-250 ease-[cubic-bezier(0.4,0,0.2,1)]
+                  hover:shadow-[0_8px_24px_var(--shadow-color),0_0_12px_var(--shadow-glow)]
+                  hover:border-[rgba(78,142,247,0.25)]
+                  hover:-translate-y-0.5
+                "
               >
-                <CardBody className="p-4">
-                  <div className="flex items-start justify-between mb-1">
-                    <h3 
-                      className="font-semibold text-(--text-primary) cursor-pointer hover:underline flex-1"
+                <CardBody className="p-5">
+                  <div className="flex items-start justify-between mb-2">
+                    <h3
+                      className="font-semibold text-(--text-primary) cursor-pointer hover:text-(--accent) flex-1 transition-colors duration-150"
                       onClick={() => navigate(`/projects/${project.id}`)}
                     >
                       {project.title}
                     </h3>
                     <Dropdown>
                       <DropdownTrigger>
-                        <Button isIconOnly size="sm" variant="light">
+                        <Button
+                          isIconOnly
+                          size="sm"
+                          variant="light"
+                          className="text-(--text-muted) hover:text-(--text-secondary) hover:bg-(--bg-input) rounded-lg transition-all duration-150"
+                        >
                           <MoreVertical className="w-4 h-4" />
                         </Button>
                       </DropdownTrigger>
@@ -1039,13 +1187,15 @@ const Teams: React.FC = () => {
                     </Dropdown>
                   </div>
                   {project.description && (
-                    <p className="text-sm text-(--text-secondary) line-clamp-2 mb-2">
+                    <p className="text-sm text-(--text-secondary) line-clamp-2 mb-3 leading-relaxed">
                       {project.description}
                     </p>
                   )}
-                  <p className="text-xs text-(--text-tertiary)">
-                    创建者: {project.owner_username}
-                  </p>
+                  <div className="pt-2 border-t border-(--border-subtle)">
+                    <p className="text-xs text-(--text-muted)">
+                      创建者: {project.owner_username}
+                    </p>
+                  </div>
                 </CardBody>
               </Card>
             ))

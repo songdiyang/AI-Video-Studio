@@ -166,14 +166,35 @@ export const WORKBENCH_CONFIGS: Record<ProjectType, WorkbenchConfig> = {
   },
   novel: {
     projectType: 'novel',
-    defaultTab: 'outline',
+    defaultTab: 'worldview',
     tabs: [
+      {
+        key: 'worldview',
+        label: '世界观',
+        labelEn: 'Worldview',
+        icon: 'BookOpen',
+        component: 'WorldViewEditor',
+      },
       {
         key: 'outline',
         label: '大纲规划',
         labelEn: 'Outline',
         icon: 'Network',
         component: 'OutlinePlanner',
+      },
+      {
+        key: 'characters',
+        label: '人物设定',
+        labelEn: 'Characters',
+        icon: 'Film',
+        component: 'CharacterManager',
+      },
+      {
+        key: 'scenes',
+        label: '场景设定',
+        labelEn: 'Scenes',
+        icon: 'LayoutGrid',
+        component: 'SceneManager',
       },
       {
         key: 'chapters',

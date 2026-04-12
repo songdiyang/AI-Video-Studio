@@ -10,7 +10,7 @@ module.exports = (router) => {
 
     try {
       let sql = `
-        SELECT h.*, u.username as created_by_name
+        SELECT h.*, IFNULL(NULLIF(u.nickname, ''), u.email) as created_by_name
         FROM storyboard_frame_history h
         LEFT JOIN users u ON h.created_by = u.id
         WHERE h.storyboard_id = ?

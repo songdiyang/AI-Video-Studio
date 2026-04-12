@@ -10,7 +10,7 @@ module.exports = (router) => {
 
     try {
       const versions = await queryAll(
-        `SELECT v.*, u.username as created_by_name, 
+        `SELECT v.*, IFNULL(NULLIF(u.nickname, ''), u.email) as created_by_name, 
                 (SELECT COUNT(*) FROM version_history WHERE resource_type = ? AND resource_id = ?) as total_versions
          FROM version_history v
          LEFT JOIN users u ON v.created_by = u.id

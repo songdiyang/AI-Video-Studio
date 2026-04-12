@@ -31,6 +31,7 @@ import {
   Eye,
   Trash2,
   Search,
+  ClipboardList,
 } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../contexts/ConfirmContext';
@@ -52,6 +53,7 @@ interface TeamMembersPanelProps {
   teamId: number;
   myRole: CollaborationRole;
   onMemberChange?: () => void;
+  onAssignTask?: () => void;
 }
 
 const ROLE_ICONS: Record<CollaborationRole, React.ReactNode> = {
@@ -68,10 +70,19 @@ const ROLE_COLORS: Record<CollaborationRole, 'warning' | 'primary' | 'success' |
   viewer: 'default',
 };
 
+// 角色 badge 样式映射（与团队卡片/详情页统一风格）
+const ROLE_BADGE_CLASS: Record<CollaborationRole, string> = {
+  owner: 'bg-[var(--warning-glow)] text-[var(--warning)] ring-1 ring-[var(--warning)]/20',
+  admin: 'bg-(--accent)/10 text-(--accent) ring-1 ring-(--accent)/20',
+  editor: 'bg-[var(--success-glow)] text-[var(--success)] ring-1 ring-[var(--success)]/20',
+  viewer: 'bg-(--bg-input) text-(--text-secondary) ring-1 ring-(--border-subtle)',
+};
+
 const TeamMembersPanel: React.FC<TeamMembersPanelProps> = ({
   teamId,
   myRole,
   onMemberChange,
+  onAssignTask,
 }) => {
   const { showToast } = useToast();
   const { confirm } = useConfirm();
@@ -219,10 +230,21 @@ const TeamMembersPanel: React.FC<TeamMembersPanelProps> = ({
     <div>
       {/* 头部操作区 */}
       {canManage && (
-        <div className="flex justify-end mb-4">
+        <div className="flex justify-end gap-2 mb-4">
+          {onAssignTask && (
+            <Button
+              variant="bordered"
+              className="border-(--border-color) text-(--text-secondary) hover:text-(--text-primary) hover:border-(--accent)/40 hover:bg-(--accent)/5 transition-all duration-200"
+              startContent={<ClipboardList className="w-4 h-4" />}
+              onPress={onAssignTask}
+            >
+              指派任务
+            </Button>
+          )}
           <Button
             color="primary"
             startContent={<UserPlus className="w-4 h-4" />}
+            className="shadow-[0_2px_8px_var(--accent-glow)] hover:shadow-[0_4px_16px_var(--accent-glow)] transition-shadow duration-200"
             onPress={() => setShowAddModal(true)}
           >
             添加成员
@@ -231,41 +253,46 @@ const TeamMembersPanel: React.FC<TeamMembersPanelProps> = ({
       )}
 
       {/* 成员列表 */}
-      <Card className="bg-(--bg-card)">
+      <Card className="bg-(--bg-card) border border-(--border-subtle) shadow-[0_2px_8px_var(--shadow-color)]">
         <CardBody className="p-0">
           {members.length === 0 ? (
-            <div className="py-8 text-center">
+            <div className="py-12 text-center">
+              <Users className="w-10 h-10 mx-auto mb-3 text-(--text-muted)" />
               <p className="text-(--text-secondary)">暂无成员</p>
+              <p className="text-xs text-(--text-muted) mt-1">点击上方按钮邀请新成员</p>
             </div>
           ) : (
-            <div className="divide-y divide-(--border-color)">
+            <div className="divide-y divide-(--border-subtle)">
               {members.map((member) => (
                 <div
                   key={member.id}
-                  className="flex items-center justify-between p-4 hover:bg-(--bg-elevated) transition-colors"
+                  className="flex items-center justify-between p-4 hover:bg-(--bg-card-hover) transition-colors duration-150 group"
                 >
-                  <div className="flex items-center gap-3">
-                    <Avatar
-                      src={member.avatar || undefined}
-                      name={member.username}
-                      size="sm"
-                    />
+                  <div className="flex items-center gap-3.5">
+                    {/* 头像 + 装饰背景 */}
+                    <div className="relative">
+                      <div className="absolute -inset-0.5 rounded-full bg-(--accent)/0 group-hover:bg-(--accent)/8 transition-colors duration-300" />
+                      <Avatar
+                        src={member.avatar || undefined}
+                        name={member.username}
+                        className="w-10 h-10 relative z-[1]"
+                      />
+                    </div>
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="font-medium text-(--text-primary)">
                           {member.username}
                         </span>
-                        <Chip
-                          size="sm"
-                          variant="flat"
-                          color={ROLE_COLORS[member.role]}
-                          startContent={ROLE_ICONS[member.role]}
+                        {/* 角色 badge - 统一风格 */}
+                        <span
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${ROLE_BADGE_CLASS[member.role]}`}
                         >
+                          {ROLE_ICONS[member.role]}
                           {ROLE_LABELS[member.role]}
-                        </Chip>
+                        </span>
                       </div>
                       {member.invited_by_username && member.role !== 'owner' && (
-                        <p className="text-xs text-(--text-tertiary) mt-0.5">
+                        <p className="text-xs text-(--text-muted) mt-0.5">
                           由 {member.invited_by_username} 邀请
                         </p>
                       )}
@@ -275,7 +302,12 @@ const TeamMembersPanel: React.FC<TeamMembersPanelProps> = ({
                   {canManage && member.role !== 'owner' && (
                     <Dropdown>
                       <DropdownTrigger>
-                        <Button isIconOnly size="sm" variant="light">
+                        <Button
+                          isIconOnly
+                          size="sm"
+                          variant="light"
+                          className="text-(--text-muted) hover:text-(--text-secondary) hover:bg-(--bg-input) rounded-lg transition-all duration-150 opacity-0 group-hover:opacity-100"
+                        >
                           <MoreVertical className="w-4 h-4" />
                         </Button>
                       </DropdownTrigger>
@@ -318,7 +350,7 @@ const TeamMembersPanel: React.FC<TeamMembersPanelProps> = ({
               placeholder="搜索用户名..."
               value={searchQuery}
               onValueChange={setSearchQuery}
-              startContent={<Search className="w-4 h-4 text-default-400" />}
+              startContent={<Search className="w-4 h-4 text-(--text-muted)" />}
               endContent={searching && <Spinner size="sm" />}
             />
 
@@ -343,7 +375,7 @@ const TeamMembersPanel: React.FC<TeamMembersPanelProps> = ({
                         <div>
                           <p className="font-medium">{user.username}</p>
                           {user.email && (
-                            <p className="text-xs text-default-400">{user.email}</p>
+                            <p className="text-xs text-(--text-muted)">{user.email}</p>
                           )}
                         </div>
                       </ListboxItem>
@@ -355,7 +387,7 @@ const TeamMembersPanel: React.FC<TeamMembersPanelProps> = ({
 
             {/* 已选用户 */}
             {selectedUser && (
-              <Card className="mt-2 bg-primary-50 dark:bg-primary-900/20">
+              <Card className="mt-2 bg-(--accent)/5 border border-(--accent)/20">
                 <CardBody className="p-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
@@ -365,15 +397,16 @@ const TeamMembersPanel: React.FC<TeamMembersPanelProps> = ({
                         size="sm"
                       />
                       <div>
-                        <p className="font-medium">{selectedUser.username}</p>
+                        <p className="font-medium text-(--text-primary)">{selectedUser.username}</p>
                         {selectedUser.email && (
-                          <p className="text-xs text-default-400">{selectedUser.email}</p>
+                          <p className="text-xs text-(--text-muted)">{selectedUser.email}</p>
                         )}
                       </div>
                     </div>
                     <Button
                       size="sm"
                       variant="light"
+                      className="text-(--accent) hover:bg-(--accent)/10"
                       onPress={() => setSelectedUser(null)}
                     >
                       更换

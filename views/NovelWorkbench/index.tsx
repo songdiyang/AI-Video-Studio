@@ -16,6 +16,9 @@ import { useAIModels } from '../../hooks/useAIModels';
 const OutlinePlanner = lazy(() => import('./OutlinePlanner'));
 const ChapterManager = lazy(() => import('./ChapterManager'));
 const TextEditor = lazy(() => import('./TextEditor'));
+const CharacterManager = lazy(() => import('./CharacterManager'));
+const SceneManager = lazy(() => import('./SceneManager'));
+const WorldViewEditor = lazy(() => import('./WorldViewEditor'));
 
 // ==================== 类型定义 ====================
 
@@ -174,6 +177,31 @@ const NovelWorkbench: React.FC<NovelWorkbenchProps> = ({ projectId, activeTab })
               chapters={chapters}
               onChapterChange={handleSelectChapter}
               onSave={refreshChapters}
+              models={models}
+              textModel={selected.text || ''}
+            />
+          </Suspense>
+        );
+
+      case 'characters':
+        return (
+          <Suspense fallback={<LoadingFallback />}>
+            <CharacterManager projectId={projectId} />
+          </Suspense>
+        );
+
+      case 'scenes':
+        return (
+          <Suspense fallback={<LoadingFallback />}>
+            <SceneManager projectId={projectId} />
+          </Suspense>
+        );
+
+      case 'worldview':
+        return (
+          <Suspense fallback={<LoadingFallback />}>
+            <WorldViewEditor
+              projectId={projectId}
               models={models}
               textModel={selected.text || ''}
             />

@@ -10,9 +10,9 @@ module.exports = (router) => {
     try {
       let sql = `
         SELECT a.*, 
-               u1.username as created_by_name,
-               u2.username as current_reviewer_name,
-               u3.username as final_approved_by_name
+               IFNULL(NULLIF(u1.nickname, ''), u1.email) as created_by_name,
+               IFNULL(NULLIF(u2.nickname, ''), u2.email) as current_reviewer_name,
+               IFNULL(NULLIF(u3.nickname, ''), u3.email) as final_approved_by_name
         FROM workflow_approvals a
         LEFT JOIN users u1 ON a.created_by = u1.id
         LEFT JOIN users u2 ON a.current_reviewer_id = u2.id
@@ -44,9 +44,9 @@ module.exports = (router) => {
     try {
       const approval = await queryOne(
         `SELECT a.*, 
-                u1.username as created_by_name,
-                u2.username as current_reviewer_name,
-                u3.username as final_approved_by_name
+                IFNULL(NULLIF(u1.nickname, ''), u1.email) as created_by_name,
+                IFNULL(NULLIF(u2.nickname, ''), u2.email) as current_reviewer_name,
+                IFNULL(NULLIF(u3.nickname, ''), u3.email) as final_approved_by_name
          FROM workflow_approvals a
          LEFT JOIN users u1 ON a.created_by = u1.id
          LEFT JOIN users u2 ON a.current_reviewer_id = u2.id
@@ -270,7 +270,7 @@ module.exports = (router) => {
     try {
       const approvals = await queryAll(
         `SELECT a.*, 
-                u1.username as created_by_name,
+                IFNULL(NULLIF(u1.nickname, ''), u1.email) as created_by_name,
                 p.name as project_name
          FROM workflow_approvals a
          LEFT JOIN users u1 ON a.created_by = u1.id

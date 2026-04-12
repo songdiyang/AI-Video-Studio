@@ -187,7 +187,7 @@ async function authenticate(ws, sessionId, data, clients) {
     }
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const user = await queryOne('SELECT id, email, username FROM users WHERE id = ?', [decoded.id]);
+    const user = await queryOne(`SELECT id, email, IFNULL(NULLIF(nickname, ''), email) as username FROM users WHERE id = ?`, [decoded.id]);
 
     if (!user) {
       send(ws, { type: 'auth_error', message: '用户不存在' });

@@ -1,8 +1,24 @@
 const express = require('express');
+const multer = require('multer');
 const { queryAll, queryOne, execute } = require('./dbHelper');
 const { authMiddleware } = require('./middleware');
+const { uploadBuffer, deleteObject, isConfigured } = require('./utils/fileStorage');
 
 const router = express.Router();
+
+// ========== 团队头像上传配置 ==========
+const ALLOWED_AVATAR_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
+const AVATAR_EXT_MAP = { 'image/png': '.png', 'image/jpeg': '.jpg', 'image/webp': '.webp' };
+const MAX_AVATAR_SIZE = 5 * 1024 * 1024; // 5MB
+
+const teamAvatarUpload = multer({
+  storage: multer.memoryStorage(),
+  fileFilter: (req, file, cb) => {
+    if (ALLOWED_AVATAR_TYPES.includes(file.mimetype)) cb(null, true);
+    else cb(new Error('不支持的文件类型，仅支持 PNG/JPG/WebP 格式'), false);
+  },
+  limits: { fileSize: MAX_AVATAR_SIZE }
+});
 
 /**
  * 团队管理 API 路由
@@ -22,7 +38,7 @@ router.get('/', authMiddleware, async (req, res) => {
         tm.role as my_role,
         (SELECT COUNT(*) FROM team_members WHERE team_id = t.id) as members_count,
         (SELECT COUNT(*) FROM projects WHERE team_id = t.id) as projects_count,
-        u.email as owner_username
+        IFNULL(NULLIF(u.nickname, ''), u.email) as owner_username
        FROM teams t
        JOIN team_members tm ON t.id = tm.team_id AND tm.user_id = ?
        JOIN users u ON t.owner_id = u.id
@@ -83,7 +99,7 @@ router.get('/:teamId', authMiddleware, async (req, res) => {
   try {
     const team = await queryOne(
       `SELECT t.*, 
-       (SELECT COUNT(*) FROM team_members WHERE team_id = t.id) + 1 as members_count,
+       (SELECT COUNT(*) FROM team_members WHERE team_id = t.id) as members_count,
        (SELECT COUNT(*) FROM projects WHERE team_id = t.id) as projects_count
        FROM teams t
        WHERE t.id = ? AND (t.owner_id = ? OR EXISTS (
@@ -194,11 +210,17 @@ router.get('/:teamId/members', authMiddleware, async (req, res) => {
     }
 
     const members = await queryAll(
-      `SELECT tm.*, u.email
+      `SELECT 
+        tm.id, tm.user_id, tm.role, tm.joined_at, tm.invited_by,
+        IFNULL(NULLIF(u.nickname, ''), u.email) as username, u.avatar_url as avatar, u.email,
+        inv.email as invited_by_username
        FROM team_members tm
-       LEFT JOIN users u ON tm.user_id = u.id
+       JOIN users u ON tm.user_id = u.id
+       LEFT JOIN users inv ON tm.invited_by = inv.id
        WHERE tm.team_id = ?
-       ORDER BY tm.role DESC, tm.joined_at DESC`,
+       ORDER BY 
+         FIELD(tm.role, 'owner', 'admin', 'editor', 'viewer'),
+         tm.joined_at ASC`,
       [teamId]
     );
 
@@ -442,6 +464,63 @@ router.post('/join', authMiddleware, async (req, res) => {
   } catch (error) {
     console.error('[Teams API] 加入团队失败:', error);
     res.status(500).json({ message: '加入团队失败' });
+  }
+});
+
+// POST /api/teams/:teamId/avatar - 上传团队头像（仅所有者）
+router.post('/:teamId/avatar', authMiddleware, teamAvatarUpload.single('avatar'), async (req, res) => {
+  const userId = req.user.id;
+  const { teamId } = req.params;
+
+  if (!req.file) {
+    return res.status(400).json({ message: '请选择要上传的头像图片' });
+  }
+
+  try {
+    // 验证是否为团队所有者
+    const team = await queryOne(
+      'SELECT * FROM teams WHERE id = ? AND owner_id = ?',
+      [teamId, userId]
+    );
+
+    if (!team) {
+      return res.status(403).json({ message: '只有团队所有者可以修改团队头像' });
+    }
+
+    if (!isConfigured()) {
+      return res.status(500).json({ message: '文件存储服务未配置，请联系管理员' });
+    }
+
+    // 获取旧头像路径，用于清理
+    const oldAvatarUrl = team.avatar_url;
+
+    // 生成存储路径: team-avatars/team_{id}_{timestamp}.{ext}
+    const ext = AVATAR_EXT_MAP[req.file.mimetype] || '.png';
+    const objectPath = `team-avatars/team_${teamId}_${Date.now()}${ext}`;
+
+    // 上传到 MinIO
+    const avatarUrl = await uploadBuffer(req.file.buffer, objectPath, {
+      contentType: req.file.mimetype
+    });
+
+    // 更新数据库
+    await execute(
+      'UPDATE teams SET avatar_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      [avatarUrl, teamId]
+    );
+
+    // 清理旧头像
+    if (oldAvatarUrl) {
+      deleteObject(oldAvatarUrl).catch(err => {
+        console.error('[Team Avatar] 清理旧头像失败:', err.message);
+      });
+    }
+
+    console.log('[Team Avatar] 上传成功:', { teamId, avatarUrl });
+    res.json({ message: '团队头像上传成功', avatar_url: avatarUrl });
+  } catch (err) {
+    console.error('[Team Avatar]', err);
+    res.status(500).json({ message: '团队头像上传失败' });
   }
 });
 

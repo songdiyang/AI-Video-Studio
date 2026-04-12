@@ -498,5 +498,57 @@ module.exports = {
     defaultValue: null,
     description: '仅重新生成指定视图（如 front/side/back），为 null 时生成全部',
     category: 'control'
+  },
+
+  // ================================================================
+  //  小说工作台
+  // ================================================================
+  chapterId: {
+    from: 'chapterId',
+    defaultValue: null,
+    description: '章节ID',
+    category: 'novel'
+  },
+  chapterNumber: {
+    from: 'chapterNumber',
+    defaultValue: 1,
+    description: '章节序号',
+    category: 'novel'
+  },
+  chapterTitle: {
+    from: 'chapterTitle',
+    defaultValue: '',
+    description: '章节标题',
+    category: 'novel'
+  },
+  generationType: {
+    from: 'generationType',
+    defaultValue: 'full',
+    description: '生成类型（full/continuation/revision）',
+    category: 'novel'
+  },
+  worldView: {
+    from: 'worldView',
+    defaultValue: '',
+    description: '小说世界观设定',
+    category: 'novel'
+  },
+  plotSummary: {
+    from: 'plotSummary',
+    defaultValue: '',
+    description: '剧情概要',
+    category: 'novel'
+  },
+  prevSummaries: {
+    from: 'prevSummaries',
+    defaultValue: [],
+    description: '前几章的剧情简述数组',
+    category: 'novel'
+  },
+  existingContent: {
+    from: 'existingContent',
+    defaultValue: '',
+    description: '已有章节内容（续写模式使用）',
+    category: 'novel'
   }
 };

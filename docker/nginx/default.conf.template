@@ -10,7 +10,7 @@ server {
     client_max_body_size ${CLIENT_MAX_BODY_SIZE};
 
     location /api/ {
-        proxy_pass http://backend:4000;
+        proxy_pass http://172.18.0.1:4000;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -21,7 +21,7 @@ server {
     }
 
     location /ws {
-        proxy_pass http://backend:4000;
+        proxy_pass http://172.18.0.1:4000;
         proxy_http_version 1.1;
         proxy_buffering off;
         proxy_set_header Host $host;
@@ -54,6 +54,13 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_read_timeout 600s;
         proxy_send_timeout 600s;
+    }
+
+    # 带哈希的静态资源长缓存
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+        expires 30d;
+        add_header Cache-Control "public, immutable";
+        try_files $uri =404;
     }
 
     include /etc/nginx/snippets/frontend-location.conf;

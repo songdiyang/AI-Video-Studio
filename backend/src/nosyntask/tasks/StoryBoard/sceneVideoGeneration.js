@@ -4,8 +4,8 @@
  * 流程：
  * 1. 查询分镜数据，获取首尾帧 URL 和 variables_json
  * 2. 校验帧完整性：
- *    - 动作镜头（hasAction=true）：必须有首帧 + 尾帧
- *    - 静态镜头（hasAction=false）：必须有首帧
+ *    - 动作镜头（hasAction=true）：首尾帧均为可选参考
+ *    - 静态镜头（hasAction=false）：至少需要一张帧图片（首帧或尾帧均可）
  * 3. 查询前后镜头描述作为上下文，确保视频衔接连贯
  * 4. 获取镜头完整信息（描述、shotType、emotion），调用文本模型生成视频提示词
  * 5. 构建 imageUrls = [首帧, 尾帧(如果有)]，以 imageUrls + 视频提示词调用视频模型生成视频
@@ -83,22 +83,23 @@ async function handleSceneVideoGeneration(inputParams, onProgress) {
   const description = storyboard.prompt_template || '';
   const firstFrameUrl = storyboard.first_frame_url || null;
   const lastFrameUrl = storyboard.last_frame_url || null;
-  trace('查询分镜数据', { storyboardId, idx: storyboard.idx, hasAction, location: variables.location, hasFirstFrame: !!firstFrameUrl, hasLastFrame: !!lastFrameUrl });
+  const effectiveStartFrame = firstFrameUrl || lastFrameUrl;
+  trace('查询分镜数据', { storyboardId, idx: storyboard.idx, hasAction, location: variables.location, hasFirstFrame: !!firstFrameUrl, hasLastFrame: !!lastFrameUrl, effectiveStartFrame: !!effectiveStartFrame });
 
-  // 2. 校验帧完整性（静态镜头必须有首帧；动作镜头首尾帧为可选参考）
+  // 2. 校验帧完整性（至少需要一张帧图片；动作镜头允许纯提示词）
   if (hasAction) {
     if (firstFrameUrl && lastFrameUrl) {
       console.log('[SceneVideoGen] 动作镜头，首帧:', firstFrameUrl, '尾帧:', lastFrameUrl);
-    } else if (firstFrameUrl) {
-      console.log('[SceneVideoGen] 动作镜头，仅有首帧（尾帧缺失，不强制依赖）:', firstFrameUrl);
+    } else if (effectiveStartFrame) {
+      console.log('[SceneVideoGen] 动作镜头，仅有单张帧图片作为参考:', effectiveStartFrame);
     } else {
       console.log('[SceneVideoGen] 动作镜头，无首尾帧，使用纯提示词生成视频');
     }
   } else {
-    if (!firstFrameUrl) {
-      throw new Error('静态镜头必须包含首帧，请先生成帧图片');
+    if (!effectiveStartFrame) {
+      throw new Error('缺少帧图片，请先生成至少一张首帧或尾帧');
     }
-    console.log('[SceneVideoGen] 静态镜头，首帧:', firstFrameUrl);
+    console.log('[SceneVideoGen] 静态镜头，参考帧:', effectiveStartFrame);
   }
 
   if (onProgress) onProgress(10);
@@ -420,11 +421,11 @@ Prompt:`;
     console.log('[SceneVideoGen] 无文本模型，使用原始描述作为视频提示词');
   }
 
-  // 5. 构建 imageUrls 并生成视频
+  // 5. 构建 imageUrls 并生成视频（支持单张帧图片：优先首帧，回退尾帧）
   if (onProgress) onProgress(20);
   const imageUrls = [];
-  if (firstFrameUrl) imageUrls.push(firstFrameUrl);
-  if (hasAction && lastFrameUrl) {
+  if (effectiveStartFrame) imageUrls.push(effectiveStartFrame);
+  if (hasAction && lastFrameUrl && firstFrameUrl) {
     imageUrls.push(lastFrameUrl);
   }
   
@@ -447,9 +448,9 @@ Prompt:`;
   // 仅在有参考图时传递
   if (imageUrls.length > 0) {
     submitParams.imageUrls = imageUrls;
-    submitParams.startFrame = firstFrameUrl || '_REMOVE_';
+    submitParams.startFrame = effectiveStartFrame;
   }
-  if (lastFrameUrl) {
+  if (hasAction && lastFrameUrl && firstFrameUrl) {
     submitParams.endFrame = lastFrameUrl;
   } else {
     submitParams.endFrame = '_REMOVE_';

@@ -192,31 +192,25 @@ async function validateForFrame(res, storyboard, variables) {
 
 /**
  * 校验生成视频的前置条件
- * - 首帧是否存在
- * - 如果是动作镜头，尾帧是否存在
+ * - 至少需要一张帧图片（首帧或尾帧均可）
  * - 提示词是否完整
  */
 async function validateForVideo(res, storyboard, variables) {
   const issues = [];
 
-  // 1. 检查首帧
-  if (!storyboard.first_frame_url) {
+  const hasFirstFrame = !!storyboard.first_frame_url;
+  const hasLastFrame = !!storyboard.last_frame_url;
+  const hasAnyFrame = hasFirstFrame || hasLastFrame;
+
+  // 1. 至少需要一张帧图片
+  if (!hasAnyFrame) {
     issues.push({
-      type: 'no_start_frame',
-      message: '缺少首帧图片，请先生成首尾帧'
+      type: 'no_frame',
+      message: '缺少帧图片，请先生成至少一张首帧或尾帧'
     });
   }
 
-  // 2. 如果是动作镜头，检查尾帧
-  const hasAction = variables.hasAction || false;
-  if (hasAction && !storyboard.last_frame_url) {
-    issues.push({
-      type: 'no_end_frame',
-      message: '动作镜头缺少尾帧图片，请先生成首尾帧'
-    });
-  }
-
-  // 3. 检查提示词
+  // 2. 检查提示词
   if (!storyboard.prompt_template || storyboard.prompt_template.trim() === '') {
     issues.push({
       type: 'no_prompt',

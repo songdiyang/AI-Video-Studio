@@ -56,6 +56,7 @@ const approvalsRoutes = require('./scripts/approvals');
 const systemConfigRoutes = require('./systemConfigRoutes');
 const teamsRoutes = require('./teams');
 const taskAssignmentRoutes = require('./taskAssignment');
+const novelRoutes = require('./novelRoutes');
 const { setupWebSocket } = require('./websocket');
 const { errorHandlerMiddleware, initGlobalErrorHandlers } = require('./globalErrorHandler');
 const callbackHandler = require('./nosyntask/callbackHandler');
@@ -157,6 +158,7 @@ app.use('/api/community', communityRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/teams', teamsRoutes);  // 团队管理路由
 app.use('/api/tasks', taskAssignmentRoutes);  // 任务指派路由
+app.use('/api/novels', novelRoutes);  // 小说工作台路由
 // 协作路由
 const collaborationRouter = express.Router();
 collaborationRoutes(collaborationRouter);
