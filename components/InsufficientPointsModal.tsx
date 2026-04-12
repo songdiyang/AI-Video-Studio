@@ -63,7 +63,7 @@ const InsufficientPointsModal: React.FC = () => {
 
           {/* 弹窗 */}
           <motion.div
-            className="relative w-full max-w-sm bg-(--bg-primary) rounded-2xl shadow-2xl overflow-hidden"
+            className="relative w-full max-w-sm bg-[var(--bg-app)] rounded-2xl shadow-2xl overflow-hidden"
             initial={{ scale: 0.9, opacity: 0, y: 20 }}
             animate={{ scale: 1, opacity: 1, y: 0 }}
             exit={{ scale: 0.9, opacity: 0, y: 20 }}
@@ -75,7 +75,7 @@ const InsufficientPointsModal: React.FC = () => {
             {/* 关闭按钮 */}
             <button
               onClick={onClose}
-              className="absolute top-4 right-4 p-2 rounded-full hover:bg-(--bg-secondary) transition-colors"
+              className="absolute top-4 right-4 p-2 rounded-full hover:bg-[var(--bg-card-hover)] transition-colors"
             >
               <X className="w-5 h-5 text-(--text-muted)" />
             </button>
@@ -93,7 +93,7 @@ const InsufficientPointsModal: React.FC = () => {
               </div>
 
               {/* 积分详情 */}
-              <div className="mb-5 p-4 rounded-xl bg-(--bg-secondary) space-y-2.5">
+              <div className="mb-5 p-4 rounded-xl bg-[var(--bg-input)] space-y-2.5">
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-(--text-muted)">需要积分</span>
                   <span className="font-semibold text-(--text-primary)">
@@ -128,7 +128,7 @@ const InsufficientPointsModal: React.FC = () => {
                 </button>
                 <button
                   onClick={handleUpgrade}
-                  className="w-full py-3 rounded-xl border border-(--border-color) text-(--text-secondary) font-medium flex items-center justify-center gap-2 hover:bg-(--bg-secondary) transition-colors"
+                  className="w-full py-3 rounded-xl border border-[var(--border-color)] text-[var(--text-secondary)] font-medium flex items-center justify-center gap-2 hover:bg-[var(--bg-card-hover)] transition-colors"
                 >
                   <Crown className="w-4 h-4 text-amber-500" />
                   <span>升级套餐</span>

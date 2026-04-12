@@ -578,6 +578,8 @@ export interface GenerationStatusResponse {
   status: 'idle' | 'generating' | 'completed' | 'failed';
   progress?: string;
   error?: string;
+  conceptStatus?: 'idle' | 'generating' | 'completed' | 'failed';
+  conceptImageUrl?: string | null;
 }
 
 /**

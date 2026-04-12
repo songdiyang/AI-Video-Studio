@@ -675,11 +675,11 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
           {/* 可折叠内容区 */}
           <div
             className={`overflow-hidden transition-all duration-300 ease-in-out ${
-              isDirectorSpaceExpanded ? 'max-h-[400px] opacity-100' : 'max-h-0 opacity-0'
+              isDirectorSpaceExpanded ? 'max-h-[600px] opacity-100' : 'max-h-0 opacity-0'
             }`}
           >
             <div className="px-4 pb-3">
-              <div className="h-[320px]">
+              <div className="h-[520px]">
                 <BlockEditor
                   storyboardId={scene.id}
                   projectId={projectId || undefined}

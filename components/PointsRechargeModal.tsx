@@ -85,19 +85,16 @@ const PointsRechargeModal: React.FC<PointsRechargeModalProps> = ({ isOpen, onClo
 
           {/* 弹窗内容 */}
           <motion.div
-            className="relative w-full max-w-lg bg-(--bg-primary) rounded-2xl shadow-2xl overflow-hidden"
+            className="relative w-full max-w-lg bg-[var(--bg-app)] rounded-2xl shadow-2xl overflow-hidden"
             initial={{ scale: 0.9, opacity: 0, y: 20 }}
             animate={{ scale: 1, opacity: 1, y: 0 }}
             exit={{ scale: 0.9, opacity: 0, y: 20 }}
             transition={{ type: 'spring', damping: 25, stiffness: 300 }}
           >
-            {/* 顶部渐变装饰 */}
-            <div className="h-2 bg-linear-to-r from-amber-400 via-orange-500 to-rose-500" />
-
             {/* 关闭按钮 */}
             <button
               onClick={onClose}
-              className="absolute top-4 right-4 p-2 rounded-full hover:bg-(--bg-secondary) transition-colors z-10"
+              className="absolute top-4 right-4 p-2 rounded-full hover:bg-[var(--bg-card-hover)] transition-colors z-10"
             >
               <X className="w-5 h-5 text-(--text-muted)" />
             </button>
@@ -119,37 +116,46 @@ const PointsRechargeModal: React.FC<PointsRechargeModalProps> = ({ isOpen, onClo
               </div>
 
               {/* 积分套餐选择 */}
-              <div className="grid grid-cols-3 gap-2.5 mb-4">
-                {RECHARGE_PACKAGES.map((pkg, index) => (
-                  <button
-                    key={pkg.points}
-                    onClick={() => handleSelectPackage(index)}
-                    className={`relative p-3 rounded-xl border-2 transition-all duration-200 text-center
-                      ${!isCustom && selectedPackage === index
-                        ? 'border-(--accent) bg-(--accent)/5 shadow-md shadow-(--accent)/10'
-                        : 'border-(--border-color) hover:border-(--accent)/40 hover:bg-(--bg-secondary)'
-                      }`}
-                  >
-                    {/* 标签 */}
-                    {pkg.tag && (
-                      <span className={`absolute -top-2 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full text-[10px] font-bold text-white
-                        ${pkg.tag === '最优惠' ? 'bg-linear-to-r from-emerald-500 to-teal-500' : 'bg-linear-to-r from-(--accent) to-purple-600'}`}>
-                        {pkg.tag}
-                      </span>
-                    )}
-                    <div className="text-lg font-bold text-(--text-primary)">
-                      {pkg.points >= 1000 ? `${pkg.points / 1000}k` : pkg.points}
-                    </div>
-                    <div className="text-xs text-(--text-muted) mb-1">{pkg.label}</div>
-                    <div className="text-sm font-semibold text-amber-500">¥{pkg.price}</div>
-                  </button>
-                ))}
+              <div className="grid grid-cols-3 gap-3 mb-4">
+                {RECHARGE_PACKAGES.map((pkg, index) => {
+                  const isSelected = !isCustom && selectedPackage === index;
+                  return (
+                    <button
+                      key={pkg.points}
+                      onClick={() => handleSelectPackage(index)}
+                      className={`relative p-3.5 rounded-xl border-2 transition-all duration-200 text-center group
+                        ${isSelected
+                          ? 'border-amber-500 bg-amber-50 dark:bg-amber-500/10 shadow-lg shadow-amber-500/15 scale-[1.02]'
+                          : 'border-[var(--border-color)] hover:border-amber-400/50 hover:bg-[var(--bg-card-hover)] hover:shadow-md'
+                        }`}
+                    >
+                      {/* 选中指示器 */}
+                      {isSelected && (
+                        <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-amber-500 flex items-center justify-center shadow-sm">
+                          <Check className="w-3 h-3 text-white" />
+                        </span>
+                      )}
+                      {/* 标签 */}
+                      {pkg.tag && (
+                        <span className={`absolute -top-2.5 left-1/2 -translate-x-1/2 px-2.5 py-0.5 rounded-full text-[10px] font-bold text-white shadow-sm
+                          ${pkg.tag === '最优惠' ? 'bg-gradient-to-r from-emerald-500 to-teal-500' : 'bg-gradient-to-r from-amber-500 to-orange-500'}`}>
+                          {pkg.tag}
+                        </span>
+                      )}
+                      <div className={`text-lg font-bold ${isSelected ? 'text-amber-600 dark:text-amber-400' : 'text-[var(--text-primary)]'}`}>
+                        {pkg.points >= 1000 ? `${pkg.points / 1000}k` : pkg.points}
+                      </div>
+                      <div className="text-xs text-[var(--text-muted)] mb-1">{pkg.label}</div>
+                      <div className={`text-sm font-semibold ${isSelected ? 'text-amber-600 dark:text-amber-400' : 'text-amber-500'}`}>¥{pkg.price}</div>
+                    </button>
+                  );
+                })}
               </div>
 
               {/* 自定义数量 */}
               <div className="mb-5">
                 <div className={`flex items-center gap-2 p-3 rounded-xl border-2 transition-all
-                  ${isCustom ? 'border-(--accent) bg-(--accent)/5' : 'border-(--border-color)'}`}>
+                  ${isCustom ? 'border-amber-500 bg-amber-50 dark:bg-amber-500/10 shadow-md' : 'border-[var(--border-color)] hover:border-amber-400/40'}`}>
                   <Zap className="w-4 h-4 text-amber-500 shrink-0" />
                   <input
                     type="number"
@@ -172,7 +178,7 @@ const PointsRechargeModal: React.FC<PointsRechargeModalProps> = ({ isOpen, onClo
               <button
                 onClick={handleRecharge}
                 disabled={selectedPoints <= 0}
-                className="w-full py-3 rounded-xl bg-linear-to-r from-amber-500 to-orange-500 text-white font-semibold flex items-center justify-center gap-2 hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full py-3.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-white font-semibold flex items-center justify-center gap-2 hover:from-amber-600 hover:to-orange-600 hover:shadow-lg hover:shadow-amber-500/25 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-none"
               >
                 <span>
                   {selectedPoints > 0
@@ -195,7 +201,7 @@ const PointsRechargeModal: React.FC<PointsRechargeModalProps> = ({ isOpen, onClo
               </div>
 
               {/* 套餐升级入口 */}
-              <div className="mt-4 p-3 rounded-xl bg-(--bg-secondary) flex items-center justify-between">
+              <div className="mt-4 p-3 rounded-xl bg-[var(--bg-input)] border border-[var(--border-color)] flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Crown className="w-4 h-4 text-amber-500" />
                   <span className="text-xs text-(--text-secondary)">

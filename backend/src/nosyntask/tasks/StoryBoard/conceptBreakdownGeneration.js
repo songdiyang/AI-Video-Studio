@@ -118,6 +118,7 @@ async function handleConceptBreakdownGeneration(inputParams, onProgress) {
     backViewUrl
   } = inputParams;
 
+  try {
   // 项目视觉风格
   const style = await requireVisualStyle(projectId);
 
@@ -183,7 +184,7 @@ async function handleConceptBreakdownGeneration(inputParams, onProgress) {
   // 保存到数据库
   if (characterId && persistedUrl) {
     const updateResult = await execute(
-      'UPDATE characters SET concept_image_url = ?, generation_status = \'completed\', updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      'UPDATE characters SET concept_image_url = ?, concept_generation_status = \'completed\', updated_at = CURRENT_TIMESTAMP WHERE id = ?',
       [persistedUrl, characterId]
     );
     assertUpdated(updateResult, '[ConceptBreakdown] 概念分解图');
@@ -202,6 +203,21 @@ async function handleConceptBreakdownGeneration(inputParams, onProgress) {
   console.log('[ConceptBreakdown] ✅ 概念分解图任务完成');
 
   return finalResult;
+
+  } catch (error) {
+    // 生成失败时更新状态
+    if (characterId) {
+      try {
+        await execute(
+          'UPDATE characters SET concept_generation_status = \'failed\', updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+          [characterId]
+        );
+      } catch (dbErr) {
+        console.error('[ConceptBreakdown] 更新失败状态异常:', dbErr.message);
+      }
+    }
+    throw error;
+  }
 }
 
 module.exports = handleConceptBreakdownGeneration;

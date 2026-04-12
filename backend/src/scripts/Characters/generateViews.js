@@ -44,6 +44,12 @@ module.exports = (router) => {
         return res.status(404).json({ message: '角色不存在' });
       }
 
+      // 设置概念分解图生成状态为 generating
+      await execute(
+        'UPDATE characters SET concept_generation_status = ? WHERE id = ? AND user_id = ?',
+        ['generating', characterId, userId]
+      );
+
       const result = await generationStartService.start({
         operationKey: 'character_concept_breakdown',
         rawInput: {
@@ -134,7 +140,7 @@ module.exports = (router) => {
 
     try {
       const character = await queryOne(
-        'SELECT generation_status, front_view_url, side_view_url, back_view_url FROM characters WHERE id = ? AND user_id = ?',
+        'SELECT generation_status, concept_generation_status, front_view_url, side_view_url, back_view_url, concept_image_url FROM characters WHERE id = ? AND user_id = ?',
         [characterId, userId]
       );
 
@@ -151,7 +157,9 @@ module.exports = (router) => {
 
       res.json({
         status: character.generation_status || 'idle',
-        progress
+        progress,
+        conceptStatus: character.concept_generation_status || 'idle',
+        conceptImageUrl: character.concept_image_url || null
       });
     } catch (error) {
       console.error('[Generation Status] 查询失败:', error);

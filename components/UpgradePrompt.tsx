@@ -136,7 +136,7 @@ const UpgradePrompt: React.FC<UpgradePromptProps> = ({
 
           {/* 弹窗内容 */}
           <motion.div
-            className="relative w-full max-w-md bg-(--bg-primary) rounded-2xl shadow-2xl overflow-hidden"
+            className="relative w-full max-w-md bg-[var(--bg-app)] rounded-2xl shadow-2xl overflow-hidden"
             initial={{ scale: 0.9, opacity: 0, y: 20 }}
             animate={{ scale: 1, opacity: 1, y: 0 }}
             exit={{ scale: 0.9, opacity: 0, y: 20 }}
@@ -148,7 +148,7 @@ const UpgradePrompt: React.FC<UpgradePromptProps> = ({
             {/* 关闭按钮 */}
             <button
               onClick={onClose}
-              className="absolute top-4 right-4 p-2 rounded-full hover:bg-(--bg-secondary) transition-colors"
+              className="absolute top-4 right-4 p-2 rounded-full hover:bg-[var(--bg-card-hover)] transition-colors"
             >
               <X className="w-5 h-5 text-(--text-muted)" />
             </button>
@@ -169,14 +169,14 @@ const UpgradePrompt: React.FC<UpgradePromptProps> = ({
               </div>
 
               {/* 当前状态 */}
-              <div className="mb-6 p-4 rounded-xl bg-(--bg-secondary)">
+              <div className="mb-6 p-4 rounded-xl bg-[var(--bg-input)]">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-sm text-(--text-muted)">当前使用</span>
                   <span className="text-sm font-medium text-(--text-primary)">
                     {currentUsage.current} / {currentUsage.max}
                   </span>
                 </div>
-                <div className="h-2 rounded-full bg-(--bg-tertiary) overflow-hidden">
+                <div className="h-2 rounded-full bg-[var(--bg-card)] overflow-hidden">
                   <div
                     className="h-full rounded-full bg-linear-to-r from-red-500 to-orange-500"
                     style={{ width: '100%' }}
@@ -221,7 +221,7 @@ const UpgradePrompt: React.FC<UpgradePromptProps> = ({
               <div className="flex gap-3">
                 <button
                   onClick={onClose}
-                  className="flex-1 px-4 py-3 rounded-xl border border-(--border-primary) text-(--text-secondary) hover:bg-(--bg-secondary) transition-colors"
+                  className="flex-1 px-4 py-3 rounded-xl border border-[var(--border-color)] text-[var(--text-secondary)] hover:bg-[var(--bg-card-hover)] transition-colors"
                 >
                   稍后再说
                 </button>

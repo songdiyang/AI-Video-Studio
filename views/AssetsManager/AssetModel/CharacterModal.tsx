@@ -117,11 +117,12 @@ const CharacterModal: React.FC<CharacterModalProps> = ({
     setIsGeneratingConcept(true);
     const interval = setInterval(async () => {
       try {
-        const status = await getCharacterViewStatus(formData.id);
-        if (status.status === 'completed' || status.status === 'failed') {
+        const result = await getCharacterViewStatus(formData.id);
+        const conceptStatus = result.conceptStatus || 'idle';
+        if (conceptStatus === 'completed' || conceptStatus === 'failed') {
           clearInterval(interval);
           setIsGeneratingConcept(false);
-          if (status.status === 'failed') {
+          if (conceptStatus === 'failed') {
             setConceptGenerationError('生成失败，请重试');
           }
           onRefreshCharacter?.();
