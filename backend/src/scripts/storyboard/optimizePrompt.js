@@ -74,13 +74,18 @@ module.exports = (router) => {
         modelName = textModels[0].name;
       }
 
-      // 4. 提取视觉风格
+      // 4. 提取视觉风格和拍摄视角
       let visualStyle = '';
+      let perspectiveInstruction = '';
       try {
         const settings = typeof storyboard.settings_json === 'string'
           ? JSON.parse(storyboard.settings_json || '{}')
           : (storyboard.settings_json || {});
         visualStyle = settings.visualStylePrompt || settings.visual_style_prompt || '';
+        // 拍摄视角
+        const { getNarrativePerspective } = require('../../utils/getProjectStyle');
+        const perspective = await getNarrativePerspective(storyboard.project_id);
+        perspectiveInstruction = perspective.promptInstruction || '';
       } catch (e) {
         // 忽略
       }
@@ -99,6 +104,7 @@ ${scriptSection}
 【分镜上下文】共 ${totalCount} 个分镜，当前为第 ${currentIdx + 1} 个：
 ${storyboardContext}
 ${visualStyle ? `【视觉风格】${visualStyle}` : ''}
+${perspectiveInstruction ? `${perspectiveInstruction}` : ''}
 
 你的任务：优化标记为"当前分镜"的描述内容。
 

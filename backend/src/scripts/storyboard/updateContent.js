@@ -8,15 +8,15 @@ const { queryOne, execute } = require('../../dbHelper');
 async function updateContent(req, res) {
   const userId = req.user.id;
   const storyboardId = Number(req.params.storyboardId);
-  const { prompt_template, spatial_description, dialogues } = req.body || {};
+  const { prompt_template, spatial_description, dialogues, voiceover } = req.body || {};
 
   if (!storyboardId) {
     return res.status(400).json({ message: 'Invalid storyboard id' });
   }
 
   // 至少需要传递一个字段
-  if (prompt_template === undefined && spatial_description === undefined && dialogues === undefined) {
-    return res.status(400).json({ message: '需要提供 prompt_template、spatial_description 或 dialogues 中的至少一个字段' });
+  if (prompt_template === undefined && spatial_description === undefined && dialogues === undefined && voiceover === undefined) {
+    return res.status(400).json({ message: '需要提供 prompt_template、spatial_description、dialogues 或 voiceover 中的至少一个字段' });
   }
 
   // 验证 prompt_template 类型（如果传递了）
@@ -61,19 +61,26 @@ async function updateContent(req, res) {
     }
 
     // 处理 dialogues：更新到 variables_json 中
-    if (dialogues !== undefined) {
+    if (dialogues !== undefined || voiceover !== undefined) {
       let vars = {};
       try {
         vars = JSON.parse(storyboard.variables_json || '{}');
       } catch { /* ignore */ }
 
-      // 更新结构化台词字段
-      vars.dialogues = dialogues;
-      // 同时更新 dialogue 扁平字符串（向后兼容）
-      if (dialogues.length > 0) {
-        vars.dialogue = dialogues.map(d => d.line).join('；');
-      } else {
-        vars.dialogue = '';
+      if (dialogues !== undefined) {
+        // 更新结构化台词字段
+        vars.dialogues = dialogues;
+        // 同时更新 dialogue 扁平字符串（向后兼容）
+        if (dialogues.length > 0) {
+          vars.dialogue = dialogues.map(d => d.line).join('；');
+        } else {
+          vars.dialogue = '';
+        }
+      }
+
+      if (voiceover !== undefined) {
+        // 更新画外音字段
+        vars.voiceover = typeof voiceover === 'string' ? voiceover.trim() : '';
       }
 
       updates.push('variables_json = ?');

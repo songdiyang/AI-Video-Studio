@@ -298,6 +298,8 @@ async function handleSceneVideoGeneration(inputParams, onProgress) {
     } else {
       dialogueInfo = '【无对白镜头】此镜头没有任何角色对白或语音，视频必须完全没有人声';
     }
+    // 画外音信息
+    const voiceoverText = variables.voiceover ? `【画外音/旁白】${variables.voiceover}（画面中应有旁白/解说声音，但不是场景中角色说的，是画外旁白）` : '';
     const actionInfo = hasAction ? '这是一个有动作的镜头，需要描述动作的完整过程' : '这是一个静态镜头，画面变化较小';
     const styleInfo = visualStyleValue ? `视觉风格: ${visualStyleValue}` : '';
     // 上下文传递：传结构化字段（endState/emotion/shotType/location），不传完整描述以避免环境效果污染
@@ -364,7 +366,7 @@ async function handleSceneVideoGeneration(inputParams, onProgress) {
       ? `【场景详情】\n${sceneDetail}\n（已提供场景参考图作为首帧背景，视频场景必须一致）`
       : '';
 
-    const extraInfo = [charBlock, locInfo, sceneBlock, shotInfo, emotionInfo, dialogueInfo, actionInfo, cameraInfo, endStateInfo, styleInfo, charConstraint, prevContext, nextContext, motionBreakdownText].filter(Boolean).join('\n');
+    const extraInfo = [charBlock, locInfo, sceneBlock, shotInfo, emotionInfo, dialogueInfo, voiceoverText, actionInfo, cameraInfo, endStateInfo, styleInfo, charConstraint, prevContext, nextContext, motionBreakdownText].filter(Boolean).join('\n');
 
     // 获取项目输出语言设置
     const outputLang = await getOutputLanguage(storyboard.project_id);
@@ -401,7 +403,7 @@ Rules:
 5. If previous shot context exists, ensure natural transition from its end state. Persistent effects (fire, snow, lighting) must continue; one-time events (lightning flash, explosion) must NOT carry over unless explicitly mentioned
 6. If visual style is specified, the video must reflect that style
 7. Strictly follow character constraints: maintain consistency with reference frame if characters present; absolutely no humans if no-character shot${conditionalRules}
-11. [Audio Control] If marked as "无对白镜头", include "no speech, no voice, no dialogue, silent". For silent mouth movements: use "silently mouthing without any audible sound", NEVER use murmuring/muttering/whispering
+11. [Audio Control] If marked as "无对白镜头" and no voiceover is provided, include "no speech, no voice, no dialogue, silent". If voiceover/narration is specified, include the narration voice description as off-screen narration audio. For silent mouth movements: use "silently mouthing without any audible sound", NEVER use murmuring/muttering/whispering
 12. [Motion Breakdown] If Motion Breakdown is provided: MOVING elements must move as described, STATIC elements must remain still and visible throughout. No unlisted elements may appear. Characters must never disappear.
 13. [Language Purity] ${outputLang.promptInstruction} Translate ALL source material faithfully into the target language. Do not mix languages.
 14. [No Text] Include "no text, no subtitles, no captions, no watermark, no written words in any language" constraint

@@ -7,7 +7,8 @@
  *   "visualStyle": "日系动漫",              // 人类可读标签
  *   "visualStylePrompt": "动漫风格...",     // 中文提示词片段，注入所有图片/视频生成
  *   "storyStyle": "热血少年漫",             // 叙事风格（用于剧本生成）
- *   "storyConstraints": "不要魔法元素"      // 剧本约束
+ *   "storyConstraints": "不要魔法元素",      // 剧本约束
+ *   "narrativePerspective": "third_person"  // 拍摄视角（first_person | third_person）
  * }
  */
 
@@ -23,11 +24,11 @@ const VISUAL_STYLE_PRESETS = {
   '美漫风格': '美式漫画风格, 粗犷描边, 动感明暗, 超级英雄美学, 鲜明色彩',
   '像素风': '像素画风格, 复古游戏美学, 16位像素, 干净像素点, 怀旧风',
   '国风水墨': '中国水墨画风格, 传统笔触, 典雅, 留白极简, 东方美学',
-  '天宫赐福': '中国仙侠奇幻风格, 古代天宫殿堂, 飘逸丝绸汉服, 金红色调点缀, 神圣光晕, 水墨云雾背景, 空灵光效, 精致发饰, 柔美面部特征, 天界氛围, 中国传统神话美学',
-  '日本少女漫画': '日本少女漫画风格, 大而闪亮的星光瞳孔, 精致美少女特征, 柔粉淡紫色调, 花卉网点背景, 浪漫氛围, 飘逸秀发配缎带, 装饰性闪光特效, 柔和腮红, 梦幻柔焦光效',
-  '乙女游戏': '乙女游戏CG插画风格, 浪漫视觉小说美学, 优雅美少年角色, 柔和渐变上色, 温暖黄昏光照, 闪光花瓣粒子特效, 精致维多利亚风服装设计, 情感丰富的眼部表现, 华丽室内背景, 柔和色彩和谐',
-  '日乙游戏': '日式乙女游戏风格, 高品质动漫CG渲染, 精致美少年角色, 樱花与季节性元素, 温柔暖色调, 精细校服或传统服饰设计, 柔和环境光, 视觉小说构图, 细腻手绘线条, 含蓄情感表达',
-  '龙族国漫': '现代中国动画风格, 动感电影级构图, 都市奇幻场景, 融合中国元素的现代角色设计, 鲜艳饱和色彩, 戏剧性动作光效, 流畅发丝与服装渲染, 大胆对比阴影, 史诗级大气透视, 高能量视觉冲击'
+  '日本少女漫画': '日本少女漫画风格, 大而闪亮的星光瞳孔, 精致美少女特征, 柔粉淡紫色调, 花卉网点背景, 浪漫氛围, 飘逸秀发配缎带, 装饰性闪光特效, 柔和腹红, 梦幻柔焦光效',
+  // 真人类预设
+  '时尚摄影': '高端时尚大片, 精致灯光, 杂志封面品质, 人像摄影, 柔和散射光, 色彩协调',
+  '纪实风格': '纪实摄影, 自然光线, 真实场景, 新闻纪录片美学, 抓拍感, 真实光影',
+  '电影感剧情': '电影色调, 宽银幕构图, 戏剧性光影, 胶片颗粒感, 质感电影画面, cinematic lighting'
 };
 
 /**
@@ -198,6 +199,164 @@ async function getOutputLanguage(projectId) {
   }
 }
 
+/**
+ * 拍摄视角预设映射：视角代码 → { name, promptInstruction }
+ * promptInstruction 用于注入 AI 提示词，指导叙事视角
+ */
+const NARRATIVE_PERSPECTIVE_PRESETS = {
+  'first_person': {
+    name: '第一人称',
+    promptInstruction: `【叙事视角：第一人称】
+- 以主角的主观视角叙事，使用“我”作为叙述者
+- 画面描述应从主角的视线出发，展现主角所看到的世界
+- 对白中主角使用第一人称（“我”）
+- 内心独白和情感反应可以直接表达
+- 镜头偏好：多用主观视角(POV)、过肩镜头，少用主角正面全身镜头`
+  },
+  'third_person': {
+    name: '第三人称',
+    promptInstruction: `【叙事视角：第三人称】
+- 使用客观的上帝视角叙事，可以自由切换不同角色的视点
+- 画面描述从观察者角度出发，可以展现多角色和全景
+- 对白中角色使用第三人称称谓
+- 镜头运用自由，包括远景、全景、多角度切换等`
+  }
+};
+
+/**
+ * 获取项目的拍摄视角设置
+ * @param {number} projectId
+ * @returns {Promise<{ perspectiveCode: string, perspectiveName: string, promptInstruction: string }>}
+ */
+async function getNarrativePerspective(projectId) {
+  const defaultPerspective = { perspectiveCode: '', perspectiveName: '', promptInstruction: '' };
+  if (!projectId) return defaultPerspective;
+  try {
+    const project = await queryOne('SELECT settings_json FROM projects WHERE id = ?', [projectId]);
+    if (!project || !project.settings_json) return defaultPerspective;
+
+    const settings = typeof project.settings_json === 'string'
+      ? JSON.parse(project.settings_json)
+      : project.settings_json;
+
+    const code = settings.narrativePerspective || '';
+    const preset = NARRATIVE_PERSPECTIVE_PRESETS[code];
+    if (preset) {
+      return { perspectiveCode: code, perspectiveName: preset.name, promptInstruction: preset.promptInstruction };
+    }
+    return defaultPerspective;
+  } catch (e) {
+    console.warn('[getProjectStyle] 读取拍摄视角失败:', e.message);
+    return defaultPerspective;
+  }
+}
+
+/**
+ * 头身比例预设映射
+ */
+const BODY_PROPORTION_PRESETS = {
+  'h2_5': {
+    name: '超Q',
+    ratio: '2.5',
+    promptInstruction: `【角色体型比例：超Q版 2.5头身】
+- 角色身高为头部长度的2.5倍，极致Q版变形
+- 头部巨大，占全身40%以上，眉眼占脸部大区域
+- 身体极度简化，四肢非常短小圆润，手脚极度简化
+- 整体像“大头娃娃”，最萌最可爱的表现形式`
+  },
+  'h3': {
+    name: '萌系',
+    ratio: '3',
+    promptInstruction: `【角色体型比例：萌系 3头身】
+- 角色身高为头部长度的3倍，Q版萌系体型
+- 头部仍然很大，占全身约1/3，圆润可爱
+- 身体小巧简化，四肢短小圆润但比超Q稍长
+- 保持角色的萌趣感，适合表情丰富的角色`
+  },
+  'h4': {
+    name: '少年/少女感',
+    ratio: '4',
+    promptInstruction: `【角色体型比例：少年/少女 4头身】
+- 角色身高为头部长度的4倍，年少感角色体型
+- 头部偏大，占全身1/4，大眼睛特征明显
+- 身体纤细但有一定比例，四肢细长
+- 体现年少的轻盈感，不能画成成人写实比例`
+  },
+  'h6': {
+    name: '可爱',
+    ratio: '6',
+    promptInstruction: `【角色体型比例：可爱 6头身】
+- 角色身高为头部长度的6倍，可爱型动漫比例
+- 头部略大，脸部圆润，眼睛大而有神
+- 身体小巧可爱，四肢均称纤细
+- 整体比例介于萌系和日常之间，温柔可人`
+  },
+  'h6_5': {
+    name: '日常',
+    ratio: '6.5',
+    promptInstruction: `【角色体型比例：日常 6.5头身】
+- 角色身高为头部长度的6.5倍，日常动漫标准比例
+- 头身比例自然协调，脸部精致
+- 身体均称，四肢比例自然流畅
+- 适合大多数日常生活场景的角色`
+  },
+  'h7': {
+    name: '略修长',
+    ratio: '7',
+    promptInstruction: `【角色体型比例：略修长 7头身】
+- 角色身高为头部长度的7倍，略修长的动漫比例
+- 头身比例趋近理想化，身材纲细修长
+- 四肢修长包括腰线、腿长等细节
+- 展现角色的精致感和立体感`
+  },
+  'h7_5': {
+    name: '修长',
+    ratio: '7.5',
+    promptInstruction: `【角色体型比例：修长 7.5头身】
+- 角色身高为头部长度的7.5倍，修长体型
+- 身材纰细修长，体现优雅的角色气质
+- 四肢修长包括肩宽、腰线、腿长等符合理想化比例
+- 面部精致，五官立体，整体显得高挑`
+  },
+  'h8': {
+    name: '超模比例',
+    ratio: '8',
+    promptInstruction: `【角色体型比例：超模 8头身】
+- 角色身高为头部长度的8倍，超模级理想体型
+- 极致修长的身材，小头长腿，身体纰细而有力量感
+- 肩宽、腰线、腿长比例极致理想化
+- 面部棱角分明，五官精致，展现极强的形体美感`
+  }
+};
+
+/**
+ * 获取项目的头身比例设置
+ * @param {number} projectId
+ * @returns {Promise<{ code: string, name: string, ratio: string, promptInstruction: string }>}
+ */
+async function getBodyProportion(projectId) {
+  const defaultResult = { code: '', name: '', ratio: '', promptInstruction: '' };
+  if (!projectId) return defaultResult;
+  try {
+    const project = await queryOne('SELECT settings_json FROM projects WHERE id = ?', [projectId]);
+    if (!project || !project.settings_json) return defaultResult;
+
+    const settings = typeof project.settings_json === 'string'
+      ? JSON.parse(project.settings_json)
+      : project.settings_json;
+
+    const code = settings.bodyProportionRatio || '';
+    const preset = BODY_PROPORTION_PRESETS[code];
+    if (preset) {
+      return { code, name: preset.name, ratio: preset.ratio, promptInstruction: preset.promptInstruction };
+    }
+    return defaultResult;
+  } catch (e) {
+    console.warn('[getProjectStyle] 读取头身比例失败:', e.message);
+    return defaultResult;
+  }
+}
+
 module.exports = {
   getVisualStylePrompt,
   getStoryStyle,
@@ -205,6 +364,10 @@ module.exports = {
   requireVisualStyle,
   requireStoryStyle,
   getOutputLanguage,
+  getNarrativePerspective,
+  getBodyProportion,
   VISUAL_STYLE_PRESETS,
-  OUTPUT_LANGUAGE_PRESETS
+  OUTPUT_LANGUAGE_PRESETS,
+  NARRATIVE_PERSPECTIVE_PRESETS,
+  BODY_PROPORTION_PRESETS
 };

@@ -3,7 +3,7 @@ import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Button, Chip 
 import { User, Wand2, Layers, Volume2, Trash2, Upload, ImagePlus, ZoomIn, X, Star, Plus, Pencil, Copy, StarOff, Clock, Filter, ChevronDown, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Character, CharacterState } from './types';
-import { fetchCharacterStates, activateCharacterState, fetchCharacterStateHistory } from '../../../services/assets';
+import { fetchCharacterStates, activateCharacterState, fetchCharacterStateHistory, updateCharacter, deleteCharacterViewApi } from '../../../services/assets';
 import type { CharacterStateHistoryEntry } from '../../../services/assets';
 import { getAuthToken } from '../../../services/auth';
 import { usePreview } from '../../../components/PreviewProvider';
@@ -47,6 +47,7 @@ interface CharacterDetailModalProps {
   onUploadImage?: (characterId: number, file: File) => Promise<void>;
   onGenerateViews?: (characterId: number) => void;
   onAddState?: (characterId: number) => void;
+  onCharacterUpdate?: (character: Character) => void;
 }
 
 const CharacterDetailModal: React.FC<CharacterDetailModalProps> = ({
@@ -58,7 +59,8 @@ const CharacterDetailModal: React.FC<CharacterDetailModalProps> = ({
   onDelete,
   onUploadImage,
   onGenerateViews,
-  onAddState
+  onAddState,
+  onCharacterUpdate
 }) => {
   const [states, setStates] = useState<CharacterState[]>([]);
   const [selectedState, setSelectedState] = useState<CharacterState | null>(null);
@@ -67,6 +69,8 @@ const CharacterDetailModal: React.FC<CharacterDetailModalProps> = ({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  // 每次打开弹窗时从 API 获取最新的角色三视图 URL（解决父组件 prop 陈旧问题）
+  const [freshViewUrls, setFreshViewUrls] = useState<{ front?: string; side?: string; back?: string }>({});
   // 状态管理增强
   const [showHistory, setShowHistory] = useState(false);
   const [historyData, setHistoryData] = useState<CharacterStateHistoryEntry[]>([]);
@@ -80,7 +84,84 @@ const CharacterDetailModal: React.FC<CharacterDetailModalProps> = ({
   const [scrollState, setScrollState] = useState({ canScrollLeft: false, canScrollRight: false });
   const { openPreview } = usePreview();
 
-  // 加载角色状态
+  // 编辑状态
+  const [editingField, setEditingField] = useState<'appearance' | 'personality' | 'description' | null>(null);
+  const [editValue, setEditValue] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const editTextareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // 开始编辑某个字段
+  const startEditing = (field: 'appearance' | 'personality' | 'description', currentValue: string) => {
+    setEditingField(field);
+    setEditValue(currentValue || '');
+    setTimeout(() => editTextareaRef.current?.focus(), 50);
+  };
+
+  // 保存编辑
+  const saveEdit = async () => {
+    if (!character || !editingField || isSaving) return;
+    const originalValue = character[editingField] || '';
+    if (editValue.trim() === originalValue.trim()) {
+      setEditingField(null);
+      return;
+    }
+    setIsSaving(true);
+    try {
+      const updated = await updateCharacter(character.id, { [editingField]: editValue.trim() });
+      // 通知父组件刷新
+      if (onCharacterUpdate) {
+        onCharacterUpdate({
+          ...character,
+          [editingField]: editValue.trim(),
+        });
+      }
+      setEditingField(null);
+    } catch (err) {
+      console.error('[CharacterDetailModal] 保存失败', err);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // 取消编辑
+  const cancelEdit = () => {
+    setEditingField(null);
+    setEditValue('');
+  };
+
+  // 删除单张三视图
+  const [deletingView, setDeletingView] = useState<string | null>(null);
+  const handleDeleteSingleView = async (viewType: 'front' | 'side' | 'back') => {
+    if (!character?.id || deletingView) return;
+    const labelMap = { front: '正面', side: '侧面', back: '背面' };
+    if (!window.confirm(`确定删除${labelMap[viewType]}视图吗？删除后可重新生成。`)) return;
+    setDeletingView(viewType);
+    try {
+      const result = await deleteCharacterViewApi(character.id, viewType);
+      // 更新本地状态
+      setFreshViewUrls({
+        front: result.front_view_url || undefined,
+        side: result.side_view_url || undefined,
+        back: result.back_view_url || undefined,
+      });
+      // 通知父组件刷新
+      if (onCharacterUpdate) {
+        onCharacterUpdate({
+          ...character,
+          frontViewUrl: result.front_view_url || undefined,
+          sideViewUrl: result.side_view_url || undefined,
+          backViewUrl: result.back_view_url || undefined,
+          imageUrl: result.image_url || character.imageUrl,
+        });
+      }
+    } catch (err) {
+      console.error('[CharacterDetailModal] 删除视图失败', err);
+    } finally {
+      setDeletingView(null);
+    }
+  };
+
+  // 加载角色状态 & 最新三视图
   useEffect(() => {
     if (character?.id && isOpen) {
       fetchCharacterStates(character.id)
@@ -92,6 +173,20 @@ const CharacterDetailModal: React.FC<CharacterDetailModalProps> = ({
         })
         .catch(err => console.error('加载角色状态失败:', err));
       fetchVoiceConfig(character.id);
+      // 从 API 获取最新角色数据（含三视图 URL），避免父组件 prop 陈旧
+      const token = getAuthToken();
+      fetch(`/api/characters/${character.id}`, {
+        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) }
+      }).then(r => r.ok ? r.json() : null).then(data => {
+        if (data) {
+          const bust = (url: string | null) => url ? `${url}${url.includes('?') ? '&' : '?'}v=${Date.now()}` : undefined;
+          setFreshViewUrls({
+            front: bust(data.front_view_url),
+            side: bust(data.side_view_url),
+            back: bust(data.back_view_url),
+          });
+        }
+      }).catch(() => {});
     } else {
       setStates([]);
       setSelectedState(null);
@@ -100,6 +195,7 @@ const CharacterDetailModal: React.FC<CharacterDetailModalProps> = ({
       setShowHistory(false);
       setHistoryData([]);
       setHistoryFilter('');
+      setFreshViewUrls({});
     }
   }, [character?.id, isOpen]);
 
@@ -228,10 +324,10 @@ const CharacterDetailModal: React.FC<CharacterDetailModalProps> = ({
   // 三视图预览 - 优先使用选中状态的视图
   const openViewPreview = (startIndex: number) => {
     const slides: { src: string; alt?: string }[] = [];
-    // 使用选中状态的视图（如果有），否则使用角色主视图
-    const frontUrl = currentState?.front_view_url || character?.frontViewUrl;
-    const sideUrl = currentState?.side_view_url || character?.sideViewUrl;
-    const backUrl = currentState?.back_view_url || character?.backViewUrl;
+    // 使用选中状态的视图（如果有），否则使用 API 最新数据，最后回退到角色主视图
+    const frontUrl = currentState?.front_view_url || freshViewUrls.front || character?.frontViewUrl;
+    const sideUrl = currentState?.side_view_url || freshViewUrls.side || character?.sideViewUrl;
+    const backUrl = currentState?.back_view_url || freshViewUrls.back || character?.backViewUrl;
     const views = [
       { url: frontUrl, label: '正面视图' },
       { url: sideUrl, label: '侧面视图' },
@@ -241,10 +337,10 @@ const CharacterDetailModal: React.FC<CharacterDetailModalProps> = ({
     if (slides.length > 0) openPreview(slides, Math.min(startIndex, slides.length - 1));
   };
 
-  // 计算当前显示用的三视图 URL（状态优先）
-  const displayFrontViewUrl = currentState?.front_view_url || character?.frontViewUrl;
-  const displaySideViewUrl = currentState?.side_view_url || character?.sideViewUrl;
-  const displayBackViewUrl = currentState?.back_view_url || character?.backViewUrl;
+  // 计算当前显示用的三视图 URL（状态优先 → API 最新数据 → 父组件 prop）
+  const displayFrontViewUrl = currentState?.front_view_url || freshViewUrls.front || character?.frontViewUrl;
+  const displaySideViewUrl = currentState?.side_view_url || freshViewUrls.side || character?.sideViewUrl;
+  const displayBackViewUrl = currentState?.back_view_url || freshViewUrls.back || character?.backViewUrl;
   // 如果选中状态没有三视图但有 image_url，可作为候选展示
   const stateImageFallback = currentState?.image_url && !currentState.front_view_url && !currentState.side_view_url && !currentState.back_view_url;
 
@@ -425,10 +521,10 @@ const CharacterDetailModal: React.FC<CharacterDetailModalProps> = ({
                         </div>
                       </div>
                     )}
-                    <div className="grid grid-cols-2 gap-3">
-                      {[{ url: displayFrontViewUrl, label: '正面', idx: 0 },
-                        { url: displaySideViewUrl, label: '侧面', idx: 1 },
-                        { url: displayBackViewUrl, label: '背面', idx: 2 }].filter(v => v.url).map(view => (
+                    <div className="grid grid-cols-3 gap-3">
+                      {[{ url: displayFrontViewUrl, label: '正面', type: 'front' as const, idx: 0 },
+                        { url: displaySideViewUrl, label: '侧面', type: 'side' as const, idx: 1 },
+                        { url: displayBackViewUrl, label: '背面', type: 'back' as const, idx: 2 }].filter(v => v.url).map(view => (
                         <div key={view.label} className="space-y-1">
                           <p className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>{view.label}</p>
                           <div
@@ -440,6 +536,17 @@ const CharacterDetailModal: React.FC<CharacterDetailModalProps> = ({
                             <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
                               <ZoomIn className="w-5 h-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
                             </div>
+                            {/* 删除单张视图按钮 */}
+                            <button
+                              className="absolute top-1 right-1 w-6 h-6 rounded-full bg-red-500/80 hover:bg-red-500 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                              title={`删除${view.label}视图`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteSingleView(view.type);
+                              }}
+                            >
+                              <X className="w-3.5 h-3.5 text-white" />
+                            </button>
                           </div>
                         </div>
                       ))}
@@ -715,46 +822,124 @@ const CharacterDetailModal: React.FC<CharacterDetailModalProps> = ({
                 )}
 
                 {/* 外貌描述 */}
-                {character.appearance && (
-                  <div className="rounded-lg p-4 border" style={{ backgroundColor: 'rgba(59,130,246,0.05)', borderColor: 'rgba(59,130,246,0.2)' }}>
-                    <h4 className="text-sm font-bold mb-2 flex items-center gap-2" style={{ color: 'var(--text-secondary)' }}>
+                <div className="rounded-lg p-4 border" style={{ backgroundColor: 'rgba(59,130,246,0.05)', borderColor: 'rgba(59,130,246,0.2)' }}>
+                  <h4 className="text-sm font-bold mb-2 flex items-center justify-between" style={{ color: 'var(--text-secondary)' }}>
+                    <span className="flex items-center gap-2">
                       <span className="w-1 h-4 rounded" style={{ backgroundColor: 'rgb(59,130,246)' }} />
                       外貌特征
-                    </h4>
+                    </span>
+                    {editingField !== 'appearance' && (
+                      <button
+                        onClick={() => startEditing('appearance', character.appearance || '')}
+                        className="p-1 rounded hover:bg-blue-500/20 transition-colors"
+                        title="编辑外貌特征"
+                      >
+                        <Pencil className="w-3.5 h-3.5" style={{ color: 'rgb(59,130,246)' }} />
+                      </button>
+                    )}
+                  </h4>
+                  {editingField === 'appearance' ? (
+                    <div className="space-y-2">
+                      <textarea
+                        ref={editTextareaRef}
+                        value={editValue}
+                        onChange={(e) => setEditValue(e.target.value)}
+                        className="w-full text-sm leading-relaxed rounded-md p-2 resize-none outline-none min-h-[80px]"
+                        style={{ backgroundColor: 'var(--bg-input)', color: 'var(--text-primary)', border: '1px solid rgba(59,130,246,0.4)' }}
+                        rows={4}
+                      />
+                      <div className="flex justify-end gap-2">
+                        <Button size="sm" variant="light" onPress={cancelEdit} isDisabled={isSaving} style={{ color: 'var(--text-muted)' }}>取消</Button>
+                        <Button size="sm" color="primary" onPress={saveEdit} isLoading={isSaving}>保存</Button>
+                      </div>
+                    </div>
+                  ) : (
                     <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--text-muted)' }}>
-                      {character.appearance}
+                      {character.appearance || '暂无外貌描述，点击编辑添加'}
                     </p>
-                  </div>
-                )}
+                  )}
+                </div>
                 
                 {/* 性格描述 */}
-                {character.personality && (
-                  <div className="rounded-lg p-4 border" style={{ backgroundColor: 'rgba(168,85,247,0.05)', borderColor: 'rgba(168,85,247,0.2)' }}>
-                    <h4 className="text-sm font-bold mb-2 flex items-center gap-2" style={{ color: 'var(--text-secondary)' }}>
+                <div className="rounded-lg p-4 border" style={{ backgroundColor: 'rgba(168,85,247,0.05)', borderColor: 'rgba(168,85,247,0.2)' }}>
+                  <h4 className="text-sm font-bold mb-2 flex items-center justify-between" style={{ color: 'var(--text-secondary)' }}>
+                    <span className="flex items-center gap-2">
                       <span className="w-1 h-4 rounded" style={{ backgroundColor: 'rgb(168,85,247)' }} />
                       性格特点
-                    </h4>
+                    </span>
+                    {editingField !== 'personality' && (
+                      <button
+                        onClick={() => startEditing('personality', character.personality || '')}
+                        className="p-1 rounded hover:bg-purple-500/20 transition-colors"
+                        title="编辑性格特点"
+                      >
+                        <Pencil className="w-3.5 h-3.5" style={{ color: 'rgb(168,85,247)' }} />
+                      </button>
+                    )}
+                  </h4>
+                  {editingField === 'personality' ? (
+                    <div className="space-y-2">
+                      <textarea
+                        ref={editTextareaRef}
+                        value={editValue}
+                        onChange={(e) => setEditValue(e.target.value)}
+                        className="w-full text-sm leading-relaxed rounded-md p-2 resize-none outline-none min-h-[80px]"
+                        style={{ backgroundColor: 'var(--bg-input)', color: 'var(--text-primary)', border: '1px solid rgba(168,85,247,0.4)' }}
+                        rows={4}
+                      />
+                      <div className="flex justify-end gap-2">
+                        <Button size="sm" variant="light" onPress={cancelEdit} isDisabled={isSaving} style={{ color: 'var(--text-muted)' }}>取消</Button>
+                        <Button size="sm" color="secondary" onPress={saveEdit} isLoading={isSaving}>保存</Button>
+                      </div>
+                    </div>
+                  ) : (
                     <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--text-muted)' }}>
-                      {character.personality}
+                      {character.personality || '暂无性格描述，点击编辑添加'}
                     </p>
-                  </div>
-                )}
+                  )}
+                </div>
                 
                 {/* 角色简介 */}
-                {character.description && (
-                  <div className="rounded-lg p-4 border" style={{ backgroundColor: 'rgba(34,197,94,0.05)', borderColor: 'rgba(34,197,94,0.2)' }}>
-                    <h4 className="text-sm font-bold mb-2 flex items-center gap-2" style={{ color: 'var(--text-secondary)' }}>
+                <div className="rounded-lg p-4 border" style={{ backgroundColor: 'rgba(34,197,94,0.05)', borderColor: 'rgba(34,197,94,0.2)' }}>
+                  <h4 className="text-sm font-bold mb-2 flex items-center justify-between" style={{ color: 'var(--text-secondary)' }}>
+                    <span className="flex items-center gap-2">
                       <span className="w-1 h-4 rounded" style={{ backgroundColor: 'rgb(34,197,94)' }} />
                       角色简介
-                    </h4>
+                    </span>
+                    {editingField !== 'description' && (
+                      <button
+                        onClick={() => startEditing('description', character.description || '')}
+                        className="p-1 rounded hover:bg-green-500/20 transition-colors"
+                        title="编辑角色简介"
+                      >
+                        <Pencil className="w-3.5 h-3.5" style={{ color: 'rgb(34,197,94)' }} />
+                      </button>
+                    )}
+                  </h4>
+                  {editingField === 'description' ? (
+                    <div className="space-y-2">
+                      <textarea
+                        ref={editTextareaRef}
+                        value={editValue}
+                        onChange={(e) => setEditValue(e.target.value)}
+                        className="w-full text-sm leading-relaxed rounded-md p-2 resize-none outline-none min-h-[80px]"
+                        style={{ backgroundColor: 'var(--bg-input)', color: 'var(--text-primary)', border: '1px solid rgba(34,197,94,0.4)' }}
+                        rows={4}
+                      />
+                      <div className="flex justify-end gap-2">
+                        <Button size="sm" variant="light" onPress={cancelEdit} isDisabled={isSaving} style={{ color: 'var(--text-muted)' }}>取消</Button>
+                        <Button size="sm" color="success" onPress={saveEdit} isLoading={isSaving} className="text-white">保存</Button>
+                      </div>
+                    </div>
+                  ) : (
                     <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--text-muted)' }}>
-                      {character.description}
+                      {character.description || '暂无角色简介，点击编辑添加'}
                     </p>
-                  </div>
-                )}
+                  )}
+                </div>
                 
-                {/* 如果没有任何详细信息 */}
-                {!character.appearance && !character.personality && !character.description && !character.imageUrl && (
+                {/* 如果没有任何详细信息且没有图片 */}
+                {!character.appearance && !character.personality && !character.description && !character.imageUrl && !editingField && (
                   <div className="text-center py-8" style={{ color: 'var(--text-muted)' }}>
                     <User className="w-16 h-16 mx-auto mb-3" style={{ opacity: 0.3 }} />
                     <p className="text-sm">暂无详细信息</p>

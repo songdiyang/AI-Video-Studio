@@ -102,3 +102,62 @@ export async function deleteProject(id: number): Promise<void> {
     throw new Error(data.message || '删除工程失败');
   }
 }
+
+// ========== 用户自定义风格 API ==========
+
+export interface UserStylePreset {
+  id: number;
+  name: string;
+  prompt: string;
+  style_category: 'anime' | 'live_action';
+  created_at: string;
+  updated_at: string;
+}
+
+export async function fetchMyStyles(): Promise<UserStylePreset[]> {
+  const response = await fetch('/api/projects/my-styles', { headers: getHeaders() });
+  if (!response.ok) {
+    throw new Error('获取风格列表失败');
+  }
+  const data = await response.json();
+  return data.styles || [];
+}
+
+export async function createMyStyle(data: Omit<UserStylePreset, 'id' | 'created_at' | 'updated_at'>): Promise<UserStylePreset> {
+  const response = await fetch('/api/projects/my-styles', {
+    method: 'POST',
+    headers: getHeaders(),
+    body: JSON.stringify(data)
+  });
+  if (!response.ok) {
+    const err = await response.json();
+    throw new Error(err.message || '创建风格失败');
+  }
+  const result = await response.json();
+  return result.style;
+}
+
+export async function updateMyStyle(id: number, data: Partial<Omit<UserStylePreset, 'id' | 'created_at' | 'updated_at'>>): Promise<UserStylePreset> {
+  const response = await fetch(`/api/projects/my-styles/${id}`, {
+    method: 'PUT',
+    headers: getHeaders(),
+    body: JSON.stringify(data)
+  });
+  if (!response.ok) {
+    const err = await response.json();
+    throw new Error(err.message || '更新风格失败');
+  }
+  const result = await response.json();
+  return result.style;
+}
+
+export async function deleteMyStyle(id: number): Promise<void> {
+  const response = await fetch(`/api/projects/my-styles/${id}`, {
+    method: 'DELETE',
+    headers: getHeaders()
+  });
+  if (!response.ok) {
+    const err = await response.json();
+    throw new Error(err.message || '删除风格失败');
+  }
+}

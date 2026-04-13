@@ -22,7 +22,7 @@ const renderScriptContent = (content: string) => {
     if (trimmedLine.startsWith('## ')) {
       const title = trimmedLine.substring(3);
       elements.push(
-        <h2 key={key++} className="text-xl font-bold text-[var(--accent-light)] mt-8 mb-4 pb-2 border-b border-[var(--border-color)] first:mt-0">
+        <h2 key={key++} className="text-xl font-bold text-[var(--accent-light)] mt-8 mb-4 pb-2 border-b border-[var(--border-color)] first:mt-0 break-words">
           {title}
         </h2>
       );
@@ -54,8 +54,8 @@ const renderScriptContent = (content: string) => {
       const [, characterName, action, dialogue] = dialogueWithActionMatch;
       elements.push(
         <div key={key++} className="my-3 flex items-start gap-3">
-          <span className="font-bold text-[var(--success)] whitespace-nowrap min-w-[4rem]">{characterName}</span>
-          <span className="text-[var(--text-primary)] leading-relaxed">
+          <span className="font-bold text-[var(--success)] whitespace-nowrap min-w-[4rem] shrink-0">{characterName}</span>
+          <span className="text-[var(--text-primary)] leading-relaxed flex-1 min-w-0 break-words">
             <span className="text-[var(--warning)] text-sm italic mr-1">（{action.slice(1, -1)}）</span>
             "{dialogue}"
           </span>
@@ -70,8 +70,8 @@ const renderScriptContent = (content: string) => {
       const [, characterName, dialogue] = dialogueMatch;
       elements.push(
         <div key={key++} className="my-3 flex items-start gap-3">
-          <span className="font-bold text-[var(--success)] whitespace-nowrap min-w-[4rem]">{characterName}</span>
-          <span className="text-[var(--text-primary)] leading-relaxed">"{dialogue}"</span>
+          <span className="font-bold text-[var(--success)] whitespace-nowrap min-w-[4rem] shrink-0">{characterName}</span>
+          <span className="text-[var(--text-primary)] leading-relaxed flex-1 min-w-0 break-words">"{dialogue}"</span>
         </div>
       );
       return;
@@ -83,8 +83,8 @@ const renderScriptContent = (content: string) => {
       const [, characterName, dialogue] = simpleDialogueMatch;
       elements.push(
         <div key={key++} className="my-3 flex items-start gap-3">
-          <span className="font-bold text-[var(--success)] whitespace-nowrap min-w-[4rem]">{characterName}</span>
-          <span className="text-[var(--text-primary)] leading-relaxed">"{dialogue}"</span>
+          <span className="font-bold text-[var(--success)] whitespace-nowrap min-w-[4rem] shrink-0">{characterName}</span>
+          <span className="text-[var(--text-primary)] leading-relaxed flex-1 min-w-0 break-words">"{dialogue}"</span>
         </div>
       );
       return;
@@ -171,7 +171,7 @@ const ScriptPreview: React.FC<ScriptPreviewProps> = ({
               className="flex-1 min-h-0 w-full bg-[var(--bg-input)] text-[var(--text-primary)] font-medium leading-relaxed text-base border border-[var(--border-color)] rounded-lg p-4 resize-none overflow-auto outline-none focus:border-[var(--accent)]/70 transition-colors font-mono"
             />
           ) : (
-            <div className="flex-1 overflow-y-auto overflow-x-hidden px-2 script-content">
+            <div className="flex-1 overflow-y-auto overflow-x-hidden px-2 script-content break-words" style={{ overflowWrap: 'break-word', wordBreak: 'break-word' }}>
               {renderScriptContent(content)}
             </div>
           )}

@@ -18,6 +18,7 @@ const { queryOne, execute } = require('../../../dbHelper');
 const { parseScriptScenes } = require('../../../utils/parseScriptScenes');
 const { stripThinkTags, extractCodeBlock, extractJSON, stripInvisible } = require('../../../utils/washBody');
 const { getBatchSceneDurationConfig } = require('../../../durationConfigService');
+const { getNarrativePerspective, getBodyProportion } = require('../../../utils/getProjectStyle');
 
 // 默认值（当数据库配置不可用时回退使用）
 const DEFAULT_MIN_SCENE_DURATION = 15;
@@ -190,7 +191,9 @@ async function generateSceneStoryboard(params) {
     scriptTitle, 
     textModel: modelName, 
     think,
-    durationConfig
+    durationConfig,
+    perspectiveInstruction,
+    bodyProportionInstruction
   } = params;
 
   const minDur = durationConfig ? durationConfig.minDuration : DEFAULT_MIN_SCENE_DURATION;
@@ -215,6 +218,8 @@ ${previousSceneContext}
 - 严格按照场景内容生成分镜，不添加场景中没有的情节、对话或角色
 - 描述简洁明了，避免过度艺术加工
 - 专注于场景内容的视觉化呈现
+${perspectiveInstruction ? `\n${perspectiveInstruction}\n` : ''}\
+${bodyProportionInstruction ? `\n${bodyProportionInstruction}\n` : ''}\
 ${contextInfo}
 **时长目标**：本场景所有分镜的 duration 总和应在 ${minDur}-${maxDur} 秒之间
 
@@ -396,6 +401,24 @@ async function handleBatchStoryboardGeneration(inputParams, onProgress) {
     };
   }
 
+  // 获取拍摄视角设置
+  let perspectiveInstruction = '';
+  try {
+    const perspective = await getNarrativePerspective(projectId);
+    perspectiveInstruction = perspective.promptInstruction || '';
+  } catch (e) {
+    console.warn('[BatchStoryboard] 获取拍摄视角失败:', e.message);
+  }
+
+  // 获取头身比例设置
+  let bodyProportionInstruction = '';
+  try {
+    const bodyProportion = await getBodyProportion(projectId);
+    bodyProportionInstruction = bodyProportion?.promptInstruction || '';
+  } catch (e) {
+    console.warn('[BatchStoryboard] 获取头身比例失败:', e.message);
+  }
+
   // 3. 清理旧分镜（如果需要）
   if (clearExisting) {
     await execute('DELETE FROM storyboards WHERE script_id = ?', [scriptId]);
@@ -439,7 +462,9 @@ async function handleBatchStoryboardGeneration(inputParams, onProgress) {
           scriptTitle: script.title || `第${script.episode_number}集`,
           textModel,
           think,
-          durationConfig
+          durationConfig,
+          perspectiveInstruction,
+          bodyProportionInstruction
         });
 
         // 为分镜标记场景信息（全局序号在排序后计算）

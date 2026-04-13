@@ -263,6 +263,7 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
     deleteScene,
     updateDescription,
     updateDialogues,
+    updateVoiceover,
     moveScene,
     reorderScenes
   } = useSceneManager(currentScriptId, currentProjectId);
@@ -1187,6 +1188,10 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
                 onUpdateDescription={handleUpdateSelectedDescription}
                 onUpdateDialogues={async (dialogues) => {
                   if (selectedScene) return await updateDialogues(selectedScene, dialogues);
+                  return false;
+                }}
+                onUpdateVoiceover={async (voiceover) => {
+                  if (selectedScene) return await updateVoiceover(selectedScene, voiceover);
                   return false;
                 }}
                 onGenerateImage={generateImage}

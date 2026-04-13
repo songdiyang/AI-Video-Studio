@@ -14,6 +14,7 @@ interface TaskErrorJob {
   created_at: string;
   updated_at: string;
   is_consumed: number;
+  admin_resolved: number;
 }
 
 // ============ 系统错误相关类型 ============
@@ -122,11 +123,11 @@ const ErrorMonitor: React.FC = () => {
       const res = await fetch(`/api/workflows/admin/errors/${jobId}/status`, {
         method: 'PATCH',
         headers: { ...getAdminAuthHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ is_consumed: newStatus ? 1 : 0 })
+        body: JSON.stringify({ admin_resolved: newStatus ? 1 : 0 })
       });
       if (!res.ok) throw new Error('更新失败');
       setTaskErrors(prev => prev.map(j => 
-        j.id === jobId ? { ...j, is_consumed: newStatus ? 1 : 0 } : j
+        j.id === jobId ? { ...j, admin_resolved: newStatus ? 1 : 0 } : j
       ));
     } catch (err) {
       console.error('[ErrorMonitor] 更新任务状态失败:', err);
@@ -240,9 +241,9 @@ const ErrorMonitor: React.FC = () => {
             onChange={e => setTaskTypeFilter(e.target.value)}
             className="bg-transparent text-sm text-white/80 outline-none"
           >
-            <option value="" className="bg-[#1a1a2e]">全部类型</option>
+            <option value="">全部类型</option>
             {Object.entries(WORKFLOW_TYPE_NAMES).map(([key, label]) => (
-              <option key={key} value={key} className="bg-[#1a1a2e]">{label}</option>
+              <option key={key} value={key}>{label}</option>
             ))}
           </select>
         </div>
@@ -333,23 +334,23 @@ const ErrorMonitor: React.FC = () => {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleUpdateTaskStatus(job.id, !job.is_consumed);
+                          handleUpdateTaskStatus(job.id, !job.admin_resolved);
                         }}
                         disabled={taskUpdatingId === job.id}
                         className={`text-xs px-2.5 py-1.5 rounded-full flex items-center gap-1.5 transition-all cursor-pointer hover:scale-105 ${
-                          job.is_consumed
+                          job.admin_resolved
                             ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30'
                             : 'bg-amber-500/20 text-amber-400 hover:bg-amber-500/30'
                         } ${taskUpdatingId === job.id ? 'opacity-50' : ''}`}
                       >
                         {taskUpdatingId === job.id ? (
                           <RefreshCw className="w-3 h-3 animate-spin" />
-                        ) : job.is_consumed ? (
+                        ) : job.admin_resolved ? (
                           <CheckCircle className="w-3 h-3" />
                         ) : (
                           <Clock className="w-3 h-3" />
                         )}
-                        {job.is_consumed ? '已处理' : '待处理'}
+                        {job.admin_resolved ? '已处理' : '待处理'}
                       </button>
                     </td>
                   </tr>
@@ -434,9 +435,9 @@ const ErrorMonitor: React.FC = () => {
             onChange={e => setSystemTypeFilter(e.target.value)}
             className="bg-transparent text-sm text-white/80 outline-none"
           >
-            <option value="" className="bg-[#1a1a2e]">全部类型</option>
+            <option value="">全部类型</option>
             {Object.entries(ERROR_TYPE_NAMES).map(([key, label]) => (
-              <option key={key} value={key} className="bg-[#1a1a2e]">{label}</option>
+              <option key={key} value={key}>{label}</option>
             ))}
           </select>
         </div>

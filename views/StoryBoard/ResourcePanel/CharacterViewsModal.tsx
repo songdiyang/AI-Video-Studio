@@ -1,6 +1,6 @@
 import React from 'react';
 import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Button } from '@heroui/react';
-import { Layers, Wand2, ZoomIn } from 'lucide-react';
+import { Layers, Wand2, ZoomIn, Palette } from 'lucide-react';
 import { ResourceItem } from './types';
 import { usePreview } from '../../../components/PreviewProvider';
 
@@ -10,7 +10,7 @@ interface CharacterViewsModalProps {
   selectedResource: ResourceItem | null;
   isGenerating: boolean;
   generatedPrompts: any;
-  onGenerate: (charName: string, imageModel: string, textModel: string, aspectRatio: string, characterId?: number) => void;
+  onGenerate: (charName: string, imageModel: string, textModel: string, aspectRatio: string, characterId?: number, mode?: 'style' | 'views' | 'all') => void;
   characterId?: number;
   imageModel: string;
   textModel: string;
@@ -121,8 +121,11 @@ const CharacterViewsModal: React.FC<CharacterViewsModalProps> = ({
               {/* 模型信息 */}
               <div className="mb-4">
                 <h3 className="text-sm font-semibold text-slate-300 mb-3">
-                  {selectedResource?.frontViewUrl ? '重新生成三视图' : '生成三视图'}
+                  {!selectedResource?.frontViewUrl ? '第一步：生成风格图' : (!selectedResource?.sideViewUrl || !selectedResource?.backViewUrl) ? '第二步：生成侧面/背面' : '重新生成'}
                 </h3>
+                {!selectedResource?.frontViewUrl && (
+                  <p className="text-xs text-slate-500 mb-2">先生成一张风格正确的正面图，确认满意后再生成侧面和背面</p>
+                )}
                 {imageModel ? (
                   <p className="text-sm text-slate-500">使用图片模型：<span className="font-medium text-slate-300">{imageModel}</span></p>
                 ) : (
@@ -179,15 +182,32 @@ const CharacterViewsModal: React.FC<CharacterViewsModalProps> = ({
             </ModalBody>
             <ModalFooter>
               <Button variant="light" onPress={onCloseModal}>关闭</Button>
+              {/* 生成/重新生成风格图（正面） */}
               <Button 
-                className="bg-linear-to-r from-purple-500 to-violet-600 text-white font-semibold shadow-lg shadow-purple-500/20"
-                startContent={<Wand2 className="w-4 h-4" />}
-                onPress={() => onGenerate(selectedResource?.name || '', imageModel, textModel, imageAspectRatio, characterId)}
+                variant={selectedResource?.frontViewUrl ? 'bordered' : 'solid'}
+                className={selectedResource?.frontViewUrl
+                  ? 'border-purple-500/40 text-purple-300 hover:bg-purple-500/10'
+                  : 'bg-linear-to-r from-purple-500 to-violet-600 text-white font-semibold shadow-lg shadow-purple-500/20'
+                }
+                startContent={<Palette className="w-4 h-4" />}
+                onPress={() => onGenerate(selectedResource?.name || '', imageModel, textModel, imageAspectRatio, characterId, 'style')}
                 isLoading={isGenerating}
                 isDisabled={!imageModel || !imageAspectRatio || isGenerating}
               >
-                {generatedPrompts ? '重新生成' : '开始生成'}
+                {selectedResource?.frontViewUrl ? '重新生成风格图' : '生成风格图'}
               </Button>
+              {/* 生成三视图（侧面+背面）- 正面已存在时显示 */}
+              {selectedResource?.frontViewUrl && (
+                <Button 
+                  className="bg-linear-to-r from-purple-500 to-violet-600 text-white font-semibold shadow-lg shadow-purple-500/20"
+                  startContent={<Wand2 className="w-4 h-4" />}
+                  onPress={() => onGenerate(selectedResource?.name || '', imageModel, textModel, imageAspectRatio, characterId, 'views')}
+                  isLoading={isGenerating}
+                  isDisabled={!imageModel || !imageAspectRatio || isGenerating}
+                >
+                  {(selectedResource?.sideViewUrl && selectedResource?.backViewUrl) ? '重新生成三视图' : '生成三视图'}
+                </Button>
+              )}
             </ModalFooter>
           </>
         )}

@@ -45,6 +45,7 @@ export interface StoryboardScene {
   description: string;
   dialogue: string;
   dialogues: DialogueLine[];
+  voiceover: string;
   duration: number;
   imageUrl?: string;
   videoUrl?: string;
@@ -182,6 +183,7 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
               description: item.prompt_template || '',
               dialogue: vars.dialogue || '',
               dialogues: Array.isArray(vars.dialogues) ? vars.dialogues : [],
+              voiceover: vars.voiceover || '',
               duration: vars.duration || 3,
               imageUrl: item.image_ref || undefined,
               videoUrl: item.video_url || vars.videoUrl || undefined,
@@ -441,6 +443,40 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
     }
   };
 
+  // 更新画外音并保存到后端
+  const updateVoiceover = async (id: number, voiceover: string) => {
+    const previousScene = scenes.find((scene) => scene.id === id);
+    if (!previousScene) return false;
+
+    // 先更新本地状态
+    setScenes(prev => prev.map(s => s.id === id ? { ...s, voiceover } : s));
+
+    try {
+      const token = getAuthToken();
+      const res = await fetch(`/api/storyboards/${id}/content`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ voiceover })
+      });
+
+      if (!res.ok) {
+        throw new Error('保存画外音失败');
+      }
+      return true;
+    } catch (error: any) {
+      // 回滚
+      setScenes(prev => prev.map(s =>
+        s.id === id ? { ...s, voiceover: previousScene.voiceover } : s
+      ));
+      console.error('保存画外音失败:', error);
+      showToast('保存画外音失败，请稍后重试', 'error');
+      return false;
+    }
+  };
+
   // 将排序持久化到后端
   const persistReorder = async (orderedScenes: StoryboardScene[]) => {
     if (!scriptId) return;
@@ -477,6 +513,7 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
     moveScene,
     updateDescription,
     updateDialogues,
+    updateVoiceover,
     updateDirectorParams,
     reorderScenes
   };

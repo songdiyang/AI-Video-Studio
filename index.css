@@ -773,6 +773,112 @@ html.theme-transitioning .excalidraw *::after {
   color: white !important;
 }
 
+/* 管理后台 select 主题适配 */
+.theme-light .admin-content select {
+  color: var(--text-secondary) !important;
+}
+.theme-light .admin-content select option {
+  background-color: var(--bg-card) !important;
+  color: var(--text-primary) !important;
+}
+.theme-dark .admin-content select option,
+.theme-high-contrast .admin-content select option {
+  background-color: #1a1a2e !important;
+  color: white !important;
+}
+
+/* =========== 管理后台浅色主题内容适配 =========== */
+/* 管理员选择浅色主题时，将子页面中深色硬编码样式转换为浅色 */
+
+/* 白色文本 → 深色文本 */
+.theme-light .admin-content .text-white {
+  color: var(--text-primary) !important;
+}
+.theme-light .admin-content .text-white\/90 {
+  color: var(--text-primary) !important;
+}
+.theme-light .admin-content .text-white\/80,
+.theme-light .admin-content .text-white\/70 {
+  color: var(--text-secondary) !important;
+}
+.theme-light .admin-content .text-white\/60,
+.theme-light .admin-content .text-white\/50,
+.theme-light .admin-content .text-white\/40 {
+  color: var(--text-muted) !important;
+}
+
+/* 深色卡片背景 → 浅色卡片 */
+.theme-light .admin-content .bg-white\/\[0\.08\],
+.theme-light .admin-content .bg-white\/\[0\.06\],
+.theme-light .admin-content .bg-white\/\[0\.03\],
+.theme-light .admin-content .bg-white\/5,
+.theme-light .admin-content .bg-white\/2 {
+  background-color: var(--bg-card) !important;
+}
+.theme-light .admin-content .bg-white\/10,
+.theme-light .admin-content .bg-white\/15,
+.theme-light .admin-content .bg-white\/20 {
+  background-color: var(--bg-elevated) !important;
+}
+
+/* 深色边框 → 浅色边框 */
+.theme-light .admin-content .border-white\/5,
+.theme-light .admin-content .border-white\/10,
+.theme-light .admin-content .border-white\/15,
+.theme-light .admin-content .border-white\/20,
+.theme-light .admin-content .border-white\/\[0\.12\] {
+  border-color: var(--border-color) !important;
+}
+
+/* hover 状态适配 */
+.theme-light .admin-content .hover\:bg-white\/10:hover,
+.theme-light .admin-content .hover\:bg-white\/5:hover {
+  background-color: var(--bg-card-hover) !important;
+}
+.theme-light .admin-content .hover\:text-white:hover {
+  color: var(--text-primary) !important;
+}
+
+/* 内联深色背景覆盖 */
+.theme-light .admin-content [style*="background-color: rgb(10, 10, 15)"],
+.theme-light .admin-content [style*="background-color:#0a0a0f"] {
+  background-color: var(--bg-app) !important;
+}
+
+/* 保护彩色按钮/徽章中的白色文本（有彩色背景的按钮不应被覆盖） */
+.theme-light .admin-content [class*="from-violet"] .text-white,
+.theme-light .admin-content [class*="from-blue"] .text-white,
+.theme-light .admin-content [class*="bg-gradient"] .text-white,
+.theme-light .admin-content .bg-blue-600 .text-white,
+.theme-light .admin-content .bg-red-600 .text-white,
+.theme-light .admin-content .bg-emerald-600 .text-white {
+  color: white !important;
+}
+
+/* 保护彩色按钮/标签内 select 文本 */
+.theme-light .admin-content [class*="from-violet"] select,
+.theme-light .admin-content .bg-blue-600 select {
+  color: white !important;
+}
+
+/* =========== 管理后台高对比度主题内容适配 =========== */
+.theme-high-contrast .admin-content .text-white\/40,
+.theme-high-contrast .admin-content .text-white\/50 {
+  color: rgba(255, 255, 255, 0.8) !important;
+}
+.theme-high-contrast .admin-content .text-white\/60 {
+  color: rgba(255, 255, 255, 0.9) !important;
+}
+.theme-high-contrast .admin-content .bg-white\/\[0\.08\],
+.theme-high-contrast .admin-content .bg-white\/5,
+.theme-high-contrast .admin-content .bg-white\/10 {
+  background-color: rgba(255, 255, 255, 0.12) !important;
+}
+.theme-high-contrast .admin-content .border-white\/5,
+.theme-high-contrast .admin-content .border-white\/10 {
+  border-color: rgba(255, 255, 255, 0.3) !important;
+}
+
 /* 背景色覆盖 */
 .theme-light .bg-slate-900,
 .theme-light .bg-\[\#0a0a0f\],

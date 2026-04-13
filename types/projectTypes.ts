@@ -5,6 +5,98 @@
 
 import { LucideIcon } from 'lucide-react';
 
+// ==================== 视觉风格分类 ====================
+
+/**
+ * 风格大类
+ * - live_action: 真人类
+ * - anime: 动漫类
+ */
+export type StyleCategory = 'live_action' | 'anime';
+
+/**
+ * 头身比例（仅动漫类有效）
+ * - teen: 少女/少年 6-7头身
+ * - adult: 成年角色 7-8头身
+ * - chibi: Q版 2.5-4头身
+ */
+export type BodyProportionRatio = 'h2_5' | 'h3' | 'h4' | 'h6' | 'h6_5' | 'h7' | 'h7_5' | 'h8';
+
+/**
+ * 按大类划分的视觉风格键名
+ */
+export const VISUAL_STYLE_BY_CATEGORY: Record<StyleCategory, string[]> = {
+  live_action: ['realisticFilm', 'fashionPhoto', 'documentary', 'cinematicDrama'],
+  anime: [
+    'animeJapanese', 'render3D', 'watercolor', 'cyberpunk',
+    'americanComic', 'pixelArt', 'chineseInk', 'shoujoManga', 'custom'
+  ],
+};
+
+/**
+ * 头身比例预设元数据
+ */
+export const BODY_PROPORTION_PRESETS: Record<BodyProportionRatio, {
+  code: BodyProportionRatio;
+  name: string;
+  nameEn: string;
+  ratio: string;
+  description: string;
+  descriptionEn: string;
+}> = {
+  h2_5: { code: 'h2_5', name: '超Q', nameEn: 'Super Chibi', ratio: '2.5', description: '2.5头身', descriptionEn: '2.5 heads' },
+  h3:   { code: 'h3',   name: '萌系', nameEn: 'Moe',         ratio: '3',   description: '3头身',   descriptionEn: '3 heads' },
+  h4:   { code: 'h4',   name: '少年/少女感', nameEn: 'Teen', ratio: '4',   description: '4头身',   descriptionEn: '4 heads' },
+  h6:   { code: 'h6',   name: '可爱', nameEn: 'Cute',         ratio: '6',   description: '6头身',   descriptionEn: '6 heads' },
+  h6_5: { code: 'h6_5', name: '日常', nameEn: 'Casual',       ratio: '6.5', description: '6.5头身', descriptionEn: '6.5 heads' },
+  h7:   { code: 'h7',   name: '略修长', nameEn: 'Slim',       ratio: '7',   description: '7头身',   descriptionEn: '7 heads' },
+  h7_5: { code: 'h7_5', name: '修长', nameEn: 'Slender',     ratio: '7.5', description: '7.5头身', descriptionEn: '7.5 heads' },
+  h8:   { code: 'h8',   name: '超模比例', nameEn: 'Supermodel', ratio: '8', description: '8头身',   descriptionEn: '8 heads' },
+};
+
+/**
+ * 根据已有 visualStyle 推断 styleCategory（向后兼容）
+ */
+export function inferStyleCategory(visualStyle: string): StyleCategory {
+  if (VISUAL_STYLE_BY_CATEGORY.live_action.includes(visualStyle)) return 'live_action';
+  return 'anime';
+}
+
+// ==================== 拍摄视角 ====================
+
+/**
+ * 拍摄视角类型
+ * - first_person: 第一人称视角，以角色主观视角叙事
+ * - third_person: 第三人称视角，常规客观叙事（默认）
+ */
+export type NarrativePerspective = 'first_person' | 'third_person';
+
+/**
+ * 拍摄视角元数据
+ */
+export const NARRATIVE_PERSPECTIVES: Record<NarrativePerspective, {
+  code: NarrativePerspective;
+  name: string;
+  nameEn: string;
+  description: string;
+  descriptionEn: string;
+}> = {
+  first_person: {
+    code: 'first_person',
+    name: '第一人称',
+    nameEn: 'First Person',
+    description: '以角色的主观视角展开叙事，画面采用角色视点，增强代入感与沉浸感',
+    descriptionEn: 'Narrate from the character\'s subjective viewpoint for immersive storytelling',
+  },
+  third_person: {
+    code: 'third_person',
+    name: '第三人称',
+    nameEn: 'Third Person',
+    description: '使用客观叙事视角，自由展示多角色和全景画面，适合复杂剧情',
+    descriptionEn: 'Use an objective narrative perspective with flexible camera angles',
+  },
+};
+
 // ==================== 项目类型枚举 ====================
 
 /**

@@ -16,7 +16,7 @@ import {
   Spinner, useDisclosure
 } from '@heroui/react';
 import {
-  X, RefreshCw, User, Shirt, Plus, Check, Trash2,
+  RefreshCw, User, Shirt, Plus, Check, Trash2,
   ChevronLeft, ChevronRight, Eye, LayoutGrid, List, Star,
   Clock, Sparkles, Tag, History
 } from 'lucide-react';
@@ -321,26 +321,21 @@ const CharacterLifecyclePanel: React.FC<CharacterLifecyclePanelProps> = ({
       scrollBehavior="inside"
     >
       <ModalContent>
-        <ModalHeader className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-purple-500/20 flex items-center justify-center">
-              {character.imageUrl ? (
-                <img src={character.imageUrl} alt="" className="w-full h-full rounded-full object-cover" />
-              ) : (
-                <User className="w-5 h-5 text-purple-400" />
-              )}
-            </div>
-            <div>
-              <h3 className="text-lg font-bold">{character.name}</h3>
-              <p className="text-sm text-slate-400">
-                {character.gender === 'male' ? '男性' : character.gender === 'female' ? '女性' : '未知性别'}
-                {character.appearance && ` · ${character.appearance.slice(0, 30)}...`}
-              </p>
-            </div>
+        <ModalHeader className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-full bg-purple-500/20 flex items-center justify-center shrink-0">
+            {character.imageUrl ? (
+              <img src={character.imageUrl} alt="" className="w-full h-full rounded-full object-cover" />
+            ) : (
+              <User className="w-5 h-5 text-purple-400" />
+            )}
           </div>
-          <Button isIconOnly variant="light" onPress={onClose}>
-            <X className="w-5 h-5" />
-          </Button>
+          <div>
+            <h3 className="text-lg font-bold">{character.name}</h3>
+            <p className="text-sm text-slate-400">
+              {character.gender === 'male' ? '男性' : character.gender === 'female' ? '女性' : '未知性别'}
+              {character.appearance && ` · ${character.appearance.slice(0, 30)}...`}
+            </p>
+          </div>
         </ModalHeader>
         
         <ModalBody className="p-0">

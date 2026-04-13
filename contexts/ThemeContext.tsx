@@ -74,6 +74,8 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // 将主题 class 同步到 <html>
   useEffect(() => {
     const root = document.documentElement;
+    // 管理后台激活时不修改根主题，避免影响管理端
+    if (root.dataset.adminMode === 'true') return;
     const actualTheme = resolveTheme(theme);
     
     root.classList.remove('theme-dark', 'theme-light', 'theme-high-contrast');
@@ -101,6 +103,8 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     
     const handleChange = () => {
       const root = document.documentElement;
+      // 管理后台激活时不修改根主题
+      if (root.dataset.adminMode === 'true') return;
       const actualTheme = getSystemTheme();
       
       // 添加过渡动画 class

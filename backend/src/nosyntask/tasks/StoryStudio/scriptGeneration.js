@@ -6,7 +6,7 @@
 
 const handleBaseTextModelCall = require('../base/baseTextModelCall');
 const { queryAll } = require('../../../dbHelper');
-const { getStoryStyle } = require('../../../utils/getProjectStyle');
+const { getStoryStyle, getNarrativePerspective } = require('../../../utils/getProjectStyle');
 
 // 根据剧本长度获取场景数量配置
 function getSceneConfig(length) {
@@ -79,6 +79,10 @@ async function handleScriptGeneration(inputParams, onProgress) {
   const effectiveStyle = projectStoryStyle;
   const constraintLine = storyConstraints ? `\n【创作约束】${storyConstraints}` : '';
 
+  // 获取拍摄视角设置
+  const { promptInstruction: perspectiveInstruction } = await getNarrativePerspective(projectId);
+  const perspectiveLine = perspectiveInstruction ? `\n${perspectiveInstruction}` : '';
+
   // 获取场景数量配置
   const sceneConfig = getSceneConfig(length);
   const sceneRequirement = `\n\n## 场景数量要求\n
@@ -93,7 +97,7 @@ async function handleScriptGeneration(inputParams, onProgress) {
   if (targetEpisode === 1) {
     userPrompt = `请根据以下信息创作一个${length || '短篇'}(${sceneConfig.duration})的${effectiveStyle}风格视频剧本（第1集）：
 标题：${title || '未命名'}
-故事概述：${description || ''}${constraintLine}${sceneRequirement}
+故事概述：${description || ''}${constraintLine}${perspectiveLine}${sceneRequirement}
 
 要求：
 1. 分成 ${sceneConfig.minScenes}~${sceneConfig.maxScenes} 个场景，每个场景独立完整
@@ -103,7 +107,7 @@ async function handleScriptGeneration(inputParams, onProgress) {
   } else {
     userPrompt = `请根据以下信息继续创作视频剧本的第${targetEpisode}集（${sceneConfig.duration}）：
 本集标题：${title || `第${targetEpisode}集`}
-${previousEpisodesContext}${constraintLine}${sceneRequirement}
+${previousEpisodesContext}${constraintLine}${perspectiveLine}${sceneRequirement}
 ${description ? `\n【用户期望的故事走向】\n${description}\n（请参考此走向发展剧情，但必须与前面的剧情保持连贯）\n` : ''}
 要求：
 1. 【重要】必须延续前面集数的人物设定、剧情发展和叙事风格

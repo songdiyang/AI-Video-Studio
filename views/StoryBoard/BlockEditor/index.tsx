@@ -20,6 +20,8 @@ const BlockEditor: React.FC<BlockEditorProps> = ({
   dialogue,
   dialogues,
   onUpdateDialogues,
+  voiceover,
+  onUpdateVoiceover,
 }) => {
   // 将积木块转换为提示词文本
   const initialPrompt = initialBlocks
@@ -71,6 +73,8 @@ const BlockEditor: React.FC<BlockEditorProps> = ({
       dialogues={dialogues}
       sceneCharacters={characters}
       onUpdateDialogues={onUpdateDialogues}
+      voiceover={voiceover}
+      onUpdateVoiceover={onUpdateVoiceover}
     />
   );
 };

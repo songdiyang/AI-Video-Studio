@@ -172,7 +172,7 @@ router.get('/admin/errors', authMiddleware, requireAdmin, async (req, res) => {
 
     const dataSql = `
       SELECT wj.id, wj.user_id, u.email as user_email, wj.workflow_type, wj.status,
-             wj.error_message, wj.input_params, wj.created_at, wj.updated_at, wj.is_consumed
+             wj.error_message, wj.input_params, wj.created_at, wj.updated_at, wj.admin_resolved
       FROM workflow_jobs wj
       LEFT JOIN users u ON u.id = wj.user_id
       ${where}
@@ -209,20 +209,20 @@ router.get('/admin/errors', authMiddleware, requireAdmin, async (req, res) => {
 router.patch('/admin/errors/:jobId/status', authMiddleware, requireAdmin, async (req, res) => {
   try {
     const { jobId } = req.params;
-    const { is_consumed } = req.body;
+    const { admin_resolved } = req.body;
     const numericJobId = decodeId(jobId);
     const { execute } = require('../dbHelper');
     
-    if (typeof is_consumed !== 'number' && typeof is_consumed !== 'boolean') {
+    if (typeof admin_resolved !== 'number' && typeof admin_resolved !== 'boolean') {
       return res.status(400).json({ message: '无效的状态值' });
     }
     
     await execute(
-      'UPDATE workflow_jobs SET is_consumed = ? WHERE id = ?',
-      [is_consumed ? 1 : 0, numericJobId]
+      'UPDATE workflow_jobs SET admin_resolved = ? WHERE id = ?',
+      [admin_resolved ? 1 : 0, numericJobId]
     );
     
-    res.json({ success: true, message: is_consumed ? '已标记为已处理' : '已标记为待处理' });
+    res.json({ success: true, message: admin_resolved ? '已标记为已处理' : '已标记为待处理' });
   } catch (error) {
     console.error('[Admin Update Error Status]', error);
     res.status(500).json({ message: error.message || '更新状态失败' });

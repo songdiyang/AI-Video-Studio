@@ -24,7 +24,7 @@
 const handleImageGeneration = require('../base/imageGeneration');
 const handleBaseTextModelCall = require('../base/baseTextModelCall');
 const { execute, queryOne } = require('../../../dbHelper');
-const { requireVisualStyle } = require('../../../utils/getProjectStyle');
+const { requireVisualStyle, getBodyProportion } = require('../../../utils/getProjectStyle');
 const { downloadAndStore, uploadBuffer } = require('../../../utils/fileStorage');
 const { assertUpdated, assertPersistedFields } = require('./persistenceGuard');
 const composeCharacterSheet = require('../../../utils/composeCharacterSheet');
@@ -53,7 +53,7 @@ const BASE_MODEL_BODY = {
  * @param {string} options.ageStage - 年龄阶段（状态级别）
  */
 async function generateViewPrompt(view, characterName, appearance, description, style, textModel, options = {}) {
-  const { isBaseModel = false, gender = 'unknown', outfit, hairstyle, accessories, ageStage } = options;
+  const { isBaseModel = false, gender = 'unknown', outfit, hairstyle, accessories, ageStage, bodyProportionInstruction } = options;
   
   const viewConfig = {
     front: {
@@ -95,7 +95,7 @@ async function generateViewPrompt(view, characterName, appearance, description, 
   const isNonFront = view !== 'front';
   const consistencyBlock = isNonFront
     ? `
-8. 【最关键 - 一致性约束】这是与正面图同一角色的${cfg.desc}，你会收到正面图作为参考。以下每一项都必须与正面图完全一致，不得有任何改动：
+9. 【最关键 - 一致性约束】这是与正面图同一角色的${cfg.desc}，你会收到正面图作为参考。以下每一项都必须与正面图完全一致，不得有任何改动：
    - 发型和发色：必须与正面图完全相同（如正面是短发/平头，${view === 'back' ? '背面也必须是短发/平头，绝对不能变成长发' : '侧面也必须是短发/平头'}）
    - 服装款式：必须与正面图完全相同（如正面穿战袍，${view === 'back' ? '背面也必须是同一件战袍' : '侧面也必须是同一件战袍'}，不能变成其他衣服）
    - 服装细节：袖子状态（挽起/放下）、领口、腰带、配饰等必须一致
@@ -122,20 +122,22 @@ async function generateViewPrompt(view, characterName, appearance, description, 
 核心要求（必须严格遵守）：
 1. 提示词必须用英文输出，逗号分隔的关键词格式
 2. 【最重要】画面中只能有一个角色，绝对不能出现多个人物、多个角度、多个姿势。禁止使用 "character sheet"、"reference sheet"、"turnaround"、"multiple views"、"multiple poses" 等会导致多人物的关键词
-3. 必须包含：single character, solo, one person, pure white background, solid white background, full body, standing pose, even soft lighting
+3. 必须包含：single character, solo, one person, simple clean background, full body, standing pose, even soft lighting
+4. 【画风一致性 - 最关键】角色的绘制风格（线条画法、上色方式、光影表现、色彩处理、笔触质感）必须严格匹配下方「风格要求」。提示词的前几个关键词必须是风格描述词。例如：水彩风格→必须包含 watercolor, soft edges, hand-painted texture, pastel tones 等水彩特征词；赛璐珞动漫→必须包含 cel-shading, clean lines, anime coloring 等；写实风格→必须包含 photorealistic, natural skin texture 等。绝对不要用通用动漫风格替代指定的画风
 ${clothingRule}
-5. 绝对不要加入任何场景、背景元素、故事情节、地面阴影、其他人物
-6. 保持中性自然表情，不要加入夸张情绪
-7. 长度控制在 80-150 个单词${consistencyBlock}
+6. 绝对不要加入任何场景、背景元素、故事情节、地面阴影、其他人物
+7. 保持中性自然表情，不要加入夸张情绪
+8. 长度控制在 80-150 个单词${consistencyBlock}
 
 ---
 
 请为以下角色生成「${cfg.desc}」的提示词（画面中只有这一个角色）：
 
+★ 风格要求（最优先）：${style || '动漫风格'}
+${bodyProportionInstruction ? `★ 体型比例要求：${bodyProportionInstruction}` : ''}
 角色名称：${characterName || '未命名角色'}
 外貌特征：${composedAppearance || '无'}
 角色描述：${description || '无'}
-风格要求：${style || '动漫风格'}
 视角要求：${cfg.angle}, ${cfg.pose}
 ${isNonFront ? '\n【再次强调】提示词中必须完整重复上面的「外貌特征」中的每一个细节（发型、发色、服装款式、服装细节、配饰等），只是视角从正面变为' + cfg.desc + '。不要省略任何外貌描述，不要自行想象或修改任何服装/发型细节。' : ''}${baseModelNote}
 请直接输出英文提示词，不要包含任何解释。`;
@@ -215,6 +217,10 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
 
   // 项目视觉风格（必填，未设置则报错）
   const style = await requireVisualStyle(projectId);
+
+  // 头身比例（仅动漫类有效）
+  const bodyProportion = await getBodyProportion(projectId);
+  const bodyProportionInstruction = bodyProportion?.promptInstruction || '';
 
   // 查询数据库中已有的三视图 URL，用于补全模式
   let existingViews = { front_view_url: null, side_view_url: null, back_view_url: null };
@@ -297,7 +303,7 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
   let lastGeneratedPrompt = ''; // 记录最新的英文提示词，用于存储到 generation_prompt
   if (needFront) {
     console.log('[CharacterViews] 生成正面视图...');
-    const frontPrompt = await generateViewPrompt('front', characterName, appearance, description, style, textModel, { isBaseModel, gender, outfit, hairstyle, accessories, ageStage });
+    const frontPrompt = await generateViewPrompt('front', characterName, appearance, description, style, textModel, { isBaseModel, gender, outfit, hairstyle, accessories, ageStage, bodyProportionInstruction });
     lastGeneratedPrompt = frontPrompt; // 保存英文提示词
     const frontResult = await handleImageGeneration({
       prompt: frontPrompt,
@@ -348,7 +354,7 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
   let persistedSideUrl = existingViews.side_view_url || null;
   if (needSide) {
     console.log('[CharacterViews] 生成侧面视图...');
-    const sidePrompt = await generateViewPrompt('side', characterName, appearance, description, style, textModel, { isBaseModel, gender, outfit, hairstyle, accessories, ageStage });
+    const sidePrompt = await generateViewPrompt('side', characterName, appearance, description, style, textModel, { isBaseModel, gender, outfit, hairstyle, accessories, ageStage, bodyProportionInstruction });
     const sideGenParams = {
       prompt: sidePrompt,
       imageModel: imageModel,
@@ -401,7 +407,7 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
   let persistedBackUrl = existingViews.back_view_url || null;
   if (needBack) {
     console.log('[CharacterViews] 生成背面视图...');
-    const backPrompt = await generateViewPrompt('back', characterName, appearance, description, style, textModel, { isBaseModel, gender, outfit, hairstyle, accessories, ageStage });
+    const backPrompt = await generateViewPrompt('back', characterName, appearance, description, style, textModel, { isBaseModel, gender, outfit, hairstyle, accessories, ageStage, bodyProportionInstruction });
     const backGenParams = {
       prompt: backPrompt,
       imageModel: imageModel,

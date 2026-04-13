@@ -356,6 +356,10 @@ const ResourcePanel: React.FC<ResourcePanelProps> = ({
         onDelete={handleDeleteCharacter}
         onUploadImage={handleUploadCharacterImage}
         onGenerateViews={handleGenerateViewsFromDetail}
+        onCharacterUpdate={(updated) => {
+          setSelectedCharacter(updated);
+          loadCharacters();
+        }}
       />
 
       <SceneDetailModal

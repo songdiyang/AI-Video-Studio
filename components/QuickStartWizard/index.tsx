@@ -6,12 +6,14 @@ import {
   Film, Video, BookImage, BookOpen, Sparkles,
   Palette, Globe, ImagePlus, Upload
 } from 'lucide-react';
-import { ProjectType, PROJECT_TYPES } from '../../types/projectTypes';
+import { ProjectType, PROJECT_TYPES, VISUAL_STYLE_BY_CATEGORY, StyleCategory, BodyProportionRatio, BODY_PROPORTION_PRESETS, inferStyleCategory } from '../../types/projectTypes';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { useToast } from '../../contexts/ToastContext';
 import { getAuthToken } from '../../services/auth';
 import { Team, fetchTeams } from '../../services/collaboration';
+import { UserStylePreset, fetchMyStyles } from '../../services/projects';
 import UpgradePrompt from '../UpgradePrompt';
+import { usePreview } from '../PreviewProvider';
 
 interface QuickStartWizardProps {
   isOpen: boolean;
@@ -31,6 +33,7 @@ const CREATION_TYPES: { type: CreationType; icon: React.ElementType; color: stri
 const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ isOpen, onClose, onComplete }) => {
   const { t } = useLanguage();
   const { showToast } = useToast();
+  const { openPreview } = usePreview();
 
   // 创作类型
   const [selectedType, setSelectedType] = useState<CreationType>('comic_drama');
@@ -44,8 +47,11 @@ const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ isOpen, onClose, on
     status: 'draft' as 'draft' | 'in_progress' | 'completed',
     visualStyle: '',
     visualStylePrompt: '',
+    styleCategory: '' as '' | StyleCategory,
+    bodyProportionRatio: '' as '' | BodyProportionRatio,
     storyStyle: '',
     storyConstraints: '',
+    narrativePerspective: '' as '' | 'first_person' | 'third_person',
     mangaLayout: '' as '' | 'page' | 'strip' | 'free',
     mangaPanelStyle: '',
     imageAspectRatio: '',
@@ -84,6 +90,9 @@ const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ isOpen, onClose, on
     nextPlan?: { name: string; displayName: string; maxProjects: number | string; price?: any };
   } | null>(null);
 
+  // 我的风格
+  const [myStyles, setMyStyles] = useState<UserStylePreset[]>([]);
+
   // 视觉风格预设
   const VISUAL_STYLE_PRESETS: Record<string, { prompt: string; labelKey: keyof typeof t.projects.presets }> = {
     'animeJapanese': { prompt: '动漫风格, 赛璐珞上色, 鲜艳色彩, 干净线条, 漫画美学, 日式动画', labelKey: 'animeJapanese' },
@@ -94,11 +103,10 @@ const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ isOpen, onClose, on
     'americanComic': { prompt: '美式漫画风格, 粗犷描边, 动感明暗, 超级英雄美学, 鲜明色彩', labelKey: 'americanComic' },
     'pixelArt': { prompt: '像素画风格, 复古游戏美学, 16位像素, 干净像素点, 怀旧风', labelKey: 'pixelArt' },
     'chineseInk': { prompt: '中国水墨画风格, 传统笔触, 典雅, 留白极简, 东方美学', labelKey: 'chineseInk' },
-    'heavenBlessing': { prompt: '中国仙侠奇幻风格, 古代天宫殿堂, 飘逸丝绸汉服, 金红色调点缀, 神圣光晕, 水墨云雾背景, 空灵光效, 精致发饰, 柔美面部特征, 天界氛围, 中国传统神话美学', labelKey: 'heavenBlessing' },
-    'shoujoManga': { prompt: '日本少女漫画风格, 大而闪亮的星光瞳孔, 精致美少女特征, 柔粉淡紫色调, 花卉网点背景, 浪漫氛围, 飘逸秀发配缎带, 装饰性闪光特效, 柔和腮红, 梦幻柔焦光效', labelKey: 'shoujoManga' },
-    'otomeGame': { prompt: '乙女游戏CG插画风格, 浪漫视觉小说美学, 优雅美少年角色, 柔和渐变上色, 温暖黄昏光照, 闪光花瓣粒子特效, 精致维多利亚风服装设计, 情感丰富的眼部表现, 华丽室内背景, 柔和色彩和谐', labelKey: 'otomeGame' },
-    'japaneseOtome': { prompt: '日式乙女游戏风格, 高品质动漫CG渲染, 精致美少年角色, 樱花与季节性元素, 温柔暖色调, 精细校服或传统服饰设计, 柔和环境光, 视觉小说构图, 细腻手绘线条, 含蓄情感表达', labelKey: 'japaneseOtome' },
-    'chineseDonghua': { prompt: '现代中国动画风格, 动感电影级构图, 都市奇幻场景, 融合中国元素的现代角色设计, 鲜艳饱和色彩, 戏剧性动作光效, 流畅发丝与服装渲染, 大胆对比阴影, 史诗级大气透视, 高能量视觉冲击', labelKey: 'chineseDonghua' },
+    'shoujoManga': { prompt: '日本少女漫画风格, 大而闪亮的星光瞳孔, 精致美少女特征, 柔粉淡紫色调, 花卉网点背景, 浪漫氛围, 飘逸秀发配缎带, 装饰性闪光特效, 柔和腹红, 梦幻柔焦光效', labelKey: 'shoujoManga' },
+    'fashionPhoto': { prompt: '高端时尚大片, 精致灯光, 杂志封面品质, 人像摄影, 柔和散射光, 色彩协调', labelKey: 'fashionPhoto' },
+    'documentary': { prompt: '纪实摄影, 自然光线, 真实场景, 新闻纪录片美学, 抓拍感, 真实光影', labelKey: 'documentary' },
+    'cinematicDrama': { prompt: '电影色调, 宽银幕构图, 戏剧性光影, 胶片颗粒感, 质感电影画面, cinematic lighting', labelKey: 'cinematicDrama' },
     'custom': { prompt: '', labelKey: 'custom' }
   };
 
@@ -110,7 +118,8 @@ const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ isOpen, onClose, on
       setProjectDesc('');
       setFormData({
         cover_url: '', _coverFile: null, status: 'draft',
-        visualStyle: '', visualStylePrompt: '', storyStyle: '', storyConstraints: '',
+        visualStyle: '', visualStylePrompt: '', styleCategory: '' as '' | StyleCategory, bodyProportionRatio: '' as '' | BodyProportionRatio,
+        storyStyle: '', storyConstraints: '',
         mangaLayout: '', mangaPanelStyle: '',
         imageAspectRatio: '', imageResolution: '', videoAspectRatio: '', videoResolution: '',
         videoDuration: '', videoAspect: '', videoStyle: '',
@@ -135,11 +144,17 @@ const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ isOpen, onClose, on
 
   // ==================== 表单处理函数 ====================
 
-  const handleSelectVisualStyle = (styleKey: string) => {
+    const handleSelectVisualStyle = (styleKey: string) => {
     if (formData.visualStyle === styleKey) {
       setFormData(prev => ({ ...prev, visualStyle: '', visualStylePrompt: '' }));
     } else if (styleKey === 'custom') {
       setFormData(prev => ({ ...prev, visualStyle: 'custom', visualStylePrompt: '' }));
+    } else if (styleKey.startsWith('myStyle_')) {
+      const styleId = parseInt(styleKey.replace('myStyle_', ''));
+      const myStyle = myStyles.find(s => s.id === styleId);
+      if (myStyle) {
+        setFormData(prev => ({ ...prev, visualStyle: styleKey, visualStylePrompt: myStyle.prompt }));
+      }
     } else {
       setFormData(prev => ({
         ...prev,
@@ -194,7 +209,8 @@ const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ isOpen, onClose, on
         body: JSON.stringify({
           name: projectName, description: projectDesc,
           visualStylePrompt: formData.visualStylePrompt,
-          storyStyle: formData.storyStyle, storyConstraints: formData.storyConstraints
+          storyStyle: formData.storyStyle, storyConstraints: formData.storyConstraints,
+          bodyProportionRatio: formData.bodyProportionRatio || undefined
         })
       });
       if (!res.ok) { const data = await res.json().catch(() => ({})); throw new Error(data.message || 'AI 封面生成失败'); }
@@ -229,14 +245,17 @@ const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ isOpen, onClose, on
     try {
       const token = getAuthToken();
       const settingsObj: any = {};
-      const { visualStyle, visualStylePrompt, storyStyle, storyConstraints,
+      const { visualStyle, visualStylePrompt, styleCategory, bodyProportionRatio, storyStyle, storyConstraints, narrativePerspective,
         mangaLayout, mangaPanelStyle, imageAspectRatio, imageResolution,
         videoAspectRatio, videoResolution, videoDuration, videoAspect, videoStyle,
         novelGenre, novelWritingStyle, novelChapterLength, novelTarget, outputLanguage } = formData;
       if (visualStyle) settingsObj.visualStyle = visualStyle;
       if (visualStylePrompt) settingsObj.visualStylePrompt = visualStylePrompt;
+      if (styleCategory) settingsObj.styleCategory = styleCategory;
+      if (bodyProportionRatio) settingsObj.bodyProportionRatio = bodyProportionRatio;
       if (storyStyle) settingsObj.storyStyle = storyStyle;
       if (storyConstraints) settingsObj.storyConstraints = storyConstraints;
+      if (narrativePerspective) settingsObj.narrativePerspective = narrativePerspective;
       if (mangaLayout) settingsObj.mangaLayout = mangaLayout;
       if (mangaPanelStyle) settingsObj.mangaPanelStyle = mangaPanelStyle;
       if (imageAspectRatio) settingsObj.imageAspectRatio = imageAspectRatio;
@@ -331,6 +350,12 @@ const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ isOpen, onClose, on
       default: return t.projects.statusDraft;
     }
   };
+
+  // 加载我的风格
+  useEffect(() => {
+    if (!isOpen) return;
+    fetchMyStyles().then(setMyStyles).catch(console.error);
+  }, [isOpen]);
 
   // ESC 关闭
   useEffect(() => {
@@ -489,7 +514,7 @@ const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ isOpen, onClose, on
                     </label>
                     {formData.cover_url ? (
                       <div className="rounded-lg overflow-hidden border border-[var(--border-color)] bg-[var(--bg-input)] relative group aspect-[4/3]">
-                        <img src={formData.cover_url} alt="cover" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                        <img src={formData.cover_url} alt="cover" className="w-full h-full object-cover cursor-pointer" onClick={() => openPreview([{ src: formData.cover_url }])} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                         <button onClick={() => setFormData(prev => ({ ...prev, cover_url: '', _coverFile: null }))}
                           className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer text-[10px]">×</button>
                       </div>
@@ -526,8 +551,36 @@ const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ isOpen, onClose, on
                           <Palette className="w-3.5 h-3.5 text-[var(--accent)]" />
                           {t.projects.visualStyleLabel}
                         </label>
+                        {/* 内容类型切换：真人 / 动漫 */}
+                        <div className="flex gap-1.5 mb-2">
+                          {(['live_action', 'anime'] as StyleCategory[]).map((cat) => (
+                            <button key={cat}
+                              onClick={() => {
+                                const stylesInCategory = VISUAL_STYLE_BY_CATEGORY[cat];
+                                const shouldResetStyle = formData.visualStyle && !stylesInCategory.includes(formData.visualStyle);
+                                setFormData(prev => ({
+                                  ...prev,
+                                  styleCategory: cat,
+                                  ...(shouldResetStyle ? { visualStyle: '', visualStylePrompt: '' } : {}),
+                                  ...(cat === 'live_action' ? { bodyProportionRatio: '' as '' } : {}),
+                                }));
+                              }}
+                              className={`flex-1 px-2 py-1.5 rounded-md border text-xs font-semibold transition-all cursor-pointer ${
+                                formData.styleCategory === cat ? pillActive : pillInactive
+                              }`}>
+                              {cat === 'live_action' ? t.projects.categoryLiveAction : t.projects.categoryAnime}
+                            </button>
+                          ))}
+                        </div>
+                        {/* 按分类过滤的画风子选项 */}
                         <div className="grid grid-cols-3 gap-1">
-                          {Object.entries(VISUAL_STYLE_PRESETS).map(([styleKey, { labelKey }]) => (
+                          {Object.entries(VISUAL_STYLE_PRESETS)
+                            .filter(([styleKey]) => {
+                              if (styleKey === 'custom') return false;
+                              if (!formData.styleCategory) return true;
+                              return VISUAL_STYLE_BY_CATEGORY[formData.styleCategory as StyleCategory]?.includes(styleKey);
+                            })
+                            .map(([styleKey, { labelKey }]) => (
                             <button key={styleKey} onClick={() => handleSelectVisualStyle(styleKey)}
                               className={`px-2 py-1 rounded-md border text-[11px] font-medium transition-all cursor-pointer truncate ${
                                 formData.visualStyle === styleKey ? pillActive : pillInactive
@@ -536,6 +589,41 @@ const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ isOpen, onClose, on
                             </button>
                           ))}
                         </div>
+                        {/* 我的风格 - 快捷显示 */}
+                        {(() => {
+                          const filteredMyStyles = myStyles.filter(s => {
+                            if (!formData.styleCategory) return true;
+                            return s.style_category === formData.styleCategory;
+                          });
+                          if (filteredMyStyles.length === 0) return null;
+                          return (
+                            <>
+                              <div className="flex items-center gap-1.5 mt-2 mb-1">
+                                <div className="flex-1 h-px bg-[var(--border-color)] opacity-50" />
+                                <span className="text-[10px] font-medium" style={{ color: 'var(--text-muted)' }}>{t.projects.myStyles}</span>
+                                <div className="flex-1 h-px bg-[var(--border-color)] opacity-50" />
+                              </div>
+                              <div className="grid grid-cols-3 gap-1">
+                                {filteredMyStyles.slice(0, 6).map((style) => (
+                                  <button key={style.id} onClick={() => handleSelectVisualStyle(`myStyle_${style.id}`)}
+                                    className={`px-2 py-1 rounded-md border text-[11px] font-medium transition-all cursor-pointer truncate ${
+                                      formData.visualStyle === `myStyle_${style.id}` ? pillActive : pillInactive
+                                    }`}>
+                                    {style.name}
+                                  </button>
+                                ))}
+                              </div>
+                            </>
+                          );
+                        })()}
+                        {/* 自定义按钮 */}
+                        <button
+                          onClick={() => handleSelectVisualStyle('custom')}
+                          className={`mt-1 w-full px-2 py-1.5 rounded-md border text-[11px] font-medium transition-all cursor-pointer ${
+                            formData.visualStyle === 'custom' ? pillActive : pillInactive
+                          }`}>
+                          {t.projects.presets.custom}
+                        </button>
                         <Input size="sm"
                           placeholder={t.projects.visualStylePromptPlaceholder}
                           value={formData.visualStylePrompt}
@@ -543,6 +631,27 @@ const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ isOpen, onClose, on
                           className="mt-2"
                           classNames={{ input: "bg-transparent text-[var(--text-primary)] placeholder:text-[var(--text-muted)] text-xs", inputWrapper: "bg-[var(--bg-input)] border border-[var(--border-color)] hover:border-[var(--accent)]/30 h-7 min-h-7" }}
                         />
+                        {/* 头身比例选择器 - 仅动漫类 */}
+                        {formData.styleCategory === 'anime' && (
+                          <div className="mt-2">
+                            <label className="text-[11px] font-medium mb-1 flex items-center gap-1" style={{ color: 'var(--text-secondary)' }}>
+                              {t.projects.bodyProportionLabel}
+                              <span className="text-[10px] font-normal" style={{ color: 'var(--text-muted)' }}>{t.projects.bodyProportionHint}</span>
+                            </label>
+                            <div className="grid grid-cols-4 gap-1">
+                              {(Object.keys(BODY_PROPORTION_PRESETS) as BodyProportionRatio[]).map((key) => (
+                                <button key={key}
+                                  onClick={() => setFormData(prev => ({ ...prev, bodyProportionRatio: key }))}
+                                  className={`px-2 py-1.5 rounded-md border text-center transition-all cursor-pointer ${
+                                    formData.bodyProportionRatio === key ? pillActive : pillInactive
+                                  }`}>
+                                  <div className="text-[11px] font-semibold">{t.projects[`proportion${key.charAt(0).toUpperCase() + key.slice(1)}` as keyof typeof t.projects]}</div>
+                                  <div className="text-[9px] opacity-70">{t.projects[`proportion${key.charAt(0).toUpperCase() + key.slice(1)}Desc` as keyof typeof t.projects]}</div>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     ) : (
                       /* 小说: 类型与写作风格 */
@@ -575,6 +684,25 @@ const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ isOpen, onClose, on
                         value={formData.storyStyle} onValueChange={(val) => setFormData(prev => ({ ...prev, storyStyle: val }))} classNames={inputCls} />
                       <Input size="sm" label={t.projects.storyConstraintsLabel} placeholder={t.projects.storyConstraintsPlaceholder}
                         value={formData.storyConstraints} onValueChange={(val) => setFormData(prev => ({ ...prev, storyConstraints: val }))} classNames={inputCls} />
+                    </div>
+                    {/* 拍摄视角 */}
+                    <div>
+                      <label className="text-xs font-semibold mb-1.5 flex items-center gap-1" style={{ color: 'var(--text-secondary)' }}>
+                        {t.projects.narrativePerspectiveLabel}
+                        <span className="text-[10px] font-normal" style={{ color: 'var(--text-muted)' }}>{t.projects.narrativePerspectiveHint}</span>
+                      </label>
+                      <div className="flex gap-1.5">
+                        {([['first_person', t.projects.perspectiveFirstPerson, t.projects.perspectiveFirstPersonDesc], ['third_person', t.projects.perspectiveThirdPerson, t.projects.perspectiveThirdPersonDesc]] as const).map(([key, label, desc]) => (
+                          <button key={key}
+                            onClick={() => setFormData(prev => ({ ...prev, narrativePerspective: prev.narrativePerspective === key ? '' : key as any }))}
+                            className={`flex-1 px-2.5 py-1.5 rounded-md border text-xs transition-all cursor-pointer text-left ${
+                              formData.narrativePerspective === key ? pillActive : pillInactive
+                            }`}>
+                            <span className="font-medium">{label}</span>
+                            <span className="text-[10px] ml-1 opacity-70">{desc}</span>
+                          </button>
+                        ))}
+                      </div>
                     </div>
                     <div className="p-3 rounded-lg border border-[var(--border-color)] bg-[var(--bg-input)]/30 space-y-2.5">
                       <p className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>画面参数</p>

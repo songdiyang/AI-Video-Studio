@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Button, Input, Textarea, Select, SelectItem, Popover, PopoverTrigger, PopoverContent, Tabs, Tab } from '@heroui/react';
-import { Plus, X, Tag, Download, RefreshCw, Trash2, Image as ImageIcon, User, Layers, Sparkles, Upload } from 'lucide-react';
+import { Plus, X, Tag, Download, RefreshCw, Trash2, Image as ImageIcon, User, Layers, Sparkles, Upload, ZoomIn } from 'lucide-react';
+import { usePreview } from '../../../components/PreviewProvider';
 import { 
   TagGroup, 
   CharacterTagGroupEntry, 
@@ -65,6 +66,22 @@ const CharacterModal: React.FC<CharacterModalProps> = ({
   // 概念分解图生成状态
   const [isGeneratingConcept, setIsGeneratingConcept] = useState(false);
   const [conceptGenerationError, setConceptGenerationError] = useState<string | null>(null);
+
+  const { openPreview } = usePreview();
+
+  // 三视图预览
+  const openViewPreview = (startIndex: number) => {
+    const views = [
+      { url: formData.front_view_url, label: '正面视图' },
+      { url: formData.side_view_url, label: '侧面视图' },
+      { url: formData.back_view_url, label: '背面视图' },
+    ];
+    const slides = views.filter(v => v.url).map(v => ({ src: v.url, alt: v.label }));
+    if (slides.length > 0) {
+      const filteredIndex = views.slice(0, startIndex + 1).filter(v => v.url).length - 1;
+      openPreview(slides, Math.max(0, filteredIndex));
+    }
+  };
 
   // Tab 状态
   const [activeTab, setActiveTab] = useState<string>('basic');
@@ -785,12 +802,20 @@ const CharacterModal: React.FC<CharacterModalProps> = ({
                             <img 
                               src={formData.front_view_url} 
                               alt="正面视图" 
-                              className="w-full aspect-square object-cover bg-slate-800/60"
+                              className="w-full aspect-square object-cover bg-slate-800/60 cursor-pointer"
+                              onClick={() => openViewPreview(0)}
                               onError={(e) => {
                                 setFormData({ ...formData, front_view_url: '' });
                               }}
                             />
                             <div className="absolute inset-0 top-6 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1">
+                              <button 
+                                onClick={() => openViewPreview(0)} 
+                                className="p-1.5 bg-white/20 rounded hover:bg-white/30" 
+                                title="预览"
+                              >
+                                <ZoomIn className="w-3 h-3 text-white" />
+                              </button>
                               <button 
                                 onClick={() => handleDownloadView('front')} 
                                 className="p-1.5 bg-white/20 rounded hover:bg-white/30" 
@@ -826,12 +851,20 @@ const CharacterModal: React.FC<CharacterModalProps> = ({
                             <img 
                               src={formData.side_view_url} 
                               alt="侧面视图" 
-                              className="w-full aspect-square object-cover bg-slate-800/60"
+                              className="w-full aspect-square object-cover bg-slate-800/60 cursor-pointer"
+                              onClick={() => openViewPreview(1)}
                               onError={(e) => {
                                 setFormData({ ...formData, side_view_url: '' });
                               }}
                             />
                             <div className="absolute inset-0 top-6 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1">
+                              <button 
+                                onClick={() => openViewPreview(1)} 
+                                className="p-1.5 bg-white/20 rounded hover:bg-white/30" 
+                                title="预览"
+                              >
+                                <ZoomIn className="w-3 h-3 text-white" />
+                              </button>
                               <button 
                                 onClick={() => handleDownloadView('side')} 
                                 className="p-1.5 bg-white/20 rounded hover:bg-white/30" 
@@ -867,12 +900,20 @@ const CharacterModal: React.FC<CharacterModalProps> = ({
                             <img 
                               src={formData.back_view_url} 
                               alt="背面视图" 
-                              className="w-full aspect-square object-cover bg-slate-800/60"
+                              className="w-full aspect-square object-cover bg-slate-800/60 cursor-pointer"
+                              onClick={() => openViewPreview(2)}
                               onError={(e) => {
                                 setFormData({ ...formData, back_view_url: '' });
                               }}
                             />
                             <div className="absolute inset-0 top-6 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1">
+                              <button 
+                                onClick={() => openViewPreview(2)} 
+                                className="p-1.5 bg-white/20 rounded hover:bg-white/30" 
+                                title="预览"
+                              >
+                                <ZoomIn className="w-3 h-3 text-white" />
+                              </button>
                               <button 
                                 onClick={() => handleDownloadView('back')} 
                                 className="p-1.5 bg-white/20 rounded hover:bg-white/30" 

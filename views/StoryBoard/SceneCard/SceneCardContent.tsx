@@ -1,6 +1,6 @@
 import React from 'react';
 import { Textarea } from '@heroui/react';
-import { Trash2, Edit2, Check } from 'lucide-react';
+import { Trash2, Edit2, Check, Mic } from 'lucide-react';
 import { StoryboardScene } from '../useSceneManager';
 
 interface SceneCardContentProps {
@@ -76,6 +76,14 @@ const SceneCardContent: React.FC<SceneCardContentProps> = ({
                 {scene.dialogue}
               </p>
             ) : null}
+            {scene.voiceover && (
+              <div className="mt-1 flex items-start gap-1">
+                <Mic className="w-3 h-3 text-amber-400 mt-0.5 flex-shrink-0" />
+                <p className="text-xs text-amber-400/80 italic">
+                  {scene.voiceover}
+                </p>
+              </div>
+            )}
           </div>
         )}
       </div>

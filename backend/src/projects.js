@@ -2,7 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const { queryOne, queryAll, execute } = require('./dbHelper');
 const { authMiddleware } = require('./middleware');
-const { VISUAL_STYLE_PRESETS } = require('./utils/getProjectStyle');
+const { VISUAL_STYLE_PRESETS, BODY_PROPORTION_PRESETS } = require('./utils/getProjectStyle');
 const { callAIModel } = require('./aiModelService');
 const { withAIBillingContext } = require('./aiBillingContext');
 const { uploadBuffer, downloadAndStore, deleteObject, isConfigured } = require('./utils/fileStorage');
@@ -41,6 +41,96 @@ router.get('/membership', authMiddleware, async (req, res) => {
 router.get('/style-presets', authMiddleware, (req, res) => {
   const presets = Object.entries(VISUAL_STYLE_PRESETS).map(([label, prompt]) => ({ label, prompt }));
   res.json({ presets });
+});
+
+// ========== 用户自定义风格 CRUD ==========
+
+// 获取用户的所有自定义风格
+router.get('/my-styles', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const [rows] = await queryAll(
+      'SELECT id, name, prompt, style_category, created_at, updated_at FROM user_style_presets WHERE user_id = ? ORDER BY created_at DESC',
+      [userId]
+    );
+    res.json({ styles: rows });
+  } catch (error) {
+    console.error('[My Styles GET]', error);
+    res.status(500).json({ message: '获取风格列表失败' });
+  }
+});
+
+// 创建新风格
+router.post('/my-styles', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { name, prompt, style_category } = req.body;
+    if (!name || !prompt) {
+      return res.status(400).json({ message: '风格名称和提示词不能为空' });
+    }
+    const category = style_category || 'anime';
+    const [result] = await execute(
+      'INSERT INTO user_style_presets (user_id, name, prompt, style_category) VALUES (?, ?, ?, ?)',
+      [userId, name.trim(), prompt.trim(), category]
+    );
+    const [rows] = await queryAll(
+      'SELECT id, name, prompt, style_category, created_at, updated_at FROM user_style_presets WHERE id = ?',
+      [result.insertId]
+    );
+    res.status(201).json({ style: rows[0] });
+  } catch (error) {
+    console.error('[My Styles POST]', error);
+    res.status(500).json({ message: '创建风格失败' });
+  }
+});
+
+// 更新风格
+router.put('/my-styles/:id', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const styleId = parseInt(req.params.id);
+    const { name, prompt, style_category } = req.body;
+    // 校验所有权
+    const [rows] = await queryAll('SELECT user_id FROM user_style_presets WHERE id = ?', [styleId]);
+    if (!rows.length || rows[0].user_id !== userId) {
+      return res.status(403).json({ message: '无权修改此风格' });
+    }
+    const updates = [];
+    const params = [];
+    if (name !== undefined) { updates.push('name = ?'); params.push(name.trim()); }
+    if (prompt !== undefined) { updates.push('prompt = ?'); params.push(prompt.trim()); }
+    if (style_category !== undefined) { updates.push('style_category = ?'); params.push(style_category); }
+    if (updates.length === 0) {
+      return res.status(400).json({ message: '没有需要更新的字段' });
+    }
+    params.push(styleId);
+    await execute(`UPDATE user_style_presets SET ${updates.join(', ')} WHERE id = ?`, params);
+    const [updated] = await queryAll(
+      'SELECT id, name, prompt, style_category, created_at, updated_at FROM user_style_presets WHERE id = ?',
+      [styleId]
+    );
+    res.json({ style: updated[0] });
+  } catch (error) {
+    console.error('[My Styles PUT]', error);
+    res.status(500).json({ message: '更新风格失败' });
+  }
+});
+
+// 删除风格
+router.delete('/my-styles/:id', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const styleId = parseInt(req.params.id);
+    const [rows] = await queryAll('SELECT user_id FROM user_style_presets WHERE id = ?', [styleId]);
+    if (!rows.length || rows[0].user_id !== userId) {
+      return res.status(403).json({ message: '无权删除此风格' });
+    }
+    await execute('DELETE FROM user_style_presets WHERE id = ?', [styleId]);
+    res.json({ message: '风格已删除' });
+  } catch (error) {
+    console.error('[My Styles DELETE]', error);
+    res.status(500).json({ message: '删除风格失败' });
+  }
 });
 
 // AI 智能推荐项目设置
@@ -137,7 +227,7 @@ router.post('/suggest-settings', authMiddleware, async (req, res) => {
 // AI 生成封面图片
 router.post('/generate-cover', authMiddleware, async (req, res) => {
   const userId = req.user.id;
-  const { name, description, visualStylePrompt, storyStyle, storyConstraints } = req.body;
+  const { name, description, visualStylePrompt, storyStyle, storyConstraints, bodyProportionRatio } = req.body;
 
   if (!name && !description) {
     return res.status(400).json({ message: '请提供项目名称或描述' });
@@ -155,10 +245,13 @@ router.post('/generate-cover', authMiddleware, async (req, res) => {
     const styleHint = visualStylePrompt ? `\nVisual style: ${visualStylePrompt}` : '';
     const storyStyleHint = storyStyle ? `\nNarrative style: ${storyStyle}` : '';
     const constraintsHint = storyConstraints ? `\nStory constraints: ${storyConstraints}` : '';
+    const bodyProportionHint = bodyProportionRatio && BODY_PROPORTION_PRESETS[bodyProportionRatio]
+      ? `\nCharacter body proportion: ${BODY_PROPORTION_PRESETS[bodyProportionRatio].promptInstruction}`
+      : '';
     const promptForCover = `You are a professional illustrator prompt engineer. Generate a concise English prompt for an AI image model to create a visually striking cover/poster image for the following project.
 
 Project name: ${name || 'Untitled'}
-Project description: ${description || 'No description'}${styleHint}${storyStyleHint}${constraintsHint}
+Project description: ${description || 'No description'}${styleHint}${storyStyleHint}${constraintsHint}${bodyProportionHint}
 
 Requirements:
 1. The prompt should describe a single iconic scene that captures the essence of the project

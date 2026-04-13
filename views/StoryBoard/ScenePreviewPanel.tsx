@@ -19,6 +19,7 @@ interface ScenePreviewPanelProps {
   scriptId?: number | null;
   onUpdateDescription: (description: string) => Promise<boolean>;
   onUpdateDialogues?: (dialogues: DialogueLine[]) => Promise<boolean>;
+  onUpdateVoiceover?: (voiceover: string) => Promise<boolean>;
   onGenerateImage: (id: number, prompt: string) => Promise<{ success: boolean; error?: string }>;
   onGenerateVideo: (id: number) => Promise<{ success: boolean; error?: string }>;
   onUpdateScene?: (updates: Partial<StoryboardScene>) => void;
@@ -33,6 +34,7 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
   scriptId,
   onUpdateDescription,
   onUpdateDialogues,
+  onUpdateVoiceover,
   onGenerateImage,
   onGenerateVideo,
   onUpdateScene,
@@ -693,6 +695,8 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                   dialogues={scene.dialogues}
                   characters={scene.characters}
                   onUpdateDialogues={onUpdateDialogues}
+                  voiceover={scene.voiceover}
+                  onUpdateVoiceover={onUpdateVoiceover}
                   onChange={(state: BlockEditorState) => {
                     // 同步编辑器当前文本到组件状态
                     if (state.generatedPrompt !== undefined) {

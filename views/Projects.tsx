@@ -3,15 +3,16 @@ import { useNavigate } from 'react-router-dom';
 import { Card, CardBody, Button, Input, Textarea, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure, Chip, Spinner } from '@heroui/react';
 import { FolderOpen, Plus, Edit, Trash2, Search, BookOpen, Clock, Palette, Sparkles, ImagePlus, Globe, Upload } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { Project, fetchProjects, createProject, updateProject, deleteProject } from '../services/projects';
+import { Project, fetchProjects, createProject, updateProject, deleteProject, UserStylePreset, fetchMyStyles, createMyStyle, updateMyStyle, deleteMyStyle } from '../services/projects';
 import { Team, fetchTeams } from '../services/collaboration';
-import { ProjectType } from '../types/projectTypes';
+import { ProjectType, VISUAL_STYLE_BY_CATEGORY, StyleCategory, BodyProportionRatio, BODY_PROPORTION_PRESETS, inferStyleCategory } from '../types/projectTypes';
 import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../contexts/ConfirmContext';
 import { useWorkbench } from '../contexts/WorkbenchContext';
 import { getAuthToken } from '../services/auth';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useVirtualList } from '../hooks/useVirtualList';
+import { usePreview } from '../components/PreviewProvider';
 import QuickStartWizard from '../components/QuickStartWizard';
 import UpgradePrompt from '../components/UpgradePrompt';
 
@@ -30,6 +31,7 @@ const Projects: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const { showToast } = useToast();
+  const { openPreview } = usePreview();
   const { confirm } = useConfirm();
   
   // 虚拟列表容器 ref 和高度状态
@@ -50,8 +52,12 @@ const Projects: React.FC = () => {
     team_id: null as number | null,
     visualStyle: '',
     visualStylePrompt: '',
+    styleCategory: '' as '' | StyleCategory,
+    bodyProportionRatio: '' as '' | BodyProportionRatio,
     storyStyle: '',
     storyConstraints: '',
+    // 拍摄视角
+    narrativePerspective: '' as '' | 'first_person' | 'third_person',
     // 漫画专属
     mangaLayout: '' as '' | 'page' | 'strip' | 'free',
     mangaPanelStyle: '',
@@ -78,6 +84,12 @@ const Projects: React.FC = () => {
   const coverInputRef = useRef<HTMLInputElement>(null);
   const [showQuickStart, setShowQuickStart] = useState(false);
   
+  // 我的风格
+  const [myStyles, setMyStyles] = useState<UserStylePreset[]>([]);
+  const myStylesDisclosure = useDisclosure();
+  const [editingMyStyle, setEditingMyStyle] = useState<UserStylePreset | null>(null);
+  const [myStyleForm, setMyStyleForm] = useState({ name: '', prompt: '', style_category: 'anime' as 'anime' | 'live_action' });
+  
   // 团队选择
   const [userTeams, setUserTeams] = useState<Team[]>([]);
   const [loadingTeams, setLoadingTeams] = useState(false);
@@ -93,7 +105,7 @@ const Projects: React.FC = () => {
 
   // 视觉风格预设（键名用于内部标识，翻译后的显示名称从 t 获取）
   const VISUAL_STYLE_PRESETS: Record<string, { prompt: string; labelKey: keyof typeof t.projects.presets }> = {
-    'animeJapanese': { prompt: '动漫风格, 赛璐珞上色, 鲜艳色彩, 干净线条, 漫画美学, 日式动画', labelKey: 'animeJapanese' },
+    'animeJapanese': { prompt: '动漫风格, 赛璘珞上色, 鲜艳色彩, 干净线条, 漫画美学, 日式动画', labelKey: 'animeJapanese' },
     'realisticFilm': { prompt: '照片写实, 电影级打光, 胶片质感, 真实比例, 电影剧照, 自然色调', labelKey: 'realisticFilm' },
     'render3D': { prompt: '3D渲染, 皮克斯风格, 柔和光照, 次表面散射, 平滑着色, CG品质', labelKey: 'render3D' },
     'watercolor': { prompt: '水彩插画, 柔和边缘, 粉彩色调, 绘本风格, 手绘纹理', labelKey: 'watercolor' },
@@ -101,17 +113,17 @@ const Projects: React.FC = () => {
     'americanComic': { prompt: '美式漫画风格, 粗犷描边, 动感明暗, 超级英雄美学, 鲜明色彩', labelKey: 'americanComic' },
     'pixelArt': { prompt: '像素画风格, 复古游戏美学, 16位像素, 干净像素点, 怀旧风', labelKey: 'pixelArt' },
     'chineseInk': { prompt: '中国水墨画风格, 传统笔触, 典雅, 留白极简, 东方美学', labelKey: 'chineseInk' },
-    'heavenBlessing': { prompt: '中国仙侠奇幻风格, 古代天宫殿堂, 飘逸丝绸汉服, 金红色调点缀, 神圣光晕, 水墨云雾背景, 空灵光效, 精致发饰, 柔美面部特征, 天界氛围, 中国传统神话美学', labelKey: 'heavenBlessing' },
-    'shoujoManga': { prompt: '日本少女漫画风格, 大而闪亮的星光瞳孔, 精致美少女特征, 柔粉淡紫色调, 花卉网点背景, 浪漫氛围, 飘逸秀发配缎带, 装饰性闪光特效, 柔和腮红, 梦幻柔焦光效', labelKey: 'shoujoManga' },
-    'otomeGame': { prompt: '乙女游戏CG插画风格, 浪漫视觉小说美学, 优雅美少年角色, 柔和渐变上色, 温暖黄昏光照, 闪光花瓣粒子特效, 精致维多利亚风服装设计, 情感丰富的眼部表现, 华丽室内背景, 柔和色彩和谐', labelKey: 'otomeGame' },
-    'japaneseOtome': { prompt: '日式乙女游戏风格, 高品质动漫CG渲染, 精致美少年角色, 樱花与季节性元素, 温柔暖色调, 精细校服或传统服饰设计, 柔和环境光, 视觉小说构图, 细腻手绘线条, 含蓄情感表达', labelKey: 'japaneseOtome' },
-    'chineseDonghua': { prompt: '现代中国动画风格, 动感电影级构图, 都市奇幻场景, 融合中国元素的现代角色设计, 鲜艳饱和色彩, 戏剧性动作光效, 流畅发丝与服装渲染, 大胆对比阴影, 史诗级大气透视, 高能量视觉冲击', labelKey: 'chineseDonghua' },
+    'shoujoManga': { prompt: '日本少女漫画风格, 大而闪亮的星光瞳孔, 精致美少女特征, 柔粉淡紫色调, 花卉网点背景, 浪漫氛围, 飘逸秀发配缎带, 装饰性闪光特效, 柔和腹红, 梦幻柔焦光效', labelKey: 'shoujoManga' },
+    'fashionPhoto': { prompt: '高端时尚大片, 精致灯光, 杂志封面品质, 人像摄影, 柔和散射光, 色彩协调', labelKey: 'fashionPhoto' },
+    'documentary': { prompt: '纪实摄影, 自然光线, 真实场景, 新闻纪录片美学, 抓拍感, 真实光影', labelKey: 'documentary' },
+    'cinematicDrama': { prompt: '电影色调, 宽银幕构图, 戏剧性光影, 胶片颗粒感, 质感电影画面, cinematic lighting', labelKey: 'cinematicDrama' },
     'custom': { prompt: '', labelKey: 'custom' }
   };
 
   useEffect(() => {
     loadProjects();
     loadUserTeams();
+    loadMyStyles();
   }, []);
 
   // 加载用户团队列表
@@ -124,6 +136,68 @@ const Projects: React.FC = () => {
       console.error('加载团队失败:', error);
     } finally {
       setLoadingTeams(false);
+    }
+  };
+
+  // 加载用户自定义风格
+  const loadMyStyles = async () => {
+    try {
+      const styles = await fetchMyStyles();
+      setMyStyles(styles);
+    } catch (error) {
+      console.error('加载风格失败:', error);
+    }
+  };
+
+  const openMyStyleModal = (style?: UserStylePreset) => {
+    if (style) {
+      setEditingMyStyle(style);
+      setMyStyleForm({ name: style.name, prompt: style.prompt, style_category: style.style_category });
+    } else {
+      setEditingMyStyle(null);
+      setMyStyleForm({ name: '', prompt: '', style_category: formData.styleCategory as 'anime' | 'live_action' || 'anime' });
+    }
+    myStylesDisclosure.onOpen();
+  };
+
+  const handleSaveMyStyle = async () => {
+    if (!myStyleForm.name.trim() || !myStyleForm.prompt.trim()) {
+      showToast(t.projects.myStylesNameLabel + ' 和 ' + t.projects.myStylesPromptLabel + ' 不能为空', 'warning');
+      return;
+    }
+    try {
+      if (editingMyStyle) {
+        await updateMyStyle(editingMyStyle.id, { name: myStyleForm.name.trim(), prompt: myStyleForm.prompt.trim(), style_category: myStyleForm.style_category });
+        showToast(t.projects.myStylesSaved, 'success');
+      } else {
+        await createMyStyle({ name: myStyleForm.name.trim(), prompt: myStyleForm.prompt.trim(), style_category: myStyleForm.style_category });
+        showToast(t.projects.myStylesSaved, 'success');
+      }
+      myStylesDisclosure.onClose();
+      loadMyStyles();
+    } catch (error: any) {
+      showToast(error.message || '操作失败', 'danger');
+    }
+  };
+
+  const handleDeleteMyStyle = async (style: UserStylePreset) => {
+    const ok = await confirm({
+      title: t.projects.myStylesDeleteConfirm.replace('{name}', style.name),
+      confirmText: '删除',
+      cancelText: '取消',
+      confirmColor: 'danger' as any,
+    });
+    if (!ok) return;
+    try {
+      await deleteMyStyle(style.id);
+      showToast(t.projects.myStylesDeleted, 'success');
+      loadMyStyles();
+      // 如果当前选中的是这个风格，清除选中
+      if (formData.visualStyle === `myStyle_${style.id}`) {
+        setFormData({ ...formData, visualStyle: '', visualStylePrompt: '' });
+      }
+    } catch (error: any) {
+      showToast(error.message || '删除失败', 'danger');
     }
   };
 
@@ -180,8 +254,11 @@ const Projects: React.FC = () => {
       team_id: project.team_id || null,
       visualStyle: settings.visualStyle || '',
       visualStylePrompt: settings.visualStylePrompt || '',
+      styleCategory: settings.styleCategory || (settings.visualStyle ? inferStyleCategory(settings.visualStyle) : ''),
+      bodyProportionRatio: settings.bodyProportionRatio || '',
       storyStyle: settings.storyStyle || '',
       storyConstraints: settings.storyConstraints || '',
+      narrativePerspective: settings.narrativePerspective || '',
       mangaLayout: settings.mangaLayout || '',
       mangaPanelStyle: settings.mangaPanelStyle || '',
       imageAspectRatio: settings.imageAspectRatio || '',
@@ -202,15 +279,19 @@ const Projects: React.FC = () => {
 
   const handleSave = async () => {
     try {
-      const { visualStyle, visualStylePrompt, storyStyle, storyConstraints,
+      const { visualStyle, visualStylePrompt, storyStyle, storyConstraints, narrativePerspective,
+        styleCategory, bodyProportionRatio,
         mangaLayout, mangaPanelStyle, imageAspectRatio, imageResolution,
         videoAspectRatio, videoResolution, videoDuration, videoAspect, videoStyle,
         novelGenre, novelWritingStyle, novelChapterLength, novelTarget, outputLanguage, _coverFile, ...rest } = formData;
       const settingsObj: any = {};
+      if (styleCategory) settingsObj.styleCategory = styleCategory;
+      if (bodyProportionRatio) settingsObj.bodyProportionRatio = bodyProportionRatio;
       if (visualStyle) settingsObj.visualStyle = visualStyle;
       if (visualStylePrompt) settingsObj.visualStylePrompt = visualStylePrompt;
       if (storyStyle) settingsObj.storyStyle = storyStyle;
       if (storyConstraints) settingsObj.storyConstraints = storyConstraints;
+      if (narrativePerspective) settingsObj.narrativePerspective = narrativePerspective;
       // 漫画专属
       if (mangaLayout) settingsObj.mangaLayout = mangaLayout;
       if (mangaPanelStyle) settingsObj.mangaPanelStyle = mangaPanelStyle;
@@ -276,7 +357,7 @@ const Projects: React.FC = () => {
     }
   };
 
-  const handleSelectVisualStyle = (styleKey: string) => {
+    const handleSelectVisualStyle = (styleKey: string) => {
     if (formData.visualStyle === styleKey) {
       setFormData({ ...formData, visualStyle: '', visualStylePrompt: '' });
     } else if (styleKey === 'custom') {
@@ -292,6 +373,17 @@ const Projects: React.FC = () => {
           if (input) (input as HTMLInputElement).focus();
         }
       }, 100);
+    } else if (styleKey.startsWith('myStyle_')) {
+      // 我的风格
+      const styleId = parseInt(styleKey.replace('myStyle_', ''));
+      const myStyle = myStyles.find(s => s.id === styleId);
+      if (myStyle) {
+        setFormData({
+          ...formData,
+          visualStyle: styleKey,
+          visualStylePrompt: myStyle.prompt
+        });
+      }
     } else {
       setFormData({
         ...formData,
@@ -369,7 +461,8 @@ const Projects: React.FC = () => {
           description: formData.description,
           visualStylePrompt: formData.visualStylePrompt,
           storyStyle: formData.storyStyle,
-          storyConstraints: formData.storyConstraints
+          storyConstraints: formData.storyConstraints,
+          bodyProportionRatio: formData.bodyProportionRatio || undefined
         })
       });
   
@@ -799,7 +892,8 @@ const Projects: React.FC = () => {
                             <img
                               src={formData.cover_url}
                               alt="cover preview"
-                              className="w-full h-full object-cover"
+                              className="w-full h-full object-cover cursor-pointer"
+                              onClick={() => openPreview([{ src: formData.cover_url }])}
                               onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                             />
                             <button
@@ -852,8 +946,45 @@ const Projects: React.FC = () => {
                           {t.projects.visualStyleLabel}
                           <span className="text-xs text-(--text-muted) font-normal">{t.projects.visualStyleHint}</span>
                         </label>
+
+                        {/* 内容类型切换：真人 / 动漫 */}
+                        <div className="flex gap-2 mb-2">
+                          {(['live_action', 'anime'] as StyleCategory[]).map((cat) => (
+                            <button
+                              key={cat}
+                              onClick={() => {
+                                const newCategory = cat;
+                                // 切换分类时，如果当前选中的风格不属于新分类，重置
+                                const stylesInCategory = VISUAL_STYLE_BY_CATEGORY[newCategory];
+                                const shouldResetStyle = formData.visualStyle && !stylesInCategory.includes(formData.visualStyle);
+                                setFormData({
+                                  ...formData,
+                                  styleCategory: newCategory,
+                                  ...(shouldResetStyle ? { visualStyle: '', visualStylePrompt: '' } : {}),
+                                  // 切换到真人类时清空头身比例
+                                  ...(newCategory === 'live_action' ? { bodyProportionRatio: '' as '' } : {}),
+                                });
+                              }}
+                              className={`flex-1 px-3 py-2 rounded-lg border text-sm font-semibold transition-all cursor-pointer ${
+                                formData.styleCategory === cat
+                                  ? 'bg-(--accent)/15 border-(--accent)/40 text-(--accent) shadow-[0_0_10px_var(--accent-glow)]'
+                                  : 'border-(--border-color) bg-(--bg-input) text-(--text-secondary) hover:border-(--accent)/30 hover:bg-(--accent)/5'
+                              }`}
+                            >
+                              {cat === 'live_action' ? t.projects.categoryLiveAction : t.projects.categoryAnime}
+                            </button>
+                          ))}
+                        </div>
+
+                        {/* 按分类过滤的画风子选项 */}
                         <div className="grid grid-cols-2 gap-1.5">
-                          {Object.entries(VISUAL_STYLE_PRESETS).map(([styleKey, { labelKey }]) => (
+                          {Object.entries(VISUAL_STYLE_PRESETS)
+                            .filter(([styleKey]) => {
+                              if (styleKey === 'custom') return false; // custom 单独处理
+                              if (!formData.styleCategory) return true;
+                              return VISUAL_STYLE_BY_CATEGORY[formData.styleCategory as StyleCategory]?.includes(styleKey);
+                            })
+                            .map(([styleKey, { labelKey }]) => (
                             <button
                               key={styleKey}
                               onClick={() => handleSelectVisualStyle(styleKey)}
@@ -866,6 +997,89 @@ const Projects: React.FC = () => {
                               {t.projects.presets[labelKey]}
                             </button>
                           ))}
+                        </div>
+
+                        {/* 我的风格 */}
+                        {(() => {
+                          const filteredMyStyles = myStyles.filter(s => {
+                            if (!formData.styleCategory) return true;
+                            return s.style_category === formData.styleCategory;
+                          });
+                          return filteredMyStyles.length > 0 ? (
+                            <>
+                              <div className="flex items-center gap-2 mt-3 mb-1.5">
+                                <div className="flex-1 h-px bg-(--border-color)" />
+                                <span className="text-xs text-(--text-muted) font-medium">{t.projects.myStyles}</span>
+                                <div className="flex-1 h-px bg-(--border-color)" />
+                              </div>
+                              <div className="grid grid-cols-2 gap-1.5">
+                                {filteredMyStyles.map((style) => (
+                                  <div key={style.id} className="relative group">
+                                    <button
+                                      onClick={() => handleSelectVisualStyle(`myStyle_${style.id}`)}
+                                      className={`w-full px-2 py-1.5 rounded-lg border text-xs font-medium transition-all cursor-pointer text-left ${
+                                        formData.visualStyle === `myStyle_${style.id}`
+                                          ? 'bg-(--accent)/15 border-(--accent)/40 text-(--accent) shadow-[0_0_10px_var(--accent-glow)]'
+                                          : 'border-(--border-color) bg-(--bg-input) text-(--text-secondary) hover:border-(--accent)/30 hover:bg-(--accent)/5'
+                                      }`}
+                                    >
+                                      <div className="truncate">{style.name}</div>
+                                    </button>
+                                    <div className="absolute top-0.5 right-0.5 hidden group-hover:flex gap-0.5">
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); openMyStyleModal(style); }}
+                                        className="p-0.5 rounded bg-(--bg-card) border border-(--border-color) text-(--text-muted) hover:text-(--accent) hover:border-(--accent)/40 transition-all"
+                                        title={t.projects.myStylesEdit}
+                                      >
+                                        <Edit className="w-3 h-3" />
+                                      </button>
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); handleDeleteMyStyle(style); }}
+                                        className="p-0.5 rounded bg-(--bg-card) border border-(--border-color) text-(--text-muted) hover:text-red-400 hover:border-red-400/40 transition-all"
+                                        title="删除"
+                                      >
+                                        <Trash2 className="w-3 h-3" />
+                                      </button>
+                                    </div>
+                                  </div>
+                                ))}
+                                <button
+                                  onClick={() => openMyStyleModal()}
+                                  className="px-2 py-1.5 rounded-lg border border-dashed border-(--border-color) text-xs text-(--text-muted) hover:border-(--accent)/40 hover:text-(--accent) transition-all cursor-pointer"
+                                >
+                                  {t.projects.myStylesAdd}
+                                </button>
+                              </div>
+                            </>
+                          ) : (
+                            <div className="mt-3">
+                              <div className="flex items-center gap-2 mb-1.5">
+                                <div className="flex-1 h-px bg-(--border-color)" />
+                                <span className="text-xs text-(--text-muted) font-medium">{t.projects.myStyles}</span>
+                                <div className="flex-1 h-px bg-(--border-color)" />
+                              </div>
+                              <button
+                                onClick={() => openMyStyleModal()}
+                                className="w-full px-2 py-1.5 rounded-lg border border-dashed border-(--border-color) text-xs text-(--text-muted) hover:border-(--accent)/40 hover:text-(--accent) transition-all cursor-pointer"
+                              >
+                                {t.projects.myStylesAdd}
+                              </button>
+                            </div>
+                          );
+                        })()}
+
+                        {/* 自定义按钮 */}
+                        <div className="mt-1.5">
+                          <button
+                            onClick={() => handleSelectVisualStyle('custom')}
+                            className={`w-full px-2 py-1.5 rounded-lg border text-xs font-medium transition-all cursor-pointer ${
+                              formData.visualStyle === 'custom'
+                                ? 'bg-(--accent)/15 border-(--accent)/40 text-(--accent) shadow-[0_0_10px_var(--accent-glow)]'
+                                : 'border-(--border-color) bg-(--bg-input) text-(--text-secondary) hover:border-(--accent)/30 hover:bg-(--accent)/5'
+                            }`}
+                          >
+                            {t.projects.presets.custom}
+                          </button>
                         </div>
                         {formData.visualStyle && (
                           <p className="text-xs text-(--text-muted) mt-1.5 truncate" title={formData.visualStylePrompt}>
@@ -884,6 +1098,34 @@ const Projects: React.FC = () => {
                             inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 h-8 min-h-8"
                           }}
                         />
+
+                        {/* 头身比例选择器 - 仅动漫类显示 */}
+                        {formData.styleCategory === 'anime' && (
+                          <div className="mt-3">
+                            <label className="text-xs text-(--text-secondary) font-medium mb-1.5 flex items-center gap-1">
+                              {t.projects.bodyProportionLabel}
+                              <span className="text-xs text-(--text-muted) font-normal">{t.projects.bodyProportionHint}</span>
+                            </label>
+                            <div className="grid grid-cols-4 gap-1.5">
+                              {(Object.keys(BODY_PROPORTION_PRESETS) as BodyProportionRatio[]).map((key) => {
+                                return (
+                                  <button
+                                    key={key}
+                                    onClick={() => setFormData({ ...formData, bodyProportionRatio: key })}
+                                    className={`px-2 py-2 rounded-lg border text-center transition-all cursor-pointer ${
+                                      formData.bodyProportionRatio === key
+                                        ? 'bg-(--accent)/15 border-(--accent)/40 text-(--accent) shadow-[0_0_10px_var(--accent-glow)]'
+                                        : 'border-(--border-color) bg-(--bg-input) text-(--text-secondary) hover:border-(--accent)/30 hover:bg-(--accent)/5'
+                                    }`}
+                                  >
+                                    <div className="text-xs font-semibold">{t.projects[`proportion${key.charAt(0).toUpperCase() + key.slice(1)}` as keyof typeof t.projects]}</div>
+                                    <div className="text-[10px] opacity-70 mt-0.5">{t.projects[`proportion${key.charAt(0).toUpperCase() + key.slice(1)}Desc` as keyof typeof t.projects]}</div>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
                       </div>
                       )}
                     </div>
@@ -1014,6 +1256,30 @@ const Projects: React.FC = () => {
                             inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 focus-within:border-(--accent)/40"
                           }}
                         />
+                      </div>
+
+                      {/* 拍摄视角选择 */}
+                      <div>
+                        <label className="text-sm text-(--text-secondary) font-medium mb-2 flex items-center gap-1.5">
+                          {t.projects.narrativePerspectiveLabel}
+                          <span className="text-xs text-(--text-muted) font-normal">{t.projects.narrativePerspectiveHint}</span>
+                        </label>
+                        <div className="flex gap-2">
+                          {([['first_person', t.projects.perspectiveFirstPerson, t.projects.perspectiveFirstPersonDesc], ['third_person', t.projects.perspectiveThirdPerson, t.projects.perspectiveThirdPersonDesc]] as const).map(([key, label, desc]) => (
+                            <button
+                              key={key}
+                              onClick={() => setFormData({ ...formData, narrativePerspective: formData.narrativePerspective === key ? '' : key as any })}
+                              className={`flex-1 px-3 py-2 rounded-lg border text-sm transition-all cursor-pointer text-left ${
+                                formData.narrativePerspective === key
+                                  ? 'bg-(--accent)/15 border-(--accent)/40 text-(--accent) shadow-[0_0_10px_var(--accent-glow)]'
+                                  : 'border-(--border-color) bg-(--bg-input) text-(--text-secondary) hover:border-(--accent)/30 hover:bg-(--accent)/5'
+                              }`}
+                            >
+                              <span className="font-medium">{label}</span>
+                              <span className="text-xs ml-1.5 opacity-70">{desc}</span>
+                            </button>
+                          ))}
+                        </div>
                       </div>
 
                       {/* 画面参数设置 */}
@@ -1270,6 +1536,86 @@ const Projects: React.FC = () => {
                     {t.common.cancel}
                   </Button>
                   <Button className="pro-btn-primary" onPress={handleSave}>
+                    {t.common.save}
+                  </Button>
+                </ModalFooter>
+              </>
+            )}
+          </ModalContent>
+        </Modal>
+
+        {/* 我的风格编辑弹窗 */}
+        <Modal
+          isOpen={myStylesDisclosure.isOpen}
+          onOpenChange={myStylesDisclosure.onOpenChange}
+          size="md"
+          classNames={{
+            backdrop: 'bg-black/60 backdrop-blur-sm',
+            base: 'border border-(--border-color) shadow-2xl',
+            header: 'border-b border-(--border-color)',
+            footer: 'border-t border-(--border-color)',
+            body: 'bg-transparent',
+            closeButton: 'text-(--text-muted) hover:text-(--text-primary)',
+          }}
+        >
+          <ModalContent>
+            {(onClose) => (
+              <>
+                <ModalHeader className="text-(--text-primary) font-bold">
+                  {editingMyStyle ? t.projects.myStylesEdit : t.projects.myStylesAdd}
+                </ModalHeader>
+                <ModalBody className="space-y-3">
+                  <div>
+                    <label className="text-xs text-(--text-secondary) font-medium mb-1 block">{t.projects.myStylesNameLabel}</label>
+                    <Input
+                      size="sm"
+                      placeholder={t.projects.myStylesNamePlaceholder}
+                      value={myStyleForm.name}
+                      onValueChange={(val) => setMyStyleForm({ ...myStyleForm, name: val })}
+                      classNames={{
+                        input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted) text-xs",
+                        inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 h-8 min-h-8"
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-(--text-secondary) font-medium mb-1 block">{t.projects.myStylesPromptLabel}</label>
+                    <Textarea
+                      size="sm"
+                      placeholder={t.projects.myStylesPromptPlaceholder}
+                      value={myStyleForm.prompt}
+                      onValueChange={(val) => setMyStyleForm({ ...myStyleForm, prompt: val })}
+                      minRows={3}
+                      classNames={{
+                        input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted) text-xs",
+                        inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30"
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-(--text-secondary) font-medium mb-1 block">{t.projects.myStylesCategoryLabel}</label>
+                    <div className="flex gap-2">
+                      {(['anime', 'live_action'] as const).map((cat) => (
+                        <button
+                          key={cat}
+                          onClick={() => setMyStyleForm({ ...myStyleForm, style_category: cat })}
+                          className={`flex-1 px-3 py-2 rounded-lg border text-xs font-semibold transition-all cursor-pointer ${
+                            myStyleForm.style_category === cat
+                              ? 'bg-(--accent)/15 border-(--accent)/40 text-(--accent) shadow-[0_0_10px_var(--accent-glow)]'
+                              : 'border-(--border-color) bg-(--bg-input) text-(--text-secondary) hover:border-(--accent)/30 hover:bg-(--accent)/5'
+                          }`}
+                        >
+                          {cat === 'live_action' ? t.projects.categoryLiveAction : t.projects.categoryAnime}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </ModalBody>
+                <ModalFooter className="gap-2">
+                  <Button variant="flat" onPress={onClose} className="bg-white/5 text-(--text-secondary) font-semibold hover:bg-white/10 border border-white/10 cursor-pointer">
+                    {t.common.cancel}
+                  </Button>
+                  <Button className="pro-btn-primary" onPress={handleSaveMyStyle}>
                     {t.common.save}
                   </Button>
                 </ModalFooter>

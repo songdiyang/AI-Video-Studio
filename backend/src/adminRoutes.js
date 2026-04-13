@@ -91,8 +91,8 @@ router.get('/service-ports-status', authMiddleware, requireAdmin, async (_req, r
     },
     {
       name: 'Frontend',
-      port: 3000,
-      url: (process.env.ALLOWED_ORIGINS || 'http://localhost:3000').split(',')[0].trim(),
+      port: parseInt(process.env.HTTP_PORT || '80'),
+      url: (process.env.FRONTEND_CHECK_URL || `http://localhost:${process.env.HTTP_PORT || 80}`),
       description: '前端应用'
     },
     {
@@ -474,7 +474,7 @@ router.get('/services', authMiddleware, requireAdmin, async (_req, res) => {
     } catch (_) { /* ignore */ }
 
     // --- 2. Frontend（Vite dev server 或 nginx） ---
-    const frontendUrl = (process.env.ALLOWED_ORIGINS || 'http://localhost:3000').split(',')[0].trim();
+    const frontendUrl = process.env.FRONTEND_CHECK_URL || `http://localhost:${process.env.HTTP_PORT || 80}`;
     const frontendProbe = await probeWithTimeout(frontendUrl);
     const frontendService = {
       serviceId: 'frontend',

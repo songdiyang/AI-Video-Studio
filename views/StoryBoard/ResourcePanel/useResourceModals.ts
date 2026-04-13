@@ -3,6 +3,13 @@ import { useDisclosure } from '@heroui/react';
 import { getAuthToken } from '../../../services/auth';
 import { ResourceItem } from './types';
 
+/** URL 缓存破坏：追加时间戳参数，强制浏览器加载最新图片 */
+function bustCache(url: string | null | undefined): string | undefined {
+  if (!url) return undefined;
+  const separator = url.includes('?') ? '&' : '?';
+  return `${url}${separator}v=${Date.now()}`;
+}
+
 interface UseResourceModalsOptions {
   onSuccess?: (message: string) => void;
   onError?: (message: string) => void;
@@ -22,7 +29,8 @@ export const useResourceModals = (options: UseResourceModalsOptions = {}) => {
     imageModel: string,
     textModel: string,
     aspectRatio: string,
-    characterId?: number
+    characterId?: number,
+    mode?: 'style' | 'views' | 'all'
   ) => {
     // 如果是从角色卡片点击进来（没有 imageModel），先从数据库获取三视图数据
     if (!imageModel && !textModel && characterId) {
@@ -43,10 +51,10 @@ export const useResourceModals = (options: UseResourceModalsOptions = {}) => {
           // 设置角色数据，包含三视图 URL
           setSelectedResource({
             name: charName,
-            frontViewUrl: character.front_view_url,
-            sideViewUrl: character.side_view_url,
-            backViewUrl: character.back_view_url,
-            characterSheetUrl: character.character_sheet_url,
+            frontViewUrl: bustCache(character.front_view_url),
+            sideViewUrl: bustCache(character.side_view_url),
+            backViewUrl: bustCache(character.back_view_url),
+            characterSheetUrl: bustCache(character.character_sheet_url),
             generationStatus: character.generation_status
           });
         } else {
@@ -95,14 +103,21 @@ export const useResourceModals = (options: UseResourceModalsOptions = {}) => {
           imageModel,
           textModel,
           aspectRatio,
-          // 智能补全：检测缺失的视图，只生成缺失的
-          ...(selectedResource ? (() => {
-            const missing: string[] = [];
-            if (!selectedResource.frontViewUrl) missing.push('front');
-            if (!selectedResource.sideViewUrl) missing.push('side');
-            if (!selectedResource.backViewUrl) missing.push('back');
-            return missing.length > 0 && missing.length < 3 ? { regenerateOnly: missing } : {};
-          })() : {})
+          // 根据模式设置 regenerateOnly
+          ...(mode === 'style'
+            ? { regenerateOnly: ['front'] }          // 风格图：只生成正面
+            : mode === 'views'
+            ? { regenerateOnly: ['side', 'back'] }   // 三视图：生成侧面+背面
+            : (selectedResource ? (() => {           // 全部：智能检测
+                const missing: string[] = [];
+                if (!selectedResource.frontViewUrl) missing.push('front');
+                if (!selectedResource.sideViewUrl) missing.push('side');
+                if (!selectedResource.backViewUrl) missing.push('back');
+                if (missing.length === 0) return { regenerateOnly: ['front', 'side', 'back'] };
+                if (missing.length < 3) return { regenerateOnly: missing };
+                return {};
+              })() : {})
+          )
         })
       });
 
@@ -121,7 +136,8 @@ export const useResourceModals = (options: UseResourceModalsOptions = {}) => {
       console.log('[Generate Views] 工作流已启动:', data);
       await onJobAccepted?.();
       
-      onSuccess?.(`三视图生成已启动（工作流 ID: ${data.jobId}），请稍后刷新查看`);
+      const modeLabel = mode === 'style' ? '风格图' : mode === 'views' ? '侧面/背面' : '三视图';
+      onSuccess?.(`${modeLabel}生成已启动（工作流 ID: ${data.jobId}），请稍后刷新查看`);
       setGeneratedPrompts({ status: 'generating', jobId: data.jobId });
       
       // 关闭弹窗
