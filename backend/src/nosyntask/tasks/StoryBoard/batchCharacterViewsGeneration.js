@@ -102,9 +102,8 @@ async function handleBatchCharacterViewsGeneration(inputParams, onProgress) {
         projectId,
         imageModel,
         textModel,
-        aspectRatio: aspectRatio || null,
-        width: 1920,
-        height: 2880
+        aspectRatio: aspectRatio || '9:16'  // 使用传入的 aspectRatio，默认 9:16
+        // 不再硬编码 width/height，让 handleImageGeneration 根据 aspectRatio 自动计算
       }, (stepProgress) => {
         // 映射单角色进度到整体进度
         const overallProgress = Math.round(((i + stepProgress / 100) / characters.length) * 100);

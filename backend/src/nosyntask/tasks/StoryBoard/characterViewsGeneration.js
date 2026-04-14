@@ -200,9 +200,9 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
     projectId,
     imageModel,
     textModel,
-    aspectRatio,
-    width = 1920,
-    height = 2880,
+    aspectRatio = '9:16',  // 默认 9:16 竖版比例
+    width,
+    height,
     regenerateOnly,   // 可选：补全模式，如 ['side', 'back']
     isBaseModel = false,  // 白膜模式
     gender = 'unknown',   // 性别：male, female, unknown
@@ -305,13 +305,20 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
     console.log('[CharacterViews] 生成正面视图...');
     const frontPrompt = await generateViewPrompt('front', characterName, appearance, description, style, textModel, { isBaseModel, gender, outfit, hairstyle, accessories, ageStage, bodyProportionInstruction });
     lastGeneratedPrompt = frontPrompt; // 保存英文提示词
-    const frontResult = await handleImageGeneration({
+    // 构建图片生成参数：优先使用具体尺寸，否则使用 aspectRatio
+    const frontGenParams = {
       prompt: frontPrompt,
       imageModel: imageModel,
-      aspectRatio,
-      width,
-      height
-    }, (progress) => {
+      aspectRatio
+    };
+    // 如果传入了具体 width/height，优先使用它们
+    if (width && height) {
+      frontGenParams.width = width;
+      frontGenParams.height = height;
+      delete frontGenParams.aspectRatio;
+    }
+
+    const frontResult = await handleImageGeneration(frontGenParams, (progress) => {
       if (onProgress) onProgress(5 + progress * 0.2);
     });
     const frontViewUrl = frontResult.image_url;
@@ -358,10 +365,14 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
     const sideGenParams = {
       prompt: sidePrompt,
       imageModel: imageModel,
-      aspectRatio,
-      width,
-      height
+      aspectRatio
     };
+    // 如果传入了具体 width/height，优先使用它们
+    if (width && height) {
+      sideGenParams.width = width;
+      sideGenParams.height = height;
+      delete sideGenParams.aspectRatio;
+    }
     if (referenceUrls.length > 0) {
       sideGenParams.imageUrls = referenceUrls;
       console.log('[CharacterViews] 侧面视图参考图:', referenceUrls);
@@ -411,10 +422,14 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
     const backGenParams = {
       prompt: backPrompt,
       imageModel: imageModel,
-      aspectRatio,
-      width,
-      height
+      aspectRatio
     };
+    // 如果传入了具体 width/height，优先使用它们
+    if (width && height) {
+      backGenParams.width = width;
+      backGenParams.height = height;
+      delete backGenParams.aspectRatio;
+    }
     if (referenceUrls.length > 0) {
       backGenParams.imageUrls = referenceUrls;
       console.log('[CharacterViews] 背面视图参考图:', referenceUrls);

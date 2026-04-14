@@ -56,11 +56,11 @@ function normalizeFrameResult(result: any) {
     result?.image_url ||
     null;
 
+  // 注意：尾帧不再默认使用首帧的值，以支持单独重新生成首帧或尾帧
   const endFrame =
     result?.endFrame ||
     result?.lastFrameUrl ||
     result?.last_frame_url ||
-    startFrame ||
     null;
 
   return { startFrame, endFrame };
@@ -162,17 +162,37 @@ export function useSceneGeneration({
 
       if (key.startsWith('img_')) {
         const { startFrame, endFrame } = normalizeFrameResult(task.result);
-        if (startFrame) {
+        // 只要有一个帧存在就更新（支持单独重新生成首帧或尾帧）
+        if (startFrame || endFrame) {
           // 添加缓存破坏参数，确保浏览器加载最新帧图片
-          const freshStartFrame = bustCache(startFrame)!;
+          const freshStartFrame = bustCache(startFrame);
           const freshEndFrame = bustCache(endFrame);
-          setScenes(prev => prev.map(s =>
-            s.id === sceneId
-              ? { ...s, startFrame: freshStartFrame, endFrame: freshEndFrame, imageUrl: freshStartFrame }
-              : s
-          ));
+          setScenes(prev => prev.map(s => {
+            if (s.id !== sceneId) return s;
+            const updates: Partial<StoryboardScene> = {};
+            // 只更新返回的帧，保留已有的帧
+            if (freshStartFrame) {
+              updates.startFrame = freshStartFrame;
+              updates.imageUrl = freshStartFrame;
+            }
+            if (freshEndFrame) {
+              updates.endFrame = freshEndFrame;
+            }
+            return { ...s, ...updates };
+          }));
           // 保存到数据库时使用原始 URL（不含缓存参数）
-          void persistStoryboardMedia(sceneId, { imageUrl: startFrame, startFrame, endFrame });
+          // 只传递实际存在的字段，避免传递 undefined 导致后端误判
+          const payload: Record<string, string | null> = {};
+          if (startFrame) {
+            payload.imageUrl = startFrame;
+            payload.startFrame = startFrame;
+          }
+          if (endFrame) {
+            payload.endFrame = endFrame;
+          }
+          if (Object.keys(payload).length > 0) {
+            void persistStoryboardMedia(sceneId, payload);
+          }
         }
       } else if (key.startsWith('vid_')) {
         const videoUrl = task.result.video_url || task.result.videoUrl || task.result.url;
@@ -191,7 +211,7 @@ export function useSceneGeneration({
   }, [tasks, clearTask, setScenes]);
 
   // 启动首尾帧生成 workflow
-  const generateImage = async (id: number, prompt: string, regenerateTarget?: 'first' | 'last' | 'both'): Promise<{ success: boolean; error?: string }> => {
+  const generateImage = async (id: number, prompt: string, regenerateTarget?: 'first' | 'last' | 'both', forceRegenerate?: boolean): Promise<{ success: boolean; error?: string }> => {
     try {
       if (isTaskActive(`img_${id}`)) {
         return { success: false, error: '当前镜头正在生成首尾帧，请等待完成后再试' };
@@ -217,13 +237,14 @@ export function useSceneGeneration({
       // 根据是否有动作选择不同的工作流
       if (scene.hasAction) {
         // 有动作：生成首尾帧
-        console.log('[useSceneGeneration] 生成首尾帧（有动作）, target:', regenerateTarget || 'auto');
+        console.log('[useSceneGeneration] 生成首尾帧（有动作）, target:', regenerateTarget || 'auto', 'forceRegenerate:', forceRegenerate);
         await runTask(`img_${id}`, 'frame_generation', {
           storyboardId: id,
           prompt,
           imageModel,
           textModel,
           regenerateTarget,
+          forceRegenerate,
           ...extraParams
         });
       } else {

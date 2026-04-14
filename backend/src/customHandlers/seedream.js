@@ -56,12 +56,9 @@ const ASPECT_RATIO_SIZE_MAP_45 = {
   '3:4':   '1680x2240',   // 3,763,200
   '3:2':   '2400x1600',   // 3,840,000
   '2:3':   '1600x2400',   // 3,840,000
-  '21:9':  '2880x1232',   // 3,548,160 → 补偿到 2880x1280
-  '9:21':  '1232x2880',   // 同上 → 1280x2880
+  '21:9':  '2880x1280',   // 3,686,400（已修正边界值）
+  '9:21':  '1280x2880',   // 3,686,400（已修正边界值）
 };
-// 修正边界值
-ASPECT_RATIO_SIZE_MAP_45['21:9'] = '2880x1280';
-ASPECT_RATIO_SIZE_MAP_45['9:21'] = '1280x2880';
 
 /**
  * 根据 aspectRatio 字符串动态计算满足最低像素要求的尺寸
@@ -113,14 +110,20 @@ function processParams(params, modelId) {
 
   // Seedream 5.0 系列
   if (isSeedream50) {
-    // 5.0 使用 '2k'/'3k' 预设值
-    if (!size || size === '_REMOVE_' || !/^(2k|3k)$/i.test(size)) {
+    // 5.0 使用 '2k'/'3k' 预设值，但只有在没有 aspectRatio 时才强制设置默认值
+    // 因为如果传入了 aspectRatio，API 会根据 ratio 自动选择合适的尺寸
+    if (!aspectRatio && (!size || size === '_REMOVE_' || !/^(2k|3k)$/i.test(size))) {
       size = '2k';
     }
     // 如果有 aspectRatio，作为 ratio 参数传递给 API（Seedream 5.0 支持 ratio 字段）
     if (aspectRatio && aspectRatio !== '_REMOVE_' && /^\d+:\d+$/.test(aspectRatio)) {
       extra.ratio = aspectRatio;
-      console.log(`[Seedream Handler] Seedream 5.0，设置 ratio=${aspectRatio}, size=${size}`);
+      // 当使用 ratio 参数时，size 参数可以省略，让 API 根据比例自动选择
+      if (!size || size === '_REMOVE_') {
+        console.log(`[Seedream Handler] Seedream 5.0，设置 ratio=${aspectRatio}，不指定 size（API自动选择）`);
+      } else {
+        console.log(`[Seedream Handler] Seedream 5.0，设置 ratio=${aspectRatio}, size=${size}`);
+      }
     } else {
       console.log(`[Seedream Handler] Seedream 5.0 模型，使用预设尺寸 '${size}'，无 aspectRatio`);
     }

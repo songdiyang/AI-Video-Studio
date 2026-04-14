@@ -188,3 +188,15 @@ export function formatCacheSize(bytes: number): string {
   const size = bytes / Math.pow(k, i);
   return `${size.toFixed(i > 0 ? 1 : 0)} ${units[i]}`;
 }
+
+/**
+ * 为 URL 添加缓存破坏参数，确保浏览器加载最新内容
+ * 帧图片使用固定 MinIO 路径，重新生成后 URL 不变，需要强制刷新缓存
+ * @param url 原始 URL
+ * @returns 带缓存破坏参数的 URL
+ */
+export function bustCache(url: string | null | undefined): string | null {
+  if (!url) return null;
+  const separator = url.includes('?') ? '&' : '?';
+  return `${url}${separator}v=${Date.now()}`;
+}

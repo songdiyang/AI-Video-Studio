@@ -32,6 +32,7 @@ import {
   Trash2,
   Search,
   ClipboardList,
+  Users,
 } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../contexts/ConfirmContext';

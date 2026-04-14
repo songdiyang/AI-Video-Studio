@@ -176,16 +176,17 @@ const Projects: React.FC = () => {
       myStylesDisclosure.onClose();
       loadMyStyles();
     } catch (error: any) {
-      showToast(error.message || '操作失败', 'danger');
+      showToast(error.message || '操作失败', 'error');
     }
   };
 
   const handleDeleteMyStyle = async (style: UserStylePreset) => {
     const ok = await confirm({
-      title: t.projects.myStylesDeleteConfirm.replace('{name}', style.name),
+      title: '删除确认',
+      message: t.projects.myStylesDeleteConfirm.replace('{name}', style.name),
       confirmText: '删除',
       cancelText: '取消',
-      confirmColor: 'danger' as any,
+      type: 'danger'
     });
     if (!ok) return;
     try {
@@ -197,7 +198,7 @@ const Projects: React.FC = () => {
         setFormData({ ...formData, visualStyle: '', visualStylePrompt: '' });
       }
     } catch (error: any) {
-      showToast(error.message || '删除失败', 'danger');
+      showToast(error.message || '删除失败', 'error');
     }
   };
 
@@ -1108,6 +1109,7 @@ const Projects: React.FC = () => {
                             </label>
                             <div className="grid grid-cols-4 gap-1.5">
                               {(Object.keys(BODY_PROPORTION_PRESETS) as BodyProportionRatio[]).map((key) => {
+                                const preset = BODY_PROPORTION_PRESETS[key];
                                 return (
                                   <button
                                     key={key}
@@ -1118,8 +1120,8 @@ const Projects: React.FC = () => {
                                         : 'border-(--border-color) bg-(--bg-input) text-(--text-secondary) hover:border-(--accent)/30 hover:bg-(--accent)/5'
                                     }`}
                                   >
-                                    <div className="text-xs font-semibold">{t.projects[`proportion${key.charAt(0).toUpperCase() + key.slice(1)}` as keyof typeof t.projects]}</div>
-                                    <div className="text-[10px] opacity-70 mt-0.5">{t.projects[`proportion${key.charAt(0).toUpperCase() + key.slice(1)}Desc` as keyof typeof t.projects]}</div>
+                                    <div className="text-xs font-semibold">{preset.name}</div>
+                                    <div className="text-[10px] opacity-70 mt-0.5">{preset.description}</div>
                                   </button>
                                 );
                               })}

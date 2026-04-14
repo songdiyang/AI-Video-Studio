@@ -6,6 +6,22 @@
 const { queryOne, execute } = require('../../../dbHelper');
 
 /**
+ * 获取下一个版本号（不保存）
+ * 用于在保存文件前确定版本号，以便生成带版本号的文件路径
+ * 
+ * @param {number} storyboardId - 分镜 ID
+ * @param {'first'|'last'} frameType - 帧类型
+ * @returns {number} 下一个版本号
+ */
+async function getNextVersionNumber(storyboardId, frameType) {
+  const maxRow = await queryOne(
+    'SELECT COALESCE(MAX(version_number), 0) as max_ver FROM storyboard_frame_history WHERE storyboard_id = ? AND frame_type = ?',
+    [storyboardId, frameType]
+  );
+  return (maxRow?.max_ver || 0) + 1;
+}
+
+/**
  * 保存帧到历史版本表
  * 先将旧版本标记为非当前，再插入新版本
  * 
@@ -23,11 +39,7 @@ async function saveFrameHistory(storyboardId, frameType, frameUrl, prompt, param
   }
 
   // 1. 查询当前最大版本号
-  const maxRow = await queryOne(
-    'SELECT COALESCE(MAX(version_number), 0) as max_ver FROM storyboard_frame_history WHERE storyboard_id = ? AND frame_type = ?',
-    [storyboardId, frameType]
-  );
-  const newVersion = (maxRow?.max_ver || 0) + 1;
+  const newVersion = await getNextVersionNumber(storyboardId, frameType);
 
   // 2. 将旧版本标记为非当前
   await execute(
@@ -46,4 +58,4 @@ async function saveFrameHistory(storyboardId, frameType, frameUrl, prompt, param
   return newVersion;
 }
 
-module.exports = { saveFrameHistory };
+module.exports = { saveFrameHistory, getNextVersionNumber };

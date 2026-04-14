@@ -258,6 +258,7 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
       description: '',
       dialogue: '',
       dialogues: [],
+      voiceover: '',
       duration: 5,
       characters: [],
       props: [],

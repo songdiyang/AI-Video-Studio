@@ -28,7 +28,7 @@ const { selectReferenceImages } = require('./referenceImageSelector');
 const { collectCandidateImages, appendContextCandidates } = require('./collectCandidateImages');
 const { traced, trace } = require('../../engine/generationTrace');
 const { assertUpdated, assertPersistedFields } = require('./persistenceGuard');
-const { saveFrameHistory } = require('./saveFrameHistory');
+const { saveFrameHistory, getNextVersionNumber } = require('./saveFrameHistory');
 
 /**
  * 草图转图片主函数
@@ -264,11 +264,12 @@ ${extraInfo}
   trace('图片生成完成', { url: generatedUrl, model: modelName, promptUsed, sketchType, controlStrength });
   console.log('[SketchToImage] 图片生成完成:', generatedUrl);
 
-  // 6. 持久化到 MinIO
+  // 6. 获取版本号并持久化到 MinIO（带版本号路径，避免覆盖历史版本）
   if (onProgress) onProgress(92);
+  const versionNum = await getNextVersionNumber(storyboardId, 'first');
   const persistedUrl = await downloadAndStore(
     generatedUrl,
-    `images/frames/${storyboardId}/sketch_frame`,
+    `images/frames/${storyboardId}/sketch_frame_v${versionNum}`,
     { fallbackExt: '.png' }
   );
 

@@ -25,7 +25,7 @@ const { collectCandidateImages, appendContextCandidates } = require('./collectCa
 const { traced, trace } = require('../../engine/generationTrace');
 const { assertUpdated, assertPersistedFields } = require('./persistenceGuard');
 const { resolveMediaUrl } = require('../base/mediaResultResolver');
-const { saveFrameHistory } = require('./saveFrameHistory');
+const { saveFrameHistory, getNextVersionNumber } = require('./saveFrameHistory');
 
 /**
  * 生成单张图片（通过 submitAndPoll 自动处理同步/异步）
@@ -406,7 +406,7 @@ ${frameHint}
 });
 
 async function handleFrameGeneration(inputParams, onProgress) {
-  const { storyboardId, prompt, imageModel: modelName, textModel, aspectRatio, resolution, prevEndFrameUrl, prevDescription, prevEndState: inputPrevEndState, isFirstScene, sceneState: inputSceneState, environmentChange: inputEnvironmentChange, activeSceneUrl, regenerateTarget, visualStyle: inputVisualStyle } = inputParams;
+  const { storyboardId, prompt, imageModel: modelName, textModel, aspectRatio, resolution, prevEndFrameUrl, prevDescription, prevEndState: inputPrevEndState, isFirstScene, sceneState: inputSceneState, environmentChange: inputEnvironmentChange, activeSceneUrl, regenerateTarget, visualStyle: inputVisualStyle, forceRegenerate } = inputParams;
 
   if (!storyboardId) {
     throw new Error('缺少必要参数: storyboardId');
@@ -555,7 +555,7 @@ async function handleFrameGeneration(inputParams, onProgress) {
 
     // AI 选择首帧参考图
     const startCandidates = [...candidateImages];
-    const currentShotData = { prompt_template: description, variables_json: variables, first_frame_url: null, last_frame_url: existingLastFrame };
+    const currentShotData = { prompt_template: description, variables_json: variables, first_frame_url: null, last_frame_url: forceRegenerate ? null : existingLastFrame };
     const startRefResult = await selectReferenceImages({
       textModel,
       frameType: 'start',
@@ -570,19 +570,22 @@ async function handleFrameGeneration(inputParams, onProgress) {
     console.log('[FrameGen] 开始生成首帧...');
     const startFrame = await generateSingleImage(modelName, startPrompt, aspectRatio, 'FrameGen-Start', startRefResult.selectedUrls, resolution);
 
-    // 持久化首帧到 MinIO
+    // 获取首帧版本号并持久化到 MinIO（带版本号路径，避免覆盖历史版本）
+    const startVersionNum = await getNextVersionNumber(storyboardId, 'first');
     persistedStartFrame = await downloadAndStore(
       startFrame,
-      `images/frames/${storyboardId}/first_frame`,
+      `images/frames/${storyboardId}/first_frame_v${startVersionNum}`,
       { fallbackExt: '.png' }
     );
-    console.log('[FrameGen] 首帧已持久化:', persistedStartFrame);
+    console.log('[FrameGen] 首帧已持久化 (版本' + startVersionNum + '):', persistedStartFrame);
     trace('首帧持久化完成', { url: persistedStartFrame, promptUsed: startPrompt, refImages: startRefResult.selectedUrls });
 
-    // AI 选择尾帧参考图（包含刚生成的首帧）
+    // AI 选择尾帧参考图（包含刚生成的首帧，仅当不是强制重新生成时）
     if (onProgress) onProgress(55);
     const endCandidates = [...candidateImages];
-    endCandidates.push({ id: 'current_start_frame', label: '本镜头首帧（刚生成）', url: persistedStartFrame, description: '本镜头的首帧画面，展示动作开始前的状态。尾帧应展示动作结束后的状态，与首帧保持角色、场景、风格的一致性' });
+    if (!forceRegenerate) {
+      endCandidates.push({ id: 'current_start_frame', label: '本镜头首帧（刚生成）', url: persistedStartFrame, description: '本镜头的首帧画面，展示动作开始前的状态。尾帧应展示动作结束后的状态，与首帧保持角色、场景、风格的一致性' });
+    }
     const endRefResult = await selectReferenceImages({
       textModel,
       frameType: 'end',
@@ -597,13 +600,14 @@ async function handleFrameGeneration(inputParams, onProgress) {
     console.log('[FrameGen] 开始生成尾帧...');
     const endFrame = await generateSingleImage(modelName, endPrompt, aspectRatio, 'FrameGen-End', endRefResult.selectedUrls, resolution);
 
-    // 持久化尾帧到 MinIO
+    // 获取尾帧版本号并持久化到 MinIO（带版本号路径，避免覆盖历史版本）
+    const endVersionNum = await getNextVersionNumber(storyboardId, 'last');
     persistedEndFrame = await downloadAndStore(
       endFrame,
-      `images/frames/${storyboardId}/last_frame`,
+      `images/frames/${storyboardId}/last_frame_v${endVersionNum}`,
       { fallbackExt: '.png' }
     );
-    console.log('[FrameGen] 尾帧已持久化:', persistedEndFrame);
+    console.log('[FrameGen] 尾帧已持久化 (版本' + endVersionNum + '):', persistedEndFrame);
     trace('尾帧持久化完成', { url: persistedEndFrame, promptUsed: endPrompt, refImages: endRefResult.selectedUrls });
 
     // === 优化：一次性更新数据库 ===
@@ -643,8 +647,8 @@ async function handleFrameGeneration(inputParams, onProgress) {
     // 2.8 AI 选择首帧参考图
     if (onProgress) onProgress(13);
     const startCandidates = [...candidateImages];
-    // 如果尾帧已存在，加入作为参考
-    if (existingLastFrame && !needGenerateLast) {
+    // 如果尾帧已存在且不是强制重新生成，加入作为参考
+    if (existingLastFrame && !needGenerateLast && !forceRegenerate) {
       startCandidates.push({ id: 'existing_last_frame', label: '本镜头尾帧（已保留）', url: existingLastFrame, description: '本镜头已有的尾帧画面，展示动作结束后的状态。首帧应展示动作开始前的状态，与尾帧保持角色、场景、风格的一致性' });
     }
     const currentShotData = { prompt_template: description, variables_json: variables, first_frame_url: null, last_frame_url: existingLastFrame };
@@ -676,10 +680,11 @@ async function handleFrameGeneration(inputParams, onProgress) {
     console.log('[FrameGen] 开始生成首帧...');
     const startFrame = await generateSingleImage(modelName, startPrompt, aspectRatio, 'FrameGen-Start', startRefResult.selectedUrls, resolution);
 
-    // 持久化首帧到 MinIO
+    // 获取版本号并持久化首帧到 MinIO（带版本号路径，避免覆盖历史版本）
+    const startVersionNum = await getNextVersionNumber(storyboardId, 'first');
     persistedStartFrame = await downloadAndStore(
       startFrame,
-      `images/frames/${storyboardId}/first_frame`,
+      `images/frames/${storyboardId}/first_frame_v${startVersionNum}`,
       { fallbackExt: '.png' }
     );
 
@@ -695,7 +700,7 @@ async function handleFrameGeneration(inputParams, onProgress) {
       fields: ['first_frame_url'],
       label: '[FrameGen] 首帧'
     });
-    console.log('[FrameGen] 首帧已保存:', persistedStartFrame);
+    console.log('[FrameGen] 首帧已保存 (版本' + startVersionNum + '):', persistedStartFrame);
     trace('首帧持久化完成', { url: persistedStartFrame, promptUsed: startPrompt, refImages: startRefResult.selectedUrls });
 
     // 保存首帧到历史版本表
@@ -727,9 +732,9 @@ async function handleFrameGeneration(inputParams, onProgress) {
     // 6. AI 选择尾帧参考图（加入首帧作为候选）
     if (onProgress) onProgress(55);
     const endCandidates = [...candidateImages];
-    // 用刚生成的或已有的首帧作为参考
+    // 用刚生成的或已有的首帧作为参考（仅当不是强制重新生成时）
     const firstFrameForRef = persistedStartFrame;
-    if (firstFrameForRef) {
+    if (firstFrameForRef && !forceRegenerate) {
       endCandidates.push({ id: 'current_start_frame', label: needGenerateFirst ? '本镜头首帧（刚生成）' : '本镜头首帧（已保留）', url: firstFrameForRef, description: '本镜头的首帧画面，展示动作开始前的状态。尾帧应展示动作结束后的状态，与首帧保持角色、场景、风格的一致性' });
     }
     const endRefResult = await selectReferenceImages({
@@ -746,10 +751,11 @@ async function handleFrameGeneration(inputParams, onProgress) {
     console.log('[FrameGen] 开始生成尾帧...');
     const endFrame = await generateSingleImage(modelName, endPrompt, aspectRatio, 'FrameGen-End', endRefResult.selectedUrls, resolution);
 
-    // 持久化尾帧到 MinIO
+    // 获取版本号并持久化尾帧到 MinIO（带版本号路径，避免覆盖历史版本）
+    const endVersionNum = await getNextVersionNumber(storyboardId, 'last');
     persistedEndFrame = await downloadAndStore(
       endFrame,
-      `images/frames/${storyboardId}/last_frame`,
+      `images/frames/${storyboardId}/last_frame_v${endVersionNum}`,
       { fallbackExt: '.png' }
     );
 
@@ -765,7 +771,7 @@ async function handleFrameGeneration(inputParams, onProgress) {
       fields: ['last_frame_url'],
       label: '[FrameGen] 尾帧'
     });
-    console.log('[FrameGen] 尾帧已保存:', persistedEndFrame);
+    console.log('[FrameGen] 尾帧已保存 (版本' + endVersionNum + '):', persistedEndFrame);
     trace('尾帧持久化完成', { url: persistedEndFrame, promptUsed: endPrompt, refImages: endRefResult.selectedUrls });
 
     // 保存尾帧到历史版本表

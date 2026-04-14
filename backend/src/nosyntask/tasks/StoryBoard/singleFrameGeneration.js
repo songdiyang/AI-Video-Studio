@@ -22,7 +22,7 @@ const { selectReferenceImages } = require('./referenceImageSelector');
 const { collectCandidateImages, appendContextCandidates } = require('./collectCandidateImages');
 const { traced, trace } = require('../../engine/generationTrace');
 const { assertUpdated, assertPersistedFields } = require('./persistenceGuard');
-const { saveFrameHistory } = require('./saveFrameHistory');
+const { saveFrameHistory, getNextVersionNumber } = require('./saveFrameHistory');
 
 // collectReferenceImages 已提取到 collectCandidateImages.js 共享模块
 
@@ -338,10 +338,11 @@ ${extraInfo}
   trace('图片生成完成', { url: firstFrameUrl, model: modelName, promptUsed, refImages: refResult.selectedUrls });
   console.log('[SingleFrameGen] 首帧生成完成:', firstFrameUrl);
 
-  // 持久化首帧到 MinIO
+  // 获取版本号并持久化首帧到 MinIO（带版本号路径，避免覆盖历史版本）
+  const versionNum = await getNextVersionNumber(storyboardId, 'first');
   const persistedUrl = await downloadAndStore(
     firstFrameUrl,
-    `images/frames/${storyboardId}/first_frame`,
+    `images/frames/${storyboardId}/first_frame_v${versionNum}`,
     { fallbackExt: '.png' }
   );
 

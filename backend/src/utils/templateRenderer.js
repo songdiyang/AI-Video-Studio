@@ -249,15 +249,23 @@ function renderWithFallback(type, template, runtimeParams, fallbackParams, label
   if (!mergedData.resolution && mergedData.size && mergedData.size !== '_REMOVE_') {
     mergedData.resolution = mergedData.size;
   }
-  // 如果 size 和 resolution 都没有，但模板需要 size，提供默认值 '2k'（Seedream 5.0 系列默认）
-  // 这在模板校验阶段会检测到需要 size，此时提供兜底值
-  if (!mergedData.size || mergedData.size === '_REMOVE_') {
-    mergedData.size = '2k';
-  }
+  // 注意：不再自动设置默认 size，因为 aspectRatio 参数会被 customHandlers/seedream.js
+  // 自动转换为正确的尺寸。自动设置 '2k' 会覆盖 aspectRatio 的计算结果。
+  // 如果模板确实需要 size 且没有 aspectRatio，custom handler 会提供默认值。
 
   // 渲染前校验：扫描原始模板中的 {{key}}，检查 mergedData 是否全部覆盖
   const required = findUnrenderedPlaceholders(template);
   const missing = required.filter(key => mergedData[key] === undefined);
+
+  // 特殊处理：如果模板需要 size 但未提供，但有 aspectRatio，则将 size 设为 '_REMOVE_'
+  // 这样 seedream handler 会根据 aspectRatio 动态计算 size，而不会使用模板中的占位符
+  if (missing.includes('size') && mergedData.aspectRatio && mergedData.aspectRatio !== '_REMOVE_') {
+    mergedData.size = '_REMOVE_';
+    // 从 missing 列表中移除 size
+    const sizeIndex = missing.indexOf('size');
+    if (sizeIndex > -1) missing.splice(sizeIndex, 1);
+  }
+
   if (missing.length > 0) {
     throw new Error(
       `模板渲染不完整 [${label}]：以下占位符未被填充: ${missing.map(k => '{{' + k + '}}').join(', ')}。` +

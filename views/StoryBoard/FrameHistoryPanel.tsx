@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { History, Clock, RotateCcw, Trash2, Check, Image } from 'lucide-react';
+import { History, Clock, Trash2, Check, Image } from 'lucide-react';
 import { getAuthToken } from '../../services/auth';
+import { useConfirm } from '../../contexts/ConfirmContext';
 
 interface FrameVersion {
   id: number;
@@ -30,6 +31,7 @@ const FrameHistoryPanel: React.FC<FrameHistoryPanelProps> = ({
   onClose,
   onRestoreVersion
 }) => {
+  const { confirm } = useConfirm();
   const [versions, setVersions] = useState<FrameVersion[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -59,6 +61,18 @@ const FrameHistoryPanel: React.FC<FrameHistoryPanelProps> = ({
     }
   };
 
+  // 点击缩略图直接恢复到该版本（不再预览）
+  const handleSwitchVersion = (version: FrameVersion) => {
+    console.log('[FrameHistoryPanel] handleSwitchVersion called:', { versionId: version.id, isCurrent: version.is_current, frameUrl: version.frame_url });
+    if (version.is_current) {
+      console.log('[FrameHistoryPanel] Skipping switch - already current version');
+      return; // 当前版本无需切换
+    }
+    
+    // 直接调用恢复功能，不再预览
+    handleRestore(version.id);
+  };
+
   const handleRestore = async (versionId: number) => {
     try {
       const token = getAuthToken();
@@ -80,7 +94,15 @@ const FrameHistoryPanel: React.FC<FrameHistoryPanelProps> = ({
   };
 
   const handleDelete = async (versionId: number) => {
-    if (!confirm('确定要删除这个历史版本吗？')) return;
+    const confirmed = await confirm({
+      title: '删除历史版本',
+      message: '确定要删除这个历史版本吗？删除后将无法恢复。',
+      confirmText: '删除',
+      cancelText: '取消',
+      type: 'danger'
+    });
+    
+    if (!confirmed) return;
     
     try {
       const token = getAuthToken();
@@ -144,23 +166,51 @@ const FrameHistoryPanel: React.FC<FrameHistoryPanelProps> = ({
               </div>
             ) : (
               <div className="p-2 space-y-2">
-                {versions.map((version) => (
+                {versions.map((version) => {
+                  const isCurrent = version.is_current;
+                  
+                  return (
                   <div
                     key={version.id}
-                    className={`rounded-lg overflow-hidden border ${
-                      version.is_current
-                        ? 'border-(--accent) bg-(--accent)/5'
-                        : 'border-(--border-color) bg-(--bg-input)'
+                    className={`rounded-lg overflow-hidden border transition-all duration-200 ${
+                      isCurrent
+                        ? 'border-(--accent) bg-(--accent)/5 ring-1 ring-(--accent)'
+                        : 'border-(--border-color) bg-(--bg-input) hover:border-(--accent)/50'
                     }`}
                   >
-                    {/* 缩略图 */}
-                    <div className="h-30 bg-(--bg-app) relative">
+                    {/* 缩略图 - 点击直接恢复 */}
+                    <div 
+                      className="h-30 bg-(--bg-app) relative cursor-pointer group z-0"
+                      onClick={() => {
+                        console.log('[FrameHistoryPanel] Thumbnail clicked, version:', version.id, 'is_current:', version.is_current);
+                        handleSwitchVersion(version);
+                      }}
+                      title={version.is_current ? '当前版本' : '点击恢复此版本'}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          handleSwitchVersion(version);
+                        }
+                      }}
+                    >
                       <img
                         src={version.frame_url}
                         alt={`版本 ${version.version_number}`}
-                        className="w-full h-full object-cover"
+                        className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105 pointer-events-none"
+                        draggable={false}
                       />
-                      {version.is_current && (
+                      {/* 悬停遮罩提示 */}
+                      {!version.is_current && (
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100 pointer-events-none">
+                          <span className="text-white text-xs font-medium px-2 py-1 bg-black/50 rounded">
+                            点击恢复
+                          </span>
+                        </div>
+                      )}
+                      {/* 当前版本标识 */}
+                      {isCurrent && (
                         <div className="absolute top-1 right-1 bg-(--accent) text-white text-[10px] px-1.5 py-0.5 rounded flex items-center gap-1">
                           <Check className="w-3 h-3" />
                           当前
@@ -182,19 +232,9 @@ const FrameHistoryPanel: React.FC<FrameHistoryPanelProps> = ({
                         </p>
                       )}
                       
-                      {/* 操作按钮 */}
-                      <div className="flex items-center gap-1">
-                        {!version.is_current && (
-                          <button
-                            onClick={() => handleRestore(version.id)}
-                            className="flex-1 px-2 py-1 bg-(--accent)/10 text-(--accent) text-[10px] rounded hover:bg-(--accent)/20 flex items-center justify-center gap-1"
-                            title="恢复此版本"
-                          >
-                            <RotateCcw className="w-3 h-3" />
-                            恢复
-                          </button>
-                        )}
-                        {!version.is_current && (
+                      {/* 操作按钮 - 仅保留删除 */}
+                      {!version.is_current && (
+                        <div className="flex items-center justify-end">
                           <button
                             onClick={() => handleDelete(version.id)}
                             className="px-2 py-1 bg-red-500/10 text-red-400 text-[10px] rounded hover:bg-red-500/20"
@@ -202,11 +242,11 @@ const FrameHistoryPanel: React.FC<FrameHistoryPanelProps> = ({
                           >
                             <Trash2 className="w-3 h-3" />
                           </button>
-                        )}
-                      </div>
+                        </div>
+                      )}
                     </div>
                   </div>
-                ))}
+                );})}
               </div>
             )}
           </div>

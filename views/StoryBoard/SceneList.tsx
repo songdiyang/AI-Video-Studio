@@ -19,7 +19,7 @@ interface SceneListProps {
   onDeleteScene: (id: number) => void;
   onAddScene: () => void;
   onUpdateDescription: (id: number, description: string) => Promise<boolean>;
-  onGenerateImage: (id: number, prompt: string) => Promise<{ success: boolean; error?: string }>;
+  onGenerateImage: (id: number, prompt: string, regenerateTarget?: 'first' | 'last' | 'both', forceRegenerate?: boolean) => Promise<{ success: boolean; error?: string }>;
   onGenerateVideo: (id: number) => Promise<{ success: boolean; error?: string }>;
   onUpdateScene?: (id: number, updates: Partial<StoryboardScene>) => void;
   tasks: Record<string, TaskState>;

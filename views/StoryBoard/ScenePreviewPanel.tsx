@@ -11,6 +11,7 @@ import SketchPanel from './SceneCard/SketchPanel';
 import BlockEditor from './BlockEditor';
 import FrameHistoryPanel from './FrameHistoryPanel';
 import { BlockEditorState } from './BlockEditor/types/blockTypes';
+import { bustCache } from '../../services/mediaCache';
 
 interface ScenePreviewPanelProps {
   scene: StoryboardScene | null;
@@ -20,7 +21,7 @@ interface ScenePreviewPanelProps {
   onUpdateDescription: (description: string) => Promise<boolean>;
   onUpdateDialogues?: (dialogues: DialogueLine[]) => Promise<boolean>;
   onUpdateVoiceover?: (voiceover: string) => Promise<boolean>;
-  onGenerateImage: (id: number, prompt: string) => Promise<{ success: boolean; error?: string }>;
+  onGenerateImage: (id: number, prompt: string, regenerateTarget?: 'first' | 'last' | 'both', forceRegenerate?: boolean) => Promise<{ success: boolean; error?: string }>;
   onGenerateVideo: (id: number) => Promise<{ success: boolean; error?: string }>;
   onUpdateScene?: (updates: Partial<StoryboardScene>) => void;
   imageTask?: TaskState;
@@ -44,6 +45,9 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
   const [showStartFrame, setShowStartFrame] = useState(true);
   const [isDirectorSpaceExpanded, setIsDirectorSpaceExpanded] = useState(false);
   const [showHistory, setShowHistory] = useState<{ type: 'first' | 'last' | null }>({ type: null });
+  // 历史版本预览状态：临时存储预览的帧 URL，不永久修改场景数据
+  const [previewFrameUrl, setPreviewFrameUrl] = useState<string | null>(null);
+  const [previewFrameType, setPreviewFrameType] = useState<'first' | 'last' | null>(null);
   const { showToast } = useToast();
   const { confirm } = useConfirm();
 
@@ -52,6 +56,13 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
   useEffect(() => {
     if (scene?.description) setCurrentEditorText(scene.description);
   }, [scene?.id, scene?.description]);
+
+  // 切换分镜时清除历史版本预览状态
+  useEffect(() => {
+    setPreviewFrameUrl(null);
+    setPreviewFrameType(null);
+    setShowHistory({ type: null });
+  }, [scene?.id]);
 
   const isGeneratingImage = imageTask?.status === 'pending' || imageTask?.status === 'running';
   const isGeneratingVideo = videoTask?.status === 'pending' || videoTask?.status === 'running';
@@ -156,8 +167,12 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
       if (!proceed) return;
     }
     
+    // 判断是否为重新生成（已有帧时）
+    const isRegenerate = !!(scene.startFrame || scene.endFrame);
+    
     // 使用当前编辑器文本（而非 scene.description）
-    const result = await onGenerateImage(scene.id, currentEditorText.trim());
+    // 重新生成时传递 forceRegenerate: true，确保不使用现有帧作为参考
+    const result = await onGenerateImage(scene.id, currentEditorText.trim(), undefined, isRegenerate);
     if (!result.success) {
       showToast(result.error || '图片生成失败', 'error');
     }
@@ -310,7 +325,10 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
   // 判断当前显示的媒体
   const hasFrames = scene.startFrame || scene.endFrame;
   const hasVideo = !!scene.videoUrl;
-  const currentFrame = showStartFrame ? scene.startFrame : scene.endFrame;
+  // 优先使用预览的帧 URL（如果有），否则使用场景的当前帧
+  const currentFrame = previewFrameUrl && previewFrameType === (showStartFrame ? 'first' : 'last')
+    ? previewFrameUrl
+    : (showStartFrame ? scene.startFrame : scene.endFrame);
 
   // Lightbox 放大预览状态
   const [lightboxOpen, setLightboxOpen] = useState(false);
@@ -397,7 +415,8 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
             {currentFrame ? (
               <>
                 <img
-                  src={currentFrame}
+                  key={currentFrame}
+                  src={bustCache(currentFrame) || currentFrame}
                   alt={`分镜 ${sceneIndex + 1} - ${showStartFrame ? '首帧' : '尾帧'}`}
                   className="max-w-full max-h-full rounded-lg shadow-2xl object-contain cursor-zoom-in hover:ring-2 hover:ring-[var(--accent)]/50 transition-all"
                   style={{ maxHeight: 'calc(100% - 2rem)' }}
@@ -567,7 +586,8 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
 
           {/* 图片 */}
           <img
-            src={currentFrame}
+            key={`lightbox-${currentFrame}`}
+            src={bustCache(currentFrame) || currentFrame}
             alt={`分镜 ${sceneIndex + 1} 放大预览`}
             className="select-none"
             style={{
@@ -779,19 +799,27 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
           storyboardId={scene.id}
           frameType={showHistory.type}
           isOpen={!!showHistory.type}
-          onClose={() => setShowHistory({ type: null })}
+          onClose={() => {
+            setShowHistory({ type: null });
+            // 关闭面板时清除预览状态
+            setPreviewFrameUrl(null);
+            setPreviewFrameType(null);
+          }}
           onRestoreVersion={(_versionId, frameUrl, restoredFrameType) => {
-            // 用恢复的帧 URL 更新场景数据，让预览立即刷新
+            // 用恢复的帧 URL 更新场景数据
             if (frameUrl && onUpdateScene) {
               const updates: Partial<StoryboardScene> = {};
               if (restoredFrameType === 'first') {
                 updates.startFrame = frameUrl;
-                updates.imageUrl = frameUrl; // imageUrl 通常与首帧一致
+                updates.imageUrl = frameUrl;
               } else {
                 updates.endFrame = frameUrl;
               }
               onUpdateScene(updates);
             }
+            // 清除预览状态
+            setPreviewFrameUrl(null);
+            setPreviewFrameType(null);
             showToast('版本已恢复', 'success');
             setShowHistory({ type: null });
           }}

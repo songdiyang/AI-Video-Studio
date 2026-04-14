@@ -120,6 +120,7 @@ const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ isOpen, onClose, on
         cover_url: '', _coverFile: null, status: 'draft',
         visualStyle: '', visualStylePrompt: '', styleCategory: '' as '' | StyleCategory, bodyProportionRatio: '' as '' | BodyProportionRatio,
         storyStyle: '', storyConstraints: '',
+        narrativePerspective: '' as '' | 'first_person' | 'third_person',
         mangaLayout: '', mangaPanelStyle: '',
         imageAspectRatio: '', imageResolution: '', videoAspectRatio: '', videoResolution: '',
         videoDuration: '', videoAspect: '', videoStyle: '',
@@ -639,16 +640,19 @@ const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ isOpen, onClose, on
                               <span className="text-[10px] font-normal" style={{ color: 'var(--text-muted)' }}>{t.projects.bodyProportionHint}</span>
                             </label>
                             <div className="grid grid-cols-4 gap-1">
-                              {(Object.keys(BODY_PROPORTION_PRESETS) as BodyProportionRatio[]).map((key) => (
-                                <button key={key}
-                                  onClick={() => setFormData(prev => ({ ...prev, bodyProportionRatio: key }))}
-                                  className={`px-2 py-1.5 rounded-md border text-center transition-all cursor-pointer ${
-                                    formData.bodyProportionRatio === key ? pillActive : pillInactive
-                                  }`}>
-                                  <div className="text-[11px] font-semibold">{t.projects[`proportion${key.charAt(0).toUpperCase() + key.slice(1)}` as keyof typeof t.projects]}</div>
-                                  <div className="text-[9px] opacity-70">{t.projects[`proportion${key.charAt(0).toUpperCase() + key.slice(1)}Desc` as keyof typeof t.projects]}</div>
-                                </button>
-                              ))}
+                              {(Object.keys(BODY_PROPORTION_PRESETS) as BodyProportionRatio[]).map((key) => {
+                                const preset = BODY_PROPORTION_PRESETS[key];
+                                return (
+                                  <button key={key}
+                                    onClick={() => setFormData(prev => ({ ...prev, bodyProportionRatio: key }))}
+                                    className={`px-2 py-1.5 rounded-md border text-center transition-all cursor-pointer ${
+                                      formData.bodyProportionRatio === key ? pillActive : pillInactive
+                                    }`}>
+                                    <div className="text-[11px] font-semibold">{preset.name}</div>
+                                    <div className="text-[9px] opacity-70">{preset.description}</div>
+                                  </button>
+                                );
+                              })}
                             </div>
                           </div>
                         )}

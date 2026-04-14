@@ -150,13 +150,19 @@ async function handleConceptBreakdownGeneration(inputParams, onProgress) {
   if (sideViewUrl) referenceUrls.push(sideViewUrl);
   if (backViewUrl) referenceUrls.push(backViewUrl);
 
-  // 生成图片 - 16:9 比例
+  // 生成图片 - 使用传入的 aspectRatio 或默认 16:9
   const genParams = {
     prompt: conceptPrompt,
     imageModel: imageModel,
-    width: 1920,
-    height: 1088  // 约 16:9
+    aspectRatio: aspectRatio || '16:9'  // 优先使用传入的比例，默认 16:9
   };
+
+  // 如果传入了具体的 width/height，则使用它们（兼容旧逻辑）
+  if (inputParams.width && inputParams.height) {
+    genParams.width = inputParams.width;
+    genParams.height = inputParams.height;
+    delete genParams.aspectRatio;  // 有具体尺寸时优先使用尺寸
+  }
 
   if (referenceUrls.length > 0) {
     genParams.imageUrls = referenceUrls;
