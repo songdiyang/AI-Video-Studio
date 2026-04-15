@@ -236,6 +236,8 @@ function processParams(params, modelId) {
   return extra;
 }
 
+const { resolveToInternalUrl } = require('../utils/fileStorage');
+
 /**
  * 构建 image 数组（图生图用）
  * @param {object} params - 原始参数
@@ -265,7 +267,10 @@ function buildImageArray(params) {
     images.push(params.startFrame);
   }
 
-  return images.length > 0 ? images : null;
+  if (images.length === 0) return null;
+
+  // 将相对路径转换为可访问的绝对 URL（外部 API 无法解析相对路径）
+  return images.map(url => resolveToInternalUrl(url));
 }
 
 module.exports = {

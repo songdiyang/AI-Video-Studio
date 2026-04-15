@@ -9,6 +9,7 @@
  */
 
 const fetch = require('node-fetch');
+const { resolveToInternalUrl } = require('../utils/fileStorage');
 
 /**
  * 将 API 原始错误消息映射为用户友好的中文提示
@@ -56,7 +57,8 @@ function buildContent(prompt, imageUrls = [], startFrame = null, endFrame = null
 
   // 2. 添加首帧图片
   // 优先使用 startFrame，其次使用 imageUrls[0]
-  const firstFrameUrl = startFrame && startFrame !== '_REMOVE_' ? startFrame : (imageUrls.length > 0 ? imageUrls[0] : null);
+  const rawFirstFrame = startFrame && startFrame !== '_REMOVE_' ? startFrame : (imageUrls.length > 0 ? imageUrls[0] : null);
+  const firstFrameUrl = rawFirstFrame ? resolveToInternalUrl(rawFirstFrame) : null;
   if (firstFrameUrl) {
     content.push({
       type: 'image_url',
@@ -69,7 +71,8 @@ function buildContent(prompt, imageUrls = [], startFrame = null, endFrame = null
 
   // 3. 添加尾帧图片（如果存在）
   // 优先使用 endFrame，其次使用 imageUrls[1]
-  const lastFrameUrl = endFrame && endFrame !== '_REMOVE_' ? endFrame : (imageUrls.length > 1 ? imageUrls[1] : null);
+  const rawLastFrame = endFrame && endFrame !== '_REMOVE_' ? endFrame : (imageUrls.length > 1 ? imageUrls[1] : null);
+  const lastFrameUrl = rawLastFrame ? resolveToInternalUrl(rawLastFrame) : null;
   if (lastFrameUrl) {
     content.push({
       type: 'image_url',

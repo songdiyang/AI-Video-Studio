@@ -2,7 +2,9 @@
  * 共享候选参考图收集模块
  * 
  * 被 frameGeneration.js 和 singleFrameGeneration.js 共同使用。
- * 负责：查询角色三视图 + 用户上传参考图 + 场景图 + 更新版空镜 + 上一镜头尾帧，构建完整候选列表。
+ * 负责：查询角色三视图 + 场景图 + 更新版空镜 + 上一镜头尾帧，构建完整候选列表。
+ * 注意：用户上传的参考图仅在三视图生成阶段使用（characterViewsGeneration.js），
+ * 不直接参与分镜帧生成，以确保风格一致性。
  */
 
 const { queryOne, queryAll } = require('../../../dbHelper');
@@ -91,7 +93,6 @@ const collectCandidateImages = traced('收集候选参考图', async function _c
   }
 
   // === 处理角色数据 ===
-  const charIds = [];
   if (validCharNames.length > 0) {
     // 构建 name → row 映射，O(1) 查找
     const charMap = new Map();
@@ -116,8 +117,6 @@ const collectCandidateImages = traced('收集候选参考图', async function _c
         description: linkedChar.description,
         personality: linkedChar.personality
       });
-      charIds.push(linkedChar.id);
-
       // 三视图候选
       const frontUrl = linkedChar.front_view_url || linkedChar.image_url;
       candidateImages.push({
@@ -145,55 +144,8 @@ const collectCandidateImages = traced('收集候选参考图', async function _c
       console.log(`[CandidateImages] 角色「${charName}」三视图: 正面=${!!frontUrl}, 侧面=${!!linkedChar.side_view_url}, 背面=${!!linkedChar.back_view_url}`);
     }
 
-    // 批量查询所有角色的用户上传参考图（1 次 DB 查询代替 N 次）
-    if (charIds.length > 0) {
-      const refPlaceholders = charIds.map(() => '?').join(',');
-      const allRefImages = await queryAll(
-        `SELECT asset_id, image_url, description, view_type FROM asset_reference_images
-         WHERE asset_type = 'character' AND asset_id IN (${refPlaceholders})
-         ORDER BY sort_order ASC`,
-        charIds
-      );
-
-      // 按 asset_id 分组
-      const refByCharId = new Map();
-      for (const ref of allRefImages) {
-        if (!refByCharId.has(ref.asset_id)) refByCharId.set(ref.asset_id, []);
-        refByCharId.get(ref.asset_id).push(ref);
-      }
-
-      const viewTypeLabels = {
-        front: '用户上传正面参考图',
-        side: '用户上传侧面参考图',
-        back: '用户上传背面参考图',
-        other: '用户上传参考图'
-      };
-      const viewTypeDescs = {
-        front: '用户上传的角色正面参考图，适用于正面、面部特写镜头',
-        side: '用户上传的角色侧面参考图，适用于侧面、过肩镜头',
-        back: '用户上传的角色背面参考图，适用于背影镜头',
-        other: '用户上传的其他角色参考图，用于补充角色细节'
-      };
-
-      for (let ci = 0; ci < validCharNames.length; ci++) {
-        const charName = validCharNames[ci];
-        const charId = charIds[ci];
-        const userRefImages = refByCharId.get(charId) || [];
-        for (let i = 0; i < userRefImages.length; i++) {
-          const refImg = userRefImages[i];
-          const vt = refImg.view_type || 'other';
-          candidateImages.push({
-            id: `char_${charName}_user_${vt}_${i}`,
-            label: `${viewTypeLabels[vt]}（${charName}）`,
-            url: refImg.image_url,
-            description: refImg.description || viewTypeDescs[vt]
-          });
-        }
-        if (userRefImages.length > 0) {
-          console.log(`[CandidateImages] 角色「${charName}」用户上传参考图: ${userRefImages.length} 张`);
-        }
-      }
-    }
+    // 注意：用户上传的参考图不在此处收集，参考图仅用于三视图生成阶段（characterViewsGeneration.js）
+    // 分镜帧生成仅依赖三视图 + 场景图来保证风格一致性
 
     // 兼容旧逻辑：单角色时保留 characterName 和 characterInfo
     if (characterNames.length === 1) {

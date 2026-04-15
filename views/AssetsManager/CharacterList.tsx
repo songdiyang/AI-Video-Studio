@@ -95,7 +95,7 @@ const CharacterList: React.FC<CharacterListProps> = ({ characters, tagGroups, on
                   </Chip>
                 )}
                 {/* 显示状态数量 */}
-                {character.states_count && character.states_count > 0 && (
+                {character.states_count > 0 && (
                   <Chip
                     size="sm"
                     variant="flat"

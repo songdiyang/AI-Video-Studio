@@ -239,8 +239,25 @@ const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ isOpen, onClose, on
 
   // ==================== 创建项目 ====================
 
+  // 验证必填字段，返回缺失项列表
+  const validateRequiredFields = (): string[] => {
+    const missing: string[] = [];
+    if (!projectName.trim()) missing.push('项目名称');
+    if (!selectedType) missing.push('创作类型');
+    // 非小说类型必须选择视觉风格
+    if (selectedType !== 'novel') {
+      if (!formData.styleCategory) missing.push('内容类型（真人/动漫）');
+      if (!formData.visualStyle) missing.push('视觉风格');
+    }
+    return missing;
+  };
+
   const handleCreateProject = async () => {
-    if (!projectName.trim() || !selectedType) return;
+    const missing = validateRequiredFields();
+    if (missing.length > 0) {
+      setCreateError(`您还没有选择：${missing.join('、')}`);
+      return;
+    }
     setCreating(true);
     setCreateError(null);
     try {
@@ -861,9 +878,9 @@ const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ isOpen, onClose, on
             </button>
             <button
               onClick={handleCreateProject}
-              disabled={!projectName.trim() || creating}
+              disabled={creating}
               className={`flex items-center gap-1.5 px-5 py-1.5 rounded-md text-sm font-medium transition-all ${
-                projectName.trim() && !creating
+                !creating
                   ? 'bg-[var(--accent)] text-white hover:brightness-110 shadow-sm'
                   : 'bg-[var(--bg-input)] text-[var(--text-muted)] cursor-not-allowed'
               }`}

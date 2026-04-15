@@ -10,7 +10,7 @@ const { submitAndPoll } = require('../pollUtils');
 const { resolveMediaUrl } = require('./mediaResultResolver');
 
 async function handleImageGeneration(inputParams, onProgress) {
-  const { prompt, imageModel: modelName, width, height, aspectRatio, resolution, size, imageUrl, imageUrls, startFrame, endFrame } = inputParams;
+  const { prompt, imageModel: modelName, width, height, aspectRatio, resolution, size, imageUrl, imageUrls, startFrame, endFrame, strength } = inputParams;
 
   if (!modelName) {
     throw new Error('imageModel 参数是必需的');
@@ -33,6 +33,7 @@ async function handleImageGeneration(inputParams, onProgress) {
   if (imageUrls)   submitParams.imageUrls = imageUrls;
   if (startFrame)  submitParams.startFrame = startFrame;
   if (endFrame)    submitParams.endFrame = endFrame;
+  if (strength !== undefined && strength !== null) submitParams.strength = strength;
 
   const result = await submitAndPoll(modelName, submitParams, {
     intervalMs: 3000,

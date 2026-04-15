@@ -563,20 +563,22 @@ async function downloadWithFetch(url, options = {}) {
  * @returns {Promise<{buffer: Buffer, contentType: string, contentLength: number, ttfb: number, downloadTime: number, poolReused: boolean}>}
  */
 async function smartDownload(url) {
-  const parsedUrl = new URL(url);
+  // 相对路径自动转为公网绝对 URL
+  const resolved = resolveToInternalUrl(url);
+  const parsedUrl = new URL(resolved);
   const hostname = parsedUrl.hostname;
   
   // 检查是否应使用 undici 连接池
   if (checkUndiciAvailable() && shouldUsePool(hostname)) {
     try {
-      return await downloadWithUndici(url);
+      return await downloadWithUndici(resolved);
     } catch (err) {
       console.warn(`[FileStorage] undici 下载失败，回退到 fetch:`, err.message);
     }
   }
   
   // 回退到 safeFetch
-  return await downloadWithFetch(url);
+  return await downloadWithFetch(resolved);
 }
 
 /**
@@ -851,12 +853,54 @@ async function isMinIOReady() {
   return await ensureReady();
 }
 
+/**
+ * 将存储 URL（可能是相对路径）转换为外部可访问的绝对 URL
+ * 当 MINIO_PUBLIC_URL 为相对路径（如 /storage）时，外部 API（如 Seedream）无法访问，
+ * 需要拼接 SITE_PUBLIC_URL 为完整的公网 URL
+ * 
+ * @param {string} url - 原始 URL（可能为相对路径或绝对 URL）
+ * @returns {string} 可访问的绝对 URL
+ */
+function resolveToInternalUrl(url) {
+  if (!url) return url;
+  
+  const publicBase = (CONFIG.publicUrl || '').replace(/\/$/, '');
+  const siteUrl = (process.env.SITE_PUBLIC_URL || '').replace(/\/$/, '');
+  
+  // 如果 publicUrl 是相对路径（如 /storage），则需要转换
+  if (publicBase && !publicBase.startsWith('http') && url.startsWith(publicBase + '/')) {
+    if (siteUrl) {
+      // 拼接公网基址：/storage/images/xxx → http://101.133.162.255/storage/images/xxx
+      const fullUrl = `${siteUrl}${url}`;
+      console.log(`[FileStorage] 解析相对 URL: ${url} → ${fullUrl}`);
+      return fullUrl;
+    }
+    // 如果没有 SITE_PUBLIC_URL，回退到 MinIO 内网地址
+    const objectName = url.slice(publicBase.length + 1);
+    const protocol = CONFIG.useSSL ? 'https' : 'http';
+    const internalUrl = `${protocol}://127.0.0.1:${CONFIG.port}/${CONFIG.bucket}/${objectName}`;
+    console.log(`[FileStorage] 解析相对 URL (无SITE_PUBLIC_URL): ${url} → ${internalUrl}`);
+    return internalUrl;
+  }
+  
+  // 如果 publicUrl 是绝对路径且 URL 以它开头，也可能需要转换为内网地址
+  if (publicBase && publicBase.startsWith('http') && url.startsWith(publicBase + '/')) {
+    const objectName = url.slice(publicBase.length + 1);
+    const protocol = CONFIG.useSSL ? 'https' : 'http';
+    const internalUrl = `${protocol}://127.0.0.1:${CONFIG.port}/${CONFIG.bucket}/${objectName}`;
+    return internalUrl;
+  }
+  
+  return url;
+}
+
 module.exports = {
   uploadBuffer,
   downloadAndStore,
   downloadAndStoreMany,
   deleteObject,
   getPublicUrl,
+  resolveToInternalUrl,
   isConfigured,
   ensureReady,
   isMinIOReady,

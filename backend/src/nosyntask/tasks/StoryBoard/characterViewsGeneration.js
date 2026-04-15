@@ -23,11 +23,28 @@
 
 const handleImageGeneration = require('../base/imageGeneration');
 const handleBaseTextModelCall = require('../base/baseTextModelCall');
-const { execute, queryOne } = require('../../../dbHelper');
+const { execute, queryOne, queryAll } = require('../../../dbHelper');
 const { requireVisualStyle, getBodyProportion } = require('../../../utils/getProjectStyle');
-const { downloadAndStore, uploadBuffer } = require('../../../utils/fileStorage');
+const { downloadAndStore, uploadBuffer, resolveToInternalUrl } = require('../../../utils/fileStorage');
 const { assertUpdated, assertPersistedFields } = require('./persistenceGuard');
 const composeCharacterSheet = require('../../../utils/composeCharacterSheet');
+
+/**
+ * 有参考图时，构建简化提示词（让参考图主导角色外貌，提示词仅指定风格+视角）
+ * 跳过 LLM 翻译，直接输出英文关键词，节省成本且避免文字描述与参考图冲突
+ */
+function buildReferenceGuidedPrompt(view, style, characterName, options = {}) {
+  const viewConfig = {
+    front: 'front view, eye-level shot, facing directly at the camera, standing upright with relaxed natural posture, arms at sides, feet shoulder-width apart, looking straight ahead',
+    side: 'side view, profile shot, turned 90 degrees to the right, full body, standing upright, showing full side profile silhouette, arms naturally at sides',
+    back: 'back view, rear shot, facing completely away from the camera, standing upright, showing back of head, hair, and clothing details'
+  };
+  const viewAngle = viewConfig[view] || viewConfig.front;
+  const styleKeywords = style || 'anime style';
+
+  // 简化提示词：参考图匹配指令放最前面（Seedream 对前面的 token 给予更高权重）
+  return `match the character appearance in the reference image exactly, maintain same clothing accessories hairstyle and color scheme as reference image, character design reference sheet style, ${styleKeywords}, single character, solo, one person, full body, ${viewAngle}, simple clean background, even soft lighting, neutral natural expression`;
+}
 
 // 白膜模式：基础人体形态提示词（不包含任何服装/装饰/装备）
 const BASE_MODEL_BODY = {
@@ -223,18 +240,18 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
   const bodyProportionInstruction = bodyProportion?.promptInstruction || '';
 
   // 查询数据库中已有的三视图 URL，用于补全模式
-  let existingViews = { front_view_url: null, side_view_url: null, back_view_url: null };
+  let existingViews = { front_view_url: null, side_view_url: null, back_view_url: null, use_reference_images: 1 };
   if (stateId) {
     // 状态级别：从 character_states 表读取
     const row = await queryOne(
-      'SELECT front_view_url, side_view_url, back_view_url FROM character_states WHERE id = ?',
+      'SELECT front_view_url, side_view_url, back_view_url, use_reference_images FROM character_states WHERE id = ?',
       [stateId]
     );
     if (row) existingViews = row;
   } else if (characterId) {
     // 角色级别：从 characters 表读取
     const row = await queryOne(
-      'SELECT front_view_url, side_view_url, back_view_url FROM characters WHERE id = ?',
+      'SELECT front_view_url, side_view_url, back_view_url, use_reference_images FROM characters WHERE id = ?',
       [characterId]
     );
     if (row) existingViews = row;
@@ -295,15 +312,61 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
   const storageBase = isStateGeneration
     ? `images/characters/${characterId}/states/${stateId}`
     : `images/characters/${characterId}`;
+  const ts = Date.now(); // 时间戳用于生成唯一文件名，避免浏览器缓存旧图
 
   console.log(`[CharacterViews] 生成模式: ${isStateGeneration ? '状态级别(stateId=' + stateId + ')' : '角色级别'}`);
+
+  // === 查询用户上传参考图（当 use_reference_images 开关启用时）===
+  let userReferenceUrls = [];
+  const useRefImages = existingViews.use_reference_images !== 0 && existingViews.use_reference_images !== false;
+  if (useRefImages && characterId) {
+    // 优先查询当前级别的参考图，角色级别 fallback
+    let refImages = [];
+    if (isStateGeneration && stateId) {
+      refImages = await queryAll(
+        `SELECT image_url, view_type FROM asset_reference_images
+         WHERE asset_type = 'character_state' AND asset_id = ? AND is_enabled = 1
+         ORDER BY sort_order ASC`,
+        [stateId]
+      );
+    }
+    // 如果状态级别无参考图，或者是角色级别生成，查询角色级别参考图
+    if (refImages.length === 0) {
+      refImages = await queryAll(
+        `SELECT image_url, view_type FROM asset_reference_images
+         WHERE asset_type = 'character' AND asset_id = ? AND is_enabled = 1
+         ORDER BY sort_order ASC`,
+        [characterId]
+      );
+    }
+    if (refImages.length > 0) {
+      userReferenceUrls = refImages
+        .map(r => resolveToInternalUrl(r.image_url))
+        .filter(Boolean);
+      console.log(`[CharacterViews] ✅ 用户参考图已启用，共 ${userReferenceUrls.length} 张:`, userReferenceUrls);
+    } else {
+      console.log('[CharacterViews] 用户参考图已启用但无可用参考图');
+    }
+  } else {
+    console.log(`[CharacterViews] 用户参考图未启用 (use_reference_images=${existingViews.use_reference_images})`);
+  }
 
   // === 正面视图 ===
   let persistedFrontUrl = existingViews.front_view_url || null;
   let lastGeneratedPrompt = ''; // 记录最新的英文提示词，用于存储到 generation_prompt
   if (needFront) {
     console.log('[CharacterViews] 生成正面视图...');
-    const frontPrompt = await generateViewPrompt('front', characterName, appearance, description, style, textModel, { isBaseModel, gender, outfit, hairstyle, accessories, ageStage, bodyProportionInstruction });
+
+    let frontPrompt;
+    const hasUserRefs = userReferenceUrls.length > 0;
+    if (hasUserRefs) {
+      // ★ 有参考图：使用简化提示词，让参考图主导角色外貌（跳过 LLM 翻译，节省成本）
+      frontPrompt = buildReferenceGuidedPrompt('front', style, characterName, { isBaseModel, gender });
+      console.log('[CharacterViews] ✅ 有参考图 → 使用简化提示词（参考图优先，跳过 LLM）');
+    } else {
+      // 无参考图：使用 AI 根据外貌描述生成详细英文提示词
+      frontPrompt = await generateViewPrompt('front', characterName, appearance, description, style, textModel, { isBaseModel, gender, outfit, hairstyle, accessories, ageStage, bodyProportionInstruction });
+    }
     lastGeneratedPrompt = frontPrompt; // 保存英文提示词
     // 构建图片生成参数：优先使用具体尺寸，否则使用 aspectRatio
     const frontGenParams = {
@@ -318,6 +381,13 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
       delete frontGenParams.aspectRatio;
     }
 
+    // 如果有用户参考图，传递给正面视图生成
+    if (hasUserRefs) {
+      frontGenParams.imageUrls = [...userReferenceUrls];
+      frontGenParams.strength = 0.25; // 低 strength → 最大程度保留参考图外貌
+      console.log('[CharacterViews] 正面视图使用用户参考图 (strength=0.25):', userReferenceUrls);
+    }
+
     const frontResult = await handleImageGeneration(frontGenParams, (progress) => {
       if (onProgress) onProgress(5 + progress * 0.2);
     });
@@ -326,7 +396,7 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
 
     persistedFrontUrl = await downloadAndStore(
       frontViewUrl,
-      `${storageBase}/front_view`,
+      `${storageBase}/front_${ts}`,
       { fallbackExt: '.png' }
     );
 
@@ -351,17 +421,29 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
   if (onProgress) onProgress(30);
 
   // 收集参考图片 URL（用于保持角色一致性）
-  const referenceUrls = [];
+  // 用户参考图排在前面作为主要参考，自生成视图在后面保持一致性
+  const referenceUrls = [...userReferenceUrls];
   if (persistedFrontUrl) {
-    referenceUrls.push(persistedFrontUrl);
+    referenceUrls.push(resolveToInternalUrl(persistedFrontUrl));
     console.log('[CharacterViews] 正面视图将作为参考图传递给后续生成');
+  }
+  if (referenceUrls.length > 0) {
+    console.log(`[CharacterViews] 侧面/背面参考图列表 (${referenceUrls.length} 张):`, referenceUrls);
   }
 
   // === 侧面视图 ===
   let persistedSideUrl = existingViews.side_view_url || null;
   if (needSide) {
     console.log('[CharacterViews] 生成侧面视图...');
-    const sidePrompt = await generateViewPrompt('side', characterName, appearance, description, style, textModel, { isBaseModel, gender, outfit, hairstyle, accessories, ageStage, bodyProportionInstruction });
+
+    let sidePrompt;
+    const sideHasUserRefs = userReferenceUrls.length > 0;
+    if (sideHasUserRefs) {
+      sidePrompt = buildReferenceGuidedPrompt('side', style, characterName, { isBaseModel, gender });
+      console.log('[CharacterViews] ✅ 有参考图 → 侧面视图使用简化提示词');
+    } else {
+      sidePrompt = await generateViewPrompt('side', characterName, appearance, description, style, textModel, { isBaseModel, gender, outfit, hairstyle, accessories, ageStage, bodyProportionInstruction });
+    }
     const sideGenParams = {
       prompt: sidePrompt,
       imageModel: imageModel,
@@ -375,7 +457,8 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
     }
     if (referenceUrls.length > 0) {
       sideGenParams.imageUrls = referenceUrls;
-      console.log('[CharacterViews] 侧面视图参考图:', referenceUrls);
+      if (sideHasUserRefs) sideGenParams.strength = 0.35;
+      console.log(`[CharacterViews] 侧面视图参考图${sideHasUserRefs ? ' (strength=0.35)' : ''}:`, referenceUrls);
     }
     const sideResult = await handleImageGeneration(sideGenParams, (progress) => {
       if (onProgress) onProgress(30 + progress * 0.25);
@@ -385,7 +468,7 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
 
     persistedSideUrl = await downloadAndStore(
       sideViewUrl,
-      `${storageBase}/side_view`,
+      `${storageBase}/side_${ts}`,
       { fallbackExt: '.png' }
     );
 
@@ -411,14 +494,22 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
 
   // 累加侧面视图到参考图
   if (persistedSideUrl) {
-    referenceUrls.push(persistedSideUrl);
+    referenceUrls.push(resolveToInternalUrl(persistedSideUrl));
   }
 
   // === 背面视图 ===
   let persistedBackUrl = existingViews.back_view_url || null;
   if (needBack) {
     console.log('[CharacterViews] 生成背面视图...');
-    const backPrompt = await generateViewPrompt('back', characterName, appearance, description, style, textModel, { isBaseModel, gender, outfit, hairstyle, accessories, ageStage, bodyProportionInstruction });
+
+    let backPrompt;
+    const backHasUserRefs = userReferenceUrls.length > 0;
+    if (backHasUserRefs) {
+      backPrompt = buildReferenceGuidedPrompt('back', style, characterName, { isBaseModel, gender });
+      console.log('[CharacterViews] ✅ 有参考图 → 背面视图使用简化提示词');
+    } else {
+      backPrompt = await generateViewPrompt('back', characterName, appearance, description, style, textModel, { isBaseModel, gender, outfit, hairstyle, accessories, ageStage, bodyProportionInstruction });
+    }
     const backGenParams = {
       prompt: backPrompt,
       imageModel: imageModel,
@@ -432,7 +523,8 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
     }
     if (referenceUrls.length > 0) {
       backGenParams.imageUrls = referenceUrls;
-      console.log('[CharacterViews] 背面视图参考图:', referenceUrls);
+      if (backHasUserRefs) backGenParams.strength = 0.40;
+      console.log(`[CharacterViews] 背面视图参考图${backHasUserRefs ? ' (strength=0.40)' : ''}:`, referenceUrls);
     }
     const backResult = await handleImageGeneration(backGenParams, (progress) => {
       if (onProgress) onProgress(60 + progress * 0.25);
@@ -442,7 +534,7 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
 
     persistedBackUrl = await downloadAndStore(
       backViewUrl,
-      `${storageBase}/back_view`,
+      `${storageBase}/back_${ts}`,
       { fallbackExt: '.png' }
     );
 
@@ -483,7 +575,7 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
     });
 
     // 上传到 MinIO
-    const sheetObjectPath = `${storageBase}/character_sheet.png`;
+    const sheetObjectPath = `${storageBase}/character_sheet_${ts}.png`;
     characterSheetUrl = await uploadBuffer(sheetBuffer, sheetObjectPath, { contentType: 'image/png' });
     console.log('[CharacterViews] ✅ 角色设定图已上传:', characterSheetUrl);
 

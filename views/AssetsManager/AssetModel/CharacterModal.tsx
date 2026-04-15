@@ -199,14 +199,19 @@ const CharacterModal: React.FC<CharacterModalProps> = ({
     setGenerationError(null);
 
     try {
-      // 如果是补全模式，传递缺失的视图列表
+      // 根据缺失情况决定生成策略
       const params: any = {
         imageModel: localImageModel,
         textModel: selectedTextModel || undefined
       };
       if (isComplementMode) {
+        // 补全模式：仅生成缺失的视图
         params.regenerateOnly = missingViews;
+      } else if (missingViews.length === 0) {
+        // 全部已存在：强制重新生成所有视图（基于最新参考图）
+        params.regenerateOnly = ['front', 'side', 'back'];
       }
+      // missingViews.length === 3 时不传 regenerateOnly，后端自动生成全部缺失
       await generateCharacterViews(formData.id, params);
       // 更新本地状态以触发轮询
       setFormData({ ...formData, generation_status: 'generating' });
@@ -742,6 +747,19 @@ const CharacterModal: React.FC<CharacterModalProps> = ({
                         角色三视图
                       </label>
                       <div className="flex gap-2">
+                        {/* 刷新最新图片 */}
+                        {editMode && formData.id && hasAnyView && (
+                          <Button
+                            size="sm"
+                            variant="flat"
+                            isIconOnly
+                            className="bg-slate-500/20 text-slate-400 hover:bg-slate-500/30"
+                            onPress={() => onRefreshCharacter?.()}
+                            title="刷新最新图片"
+                          >
+                            <RefreshCw className="w-3 h-3" />
+                          </Button>
+                        )}
                         {/* 重新生成按钮（已有视图时显示） */}
                         {editMode && formData.id && hasAnyView && (
                           <Button
@@ -830,29 +848,36 @@ const CharacterModal: React.FC<CharacterModalProps> = ({
                                 setFormData({ ...formData, front_view_url: '' });
                               }}
                             />
-                            <div className="absolute inset-0 top-6 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1">
-                              <button 
-                                onClick={() => openViewPreview(0)} 
-                                className="p-1.5 bg-white/20 rounded hover:bg-white/30" 
-                                title="预览"
-                              >
-                                <ZoomIn className="w-3 h-3 text-white" />
-                              </button>
-                              <button 
-                                onClick={() => handleDownloadView('front')} 
-                                className="p-1.5 bg-white/20 rounded hover:bg-white/30" 
-                                title="下载"
-                              >
-                                <Download className="w-3 h-3 text-white" />
-                              </button>
-                              <button 
-                                onClick={() => handleDeleteView('front')} 
-                                className="p-1.5 bg-red-500/50 rounded hover:bg-red-500/70" 
-                                title="删除"
-                              >
-                                <Trash2 className="w-3 h-3 text-white" />
-                              </button>
-                            </div>
+                            {isGenerating ? (
+                              <div className="absolute inset-0 top-6 bg-black/60 flex flex-col items-center justify-center gap-2">
+                                <div className="animate-spin w-6 h-6 border-2 border-indigo-400 border-t-transparent rounded-full" />
+                                <span className="text-xs text-indigo-300 animate-pulse">重新生成中...</span>
+                              </div>
+                            ) : (
+                              <div className="absolute inset-0 top-6 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1">
+                                <button 
+                                  onClick={() => openViewPreview(0)} 
+                                  className="p-1.5 bg-white/20 rounded hover:bg-white/30" 
+                                  title="预览"
+                                >
+                                  <ZoomIn className="w-3 h-3 text-white" />
+                                </button>
+                                <button 
+                                  onClick={() => handleDownloadView('front')} 
+                                  className="p-1.5 bg-white/20 rounded hover:bg-white/30" 
+                                  title="下载"
+                                >
+                                  <Download className="w-3 h-3 text-white" />
+                                </button>
+                                <button 
+                                  onClick={() => handleDeleteView('front')} 
+                                  className="p-1.5 bg-red-500/50 rounded hover:bg-red-500/70" 
+                                  title="删除"
+                                >
+                                  <Trash2 className="w-3 h-3 text-white" />
+                                </button>
+                              </div>
+                            )}
                           </>
                         ) : (
                           <div className="w-full aspect-square flex items-center justify-center text-slate-500 text-xs">
@@ -879,29 +904,36 @@ const CharacterModal: React.FC<CharacterModalProps> = ({
                                 setFormData({ ...formData, side_view_url: '' });
                               }}
                             />
-                            <div className="absolute inset-0 top-6 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1">
-                              <button 
-                                onClick={() => openViewPreview(1)} 
-                                className="p-1.5 bg-white/20 rounded hover:bg-white/30" 
-                                title="预览"
-                              >
-                                <ZoomIn className="w-3 h-3 text-white" />
-                              </button>
-                              <button 
-                                onClick={() => handleDownloadView('side')} 
-                                className="p-1.5 bg-white/20 rounded hover:bg-white/30" 
-                                title="下载"
-                              >
-                                <Download className="w-3 h-3 text-white" />
-                              </button>
-                              <button 
-                                onClick={() => handleDeleteView('side')} 
-                                className="p-1.5 bg-red-500/50 rounded hover:bg-red-500/70" 
-                                title="删除"
-                              >
-                                <Trash2 className="w-3 h-3 text-white" />
-                              </button>
-                            </div>
+                            {isGenerating ? (
+                              <div className="absolute inset-0 top-6 bg-black/60 flex flex-col items-center justify-center gap-2">
+                                <div className="animate-spin w-6 h-6 border-2 border-indigo-400 border-t-transparent rounded-full" />
+                                <span className="text-xs text-indigo-300 animate-pulse">重新生成中...</span>
+                              </div>
+                            ) : (
+                              <div className="absolute inset-0 top-6 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1">
+                                <button 
+                                  onClick={() => openViewPreview(1)} 
+                                  className="p-1.5 bg-white/20 rounded hover:bg-white/30" 
+                                  title="预览"
+                                >
+                                  <ZoomIn className="w-3 h-3 text-white" />
+                                </button>
+                                <button 
+                                  onClick={() => handleDownloadView('side')} 
+                                  className="p-1.5 bg-white/20 rounded hover:bg-white/30" 
+                                  title="下载"
+                                >
+                                  <Download className="w-3 h-3 text-white" />
+                                </button>
+                                <button 
+                                  onClick={() => handleDeleteView('side')} 
+                                  className="p-1.5 bg-red-500/50 rounded hover:bg-red-500/70" 
+                                  title="删除"
+                                >
+                                  <Trash2 className="w-3 h-3 text-white" />
+                                </button>
+                              </div>
+                            )}
                           </>
                         ) : (
                           <div className="w-full aspect-square flex items-center justify-center text-slate-500 text-xs">
@@ -928,29 +960,36 @@ const CharacterModal: React.FC<CharacterModalProps> = ({
                                 setFormData({ ...formData, back_view_url: '' });
                               }}
                             />
-                            <div className="absolute inset-0 top-6 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1">
-                              <button 
-                                onClick={() => openViewPreview(2)} 
-                                className="p-1.5 bg-white/20 rounded hover:bg-white/30" 
-                                title="预览"
-                              >
-                                <ZoomIn className="w-3 h-3 text-white" />
-                              </button>
-                              <button 
-                                onClick={() => handleDownloadView('back')} 
-                                className="p-1.5 bg-white/20 rounded hover:bg-white/30" 
-                                title="下载"
-                              >
-                                <Download className="w-3 h-3 text-white" />
-                              </button>
-                              <button 
-                                onClick={() => handleDeleteView('back')} 
-                                className="p-1.5 bg-red-500/50 rounded hover:bg-red-500/70" 
-                                title="删除"
-                              >
-                                <Trash2 className="w-3 h-3 text-white" />
-                              </button>
-                            </div>
+                            {isGenerating ? (
+                              <div className="absolute inset-0 top-6 bg-black/60 flex flex-col items-center justify-center gap-2">
+                                <div className="animate-spin w-6 h-6 border-2 border-indigo-400 border-t-transparent rounded-full" />
+                                <span className="text-xs text-indigo-300 animate-pulse">重新生成中...</span>
+                              </div>
+                            ) : (
+                              <div className="absolute inset-0 top-6 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1">
+                                <button 
+                                  onClick={() => openViewPreview(2)} 
+                                  className="p-1.5 bg-white/20 rounded hover:bg-white/30" 
+                                  title="预览"
+                                >
+                                  <ZoomIn className="w-3 h-3 text-white" />
+                                </button>
+                                <button 
+                                  onClick={() => handleDownloadView('back')} 
+                                  className="p-1.5 bg-white/20 rounded hover:bg-white/30" 
+                                  title="下载"
+                                >
+                                  <Download className="w-3 h-3 text-white" />
+                                </button>
+                                <button 
+                                  onClick={() => handleDeleteView('back')} 
+                                  className="p-1.5 bg-red-500/50 rounded hover:bg-red-500/70" 
+                                  title="删除"
+                                >
+                                  <Trash2 className="w-3 h-3 text-white" />
+                                </button>
+                              </div>
+                            )}
                           </>
                         ) : (
                           <div className="w-full aspect-square flex items-center justify-center text-slate-500 text-xs">

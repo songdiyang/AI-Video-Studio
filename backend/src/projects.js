@@ -301,9 +301,20 @@ Requirements:
     );
 
     // 提取图片 URL
-    let imageUrl = imageResult.url || imageResult.image_url || imageResult.data?.[0]?.url || '';
+    // callAIModel 返回结构：mapResponse 结果 + _raw 原始数据
+    // Seedream 等 custom handler 的 URL 在 _raw.data[0].url 中
+    // 其他模型可能直接在 image_url 或 url 字段
+    let imageUrl = imageResult.image_url || imageResult.url || '';
     if (!imageUrl && imageResult.data && Array.isArray(imageResult.data)) {
       imageUrl = imageResult.data[0]?.url || imageResult.data[0]?.image_url || '';
+    }
+    // 兜底：从 _raw 原始数据中提取
+    if (!imageUrl && imageResult._raw) {
+      const raw = imageResult._raw;
+      imageUrl = raw.image_url || raw.url || '';
+      if (!imageUrl && raw.data && Array.isArray(raw.data)) {
+        imageUrl = raw.data[0]?.url || raw.data[0]?.image_url || '';
+      }
     }
 
     if (!imageUrl) {
@@ -316,6 +327,7 @@ Requirements:
     const objectPath = `images/covers/${userId}/${timestamp}_cover`;
     const persistedUrl = await downloadAndStore(imageUrl, objectPath, { fallbackExt: '.png' });
 
+    console.log('[Generate Cover] 返回封面 URL:', persistedUrl);
     res.json({ cover_url: persistedUrl, prompt: coverPrompt });
   } catch (error) {
     console.error('[Generate Cover]', error);

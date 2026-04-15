@@ -259,14 +259,30 @@ function renderWithFallback(type, template, runtimeParams, fallbackParams, label
 
   // 特殊处理：如果模板需要 size 但未提供，但有 aspectRatio，则将 size 设为 '_REMOVE_'
   // 这样 seedream handler 会根据 aspectRatio 动态计算 size，而不会使用模板中的占位符
-  if (missing.includes('size') && mergedData.aspectRatio && mergedData.aspectRatio !== '_REMOVE_') {
-    mergedData.size = '_REMOVE_';
-    // 从 missing 列表中移除 size
-    const sizeIndex = missing.indexOf('size');
-    if (sizeIndex > -1) missing.splice(sizeIndex, 1);
+  if (missing.includes('size')) {
+    if (mergedData.aspectRatio && mergedData.aspectRatio !== '_REMOVE_') {
+      console.log(`[TemplateRenderer] size 缺失但有 aspectRatio=${mergedData.aspectRatio}，设置 size='_REMOVE_'`);
+      mergedData.size = '_REMOVE_';
+      // 从 missing 列表中移除 size
+      const sizeIndex = missing.indexOf('size');
+      if (sizeIndex > -1) missing.splice(sizeIndex, 1);
+    } else if (mergedData.width && mergedData.height) {
+      // 有 width/height，自动派生 size
+      mergedData.size = `${mergedData.width}x${mergedData.height}`;
+      console.log(`[TemplateRenderer] size 缺失但有 width/height，派生 size=${mergedData.size}`);
+      const sizeIndex = missing.indexOf('size');
+      if (sizeIndex > -1) missing.splice(sizeIndex, 1);
+    } else {
+      // 无 aspectRatio 也无 width/height，提供 Seedream 5.0 系列默认值
+      console.log(`[TemplateRenderer] size 缺失且无 aspectRatio/width/height，使用默认 size='2k'`);
+      mergedData.size = '2k';
+      const sizeIndex = missing.indexOf('size');
+      if (sizeIndex > -1) missing.splice(sizeIndex, 1);
+    }
   }
 
   if (missing.length > 0) {
+    console.error(`[TemplateRenderer] 渲染失败 [${label}]，missing=${missing.join(',')}, mergedData keys=${Object.keys(mergedData).join(',')}`);
     throw new Error(
       `模板渲染不完整 [${label}]：以下占位符未被填充: ${missing.map(k => '{{' + k + '}}').join(', ')}。` +
       `请检查调用参数或模型的 default_params 配置。如果某字段确实不需要，请传入 '_REMOVE_' 标识符。`

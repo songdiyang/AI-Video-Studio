@@ -279,6 +279,17 @@ const Projects: React.FC = () => {
   };
 
   const handleSave = async () => {
+    // 前置验证必填字段
+    const missing: string[] = [];
+    if (!formData.name?.trim()) missing.push('项目名称');
+    if (editProjectType !== 'novel') {
+      if (!formData.styleCategory) missing.push('内容类型（真人/动漫）');
+      if (!formData.visualStyle) missing.push('视觉风格');
+    }
+    if (missing.length > 0) {
+      showToast(`您还没有选择：${missing.join('、')}`, 'error');
+      return;
+    }
     try {
       const { visualStyle, visualStylePrompt, storyStyle, storyConstraints, narrativePerspective,
         styleCategory, bodyProportionRatio,
