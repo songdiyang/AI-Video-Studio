@@ -843,6 +843,14 @@ async function deleteObject(persistentUrl) {
   }
 }
 
+/**
+ * 检查 MinIO 是否就绪
+ * @returns {Promise<boolean>}
+ */
+async function isMinIOReady() {
+  return await ensureReady();
+}
+
 module.exports = {
   uploadBuffer,
   downloadAndStore,
@@ -851,5 +859,6 @@ module.exports = {
   getPublicUrl,
   isConfigured,
   ensureReady,
+  isMinIOReady,
   smartDownload,
 };

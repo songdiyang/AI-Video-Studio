@@ -44,7 +44,7 @@ module.exports = (router) => {
   // GET /api/reference-images - 查询参考图
   router.get('/reference-images', authMiddleware, async (req, res) => {
     const userId = req.user.id;
-    const { asset_type, asset_id } = req.query;
+    const { asset_type, asset_id, enabled_only } = req.query;
 
     if (!asset_type || !asset_id) {
       return res.status(400).json({ message: '缺少asset_type或asset_id参数' });
@@ -62,10 +62,17 @@ module.exports = (router) => {
         return res.status(403).json({ message: '无权访问该资产' });
       }
 
-      const images = await queryAll(
-        'SELECT * FROM asset_reference_images WHERE asset_type = ? AND asset_id = ? ORDER BY sort_order ASC, created_at ASC',
-        [asset_type, parseInt(asset_id)]
-      );
+      // 根据 enabled_only 参数决定查询条件
+      let query = 'SELECT * FROM asset_reference_images WHERE asset_type = ? AND asset_id = ?';
+      const params = [asset_type, parseInt(asset_id)];
+      
+      if (enabled_only === 'true') {
+        query += ' AND is_enabled = TRUE';
+      }
+      
+      query += ' ORDER BY sort_order ASC, created_at ASC';
+
+      const images = await queryAll(query, params);
 
       res.json({ images });
     } catch (error) {
@@ -77,7 +84,7 @@ module.exports = (router) => {
   // POST /api/reference-images - 上传参考图
   router.post('/reference-images', authMiddleware, async (req, res) => {
     const userId = req.user.id;
-    const { asset_type, asset_id, image_url, description, sort_order, view_type } = req.body;
+    const { asset_type, asset_id, image_url, description, sort_order, view_type, is_enabled } = req.body;
 
     if (!asset_type || !asset_id || !image_url) {
       return res.status(400).json({ message: '缺少必要参数' });
@@ -91,6 +98,9 @@ module.exports = (router) => {
     // 验证 view_type
     const validViewTypes = ['front', 'side', 'back', 'other'];
     const finalViewType = view_type && validViewTypes.includes(view_type) ? view_type : 'other';
+    
+    // 默认启用参考图
+    const finalIsEnabled = is_enabled !== undefined ? is_enabled : true;
 
     try {
       // 验证资产所有权
@@ -107,9 +117,9 @@ module.exports = (router) => {
       const newSortOrder = sort_order !== undefined ? sort_order : (maxOrder?.max_order || 0) + 1;
 
       const result = await execute(
-        `INSERT INTO asset_reference_images (asset_type, asset_id, image_url, description, view_type, sort_order)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [asset_type, parseInt(asset_id), image_url, description || null, finalViewType, newSortOrder]
+        `INSERT INTO asset_reference_images (asset_type, asset_id, image_url, description, view_type, sort_order, is_enabled)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [asset_type, parseInt(asset_id), image_url, description || null, finalViewType, newSortOrder, finalIsEnabled]
       );
 
       const image = await queryOne('SELECT * FROM asset_reference_images WHERE id = ?', [result.insertId]);
@@ -124,7 +134,7 @@ module.exports = (router) => {
   router.put('/reference-images/:id', authMiddleware, async (req, res) => {
     const userId = req.user.id;
     const { id } = req.params;
-    const { image_url, description, sort_order, view_type } = req.body;
+    const { image_url, description, sort_order, view_type, is_enabled } = req.body;
 
     try {
       // 获取参考图信息
@@ -155,13 +165,14 @@ module.exports = (router) => {
 
       await execute(
         `UPDATE asset_reference_images 
-         SET image_url = ?, description = ?, view_type = ?, sort_order = ?
+         SET image_url = ?, description = ?, view_type = ?, sort_order = ?, is_enabled = ?
          WHERE id = ?`,
         [
           image_url !== undefined ? image_url : existingImage.image_url,
           description !== undefined ? description : existingImage.description,
           finalViewType,
           sort_order !== undefined ? sort_order : existingImage.sort_order,
+          is_enabled !== undefined ? is_enabled : existingImage.is_enabled,
           id
         ]
       );

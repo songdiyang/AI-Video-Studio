@@ -1,6 +1,6 @@
 import React from 'react';
-import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Button } from '@heroui/react';
-import { Layers, Wand2, ZoomIn, Palette } from 'lucide-react';
+import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Button, Tooltip } from '@heroui/react';
+import { Layers, Wand2, ZoomIn, Palette, ImageIcon, Power } from 'lucide-react';
 import { ResourceItem } from './types';
 import { usePreview } from '../../../components/PreviewProvider';
 
@@ -15,6 +15,10 @@ interface CharacterViewsModalProps {
   imageModel: string;
   textModel: string;
   imageAspectRatio: string;
+  /** 是否使用参考图 */
+  useReferenceImages?: boolean;
+  /** 参考图数量 */
+  referenceImageCount?: number;
 }
 
 const CharacterViewsModal: React.FC<CharacterViewsModalProps> = ({
@@ -27,7 +31,9 @@ const CharacterViewsModal: React.FC<CharacterViewsModalProps> = ({
   characterId,
   imageModel,
   textModel,
-  imageAspectRatio
+  imageAspectRatio,
+  useReferenceImages = true,
+  referenceImageCount = 0
 }) => {
 
   const { openPreview } = usePreview();
@@ -54,9 +60,32 @@ const CharacterViewsModal: React.FC<CharacterViewsModalProps> = ({
         {(onCloseModal) => (
           <>
             <ModalHeader className="text-slate-100 font-bold">
-              <div className="flex items-center gap-2">
-                <Layers className="w-5 h-5 text-purple-400" />
-                角色三视图 - {selectedResource?.name}
+              <div className="flex items-center justify-between w-full">
+                <div className="flex items-center gap-2">
+                  <Layers className="w-5 h-5 text-purple-400" />
+                  角色三视图 - {selectedResource?.name}
+                </div>
+                {/* 参考图使用状态 */}
+                <Tooltip 
+                  content={useReferenceImages 
+                    ? `使用参考图生成（${referenceImageCount}张）` 
+                    : '不使用参考图，仅基于角色描述生成'}
+                >
+                  <div className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs ${
+                    useReferenceImages 
+                      ? 'bg-green-500/20 text-green-400' 
+                      : 'bg-slate-500/20 text-slate-400'
+                  }`}>
+                    <ImageIcon className="w-3.5 h-3.5" />
+                    <Power className={`w-3 h-3 ${useReferenceImages ? 'text-green-400' : 'text-slate-500'}`} />
+                    <span>{useReferenceImages ? '参考图已启用' : '参考图已禁用'}</span>
+                    {useReferenceImages && referenceImageCount > 0 && (
+                      <span className="bg-green-500/30 px-1.5 py-0.5 rounded">
+                        {referenceImageCount}张
+                      </span>
+                    )}
+                  </div>
+                </Tooltip>
               </div>
             </ModalHeader>
             <ModalBody>

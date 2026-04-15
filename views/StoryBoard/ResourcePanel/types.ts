@@ -16,6 +16,7 @@ export interface Character {
   statesCount?: number;  // 状态数量
   projectId?: number;  // 所属项目ID
   gender?: 'male' | 'female' | 'unknown';  // 性别
+  useReferenceImages?: boolean;  // 是否启用参考图功能
 }
 
 // 角色状态接口
@@ -43,6 +44,7 @@ export interface CharacterState {
   // 状态分类和标签
   state_category?: 'daily' | 'costume' | 'time' | 'effect';
   tags?: string;  // 状态标签JSON数组
+  useReferenceImages?: boolean;  // 是否启用参考图功能
 }
 
 export interface ResourceItem {

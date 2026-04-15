@@ -154,6 +154,7 @@ export interface CharacterState {
   age_stage?: string;        // 年龄阶段
   hairstyle?: string;        // 发型描述
   accessories?: string;      // 配饰JSON
+  use_reference_images?: boolean; // 是否使用参考图生成
   is_active?: boolean;       // 是否激活
   generation_prompt?: string;
   generation_status?: 'idle' | 'generating' | 'completed' | 'failed';
@@ -222,6 +223,7 @@ export interface AssetReferenceImage {
   description: string | null;
   view_type: ReferenceViewType;
   sort_order: number;
+  is_enabled: boolean;
   created_at: string;
 }
 
@@ -580,6 +582,7 @@ export interface GenerationStatusResponse {
   error?: string;
   conceptStatus?: 'idle' | 'generating' | 'completed' | 'failed';
   conceptImageUrl?: string | null;
+  useReferenceImages?: boolean;
 }
 
 /**
@@ -664,6 +667,29 @@ export async function getCharacterViewStatus(
   if (!response.ok) {
     const result = await response.json();
     throw new Error(result.message || '查询生成状态失败');
+  }
+  return response.json();
+}
+
+/**
+ * 更新角色使用参考图开关
+ */
+export async function updateCharacterUseReferenceImages(
+  characterId: number,
+  useReferenceImages: boolean
+): Promise<{ message: string; useReferenceImages: boolean }> {
+  const token = getAuthToken();
+  const response = await fetch(`/api/characters/${characterId}/use-reference-images`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    },
+    body: JSON.stringify({ use_reference_images: useReferenceImages })
+  });
+  if (!response.ok) {
+    const result = await response.json();
+    throw new Error(result.message || '更新参考图设置失败');
   }
   return response.json();
 }
@@ -985,14 +1011,24 @@ export async function fetchCharacterStateHistory(
 
 /**
  * 获取资产的参考图
+ * @param enabledOnly 是否只获取启用的参考图
  */
 export async function fetchReferenceImages(
   assetType: AssetReferenceType,
-  assetId: number
+  assetId: number,
+  enabledOnly: boolean = false
 ): Promise<AssetReferenceImage[]> {
   const token = getAuthToken();
+  const params = new URLSearchParams({
+    asset_type: assetType,
+    asset_id: assetId.toString()
+  });
+  if (enabledOnly) {
+    params.append('enabled_only', 'true');
+  }
+  
   const response = await fetch(
-    `/api/reference-images?asset_type=${assetType}&asset_id=${assetId}`,
+    `/api/reference-images?${params.toString()}`,
     {
       headers: {
         ...(token ? { Authorization: `Bearer ${token}` } : {})
@@ -1015,7 +1051,8 @@ export async function uploadReferenceImage(
   assetId: number,
   imageUrl: string,
   description?: string,
-  viewType?: ReferenceViewType
+  viewType?: ReferenceViewType,
+  isEnabled: boolean = true
 ): Promise<AssetReferenceImage> {
   const token = getAuthToken();
   const response = await fetch('/api/reference-images', {
@@ -1029,7 +1066,8 @@ export async function uploadReferenceImage(
       asset_id: assetId,
       image_url: imageUrl,
       description,
-      view_type: viewType || 'other'
+      view_type: viewType || 'other',
+      is_enabled: isEnabled
     })
   });
   if (!response.ok) {
@@ -1045,7 +1083,7 @@ export async function uploadReferenceImage(
  */
 export async function updateReferenceImage(
   imageId: number,
-  data: { image_url?: string; description?: string; sort_order?: number; view_type?: ReferenceViewType }
+  data: { image_url?: string; description?: string; sort_order?: number; view_type?: ReferenceViewType; is_enabled?: boolean }
 ): Promise<AssetReferenceImage> {
   const token = getAuthToken();
   const response = await fetch(`/api/reference-images/${imageId}`, {
@@ -1336,6 +1374,108 @@ export async function getSceneSketch(
   if (!response.ok) {
     const result = await response.json();
     throw new Error(result.message || '获取场景草图失败');
+  }
+  return response.json();
+}
+
+// ============================================================
+// 文件上传 API
+// ============================================================
+
+/**
+ * 上传文件到 MinIO（直接上传本地文件）
+ * @param file 本地文件对象
+ * @param assetType 资产类型
+ * @param assetId 资产ID
+ * @param viewType 视角类型
+ * @param description 图片描述
+ * @param onProgress 上传进度回调 (0-100)
+ * @returns 上传结果
+ */
+export async function uploadFileToMinIO(
+  file: File,
+  assetType: AssetReferenceType,
+  assetId: number,
+  viewType: ReferenceViewType = 'other',
+  description?: string,
+  onProgress?: (progress: number) => void
+): Promise<{ image: AssetReferenceImage; url: string }> {
+  const token = getAuthToken();
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('asset_type', assetType);
+  formData.append('asset_id', assetId.toString());
+  formData.append('view_type', viewType);
+  if (description) {
+    formData.append('description', description);
+  }
+
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+
+    // 上传进度监听
+    if (onProgress) {
+      xhr.upload.addEventListener('progress', (event) => {
+        if (event.lengthComputable) {
+          const progress = Math.round((event.loaded / event.total) * 100);
+          onProgress(progress);
+        }
+      });
+    }
+
+    xhr.addEventListener('load', () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const result = JSON.parse(xhr.responseText);
+          resolve(result);
+        } catch (error) {
+          reject(new Error('解析响应失败'));
+        }
+      } else {
+        try {
+          const result = JSON.parse(xhr.responseText);
+          reject(new Error(result.message || '上传失败'));
+        } catch {
+          reject(new Error(`上传失败 (${xhr.status})`));
+        }
+      }
+    });
+
+    xhr.addEventListener('error', () => {
+      reject(new Error('网络错误，上传失败'));
+    });
+
+    xhr.addEventListener('abort', () => {
+      reject(new Error('上传已取消'));
+    });
+
+    xhr.open('POST', '/api/upload');
+    if (token) {
+      xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    }
+    xhr.send(formData);
+  });
+}
+
+/**
+ * 检查上传服务状态
+ * @returns 服务状态
+ */
+export async function checkUploadStatus(): Promise<{
+  ready: boolean;
+  maxFileSize: number;
+  allowedTypes: string[];
+}> {
+  const token = getAuthToken();
+  const response = await fetch('/api/upload/status', {
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    }
+  });
+
+  if (!response.ok) {
+    const result = await response.json();
+    throw new Error(result.message || '检查上传服务状态失败');
   }
   return response.json();
 }

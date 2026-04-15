@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useDisclosure } from '@heroui/react';
 import { getAuthToken } from '../../../services/auth';
+import { fetchReferenceImages } from '../../../services/assets';
 import { ResourceItem } from './types';
 
 /** URL 缓存破坏：追加时间戳参数，强制浏览器加载最新图片 */
@@ -21,6 +22,8 @@ export const useResourceModals = (options: UseResourceModalsOptions = {}) => {
   const [selectedResource, setSelectedResource] = useState<ResourceItem | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedPrompts, setGeneratedPrompts] = useState<any>(null);
+  const [useReferenceImages, setUseReferenceImages] = useState(true);
+  const [referenceImageCount, setReferenceImageCount] = useState(0);
   const { isOpen: isViewsModalOpen, onOpen: openViewsModal, onOpenChange: onViewsModalChange } = useDisclosure();
   const { isOpen: isPreviewModalOpen, onOpen: openPreviewModal, onOpenChange: onPreviewModalChange } = useDisclosure();
 
@@ -37,15 +40,18 @@ export const useResourceModals = (options: UseResourceModalsOptions = {}) => {
       try {
         const token = getAuthToken();
         
-        // 从数据库获取角色的三视图数据
-        const res = await fetch(`/api/characters/${characterId}`, {
-          headers: {
-            ...(token ? { Authorization: `Bearer ${token}` } : {})
-          }
-        });
+        // 并行获取角色数据和参考图数据
+        const [characterRes, referenceImages] = await Promise.all([
+          fetch(`/api/characters/${characterId}`, {
+            headers: {
+              ...(token ? { Authorization: `Bearer ${token}` } : {})
+            }
+          }),
+          fetchReferenceImages('character', characterId, true).catch(() => [])
+        ]);
 
-        if (res.ok) {
-          const character = await res.json();
+        if (characterRes.ok) {
+          const character = await characterRes.json();
           console.log('[Generate Views] 角色数据:', character);
           
           // 设置角色数据，包含三视图 URL
@@ -57,13 +63,21 @@ export const useResourceModals = (options: UseResourceModalsOptions = {}) => {
             characterSheetUrl: bustCache(character.character_sheet_url),
             generationStatus: character.generation_status
           });
+          
+          // 设置参考图使用状态
+          setUseReferenceImages(character.use_reference_images !== false);
+          setReferenceImageCount(referenceImages.length);
         } else {
           // 获取失败，只设置名称
           setSelectedResource({ name: charName });
+          setUseReferenceImages(true);
+          setReferenceImageCount(0);
         }
       } catch (error) {
         console.error('[Generate Views] 获取角色数据失败:', error);
         setSelectedResource({ name: charName });
+        setUseReferenceImages(true);
+        setReferenceImageCount(0);
       }
       
       setGeneratedPrompts(null);
@@ -168,6 +182,8 @@ export const useResourceModals = (options: UseResourceModalsOptions = {}) => {
     generatedPrompts,
     isViewsModalOpen,
     isPreviewModalOpen,
+    useReferenceImages,
+    referenceImageCount,
     handleGenerateViews,
     handlePreview,
     closeViewsModal,

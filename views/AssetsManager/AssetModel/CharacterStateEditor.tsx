@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Button, Input, Textarea, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure, Card, CardBody, Select, SelectItem, Tooltip, Chip } from '@heroui/react';
+import { Button, Input, Textarea, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure, Card, CardBody, Select, SelectItem, Tooltip, Chip, Switch } from '@heroui/react';
 import { Plus, Edit2, Trash2, ChevronDown, ChevronRight, Image as ImageIcon, Star, Copy, RefreshCw, Shirt, Calendar, Scissors, Clock, Sparkles, User, X, Tag } from 'lucide-react';
 import {
   Character,
@@ -111,7 +111,8 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
     is_active: false,
     state_category: 'daily',
     tags: '[]',
-    tagInput: ''
+    tagInput: '',
+    use_reference_images: true
   });
   
   const { showToast } = useToast();
@@ -241,7 +242,8 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
       is_active: state.is_active || false,
       state_category: state.state_category || 'daily',
       tags: state.tags || '[]',
-      tagInput: ''
+      tagInput: '',
+      use_reference_images: state.use_reference_images !== false
     });
     onOpen();
   };
@@ -1075,7 +1077,28 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                       
                       {/* 参考图 */}
                       <div>
-                        <h5 className="text-xs font-medium text-slate-400 mb-2">参考图</h5>
+                        <div className="flex items-center justify-between mb-2">
+                          <h5 className="text-xs font-medium text-slate-400">参考图</h5>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-slate-500">使用参考图</span>
+                            <Switch
+                              size="sm"
+                              isSelected={state.use_reference_images !== false}
+                              onValueChange={async (enabled) => {
+                                try {
+                                  await updateCharacterState(characterId!, state.id, {
+                                    use_reference_images: enabled
+                                  });
+                                  await loadStates();
+                                  showToast(enabled ? '已启用参考图' : '已禁用参考图', 'success');
+                                } catch (error: any) {
+                                  showToast(error.message, 'error');
+                                }
+                              }}
+                              isDisabled={disabled}
+                            />
+                          </div>
+                        </div>
                         <ReferenceImageManager
                           assetType="character_state"
                           assetId={state.id}

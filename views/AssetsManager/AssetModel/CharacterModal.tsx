@@ -14,7 +14,8 @@ import {
   getCharacterViewStatus,
   downloadCharacterView,
   downloadAllCharacterViews,
-  deleteCharacterViewApi
+  deleteCharacterViewApi,
+  updateCharacterUseReferenceImages
 } from '../../../services/assets';
 import AIModelSelector, { AIModel } from '../../../components/AIModelSelector';
 import CharacterStateEditor from './CharacterStateEditor';
@@ -67,6 +68,9 @@ const CharacterModal: React.FC<CharacterModalProps> = ({
   const [isGeneratingConcept, setIsGeneratingConcept] = useState(false);
   const [conceptGenerationError, setConceptGenerationError] = useState<string | null>(null);
 
+  // 参考图启用状态
+  const [useReferenceImages, setUseReferenceImages] = useState(formData.use_reference_images !== false);
+
   const { openPreview } = usePreview();
 
   // 三视图预览
@@ -92,6 +96,24 @@ const CharacterModal: React.FC<CharacterModalProps> = ({
       setLocalImageModel(selectedImageModel);
     }
   }, [selectedImageModel]);
+
+  // 同步参考图启用状态
+  useEffect(() => {
+    setUseReferenceImages(formData.use_reference_images !== false);
+  }, [formData.use_reference_images]);
+
+  // 处理参考图开关变更
+  const handleUseReferenceImagesChange = async (enabled: boolean) => {
+    if (!formData.id) return;
+    
+    try {
+      await updateCharacterUseReferenceImages(formData.id, enabled);
+      setUseReferenceImages(enabled);
+      setFormData({ ...formData, use_reference_images: enabled });
+    } catch (error: any) {
+      console.error('更新参考图设置失败:', error);
+    }
+  };
 
   // 检查是否有任何三视图
   const hasAnyView = !!(formData.front_view_url || formData.side_view_url || formData.back_view_url);
@@ -994,6 +1016,9 @@ const CharacterModal: React.FC<CharacterModalProps> = ({
                     <ReferenceImageManager
                       assetType="character"
                       assetId={formData.id}
+                      showGlobalToggle={true}
+                      globalEnabled={useReferenceImages}
+                      onGlobalEnabledChange={handleUseReferenceImagesChange}
                     />
                   ) : (
                     <div className="text-center py-8 text-slate-500">

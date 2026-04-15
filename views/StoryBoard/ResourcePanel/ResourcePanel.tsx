@@ -120,6 +120,8 @@ const ResourcePanel: React.FC<ResourcePanelProps> = ({
     isGenerating,
     generatedPrompts,
     isViewsModalOpen,
+    useReferenceImages,
+    referenceImageCount,
     handleGenerateViews,
     closeViewsModal
   } = useResourceModals({
@@ -346,6 +348,8 @@ const ResourcePanel: React.FC<ResourcePanelProps> = ({
         imageModel={effectiveImageModel}
         textModel={textModel}
         imageAspectRatio={effectiveImageAspectRatio}
+        useReferenceImages={useReferenceImages}
+        referenceImageCount={referenceImageCount}
       />
 
       <CharacterDetailModal

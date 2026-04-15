@@ -166,6 +166,77 @@ async function runMigration() {
 
     console.log('[迁移 3] 完成 ✓\n');
 
+    // =============================================
+    // 迁移 4: 参考图启用/禁用功能
+    // =============================================
+    console.log('[迁移 4] 参考图启用/禁用功能');
+    console.log('-------------------------------------------');
+
+    // 4.1 为 asset_reference_images 表添加 is_enabled 字段
+    console.log('4.1 添加 asset_reference_images.is_enabled 字段...');
+    try {
+      await connection.execute(`
+        ALTER TABLE asset_reference_images 
+        ADD COLUMN is_enabled BOOLEAN DEFAULT TRUE COMMENT '是否启用该参考图参与AI生成'
+      `);
+      console.log('    ✓ 成功添加 is_enabled 字段');
+    } catch (err) {
+      if (err.code === 'ER_DUP_FIELDNAME') {
+        console.log('    - is_enabled 字段已存在，跳过');
+      } else {
+        throw err;
+      }
+    }
+
+    // 4.2 为 characters 表添加 use_reference_images 字段
+    console.log('4.2 添加 characters.use_reference_images 字段...');
+    try {
+      await connection.execute(`
+        ALTER TABLE characters 
+        ADD COLUMN use_reference_images BOOLEAN DEFAULT TRUE COMMENT '是否使用参考图进行三视图生成'
+      `);
+      console.log('    ✓ 成功添加 use_reference_images 字段');
+    } catch (err) {
+      if (err.code === 'ER_DUP_FIELDNAME') {
+        console.log('    - use_reference_images 字段已存在，跳过');
+      } else {
+        throw err;
+      }
+    }
+
+    // 4.3 为 character_states 表添加 use_reference_images 字段
+    console.log('4.3 添加 character_states.use_reference_images 字段...');
+    try {
+      await connection.execute(`
+        ALTER TABLE character_states 
+        ADD COLUMN use_reference_images BOOLEAN DEFAULT TRUE COMMENT '是否使用参考图进行状态图片生成'
+      `);
+      console.log('    ✓ 成功添加 use_reference_images 字段');
+    } catch (err) {
+      if (err.code === 'ER_DUP_FIELDNAME') {
+        console.log('    - use_reference_images 字段已存在，跳过');
+      } else {
+        throw err;
+      }
+    }
+
+    // 4.4 创建索引优化查询
+    console.log('4.4 创建索引 idx_reference_images_enabled...');
+    try {
+      await connection.execute(`
+        CREATE INDEX idx_reference_images_enabled ON asset_reference_images (asset_type, asset_id, is_enabled)
+      `);
+      console.log('    ✓ 成功创建索引');
+    } catch (err) {
+      if (err.code === 'ER_DUP_KEYNAME') {
+        console.log('    - 索引已存在，跳过');
+      } else {
+        throw err;
+      }
+    }
+
+    console.log('[迁移 4] 完成 ✓\n');
+
     console.log('========================================');
     console.log('所有迁移执行完成!');
     console.log('========================================');

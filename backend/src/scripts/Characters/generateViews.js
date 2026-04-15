@@ -140,7 +140,7 @@ module.exports = (router) => {
 
     try {
       const character = await queryOne(
-        'SELECT generation_status, concept_generation_status, front_view_url, side_view_url, back_view_url, concept_image_url FROM characters WHERE id = ? AND user_id = ?',
+        'SELECT generation_status, concept_generation_status, front_view_url, side_view_url, back_view_url, concept_image_url, use_reference_images FROM characters WHERE id = ? AND user_id = ?',
         [characterId, userId]
       );
 
@@ -159,11 +159,47 @@ module.exports = (router) => {
         status: character.generation_status || 'idle',
         progress,
         conceptStatus: character.concept_generation_status || 'idle',
-        conceptImageUrl: character.concept_image_url || null
+        conceptImageUrl: character.concept_image_url || null,
+        useReferenceImages: character.use_reference_images !== 0
       });
     } catch (error) {
       console.error('[Generation Status] 查询失败:', error);
       res.status(500).json({ message: '查询生成状态失败' });
+    }
+  });
+
+  // PUT /:id/use-reference-images - 更新角色使用参考图开关
+  router.put('/:id/use-reference-images', authMiddleware, async (req, res) => {
+    const userId = req.user.id;
+    const characterId = Number(req.params.id);
+    const { use_reference_images } = req.body;
+
+    if (use_reference_images === undefined) {
+      return res.status(400).json({ message: '缺少 use_reference_images 参数' });
+    }
+
+    try {
+      // 验证角色归属
+      const character = await queryOne(
+        'SELECT id FROM characters WHERE id = ? AND user_id = ?',
+        [characterId, userId]
+      );
+      if (!character) {
+        return res.status(404).json({ message: '角色不存在' });
+      }
+
+      await execute(
+        'UPDATE characters SET use_reference_images = ? WHERE id = ?',
+        [use_reference_images ? 1 : 0, characterId]
+      );
+
+      res.json({
+        message: use_reference_images ? '已启用参考图' : '已禁用参考图',
+        useReferenceImages: use_reference_images
+      });
+    } catch (error) {
+      console.error('[Update Use Reference Images] 更新失败:', error);
+      res.status(500).json({ message: '更新参考图设置失败' });
     }
   });
 };

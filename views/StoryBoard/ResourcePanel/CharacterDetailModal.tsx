@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Button, Chip } from '@heroui/react';
-import { User, Wand2, Layers, Volume2, Trash2, Upload, ImagePlus, ZoomIn, X, Star, Plus, Pencil, Copy, StarOff, Clock, Filter, ChevronDown, Loader2 } from 'lucide-react';
+import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Button, Chip, Switch } from '@heroui/react';
+import { User, Wand2, Layers, Volume2, Trash2, Upload, ImagePlus, ZoomIn, X, Star, Plus, Pencil, Copy, StarOff, Clock, Filter, ChevronDown, Loader2, ImageIcon, Eye, Power } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Character, CharacterState } from './types';
-import { fetchCharacterStates, activateCharacterState, fetchCharacterStateHistory, updateCharacter, deleteCharacterViewApi } from '../../../services/assets';
+import { fetchCharacterStates, activateCharacterState, fetchCharacterStateHistory, updateCharacter, deleteCharacterViewApi, fetchReferenceImages, AssetReferenceImage, updateCharacterUseReferenceImages } from '../../../services/assets';
 import type { CharacterStateHistoryEntry } from '../../../services/assets';
 import { getAuthToken } from '../../../services/auth';
 import { usePreview } from '../../../components/PreviewProvider';
@@ -90,6 +90,11 @@ const CharacterDetailModal: React.FC<CharacterDetailModalProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const editTextareaRef = useRef<HTMLTextAreaElement>(null);
 
+  // 参考图状态
+  const [referenceImages, setReferenceImages] = useState<AssetReferenceImage[]>([]);
+  const [referenceImagesLoading, setReferenceImagesLoading] = useState(false);
+  const [stateReferenceImages, setStateReferenceImages] = useState<Record<number, AssetReferenceImage[]>>({});
+
   // 开始编辑某个字段
   const startEditing = (field: 'appearance' | 'personality' | 'description', currentValue: string) => {
     setEditingField(field);
@@ -161,7 +166,7 @@ const CharacterDetailModal: React.FC<CharacterDetailModalProps> = ({
     }
   };
 
-  // 加载角色状态 & 最新三视图
+  // 加载角色状态 & 最新三视图 & 参考图
   useEffect(() => {
     if (character?.id && isOpen) {
       fetchCharacterStates(character.id)
@@ -173,6 +178,12 @@ const CharacterDetailModal: React.FC<CharacterDetailModalProps> = ({
         })
         .catch(err => console.error('加载角色状态失败:', err));
       fetchVoiceConfig(character.id);
+      
+      // 加载角色级别的参考图（如果启用了参考图功能）
+      if (character.useReferenceImages !== false) {
+        loadReferenceImages();
+      }
+      
       // 从 API 获取最新角色数据（含三视图 URL），避免父组件 prop 陈旧
       const token = getAuthToken();
       fetch(`/api/characters/${character.id}`, {
@@ -196,8 +207,43 @@ const CharacterDetailModal: React.FC<CharacterDetailModalProps> = ({
       setHistoryData([]);
       setHistoryFilter('');
       setFreshViewUrls({});
+      setReferenceImages([]);
+      setStateReferenceImages({});
     }
   }, [character?.id, isOpen]);
+
+  // 加载角色级别参考图
+  const loadReferenceImages = useCallback(async () => {
+    if (!character?.id) return;
+    setReferenceImagesLoading(true);
+    try {
+      // 只加载启用的参考图
+      const images = await fetchReferenceImages('character', character.id, true);
+      setReferenceImages(images);
+    } catch (err) {
+      console.error('加载参考图失败:', err);
+    } finally {
+      setReferenceImagesLoading(false);
+    }
+  }, [character?.id]);
+
+  // 加载状态级别参考图
+  const loadStateReferenceImages = useCallback(async (stateId: number) => {
+    if (!stateId) return;
+    try {
+      const images = await fetchReferenceImages('character_state', stateId, true);
+      setStateReferenceImages(prev => ({ ...prev, [stateId]: images }));
+    } catch (err) {
+      console.error('加载状态参考图失败:', err);
+    }
+  }, []);
+
+  // 当选中状态变化时，加载该状态的参考图
+  useEffect(() => {
+    if (selectedState?.id && selectedState?.useReferenceImages !== false) {
+      loadStateReferenceImages(selectedState.id);
+    }
+  }, [selectedState?.id, selectedState?.useReferenceImages]);
 
   // 监测滚动状态，更新渐变遮罩
   const updateScrollState = useCallback(() => {
@@ -428,7 +474,7 @@ const CharacterDetailModal: React.FC<CharacterDetailModalProps> = ({
                   )}
                 </AnimatePresence>
 
-                {/* 图片上传区域 */}
+                {/* 角色参考图区域 - 统一显示上传的参考图或生成的正视图 */}
                 <div
                   className={`rounded-lg p-4 border transition-colors ${isDragging ? 'ring-2 ring-blue-400' : ''}`}
                   style={{
@@ -439,23 +485,73 @@ const CharacterDetailModal: React.FC<CharacterDetailModalProps> = ({
                   onDragLeave={() => setIsDragging(false)}
                   onDrop={handleDrop}
                 >
-                  <h4 className="text-sm font-bold mb-3 flex items-center gap-2" style={{ color: 'var(--text-secondary)' }}>
-                    <span className="w-1 h-4 rounded" style={{ backgroundColor: 'rgb(59,130,246)' }} />
-                    角色参考图
-                  </h4>
-                  {(currentState?.image_url || character.imageUrl) ? (
-                    <div className="flex gap-4 items-start">
-                      <div className="w-40 h-40 rounded-lg overflow-hidden border flex-shrink-0" style={{ borderColor: 'var(--border)' }}>
-                        <img
-                          src={currentState?.image_url || character.imageUrl}
-                          alt={character.name}
-                          className="w-full h-full object-cover"
-                        />
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="text-sm font-bold flex items-center gap-2" style={{ color: 'var(--text-secondary)' }}>
+                      <span className="w-1 h-4 rounded" style={{ backgroundColor: 'rgb(59,130,246)' }} />
+                      角色参考图
+                      {referenceImages.length > 0 && (
+                        <Chip size="sm" variant="flat" className="bg-blue-500/10 text-blue-400">
+                          {referenceImages.length} 张
+                        </Chip>
+                      )}
+                    </h4>
+                    {/* 使用参考图开关 */}
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs" style={{ color: 'var(--text-muted)' }}>使用参考图生成</span>
+                      <Switch
+                        size="sm"
+                        isSelected={character.useReferenceImages !== false}
+                        onValueChange={async (checked) => {
+                          try {
+                            await updateCharacterUseReferenceImages(character.id, checked);
+                            // 更新本地状态
+                            if (onCharacterUpdate) {
+                              onCharacterUpdate({
+                                ...character,
+                                useReferenceImages: checked,
+                              });
+                            }
+                          } catch (err: any) {
+                            console.error('更新参考图设置失败:', err);
+                          }
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* 参考图显示：优先显示上传的参考图，其次显示生成的正视图 */}
+                  {referenceImages.length > 0 ? (
+                    // 显示上传的参考图
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-4 gap-2">
+                        {referenceImages
+                          .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+                          .map((image) => (
+                          <div
+                            key={image.id}
+                            className="relative group aspect-square rounded-lg overflow-hidden border cursor-pointer"
+                            style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border)' }}
+                            onClick={() => openPreview([{ src: image.image_url, alt: image.description || '参考图' }], 0)}
+                          >
+                            <img
+                              src={image.image_url}
+                              alt={image.description || '参考图'}
+                              className="w-full h-full object-cover"
+                            />
+                            {/* 悬停遮罩 */}
+                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center">
+                              <Eye className="w-5 h-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                            </div>
+                            {/* 视角类型标签 */}
+                            {image.view_type && image.view_type !== 'other' && (
+                              <div className="absolute bottom-0 left-0 right-0 px-1.5 py-0.5 bg-black/60">
+                                <p className="text-[10px] text-white text-center capitalize">{image.view_type}</p>
+                              </div>
+                            )}
+                          </div>
+                        ))}
                       </div>
-                      <div className="flex-1 flex flex-col gap-2">
-                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                          已上传参考图，可重新上传替换
-                        </p>
+                      <div className="flex gap-2">
                         <Button
                           size="sm"
                           variant="flat"
@@ -464,7 +560,7 @@ const CharacterDetailModal: React.FC<CharacterDetailModalProps> = ({
                           onPress={() => fileInputRef.current?.click()}
                           style={{ backgroundColor: 'rgba(59,130,246,0.1)', color: 'rgb(59,130,246)' }}
                         >
-                          重新上传
+                          上传更多
                         </Button>
                         {onGenerateViews && (
                           <Button
@@ -474,12 +570,50 @@ const CharacterDetailModal: React.FC<CharacterDetailModalProps> = ({
                             className="font-semibold text-white"
                             style={{ background: 'linear-gradient(135deg, #8b5cf6, #6366f1)' }}
                           >
-                            生成三视图
+                            重新生成三视图
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  ) : displayFrontViewUrl ? (
+                    // 显示生成的正视图作为参考
+                    <div className="flex gap-4 items-start">
+                      <div className="w-40 h-40 rounded-lg overflow-hidden border flex-shrink-0" style={{ borderColor: 'var(--border)' }}>
+                        <img
+                          src={displayFrontViewUrl}
+                          alt={character.name}
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                      <div className="flex-1 flex flex-col gap-2">
+                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                          已生成正视图，可上传参考图替换
+                        </p>
+                        <Button
+                          size="sm"
+                          variant="flat"
+                          startContent={<Upload className="w-3 h-3" />}
+                          isLoading={isUploading}
+                          onPress={() => fileInputRef.current?.click()}
+                          style={{ backgroundColor: 'rgba(59,130,246,0.1)', color: 'rgb(59,130,246)' }}
+                        >
+                          上传参考图
+                        </Button>
+                        {onGenerateViews && (
+                          <Button
+                            size="sm"
+                            startContent={<Wand2 className="w-3 h-3" />}
+                            onPress={() => onGenerateViews(character.id)}
+                            className="font-semibold text-white"
+                            style={{ background: 'linear-gradient(135deg, #8b5cf6, #6366f1)' }}
+                          >
+                            重新生成三视图
                           </Button>
                         )}
                       </div>
                     </div>
                   ) : (
+                    // 空状态
                     <div
                       className="flex flex-col items-center justify-center py-8 rounded-lg border-2 border-dashed cursor-pointer hover:border-blue-400 transition-colors"
                       style={{ borderColor: 'var(--border)' }}
@@ -558,6 +692,53 @@ const CharacterDetailModal: React.FC<CharacterDetailModalProps> = ({
                           </div>
                         </div>
                       )}
+                    </div>
+                  </div>
+                )}
+
+                {/* 状态级别参考图 */}
+                {selectedState && selectedState.useReferenceImages !== false && stateReferenceImages[selectedState.id]?.length > 0 && (
+                  <div className="rounded-lg p-4 border" style={{ backgroundColor: 'rgba(245,158,11,0.05)', borderColor: 'rgba(245,158,11,0.2)' }}>
+                    <h4 className="text-sm font-bold mb-3 flex items-center gap-2" style={{ color: 'var(--text-secondary)' }}>
+                      <span className="w-1 h-4 bg-amber-500 rounded" />
+                      {selectedState.name} - 参考图
+                      <Chip size="sm" variant="flat" className="bg-amber-500/10 text-amber-400">
+                        {stateReferenceImages[selectedState.id].length} 张
+                      </Chip>
+                    </h4>
+                    <div className="grid grid-cols-4 gap-2">
+                      {stateReferenceImages[selectedState.id]
+                        .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+                        .map((image) => (
+                        <div
+                          key={image.id}
+                          className="relative group aspect-square rounded-lg overflow-hidden border cursor-pointer"
+                          style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border)' }}
+                          onClick={() => openPreview([{ src: image.image_url, alt: image.description || '参考图' }], 0)}
+                        >
+                          <img
+                            src={image.image_url}
+                            alt={image.description || '参考图'}
+                            className="w-full h-full object-cover"
+                          />
+                          {/* 悬停遮罩 */}
+                          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center">
+                            <Eye className="w-5 h-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                          </div>
+                          {/* 视角类型标签 */}
+                          {image.view_type && image.view_type !== 'other' && (
+                            <div className="absolute bottom-0 left-0 right-0 px-1.5 py-0.5 bg-black/60">
+                              <p className="text-[10px] text-white text-center capitalize">{image.view_type}</p>
+                            </div>
+                          )}
+                          {/* 描述提示 */}
+                          {image.description && (
+                            <div className="absolute top-0 left-0 right-0 px-1.5 py-0.5 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <p className="text-[10px] text-white truncate">{image.description}</p>
+                            </div>
+                          )}
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}
@@ -953,16 +1134,6 @@ const CharacterDetailModal: React.FC<CharacterDetailModalProps> = ({
               <Button variant="light" onPress={onCloseModal} style={{ color: 'var(--text-muted)' }}>
                 关闭
               </Button>
-              {onGenerateViews && (
-                <Button 
-                  className="font-semibold text-white"
-                  style={{ background: 'linear-gradient(135deg, #8b5cf6, #6366f1)' }}
-                  startContent={<Wand2 className="w-4 h-4" />}
-                  onPress={() => onGenerateViews(character.id)}
-                >
-                  生成三视图
-                </Button>
-              )}
             </ModalFooter>
 
             {/* 声音设置弹窗 */}
