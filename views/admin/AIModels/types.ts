@@ -13,7 +13,7 @@ export interface PriceConfig {
 export interface AIModel {
   id: number;
   name: string;
-  category: 'TEXT' | 'IMAGE' | 'VIDEO' | 'AUDIO';
+  category: 'TEXT' | 'IMAGE' | 'VIDEO' | 'AUDIO' | 'MULTIMODAL';
   provider: string;
   description?: string;
   is_active: number;
@@ -55,7 +55,7 @@ export interface TextModel {
 
 export interface ModelFormData {
   name: string;
-  category: 'TEXT' | 'IMAGE' | 'VIDEO' | 'AUDIO';
+  category: 'TEXT' | 'IMAGE' | 'VIDEO' | 'AUDIO' | 'MULTIMODAL';
   provider: string;
   description: string;
   is_active: number;
@@ -125,7 +125,7 @@ export const DURATION_PRESETS = [
 export interface TemplatePreset {
   name: string;
   description: string;
-  category: 'TEXT' | 'IMAGE' | 'VIDEO' | 'AUDIO';
+  category: 'TEXT' | 'IMAGE' | 'VIDEO' | 'AUDIO' | 'MULTIMODAL';
   config: Partial<ModelFormData>;
 }
 
@@ -289,6 +289,41 @@ export const TEMPLATE_PRESETS: TemplatePreset[] = [
         components: [
           { type: 'input_tokens', unit: 'per_million_tokens', price: 2 },
           { type: 'output_tokens', unit: 'per_million_tokens', price: 8 }
+        ]
+      }, null, 2),
+    }
+  },
+  {
+    name: '多模态理解 (Volcengine)',
+    description: '火山引擎多模态理解模型，支持图像/视频/文档理解',
+    category: 'MULTIMODAL',
+    config: {
+      provider: 'volcengine',
+      request_method: 'POST',
+      url_template: 'https://ark.cn-beijing.volces.com/api/v3/responses',
+      headers_template: JSON.stringify({
+        "Content-Type": "application/json",
+        "Authorization": "Bearer {{apiKey}}"
+      }, null, 2),
+      body_template: JSON.stringify({
+        "model": "{{modelId}}",
+        "input": "{{input}}"
+      }, null, 2),
+      default_params: JSON.stringify({
+        modelId: 'doubao-seed-2-0-pro-260215',
+        temperature: 0.7,
+        max_tokens: 4096
+      }, null, 2),
+      response_mapping: JSON.stringify({
+        "content": "output[0].content[0].text",
+        "usage": "usage"
+      }, null, 2),
+      custom_handler: 'doubao_multimodal',
+      price_config: JSON.stringify({
+        currency: 'CNY',
+        charge_on_failure: false,
+        components: [
+          { type: 'total_tokens', unit: 'per_million_tokens', price: 18 }
         ]
       }, null, 2),
     }

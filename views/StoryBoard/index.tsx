@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef, Component, ReactNode } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef, Component, ReactNode, lazy, Suspense } from 'react';
 import { Button, Select, SelectItem, Tooltip } from '@heroui/react';
-import { Wand2, RefreshCw, Download, Video, ImageIcon, Users, MapPin, Frame, Film, ChevronDown, Play, PanelRight, GitBranch, MessageSquare, Lock, Sparkles } from 'lucide-react';
+import { Wand2, RefreshCw, Download, Video, ImageIcon, Users, MapPin, Frame, Film, ChevronDown, Play, GitBranch, MessageSquare, Lock, Sparkles } from 'lucide-react';
 import { useSceneManager, StoryboardScene, DialogueLine } from './useSceneManager';
 import { useAutoStoryboard } from './useAutoStoryboard';
 import { useSceneGeneration } from './useSceneGeneration';
@@ -25,6 +25,9 @@ import { AnimaticPreview } from './AnimaticPreview';
 import VersionHistoryPanel from './VersionHistoryPanel';
 import TeamCollaborationPanel from './TeamCollaborationPanel';
 import FrameAnnotationPanel from './FrameAnnotationPanel';
+
+// AI辅助面板 - 懒加载
+const AIAssistantPanel = lazy(() => import('../../components/AIAssistantPanel'));
 
 interface Script {
   id: number;
@@ -121,7 +124,10 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
   const [isVersionHistoryOpen, setIsVersionHistoryOpen] = useState(false);
   const [isTeamCollaborationOpen, setIsTeamCollaborationOpen] = useState(false);
   const [isFrameAnnotationOpen, setIsFrameAnnotationOpen] = useState(false);
+  const [isAssistantOpen, setIsAssistantOpen] = useState(false);
   const resourcePanelRef = useRef<ResizablePanelRef>(null);
+  const assistantPanelRef = useRef<ResizablePanelRef>(null);
+  const [leftPanelTab, setLeftPanelTab] = useState<'scenes' | 'resources'>('scenes');
   const { showToast } = useToast();
 
   // 批量生成提交状态追踪
@@ -1108,11 +1114,17 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
 
             <Divider />
 
-            {/* 资源面板切换 */}
+            {/* AI 助手 */}
             <IconButton
-              icon={<PanelRight className="w-4 h-4" />}
-              tooltip="显示/隐藏资源面板"
-              onClick={() => resourcePanelRef.current?.toggle()}
+              icon={<Sparkles className="w-4 h-4" />}
+              tooltip="AI 助手"
+              onClick={() => {
+                setIsAssistantOpen(true);
+                // 如果面板已存在但被折叠，展开它
+                requestAnimationFrame(() => {
+                  assistantPanelRef.current?.expand?.();
+                });
+              }}
             />
           </div>
         </div>
@@ -1191,48 +1203,94 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
         </div>
       )}
 
-      {/* 主内容区 - 三栏布局 */}
+      {/* 主内容区 - 双栏布局 */}
       {currentScriptId && (
         <div className="flex-1 overflow-hidden flex flex-col">
-          {/* 三栏布局 */}
+          {/* 双栏布局 */}
           <div className="flex-1 overflow-hidden">
             <PanelGroup 
               direction="horizontal" 
-              storageKey="storyboard-layout"
+              storageKey={isAssistantOpen ? "storyboard-layout-v3-with-assistant" : "storyboard-layout-v2"}
               mobileDefaultPanel={1}
-              mobilePanelLabels={['分镜列表', '预览编辑', '资源']}
+              mobilePanelLabels={isAssistantOpen ? ['分镜/资源', '预览编辑', 'AI助手'] : ['分镜/资源', '预览编辑']}
             >
-              {/* 左侧：分镜列表 */}
-              <ResizablePanel defaultSize={22} minSize={15} maxSize={35} title="分镜列表" collapsible>
-                <SceneList
-                scenes={scenes}
-                selectedScene={selectedScene}
-                projectId={currentProjectId}
-                scriptId={currentScriptId}
-                onSelectScene={setSelectedScene}
-                onAddScene={addScene}
-                onDeleteScene={deleteScene}
-                onMoveScene={moveScene}
-                onUpdateDescription={updateDescription}
-                onReorderScenes={reorderScenes}
-                onGenerateImage={generateImage}
-                onGenerateVideo={generateVideo}
-                onUpdateScene={(id, updates) => {
-                  setScenes(prev => prev.map(s => s.id === id ? { ...s, ...updates } : s));
-                }}
-                tasks={tasks}
-                onBatchGenerate={(overwrite) => handleBatchFrameGeneration(overwrite)}
-                isBatchGenerating={isBatchFrameSubmitting || isRunning}
-                batchProgress={0}
-                onBatchGenerateVideo={(overwrite) => handleBatchVideoGeneration(overwrite)}
-                isBatchGeneratingVideo={isBatchVideoSubmitting || isRunning}
-                batchVideoProgress={0}
-                isLoading={isLoading}
-              />
-            </ResizablePanel>
+              {/* 左侧：分镜列表 / 资源 Tab 切换 */}
+              <ResizablePanel ref={resourcePanelRef} defaultSize={isAssistantOpen ? 20 : 25} minSize={15} maxSize={35} title={leftPanelTab === 'scenes' ? '分镜列表' : '资源'} collapsible>
+                <div className="flex flex-col h-full overflow-hidden">
+                  {/* Tab 切换栏 */}
+                  <div className="flex items-center gap-0.5 px-2 py-1.5 border-b shrink-0" style={{ borderColor: 'var(--border-color)', backgroundColor: 'var(--bg-secondary)' }}>
+                    <button
+                      onClick={() => setLeftPanelTab('scenes')}
+                      className={`flex-1 px-3 py-1 text-xs font-medium rounded-md transition-all ${
+                        leftPanelTab === 'scenes'
+                          ? 'text-[var(--accent)]'
+                          : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+                      }`}
+                      style={leftPanelTab === 'scenes' ? { backgroundColor: 'color-mix(in srgb, var(--accent) 15%, transparent)' } : {}}
+                    >
+                      分镜列表
+                    </button>
+                    <button
+                      onClick={() => setLeftPanelTab('resources')}
+                      className={`flex-1 px-3 py-1 text-xs font-medium rounded-md transition-all ${
+                        leftPanelTab === 'resources'
+                          ? 'text-[var(--accent)]'
+                          : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+                      }`}
+                      style={leftPanelTab === 'resources' ? { backgroundColor: 'color-mix(in srgb, var(--accent) 15%, transparent)' } : {}}
+                    >
+                      资源
+                    </button>
+                  </div>
 
-            {/* 中央：预览编辑 */}
-            <ResizablePanel defaultSize={53} minSize={30} title="预览编辑">
+                  {/* 内容区域 */}
+                  <div className="flex-1 overflow-hidden">
+                    {leftPanelTab === 'scenes' ? (
+                      <SceneList
+                        scenes={scenes}
+                        selectedScene={selectedScene}
+                        projectId={currentProjectId}
+                        scriptId={currentScriptId}
+                        onSelectScene={setSelectedScene}
+                        onAddScene={addScene}
+                        onDeleteScene={deleteScene}
+                        onMoveScene={moveScene}
+                        onUpdateDescription={updateDescription}
+                        onReorderScenes={reorderScenes}
+                        onGenerateImage={generateImage}
+                        onGenerateVideo={generateVideo}
+                        onUpdateScene={(id, updates) => {
+                          setScenes(prev => prev.map(s => s.id === id ? { ...s, ...updates } : s));
+                        }}
+                        tasks={tasks}
+                        onBatchGenerate={(overwrite) => handleBatchFrameGeneration(overwrite)}
+                        isBatchGenerating={isBatchFrameSubmitting || isRunning}
+                        batchProgress={0}
+                        onBatchGenerateVideo={(overwrite) => handleBatchVideoGeneration(overwrite)}
+                        isBatchGeneratingVideo={isBatchVideoSubmitting || isRunning}
+                        batchVideoProgress={0}
+                        isLoading={isLoading}
+                      />
+                    ) : (
+                      <ResourcePanel
+                        characters={allCharacters}
+                        locations={allLocations}
+                        props={allProps}
+                        projectId={currentProjectId}
+                        scriptId={currentScriptId}
+                        scenes={scenes}
+                        imageModel={imageModel}
+                        imageAspectRatio={imageAspectRatio}
+                        textModel={textModel}
+                        models={models}
+                      />
+                    )}
+                  </div>
+                </div>
+              </ResizablePanel>
+
+            {/* 中间：预览编辑 */}
+            <ResizablePanel defaultSize={isAssistantOpen ? 55 : 75} minSize={35} title="预览编辑">
               <ScenePreviewPanel
                 key={selectedScene ?? 'none'}
                 scene={selectedSceneData}
@@ -1256,21 +1314,42 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
               />
             </ResizablePanel>
 
-            {/* 右侧：资源面板 */}
-            <ResizablePanel ref={resourcePanelRef} defaultSize={25} minSize={15} maxSize={35} title="资源" collapsible>
-              <ResourcePanel
-                characters={allCharacters}
-                locations={allLocations}
-                props={allProps}
-                projectId={currentProjectId}
-                scriptId={currentScriptId}
-                scenes={scenes}
-                imageModel={imageModel}
-                imageAspectRatio={imageAspectRatio}
-                textModel={textModel}
-                models={models}
-              />
-            </ResizablePanel>
+            {/* 右侧：AI辅助面板（仅当开启时显示） */}
+            {isAssistantOpen && (
+              <ResizablePanel
+                ref={assistantPanelRef}
+                defaultSize={25}
+                minSize={18}
+                maxSize={40}
+                collapsible
+                title="AI助手"
+                onCollapse={(collapsed) => {
+                  if (collapsed) setIsAssistantOpen(false);
+                }}
+              >
+                <Suspense fallback={
+                  <div className="flex items-center justify-center h-full text-sm text-(--text-muted)">
+                    <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin mr-2" />
+                    加载中...
+                  </div>
+                }>
+                  <AIAssistantPanel
+                    projectId={currentProjectId}
+                    currentFrame={selectedSceneData ? {
+                      id: selectedSceneData.id,
+                      first_frame_url: selectedSceneData.startFrame,
+                      last_frame_url: selectedSceneData.endFrame,
+                      video_url: selectedSceneData.videoUrl,
+                      scene_description: selectedSceneData.description
+                    } : null}
+                    onClose={() => setIsAssistantOpen(false)}
+                    onAction={(action, params) => {
+                      console.log('[AI Assistant] Action:', action, params);
+                    }}
+                  />
+                </Suspense>
+              </ResizablePanel>
+            )}
           </PanelGroup>
         </div>
         </div>

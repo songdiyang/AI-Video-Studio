@@ -25,7 +25,7 @@ interface AIModelSelectorProps {
   models: AIModel[];
   selectedModel: string;
   onModelChange: (modelName: string) => void;
-  filterType?: 'TEXT' | 'IMAGE' | 'VIDEO' | 'AUDIO';
+  filterType?: 'TEXT' | 'IMAGE' | 'VIDEO' | 'AUDIO' | 'MULTIMODAL';
   size?: 'sm' | 'md' | 'lg';
   isDisabled?: boolean;
   isRequired?: boolean;

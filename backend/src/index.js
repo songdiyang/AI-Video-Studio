@@ -39,6 +39,7 @@ const costumeRoutes = require('./scripts/Costumes');
 const projectRoutes = require('./projects');
 const workflowRoutes = require('./nosyntask/routes');
 const modelRoutes = require('./modelRoutes');
+const aiAssistantRoutes = require('./aiAssistantRoutes');
 const adminRoutes = require('./adminRoutes');
 const fileProxyRoutes = require('./scripts/fileProxy');
 const feedbackModule = require('./feedback');
@@ -148,6 +149,7 @@ app.use('/api', assetsRoutes);  // 参考图路由（/api/reference-images）
 app.use('/api/projects', projectRoutes);
 app.use('/api/workflows', workflowRoutes);
 app.use('/api/ai-models', modelRoutes);
+app.use('/api/ai-assistant', aiAssistantRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/feedback', feedbackRoutes);
 app.use('/api/mail', internalMailRoutes);

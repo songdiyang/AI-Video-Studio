@@ -15,7 +15,8 @@ const getCategoryColor = (category: string) => {
     TEXT: 'bg-blue-500/10 text-blue-400',
     IMAGE: 'bg-purple-500/10 text-purple-400',
     VIDEO: 'bg-pink-500/10 text-pink-400',
-    AUDIO: 'bg-emerald-500/10 text-emerald-400'
+    AUDIO: 'bg-emerald-500/10 text-emerald-400',
+    MULTIMODAL: 'bg-teal-500/10 text-teal-400'
   };
   return colors[category] || 'bg-slate-700/50 text-slate-400';
 };

@@ -34,6 +34,8 @@ const MODEL_POLL_INTERVALS = {
   'Seedance 1.0': { initialMs: 15000, maxMs: 60000 },
   'Seedance 1.0 Pro': { initialMs: 20000, maxMs: 60000 },
   'Kling': { initialMs: 15000, maxMs: 60000 },
+  // 多模态理解（通常3-15s完成，同步API为主）
+  'Doubao-Seed-2.0-Pro': { initialMs: 3000, maxMs: 15000 },
   // 默认配置
   '_default': { initialMs: 10000, maxMs: 30000 }
 };

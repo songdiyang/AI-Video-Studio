@@ -2,7 +2,7 @@
  * AI 模型配置弹窗
  * 
  * 全局统一管理所有类型的 AI 模型选择。
- * 按分类（TEXT / IMAGE / VIDEO / AUDIO）展示选择器。
+ * 按分类（TEXT / IMAGE / VIDEO / AUDIO / MULTIMODAL）展示选择器。
  */
 
 import React from 'react';
@@ -14,7 +14,7 @@ import { AIModelSelection } from '../hooks/useAIModels';
 interface ModelCategory {
   key: keyof AIModelSelection;
   label: string;
-  filterType: 'TEXT' | 'IMAGE' | 'VIDEO' | 'AUDIO';
+  filterType: 'TEXT' | 'IMAGE' | 'VIDEO' | 'AUDIO' | 'MULTIMODAL';
   placeholder: string;
 }
 
@@ -23,6 +23,7 @@ const MODEL_CATEGORIES: ModelCategory[] = [
   { key: 'image', label: '图片模型',  filterType: 'IMAGE', placeholder: '用于图片生成、场景图、角色三视图等' },
   { key: 'video', label: '视频模型',  filterType: 'VIDEO', placeholder: '用于分镜视频生成' },
   { key: 'audio', label: '音频模型',  filterType: 'AUDIO', placeholder: '用于配音、音效生成' },
+  { key: 'multimodal', label: '多模态模型', filterType: 'MULTIMODAL', placeholder: '用于图像理解、视频理解、文档理解、AI辅助对话' },
 ];
 
 interface AIModelConfigModalProps {

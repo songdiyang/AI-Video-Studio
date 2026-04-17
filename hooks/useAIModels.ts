@@ -15,16 +15,18 @@ export interface AIModelSelection {
   image: string;
   video: string;
   audio: string;
+  multimodal: string;
 }
 
-const EMPTY_SELECTION: AIModelSelection = { text: '', image: '', video: '', audio: '' };
+const EMPTY_SELECTION: AIModelSelection = { text: '', image: '', video: '', audio: '', multimodal: '' };
 
 // category 名称（后端 ai_model_configs.category）到 key 的映射
 const CATEGORY_TO_KEY: Record<string, keyof AIModelSelection> = {
   TEXT: 'text',
   IMAGE: 'image',
   VIDEO: 'video',
-  AUDIO: 'audio'
+  AUDIO: 'audio',
+  MULTIMODAL: 'multimodal'
 };
 
 export interface UseAIModelsReturn {
@@ -99,7 +101,7 @@ export function useAIModels(projectId: number | null | undefined): UseAIModelsRe
         if (res.ok) {
           const data = await res.json();
           const saved = data.useModels || {};
-          // 后端存的 key 是 category 大写（TEXT/IMAGE/VIDEO/AUDIO），转为小写 key
+          // 后端存的 key 是 category 大写（TEXT/IMAGE/VIDEO/AUDIO/MULTIMODAL），转为小写 key
           const restored: AIModelSelection = { ...EMPTY_SELECTION };
           for (const [cat, modelName] of Object.entries(saved)) {
             const key = CATEGORY_TO_KEY[cat.toUpperCase()];
@@ -148,7 +150,7 @@ export function useAIModels(projectId: number | null | undefined): UseAIModelsRe
         const token = getAuthToken();
         // 转为后端格式：category 大写作为 key
         const useModels: Record<string, string> = {};
-        for (const [key, cat] of Object.entries({ text: 'TEXT', image: 'IMAGE', video: 'VIDEO', audio: 'AUDIO' })) {
+        for (const [key, cat] of Object.entries({ text: 'TEXT', image: 'IMAGE', video: 'VIDEO', audio: 'AUDIO', multimodal: 'MULTIMODAL' })) {
           const val = newSelected[key as keyof AIModelSelection];
           if (val) useModels[cat] = val;
         }

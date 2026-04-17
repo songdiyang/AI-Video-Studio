@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Button, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter } from '@heroui/react';
-import { Plus, Images, Video } from 'lucide-react';
+import { Button, Tooltip } from '@heroui/react';
+import { Plus, Video } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import SceneCard from './SceneCard';
 import { StoryboardScene } from './useSceneManager';
@@ -94,18 +94,10 @@ const SceneList: React.FC<SceneListProps> = ({
   onUpdateScene,
   tasks,
   onReorderScenes,
-  onBatchGenerate,
-  isBatchGenerating = false,
-  batchProgress = 0,
-  onBatchGenerateVideo,
-  isBatchGeneratingVideo = false,
-  batchVideoProgress = 0,
   sceneValidationMap
 }) => {
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
-  const [showBatchModal, setShowBatchModal] = useState(false);
-  const [showBatchVideoModal, setShowBatchVideoModal] = useState(false);
   // 标记首次加载完成，用于控制 layout 动画
   const [hasLoaded, setHasLoaded] = useState(false);
 
@@ -126,28 +118,26 @@ const SceneList: React.FC<SceneListProps> = ({
     }
   }, [scenes.length, hasLoaded]);
 
-  // 统计已有帧的镜头数
-  const scenesWithFrames = scenes.filter(s => s.startFrame).length;
+  // 统计
   const totalScenes = scenes.length;
-
-  // 统计已有视频的分镜数
   const scenesWithVideos = scenes.filter(s => s.videoUrl).length;
 
-  const handleBatchClick = () => {
-    if (!onBatchGenerate || scenes.length === 0) return;
-    if (scenesWithFrames > 0) {
-      setShowBatchModal(true);
-    } else {
-      onBatchGenerate(false);
-    }
-  };
-
-  const handleBatchVideoClick = () => {
-    if (!onBatchGenerateVideo || scenes.length === 0) return;
-    if (scenesWithVideos > 0) {
-      setShowBatchVideoModal(true);
-    } else {
-      onBatchGenerateVideo(false);
+  // 点击视频进度指示器 → 循环跳转到下一个缺少视频的分镜
+  const handleVideoProgressClick = () => {
+    const missingScenes = scenes.filter(s => !s.videoUrl);
+    if (missingScenes.length === 0) return;
+    // 找到当前选中分镜之后的第一个缺视频的，如果没有就回到开头
+    const currentIdx = selectedScene ? scenes.findIndex(s => s.id === selectedScene) : -1;
+    const next = missingScenes.find(s => {
+      const idx = scenes.findIndex(ss => ss.id === s.id);
+      return idx > currentIdx;
+    }) || missingScenes[0];
+    if (next?.id) {
+      onSelectScene(next.id);
+      requestAnimationFrame(() => {
+        const el = scrollContainerRef.current?.querySelector(`[data-scene-id="${next.id}"]`);
+        el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
     }
   };
 
@@ -200,29 +190,20 @@ const SceneList: React.FC<SceneListProps> = ({
           添加
         </Button>
         <div className="flex items-center gap-1">
-          {onBatchGenerate && scenes.length > 0 && (
-            <Button
-              size="sm"
-              className="h-7 px-2 text-xs bg-amber-500/20 text-amber-400 border border-amber-500/30"
-              startContent={<Images className="w-3.5 h-3.5" />}
-              onPress={handleBatchClick}
-              isLoading={isBatchGenerating}
-              isDisabled={isBatchGenerating || isBatchGeneratingVideo}
-            >
-              {isBatchGenerating ? `${batchProgress}%` : '帧'}
-            </Button>
-          )}
-          {onBatchGenerateVideo && scenes.length > 0 && (
-            <Button
-              size="sm"
-              className="h-7 px-2 text-xs bg-rose-500/20 text-rose-400 border border-rose-500/30"
-              startContent={<Video className="w-3.5 h-3.5" />}
-              onPress={handleBatchVideoClick}
-              isLoading={isBatchGeneratingVideo}
-              isDisabled={isBatchGeneratingVideo || isBatchGenerating}
-            >
-              {isBatchGeneratingVideo ? `${batchVideoProgress}%` : '视频'}
-            </Button>
+          {scenes.length > 0 && (
+            <Tooltip content={scenesWithVideos === totalScenes ? '所有视频已完成' : '点击定位缺少视频的分镜'} placement="bottom">
+              <button
+                onClick={handleVideoProgressClick}
+                className={`h-7 px-2.5 text-xs rounded-md border flex items-center gap-1.5 transition-all cursor-pointer ${
+                  scenesWithVideos === totalScenes
+                    ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                    : 'bg-[var(--bg-card)] text-[var(--text-secondary)] border-[var(--border-color)] hover:bg-[var(--bg-card-hover)] hover:text-[var(--text-primary)]'
+                }`}
+              >
+                <Video className="w-3.5 h-3.5" />
+                <span className="font-medium">{scenesWithVideos}/{totalScenes}</span>
+              </button>
+            </Tooltip>
           )}
         </div>
       </div>
@@ -244,6 +225,7 @@ const SceneList: React.FC<SceneListProps> = ({
             {scenes.map((scene, index) => (
               <motion.div
                 key={scene.id}
+                data-scene-id={scene.id}
                 variants={itemVariants}
                 layout={hasLoaded}
                 draggable
@@ -288,93 +270,6 @@ const SceneList: React.FC<SceneListProps> = ({
           </motion.div>
         )}
       </div>
-      {/* 批量生成确认弹窗 */}
-      <Modal isOpen={showBatchModal} onOpenChange={setShowBatchModal} size="sm" classNames={{ base: "pro-modal" }}>
-        <ModalContent>
-          {(onClose) => (
-            <>
-              <ModalHeader className="text-[var(--text-primary)]">检测到已有帧图片</ModalHeader>
-              <ModalBody>
-                <p className="text-sm text-[var(--text-secondary)]">
-                  当前 {totalScenes} 个分镜中，已有 <span className="font-bold text-amber-400">{scenesWithFrames}</span> 个分镜已生成帧图片。
-                </p>
-                <p className="text-sm text-[var(--text-muted)] mt-1">请选择处理方式：</p>
-              </ModalBody>
-              <ModalFooter>
-                <Button
-                  variant="flat"
-                  onPress={onClose}
-                  className="pro-btn"
-                >
-                  取消
-                </Button>
-                <Button
-                  className="pro-btn bg-[var(--accent)]/20 text-[var(--accent)] border-[var(--accent)]/30"
-                  onPress={() => {
-                    onClose();
-                    onBatchGenerate?.(false);
-                  }}
-                >
-                  跳过已有
-                </Button>
-                <Button
-                  className="pro-btn-primary"
-                  onPress={() => {
-                    onClose();
-                    onBatchGenerate?.(true);
-                  }}
-                >
-                  全部覆盖
-                </Button>
-              </ModalFooter>
-            </>
-          )}
-        </ModalContent>
-      </Modal>
-
-      {/* 批量视频生成确认弹窗 */}
-      <Modal isOpen={showBatchVideoModal} onOpenChange={setShowBatchVideoModal} size="sm" classNames={{ base: "pro-modal" }}>
-        <ModalContent>
-          {(onClose) => (
-            <>
-              <ModalHeader className="text-[var(--text-primary)]">检测到已有视频</ModalHeader>
-              <ModalBody>
-                <p className="text-sm text-[var(--text-secondary)]">
-                  当前 {totalScenes} 个分镜中，已有 <span className="font-bold text-rose-400">{scenesWithVideos}</span> 个分镜已生成视频。
-                </p>
-                <p className="text-sm text-[var(--text-muted)] mt-1">请选择处理方式：</p>
-              </ModalBody>
-              <ModalFooter>
-                <Button
-                  variant="flat"
-                  onPress={onClose}
-                  className="pro-btn"
-                >
-                  取消
-                </Button>
-                <Button
-                  className="pro-btn bg-[var(--accent)]/20 text-[var(--accent)] border-[var(--accent)]/30"
-                  onPress={() => {
-                    onClose();
-                    onBatchGenerateVideo?.(false);
-                  }}
-                >
-                  跳过已有
-                </Button>
-                <Button
-                  className="pro-btn-primary"
-                  onPress={() => {
-                    onClose();
-                    onBatchGenerateVideo?.(true);
-                  }}
-                >
-                  全部覆盖
-                </Button>
-              </ModalFooter>
-            </>
-          )}
-        </ModalContent>
-      </Modal>
     </div>
   );
 };

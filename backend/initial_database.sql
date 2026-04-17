@@ -296,7 +296,7 @@ CREATE TABLE IF NOT EXISTS ai_model_configs (
   
   -- 基础信息
   name VARCHAR(255) NOT NULL COMMENT '模型显示名称，如 "Sora 2.0 Turbo"',
-  category ENUM('TEXT', 'IMAGE', 'VIDEO', 'AUDIO') NOT NULL COMMENT '模型分类',
+  category ENUM('TEXT', 'IMAGE', 'VIDEO', 'AUDIO', 'MULTIMODAL') NOT NULL COMMENT '模型分类',
   provider VARCHAR(100) NOT NULL COMMENT '厂商标识，如 openai, google, kling, minimax',
   description TEXT COMMENT '模型描述',
   is_active TINYINT(1) DEFAULT 1 COMMENT '是否启用，0=禁用 1=启用',

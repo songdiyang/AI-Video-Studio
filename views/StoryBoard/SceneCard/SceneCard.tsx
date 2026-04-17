@@ -420,8 +420,8 @@ const SceneCard: React.FC<SceneCardProps> = ({
               </div>
             </div>
 
-            {/* 悬停时显示的操作按钮 */}
-            <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+            {/* 操作按钮 */}
+            <div className="flex items-center gap-1">
               {/* 草图按钮 - 已隐藏 */}
               {/*
               <Tooltip content={scene.sketchUrl ? "编辑草图" : "添加草图"}>

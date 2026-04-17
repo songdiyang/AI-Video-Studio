@@ -531,7 +531,8 @@ const TemplatePresetSelector: React.FC<{
                   preset.category === 'TEXT' ? 'bg-blue-500/10 text-blue-400' :
                   preset.category === 'IMAGE' ? 'bg-purple-500/10 text-purple-400' :
                   preset.category === 'VIDEO' ? 'bg-pink-500/10 text-pink-400' :
-                  'bg-emerald-500/10 text-emerald-400'
+                  preset.category === 'MULTIMODAL' ? 'bg-emerald-500/10 text-emerald-400' :
+                  'bg-amber-500/10 text-amber-400'
                 }`}>
                   {preset.category}
                 </Chip>
@@ -711,6 +712,7 @@ const ModelFormModal: React.FC<ModelFormModalProps> = ({
               <SelectItem key="IMAGE">IMAGE (图像)</SelectItem>
               <SelectItem key="VIDEO">VIDEO (视频)</SelectItem>
               <SelectItem key="AUDIO">AUDIO (音频)</SelectItem>
+              <SelectItem key="MULTIMODAL">MULTIMODAL (多模态)</SelectItem>
             </Select>
 
             <Select
