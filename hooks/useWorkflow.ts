@@ -170,6 +170,11 @@ export async function consumeWorkflow(jobId: string): Promise<void> {
   await fetchApi(`/api/workflows/${jobId}/consume`, { method: 'POST' });
 }
 
+/** 批量清除失败/已取消的任务（标记已消费，不删除数据库记录） */
+export async function consumeAllFailed(): Promise<{ consumed: number }> {
+  return fetchApi('/api/workflows/batch-consume-failed', { method: 'POST' });
+}
+
 // ============================================================
 // Hook: useWorkflow
 // 轮询工作流状态，自动在完成/失败时停止

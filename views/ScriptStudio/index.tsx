@@ -7,7 +7,7 @@ import ResizablePanel from '../../components/ResizablePanel';
 import { useProjectInit } from './hooks/useProjectInit';
 import { useScriptManagement } from './hooks/useScriptManagement';
 import { useScriptGeneration } from './hooks/useScriptGeneration';
-import ProjectInfo from './ProjectInfo';
+// ProjectInfo 已移除，项目切换功能在顶部工具栏下拉面板中
 import ScriptActions from './ScriptActions';
 import ScriptGeneratorForm from './ScriptGeneratorForm';
 import ScriptPreview from './ScriptPreview';
@@ -353,16 +353,8 @@ const ScriptStudio: React.FC = () => {
 
   return (
     <div className="h-full bg-[var(--bg-app)] overflow-hidden flex flex-col">
-      {/* 项目信息和子标签页 */}
+      {/* 子标签页 */}
       <div className="bg-[var(--bg-nav)] backdrop-blur-xl border-b border-[var(--border-color)]">
-        <div className="px-8 pt-4">
-          {selectedProject && (
-            <ProjectInfo 
-              project={selectedProject} 
-              onBackToProjects={handleBackToProjects} 
-            />
-          )}
-        </div>
         
         {/* 子标签页 + AI 模型按钮 */}
         <div className="px-8 flex items-center">

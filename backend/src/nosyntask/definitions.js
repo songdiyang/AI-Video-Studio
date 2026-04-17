@@ -43,6 +43,8 @@ const {
   handleConceptBreakdownGeneration
 } = require('./tasks');
 
+const handleBatchPromptOptimization = require('./tasks/StoryBoard/batchPromptOptimization');
+
 // 独立帧生成模块（支持并发）
 const { handleParallelFrameGeneration } = require('./tasks/StoryBoard/independentFrameGeneration');
 
@@ -691,6 +693,25 @@ const WORKFLOW_DEFINITIONS = {
         console.log('[PropGen] 道具图片已保存, propId:', propId);
       }
     }
+  },
+
+  /**
+   * 批量分镜提示词优化（一键优化全部分镜描述）
+   * 单步骤模式：内部并发池处理所有分镜
+   */
+  batch_prompt_optimization: {
+    name: '批量提示词优化',
+    steps: [
+      {
+        type: 'batch_prompt_optimize',
+        targetType: 'storyboard',
+        handler: handleBatchPromptOptimization,
+        buildInput: createBuildInput([
+          'scriptId', 'textModel',
+          { key: 'maxConcurrency', defaultValue: 3 }
+        ])
+      }
+    ]
   }
 };
 

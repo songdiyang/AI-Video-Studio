@@ -230,6 +230,28 @@ router.patch('/admin/errors/:jobId/status', authMiddleware, requireAdmin, async 
 });
 
 /**
+ * 批量标记失败/已取消的任务为已消费（一键清除错误信息）
+ * 仅标记 is_consumed=1，不删除数据库记录
+ */
+router.post('/batch-consume-failed', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { execute } = require('../dbHelper');
+    const [result] = await execute(
+      `UPDATE workflow_jobs SET is_consumed = 1 
+       WHERE user_id = ? AND status IN ('failed', 'cancelled') AND is_consumed = 0`,
+      [userId]
+    );
+    const count = result?.affectedRows || 0;
+    console.log(`[BatchConsumeFailed] 用户 ${userId} 清除了 ${count} 个失败任务`);
+    res.json({ success: true, consumed: count });
+  } catch (error) {
+    console.error('[BatchConsumeFailed]', error);
+    res.status(500).json({ message: error.message || '批量清除失败' });
+  }
+});
+
+/**
  * 标记工作流已消费
  */
 router.post('/:jobId/consume', authMiddleware, async (req, res) => {

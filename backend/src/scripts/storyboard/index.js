@@ -10,6 +10,7 @@ const getByScriptId = require('./getByScriptId');
 const saveManual = require('./saveManual');
 const batchGenerateFrames = require('./batchGenerateFrames');
 const batchGenerateVideos = require('./batchGenerateVideos');
+const batchOptimizePrompts = require('./batchOptimizePrompts');
 
 // 新增：独立模式处理器
 const parallelGenerateFrames = require('./parallelGenerateFrames');
@@ -58,6 +59,7 @@ autoGenerate(router);
 autoGenerateByScene(router);  // 按场景分割的分镜生成
 batchGenerateFrames(router);
 batchGenerateVideos(router);
+batchOptimizePrompts(router);
 parallelGenerateFrames(router);  // 并发帧生成（独立模式）
 linkStoryboard(router);          // 单分镜独立关联
 saveManual(router);

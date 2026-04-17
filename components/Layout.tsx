@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Film, User, Package, LogOut, FolderOpen, Settings, Sparkles, Wifi, WifiOff, Pencil, Moon, Sun, Monitor, Contrast, BarChart3, LayoutTemplate, Users, Maximize, Minimize, BookOpen, Video, Image, UsersRound, Puzzle, Coins } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { Film, User, Package, LogOut, FolderOpen, Settings, Sparkles, Wifi, WifiOff, Pencil, Moon, Sun, Monitor, Contrast, BarChart3, LayoutTemplate, Users, Maximize, Minimize, BookOpen, Video, Image, UsersRound, Puzzle, Coins, ChevronDown, Check } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from "@heroui/react";
 import { motion } from 'framer-motion';
@@ -21,6 +21,7 @@ import PointsRechargeModal from './PointsRechargeModal';
 import InsufficientPointsModal from './InsufficientPointsModal';
 import { usePoints } from '../contexts/PointsContext';
 import { useRoutePreload } from '../hooks/useRoutePreload';
+import { fetchProjects, Project } from '../services/projects';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -50,7 +51,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const navigate = useNavigate();
   const { t, language, setLanguage } = useLanguage();
   const { theme, setTheme } = useTheme();
-  const { projectType, currentProject } = useWorkbench();
+  const { projectType, currentProject, switchProject } = useWorkbench();
   const { balance, isLowBalance, loading: pointsLoading, balanceAsCNY, openRechargeModal, isRechargeModalOpen, closeRechargeModal } = usePoints();
   const isAuth = location.pathname === '/auth';
   const isLoggedIn = !!getAuthToken();
@@ -223,6 +224,48 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       console.error('Fullscreen error:', err);
     }
   };
+
+  // ==================== 项目快速切换 ====================
+  const [projectSwitcherOpen, setProjectSwitcherOpen] = useState(false);
+  const [projectList, setProjectList] = useState<Project[]>([]);
+  const [projectListLoading, setProjectListLoading] = useState(false);
+  const projectSwitcherRef = useRef<HTMLDivElement>(null);
+
+  // 点击外部关闭下拉面板
+  useEffect(() => {
+    if (!projectSwitcherOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (projectSwitcherRef.current && !projectSwitcherRef.current.contains(e.target as Node)) {
+        setProjectSwitcherOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [projectSwitcherOpen]);
+
+  // 打开面板时加载项目列表
+  const handleOpenProjectSwitcher = useCallback(async () => {
+    const willOpen = !projectSwitcherOpen;
+    setProjectSwitcherOpen(willOpen);
+    if (willOpen) {
+      setProjectListLoading(true);
+      try {
+        const projects = await fetchProjects();
+        setProjectList(projects);
+      } catch (err) {
+        console.error('Failed to fetch projects:', err);
+      } finally {
+        setProjectListLoading(false);
+      }
+    }
+  }, [projectSwitcherOpen]);
+
+  // 快速切换项目
+  const handleQuickSwitchProject = useCallback((project: Project) => {
+    switchProject(project);
+    localStorage.setItem('nanostory_last_project_id', String(project.id));
+    setProjectSwitcherOpen(false);
+  }, [switchProject]);
 
   // 命令面板命令列表
   const commands: Command[] = useMemo(() => [
@@ -477,9 +520,55 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
               {currentPageTitle}
             </h1>
             {currentProject && location.pathname === '/' && (
-              <span className="text-xs text-(--text-muted) px-2 py-0.5 bg-(--bg-card) rounded">
-                {currentProject.name}
-              </span>
+              <div className="relative" ref={projectSwitcherRef}>
+                <button
+                  onClick={handleOpenProjectSwitcher}
+                  className="flex items-center gap-1 text-xs text-(--text-muted) px-2 py-0.5 bg-(--bg-card) hover:bg-(--bg-card-hover) rounded transition-colors cursor-pointer"
+                  title="切换项目"
+                >
+                  <span className="max-w-[120px] truncate">{currentProject.name}</span>
+                  <ChevronDown className={`w-3 h-3 transition-transform ${projectSwitcherOpen ? 'rotate-180' : ''}`} />
+                </button>
+                {/* 项目快速切换下拉面板 */}
+                {projectSwitcherOpen && (
+                  <div className="absolute top-full left-0 mt-1 w-64 max-h-80 overflow-y-auto rounded-lg border border-(--border-color) bg-(--bg-card) shadow-xl z-50">
+                    <div className="px-3 py-2 border-b border-(--border-color)">
+                      <span className="text-xs font-medium text-(--text-secondary)">切换项目</span>
+                    </div>
+                    {projectListLoading ? (
+                      <div className="px-3 py-4 text-center text-xs text-(--text-muted)">加载中...</div>
+                    ) : projectList.length === 0 ? (
+                      <div className="px-3 py-4 text-center text-xs text-(--text-muted)">暂无项目</div>
+                    ) : (
+                      <div className="py-1">
+                        {projectList.map((project) => (
+                          <button
+                            key={project.id}
+                            onClick={() => handleQuickSwitchProject(project)}
+                            className={`w-full flex items-center gap-2 px-3 py-2 text-left text-xs transition-colors hover:bg-(--bg-card-hover) ${
+                              currentProject.id === project.id ? 'text-(--accent)' : 'text-(--text-primary)'
+                            }`}
+                          >
+                            <FolderOpen className="w-3.5 h-3.5 shrink-0 opacity-60" />
+                            <span className="truncate flex-1">{project.name}</span>
+                            {currentProject.id === project.id && (
+                              <Check className="w-3.5 h-3.5 shrink-0 text-(--accent)" />
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    <div className="border-t border-(--border-color) px-3 py-2">
+                      <button
+                        onClick={() => { setProjectSwitcherOpen(false); navigate('/projects'); }}
+                        className="w-full text-xs text-(--text-muted) hover:text-(--accent) text-center transition-colors"
+                      >
+                        管理全部项目
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
           </div>
           
@@ -514,6 +603,15 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
             <span className="text-xs text-(--text-muted)">
               {t.nav.studioTitle}
             </span>
+            {/* 全屏切换按钮 */}
+            <button
+              onClick={toggleFullscreen}
+              className="p-1.5 rounded-lg text-(--text-muted) hover:text-(--text-primary) hover:bg-white/5 transition-colors"
+              aria-label={isFullscreen ? t.settings?.appearance?.exitFullscreen || '退出全屏' : t.settings?.appearance?.enterFullscreen || '全屏'}
+              title={isFullscreen ? t.settings?.appearance?.exitFullscreen || '退出全屏' : t.settings?.appearance?.enterFullscreen || '全屏'}
+            >
+              {isFullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
+            </button>
           </div>
         </header>
 
@@ -655,16 +753,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
       {/* 积分不足拦截弹窗 */}
       <InsufficientPointsModal />
-
-      {/* 右上角全屏按钮 */}
-      <button
-        onClick={toggleFullscreen}
-        className="fixed top-3 right-3 z-50 p-2 rounded-lg bg-(--bg-card) border border-(--border-color) text-(--text-muted) hover:text-(--text-primary) hover:bg-(--bg-card-hover) transition-colors shadow-lg"
-        aria-label={isFullscreen ? t.settings?.appearance?.exitFullscreen || '退出全屏' : t.settings?.appearance?.enterFullscreen || '全屏'}
-        title={isFullscreen ? t.settings?.appearance?.exitFullscreen || '退出全屏' : t.settings?.appearance?.enterFullscreen || '全屏'}
-      >
-        {isFullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
-      </button>
     </div>
   );
 };

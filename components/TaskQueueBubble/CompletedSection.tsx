@@ -17,6 +17,7 @@ const WORKFLOW_TYPE_NAMES: Record<string, string> = {
   'batch_frame_generation': '批量帧生成',
   'batch_scene_video_generation': '批量视频生成',
   'smart_parse': 'AI 智能解析',
+  'batch_prompt_optimization': '批量提示词优化',
 };
 
 const getTaskName = (job: WorkflowJob): string => {

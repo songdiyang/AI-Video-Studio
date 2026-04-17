@@ -15,6 +15,7 @@ const REFRESH_ON_COMPLETE_TYPES = [
   'scene_video',                 // 分镜视频生成
   'scene_image_generation',      // 场景图片生成
   'character_views_generation',  // 角色三视图生成
+  'batch_prompt_optimization',   // 批量提示词优化
 ];
 
 export interface UseTaskQueueOptions {

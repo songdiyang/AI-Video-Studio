@@ -43,7 +43,8 @@ function buildReferenceGuidedPrompt(view, style, characterName, options = {}) {
   const styleKeywords = style || 'anime style';
 
   // 简化提示词：参考图匹配指令放最前面（Seedream 对前面的 token 给予更高权重）
-  return `match the character appearance in the reference image exactly, maintain same clothing accessories hairstyle and color scheme as reference image, character design reference sheet style, ${styleKeywords}, single character, solo, one person, full body, ${viewAngle}, simple clean background, even soft lighting, neutral natural expression`;
+  // 逐项列出需要保留的外貌特征，强化保真度
+  return `match the character appearance in the reference image exactly, preserve all facial features face shape eye shape eye color hair style hair color skin tone body proportions from reference, keep identical clothing outfit style color fabric pattern accessories jewelry headwear footwear from reference image, character design reference sheet style, ${styleKeywords}, single character, solo, one person, full body, ${viewAngle}, simple clean background, even soft lighting, neutral natural expression`;
 }
 
 // 白膜模式：基础人体形态提示词（不包含任何服装/装饰/装备）
@@ -384,8 +385,8 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
     // 如果有用户参考图，传递给正面视图生成
     if (hasUserRefs) {
       frontGenParams.imageUrls = [...userReferenceUrls];
-      frontGenParams.strength = 0.25; // 低 strength → 最大程度保留参考图外貌
-      console.log('[CharacterViews] 正面视图使用用户参考图 (strength=0.25):', userReferenceUrls);
+      frontGenParams.strength = 0.10; // 极低 strength → 最大程度保留参考图外貌（正面与参考图同角度，几乎无需变形）
+      console.log('[CharacterViews] 正面视图使用用户参考图 (strength=0.10):', userReferenceUrls);
     }
 
     const frontResult = await handleImageGeneration(frontGenParams, (progress) => {
@@ -457,8 +458,8 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
     }
     if (referenceUrls.length > 0) {
       sideGenParams.imageUrls = referenceUrls;
-      if (sideHasUserRefs) sideGenParams.strength = 0.35;
-      console.log(`[CharacterViews] 侧面视图参考图${sideHasUserRefs ? ' (strength=0.35)' : ''}:`, referenceUrls);
+      if (sideHasUserRefs) sideGenParams.strength = 0.15;
+      console.log(`[CharacterViews] 侧面视图参考图${sideHasUserRefs ? ' (strength=0.15)' : ''}:`, referenceUrls);
     }
     const sideResult = await handleImageGeneration(sideGenParams, (progress) => {
       if (onProgress) onProgress(30 + progress * 0.25);
@@ -523,8 +524,8 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
     }
     if (referenceUrls.length > 0) {
       backGenParams.imageUrls = referenceUrls;
-      if (backHasUserRefs) backGenParams.strength = 0.40;
-      console.log(`[CharacterViews] 背面视图参考图${backHasUserRefs ? ' (strength=0.40)' : ''}:`, referenceUrls);
+      if (backHasUserRefs) backGenParams.strength = 0.20;
+      console.log(`[CharacterViews] 背面视图参考图${backHasUserRefs ? ' (strength=0.20)' : ''}:`, referenceUrls);
     }
     const backResult = await handleImageGeneration(backGenParams, (progress) => {
       if (onProgress) onProgress(60 + progress * 0.25);

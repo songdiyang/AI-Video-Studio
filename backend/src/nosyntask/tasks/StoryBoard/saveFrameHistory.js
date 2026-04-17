@@ -4,6 +4,7 @@
  */
 
 const { queryOne, execute } = require('../../../dbHelper');
+const crypto = require('crypto');
 
 /**
  * 获取下一个版本号（不保存）
@@ -22,6 +23,14 @@ async function getNextVersionNumber(storyboardId, frameType) {
 }
 
 /**
+ * 生成批次 ID
+ * @returns {string} UUID v4
+ */
+function generateBatchId() {
+  return crypto.randomUUID();
+}
+
+/**
  * 保存帧到历史版本表
  * 先将旧版本标记为非当前，再插入新版本
  * 
@@ -30,9 +39,10 @@ async function getNextVersionNumber(storyboardId, frameType) {
  * @param {string} frameUrl - 帧图片 URL
  * @param {string} prompt - 生成提示词
  * @param {object} params - 生成参数（model, aspectRatio, resolution 等）
+ * @param {string} [batchId] - 批次 ID，同一次生成的首尾帧共享
  * @returns {number} 新版本号
  */
-async function saveFrameHistory(storyboardId, frameType, frameUrl, prompt, params) {
+async function saveFrameHistory(storyboardId, frameType, frameUrl, prompt, params, batchId) {
   if (!storyboardId || !frameType || !frameUrl) {
     console.warn('[FrameHistory] 跳过保存：缺少必要参数', { storyboardId, frameType, hasUrl: !!frameUrl });
     return 0;
@@ -47,15 +57,15 @@ async function saveFrameHistory(storyboardId, frameType, frameUrl, prompt, param
     [storyboardId, frameType]
   );
 
-  // 3. 插入新版本（设为当前）
+  // 3. 插入新版本（设为当前，含 batch_id）
   await execute(
     `INSERT INTO storyboard_frame_history 
-     (storyboard_id, frame_type, frame_url, generation_prompt, generation_params, version_number, is_current)
-     VALUES (?, ?, ?, ?, ?, ?, TRUE)`,
-    [storyboardId, frameType, frameUrl, prompt, JSON.stringify(params || {}), newVersion]
+     (storyboard_id, frame_type, frame_url, generation_prompt, generation_params, version_number, is_current, batch_id)
+     VALUES (?, ?, ?, ?, ?, ?, TRUE, ?)`,
+    [storyboardId, frameType, frameUrl, prompt, JSON.stringify(params || {}), newVersion, batchId || null]
   );
 
   return newVersion;
 }
 
-module.exports = { saveFrameHistory, getNextVersionNumber };
+module.exports = { saveFrameHistory, getNextVersionNumber, generateBatchId };

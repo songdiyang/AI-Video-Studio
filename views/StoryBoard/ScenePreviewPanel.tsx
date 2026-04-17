@@ -44,7 +44,7 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
 }) => {
   const [showStartFrame, setShowStartFrame] = useState(true);
   const [isDirectorSpaceExpanded, setIsDirectorSpaceExpanded] = useState(false);
-  const [showHistory, setShowHistory] = useState<{ type: 'first' | 'last' | null }>({ type: null });
+  const [showHistory, setShowHistory] = useState(false);
   // 历史版本预览状态：临时存储预览的帧 URL，不永久修改场景数据
   const [previewFrameUrl, setPreviewFrameUrl] = useState<string | null>(null);
   const [previewFrameType, setPreviewFrameType] = useState<'first' | 'last' | null>(null);
@@ -61,7 +61,7 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
   useEffect(() => {
     setPreviewFrameUrl(null);
     setPreviewFrameType(null);
-    setShowHistory({ type: null });
+    setShowHistory(false);
   }, [scene?.id]);
 
   const isGeneratingImage = imageTask?.status === 'pending' || imageTask?.status === 'running';
@@ -436,7 +436,7 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                 />
                 {/* 左上角：历史版本按钮 */}
                 <button
-                  onClick={() => setShowHistory({ type: showStartFrame ? 'first' : 'last' })}
+                  onClick={() => setShowHistory(true)}
                   disabled={isGenerating}
                   className={`absolute top-2 left-2 p-2 rounded-lg bg-black/50 text-white/80 transition-colors flex items-center gap-1.5 ${
                     isGenerating ? 'opacity-40 cursor-not-allowed' : 'hover:bg-black/70 hover:text-white'
@@ -794,34 +794,33 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
       </div>
 
       {/* 历史版本面板 */}
-      {scene && showHistory.type && (
+      {scene && showHistory && (
         <FrameHistoryPanel
           storyboardId={scene.id}
-          frameType={showHistory.type}
-          isOpen={!!showHistory.type}
+          isOpen={showHistory}
           onClose={() => {
-            setShowHistory({ type: null });
-            // 关闭面板时清除预览状态
+            setShowHistory(false);
             setPreviewFrameUrl(null);
             setPreviewFrameType(null);
           }}
-          onRestoreVersion={(_versionId, frameUrl, restoredFrameType) => {
-            // 用恢复的帧 URL 更新场景数据
-            if (frameUrl && onUpdateScene) {
+          onRestoreVersion={({ firstFrameUrl, lastFrameUrl, videoUrl }) => {
+            if (onUpdateScene) {
               const updates: Partial<StoryboardScene> = {};
-              if (restoredFrameType === 'first') {
-                updates.startFrame = frameUrl;
-                updates.imageUrl = frameUrl;
-              } else {
-                updates.endFrame = frameUrl;
+              if (firstFrameUrl) {
+                updates.startFrame = firstFrameUrl;
+                updates.imageUrl = firstFrameUrl;
               }
+              if (lastFrameUrl) {
+                updates.endFrame = lastFrameUrl;
+              }
+              // videoUrl 可以是 null（该版本无视频），也要更新
+              updates.videoUrl = videoUrl || undefined;
               onUpdateScene(updates);
             }
-            // 清除预览状态
             setPreviewFrameUrl(null);
             setPreviewFrameType(null);
             showToast('版本已恢复', 'success');
-            setShowHistory({ type: null });
+            setShowHistory(false);
           }}
         />
       )}

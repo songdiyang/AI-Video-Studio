@@ -288,7 +288,28 @@ async function handleSceneVideoGeneration(inputParams, onProgress) {
 
     const locInfo = variables.location ? `场景: ${variables.location}` : '无特定场景';
     const shotInfo = variables.shotType ? `镜头类型: ${variables.shotType}` : '';
-    const emotionInfo = variables.emotion ? `情绪/氛围: ${variables.emotion}` : '';
+    const styleInfo = visualStyleValue ? `视觉风格: ${visualStyleValue}` : '';
+
+    // 判断是否为真人实拍风格
+    const isLiveAction = visualStyleValue && (
+      /写实|电影|摄影|纪实|realistic|cinematic|photography/i.test(visualStyleValue)
+    );
+
+    // 真人风格：使用感情叠加理论增强情绪表达
+    let emotionInfo = '';
+    if (variables.emotion) {
+      if (isLiveAction) {
+        emotionInfo = `【情绪表达 - 感情叠加理论】
+情绪标签: ${variables.emotion}
+真人面部表情极少是单一情绪。请运用感情叠加理论处理角色表情：
+① 将"${variables.emotion}"分解为2-4种基础情绪的百分比混合（如 40% sadness + 30% determination + 30% nostalgia）
+② 基础情绪谱: joy, sadness, anger, fear, surprise, disgust, contempt, trust, hope, resignation, determination, nostalgia
+③ 将情绪配方翻译为具体的面部微表情：眉毛形态、眼睛状态（瞳孔/眼角/泪光）、嘴角弧度、面部肌肉张力
+④ 在视频中，微表情应有细微的动态变化（如眼神闪烁、嘴角微颤），而非僵硬的静态表情`;
+      } else {
+        emotionInfo = `情绪/氛围: ${variables.emotion}`;
+      }
+    }
     let dialogueInfo;
     if (variables.dialogues && Array.isArray(variables.dialogues) && variables.dialogues.length > 0) {
       const lines = variables.dialogues.map(d => `${d.character}："${d.line}"`).join('\n');
@@ -301,7 +322,6 @@ async function handleSceneVideoGeneration(inputParams, onProgress) {
     // 画外音信息
     const voiceoverText = variables.voiceover ? `【画外音/旁白】${variables.voiceover}（画面中应有旁白/解说声音，但不是场景中角色说的，是画外旁白）` : '';
     const actionInfo = hasAction ? '这是一个有动作的镜头，需要描述动作的完整过程' : '这是一个静态镜头，画面变化较小';
-    const styleInfo = visualStyleValue ? `视觉风格: ${visualStyleValue}` : '';
     // 上下文传递：传结构化字段（endState/emotion/shotType/location），不传完整描述以避免环境效果污染
     // 保留叙事流、情绪过渡、景别衔接等有价值信息，但过滤掉天气/光照等环境细节
     // 直接使用并行查询阶段已获取的前后镜头数据（含 variables_json），无需再次查询 DB
@@ -468,6 +488,15 @@ Prompt:`;
     submitParams.resolution = resolution;
   }
 
+  // 有台词或画外音时，自动开启音频生成（Seedance 1.5 Pro 支持 generate_audio）
+  const hasDialogues = variables.dialogues && Array.isArray(variables.dialogues) && variables.dialogues.length > 0;
+  const hasDialogue = !!variables.dialogue;
+  const hasVoiceover = !!variables.voiceover;
+  if (hasDialogues || hasDialogue || hasVoiceover) {
+    submitParams.generate_audio = true;
+    console.log('[SceneVideoGen] 检测到台词/画外音，开启音频生成 generate_audio=true');
+  }
+
   const result = await submitAndPoll(modelName, submitParams, {
     intervalMs: 3000,
     maxDurationMs: 3600000,
@@ -522,6 +551,34 @@ Prompt:`;
   });
   trace('视频持久化完成', { url: persistedVideoUrl, model: modelName, promptUsed, refImages: imageUrls });
   console.log('[SceneVideoGen] 视频已保存:', persistedVideoUrl);
+
+  // 回写视频 URL 到帧历史记录（当前批次）
+  try {
+    // 找到当前 is_current=true 的 first 帧记录，获取其 batch_id
+    const currentFirstFrame = await queryOne(
+      `SELECT id, batch_id FROM storyboard_frame_history WHERE storyboard_id = ? AND frame_type = 'first' AND is_current = TRUE`,
+      [storyboardId]
+    );
+    if (currentFirstFrame) {
+      if (currentFirstFrame.batch_id) {
+        // 更新同一批次的所有记录
+        await execute(
+          'UPDATE storyboard_frame_history SET video_url = ? WHERE batch_id = ?',
+          [persistedVideoUrl, currentFirstFrame.batch_id]
+        );
+        console.log('[SceneVideoGen] 视频 URL 已回写到帧历史批次:', currentFirstFrame.batch_id);
+      } else {
+        // 无 batch_id 的老数据，只更新当前 first 帧记录
+        await execute(
+          'UPDATE storyboard_frame_history SET video_url = ? WHERE id = ?',
+          [persistedVideoUrl, currentFirstFrame.id]
+        );
+        console.log('[SceneVideoGen] 视频 URL 已回写到帧历史记录:', currentFirstFrame.id);
+      }
+    }
+  } catch (e) {
+    console.warn('[SceneVideoGen] 回写视频到帧历史失败（不影响主流程）:', e.message);
+  }
 
   if (onProgress) onProgress(100);
   console.log('[SceneVideoGen] 视频生成完成');

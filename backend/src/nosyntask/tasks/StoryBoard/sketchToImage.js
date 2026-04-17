@@ -28,7 +28,7 @@ const { selectReferenceImages } = require('./referenceImageSelector');
 const { collectCandidateImages, appendContextCandidates } = require('./collectCandidateImages');
 const { traced, trace } = require('../../engine/generationTrace');
 const { assertUpdated, assertPersistedFields } = require('./persistenceGuard');
-const { saveFrameHistory, getNextVersionNumber } = require('./saveFrameHistory');
+const { saveFrameHistory, getNextVersionNumber, generateBatchId } = require('./saveFrameHistory');
 
 /**
  * 草图转图片主函数
@@ -292,11 +292,12 @@ ${extraInfo}
   trace('帧持久化完成', { firstFrameUrl: persistedUrl, lastFrameUrl: persistedUrl });
 
   // 保存到帧历史版本表（草图帧：首尾帧相同）
+  const skBatchId = generateBatchId();
   try {
     const genParams = { model: modelName, aspectRatio, sketchType, controlStrength };
-    const ver = await saveFrameHistory(storyboardId, 'first', persistedUrl, promptUsed, genParams);
-    await saveFrameHistory(storyboardId, 'last', persistedUrl, promptUsed, genParams);
-    console.log(`[SketchToImage] 帧历史版本已保存 (v${ver})`);
+    const ver = await saveFrameHistory(storyboardId, 'first', persistedUrl, promptUsed, genParams, skBatchId);
+    await saveFrameHistory(storyboardId, 'last', persistedUrl, promptUsed, genParams, skBatchId);
+    console.log(`[SketchToImage] 帧历史版本已保存 (v${ver}), batchId:`, skBatchId);
   } catch (e) {
     console.warn('[SketchToImage] 保存帧历史版本失败:', e.message);
   }

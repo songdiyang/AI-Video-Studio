@@ -27,6 +27,8 @@ const WORKFLOW_TYPE_NAMES: Record<string, string> = {
   'prop_image_generation': '道具图片生成',
   // 运镜生成
   'camera_run_generation': '精细运镜生成',
+  // 批量提示词优化
+  'batch_prompt_optimization': '批量提示词优化',
 };
 
 // 相对时间格式化

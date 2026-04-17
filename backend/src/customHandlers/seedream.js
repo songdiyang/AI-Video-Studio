@@ -111,19 +111,19 @@ function processParams(params, modelId) {
   // Seedream 5.0 系列
   if (isSeedream50) {
     // 5.0 使用 '2k'/'3k' 预设值，但只有在没有 aspectRatio 时才强制设置默认值
-    // 因为如果传入了 aspectRatio，API 会根据 ratio 自动选择合适的尺寸
     if (!aspectRatio && (!size || size === '_REMOVE_' || !/^(2k|3k)$/i.test(size))) {
       size = '2k';
     }
-    // 如果有 aspectRatio，作为 ratio 参数传递给 API（Seedream 5.0 支持 ratio 字段）
+    // 如果有 aspectRatio，同时设置 ratio 和 size，双重保障比例正确
+    // - ratio：文生图模式下 API 可自动选择合适尺寸
+    // - size：图生图模式下 ratio 可能被忽略，显式像素尺寸兜底
     if (aspectRatio && aspectRatio !== '_REMOVE_' && /^\d+:\d+$/.test(aspectRatio)) {
       extra.ratio = aspectRatio;
-      // 当使用 ratio 参数时，size 参数可以省略，让 API 根据比例自动选择
-      if (!size || size === '_REMOVE_') {
-        console.log(`[Seedream Handler] Seedream 5.0，设置 ratio=${aspectRatio}，不指定 size（API自动选择）`);
-      } else {
-        console.log(`[Seedream Handler] Seedream 5.0，设置 ratio=${aspectRatio}, size=${size}`);
+      const mappedSize = ASPECT_RATIO_SIZE_MAP_45[aspectRatio] || computeSizeFromRatio(aspectRatio, SEEDREAM_HIGH_MIN_PIXELS);
+      if (mappedSize) {
+        size = mappedSize;
       }
+      console.log(`[Seedream Handler] Seedream 5.0，ratio=${aspectRatio}，size=${size || '(API自动)'}`);
     } else {
       console.log(`[Seedream Handler] Seedream 5.0 模型，使用预设尺寸 '${size}'，无 aspectRatio`);
     }
@@ -324,8 +324,9 @@ module.exports = {
     console.log('[Seedream Handler] 请求体:', JSON.stringify(requestBody, null, 2));
 
     // 4. 发送请求
+    const TIMEOUT_MS = 180000; // 180 秒超时
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 120000);
+    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
     let response;
     try {
@@ -335,11 +336,11 @@ module.exports = {
         body: JSON.stringify(requestBody),
         signal: controller.signal
       });
-      clearTimeout(timeout);
+      clearTimeout(timer);
     } catch (err) {
-      clearTimeout(timeout);
+      clearTimeout(timer);
       if (err.name === 'AbortError') {
-        throw new Error('Seedream API 请求超时（120秒）');
+        throw new Error(`Seedream API 请求超时（${TIMEOUT_MS / 1000}秒），请稍后重试`);
       }
       throw err;
     }

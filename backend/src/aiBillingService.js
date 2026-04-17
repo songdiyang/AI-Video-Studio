@@ -873,38 +873,41 @@ async function listBillingRecords(userId, options = {}) {
     sourceType
   } = options;
 
-  const filters = ['user_id = ?'];
+  const filters = ['b.user_id = ?'];
   const params = [userId];
 
   if (chargeStatus) {
-    filters.push('charge_status = ?');
+    filters.push('b.charge_status = ?');
     params.push(chargeStatus);
   }
   if (modelCategory) {
-    filters.push('model_category = ?');
+    filters.push('b.model_category = ?');
     params.push(modelCategory);
   }
   if (sourceType) {
-    filters.push('source_type = ?');
+    filters.push('b.source_type = ?');
     params.push(sourceType);
   }
 
   const whereClause = filters.length > 0 ? `WHERE ${filters.join(' AND ')}` : '';
   const records = await queryAll(
     `SELECT
-      id, script_id, operation, model_provider, model_tier, tokens, unit_price, amount, points_cost, created_at,
-      model_name, model_category, source_type, operation_key, workflow_job_id, generation_task_id,
-      request_status, charge_status, currency, input_tokens, output_tokens, duration_seconds,
-      item_count, price_breakdown_json, usage_snapshot, error_message
-     FROM billing_records
+      b.id, b.script_id, b.operation, b.model_provider, b.model_tier, b.tokens, b.unit_price, b.amount, b.points_cost, b.created_at,
+      b.model_name, b.model_category, b.source_type, b.operation_key, b.workflow_job_id, b.generation_task_id,
+      b.request_status, b.charge_status, b.currency, b.input_tokens, b.output_tokens, b.duration_seconds,
+      b.item_count, b.price_breakdown_json, b.usage_snapshot, b.error_message,
+      p.name AS project_name
+     FROM billing_records b
+     LEFT JOIN workflow_jobs wj ON b.workflow_job_id = wj.id
+     LEFT JOIN projects p ON wj.project_id = p.id
      ${whereClause}
-     ORDER BY created_at DESC
+     ORDER BY b.created_at DESC
      LIMIT ? OFFSET ?`,
     [...params, Number(limit), Number(offset)]
   );
 
   const totalRow = await queryOne(
-    `SELECT COUNT(*) AS count FROM billing_records ${whereClause}`,
+    `SELECT COUNT(*) AS count FROM billing_records b ${whereClause}`,
     params
   );
 
@@ -913,6 +916,7 @@ async function listBillingRecords(userId, options = {}) {
       ...record,
       price_breakdown_json: parseJsonField(record.price_breakdown_json, []),
       usage_snapshot: parseJsonField(record.usage_snapshot, {}),
+      project_name: record.project_name || null,
       // 前端展示用：积分对应的内部成本金额
       points_value: (record.points_cost || 0) * pointsService.POINT_VALUE_CNY,
       // 前端展示用：积分对应的用户充值售价金额

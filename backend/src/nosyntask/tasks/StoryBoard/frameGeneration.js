@@ -25,7 +25,7 @@ const { collectCandidateImages, appendContextCandidates } = require('./collectCa
 const { traced, trace } = require('../../engine/generationTrace');
 const { assertUpdated, assertPersistedFields } = require('./persistenceGuard');
 const { resolveMediaUrl } = require('../base/mediaResultResolver');
-const { saveFrameHistory, getNextVersionNumber } = require('./saveFrameHistory');
+const { saveFrameHistory, getNextVersionNumber, generateBatchId } = require('./saveFrameHistory');
 
 /**
  * 生成单张图片（通过 submitAndPoll 自动处理同步/异步）
@@ -168,8 +168,28 @@ ${sceneConstraint}`
     : '';
 
   const shotInfo = shotType ? `镜头类型: ${shotType}` : '';
-  const emotionInfo = emotion ? `情绪/氛围: ${emotion}` : '';
   const styleInfo = visualStyle ? `视觉风格: ${visualStyle}` : '';
+
+  // 判断是否为真人实拍风格
+  const isLiveAction = visualStyle && (
+    /写实|电影|摄影|纪实|realistic|cinematic|photography/i.test(visualStyle)
+  );
+
+  // 真人风格：使用感情叠加理论增强情绪表达
+  let emotionInfo = '';
+  if (emotion) {
+    if (isLiveAction) {
+      emotionInfo = `【情绪表达 - 感情叠加理论】
+情绪标签: ${emotion}
+真人面部表情极少是单一情绪。请运用感情叠加理论处理角色表情：
+① 将"${emotion}"分解为2-4种基础情绪的百分比混合（如 40% sadness + 30% determination + 30% nostalgia）
+② 基础情绪谱: joy, sadness, anger, fear, surprise, disgust, contempt, trust, hope, resignation, determination, nostalgia
+③ 将情绪配方翻译为具体的面部微表情：眉毛形态、眼睛状态（瞳孔/眼角/泪光）、嘴角弧度、面部肌肉张力
+④ 禁止使用扁平化的单一表情词（如 "sad face", "happy expression"），必须描述复合微表情细节`;
+    } else {
+      emotionInfo = `情绪/氛围: ${emotion}`;
+    }
+  }
 
   // 首尾帧文字描述（分镜阶段 AI 生成的）+ 交叉参考
   let frameDescBlock;
@@ -626,14 +646,15 @@ async function handleFrameGeneration(inputParams, onProgress) {
     console.log('[FrameGen] 首尾帧已保存到数据库');
 
     // === 优化：异步保存历史版本（不阻塞主流程） ===
+    const batchId = generateBatchId();
     setImmediate(async () => {
       try {
         const genParams = { model: modelName, aspectRatio, resolution };
         await Promise.all([
-          saveFrameHistory(storyboardId, 'first', persistedStartFrame, startPrompt, genParams),
-          saveFrameHistory(storyboardId, 'last', persistedEndFrame, endPrompt, genParams)
+          saveFrameHistory(storyboardId, 'first', persistedStartFrame, startPrompt, genParams, batchId),
+          saveFrameHistory(storyboardId, 'last', persistedEndFrame, endPrompt, genParams, batchId)
         ]);
-        console.log('[FrameGen] 首尾帧历史版本已异步保存');
+        console.log('[FrameGen] 首尾帧历史版本已异步保存, batchId:', batchId);
       } catch (e) {
         console.warn('[FrameGen] 异步保存历史版本失败:', e.message);
       }
@@ -704,9 +725,10 @@ async function handleFrameGeneration(inputParams, onProgress) {
     trace('首帧持久化完成', { url: persistedStartFrame, promptUsed: startPrompt, refImages: startRefResult.selectedUrls });
 
     // 保存首帧到历史版本表
+    const singleBatchIdFirst = generateBatchId();
     try {
-      const ver = await saveFrameHistory(storyboardId, 'first', persistedStartFrame, startPrompt, { model: modelName, aspectRatio, resolution });
-      console.log(`[FrameGen] 首帧历史版本已保存 (v${ver})`);
+      const ver = await saveFrameHistory(storyboardId, 'first', persistedStartFrame, startPrompt, { model: modelName, aspectRatio, resolution }, singleBatchIdFirst);
+      console.log(`[FrameGen] 首帧历史版本已保存 (v${ver}), batchId:`, singleBatchIdFirst);
     } catch (e) {
       console.warn('[FrameGen] 保存首帧历史版本失败:', e.message);
     }
@@ -775,9 +797,10 @@ async function handleFrameGeneration(inputParams, onProgress) {
     trace('尾帧持久化完成', { url: persistedEndFrame, promptUsed: endPrompt, refImages: endRefResult.selectedUrls });
 
     // 保存尾帧到历史版本表
+    const singleBatchIdLast = generateBatchId();
     try {
-      const ver = await saveFrameHistory(storyboardId, 'last', persistedEndFrame, endPrompt, { model: modelName, aspectRatio, resolution });
-      console.log(`[FrameGen] 尾帧历史版本已保存 (v${ver})`);
+      const ver = await saveFrameHistory(storyboardId, 'last', persistedEndFrame, endPrompt, { model: modelName, aspectRatio, resolution }, singleBatchIdLast);
+      console.log(`[FrameGen] 尾帧历史版本已保存 (v${ver}), batchId:`, singleBatchIdLast);
     } catch (e) {
       console.warn('[FrameGen] 保存尾帧历史版本失败:', e.message);
     }

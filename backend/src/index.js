@@ -285,6 +285,26 @@ async function start() {
   // 设置 WebSocket 服务（集成到 HTTP 服务器）
   setupWebSocket(app, server);
 
+  // 清理因服务重启而中断的工作流任务
+  try {
+    const { execute: dbExec } = require('./dbHelper');
+    const [staleResult] = await dbExec(
+      `UPDATE workflow_jobs SET status = 'failed', error_message = '服务重启导致任务中断', updated_at = NOW()
+       WHERE status IN ('pending', 'running')`
+    );
+    const staleCount = staleResult?.affectedRows || 0;
+    if (staleCount > 0) {
+      console.log(`  \x1b[33m⚠\x1b[0m 清理了 ${staleCount} 个因服务重启中断的工作流任务`);
+      // 同时清理对应的 generation_tasks
+      await dbExec(
+        `UPDATE generation_tasks SET status = 'failed', error_message = '服务重启导致任务中断', updated_at = NOW()
+         WHERE status IN ('pending', 'processing')`
+      );
+    }
+  } catch (err) {
+    console.warn('[Startup] 清理中断任务失败（非致命）:', err.message);
+  }
+
   server.listen(PORT, () => {
     console.log('\n' +
       '  ~(=^\u30FB\u03C9\u30FB^)\uFF8D >\uFF9F)))\u5F61\n' +

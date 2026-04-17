@@ -846,6 +846,58 @@ const operationContracts = [
       tasks: result.tasks,
       message: '解析任务已启动'
     })
+  },
+  {
+    operationKey: 'batch_prompt_optimize',
+    workflowType: 'batch_prompt_optimization',
+    requestSchema: {
+      type: 'object',
+      required: ['scriptId'],
+      properties: {
+        scriptId: { type: 'integer', minimum: 1 },
+        textModel: { type: 'string' },
+        maxConcurrency: { type: 'integer', minimum: 1, default: 3 }
+      }
+    },
+    scopeResolver: async ({ actor, input }) => {
+      const script = await requireScriptForUser(input.scriptId, actor.userId);
+      return {
+        scope: {
+          projectId: script.project_id,
+          scriptId: script.id
+        },
+        resources: { script }
+      };
+    },
+    defaultsResolver: async ({ input }) => ({
+      models: {
+        textModel: input.textModel || null
+      },
+      inputs: {},
+      options: {
+        maxConcurrency: input.maxConcurrency ?? 3
+      }
+    }),
+    conflictKeyResolver: ({ scope }) => ({
+      key: 'scriptId',
+      value: scope.scriptId
+    }),
+    toJobParams: ({ contract, actor, scope, resolved }) =>
+      createCommand({
+        operationKey: contract.operationKey,
+        workflowType: contract.workflowType,
+        actor,
+        scope,
+        models: resolved.models,
+        inputs: resolved.inputs,
+        options: resolved.options
+      }),
+    responseMapper: ({ result }) => ({
+      success: true,
+      jobId: result.jobId,
+      tasks: result.tasks,
+      message: '批量提示词优化任务已启动'
+    })
   }
 ];
 

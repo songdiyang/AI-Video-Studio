@@ -48,6 +48,10 @@ const WORKFLOW_CONFLICT_RULES = {
   scene_video: {
     paramKey: 'storyboardId',
     workflowTypes: ['scene_video']
+  },
+  batch_prompt_optimization: {
+    paramKey: 'scriptId',
+    workflowTypes: ['batch_prompt_optimization']
   }
 };
 

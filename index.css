@@ -1213,9 +1213,7 @@ html.theme-transitioning .excalidraw *::after {
 }
 
 /* 响应式显示/隐藏工具类 */
-.hide-on-mobile {
-  display: block;
-}
+/* 注意：桌面端不设置 display 值，避免覆盖 flex/grid 等布局 */
 
 .show-on-mobile {
   display: none;

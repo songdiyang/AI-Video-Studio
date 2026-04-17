@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef, Component, ReactNode } from 'react';
 import { Button, Select, SelectItem, Tooltip } from '@heroui/react';
-import { Wand2, RefreshCw, Download, Video, ImageIcon, Users, MapPin, Frame, Film, ChevronDown, Play, PanelRight, GitBranch, MessageSquare, Lock } from 'lucide-react';
+import { Wand2, RefreshCw, Download, Video, ImageIcon, Users, MapPin, Frame, Film, ChevronDown, Play, PanelRight, GitBranch, MessageSquare, Lock, Sparkles } from 'lucide-react';
 import { useSceneManager, StoryboardScene, DialogueLine } from './useSceneManager';
 import { useAutoStoryboard } from './useAutoStoryboard';
 import { useSceneGeneration } from './useSceneGeneration';
@@ -116,6 +116,7 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
   // 项目级参数（只读，由项目设置决定）
   const [isSubmittingCharacterBatch, setIsSubmittingCharacterBatch] = useState(false);
   const [isSubmittingSceneBatch, setIsSubmittingSceneBatch] = useState(false);
+    const [isOptimizingAllPrompts, setIsOptimizingAllPrompts] = useState(false);
   const [isAnimaticOpen, setIsAnimaticOpen] = useState(false);
   const [isVersionHistoryOpen, setIsVersionHistoryOpen] = useState(false);
   const [isTeamCollaborationOpen, setIsTeamCollaborationOpen] = useState(false);
@@ -496,6 +497,51 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
       console.error('场景批量生成失败:', error);
     } finally {
       setIsSubmittingSceneBatch(false);
+    }
+  };
+
+  // 批量优化全部分镜提示词（工作流模式 - 持久化任务）
+  const handleBatchOptimizePrompts = async () => {
+    if (isOptimizingAllPrompts) {
+      showToast('正在优化中，请稍候', 'warning');
+      return;
+    }
+    if (!currentScriptId) {
+      showToast('请先选择剧本', 'warning');
+      return;
+    }
+    if (scenes.length === 0) {
+      showToast('没有可优化的分镜', 'warning');
+      return;
+    }
+
+    setIsOptimizingAllPrompts(true);
+    try {
+      const token = getAuthToken();
+      const res = await fetch(`/api/storyboards/batch-optimize-prompts/${currentScriptId}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ textModel })
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        if (res.status === 409 && err.jobId) {
+          showToast('已有提示词优化任务正在运行中', 'warning');
+          return;
+        }
+        throw new Error(err.message || '启动优化任务失败');
+      }
+
+      const data = await res.json();
+      showToast(`提示词优化任务已启动（任务ID: ${String(data.jobId || '').slice(-6) || '...'}）`, 'success');
+    } catch (error: any) {
+      showToast('批量优化失败：' + (error.message || '未知错误'), 'error');
+    } finally {
+      setIsOptimizingAllPrompts(false);
     }
   };
 
@@ -981,6 +1027,14 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
             <Divider />
 
             {/* 批量生成操作 */}
+            <IconButton
+              icon={<Sparkles className="w-4 h-4" />}
+              tooltip="一键优化全部提示词"
+              onClick={handleBatchOptimizePrompts}
+              disabled={!currentScriptId || isOptimizingAllPrompts || scenes.length === 0}
+              loading={isOptimizingAllPrompts}
+              variant="default"
+            />
             <IconButton
               icon={<Users className="w-4 h-4" />}
               tooltip="批量生成角色"

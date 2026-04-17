@@ -22,7 +22,7 @@ const { selectReferenceImages } = require('./referenceImageSelector');
 const { collectCandidateImages, appendContextCandidates } = require('./collectCandidateImages');
 const { traced, trace } = require('../../engine/generationTrace');
 const { assertUpdated, assertPersistedFields } = require('./persistenceGuard');
-const { saveFrameHistory, getNextVersionNumber } = require('./saveFrameHistory');
+const { saveFrameHistory, getNextVersionNumber, generateBatchId } = require('./saveFrameHistory');
 
 // collectReferenceImages 已提取到 collectCandidateImages.js 共享模块
 
@@ -182,8 +182,28 @@ ${sceneConstraint}`
       : '';
 
     const shotInfo = variables.shotType ? `镜头类型: ${variables.shotType}` : '';
-    const emotionInfo = variables.emotion ? `情绪/氛围: ${variables.emotion}` : '';
     const styleInfo = visualStyle ? `视觉风格: ${visualStyle}` : '';
+
+    // 判断是否为真人实拍风格
+    const isLiveAction = visualStyle && (
+      /写实|电影|摄影|纪实|realistic|cinematic|photography/i.test(visualStyle)
+    );
+
+    // 真人风格：使用感情叠加理论增强情绪表达
+    let emotionInfo = '';
+    if (variables.emotion) {
+      if (isLiveAction) {
+        emotionInfo = `【情绪表达 - 感情叠加理论】
+情绪标签: ${variables.emotion}
+真人面部表情极少是单一情绪。请运用感情叠加理论处理角色表情：
+① 将"${variables.emotion}"分解为2-4种基础情绪的百分比混合（如 40% sadness + 30% determination + 30% nostalgia）
+② 基础情绪谱: joy, sadness, anger, fear, surprise, disgust, contempt, trust, hope, resignation, determination, nostalgia
+③ 将情绪配方翻译为具体的面部微表情：眉毛形态、眼睛状态（瞳孔/眼角/泪光）、嘴角弧度、面部肌肉张力
+④ 禁止使用扁平化的单一表情词（如 "sad face", "happy expression"），必须描述复合微表情细节`;
+      } else {
+        emotionInfo = `情绪/氛围: ${variables.emotion}`;
+      }
+    }
     const prevEndStateBlock = resolvedPrevEndState
       ? `【上一镜头结束状态 - 必须衔接】\n${resolvedPrevEndState}\n（严格衔接要求：\n① 角色姿势、位置、朝向必须与上述状态完全一致，不得出现不可接受的跳变\n② 光线/时间必须与上述【时空】描述一致：如上一镜头是深夜就不能变成白天，黄昏就不能变成正午\n③ 如果上一镜头有持续性环境效果（篝火、风雪等），当前画面必须保持一致）`
       : '';
@@ -365,12 +385,13 @@ ${extraInfo}
   trace('首尾帧持久化完成（静态镜头）', { firstFrameUrl: persistedUrl, lastFrameUrl: persistedUrl });
 
   // 保存到帧历史版本表（静态镜头：首尾帧相同，只保存一条 first 类型）
+  const sfBatchId = generateBatchId();
   try {
     const genParams = { model: modelName, aspectRatio, resolution };
-    const ver = await saveFrameHistory(storyboardId, 'first', persistedUrl, promptUsed, genParams);
+    const ver = await saveFrameHistory(storyboardId, 'first', persistedUrl, promptUsed, genParams, sfBatchId);
     // 静态镜头的 last 帧也单独保存一条历史，便于用户在尾帧历史中也能看到
-    await saveFrameHistory(storyboardId, 'last', persistedUrl, promptUsed, genParams);
-    console.log(`[SingleFrameGen] 帧历史版本已保存 (v${ver})`);
+    await saveFrameHistory(storyboardId, 'last', persistedUrl, promptUsed, genParams, sfBatchId);
+    console.log(`[SingleFrameGen] 帧历史版本已保存 (v${ver}), batchId:`, sfBatchId);
   } catch (e) {
     console.warn('[SingleFrameGen] 保存帧历史版本失败:', e.message);
   }

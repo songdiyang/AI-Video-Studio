@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence, useMotionValue, useSpring, useTransform } from 'framer-motion';
 import { X, RotateCcw, ListTodo } from 'lucide-react';
 import { getAuthToken } from '../../services/auth';
-import { consumeWorkflow } from '../../hooks/useWorkflow';
+import { consumeWorkflow, consumeAllFailed } from '../../hooks/useWorkflow';
 import { useToast } from '../../contexts/ToastContext';
 import { useTaskQueue } from './useTaskQueue';
 import TaskItem, { getTaskName } from './TaskItem';
@@ -416,8 +416,27 @@ const TaskQueueBubble: React.FC = () => {
             {/* 底部状态栏 */}
             <div className="flex items-center justify-between px-4 py-1.5 shrink-0"
               style={{ borderTop: '1px solid var(--border)', backgroundColor: 'var(--bg-nav)', borderRadius: '0 0 12px 12px' }}>
-              <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                {failedCount > 0 && <span style={{ color: 'var(--danger)', fontWeight: 500 }}>{failedCount} 失败</span>}
+              <span className="text-xs flex items-center gap-1" style={{ color: 'var(--text-muted)' }}>
+                {failedCount > 0 && (
+                  <>
+                    <span style={{ color: 'var(--danger)', fontWeight: 500 }}>{failedCount} 失败</span>
+                    <button
+                      onClick={async () => {
+                        try {
+                          await consumeAllFailed();
+                          fetchJobs(false);
+                        } catch (err) {
+                          console.error('[TaskQueue] 批量清除失败:', err);
+                        }
+                      }}
+                      className="px-1 py-0 rounded text-[10px] hover:opacity-80 transition-opacity cursor-pointer"
+                      style={{ color: 'var(--danger)', opacity: 0.7 }}
+                      title="清除所有失败任务（仅隐藏，不删除记录）"
+                    >
+                      清除
+                    </button>
+                  </>
+                )}
                 {failedCount > 0 && runningCount > 0 && ' · '}
                 {runningCount > 0 && `${runningCount} 运行中`}
                 {runningCount > 0 && pendingCount > 0 && ' · '}
