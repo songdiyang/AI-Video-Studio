@@ -39,11 +39,15 @@ const WORKFLOW_CONFLICT_RULES = {
   },
   frame_generation: {
     paramKey: 'storyboardId',
-    workflowTypes: ['frame_generation', 'single_frame_generation']
+    workflowTypes: ['frame_generation', 'single_frame_generation', 'camera_frame_generation']
   },
   single_frame_generation: {
     paramKey: 'storyboardId',
-    workflowTypes: ['frame_generation', 'single_frame_generation']
+    workflowTypes: ['frame_generation', 'single_frame_generation', 'camera_frame_generation']
+  },
+  camera_frame_generation: {
+    paramKey: 'storyboardId',
+    workflowTypes: ['frame_generation', 'single_frame_generation', 'camera_frame_generation']
   },
   scene_video: {
     paramKey: 'storyboardId',

@@ -99,15 +99,16 @@ const SceneList: React.FC<SceneListProps> = ({ scenes, onEdit, onDelete, onViewD
         onChange={handleFileChange}
       />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-6 items-stretch">
         {scenes.map((scene) => (
           <Card 
             key={scene.id} 
-            className="bg-(--bg-card) border border-(--border-color) shadow-sm hover:shadow-md hover:shadow-(--accent)/5 transition-shadow cursor-pointer"
+            className="bg-(--bg-card) border border-(--border-color) shadow-sm hover:shadow-md hover:shadow-(--accent)/5 transition-shadow cursor-pointer h-full"
+            classNames={{ base: 'h-full', body: 'h-full' }}
             isPressable
             onPress={() => onEdit(scene)}
           >
-            <CardBody className="p-4 space-y-3">
+            <CardBody className="p-4 flex flex-col gap-3 h-full">
               {/* 草图预览区域 */}
               {scene.sketch_url && (
                 <div className="relative group">
@@ -195,8 +196,8 @@ const SceneList: React.FC<SceneListProps> = ({ scenes, onEdit, onDelete, onViewD
                   </Button>
                 </div>
               </div>
-              <p className="text-sm text-(--text-secondary) line-clamp-2">{scene.description}</p>
-              <div className="flex flex-wrap gap-2">
+              <p className="text-sm text-(--text-secondary) line-clamp-2 flex-1">{scene.description}</p>
+              <div className="flex flex-wrap gap-2 mt-auto">
                 {scene.project_name && (
                   <Chip 
                     size="sm" 

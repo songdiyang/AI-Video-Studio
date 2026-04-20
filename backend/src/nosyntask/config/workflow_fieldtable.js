@@ -497,6 +497,52 @@ module.exports = {
   },
 
   // ================================================================
+  //  视角调整（Camera Control）
+  // ================================================================
+  compositeImageUrl: {
+    from: 'compositeImageUrl',
+    defaultValue: null,
+    description: '画布合成图URL（由前端画布导出并上传）',
+    category: 'camera'
+  },
+  sourceImageUrl: {
+    from: 'sourceImageUrl',
+    defaultValue: null,
+    description: '原始帧图片URL（用于风格一致性参考）',
+    category: 'camera'
+  },
+  rotationX: {
+    from: 'rotationX',
+    defaultValue: 0,
+    description: 'X轴旋转角度（俯仰，-180~180）',
+    category: 'camera'
+  },
+  rotationY: {
+    from: 'rotationY',
+    defaultValue: 0,
+    description: 'Y轴旋转角度（偏航，-180~180）',
+    category: 'camera'
+  },
+  rotationZ: {
+    from: 'rotationZ',
+    defaultValue: 0,
+    description: 'Z轴旋转角度（翻滚，-180~180）',
+    category: 'camera'
+  },
+  zoomLevel: {
+    from: 'zoomLevel',
+    defaultValue: 1,
+    description: '缩放级别（0.2~3.0，<1扩图，>1聚焦）',
+    category: 'camera'
+  },
+  mode: {
+    from: 'mode',
+    defaultValue: 'expand',
+    description: '生成模式（expand=扩图，focus=聚焦）',
+    category: 'camera'
+  },
+
+  // ================================================================
   //  重新生成控制
   // ================================================================
   regenerateOnly: {

@@ -4,6 +4,7 @@
  * - POST /api/upload - 上传文件到 MinIO
  */
 const multer = require('multer');
+const path = require('path');
 const { authMiddleware } = require('../../middleware');
 const { uploadBuffer, isMinIOReady } = require('../../utils/fileStorage');
 const { queryOne, execute } = require('../../dbHelper');
@@ -216,4 +217,56 @@ module.exports = (router) => {
       res.status(500).json({ message: '检查服务状态失败' });
     }
   });
+
+  // POST /api/upload/general - 通用文件上传（不绑定特定资产类型）
+  router.post(
+    '/upload/general',
+    authMiddleware,
+    upload.single('file'),
+    async (req, res) => {
+      try {
+        if (!req.file) {
+          return res.status(400).json({ message: '没有上传文件或文件类型不支持' });
+        }
+
+        const userId = req.user.id;
+        const { path_prefix = 'general' } = req.body;
+
+        // 检查 MinIO 是否可用
+        const minioReady = await isMinIOReady();
+        if (!minioReady) {
+          return res.status(503).json({
+            message: '文件存储服务暂时不可用，请稍后重试',
+            code: 'STORAGE_UNAVAILABLE'
+          });
+        }
+
+        // 生成存储路径
+        const timestamp = Date.now();
+        const randomSuffix = Math.random().toString(36).substring(2, 8);
+        const ext = req.file.originalname ? path.extname(req.file.originalname) : '.png';
+        const objectPath = `${path_prefix}/${userId}/${timestamp}_${randomSuffix}${ext}`;
+
+        // 上传到 MinIO
+        const persistentUrl = await uploadBuffer(
+          req.file.buffer,
+          objectPath,
+          { contentType: req.file.mimetype }
+        );
+
+        res.json({
+          url: persistentUrl,
+          filePath: persistentUrl,
+          size: req.file.size,
+          mimeType: req.file.mimetype,
+        });
+      } catch (error) {
+        console.error('[General Upload] 上传失败:', error);
+        res.status(500).json({
+          message: '文件上传失败: ' + (error.message || '未知错误'),
+          code: 'UPLOAD_FAILED'
+        });
+      }
+    }
+  );
 };

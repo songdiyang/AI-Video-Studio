@@ -210,6 +210,24 @@ export function useScriptGeneration({
     onFailed: async (failedJob) => {
       setGenerationProgress(null);
       
+      // 将生成中的剧本状态回滚为 draft（防止假死）
+      if (generatingScriptId) {
+        try {
+          const token = getAuthToken();
+          await fetch(`/api/scripts/${generatingScriptId}/status`, {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token ? { Authorization: `Bearer ${token}` } : {})
+            },
+            body: JSON.stringify({ status: 'draft' })
+          });
+          console.log('[useScriptGeneration] 剧本状态已回滚为 draft');
+        } catch (e) {
+          console.warn('[useScriptGeneration] 剧本状态回滚失败:', e);
+        }
+      }
+      
       // 失败的工作流也标记为已消费
       try {
         await consumeWorkflow(failedJob.id);

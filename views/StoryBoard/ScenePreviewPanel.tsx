@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Button, Textarea, Chip } from '@heroui/react';
-import { ImageIcon, Video, Film, Camera, Users, MapPin, Zap, X, Trash2, ZoomIn, ZoomOut, RotateCw, Maximize2, Blocks, ChevronDown, ChevronUp, History, Loader2, Pencil, Check, Plus, Search } from 'lucide-react';
+import { ImageIcon, Video, Film, Camera, Users, MapPin, Zap, X, Trash2, ZoomIn, ZoomOut, RotateCw, Maximize2, Blocks, ChevronDown, ChevronUp, History, Loader2, Pencil, Check, Plus, Search, Compass } from 'lucide-react';
 import { StoryboardScene, DialogueLine } from './useSceneManager';
 import { TaskState } from '../../hooks/useTaskRunner';
+import CameraControlPanel, { CameraGenerateParams } from './CameraControl';
 import { getAuthToken } from '../../services/auth';
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
@@ -220,6 +221,7 @@ interface ScenePreviewPanelProps {
   projectScenes?: { id: number; name: string; description?: string }[];
   onGenerateImage: (id: number, prompt: string, regenerateTarget?: 'first' | 'last' | 'both', forceRegenerate?: boolean) => Promise<{ success: boolean; error?: string }>;
   onGenerateVideo: (id: number) => Promise<{ success: boolean; error?: string }>;
+  onGenerateWithCamera?: (id: number, cameraParams: CameraGenerateParams) => Promise<{ success: boolean; error?: string }>;
   onUpdateScene?: (updates: Partial<StoryboardScene>) => void;
   imageTask?: TaskState;
   videoTask?: TaskState;
@@ -238,6 +240,7 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
   projectScenes = [],
   onGenerateImage,
   onGenerateVideo,
+  onGenerateWithCamera,
   onUpdateScene,
   imageTask,
   videoTask
@@ -245,6 +248,7 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
   const [showStartFrame, setShowStartFrame] = useState(true);
   const [isDirectorSpaceExpanded, setIsDirectorSpaceExpanded] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [showCameraControl, setShowCameraControl] = useState(false);
   // 历史版本预览状态：临时存储预览的帧 URL，不永久修改场景数据
   const [previewFrameUrl, setPreviewFrameUrl] = useState<string | null>(null);
   const [previewFrameType, setPreviewFrameType] = useState<'first' | 'last' | null>(null);
@@ -566,6 +570,24 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
 
   return (
     <div className="h-full flex flex-col bg-[var(--bg-app)]">
+      {/* 视角调整模式 - 全覆盖 */}
+      {showCameraControl && currentFrame && onGenerateWithCamera ? (
+        <CameraControlPanel
+          sourceImageUrl={bustCache(currentFrame) || currentFrame}
+          aspectRatio={scene.hasAction ? '16:9' : '16:9'}
+          onGenerate={async (params) => {
+            const result = await onGenerateWithCamera(scene.id, params);
+            if (result.success) {
+              setShowCameraControl(false);
+            } else {
+              showToast(result.error || '视角生成失败', 'error');
+            }
+          }}
+          onCancel={() => setShowCameraControl(false)}
+          isGenerating={isGeneratingImage}
+        />
+      ) : (
+      <>
       {/* 预览区域 */}
       <div className="flex-1 flex items-center justify-center p-4 min-h-0 relative">
         {/* 生成中遮罩层 */}
@@ -646,6 +668,20 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                   <History className="w-4 h-4" />
                   <span className="text-xs">历史版本</span>
                 </button>
+                {/* 视角调整按钮 */}
+                {onGenerateWithCamera && (
+                  <button
+                    onClick={() => setShowCameraControl(true)}
+                    disabled={isGenerating}
+                    className={`absolute top-2 left-28 p-2 rounded-lg bg-black/50 text-white/80 transition-colors flex items-center gap-1.5 ${
+                      isGenerating ? 'opacity-40 cursor-not-allowed' : 'hover:bg-purple-500/70 hover:text-white'
+                    }`}
+                    title="视角调整 - 旋转/缩放/扩图"
+                  >
+                    <Compass className="w-4 h-4" />
+                    <span className="text-xs">视角调整</span>
+                  </button>
+                )}
                 {/* 放大按钮提示 */}
                 <button
                   onClick={openLightbox}
@@ -1033,6 +1069,8 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
             setShowHistory(false);
           }}
         />
+      )}
+      </>
       )}
     </div>
   );

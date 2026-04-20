@@ -40,7 +40,8 @@ const {
   handleBatchSketchFrameGeneration,
   handlePropPromptGeneration,
   handlePropImageGeneration,
-  handleConceptBreakdownGeneration
+  handleConceptBreakdownGeneration,
+  handleCameraFrameGeneration
 } = require('./tasks');
 
 const handleBatchPromptOptimization = require('./tasks/StoryBoard/batchPromptOptimization');
@@ -347,6 +348,26 @@ const WORKFLOW_DEFINITIONS = {
         buildInput: createBuildInput([
           'storyboardId', 'description', 'imageModel', 'textModel',
           'aspectRatio'
+        ])
+      }
+    ]
+  },
+
+  /**
+   * 视角调整帧生成（旋转/缩放/扩图）
+   */
+  camera_frame_generation: {
+    name: '视角调整帧生成',
+    steps: [
+      {
+        type: 'camera_frame',
+        targetType: 'storyboard',
+        handler: handleCameraFrameGeneration,
+        buildInput: createBuildInput([
+          'storyboardId', 'compositeImageUrl', 'sourceImageUrl',
+          'imageModel', 'textModel', 'aspectRatio',
+          'rotationX', 'rotationY', 'rotationZ',
+          'zoomLevel', 'mode'
         ])
       }
     ]

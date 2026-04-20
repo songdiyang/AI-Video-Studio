@@ -54,11 +54,12 @@ const PropList: React.FC<PropListProps> = ({ props, onEdit, onDelete }) => {
     <Card 
       key={prop.id} 
       className="bg-(--bg-card) border border-(--border-color) shadow-sm hover:shadow-md hover:shadow-(--accent)/5 transition-shadow h-full cursor-pointer"
+      classNames={{ base: 'h-full', body: 'h-full' }}
       style={style}
       isPressable
       onPress={() => onEdit(prop)}
     >
-      <CardBody className="p-4 space-y-3">
+      <CardBody className="p-4 flex flex-col gap-3 h-full">
         <div className="flex items-start justify-between">
           <h3 className="text-lg font-semibold text-(--text-primary)">{prop.name}</h3>
           <div className="flex gap-1">
@@ -82,26 +83,24 @@ const PropList: React.FC<PropListProps> = ({ props, onEdit, onDelete }) => {
             </Button>
           </div>
         </div>
-        <p className="text-sm text-(--text-secondary) line-clamp-2">{prop.description}</p>
+        <p className="text-sm text-(--text-secondary) line-clamp-2 flex-1">{prop.description}</p>
+        <div className="flex flex-wrap gap-2 mt-auto">
         {prop.category && (
           <Chip size="sm" variant="flat" className="bg-amber-500/10 text-amber-400 font-medium">
             {prop.category}
           </Chip>
         )}
-        {prop.tags && (
-          <div className="flex flex-wrap gap-2">
-            {prop.tags.split(',').map((tag, idx) => (
-              <Chip 
-                key={idx} 
-                size="sm" 
-                variant="flat" 
-                className="bg-purple-500/10 text-purple-400 font-medium"
-              >
-                {tag.trim()}
-              </Chip>
-            ))}
-          </div>
-        )}
+        {prop.tags && prop.tags.split(',').map((tag, idx) => (
+          <Chip 
+            key={idx} 
+            size="sm" 
+            variant="flat" 
+            className="bg-purple-500/10 text-purple-400 font-medium"
+          >
+            {tag.trim()}
+          </Chip>
+        ))}
+        </div>
       </CardBody>
     </Card>
   );
@@ -146,7 +145,7 @@ const PropList: React.FC<PropListProps> = ({ props, onEdit, onDelete }) => {
 
   // 常规网格模式
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-6">
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-6 items-stretch">
       {props.map((prop) => renderPropCard(prop))}
     </div>
   );

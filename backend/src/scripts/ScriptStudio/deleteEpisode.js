@@ -47,24 +47,36 @@ async function deleteEpisode(req, res) {
     );
 
     // 1. 先查孤立资源（必须在删除前查，删除后关联记录就没了）
-    const orphanCharIds = await findOrphanIds(projectId, scriptId, 'storyboard_characters', 'character_id');
-    const orphanSceneIds = await findOrphanIds(projectId, scriptId, 'storyboard_scenes', 'scene_id');
+    let orphanCharIds = [];
+    let orphanSceneIds = [];
+    try {
+      orphanCharIds = await findOrphanIds(projectId, scriptId, 'storyboard_characters', 'character_id');
+      orphanSceneIds = await findOrphanIds(projectId, scriptId, 'storyboard_scenes', 'scene_id');
+    } catch (orphanErr) {
+      console.warn('[DeleteEpisode] 查询孤立资源失败（非致命）:', orphanErr.message);
+    }
 
     // 2. 清理相关的工作流任务（workflow_jobs 没有 script_id 外键，需手动清理）
     //    generation_tasks 通过 job_id CASCADE 自动删除
-    const workflowResult = await execute(
-      `DELETE FROM workflow_jobs 
-       WHERE user_id = ? 
-         AND project_id = ? 
-         AND (
-           JSON_EXTRACT(input_params, '$.scriptId') = ?
-           OR JSON_EXTRACT(input_params, '$.scope.scriptId') = ?
-         )`,
-      [userId, projectId, scriptId]
-    );
-    const deletedWorkflows = workflowResult?.affectedRows || 0;
-    if (deletedWorkflows > 0) {
-      console.log(`[DeleteEpisode] 清理 ${deletedWorkflows} 个相关工作流任务`);
+    let deletedWorkflows = 0;
+    try {
+      const workflowResult = await execute(
+        `DELETE FROM workflow_jobs 
+         WHERE user_id = ? 
+           AND project_id = ? 
+           AND (
+             JSON_EXTRACT(input_params, '$.scriptId') = ?
+             OR JSON_EXTRACT(input_params, '$.scope.scriptId') = ?
+           )`,
+        [userId, projectId, scriptId]
+      );
+      deletedWorkflows = workflowResult?.affectedRows || 0;
+      if (deletedWorkflows > 0) {
+        console.log(`[DeleteEpisode] 清理 ${deletedWorkflows} 个相关工作流任务`);
+      }
+    } catch (wfErr) {
+      // JSON_EXTRACT 可能因 input_params 格式问题失败，不阻断删除流程
+      console.warn(`[DeleteEpisode] 清理工作流任务失败（非致命）:`, wfErr.message);
     }
 
     // 3. 删除剧本（级联自动删除：分镜 → 关联记录；角色/场景的 script_id 置 NULL）

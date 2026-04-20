@@ -810,6 +810,15 @@ module.exports = (router) => {
     const { imageModel, textModel, regenerateOnly } = req.body;
 
     try {
+      // 前置校验：状态必须存在
+      const existingState = await queryOne(
+        'SELECT id, is_base_model FROM character_states WHERE id = ? AND character_id = ?',
+        [stateId, id]
+      );
+      if (!existingState) {
+        return res.status(404).json({ message: '角色状态不存在' });
+      }
+
       // 更新状态为生成中
       await execute(
         `UPDATE character_states SET generation_status = 'generating', updated_at = CURRENT_TIMESTAMP WHERE id = ?`,

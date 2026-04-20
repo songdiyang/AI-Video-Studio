@@ -348,87 +348,73 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
 
   console.log(`[CharacterViews] 生成模式: ${isStateGeneration ? '状态级别(stateId=' + stateId + ')' : '角色级别'}`);
 
-  // === 查询用户上传参考图（当 use_reference_images 开关启用时）===
+  // === 参考图查询（简化架构：白膜用角色参考图，非白膜只用白膜三视图）===
   let userReferenceUrls = [];
-  const useRefImages = existingViews.use_reference_images !== 0 && existingViews.use_reference_images !== false;
-  if (useRefImages && characterId) {
-    // 优先查询当前级别的参考图，角色级别 fallback
-    let refImages = [];
-    if (isStateGeneration && stateId) {
-      refImages = await queryAll(
-        `SELECT image_url, view_type FROM asset_reference_images
-         WHERE asset_type = 'character_state' AND asset_id = ? AND is_enabled = 1
-         ORDER BY sort_order ASC`,
-        [stateId]
-      );
-    }
-    // 如果状态级别无参考图，或者是角色级别生成，查询角色级别参考图
-    if (refImages.length === 0) {
-      refImages = await queryAll(
+
+  if (isBaseModel && characterId) {
+    // ★ 白膜生成：直接查询角色级参考图（来自"参考图"Tab）
+    const useRefImages = existingViews.use_reference_images !== 0 && existingViews.use_reference_images !== false;
+    if (useRefImages) {
+      const refImages = await queryAll(
         `SELECT image_url, view_type FROM asset_reference_images
          WHERE asset_type = 'character' AND asset_id = ? AND is_enabled = 1
          ORDER BY sort_order ASC`,
         [characterId]
       );
-    }
-    if (refImages.length > 0) {
-      userReferenceUrls = refImages
-        .map(r => resolveToInternalUrl(r.image_url))
-        .filter(Boolean);
-      console.log(`[CharacterViews] ✅ 用户参考图已启用，共 ${userReferenceUrls.length} 张:`, userReferenceUrls);
+      if (refImages.length > 0) {
+        userReferenceUrls = refImages
+          .map(r => resolveToInternalUrl(r.image_url))
+          .filter(Boolean);
+        console.log(`[CharacterViews] ✅ 白膜生成：使用角色级参考图，共 ${userReferenceUrls.length} 张:`, userReferenceUrls);
+      } else {
+        console.log('[CharacterViews] 白膜生成：角色级无可用参考图');
+      }
     } else {
-      console.log('[CharacterViews] 用户参考图已启用但无可用参考图');
+      console.log('[CharacterViews] 白膜生成：参考图未启用');
     }
-  } else {
-    console.log(`[CharacterViews] 用户参考图未启用 (use_reference_images=${existingViews.use_reference_images})`);
-  }
-
-  // === 白膜互参：非白膜引用白膜三视图 / 白膜引用其他状态图片 ===
-  if (isStateGeneration && characterId) {
-    if (!isBaseModel) {
-      // ★ 生成非白膜状态时：引用白膜三视图作为基准参考（确保角色一致性）
-      const baseModelState = await queryOne(
+    // 白膜无参考图时，回退用其他已生成状态图片作为参考
+    if (userReferenceUrls.length === 0) {
+      const otherStateWithImages = await queryOne(
         `SELECT front_view_url, side_view_url, back_view_url FROM character_states 
-         WHERE character_id = ? AND is_base_model = 1 AND front_view_url IS NOT NULL AND front_view_url != ''`,
+         WHERE character_id = ? AND is_base_model = 0 
+           AND front_view_url IS NOT NULL AND front_view_url != ''
+         ORDER BY is_active DESC, updated_at DESC LIMIT 1`,
         [characterId]
       );
-      if (baseModelState) {
-        const baseModelUrls = [baseModelState.front_view_url, baseModelState.side_view_url, baseModelState.back_view_url]
+      if (otherStateWithImages) {
+        const otherUrls = [otherStateWithImages.front_view_url, otherStateWithImages.side_view_url, otherStateWithImages.back_view_url]
           .filter(Boolean)
           .map(url => resolveToInternalUrl(url))
           .filter(Boolean);
-        if (baseModelUrls.length > 0) {
-          // 白膜参考放在最前面，权重最高
-          userReferenceUrls = [...baseModelUrls, ...userReferenceUrls];
-          console.log(`[CharacterViews] ✅ 白膜三视图作为基准参考 (${baseModelUrls.length} 张):`, baseModelUrls);
+        if (otherUrls.length > 0) {
+          userReferenceUrls = otherUrls;
+          console.log(`[CharacterViews] ✅ 白膜生成：使用其他状态三视图作为回退参考 (${otherUrls.length} 张):`, otherUrls);
         }
       } else {
-        console.log('[CharacterViews] 白膜无三视图，跳过基准参考');
-      }
-    } else {
-      // ★ 生成白膜时：如果白膜没有自己的参考图，用其他状态的已生成图片作为参考
-      if (userReferenceUrls.length === 0) {
-        const otherStateWithImages = await queryOne(
-          `SELECT front_view_url, side_view_url, back_view_url FROM character_states 
-           WHERE character_id = ? AND is_base_model = 0 
-             AND front_view_url IS NOT NULL AND front_view_url != ''
-           ORDER BY is_active DESC, updated_at DESC LIMIT 1`,
-          [characterId]
-        );
-        if (otherStateWithImages) {
-          const otherUrls = [otherStateWithImages.front_view_url, otherStateWithImages.side_view_url, otherStateWithImages.back_view_url]
-            .filter(Boolean)
-            .map(url => resolveToInternalUrl(url))
-            .filter(Boolean);
-          if (otherUrls.length > 0) {
-            userReferenceUrls = otherUrls;
-            console.log(`[CharacterViews] ✅ 使用其他状态三视图作为白膜生成参考 (${otherUrls.length} 张):`, otherUrls);
-          }
-        } else {
-          console.log('[CharacterViews] 无其他状态可用作白膜参考');
-        }
+        console.log('[CharacterViews] 白膜生成：无其他状态可用作回退参考');
       }
     }
+  } else if (!isBaseModel && isStateGeneration && characterId) {
+    // ★ 非白膜状态生成：只用白膜三视图作为参考（不查询用户参考图）
+    const baseModelState = await queryOne(
+      `SELECT front_view_url, side_view_url, back_view_url FROM character_states 
+       WHERE character_id = ? AND is_base_model = 1 AND front_view_url IS NOT NULL AND front_view_url != ''`,
+      [characterId]
+    );
+    if (baseModelState) {
+      const baseModelUrls = [baseModelState.front_view_url, baseModelState.side_view_url, baseModelState.back_view_url]
+        .filter(Boolean)
+        .map(url => resolveToInternalUrl(url))
+        .filter(Boolean);
+      if (baseModelUrls.length > 0) {
+        userReferenceUrls = baseModelUrls;
+        console.log(`[CharacterViews] ✅ 非白膜状态生成：使用白膜三视图作为唯一参考 (${baseModelUrls.length} 张):`, baseModelUrls);
+      }
+    } else {
+      console.log('[CharacterViews] 非白膜状态生成：白膜无三视图，将纯靠提示词生成');
+    }
+  } else {
+    console.log('[CharacterViews] 角色级别生成或无 characterId，跳过参考图查询');
   }
 
   // === 正面视图 ===

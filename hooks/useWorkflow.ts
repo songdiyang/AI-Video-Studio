@@ -239,7 +239,13 @@ export function useWorkflow(jobId: string | null, options: UseWorkflowOptions = 
       return false;
     } catch (err: any) {
       setError(err.message);
-      return false; // 出错继续轮询
+      // 404 表示工作流已不存在，视为终态停止轮询，避免无限重试
+      if (err instanceof ApiError && err.status === 404) {
+        console.warn(`[useWorkflow] 工作流 ${jobId} 不存在(404)，停止轮询`);
+        callbackRefs.current.onFailed?.({ id: jobId, status: 'failed', error_message: '工作流不存在' } as WorkflowJob);
+        return true;
+      }
+      return false; // 其他错误继续轮询
     } finally {
       setLoading(false);
       isInitialFetch.current = false;

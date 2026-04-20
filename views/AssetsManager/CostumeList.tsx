@@ -77,11 +77,12 @@ const CostumeList: React.FC<CostumeListProps> = ({ costumes, onEdit, onDelete })
     <Card 
       key={costume.id} 
       className="bg-(--bg-card) border border-(--border-color) shadow-sm hover:shadow-md hover:shadow-(--accent)/5 transition-shadow h-full cursor-pointer"
+      classNames={{ base: 'h-full', body: 'h-full' }}
       style={style}
       isPressable
       onPress={() => onEdit(costume)}
     >
-      <CardBody className="p-4 space-y-3">
+      <CardBody className="p-4 flex flex-col gap-3 h-full">
         <div className="flex items-start gap-3">
           {/* 预览图 */}
           <div className="w-20 h-20 rounded-lg overflow-hidden bg-(--bg-secondary) shrink-0 flex items-center justify-center border border-(--border-color)">
@@ -96,7 +97,7 @@ const CostumeList: React.FC<CostumeListProps> = ({ costumes, onEdit, onDelete })
             )}
           </div>
           
-          <div className="flex-1 min-w-0">
+          <div className="flex-1 min-w-0 flex flex-col gap-1">
             <div className="flex items-start justify-between">
               <h3 className="text-lg font-semibold text-(--text-primary) truncate">{costume.name}</h3>
               <div className="flex gap-1 ml-2">
@@ -121,14 +122,12 @@ const CostumeList: React.FC<CostumeListProps> = ({ costumes, onEdit, onDelete })
               </div>
             </div>
             
-            {costume.description && (
-              <p className="text-sm text-(--text-secondary) line-clamp-2 mt-1">{costume.description}</p>
-            )}
+            <p className="text-sm text-(--text-secondary) line-clamp-2 flex-1">{costume.description || ''}</p>
           </div>
         </div>
         
         {/* 标签 */}
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 mt-auto">
           {costume.category && (
             <Chip size="sm" variant="flat" className={`${getCategoryColor(costume.category)} font-medium`}>
               {costume.category}
@@ -190,7 +189,7 @@ const CostumeList: React.FC<CostumeListProps> = ({ costumes, onEdit, onDelete })
   return (
     <div 
       ref={listContainerRef}
-      className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-2 h-full overflow-auto"
+      className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-2 h-full overflow-auto items-stretch"
     >
       {costumes.map((costume) => renderCostumeCard(costume))}
     </div>

@@ -1,5 +1,6 @@
 const { getSceneCount, parseScriptScenes } = require('../../../utils/parseScriptScenes');
 const { HttpError } = require('../utils/httpErrors');
+const { queryOne, queryAll } = require('../../../dbHelper');
 const {
   requireProjectForUser,
   requireScriptForUser,
@@ -158,6 +159,122 @@ const operationContracts = [
       message: '三视图生成已启动',
       jobId: result.jobId,
       characterId: command.scope.characterId,
+      status: 'generating'
+    })
+  },
+  {
+    operationKey: 'character_state_views_generate',
+    workflowType: 'character_state_views_generation',
+    requestSchema: {
+      type: 'object',
+      required: ['characterId', 'stateId', 'imageModel'],
+      properties: {
+        characterId: { type: 'integer', minimum: 1 },
+        stateId: { type: 'integer', minimum: 1 },
+        imageModel: { type: 'string', minLength: 1 },
+        textModel: { type: 'string' },
+        regenerateOnly: { type: 'array', items: { type: 'string', enum: ['front', 'side', 'back'] } }
+      }
+    },
+    scopeResolver: async ({ actor, input }) => {
+      const character = await requireCharacterForUser(input.characterId, actor.userId);
+      return {
+        scope: {
+          projectId: character.project_id,
+          characterId: character.id,
+          stateId: input.stateId
+        },
+        resources: { character }
+      };
+    },
+    defaultsResolver: async ({ input, resources, scope }) => {
+      // 查询状态数据以获取外貌属性和白膜标记
+      const state = await queryOne(
+        'SELECT * FROM character_states WHERE id = ? AND character_id = ?',
+        [input.stateId, input.characterId]
+      );
+      if (!state) {
+        throw new HttpError(404, '角色状态不存在');
+      }
+
+      // 白膜校验：必须有参考图或已生成的状态图片
+      if (state.is_base_model) {
+        let hasReference = false;
+        // 检查角色级参考图
+        const useRefImages = state.use_reference_images !== 0 && state.use_reference_images !== false;
+        if (useRefImages) {
+          const refImages = await queryAll(
+            `SELECT id FROM asset_reference_images
+             WHERE asset_type = 'character' AND asset_id = ? AND is_enabled = 1
+             LIMIT 1`,
+            [input.characterId]
+          );
+          if (refImages.length > 0) hasReference = true;
+        }
+        // 检查是否有其他已生成状态图片
+        if (!hasReference) {
+          const otherState = await queryOne(
+            `SELECT id FROM character_states
+             WHERE character_id = ? AND is_base_model = 0
+               AND front_view_url IS NOT NULL AND front_view_url != ''
+             LIMIT 1`,
+            [input.characterId]
+          );
+          if (otherState) hasReference = true;
+        }
+        // 白膜已有自身图片也算有参考
+        if (!hasReference && (state.front_view_url || state.image_url)) {
+          hasReference = true;
+        }
+        if (!hasReference) {
+          throw new HttpError(400, '生成白膜需要角色参考图或已有状态图片，请先在「参考图」页面上传参考图，或先为其他状态生成图片');
+        }
+      }
+
+      return {
+        models: {
+          imageModel: input.imageModel,
+          textModel: input.textModel || null
+        },
+        inputs: {
+          characterId: input.characterId,
+          characterName: resources.character.name,
+          appearance: resources.character.appearance,
+          personality: resources.character.personality,
+          description: resources.character.description,
+          style: null,
+          stateId: input.stateId,
+          outfit: state.outfit || null,
+          hairstyle: state.hairstyle || null,
+          accessories: state.accessories || null,
+          ageStage: state.age_stage || null,
+          bodyElements: state.body_elements || null,
+          isBaseModel: !!state.is_base_model,
+          gender: resources.character.gender || 'unknown',
+          regenerateOnly: input.regenerateOnly || null
+        },
+        options: {}
+      };
+    },
+    conflictKeyResolver: ({ scope }) => ({
+      key: 'stateId',
+      value: scope.stateId
+    }),
+    toJobParams: ({ contract, actor, scope, resolved }) =>
+      createCommand({
+        operationKey: contract.operationKey,
+        workflowType: contract.workflowType,
+        actor,
+        scope,
+        models: resolved.models,
+        inputs: resolved.inputs,
+        options: resolved.options
+      }),
+    responseMapper: ({ result, command }) => ({
+      message: '状态三视图生成已启动',
+      jobId: result.jobId,
+      characterId: command.scope.characterId,
+      stateId: command.scope.stateId,
       status: 'generating'
     })
   },
@@ -713,6 +830,81 @@ const operationContracts = [
       options: {
         aspectRatio: input.aspectRatio || null,
         isRegenerate: Boolean(input.isRegenerate)
+      }
+    }),
+    conflictKeyResolver: ({ scope }) => ({
+      key: 'storyboardId',
+      value: scope.storyboardId
+    }),
+    toJobParams: ({ contract, actor, scope, resolved }) =>
+      createCommand({
+        operationKey: contract.operationKey,
+        workflowType: contract.workflowType,
+        actor,
+        scope,
+        models: resolved.models,
+        inputs: resolved.inputs,
+        options: resolved.options
+      }),
+    responseMapper: ({ result, command }) => ({
+      jobId: result.jobId,
+      tasks: result.tasks,
+      workflowType: command.workflowType,
+      operationKey: command.operationKey,
+      status: 'pending'
+    })
+  },
+  {
+    operationKey: 'camera_frame_generate',
+    workflowType: 'camera_frame_generation',
+    requestSchema: {
+      type: 'object',
+      required: ['storyboardId', 'compositeImageUrl', 'imageModel'],
+      properties: {
+        storyboardId: { type: 'integer', minimum: 1 },
+        compositeImageUrl: { type: 'string', minLength: 1 },
+        sourceImageUrl: { type: 'string' },
+        imageModel: { type: 'string', minLength: 1 },
+        textModel: { type: 'string' },
+        rotationX: { type: 'number', default: 0 },
+        rotationY: { type: 'number', default: 0 },
+        rotationZ: { type: 'number', default: 0 },
+        zoomLevel: { type: 'number', default: 1 },
+        mode: { type: 'string', enum: ['expand', 'focus'], default: 'expand' },
+        aspectRatio: { type: 'string' },
+        episodeNumber: { type: 'integer', minimum: 1 },
+        storyboardIndex: { type: 'integer', minimum: 1 }
+      }
+    },
+    scopeResolver: async ({ actor, input }) => {
+      const storyboard = await requireStoryboardForUser(input.storyboardId, actor.userId);
+      return {
+        scope: {
+          projectId: storyboard.project_id,
+          scriptId: storyboard.script_id,
+          storyboardId: storyboard.id
+        },
+        resources: { storyboard }
+      };
+    },
+    defaultsResolver: async ({ input }) => ({
+      models: {
+        imageModel: input.imageModel,
+        textModel: input.textModel || null
+      },
+      inputs: {
+        compositeImageUrl: input.compositeImageUrl,
+        sourceImageUrl: input.sourceImageUrl || null,
+        rotationX: input.rotationX || 0,
+        rotationY: input.rotationY || 0,
+        rotationZ: input.rotationZ || 0,
+        zoomLevel: input.zoomLevel || 1,
+        mode: input.mode || 'expand',
+        episodeNumber: input.episodeNumber ?? null,
+        storyboardIndex: input.storyboardIndex ?? null
+      },
+      options: {
+        aspectRatio: input.aspectRatio || null
       }
     }),
     conflictKeyResolver: ({ scope }) => ({

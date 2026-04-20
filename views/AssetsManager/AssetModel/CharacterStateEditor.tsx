@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Button, Input, Textarea, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure, Card, CardBody, Select, SelectItem, Tooltip, Chip, Switch } from '@heroui/react';
+import { Button, Input, Textarea, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure, Card, CardBody, Select, SelectItem, Tooltip, Chip } from '@heroui/react';
 import { Plus, Edit2, Trash2, ChevronDown, ChevronRight, Image as ImageIcon, Star, Copy, RefreshCw, Shirt, Calendar, Scissors, Clock, Sparkles, User, X, Tag } from 'lucide-react';
 import {
   Character,
@@ -14,9 +14,9 @@ import {
   activateCharacterState,
   duplicateCharacterState,
   generateCharacterStateViews,
+  fetchReferenceImages,
   AGE_STAGES
 } from '../../../services/assets';
-import ReferenceImageManager from './ReferenceImageManager';
 import { useToast } from '../../../contexts/ToastContext';
 import { useConfirm } from '../../../contexts/ConfirmContext';
 import { useAIModels } from '../../../hooks/useAIModels';
@@ -422,6 +422,26 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
       return;
     }
 
+    // 白膜前置校验：必须有参考图或已有状态图片
+    if (generatingState.is_base_model) {
+      const hasOwnViews = !!(generatingState.front_view_url || generatingState.image_url);
+      const hasOtherStatesWithImages = states.some(
+        s => !s.is_base_model && (s.front_view_url || s.image_url)
+      );
+      if (!hasOwnViews && !hasOtherStatesWithImages) {
+        // 还需检查角色参考图（需要异步查询）
+        try {
+          const refImages = await fetchReferenceImages('character', characterId!, true);
+          if (!refImages || refImages.length === 0) {
+            showToast('生成白膜需要角色参考图或已有状态图片，请先在「参考图」页面上传参考图，或先为其他状态生成图片', 'error');
+            return;
+          }
+        } catch {
+          // 参考图查询失败时仍然允许提交，由后端做最终校验
+        }
+      }
+    }
+
     setGeneratingId(generatingState.id);
     setIsGenerateModalOpen(false);
     
@@ -805,14 +825,11 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                   </div>
                 )}
                 
-                {/* 参考图 */}
-                <div>
-                  <h5 className="text-xs font-medium mb-2" style={{ color: 'var(--text-secondary)' }}>参考图</h5>
-                  <ReferenceImageManager
-                    assetType="character_state"
-                    assetId={baseModelState.id}
-                    disabled={disabled}
-                  />
+                {/* 参考图提示 */}
+                <div className="rounded-lg p-3" style={{ backgroundColor: 'var(--bg-secondary)' }}>
+                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                    白膜生成将自动使用角色「参考图」Tab 中的图片作为参考，请在角色编辑的参考图页面上传和管理参考图。
+                  </p>
                 </div>
 
                 {/* 身体元素（白膜专用） */}
@@ -1130,35 +1147,11 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                         </div>
                       )}
                       
-                      {/* 参考图 */}
-                      <div>
-                        <div className="flex items-center justify-between mb-2">
-                          <h5 className="text-xs font-medium text-default-500 dark:text-slate-400">参考图</h5>
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs text-default-400 dark:text-slate-500">使用参考图</span>
-                            <Switch
-                              size="sm"
-                              isSelected={state.use_reference_images !== false}
-                              onValueChange={async (enabled) => {
-                                try {
-                                  await updateCharacterState(characterId!, state.id, {
-                                    use_reference_images: enabled
-                                  });
-                                  await loadStates();
-                                  showToast(enabled ? '已启用参考图' : '已禁用参考图', 'success');
-                                } catch (error: any) {
-                                  showToast(error.message, 'error');
-                                }
-                              }}
-                              isDisabled={disabled}
-                            />
-                          </div>
-                        </div>
-                        <ReferenceImageManager
-                          assetType="character_state"
-                          assetId={state.id}
-                          disabled={disabled}
-                        />
+                      {/* 参考图提示：非白膜状态自动使用白膜三视图 */}
+                      <div className="rounded-lg p-3" style={{ backgroundColor: 'var(--bg-secondary)' }}>
+                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                          生成三视图时将自动使用白膜三视图作为参考，无需单独上传参考图。
+                        </p>
                       </div>
                     </div>
                   )}

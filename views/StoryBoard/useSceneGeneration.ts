@@ -3,6 +3,7 @@ import { getAuthToken } from '../../services/auth';
 import { useTaskRunner, TaskState } from '../../hooks/useTaskRunner';
 import { WorkflowJob } from '../../hooks/useWorkflow';
 import { StoryboardScene } from './useSceneManager';
+import { CameraGenerateParams } from './CameraControl';
 
 interface UseSceneGenerationOptions {
   projectId: number | null;
@@ -133,7 +134,7 @@ export function useSceneGeneration({
   useEffect(() => {
     if (!projectId) return;
     recoverTasks(
-      ['frame_generation', 'single_frame_generation', 'scene_video'],
+      ['frame_generation', 'single_frame_generation', 'scene_video', 'camera_frame_generation'],
       jobToTaskKey
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -304,6 +305,88 @@ export function useSceneGeneration({
     }
   };
 
+  // 启动视角调整生成 workflow
+  const generateWithCamera = async (id: number, cameraParams: CameraGenerateParams): Promise<{ success: boolean; error?: string }> => {
+    try {
+      if (isTaskActive(`img_${id}`)) {
+        return { success: false, error: '当前镜头正在生成，请等待完成后再试' };
+      }
+
+      if (!imageModel) {
+        return { success: false, error: '请先选择图片生成模型' };
+      }
+
+      // Upload composite image base64 to get a URL
+      let compositeImageUrl = '';
+      try {
+        const base64Data = cameraParams.compositeImageBase64;
+        // Convert base64 to blob
+        const byteString = atob(base64Data.split(',')[1]);
+        const mimeString = base64Data.split(',')[0].split(':')[1].split(';')[0];
+        const ab = new ArrayBuffer(byteString.length);
+        const ia = new Uint8Array(ab);
+        for (let i = 0; i < byteString.length; i++) {
+          ia[i] = byteString.charCodeAt(i);
+        }
+        const blob = new Blob([ab], { type: mimeString });
+
+        // Upload via /api/upload
+        const token = getAuthToken();
+        const formData = new FormData();
+        formData.append('file', blob, `camera_composite_${id}_${Date.now()}.png`);
+        formData.append('path_prefix', `images/camera_composite`);
+
+        const uploadRes = await fetch('/api/upload/general', {
+          method: 'POST',
+          headers: {
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: formData,
+        });
+
+        if (!uploadRes.ok) {
+          throw new Error(`上传画布图片失败: HTTP ${uploadRes.status}`);
+        }
+        const uploadData = await uploadRes.json();
+        compositeImageUrl = uploadData.url || uploadData.fileUrl || uploadData.filePath || '';
+        if (!compositeImageUrl) {
+          throw new Error('上传画布图片返回无效URL');
+        }
+      } catch (uploadErr: any) {
+        console.error('[useSceneGeneration] 上传画布合成图失败:', uploadErr);
+        return { success: false, error: uploadErr.message || '上传画布图片失败' };
+      }
+
+      console.log('[useSceneGeneration] 视角调整生成, mode:', cameraParams.mode, 'rotation:', {
+        x: cameraParams.rotationX,
+        y: cameraParams.rotationY,
+        z: cameraParams.rotationZ,
+      });
+
+      const sceneIdx = scenes.findIndex(s => s.id === id);
+      await runTask(`img_${id}`, 'camera_frame_generation', {
+        storyboardId: id,
+        compositeImageUrl,
+        sourceImageUrl: cameraParams.sourceImageUrl,
+        imageModel,
+        textModel,
+        rotationX: cameraParams.rotationX,
+        rotationY: cameraParams.rotationY,
+        rotationZ: cameraParams.rotationZ,
+        zoomLevel: cameraParams.zoomLevel,
+        mode: cameraParams.mode,
+        aspectRatio: imageAspectRatio,
+        episodeNumber,
+        storyboardIndex: sceneIdx >= 0 ? sceneIdx + 1 : undefined,
+      });
+
+      return { success: true };
+    } catch (error: any) {
+      console.error('视角调整生成失败:', error);
+      return { success: false, error: error.message || '视角调整生成失败' };
+    }
+  };
+
   // 独立删除首帧
   const deleteFirstFrame = async (sceneId: number): Promise<{ success: boolean; error?: string; warnings?: string[] }> => {
     try {
@@ -371,6 +454,7 @@ export function useSceneGeneration({
     isRunning,
     generateImage,
     generateVideo,
+    generateWithCamera,
     deleteFirstFrame,
     deleteLastFrame
   };

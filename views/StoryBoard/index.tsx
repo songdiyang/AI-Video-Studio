@@ -307,7 +307,7 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
   });
 
   // 5. 场景图片/视频生成
-  const { generateImage, generateVideo, tasks, isRunning } = useSceneGeneration({
+  const { generateImage, generateVideo, generateWithCamera, tasks, isRunning } = useSceneGeneration({
     projectId: currentProjectId,
     scriptId: currentScriptId,
     episodeNumber: currentEpisode,
@@ -1330,6 +1330,7 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
                 projectScenes={projectScenes}
                 onGenerateImage={generateImage}
                 onGenerateVideo={generateVideo}
+                onGenerateWithCamera={generateWithCamera}
                 onUpdateScene={handleUpdateSelectedScene}
                 imageTask={selectedScene ? tasks[`img_${selectedScene}`] : undefined}
                 videoTask={selectedScene ? tasks[`vid_${selectedScene}`] : undefined}

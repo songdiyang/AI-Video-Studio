@@ -18,6 +18,7 @@ const updateScript = require('./ScriptStudio/updateScript');
 const deleteScript = require('./ScriptStudio/deleteScript');
 const createScript = require('./ScriptStudio/createScript');
 const deleteEpisode = require('./ScriptStudio/deleteEpisode');
+const updateScriptStatus = require('./ScriptStudio/updateScriptStatus');
 const cleanOrphanResources = require('./ScriptStudio/cleanOrphanResources');
 const { createOrUpdateDraft, saveDraftContent, deleteDraft } = require('./ScriptStudio/draftScript');
 
@@ -61,6 +62,9 @@ router.get('/', authMiddleware, getAllScripts);
 
 // 更新剧本
 router.put('/:id', authMiddleware, updateScript);
+
+// 更新剧本状态（回滚 generating → draft）
+router.patch('/:id/status', authMiddleware, updateScriptStatus);
 
 // 删除某集（分镜+剧本+查孤立资源）
 router.delete('/:id/episode', authMiddleware, deleteEpisode);
