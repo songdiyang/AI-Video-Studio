@@ -307,6 +307,27 @@ async function start() {
     console.warn('[Startup] 清理中断任务失败（非致命）:', err.message);
   }
 
+  // 资源包过期清零定时任务：每小时执行一次
+  try {
+    const { expireResourcePacks } = require('./resourcePackService');
+    // 启动时立即执行一次
+    expireResourcePacks().catch(err => console.warn('[Cron] 启动时资源包清零失败:', err.message));
+    // 每小时执行一次
+    setInterval(async () => {
+      try {
+        const result = await expireResourcePacks();
+        if (result.expiredCount > 0) {
+          console.log(`[Cron] 资源包过期清零: ${result.expiredCount} 个资源包, ${result.affectedUsers} 个用户受影响`);
+        }
+      } catch (err) {
+        console.warn('[Cron] 资源包过期清零失败:', err.message);
+      }
+    }, 60 * 60 * 1000);
+    console.log('  \x1b[32m✔\x1b[0m 资源包过期清零定时任务已启用（每小时）');
+  } catch (err) {
+    console.warn('[Startup] 资源包定时任务初始化失败:', err.message);
+  }
+
   server.listen(PORT, () => {
     console.log('\n' +
       '  ~(=^\u30FB\u03C9\u30FB^)\uFF8D >\uFF9F)))\u5F61\n' +

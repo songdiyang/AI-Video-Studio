@@ -4,6 +4,7 @@
  */
 
 const handleScriptGeneration = require('./StoryStudio/scriptGeneration');
+const handleScriptSplit = require('./StoryStudio/scriptSplit');
 const handleCharacterExtraction = require('./StoryBoard/characterExtraction');
 const handleSceneExtraction = require('./StoryBoard/sceneExtraction');
 const handleImageGeneration = require('./base/imageGeneration');
@@ -37,6 +38,7 @@ const handleBatchPromptOptimization = require('./StoryBoard/batchPromptOptimizat
 
 module.exports = {
   handleScriptGeneration,
+  handleScriptSplit,
   handleCharacterExtraction,
   handleSceneExtraction,
   handleImageGeneration,

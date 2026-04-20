@@ -147,6 +147,7 @@ const PointsRechargeModal: React.FC<PointsRechargeModalProps> = ({ isOpen, onClo
                       </div>
                       <div className="text-xs text-[var(--text-muted)] mb-1">{pkg.label}</div>
                       <div className={`text-sm font-semibold ${isSelected ? 'text-amber-600 dark:text-amber-400' : 'text-amber-500'}`}>¥{pkg.price}</div>
+                      <div className="text-[10px] text-[var(--text-muted)] opacity-70">当月有效</div>
                     </button>
                   );
                 })}
@@ -191,8 +192,8 @@ const PointsRechargeModal: React.FC<PointsRechargeModalProps> = ({ isOpen, onClo
               {/* 说明信息 */}
               <div className="mt-4 space-y-2">
                 <div className="flex items-center gap-2 text-xs text-(--text-muted)">
-                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                  <span>充值积分永久有效，不会每月重置</span>
+                  <ShieldCheck className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                  <span>资源包有效期为1个自然月，每月末清零未用积分</span>
                 </div>
                 <div className="flex items-center gap-2 text-xs text-(--text-muted)">
                   <Clock className="w-3.5 h-3.5 text-blue-500 shrink-0" />

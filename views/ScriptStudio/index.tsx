@@ -11,6 +11,7 @@ import { useScriptGeneration } from './hooks/useScriptGeneration';
 import ScriptActions from './ScriptActions';
 import ScriptGeneratorForm from './ScriptGeneratorForm';
 import ScriptPreview from './ScriptPreview';
+import ScriptSplitPreview, { SplitEpisode } from './ScriptSplitPreview';
 import EpisodeSelectModal from './EpisodeSelectModal';
 import EpisodeSelector from './EpisodeSelector';
 import LoadingScreen from './LoadingScreen';
@@ -56,7 +57,9 @@ const ScriptStudio: React.FC = () => {
     handleSaveDraft,
     handleDeleteDraft,
     handleDeleteScript,
-    handleCleanOrphans
+    handleCleanOrphans,
+    handleScriptSplit,
+    handleBatchCreateEpisodes
   } = useScriptManagement({
     onSuccess: () => {},
     onError: (msg) => showToast(msg, 'error')
@@ -116,6 +119,11 @@ const ScriptStudio: React.FC = () => {
   // 前情回顾状态
   const [recapData, setRecapData] = useState<RecapData | null>(null);
   const [recapLoading, setRecapLoading] = useState(false);
+  
+  // 智能拆集状态
+  const [splitEpisodes, setSplitEpisodes] = useState<SplitEpisode[] | null>(null);
+  const [splitLoading, setSplitLoading] = useState(false);
+  const [batchCreating, setBatchCreating] = useState(false);
   
   const loading = scriptLoading || generationLoading;
 
@@ -473,7 +481,7 @@ const ScriptStudio: React.FC = () => {
                   onGenerateVideo={() => {}}
                 />
 
-                {!scriptId && !loadingScript && (
+                {!scriptId && !loadingScript && !splitEpisodes && (
                   <ScriptGeneratorForm
                     title={title}
                     description={description}
@@ -491,6 +499,33 @@ const ScriptStudio: React.FC = () => {
                     lastSavedAt={lastSavedAt}
                     isDraft={!!draftScript}
                     hasUnsavedChanges={hasUnsavedChanges}
+                    onSplit={async (rawText, minutesPerEpisode) => {
+                      if (!selectedProject) {
+                        showToast('请先选择一个项目', 'warning');
+                        return;
+                      }
+                      if (!aiModels.selected.text) {
+                        showToast('请先点击右上角「AI 模型」按钮选择文本模型', 'warning');
+                        return;
+                      }
+                      setSplitLoading(true);
+                      try {
+                        const episodes = await handleScriptSplit(
+                          rawText,
+                          minutesPerEpisode,
+                          selectedProject.id,
+                          aiModels.selected.text
+                        );
+                        if (episodes && episodes.length > 0) {
+                          setSplitEpisodes(episodes);
+                        }
+                      } catch (error: any) {
+                        showToast(error.message || '拆集失败', 'error');
+                      } finally {
+                        setSplitLoading(false);
+                      }
+                    }}
+                    splitLoading={splitLoading}
                     onGenerate={async () => {
                       if (!aiModels.selected.text) {
                         showToast('请先点击右上角「AI 模型」按钮选择文本模型', 'warning');
@@ -520,6 +555,26 @@ const ScriptStudio: React.FC = () => {
                         showToast('保存失败，请稍后重试', 'error');
                       }
                     }}
+                  />
+                )}
+
+                {/* 拆集预览 */}
+                {splitEpisodes && splitEpisodes.length > 0 && (
+                  <ScriptSplitPreview
+                    episodes={splitEpisodes}
+                    isCreating={batchCreating}
+                    onConfirm={async (episodes) => {
+                      if (!selectedProject) return;
+                      setBatchCreating(true);
+                      const success = await handleBatchCreateEpisodes(episodes, selectedProject.id);
+                      setBatchCreating(false);
+                      if (success) {
+                        setSplitEpisodes(null);
+                        showToast(`成功创建 ${episodes.length} 集剧本`, 'success');
+                        loadProjectScript(selectedProject.id);
+                      }
+                    }}
+                    onCancel={() => setSplitEpisodes(null)}
                   />
                 )}
               </div>

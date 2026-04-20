@@ -14,6 +14,7 @@
 
 const {
   handleScriptGeneration,
+  handleScriptSplit,
   handleCharacterExtraction,
   handleSceneExtraction,
   handleImageGeneration,
@@ -77,6 +78,23 @@ const WORKFLOW_DEFINITIONS = {
         buildInput: createBuildInput([
           'title', 'description', 'style', 'length',
           'textModel', 'projectId', 'episodeNumber'
+        ])
+      }
+    ]
+  },
+
+  /**
+   * 剧本拆集（将长文本按高潮点拆分为多集，不增删改原文）
+   */
+  script_split: {
+    name: '剧本拆集',
+    steps: [
+      {
+        type: 'script_split',
+        targetType: 'script',
+        handler: handleScriptSplit,
+        buildInput: createBuildInput([
+          'rawText', 'minutesPerEpisode', 'textModel', 'projectId'
         ])
       }
     ]

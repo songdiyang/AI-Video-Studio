@@ -133,7 +133,7 @@ async function handleCameraRunGeneration(inputParams, onProgress) {
   const endFrameDesc = variables.endFrame || '';
   let dialogue = '';
   if (variables.dialogues && Array.isArray(variables.dialogues) && variables.dialogues.length > 0) {
-    dialogue = variables.dialogues.map(d => `${d.character}：${d.line}`).join('；');
+    dialogue = variables.dialogues.map(d => `${d.character} says "${d.line}"`).join('; ');
   } else {
     dialogue = variables.dialogue || '';
   }

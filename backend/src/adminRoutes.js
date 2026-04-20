@@ -3,6 +3,7 @@ const { queryOne, queryAll, execute } = require('./dbHelper');
 const { authMiddleware, requireAdmin } = require('./middleware');
 const { parseJsonField } = require('./utils/parseJsonField');
 const { withAIBillingContext } = require('./aiBillingContext');
+const { createResourcePack, deductFromResourcePacks, syncUserBalance } = require('./resourcePackService');
 const { getPriceSummary } = require('./aiBillingService');
 const { callAIModel, queryAIModel, getTextModels } = require('./aiModelService');
 const { generationStartService, sendGenerationError } = require('./modules/generation');
@@ -551,7 +552,7 @@ router.get('/services', authMiddleware, requireAdmin, async (_req, res) => {
 router.get('/users', authMiddleware, requireAdmin, async (req, res) => {
   try {
     const users = await queryAll(
-      'SELECT id, email, role, balance, is_active, last_login_ip, last_active_at, created_at, updated_at FROM users ORDER BY id DESC'
+      'SELECT id, email, role, employee_id, balance, is_active, last_login_ip, last_active_at, created_at, updated_at FROM users ORDER BY id DESC'
     );
     res.json({ users });
   } catch (error) {
@@ -565,7 +566,7 @@ router.get('/users/:id', authMiddleware, requireAdmin, async (req, res) => {
   
   try {
     const user = await queryOne(
-      'SELECT id, email, role, balance, created_at, updated_at FROM users WHERE id = ?',
+      'SELECT id, email, role, employee_id, balance, created_at, updated_at FROM users WHERE id = ?',
       [id]
     );
     
@@ -582,7 +583,7 @@ router.get('/users/:id', authMiddleware, requireAdmin, async (req, res) => {
 
 router.put('/users/:id', authMiddleware, requireAdmin, async (req, res) => {
   const { id } = req.params;
-  const { email, role, balance } = req.body;
+  const { email, role } = req.body;
   
   try {
     const user = await queryOne('SELECT id FROM users WHERE id = ?', [id]);
@@ -601,10 +602,7 @@ router.put('/users/:id', authMiddleware, requireAdmin, async (req, res) => {
       updates.push('role = ?');
       values.push(role);
     }
-    if (balance !== undefined) {
-      updates.push('balance = ?');
-      values.push(balance);
-    }
+    // balance 不再允许直接修改，必须通过 /users/:id/adjust-points 接口
     
     if (updates.length === 0) {
       return res.status(400).json({ message: '没有需要更新的字段' });
@@ -620,6 +618,150 @@ router.put('/users/:id', authMiddleware, requireAdmin, async (req, res) => {
   } catch (error) {
     console.error('[Admin] Update user error:', error);
     res.status(500).json({ message: '更新用户信息失败' });
+  }
+});
+
+/**
+ * POST /api/admin/users/:id/adjust-points - 管理员调整用户积分（增加/减少）
+ * 必须填写站内信内容，操作后自动发送站内信通知用户
+ */
+router.post('/users/:id/adjust-points', authMiddleware, requireAdmin, async (req, res) => {
+  const { id } = req.params;
+  const { adjustmentType, amount, message } = req.body; // adjustmentType: 'add' | 'subtract'
+  const adminId = req.user.userId || req.user.id;
+
+  // 参数校验
+  if (!adjustmentType || !['add', 'subtract'].includes(adjustmentType)) {
+    return res.status(400).json({ message: '调整类型必须是 add 或 subtract' });
+  }
+  if (!amount || amount <= 0 || !Number.isInteger(amount)) {
+    return res.status(400).json({ message: '调整积分必须为正整数' });
+  }
+  if (!message || !message.trim()) {
+    return res.status(400).json({ message: '必须填写站内信内容才能调整积分' });
+  }
+
+  try {
+    // 获取用户当前余额
+    const user = await queryOne('SELECT id, balance, email FROM users WHERE id = ?', [id]);
+    if (!user) {
+      return res.status(404).json({ message: '用户不存在' });
+    }
+
+    // 获取管理员信息（含工号）
+    const admin = await queryOne('SELECT id, employee_id, email FROM users WHERE id = ?', [adminId]);
+    if (!admin) {
+      return res.status(403).json({ message: '管理员账号不存在' });
+    }
+
+    // 如果管理员还没有工号，自动生成一个
+    let employeeId = admin.employee_id;
+    if (!employeeId) {
+      employeeId = 'ADM-' + Math.random().toString(36).substring(2, 8).toUpperCase();
+      await execute('UPDATE users SET employee_id = ? WHERE id = ?', [employeeId, adminId]);
+      console.log(`[Admin] 自动生成工号: ${employeeId} (admin ID=${adminId})`);
+    }
+
+    const balanceBefore = Math.round(user.balance || 0);
+    let balanceAfter;
+    let resourcePackId = null;
+
+    if (adjustmentType === 'add') {
+      // 增加积分 → 创建资源包
+      const pack = await createResourcePack(id, {
+        name: '管理员调整积分',
+        totalPoints: amount,
+        sourceType: 'admin',
+        sourceId: adminId,
+        isGift: false
+      });
+      resourcePackId = pack.id;
+      balanceAfter = await syncUserBalance(id);
+    } else {
+      // 减少积分 → 从资源包扣减
+      try {
+        const result = await deductFromResourcePacks(id, amount);
+        balanceAfter = result.balanceAfter;
+      } catch (err) {
+        if (err.code === 'INSUFFICIENT_POINTS') {
+          return res.status(400).json({ message: `用户积分不足（当前 ${err.current}），无法减少 ${amount} 积分` });
+        }
+        throw err;
+      }
+    }
+
+    // 生成站内信标题和内容（Markdown 格式）
+    const isAdd = adjustmentType === 'add';
+    const mailTitle = isAdd ? '积分增加通知' : '积分减少通知';
+    const colorTag = isAdd ? 'green' : 'red';
+    const symbol = isAdd ? '+' : '-';
+    const periodInfo = isAdd ? '（有效期1个月）' : '';
+    const mailContent = [
+      `**${isAdd ? '🎉 积分增加' : '📝 积分减少'}**`,
+      '',
+      `| 项目 | 详情 |`,
+      `| --- | --- |`,
+      `| 变动积分 | <span style="color:${colorTag};font-weight:bold">${symbol}${amount} 积分</span>${periodInfo} |`,
+      `| 变动前余额 | ${balanceBefore} 积分 |`,
+      `| 变动后余额 | **${balanceAfter} 积分** |`,
+      `| 操作人工号 | ${employeeId} |`,
+      '',
+      '---',
+      '',
+      message.trim()
+    ].join('\n');
+
+    // 发送站内信
+    const mailResult = await execute(
+      `INSERT INTO internal_mail (sender_type, sender_id, receiver_id, title, content, mail_type)
+       VALUES ('admin', ?, ?, ?, ?, 'points_change')`,
+      [adminId, id, mailTitle, mailContent]
+    );
+    const mailId = mailResult?.insertId || null;
+
+    // 记录调整日志
+    await execute(
+      `INSERT INTO points_adjustment_log (user_id, admin_id, admin_employee_id, adjustment_type, amount, balance_before, balance_after, reason, mail_id, resource_pack_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, adminId, employeeId, adjustmentType, amount, balanceBefore, balanceAfter, message.trim(), mailId, resourcePackId]
+    );
+
+    console.log(`[Admin] 积分调整: ${adjustmentType === 'add' ? '+' : '-'}${amount}, 用户ID=${id}, 操作人=${employeeId}`);
+
+    res.json({
+      message: '积分调整成功',
+      balanceBefore,
+      balanceAfter,
+      adjustmentType,
+      amount,
+      employeeId
+    });
+  } catch (error) {
+    console.error('[Admin] Adjust points error:', error);
+    res.status(500).json({ message: '积分调整失败' });
+  }
+});
+
+/**
+ * GET /api/admin/me/employee-id - 获取当前管理员工号
+ */
+router.get('/me/employee-id', authMiddleware, requireAdmin, async (req, res) => {
+  const adminId = req.user.userId || req.user.id;
+  try {
+    const admin = await queryOne('SELECT employee_id FROM users WHERE id = ?', [adminId]);
+    if (!admin) {
+      return res.status(404).json({ message: '管理员不存在' });
+    }
+    // 如果还没有工号，自动生成
+    let employeeId = admin.employee_id;
+    if (!employeeId) {
+      employeeId = 'ADM-' + Math.random().toString(36).substring(2, 8).toUpperCase();
+      await execute('UPDATE users SET employee_id = ? WHERE id = ?', [employeeId, adminId]);
+    }
+    res.json({ employeeId });
+  } catch (error) {
+    console.error('[Admin] Get employee ID error:', error);
+    res.status(500).json({ message: '获取工号失败' });
   }
 });
 
@@ -1641,10 +1783,14 @@ router.post('/subscriptions', authMiddleware, requireAdmin, async (req, res) => 
     let giftPoints = 0;
     if (planPrice > 0) {
       giftPoints = Math.ceil(planPrice * 100);
-      await execute(
-        'UPDATE users SET balance = balance + ? WHERE id = ?',
-        [giftPoints, user_id]
-      );
+      // 创建赠送资源包（有效期1个自然月，与订阅周期无关）
+      await createResourcePack(user_id, {
+        name: '订阅赠送资源包',
+        totalPoints: giftPoints,
+        sourceType: 'subscription',
+        sourceId: result.insertId,
+        isGift: true
+      });
     }
 
     res.json({ 

@@ -110,6 +110,7 @@ async function handleSceneVideoGeneration(inputParams, onProgress) {
   const scriptId = storyboard.script_id;
   const currentIdx = storyboard.idx;
   let characterAppearance = '';
+  let characterMap = {}; // 角色名→外貌映射，用于台词时关联外貌
   let sceneDetail = '';
 
   if (!_context) {
@@ -157,11 +158,16 @@ async function handleSceneVideoGeneration(inputParams, onProgress) {
     }
 
     characterAppearance = '';
+    characterMap = {};
     if (charResult.status === 'fulfilled' && charResult.value.length > 0) {
       characterAppearance = charResult.value
         .filter(c => c.appearance)
         .map(c => `${c.name}: ${c.appearance}`)
         .join('\n');
+      // 同时构建角色名→外貌映射
+      charResult.value.forEach(c => {
+        if (c.name) characterMap[c.name] = c.appearance || c.description || '';
+      });
       console.log('[SceneVideoGen] 查询到角色外貌:', characterAppearance.substring(0, 120));
     } else if (charResult.status === 'rejected') {
       console.warn('[SceneVideoGen] 查询角色外貌失败:', charResult.reason?.message);
@@ -199,11 +205,16 @@ async function handleSceneVideoGeneration(inputParams, onProgress) {
     ]);
 
     characterAppearance = '';
+    characterMap = {};
     if (charResult.status === 'fulfilled' && charResult.value.length > 0) {
       characterAppearance = charResult.value
         .filter(c => c.appearance)
         .map(c => `${c.name}: ${c.appearance}`)
         .join('\n');
+      // 同时构建角色名→外貌映射
+      charResult.value.forEach(c => {
+        if (c.name) characterMap[c.name] = c.appearance || c.description || '';
+      });
       console.log('[SceneVideoGen] 查询到角色外貌:', characterAppearance.substring(0, 120));
     } else if (charResult.status === 'rejected') {
       console.warn('[SceneVideoGen] 查询角色外貌失败:', charResult.reason?.message);
@@ -312,12 +323,18 @@ async function handleSceneVideoGeneration(inputParams, onProgress) {
     }
     let dialogueInfo;
     if (variables.dialogues && Array.isArray(variables.dialogues) && variables.dialogues.length > 0) {
-      const lines = variables.dialogues.map(d => `${d.character}："${d.line}"`).join('\n');
-      dialogueInfo = `对话/台词:\n${lines}`;
+      const lines = variables.dialogues.map(d => {
+        const appearance = characterMap[d.character];
+        // 带外貌描述，让视频模型能通过外观识别画面中哪个角色在说话
+        return appearance
+          ? `${d.character}（外貌：${appearance}）说："${d.line}" `
+          : `${d.character}说："${d.line}" `;
+      }).join('\n');
+      dialogueInfo = `【角色台词】\n${lines}\n（重要：请根据外貌描述在画面中识别说话角色，说话角色的嘴型必须与台词同步，未说话的角色嘴唇不可动，需根据外貌明确区分说话者和旁听者）`;
     } else if (variables.dialogue) {
-      dialogueInfo = `对话/台词: ${variables.dialogue}`;
+      dialogueInfo = `【台词】"${variables.dialogue}"（说话角色的嘴型必须与台词同步，未说话的角色嘴唇不可动）`;
     } else {
-      dialogueInfo = '【无对白镜头】此镜头没有任何角色对白或语音，视频必须完全没有人声';
+      dialogueInfo = '【无台词】本镜头无角色对话或语音，视频必须完全安静无声';
     }
     // 画外音信息
     const voiceoverText = variables.voiceover ? `【画外音/旁白】${variables.voiceover}（画面中应有旁白/解说声音，但不是场景中角色说的，是画外旁白）` : '';
@@ -423,7 +440,9 @@ Rules:
 5. If previous shot context exists, ensure natural transition from its end state. Persistent effects (fire, snow, lighting) must continue; one-time events (lightning flash, explosion) must NOT carry over unless explicitly mentioned
 6. If visual style is specified, the video must reflect that style
 7. Strictly follow character constraints: maintain consistency with reference frame if characters present; absolutely no humans if no-character shot${conditionalRules}
-11. [Audio Control] If marked as "无对白镜头" and no voiceover is provided, include "no speech, no voice, no dialogue, silent". If voiceover/narration is specified, include the narration voice description as off-screen narration audio. For silent mouth movements: use "silently mouthing without any audible sound", NEVER use murmuring/muttering/whispering
+8. [Dialogue Lip-Sync] CRITICAL for audio generation: When character dialogue is provided, you MUST explicitly describe WHO is speaking and their appearance to identify them. Format: "[CharacterName]（外貌描述）说[dialogue]，嘴唇与台词同步". Non-speaking characters must keep their mouths closed. The speaking character must have visible lip movement matching the dialogue. Each speaking character must be identified by name AND appearance in the prompt so the video model knows exactly which person is talking.
+9. [Dialogue Audio] When dialogue is present and generate_audio is enabled, the prompt must contain the actual dialogue text in quotes so the model can generate the spoken audio. E.g. "绅士（黑色西装、灰色领带）说'你画的不错'，嘴唇与台词同步，女孩微笑聆听，嘴唇紧闭"
+11. [Audio Control] If marked as "No Dialogue" and no voiceover is provided, include "no speech, no voice, no dialogue, silent". If voiceover/narration is specified, include the narration voice description as off-screen narration audio. For silent mouth movements: use "silently mouthing without any audible sound", NEVER use murmuring/muttering/whispering
 12. [Motion Breakdown] If Motion Breakdown is provided: MOVING elements must move as described, STATIC elements must remain still and visible throughout. No unlisted elements may appear. Characters must never disappear.
 13. [Language Purity] ${outputLang.promptInstruction} Translate ALL source material faithfully into the target language. Do not mix languages.
 14. [No Text] Include "no text, no subtitles, no captions, no watermark, no written words in any language" constraint

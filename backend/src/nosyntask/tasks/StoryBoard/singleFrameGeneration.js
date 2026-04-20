@@ -212,10 +212,10 @@ ${sceneConstraint}`
       : '';
     let dialogueBlock = '';
     if (variables.dialogues && Array.isArray(variables.dialogues) && variables.dialogues.length > 0) {
-      const lines = variables.dialogues.map(d => `${d.character}："${d.line}"`).join('\n');
-      dialogueBlock = `【角色对白】\n${lines}\n（请根据对白内容调整对应角色的面部表情和嘴型状态，说话中的角色嘴巴应微张）`;
+      const lines = variables.dialogues.map(d => `${d.character} says "${d.line}"`).join('\n');
+      dialogueBlock = `【Character Dialogue】\n${lines}\n(IMPORTANT: Speaking characters must have slightly open mouths matching their dialogue. Non-speaking characters must keep their mouths closed. Identify who is speaking by name.)`;
     } else if (variables.dialogue) {
-      dialogueBlock = `【角色对白】"${variables.dialogue}"（请根据对白内容调整角色的面部表情和嘴型状态）`;
+      dialogueBlock = `【Character Dialogue】"${variables.dialogue}" (Speaking character must have slightly open mouth. Non-speaking characters must keep their mouths closed.)`;
     }
 
     // 摄像机空间推理（反打镜头感知）

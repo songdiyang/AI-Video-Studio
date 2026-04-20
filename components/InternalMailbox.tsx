@@ -24,7 +24,7 @@ interface InternalMail {
   sender_type: 'system' | 'admin';
   title: string;
   content: string;
-  mail_type: 'reply' | 'announce' | 'system' | 'task';
+  mail_type: 'reply' | 'announce' | 'system' | 'task' | 'points_change';
   related_feedback_id: number | null;
   related_task_id: number | null;
   is_read: number;
@@ -36,6 +36,7 @@ const MAIL_TYPE_CONFIG: Record<string, { label: string; icon: React.ReactNode; c
   announce: { label: '系统公告', icon: <Megaphone className="w-3.5 h-3.5" />, color: '#f59e0b' },
   system: { label: '系统通知', icon: <Bell className="w-3.5 h-3.5" />, color: '#10b981' },
   task: { label: '任务指派', icon: <ClipboardList className="w-3.5 h-3.5" />, color: '#8b5cf6' },
+  points_change: { label: '积分变动', icon: <Bell className="w-3.5 h-3.5" />, color: '#f59e0b' },
 };
 
 const PRIORITY_CONFIG: Record<string, { label: string; color: string; bgColor: string }> = {
@@ -44,6 +45,120 @@ const PRIORITY_CONFIG: Record<string, { label: string; color: string; bgColor: s
   high: { label: '高', color: '#f59e0b', bgColor: '#f59e0b18' },
   urgent: { label: '紧急', color: '#ef4444', bgColor: '#ef444418' },
 };
+
+/**
+ * 轻量级 Markdown 渲染（支持积分变动的颜色高亮）
+ * 处理: **bold**, *italic*, `code`, ---, | table |, <span style="color:...">, 换行
+ */
+function renderLightMarkdown(text: string): React.ReactNode[] {
+  const lines = text.split('\n');
+  const result: React.ReactNode[] = [];
+  let inTable = false;
+  let tableRows: string[][] = [];
+  let tableKey = 0;
+
+  const flushTable = () => {
+    if (tableRows.length === 0) return;
+    const header = tableRows[0];
+    const body = tableRows.slice(1);
+    result.push(
+      <table key={`table-${tableKey++}`} className="w-full text-sm border-collapse my-2" style={{ fontSize: '12px' }}>
+        <thead>
+          <tr>{header.map((cell, i) => (
+            <th key={i} className="border-b py-1 px-2 text-left font-semibold" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>
+              {renderInlineMarkdown(cell)}
+            </th>
+          ))}</tr>
+        </thead>
+        <tbody>
+          {body.map((row, ri) => (
+            <tr key={ri}>{row.map((cell, ci) => (
+              <td key={ci} className="py-1 px-2" style={{ borderBottom: '1px solid var(--border-color)', color: 'var(--text-primary)' }}>
+                {renderInlineMarkdown(cell)}
+              </td>
+            ))}</tr>
+          ))}
+        </tbody>
+      </table>
+    );
+    tableRows = [];
+    inTable = false;
+  };
+
+  const renderInlineMarkdown = (s: string): React.ReactNode => {
+    // 处理 <span style="color:...">...</span>
+    const parts: React.ReactNode[] = [];
+    const spanRegex = /<span\s+style="color:(.*?)">(.*?)<\/span>/g;
+    let lastIndex = 0;
+    let match;
+    let partKey = 0;
+    while ((match = spanRegex.exec(s)) !== null) {
+      if (match.index > lastIndex) {
+        parts.push(...renderBasicInline(s.slice(lastIndex, match.index), partKey));
+      }
+      const color = match[1];
+      const content = match[2];
+      parts.push(<span key={`span-${partKey++}`} style={{ color, fontWeight: 'bold' }}>{content}</span>);
+      lastIndex = match.index + match[0].length;
+    }
+    if (lastIndex < s.length) {
+      parts.push(...renderBasicInline(s.slice(lastIndex), partKey));
+    }
+    return parts.length === 1 ? parts[0] : <>{parts}</>;
+  };
+
+  const renderBasicInline = (s: string, keyOffset: number): React.ReactNode[] => {
+    const result: React.ReactNode[] = [];
+    // **bold**
+    const boldRegex = /\*\*(.*?)\*\*/g;
+    let lastIdx = 0;
+    let m;
+    while ((m = boldRegex.exec(s)) !== null) {
+      if (m.index > lastIdx) result.push(s.slice(lastIdx, m.index));
+      result.push(<strong key={`b-${keyOffset}-${m.index}`}>{m[1]}</strong>);
+      lastIdx = m.index + m[0].length;
+    }
+    if (lastIdx < s.length) result.push(s.slice(lastIdx));
+    return result.length > 0 ? result : [s];
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    // 表格行
+    if (line.trim().startsWith('|') && line.trim().endsWith('|')) {
+      // 分隔行跳过
+      if (line.match(/^\|[\s\-:|]+\|$/)) continue;
+      const cells = line.split('|').filter(c => c.trim() !== '').map(c => c.trim());
+      tableRows.push(cells);
+      inTable = true;
+      continue;
+    } else if (inTable) {
+      flushTable();
+    }
+
+    // 水平线
+    if (line.trim() === '---') {
+      result.push(<hr key={`hr-${i}`} className="my-2" style={{ borderColor: 'var(--border-color)' }} />);
+      continue;
+    }
+
+    // 空行
+    if (line.trim() === '') {
+      result.push(<div key={`br-${i}`} className="h-2" />);
+      continue;
+    }
+
+    // 普通行
+    result.push(<div key={`line-${i}`} className="leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+      {renderInlineMarkdown(line)}
+    </div>);
+  }
+
+  if (inTable) flushTable();
+
+  return result;
+}
 
 const InternalMailbox: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -480,11 +595,17 @@ const InternalMailbox: React.FC = () => {
                         );
                       })()
                     ) : (
-                      /* 普通消息展示 */
+                      /* 普通消息展示（points_change 使用 Markdown 渲染） */
                       <>
-                        <div className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--text-secondary)' }}>
-                          {selectedMail.content}
-                        </div>
+                        {selectedMail.mail_type === 'points_change' ? (
+                          <div className="text-sm leading-relaxed">
+                            {renderLightMarkdown(selectedMail.content)}
+                          </div>
+                        ) : (
+                          <div className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--text-secondary)' }}>
+                            {selectedMail.content}
+                          </div>
+                        )}
                         <div className="mt-4 pt-3 flex justify-end" style={{ borderTop: '1px solid var(--border-color)' }}>
                           <button
                             onClick={() => deleteMail(selectedMail.id)}

@@ -15,6 +15,9 @@ interface ScriptGeneratorFormProps {
   onLengthChange: (value: string) => void;
   onGenerate: () => void;
   onManualSave: (title: string, content: string) => void;
+  // 智能拆集
+  onSplit?: (rawText: string, minutesPerEpisode: number) => void;
+  splitLoading?: boolean;
   // 新增：生成进度信息
   generationProgress?: {
     step: number;
@@ -44,6 +47,8 @@ const ScriptGeneratorForm: React.FC<ScriptGeneratorFormProps> = ({
   onLengthChange,
   onGenerate,
   onManualSave,
+  onSplit,
+  splitLoading = false,
   generationProgress,
   recapData,
   recapLoading,
@@ -235,6 +240,8 @@ const ScriptGeneratorForm: React.FC<ScriptGeneratorFormProps> = ({
             nextEpisode={nextEpisode}
             loading={loading}
             onSave={onManualSave}
+            onSplit={onSplit}
+            splitLoading={splitLoading}
           />
         )}
       </CardBody>

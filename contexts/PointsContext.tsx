@@ -6,7 +6,7 @@
  */
 
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef, ReactNode } from 'react';
-import { fetchBalance, type BalanceInfo } from '../services/billing';
+import { fetchBalance, type BalanceInfo, type ResourcePack, fetchResourcePacks } from '../services/billing';
 import { getAuthToken } from '../services/auth';
 import { useToast } from './ToastContext';
 
@@ -73,6 +73,8 @@ interface PointsContextType {
   closeRechargeModal: () => void;
   /** 充值弹窗是否打开 */
   isRechargeModalOpen: boolean;
+  /** 资源包列表 */
+  resourcePacks: ResourcePack[];
 }
 
 const PointsContext = createContext<PointsContextType | null>(null);
@@ -109,6 +111,7 @@ export const PointsProvider: React.FC<PointsProviderProps> = ({ children }) => {
   const [periodEnd, setPeriodEnd] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [isRechargeModalOpen, setIsRechargeModalOpen] = useState(false);
+  const [resourcePacks, setResourcePacks] = useState<ResourcePack[]>([]);
 
   const prevBalanceRef = useRef<number | null>(null);
   const expiryWarnedRef = useRef(false);
@@ -149,6 +152,30 @@ export const PointsProvider: React.FC<PointsProviderProps> = ({ children }) => {
             'warn'
           );
         }
+      }
+
+      // 获取资源包列表
+      try {
+        const packsData = await fetchResourcePacks();
+        setResourcePacks(packsData.packs);
+
+        // 资源包到期提醒
+        if (!expiryWarnedRef.current) {
+          for (const pack of packsData.packs) {
+            if (!pack.isActive) continue;
+            const daysLeft = Math.ceil((new Date(pack.periodEnd).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+            if (daysLeft > 0 && daysLeft <= EXPIRY_WARNING_DAYS) {
+              expiryWarnedRef.current = true;
+              showToast(
+                `资源包「${pack.name}」将于 ${daysLeft} 天后月末到期，剩余 ${pack.remainingPoints} 积分将清零`,
+                'warn'
+              );
+              break; // 只提醒一次
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('[PointsContext] 获取资源包列表失败:', err);
       }
     } catch (err) {
       console.error('[PointsContext] 获取余额失败:', err);
@@ -215,6 +242,7 @@ export const PointsProvider: React.FC<PointsProviderProps> = ({ children }) => {
     openRechargeModal,
     closeRechargeModal,
     isRechargeModalOpen,
+    resourcePacks,
   };
 
   return (

@@ -76,7 +76,7 @@ const Projects: React.FC = () => {
     novelChapterLength: '',
     novelTarget: '',
     // AI 输出语言
-    outputLanguage: 'en' as string
+    outputLanguage: 'zh' as string
   });
   const [aiSuggesting, setAiSuggesting] = useState(false);
   const [coverGenerating, setCoverGenerating] = useState(false);
@@ -273,7 +273,7 @@ const Projects: React.FC = () => {
       novelWritingStyle: settings.novelWritingStyle || '',
       novelChapterLength: settings.novelChapterLength || '',
       novelTarget: settings.novelTarget || '',
-      outputLanguage: settings.outputLanguage || 'en'
+      outputLanguage: settings.outputLanguage || 'zh'
     });
     onOpen();
   };

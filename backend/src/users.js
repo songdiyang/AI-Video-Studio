@@ -4,6 +4,7 @@ const { queryOne, execute } = require('./dbHelper');
 const { authMiddleware } = require('./middleware');
 const { listBillingRecords, getBillingStats } = require('./aiBillingService');
 const { uploadBuffer, deleteObject, getPublicUrl, isConfigured } = require('./utils/fileStorage');
+const { getUserResourcePacks } = require('./resourcePackService');
 
 const router = express.Router();
 
@@ -235,6 +236,19 @@ router.get('/stats', authMiddleware, async (req, res) => {
   } catch (error) {
     console.error('[User Stats]', error);
     res.status(500).json({ message: '获取统计数据失败' });
+  }
+});
+
+// 获取资源包列表
+router.get('/resource-packs', authMiddleware, async (req, res) => {
+  const userId = req.user.id;
+
+  try {
+    const data = await getUserResourcePacks(userId, { includeExpired: true });
+    res.json(data);
+  } catch (error) {
+    console.error('[User Resource Packs]', error);
+    res.status(500).json({ message: '获取资源包列表失败' });
   }
 });
 

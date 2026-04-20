@@ -65,7 +65,7 @@ const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ isOpen, onClose, on
     novelWritingStyle: '',
     novelChapterLength: '',
     novelTarget: '',
-    outputLanguage: 'en' as string
+    outputLanguage: 'zh' as string
   });
 
   // 团队
@@ -125,7 +125,7 @@ const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ isOpen, onClose, on
         imageAspectRatio: '', imageResolution: '', videoAspectRatio: '', videoResolution: '',
         videoDuration: '', videoAspect: '', videoStyle: '',
         novelGenre: '', novelWritingStyle: '', novelChapterLength: '', novelTarget: '',
-        outputLanguage: 'en'
+        outputLanguage: 'zh'
       });
       setSelectedTeamId('');
       setCreating(false);

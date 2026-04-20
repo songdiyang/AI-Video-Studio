@@ -5,6 +5,8 @@
 
 import { useState } from 'react';
 import { getAuthToken } from '../../../services/auth';
+import { startWorkflow } from '../../../hooks/useWorkflow';
+import type { SplitEpisode } from '../ScriptSplitPreview';
 
 export interface Script {
   id: number;
@@ -297,6 +299,114 @@ export function useScriptManagement(options: UseScriptManagementOptions = {}) {
     }
   };
 
+  // 智能拆集：调用 script_split 工作流
+  const handleScriptSplit = async (
+    rawText: string,
+    minutesPerEpisode: number,
+    projectId: number,
+    textModel: string
+  ): Promise<SplitEpisode[] | null> => {
+    try {
+      setLoading(true);
+      console.log('[useScriptManagement] 启动智能拆集...', { textLength: rawText.length, minutesPerEpisode });
+
+      const { jobId } = await startWorkflow('script_split', projectId, {
+        rawText,
+        minutesPerEpisode,
+        textModel,
+        projectId
+      });
+
+      // 轮询工作流结果
+      const { getWorkflowStatus } = await import('../../../hooks/useWorkflow');
+      const maxAttempts = 120; // 最多等 2 分钟
+      let attempts = 0;
+
+      while (attempts < maxAttempts) {
+        await new Promise(r => setTimeout(r, 2000));
+        attempts++;
+
+        try {
+          const job = await getWorkflowStatus(jobId);
+          if (job.status === 'completed') {
+            const taskResult = job.tasks?.[0]?.result_data;
+            const episodes = taskResult?.episodes || [];
+            console.log('[useScriptManagement] 拆集完成:', episodes.length, '集');
+            return episodes;
+          } else if (job.status === 'failed' || job.status === 'cancelled') {
+            const errMsg = job.tasks?.[0]?.error_message || '拆集失败';
+            onError?.(errMsg);
+            return null;
+          }
+        } catch (pollErr: any) {
+          console.warn('[useScriptManagement] 轮询拆集结果失败:', pollErr.message);
+        }
+      }
+
+      onError?.('拆集超时，请重试');
+      return null;
+    } catch (error: any) {
+      console.error('[useScriptManagement] 拆集失败:', error);
+      onError?.(error.message || '拆集失败');
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 批量创建多集剧本
+  const handleBatchCreateEpisodes = async (
+    episodes: SplitEpisode[],
+    projectId: number
+  ): Promise<boolean> => {
+    try {
+      setLoading(true);
+      const token = getAuthToken();
+      let successCount = 0;
+
+      for (const episode of episodes) {
+        const res = await fetch('/api/scripts/create', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {})
+          },
+          body: JSON.stringify({
+            projectId,
+            episodeNumber: episode.episodeNumber,
+            title: episode.title,
+            content: episode.content,
+            status: 'completed'
+          })
+        });
+
+        if (res.ok) {
+          successCount++;
+        } else {
+          const data = await res.json().catch(() => ({}));
+          console.error(`[useScriptManagement] 创建第${episode.episodeNumber}集失败:`, data.message);
+        }
+      }
+
+      if (successCount === episodes.length) {
+        onSuccess?.(`成功创建 ${successCount} 集剧本`);
+        return true;
+      } else if (successCount > 0) {
+        onSuccess?.(`已创建 ${successCount}/${episodes.length} 集`);
+        return true;
+      } else {
+        onError?.('创建剧本失败');
+        return false;
+      }
+    } catch (error: any) {
+      console.error('[useScriptManagement] 批量创建失败:', error);
+      onError?.(error.message || '批量创建失败');
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return {
     // 状态
     scripts,
@@ -321,6 +431,8 @@ export function useScriptManagement(options: UseScriptManagementOptions = {}) {
     handleSaveDraft,
     handleDeleteDraft,
     handleDeleteScript,
-    handleCleanOrphans
+    handleCleanOrphans,
+    handleScriptSplit,
+    handleBatchCreateEpisodes
   };
 }

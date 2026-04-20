@@ -543,6 +543,22 @@ module.exports = {
   },
 
   // ================================================================
+  //  剧本拆集
+  // ================================================================
+  rawText: {
+    from: 'rawText',
+    defaultValue: null,
+    description: '用户原始长文本（拆集时不可增删改）',
+    category: 'script_split'
+  },
+  minutesPerEpisode: {
+    from: 'minutesPerEpisode',
+    defaultValue: 3,
+    description: '每集目标分钟数（1/3/5/10）',
+    category: 'script_split'
+  },
+
+  // ================================================================
   //  重新生成控制
   // ================================================================
   regenerateOnly: {

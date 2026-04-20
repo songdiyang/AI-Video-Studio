@@ -212,10 +212,10 @@ ${sceneConstraint}`
   // 对白信息（帮助 AI 理解角色表情和嘴型）
   let dialogueBlock = '';
   if (opts.dialogues && Array.isArray(opts.dialogues) && opts.dialogues.length > 0) {
-    const lines = opts.dialogues.map(d => `${d.character}："${d.line}"`).join('\n');
-    dialogueBlock = `【角色对白】\n${lines}\n（请根据对白内容调整对应角色的面部表情和嘴型状态，说话中的角色嘴巴应微张）`;
+    const lines = opts.dialogues.map(d => `${d.character} says "${d.line}"`).join('\n');
+    dialogueBlock = `【Character Dialogue】\n${lines}\n(IMPORTANT: Speaking characters must have slightly open mouths matching their dialogue. Non-speaking characters must keep their mouths closed. Identify who is speaking by name.)`;
   } else if (dialogue) {
-    dialogueBlock = `【角色对白】"${dialogue}"（请根据对白内容调整角色的面部表情和嘴型状态）`;
+    dialogueBlock = `【Character Dialogue】"${dialogue}" (Speaking character must have slightly open mouth. Non-speaking characters must keep their mouths closed.)`;
   }
 
   // 上一镜头结束状态（首帧必须与此衔接）

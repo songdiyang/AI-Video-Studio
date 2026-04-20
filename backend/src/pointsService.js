@@ -11,6 +11,7 @@
  */
 
 const { queryOne, execute } = require('./dbHelper');
+const { deductFromResourcePacks, syncUserBalance, checkResourcePackBalance } = require('./resourcePackService');
 
 // 积分基础配置（固定）
 const POINT_VALUE_CNY = 0.01;  // 1积分 = ¥0.01（1分钱）— 内部成本转换用
@@ -187,35 +188,22 @@ async function calculatePoints(category, usage, priceConfig, options = {}) {
 }
 
 /**
- * 检查积分是否充足
+ * 检查积分是否充足（基于资源包）
  * 
  * @param {number} userId - 用户ID
  * @param {number} requiredPoints - 需要的积分
  * @returns {Promise<Object>} { sufficient, balance, required }
  */
 async function checkPointsBalance(userId, requiredPoints) {
-  const user = await queryOne('SELECT balance, role FROM users WHERE id = ?', [userId]);
-  const balance = parseInt(user?.balance) || 0;
-  
-  // 管理员跳过检查
-  if (user?.role === 'admin') {
-    return { sufficient: true, balance, required: requiredPoints, isAdmin: true };
-  }
-  
-  return {
-    sufficient: balance >= requiredPoints,
-    balance,
-    required: requiredPoints,
-    isAdmin: false
-  };
+  return checkResourcePackBalance(userId, requiredPoints);
 }
 
 /**
- * 扣除积分
+ * 扣除积分（从资源包中按到期顺序扣减）
  * 
  * @param {number} userId - 用户ID
  * @param {number} points - 扣除积分数
- * @returns {Promise<Object>} { success, balanceAfter }
+ * @returns {Promise<Object>} { success, balanceAfter, deducted }
  */
 async function deductPoints(userId, points) {
   const pointsInt = Math.ceil(points);
@@ -229,27 +217,13 @@ async function deductPoints(userId, points) {
     return { success: true, balanceAfter: user.balance, deducted: 0, isAdmin: true };
   }
   
-  const result = await execute(
-    'UPDATE users SET balance = balance - ? WHERE id = ? AND balance >= ?',
-    [pointsInt, userId, pointsInt]
-  );
-  
-  if (!result?.affectedRows) {
-    const error = new Error('积分不足');
-    error.code = 'INSUFFICIENT_POINTS';
-    error.status = 402;
-    error.required = pointsInt;
-    error.current = user?.balance || 0;
-    throw error;
-  }
-  
-  // 获取扣除后余额
-  const updated = await queryOne('SELECT balance FROM users WHERE id = ?', [userId]);
+  // 从资源包扣减
+  const result = await deductFromResourcePacks(userId, pointsInt);
   
   return {
-    success: true,
-    balanceAfter: updated?.balance || 0,
-    deducted: pointsInt
+    success: result.success,
+    balanceAfter: result.balanceAfter,
+    deducted: result.deducted
   };
 }
 
@@ -289,5 +263,6 @@ module.exports = {
   calculatePoints,
   checkPointsBalance,
   deductPoints,
-  formatPointsDisplay
+  formatPointsDisplay,
+  syncUserBalance
 };

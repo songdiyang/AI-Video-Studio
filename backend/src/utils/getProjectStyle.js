@@ -177,7 +177,7 @@ const OUTPUT_LANGUAGE_PRESETS = {
  * @returns {Promise<{ languageCode: string, languageName: string, promptInstruction: string }>}
  */
 async function getOutputLanguage(projectId) {
-  const defaultLang = { languageCode: 'en', languageName: 'English', promptInstruction: OUTPUT_LANGUAGE_PRESETS['en'].promptInstruction };
+  const defaultLang = { languageCode: 'zh', languageName: '中文', promptInstruction: OUTPUT_LANGUAGE_PRESETS['zh'].promptInstruction };
   if (!projectId) return defaultLang;
   try {
     const project = await queryOne('SELECT settings_json FROM projects WHERE id = ?', [projectId]);
@@ -187,7 +187,7 @@ async function getOutputLanguage(projectId) {
       ? JSON.parse(project.settings_json)
       : project.settings_json;
 
-    const langCode = settings.outputLanguage || 'en';
+    const langCode = settings.outputLanguage || 'zh';
     const preset = OUTPUT_LANGUAGE_PRESETS[langCode];
     if (preset) {
       return { languageCode: langCode, languageName: preset.name, promptInstruction: preset.promptInstruction };

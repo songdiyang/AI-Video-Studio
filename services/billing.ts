@@ -25,6 +25,28 @@ export interface BalanceInfo {
   periodEnd: string | null;
 }
 
+export interface ResourcePack {
+  id: number;
+  name: string;
+  totalPoints: number;
+  remainingPoints: number;
+  sourceType: 'purchase' | 'gift' | 'subscription' | 'admin';
+  sourceId: number | null;
+  isGift: boolean;
+  periodStart: string;
+  periodEnd: string;
+  periodMonth: string;
+  status: 'active' | 'expired' | 'used_up';
+  isActive: boolean;
+  createdAt: string;
+}
+
+export interface ResourcePacksResponse {
+  packs: ResourcePack[];
+  totalBalance: number;
+  activeBalance: number;
+}
+
 function authHeaders(): Record<string, string> {
   const token = getAuthToken();
   return token ? { Authorization: `Bearer ${token}` } : {};
@@ -73,4 +95,19 @@ export async function fetchBalance(): Promise<BalanceInfo> {
   }
 
   return (await res.json()) as BalanceInfo;
+}
+
+export async function fetchResourcePacks(): Promise<ResourcePacksResponse> {
+  const res = await fetch('/api/users/resource-packs', {
+    headers: {
+      ...authHeaders(),
+    },
+  });
+
+  if (!res.ok) {
+    const data = await res.json().catch(() => null);
+    throw new Error(data?.message || 'Failed to load resource packs');
+  }
+
+  return (await res.json()) as ResourcePacksResponse;
 }

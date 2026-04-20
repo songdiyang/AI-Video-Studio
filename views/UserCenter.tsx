@@ -1,11 +1,12 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { Card, CardBody, Button, Chip, Table, TableHeader, TableColumn, TableBody, TableRow, TableCell, Progress, Tooltip, Input, Textarea, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter } from '@heroui/react';
-import { Wallet, TrendingUp, FolderOpen, FileText, Receipt, AlertTriangle, Sparkles, Clock, Zap, ChevronLeft, ChevronRight, User, Calendar, Activity, RefreshCw, ExternalLink, CreditCard, ArrowUpRight, XCircle, Camera, Pencil, Save, X, Image, Video, Users } from 'lucide-react';
+import { Wallet, TrendingUp, FolderOpen, FileText, Receipt, AlertTriangle, Sparkles, Clock, Zap, ChevronLeft, ChevronRight, User, Calendar, Activity, RefreshCw, ExternalLink, CreditCard, ArrowUpRight, XCircle, Camera, Pencil, Save, X, Image, Video, Users, Package, Gift } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { getAuthToken, logout } from '../services/auth';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useConfirm } from '../contexts/ConfirmContext';
 import { useToast } from '../contexts/ToastContext';
+import { usePoints } from '../contexts/PointsContext';
 import { fetchCurrentSubscription, cancelSubscription, type CurrentSubscriptionResponse } from '../services/subscriptions';
 import useWebSocket, { type BalanceUpdateMessage } from '../hooks/useWebSocket';
 
@@ -84,6 +85,7 @@ const UserCenter: React.FC = () => {
   const { t } = useLanguage();
   const { confirm } = useConfirm();
   const { showToast } = useToast();
+  const { resourcePacks } = usePoints();
 
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [stats, setStats] = useState<UserStats | null>(null);
@@ -790,6 +792,123 @@ const UserCenter: React.FC = () => {
                 >
                   {t.pricing.basic.cta}
                 </Button>
+              </div>
+            )}
+          </CardBody>
+        </Card>
+
+        {/* 我的资源包 */}
+        <Card className="bg-(--bg-card) border border-(--border-color) shadow-sm">
+          <CardBody className="p-6">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="p-2.5 bg-amber-500/10 rounded-xl">
+                <Package className="w-5 h-5 text-amber-500" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-(--text-primary)">我的资源包</h3>
+                <p className="text-xs text-(--text-muted)">积分每月清零，每个资源包有效期1个自然月</p>
+              </div>
+              <Chip size="sm" variant="flat" className="bg-amber-500/10 text-amber-600 ml-auto">
+                {resourcePacks.filter(p => p.isActive).length} 个有效
+              </Chip>
+            </div>
+
+            {resourcePacks.length === 0 ? (
+              <div className="text-center py-8">
+                <div className="w-16 h-16 mx-auto mb-4 bg-(--bg-secondary) rounded-full flex items-center justify-center">
+                  <Package className="w-8 h-8 text-(--text-muted)" />
+                </div>
+                <p className="text-(--text-muted) mb-4">暂无资源包</p>
+                <Button
+                  className="bg-linear-to-r from-amber-500 to-orange-500 text-white font-semibold"
+                  startContent={<Zap className="w-4 h-4" />}
+                  onPress={() => navigate('/pricing')}
+                >
+                  获取资源包
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {resourcePacks.map(pack => {
+                  const usedPercent = pack.totalPoints > 0
+                    ? Math.round(((pack.totalPoints - pack.remainingPoints) / pack.totalPoints) * 100)
+                    : 0;
+                  const periodEnd = new Date(pack.periodEnd);
+                  const now = new Date();
+                  const daysLeft = Math.ceil((periodEnd.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+                  const isExpiringSoon = pack.isActive && daysLeft > 0 && daysLeft <= 7;
+
+                  return (
+                    <div
+                      key={pack.id}
+                      className={`p-4 rounded-xl border transition-colors ${
+                        pack.isActive
+                          ? 'bg-(--bg-secondary) border-(--border-color)'
+                          : 'bg-(--bg-secondary)/50 border-(--border-color)/50 opacity-50'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-semibold text-(--text-primary)">
+                            {pack.name}
+                          </span>
+                          {pack.isGift && (
+                            <Chip
+                              size="sm"
+                              variant="flat"
+                              className="bg-rose-500/10 text-rose-500 text-[10px] h-5"
+                              startContent={<Gift className="w-3 h-3" />}
+                            >
+                              赠送
+                            </Chip>
+                          )}
+                          {!pack.isActive && (
+                            <Chip
+                              size="sm"
+                              variant="flat"
+                              className="bg-gray-500/10 text-gray-500 text-[10px] h-5"
+                            >
+                              {pack.status === 'expired' ? '已过期' : '已用完'}
+                            </Chip>
+                          )}
+                        </div>
+                        <div className="text-right">
+                          <span className="text-sm font-mono font-semibold text-emerald-500">
+                            {pack.remainingPoints.toLocaleString()}
+                          </span>
+                          <span className="text-xs text-(--text-muted)"> / {pack.totalPoints.toLocaleString()} 积分</span>
+                        </div>
+                      </div>
+
+                      {/* 进度条 */}
+                      <Progress
+                        value={usedPercent}
+                        className="mb-2"
+                        size="sm"
+                        color={pack.isActive ? (isExpiringSoon ? 'warning' : 'primary') : 'default'}
+                      />
+
+                      {/* 有效期 - 显示月份区间 */}
+                      <div className="flex items-center justify-between text-xs text-(--text-muted)">
+                        <span className="flex items-center gap-1">
+                          <Calendar className="w-3 h-3" />
+                          {pack.periodMonth || (() => {
+                            const ps = new Date(pack.periodStart);
+                            const pe = new Date(pack.periodEnd);
+                            const sm = `${ps.getFullYear()}年${ps.getMonth() + 1}月`;
+                            const em = `${pe.getFullYear()}年${pe.getMonth() + 1}月`;
+                            return sm === em ? sm : `${sm} ~ ${em}`;
+                          })()}
+                        </span>
+                        {pack.isActive && (
+                          <span className={isExpiringSoon ? 'text-amber-500 font-medium' : ''}>
+                            {daysLeft > 0 ? `${daysLeft}天后到期` : '今日到期'}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </CardBody>
