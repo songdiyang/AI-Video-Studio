@@ -34,7 +34,9 @@ const handleBatchSketchFrameGeneration = require('./StoryBoard/batchSketchFrameG
 const { handlePropPromptGeneration, handlePropImageGeneration } = require('./StoryBoard/propGeneration');
 const handleConceptBreakdownGeneration = require('./StoryBoard/conceptBreakdownGeneration');
 const handleCameraFrameGeneration = require('./StoryBoard/cameraFrameGeneration');
+const handleMagicPaintGeneration = require('./StoryBoard/magicPaintGeneration');
 const handleBatchPromptOptimization = require('./StoryBoard/batchPromptOptimization');
+const handleSinglePromptOptimization = require('./StoryBoard/singlePromptOptimization');
 
 module.exports = {
   handleScriptGeneration,
@@ -69,5 +71,7 @@ module.exports = {
   handlePropImageGeneration,
   handleConceptBreakdownGeneration,
   handleCameraFrameGeneration,
-  handleBatchPromptOptimization
+  handleMagicPaintGeneration,
+  handleBatchPromptOptimization,
+  handleSinglePromptOptimization
 };

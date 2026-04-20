@@ -10,14 +10,14 @@ const { linkCharactersForStoryboard, linkScenesForStoryboard } = require('../../
 async function updateContent(req, res) {
   const userId = req.user.id;
   const storyboardId = Number(req.params.storyboardId);
-  const { prompt_template, spatial_description, dialogues, voiceover, characters, location, characterIds, sceneId } = req.body || {};
+  const { prompt_template, spatial_description, dialogues, voiceover, characters, location, characterIds, sceneId, negative_prompt, duration } = req.body || {};
 
   if (!storyboardId) {
     return res.status(400).json({ message: 'Invalid storyboard id' });
   }
 
   // 至少需要传递一个字段
-  if (prompt_template === undefined && spatial_description === undefined && dialogues === undefined && voiceover === undefined && characters === undefined && location === undefined) {
+  if (prompt_template === undefined && spatial_description === undefined && dialogues === undefined && voiceover === undefined && characters === undefined && location === undefined && negative_prompt === undefined && duration === undefined) {
     return res.status(400).json({ message: '需要提供至少一个可更新字段' });
   }
 
@@ -62,6 +62,11 @@ async function updateContent(req, res) {
       params.push(prompt_template);
     }
 
+    if (negative_prompt !== undefined) {
+      updates.push('negative_prompt = ?');
+      params.push(negative_prompt || null);
+    }
+
     if (spatial_description !== undefined) {
       updates.push('spatial_description = ?');
       // 序列化为 JSON 字符串
@@ -71,8 +76,8 @@ async function updateContent(req, res) {
       params.push(spatialDescJson);
     }
 
-    // 处理 dialogues / voiceover / characters / location：更新到 variables_json 中
-    if (dialogues !== undefined || voiceover !== undefined || characters !== undefined || location !== undefined) {
+    // 处理 dialogues / voiceover / characters / location / duration：更新到 variables_json 中
+    if (dialogues !== undefined || voiceover !== undefined || characters !== undefined || location !== undefined || duration !== undefined) {
       let vars = {};
       try {
         vars = JSON.parse(storyboard.variables_json || '{}');
@@ -100,6 +105,10 @@ async function updateContent(req, res) {
 
       if (location !== undefined) {
         vars.location = typeof location === 'string' ? location.trim() : '';
+      }
+
+      if (duration !== undefined) {
+        vars.duration = typeof duration === 'number' ? duration : 3;
       }
 
       updates.push('variables_json = ?');

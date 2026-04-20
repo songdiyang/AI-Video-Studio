@@ -9,6 +9,7 @@ import { Save, Trash2, Wand2, Type, Camera, Users, MapPin, Zap, History, RotateC
 import { useToast } from '../../../contexts/ToastContext';
 import { BLOCK_OPTIONS } from './utils/blockRegistry';
 import { getAuthToken } from '../../../services/auth';
+import { startWorkflow, getWorkflowStatus, WorkflowJob } from '../../../hooks/useWorkflow';
 
 interface PromptVersion {
   id: number;
@@ -40,6 +41,8 @@ interface DialogEditorProps {
   onUpdateDialogues?: (dialogues: DialogueLine[]) => Promise<boolean>;
   voiceover?: string;
   onUpdateVoiceover?: (voiceover: string) => Promise<boolean>;
+  negativePrompt?: string;
+  onUpdateNegativePrompt?: (negativePrompt: string) => Promise<boolean>;
 }
 
 interface Character {
@@ -172,6 +175,8 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
   onUpdateDialogues,
   voiceover: initialVoiceover = '',
   onUpdateVoiceover,
+  negativePrompt: initialNegativePrompt = '',
+  onUpdateNegativePrompt,
 }) => {
   const { showToast } = useToast();
   const editorRef = useRef<HTMLDivElement>(null);
@@ -200,6 +205,8 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
   // AI 优化状态
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [preOptimizeText, setPreOptimizeText] = useState<string | null>(null);
+  const optimizeJobIdRef = useRef<string | null>(null);
+  const optimizePollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // 台词编辑状态
   const [editingDialogues, setEditingDialogues] = useState<DialogueLine[]>([]);
@@ -210,6 +217,11 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
   const [editingVoiceover, setEditingVoiceover] = useState('');
   const [isVoiceoverDirty, setIsVoiceoverDirty] = useState(false);
   const [isSavingVoiceover, setIsSavingVoiceover] = useState(false);
+
+  // 反向提示词编辑状态
+  const [editingNegativePrompt, setEditingNegativePrompt] = useState(initialNegativePrompt);
+  const [isNegativePromptDirty, setIsNegativePromptDirty] = useState(false);
+  const [isSavingNegativePrompt, setIsSavingNegativePrompt] = useState(false);
 
   // 获取当前分镜的角色名列表
   const getCharacterNames = (): string[] => {
@@ -241,43 +253,109 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
     setIsVoiceoverDirty(false);
   }, [storyboardId]);
 
-  // AI 优化分镜描述
+  // 初始化反向提示词编辑状态
+  useEffect(() => {
+    setEditingNegativePrompt(initialNegativePrompt || '');
+    setIsNegativePromptDirty(false);
+  }, [storyboardId, initialNegativePrompt]);
+
+  // 切换分镜时清理 AI 优化轮询
+  useEffect(() => {
+    return () => {
+      if (optimizePollTimerRef.current) {
+        clearTimeout(optimizePollTimerRef.current);
+        optimizePollTimerRef.current = null;
+      }
+      optimizeJobIdRef.current = null;
+      setIsOptimizing(false);
+    };
+  }, [storyboardId]);
+
+  // AI 优化分镜描述（工作流模式 - 挂载任务球）
   const handleOptimize = async () => {
     const text = promptText.trim();
     if (!text || isOptimizing) return;
 
     setIsOptimizing(true);
     try {
-      const token = getAuthToken();
-      const res = await fetch(`/api/storyboards/${storyboardId}/optimize-prompt`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        },
-        body: JSON.stringify({ prompt: text })
+      if (!projectId) {
+        showToast('缺少项目信息', 'warning');
+        return;
+      }
+
+      // 启动工作流任务
+      const { jobId } = await startWorkflow('single_prompt_optimization', projectId, {
+        storyboardId,
+        prompt: text
       });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.message || '优化失败');
-      }
-      const data = await res.json();
-      if (data.optimized) {
-        // 保存原始文本用于撤回
-        setPreOptimizeText(text);
-        // 更新编辑器内容
-        setPromptText(data.optimized);
-        if (editorRef.current) {
-          editorRef.current.innerHTML = refTextToHtml(data.optimized, referenceImages);
-          lastRenderedRef.current = data.optimized;
+
+      optimizeJobIdRef.current = jobId;
+      console.log(`[DialogEditor] AI优化任务已启动, jobId=${jobId}`);
+
+      // 开始轮询工作流状态
+      const pollOptimizeStatus = async () => {
+        if (!optimizeJobIdRef.current) return;
+        try {
+          const job = await getWorkflowStatus(optimizeJobIdRef.current);
+
+          if (job.status === 'completed') {
+            // 从工作流结果中提取优化数据
+            const lastTask = job.tasks?.[job.tasks.length - 1];
+            const resultData = lastTask?.result_data;
+            const optimized = resultData?.optimized || (typeof resultData === 'string' ? resultData : '');
+            const negativePrompt = resultData?.negativePrompt || '';
+
+            if (optimized) {
+              // 保存原始文本用于撤回
+              setPreOptimizeText(text);
+              // 更新编辑器内容
+              setPromptText(optimized);
+              if (editorRef.current) {
+                editorRef.current.innerHTML = refTextToHtml(optimized, referenceImages);
+                lastRenderedRef.current = optimized;
+              }
+              setIsDirty(true);
+              onChange?.(optimized);
+              // AI 优化同时生成反向提示词，自动填充
+              if (negativePrompt) {
+                setEditingNegativePrompt(negativePrompt);
+                setIsNegativePromptDirty(true);
+              }
+              showToast('AI 优化完成', 'success');
+            } else {
+              showToast('AI 模型返回内容为空', 'error');
+            }
+            // 清理
+            optimizeJobIdRef.current = null;
+            setIsOptimizing(false);
+            return;
+          } else if (job.status === 'failed') {
+            const failedTask = job.tasks?.find(t => t.status === 'failed');
+            const errorMsg = job.error_message || failedTask?.error_message || '优化失败';
+            showToast(errorMsg, 'error');
+            optimizeJobIdRef.current = null;
+            setIsOptimizing(false);
+            return;
+          } else if (job.status === 'cancelled') {
+            showToast('优化任务已取消', 'info');
+            optimizeJobIdRef.current = null;
+            setIsOptimizing(false);
+            return;
+          }
+
+          // 继续轮询
+          optimizePollTimerRef.current = setTimeout(pollOptimizeStatus, 1000);
+        } catch (err: any) {
+          console.error('[DialogEditor] 轮询优化任务状态失败:', err);
+          // 继续轮询（网络错误时重试）
+          optimizePollTimerRef.current = setTimeout(pollOptimizeStatus, 2000);
         }
-        setIsDirty(true);
-        onChange?.(data.optimized);
-        showToast('AI 优化完成', 'success');
-      }
+      };
+
+      // 启动轮询
+      pollOptimizeStatus();
     } catch (error: any) {
       showToast(error.message || 'AI 优化失败', 'error');
-    } finally {
       setIsOptimizing(false);
     }
   };
@@ -293,6 +371,7 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
     setIsDirty(true);
     onChange?.(preOptimizeText);
     setPreOptimizeText(null);
+    // 撤回优化时不自动清除反向提示词，用户可手动清除
     showToast('已撤回优化', 'info');
   };
 
@@ -1382,6 +1461,64 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
                 {isOptimizing ? '优化中...' : 'AI 优化'}
               </button>
             )}
+          </div>
+
+          {/* 反向提示词区域 */}
+          <div className="mt-3 border-t border-[var(--border-color)] pt-3">
+            <div className="flex items-center justify-between mb-1.5">
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs font-medium text-[var(--text-secondary)]">反向提示词</span>
+                <span className="text-[10px] text-[var(--text-muted)]">（排除不希望出现的内容）</span>
+                {isNegativePromptDirty && (
+                  <span className="text-[10px] text-amber-500">未保存</span>
+                )}
+              </div>
+              <div className="flex items-center gap-1.5">
+                {editingNegativePrompt && (
+                  <button
+                    onClick={() => {
+                      setEditingNegativePrompt('');
+                      setIsNegativePromptDirty(true);
+                    }}
+                    className="text-[10px] text-[var(--text-muted)] hover:text-red-500 transition-colors"
+                    title="清空反向提示词"
+                  >
+                    清空
+                  </button>
+                )}
+                {isNegativePromptDirty && onUpdateNegativePrompt && (
+                  <button
+                    onClick={async () => {
+                      if (!onUpdateNegativePrompt) return;
+                      setIsSavingNegativePrompt(true);
+                      try {
+                        await onUpdateNegativePrompt(editingNegativePrompt);
+                        setIsNegativePromptDirty(false);
+                      } catch (err) {
+                        // error handled by parent
+                      } finally {
+                        setIsSavingNegativePrompt(false);
+                      }
+                    }}
+                    disabled={isSavingNegativePrompt}
+                    className="flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] bg-blue-500/10 text-blue-600 hover:bg-blue-500/20 transition-colors disabled:opacity-40"
+                  >
+                    {isSavingNegativePrompt ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <Save className="w-2.5 h-2.5" />}
+                    保存
+                  </button>
+                )}
+              </div>
+            </div>
+            <textarea
+              value={editingNegativePrompt}
+              onChange={(e) => {
+                setEditingNegativePrompt(e.target.value);
+                setIsNegativePromptDirty(true);
+              }}
+              placeholder="描述不希望出现在画面中的内容，如：low quality, blurry, extra limbs, watermark..."
+              rows={2}
+              className="w-full text-xs px-2 py-1.5 rounded-lg bg-[var(--bg-input)] border border-[var(--border-color)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)] resize-none leading-relaxed"
+            />
           </div>
         </div>
       </div>

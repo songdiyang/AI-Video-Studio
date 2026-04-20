@@ -497,7 +497,7 @@ module.exports = {
   },
 
   // ================================================================
-  //  视角调整（Camera Control）
+  //  魔术空间-视角（Camera Control）
   // ================================================================
   compositeImageUrl: {
     from: 'compositeImageUrl',
@@ -540,6 +540,22 @@ module.exports = {
     defaultValue: 'expand',
     description: '生成模式（expand=扩图，focus=聚焦）',
     category: 'camera'
+  },
+
+  // ================================================================
+  //  魔术空间涂改（Magic Paint）
+  // ================================================================
+  maskImageUrl: {
+    from: 'maskImageUrl',
+    defaultValue: null,
+    description: '黑白掩膜图URL（白色=需修改区域，黑色=保留区域）',
+    category: 'magic_paint'
+  },
+  colorInstructions: {
+    from: 'colorInstructions',
+    defaultValue: [],
+    description: '颜色指令数组（每个元素含color/label/colorName）',
+    category: 'magic_paint'
   },
 
   // ================================================================

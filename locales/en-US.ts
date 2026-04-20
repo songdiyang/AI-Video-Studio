@@ -226,6 +226,11 @@ const enUS: Translations = {
     usernameMinLength: 'Username must be at least 3 characters',
     passwordMinLength: 'Password must be at least 6 characters',
     registrationClosed: 'Registration is closed, please contact the administrator',
+    emailPlaceholder: 'Email',
+    emailRequired: 'Please enter your email address',
+    emailFormatRequired: 'Please use your email address to login',
+    emailFormatInvalid: 'Invalid email format. Please check for extra spaces or non-English punctuation',
+    cjkPunctuationWarning: 'Non-English punctuation detected, will be auto-corrected on submit: ',
   },
   // Projects
   projects: {

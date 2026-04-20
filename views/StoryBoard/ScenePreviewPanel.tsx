@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Button, Textarea, Chip } from '@heroui/react';
-import { ImageIcon, Video, Film, Camera, Users, MapPin, Zap, X, Trash2, ZoomIn, ZoomOut, RotateCw, Maximize2, Blocks, ChevronDown, ChevronUp, History, Loader2, Pencil, Check, Plus, Search, Compass } from 'lucide-react';
+import { ImageIcon, Video, Film, Camera, Users, MapPin, Zap, X, Trash2, ZoomIn, ZoomOut, RotateCw, Maximize2, Blocks, ChevronDown, ChevronUp, History, Loader2, Pencil, Check, Plus, Search, Sparkles, Clock } from 'lucide-react';
 import { StoryboardScene, DialogueLine } from './useSceneManager';
 import { TaskState } from '../../hooks/useTaskRunner';
-import CameraControlPanel, { CameraGenerateParams } from './CameraControl';
+import MagicSpacePanel, { CameraGenerateParams, PaintGenerateParams } from './MagicSpace';
 import { getAuthToken } from '../../services/auth';
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
@@ -208,6 +208,131 @@ const SceneDropdownSelector: React.FC<{
   );
 };
 
+// 分镜时长选择器 - 扩展范围，支持用户自由选择
+const DURATION_OPTIONS = [1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 20, 25, 30, 45, 60];
+
+const DurationSelector: React.FC<{
+  duration: number;
+  onSave: (duration: number) => void;
+}> = ({ duration, onSave }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [customValue, setCustomValue] = useState('');
+  const [isCustomMode, setIsCustomMode] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const customInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setIsOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (isOpen && isCustomMode) {
+      customInputRef.current?.focus();
+    }
+  }, [isOpen, isCustomMode]);
+
+  const selectDuration = (val: number) => {
+    onSave(val);
+    setIsOpen(false);
+    setIsCustomMode(false);
+    setCustomValue('');
+  };
+
+  const handleCustomConfirm = () => {
+    const val = parseFloat(customValue);
+    if (val > 0 && val <= 300) {
+      onSave(val);
+      setIsOpen(false);
+      setIsCustomMode(false);
+      setCustomValue('');
+    }
+  };
+
+  // 判断当前 duration 是否在预设选项中
+  const isPresetValue = DURATION_OPTIONS.includes(duration);
+
+  return (
+    <div ref={containerRef} className="relative flex items-center gap-1">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="flex items-center gap-1 text-[var(--text-muted)] cursor-pointer hover:text-[var(--accent)] transition-colors text-xs group"
+        title="点击选择时长"
+      >
+        <Clock className="w-3 h-3" />
+        <span className={!isPresetValue && duration ? 'text-[var(--accent)] font-medium' : ''}>{duration || 3}s</span>
+        <ChevronDown className="w-2.5 h-2.5 opacity-60 group-hover:opacity-100 transition-opacity" />
+      </button>
+
+      {isOpen && (
+        <div className="absolute top-full left-0 mt-1 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg shadow-xl z-50 py-1 min-w-[80px] max-h-[240px] overflow-y-auto">
+          {DURATION_OPTIONS.map(val => (
+            <button
+              key={val}
+              onClick={() => selectDuration(val)}
+              className={`w-full px-3 py-1.5 text-left text-xs transition-colors ${
+                duration === val
+                  ? 'text-[var(--accent)] bg-[var(--accent)]/10 font-medium'
+                  : 'text-[var(--text-secondary)] hover:bg-[var(--bg-card-hover)] hover:text-[var(--text-primary)]'
+              }`}
+            >
+              {val}s
+            </button>
+          ))}
+          {/* 自定义输入 */}
+          <div className="border-t border-[var(--border-color)] mt-1 pt-1 px-2">
+            {isCustomMode ? (
+              <div className="flex items-center gap-1">
+                <input
+                  ref={customInputRef}
+                  type="number"
+                  min="0.5"
+                  max="300"
+                  step="0.5"
+                  value={customValue}
+                  onChange={(e) => setCustomValue(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleCustomConfirm(); if (e.key === 'Escape') { setIsCustomMode(false); setCustomValue(''); } }}
+                  placeholder="秒数"
+                  className="w-16 px-1.5 py-1 text-xs bg-[var(--bg-input)] border border-[var(--border-color)] rounded text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
+                />
+                <button
+                  onClick={handleCustomConfirm}
+                  className="px-1.5 py-1 text-xs text-[var(--accent)] hover:bg-[var(--accent)]/10 rounded transition-colors"
+                  title="确认"
+                >
+                  <Check className="w-3 h-3" />
+                </button>
+                <button
+                  onClick={() => { setIsCustomMode(false); setCustomValue(''); }}
+                  className="px-1.5 py-1 text-xs text-[var(--text-muted)] hover:bg-[var(--bg-card-hover)] rounded transition-colors"
+                  title="取消"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => { setIsCustomMode(true); setCustomValue(String(duration || '')); }}
+                className={`w-full py-1.5 text-left text-xs transition-colors ${
+                  !isPresetValue && duration
+                    ? 'text-[var(--accent)] bg-[var(--accent)]/10 font-medium'
+                    : 'text-[var(--text-muted)] hover:bg-[var(--bg-card-hover)] hover:text-[var(--text-primary)]'
+                }`}
+              >
+                {!isPresetValue && duration ? `${duration}s (自定义)` : '自定义时长...'}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 interface ScenePreviewPanelProps {
   scene: StoryboardScene | null;
   sceneIndex: number;
@@ -222,7 +347,9 @@ interface ScenePreviewPanelProps {
   onGenerateImage: (id: number, prompt: string, regenerateTarget?: 'first' | 'last' | 'both', forceRegenerate?: boolean) => Promise<{ success: boolean; error?: string }>;
   onGenerateVideo: (id: number) => Promise<{ success: boolean; error?: string }>;
   onGenerateWithCamera?: (id: number, cameraParams: CameraGenerateParams) => Promise<{ success: boolean; error?: string }>;
+  onGenerateWithPaint?: (id: number, paintParams: PaintGenerateParams) => Promise<{ success: boolean; error?: string }>;
   onUpdateScene?: (updates: Partial<StoryboardScene>) => void;
+  onUpdateDuration?: (duration: number) => Promise<boolean>;
   imageTask?: TaskState;
   videoTask?: TaskState;
 }
@@ -241,14 +368,16 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
   onGenerateImage,
   onGenerateVideo,
   onGenerateWithCamera,
+  onGenerateWithPaint,
   onUpdateScene,
+  onUpdateDuration,
   imageTask,
   videoTask
 }) => {
   const [showStartFrame, setShowStartFrame] = useState(true);
   const [isDirectorSpaceExpanded, setIsDirectorSpaceExpanded] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
-  const [showCameraControl, setShowCameraControl] = useState(false);
+  const [showMagicSpace, setShowMagicSpace] = useState(false);
   // 历史版本预览状态：临时存储预览的帧 URL，不永久修改场景数据
   const [previewFrameUrl, setPreviewFrameUrl] = useState<string | null>(null);
   const [previewFrameType, setPreviewFrameType] = useState<'first' | 'last' | null>(null);
@@ -570,20 +699,28 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
 
   return (
     <div className="h-full flex flex-col bg-[var(--bg-app)]">
-      {/* 视角调整模式 - 全覆盖 */}
-      {showCameraControl && currentFrame && onGenerateWithCamera ? (
-        <CameraControlPanel
+      {/* 魔术空间 - 全覆盖 */}
+      {showMagicSpace && currentFrame && onGenerateWithCamera ? (
+        <MagicSpacePanel
           sourceImageUrl={bustCache(currentFrame) || currentFrame}
           aspectRatio={scene.hasAction ? '16:9' : '16:9'}
-          onGenerate={async (params) => {
+          onGenerateWithCamera={async (params) => {
             const result = await onGenerateWithCamera(scene.id, params);
             if (result.success) {
-              setShowCameraControl(false);
+              setShowMagicSpace(false);
             } else {
               showToast(result.error || '视角生成失败', 'error');
             }
           }}
-          onCancel={() => setShowCameraControl(false)}
+          onGenerateWithPaint={async (params) => {
+            const result = await onGenerateWithPaint(scene.id, params);
+            if (result.success) {
+              setShowMagicSpace(false);
+            } else {
+              showToast(result.error || '涂改生成失败', 'error');
+            }
+          }}
+          onCancel={() => setShowMagicSpace(false)}
           isGenerating={isGeneratingImage}
         />
       ) : (
@@ -671,15 +808,15 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                 {/* 视角调整按钮 */}
                 {onGenerateWithCamera && (
                   <button
-                    onClick={() => setShowCameraControl(true)}
+                    onClick={() => setShowMagicSpace(true)}
                     disabled={isGenerating}
                     className={`absolute top-2 left-28 p-2 rounded-lg bg-black/50 text-white/80 transition-colors flex items-center gap-1.5 ${
                       isGenerating ? 'opacity-40 cursor-not-allowed' : 'hover:bg-purple-500/70 hover:text-white'
                     }`}
-                    title="视角调整 - 旋转/缩放/扩图"
+                    title="魔术空间 - 涂改/视角调整"
                   >
-                    <Compass className="w-4 h-4" />
-                    <span className="text-xs">视角调整</span>
+                    <Sparkles className="w-4 h-4" />
+                    <span className="text-xs">魔术空间</span>
                   </button>
                 )}
                 {/* 放大按钮提示 */}
@@ -894,12 +1031,13 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                 onUpdateCharactersAndLocation?.(scene.characters || [], loc, charIds, newSceneId);
               }}
             />
-            {scene.duration && (
-              <div className="flex items-center gap-1 text-[var(--text-muted)]">
-                <Video className="w-3 h-3" />
-                <span>{scene.duration}s</span>
-              </div>
-            )}
+            <DurationSelector
+              duration={scene.duration || 3}
+              onSave={(val) => {
+                onUpdateScene?.({ duration: val });
+                onUpdateDuration?.(val);
+              }}
+            />
           </div>
         </div>
 
@@ -943,11 +1081,11 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
           {/* 可折叠内容区 */}
           <div
             className={`overflow-hidden transition-all duration-300 ease-in-out ${
-              isDirectorSpaceExpanded ? 'max-h-[600px] opacity-100' : 'max-h-0 opacity-0'
+              isDirectorSpaceExpanded ? 'max-h-[660px] opacity-100' : 'max-h-0 opacity-0'
             }`}
           >
             <div className="px-4 pb-3">
-              <div className="h-[520px]">
+              <div className="h-[580px]">
                 <BlockEditor
                   storyboardId={scene.id}
                   projectId={projectId || undefined}
@@ -963,6 +1101,20 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                   onUpdateDialogues={onUpdateDialogues}
                   voiceover={scene.voiceover}
                   onUpdateVoiceover={onUpdateVoiceover}
+                  negativePrompt={scene.negativePrompt}
+                  onUpdateNegativePrompt={async (negativePrompt: string) => {
+                    const token = getAuthToken();
+                    const res = await fetch(`/api/storyboards/${scene.id}/content`, {
+                      method: 'PATCH',
+                      headers: {
+                        'Content-Type': 'application/json',
+                        ...(token ? { Authorization: `Bearer ${token}` } : {})
+                      },
+                      body: JSON.stringify({ negative_prompt: negativePrompt })
+                    });
+                    if (!res.ok) throw new Error('保存反向提示词失败');
+                    return true;
+                  }}
                   onChange={(state: BlockEditorState) => {
                     // 同步编辑器当前文本到组件状态
                     if (state.generatedPrompt !== undefined) {

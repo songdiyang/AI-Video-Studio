@@ -1,11 +1,42 @@
 import React, { useState, FormEvent, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Card, CardBody, Button, Input } from '@heroui/react';
-import { User, Lock, ArrowRight, KeyRound, Maximize2, Minimize2 } from 'lucide-react';
+import { User, Lock, ArrowRight, KeyRound, Maximize2, Minimize2, Mail, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { login, register, loginWithAdminAccess, getLoginRequirements, getRegistrationStatus } from '../services/auth';
 import { useToast } from '../contexts/ToastContext';
 import { useLanguage } from '../contexts/LanguageContext';
+
+// 中文标点 → 英文标点 映射表（常见混淆）
+const CJK_PUNCTUATION_MAP: Record<string, string> = {
+  '。': '.',   // 中文句号
+  '，': ',',   // 中文逗号
+  '；': ';',   // 中文分号
+  '：': ':',   // 中文冒号
+  '！': '!',   // 中文感叹号
+  '？': '?',   // 中文问号
+  '（': '(',   // 中文左括号
+  '）': ')',   // 中文右括号
+  '＠': '@',   // 全角＠
+  '＿': '_',   // 全角下划线
+  '－': '-',   // 全角连字符
+};
+
+/**
+ * 检测并纠正邮箱中的中文/全角标点
+ * @returns { corrected: string, hasCJK: boolean, details: string[] }
+ */
+function sanitizeEmailCJK(input: string): { corrected: string; hasCJK: boolean; details: string[] } {
+  const details: string[] = [];
+  let corrected = input;
+  for (const [cjk, ascii] of Object.entries(CJK_PUNCTUATION_MAP)) {
+    if (corrected.includes(cjk)) {
+      details.push(`"${cjk}" → "${ascii}"`);
+      corrected = corrected.replaceAll(cjk, ascii);
+    }
+  }
+  return { corrected, hasCJK: details.length > 0, details };
+}
 
 const Auth: React.FC = () => {
   const navigate = useNavigate();
@@ -23,6 +54,7 @@ const Auth: React.FC = () => {
   const [errors, setErrors] = useState<{ username?: string; password?: string }>({});
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [registrationEnabled, setRegistrationEnabled] = useState(true);
+  const [cjkWarning, setCjkWarning] = useState<string | null>(null);
 
   // 获取注册功能开关状态
   useEffect(() => {
@@ -67,6 +99,7 @@ const Auth: React.FC = () => {
       setRequiresAdminAccess(false);
       setCheckingLoginRequirements(false);
       setAdminAccessKey('');
+      setCjkWarning(null);
       return;
     }
 
@@ -112,15 +145,46 @@ const Auth: React.FC = () => {
     // 前端验证
     const newErrors: typeof errors = {};
     const trimmedUsername = username.trim();
-    const isEmail = trimmedUsername.includes('@');
-    if (isEmail) {
-      // 邮箱格式验证
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(trimmedUsername)) {
-        newErrors.username = '邮箱格式不正确';
+
+    // 登录模式：强制邮箱格式校验
+    if (mode === 'login') {
+      // 先检测并纠正中文/全角标点
+      const { corrected, hasCJK, details } = sanitizeEmailCJK(trimmedUsername);
+      if (hasCJK) {
+        // 自动纠正并提示用户
+        setUsername(corrected);
+        showToast(`已自动修正邮箱中的中文标点：${details.join('，')}`, 'info');
+        // 用纠正后的值继续验证
       }
-    } else if (trimmedUsername.length < 3) {
-      newErrors.username = t.auth.usernameMinLength;
+      const emailToValidate = hasCJK ? corrected : trimmedUsername;
+      
+      if (!emailToValidate) {
+        newErrors.username = t.auth.emailRequired;
+      } else if (!emailToValidate.includes('@')) {
+        newErrors.username = t.auth.emailFormatRequired;
+      } else {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(emailToValidate)) {
+          newErrors.username = t.auth.emailFormatInvalid;
+        }
+      }
+    } else {
+      // 注册模式：允许用户名或邮箱
+      const isEmail = trimmedUsername.includes('@');
+      if (isEmail) {
+        const { corrected, hasCJK, details } = sanitizeEmailCJK(trimmedUsername);
+        if (hasCJK) {
+          setUsername(corrected);
+          showToast(`已自动修正邮箱中的中文标点：${details.join('，')}`, 'info');
+        }
+        const emailToValidate = hasCJK ? corrected : trimmedUsername;
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(emailToValidate)) {
+          newErrors.username = t.auth.emailFormatInvalid;
+        }
+      } else if (trimmedUsername.length < 3) {
+        newErrors.username = t.auth.usernameMinLength;
+      }
     }
     if (password.length < 6) {
       newErrors.password = t.auth.passwordMinLength;
@@ -303,25 +367,44 @@ const Auth: React.FC = () => {
             >
               <div className="space-y-1">
                 <Input
-                  type="text"
-                  placeholder={mode === 'register' ? t.auth.username : `${t.auth.username} / 邮箱`}
+                  type={mode === 'login' ? 'email' : 'text'}
+                  placeholder={mode === 'login' ? t.auth.emailPlaceholder : `${t.auth.username} / ${t.auth.emailPlaceholder}`}
                   value={username}
                   onValueChange={(v) => {
                     setUsername(v);
                     setErrors(prev => ({ ...prev, username: undefined }));
+                    // 实时检测中文标点并警告
+                    if (v) {
+                      const { hasCJK, details } = sanitizeEmailCJK(v);
+                      if (hasCJK) {
+                        setCjkWarning(t.auth.cjkPunctuationWarning + details.join('，'));
+                      } else {
+                        setCjkWarning(null);
+                      }
+                    } else {
+                      setCjkWarning(null);
+                    }
                   }}
-                  startContent={<User className="w-4 h-4 text-(--text-muted)" />}
+                  startContent={mode === 'login' ? <Mail className="w-4 h-4 text-(--text-muted)" /> : <User className="w-4 h-4 text-(--text-muted)" />}
                   variant="flat"
                   radius="lg"
                   size="lg"
                   isInvalid={!!errors.username}
                   errorMessage={errors.username}
+                  autoComplete={mode === 'login' ? 'email' : 'username'}
                   classNames={{
                     base: 'bg-transparent',
                     input: 'bg-transparent text-(--text-primary) placeholder:text-(--text-muted)',
                     inputWrapper: `bg-(--bg-input) border hover:border-(--accent)/30 data-[focus=true]:border-(--accent)/50 shadow-sm transition-colors ${errors.username ? 'border-(--danger)' : 'border-(--border-color)'}`,
                   }}
                 />
+                {/* 中文标点检测警告 */}
+                {cjkWarning && !errors.username && (
+                  <div className="flex items-start gap-1.5 px-1 mt-1">
+                    <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
+                    <p className="text-xs text-amber-400 leading-relaxed">{cjkWarning}</p>
+                  </div>
+                )}
               </div>
 
               <div className="space-y-1">

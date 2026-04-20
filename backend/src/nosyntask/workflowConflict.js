@@ -57,6 +57,10 @@ const WORKFLOW_CONFLICT_RULES = {
     paramKey: 'scriptId',
     workflowTypes: ['batch_prompt_optimization']
   },
+  single_prompt_optimization: {
+    paramKey: 'storyboardId',
+    workflowTypes: ['single_prompt_optimization']
+  },
   script_split: {
     paramKey: 'projectId',
     workflowTypes: ['script_split', 'script_only']

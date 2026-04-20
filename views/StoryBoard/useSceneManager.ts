@@ -73,6 +73,7 @@ export interface StoryboardScene {
   // 镜头语言参数
   shotLanguage?: ShotLanguage;  // 专业镜头参数
   isLocked?: boolean;           // 是否锁定
+  negativePrompt?: string;      // 反向提示词
 }
 
 export const useSceneManager = (scriptId: number | null, projectId?: number | null) => {
@@ -207,7 +208,8 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
               sketchUrl: item.sketch_url || undefined,
               sketchType: item.sketch_type || undefined,
               sketchData: item.sketch_data || undefined,
-              controlStrength: item.control_strength ?? undefined
+              controlStrength: item.control_strength ?? undefined,
+              negativePrompt: item.negative_prompt || undefined
             };
           });
 
@@ -542,6 +544,44 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
     }
   };
 
+  // 更新分镜时长并保存到后端
+  const updateDuration = async (id: number, duration: number) => {
+    const previousScene = scenes.find((scene) => scene.id === id);
+    if (!previousScene) return false;
+
+    // 本地先更新
+    setScenes(prevScenes => prevScenes.map(s =>
+      s.id === id ? { ...s, duration } : s
+    ));
+
+    try {
+      const token = getAuthToken();
+      const res = await fetch(`/api/storyboards/${id}/content`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ duration })
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message || '保存时长失败');
+      }
+
+      return true;
+    } catch (error: any) {
+      // 回滚
+      setScenes(prevScenes => prevScenes.map(s =>
+        s.id === id ? { ...s, duration: previousScene.duration } : s
+      ));
+      console.error('保存时长失败:', error);
+      showToast('保存时长失败，请稍后重试', 'error');
+      return false;
+    }
+  };
+
   return {
     scenes,
     setScenes,
@@ -557,6 +597,7 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
     updateVoiceover,
     updateDirectorParams,
     updateCharactersAndLocation,
+    updateDuration,
     reorderScenes
   };
 }

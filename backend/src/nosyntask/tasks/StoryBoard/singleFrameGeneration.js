@@ -27,7 +27,7 @@ const { saveFrameHistory, getNextVersionNumber, generateBatchId } = require('./s
 // collectReferenceImages 已提取到 collectCandidateImages.js 共享模块
 
 async function handleSingleFrameGeneration(inputParams, onProgress) {
-  const { storyboardId, description, imageModel: modelName, textModel, aspectRatio, resolution, prevEndFrameUrl, prevDescription, prevEndState: inputPrevEndState, isFirstScene, sceneState: inputSceneState, environmentChange: inputEnvironmentChange, activeSceneUrl, visualStyle: inputVisualStyle } = inputParams;
+  const { storyboardId, description, imageModel: modelName, textModel, aspectRatio, resolution, prevEndFrameUrl, prevDescription, prevEndState: inputPrevEndState, isFirstScene, sceneState: inputSceneState, environmentChange: inputEnvironmentChange, activeSceneUrl, visualStyle: inputVisualStyle, negative_prompt: inputNegativePrompt } = inputParams;
 
   if (!storyboardId) {
     throw new Error('缺少必要参数: storyboardId');
@@ -54,6 +54,9 @@ async function handleSingleFrameGeneration(inputParams, onProgress) {
   if (inputVisualStyle) {
     console.log('[SingleFrameGen] 使用预取的视觉风格（跳过DB查询）');
   }
+
+  // 获取分镜级别的反向提示词
+  const negativePrompt = inputNegativePrompt || storyboard.negative_prompt || null;
 
   let variables = {};
   try {
@@ -351,7 +354,9 @@ ${extraInfo}
     imageModel: modelName,
     aspectRatio,
     resolution,
-    imageUrls: refResult.selectedUrls.length > 0 ? refResult.selectedUrls : undefined
+    imageUrls: refResult.selectedUrls.length > 0 ? refResult.selectedUrls : undefined,
+    negative_prompt: negativePrompt,
+    textModel
   });
 
   const firstFrameUrl = imageResult.image_url;

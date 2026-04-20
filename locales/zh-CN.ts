@@ -224,6 +224,11 @@ const zhCN = {
     usernameMinLength: '用户名至少需要3个字符',
     passwordMinLength: '密码至少需要6个字符',
     registrationClosed: '注册功能已关闭，请联系管理员',
+    emailPlaceholder: '邮箱',
+    emailRequired: '请输入邮箱地址',
+    emailFormatRequired: '登录请使用邮箱地址',
+    emailFormatInvalid: '邮箱格式不正确，请检查是否有多余空格或中文标点',
+    cjkPunctuationWarning: '检测到中文标点，提交时将自动修正：',
   },
   // 项目管理
   projects: {

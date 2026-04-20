@@ -894,12 +894,12 @@ const Projects: React.FC = () => {
         <Modal
           isOpen={isOpen}
           onOpenChange={onOpenChange}
-          size="2xl"
+          size="5xl"
           classNames={{
             backdrop: 'bg-black/60 backdrop-blur-sm',
-            base: 'bg-(--bg-elevated) border border-(--border-color) shadow-2xl',
+            base: 'bg-(--bg-elevated) border border-(--border-color) shadow-2xl max-h-[92vh]',
             header: 'border-b border-(--border-color)',
-            body: 'py-4 px-5',
+            body: 'py-4 px-5 overflow-hidden',
             footer: 'border-t border-(--border-color)',
             closeButton: 'text-(--text-secondary) hover:text-(--text-primary) hover:bg-white/10'
           }}
@@ -911,14 +911,14 @@ const Projects: React.FC = () => {
                   {editMode ? `${formData.name || t.projects.editTitle} - 设置` : t.projects.createTitle}
                 </ModalHeader>
                 <ModalBody>
-                  <div className="flex gap-5 min-h-0">
-                    {/* 左栏 - 封面与视觉风格（约38.2%黄金比例） */}
-                    <div className="w-[38.2%] shrink-0 flex flex-col gap-4">
+                  <div className="flex gap-5 min-h-0 max-h-[calc(92vh-130px)]">
+                    {/* 左栏 - 封面与视觉风格 */}
+                    <div className="w-[340px] shrink-0 flex flex-col gap-3 overflow-y-auto pr-1">
                       {/* 封面图片 */}
                       <div>
                         <label className="text-sm text-(--text-secondary) font-medium mb-2 block">{t.projects.coverLabel}</label>
                         {formData.cover_url ? (
-                          <div className="rounded-xl overflow-hidden border border-(--border-color) bg-(--bg-input) relative group aspect-[16/10]">
+                          <div className="rounded-xl overflow-hidden border border-(--border-color) bg-(--bg-input) relative group aspect-[16/9]">
                             <img
                               src={formData.cover_url}
                               alt="cover preview"
@@ -934,7 +934,7 @@ const Projects: React.FC = () => {
                             </button>
                           </div>
                         ) : (
-                          <div className="rounded-xl border border-dashed border-(--border-color) bg-(--bg-input)/50 flex items-center justify-center aspect-[16/10]">
+                          <div className="rounded-xl border border-dashed border-(--border-color) bg-(--bg-input)/50 flex items-center justify-center aspect-[16/9]">
                             <div className="text-center text-(--text-muted)">
                               <ImagePlus className="w-8 h-8 mx-auto mb-1 opacity-40" />
                               <p className="text-xs">暂无封面</p>
@@ -948,18 +948,18 @@ const Projects: React.FC = () => {
                           className="hidden"
                           onChange={handleUploadCover}
                         />
-                        <div className="flex gap-2 mt-2">
+                        <div className="flex gap-2 mt-1.5">
                           <Button
-                            className="flex-1 bg-(--bg-input) border border-(--border-color) text-(--text-secondary) hover:border-(--accent)/30 hover:bg-(--accent)/5 font-medium transition-all cursor-pointer text-sm h-9"
-                            startContent={coverUploading ? <Spinner size="sm" /> : <Upload className="w-3.5 h-3.5" />}
+                            className="flex-1 bg-(--bg-input) border border-(--border-color) text-(--text-secondary) hover:border-(--accent)/30 hover:bg-(--accent)/5 font-medium transition-all cursor-pointer text-xs h-8"
+                            startContent={coverUploading ? <Spinner size="sm" /> : <Upload className="w-3 h-3" />}
                             onPress={() => coverInputRef.current?.click()}
                             isDisabled={coverUploading}
                           >
                             {coverUploading ? '上传中...' : '上传图片'}
                           </Button>
                           <Button
-                            className="flex-1 bg-linear-to-r from-violet-500/20 to-pink-500/20 border border-violet-500/30 text-violet-600 dark:text-violet-300 font-medium hover:from-violet-500/30 hover:to-pink-500/30 transition-all cursor-pointer text-sm h-9"
-                            startContent={coverGenerating ? <Spinner size="sm" color="secondary" /> : <Sparkles className="w-3.5 h-3.5" />}
+                            className="flex-1 bg-linear-to-r from-violet-500/20 to-pink-500/20 border border-violet-500/30 text-violet-600 dark:text-violet-300 font-medium hover:from-violet-500/30 hover:to-pink-500/30 transition-all cursor-pointer text-xs h-8"
+                            startContent={coverGenerating ? <Spinner size="sm" color="secondary" /> : <Sparkles className="w-3 h-3" />}
                             onPress={handleGenerateCover}
                             isDisabled={coverGenerating}
                           >
@@ -1007,7 +1007,7 @@ const Projects: React.FC = () => {
                         </div>
 
                         {/* 按分类过滤的画风子选项 */}
-                        <div className="grid grid-cols-2 gap-1.5">
+                        <div className="grid grid-cols-3 gap-1.5">
                           {Object.entries(VISUAL_STYLE_PRESETS)
                             .filter(([styleKey]) => {
                               if (styleKey === 'custom') return false; // custom 单独处理
@@ -1042,7 +1042,7 @@ const Projects: React.FC = () => {
                                 <span className="text-xs text-(--text-muted) font-medium">{t.projects.myStyles}</span>
                                 <div className="flex-1 h-px bg-(--border-color)" />
                               </div>
-                              <div className="grid grid-cols-2 gap-1.5">
+                              <div className="grid grid-cols-3 gap-1.5">
                                 {filteredMyStyles.map((style) => (
                                   <div key={style.id} className="relative group">
                                     <button
@@ -1136,14 +1136,14 @@ const Projects: React.FC = () => {
                               {t.projects.bodyProportionLabel}
                               <span className="text-xs text-(--text-muted) font-normal">{t.projects.bodyProportionHint}</span>
                             </label>
-                            <div className="grid grid-cols-4 gap-1.5">
+                            <div className="grid grid-cols-2 gap-1.5">
                               {(Object.keys(BODY_PROPORTION_PRESETS) as BodyProportionRatio[]).map((key) => {
                                 const preset = BODY_PROPORTION_PRESETS[key];
                                 return (
                                   <button
                                     key={key}
                                     onClick={() => setFormData({ ...formData, bodyProportionRatio: key })}
-                                    className={`px-2 py-2 rounded-lg border text-center transition-all cursor-pointer ${
+                                    className={`px-2 py-1.5 rounded-lg border text-center transition-all cursor-pointer ${
                                       formData.bodyProportionRatio === key
                                         ? 'bg-(--accent)/15 border-(--accent)/40 text-(--accent) shadow-[0_0_10px_var(--accent-glow)]'
                                         : 'border-(--border-color) bg-(--bg-input) text-(--text-secondary) hover:border-(--accent)/30 hover:bg-(--accent)/5'
@@ -1161,8 +1161,8 @@ const Projects: React.FC = () => {
                       )}
                     </div>
 
-                    {/* 右栏 - 项目设置（约61.8%黄金比例） */}
-                    <div className="flex-1 flex flex-col gap-3.5 overflow-y-auto max-h-[70vh] pr-1">
+                    {/* 右栏 - 项目设置 */}
+                    <div className="flex-1 flex flex-col gap-3 overflow-y-auto pr-1 min-h-0">
                       <Input
                         label={t.projects.nameLabel}
                         placeholder={t.projects.namePlaceholder}
@@ -1190,8 +1190,8 @@ const Projects: React.FC = () => {
 
                       {/* AI 智能推荐按钮 */}
                       <Button
-                        className="w-full bg-linear-to-r from-violet-500/20 to-purple-500/20 border border-violet-500/30 text-violet-600 dark:text-violet-300 font-medium hover:from-violet-500/30 hover:to-purple-500/30 transition-all cursor-pointer text-sm h-9"
-                        startContent={aiSuggesting ? <Spinner size="sm" color="secondary" /> : <Sparkles className="w-3.5 h-3.5" />}
+                        className="w-full bg-linear-to-r from-violet-500/20 to-purple-500/20 border border-violet-500/30 text-violet-600 dark:text-violet-300 font-medium hover:from-violet-500/30 hover:to-purple-500/30 transition-all cursor-pointer text-xs h-8"
+                        startContent={aiSuggesting ? <Spinner size="sm" color="secondary" /> : <Sparkles className="w-3 h-3" />}
                         onPress={handleAiSuggest}
                         isDisabled={aiSuggesting}
                       >
@@ -1219,13 +1219,13 @@ const Projects: React.FC = () => {
 
                       {/* 工程状态 */}
                       <div>
-                        <label className="text-sm text-(--text-secondary) font-medium mb-2 block">{t.projects.statusLabel}</label>
-                        <div className="flex gap-2">
+                        <label className="text-xs text-(--text-secondary) font-medium mb-1.5 block">{t.projects.statusLabel}</label>
+                        <div className="flex gap-1.5">
                           {(['draft', 'in_progress', 'completed'] as const).map((status) => (
                             <button
                               key={status}
                               onClick={() => setFormData({ ...formData, status })}
-                              className={`px-4 py-2 rounded-lg border transition-all cursor-pointer ${
+                              className={`px-3 py-1 rounded-md border text-xs transition-all cursor-pointer ${
                                 formData.status === status
                                   ? getStatusColor(status)
                                   : 'border-(--border-color) bg-(--bg-input) text-(--text-muted) hover:border-(--border-color)'
@@ -1239,19 +1239,19 @@ const Projects: React.FC = () => {
 
                       {/* AI 输出语言选择 */}
                       <div>
-                        <label className="text-sm text-(--text-secondary) font-medium mb-2 flex items-center gap-1.5">
-                          <Globe className="w-4 h-4 text-(--accent)" />
+                        <label className="text-xs text-(--text-secondary) font-medium mb-1.5 flex items-center gap-1.5">
+                          <Globe className="w-3.5 h-3.5 text-(--accent)" />
                           {t.projects.outputLanguageLabel}
-                          <span className="text-xs text-(--text-muted) font-normal">{t.projects.outputLanguageHint}</span>
+                          <span className="text-[10px] text-(--text-muted) font-normal">{t.projects.outputLanguageHint}</span>
                         </label>
-                        <div className="grid grid-cols-4 gap-1.5">
+                        <div className="flex flex-wrap gap-1">
                           {Object.entries(t.projects.outputLanguages).map(([code, name]) => (
                             <button
                               key={code}
                               onClick={() => setFormData({ ...formData, outputLanguage: code })}
-                              className={`px-2 py-1.5 rounded-lg border text-xs font-medium transition-all cursor-pointer ${
+                              className={`px-2 py-1 rounded border text-[11px] font-medium transition-all cursor-pointer ${
                                 formData.outputLanguage === code
-                                  ? 'bg-(--accent)/15 border-(--accent)/40 text-(--accent) shadow-[0_0_10px_var(--accent-glow)]'
+                                  ? 'bg-(--accent)/15 border-(--accent)/40 text-(--accent) shadow-[0_0_6px_var(--accent-glow)]'
                                   : 'border-(--border-color) bg-(--bg-input) text-(--text-secondary) hover:border-(--accent)/30 hover:bg-(--accent)/5'
                               }`}
                             >
@@ -1291,101 +1291,103 @@ const Projects: React.FC = () => {
 
                       {/* 拍摄视角选择 */}
                       <div>
-                        <label className="text-sm text-(--text-secondary) font-medium mb-2 flex items-center gap-1.5">
+                        <label className="text-sm text-(--text-secondary) font-medium mb-1.5 flex items-center gap-1.5">
                           {t.projects.narrativePerspectiveLabel}
                           <span className="text-xs text-(--text-muted) font-normal">{t.projects.narrativePerspectiveHint}</span>
                         </label>
-                        <div className="flex gap-2">
+                        <div className="grid grid-cols-2 gap-2">
                           {([['first_person', t.projects.perspectiveFirstPerson, t.projects.perspectiveFirstPersonDesc], ['third_person', t.projects.perspectiveThirdPerson, t.projects.perspectiveThirdPersonDesc]] as const).map(([key, label, desc]) => (
                             <button
                               key={key}
                               onClick={() => setFormData({ ...formData, narrativePerspective: formData.narrativePerspective === key ? '' : key as any })}
-                              className={`flex-1 px-3 py-2 rounded-lg border text-sm transition-all cursor-pointer text-left ${
+                              className={`px-2.5 py-1.5 rounded-lg border text-xs transition-all cursor-pointer text-left ${
                                 formData.narrativePerspective === key
                                   ? 'bg-(--accent)/15 border-(--accent)/40 text-(--accent) shadow-[0_0_10px_var(--accent-glow)]'
                                   : 'border-(--border-color) bg-(--bg-input) text-(--text-secondary) hover:border-(--accent)/30 hover:bg-(--accent)/5'
                               }`}
                             >
                               <span className="font-medium">{label}</span>
-                              <span className="text-xs ml-1.5 opacity-70">{desc}</span>
+                              <span className="ml-1 opacity-70">{desc}</span>
                             </button>
                           ))}
                         </div>
                       </div>
 
                       {/* 画面参数设置 */}
-                      <div className="space-y-2.5 p-3 rounded-lg border border-(--border-color) bg-(--bg-input)/50">
-                        <p className="text-sm font-medium text-(--text-secondary)">画面参数（项目级锁定，分镜制作中不可更改）</p>
-                        <div>
-                          <label className="text-xs text-(--text-muted) mb-1.5 block">图片画面比例</label>
-                          <div className="flex flex-wrap gap-1.5">
-                            {['1:1', '16:9', '9:16', '4:3', '3:4', '21:9'].map((ratio) => (
-                              <button
-                                key={ratio}
-                                onClick={() => setFormData({ ...formData, imageAspectRatio: formData.imageAspectRatio === ratio ? '' : ratio })}
-                                className={`px-3 py-1 rounded-md border text-xs transition-all cursor-pointer ${
-                                  formData.imageAspectRatio === ratio
-                                    ? 'bg-(--accent)/15 border-(--accent)/40 text-(--accent) shadow-[0_0_8px_var(--accent-glow)]'
-                                    : 'border-(--border-color) bg-(--bg-input) text-(--text-muted) hover:border-(--accent)/30'
-                                }`}
-                              >
-                                {ratio}
-                              </button>
-                            ))}
+                      <div className="space-y-2 p-2.5 rounded-lg border border-(--border-color) bg-(--bg-input)/50">
+                        <p className="text-xs font-medium text-(--text-secondary)">画面参数（项目级锁定，分镜制作中不可更改）</p>
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+                          <div>
+                            <label className="text-xs text-(--text-muted) mb-1 block">图片画面比例</label>
+                            <div className="flex flex-wrap gap-1">
+                              {['1:1', '16:9', '9:16', '4:3', '3:4', '21:9'].map((ratio) => (
+                                <button
+                                  key={ratio}
+                                  onClick={() => setFormData({ ...formData, imageAspectRatio: formData.imageAspectRatio === ratio ? '' : ratio })}
+                                  className={`px-2 py-0.5 rounded border text-[11px] transition-all cursor-pointer ${
+                                    formData.imageAspectRatio === ratio
+                                      ? 'bg-(--accent)/15 border-(--accent)/40 text-(--accent) shadow-[0_0_6px_var(--accent-glow)]'
+                                      : 'border-(--border-color) bg-(--bg-input) text-(--text-muted) hover:border-(--accent)/30'
+                                  }`}
+                                >
+                                  {ratio}
+                                </button>
+                              ))}
+                            </div>
                           </div>
-                        </div>
-                        <div>
-                          <label className="text-xs text-(--text-muted) mb-1.5 block">图片分辨率</label>
-                          <div className="flex flex-wrap gap-1.5">
-                            {['720p', '1080p', '2K', '4K'].map((res) => (
-                              <button
-                                key={res}
-                                onClick={() => setFormData({ ...formData, imageResolution: formData.imageResolution === res ? '' : res })}
-                                className={`px-3 py-1 rounded-md border text-xs transition-all cursor-pointer ${
-                                  formData.imageResolution === res
-                                    ? 'bg-(--accent)/15 border-(--accent)/40 text-(--accent) shadow-[0_0_8px_var(--accent-glow)]'
-                                    : 'border-(--border-color) bg-(--bg-input) text-(--text-muted) hover:border-(--accent)/30'
-                                }`}
-                              >
-                                {res}
-                              </button>
-                            ))}
+                          <div>
+                            <label className="text-xs text-(--text-muted) mb-1 block">图片分辨率</label>
+                            <div className="flex flex-wrap gap-1">
+                              {['720p', '1080p', '2K', '4K'].map((res) => (
+                                <button
+                                  key={res}
+                                  onClick={() => setFormData({ ...formData, imageResolution: formData.imageResolution === res ? '' : res })}
+                                  className={`px-2 py-0.5 rounded border text-[11px] transition-all cursor-pointer ${
+                                    formData.imageResolution === res
+                                      ? 'bg-(--accent)/15 border-(--accent)/40 text-(--accent) shadow-[0_0_6px_var(--accent-glow)]'
+                                      : 'border-(--border-color) bg-(--bg-input) text-(--text-muted) hover:border-(--accent)/30'
+                                  }`}
+                                >
+                                  {res}
+                                </button>
+                              ))}
+                            </div>
                           </div>
-                        </div>
-                        <div>
-                          <label className="text-xs text-(--text-muted) mb-1.5 block">视频画面比例</label>
-                          <div className="flex flex-wrap gap-1.5">
-                            {['16:9', '9:16', '1:1'].map((ratio) => (
-                              <button
-                                key={ratio}
-                                onClick={() => setFormData({ ...formData, videoAspectRatio: formData.videoAspectRatio === ratio ? '' : ratio })}
-                                className={`px-3 py-1 rounded-md border text-xs transition-all cursor-pointer ${
-                                  formData.videoAspectRatio === ratio
-                                    ? 'bg-(--accent)/15 border-(--accent)/40 text-(--accent) shadow-[0_0_8px_var(--accent-glow)]'
-                                    : 'border-(--border-color) bg-(--bg-input) text-(--text-muted) hover:border-(--accent)/30'
-                                }`}
-                              >
-                                {ratio}
-                              </button>
-                            ))}
+                          <div>
+                            <label className="text-xs text-(--text-muted) mb-1 block">视频画面比例</label>
+                            <div className="flex flex-wrap gap-1">
+                              {['16:9', '9:16', '1:1'].map((ratio) => (
+                                <button
+                                  key={ratio}
+                                  onClick={() => setFormData({ ...formData, videoAspectRatio: formData.videoAspectRatio === ratio ? '' : ratio })}
+                                  className={`px-2 py-0.5 rounded border text-[11px] transition-all cursor-pointer ${
+                                    formData.videoAspectRatio === ratio
+                                      ? 'bg-(--accent)/15 border-(--accent)/40 text-(--accent) shadow-[0_0_6px_var(--accent-glow)]'
+                                      : 'border-(--border-color) bg-(--bg-input) text-(--text-muted) hover:border-(--accent)/30'
+                                  }`}
+                                >
+                                  {ratio}
+                                </button>
+                              ))}
+                            </div>
                           </div>
-                        </div>
-                        <div>
-                          <label className="text-xs text-(--text-muted) mb-1.5 block">视频分辨率</label>
-                          <div className="flex flex-wrap gap-1.5">
-                            {['480p', '720p', '1080p'].map((res) => (
-                              <button
-                                key={res}
-                                onClick={() => setFormData({ ...formData, videoResolution: formData.videoResolution === res ? '' : res })}
-                                className={`px-3 py-1 rounded-md border text-xs transition-all cursor-pointer ${
-                                  formData.videoResolution === res
-                                    ? 'bg-(--accent)/15 border-(--accent)/40 text-(--accent) shadow-[0_0_8px_var(--accent-glow)]'
-                                    : 'border-(--border-color) bg-(--bg-input) text-(--text-muted) hover:border-(--accent)/30'
-                                }`}
-                              >
-                                {res}
-                              </button>
-                            ))}
+                          <div>
+                            <label className="text-xs text-(--text-muted) mb-1 block">视频分辨率</label>
+                            <div className="flex flex-wrap gap-1">
+                              {['480p', '720p', '1080p'].map((res) => (
+                                <button
+                                  key={res}
+                                  onClick={() => setFormData({ ...formData, videoResolution: formData.videoResolution === res ? '' : res })}
+                                  className={`px-2 py-0.5 rounded border text-[11px] transition-all cursor-pointer ${
+                                    formData.videoResolution === res
+                                      ? 'bg-(--accent)/15 border-(--accent)/40 text-(--accent) shadow-[0_0_6px_var(--accent-glow)]'
+                                      : 'border-(--border-color) bg-(--bg-input) text-(--text-muted) hover:border-(--accent)/30'
+                                  }`}
+                                >
+                                  {res}
+                                </button>
+                              ))}
+                            </div>
                           </div>
                         </div>
                       </div>

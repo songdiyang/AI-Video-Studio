@@ -247,7 +247,9 @@ ${extraInfo}
     // 草图控制特有参数
     sketchUrl: processedSketchUrl,
     sketchType: sketchType,
-    controlStrength: controlStrength
+    controlStrength: controlStrength,
+    negative_prompt: storyboard.negative_prompt || null,
+    textModel
   };
 
   if (onProgress) onProgress(50);

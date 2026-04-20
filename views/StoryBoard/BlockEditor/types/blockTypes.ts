@@ -221,6 +221,8 @@ export interface BlockEditorProps {
   onUpdateDialogues?: (dialogues: DialogueLine[]) => Promise<boolean>;
   voiceover?: string;
   onUpdateVoiceover?: (voiceover: string) => Promise<boolean>;
+  negativePrompt?: string;
+  onUpdateNegativePrompt?: (negativePrompt: string) => Promise<boolean>;
 }
 
 export interface ProjectCharacter {

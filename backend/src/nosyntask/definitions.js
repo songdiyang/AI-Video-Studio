@@ -42,10 +42,12 @@ const {
   handlePropPromptGeneration,
   handlePropImageGeneration,
   handleConceptBreakdownGeneration,
-  handleCameraFrameGeneration
+  handleCameraFrameGeneration,
+  handleMagicPaintGeneration
 } = require('./tasks');
 
 const handleBatchPromptOptimization = require('./tasks/StoryBoard/batchPromptOptimization');
+const handleSinglePromptOptimization = require('./tasks/StoryBoard/singlePromptOptimization');
 
 // 独立帧生成模块（支持并发）
 const { handleParallelFrameGeneration } = require('./tasks/StoryBoard/independentFrameGeneration');
@@ -372,10 +374,10 @@ const WORKFLOW_DEFINITIONS = {
   },
 
   /**
-   * 视角调整帧生成（旋转/缩放/扩图）
+   * 魔术空间-视角帧生成（旋转/缩放/扩图）
    */
   camera_frame_generation: {
-    name: '视角调整帧生成',
+    name: '魔术空间-视角帧生成',
     steps: [
       {
         type: 'camera_frame',
@@ -386,6 +388,25 @@ const WORKFLOW_DEFINITIONS = {
           'imageModel', 'textModel', 'aspectRatio',
           'rotationX', 'rotationY', 'rotationZ',
           'zoomLevel', 'mode'
+        ])
+      }
+    ]
+  },
+
+  /**
+   * 魔术空间涂改帧生成（颜色涂抹 + 文字指令）
+   */
+  magic_paint_generation: {
+    name: '魔术涂改帧生成',
+    steps: [
+      {
+        type: 'magic_paint',
+        targetType: 'storyboard',
+        handler: handleMagicPaintGeneration,
+        buildInput: createBuildInput([
+          'storyboardId', 'compositeImageUrl', 'maskImageUrl',
+          'sourceImageUrl', 'colorInstructions',
+          'imageModel', 'textModel', 'aspectRatio'
         ])
       }
     ]
@@ -748,6 +769,23 @@ const WORKFLOW_DEFINITIONS = {
         buildInput: createBuildInput([
           'scriptId', 'textModel',
           { key: 'maxConcurrency', defaultValue: 3 }
+        ])
+      }
+    ]
+  },
+
+  /**
+   * 单条分镜提示词优化（AI 优化按钮触发）
+   */
+  single_prompt_optimization: {
+    name: 'AI 优化提示词',
+    steps: [
+      {
+        type: 'single_prompt_optimize',
+        targetType: 'storyboard',
+        handler: handleSinglePromptOptimization,
+        buildInput: createBuildInput([
+          'storyboardId', 'prompt', 'textModel'
         ])
       }
     ]

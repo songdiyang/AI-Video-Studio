@@ -136,7 +136,7 @@ const CameraControlPanel: React.FC<CameraControlPanelProps> = ({
           onClick={handleCancel}
           disabled={isGenerating}
           className="absolute top-2 left-2 z-30 p-1.5 rounded-lg bg-black/50 text-white/80 hover:bg-black/70 hover:text-white transition-colors border border-white/10"
-          title="关闭视角调整"
+          title="关闭魔术空间"
         >
           <X className="w-4 h-4" />
         </button>

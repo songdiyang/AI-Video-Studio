@@ -3,7 +3,7 @@ import { getAuthToken } from '../../services/auth';
 import { useTaskRunner, TaskState } from '../../hooks/useTaskRunner';
 import { WorkflowJob } from '../../hooks/useWorkflow';
 import { StoryboardScene } from './useSceneManager';
-import { CameraGenerateParams } from './CameraControl';
+import { CameraGenerateParams, PaintGenerateParams } from './MagicSpace';
 
 interface UseSceneGenerationOptions {
   projectId: number | null;
@@ -305,7 +305,7 @@ export function useSceneGeneration({
     }
   };
 
-  // 启动视角调整生成 workflow
+  // 启动魔术空间-视角生成 workflow
   const generateWithCamera = async (id: number, cameraParams: CameraGenerateParams): Promise<{ success: boolean; error?: string }> => {
     try {
       if (isTaskActive(`img_${id}`)) {
@@ -357,7 +357,7 @@ export function useSceneGeneration({
         return { success: false, error: uploadErr.message || '上传画布图片失败' };
       }
 
-      console.log('[useSceneGeneration] 视角调整生成, mode:', cameraParams.mode, 'rotation:', {
+      console.log('[useSceneGeneration] 魔术空间-视角生成, mode:', cameraParams.mode, 'rotation:', {
         x: cameraParams.rotationX,
         y: cameraParams.rotationY,
         z: cameraParams.rotationZ,
@@ -382,8 +382,106 @@ export function useSceneGeneration({
 
       return { success: true };
     } catch (error: any) {
-      console.error('视角调整生成失败:', error);
-      return { success: false, error: error.message || '视角调整生成失败' };
+      console.error('魔术空间-视角生成失败:', error);
+      return { success: false, error: error.message || '魔术空间-视角生成失败' };
+    }
+  };
+
+  // 启动涂改生成 workflow
+  const generateWithPaint = async (id: number, paintParams: PaintGenerateParams): Promise<{ success: boolean; error?: string }> => {
+    try {
+      if (isTaskActive(`img_${id}`)) {
+        return { success: false, error: '当前镜头正在生成，请等待完成后再试' };
+      }
+
+      if (!imageModel) {
+        return { success: false, error: '请先选择图片生成模型' };
+      }
+
+      // 上传合成图
+      let compositeImageUrl = '';
+      try {
+        const base64Data = paintParams.compositeImageBase64;
+        const byteString = atob(base64Data.split(',')[1]);
+        const mimeString = base64Data.split(',')[0].split(':')[1].split(';')[0];
+        const ab = new ArrayBuffer(byteString.length);
+        const ia = new Uint8Array(ab);
+        for (let i = 0; i < byteString.length; i++) {
+          ia[i] = byteString.charCodeAt(i);
+        }
+        const blob = new Blob([ab], { type: mimeString });
+        const token = getAuthToken();
+        const formData = new FormData();
+        formData.append('file', blob, `paint_composite_${id}_${Date.now()}.png`);
+        formData.append('path_prefix', 'images/paint_composite');
+
+        const uploadRes = await fetch('/api/upload/general', {
+          method: 'POST',
+          headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+          body: formData,
+        });
+
+        if (!uploadRes.ok) throw new Error(`上传合成图失败: HTTP ${uploadRes.status}`);
+        const uploadData = await uploadRes.json();
+        compositeImageUrl = uploadData.url || uploadData.fileUrl || uploadData.filePath || '';
+        if (!compositeImageUrl) throw new Error('上传合成图返回无效URL');
+      } catch (uploadErr: any) {
+        console.error('[useSceneGeneration] 上传涂改合成图失败:', uploadErr);
+        return { success: false, error: uploadErr.message || '上传合成图失败' };
+      }
+
+      // 上传掩膜图
+      let maskImageUrl = '';
+      try {
+        const base64Data = paintParams.maskImageBase64;
+        const byteString = atob(base64Data.split(',')[1]);
+        const mimeString = base64Data.split(',')[0].split(':')[1].split(';')[0];
+        const ab = new ArrayBuffer(byteString.length);
+        const ia = new Uint8Array(ab);
+        for (let i = 0; i < byteString.length; i++) {
+          ia[i] = byteString.charCodeAt(i);
+        }
+        const blob = new Blob([ab], { type: mimeString });
+        const token = getAuthToken();
+        const formData = new FormData();
+        formData.append('file', blob, `paint_mask_${id}_${Date.now()}.png`);
+        formData.append('path_prefix', 'images/paint_mask');
+
+        const uploadRes = await fetch('/api/upload/general', {
+          method: 'POST',
+          headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+          body: formData,
+        });
+
+        if (!uploadRes.ok) throw new Error(`上传掩膜图失败: HTTP ${uploadRes.status}`);
+        const uploadData = await uploadRes.json();
+        maskImageUrl = uploadData.url || uploadData.fileUrl || uploadData.filePath || '';
+        if (!maskImageUrl) throw new Error('上传掩膜图返回无效URL');
+      } catch (uploadErr: any) {
+        console.error('[useSceneGeneration] 上传掩膜图失败:', uploadErr);
+        return { success: false, error: uploadErr.message || '上传掩膜图失败' };
+      }
+
+      console.log('[useSceneGeneration] 涂改生成, colors:', paintParams.colorInstructions.length);
+
+      const sceneIdx = scenes.findIndex(s => s.id === id);
+      await runTask(`img_${id}`, 'magic_paint_generation', {
+        storyboardId: id,
+        compositeImageUrl,
+        maskImageUrl,
+        sourceImageUrl: paintParams.sourceImageUrl,
+        colorInstructions: paintParams.colorInstructions,
+        imageModel,
+        textModel,
+        aspectRatio: imageAspectRatio,
+        episodeNumber,
+        storyboardIndex: sceneIdx >= 0 ? sceneIdx + 1 : undefined,
+      });
+
+      return { success: true };
+    } catch (error: any) {
+      console.error('涂改生成失败:', error);
+      return { success: false, error: error.message || '涂改生成失败' };
     }
   };
 
@@ -455,6 +553,7 @@ export function useSceneGeneration({
     generateImage,
     generateVideo,
     generateWithCamera,
+    generateWithPaint,
     deleteFirstFrame,
     deleteLastFrame
   };

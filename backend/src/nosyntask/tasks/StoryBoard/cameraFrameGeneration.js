@@ -1,5 +1,5 @@
 /**
- * 视角调整帧生成处理器（旋转/缩放/扩图）
+ * 魔术空间-视角帧生成处理器（旋转/缩放/扩图）
  *
  * 流程：
  * 1. 接收前端传来的画布合成图URL + 原始帧图URL + 旋转/缩放参数
@@ -70,7 +70,7 @@ async function handleCameraFrameGeneration(inputParams, onProgress) {
     throw new Error('imageModel 参数是必需的');
   }
 
-  console.log('[CameraFrameGen] 开始视角调整帧生成，storyboardId:', storyboardId,
+  console.log('[CameraFrameGen] 开始魔术空间-视角帧生成，storyboardId:', storyboardId,
     `rotation=(${rotationX},${rotationY},${rotationZ}) zoom=${zoomLevel} mode=${mode}`);
   if (onProgress) onProgress(5);
 
@@ -159,7 +159,9 @@ async function handleCameraFrameGeneration(inputParams, onProgress) {
     imageModel: modelName,
     aspectRatio,
     imageUrls: imageUrls.length > 0 ? imageUrls : undefined,
-    strength
+    strength,
+    negative_prompt: storyboard.negative_prompt || null,
+    textModel
   };
 
   console.log('[CameraFrameGen] 图片生成参数:', { model: modelName, aspectRatio, strength, refImageCount: imageUrls.length });
@@ -207,7 +209,7 @@ async function handleCameraFrameGeneration(inputParams, onProgress) {
   }
 
   if (onProgress) onProgress(100);
-  console.log('[CameraFrameGen] 视角调整帧生成完成');
+  console.log('[CameraFrameGen] 魔术空间-视角帧生成完成');
 
   return {
     firstFrameUrl: persistedUrl,

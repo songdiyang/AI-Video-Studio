@@ -111,7 +111,15 @@ async function optimizeSinglePrompt({ storyboard, allStoryboards, currentIdx, mo
 【环境与氛围】
 • 自然光：黄金时刻/蓝调时刻/正午硬光/阴天柔光
 • 人工光：主光位置、辅光比例、轮廓光、眼神光
-• 场景氛围：烟雾/雨丝/光斑/尘土等环境元素`
+• 场景氛围：烟雾/雨丝/光斑/尘土等环境元素
+
+【材质质感描述 - 真人实拍核心】
+你必须为画面中的关键元素添加专业的材质质感描述，增强真实感和细节丰富度：
+• 皮肤质感：根据角色年龄、性别、情绪状态描述皮肤纹理（细腻光滑/粗糙晒伤/毛孔可见/皱纹沟壑/油光/干裂），关注光线对皮肤质感的影响（侧光凸显纹理、柔光弱化纹理）
+• 服装面料：明确面料类型与视觉特征（丝绸→光泽流淌、垂坠感；棉麻→哑光、自然褶皱；皮革→反光高光、纹理沟槽；毛料→蓬松纤维、漫反射；雪纺→半透明、轻柔飘逸），描述面料在光线下的表现
+• 环境材质：描述场景中主要材质的质感特征（金属→镜面反射/拉丝纹理/氧化锈蚀；木材→木纹肌理/光滑漆面/粗糙原木；石材→颗粒感/抛光面/风化裂纹；玻璃→透明折射/磨砂漫射/反光倒影）
+• 物品表面：标注表面处理工艺（哑光/光泽/半光泽）和质感细节（纹理走向、磨损痕迹、指纹、水渍、灰尘覆盖）
+• 融合要求：材质描述必须自然融入画面描述，不可孤立罗列；材质选择必须符合场景逻辑（如古代场景不用塑料质感、战场不用光洁如新）、符合视觉风格（真人实拍追求物理真实的材质还原）`
       : `【动漫动画优化原则】
 1. 先通读剧本，理解故事全貌、人物关系和情节走向
 2. 确认当前分镜在故事中的时间线位置和情感基调
@@ -125,7 +133,15 @@ async function optimizeSinglePrompt({ storyboard, allStoryboards, currentIdx, mo
 • 景别：画面范围（远景/全景/中景/近景/特写/大特写）
 • 动态表现：运动轨迹、速度线、变形夸张、弹性运动
 • 色指定：主色调、配色方案、色彩情绪
-• 造型一致性：角色设计特征保持，表情变化规律`;
+• 造型一致性：角色设计特征保持，表情变化规律
+
+【材质质感描述 - 动漫动画核心】
+你必须为画面中的关键元素添加符合动漫风格的材质质感描述，增强画面细节丰富度：
+• 皮肤质感：根据角色设定描述皮肤表现风格（赛璐璐→平面均匀色块、无纹理；半写实→柔和渐变、隐约毛孔；厚涂→笔触可见、肌理丰富），动漫皮肤通常追求光洁感，用高光和阴影暗示体积
+• 服装面料：用色块和线条表现面料特征（丝绸→高光色带、流畅曲线；棉麻→柔和色块、少高光；皮革→锐利高光、深色阴影；毛料→柔和边缘、暖色漫反射），动漫中面料质感主要通过色彩处理手法体现而非照片级写实
+• 环境材质：用动画表现手法描述场景材质（金属→锐利高光线、冷色反光；木材→暖色调、木纹用线条暗示；石材→粗颗粒网点、灰色调；玻璃→透明色层叠加、折射变形），注意与角色风格统一
+• 物品表面：用渲染风格标注质感（平涂→无质感变化；渐变→柔和过渡暗示曲面；网点→印刷质感），注意日式动画与美式动画的质感表现差异
+• 融合要求：材质描述必须自然融入画面描述，与整体动画风格一致（如赛璐璐风格不描述毛孔纹理、厚涂风格不描述色块边界）；材质选择符合场景世界观逻辑`;
 
     const scriptContent = storyboard.script_content || '';
     const scriptSection = scriptContent
@@ -140,10 +156,24 @@ ${storyboardContext}${visualStyle ? `\n【视觉风格】${visualStyle}` : ''}${
 
 ${optimizationPrinciples}
 
-【输出要求】
-• 保持简洁凝练，不要过度冗长（控制在原文2倍长度以内）
-• 只输出优化后的分镜描述，不要输出其他任何内容（不要标注、不要解释、不要前缀）
-• 描述要有画面感和电影感，让读者能清晰想象出画面`;
+【输出要求 - 正向提示词】
+• 描述越详细画面效果越好，请充分发挥专业能力，用丰富的细节描述画面
+• 描述要有画面感和电影感，让读者能清晰想象出画面
+
+【输出要求 - 反向提示词（Negative Prompt）】
+你必须同时生成反向提示词，用于排除画面中不应该出现的内容。参考以下信息：
+1. 项目视觉风格：${visualStyle || '未指定'}，排除与该风格冲突的元素
+2. 分镜正向提示词的内容范围：只描述画面应有的内容，排除所有不应该出现的多余元素
+反向提示词生成规则：
+• 排除与当前场景、角色、情绪无关的视觉元素
+• 排除与视觉风格冲突的表现形式（如动漫风格排除"写实、真人、照片"，写实风格排除"卡通、动漫、插画"）
+• 排除常见画面缺陷（低质量、模糊、变形、多余肢体、水印、文字、签名）
+• 排除与当前情绪氛围不符的元素（如悲伤场景排除"微笑、明亮"）
+• 反向提示词用中文描述，词语间用英文逗号分隔
+
+【输出格式】
+严格按以下 JSON 格式输出，不要添加任何其他内容：
+{"positive": "优化后的正向提示词", "negative": "反向提示词，中文描述，英文逗号分隔"}`;
 
     // 注意：WorkflowExecutor 已经在外层设置了完整的 billing context（含 userId、projectId 等），
     // 此处只覆盖 resourceRefs 以追踪具体分镜，其余字段自动从外层继承。
@@ -154,12 +184,13 @@ ${optimizationPrinciples}
           { role: 'system', content: systemPrompt },
           { role: 'user', content: prompt }
         ],
-        maxTokens: 1024,
+        maxTokens: 4096,
         temperature: 0.7
       })
     );
 
     let optimized = '';
+    let negativePrompt = '';
     if (typeof response === 'string') optimized = response;
     else if (response?.content) optimized = response.content;
     else if (response?.text) optimized = response.text;
@@ -168,7 +199,20 @@ ${optimizationPrinciples}
     if (!optimized) return null;
 
     optimized = optimized.replace(/^["'""]+|["'""]+$/g, '').trim();
-    return optimized;
+
+    // 尝试解析 JSON 格式（包含正向+反向提示词）
+    try {
+      const jsonMatch = optimized.match(/\{[\s\S]*"positive"[\s\S]*"negative"[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        if (parsed.positive) optimized = parsed.positive.trim();
+        if (parsed.negative) negativePrompt = parsed.negative.trim();
+      }
+    } catch (parseErr) {
+      // JSON 解析失败，使用整段作为正向提示词
+    }
+
+    return { optimized, negativePrompt };
   } catch (e) {
     console.error(`[BatchPromptOptimize] 分镜 #${currentIdx + 1} 优化失败:`, e.message);
     throw e;
@@ -226,21 +270,31 @@ async function handleBatchPromptOptimization(inputParams, onProgress) {
   const tasks = targetStoryboards.map((sb, i) => {
     const currentIdx = allStoryboards.findIndex(s => s.id === sb.id);
     return async () => {
-      const optimized = await optimizeSinglePrompt({
+      const result = await optimizeSinglePrompt({
         storyboard: sb,
         allStoryboards,
         currentIdx,
         modelName
       });
 
-      if (optimized) {
-        // 写回数据库
-        await execute(
-          'UPDATE storyboards SET prompt_template = ? WHERE id = ?',
-          [optimized, sb.id]
-        );
-        console.log(`[BatchPromptOptimize] 分镜 #${sb.idx + 1} 优化完成: ${sb.prompt_template.length}字 → ${optimized.length}字`);
-        return { id: sb.id, idx: sb.idx, success: true, originalLength: sb.prompt_template.length, optimizedLength: optimized.length };
+      if (result) {
+        const optimizedText = typeof result === 'string' ? result : result.optimized;
+        const negativePromptText = typeof result === 'string' ? '' : (result.negativePrompt || '');
+
+        // 写回数据库（同时更新正向和反向提示词）
+        if (negativePromptText) {
+          await execute(
+            'UPDATE storyboards SET prompt_template = ?, negative_prompt = ? WHERE id = ?',
+            [optimizedText, negativePromptText, sb.id]
+          );
+        } else {
+          await execute(
+            'UPDATE storyboards SET prompt_template = ? WHERE id = ?',
+            [optimizedText, sb.id]
+          );
+        }
+        console.log(`[BatchPromptOptimize] 分镜 #${sb.idx + 1} 优化完成: ${sb.prompt_template.length}字 → ${optimizedText.length}字, negative=${negativePromptText.length}字`);
+        return { id: sb.id, idx: sb.idx, success: true, originalLength: sb.prompt_template.length, optimizedLength: optimizedText.length, negativePromptLength: negativePromptText.length };
       }
       return { id: sb.id, idx: sb.idx, success: false, reason: 'AI返回为空' };
     };

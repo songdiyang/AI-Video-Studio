@@ -26,13 +26,26 @@ const { traced, trace } = require('../../engine/generationTrace');
 const { assertUpdated, assertPersistedFields } = require('./persistenceGuard');
 const { resolveMediaUrl } = require('../base/mediaResultResolver');
 const { saveFrameHistory, getNextVersionNumber, generateBatchId } = require('./saveFrameHistory');
+const { mergeNegativeIntoPositive } = require('../../utils/negativeToPositive');
 
 /**
  * 生成单张图片（通过 submitAndPoll 自动处理同步/异步）
  */
-const generateSingleImage = traced('图片生成', async function _generateSingleImage(modelName, prompt, aspectRatio, logTag, imageUrls, resolution) {
+const generateSingleImage = traced('图片生成', async function _generateSingleImage(modelName, prompt, aspectRatio, logTag, imageUrls, resolution, negativePrompt, textModel) {
+  // 反向提示词转正向并合并到主提示词
+  let finalPrompt = prompt;
+  if (negativePrompt) {
+    try {
+      finalPrompt = await mergeNegativeIntoPositive(prompt, negativePrompt, { textModel });
+      console.log(`[${logTag || 'FrameGen'}] 反向提示词已转为正向并合并，原始长度:`, prompt.length, '→ 合并后:', finalPrompt.length);
+    } catch (err) {
+      console.warn(`[${logTag || 'FrameGen'}] 反向提示词转换失败，使用原始提示词:`, err.message);
+      finalPrompt = prompt;
+    }
+  }
+
   const submitParams = {
-    prompt,
+    prompt: finalPrompt,
     aspectRatio
   };
 
@@ -42,6 +55,7 @@ const generateSingleImage = traced('图片生成', async function _generateSingl
   if (resolution) {
     submitParams.resolution = resolution;
   }
+  // 不再传 negative_prompt 给模型，已通过 mergeNegativeIntoPositive 转为正向提示词合并
 
   const result = await submitAndPoll(modelName, submitParams, {
     intervalMs: 3000,
@@ -67,7 +81,7 @@ const generateSingleImage = traced('图片生成', async function _generateSingl
   }
   return mediaResolution.mediaUrl;
 }, {
-  extractInput: (modelName, prompt, w, h, logTag, urls) => ({ model: modelName, logTag, refCount: urls?.length || 0, prompt: prompt?.substring(0, 100) }),
+  extractInput: (modelName, prompt, w, h, logTag, urls, resolution, negativePrompt, textModel) => ({ model: modelName, logTag, refCount: urls?.length || 0, prompt: prompt?.substring(0, 100), negativePrompt: negativePrompt?.substring(0, 50) || null }),
   extractOutput: (url) => ({ imageUrl: url })
 });
 
@@ -426,7 +440,7 @@ ${frameHint}
 });
 
 async function handleFrameGeneration(inputParams, onProgress) {
-  const { storyboardId, prompt, imageModel: modelName, textModel, aspectRatio, resolution, prevEndFrameUrl, prevDescription, prevEndState: inputPrevEndState, isFirstScene, sceneState: inputSceneState, environmentChange: inputEnvironmentChange, activeSceneUrl, regenerateTarget, visualStyle: inputVisualStyle, forceRegenerate } = inputParams;
+  const { storyboardId, prompt, imageModel: modelName, textModel, aspectRatio, resolution, prevEndFrameUrl, prevDescription, prevEndState: inputPrevEndState, isFirstScene, sceneState: inputSceneState, environmentChange: inputEnvironmentChange, activeSceneUrl, regenerateTarget, visualStyle: inputVisualStyle, forceRegenerate, negative_prompt: inputNegativePrompt } = inputParams;
 
   if (!storyboardId) {
     throw new Error('缺少必要参数: storyboardId');
@@ -452,6 +466,9 @@ async function handleFrameGeneration(inputParams, onProgress) {
   if (inputVisualStyle) {
     console.log('[FrameGen] 使用预取的视觉风格（跳过DB查询）');
   }
+
+  // 获取分镜级别的反向提示词（优先使用传入参数，其次从数据库读取）
+  const negativePrompt = inputNegativePrompt || storyboard.negative_prompt || null;
 
   // 获取项目输出语言设置
   const outputLang = await getOutputLanguage(storyboard.project_id);
@@ -588,7 +605,7 @@ async function handleFrameGeneration(inputParams, onProgress) {
     // 生成首帧图片
     if (onProgress) onProgress(25);
     console.log('[FrameGen] 开始生成首帧...');
-    const startFrame = await generateSingleImage(modelName, startPrompt, aspectRatio, 'FrameGen-Start', startRefResult.selectedUrls, resolution);
+    const startFrame = await generateSingleImage(modelName, startPrompt, aspectRatio, 'FrameGen-Start', startRefResult.selectedUrls, resolution, negativePrompt, textModel);
 
     // 获取首帧版本号并持久化到 MinIO（带版本号路径，避免覆盖历史版本）
     const startVersionNum = await getNextVersionNumber(storyboardId, 'first');
@@ -618,7 +635,7 @@ async function handleFrameGeneration(inputParams, onProgress) {
     // 生成尾帧图片
     if (onProgress) onProgress(60);
     console.log('[FrameGen] 开始生成尾帧...');
-    const endFrame = await generateSingleImage(modelName, endPrompt, aspectRatio, 'FrameGen-End', endRefResult.selectedUrls, resolution);
+    const endFrame = await generateSingleImage(modelName, endPrompt, aspectRatio, 'FrameGen-End', endRefResult.selectedUrls, resolution, negativePrompt, textModel);
 
     // 获取尾帧版本号并持久化到 MinIO（带版本号路径，避免覆盖历史版本）
     const endVersionNum = await getNextVersionNumber(storyboardId, 'last');
@@ -699,7 +716,7 @@ async function handleFrameGeneration(inputParams, onProgress) {
     // 4. 生成首帧
     if (onProgress) onProgress(25);
     console.log('[FrameGen] 开始生成首帧...');
-    const startFrame = await generateSingleImage(modelName, startPrompt, aspectRatio, 'FrameGen-Start', startRefResult.selectedUrls, resolution);
+    const startFrame = await generateSingleImage(modelName, startPrompt, aspectRatio, 'FrameGen-Start', startRefResult.selectedUrls, resolution, negativePrompt, textModel);
 
     // 获取版本号并持久化首帧到 MinIO（带版本号路径，避免覆盖历史版本）
     const startVersionNum = await getNextVersionNumber(storyboardId, 'first');
@@ -771,7 +788,7 @@ async function handleFrameGeneration(inputParams, onProgress) {
     // 7. 生成尾帧
     if (onProgress) onProgress(60);
     console.log('[FrameGen] 开始生成尾帧...');
-    const endFrame = await generateSingleImage(modelName, endPrompt, aspectRatio, 'FrameGen-End', endRefResult.selectedUrls, resolution);
+    const endFrame = await generateSingleImage(modelName, endPrompt, aspectRatio, 'FrameGen-End', endRefResult.selectedUrls, resolution, negativePrompt, textModel);
 
     // 获取版本号并持久化尾帧到 MinIO（带版本号路径，避免覆盖历史版本）
     const endVersionNum = await getNextVersionNumber(storyboardId, 'last');

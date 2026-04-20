@@ -321,6 +321,15 @@ module.exports = {
       console.log('[Seedream Handler] 文生图模式');
     }
 
+    // 3.5 如果有 mask_image（inpainting 涂改模式），添加 mask_image 字段
+    if (params.mask_image) {
+      const resolvedMask = resolveToInternalUrl(params.mask_image);
+      if (resolvedMask) {
+        requestBody.mask_image = resolvedMask;
+        console.log(`[Seedream Handler] Inpainting 模式，已添加 mask_image`);
+      }
+    }
+
     console.log('[Seedream Handler] 请求体:', JSON.stringify(requestBody, null, 2));
 
     // 4. 发送请求

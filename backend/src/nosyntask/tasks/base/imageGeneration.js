@@ -2,15 +2,16 @@
  * 图片生成处理器（角色/场景通用）
  * 使用公共轮询组件 submitAndPoll 处理同步/异步模型
  * 
- * input:  { prompt, imageModel, aspectRatio?, width?, height?, imageUrl?, imageUrls? }
+ * input:  { prompt, imageModel, aspectRatio?, width?, height?, imageUrl?, imageUrls?, negative_prompt?, textModel? }
  * output: { image_url, taskId?, tokens?, provider }
  */
 
 const { submitAndPoll } = require('../pollUtils');
 const { resolveMediaUrl } = require('./mediaResultResolver');
+const { mergeNegativeIntoPositive } = require('../../utils/negativeToPositive');
 
 async function handleImageGeneration(inputParams, onProgress) {
-  const { prompt, imageModel: modelName, width, height, aspectRatio, resolution, size, imageUrl, imageUrls, startFrame, endFrame, strength } = inputParams;
+  const { prompt, imageModel: modelName, width, height, aspectRatio, resolution, size, imageUrl, imageUrls, startFrame, endFrame, strength, mask_image, negative_prompt, textModel } = inputParams;
 
   if (!modelName) {
     throw new Error('imageModel 参数是必需的');
@@ -18,10 +19,24 @@ async function handleImageGeneration(inputParams, onProgress) {
 
   if (onProgress) onProgress(10);
 
+  // 反向提示词转正向并合并到主提示词
+  let finalPrompt = prompt;
+  if (negative_prompt) {
+    try {
+      finalPrompt = await mergeNegativeIntoPositive(prompt, negative_prompt, { textModel });
+      console.log('[ImageGen] 反向提示词已转为正向并合并，原始长度:', prompt.length, '→ 合并后:', finalPrompt.length);
+    } catch (err) {
+      console.warn('[ImageGen] 反向提示词转换失败，使用原始提示词:', err.message);
+      finalPrompt = prompt;
+    }
+  }
+
   // 构建提交参数（图片参数派生由 templateRenderer.renderWithFallback 统一处理）
   const submitParams = {
-    prompt
+    prompt: finalPrompt
   };
+
+  // 不再传 negative_prompt 给模型，已通过 mergeNegativeIntoPositive 转为正向提示词合并
 
   if (size) submitParams.size = size;  // 支持直接传递 size（如 '2k', '3k'）
   if (width !== undefined && width !== null) submitParams.width = width;
@@ -34,6 +49,7 @@ async function handleImageGeneration(inputParams, onProgress) {
   if (startFrame)  submitParams.startFrame = startFrame;
   if (endFrame)    submitParams.endFrame = endFrame;
   if (strength !== undefined && strength !== null) submitParams.strength = strength;
+  if (mask_image) submitParams.mask_image = mask_image;
 
   const result = await submitAndPoll(modelName, submitParams, {
     intervalMs: 3000,

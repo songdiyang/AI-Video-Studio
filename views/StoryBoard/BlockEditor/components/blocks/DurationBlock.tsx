@@ -16,7 +16,7 @@ const DurationBlock: React.FC<DurationBlockProps> = ({ block, isSelected, onChan
   const definition = getBlockDefinition('duration');
   const { seconds } = block.data;
 
-  const presets = [1, 2, 3, 4, 5, 6, 8, 10];
+  const presets = [1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 20, 25, 30];
 
   return (
     <div
@@ -37,7 +37,7 @@ const DurationBlock: React.FC<DurationBlockProps> = ({ block, isSelected, onChan
         <input
           type="range"
           min="0.5"
-          max="30"
+          max="60"
           step="0.5"
           value={seconds}
           onChange={(e) => onChange?.({ seconds: parseFloat(e.target.value) })}
@@ -45,7 +45,7 @@ const DurationBlock: React.FC<DurationBlockProps> = ({ block, isSelected, onChan
         />
         <div className="flex justify-between text-xs text-slate-500 mt-1">
           <span>0.5s</span>
-          <span>30s</span>
+          <span>60s</span>
         </div>
       </div>
 
@@ -54,7 +54,7 @@ const DurationBlock: React.FC<DurationBlockProps> = ({ block, isSelected, onChan
         <input
           type="number"
           min="0.5"
-          max="30"
+          max="60"
           step="0.5"
           value={seconds}
           onChange={(e) => onChange?.({ seconds: parseFloat(e.target.value) || 3 })}

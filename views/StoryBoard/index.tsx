@@ -274,7 +274,8 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
     updateVoiceover,
     moveScene,
     reorderScenes,
-    updateCharactersAndLocation
+    updateCharactersAndLocation,
+    updateDuration
   } = useSceneManager(currentScriptId, currentProjectId);
 
   // 项目角色和场景资源（供选择器使用）
@@ -307,7 +308,7 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
   });
 
   // 5. 场景图片/视频生成
-  const { generateImage, generateVideo, generateWithCamera, tasks, isRunning } = useSceneGeneration({
+  const { generateImage, generateVideo, generateWithCamera, generateWithPaint, tasks, isRunning } = useSceneGeneration({
     projectId: currentProjectId,
     scriptId: currentScriptId,
     episodeNumber: currentEpisode,
@@ -1331,7 +1332,12 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
                 onGenerateImage={generateImage}
                 onGenerateVideo={generateVideo}
                 onGenerateWithCamera={generateWithCamera}
-                onUpdateScene={handleUpdateSelectedScene}
+                onGenerateWithPaint={generateWithPaint}
+                                onUpdateScene={handleUpdateSelectedScene}
+                                onUpdateDuration={(duration) => {
+                                  if (selectedScene) return updateDuration(selectedScene, duration);
+                                  return Promise.resolve(false);
+                                }}
                 imageTask={selectedScene ? tasks[`img_${selectedScene}`] : undefined}
                 videoTask={selectedScene ? tasks[`vid_${selectedScene}`] : undefined}
               />

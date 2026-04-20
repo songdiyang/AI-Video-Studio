@@ -173,7 +173,26 @@ router.post('/login', async (req, res) => {
   }
 
   // 兼容旧的 email 参数名，实际查询 username
-  const username = String(email).trim();
+  let username = String(email).trim();
+
+  // 检测并纠正中文/全角标点（防止用户输入中文句号等混淆字符）
+  const cjkReplacements = { '。': '.', '，': ',', '；': ';', '：': ':', '！': '!', '？': '?', '（': '(', '）': ')', '＠': '@', '＿': '_', '－': '-' };
+  let cjkFixed = [];
+  for (const [cjk, ascii] of Object.entries(cjkReplacements)) {
+    if (username.includes(cjk)) {
+      cjkFixed.push(`"${cjk}" → "${ascii}"`);
+      username = username.replaceAll(cjk, ascii);
+    }
+  }
+  if (cjkFixed.length > 0) {
+    console.log(`[Auth] 自动修正邮箱中文标点: ${cjkFixed.join(', ')}`);
+  }
+
+  // 邮箱格式校验
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(username)) {
+    return res.status(400).json({ message: '请输入有效的邮箱地址', reason: 'invalid_email' });
+  }
 
   try {
     const row = await queryOne('SELECT id, password_hash, role, is_active FROM users WHERE email = ?', [username]);

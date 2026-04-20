@@ -1090,6 +1090,59 @@ const operationContracts = [
       tasks: result.tasks,
       message: '批量提示词优化任务已启动'
     })
+  },
+  {
+    operationKey: 'single_prompt_optimize',
+    workflowType: 'single_prompt_optimization',
+    requestSchema: {
+      type: 'object',
+      required: ['storyboardId', 'prompt'],
+      properties: {
+        storyboardId: { type: 'integer', minimum: 1 },
+        prompt: { type: 'string', minLength: 1 },
+        textModel: { type: 'string' }
+      }
+    },
+    scopeResolver: async ({ actor, input }) => {
+      const storyboard = await requireStoryboardForUser(input.storyboardId, actor.userId);
+      return {
+        scope: {
+          projectId: storyboard.project_id,
+          scriptId: storyboard.script_id,
+          storyboardId: storyboard.id
+        },
+        resources: { storyboard }
+      };
+    },
+    defaultsResolver: async ({ input }) => ({
+      models: {
+        textModel: input.textModel || null
+      },
+      inputs: {
+        prompt: input.prompt
+      },
+      options: {}
+    }),
+    conflictKeyResolver: ({ scope }) => ({
+      key: 'storyboardId',
+      value: scope.storyboardId
+    }),
+    toJobParams: ({ contract, actor, scope, resolved }) =>
+      createCommand({
+        operationKey: contract.operationKey,
+        workflowType: contract.workflowType,
+        actor,
+        scope,
+        models: resolved.models,
+        inputs: resolved.inputs,
+        options: resolved.options
+      }),
+    responseMapper: ({ result }) => ({
+      success: true,
+      jobId: result.jobId,
+      tasks: result.tasks,
+      message: 'AI 优化任务已启动'
+    })
   }
 ];
 
