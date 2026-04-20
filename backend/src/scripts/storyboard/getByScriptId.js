@@ -1,6 +1,7 @@
 const { queryOne, queryAll } = require('../../dbHelper');
 const { authMiddleware } = require('../../middleware');
 const { getBatchStoryboardLinks } = require('../../resourceLinks/queryLinks');
+const { getEffectiveProjectRole } = require('../../middleware/collaborationAuth');
 
 /**
  * 从图片 URL 生成缩略图 URL
@@ -31,14 +32,20 @@ module.exports = (router) => {
     const scriptId = Number(req.params.scriptId);
 
     try {
-      // 验证剧本权限
+      // 验证剧本权限（支持团队成员访问）
       const script = await queryOne(
-        'SELECT * FROM scripts WHERE id = ? AND user_id = ?',
-        [scriptId, userId]
+        'SELECT * FROM scripts WHERE id = ?',
+        [scriptId]
       );
 
       if (!script) {
-        return res.status(404).json({ message: '剧本不存在或无权访问' });
+        return res.status(404).json({ message: '剧本不存在' });
+      }
+
+      // 通过剧本关联的项目检查权限
+      const role = await getEffectiveProjectRole(userId, script.project_id);
+      if (!role) {
+        return res.status(403).json({ message: '无权访问该剧本' });
       }
 
       // 获取分镜

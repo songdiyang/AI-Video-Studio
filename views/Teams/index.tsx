@@ -45,10 +45,13 @@ import {
   UserPlus,
   ClipboardList,
   Camera,
+  BookOpen,
+  Edit,
 } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import { useLanguage } from '../../contexts/LanguageContext';
+import { useWorkbench } from '../../contexts/WorkbenchContext';
 import TeamMembersPanel from '../../components/TeamMembersPanel';
 import TaskAssignmentModal from '../../components/TaskAssignmentModal';
 import { createProject, updateProject, fetchProjects, Project } from '../../services/projects';
@@ -68,7 +71,6 @@ import {
   leaveTeam,
   joinTeam,
   generateInvite,
-  generateInviteLink,
   canManageMembers,
   canDelete,
   ROLE_LABELS,
@@ -85,6 +87,52 @@ const Teams: React.FC = () => {
   const { showToast } = useToast();
   const { confirm } = useConfirm();
   const { t } = useLanguage();
+  const { setCurrentProject } = useWorkbench();
+
+  // 项目打开
+  const LAST_PROJECT_KEY = 'nanostory_last_project_id';
+  const handleEnterProject = (project: any) => {
+    localStorage.setItem(LAST_PROJECT_KEY, project.id.toString());
+    setCurrentProject({ ...project, name: project.name || project.title });
+    navigate('/');
+  };
+
+  // 辅助函数：与 Projects.tsx 保持一致
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'draft': return 'bg-slate-500/20 text-slate-600 dark:text-slate-300 border border-slate-400/30';
+      case 'in_progress': return 'bg-blue-500/20 text-blue-600 dark:text-blue-300 border border-blue-400/30';
+      case 'completed': return 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 border border-emerald-400/30';
+      default: return 'bg-slate-500/20 text-slate-600 dark:text-slate-300 border border-slate-400/30';
+    }
+  };
+  const getStatusText = (status: string) => {
+    switch (status) {
+      case 'draft': return '草稿';
+      case 'in_progress': return '进行中';
+      case 'completed': return '已完成';
+      default: return '草稿';
+    }
+  };
+  const getProjectTypeLabel = (type: string) => {
+    switch (type) {
+      case 'comic_drama': return '漫剧';
+      case 'manga': return '漫画';
+      case 'short_video': return '短视频';
+      case 'novel': return '小说';
+      default: return type;
+    }
+  };
+  const getProjectTypeColor = (type: string) => {
+    switch (type) {
+      case 'comic_drama': return 'bg-violet-500/20 text-violet-600 dark:text-violet-300 border border-violet-400/30';
+      case 'manga': return 'bg-orange-500/20 text-orange-600 dark:text-orange-300 border border-orange-400/30';
+      case 'short_video': return 'bg-cyan-500/20 text-cyan-600 dark:text-cyan-300 border border-cyan-400/30';
+      case 'novel': return 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 border border-emerald-400/30';
+      default: return 'bg-slate-500/20 text-slate-600 dark:text-slate-300 border border-slate-400/30';
+    }
+  };
+  const formatDate = (dateString: string) => new Date(dateString).toLocaleDateString('zh-CN');
 
   // 状态
   const [teams, setTeams] = useState<Team[]>([]);
@@ -309,9 +357,11 @@ const Teams: React.FC = () => {
       showToast(result.message, 'success');
       setShowJoinModal(false);
       setInviteCode('');
-      // 刷新邀请历史
-      loadMyJoinRequests().catch(err => console.error('刷新邀请历史失败:', err));
       await loadTeams();
+      // 加入成功后直接跳转到团队详情页
+      if (result.team?.id) {
+        navigate(`/teams/${result.team.id}`);
+      }
     } catch (error) {
       showToast(error instanceof Error ? error.message : '加入失败', 'error');
     } finally {
@@ -332,7 +382,7 @@ const Teams: React.FC = () => {
         max_uses: 10,
         expires_in_hours: 168, // 7天
       });
-      setInviteLink(generateInviteLink(invite.code));
+      setInviteLink(invite.code);
       setShowInviteModal(true);
     } catch (error) {
       showToast(error instanceof Error ? error.message : '生成邀请失败', 'error');
@@ -341,10 +391,26 @@ const Teams: React.FC = () => {
     }
   };
 
-  // 复制邀请链接
-  const handleCopyInviteLink = () => {
-    navigator.clipboard.writeText(inviteLink);
-    showToast('邀请链接已复制', 'success');
+  // 复制邀请链接（兼容 HTTP 环境）
+  const handleCopyInviteLink = async () => {
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(inviteLink);
+      } else {
+        // HTTP 降级：使用临时 textarea + execCommand
+        const ta = document.createElement('textarea');
+        ta.value = inviteLink;
+        ta.style.position = 'fixed';
+        ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      }
+      showToast('邀请码已复制', 'success');
+    } catch {
+      showToast('复制失败，请手动复制', 'error');
+    }
   };
 
   // 在团队中创建工程
@@ -965,7 +1031,7 @@ const Teams: React.FC = () => {
                 onPress={handleGenerateInvite}
                 isLoading={generatingInvite}
               >
-                邀请链接
+                邀请码
               </Button>
               <Button
                 variant="bordered"
@@ -1140,61 +1206,72 @@ const Teams: React.FC = () => {
             teamProjects.map((project) => (
               <Card
                 key={project.id}
-                isPressable={false}
-                className="
-                  bg-(--bg-card) border border-(--border-subtle)
-                  shadow-[0_2px_8px_var(--shadow-color)]
-                  cursor-pointer
-                  transition-all duration-250 ease-[cubic-bezier(0.4,0,0.2,1)]
-                  hover:shadow-[0_8px_24px_var(--shadow-color),0_0_12px_var(--shadow-glow)]
-                  hover:border-[rgba(78,142,247,0.25)]
-                  hover:-translate-y-0.5
-                "
+                className="pro-card cursor-pointer group"
+                onDoubleClick={() => handleEnterProject(project)}
               >
-                <CardBody className="p-5">
-                  <div className="flex items-start justify-between mb-2">
-                    <h3
-                      className="font-semibold text-(--text-primary) cursor-pointer hover:text-(--accent) flex-1 transition-colors duration-150"
-                      onClick={() => navigate(`/projects/${project.id}`)}
-                    >
-                      {project.title}
-                    </h3>
-                    <Dropdown>
-                      <DropdownTrigger>
-                        <Button
-                          isIconOnly
-                          size="sm"
-                          variant="light"
-                          className="text-(--text-muted) hover:text-(--text-secondary) hover:bg-(--bg-input) rounded-lg transition-all duration-150"
-                        >
-                          <MoreVertical className="w-4 h-4" />
-                        </Button>
-                      </DropdownTrigger>
-                      <DropdownMenu
-                        aria-label="项目操作"
-                        onAction={(key) => {
-                          if (key === 'open') navigate(`/projects/${project.id}`);
-                          if (key === 'remove') handleRemoveFromTeam(project.id, project.title);
-                        }}
+                <CardBody className="p-0">
+                  {/* 封面区域 */}
+                  <div
+                    className="h-32 bg-linear-to-br from-(--bg-card) to-(--bg-input) relative overflow-hidden rounded-t-2xl"
+                    onClick={() => handleEnterProject(project)}
+                  >
+                    {project.cover_url ? (
+                      <img src={project.cover_url} alt={project.name} className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <BookOpen className="w-12 h-12 text-(--accent)/30" />
+                      </div>
+                    )}
+                    {/* 悬停操作按钮 */}
+                    <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Button
+                        size="sm"
+                        isIconOnly
+                        className="bg-(--bg-elevated) backdrop-blur-sm hover:bg-(--bg-card) shadow-lg border border-(--border-color) cursor-pointer"
+                        onPress={() => handleEnterProject(project)}
                       >
-                        <DropdownItem key="open" startContent={<FolderOpen className="w-4 h-4" />}>
-                          打开项目
-                        </DropdownItem>
-                        <DropdownItem key="remove" className="text-warning" color="warning" startContent={<Download className="w-4 h-4" />}>
-                          移出到个人
-                        </DropdownItem>
-                      </DropdownMenu>
-                    </Dropdown>
+                        <FolderOpen className="w-4 h-4 text-(--text-primary)" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        isIconOnly
+                        className="bg-(--bg-elevated) backdrop-blur-sm hover:bg-amber-500/20 shadow-lg border border-(--border-color) cursor-pointer"
+                        onPress={() => handleRemoveFromTeam(project.id, project.name)}
+                      >
+                        <Download className="w-4 h-4 text-amber-400" />
+                      </Button>
+                    </div>
                   </div>
-                  {project.description && (
-                    <p className="text-sm text-(--text-secondary) line-clamp-2 mb-3 leading-relaxed">
-                      {project.description}
+
+                  {/* 信息区域 */}
+                  <div className="p-4 space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <h3 className="text-lg font-semibold text-(--text-primary) line-clamp-1">{project.name}</h3>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {project.type && (
+                          <Chip size="sm" className={getProjectTypeColor(project.type)}>
+                            {getProjectTypeLabel(project.type)}
+                          </Chip>
+                        )}
+                        {project.status && (
+                          <Chip size="sm" className={getStatusColor(project.status)}>
+                            {getStatusText(project.status)}
+                          </Chip>
+                        )}
+                      </div>
+                    </div>
+                    <p className="text-sm text-(--text-muted) line-clamp-2 min-h-10">
+                      {project.description || '暂无描述'}
                     </p>
-                  )}
-                  <div className="pt-2 border-t border-(--border-subtle)">
-                    <p className="text-xs text-(--text-muted)">
-                      创建者: {project.owner_username}
-                    </p>
+                    <div className="flex items-center justify-between text-xs text-(--text-muted) pt-2 border-t border-(--border-color)">
+                      <div className="flex items-center gap-1">
+                        <Clock className="w-3 h-3" />
+                        <span>更新于 {formatDate(project.updated_at)}</span>
+                      </div>
+                      {project.owner_username && (
+                        <span>{project.owner_username}</span>
+                      )}
+                    </div>
                   </div>
                 </CardBody>
               </Card>
@@ -1204,20 +1281,20 @@ const Teams: React.FC = () => {
         </div>
       )}
   
-      {/* 邀请链接模态框 */}
+      {/* 邀请码模态框 */}
       <Modal isOpen={showInviteModal} onClose={() => setShowInviteModal(false)}>
         <ModalContent>
-          <ModalHeader>邀请链接</ModalHeader>
+          <ModalHeader>邀请码</ModalHeader>
           <ModalBody>
             <p className="text-sm text-(--text-secondary) mb-4">
-              分享此链接邀请他人加入团队，链接7天内有效，最多可使用10次。
+              分享此邀请码邀请他人加入团队，7天内有效，最多可使用10次。
             </p>
             <div className="flex gap-2">
               <Input
                 value={inviteLink}
                 isReadOnly
                 classNames={{
-                  input: 'text-sm',
+                  input: 'text-base font-mono tracking-wider text-center',
                 }}
               />
               <Button

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardBody, Button, Input, Textarea, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure, Chip, Spinner } from '@heroui/react';
-import { FolderOpen, Plus, Edit, Trash2, Search, BookOpen, Clock, Palette, Sparkles, ImagePlus, Globe, Upload } from 'lucide-react';
+import { FolderOpen, Plus, Edit, Trash2, Search, BookOpen, Clock, Palette, Sparkles, ImagePlus, Globe, Upload, Users } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Project, fetchProjects, createProject, updateProject, deleteProject, UserStylePreset, fetchMyStyles, createMyStyle, updateMyStyle, deleteMyStyle } from '../services/projects';
 import { Team, fetchTeams } from '../services/collaboration';
@@ -752,22 +752,26 @@ const Projects: React.FC = () => {
                             )}
                             {/* 操作按钮 */}
                             <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <Button
-                                size="sm"
-                                isIconOnly
-                                className="bg-(--bg-elevated) backdrop-blur-sm hover:bg-(--bg-card) shadow-lg border border-(--border-color) cursor-pointer"
-                                onPress={() => handleEdit(project)}
-                              >
-                                <Edit className="w-4 h-4 text-(--text-primary)" />
-                              </Button>
-                              <Button
-                                size="sm"
-                                isIconOnly
-                                className="bg-(--bg-elevated) backdrop-blur-sm hover:bg-red-500/20 shadow-lg border border-(--border-color) cursor-pointer"
-                                onPress={() => handleDelete(project.id)}
-                              >
-                                <Trash2 className="w-4 h-4 text-red-400" />
-                              </Button>
+                              {(!project.my_role || project.my_role !== 'viewer') && (
+                                <Button
+                                  size="sm"
+                                  isIconOnly
+                                  className="bg-(--bg-elevated) backdrop-blur-sm hover:bg-(--bg-card) shadow-lg border border-(--border-color) cursor-pointer"
+                                  onPress={() => handleEdit(project)}
+                                >
+                                  <Edit className="w-4 h-4 text-(--text-primary)" />
+                                </Button>
+                              )}
+                              {(!project.my_role || project.my_role === 'owner' || project.my_role === 'admin') && (
+                                <Button
+                                  size="sm"
+                                  isIconOnly
+                                  className="bg-(--bg-elevated) backdrop-blur-sm hover:bg-red-500/20 shadow-lg border border-(--border-color) cursor-pointer"
+                                  onPress={() => handleDelete(project.id)}
+                                >
+                                  <Trash2 className="w-4 h-4 text-red-400" />
+                                </Button>
+                              )}
                             </div>
                           </div>
                           
@@ -777,6 +781,11 @@ const Projects: React.FC = () => {
                               <div className="flex items-start justify-between gap-2">
                                 <h3 className="text-base font-semibold text-(--text-primary) line-clamp-1">{project.name}</h3>
                                 <div className="flex items-center gap-1 shrink-0">
+                                  {project.team_name && (
+                                    <Chip size="sm" className="bg-blue-500/15 text-blue-600" startContent={<Users className="w-3 h-3" />}>
+                                      {project.team_name}
+                                    </Chip>
+                                  )}
                                   <Chip size="sm" className={getProjectTypeColor(project.type)}>
                                     {getProjectTypeLabel(project.type)}
                                   </Chip>
@@ -826,22 +835,26 @@ const Projects: React.FC = () => {
                     )}
                     {/* 操作按钮 */}
                     <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Button
-                        size="sm"
-                        isIconOnly
-                        className="bg-(--bg-elevated) backdrop-blur-sm hover:bg-(--bg-card) shadow-lg border border-(--border-color) cursor-pointer"
-                        onPress={() => handleEdit(project)}
-                      >
-                        <Edit className="w-4 h-4 text-(--text-primary)" />
-                      </Button>
-                      <Button
-                        size="sm"
-                        isIconOnly
-                        className="bg-(--bg-elevated) backdrop-blur-sm hover:bg-red-500/20 shadow-lg border border-(--border-color) cursor-pointer"
-                        onPress={() => handleDelete(project.id)}
-                      >
-                        <Trash2 className="w-4 h-4 text-red-400" />
-                      </Button>
+                      {(!project.my_role || project.my_role !== 'viewer') && (
+                        <Button
+                          size="sm"
+                          isIconOnly
+                          className="bg-(--bg-elevated) backdrop-blur-sm hover:bg-(--bg-card) shadow-lg border border-(--border-color) cursor-pointer"
+                          onPress={() => handleEdit(project)}
+                        >
+                          <Edit className="w-4 h-4 text-(--text-primary)" />
+                        </Button>
+                      )}
+                      {(!project.my_role || project.my_role === 'owner' || project.my_role === 'admin') && (
+                        <Button
+                          size="sm"
+                          isIconOnly
+                          className="bg-(--bg-elevated) backdrop-blur-sm hover:bg-red-500/20 shadow-lg border border-(--border-color) cursor-pointer"
+                          onPress={() => handleDelete(project.id)}
+                        >
+                          <Trash2 className="w-4 h-4 text-red-400" />
+                        </Button>
+                      )}
                     </div>
                   </div>
                   
@@ -850,6 +863,11 @@ const Projects: React.FC = () => {
                     <div className="flex items-start justify-between gap-2">
                       <h3 className="text-lg font-semibold text-(--text-primary) line-clamp-1">{project.name}</h3>
                       <div className="flex items-center gap-1 shrink-0">
+                        {project.team_name && (
+                          <Chip size="sm" className="bg-blue-500/15 text-blue-600" startContent={<Users className="w-3 h-3" />}>
+                            {project.team_name}
+                          </Chip>
+                        )}
                         <Chip size="sm" className={getProjectTypeColor(project.type)}>
                           {getProjectTypeLabel(project.type)}
                         </Chip>

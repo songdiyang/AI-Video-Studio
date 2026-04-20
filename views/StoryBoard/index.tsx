@@ -15,6 +15,7 @@ import ScenePreviewPanel from './ScenePreviewPanel';
 import { PanelGroup } from '../../components/PanelGroup';
 import ResizablePanel, { ResizablePanelRef } from '../../components/ResizablePanel';
 import { getAuthToken } from '../../services/auth';
+import { fetchCharactersByProject, fetchScenesByProject } from '../../services/assets';
 import { useToast } from '../../contexts/ToastContext';
 import { AIModel } from '../../components/AIModelSelector';
 import { normalizeCapabilityOptions } from '../../utils/modelCapabilities';
@@ -272,8 +273,23 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
     updateDialogues,
     updateVoiceover,
     moveScene,
-    reorderScenes
+    reorderScenes,
+    updateCharactersAndLocation
   } = useSceneManager(currentScriptId, currentProjectId);
+
+  // 项目角色和场景资源（供选择器使用）
+  const [projectCharacters, setProjectCharacters] = useState<{ id: number; name: string; image_url?: string }[]>([]);
+  const [projectScenes, setProjectScenes] = useState<{ id: number; name: string; description?: string }[]>([]);
+
+  useEffect(() => {
+    if (!currentProjectId) return;
+    fetchCharactersByProject(currentProjectId)
+      .then(chars => setProjectCharacters(chars.map(c => ({ id: c.id, name: c.name, image_url: (c as any).image_url }))))
+      .catch(() => {});
+    fetchScenesByProject(currentProjectId)
+      .then(scenes => setProjectScenes(scenes.map(s => ({ id: s.id, name: s.name, description: s.description }))))
+      .catch(() => {});
+  }, [currentProjectId]);
 
   // 2. 自动分镜
   const autoStoryboard = useAutoStoryboard({
@@ -1306,6 +1322,12 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
                   if (selectedScene) return await updateVoiceover(selectedScene, voiceover);
                   return false;
                 }}
+                onUpdateCharactersAndLocation={async (characters, location, characterIds, sceneId) => {
+                  if (selectedScene) return await updateCharactersAndLocation(selectedScene, characters, location, characterIds, sceneId);
+                  return false;
+                }}
+                projectCharacters={projectCharacters}
+                projectScenes={projectScenes}
                 onGenerateImage={generateImage}
                 onGenerateVideo={generateVideo}
                 onUpdateScene={handleUpdateSelectedScene}

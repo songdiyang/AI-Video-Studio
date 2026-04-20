@@ -1,5 +1,6 @@
 const { queryAll } = require('../../dbHelper');
 const { authMiddleware } = require('../../middleware');
+const { getEffectiveProjectRole } = require('../../middleware/collaborationAuth');
 
 // GET /project/:projectId - 获取项目的所有角色
 // 支持可选的 scriptId 参数：/project/:projectId?scriptId=123
@@ -11,8 +12,14 @@ module.exports = (router) => {
     const { scriptId } = req.query;
 
     try {
-      let sql = 'SELECT * FROM characters WHERE project_id = ? AND user_id = ?';
-      const params = [projectId, userId];
+      // 验证项目权限（支持团队成员访问）
+      const role = await getEffectiveProjectRole(userId, projectId);
+      if (!role) {
+        return res.status(403).json({ message: '无权访问该项目' });
+      }
+
+      let sql = 'SELECT * FROM characters WHERE project_id = ?';
+      const params = [projectId];
 
       // 如果提供了 scriptId，添加过滤条件
       if (scriptId) {

@@ -51,15 +51,15 @@ export interface CurrentSubscriptionResponse {
 }
 
 export interface AdminSubscription {
-  id: number;
+  id: number | null;
   user_id: number;
   user_email: string;
-  plan_id: number;
-  plan_name: string;
-  status: string;
-  billing_cycle: string;
-  current_period_end: string;
-  api_calls_used: number;
+  plan_id: number | null;
+  plan_name: string | null;
+  status: string | null;
+  billing_cycle: string | null;
+  current_period_end: string | null;
+  api_calls_used: number | null;
   created_at: string;
 }
 
@@ -238,4 +238,54 @@ export async function adminFetchSubscriptions(params: {
     subscriptions: data.subscriptions || [],
     total: data.pagination?.total ?? 0,
   };
+}
+
+export async function adminUpdateSubscription(
+  id: number,
+  updates: {
+    status?: string;
+    plan_id?: number;
+    billing_cycle?: string;
+    current_period_end?: string;
+    api_calls_used?: number;
+  }
+): Promise<void> {
+  const res = await fetch(`/api/admin/subscriptions/${id}`, {
+    method: 'PUT',
+    headers: {
+      ...getAdminAuthHeaders(),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(updates),
+  });
+
+  if (!res.ok) {
+    const data = await res.json().catch(() => null);
+    throw new Error(data?.message || '更新订阅失败');
+  }
+}
+
+export async function adminCreateSubscription(
+  data: {
+    user_id: number;
+    plan_id: number;
+    status?: string;
+    billing_cycle?: string;
+    current_period_end?: string;
+  }
+): Promise<{ id: number; gift_points?: number; plan_price?: number }> {
+  const res = await fetch('/api/admin/subscriptions', {
+    method: 'POST',
+    headers: {
+      ...getAdminAuthHeaders(),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(data),
+  });
+
+  if (!res.ok) {
+    const d = await res.json().catch(() => null);
+    throw new Error(d?.message || '创建订阅失败');
+  }
+  return res.json();
 }

@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Button, Textarea, Chip } from '@heroui/react';
-import { ImageIcon, Video, Film, Camera, Users, MapPin, Zap, X, Trash2, ZoomIn, ZoomOut, RotateCw, Maximize2, Blocks, ChevronDown, ChevronUp, History, Loader2 } from 'lucide-react';
+import { ImageIcon, Video, Film, Camera, Users, MapPin, Zap, X, Trash2, ZoomIn, ZoomOut, RotateCw, Maximize2, Blocks, ChevronDown, ChevronUp, History, Loader2, Pencil, Check, Plus, Search } from 'lucide-react';
 import { StoryboardScene, DialogueLine } from './useSceneManager';
 import { TaskState } from '../../hooks/useTaskRunner';
 import { getAuthToken } from '../../services/auth';
@@ -13,6 +13,200 @@ import FrameHistoryPanel from './FrameHistoryPanel';
 import { BlockEditorState } from './BlockEditor/types/blockTypes';
 import { bustCache } from '../../services/mediaCache';
 
+/** 角色选择器：Chip 标签 + 添加下拉 */
+const CharacterTagSelector: React.FC<{
+  characters: string[];
+  projectCharacters: { id: number; name: string; image_url?: string }[];
+  onSave: (characters: string[]) => void;
+}> = ({ characters, projectCharacters, onSave }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setIsOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [isOpen]);
+
+  useEffect(() => { if (isOpen) inputRef.current?.focus(); }, [isOpen]);
+
+  const toggleCharacter = (name: string) => {
+    if (characters.includes(name)) {
+      onSave(characters.filter(c => c !== name));
+    } else {
+      onSave([...characters, name]);
+    }
+  };
+
+  const addCustom = () => {
+    const trimmed = search.trim();
+    if (trimmed && !characters.includes(trimmed)) {
+      onSave([...characters, trimmed]);
+      setSearch('');
+    }
+  };
+
+  const filtered = projectCharacters.filter(c =>
+    !search || c.name.toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <div ref={containerRef} className="relative flex items-center gap-1 flex-wrap">
+      <Users className="w-3 h-3 text-[var(--text-muted)] shrink-0" />
+      {characters.map(name => (
+        <span key={name} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-blue-500/15 text-blue-400 rounded text-xs">
+          {name}
+          <button onClick={() => toggleCharacter(name)} className="hover:text-red-400 transition-colors">
+            <X className="w-2.5 h-2.5" />
+          </button>
+        </span>
+      ))}
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-4 h-4 flex items-center justify-center rounded bg-[var(--accent)]/20 text-[var(--accent)] hover:bg-[var(--accent)]/30 transition-colors"
+        title="添加角色"
+      >
+        <Plus className="w-3 h-3" />
+      </button>
+
+      {isOpen && (
+        <div className="absolute top-full left-0 mt-1 z-50 w-56 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg shadow-xl p-2 space-y-1">
+          <div className="flex items-center gap-1 border-b border-[var(--border-color)] pb-1 mb-1">
+            <Search className="w-3 h-3 text-[var(--text-muted)]" />
+            <input
+              ref={inputRef}
+              className="flex-1 bg-transparent text-xs text-[var(--text-primary)] placeholder-[var(--text-muted)] outline-none"
+              placeholder="搜索或输入新角色名..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') addCustom(); }}
+            />
+          </div>
+          <div className="max-h-36 overflow-y-auto space-y-0.5">
+            {filtered.length === 0 && !search.trim() && (
+              <div className="text-xs text-[var(--text-muted)] px-2 py-1">项目暂无角色资源</div>
+            )}
+            {filtered.map(c => {
+              const selected = characters.includes(c.name);
+              return (
+                <button
+                  key={c.id}
+                  onClick={() => toggleCharacter(c.name)}
+                  className={`w-full text-left px-2 py-1 rounded text-xs transition-colors flex items-center gap-2 ${
+                    selected ? 'bg-blue-500/20 text-blue-400' : 'hover:bg-[var(--bg-card-hover)] text-[var(--text-secondary)]'
+                  }`}
+                >
+                  {selected ? <Check className="w-3 h-3 shrink-0" /> : <div className="w-3 h-3 shrink-0" />}
+                  <span className="truncate">{c.name}</span>
+                </button>
+              );
+            })}
+          </div>
+          {search.trim() && !projectCharacters.find(c => c.name === search.trim()) && (
+            <button
+              onClick={addCustom}
+              className="w-full text-left px-2 py-1 rounded text-xs text-[var(--accent)] hover:bg-[var(--accent)]/10 transition-colors flex items-center gap-1"
+            >
+              <Plus className="w-3 h-3" /> 添加自定义角色 "{search.trim()}"
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+/** 场景选择器：单选下拉 */
+const SceneDropdownSelector: React.FC<{
+  location: string;
+  projectScenes: { id: number; name: string; description?: string }[];
+  onSave: (location: string) => void;
+}> = ({ location, projectScenes, onSave }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setIsOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [isOpen]);
+
+  useEffect(() => { if (isOpen) inputRef.current?.focus(); }, [isOpen]);
+
+  const selectScene = (name: string) => {
+    onSave(name);
+    setIsOpen(false);
+    setSearch('');
+  };
+
+  const filtered = projectScenes.filter(s =>
+    !search || s.name.toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <div ref={containerRef} className="relative flex items-center gap-1">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="flex items-center gap-1 text-[var(--text-muted)] cursor-pointer hover:text-[var(--accent)] transition-colors text-xs group"
+        title="点击选择场景"
+      >
+        <MapPin className="w-3 h-3" />
+        <span>{location || '选择场景'}</span>
+        <ChevronDown className="w-2.5 h-2.5 opacity-60 group-hover:opacity-100 transition-opacity" />
+      </button>
+
+      {isOpen && (
+        <div className="absolute top-full left-0 mt-1 z-50 w-56 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg shadow-xl p-2 space-y-1">
+          <div className="flex items-center gap-1 border-b border-[var(--border-color)] pb-1 mb-1">
+            <Search className="w-3 h-3 text-[var(--text-muted)]" />
+            <input
+              ref={inputRef}
+              className="flex-1 bg-transparent text-xs text-[var(--text-primary)] placeholder-[var(--text-muted)] outline-none"
+              placeholder="搜索场景..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          <div className="max-h-36 overflow-y-auto space-y-0.5">
+            {filtered.length === 0 && !search.trim() && (
+              <div className="text-xs text-[var(--text-muted)] px-2 py-1">项目暂无场景资源</div>
+            )}
+            {filtered.map(s => (
+              <button
+                key={s.id}
+                onClick={() => selectScene(s.name)}
+                className={`w-full text-left px-2 py-1 rounded text-xs transition-colors ${
+                  s.name === location ? 'bg-green-500/20 text-green-400' : 'hover:bg-[var(--bg-card-hover)] text-[var(--text-secondary)]'
+                }`}
+              >
+                {s.name}
+              </button>
+            ))}
+          </div>
+          {search.trim() && !projectScenes.find(s => s.name === search.trim()) && (
+            <button
+              onClick={() => selectScene(search.trim())}
+              className="w-full text-left px-2 py-1 rounded text-xs text-[var(--accent)] hover:bg-[var(--accent)]/10 transition-colors flex items-center gap-1"
+            >
+              <Plus className="w-3 h-3" /> 使用自定义场景 "{search.trim()}"
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
 interface ScenePreviewPanelProps {
   scene: StoryboardScene | null;
   sceneIndex: number;
@@ -21,6 +215,9 @@ interface ScenePreviewPanelProps {
   onUpdateDescription: (description: string) => Promise<boolean>;
   onUpdateDialogues?: (dialogues: DialogueLine[]) => Promise<boolean>;
   onUpdateVoiceover?: (voiceover: string) => Promise<boolean>;
+  onUpdateCharactersAndLocation?: (characters: string[], location: string, characterIds?: number[], sceneId?: number) => Promise<boolean>;
+  projectCharacters?: { id: number; name: string; image_url?: string }[];
+  projectScenes?: { id: number; name: string; description?: string }[];
   onGenerateImage: (id: number, prompt: string, regenerateTarget?: 'first' | 'last' | 'both', forceRegenerate?: boolean) => Promise<{ success: boolean; error?: string }>;
   onGenerateVideo: (id: number) => Promise<{ success: boolean; error?: string }>;
   onUpdateScene?: (updates: Partial<StoryboardScene>) => void;
@@ -36,6 +233,9 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
   onUpdateDescription,
   onUpdateDialogues,
   onUpdateVoiceover,
+  onUpdateCharactersAndLocation,
+  projectCharacters = [],
+  projectScenes = [],
   onGenerateImage,
   onGenerateVideo,
   onUpdateScene,
@@ -635,19 +835,29 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
             </div>
           </div>
           
-          <div className="flex flex-wrap gap-2 text-xs">
-            {scene.characters && scene.characters.length > 0 && (
-              <div className="flex items-center gap-1 text-[var(--text-muted)]">
-                <Users className="w-3 h-3" />
-                <span>{scene.characters.join(', ')}</span>
-              </div>
-            )}
-            {scene.location && (
-              <div className="flex items-center gap-1 text-[var(--text-muted)]">
-                <MapPin className="w-3 h-3" />
-                <span>{scene.location}</span>
-              </div>
-            )}
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs items-start">
+            <CharacterTagSelector
+              characters={scene.characters || []}
+              projectCharacters={projectCharacters}
+              onSave={(chars) => {
+                const charIds = chars
+                  .map(name => projectCharacters.find(pc => pc.name === name)?.id)
+                  .filter((id): id is number => id !== undefined);
+                const curSceneId = projectScenes.find(s => s.name === scene.location)?.id;
+                onUpdateCharactersAndLocation?.(chars, scene.location || '', charIds, curSceneId);
+              }}
+            />
+            <SceneDropdownSelector
+              location={scene.location || ''}
+              projectScenes={projectScenes}
+              onSave={(loc) => {
+                const charIds = (scene.characters || [])
+                  .map(name => projectCharacters.find(pc => pc.name === name)?.id)
+                  .filter((id): id is number => id !== undefined);
+                const newSceneId = projectScenes.find(s => s.name === loc)?.id;
+                onUpdateCharactersAndLocation?.(scene.characters || [], loc, charIds, newSceneId);
+              }}
+            />
             {scene.duration && (
               <div className="flex items-center gap-1 text-[var(--text-muted)]">
                 <Video className="w-3 h-3" />

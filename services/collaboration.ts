@@ -68,6 +68,7 @@ export interface CollaborationInvite {
   created_by?: string;
   max_uses?: number;
   expires_at: string;
+  is_member?: boolean;
 }
 
 export interface SearchedUser {
@@ -302,7 +303,10 @@ export async function generateInvite(data: {
 }
 
 export async function fetchInviteDetail(code: string): Promise<{ invite: CollaborationInvite }> {
-  const res = await fetch(`/api/invites/${code}`);
+  // 带上 auth header，后端可选检查成员状态
+  const res = await fetch(`/api/invites/${code}`, {
+    headers: authHeaders(),
+  });
   return handleResponse(res);
 }
 

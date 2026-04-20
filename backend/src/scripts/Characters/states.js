@@ -18,6 +18,87 @@ const { generationStartService, sendGenerationError } = require('../../modules/g
 // 年龄阶段选项
 const AGE_STAGES = ['童年', '少年', '青年', '中年', '老年'];
 
+/**
+ * 获取默认文本模型
+ */
+async function getDefaultTextModel() {
+  const model = await queryOne(
+    "SELECT name FROM ai_model_configs WHERE category = 'TEXT' AND is_active = 1 ORDER BY id ASC LIMIT 1"
+  );
+  return model?.name;
+}
+
+/**
+ * 使用 AI 清洗白膜外貌特征
+ * 只保留身体物理特征（年龄、身高、体型、肤色、发型发色、瞳色、疤痕等）
+ * 去掉服饰描述、场景描述、性格/感情描述
+ */
+async function cleanAppearanceForBaseModel(appearance) {
+  if (!appearance || appearance.trim().length === 0) return '';
+  
+  const textModel = await getDefaultTextModel();
+  if (!textModel) {
+    console.warn('[States] 无可用文本模型，跳过白膜外貌清洗');
+    return appearance;
+  }
+
+  const handleBaseTextModelCall = require('../../nosyntask/tasks/base/baseTextModelCall');
+
+  const prompt = `你是一个角色设计助手。请从以下角色外貌描述中，只提取【身体物理特征】，严格按以下规则处理：
+
+【保留的内容】（只保留这些）：
+- 年龄、性别
+- 身高、体重、体型（偏瘦/健壮/矮小等）
+- 肤色
+- 发型、发色、发质
+- 瞳色、眼型
+- 脸型、五官特征
+- 身体特征（疤痕、胎记、纹身等永久性身体标记）
+- 体型比例
+
+【必须去掉的内容】：
+- 所有服装/服饰描述（衣服、裤子、裙子、鞋子、帽子、配饰等）
+- 所有场景描述（"在xxx场景中"等）
+- 所有性格/情感描述（"性格开朗"、"带有生活磨损感"等主观描述）
+- 所有风格描述（"纪实风格"、"日常真实"等）
+
+请直接输出清洗后的纯身体特征描述，用中文，保持简洁自然的语句。不要添加任何解释或标题。
+
+原始描述：
+${appearance}`;
+
+  try {
+    const response = await handleBaseTextModelCall({
+      prompt,
+      textModel: textModel,
+      maxTokens: 1024,
+      temperature: 0.3
+    });
+
+    let cleaned = '';
+    if (typeof response === 'string') {
+      cleaned = response;
+    } else if (response?.content) {
+      cleaned = response.content;
+    } else if (response?.text) {
+      cleaned = response.text;
+    }
+
+    cleaned = cleaned.trim().replace(/^["']|["']$/g, '');
+    
+    if (cleaned && cleaned.length > 5) {
+      console.log(`[States] ✅ 白膜外貌清洗完成: ${appearance.length} → ${cleaned.length} 字`);
+      return cleaned;
+    }
+    
+    console.warn('[States] AI清洗结果为空，保留原始外貌');
+    return appearance;
+  } catch (error) {
+    console.error('[States] 白膜外貌清洗失败:', error.message);
+    return appearance;
+  }
+}
+
 // 状态分类选项
 const STATE_CATEGORIES = ['daily', 'costume', 'time', 'effect'];
 
@@ -57,6 +138,53 @@ async function recordDeactivation(characterId, newActiveStateId, userId) {
   }
 }
 
+/**
+ * 确保角色拥有白膜基础状态
+ * 如果角色没有 is_base_model=1 的状态，自动创建一个
+ * 支持老角色（创建时未自动生成白膜）和意外丢失的情况
+ */
+async function ensureBaseModelState(characterId) {
+  const existing = await queryOne(
+    'SELECT id FROM character_states WHERE character_id = ? AND is_base_model = 1',
+    [characterId]
+  );
+  if (existing) return null; // 已有白膜，无需创建
+
+  // 从角色表获取基础外貌和性别信息
+  const character = await queryOne(
+    'SELECT appearance, gender FROM characters WHERE id = ?',
+    [characterId]
+  );
+  if (!character) return null;
+
+  const result = await execute(
+    `INSERT INTO character_states (
+      character_id, is_base_model, name, description, appearance, gender, is_active, generation_status
+    ) VALUES (?, 1, '基础白膜', '角色基础白膜版本，用于生成各状态的参考基准', ?, ?, 1, 'idle')`,
+    [characterId, character.appearance || '', character.gender || 'unknown']
+  );
+
+  const newStateId = result.insertId;
+  console.log(`[States] 角色 ${characterId} 自动创建白膜状态，ID: ${newStateId}`);
+
+  // 异步清洗白膜外貌（去掉服饰/场景/感情描述，只保留身体特征）
+  if (character.appearance) {
+    cleanAppearanceForBaseModel(character.appearance).then(async (cleaned) => {
+      if (cleaned !== character.appearance) {
+        await execute(
+          'UPDATE character_states SET appearance = ? WHERE id = ?',
+          [cleaned, newStateId]
+        );
+        console.log(`[States] 角色 ${characterId} 白膜外貌已异步清洗`);
+      }
+    }).catch(err => {
+      console.error(`[States] 角色 ${characterId} 白膜外貌清洗失败:`, err.message);
+    });
+  }
+
+  return newStateId;
+}
+
 module.exports = (router) => {
   // GET /api/characters/:id/states - 获取角色的所有状态
   router.get('/:id/states', authMiddleware, async (req, res) => {
@@ -73,6 +201,9 @@ module.exports = (router) => {
       if (!character) {
         return res.status(404).json({ message: '角色不存在或无权访问' });
       }
+
+      // 确保白膜状态存在（兼容老角色）
+      await ensureBaseModelState(id);
 
       const states = await queryAll(
         'SELECT * FROM character_states WHERE character_id = ? ORDER BY sort_order ASC, created_at ASC',
@@ -105,8 +236,9 @@ module.exports = (router) => {
 
       let query, params;
       if (category && STATE_CATEGORIES.includes(category)) {
-        query = 'SELECT * FROM character_states WHERE character_id = ? AND state_category = ? ORDER BY is_base_model DESC, sort_order ASC, created_at ASC';
-        params = [id, category];
+        // 兼容新旧格式：JSON数组包含该分类 或 旧格式精确匹配
+        query = 'SELECT * FROM character_states WHERE character_id = ? AND (state_category LIKE ? OR state_category = ?) ORDER BY is_base_model DESC, sort_order ASC, created_at ASC';
+        params = [id, `%"${category}"%`, category];
       } else {
         query = 'SELECT * FROM character_states WHERE character_id = ? ORDER BY is_base_model DESC, state_category ASC, sort_order ASC, created_at ASC';
         params = [id];
@@ -114,10 +246,19 @@ module.exports = (router) => {
 
       const states = await queryAll(query, params);
 
-      // 按分类分组返回
+      // 辅助函数：解析状态分类（兼容旧单值和新JSON数组）
+      const parseCategories = (cat) => {
+        if (!cat) return ['daily'];
+        try {
+          const parsed = JSON.parse(cat);
+          return Array.isArray(parsed) ? parsed : [cat];
+        } catch { return [cat]; }
+      };
+
+      // 按分类分组返回（一个状态可出现在多个分类中）
       const grouped = {};
       for (const cat of STATE_CATEGORIES) {
-        grouped[cat] = states.filter(s => (s.state_category || 'daily') === cat);
+        grouped[cat] = states.filter(s => parseCategories(s.state_category).includes(cat));
       }
 
       res.json({ states, grouped });
@@ -243,7 +384,7 @@ module.exports = (router) => {
       name, description, appearance, image_url, 
       front_view_url, side_view_url, back_view_url, sort_order,
       // 新增外观属性字段
-      outfit, age_stage, hairstyle, accessories, is_active, generation_prompt,
+      outfit, age_stage, hairstyle, accessories, body_elements, is_active, generation_prompt,
       // 状态分类和标签
       state_category, tags
     } = req.body;
@@ -252,9 +393,15 @@ module.exports = (router) => {
       return res.status(400).json({ message: '状态名称不能为空' });
     }
 
-    // 验证状态分类
-    if (state_category && !STATE_CATEGORIES.includes(state_category)) {
-      return res.status(400).json({ message: `无效的状态分类，可选值: ${STATE_CATEGORIES.join(', ')}` });
+    // 验证状态分类（支持单值或数组）
+    let normalizedCategory = 'daily';
+    if (state_category) {
+      const cats = Array.isArray(state_category) ? state_category : [state_category];
+      const invalid = cats.filter(c => !STATE_CATEGORIES.includes(c));
+      if (invalid.length > 0) {
+        return res.status(400).json({ message: `无效的状态分类: ${invalid.join(', ')}，可选值: ${STATE_CATEGORIES.join(', ')}` });
+      }
+      normalizedCategory = JSON.stringify(cats);
     }
 
     // 解析和验证标签
@@ -298,14 +445,14 @@ module.exports = (router) => {
         `INSERT INTO character_states (
           character_id, name, description, appearance, image_url, 
           front_view_url, side_view_url, back_view_url, sort_order,
-          outfit, age_stage, hairstyle, accessories, is_active, generation_prompt, generation_status,
+          outfit, age_stage, hairstyle, accessories, body_elements, is_active, generation_prompt, generation_status,
           state_category, tags
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'idle', ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'idle', ?, ?)`,
         [
           id, name.trim(), description || '', appearance || '', image_url || '',
           front_view_url || '', side_view_url || '', back_view_url || '', newSortOrder,
-          outfit || '', age_stage || '', hairstyle || '', accessories || '', is_active ? 1 : 0, generation_prompt || '',
-          state_category || 'daily', parsedTags
+          outfit || '', age_stage || '', hairstyle || '', accessories || '', body_elements || '', is_active ? 1 : 0, generation_prompt || '',
+          normalizedCategory, parsedTags
         ]
       );
 
@@ -335,7 +482,7 @@ module.exports = (router) => {
       name, description, appearance, image_url, 
       front_view_url, side_view_url, back_view_url, sort_order,
       // 新增外观属性字段
-      outfit, age_stage, hairstyle, accessories, is_active, generation_prompt, generation_status,
+      outfit, age_stage, hairstyle, accessories, body_elements, is_active, generation_prompt, generation_status,
       // 状态分类和标签
       state_category, tags
     } = req.body;
@@ -380,9 +527,15 @@ module.exports = (router) => {
         }
       }
 
-      // 验证状态分类
-      if (state_category && !STATE_CATEGORIES.includes(state_category)) {
-        return res.status(400).json({ message: `无效的状态分类，可选值: ${STATE_CATEGORIES.join(', ')}` });
+      // 验证状态分类（支持单值或数组）
+      let normalizedCategory = undefined;
+      if (state_category !== undefined) {
+        const cats = Array.isArray(state_category) ? state_category : (typeof state_category === 'string' && state_category.startsWith('[') ? JSON.parse(state_category) : [state_category]);
+        const invalid = cats.filter(c => !STATE_CATEGORIES.includes(c));
+        if (invalid.length > 0) {
+          return res.status(400).json({ message: `无效的状态分类: ${invalid.join(', ')}，可选值: ${STATE_CATEGORIES.join(', ')}` });
+        }
+        normalizedCategory = JSON.stringify(cats);
       }
 
       // 检测外貌属性是否发生变化，若变化则清除旧的 generation_prompt
@@ -392,7 +545,8 @@ module.exports = (router) => {
         ['outfit', outfit, existingState.outfit],
         ['age_stage', age_stage, existingState.age_stage],
         ['hairstyle', hairstyle, existingState.hairstyle],
-        ['accessories', accessories, existingState.accessories]
+        ['accessories', accessories, existingState.accessories],
+        ['body_elements', body_elements, existingState.body_elements]
       ].some(([, newVal, oldVal]) => newVal !== undefined && String(newVal || '') !== String(oldVal || ''));
 
       // 如果外貌属性变了且未显式传入 generation_prompt，则清除它
@@ -404,7 +558,7 @@ module.exports = (router) => {
         `UPDATE character_states 
          SET name = ?, description = ?, appearance = ?, image_url = ?, 
              front_view_url = ?, side_view_url = ?, back_view_url = ?, sort_order = ?,
-             outfit = ?, age_stage = ?, hairstyle = ?, accessories = ?, 
+             outfit = ?, age_stage = ?, hairstyle = ?, accessories = ?, body_elements = ?,
              is_active = ?, generation_prompt = ?, generation_status = ?,
              state_category = ?, tags = ?,
              updated_at = CURRENT_TIMESTAMP
@@ -422,10 +576,11 @@ module.exports = (router) => {
           age_stage !== undefined ? age_stage : (existingState.age_stage || ''),
           hairstyle !== undefined ? hairstyle : (existingState.hairstyle || ''),
           accessories !== undefined ? accessories : (existingState.accessories || ''),
+          body_elements !== undefined ? body_elements : (existingState.body_elements || ''),
           is_active !== undefined ? (is_active ? 1 : 0) : existingState.is_active,
           finalGenerationPrompt,
           generation_status !== undefined ? generation_status : (existingState.generation_status || 'idle'),
-          state_category !== undefined ? state_category : (existingState.state_category || 'daily'),
+          normalizedCategory !== undefined ? normalizedCategory : (existingState.state_category || '["daily"]'),
           parsedTags !== null ? parsedTags : (existingState.tags || null),
           stateId
         ]
@@ -434,7 +589,7 @@ module.exports = (router) => {
       const state = await queryOne('SELECT * FROM character_states WHERE id = ?', [stateId]);
 
       // 计算变更差异并记录历史
-      const trackFields = ['name', 'description', 'appearance', 'image_url', 'front_view_url', 'side_view_url', 'back_view_url', 'sort_order', 'outfit', 'age_stage', 'hairstyle', 'accessories', 'is_active', 'generation_prompt', 'generation_status', 'state_category', 'tags'];
+      const trackFields = ['name', 'description', 'appearance', 'image_url', 'front_view_url', 'side_view_url', 'back_view_url', 'sort_order', 'outfit', 'age_stage', 'hairstyle', 'accessories', 'body_elements', 'is_active', 'generation_prompt', 'generation_status', 'state_category', 'tags'];
       const changes = {};
       for (const field of trackFields) {
         const oldVal = existingState[field];

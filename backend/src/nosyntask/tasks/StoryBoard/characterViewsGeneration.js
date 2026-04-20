@@ -55,6 +55,32 @@ const BASE_MODEL_BODY = {
 };
 
 /**
+ * 白膜模式专用：有参考图时的提示词构建
+ * 核心策略：
+ *   1. 严格保留参考图的脸部特征和发型（最高优先级）
+ *   2. 身体为裸体基础形态（BASE_MODEL_BODY）
+ *   3. 注入用户填写的身体元素（纹身/疤痕/胎记等）
+ * 与通用 buildReferenceGuidedPrompt 的区别：去掉了服装/配饰保留指令
+ */
+function buildBaseModelReferencePrompt(view, style, characterName, options = {}) {
+  const { gender = 'unknown', bodyElements = '' } = options;
+  const viewConfig = {
+    front: 'front view, eye-level shot, facing directly at the camera, standing upright with relaxed natural posture, arms at sides, feet shoulder-width apart, looking straight ahead',
+    side: 'side view, profile shot, turned 90 degrees to the right, full body, standing upright, showing full side profile silhouette, arms naturally at sides',
+    back: 'back view, rear shot, facing completely away from the camera, standing upright, showing back of head and hair details'
+  };
+  const viewAngle = viewConfig[view] || viewConfig.front;
+  const styleKeywords = style || 'anime style';
+  const bodyPrompt = BASE_MODEL_BODY[gender] || BASE_MODEL_BODY.unknown;
+  const bodyElementsPrompt = bodyElements
+    ? `, body markings and features: ${bodyElements}`
+    : '';
+
+  // 脸部+发型严格保留 → 裸体基础形态 → 身体元素 → 视角+风格
+  return `match the character face and hairstyle from the reference image exactly, preserve all facial features face shape eye shape eye color hair style hair color hair length from reference, keep identical face proportions jawline nose shape lip shape eyebrow shape from reference image, ${bodyPrompt}${bodyElementsPrompt}, character design reference sheet style, ${styleKeywords}, single character, solo, one person, full body, ${viewAngle}, simple clean background, even soft lighting, neutral natural expression`;
+}
+
+/**
  * 使用 AI 生成视图提示词
  * @param {string} view - 视图类型: front, side, back
  * @param {string} characterName - 角色名称
@@ -69,9 +95,10 @@ const BASE_MODEL_BODY = {
  * @param {string} options.hairstyle - 发型描述（状态级别）
  * @param {string} options.accessories - 配饰描述（状态级别）
  * @param {string} options.ageStage - 年龄阶段（状态级别）
+ * @param {string} options.bodyElements - 身体元素描述（纹身/疤痕/胎记等，白膜专用）
  */
 async function generateViewPrompt(view, characterName, appearance, description, style, textModel, options = {}) {
-  const { isBaseModel = false, gender = 'unknown', outfit, hairstyle, accessories, ageStage, bodyProportionInstruction } = options;
+  const { isBaseModel = false, gender = 'unknown', outfit, hairstyle, accessories, ageStage, bodyProportionInstruction, bodyElements } = options;
   
   const viewConfig = {
     front: {
@@ -97,6 +124,9 @@ async function generateViewPrompt(view, characterName, appearance, description, 
   
   // 白膜模式下的基础人体形态提示词
   const baseModelBodyPrompt = isBaseModel ? BASE_MODEL_BODY[gender] || BASE_MODEL_BODY.unknown : '';
+  const bodyElementsNote = (isBaseModel && bodyElements)
+    ? `\n- 【身体元素标记】角色身体上有以下永久性标记，必须在生成的图像中体现：${bodyElements}`
+    : '';
   const baseModelNote = isBaseModel 
     ? `\n\n【白膜模式 - 基础人体形态】此角色正在生成基础白膜版本，要求生成纯粹的人体基础形态：
 - 身体描述必须为：${baseModelBodyPrompt}
@@ -105,7 +135,7 @@ async function generateViewPrompt(view, characterName, appearance, description, 
 - 绝对不能包含任何装备（武器、背包、道具等）
 - 保留角色的面部特征（脸型、眼睛、鼻子、嘴巴等）和发型发色
 - 保留角色的体型比例（身高、体型、肤色等）
-- 只展示人体的基本结构、肌肉轮廓和皮肤
+- 只展示人体的基本结构、肌肉轮廓和皮肤${bodyElementsNote}
 - 此基础形态将作为后续添加服装和装饰的基础参考`
     : '';
 
@@ -229,7 +259,8 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
     outfit = '',          // 服装描述
     hairstyle = '',       // 发型描述
     accessories = '',     // 配饰描述
-    ageStage = ''         // 年龄阶段
+    ageStage = '',        // 年龄阶段
+    bodyElements = ''     // 身体元素（纹身、疤痕、胎记等，白膜专用）
   } = inputParams;
 
 
@@ -352,6 +383,54 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
     console.log(`[CharacterViews] 用户参考图未启用 (use_reference_images=${existingViews.use_reference_images})`);
   }
 
+  // === 白膜互参：非白膜引用白膜三视图 / 白膜引用其他状态图片 ===
+  if (isStateGeneration && characterId) {
+    if (!isBaseModel) {
+      // ★ 生成非白膜状态时：引用白膜三视图作为基准参考（确保角色一致性）
+      const baseModelState = await queryOne(
+        `SELECT front_view_url, side_view_url, back_view_url FROM character_states 
+         WHERE character_id = ? AND is_base_model = 1 AND front_view_url IS NOT NULL AND front_view_url != ''`,
+        [characterId]
+      );
+      if (baseModelState) {
+        const baseModelUrls = [baseModelState.front_view_url, baseModelState.side_view_url, baseModelState.back_view_url]
+          .filter(Boolean)
+          .map(url => resolveToInternalUrl(url))
+          .filter(Boolean);
+        if (baseModelUrls.length > 0) {
+          // 白膜参考放在最前面，权重最高
+          userReferenceUrls = [...baseModelUrls, ...userReferenceUrls];
+          console.log(`[CharacterViews] ✅ 白膜三视图作为基准参考 (${baseModelUrls.length} 张):`, baseModelUrls);
+        }
+      } else {
+        console.log('[CharacterViews] 白膜无三视图，跳过基准参考');
+      }
+    } else {
+      // ★ 生成白膜时：如果白膜没有自己的参考图，用其他状态的已生成图片作为参考
+      if (userReferenceUrls.length === 0) {
+        const otherStateWithImages = await queryOne(
+          `SELECT front_view_url, side_view_url, back_view_url FROM character_states 
+           WHERE character_id = ? AND is_base_model = 0 
+             AND front_view_url IS NOT NULL AND front_view_url != ''
+           ORDER BY is_active DESC, updated_at DESC LIMIT 1`,
+          [characterId]
+        );
+        if (otherStateWithImages) {
+          const otherUrls = [otherStateWithImages.front_view_url, otherStateWithImages.side_view_url, otherStateWithImages.back_view_url]
+            .filter(Boolean)
+            .map(url => resolveToInternalUrl(url))
+            .filter(Boolean);
+          if (otherUrls.length > 0) {
+            userReferenceUrls = otherUrls;
+            console.log(`[CharacterViews] ✅ 使用其他状态三视图作为白膜生成参考 (${otherUrls.length} 张):`, otherUrls);
+          }
+        } else {
+          console.log('[CharacterViews] 无其他状态可用作白膜参考');
+        }
+      }
+    }
+  }
+
   // === 正面视图 ===
   let persistedFrontUrl = existingViews.front_view_url || null;
   let lastGeneratedPrompt = ''; // 记录最新的英文提示词，用于存储到 generation_prompt
@@ -361,12 +440,18 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
     let frontPrompt;
     const hasUserRefs = userReferenceUrls.length > 0;
     if (hasUserRefs) {
-      // ★ 有参考图：使用简化提示词，让参考图主导角色外貌（跳过 LLM 翻译，节省成本）
-      frontPrompt = buildReferenceGuidedPrompt('front', style, characterName, { isBaseModel, gender });
-      console.log('[CharacterViews] ✅ 有参考图 → 使用简化提示词（参考图优先，跳过 LLM）');
+      if (isBaseModel) {
+        // ★ 白膜 + 有参考图：保留脸部发型，身体裸体 + 身体元素
+        frontPrompt = buildBaseModelReferencePrompt('front', style, characterName, { gender, bodyElements });
+        console.log('[CharacterViews] ✅ 白膜模式 + 有参考图 → 使用白膜专用提示词（保留脸部发型，裸体基础形态）');
+      } else {
+        // ★ 非白膜 + 有参考图：使用通用简化提示词，让参考图主导角色外貌（跳过 LLM 翻译，节省成本）
+        frontPrompt = buildReferenceGuidedPrompt('front', style, characterName, { isBaseModel, gender });
+        console.log('[CharacterViews] ✅ 有参考图 → 使用简化提示词（参考图优先，跳过 LLM）');
+      }
     } else {
       // 无参考图：使用 AI 根据外貌描述生成详细英文提示词
-      frontPrompt = await generateViewPrompt('front', characterName, appearance, description, style, textModel, { isBaseModel, gender, outfit, hairstyle, accessories, ageStage, bodyProportionInstruction });
+      frontPrompt = await generateViewPrompt('front', characterName, appearance, description, style, textModel, { isBaseModel, gender, outfit, hairstyle, accessories, ageStage, bodyProportionInstruction, bodyElements });
     }
     lastGeneratedPrompt = frontPrompt; // 保存英文提示词
     // 构建图片生成参数：优先使用具体尺寸，否则使用 aspectRatio
@@ -440,10 +525,15 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
     let sidePrompt;
     const sideHasUserRefs = userReferenceUrls.length > 0;
     if (sideHasUserRefs) {
-      sidePrompt = buildReferenceGuidedPrompt('side', style, characterName, { isBaseModel, gender });
-      console.log('[CharacterViews] ✅ 有参考图 → 侧面视图使用简化提示词');
+      if (isBaseModel) {
+        sidePrompt = buildBaseModelReferencePrompt('side', style, characterName, { gender, bodyElements });
+        console.log('[CharacterViews] ✅ 白膜模式 + 有参考图 → 侧面视图使用白膜专用提示词');
+      } else {
+        sidePrompt = buildReferenceGuidedPrompt('side', style, characterName, { isBaseModel, gender });
+        console.log('[CharacterViews] ✅ 有参考图 → 侧面视图使用简化提示词');
+      }
     } else {
-      sidePrompt = await generateViewPrompt('side', characterName, appearance, description, style, textModel, { isBaseModel, gender, outfit, hairstyle, accessories, ageStage, bodyProportionInstruction });
+      sidePrompt = await generateViewPrompt('side', characterName, appearance, description, style, textModel, { isBaseModel, gender, outfit, hairstyle, accessories, ageStage, bodyProportionInstruction, bodyElements });
     }
     const sideGenParams = {
       prompt: sidePrompt,
@@ -506,10 +596,15 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
     let backPrompt;
     const backHasUserRefs = userReferenceUrls.length > 0;
     if (backHasUserRefs) {
-      backPrompt = buildReferenceGuidedPrompt('back', style, characterName, { isBaseModel, gender });
-      console.log('[CharacterViews] ✅ 有参考图 → 背面视图使用简化提示词');
+      if (isBaseModel) {
+        backPrompt = buildBaseModelReferencePrompt('back', style, characterName, { gender, bodyElements });
+        console.log('[CharacterViews] ✅ 白膜模式 + 有参考图 → 背面视图使用白膜专用提示词');
+      } else {
+        backPrompt = buildReferenceGuidedPrompt('back', style, characterName, { isBaseModel, gender });
+        console.log('[CharacterViews] ✅ 有参考图 → 背面视图使用简化提示词');
+      }
     } else {
-      backPrompt = await generateViewPrompt('back', characterName, appearance, description, style, textModel, { isBaseModel, gender, outfit, hairstyle, accessories, ageStage, bodyProportionInstruction });
+      backPrompt = await generateViewPrompt('back', characterName, appearance, description, style, textModel, { isBaseModel, gender, outfit, hairstyle, accessories, ageStage, bodyProportionInstruction, bodyElements });
     }
     const backGenParams = {
       prompt: backPrompt,

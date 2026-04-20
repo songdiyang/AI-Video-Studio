@@ -18,9 +18,37 @@ const { queryOne, queryAll, execute } = require('../db');
  * @returns {Promise<{linked: number, notFound: string[]}>}
  */
 async function linkCharactersForStoryboard(storyboardId, projectId, options = {}) {
-  const { clearExisting = true } = options;
+  const { clearExisting = true, characterIds = [] } = options;
 
-  // 查询分镜的 variables_json
+  // 清除已有角色关联
+  if (clearExisting) {
+    await execute('DELETE FROM storyboard_characters WHERE storyboard_id = ?', [storyboardId]);
+  }
+
+  let linked = 0;
+  const notFound = [];
+
+  // 优先模式：如果前端提供了 characterIds，直接使用 ID 创建关联（最可靠）
+  if (characterIds && characterIds.length > 0) {
+    for (const charId of characterIds) {
+      if (!charId || typeof charId !== 'number') continue;
+      try {
+        await execute(
+          'INSERT IGNORE INTO storyboard_characters (storyboard_id, character_id) VALUES (?, ?)',
+          [storyboardId, charId]
+        );
+        linked++;
+      } catch (err) {
+        if (!err.message.includes('Duplicate')) {
+          console.error('[linkCharactersForStoryboard] 直接ID写入关联失败:', err.message);
+        }
+      }
+    }
+    console.log(`[linkCharactersForStoryboard] storyboardId=${storyboardId}: 通过ID直接关联${linked}个角色`);
+    return { linked, notFound };
+  }
+
+  // 降级模式：通过名称匹配（兼容批量生成等无ID的场景）
   const storyboard = await queryOne(
     'SELECT variables_json FROM storyboards WHERE id = ?',
     [storyboardId]
@@ -42,14 +70,6 @@ async function linkCharactersForStoryboard(storyboardId, projectId, options = {}
   if (characterNames.length === 0) {
     return { linked: 0, notFound: [] };
   }
-
-  // 清除已有角色关联
-  if (clearExisting) {
-    await execute('DELETE FROM storyboard_characters WHERE storyboard_id = ?', [storyboardId]);
-  }
-
-  let linked = 0;
-  const notFound = [];
 
   for (const name of characterNames) {
     if (!name || typeof name !== 'string') continue;
@@ -93,7 +113,7 @@ async function linkCharactersForStoryboard(storyboardId, projectId, options = {}
     }
   }
 
-  console.log(`[linkCharactersForStoryboard] storyboardId=${storyboardId}: 关联${linked}个角色, 未找到${notFound.length}个`);
+  console.log(`[linkCharactersForStoryboard] storyboardId=${storyboardId}: 通过名称关联${linked}个角色, 未找到${notFound.length}个`);
   return { linked, notFound };
 }
 
@@ -106,9 +126,31 @@ async function linkCharactersForStoryboard(storyboardId, projectId, options = {}
  * @returns {Promise<{linked: boolean, notFound: boolean}>}
  */
 async function linkScenesForStoryboard(storyboardId, projectId, options = {}) {
-  const { clearExisting = true } = options;
+  const { clearExisting = true, sceneId = null } = options;
 
-  // 查询分镜的 variables_json
+  // 清除已有场景关联
+  if (clearExisting) {
+    await execute('DELETE FROM storyboard_scenes WHERE storyboard_id = ?', [storyboardId]);
+  }
+
+  // 优先模式：直接使用 sceneId 创建关联
+  if (sceneId && typeof sceneId === 'number') {
+    try {
+      await execute(
+        'INSERT IGNORE INTO storyboard_scenes (storyboard_id, scene_id) VALUES (?, ?)',
+        [storyboardId, sceneId]
+      );
+      console.log(`[linkScenesForStoryboard] storyboardId=${storyboardId}: 通过ID直接关联场景(sceneId=${sceneId})`);
+      return { linked: true, notFound: false };
+    } catch (err) {
+      if (!err.message.includes('Duplicate')) {
+        console.error('[linkScenesForStoryboard] 直接ID写入关联失败:', err.message);
+      }
+      return { linked: false, notFound: false };
+    }
+  }
+
+  // 降级模式：通过名称匹配
   const storyboard = await queryOne(
     'SELECT variables_json FROM storyboards WHERE id = ?',
     [storyboardId]
@@ -131,11 +173,6 @@ async function linkScenesForStoryboard(storyboardId, projectId, options = {}) {
     return { linked: false, notFound: false };
   }
 
-  // 清除已有场景关联
-  if (clearExisting) {
-    await execute('DELETE FROM storyboard_scenes WHERE storyboard_id = ?', [storyboardId]);
-  }
-
   const scene = await queryOne(
     'SELECT id, name FROM scenes WHERE project_id = ? AND name = ?',
     [projectId, location.trim()]
@@ -147,7 +184,7 @@ async function linkScenesForStoryboard(storyboardId, projectId, options = {}) {
         'INSERT IGNORE INTO storyboard_scenes (storyboard_id, scene_id) VALUES (?, ?)',
         [storyboardId, scene.id]
       );
-      console.log(`[linkScenesForStoryboard] storyboardId=${storyboardId}: 关联场景「${scene.name}」`);
+      console.log(`[linkScenesForStoryboard] storyboardId=${storyboardId}: 通过名称关联场景「${scene.name}」`);
       return { linked: true, notFound: false };
     } catch (err) {
       if (!err.message.includes('Duplicate')) {

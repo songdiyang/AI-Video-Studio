@@ -1,5 +1,6 @@
 const { queryOne, execute } = require('../../dbHelper');
 const { authMiddleware } = require('../../middleware');
+const { getEffectiveProjectRole } = require('../../middleware/collaborationAuth');
 
 // POST / - 创建角色
 module.exports = (router) => {
@@ -19,6 +20,11 @@ module.exports = (router) => {
     }
 
     try {
+      // 验证项目权限（支持团队成员创建）
+      const role = await getEffectiveProjectRole(userId, projectId);
+      if (!role || role === 'viewer') {
+        return res.status(403).json({ message: '无权在该项目中创建角色' });
+      }
       // 处理 tag_groups_json，确保是有效的 JSON 字符串
       let tagGroupsStr = null;
       if (tag_groups_json) {

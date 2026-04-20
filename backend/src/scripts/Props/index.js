@@ -1,6 +1,7 @@
 const express = require('express');
 const { queryOne, queryAll, execute } = require('../../dbHelper');
 const { authMiddleware } = require('../../middleware');
+const { getEffectiveProjectRole } = require('../../middleware/collaborationAuth');
 const generateImage = require('./generateImage');
 const states = require('./states');
 
@@ -32,13 +33,9 @@ router.get('/project/:projectId', authMiddleware, async (req, res) => {
     const userId = req.user.id;
     const { projectId } = req.params;
     
-    // 验证项目权限
-    const project = await queryOne(
-      'SELECT id FROM projects WHERE id = ? AND user_id = ?',
-      [projectId, userId]
-    );
-    
-    if (!project) {
+    // 验证项目权限（支持团队成员访问）
+    const role = await getEffectiveProjectRole(userId, projectId);
+    if (!role) {
       return res.status(404).json({ message: '项目不存在或无权访问' });
     }
     
@@ -63,14 +60,10 @@ router.post('/', authMiddleware, async (req, res) => {
       return res.status(400).json({ message: '道具名称和项目ID为必填项' });
     }
 
-    // 验证项目权限
-    const project = await queryOne(
-      'SELECT id FROM projects WHERE id = ? AND user_id = ?',
-      [project_id, userId]
-    );
-    
-    if (!project) {
-      return res.status(404).json({ message: '项目不存在或无权访问' });
+    // 验证项目权限（支持团队成员）
+    const role = await getEffectiveProjectRole(userId, project_id);
+    if (!role || role === 'viewer') {
+      return res.status(403).json({ message: '项目不存在或无权操作' });
     }
 
     const result = await execute(
@@ -94,14 +87,26 @@ router.put('/:id', authMiddleware, async (req, res) => {
     const { id } = req.params;
     const { name, description, category, image_url, tags } = req.body;
 
-    // 验证道具所有权
+    // 验证道具权限
     const prop = await queryOne(
-      'SELECT * FROM props WHERE id = ? AND user_id = ?',
-      [id, userId]
+      'SELECT * FROM props WHERE id = ?',
+      [id]
     );
 
     if (!prop) {
-      return res.status(404).json({ message: '道具不存在或无权访问' });
+      return res.status(404).json({ message: '道具不存在' });
+    }
+
+    // 通过项目检查编辑权限
+    let hasAccess = false;
+    if (prop.project_id) {
+      const role = await getEffectiveProjectRole(userId, prop.project_id);
+      hasAccess = role && role !== 'viewer';
+    } else {
+      hasAccess = prop.user_id === userId;
+    }
+    if (!hasAccess) {
+      return res.status(403).json({ message: '无权编辑该道具' });
     }
 
     await execute(
@@ -132,14 +137,26 @@ router.delete('/:id', authMiddleware, async (req, res) => {
     const userId = req.user.id;
     const { id } = req.params;
 
-    // 验证道具所有权
+    // 验证道具权限
     const prop = await queryOne(
-      'SELECT * FROM props WHERE id = ? AND user_id = ?',
-      [id, userId]
+      'SELECT * FROM props WHERE id = ?',
+      [id]
     );
 
     if (!prop) {
-      return res.status(404).json({ message: '道具不存在或无权访问' });
+      return res.status(404).json({ message: '道具不存在' });
+    }
+
+    // 通过项目检查删除权限
+    let hasAccess = false;
+    if (prop.project_id) {
+      const role = await getEffectiveProjectRole(userId, prop.project_id);
+      hasAccess = role && role !== 'viewer';
+    } else {
+      hasAccess = prop.user_id === userId;
+    }
+    if (!hasAccess) {
+      return res.status(403).json({ message: '无权删除该道具' });
     }
 
     await execute('DELETE FROM props WHERE id = ?', [id]);

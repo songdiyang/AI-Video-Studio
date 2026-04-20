@@ -1,6 +1,7 @@
 const express = require('express');
 const { queryOne, queryAll, execute } = require('../../dbHelper');
 const { authMiddleware } = require('../../middleware');
+const { getEffectiveProjectRole } = require('../../middleware/collaborationAuth');
 
 const router = express.Router();
 
@@ -40,8 +41,14 @@ router.get('/project/:projectId', authMiddleware, async (req, res) => {
   const { scriptId } = req.query;
 
   try {
-    let sql = 'SELECT * FROM scenes WHERE project_id = ? AND user_id = ?';
-    const params = [projectId, userId];
+    // 验证项目权限（支持团队成员访问）
+    const role = await getEffectiveProjectRole(userId, projectId);
+    if (!role) {
+      return res.status(403).json({ message: '无权访问该项目' });
+    }
+
+    let sql = 'SELECT * FROM scenes WHERE project_id = ?';
+    const params = [projectId];
 
     // 如果提供了 scriptId，添加过滤条件
     if (scriptId) {
@@ -68,12 +75,22 @@ router.get('/:id', authMiddleware, async (req, res) => {
 
   try {
     const scene = await queryOne(
-      'SELECT * FROM scenes WHERE id = ? AND user_id = ?',
-      [id, userId]
+      'SELECT * FROM scenes WHERE id = ?',
+      [id]
     );
 
     if (!scene) {
       return res.status(404).json({ message: '场景不存在' });
+    }
+
+    // 通过场景关联的项目检查权限
+    if (scene.project_id) {
+      const role = await getEffectiveProjectRole(userId, scene.project_id);
+      if (!role) {
+        return res.status(403).json({ message: '无权访问该场景' });
+      }
+    } else if (scene.user_id !== userId) {
+      return res.status(403).json({ message: '无权访问该场景' });
     }
 
     res.json(scene);
@@ -86,10 +103,18 @@ router.get('/:id', authMiddleware, async (req, res) => {
 // 创建场景
 router.post('/', authMiddleware, async (req, res) => {
   const userId = req.user.id;
-  const { name, description, environment, lighting, mood, image_url, tags, spatial_layout, camera_defaults } = req.body;
+  const { name, description, environment, lighting, mood, image_url, tags, spatial_layout, camera_defaults, project_id } = req.body;
 
   if (!name) {
     return res.status(400).json({ message: '场景名称不能为空' });
+  }
+
+  // 如果指定了项目，验证权限
+  if (project_id) {
+    const role = await getEffectiveProjectRole(userId, project_id);
+    if (!role || role === 'viewer') {
+      return res.status(403).json({ message: '无权在该项目中创建场景' });
+    }
   }
 
   // 序列化空间布局和摄像机默认参数为JSON字符串
@@ -98,9 +123,9 @@ router.post('/', authMiddleware, async (req, res) => {
 
   try {
     const result = await execute(
-      `INSERT INTO scenes (user_id, name, description, environment, lighting, mood, image_url, tags, spatial_layout, camera_defaults) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [userId, name, description || '', environment || '', lighting || '', mood || '', image_url || '', tags || '', spatialLayoutJson, cameraDefaultsJson]
+      `INSERT INTO scenes (user_id, project_id, name, description, environment, lighting, mood, image_url, tags, spatial_layout, camera_defaults) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [userId, project_id || null, name, description || '', environment || '', lighting || '', mood || '', image_url || '', tags || '', spatialLayoutJson, cameraDefaultsJson]
     );
 
     const id = result.insertId;
@@ -121,12 +146,24 @@ router.put('/:id', authMiddleware, async (req, res) => {
 
   try {
     const existing = await queryOne(
-      'SELECT * FROM scenes WHERE id = ? AND user_id = ?',
-      [id, userId]
+      'SELECT * FROM scenes WHERE id = ?',
+      [id]
     );
 
     if (!existing) {
       return res.status(404).json({ message: '场景不存在' });
+    }
+
+    // 检查编辑权限
+    let hasAccess = false;
+    if (existing.project_id) {
+      const role = await getEffectiveProjectRole(userId, existing.project_id);
+      hasAccess = role && role !== 'viewer';
+    } else {
+      hasAccess = existing.user_id === userId;
+    }
+    if (!hasAccess) {
+      return res.status(403).json({ message: '无权编辑该场景' });
     }
 
     // 序列化空间布局和摄像机默认参数为JSON字符串
@@ -143,9 +180,9 @@ router.put('/:id', authMiddleware, async (req, res) => {
     await execute(
       `UPDATE scenes 
        SET name = ?, description = ?, environment = ?, lighting = ?, mood = ?, image_url = ?, tags = ?, spatial_layout = ?, camera_defaults = ?, updated_at = CURRENT_TIMESTAMP
-       WHERE id = ? AND user_id = ?`,
+       WHERE id = ?`,
       [name || existing.name, description || existing.description, environment || existing.environment,
-       lighting || existing.lighting, mood || existing.mood, image_url || existing.image_url, tags || existing.tags, spatialLayoutJson, cameraDefaultsJson, id, userId]
+       lighting || existing.lighting, mood || existing.mood, image_url || existing.image_url, tags || existing.tags, spatialLayoutJson, cameraDefaultsJson, id]
     );
 
     const scene = await queryOne('SELECT * FROM scenes WHERE id = ?', [id]);
@@ -164,15 +201,27 @@ router.delete('/:id', authMiddleware, async (req, res) => {
 
   try {
     const existing = await queryOne(
-      'SELECT * FROM scenes WHERE id = ? AND user_id = ?',
-      [id, userId]
+      'SELECT * FROM scenes WHERE id = ?',
+      [id]
     );
 
     if (!existing) {
       return res.status(404).json({ message: '场景不存在' });
     }
 
-    await execute('DELETE FROM scenes WHERE id = ? AND user_id = ?', [id, userId]);
+    // 检查删除权限
+    let hasAccess = false;
+    if (existing.project_id) {
+      const role = await getEffectiveProjectRole(userId, existing.project_id);
+      hasAccess = role && role !== 'viewer';
+    } else {
+      hasAccess = existing.user_id === userId;
+    }
+    if (!hasAccess) {
+      return res.status(403).json({ message: '无权删除该场景' });
+    }
+
+    await execute('DELETE FROM scenes WHERE id = ?', [id]);
 
     res.json({ message: '场景删除成功' });
   } catch (error) {

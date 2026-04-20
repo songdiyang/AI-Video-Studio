@@ -115,7 +115,8 @@ async function handleConceptBreakdownGeneration(inputParams, onProgress) {
     textModel,
     frontViewUrl,
     sideViewUrl,
-    backViewUrl
+    backViewUrl,
+    aspectRatio: inputAspectRatio
   } = inputParams;
 
   try {
@@ -154,7 +155,7 @@ async function handleConceptBreakdownGeneration(inputParams, onProgress) {
   const genParams = {
     prompt: conceptPrompt,
     imageModel: imageModel,
-    aspectRatio: aspectRatio || '16:9'  // 优先使用传入的比例，默认 16:9
+    aspectRatio: inputAspectRatio || '16:9'  // 优先使用传入的比例，默认 16:9
   };
 
   // 如果传入了具体的 width/height，则使用它们（兼容旧逻辑）

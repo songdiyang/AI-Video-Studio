@@ -59,6 +59,7 @@ export interface CameraDefaults {
 export interface Scene {
   id: number;
   user_id: number;
+  project_id?: number | null;
   name: string;
   description: string;
   environment: string;
@@ -154,12 +155,13 @@ export interface CharacterState {
   age_stage?: string;        // 年龄阶段
   hairstyle?: string;        // 发型描述
   accessories?: string;      // 配饰JSON
+  body_elements?: string;    // 身体元素（纹身、疤痕、胎记等，白膜专用）
   use_reference_images?: boolean; // 是否使用参考图生成
   is_active?: boolean;       // 是否激活
   generation_prompt?: string;
   generation_status?: 'idle' | 'generating' | 'completed' | 'failed';
   // 状态分类和标签
-  state_category?: StateCategory;  // 状态分类
+  state_category?: StateCategory | StateCategory[];  // 状态分类（支持多选）
   tags?: string;                   // 状态标签JSON数组
 }
 
@@ -237,6 +239,21 @@ export async function fetchCharacters(): Promise<Character[]> {
   });
   if (!response.ok) {
     throw new Error('获取角色列表失败');
+  }
+  const data = await response.json();
+  return data.characters || [];
+}
+
+/** 按项目获取角色列表（支持团队成员访问） */
+export async function fetchCharactersByProject(projectId: number): Promise<Character[]> {
+  const token = getAuthToken();
+  const response = await fetch(`/api/characters/project/${projectId}`, {
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    }
+  });
+  if (!response.ok) {
+    throw new Error('获取项目角色列表失败');
   }
   const data = await response.json();
   return data.characters || [];
@@ -344,6 +361,21 @@ export async function fetchScenes(): Promise<Scene[]> {
   });
   if (!response.ok) {
     throw new Error('获取场景列表失败');
+  }
+  const data = await response.json();
+  return data.scenes || [];
+}
+
+/** 按项目获取场景列表（支持团队成员访问） */
+export async function fetchScenesByProject(projectId: number): Promise<Scene[]> {
+  const token = getAuthToken();
+  const response = await fetch(`/api/scenes/project/${projectId}`, {
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    }
+  });
+  if (!response.ok) {
+    throw new Error('获取项目场景列表失败');
   }
   const data = await response.json();
   return data.scenes || [];

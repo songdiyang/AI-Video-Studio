@@ -342,19 +342,21 @@ router.get('/', authMiddleware, async (req, res) => {
   try {
     // 1. 获取用户自己的项目
     const ownProjects = await queryAll(
-      `SELECT p.*, 'owner' as my_role, IFNULL(NULLIF(u.nickname, ''), u.email) as owner_username
+      `SELECT p.*, 'owner' as my_role, IFNULL(NULLIF(u.nickname, ''), u.email) as owner_username, t.name as team_name
        FROM projects p
        JOIN users u ON p.user_id = u.id
+       LEFT JOIN teams t ON p.team_id = t.id
        WHERE p.user_id = ?`,
       [userId]
     );
 
     // 2. 获取用户作为协作者的项目
     const collaboratedProjects = await queryAll(
-      `SELECT p.*, pc.role as my_role, IFNULL(NULLIF(u.nickname, ''), u.email) as owner_username
+      `SELECT p.*, pc.role as my_role, IFNULL(NULLIF(u.nickname, ''), u.email) as owner_username, t.name as team_name
        FROM projects p
        JOIN project_collaborators pc ON p.id = pc.project_id AND pc.user_id = ?
-       JOIN users u ON p.user_id = u.id`,
+       JOIN users u ON p.user_id = u.id
+       LEFT JOIN teams t ON p.team_id = t.id`,
       [userId]
     );
 

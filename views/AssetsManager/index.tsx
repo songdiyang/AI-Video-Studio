@@ -1,12 +1,12 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Button, Input, Tabs, Tab, useDisclosure, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Popover, PopoverTrigger, PopoverContent } from '@heroui/react';
-import { Users, MapPin, FileText, Plus, Search, Tag, Settings, X, Edit2, ChevronDown, ChevronRight, Shirt } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { Button, Input, Tabs, Tab, useDisclosure, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Popover, PopoverTrigger, PopoverContent, Select, SelectItem } from '@heroui/react';
+import { Users, MapPin, FileText, Plus, Search, Tag, Settings, X, Edit2, ChevronDown, ChevronRight, Shirt, FolderOpen, Package } from 'lucide-react';
 import { getAuthToken } from '../../services/auth';
 import { useSceneImageGeneration } from '../StoryBoard/hooks/useSceneImageGeneration';
 import SceneDetailModal from '../StoryBoard/ResourcePanel/SceneDetailModal';
 import { 
   Character, Scene, Prop, TagGroup, CharacterTagGroupEntry,
-  fetchCharacters, fetchScenes, fetchProps,
+  fetchCharacters, fetchCharactersByProject, fetchScenes, fetchScenesByProject, fetchProps,
   createCharacter, createScene, createProp,
   updateCharacter, updateScene, updateProp,
   deleteCharacter, deleteScene, deleteProp,
@@ -14,6 +14,7 @@ import {
   TAG_GROUP_COLORS
 } from '../../services/assets';
 import { Costume, fetchCostumes, createCostume, updateCostume, deleteCostume, COSTUME_CATEGORIES } from '../../services/costumes';
+import { Project, fetchProjects } from '../../services/projects';
 import { LayoutGrid, ListTree } from 'lucide-react';
 import CharacterList from './CharacterList';
 import CharacterTreeView from './CharacterTreeView';
@@ -23,6 +24,7 @@ import CostumeList from './CostumeList';
 import { CharacterModal, SceneModal, PropModal, CostumeModal } from './AssetModel';
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
+import { useCurrentProject } from '../../contexts/WorkbenchContext';
 import { AIModel } from '../../components/AIModelSelector';
 import type { Character as TreeCharacter } from '../StoryBoard/ResourcePanel/types';
 import type { CharacterState } from '../../services/assets';
@@ -323,6 +325,10 @@ const AssetsManager: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTag, setActiveTag] = useState<string | null>(null);
+  // 项目筛选：'all' | 'unused' | 数字(projectId)
+  const [projectFilter, setProjectFilter] = useState<string>('all');
+  // 用户的项目列表
+  const [userProjects, setUserProjects] = useState<Project[]>([]);
   // 角色视图模式：网格/树形
   const [characterViewMode, setCharacterViewMode] = useState<'grid' | 'tree'>('grid');
   // 分组筛选状态：{ groupId: number, tag: string } | null
@@ -335,6 +341,12 @@ const AssetsManager: React.FC = () => {
   const [selectedTextModel, setSelectedTextModel] = useState('');
   const { showToast } = useToast();
   const { confirm } = useConfirm();
+  const { currentProject } = useCurrentProject();
+
+  // 加载用户项目列表
+  useEffect(() => {
+    fetchProjects().then(setUserProjects).catch(console.error);
+  }, []);
   
   const { isOpen, onOpen, onOpenChange } = useDisclosure();
   const [editMode, setEditMode] = useState(false);
@@ -363,7 +375,7 @@ const AssetsManager: React.FC = () => {
 
   useEffect(() => {
     loadData();
-  }, [activeTab]);
+  }, [activeTab, projectFilter]);
 
   useEffect(() => {
     loadTagGroups();
@@ -416,15 +428,21 @@ const AssetsManager: React.FC = () => {
   const loadData = async () => {
     setLoading(true);
     try {
+      const filterProjectId = projectFilter !== 'all' && projectFilter !== 'unused' ? Number(projectFilter) : null;
+
       if (activeTab === 'characters') {
-        const data = await fetchCharacters();
+        // 指定项目时用项目级API（支持团队），否则加载全部
+        const data = filterProjectId
+          ? await fetchCharactersByProject(filterProjectId)
+          : await fetchCharacters();
         setCharacters(data);
       } else if (activeTab === 'scenes') {
-        const data = await fetchScenes();
+        const data = filterProjectId
+          ? await fetchScenesByProject(filterProjectId)
+          : await fetchScenes();
         setScenes(data);
       } else if (activeTab === 'costumes') {
-        // 获取当前项目的服装，需要从第一个角色获取project_id
-        const projectId = characters.length > 0 ? (characters[0] as any).project_id : null;
+        const projectId = filterProjectId || currentProject?.id || (characters.length > 0 ? (characters[0] as any).project_id : null);
         if (projectId) {
           const data = await fetchCostumes(projectId);
           setCostumes(data);
@@ -454,6 +472,8 @@ const AssetsManager: React.FC = () => {
   const handleAdd = () => {
     setEditMode(false);
     setCurrentId(null);
+    // 默认项目：如果当前筛选器选中了具体项目，自动填充
+    const defaultProjectId = (projectFilter !== 'all' && projectFilter !== 'unused') ? Number(projectFilter) : undefined;
     setFormData({
       name: '',
       description: '',
@@ -465,7 +485,8 @@ const AssetsManager: React.FC = () => {
       category: '',
       image_url: '',
       tags: '',
-      tag_groups_json: null
+      tag_groups_json: null,
+      project_id: defaultProjectId
     });
     onOpen();
   };
@@ -492,26 +513,51 @@ const AssetsManager: React.FC = () => {
     }
   }, [currentId]);
 
+  // 获取当前筛选器对应的项目ID（用于创建资源）
+  const getActiveProjectId = (): number | null => {
+    if (projectFilter !== 'all' && projectFilter !== 'unused') {
+      return Number(projectFilter);
+    }
+    return currentProject?.id || null;
+  };
+
   const handleSave = async () => {
+    // 优先使用表单中用户选择的项目，其次使用筛选器/上下文推断
+    const activeProjectId = formData.project_id || getActiveProjectId();
+
+    // 创建时非“未使用素材”模式下需要项目ID
+    if (!editMode && !activeProjectId && projectFilter !== 'unused') {
+      showToast('请先选择一个所属项目', 'error');
+      return;
+    }
+
     try {
       if (activeTab === 'characters') {
         if (editMode && currentId) {
           await updateCharacter(currentId, formData);
         } else {
-          await createCharacter(formData);
+          const newChar = await createCharacter({ ...formData, projectId: activeProjectId || undefined });
+          // 创建成功后自动切换到编辑模式，以便用户立即生成三视图
+          if (newChar && newChar.id) {
+            await loadData();
+            setEditMode(true);
+            setCurrentId(newChar.id);
+            setFormData(newChar);
+            showToast('角色创建成功，现在可以生成三视图', 'success');
+            return; // 不关闭弹窗
+          }
         }
       } else if (activeTab === 'scenes') {
         if (editMode && currentId) {
           await updateScene(currentId, formData);
         } else {
-          await createScene(formData);
+          await createScene({ ...formData, project_id: activeProjectId || undefined } as any);
         }
       } else if (activeTab === 'costumes') {
         if (editMode && currentId) {
           await updateCostume(currentId, formData);
         } else {
-          // 创建服装需要project_id
-          const projectId = characters.length > 0 ? (characters[0] as any).project_id : null;
+          const projectId = activeProjectId || (characters.length > 0 ? (characters[0] as any).project_id : null);
           if (!projectId) {
             showToast('无法创建服装：缺少项目ID', 'error');
             return;
@@ -522,7 +568,7 @@ const AssetsManager: React.FC = () => {
         if (editMode && currentId) {
           await updateProp(currentId, formData);
         } else {
-          await createProp(formData);
+          await createProp({ ...formData, project_id: activeProjectId || undefined } as any);
         }
       }
       await loadData();
@@ -665,6 +711,8 @@ const AssetsManager: React.FC = () => {
   };
 
   const filteredCharacters = characters.filter(c => {
+    // 项目筛选（“未使用素材”过滤无项目的资源）
+    if (projectFilter === 'unused' && c.project_id) return false;
     // 分组筛选
     if (activeGroupFilter && !matchesGroupFilter(c)) return false;
     // 普通标签筛选
@@ -678,6 +726,7 @@ const AssetsManager: React.FC = () => {
   });
 
   const filteredScenes = scenes.filter(s => {
+    if (projectFilter === 'unused' && s.project_id) return false;
     if (!matchesTag(s.tags)) return false;
     const q = searchQuery.toLowerCase();
     return (s.name || '').toLowerCase().includes(q) ||
@@ -687,6 +736,7 @@ const AssetsManager: React.FC = () => {
   });
 
   const filteredProps = props.filter(p => {
+    if (projectFilter === 'unused' && (p as any).project_id) return false;
     if (!matchesTag(p.tags)) return false;
     const q = searchQuery.toLowerCase();
     return (p.name || '').toLowerCase().includes(q) ||
@@ -721,17 +771,58 @@ const AssetsManager: React.FC = () => {
           </div>
         </div>
 
-        {/* 搜索 */}
-        <Input
-          placeholder="搜索资产..."
-          value={searchQuery}
-          onValueChange={setSearchQuery}
-          startContent={<Search className="w-4 h-4 text-(--text-muted)" />}
-          classNames={{
-            input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted)",
-            inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 focus-within:border-(--accent)/50 shadow-sm transition-all"
-          }}
-        />
+        {/* 搜索 + 项目筛选 */}
+        <div className="flex gap-3 items-center">
+          <Input
+            placeholder="搜索资产..."
+            value={searchQuery}
+            onValueChange={setSearchQuery}
+            startContent={<Search className="w-4 h-4 text-(--text-muted)" />}
+            classNames={{
+              input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted)",
+              inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 focus-within:border-(--accent)/50 shadow-sm transition-all"
+            }}
+            className="flex-1"
+          />
+          <Select
+            selectedKeys={[projectFilter]}
+            onSelectionChange={(keys) => {
+              const val = Array.from(keys)[0] as string;
+              if (val) setProjectFilter(val);
+            }}
+            startContent={<FolderOpen className="w-4 h-4 text-(--text-muted)" />}
+            classNames={{
+              trigger: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 shadow-sm min-h-10 h-10",
+              value: "text-(--text-primary) text-sm",
+              popoverContent: "bg-(--bg-card) border border-(--border-color)"
+            }}
+            className="w-52 shrink-0"
+            aria-label="项目筛选"
+          >
+            {[
+              <SelectItem key="all" textValue="全部项目">
+                <div className="flex items-center gap-2">
+                  <Package className="w-3.5 h-3.5 text-(--text-muted)" />
+                  <span>全部项目</span>
+                </div>
+              </SelectItem>,
+              <SelectItem key="unused" textValue="未使用素材">
+                <div className="flex items-center gap-2">
+                  <X className="w-3.5 h-3.5 text-amber-500" />
+                  <span>未使用素材</span>
+                </div>
+              </SelectItem>,
+              ...userProjects.map((p) => (
+                <SelectItem key={String(p.id)} textValue={p.name}>
+                  <div className="flex items-center gap-2">
+                    <FolderOpen className="w-3.5 h-3.5 text-(--accent)" />
+                    <span className="truncate">{p.name}</span>
+                  </div>
+                </SelectItem>
+              ))
+            ]}
+          </Select>
+        </div>
 
         {/* 分组标签筛选（仅角色Tab显示） */}
         {activeTab === 'characters' && Object.keys(groupedTags).length > 0 && (
@@ -987,6 +1078,7 @@ const AssetsManager: React.FC = () => {
             aiModels={aiModels}
             selectedImageModel={selectedImageModel}
             selectedTextModel={selectedTextModel}
+            userProjects={userProjects}
           />
         )}
         
@@ -998,6 +1090,7 @@ const AssetsManager: React.FC = () => {
             formData={formData}
             setFormData={setFormData}
             onSave={handleSave}
+            userProjects={userProjects}
           />
         )}
         

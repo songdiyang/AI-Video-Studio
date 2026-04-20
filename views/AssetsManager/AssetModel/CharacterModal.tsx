@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Button, Input, Textarea, Select, SelectItem, Popover, PopoverTrigger, PopoverContent, Tabs, Tab } from '@heroui/react';
-import { Plus, X, Tag, Download, RefreshCw, Trash2, Image as ImageIcon, User, Layers, Sparkles, Upload, ZoomIn } from 'lucide-react';
+import { Plus, X, Tag, Download, RefreshCw, Trash2, Image as ImageIcon, User, Layers, Sparkles, Upload, ZoomIn, FolderOpen } from 'lucide-react';
+import { Project } from '../../../services/projects';
 import { usePreview } from '../../../components/PreviewProvider';
 import { 
   TagGroup, 
@@ -34,6 +35,7 @@ interface CharacterModalProps {
   aiModels?: AIModel[];
   selectedImageModel?: string;
   selectedTextModel?: string;
+  userProjects?: Project[];
 }
 
 const CharacterModal: React.FC<CharacterModalProps> = ({
@@ -48,6 +50,7 @@ const CharacterModal: React.FC<CharacterModalProps> = ({
   onRefreshCharacter,
   aiModels = [],
   selectedImageModel = '',
+  userProjects = [],
   selectedTextModel = ''
 }) => {
   // 当前选择的分组（用于添加新标签）
@@ -431,6 +434,35 @@ const CharacterModal: React.FC<CharacterModalProps> = ({
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* 左侧：表单 */}
                 <div className="space-y-4">
+                  {/* 所属项目选择器 */}
+                  <Select
+                    label="所属项目"
+                    placeholder="选择所属项目（可选）"
+                    selectedKeys={formData.project_id ? [String(formData.project_id)] : []}
+                    onSelectionChange={(keys) => {
+                      const val = Array.from(keys)[0] as string;
+                      setFormData({ ...formData, project_id: val ? Number(val) : undefined });
+                    }}
+                    isDisabled={editMode}
+                    startContent={<FolderOpen className="w-4 h-4 text-blue-400" />}
+                    classNames={{
+                      trigger: "bg-slate-800/60 border border-slate-600/50 hover:border-blue-500/50 shadow-sm",
+                      value: "text-slate-100",
+                      label: "text-slate-400 font-medium",
+                      popoverContent: "bg-slate-800 border border-slate-700"
+                    }}
+                    description={editMode ? '编辑模式下不可更改所属项目' : '选择后角色可在该项目的分镜中调用'}
+                  >
+                    {userProjects.map((p) => (
+                      <SelectItem key={String(p.id)} textValue={p.name}>
+                        <div className="flex items-center gap-2">
+                          <FolderOpen className="w-3.5 h-3.5 text-blue-400" />
+                          <span>{p.name}</span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </Select>
+
                   <Input
                     label="名称"
                     placeholder="输入角色名称"
@@ -814,6 +846,14 @@ const CharacterModal: React.FC<CharacterModalProps> = ({
                               ? '补全缺失视图'
                               : '一键生成三视图'}
                         </Button>
+                      </div>
+                    )}
+
+                    {/* 非编辑模式提示 */}
+                    {!editMode && (
+                      <div className="text-xs text-slate-400 bg-slate-700/30 px-3 py-2 rounded flex items-center gap-2">
+                        <RefreshCw className="w-3 h-3" />
+                        保存角色后可生成三视图
                       </div>
                     )}
 

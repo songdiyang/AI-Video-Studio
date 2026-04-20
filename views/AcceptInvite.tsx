@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Card,
@@ -35,8 +35,9 @@ const AcceptInvite: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [accepting, setAccepting] = useState(false);
   const [accepted, setAccepted] = useState(false);
-  const [isPending, setIsPending] = useState(false); // 团队邀请需要审核
+  const [isPending, setIsPending] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const redirectedRef = useRef(false);
 
   // 检查登录状态
   useEffect(() => {
@@ -56,6 +57,18 @@ const AcceptInvite: React.FC = () => {
       try {
         const { invite: data } = await fetchInviteDetail(code);
         setInvite(data);
+
+        // 如果已登录且已是成员，直接跳转到对应页面
+        if (data.is_member && !redirectedRef.current) {
+          redirectedRef.current = true;
+          showToast(`您已是该${data.type === 'team' ? '团队' : '项目'}的成员，正在跳转...`, 'info');
+          if (data.type === 'team' && data.target_id) {
+            navigate(`/teams/${data.target_id}`);
+          } else {
+            navigate('/projects');
+          }
+          return;
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : '邀请不存在或已失效');
       } finally {
@@ -64,7 +77,7 @@ const AcceptInvite: React.FC = () => {
     };
 
     loadInvite();
-  }, [code]);
+  }, [code, navigate, showToast]);
 
   // 接受邀请
   const handleAccept = async () => {
@@ -75,19 +88,24 @@ const AcceptInvite: React.FC = () => {
       const result = await acceptInvite(code);
       setAccepted(true);
 
-      // 团队邀请需要审核
       if (result.status === 'pending' || result.type === 'team') {
         setIsPending(true);
         showToast('申请已提交，请等待管理员审核', 'success');
       } else {
         showToast(`已成功加入项目：${result.target_name}`, 'success');
-        // 项目邀请直接跳转
         setTimeout(() => {
-          navigate(`/projects`);
+          navigate('/projects');
         }, 2000);
       }
     } catch (err) {
-      showToast(err instanceof Error ? err.message : '操作失败', 'error');
+      const msg = err instanceof Error ? err.message : '操作失败';
+      // 如果后端返回“已是团队成员”，直接跳转
+      if (msg.includes('已是该团队成员') && invite?.target_id) {
+        showToast('您已是该团队成员，正在跳转...', 'info');
+        navigate(`/teams/${invite.target_id}`);
+        return;
+      }
+      showToast(msg, 'error');
     } finally {
       setAccepting(false);
     }
@@ -95,7 +113,6 @@ const AcceptInvite: React.FC = () => {
 
   // 跳转登录
   const handleLogin = () => {
-    // 保存当前邀请链接到 sessionStorage，登录后自动跳回
     sessionStorage.setItem('redirectAfterLogin', `/invite/${code}`);
     navigate('/auth?mode=login');
   };
@@ -190,7 +207,7 @@ const AcceptInvite: React.FC = () => {
     );
   }
 
-  // 正常显示邀请详情
+  // 正常显示邀请详情 — 非成员的确认加入弹窗
   return (
     <div className="min-h-screen flex items-center justify-center bg-[var(--bg-base)] p-4">
       <Card className="w-full max-w-md bg-[var(--bg-card)]">
@@ -255,7 +272,7 @@ const AcceptInvite: React.FC = () => {
                 onPress={handleAccept}
                 isLoading={accepting}
               >
-                接受邀请
+                {invite?.type === 'team' ? `加入团队「${invite?.target_name}」` : '接受邀请'}
               </Button>
               <Button
                 variant="light"
@@ -269,7 +286,7 @@ const AcceptInvite: React.FC = () => {
           ) : (
             <div className="space-y-3">
               <p className="text-center text-[var(--text-secondary)] mb-2">
-                登录后即可接受邀请
+                登录后即可加入{invite?.type === 'team' ? '团队' : '项目'}
               </p>
               <Button
                 color="primary"

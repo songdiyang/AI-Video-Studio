@@ -478,6 +478,46 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
     }
   };
 
+  // 更新分镜的角色和场景
+  const updateCharactersAndLocation = async (id: number, characters: string[], location: string, characterIds?: number[], sceneId?: number) => {
+    const previousScene = scenes.find((scene) => scene.id === id);
+    if (!previousScene) return false;
+
+    // 本地先更新
+    setScenes(prevScenes => prevScenes.map(s =>
+      s.id === id ? { ...s, characters, location } : s
+    ));
+
+    try {
+      const token = getAuthToken();
+      const body: Record<string, unknown> = { characters, location };
+      if (characterIds && characterIds.length > 0) body.characterIds = characterIds;
+      if (sceneId) body.sceneId = sceneId;
+
+      const res = await fetch(`/api/storyboards/${id}/content`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify(body)
+      });
+
+      if (!res.ok) {
+        throw new Error('保存角色/场景失败');
+      }
+      return true;
+    } catch (error: any) {
+      // 回滚
+      setScenes(prevScenes => prevScenes.map(s =>
+        s.id === id ? { ...s, characters: previousScene.characters, location: previousScene.location } : s
+      ));
+      console.error('保存角色/场景失败:', error);
+      showToast('保存角色/场景失败，请稍后重试', 'error');
+      return false;
+    }
+  };
+
   // 将排序持久化到后端
   const persistReorder = async (orderedScenes: StoryboardScene[]) => {
     if (!scriptId) return;
@@ -516,6 +556,7 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
     updateDialogues,
     updateVoiceover,
     updateDirectorParams,
+    updateCharactersAndLocation,
     reorderScenes
   };
 }

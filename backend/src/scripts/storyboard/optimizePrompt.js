@@ -36,7 +36,24 @@ module.exports = (router) => {
         return res.status(404).json({ message: '分镜不存在' });
       }
 
-      // 2. 获取同一剧本下的所有分镜描述（建立上下文关系）
+      // 2. 获取当前分镜的角色和场景信息
+      let currentCharacters = [];
+      let currentLocation = '';
+      try {
+        const storyboardDetail = await queryOne(
+          'SELECT variables_json FROM storyboards WHERE id = ?',
+          [storyboardId]
+        );
+        if (storyboardDetail && storyboardDetail.variables_json) {
+          const vars = typeof storyboardDetail.variables_json === 'string'
+            ? JSON.parse(storyboardDetail.variables_json)
+            : storyboardDetail.variables_json;
+          currentCharacters = vars.characters || [];
+          currentLocation = vars.location || '';
+        }
+      } catch (e) { /* 忽略 */ }
+
+      // 3. 获取同一剧本下的所有分镜描述（建立上下文关系）
       const allStoryboards = await queryAll(
         `SELECT id, idx, prompt_template, spatial_description
          FROM storyboards
@@ -106,8 +123,31 @@ module.exports = (router) => {
                           visualStyle.toLowerCase().includes('photography');
       const styleType = isLiveAction ? 'live_action' : 'anime';
 
-      // 6. 构建系统提示词（包含剧本和分镜上下文）
+      // 6. 构建系统提示词（包含剧本、分镜上下文和角色信息）
       const scriptContent = storyboard.script_content || '';
+
+      // 构建角色和场景上下文
+      let characterContext = '';
+      if (currentCharacters.length > 0) {
+        characterContext = `\n【当前分镜角色】${currentCharacters.join('、')}`;
+        // 尝试获取角色外貌特征
+        try {
+          const charNames = currentCharacters.map(n => `'${n.replace(/'/g, "''")}'`).join(',');
+          const charDetails = await queryAll(
+            `SELECT name, appearance FROM characters WHERE project_id = ? AND name IN (${charNames})`,
+            [storyboard.project_id]
+          );
+          if (charDetails.length > 0) {
+            characterContext += '\n角色外貌特征：';
+            for (const cd of charDetails) {
+              characterContext += `\n  - ${cd.name}：${(cd.appearance || '未设置').slice(0, 200)}`;
+            }
+          }
+        } catch (e) { /* 忽略 */ }
+      }
+      if (currentLocation) {
+        characterContext += `\n【当前分镜场景】${currentLocation}`;
+      }
       const scriptSection = scriptContent
         ? `\n【剧本全文】\n${scriptContent.length > 3000 ? scriptContent.slice(0, 3000) + '\n...(剧本过长，已截断)' : scriptContent}\n`
         : '';
@@ -180,13 +220,15 @@ module.exports = (router) => {
       const systemPrompt = `你是一个专业的分镜描述优化专家。你需要先理解整个剧本的内容和脉络，明确当前分镜在故事中的位置，然后再优化当前分镜的描述。
 
 【项目】${storyboard.project_name || '未命名'}${storyboard.script_title ? `\n【剧本标题】${storyboard.script_title}` : ''}${scriptSection}\n【分镜上下文】共 ${totalCount} 个分镜，当前为第 ${currentIdx + 1} 个：
-${storyboardContext}${visualStyle ? `\n【视觉风格】${visualStyle}` : ''}${perspectiveInstruction ? `\n${perspectiveInstruction}` : ''}\n【风格类型】${isLiveAction ? '真人实拍' : '动漫动画'}\n
+${storyboardContext}${characterContext}${visualStyle ? `\n【视觉风格】${visualStyle}` : ''}${perspectiveInstruction ? `\n${perspectiveInstruction}` : ''}\n【风格类型】${isLiveAction ? '真人实拍' : '动漫动画'}\n
 你的任务：优化标记为"当前分镜"的描述内容。
 
 ${optimizationPrinciples}
 
 【输出要求】
-• 保持简洁凝练，不要过度冗长（控制在原文2倍长度以内）
+• 保持简洁凝练，不要过度冗长（控制在原文 2 倍长度以内）
+• 如果当前分镜指定了角色，确保角色名称和外貌特征准确融入描述中，不能遗漏任何角色
+• 如果当前分镜指定了场景，确保场景环境描述自然融入画面描述中
 • 只输出优化后的分镜描述，不要输出其他任何内容（不要标注、不要解释、不要前缀）
 • 描述要有画面感和电影感，让读者能清晰想象出画面`;
 

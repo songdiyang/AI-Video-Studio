@@ -1523,11 +1523,14 @@ router.get('/subscriptions', authMiddleware, requireAdmin, async (req, res) => {
     const limit = Math.min(100, Math.max(1, parseInt(rawLimit, 10) || 20));
     const offset = (page - 1) * limit;
 
-    // 构建查询条件
+    // 构建查询条件（以 users 表为主，LEFT JOIN 订阅表，显示所有用户包括免费用户）
     const conditions = [];
     const params = [];
 
-    if (status) {
+    if (status === 'free') {
+      // 筛选无订阅记录的免费用户
+      conditions.push('us.id IS NULL');
+    } else if (status) {
       conditions.push('us.status = ?');
       params.push(status);
     }
@@ -1543,32 +1546,33 @@ router.get('/subscriptions', authMiddleware, requireAdmin, async (req, res) => {
     // 查询总数
     const countResult = await queryOne(
       `SELECT COUNT(*) as total 
-       FROM user_subscriptions us 
+       FROM users u
+       LEFT JOIN user_subscriptions us ON u.id = us.user_id
        ${whereClause}`,
       params
     );
     const total = countResult?.total || 0;
 
-    // 查询订阅列表
+    // 查询用户列表（含订阅信息）
     const subscriptions = await queryAll(
       `SELECT 
         us.id,
-        us.user_id,
+        u.id as user_id,
         us.plan_id,
         us.status,
         us.billing_cycle,
         us.current_period_start,
         us.current_period_end,
         us.api_calls_used,
-        us.created_at,
+        COALESCE(us.created_at, u.created_at) as created_at,
         u.email as user_email,
         sp.name as plan_name,
         sp.display_name as plan_display_name
-       FROM user_subscriptions us
-       LEFT JOIN users u ON us.user_id = u.id
+       FROM users u
+       LEFT JOIN user_subscriptions us ON u.id = us.user_id
        LEFT JOIN subscription_plans sp ON us.plan_id = sp.id
        ${whereClause}
-       ORDER BY us.created_at DESC
+       ORDER BY COALESCE(us.created_at, u.created_at) DESC
        LIMIT ? OFFSET ?`,
       [...params, limit, offset]
     );
@@ -1585,6 +1589,73 @@ router.get('/subscriptions', authMiddleware, requireAdmin, async (req, res) => {
   } catch (error) {
     console.error('[Admin] Get subscriptions error:', error);
     res.status(500).json({ message: '获取订阅列表失败' });
+  }
+});
+
+/**
+ * 为用户创建订阅（管理员给免费用户开通会员）
+ * POST /api/admin/subscriptions
+ */
+router.post('/subscriptions', authMiddleware, requireAdmin, async (req, res) => {
+  const { user_id, plan_id, status, billing_cycle, current_period_end } = req.body;
+
+  try {
+    if (!user_id || !plan_id) {
+      return res.status(400).json({ message: '用户ID和套餐ID为必填' });
+    }
+
+    // 验证用户存在
+    const user = await queryOne('SELECT id FROM users WHERE id = ?', [user_id]);
+    if (!user) {
+      return res.status(404).json({ message: '用户不存在' });
+    }
+
+    // 验证套餐存在并获取价格
+    const plan = await queryOne('SELECT id, price_monthly, price_yearly FROM subscription_plans WHERE id = ?', [plan_id]);
+    if (!plan) {
+      return res.status(400).json({ message: '指定的套餐不存在' });
+    }
+
+    // 检查是否已有订阅记录
+    const existing = await queryOne('SELECT id FROM user_subscriptions WHERE user_id = ?', [user_id]);
+    if (existing) {
+      return res.status(409).json({ message: '该用户已有订阅记录，请使用编辑功能' });
+    }
+
+    const validStatus = ['active', 'trial', 'expired', 'cancelled'].includes(status) ? status : 'active';
+    const validCycle = ['monthly', 'yearly'].includes(billing_cycle) ? billing_cycle : 'monthly';
+    const periodEnd = current_period_end || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const periodStart = new Date().toISOString().split('T')[0];
+
+    const result = await execute(
+      `INSERT INTO user_subscriptions (user_id, plan_id, status, billing_cycle, current_period_start, current_period_end, api_calls_used)
+       VALUES (?, ?, ?, ?, ?, ?, 0)`,
+      [user_id, plan_id, validStatus, validCycle, periodStart, periodEnd]
+    );
+
+    // 赠送积分：为购买套餐的钱购买积分的两倍
+    // 公式：gift = plan_price / POINT_PURCHASE_PRICE(¥0.02) * 2 = plan_price * 100
+    const planPrice = validCycle === 'yearly' 
+      ? (parseFloat(plan.price_yearly) || 0) 
+      : (parseFloat(plan.price_monthly) || 0);
+    let giftPoints = 0;
+    if (planPrice > 0) {
+      giftPoints = Math.ceil(planPrice * 100);
+      await execute(
+        'UPDATE users SET balance = balance + ? WHERE id = ?',
+        [giftPoints, user_id]
+      );
+    }
+
+    res.json({ 
+      message: '订阅已创建', 
+      id: result.insertId,
+      gift_points: giftPoints,
+      plan_price: planPrice
+    });
+  } catch (error) {
+    console.error('[Admin] Create subscription error:', error);
+    res.status(500).json({ message: '创建订阅失败' });
   }
 });
 
@@ -1636,6 +1707,13 @@ router.put('/subscriptions/:id', authMiddleware, requireAdmin, async (req, res) 
     if (api_calls_used !== undefined) {
       updates.push('api_calls_used = ?');
       values.push(api_calls_used);
+    }
+    if (req.body.billing_cycle !== undefined) {
+      if (!['monthly', 'yearly'].includes(req.body.billing_cycle)) {
+        return res.status(400).json({ message: '无效的计费周期' });
+      }
+      updates.push('billing_cycle = ?');
+      values.push(req.body.billing_cycle);
     }
 
     if (updates.length === 0) {

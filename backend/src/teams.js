@@ -403,7 +403,7 @@ router.get('/:teamId/projects', authMiddleware, async (req, res) => {
   }
 });
 
-// POST /api/teams/join - 通过邀请码加入团队
+// POST /api/teams/join - 通过邀请码加入团队（兼容团队邀请码 + 协作邀请码两套系统）
 router.post('/join', authMiddleware, async (req, res) => {
   const userId = req.user.id;
   const { invite_code } = req.body;
@@ -413,52 +413,90 @@ router.post('/join', authMiddleware, async (req, res) => {
   }
 
   try {
-    // 查找团队
+    let teamId = null;
+    let teamName = '';
+    let role = 'viewer';
+    let viaCollabInvite = false;
+
+    // === 策略 1：先查团队级邀请码（teams.invite_code） ===
     const team = await queryOne(
       `SELECT * FROM teams WHERE invite_code = ? AND is_active = 1`,
       [invite_code]
     );
 
-    if (!team) {
-      return res.status(404).json({ message: '邀请码无效或已过期' });
-    }
+    if (team) {
+      // 检查团队邀请码是否过期
+      if (team.invite_code_expires_at && new Date(team.invite_code_expires_at) < new Date()) {
+        return res.status(400).json({ message: '邀请码已过期' });
+      }
+      teamId = team.id;
+      teamName = team.name;
+    } else {
+      // === 策略 2：查协作邀请码（collaboration_invites 表） ===
+      const collab = await queryOne(
+        `SELECT * FROM collaboration_invites WHERE invite_code = ? AND is_active = 1 AND invite_type = 'team'`,
+        [invite_code]
+      );
 
-    // 检查邀请码是否过期
-    if (team.invite_code_expires_at && new Date(team.invite_code_expires_at) < new Date()) {
-      return res.status(400).json({ message: '邀请码已过期' });
-    }
+      if (!collab) {
+        return res.status(404).json({ message: '邀请码无效或已过期' });
+      }
 
-    // 检查成员数量是否已满
-    const memberCount = await queryOne(
-      `SELECT COUNT(*) as count FROM team_members WHERE team_id = ?`,
-      [team.id]
-    );
+      // 检查过期
+      if (new Date(collab.expires_at) < new Date()) {
+        return res.status(400).json({ message: '邀请码已过期' });
+      }
 
-    if (memberCount.count >= team.max_members) {
-      return res.status(400).json({ message: '团队人数已满' });
+      // 检查使用次数
+      if (collab.max_uses > 0 && collab.used_count >= collab.max_uses) {
+        return res.status(400).json({ message: '邀请码已达到使用上限' });
+      }
+
+      // 确认目标团队存在
+      const targetTeam = await queryOne(
+        'SELECT id, name FROM teams WHERE id = ? AND is_active = 1',
+        [collab.target_id]
+      );
+      if (!targetTeam) {
+        return res.status(404).json({ message: '目标团队不存在' });
+      }
+
+      teamId = targetTeam.id;
+      teamName = targetTeam.name;
+      role = collab.role || 'viewer';
+      viaCollabInvite = true;
+
+      // 增加使用计数
+      await execute(
+        'UPDATE collaboration_invites SET used_count = used_count + 1 WHERE id = ?',
+        [collab.id]
+      );
     }
 
     // 检查是否已是成员
     const existingMember = await queryOne(
       `SELECT * FROM team_members WHERE team_id = ? AND user_id = ?`,
-      [team.id, userId]
+      [teamId, userId]
     );
 
     if (existingMember) {
-      return res.status(400).json({ message: '你已是该团队成员' });
+      return res.json({
+        message: '您已是该团队成员',
+        team: { id: teamId, name: teamName }
+      });
     }
 
-    // 添加成员（默认为 viewer 角色）
+    // 添加成员（直接加入，无需审核）
     await execute(
-      `INSERT INTO team_members (team_id, user_id, role, invited_by) VALUES (?, ?, 'viewer', 0)`,
-      [team.id, userId]
+      `INSERT INTO team_members (team_id, user_id, role, invited_by) VALUES (?, ?, ?, NULL)`,
+      [teamId, userId, role]
     );
 
     res.json({ 
       message: '加入团队成功',
       team: {
-        id: team.id,
-        name: team.name
+        id: teamId,
+        name: teamName
       }
     });
   } catch (error) {

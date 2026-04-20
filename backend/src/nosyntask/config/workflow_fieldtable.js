@@ -301,6 +301,12 @@ module.exports = {
     description: '角色年龄阶段描述',
     category: 'character'
   },
+  bodyElements: {
+    from: 'bodyElements',
+    defaultValue: '',
+    description: '白膜身体元素描述（纹身、疤痕、胎记等永久性身体标记）',
+    category: 'character'
+  },
   frontViewUrl: {
     from: 'frontViewUrl',
     defaultValue: null,

@@ -7,7 +7,8 @@ const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
 const { queryOne, queryAll, execute } = require('./dbHelper');
-const { authMiddleware } = require('./middleware');
+const { authMiddleware, JWT_SECRET } = require('./middleware');
+const jwt = require('jsonwebtoken');
 const { 
   checkTeamPermission, 
   checkProjectPermission,
@@ -432,7 +433,7 @@ router.get('/teams/:id/projects', authMiddleware, checkTeamPermission('viewer'),
   try {
     const projects = await queryAll(
       `SELECT 
-        p.id, p.title, p.description, p.cover_image, p.project_type,
+        p.id, p.name, p.description, p.cover_url, p.type, p.status,
         p.created_at, p.updated_at,
         IFNULL(NULLIF(u.nickname, ''), u.email) as owner_username
        FROM projects p
@@ -694,7 +695,7 @@ router.post('/invites/generate', authMiddleware, async (req, res) => {
 });
 
 /**
- * 获取邀请详情（公开接口，用于预览）
+ * 获取邀请详情（公开接口，用于预览；若携带 token 则额外返回成员状态）
  * GET /api/invites/:code
  */
 router.get('/invites/:code', async (req, res) => {
@@ -731,18 +732,42 @@ router.get('/invites/:code', async (req, res) => {
       const team = await queryOne('SELECT name FROM teams WHERE id = ?', [invite.target_id]);
       targetName = team?.name || '';
     } else {
-      const project = await queryOne('SELECT title FROM projects WHERE id = ?', [invite.target_id]);
-      targetName = project?.title || '';
+      const project = await queryOne('SELECT name FROM projects WHERE id = ?', [invite.target_id]);
+      targetName = project?.name || '';
+    }
+
+    // 可选：如果携带了 Authorization header，检查用户是否已是成员
+    let isMember = false;
+    try {
+      const authHeader = req.headers['authorization'];
+      if (authHeader) {
+        const [scheme, token] = authHeader.split(' ');
+        if (scheme === 'Bearer' && token) {
+          const payload = jwt.verify(token, JWT_SECRET);
+          const userId = payload.userId;
+          if (invite.invite_type === 'team') {
+            const teamRole = await getTeamRole(userId, invite.target_id);
+            isMember = !!teamRole;
+          } else {
+            const projectRole = await getEffectiveProjectRole(userId, invite.target_id);
+            isMember = !!projectRole;
+          }
+        }
+      }
+    } catch (_) {
+      // token 无效时忽略，当作未登录
     }
 
     res.json({
       invite: {
         code: invite.invite_code,
         type: invite.invite_type,
+        target_id: invite.target_id,
         target_name: targetName,
         role: invite.role,
         created_by: invite.created_by_username,
-        expires_at: invite.expires_at
+        expires_at: invite.expires_at,
+        is_member: isMember
       }
     });
   } catch (error) {

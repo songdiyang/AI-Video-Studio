@@ -10,6 +10,8 @@ import {
   adminUpdatePlan,
   adminDeletePlan,
   adminFetchSubscriptions,
+  adminUpdateSubscription,
+  adminCreateSubscription,
   type SubscriptionPlan,
   type AdminSubscription
 } from '../../services/subscriptions';
@@ -42,6 +44,18 @@ const SubscriptionManagement: React.FC = () => {
   const [subscriptionsTotal, setSubscriptionsTotal] = useState(0);
   const [subscriptionsPage, setSubscriptionsPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState('');
+
+  // 编辑订阅状态
+  const [showSubModal, setShowSubModal] = useState(false);
+  const [editingSub, setEditingSub] = useState<AdminSubscription | null>(null);
+  const [subFormData, setSubFormData] = useState({
+    status: 'active',
+    plan_id: 0,
+    billing_cycle: 'monthly',
+    current_period_end: '',
+    api_calls_used: 0
+  });
+  const [subSaving, setSubSaving] = useState(false);
 
   const { showToast } = useToast();
   const { confirm } = useConfirm();
@@ -213,7 +227,60 @@ const SubscriptionManagement: React.FC = () => {
     }
   };
 
-  const getStatusColor = (status: string) => {
+  // 打开编辑订阅弹窗
+  const handleOpenSubModal = (sub: AdminSubscription) => {
+    setEditingSub(sub);
+    const firstPlan = plans.length > 0 ? plans[0].id : 0;
+    setSubFormData({
+      status: sub.status || 'active',
+      plan_id: sub.plan_id || firstPlan,
+      billing_cycle: sub.billing_cycle || 'monthly',
+      current_period_end: sub.current_period_end ? new Date(sub.current_period_end).toISOString().split('T')[0] : '',
+      api_calls_used: sub.api_calls_used || 0
+    });
+    setShowSubModal(true);
+  };
+
+  // 保存编辑订阅
+  const handleSaveSub = async () => {
+    if (!editingSub) return;
+    setSubSaving(true);
+    try {
+      if (editingSub.id) {
+        // 更新已有订阅
+        await adminUpdateSubscription(editingSub.id, {
+          status: subFormData.status,
+          plan_id: subFormData.plan_id,
+          billing_cycle: subFormData.billing_cycle,
+          current_period_end: subFormData.current_period_end || undefined,
+          api_calls_used: subFormData.api_calls_used
+        });
+        showToast('订阅信息已更新', 'success');
+      } else {
+        // 为免费用户创建订阅
+        const result = await adminCreateSubscription({
+          user_id: editingSub.user_id,
+          plan_id: subFormData.plan_id,
+          status: subFormData.status,
+          billing_cycle: subFormData.billing_cycle,
+          current_period_end: subFormData.current_period_end || undefined
+        });
+        const giftMsg = result.gift_points 
+          ? `，已赠送 ${result.gift_points.toLocaleString()} 积分` 
+          : '';
+        showToast(`订阅已创建${giftMsg}`, 'success');
+      }
+      setShowSubModal(false);
+      setEditingSub(null);
+      fetchSubscriptions();
+    } catch (error: any) {
+      showToast(error.message || '操作失败', 'error');
+    } finally {
+      setSubSaving(false);
+    }
+  };
+
+  const getStatusColor = (status: string | null) => {
     switch (status) {
       case 'active':
         return 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400';
@@ -224,11 +291,11 @@ const SubscriptionManagement: React.FC = () => {
       case 'cancelled':
         return 'bg-slate-500/15 text-slate-600 dark:text-slate-400';
       default:
-        return 'bg-slate-500/15 text-slate-600 dark:text-slate-400';
+        return 'bg-gray-500/15 text-gray-600 dark:text-gray-400';
     }
   };
 
-  const getStatusLabel = (status: string) => {
+  const getStatusLabel = (status: string | null) => {
     switch (status) {
       case 'active':
         return '生效中';
@@ -239,7 +306,7 @@ const SubscriptionManagement: React.FC = () => {
       case 'cancelled':
         return '已取消';
       default:
-        return status;
+        return '免费';
     }
   };
 
@@ -407,6 +474,7 @@ const SubscriptionManagement: React.FC = () => {
                   <option value="trial">试用中</option>
                   <option value="expired">已过期</option>
                   <option value="cancelled">已取消</option>
+                  <option value="free">免费用户</option>
                 </select>
               </div>
             </div>
@@ -427,20 +495,27 @@ const SubscriptionManagement: React.FC = () => {
                 <TableColumn>到期日期</TableColumn>
                 <TableColumn>积分用量</TableColumn>
                 <TableColumn>订阅时间</TableColumn>
+                <TableColumn>操作</TableColumn>
               </TableHeader>
               <TableBody 
                 emptyContent={subscriptionsLoading ? '加载中...' : '暂无订阅记录'}
                 isLoading={subscriptionsLoading}
               >
                 {subscriptions.map((sub) => (
-                  <TableRow key={sub.id}>
+                  <TableRow key={sub.id || `user-${sub.user_id}`}>
                     <TableCell>
                       <span style={{ color: 'var(--text-primary)' }}>{sub.user_email}</span>
                     </TableCell>
                     <TableCell>
-                      <Chip size="sm" variant="flat" className="bg-purple-500/15 text-purple-700 dark:text-purple-400">
-                        {sub.plan_name}
-                      </Chip>
+                      {sub.plan_name ? (
+                        <Chip size="sm" variant="flat" className="bg-purple-500/15 text-purple-700 dark:text-purple-400">
+                          {sub.plan_name}
+                        </Chip>
+                      ) : (
+                        <Chip size="sm" variant="flat" className="bg-gray-500/15 text-gray-600 dark:text-gray-400">
+                          免费版
+                        </Chip>
+                      )}
                     </TableCell>
                     <TableCell>
                       <Chip size="sm" className={getStatusColor(sub.status)}>
@@ -449,17 +524,32 @@ const SubscriptionManagement: React.FC = () => {
                     </TableCell>
                     <TableCell>
                       <span style={{ color: 'var(--text-secondary)' }}>
-                        {sub.billing_cycle === 'yearly' ? '年付' : '月付'}
+                        {sub.billing_cycle ? (sub.billing_cycle === 'yearly' ? '年付' : '月付') : '-'}
                       </span>
                     </TableCell>
                     <TableCell>
-                      <span style={{ color: 'var(--text-secondary)' }}>{formatDate(sub.current_period_end)}</span>
+                      <span style={{ color: 'var(--text-secondary)' }}>
+                        {sub.current_period_end ? formatDate(sub.current_period_end) : '-'}
+                      </span>
                     </TableCell>
                     <TableCell>
-                      <span className="font-mono text-blue-700 dark:text-blue-400">{sub.api_calls_used.toLocaleString()}</span>
+                      <span className="font-mono text-blue-700 dark:text-blue-400">
+                        {sub.api_calls_used != null ? sub.api_calls_used.toLocaleString() : '-'}
+                      </span>
                     </TableCell>
                     <TableCell>
                       <span className="text-sm" style={{ color: 'var(--text-muted)' }}>{formatDate(sub.created_at)}</span>
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        size="sm"
+                        variant="flat"
+                        className={sub.id ? 'bg-blue-500/15 text-blue-700 dark:text-blue-400' : 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400'}
+                        startContent={<Edit className="w-3.5 h-3.5" />}
+                        onPress={() => handleOpenSubModal(sub)}
+                      >
+                        {sub.id ? '编辑' : '开通'}
+                      </Button>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -484,6 +574,97 @@ const SubscriptionManagement: React.FC = () => {
           </CardBody>
         </Card>
       </div>
+
+      {/* 编辑用户订阅 Modal */}
+      <Modal isOpen={showSubModal} onOpenChange={setShowSubModal} size="lg">
+        <ModalContent>
+          {(onClose) => (
+            <>
+              <ModalHeader className="flex flex-col gap-1">
+                {editingSub?.id ? '编辑用户订阅' : '开通会员'}
+                {editingSub && (
+                  <span className="text-sm font-normal" style={{ color: 'var(--text-secondary)' }}>
+                    {editingSub.user_email}
+                  </span>
+                )}
+              </ModalHeader>
+              <ModalBody>
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>套餐</label>
+                      <select
+                        value={subFormData.plan_id}
+                        onChange={(e) => setSubFormData({ ...subFormData, plan_id: parseInt(e.target.value) })}
+                        className="w-full rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+                        style={{ background: 'var(--bg-input)', borderColor: 'var(--border-color)', color: 'var(--text-primary)', border: '1px solid var(--border-color)' }}
+                      >
+                        {plans.map(p => (
+                          <option key={p.id} value={p.id}>{p.display_name || p.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>状态</label>
+                      <select
+                        value={subFormData.status}
+                        onChange={(e) => setSubFormData({ ...subFormData, status: e.target.value })}
+                        className="w-full rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+                        style={{ background: 'var(--bg-input)', borderColor: 'var(--border-color)', color: 'var(--text-primary)', border: '1px solid var(--border-color)' }}
+                      >
+                        <option value="active">生效中</option>
+                        <option value="trial">试用中</option>
+                        <option value="expired">已过期</option>
+                        <option value="cancelled">已取消</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>计费周期</label>
+                      <select
+                        value={subFormData.billing_cycle}
+                        onChange={(e) => setSubFormData({ ...subFormData, billing_cycle: e.target.value })}
+                        className="w-full rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+                        style={{ background: 'var(--bg-input)', borderColor: 'var(--border-color)', color: 'var(--text-primary)', border: '1px solid var(--border-color)' }}
+                      >
+                        <option value="monthly">月付</option>
+                        <option value="yearly">年付</option>
+                      </select>
+                    </div>
+                    <Input
+                      type="date"
+                      label="到期日期"
+                      value={subFormData.current_period_end}
+                      onValueChange={(value) => setSubFormData({ ...subFormData, current_period_end: value })}
+                    />
+                  </div>
+                  <Input
+                    type="number"
+                    label="已用积分"
+                    value={String(subFormData.api_calls_used)}
+                    onValueChange={(value) => setSubFormData({ ...subFormData, api_calls_used: parseInt(value) || 0 })}
+                    description="当前计费周期内已使用的积分数量"
+                  />
+                </div>
+              </ModalBody>
+              <ModalFooter>
+                <Button variant="flat" onPress={onClose}>
+                  取消
+                </Button>
+                <Button
+                  className="bg-gradient-to-r from-purple-500 to-pink-600 text-white"
+                  startContent={<Save className="w-4 h-4" />}
+                  onPress={handleSaveSub}
+                  isLoading={subSaving}
+                >
+                  保存
+                </Button>
+              </ModalFooter>
+            </>
+          )}
+        </ModalContent>
+      </Modal>
 
       {/* 套餐编辑 Modal */}
       <Modal isOpen={showPlanModal} onOpenChange={setShowPlanModal} size="2xl">

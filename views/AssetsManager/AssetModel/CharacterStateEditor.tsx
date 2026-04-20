@@ -31,12 +31,12 @@ const CATEGORY_ICON_MAP: Record<StateCategory, React.ElementType> = {
   effect: Sparkles,
 };
 
-// 状态分类颜色映射
+// 状态分类颜色映射（WCAG AA 双主题适配）
 const CATEGORY_COLOR_MAP: Record<StateCategory, { bg: string; text: string; border: string }> = {
-  daily: { bg: 'bg-blue-500/15', text: 'text-blue-400', border: 'border-blue-500/30' },
-  costume: { bg: 'bg-pink-500/15', text: 'text-pink-400', border: 'border-pink-500/30' },
-  time: { bg: 'bg-purple-500/15', text: 'text-purple-400', border: 'border-purple-500/30' },
-  effect: { bg: 'bg-amber-500/15', text: 'text-amber-400', border: 'border-amber-500/30' },
+  daily: { bg: 'bg-blue-500/15', text: 'text-blue-700 dark:text-blue-400', border: 'border-blue-500/30' },
+  costume: { bg: 'bg-pink-500/15', text: 'text-pink-700 dark:text-pink-400', border: 'border-pink-500/30' },
+  time: { bg: 'bg-purple-500/15', text: 'text-purple-700 dark:text-purple-400', border: 'border-purple-500/30' },
+  effect: { bg: 'bg-amber-500/15', text: 'text-amber-700 dark:text-amber-400', border: 'border-amber-500/30' },
 };
 
 // 解析标签JSON字符串
@@ -48,6 +48,17 @@ function parseTags(tagsStr?: string): string[] {
   } catch {
     return [];
   }
+}
+
+// 解析状态分类（兼容旧单值字符串和新JSON数组）
+function parseStateCategories(cat?: string | StateCategory | StateCategory[]): StateCategory[] {
+  if (!cat) return ['daily'];
+  if (Array.isArray(cat)) return cat;
+  try {
+    const parsed = JSON.parse(cat as string);
+    if (Array.isArray(parsed)) return parsed as StateCategory[];
+  } catch {}
+  return [cat as StateCategory];
 }
 
 // 序列化标签数组为JSON字符串
@@ -145,7 +156,7 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
   const filteredStates = useMemo(() => {
     let result = states;
     if (activeCategoryFilter !== 'all') {
-      result = states.filter(s => (s.state_category || 'daily') === activeCategoryFilter);
+      result = states.filter(s => parseStateCategories(s.state_category).includes(activeCategoryFilter as StateCategory));
     }
     // 白膜状态始终置顶
     return [...result].sort((a, b) => {
@@ -155,11 +166,11 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
     });
   }, [states, activeCategoryFilter]);
 
-  // 各分类状态数量
+  // 各分类状态数量（一个状态可归属多个分类）
   const categoryCounts = useMemo(() => {
     const counts: Record<string, number> = { all: states.length };
     STATE_CATEGORIES.forEach(cat => {
-      counts[cat.key] = states.filter(s => (s.state_category || 'daily') === cat.key).length;
+      counts[cat.key] = states.filter(s => parseStateCategories(s.state_category).includes(cat.key)).length;
     });
     return counts;
   }, [states]);
@@ -193,7 +204,7 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
       hairstyle: '',
       accessories: '',
       is_active: false,
-      state_category: presetCategory || 'daily',
+      state_category: presetCategory ? [presetCategory] : ['daily'],
       tags: '[]',
       tagInput: ''
     });
@@ -217,7 +228,7 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
       hairstyle: baseModel?.hairstyle || '',
       accessories: baseModel?.accessories || '',
       is_active: false,
-      state_category: 'daily',
+      state_category: ['daily'],
       tags: '[]',
       tagInput: ''
     });
@@ -240,7 +251,7 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
       hairstyle: state.hairstyle || '',
       accessories: state.accessories || '',
       is_active: state.is_active || false,
-      state_category: state.state_category || 'daily',
+      state_category: parseStateCategories(state.state_category),
       tags: state.tags || '[]',
       tagInput: '',
       use_reference_images: state.use_reference_images !== false
@@ -415,8 +426,8 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
     setIsGenerateModalOpen(false);
     
     try {
-      // 先保存AI分析出的外貌属性到状态
-      if (generatedTags) {
+      // 白膜直接生成，非白膜先保存AI分析出的外貌属性
+      if (!generatingState.is_base_model && generatedTags) {
         await updateCharacterState(characterId!, generatingState.id, {
           name: generatedTags.name || generatingState.name,
           age_stage: generatedTags.age_stage,
@@ -459,7 +470,8 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
         outfit: state.outfit,
         hairstyle: state.hairstyle,
         accessories: state.accessories,
-        age_stage: state.age_stage
+        age_stage: state.age_stage,
+        body_elements: state.body_elements
       });
 
       await generateCharacterStateViews(characterId!, state.id, {
@@ -511,22 +523,29 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
     checkStatus();
   };
 
-  // 渲染分类标签
-  const renderCategoryChip = (category: StateCategory, size: 'sm' | 'md' = 'sm') => {
-    const config = STATE_CATEGORIES.find(c => c.key === category) || STATE_CATEGORIES[0];
-    const colors = CATEGORY_COLOR_MAP[category];
-    const IconComp = CATEGORY_ICON_MAP[category];
+  // 渲染分类标签（支持多分类）
+  const renderCategoryChip = (category: StateCategory | StateCategory[] | string, size: 'sm' | 'md' = 'sm') => {
+    const cats = parseStateCategories(category as any);
     return (
-      <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-${size === 'sm' ? 'xs' : 'sm'} ${colors.bg} ${colors.text} ${colors.border} border`}>
-        <IconComp className={`w-${size === 'sm' ? '3' : '4'} h-${size === 'sm' ? '3' : '4'}`} />
-        {config.label}
-      </span>
+      <>
+        {cats.map(cat => {
+          const config = STATE_CATEGORIES.find(c => c.key === cat) || STATE_CATEGORIES[0];
+          const colors = CATEGORY_COLOR_MAP[cat] || CATEGORY_COLOR_MAP.daily;
+          const IconComp = CATEGORY_ICON_MAP[cat] || CATEGORY_ICON_MAP.daily;
+          return (
+            <span key={cat} className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-${size === 'sm' ? 'xs' : 'sm'} ${colors.bg} ${colors.text} ${colors.border} border`}>
+              <IconComp className={`w-${size === 'sm' ? '3' : '4'} h-${size === 'sm' ? '3' : '4'}`} />
+              {config.label}
+            </span>
+          );
+        })}
+      </>
     );
   };
 
   if (!characterId) {
     return (
-      <div className="text-center py-8 text-slate-500">
+      <div className="text-center py-8 text-default-400">
         <ImageIcon className="w-12 h-12 mx-auto mb-2 opacity-30" />
         <p className="text-sm">请先保存角色后再管理状态</p>
       </div>
@@ -540,35 +559,24 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
     <div className="space-y-4">
       {/* 头部 */}
       <div className="flex items-center justify-between">
-        <h4 className="text-sm font-medium text-slate-300 flex items-center gap-2">
+        <h4 className="text-sm font-medium flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
           <ImageIcon className="w-4 h-4" />
           角色状态
           {states.length > 0 && (
-            <span className="text-xs text-slate-500">({states.length})</span>
+            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>({states.length})</span>
           )}
         </h4>
         {!disabled && (
           <div className="flex items-center gap-2">
-            {/* 基于白膜创建快捷按钮 */}
-            {baseModelState && (
-              <Button
-                size="sm"
-                variant="flat"
-                className="bg-amber-500/10 text-amber-400 hover:bg-amber-500/20"
-                startContent={<Star className="w-3 h-3" />}
-                onPress={handleCreateFromBaseModel}
-              >
-                基于白膜新建
-              </Button>
-            )}
+            {/* 所有新建状态统一基于白膜创建 */}
             <Button
               size="sm"
               variant="flat"
-              className="bg-blue-500/10 text-blue-400 hover:bg-blue-500/20"
-              startContent={<Plus className="w-3 h-3" />}
-              onPress={() => handleCreate()}
+              className="bg-amber-500/10 text-amber-700 dark:text-amber-400 hover:bg-amber-500/20"
+              startContent={<Star className="w-3 h-3" />}
+              onPress={handleCreateFromBaseModel}
             >
-              新建状态
+              基于白膜新建
             </Button>
           </div>
         )}
@@ -580,8 +588,8 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
           <button
             className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
               activeCategoryFilter === 'all'
-                ? 'bg-slate-600/50 text-slate-200'
-                : 'text-slate-500 hover:text-slate-300 hover:bg-slate-700/30'
+                ? 'bg-default-200 text-default-700'
+                : 'text-default-400 hover:text-default-600 hover:bg-default-100'
             }`}
             onClick={() => setActiveCategoryFilter('all')}
           >
@@ -596,7 +604,7 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                 className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors flex items-center gap-1 ${
                   activeCategoryFilter === cat.key
                     ? `${colors.bg} ${colors.text}`
-                    : 'text-slate-500 hover:text-slate-300 hover:bg-slate-700/30'
+                    : 'text-default-400 hover:text-default-600 hover:bg-default-100'
                 }`}
                 onClick={() => setActiveCategoryFilter(cat.key)}
               >
@@ -610,16 +618,16 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
 
       {/* 白膜状态卡片（置顶特殊展示） */}
       {baseModelState && activeCategoryFilter === 'all' && (
-        <Card className="bg-linear-to-r from-slate-800/60 to-slate-800/30 border border-amber-500/30 ring-1 ring-amber-500/10">
+        <Card className="border border-amber-500/30 ring-1 ring-amber-500/10" style={{ background: 'var(--bg-elevated)' }}>
           <CardBody className="p-0">
             <div
               className="flex items-center gap-3 p-3 cursor-pointer hover:bg-amber-500/5 transition-colors"
               onClick={() => toggleExpand(baseModelState.id)}
             >
               {expandedStates.has(baseModelState.id) ? (
-                <ChevronDown className="w-4 h-4 text-amber-400" />
+                <ChevronDown className="w-4 h-4 text-amber-600 dark:text-amber-400" />
               ) : (
-                <ChevronRight className="w-4 h-4 text-amber-400" />
+                <ChevronRight className="w-4 h-4 text-amber-600 dark:text-amber-400" />
               )}
               
               {/* 白膜标识 */}
@@ -632,7 +640,7 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                   />
                 ) : (
                   <div className="w-12 h-12 rounded-lg bg-amber-500/10 flex items-center justify-center border border-amber-500/30">
-                    <Star className="w-5 h-5 text-amber-400" />
+                    <Star className="w-5 h-5 text-amber-600 dark:text-amber-400" />
                   </div>
                 )}
                 <div className="absolute -top-1 -right-1 w-5 h-5 bg-amber-500 rounded-full flex items-center justify-center">
@@ -642,16 +650,18 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
               
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-semibold text-amber-300">
+                  <span className="text-sm font-semibold text-amber-700 dark:text-amber-300">
                     {baseModelState.name}
                   </span>
-                  <span className="text-xs px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                  <span className="text-xs px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-700 dark:text-amber-400 border border-amber-500/30">
                     白膜
                   </span>
-                  {renderCategoryChip(baseModelState.state_category || 'daily')}
+                  {renderCategoryChip(baseModelState.state_category || ['daily'])}
                 </div>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  基础白膜状态 - 角色的初始外观参考
+                <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                  {baseModelState.front_view_url 
+                    ? '基础白膜状态 - 其他状态图片将以白膜为参考基准生成'
+                    : '基础白膜 - 可先生成其他状态，再用已有图片反向生成白膜'}
                 </p>
               </div>
               
@@ -663,7 +673,7 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                       size="sm"
                       isIconOnly
                       variant="light"
-                      className="text-slate-400 hover:text-amber-400 hover:bg-amber-500/10"
+                      className="text-default-400 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-amber-500/10"
                       onPress={handleCreateFromBaseModel}
                     >
                       <Plus className="w-3.5 h-3.5" />
@@ -674,7 +684,7 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                       size="sm"
                       isIconOnly
                       variant="light"
-                      className="text-slate-400 hover:text-blue-400 hover:bg-blue-500/10"
+                      className="text-default-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-500/10"
                       onPress={() => handleEdit(baseModelState)}
                     >
                       <Edit2 className="w-3.5 h-3.5" />
@@ -692,38 +702,38 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                   <div className="grid grid-cols-2 gap-2">
                     {baseModelState.age_stage && (
                       <div className="bg-purple-500/10 rounded-lg p-2 border border-purple-500/20">
-                        <div className="flex items-center gap-1.5 text-xs text-purple-400 mb-0.5">
+                        <div className="flex items-center gap-1.5 text-xs text-purple-700 dark:text-purple-400 mb-0.5">
                           <Calendar className="w-3 h-3" />
                           年龄阶段
                         </div>
-                        <p className="text-sm text-slate-200">{baseModelState.age_stage}</p>
+                        <p className="text-sm" style={{ color: 'var(--text-primary)' }}>{baseModelState.age_stage}</p>
                       </div>
                     )}
                     {baseModelState.outfit && (
                       <div className="bg-pink-500/10 rounded-lg p-2 border border-pink-500/20">
-                        <div className="flex items-center gap-1.5 text-xs text-pink-400 mb-0.5">
+                        <div className="flex items-center gap-1.5 text-xs text-pink-700 dark:text-pink-400 mb-0.5">
                           <Shirt className="w-3 h-3" />
                           服装
                         </div>
-                        <p className="text-sm text-slate-200 truncate">{baseModelState.outfit}</p>
+                        <p className="text-sm truncate" style={{ color: 'var(--text-primary)' }}>{baseModelState.outfit}</p>
                       </div>
                     )}
                     {baseModelState.hairstyle && (
                       <div className="bg-cyan-500/10 rounded-lg p-2 border border-cyan-500/20">
-                        <div className="flex items-center gap-1.5 text-xs text-cyan-400 mb-0.5">
+                        <div className="flex items-center gap-1.5 text-xs text-cyan-700 dark:text-cyan-400 mb-0.5">
                           <Scissors className="w-3 h-3" />
                           发型
                         </div>
-                        <p className="text-sm text-slate-200 truncate">{baseModelState.hairstyle}</p>
+                        <p className="text-sm truncate" style={{ color: 'var(--text-primary)' }}>{baseModelState.hairstyle}</p>
                       </div>
                     )}
                     {baseModelState.accessories && (
                       <div className="bg-amber-500/10 rounded-lg p-2 border border-amber-500/20">
-                        <div className="flex items-center gap-1.5 text-xs text-amber-400 mb-0.5">
+                        <div className="flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-400 mb-0.5">
                           <Star className="w-3 h-3" />
                           配饰
                         </div>
-                        <p className="text-sm text-slate-200 truncate">{baseModelState.accessories}</p>
+                        <p className="text-sm truncate" style={{ color: 'var(--text-primary)' }}>{baseModelState.accessories}</p>
                       </div>
                     )}
                   </div>
@@ -731,8 +741,8 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                 
                 {baseModelState.appearance && (
                   <div className="bg-blue-500/5 rounded-lg p-3 border border-blue-500/20">
-                    <h5 className="text-xs font-medium text-slate-400 mb-1">外貌特征</h5>
-                    <p className="text-sm text-slate-300 whitespace-pre-wrap">{baseModelState.appearance}</p>
+                    <h5 className="text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>外貌特征</h5>
+                    <p className="text-sm whitespace-pre-wrap" style={{ color: 'var(--text-primary)' }}>{baseModelState.appearance}</p>
                   </div>
                 )}
 
@@ -740,9 +750,9 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                 {(baseModelState.front_view_url || baseModelState.side_view_url || baseModelState.back_view_url || baseModelState.generation_status === 'generating') && (
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <h5 className="text-xs font-medium text-slate-400">三视图</h5>
+                      <h5 className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>三视图</h5>
                       {baseModelState.generation_status === 'generating' && (
-                        <span className="text-xs text-amber-400 flex items-center gap-1">
+                        <span className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
                           <RefreshCw className="w-3 h-3 animate-spin" />
                           生成中...
                         </span>
@@ -755,12 +765,12 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                         { url: baseModelState.back_view_url, label: '背面' }
                       ].map(({ url, label }) => (
                         <div key={label} className="space-y-1">
-                          <p className="text-xs text-slate-500 text-center">{label}</p>
-                          <div className="aspect-square bg-slate-800/60 rounded-lg overflow-hidden border border-slate-700/50 flex items-center justify-center">
+                          <p className="text-xs text-center" style={{ color: 'var(--text-muted)' }}>{label}</p>
+                          <div className="aspect-square rounded-lg overflow-hidden flex items-center justify-center" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-color)' }}>
                             {url ? (
                               <img src={url} alt={label} className="w-full h-full object-cover" />
                             ) : (
-                              <ImageIcon className="w-6 h-6 text-slate-600" />
+                              <ImageIcon className="w-6 h-6 text-default-300" />
                             )}
                           </div>
                         </div>
@@ -771,28 +781,70 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                 
                 {/* AI生成三视图按钮 */}
                 {!disabled && baseModelState.generation_status !== 'generating' && (
-                  <Button
-                    size="sm"
-                    color="primary"
-                    variant="flat"
-                    className="w-full bg-linear-to-r from-amber-500/20 to-purple-500/20 text-amber-300 border border-amber-500/30"
-                    startContent={<RefreshCw className="w-4 h-4" />}
-                    onPress={() => openGenerateModal(baseModelState)}
-                    isLoading={generatingId === baseModelState.id}
-                  >
-                    {baseModelState.front_view_url ? '重新生成白膜三视图' : 'AI生成白膜三视图'}
-                  </Button>
+                  <div className="space-y-2">
+                    {/* 白膜无图时显示提示 */}
+                    {!baseModelState.front_view_url && !baseModelState.side_view_url && !baseModelState.back_view_url && (
+                      <div className="p-2.5 rounded-lg bg-amber-500/5 border border-amber-500/20">
+                        <p className="text-xs text-amber-700 dark:text-amber-400 leading-relaxed">
+                          白膜是角色的基础形态参考，生成其他状态图片时会以白膜为基准保持一致性。
+                          你可以先为其他状态生成图片，白膜生成时会自动参考已有的状态图片。
+                        </p>
+                      </div>
+                    )}
+                    <Button
+                      size="sm"
+                      color="primary"
+                      variant="flat"
+                      className="w-full bg-linear-to-r from-amber-500/20 to-purple-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/30"
+                      startContent={<RefreshCw className="w-4 h-4" />}
+                      onPress={() => openGenerateModal(baseModelState)}
+                      isLoading={generatingId === baseModelState.id}
+                    >
+                      {baseModelState.front_view_url ? '重新生成白膜三视图' : 'AI生成白膜三视图'}
+                    </Button>
+                  </div>
                 )}
                 
                 {/* 参考图 */}
                 <div>
-                  <h5 className="text-xs font-medium text-slate-400 mb-2">参考图</h5>
+                  <h5 className="text-xs font-medium mb-2" style={{ color: 'var(--text-secondary)' }}>参考图</h5>
                   <ReferenceImageManager
                     assetType="character_state"
                     assetId={baseModelState.id}
                     disabled={disabled}
                   />
                 </div>
+
+                {/* 身体元素（白膜专用） */}
+                {!disabled && (
+                  <div>
+                    <h5 className="text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>
+                      身体元素
+                    </h5>
+                    <p className="text-xs mb-2" style={{ color: 'var(--text-muted)' }}>
+                      描述角色身体上的永久性标记，如纹身、疤痕、胎记等，生成白膜时会体现
+                    </p>
+                    <Textarea
+                      size="sm"
+                      placeholder="例: 左臂有龙纹身、右眼下方有一道疤痕、后背有大面积火焰纹身"
+                      defaultValue={baseModelState.body_elements || ''}
+                      onBlur={async (e) => {
+                        const newValue = (e.target as HTMLTextAreaElement).value;
+                        if (newValue !== (baseModelState.body_elements || '')) {
+                          try {
+                            await updateCharacterState(characterId!, baseModelState.id, { body_elements: newValue });
+                            // 更新本地 states 缓存
+                            setStates(prev => prev.map(s => s.id === baseModelState.id ? { ...s, body_elements: newValue } : s));
+                          } catch (err: any) {
+                            showToast(err.message || '保存身体元素失败', 'error');
+                          }
+                        }
+                      }}
+                      minRows={2}
+                      maxRows={4}
+                    />
+                  </div>
+                )}
               </div>
             )}
           </CardBody>
@@ -801,13 +853,13 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
 
       {/* 其他状态列表 */}
       {loading ? (
-        <div className="text-center py-4 text-slate-400 text-sm">
+        <div className="text-center py-4 text-sm" style={{ color: 'var(--text-secondary)' }}>
           加载中...
         </div>
-      ) : filteredStates.filter(s => !s.is_base_model).length === 0 && !baseModelState ? (
-        <div className="text-center py-6 bg-slate-800/30 rounded-lg border border-slate-700/30">
-          <p className="text-sm text-slate-500">暂无状态</p>
-          <p className="text-xs text-slate-600 mt-1">可添加角色的不同时期或状态版本</p>
+      ) : filteredStates.filter(s => !s.is_base_model).length === 0 ? (
+        <div className="text-center py-6 rounded-lg" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-color)' }}>
+          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>暂无其他状态</p>
+          <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>可添加角色的不同时期、服装或场景状态版本</p>
         </div>
       ) : (
         <div className="space-y-2">
@@ -817,28 +869,30 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
             const isActive = state.is_active;
             const hasOutfitInfo = !!(state.outfit || state.age_stage || state.hairstyle);
             const stateTags = parseTags(state.tags);
-            const category = state.state_category || 'daily';
-            const colors = CATEGORY_COLOR_MAP[category];
+            const categories = parseStateCategories(state.state_category);
+            const primaryCategory = categories[0] || 'daily';
+            const colors = CATEGORY_COLOR_MAP[primaryCategory];
             
             return (
               <Card 
                 key={state.id} 
-                className={`bg-slate-800/40 border transition-all ${
+                className={`border transition-all ${
                   isActive 
                     ? 'border-amber-500/50 ring-1 ring-amber-500/20' 
-                    : `border-slate-700/50 hover:${colors.border}`
+                    : `hover:${colors.border}`
                 }`}
+                style={{ background: 'var(--bg-elevated)', borderColor: isActive ? undefined : 'var(--border-color)' }}
               >
                 <CardBody className="p-0">
                   {/* 状态头部 */}
                   <div
-                    className="flex items-center gap-2 p-3 cursor-pointer hover:bg-slate-700/20 transition-colors"
+                    className="flex items-center gap-2 p-3 cursor-pointer hover:bg-default-100 transition-colors"
                     onClick={() => toggleExpand(state.id)}
                   >
                     {isExpanded ? (
-                      <ChevronDown className="w-4 h-4 text-slate-400" />
+                      <ChevronDown className="w-4 h-4 text-default-400" />
                     ) : (
-                      <ChevronRight className="w-4 h-4 text-slate-400" />
+                      <ChevronRight className="w-4 h-4 text-default-400" />
                     )}
                     
                     {/* 状态主图 */}
@@ -847,11 +901,12 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                         <img
                           src={state.image_url || state.front_view_url}
                           alt={state.name}
-                          className="w-10 h-10 rounded object-cover border border-slate-600/50"
+                          className="w-10 h-10 rounded object-cover"
+                          style={{ border: '1px solid var(--border-color)' }}
                         />
                       ) : (
-                        <div className="w-10 h-10 rounded bg-slate-700/50 flex items-center justify-center border border-slate-600/50">
-                          <ImageIcon className="w-4 h-4 text-slate-500" />
+                        <div className="w-10 h-10 rounded flex items-center justify-center" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}>
+                          <ImageIcon className="w-4 h-4 text-default-300" />
                         </div>
                       )}
                       {isActive && (
@@ -863,27 +918,27 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                     
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="text-sm font-medium text-slate-200 truncate">
+                        <span className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>
                           {state.name}
                         </span>
-                        {renderCategoryChip(category)}
+                        {renderCategoryChip(categories)}
                         {isActive && (
-                          <span className="text-xs px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400">
+                          <span className="text-xs px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-700 dark:text-amber-400">
                             当前
                           </span>
                         )}
                         {hasViews && (
-                          <span className="text-xs px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-400">
+                          <span className="text-xs px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-700 dark:text-indigo-400">
                             三视图
                           </span>
                         )}
                         {hasOutfitInfo && (
-                          <span className="text-xs px-1.5 py-0.5 rounded bg-pink-500/20 text-pink-400">
+                          <span className="text-xs px-1.5 py-0.5 rounded bg-pink-500/20 text-pink-700 dark:text-pink-400">
                             <Shirt className="w-3 h-3 inline" />
                           </span>
                         )}
                       </div>
-                      <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
+                      <div className="flex items-center gap-2 text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
                         {state.age_stage && <span>{state.age_stage}</span>}
                         {state.outfit && <span className="truncate max-w-25">{state.outfit}</span>}
                         {!state.age_stage && !state.outfit && state.description && (
@@ -894,12 +949,12 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                       {stateTags.length > 0 && (
                         <div className="flex items-center gap-1 mt-1 flex-wrap">
                           {stateTags.slice(0, 3).map((tag, idx) => (
-                            <span key={idx} className="text-xs px-1.5 py-0 rounded bg-slate-700/50 text-slate-400 border border-slate-600/30">
+                            <span key={idx} className="text-xs px-1.5 py-0 rounded" style={{ background: 'var(--bg-card)', color: 'var(--text-secondary)', border: '1px solid var(--border-color)' }}>
                               {tag}
                             </span>
                           ))}
                           {stateTags.length > 3 && (
-                            <span className="text-xs text-slate-500">+{stateTags.length - 3}</span>
+                            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>+{stateTags.length - 3}</span>
                           )}
                         </div>
                       )}
@@ -914,7 +969,7 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                               size="sm"
                               isIconOnly
                               variant="light"
-                              className="text-slate-400 hover:text-amber-400 hover:bg-amber-500/10"
+                              className="text-default-400 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-amber-500/10"
                               onPress={() => handleActivate(state)}
                               isLoading={activatingId === state.id}
                             >
@@ -927,7 +982,7 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                             size="sm"
                             isIconOnly
                             variant="light"
-                            className="text-slate-400 hover:text-green-400 hover:bg-green-500/10"
+                            className="text-default-400 hover:text-green-600 dark:hover:text-green-400 hover:bg-green-500/10"
                             onPress={() => handleDuplicate(state)}
                             isLoading={duplicatingId === state.id}
                           >
@@ -939,7 +994,7 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                             size="sm"
                             isIconOnly
                             variant="light"
-                            className="text-slate-400 hover:text-blue-400 hover:bg-blue-500/10"
+                            className="text-default-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-500/10"
                             onPress={() => handleEdit(state)}
                           >
                             <Edit2 className="w-3.5 h-3.5" />
@@ -950,7 +1005,7 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                             size="sm"
                             isIconOnly
                             variant="light"
-                            className="text-slate-400 hover:text-red-400 hover:bg-red-500/10"
+                            className="text-default-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-500/10"
                             onPress={() => handleDelete(state)}
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -962,44 +1017,44 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                   
                   {/* 展开内容 */}
                   {isExpanded && (
-                    <div className="px-4 pb-4 pt-2 border-t border-slate-700/30 space-y-4">
+                    <div className="px-4 pb-4 pt-2 border-t border-default-200 dark:border-slate-700/30 space-y-4">
                       {/* 外观属性展示 */}
                       {(state.outfit || state.age_stage || state.hairstyle || state.accessories) && (
                         <div className="grid grid-cols-2 gap-2">
                           {state.age_stage && (
                             <div className="bg-purple-500/10 rounded-lg p-2 border border-purple-500/20">
-                              <div className="flex items-center gap-1.5 text-xs text-purple-400 mb-0.5">
+                              <div className="flex items-center gap-1.5 text-xs text-purple-700 dark:text-purple-400 mb-0.5">
                                 <Calendar className="w-3 h-3" />
                                 年龄阶段
                               </div>
-                              <p className="text-sm text-slate-200">{state.age_stage}</p>
+                              <p className="text-sm text-default-700 dark:text-slate-200">{state.age_stage}</p>
                             </div>
                           )}
                           {state.outfit && (
                             <div className="bg-pink-500/10 rounded-lg p-2 border border-pink-500/20">
-                              <div className="flex items-center gap-1.5 text-xs text-pink-400 mb-0.5">
+                              <div className="flex items-center gap-1.5 text-xs text-pink-700 dark:text-pink-400 mb-0.5">
                                 <Shirt className="w-3 h-3" />
                                 服装
                               </div>
-                              <p className="text-sm text-slate-200 truncate">{state.outfit}</p>
+                              <p className="text-sm text-default-700 dark:text-slate-200 truncate">{state.outfit}</p>
                             </div>
                           )}
                           {state.hairstyle && (
                             <div className="bg-cyan-500/10 rounded-lg p-2 border border-cyan-500/20">
-                              <div className="flex items-center gap-1.5 text-xs text-cyan-400 mb-0.5">
+                              <div className="flex items-center gap-1.5 text-xs text-cyan-700 dark:text-cyan-400 mb-0.5">
                                 <Scissors className="w-3 h-3" />
                                 发型
                               </div>
-                              <p className="text-sm text-slate-200 truncate">{state.hairstyle}</p>
+                              <p className="text-sm text-default-700 dark:text-slate-200 truncate">{state.hairstyle}</p>
                             </div>
                           )}
                           {state.accessories && (
                             <div className="bg-amber-500/10 rounded-lg p-2 border border-amber-500/20">
-                              <div className="flex items-center gap-1.5 text-xs text-amber-400 mb-0.5">
+                              <div className="flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-400 mb-0.5">
                                 <Star className="w-3 h-3" />
                                 配饰
                               </div>
-                              <p className="text-sm text-slate-200 truncate">{state.accessories}</p>
+                              <p className="text-sm text-default-700 dark:text-slate-200 truncate">{state.accessories}</p>
                             </div>
                           )}
                         </div>
@@ -1008,17 +1063,17 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                       {/* 外貌描述 */}
                       {state.appearance && (
                         <div className="bg-blue-500/5 rounded-lg p-3 border border-blue-500/20">
-                          <h5 className="text-xs font-medium text-slate-400 mb-1">外貌特征</h5>
-                          <p className="text-sm text-slate-300 whitespace-pre-wrap">{state.appearance}</p>
+                          <h5 className="text-xs font-medium text-default-500 dark:text-slate-400 mb-1">外貌特征</h5>
+                          <p className="text-sm text-default-600 dark:text-slate-300 whitespace-pre-wrap">{state.appearance}</p>
                         </div>
                       )}
 
                       {/* 展开的标签展示 */}
                       {stateTags.length > 0 && (
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <Tag className="w-3 h-3 text-slate-500" />
+                          <Tag className="w-3 h-3 text-default-400 dark:text-slate-500" />
                           {stateTags.map((tag, idx) => (
-                            <span key={idx} className="text-xs px-2 py-0.5 rounded-full bg-slate-700/50 text-slate-300 border border-slate-600/30">
+                            <span key={idx} className="text-xs px-2 py-0.5 rounded-full bg-default-100 dark:bg-slate-700/50 text-default-600 dark:text-slate-300 border border-default-200 dark:border-slate-600/30">
                               {tag}
                             </span>
                           ))}
@@ -1029,9 +1084,9 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                       {(hasViews || state.generation_status === 'generating') && (
                         <div className="space-y-2">
                           <div className="flex items-center justify-between">
-                            <h5 className="text-xs font-medium text-slate-400">三视图</h5>
+                            <h5 className="text-xs font-medium text-default-500 dark:text-slate-400">三视图</h5>
                             {state.generation_status === 'generating' && (
-                              <span className="text-xs text-amber-400 flex items-center gap-1">
+                              <span className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
                                 <RefreshCw className="w-3 h-3 animate-spin" />
                                 生成中...
                               </span>
@@ -1044,12 +1099,12 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                               { url: state.back_view_url, label: '背面' }
                             ].map(({ url, label }) => (
                               <div key={label} className="space-y-1">
-                                <p className="text-xs text-slate-500 text-center">{label}</p>
-                                <div className="aspect-square bg-slate-800/60 rounded-lg overflow-hidden border border-slate-700/50 flex items-center justify-center">
+                                <p className="text-xs text-default-400 dark:text-slate-500 text-center">{label}</p>
+                                <div className="aspect-square bg-default-100 dark:bg-slate-800/60 rounded-lg overflow-hidden border border-default-200 dark:border-slate-700/50 flex items-center justify-center">
                                   {url ? (
                                     <img src={url} alt={label} className="w-full h-full object-cover" />
                                   ) : (
-                                    <ImageIcon className="w-6 h-6 text-slate-600" />
+                                    <ImageIcon className="w-6 h-6 text-default-300 dark:text-slate-600" />
                                   )}
                                 </div>
                               </div>
@@ -1065,7 +1120,7 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                             size="sm"
                             color="primary"
                             variant="flat"
-                            className="w-full bg-linear-to-r from-purple-500/20 to-pink-500/20 text-purple-300 border border-purple-500/30"
+                            className="w-full bg-linear-to-r from-purple-500/20 to-pink-500/20 text-purple-700 dark:text-purple-300 border border-purple-500/30"
                             startContent={<RefreshCw className="w-4 h-4" />}
                             onPress={() => openGenerateModal(state)}
                             isLoading={generatingId === state.id}
@@ -1078,9 +1133,9 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                       {/* 参考图 */}
                       <div>
                         <div className="flex items-center justify-between mb-2">
-                          <h5 className="text-xs font-medium text-slate-400">参考图</h5>
+                          <h5 className="text-xs font-medium text-default-500 dark:text-slate-400">参考图</h5>
                           <div className="flex items-center gap-2">
-                            <span className="text-xs text-slate-500">使用参考图</span>
+                            <span className="text-xs text-default-400 dark:text-slate-500">使用参考图</span>
                             <Switch
                               size="sm"
                               isSelected={state.use_reference_images !== false}
@@ -1153,14 +1208,15 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                         }}
                       />
                       
-                      {/* 状态分类选择器 */}
+                      {/* 状态分类选择器（多选） */}
                       <div className="space-y-1.5">
-                        <label className="text-xs font-medium text-slate-400">状态分类</label>
+                        <label className="text-xs font-medium text-slate-400">状态分类（可多选）</label>
                         <div className="grid grid-cols-2 gap-2">
                           {STATE_CATEGORIES.map(cat => {
                             const IconComp = CATEGORY_ICON_MAP[cat.key];
                             const colors = CATEGORY_COLOR_MAP[cat.key];
-                            const isSelected = (formData.state_category || 'daily') === cat.key;
+                            const currentCats = parseStateCategories(formData.state_category);
+                            const isSelected = currentCats.includes(cat.key);
                             return (
                               <button
                                 key={cat.key}
@@ -1170,7 +1226,19 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                                     ? `${colors.bg} ${colors.text} ${colors.border}`
                                     : 'border-slate-600/50 text-slate-400 hover:border-slate-500 hover:text-slate-300'
                                 }`}
-                                onClick={() => setFormData({ ...formData, state_category: cat.key })}
+                                onClick={() => {
+                                  if (isBaseModel) return;
+                                  let newCats: StateCategory[];
+                                  if (isSelected) {
+                                    // 取消选择（至少保留一个）
+                                    newCats = currentCats.filter(c => c !== cat.key);
+                                    if (newCats.length === 0) newCats = [cat.key];
+                                  } else {
+                                    // 添加选择
+                                    newCats = [...currentCats, cat.key];
+                                  }
+                                  setFormData({ ...formData, state_category: newCats });
+                                }}
                                 disabled={isBaseModel}
                               >
                                 <IconComp className="w-4 h-4" />
@@ -1477,7 +1545,7 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
               <ModalHeader className="text-slate-100">
                 <div className="flex items-center gap-2">
                   <RefreshCw className="w-5 h-5 text-purple-400" />
-                  AI生成角色状态图片
+                  {generatingState?.is_base_model ? 'AI生成白膜三视图' : 'AI生成角色状态图片'}
                 </div>
               </ModalHeader>
               <ModalBody className="space-y-4">
@@ -1491,30 +1559,45 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                     />
                     <div>
                       <p className="text-sm font-medium text-slate-200">参考角色：{character.name}</p>
-                      <p className="text-xs text-slate-500">将基于此角色生成新的状态图片</p>
+                      <p className="text-xs text-slate-500">
+                        {generatingState?.is_base_model 
+                          ? '将基于角色基础外貌生成白膜三视图（裸体基础形态）' 
+                          : '将基于此角色生成新的状态图片'}
+                      </p>
                     </div>
                   </div>
                 )}
 
-                {/* 自然语言输入 */}
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-slate-300">
-                    描述这个角色状态
-                  </label>
-                  <Textarea
-                    placeholder="例如：这是角色童年时期的样子，穿着蓝色的学生制服，头发扎成双马尾，戴着一副圆框眼镜..."
-                    value={naturalLanguageInput}
-                    onValueChange={setNaturalLanguageInput}
-                    minRows={4}
-                    classNames={{
-                      input: "bg-transparent text-slate-100",
-                      inputWrapper: "bg-slate-800/60 border border-slate-600/50"
-                    }}
-                  />
-                  <p className="text-xs text-slate-500">
-                    用自然语言描述角色的状态、服装、发型等特征，AI会自动分析并生成图片
-                  </p>
-                </div>
+                {/* 白膜模式：直接说明，无需状态描述 */}
+                {generatingState?.is_base_model && (
+                  <div className="p-3 bg-amber-500/10 rounded-lg border border-amber-500/30">
+                    <p className="text-sm text-amber-300 leading-relaxed">
+                      白膜是角色的裸体基础形态，用于后续各状态图片生成的参考基准。无需额外描述，将直接使用角色的基础外貌特征生成三视图。
+                    </p>
+                  </div>
+                )}
+
+                {/* 非白膜：自然语言输入 */}
+                {!generatingState?.is_base_model && (
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-slate-300">
+                      描述这个角色状态
+                    </label>
+                    <Textarea
+                      placeholder="例如：这是角色童年时期的样子，穿着蓝色的学生制服，头发扎成双马尾，戴着一副圆框眼镜..."
+                      value={naturalLanguageInput}
+                      onValueChange={setNaturalLanguageInput}
+                      minRows={4}
+                      classNames={{
+                        input: "bg-transparent text-slate-100",
+                        inputWrapper: "bg-slate-800/60 border border-slate-600/50"
+                      }}
+                    />
+                    <p className="text-xs text-slate-500">
+                      用自然语言描述角色的状态、服装、发型等特征，AI会自动分析并生成图片
+                    </p>
+                  </div>
+                )}
 
                 {/* 模型选择 */}
                 <div className="grid grid-cols-2 gap-3">
@@ -1540,18 +1623,20 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                   />
                 </div>
 
-                {/* 分析按钮 */}
-                <Button
-                  color="secondary"
-                  variant="flat"
-                  className="w-full bg-linear-to-r from-blue-500/20 to-cyan-500/20 text-blue-300 border border-blue-500/30"
-                  startContent={analyzing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                  onPress={analyzeDescription}
-                  isLoading={analyzing}
-                  isDisabled={!naturalLanguageInput.trim() || !selected.text}
-                >
-                  {analyzing ? 'AI分析中...' : 'AI分析描述'}
-                </Button>
+                {/* 分析按钮（仅非白膜显示） */}
+                {!generatingState?.is_base_model && (
+                  <Button
+                    color="secondary"
+                    variant="flat"
+                    className="w-full bg-linear-to-r from-blue-500/20 to-cyan-500/20 text-blue-300 border border-blue-500/30"
+                    startContent={analyzing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                    onPress={analyzeDescription}
+                    isLoading={analyzing}
+                    isDisabled={!naturalLanguageInput.trim() || !selected.text}
+                  >
+                    {analyzing ? 'AI分析中...' : 'AI分析描述'}
+                  </Button>
+                )}
 
                 {/* 分析结果展示 */}
                 {generatedTags && (
@@ -1608,10 +1693,10 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                 <Button
                   className="bg-linear-to-r from-purple-500 to-pink-600 text-white font-semibold"
                   onPress={confirmGenerate}
-                  isDisabled={!generatedTags || !selected.image}
+                  isDisabled={!selected.image || (!generatingState?.is_base_model && !generatedTags)}
                   startContent={<RefreshCw className="w-4 h-4" />}
                 >
-                  生成图片
+                  {generatingState?.is_base_model ? '生成白膜三视图' : '生成图片'}
                 </Button>
               </ModalFooter>
             </>

@@ -4,19 +4,21 @@
  */
 
 const { queryOne, execute } = require('../../dbHelper');
+const { getEffectiveProjectRole } = require('../../middleware/collaborationAuth');
+const { linkCharactersForStoryboard, linkScenesForStoryboard } = require('../../resourceLinks/linkSingleStoryboard');
 
 async function updateContent(req, res) {
   const userId = req.user.id;
   const storyboardId = Number(req.params.storyboardId);
-  const { prompt_template, spatial_description, dialogues, voiceover } = req.body || {};
+  const { prompt_template, spatial_description, dialogues, voiceover, characters, location, characterIds, sceneId } = req.body || {};
 
   if (!storyboardId) {
     return res.status(400).json({ message: 'Invalid storyboard id' });
   }
 
   // 至少需要传递一个字段
-  if (prompt_template === undefined && spatial_description === undefined && dialogues === undefined && voiceover === undefined) {
-    return res.status(400).json({ message: '需要提供 prompt_template、spatial_description、dialogues 或 voiceover 中的至少一个字段' });
+  if (prompt_template === undefined && spatial_description === undefined && dialogues === undefined && voiceover === undefined && characters === undefined && location === undefined) {
+    return res.status(400).json({ message: '需要提供至少一个可更新字段' });
   }
 
   // 验证 prompt_template 类型（如果传递了）
@@ -31,15 +33,24 @@ async function updateContent(req, res) {
 
   try {
     const storyboard = await queryOne(
-      `SELECT s.id, s.variables_json
+      `SELECT s.id, s.variables_json, s.script_id
        FROM storyboards s
-       JOIN scripts sc ON s.script_id = sc.id
-       WHERE s.id = ? AND sc.user_id = ?`,
-      [storyboardId, userId]
+       WHERE s.id = ?`,
+      [storyboardId]
     );
 
     if (!storyboard) {
-      return res.status(404).json({ message: 'Storyboard not found or access denied' });
+      return res.status(404).json({ message: 'Storyboard not found' });
+    }
+
+    // 通过剧本关联的项目检查编辑权限
+    const script = await queryOne('SELECT project_id FROM scripts WHERE id = ?', [storyboard.script_id]);
+    if (!script) {
+      return res.status(404).json({ message: 'Associated script not found' });
+    }
+    const role = await getEffectiveProjectRole(userId, script.project_id);
+    if (!role || role === 'viewer') {
+      return res.status(403).json({ message: 'Access denied' });
     }
 
     // 构建动态更新语句
@@ -60,8 +71,8 @@ async function updateContent(req, res) {
       params.push(spatialDescJson);
     }
 
-    // 处理 dialogues：更新到 variables_json 中
-    if (dialogues !== undefined || voiceover !== undefined) {
+    // 处理 dialogues / voiceover / characters / location：更新到 variables_json 中
+    if (dialogues !== undefined || voiceover !== undefined || characters !== undefined || location !== undefined) {
       let vars = {};
       try {
         vars = JSON.parse(storyboard.variables_json || '{}');
@@ -81,6 +92,14 @@ async function updateContent(req, res) {
       if (voiceover !== undefined) {
         // 更新画外音字段
         vars.voiceover = typeof voiceover === 'string' ? voiceover.trim() : '';
+      }
+
+      if (characters !== undefined) {
+        vars.characters = Array.isArray(characters) ? characters : [];
+      }
+
+      if (location !== undefined) {
+        vars.location = typeof location === 'string' ? location.trim() : '';
       }
 
       updates.push('variables_json = ?');
@@ -121,6 +140,24 @@ async function updateContent(req, res) {
       } catch (historyError) {
         // 版本记录失败不影响主流程
         console.error('[Storyboard Content] 版本记录失败:', historyError);
+      }
+    }
+
+    // 当 characters 或 location 更新时，自动重新链接关联表
+    if (characters !== undefined || location !== undefined) {
+      try {
+        if (characters !== undefined) {
+          // 传递 characterIds 给链接函数，优先使用直接 ID 创建关联
+          const validCharIds = Array.isArray(characterIds) ? characterIds.filter(id => typeof id === 'number' && id > 0) : [];
+          await linkCharactersForStoryboard(storyboardId, script.project_id, { characterIds: validCharIds });
+        }
+        if (location !== undefined) {
+          // 传递 sceneId 给链接函数，优先使用直接 ID 创建关联
+          const validSceneId = (typeof sceneId === 'number' && sceneId > 0) ? sceneId : null;
+          await linkScenesForStoryboard(storyboardId, script.project_id, { sceneId: validSceneId });
+        }
+      } catch (linkErr) {
+        console.warn('[Storyboard Content] 重新链接关联失败（非致命）:', linkErr.message);
       }
     }
 

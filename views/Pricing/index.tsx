@@ -5,7 +5,7 @@ import { Check, Sparkles, Crown, Building2, Rocket, Mail, Zap, Star, Shield, X, 
 import { useNavigate } from 'react-router-dom';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { useToast } from '../../contexts/ToastContext';
-import { fetchPlans, subscribe, type SubscriptionPlan } from '../../services/subscriptions';
+import { fetchPlans, type SubscriptionPlan } from '../../services/subscriptions';
 import { getAuthToken } from '../../services/auth';
 
 // 默认套餐图标映射
@@ -141,7 +141,7 @@ const Pricing: React.FC = () => {
   const [isYearly, setIsYearly] = useState(false); // 默认月付，展示首月优惠
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
   const [loading, setLoading] = useState(true);
-  const [subscribing, setSubscribing] = useState<number | null>(null);
+
   const [hoveredPlan, setHoveredPlan] = useState<number | null>(null);
 
   // 分离免费版和付费套餐
@@ -186,11 +186,6 @@ const Pricing: React.FC = () => {
   };
 
   const handleSubscribe = async (plan: SubscriptionPlan) => {
-    if (!getAuthToken()) {
-      navigate('/auth', { state: { from: '/pricing' } });
-      return;
-    }
-
     if (plan.name === 'enterprise') {
       window.open('mailto:contact@jiaozianime.com?subject=Enterprise Plan Inquiry', '_blank');
       return;
@@ -198,21 +193,17 @@ const Pricing: React.FC = () => {
 
     // 免费计划直接跳转到首页开始使用
     if (plan.price_monthly === 0 && plan.price_yearly === 0) {
+      if (!getAuthToken()) {
+        navigate('/auth', { state: { from: '/pricing' } });
+        return;
+      }
       showToast('欢迎使用饺子动画！', 'success');
       navigate('/');
       return;
     }
 
-    setSubscribing(plan.id);
-    try {
-      await subscribe(plan.id, isYearly ? 'yearly' : 'monthly');
-      showToast('订阅成功！', 'success');
-      navigate('/user-center');
-    } catch (error) {
-      showToast(error instanceof Error ? error.message : '订阅失败，请稍后重试', 'error');
-    } finally {
-      setSubscribing(null);
-    }
+    // 付费订阅暂未开放在线支付
+    showToast('充值暂未开放，如需订阅请联系管理员', 'info');
   };
 
   const getPlanIcon = (name: string) => {
@@ -575,9 +566,8 @@ const Pricing: React.FC = () => {
                               : 'bg-(--accent)/10 text-(--accent) hover:bg-(--accent)/20 border border-(--accent)/30'
                           }
                         `}
-                        isLoading={subscribing === plan.id}
                         onPress={() => handleSubscribe(plan)}
-                        endContent={!isEnterprise && !subscribing ? <ChevronRight className="w-4 h-4" /> : undefined}
+                        endContent={!isEnterprise ? <ChevronRight className="w-4 h-4" /> : undefined}
                         startContent={isEnterprise ? <Mail className="w-4 h-4" /> : undefined}
                       >
                         {planTrans.cta}

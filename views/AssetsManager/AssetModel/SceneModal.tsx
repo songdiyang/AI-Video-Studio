@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Button, Input, Textarea, Select, SelectItem, Accordion, AccordionItem } from '@heroui/react';
-import { ChevronDown, MapPin, Camera } from 'lucide-react';
+import { ChevronDown, MapPin, Camera, FolderOpen } from 'lucide-react';
+import { Project } from '../../../services/projects';
 
 interface SpatialLayout {
   foreground?: string;
@@ -23,6 +24,7 @@ interface SceneModalProps {
   formData: any;
   setFormData: (data: any) => void;
   onSave: () => void;
+  userProjects?: Project[];
 }
 
 // 摄像机参数选项
@@ -72,7 +74,8 @@ const SceneModal: React.FC<SceneModalProps> = ({
   editMode,
   formData,
   setFormData,
-  onSave
+  onSave,
+  userProjects = []
 }) => {
   // 解析空间布局数据
   const spatialLayout: SpatialLayout = formData.spatial_layout || {};
@@ -117,6 +120,33 @@ const SceneModal: React.FC<SceneModalProps> = ({
               {editMode ? '编辑' : '新建'}场景
             </ModalHeader>
             <ModalBody className="space-y-4">
+              {/* 所属项目选择器 */}
+              <Select
+                label="所属项目"
+                placeholder="选择所属项目（可选）"
+                selectedKeys={formData.project_id ? [String(formData.project_id)] : []}
+                onSelectionChange={(keys) => {
+                  const val = Array.from(keys)[0] as string;
+                  setFormData({ ...formData, project_id: val ? Number(val) : undefined });
+                }}
+                isDisabled={editMode}
+                startContent={<FolderOpen className="w-4 h-4 text-blue-400" />}
+                classNames={{
+                  ...selectClassNames,
+                  label: "text-[var(--text-secondary)] font-medium"
+                }}
+                description={editMode ? '编辑模式下不可更改所属项目' : '选择后场景可在该项目的分镜中调用'}
+              >
+                {userProjects.map((p) => (
+                  <SelectItem key={String(p.id)} textValue={p.name}>
+                    <div className="flex items-center gap-2">
+                      <FolderOpen className="w-3.5 h-3.5 text-blue-400" />
+                      <span>{p.name}</span>
+                    </div>
+                  </SelectItem>
+                ))}
+              </Select>
+
               {/* 基本信息 */}
               <Input
                 label="名称"

@@ -537,7 +537,7 @@ const WORKFLOW_DEFINITIONS = {
           'characterId', 'characterName', 'appearance', 'personality',
           'description', 'style', 'projectId', 'imageModel', 'textModel', 'aspectRatio',
           'regenerateOnly',
-          'stateId', 'outfit', 'hairstyle', 'accessories', 'ageStage',
+          'stateId', 'outfit', 'hairstyle', 'accessories', 'ageStage', 'bodyElements',
           'isBaseModel', 'gender',
           { key: 'width', defaultValue: 1920 },
           { key: 'height', defaultValue: 2880 }

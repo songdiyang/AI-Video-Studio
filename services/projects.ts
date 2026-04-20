@@ -14,6 +14,10 @@ export interface Project {
   use_models?: Record<string, string>;
   /** 项目来源标识，API 返回时标记 'own' 表示自己创建的项目 */
   source?: string;
+  /** 团队名称（团队项目时返回） */
+  team_name?: string;
+  /** 当前用户对该项目的角色 */
+  my_role?: 'owner' | 'admin' | 'editor' | 'viewer';
   created_at: string;
   updated_at: string;
 }

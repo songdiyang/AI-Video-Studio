@@ -55,11 +55,11 @@ const CharacterList: React.FC<CharacterListProps> = ({ characters, tagGroups, on
           variants={itemVariants}
         >
           <Card 
-            className="bg-(--bg-card) border border-(--border-color) shadow-sm hover:shadow-md hover:shadow-(--accent)/5 transition-shadow cursor-pointer"
+            className="h-full bg-(--bg-card) border border-(--border-color) shadow-sm hover:shadow-md hover:shadow-(--accent)/5 transition-shadow cursor-pointer"
             isPressable
             onPress={() => onEdit(character)}
           >
-            <CardBody className="p-4 space-y-3">
+            <CardBody className="p-4 flex flex-col gap-3">
               <div className="flex items-start justify-between">
                 <h3 className="text-lg font-semibold text-(--text-primary)">{character.name}</h3>
                 <div className="flex gap-1">
@@ -83,8 +83,8 @@ const CharacterList: React.FC<CharacterListProps> = ({ characters, tagGroups, on
                   </Button>
                 </div>
               </div>
-              <p className="text-sm text-(--text-secondary) line-clamp-2">{character.description}</p>
-              <div className="flex flex-wrap gap-2">
+              <p className="text-sm text-(--text-secondary) line-clamp-2 flex-1">{character.description}</p>
+              <div className="flex flex-wrap gap-2 mt-auto">
                 {character.project_name && (
                   <Chip 
                     size="sm" 
