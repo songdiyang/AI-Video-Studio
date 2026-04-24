@@ -85,12 +85,13 @@ async function handleBatchSaveStoryboards(inputParams, onProgress) {
     scriptId,
     idxOffset + i,
     shot.description || '',
+    '',
     JSON.stringify(shot)
   ]);
 
   if (batchValues.length > 0) {
     await execute(
-      `INSERT INTO storyboards (project_id, script_id, idx, prompt_template, variables_json) VALUES ?`,
+      `INSERT INTO storyboards (project_id, script_id, idx, description, prompt_template, variables_json) VALUES ?`,
       [batchValues]
     );
   }

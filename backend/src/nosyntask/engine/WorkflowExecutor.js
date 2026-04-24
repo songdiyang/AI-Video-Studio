@@ -17,6 +17,8 @@ const ContextBuilder = require('./ContextBuilder');
 const JobStatusManager = require('./JobStatusManager');
 const { runWithTrace } = require('./generationTrace');
 const { withAIBillingContext } = require('../../aiBillingContext');
+const { updateJobWithVersion } = require('../utils/occUtils');
+const { WorkflowLogger } = require('../utils/WorkflowLogger');
 
 // 尝试加载 Redis 缓存服务（可选）
 let CacheService = null;
@@ -40,14 +42,15 @@ try {
 const MAX_STEPS = parseInt(process.env.WORKFLOW_MAX_STEPS, 10) || 100;
 const MAX_CONCURRENT_TASKS = parseInt(process.env.WORKFLOW_MAX_CONCURRENT, 10) || 20;
 const TASK_TIMEOUT = parseInt(process.env.WORKFLOW_TASK_TIMEOUT, 10) || 300000; // 5分钟
+const TASK_MAX_RETRIES = parseInt(process.env.WORKFLOW_TASK_MAX_RETRIES, 10) || 3; // 任务最大重试次数
+const TASK_RETRY_BASE_DELAY_MS = parseInt(process.env.WORKFLOW_TASK_RETRY_BASE_DELAY, 10) || 3000; // 重试基础延迟
+const SNAPSHOT_INTERVAL = parseInt(process.env.WORKFLOW_SNAPSHOT_INTERVAL, 10) || 15000; // 快照持久化间隔
 const MEMORY_THRESHOLD_MB = parseInt(process.env.WORKFLOW_MEMORY_THRESHOLD, 10) || 1024;
 const BACKPRESSURE_THRESHOLD = parseInt(process.env.WORKFLOW_BACKPRESSURE, 10) || 1000;
 const MEMORY_CHECK_INTERVAL = 30000;
 const STALE_CLEANUP_INTERVAL = 60000;
 const STALE_THRESHOLD = 3600000; // 1小时
 const JOB_CACHE_TTL = 30; // 秒
-const OCC_MAX_RETRIES = 3;  // 乐观锁最大重试次数
-const OCC_RETRY_DELAY = 50; // 重试间隔基础毫秒
 
 // ============================================
 // 内存管理器
@@ -191,51 +194,8 @@ function executeWithTimeout(fn, timeoutMs) {
   });
 }
 
-/**
- * 带乐观锁的工作流状态更新（OCC）
- * 理论基础：Optimistic Concurrency Control
- * 
- * @param {number} jobId - 工作流 ID
- * @param {object} updates - 要更新的字段 { status: 'completed', ... }
- * @param {number} currentVersion - 当前已知的版本号
- * @param {number} maxRetries - 最大重试次数
- * @returns {object} 更新结果
- */
-async function updateJobWithVersion(jobId, updates, currentVersion, maxRetries = OCC_MAX_RETRIES) {
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
-    let version = currentVersion;
-    
-    // 重试时需要重新获取最新版本号
-    if (attempt > 0) {
-      const latest = await queryOne('SELECT version FROM workflow_jobs WHERE id = ?', [jobId]);
-      if (!latest) throw new Error(`工作流 ${jobId} 不存在`);
-      version = latest.version;
-      await new Promise(r => setTimeout(r, OCC_RETRY_DELAY * (attempt + 1)));
-    }
-    
-    const setClauses = Object.keys(updates).map(k => `\`${k}\` = ?`).join(', ');
-    const values = [...Object.values(updates), jobId, version];
-    
-    const result = await execute(
-      `UPDATE workflow_jobs SET ${setClauses}, version = version + 1 WHERE id = ? AND version = ?`,
-      values
-    );
-    
-    if (result.affectedRows > 0) {
-      return result;
-    }
-    
-    console.warn(`[OCC] 工作流 ${jobId} 版本冲突 (尝试 ${attempt + 1}/${maxRetries}, 期望版本: ${version})`);
-  }
-  
-  // 所有重试都失败，做最后一次无版本检查的更新（保证业务不被阻塞）
-  console.error(`[OCC] 工作流 ${jobId} 连续 ${maxRetries} 次版本冲突，执行强制更新`);
-  const setClauses = Object.keys(updates).map(k => `\`${k}\` = ?`).join(', ');
-  const values = [...Object.values(updates), jobId];
-  return execute(`UPDATE workflow_jobs SET ${setClauses}, version = version + 1 WHERE id = ?`, values);
-}
-
 // ============================================
+
 // 工作流执行器
 // ============================================
 
@@ -246,6 +206,9 @@ class WorkflowExecutor {
     this.stepCounters = new Map(); // jobId -> { count, lastUpdate }
     this.runningTasks = new Map(); // jobId -> Set<taskId> 正在执行的任务
 
+    // 新增：结构化日志
+    this.logger = new WorkflowLogger({ source: 'Executor' });
+
     // 新增：内存管理器
     this.memoryManager = new MemoryManager();
     this.memoryManager.startMonitoring();
@@ -255,6 +218,17 @@ class WorkflowExecutor {
 
     // 新增：定期清理过期状态（防止内存泄漏）
     this.cleanupTimer = setInterval(() => this._cleanupStaleState(), STALE_CLEANUP_INTERVAL);
+
+    // 新增：定期持久化执行快照（断点恢复）
+    this.snapshotTimer = setInterval(() => this._persistAllSnapshots(), SNAPSHOT_INTERVAL);
+    if (this.snapshotTimer && typeof this.snapshotTimer.unref === 'function') {
+      this.snapshotTimer.unref();
+    }
+
+    // 新增：启动时恢复被中断的工作流
+    this._recoverInterruptedJobs().catch(err => {
+      console.error('[WorkflowExecutor] 启动恢复失败:', err);
+    });
   }
 
   /**
@@ -276,6 +250,114 @@ class WorkflowExecutor {
 
     if (cleaned > 0) {
       console.log(`[WorkflowExecutor] 清理过期状态: ${cleaned} 个工作流`);
+    }
+  }
+
+  /**
+   * 持久化单个工作流的执行快照到 DB
+   */
+  async _persistSnapshot(jobId) {
+    try {
+      const counterData = this.stepCounters.get(jobId);
+      const runningSet = this.runningTasks.get(jobId);
+      if (!counterData && !runningSet) return; // 没有活跃状态，跳过
+
+      const snapshot = {
+        stepCounter: counterData || { count: 0, lastUpdate: Date.now() },
+        runningTaskIds: runningSet ? Array.from(runningSet) : [],
+        savedAt: new Date().toISOString()
+      };
+
+      await execute(
+        `UPDATE workflow_jobs SET execution_snapshot = ? WHERE id = ? AND status IN ('pending', 'running')`,
+        [JSON.stringify(snapshot), jobId]
+      );
+    } catch (err) {
+      // 持久化失败不阻塞主流程
+    }
+  }
+
+  /**
+   * 批量持久化所有活跃工作流的执行快照
+   */
+  async _persistAllSnapshots() {
+    if (this.stepCounters.size === 0) return;
+    const jobs = Array.from(this.stepCounters.keys());
+    for (const jobId of jobs) {
+      await this._persistSnapshot(jobId);
+    }
+  }
+
+  /**
+   * 启动时恢复被中断的工作流
+   * 将在重启前处于 running 状态的工作流从快照中恢复
+   */
+  async _recoverInterruptedJobs() {
+    try {
+      // 查找有执行快照的运行中工作流（说明是异常中断）
+      const interruptedJobs = await queryAll(
+        `SELECT * FROM workflow_jobs WHERE status IN ('pending', 'running') AND execution_snapshot IS NOT NULL`
+      );
+
+      if (interruptedJobs.length === 0) {
+        // 没有可恢复的，标记剩余的 running/pending 为 failed（旧逻辑）
+        const { execute: dbExec } = require('../../dbHelper');
+        await dbExec(
+          `UPDATE workflow_jobs SET status = 'failed', error_message = '服务重启导致任务中断', updated_at = NOW()
+           WHERE status IN ('pending', 'running') AND execution_snapshot IS NULL`
+        );
+        return;
+      }
+
+      console.log(`[WorkflowExecutor] 发现 ${interruptedJobs.length} 个可恢复的工作流`);
+
+      for (const job of interruptedJobs) {
+        try {
+          let snapshot = job.execution_snapshot;
+          if (typeof snapshot === 'string') {
+            snapshot = JSON.parse(snapshot);
+          }
+
+          // 恢复 stepCounters
+          if (snapshot.stepCounter) {
+            this.stepCounters.set(job.id, snapshot.stepCounter);
+          }
+
+          // 恢复 runningTasks（将当时正在执行的任务重置为 pending）
+          if (snapshot.runningTaskIds && snapshot.runningTaskIds.length > 0) {
+            await execute(
+              `UPDATE generation_tasks SET status = 'pending', error_message = NULL, progress = 0
+               WHERE id IN (${snapshot.runningTaskIds.map(() => '?').join(',')}) AND status = 'processing'`,
+              snapshot.runningTaskIds
+            );
+          }
+
+          // 删除已消费的快照（避免重复恢复）
+          await execute(
+            `UPDATE workflow_jobs SET execution_snapshot = NULL WHERE id = ?`,
+            [job.id]
+          );
+
+          this.logger.info('job_recovered', '从快照恢复工作流', {
+            jobId: job.id,
+            workflowType: job.workflow_type,
+            previousRunningTasks: snapshot.runningTaskIds?.length || 0
+          });
+
+          // 触发继续执行
+          setImmediate(() => {
+            this.runNextStep(job.id).catch(err => {
+              console.error(`[WorkflowExecutor] 恢复工作流失败: jobId=${job.id}`, err);
+            });
+          });
+        } catch (err) {
+          console.error(`[WorkflowExecutor] 恢复工作流异常: jobId=${job.id}`, err);
+          // 恢复失败则标记为失败
+          await this.jobStatusManager.failJob(job.id, `服务重启后恢复失败: ${err.message}`);
+        }
+      }
+    } catch (err) {
+      console.error('[WorkflowExecutor] 恢复工作流失败:', err);
     }
   }
 
@@ -515,11 +597,16 @@ class WorkflowExecutor {
    * 执行单个任务（增强版：带超时保护）
    */
   async executeTask(taskId, stepDef, inputParams, jobId, executionContext = {}) {
+    const taskStartTime = Date.now();
     try {
       // 保留初始化时存储的 displayName
       const taskInputWithMeta = stepDef.displayName
         ? { ...inputParams, displayName: stepDef.displayName }
         : inputParams;
+
+      // 检查是否为重试（retrying → processing）
+      const oldTask = await queryOne('SELECT retry_count, user_id, workflow_type FROM generation_tasks g LEFT JOIN workflow_jobs w ON w.id = g.job_id WHERE g.id = ?', [taskId]);
+      const isRetry = oldTask?.retry_count > 0;
 
       // 更新任务状态为 processing
       await execute(
@@ -529,7 +616,21 @@ class WorkflowExecutor {
         [JSON.stringify(taskInputWithMeta), inputParams.textModel || inputParams.imageModel || inputParams.videoModel || inputParams.audioModel || null, taskId]
       );
 
-      console.log(`[WorkflowExecutor] 执行任务: taskId=${taskId}, type=${stepDef.type}`);
+      // 结构化日志：任务开始
+      const taskLogger = this.logger.child({
+        jobId, taskId,
+        userId: executionContext?.userId ?? oldTask?.user_id,
+        workflowType: executionContext?.workflowType ?? oldTask?.workflow_type
+      });
+      taskLogger.info('task_started', `开始执行任务: ${stepDef.type}`, {
+        stepType: stepDef.type,
+        stepIndex: oldTask?.step_index,
+        modelName: inputParams.textModel || inputParams.imageModel || inputParams.videoModel || inputParams.audioModel,
+        isRetry
+      });
+
+      // 持久化快照
+      this._persistSnapshot(jobId);
 
       // 进度回调
       const onProgress = async (progress) => {
@@ -537,6 +638,7 @@ class WorkflowExecutor {
       };
 
       // 用统一 billing context 包裹 handler，保证工作流内所有真实模型调用都能自动计费
+      // 重试任务不重复扣积分（skipBilling=true 跳过成本记录，但 AI API 实际消耗无法退还）
       const billingContext = {
         userId: executionContext?.userId ?? inputParams?.userId ?? null,
         projectId: executionContext?.projectId ?? inputParams?.projectId ?? null,
@@ -544,6 +646,7 @@ class WorkflowExecutor {
         operationKey: stepDef.type,
         workflowJobId: jobId,
         generationTaskId: taskId,
+        skipBilling: isRetry || false,
         resourceRefs: extractResourceRefs(inputParams, executionContext)
       };
 
@@ -583,6 +686,13 @@ class WorkflowExecutor {
       const running = this.runningTasks.get(jobId);
       if (running) running.delete(taskId);
 
+      // 结构化日志：任务成功
+      const durationMs = Date.now() - taskStartTime;
+      taskLogger.info('task_completed', '任务执行成功', { durationMs, stepType: stepDef.type });
+
+      // 持久化快照
+      this._persistSnapshot(jobId);
+
       // 异步触发下一批任务（避免递归调用栈过深）
       setImmediate(() => {
         this.runNextStep(jobId).catch(err => {
@@ -591,12 +701,96 @@ class WorkflowExecutor {
       });
 
     } catch (error) {
-      console.error(`[WorkflowExecutor] 任务执行失败: taskId=${taskId}`, error);
+      const durationMs = Date.now() - taskStartTime;
+
+      // 结构化日志：任务失败
+      const errLogger = this.logger.child({
+        jobId, taskId,
+        userId: executionContext?.userId,
+        workflowType: executionContext?.workflowType
+      });
+      errLogger.error('task_failed', `任务执行失败: ${error.message}`, {
+        stepType: stepDef.type,
+        durationMs,
+        errorType: error.name || 'Error',
+        errorStack: error.stack?.substring(0, 500),
+        isTimeout: error.message.includes('超时')
+      });
       
       // 从正在运行集合中移除
       const running = this.runningTasks.get(jobId);
       if (running) running.delete(taskId);
-      
+
+      // ── 重试逻辑 ──
+      const taskInfo = await queryOne(
+        `SELECT retry_count, max_retries FROM generation_tasks WHERE id = ?`,
+        [taskId]
+      );
+      const retryCount = (taskInfo?.retry_count || 0) + 1;
+      const maxRetries = taskInfo?.max_retries || TASK_MAX_RETRIES;
+
+      // 构建错误详情（记录到 retry_reason 字段）
+      const retryReason = JSON.stringify({
+        attempt: retryCount,
+        maxRetries,
+        errorType: error.name || 'Error',
+        errorMessage: error.message,
+        errorStack: error.stack?.substring(0, 2000),
+        timestamp: new Date().toISOString(),
+        stepType: stepDef.type
+      });
+
+      if (retryCount <= maxRetries) {
+        // 自动重试
+        const delayMs = TASK_RETRY_BASE_DELAY_MS * Math.pow(2, retryCount - 1); // 指数退避
+
+        errLogger.warn('task_retrying', `任务进入重试 (${retryCount}/${maxRetries})`, {
+          retryCount,
+          maxRetries,
+          delayMs,
+          errorType: error.name
+        });
+
+        await execute(
+          `UPDATE generation_tasks 
+           SET status = 'retrying', retry_count = ?, retry_reason = ?, error_message = ?, progress = 0 
+           WHERE id = ?`,
+          [retryCount, retryReason, error.message, taskId]
+        );
+
+        // 延迟后重新调度
+        setTimeout(() => {
+          // 将状态重置为 pending 让调度器重新抓取
+          execute(
+            `UPDATE generation_tasks SET status = 'pending', error_message = NULL WHERE id = ? AND status = 'retrying'`,
+            [taskId]
+          ).then(() => {
+            this.runNextStep(jobId).catch(err => {
+              console.error(`[WorkflowExecutor] 重试调度失败: jobId=${jobId}`, err);
+            });
+          }).catch(err => {
+            console.error(`[WorkflowExecutor] 重试状态重置失败: taskId=${taskId}`, err);
+          });
+        }, delayMs);
+
+        return; // 不继续执行后续失败逻辑
+      }
+
+      // 超过最大重试次数，标记最终失败
+      errLogger.error('task_failed_final', `任务最终失败 (已重试 ${retryCount - 1} 次)`, {
+        retryCount: retryCount - 1,
+        maxRetries,
+        stepType: stepDef.type,
+        durationMs
+      });
+
+      await execute(
+        `UPDATE generation_tasks 
+         SET retry_count = ?, retry_reason = ?, error_message = ?
+         WHERE id = ?`,
+        [retryCount, retryReason, error.message, taskId]
+      );
+
       await this.jobStatusManager.failTask(taskId, error.message, error._trace || null);
 
       // 获取工作流定义的失败策略
@@ -616,7 +810,6 @@ class WorkflowExecutor {
           if (t.status !== 'pending') return false;
           const sd = definition?.steps?.[t.step_index];
           if (!sd) return false;
-          // 检查该任务是否依赖了已失败的步骤
           const deps = sd.dependencies || [];
           return !deps.includes(failedStepIndex);
         });
@@ -650,6 +843,9 @@ class WorkflowExecutor {
           console.warn('[PubSub] 发布工作流失败事件失败:', err.message);
         });
       }
+
+      // 持久化最终快照
+      this._persistSnapshot(jobId);
     }
   }
 
@@ -677,14 +873,22 @@ class WorkflowExecutor {
   }
 
   /**
-   * 关闭执行器
+   * 关闭执行器（优雅退出）
    */
-  shutdown() {
+  async shutdown() {
     this.memoryManager.stopMonitoring();
     if (this.cleanupTimer) {
       clearInterval(this.cleanupTimer);
       this.cleanupTimer = null;
     }
+    if (this.snapshotTimer) {
+      clearInterval(this.snapshotTimer);
+      this.snapshotTimer = null;
+    }
+    // 退出前最终持久化所有快照
+    await this._persistAllSnapshots();
+    // 刷新日志缓冲
+    await this.logger.flush();
     this.stepCounters.clear();
     this.runningTasks.clear();
   }

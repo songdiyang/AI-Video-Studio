@@ -16,35 +16,7 @@
 const { queryAll, queryOne } = require('../../../dbHelper');
 const handleSceneVideoGeneration = require('./sceneVideoGeneration');
 const { requireVisualStyle } = require('../../../utils/getProjectStyle');
-
-// ============================================================
-// 并发池：同时运行最多 limit 个 async 任务
-// ============================================================
-async function runPool(tasks, limit, onTaskDone) {
-  const results = new Array(tasks.length);
-  let nextIndex = 0;
-  let doneCount = 0;
-
-  return new Promise((resolve, reject) => {
-    function runNext() {
-      if (doneCount === tasks.length) {
-        return resolve(results);
-      }
-      while (nextIndex < tasks.length && (nextIndex - doneCount) < limit) {
-        const idx = nextIndex++;
-        tasks[idx]()
-          .then(res => { results[idx] = res; })
-          .catch(err => { results[idx] = err; })
-          .finally(() => {
-            doneCount++;
-            if (onTaskDone) onTaskDone(doneCount, tasks.length);
-            runNext();
-          });
-      }
-    }
-    runNext();
-  });
-}
+const { runPool } = require('../../utils/concurrencyPool');
 
 async function handleBatchSceneVideoGeneration(inputParams, onProgress) {
   const {

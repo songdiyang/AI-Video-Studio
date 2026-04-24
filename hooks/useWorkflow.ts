@@ -175,6 +175,24 @@ export async function consumeAllFailed(): Promise<{ consumed: number }> {
   return fetchApi('/api/workflows/batch-consume-failed', { method: 'POST' });
 }
 
+/** 手动重试失败的任务（不扣积分） */
+export async function retryTask(jobId: string, taskId: string): Promise<{ success: boolean; message: string }> {
+  return fetchApi(`/api/workflows/${jobId}/tasks/${taskId}/retry`, { method: 'POST' });
+}
+
+/** 获取任务错误详情和重试历史 */
+export async function getTaskErrors(jobId: string, taskId: string): Promise<{
+  taskId: string;
+  status: string;
+  retryCount: number;
+  maxRetries: number;
+  retryHistory: any;
+  errorMessage: string | null;
+  logs: any[];
+}> {
+  return fetchApi(`/api/workflows/${jobId}/tasks/${taskId}/errors`);
+}
+
 // ============================================================
 // Hook: useWorkflow
 // 轮询工作流状态，自动在完成/失败时停止

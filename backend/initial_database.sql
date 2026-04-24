@@ -372,6 +372,8 @@ CREATE TABLE IF NOT EXISTS workflow_jobs (
   total_steps INT NOT NULL COMMENT '总步骤数',
   input_params JSON COMMENT '工作流输入参数',
   error_message TEXT COMMENT '错误信息',
+  execution_snapshot JSON DEFAULT NULL COMMENT '执行快照：持久化 stepCounters、runningTasks 等内存状态，用于断点恢复',
+  admin_resolved TINYINT(1) DEFAULT 0 COMMENT '管理员是否已处理（用于错误监控面板）',
   is_consumed TINYINT(1) DEFAULT 0 COMMENT '前端是否已消费结果（防止重复处理）',
   started_at DATETIME DEFAULT NULL COMMENT '开始执行时间',
   completed_at DATETIME DEFAULT NULL COMMENT '完成时间',
@@ -398,11 +400,14 @@ CREATE TABLE IF NOT EXISTS generation_tasks (
   target_id INT DEFAULT NULL COMMENT '目标资源ID',
   model_name VARCHAR(255) COMMENT 'AI模型名称',
   input_params JSON COMMENT '输入参数',
-  status ENUM('pending', 'processing', 'completed', 'failed') DEFAULT 'pending' COMMENT '任务状态',
+  status ENUM('pending', 'processing', 'completed', 'failed', 'retrying') DEFAULT 'pending' COMMENT '任务状态',
   progress INT DEFAULT 0 COMMENT '进度百分比（0-100）',
   result_data JSON COMMENT '结果数据',
   work_result JSON DEFAULT NULL COMMENT '任务执行追踪日志（引擎自动记录：步骤、耗时、参考图选择等）',
   error_message TEXT COMMENT '错误信息',
+  retry_count INT DEFAULT 0 COMMENT '已重试次数',
+  max_retries INT DEFAULT 3 COMMENT '最大重试次数',
+  retry_reason TEXT COMMENT '重试原因/错误详情（JSON格式，含 errorType、stack、timestamp 等）',
   external_task_id VARCHAR(255) COMMENT '外部任务ID（如API返回的task_id）',
   started_at DATETIME DEFAULT NULL COMMENT '开始时间',
   completed_at DATETIME DEFAULT NULL COMMENT '完成时间',
@@ -420,6 +425,31 @@ CREATE TABLE IF NOT EXISTS generation_tasks (
   INDEX idx_external_task_id (external_task_id),
   INDEX idx_created_at (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AI生成任务追踪表';
+
+-- 工作流结构化日志表
+CREATE TABLE IF NOT EXISTS workflow_logs (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  job_id INT DEFAULT NULL COMMENT '关联的工作流ID',
+  task_id INT DEFAULT NULL COMMENT '关联的任务ID',
+  user_id INT DEFAULT NULL COMMENT '关联的用户ID',
+  workflow_type VARCHAR(50) DEFAULT NULL COMMENT '工作流类型',
+  log_level ENUM('debug', 'info', 'warn', 'error') DEFAULT 'info' COMMENT '日志级别',
+  log_source VARCHAR(100) DEFAULT NULL COMMENT '日志来源模块（Engine/Executor/Scheduler/Handler 等）',
+  log_event VARCHAR(100) DEFAULT NULL COMMENT '事件类型（task_started, task_completed, task_failed, task_retrying, job_started, job_completed, job_failed, step_scheduled, memory_high, backpressure_activated 等）',
+  log_message TEXT COMMENT '日志消息',
+  log_context JSON DEFAULT NULL COMMENT '结构化上下文（duration_ms, step_index, model_name, error_type 等）',
+  created_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3) COMMENT '日志生成时间（毫秒精度）',
+  INDEX idx_job_id (job_id),
+  INDEX idx_task_id (task_id),
+  INDEX idx_user_id (user_id),
+  INDEX idx_log_level (log_level),
+  INDEX idx_log_event (log_event),
+  INDEX idx_workflow_type (workflow_type),
+  INDEX idx_created_at (created_at),
+  FOREIGN KEY (job_id) REFERENCES workflow_jobs(id) ON DELETE CASCADE,
+  FOREIGN KEY (task_id) REFERENCES generation_tasks(id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='工作流结构化日志表';
 
 -- 初始化默认管理员账户（已移除硬编码凭证，请手动创建）
 -- NOTE: Default admin removed for security. Create admin via:

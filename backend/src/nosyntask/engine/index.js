@@ -88,6 +88,15 @@ class WorkflowEngine {
   async getUserJobs(userId, options = {}) {
     return this.query.getUserJobs(userId, options);
   }
+
+  /**
+   * 关闭引擎（优雅退出）
+   */
+  async shutdown() {
+    if (this.executor && typeof this.executor.shutdown === 'function') {
+      await this.executor.shutdown();
+    }
+  }
 }
 
 // 单例导出

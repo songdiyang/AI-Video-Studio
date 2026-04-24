@@ -6,7 +6,6 @@
 const handleScriptGeneration = require('./StoryStudio/scriptGeneration');
 const handleScriptSplit = require('./StoryStudio/scriptSplit');
 const handleCharacterExtraction = require('./StoryBoard/characterExtraction');
-const handleSceneExtraction = require('./StoryBoard/sceneExtraction');
 const handleImageGeneration = require('./base/imageGeneration');
 const handleVideoGeneration = require('./videoGeneration');
 const handleSmartParse = require('./admin/smartParse');
@@ -35,6 +34,7 @@ const { handlePropPromptGeneration, handlePropImageGeneration } = require('./Sto
 const handleConceptBreakdownGeneration = require('./StoryBoard/conceptBreakdownGeneration');
 const handleCameraFrameGeneration = require('./StoryBoard/cameraFrameGeneration');
 const handleMagicPaintGeneration = require('./StoryBoard/magicPaintGeneration');
+const handleHdRepairGeneration = require('./StoryBoard/hdRepairGeneration');
 const handleBatchPromptOptimization = require('./StoryBoard/batchPromptOptimization');
 const handleSinglePromptOptimization = require('./StoryBoard/singlePromptOptimization');
 
@@ -42,7 +42,6 @@ module.exports = {
   handleScriptGeneration,
   handleScriptSplit,
   handleCharacterExtraction,
-  handleSceneExtraction,
   handleImageGeneration,
   handleVideoGeneration,
   handleSmartParse,
@@ -72,6 +71,7 @@ module.exports = {
   handleConceptBreakdownGeneration,
   handleCameraFrameGeneration,
   handleMagicPaintGeneration,
+  handleHdRepairGeneration,
   handleBatchPromptOptimization,
   handleSinglePromptOptimization
 };

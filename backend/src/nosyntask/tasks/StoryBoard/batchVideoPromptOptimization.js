@@ -1,11 +1,11 @@
 /**
- * 批量分镜提示词优化处理器
- * 逐个优化指定脚本下所有分镜的描述文字（并发池模式）
+ * 批量分镜视频提示词优化处理器
+ * 逐个优化指定脚本下所有分镜的描述文字（并发池模式），针对动态视频生成
  *
  * 逻辑：
  * 1. 查询 scriptId 下所有分镜
  * 2. 过滤出有描述内容的分镜
- * 3. 以并发池模式优化每个分镜描述（调用文本模型）
+ * 3. 以并发池模式优化每个分镜描述（调用文本模型），生成适合视频模型的提示词
  * 4. 将优化结果写回 prompt_template
  *
  * input:  { scriptId, textModel, maxConcurrency }
@@ -18,7 +18,7 @@ const { withAIBillingContext } = require('../../../aiBillingContext');
 const { runPool } = require('../../utils/concurrencyPool');
 
 // ============================================================
-// 单个分镜提示词优化核心逻辑（从 optimizePrompt.js 提取）
+// 单个分镜视频提示词优化核心逻辑
 // ============================================================
 async function optimizeSinglePrompt({ storyboard, allStoryboards, currentIdx, modelName }) {
   const prompt = storyboard.prompt_template;
@@ -56,99 +56,115 @@ async function optimizeSinglePrompt({ storyboard, allStoryboards, currentIdx, mo
       /写实|电影|摄影|纪实|realistic|cinematic|photography/i.test(visualStyle);
 
     const optimizationPrinciples = isLiveAction
-      ? `【真人实拍优化原则】
+      ? `【真人实拍视频优化原则】
 1. 先通读剧本，理解故事全貌、人物关系和情节走向
 2. 确认当前分镜在故事中的时间线位置和情感基调
 3. 对照前后分镜，确保角色状态、场景、情绪的连贯性
 4. 如果发现当前描述与剧本内容或前后分镜有矛盾，修正使其一致
 
-【镜头语言优化 - 真人实拍核心要素】
-• 镜头：明确镜头类型（定焦/变焦/微距/长焦/广角），说明镜头选择对画面的影响
-• 光圈：标注光圈值（f/1.4-f/22），描述景深效果
-• 焦距：说明焦距范围（广角14-35mm/标准50mm/长焦85-200mm）
-• 快门：快门速度对运动模糊的影响
-• 景深：明确焦点位置和景深范围
-• 帧率：拍摄帧率选择（24fps电影感/30fps标准/60fps高帧率）
-• 运镜：运镜方式（推/拉/摇/移/跟/升降/环绕/手持稳定/肩扛呼吸感）
-• 曝光：曝光控制（高调/低调/正常），光比关系
-• 色彩：色温设定（暖调/冷调/中性），色彩风格
+【动态视频核心要素 - 真人实拍】
+• 运动描述：主体运动轨迹、运动速度、动作幅度、加速度变化，描述动作的完整过程（起始姿态->运动过程->结束姿态）
+• 运镜指令：相机运动方式（推/拉/摇/移/跟/升降/环绕/手持稳定/肩扛呼吸感），运动速度、起止点、运动动机
+• 帧率：拍摄帧率选择（24fps电影感/30fps标准/60fps高帧率慢动作）
+• 时间叙事：镜头开始状态 -> 中间过程变化 -> 结束状态的完整时间线
+• 动态元素：风的吹动、水流、粒子飘动、火焰摇曳、光影随时间变化
+• 环境持续性：持续性效果（雨雪、火焰、烟雾）必须在整个视频时长内保持
+• 镜头：镜头类型（定焦/变焦/微距/长焦/广角），变焦过程的视觉变化
+• 色彩：色温设定，色彩风格，色彩随时间或光源变化的过渡
 
-【情绪叠加理论 - 真人表情核心】
-真人面部表情极少是单一情绪，而是多种情绪的百分比混合。你必须运用感情叠加理论来描述角色表情：
+【帧间一致性约束 - 真人实拍关键】
+• 角色一致性：视频中角色外貌、服装、发型在多帧间必须保持连贯
+• 光照连续性：光线方向、强度、色温在视频全程保持一致
+• 场景连续性：场景环境、物体位置、背景元素不得突然消失或改变
+• 物理合理性：角色动作应符合物理规律
+
+【情绪叠加理论 - 真人表情动态核心】
+真人面部表情极少是单一情绪，而是多种情绪的百分比混合。在视频中，微表情应有自然变化：
 • 分析剧情上下文，将角色当前情绪分解为2-4种基础情绪的权重组合
 • 基础情绪谱：joy、sadness、anger、fear、surprise、disgust、contempt、trust
-• 描述要求：先用百分比标注情绪配方，再翻译为具体的面部微表情
-• 避免扁平化的单一表情词
+• 动态要求：视频中微表情应有自然变化（眼神闪烁、嘴角微颤、眨眼）
+• 嘴型同步：如有台词，说话角色的嘴型必须与台词同步
 
-【环境与氛围】
-• 自然光：黄金时刻/蓝调时刻/正午硬光/阴天柔光
-• 人工光：主光位置、辅光比例、轮廓光、眼神光
-• 场景氛围：烟雾/雨丝/光斑/尘土等环境元素
+【光影与环境氛围 - 时间维度】
+• 自然光：黄金时刻/蓝调时刻/正午硬光/阴天柔光，光线随时间的变化
+• 动态光影：移动的光斑、摇曳的树影、闪烁的烛光、透过窗户移动的阳光
+• 场景氛围：烟雾的流动、雨丝的飘洒、尘土的飞扬
 
-【材质质感描述 - 真人实拍核心】
-你必须为画面中的关键元素添加专业的材质质感描述，增强真实感和细节丰富度：
-• 皮肤质感：根据角色年龄、性别、情绪状态描述皮肤纹理（细腻光滑/粗糙晒伤/毛孔可见/皱纹沟壑/油光/干裂），关注光线对皮肤质感的影响（侧光凸显纹理、柔光弱化纹理）
-• 服装面料：明确面料类型与视觉特征（丝绸→光泽流淌、垂坠感；棉麻→哑光、自然褶皱；皮革→反光高光、纹理沟槽；毛料→蓬松纤维、漫反射；雪纺→半透明、轻柔飘逸），描述面料在光线下的表现
-• 环境材质：描述场景中主要材质的质感特征（金属→镜面反射/拉丝纹理/氧化锈蚀；木材→木纹肌理/光滑漆面/粗糙原木；石材→颗粒感/抛光面/风化裂纹；玻璃→透明折射/磨砂漫射/反光倒影）
-• 物品表面：标注表面处理工艺（哑光/光泽/半光泽）和质感细节（纹理走向、磨损痕迹、指纹、水渍、灰尘覆盖）
-• 融合要求：材质描述必须自然融入画面描述，不可孤立罗列；材质选择必须符合场景逻辑（如古代场景不用塑料质感、战场不用光洁如新）、符合视觉风格（真人实拍追求物理真实的材质还原）`
-      : `【动漫动画优化原则】
+【材质质感与动态表现 - 真人实拍核心】
+• 皮肤质感：根据角色年龄、性别、情绪状态描述皮肤纹理及动态变化
+• 服装面料：面料类型与视觉特征，面料在运动中的动态表现
+• 环境材质：场景中主要材质的质感特征及动态表现
+• 融合要求：材质描述必须自然融入画面描述`
+      : `【动漫动画视频优化原则】
 1. 先通读剧本，理解故事全貌、人物关系和情节走向
 2. 确认当前分镜在故事中的时间线位置和情感基调
 3. 对照前后分镜，确保角色状态、场景、情绪的连贯性
-4. 保持造型一致性，角色外观特征不得突变
+4. 保持造型一致性，角色外观特征在多帧间不得突变
 
-【画面构成优化 - 动漫动画核心要素】
-• 构图：画面分割（三分法/黄金分割/对称/对角线），视觉重心位置
-• 机位：机位高度（平视/俯视/仰视/虫视/鸟视）
-• 透视：透视类型（一点/两点/三点/空气透视），空间纵深感
-• 景别：画面范围（远景/全景/中景/近景/特写/大特写）
-• 动态表现：运动轨迹、速度线、变形夸张、弹性运动
-• 色指定：主色调、配色方案、色彩情绪
-• 造型一致性：角色设计特征保持，表情变化规律
+【动态视频核心要素 - 动漫动画】
+• 运动描述：主体运动轨迹、运动速度、动作幅度、加速度变化，描述动作的完整过程
+• 运镜指令：相机运动方式（推/拉/摇/移/跟/升降/环绕），运动速度、起止点
+• 张数：关键帧张数估算，动作密度（单拍/双拍/三拍）
+• 动态表现：运动轨迹、速度线、变形夸张、弹性运动、跟随动作、重叠动作
+• 时间节奏：快节奏/慢节奏/停顿/节奏变化点，动作的时间分配
+• 时间叙事：镜头开始状态 -> 中间过程变化 -> 结束状态的完整时间线
+• 动态元素：风的吹动、水流、粒子效果、火焰、魔法特效的运动
+• 环境持续性：持续性效果（雨雪、火焰、烟雾）必须在整个视频时长内保持
 
-【材质质感描述 - 动漫动画核心】
-你必须为画面中的关键元素添加符合动漫风格的材质质感描述，增强画面细节丰富度：
-• 皮肤质感：根据角色设定描述皮肤表现风格（赛璐璐→平面均匀色块、无纹理；半写实→柔和渐变、隐约毛孔；厚涂→笔触可见、肌理丰富），动漫皮肤通常追求光洁感，用高光和阴影暗示体积
-• 服装面料：用色块和线条表现面料特征（丝绸→高光色带、流畅曲线；棉麻→柔和色块、少高光；皮革→锐利高光、深色阴影；毛料→柔和边缘、暖色漫反射），动漫中面料质感主要通过色彩处理手法体现而非照片级写实
-• 环境材质：用动画表现手法描述场景材质（金属→锐利高光线、冷色反光；木材→暖色调、木纹用线条暗示；石材→粗颗粒网点、灰色调；玻璃→透明色层叠加、折射变形），注意与角色风格统一
-• 物品表面：用渲染风格标注质感（平涂→无质感变化；渐变→柔和过渡暗示曲面；网点→印刷质感），注意日式动画与美式动画的质感表现差异
-• 融合要求：材质描述必须自然融入画面描述，与整体动画风格一致（如赛璐璐风格不描述毛孔纹理、厚涂风格不描述色块边界）；材质选择符合场景世界观逻辑`;
+【帧间一致性约束 - 动漫动画关键】
+• 角色一致性：视频中角色外貌、服装、发型在多帧间必须保持连贯
+• 造型稳定：角色比例、五官位置、身体结构在动态中保持稳定
+• 光照连续性：光线方向、强度、阴影位置在视频全程保持一致
+• 场景连续性：场景环境、物体位置、背景元素不得突然消失或改变
+
+【动画制作优化 - 动画技术要素】
+• 分层：前景层/中景层/背景层/特效层，各层独立运动
+• 动作分解：将复杂动作分解为预备动作->主要动作->缓冲动作
+• 跟随与重叠：服装、头发等附属物的延迟跟随动作
+• 节奏控制：关键帧之间的时间分配，加速/减速曲线
+
+【材质质感与动态表现 - 动漫动画核心】
+• 皮肤质感：根据角色设定描述皮肤表现风格，动态中的高光和阴影变化
+• 服装面料：用色块和线条表现面料特征，面料在运动中的动态
+• 环境材质：用动画表现手法描述场景材质及动态变化
+• 特效材质：魔法光效、能量波动、粒子特效的动态表现
+• 融合要求：材质描述必须自然融入画面描述，与整体动画风格一致`;
 
     const scriptContent = storyboard.script_content || '';
     const scriptSection = scriptContent
       ? `\n【剧本全文】\n${scriptContent.length > 3000 ? scriptContent.slice(0, 3000) + '\n...(剧本过长，已截断)' : scriptContent}\n`
       : '';
 
-    const systemPrompt = `你是一个专业的分镜描述优化专家。你需要先理解整个剧本的内容和脉络，明确当前分镜在故事中的位置，然后再优化当前分镜的描述。
+    const systemPrompt = `你是一个专业的分镜描述优化专家，专门为动态视频生成模型优化提示词。
 
 【项目】${storyboard.project_name || '未命名'}${storyboard.script_title ? `\n【剧本标题】${storyboard.script_title}` : ''}${scriptSection}\n【分镜上下文】共 ${totalCount} 个分镜，当前为第 ${currentIdx + 1} 个：
-${storyboardContext}${visualStyle ? `\n【视觉风格】${visualStyle}` : ''}${perspectiveInstruction ? `\n${perspectiveInstruction}` : ''}\n【风格类型】${isLiveAction ? '真人实拍' : '动漫动画'}\n
+${storyboardContext}${visualStyle ? `\n【视觉风格】${visualStyle}` : ''}${perspectiveInstruction ? `\n${perspectiveInstruction}` : ''}\n【风格类型】${isLiveAction ? '真人实拍' : '动漫动画'}\n【输出目标】动态视频生成（视频模型）
+
 你的任务：优化标记为"当前分镜"的描述内容。
 
 ${optimizationPrinciples}
 
 【输出要求 - 正向提示词】
 • 描述越详细画面效果越好，请充分发挥专业能力，用丰富的细节描述画面
-• 描述要有画面感和电影感，让读者能清晰想象出画面
+• 重点描述动态视觉元素：运动轨迹、运镜方式、时间变化、帧间一致性、动态元素
+• 必须包含时间维度描述：开始状态->过程变化->结束状态的完整叙事链
+• 必须强调帧间一致性：角色外貌、服装、光照、场景在视频全程保持连贯
+• 描述要有画面感和电影感
 
 【输出要求 - 反向提示词（Negative Prompt）】
-你必须同时生成反向提示词，用于排除画面中不应该出现的内容。参考以下信息：
-1. 项目视觉风格：${visualStyle || '未指定'}，排除与该风格冲突的元素
-2. 分镜正向提示词的内容范围：只描述画面应有的内容，排除所有不应该出现的多余元素
-反向提示词生成规则：
+你必须同时生成反向提示词，用于排除视频中不应该出现的内容：
 • 排除与当前场景、角色、情绪无关的视觉元素
-• 排除与视觉风格冲突的表现形式（如动漫风格排除"写实、真人、照片"，写实风格排除"卡通、动漫、插画"）
+• 排除与视觉风格冲突的表现形式
 • 排除常见画面缺陷（低质量、模糊、变形、多余肢体、水印、文字、签名）
-• 排除与当前情绪氛围不符的元素（如悲伤场景排除"微笑、明亮"）
+• 排除视频专属缺陷（画面抖动、跳帧、闪烁、画面撕裂、运动不连贯、卡顿、角色突然变形或消失）
+• 排除与当前情绪氛围不符的元素
 • 反向提示词用中文描述，词语间用英文逗号分隔
 
 【输出格式】
 严格按以下 JSON 格式输出，不要添加任何其他内容：
 {"positive": "优化后的正向提示词", "negative": "反向提示词，中文描述，英文逗号分隔"}`;
 
-    // 注意：WorkflowExecutor 已经在外层设置了完整的 billing context（含 userId、projectId 等），
-    // 此处只覆盖 resourceRefs 以追踪具体分镜，其余字段自动从外层继承。
+    // 注意：WorkflowExecutor 已经在外层设置了完整的 billing context
     const response = await withAIBillingContext(
       { resourceRefs: { storyboardId: storyboard.id } },
       () => callAIModel(modelName, {
@@ -186,7 +202,7 @@ ${optimizationPrinciples}
 
     return { optimized, negativePrompt };
   } catch (e) {
-    console.error(`[BatchPromptOptimize] 分镜 #${currentIdx + 1} 优化失败:`, e.message);
+    console.error(`[BatchVideoPromptOptimize] 分镜 #${currentIdx + 1} 优化失败:`, e.message);
     throw e;
   }
 }
@@ -194,12 +210,12 @@ ${optimizationPrinciples}
 // ============================================================
 // 主处理器
 // ============================================================
-async function handleBatchPromptOptimization(inputParams, onProgress) {
+async function handleBatchVideoPromptOptimization(inputParams, onProgress) {
   const { scriptId, textModel: requestedModel, maxConcurrency = 3 } = inputParams;
 
   if (!scriptId) throw new Error('缺少必要参数: scriptId');
 
-  console.log(`[BatchPromptOptimize] 开始批量优化，scriptId=${scriptId}`);
+  console.log(`[BatchVideoPromptOptimize] 开始批量视频优化，scriptId=${scriptId}`);
   if (onProgress) onProgress(5);
 
   // 1. 确定文本模型
@@ -235,7 +251,7 @@ async function handleBatchPromptOptimization(inputParams, onProgress) {
     return { total: allStoryboards.length, completed: 0, skipped: skippedCount, failed: 0, results: [] };
   }
 
-  console.log(`[BatchPromptOptimize] 共 ${allStoryboards.length} 个分镜，${targetStoryboards.length} 个需优化，${skippedCount} 个跳过`);
+  console.log(`[BatchVideoPromptOptimize] 共 ${allStoryboards.length} 个分镜，${targetStoryboards.length} 个需优化，${skippedCount} 个跳过`);
   if (onProgress) onProgress(10);
 
   // 4. 构建优化任务池
@@ -253,19 +269,19 @@ async function handleBatchPromptOptimization(inputParams, onProgress) {
         const optimizedText = typeof result === 'string' ? result : result.optimized;
         const negativePromptText = typeof result === 'string' ? '' : (result.negativePrompt || '');
 
-        // 写回数据库（同时更新正向和反向提示词）
+        // 写回数据库：视频提示词写入 video_prompt 字段（不覆盖 prompt_template）
         if (negativePromptText) {
           await execute(
-            'UPDATE storyboards SET prompt_template = ?, negative_prompt = ? WHERE id = ?',
+            'UPDATE storyboards SET video_prompt = ?, negative_prompt = ? WHERE id = ?',
             [optimizedText, negativePromptText, sb.id]
           );
         } else {
           await execute(
-            'UPDATE storyboards SET prompt_template = ? WHERE id = ?',
+            'UPDATE storyboards SET video_prompt = ? WHERE id = ?',
             [optimizedText, sb.id]
           );
         }
-        console.log(`[BatchPromptOptimize] 分镜 #${sb.idx + 1} 优化完成: ${sb.prompt_template.length}字 → ${optimizedText.length}字, negative=${negativePromptText.length}字`);
+        console.log(`[BatchVideoPromptOptimize] 分镜 #${sb.idx + 1} 优化完成: ${sb.prompt_template.length}字 -> ${optimizedText.length}字, negative=${negativePromptText.length}字`);
         return { id: sb.id, idx: sb.idx, success: true, originalLength: sb.prompt_template.length, optimizedLength: optimizedText.length, negativePromptLength: negativePromptText.length };
       }
       return { id: sb.id, idx: sb.idx, success: false, reason: 'AI返回为空' };
@@ -299,7 +315,7 @@ async function handleBatchPromptOptimization(inputParams, onProgress) {
 
   if (onProgress) onProgress(100);
 
-  console.log(`[BatchPromptOptimize] 完成: ${completed} 成功, ${failed} 失败, ${skippedCount} 跳过`);
+  console.log(`[BatchVideoPromptOptimize] 完成: ${completed} 成功, ${failed} 失败, ${skippedCount} 跳过`);
   return {
     total: allStoryboards.length,
     completed,
@@ -309,4 +325,4 @@ async function handleBatchPromptOptimization(inputParams, onProgress) {
   };
 }
 
-module.exports = handleBatchPromptOptimization;
+module.exports = handleBatchVideoPromptOptimization;

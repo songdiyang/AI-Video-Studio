@@ -9,6 +9,7 @@
 
 const { execute, queryOne, queryAll } = require('../../dbHelper');
 const { pushTaskStatus } = require('../../websocket');
+const { updateJobWithVersion } = require('../utils/occUtils');
 
 // 尝试加载 Redis 缓存服务（可选）
 let CacheService = null;
@@ -27,15 +28,7 @@ try {
 }
 
 const PROGRESS_CACHE_TTL = 30; // 进度缓存 30 秒
-const OCC_MAX_RETRIES = 3;  // 乐观锁最大重试次数
-const OCC_RETRY_DELAY = 50; // 重试间隔基础毫秒
 
-/**
- * 将日期转换为 MySQL DATETIME 兼容格式 'YYYY-MM-DD HH:mm:ss'
- * MySQL 不接受 ISO 8601 带 T 和 Z 的格式
- * @param {Date|string|null} date - 日期对象或日期字符串
- * @returns {string|null} MySQL 兼容的日期字符串，或 null
- */
 function toMySQLDatetime(date) {
   if (!date) return null;
   const d = date instanceof Date ? date : new Date(date);
@@ -46,50 +39,6 @@ function toMySQLDatetime(date) {
     String(d.getHours()).padStart(2, '0') + ':' +
     String(d.getMinutes()).padStart(2, '0') + ':' +
     String(d.getSeconds()).padStart(2, '0');
-}
-
-/**
- * 带乐观锁的工作流状态更新（OCC）
- * 理论基础：Optimistic Concurrency Control
- * 
- * @param {number} jobId - 工作流 ID
- * @param {object} updates - 要更新的字段 { status: 'completed', ... }
- * @param {number} currentVersion - 当前已知的版本号
- * @param {number} maxRetries - 最大重试次数
- * @returns {object} 更新结果
- */
-async function updateJobWithVersion(jobId, updates, currentVersion, maxRetries = OCC_MAX_RETRIES) {
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
-    let version = currentVersion;
-    
-    // 重试时需要重新获取最新版本号
-    if (attempt > 0) {
-      const latest = await queryOne('SELECT version FROM workflow_jobs WHERE id = ?', [jobId]);
-      if (!latest) throw new Error(`工作流 ${jobId} 不存在`);
-      version = latest.version;
-      await new Promise(r => setTimeout(r, OCC_RETRY_DELAY * (attempt + 1)));
-    }
-    
-    const setClauses = Object.keys(updates).map(k => `\`${k}\` = ?`).join(', ');
-    const values = [...Object.values(updates), jobId, version];
-    
-    const result = await execute(
-      `UPDATE workflow_jobs SET ${setClauses}, version = version + 1 WHERE id = ? AND version = ?`,
-      values
-    );
-    
-    if (result.affectedRows > 0) {
-      return result;
-    }
-    
-    console.warn(`[OCC] 工作流 ${jobId} 版本冲突 (尝试 ${attempt + 1}/${maxRetries}, 期望版本: ${version})`);
-  }
-  
-  // 所有重试都失败，做最后一次无版本检查的更新（保证业务不被阻塞）
-  console.error(`[OCC] 工作流 ${jobId} 连续 ${maxRetries} 次版本冲突，执行强制更新`);
-  const setClauses = Object.keys(updates).map(k => `\`${k}\` = ?`).join(', ');
-  const values = [...Object.values(updates), jobId];
-  return execute(`UPDATE workflow_jobs SET ${setClauses}, version = version + 1 WHERE id = ?`, values);
 }
 
 class JobStatusManager {

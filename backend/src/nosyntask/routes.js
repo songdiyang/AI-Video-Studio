@@ -402,4 +402,216 @@ router.get('/queue-status', authMiddleware, (req, res) => {
   }
 });
 
+/**
+ * 手动重试失败的任务（不扣积分）
+ * POST /api/workflows/:jobId/tasks/:taskId/retry
+ */
+router.post('/:jobId/tasks/:taskId/retry', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { jobId, taskId } = req.params;
+    const numericJobId = decodeId(jobId);
+    const numericTaskId = decodeId(taskId);
+    const { execute, queryOne } = require('../dbHelper');
+
+    // 验证所有权
+    const task = await queryOne(
+      `SELECT g.*, w.user_id as owner_user_id, w.status as job_status
+       FROM generation_tasks g
+       JOIN workflow_jobs w ON w.id = g.job_id
+       WHERE g.id = ? AND g.job_id = ?`,
+      [numericTaskId, numericJobId]
+    );
+
+    if (!task) {
+      return res.status(404).json({ message: '任务不存在' });
+    }
+    if (task.owner_user_id !== userId) {
+      return res.status(403).json({ message: '无权操作此任务' });
+    }
+    if (task.status !== 'failed') {
+      return res.status(400).json({ message: `只能重试失败的任务，当前状态: ${task.status}` });
+    }
+
+    // 重置任务状态为 pending，保留 retry_count 以便 skipBilling
+    await execute(
+      `UPDATE generation_tasks 
+       SET status = 'pending', error_message = NULL, progress = 0, started_at = NULL, completed_at = NULL,
+           updated_at = NOW()
+       WHERE id = ?`,
+      [numericTaskId]
+    );
+
+    // 确保工作流为 running 状态
+    if (task.job_status === 'failed') {
+      await execute(
+        `UPDATE workflow_jobs SET status = 'running', error_message = NULL, updated_at = NOW()
+         WHERE id = ?`,
+        [numericJobId]
+      );
+    }
+
+    console.log(`[Retry] 用户 ${userId} 手动重试任务: taskId=${numericTaskId}, jobId=${numericJobId}`);
+
+    // 触发执行
+    const workflowEngine = require('./engine');
+    workflowEngine.runNextStep(numericJobId).catch(err => {
+      console.error(`[Retry] 重试调度失败: jobId=${numericJobId}`, err);
+    });
+
+    res.json({
+      success: true,
+      message: '任务已重新加入调度队列',
+      taskId: encodeId(numericTaskId),
+      jobId: encodeId(numericJobId)
+    });
+  } catch (error) {
+    console.error('[Retry Task]', error);
+    res.status(500).json({ message: error.message || '重试任务失败' });
+  }
+});
+
+/**
+ * 获取任务的错误详情和重试历史
+ * GET /api/workflows/:jobId/tasks/:taskId/errors
+ */
+router.get('/:jobId/tasks/:taskId/errors', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { jobId, taskId } = req.params;
+    const numericJobId = decodeId(jobId);
+    const numericTaskId = decodeId(taskId);
+    const { queryOne, queryAll } = require('../dbHelper');
+
+    // 验证所有权
+    const task = await queryOne(
+      `SELECT g.retry_count, g.max_retries, g.retry_reason, g.error_message, g.status,
+              w.user_id as owner_user_id
+       FROM generation_tasks g
+       JOIN workflow_jobs w ON w.id = g.job_id
+       WHERE g.id = ? AND g.job_id = ?`,
+      [numericTaskId, numericJobId]
+    );
+
+    if (!task) {
+      return res.status(404).json({ message: '任务不存在' });
+    }
+    if (task.owner_user_id !== userId) {
+      return res.status(403).json({ message: '无权访问此任务' });
+    }
+
+    // 获取该任务的结构化日志
+    const logs = await queryAll(
+      `SELECT log_level, log_event, log_message, log_context, created_at
+       FROM workflow_logs
+       WHERE task_id = ?
+       ORDER BY created_at ASC`,
+      [numericTaskId]
+    );
+
+    // 解析 retry_reason 和 log_context
+    let retryHistory = null;
+    if (task.retry_reason) {
+      try { retryHistory = JSON.parse(task.retry_reason); } catch(e) {}
+    }
+
+    const parsedLogs = logs.map(log => ({
+      ...log,
+      log_context: log.log_context ? (typeof log.log_context === 'string' ? JSON.parse(log.log_context) : log.log_context) : null
+    }));
+
+    res.json({
+      taskId: encodeId(numericTaskId),
+      status: task.status,
+      retryCount: task.retry_count || 0,
+      maxRetries: task.max_retries || 3,
+      retryHistory,
+      errorMessage: task.error_message,
+      logs: parsedLogs
+    });
+  } catch (error) {
+    console.error('[Task Errors]', error);
+    res.status(500).json({ message: error.message || '获取任务错误信息失败' });
+  }
+});
+
+/**
+ * 管理员接口 - 查询结构化日志
+ * GET /api/workflows/admin/logs?jobId=xxx&taskId=xxx&logLevel=error&logEvent=task_failed&from=...&to=...
+ */
+router.get('/admin/logs', authMiddleware, requireAdmin, async (req, res) => {
+  try {
+    const { jobId, taskId, logLevel, logEvent, workflowType, from, to, page = 1, limit = 50 } = req.query;
+    const { queryAll, execute } = require('../dbHelper');
+
+    let sql = 'SELECT * FROM workflow_logs WHERE 1=1';
+    const params = [];
+
+    if (jobId) {
+      const numericJobId = parseInt(jobId) || decodeId(jobId);
+      sql += ' AND job_id = ?';
+      params.push(numericJobId);
+    }
+    if (taskId) {
+      const numericTaskId = parseInt(taskId) || decodeId(taskId);
+      sql += ' AND task_id = ?';
+      params.push(numericTaskId);
+    }
+    if (logLevel) {
+      sql += ' AND log_level = ?';
+      params.push(logLevel);
+    }
+    if (logEvent) {
+      sql += ' AND log_event = ?';
+      params.push(logEvent);
+    }
+    if (workflowType) {
+      sql += ' AND workflow_type = ?';
+      params.push(workflowType);
+    }
+    if (from) {
+      sql += ' AND created_at >= ?';
+      params.push(from);
+    }
+    if (to) {
+      sql += ' AND created_at <= ?';
+      params.push(to);
+    }
+
+    // 获取总数
+    const countSql = sql.replace('SELECT *', 'SELECT COUNT(*) as total');
+    const countResult = await execute(countSql, params);
+    const total = countResult[0].total;
+
+    // 分页
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+    sql += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+    params.push(parseInt(limit), offset);
+
+    const logs = await queryAll(sql, params);
+
+    // 解码 ID
+    const decodedLogs = logs.map(log => ({
+      ...log,
+      id: String(log.id),
+      job_id: log.job_id ? encodeId(log.job_id) : null,
+      task_id: log.task_id ? encodeId(log.task_id) : null,
+      log_context: log.log_context ? (typeof log.log_context === 'string' ? JSON.parse(log.log_context) : log.log_context) : null
+    }));
+
+    res.json({
+      logs: decodedLogs,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        totalPages: Math.ceil(total / parseInt(limit))
+      }
+    });
+  } catch (error) {
+    console.error('[Admin Logs]', error);
+    res.status(500).json({ message: error.message || '查询日志失败' });
+  }
+});
+
 module.exports = router;

@@ -697,7 +697,10 @@ async function prepareModelBilling(model, params) {
   const estimatedUsage = await estimateUsage(params, model, normalizedPriceConfig);
   const { amount: estimatedAmount } = calculatePrice(normalizedPriceConfig, estimatedUsage);
 
-  await ensureBalance(context.userId, estimatedAmount);
+  // 重试任务不扣除积分（skipBilling=true）
+  if (!context.skipBilling) {
+    await ensureBalance(context.userId, estimatedAmount);
+  }
 
   return {
     context,
@@ -725,13 +728,14 @@ async function finalizeImmediateBilling({
     useQueryHandler: false
   });
 
-  const shouldCharge = requestStatus === 'success' || billingState.normalizedPriceConfig.chargeOnFailure;
+  const shouldCharge = (requestStatus === 'success' || billingState.normalizedPriceConfig.chargeOnFailure);
   const price = shouldCharge
     ? calculatePrice(billingState.normalizedPriceConfig, usage)
     : { amount: 0, breakdown: [] };
 
   let chargeResult = { points: 0, deducted: 0 };
-  if (shouldCharge) {
+  // 重试任务不扣除积分（skipBilling=true）
+  if (shouldCharge && !billingState.context.skipBilling) {
     chargeResult = await applyBalanceCharge(billingState.context.userId, price.amount);
   }
 
@@ -807,13 +811,14 @@ async function finalizeAsyncBillingFromQuery(model, queryParams, finalResult, re
     useQueryHandler: true
   });
 
-  const shouldCharge = requestStatus === 'success' || normalizedPriceConfig.chargeOnFailure;
+  const shouldCharge = (requestStatus === 'success' || normalizedPriceConfig.chargeOnFailure);
   const price = shouldCharge
     ? calculatePrice(normalizedPriceConfig, usage)
     : { amount: 0, breakdown: [] };
 
   let chargeResult = { points: 0, deducted: 0 };
-  if (shouldCharge) {
+  // 重试任务不扣除积分（skipBilling=true）
+  if (shouldCharge && !context.skipBilling) {
     chargeResult = await applyBalanceCharge(context.userId, price.amount);
   }
 

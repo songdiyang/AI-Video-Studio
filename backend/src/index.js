@@ -49,6 +49,7 @@ const internalMailRoutes = internalMailModule.router;
 const sketchProjectRoutes = require('./scripts/sketchProjects');
 const templateRoutes = require('./templates');
 const communityRoutes = require('./community');
+const marketplaceRoutes = require('./marketplace');
 const subscriptionRoutes = require('./subscriptions');
 const collaborationRoutes = require('./scripts/collaboration');
 const collaborationApiRoutes = require('./collaboration');
@@ -58,6 +59,7 @@ const systemConfigRoutes = require('./systemConfigRoutes');
 const teamsRoutes = require('./teams');
 const taskAssignmentRoutes = require('./taskAssignment');
 const novelRoutes = require('./novelRoutes');
+const statsRoutes = require('./statsRoutes');
 const { setupWebSocket } = require('./websocket');
 const { errorHandlerMiddleware, initGlobalErrorHandlers } = require('./globalErrorHandler');
 const callbackHandler = require('./nosyntask/callbackHandler');
@@ -135,6 +137,7 @@ app.get('/api/health', (_req, res) => {
 });
 
 app.use('/api/auth/login', authLimiter);
+app.use('/api/auth/admin-login', authLimiter);
 app.use('/api/auth/register', authLimiter);
 app.use('/api/auth', authRoutes);
 app.use('/api/scripts', scriptRoutes);
@@ -157,10 +160,12 @@ app.use('/api/files', fileProxyRoutes);
 app.use('/api/sketch-projects', sketchProjectRoutes);
 app.use('/api/templates', templateRoutes);
 app.use('/api/community', communityRoutes);
+app.use('/api/marketplace', marketplaceRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/teams', teamsRoutes);  // 团队管理路由
 app.use('/api/tasks', taskAssignmentRoutes);  // 任务指派路由
 app.use('/api/novels', novelRoutes);  // 小说工作台路由
+app.use('/api/stats', statsRoutes);  // 仪表盘统计路由
 // 协作路由
 const collaborationRouter = express.Router();
 collaborationRoutes(collaborationRouter);
@@ -288,24 +293,43 @@ async function start() {
   setupWebSocket(app, server);
 
   // 清理因服务重启而中断的工作流任务
+  // 注意：有执行快照（execution_snapshot）的任务由 WorkflowExecutor._recoverInterruptedJobs() 自动恢复
+  // 这里只处理没有快照的旧任务（兼容老数据）
   try {
     const { execute: dbExec } = require('./dbHelper');
-    const [staleResult] = await dbExec(
-      `UPDATE workflow_jobs SET status = 'failed', error_message = '服务重启导致任务中断', updated_at = NOW()
-       WHERE status IN ('pending', 'running')`
+    const staleResult = await dbExec(
+      `UPDATE workflow_jobs SET status = 'failed', error_message = '服务重启导致任务中断（缺少快照），请重新发起', updated_at = NOW()
+       WHERE status IN ('pending', 'running') AND execution_snapshot IS NULL`
     );
     const staleCount = staleResult?.affectedRows || 0;
     if (staleCount > 0) {
-      console.log(`  \x1b[33m⚠\x1b[0m 清理了 ${staleCount} 个因服务重启中断的工作流任务`);
-      // 同时清理对应的 generation_tasks
+      console.log(`  \x1b[33m⚠\x1b[0m 清理了 ${staleCount} 个无快照的旧任务（新任务具备快照可自动恢复）`);
       await dbExec(
-        `UPDATE generation_tasks SET status = 'failed', error_message = '服务重启导致任务中断', updated_at = NOW()
+        `UPDATE generation_tasks SET status = 'failed', error_message = '服务重启导致任务中断（缺少快照）', updated_at = NOW()
          WHERE status IN ('pending', 'processing')`
       );
     }
   } catch (err) {
     console.warn('[Startup] 清理中断任务失败（非致命）:', err.message);
   }
+
+  // 注册优雅关闭：引擎保存快照 + 刷新日志
+  const gracefulShutdown = async (signal) => {
+    console.log(`\n\x1b[33m[Shutdown]\x1b[0m 收到 ${signal}，正在优雅退出...`);
+    try {
+      const engine = require('./nosyntask/engine');
+      if (engine && typeof engine.shutdown === 'function') {
+        console.log('[Shutdown] 保存执行快照...');
+        await engine.shutdown();
+        console.log('[Shutdown] 快照已保存');
+      }
+    } catch (err) {
+      console.warn('[Shutdown] 保存快照失败:', err.message);
+    }
+    process.exit(0);
+  };
+  process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+  process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
   // 资源包过期清零定时任务：每小时执行一次
   try {

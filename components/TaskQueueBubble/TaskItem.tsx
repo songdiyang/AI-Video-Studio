@@ -1,7 +1,7 @@
 import React, { useState, memo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Loader2, Check, AlertCircle, Clock, RotateCcw, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
-import { WorkflowJob, WorkflowTask, cancelWorkflow } from '../../hooks/useWorkflow';
+import { WorkflowJob, WorkflowTask, cancelWorkflow, retryTask } from '../../hooks/useWorkflow';
 import { useConfirm } from '../../contexts/ConfirmContext';
 
 // 任务类型中文映射
@@ -29,6 +29,11 @@ const WORKFLOW_TYPE_NAMES: Record<string, string> = {
   'camera_run_generation': '精细运镜生成',
   // 批量提示词优化
   'batch_prompt_optimization': '批量提示词优化',
+  // 图片/视频提示词优化
+  'single_image_prompt_optimization': 'AI优化提示词(图片)',
+  'single_video_prompt_optimization': 'AI优化提示词(视频)',
+  'batch_image_prompt_optimization': '批量提示词优化(图片)',
+  'batch_video_prompt_optimization': '批量提示词优化(视频)',
 };
 
 // 相对时间格式化
@@ -73,16 +78,10 @@ const parseInputParams = (job: WorkflowJob): Record<string, any> => {
 
 // 获取任务显示名称（导出供其他组件使用）
 export const getTaskName = (job: WorkflowJob): string => {
-  if (job.workflowName && job.workflowName !== job.workflow_type) {
-    const params = parseInputParams(job);
-    const prefix = params.isRegenerate ? '重新' : '';
-    return `${prefix}${job.workflowName}`;
-  }
-  
-  const baseName = WORKFLOW_TYPE_NAMES[job.workflow_type] || job.workflow_type;
   const params = parseInputParams(job);
+  const prefix = params.isRegenerate ? '重新' : '';
   const parts: string[] = [];
-  
+
   if (params.episodeNumber) parts.push(`第${params.episodeNumber}集`);
   if (params.storyboardIndex || params.sceneIndex) {
     const idx = params.storyboardIndex || params.sceneIndex;
@@ -91,12 +90,20 @@ export const getTaskName = (job: WorkflowJob): string => {
   if (params.characterName) parts.push(`「${params.characterName}」`);
   if (params.sceneName) parts.push(`「${params.sceneName}」`);
 
-  const prefix = params.isRegenerate ? '重新' : '';
-  
+  // 优先使用 workflowName（后端定义的名称）
+  if (job.workflowName && job.workflowName !== job.workflow_type) {
+    if (parts.length > 0) {
+      return `${parts.join(' ')} ${prefix}${job.workflowName}`;
+    }
+    return `${prefix}${job.workflowName}`;
+  }
+
+  const baseName = WORKFLOW_TYPE_NAMES[job.workflow_type] || job.workflow_type;
+
   if (parts.length > 0) {
     return `${parts.join(' ')} ${prefix}${baseName}`;
   }
-  
+
   return `${prefix}${baseName}`;
 };
 
@@ -185,19 +192,43 @@ const SubTaskStatusIcon: React.FC<{ status: string }> = ({ status }) => {
 };
 
 // 子任务行组件
-const SubTaskRow: React.FC<{ task: WorkflowTask }> = ({ task }) => {
+const SubTaskRow: React.FC<{ task: WorkflowTask; jobId: string }> = ({ task, jobId }) => {
   const name = getSubTaskName(task);
+  const [retrying, setRetrying] = useState(false);
   const statusColor = task.status === 'failed' ? 'var(--danger)' 
     : task.status === 'completed' ? 'var(--success)'
     : task.status === 'processing' ? 'var(--accent)'
     : 'var(--text-muted)';
 
+  const handleRetry = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (retrying) return;
+    setRetrying(true);
+    try {
+      await retryTask(jobId, task.id);
+    } catch (err) {
+      console.error('[SubTaskRow] 重试失败:', err);
+    } finally {
+      setRetrying(false);
+    }
+  };
+
   return (
-    <div className="flex items-center gap-2 py-1 px-2">
+    <div className="flex items-center gap-2 py-1 px-2 group/subtask">
       <SubTaskStatusIcon status={task.status} />
       <span className="text-xs flex-1 truncate" style={{ color: 'var(--text-secondary)' }}>
         {name}
       </span>
+      {/* 失败任务显示错误提示 + 重试按钮 */}
+      {task.status === 'failed' && task.error_message && (
+        <span 
+          className="text-[10px] truncate max-w-[80px] shrink-0"
+          style={{ color: 'var(--danger)' }}
+          title={task.error_message}
+        >
+          {task.error_message}
+        </span>
+      )}
       {/* 进度条 */}
       <div
         className="w-16 h-1 rounded-full overflow-hidden shrink-0"
@@ -214,6 +245,21 @@ const SubTaskRow: React.FC<{ task: WorkflowTask }> = ({ task }) => {
       <span className="text-[10px] tabular-nums w-8 text-right shrink-0" style={{ color: statusColor }}>
         {task.progress}%
       </span>
+      {task.status === 'failed' && (
+        <button
+          onClick={handleRetry}
+          disabled={retrying}
+          className="opacity-0 group-hover/subtask:opacity-100 p-0.5 rounded hover:bg-green-500/20 transition-all shrink-0"
+          style={{ color: 'var(--success)' }}
+          title="免费重试"
+        >
+          {retrying ? (
+            <Loader2 className="w-3 h-3 animate-spin" />
+          ) : (
+            <RotateCcw className="w-3 h-3" />
+          )}
+        </button>
+      )}
     </div>
   );
 };
@@ -231,8 +277,10 @@ const TaskItem: React.FC<TaskItemProps> = ({
   const [cancelling, setCancelling] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   const [isSubTasksExpanded, setIsSubTasksExpanded] = useState(false);
+  const [retrying, setRetrying] = useState(false);
   const canCancel = job.status === 'pending' || job.status === 'running';
   const canDismiss = job.status === 'failed' || job.status === 'cancelled';
+  const canRetry = job.status === 'failed';
   const expandable = hasExpandableSubTasks(job);
   const { confirm } = useConfirm();
   const remainingTime = job.created_at ? estimateRemainingTime(progress, job.created_at) : null;
@@ -252,7 +300,6 @@ const TaskItem: React.FC<TaskItemProps> = ({
       await cancelWorkflow(job.id);
       onCancelled?.();
     } catch (err: any) {
-      // 404 表示工作流已不存在（可能已被清理），视为取消成功
       if (err?.status === 404 || err?.message?.includes('不存在')) {
         onCancelled?.();
       } else {
@@ -260,6 +307,33 @@ const TaskItem: React.FC<TaskItemProps> = ({
       }
     } finally {
       setCancelling(false);
+    }
+  };
+
+  const handleRetry = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (retrying || !canRetry) return;
+    const confirmed = await confirm({
+      title: '重试任务',
+      message: `确定要重试任务「${getTaskName(job)}」吗？\n\n重试将不扣除积分，系统会自动尝试恢复失败的任务。`,
+      type: 'info',
+      confirmText: '免费重试'
+    });
+    if (!confirmed) return;
+    setRetrying(true);
+    try {
+      // 找到第一个失败的任务进行重试
+      const failedTask = job.tasks?.find(t => t.status === 'failed');
+      if (!failedTask) {
+        console.warn('[TaskItem] 没有可重试的失败任务');
+        return;
+      }
+      await retryTask(job.id, failedTask.id);
+      onCancelled?.(); // 通知父组件刷新列表
+    } catch (err: any) {
+      console.error('[TaskItem] 重试失败:', err);
+    } finally {
+      setRetrying(false);
     }
   };
 
@@ -379,6 +453,23 @@ const TaskItem: React.FC<TaskItemProps> = ({
               <Trash2 className="w-3.5 h-3.5" />
             </motion.button>
           )}
+          {canRetry && (
+            <motion.button
+              initial={{ opacity: 0 }}
+              animate={{ opacity: isHovered || retrying ? 1 : 0 }}
+              onClick={handleRetry}
+              disabled={retrying}
+              className="p-1 rounded hover:bg-green-500/20 transition-colors"
+              style={{ color: 'var(--success)' }}
+              title="免费重试（不扣积分）"
+            >
+              {retrying ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <RotateCcw className="w-3.5 h-3.5" />
+              )}
+            </motion.button>
+          )}
         </div>
       </div>
 
@@ -441,7 +532,7 @@ const TaskItem: React.FC<TaskItemProps> = ({
               {/* 子任务列表 */}
               <div className="max-h-40 overflow-y-auto task-panel-scrollbar">
                 {job.tasks.map((task) => (
-                  <SubTaskRow key={task.id} task={task} />
+                  <SubTaskRow key={task.id} task={task} jobId={job.id} />
                 ))}
               </div>
             </div>
@@ -452,17 +543,49 @@ const TaskItem: React.FC<TaskItemProps> = ({
       {/* 失败/取消错误信息 */}
       {(job.status === 'failed' || job.status === 'cancelled') && (
         <div 
-          className="mt-1.5 text-xs line-clamp-2 px-2 py-1 rounded"
+          className="mt-1.5 text-xs px-2 py-1.5 rounded"
           style={{ 
             color: job.status === 'failed' ? 'var(--danger)' : 'var(--text-muted)',
             backgroundColor: job.status === 'failed' ? 'rgba(239, 68, 68, 0.12)' : 'rgba(100, 116, 139, 0.1)',
             border: `1px solid ${job.status === 'failed' ? 'rgba(239, 68, 68, 0.25)' : 'rgba(100, 116, 139, 0.2)'}`,
           }}
-          title={job.error_message || undefined}
         >
-          {job.status === 'failed' 
-            ? `❌ ${job.error_message || '任务执行失败，请检查后重试'}` 
-            : `⚠️ ${job.error_message || '任务已被取消'}`}
+          {job.status === 'failed' ? (
+            <div className="flex flex-col gap-1">
+              <div className="flex items-start gap-1.5">
+                <AlertCircle className="w-3 h-3 mt-0.5 shrink-0" style={{ color: 'var(--danger)' }} />
+                <div className="flex-1 min-w-0">
+                  <p className="leading-relaxed break-words">{job.error_message || '任务执行失败，请检查后重试'}</p>
+                </div>
+              </div>
+              {canRetry && (
+                <div className="flex items-center gap-1.5 ml-[18px] mt-1">
+                  <button
+                    onClick={handleRetry}
+                    disabled={retrying}
+                    className="text-[10px] px-1.5 py-0.5 rounded transition-colors flex items-center gap-1"
+                    style={{ 
+                      color: 'var(--success)',
+                      backgroundColor: 'rgba(34, 197, 94, 0.15)',
+                      border: '1px solid rgba(34, 197, 94, 0.3)'
+                    }}
+                  >
+                    {retrying ? (
+                      <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                    ) : (
+                      <RotateCcw className="w-2.5 h-2.5" />
+                    )}
+                    免费重试
+                  </button>
+                  <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                    重试不消耗积分
+                  </span>
+                </div>
+              )}
+            </div>
+          ) : (
+            `⚠️ ${job.error_message || '任务已被取消'}`
+          )}
         </div>
       )}
     </motion.div>

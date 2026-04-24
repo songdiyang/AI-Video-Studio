@@ -16,7 +16,6 @@ const {
   handleScriptGeneration,
   handleScriptSplit,
   handleCharacterExtraction,
-  handleSceneExtraction,
   handleImageGeneration,
   handleVideoGeneration,
   handleSmartParse,
@@ -43,11 +42,16 @@ const {
   handlePropImageGeneration,
   handleConceptBreakdownGeneration,
   handleCameraFrameGeneration,
-  handleMagicPaintGeneration
+  handleMagicPaintGeneration,
+  handleHdRepairGeneration
 } = require('./tasks');
 
 const handleBatchPromptOptimization = require('./tasks/StoryBoard/batchPromptOptimization');
 const handleSinglePromptOptimization = require('./tasks/StoryBoard/singlePromptOptimization');
+const handleBatchImagePromptOptimization = require('./tasks/StoryBoard/batchImagePromptOptimization');
+const handleSingleImagePromptOptimization = require('./tasks/StoryBoard/singleImagePromptOptimization');
+const handleBatchVideoPromptOptimization = require('./tasks/StoryBoard/batchVideoPromptOptimization');
+const handleSingleVideoPromptOptimization = require('./tasks/StoryBoard/singleVideoPromptOptimization');
 
 // 独立帧生成模块（支持并发）
 const { handleParallelFrameGeneration } = require('./tasks/StoryBoard/independentFrameGeneration');
@@ -413,6 +417,23 @@ const WORKFLOW_DEFINITIONS = {
   },
 
   /**
+   * 高清修复帧生成（以现有帧为参考，高分辨率重新生成）
+   */
+  hd_repair_generation: {
+    name: '高清修复帧生成',
+    steps: [
+      {
+        type: 'hd_repair',
+        targetType: 'storyboard',
+        handler: handleHdRepairGeneration,
+        buildInput: createBuildInput([
+          'storyboardId', 'imageModel', 'textModel', 'aspectRatio', 'targetFrame'
+        ])
+      }
+    ]
+  },
+
+  /**
    * 分镜视频生成（单个分镜的视频）
    */
   scene_video: {
@@ -455,7 +476,9 @@ const WORKFLOW_DEFINITIONS = {
           { key: 'width', defaultValue: null },
           { key: 'height', defaultValue: null },
           { key: 'referenceImageUrl', from: ctx => ctx.previousResults[0]?.referenceImageUrl || null },
-          { key: 'styleDescription', from: ctx => ctx.previousResults[0]?.styleDescription || null }
+          { key: 'styleDescription', from: ctx => ctx.previousResults[0]?.styleDescription || null },
+          { key: 'customPromptA', defaultValue: null },
+          { key: 'customPromptB', defaultValue: null }
         ])
       }
     ]
@@ -575,6 +598,7 @@ const WORKFLOW_DEFINITIONS = {
           'characterId', 'characterName', 'appearance', 'personality',
           'description', 'style', 'projectId', 'imageModel', 'textModel', 'aspectRatio',
           'regenerateOnly', 'isBaseModel', 'gender',
+          'customPromptFront', 'customPromptSide', 'customPromptBack',
           { key: 'width', defaultValue: 1920 },
           { key: 'height', defaultValue: 2880 }
         ])
@@ -599,6 +623,7 @@ const WORKFLOW_DEFINITIONS = {
           'regenerateOnly',
           'stateId', 'outfit', 'hairstyle', 'accessories', 'ageStage', 'bodyElements',
           'isBaseModel', 'gender',
+          'customPromptFront', 'customPromptSide', 'customPromptBack',
           { key: 'width', defaultValue: 1920 },
           { key: 'height', defaultValue: 2880 }
         ])
@@ -786,6 +811,76 @@ const WORKFLOW_DEFINITIONS = {
         handler: handleSinglePromptOptimization,
         buildInput: createBuildInput([
           'storyboardId', 'prompt', 'textModel'
+        ])
+      }
+    ]
+  },
+
+  /**
+   * 单条分镜图片提示词优化（针对静态图像生成）
+   */
+  single_image_prompt_optimization: {
+    name: 'AI 优化提示词(图片)',
+    steps: [
+      {
+        type: 'single_image_prompt_optimize',
+        targetType: 'storyboard',
+        handler: handleSingleImagePromptOptimization,
+        buildInput: createBuildInput([
+          'storyboardId', 'prompt', 'textModel'
+        ])
+      }
+    ]
+  },
+
+  /**
+   * 单条分镜视频提示词优化（针对动态视频生成）
+   */
+  single_video_prompt_optimization: {
+    name: 'AI 优化提示词(视频)',
+    steps: [
+      {
+        type: 'single_video_prompt_optimize',
+        targetType: 'storyboard',
+        handler: handleSingleVideoPromptOptimization,
+        buildInput: createBuildInput([
+          'storyboardId', 'prompt', 'textModel'
+        ])
+      }
+    ]
+  },
+
+  /**
+   * 批量分镜图片提示词优化（一键优化全部分镜描述为图片提示词）
+   */
+  batch_image_prompt_optimization: {
+    name: '批量提示词优化(图片)',
+    steps: [
+      {
+        type: 'batch_image_prompt_optimize',
+        targetType: 'storyboard',
+        handler: handleBatchImagePromptOptimization,
+        buildInput: createBuildInput([
+          'scriptId', 'textModel',
+          { key: 'maxConcurrency', defaultValue: 3 }
+        ])
+      }
+    ]
+  },
+
+  /**
+   * 批量分镜视频提示词优化（一键优化全部分镜描述为视频提示词）
+   */
+  batch_video_prompt_optimization: {
+    name: '批量提示词优化(视频)',
+    steps: [
+      {
+        type: 'batch_video_prompt_optimize',
+        targetType: 'storyboard',
+        handler: handleBatchVideoPromptOptimization,
+        buildInput: createBuildInput([
+          'scriptId', 'textModel',
+          { key: 'maxConcurrency', defaultValue: 3 }
         ])
       }
     ]
