@@ -803,7 +803,7 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                             }}
                           >
                             {url ? (
-                              <img src={url} alt={label} className="w-full h-full object-cover" />
+                              <img src={url} alt={label} className="w-full h-full object-cover object-top" />
                             ) : (
                               <ImageIcon className="w-6 h-6 text-default-300" />
                             )}
@@ -1146,7 +1146,7 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                                   }}
                                 >
                                   {url ? (
-                                    <img src={url} alt={label} className="w-full h-full object-cover" />
+                                    <img src={url} alt={label} className="w-full h-full object-cover object-top" />
                                   ) : (
                                     <ImageIcon className="w-6 h-6 text-default-300 dark:text-slate-600" />
                                   )}
@@ -1507,7 +1507,7 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                               <p className="text-xs text-slate-500 text-center">{label}</p>
                               <div className="aspect-square bg-slate-800/60 rounded-lg overflow-hidden border border-slate-700/50 flex items-center justify-center">
                                 {url ? (
-                                  <img src={String(url)} alt={label} className="w-full h-full object-cover" />
+                                  <img src={String(url)} alt={label} className="w-full h-full object-cover object-top" />
                                 ) : (
                                   <ImageIcon className="w-6 h-6 text-slate-600" />
                                 )}

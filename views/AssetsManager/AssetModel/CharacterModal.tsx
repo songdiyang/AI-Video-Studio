@@ -889,7 +889,7 @@ const CharacterModal: React.FC<CharacterModalProps> = ({
                             <img 
                               src={formData.front_view_url} 
                               alt="正面视图" 
-                              className="w-full aspect-square object-cover bg-slate-800/60 cursor-pointer"
+                              className="w-full aspect-square object-cover object-top bg-slate-800/60 cursor-pointer"
                               onClick={() => openViewPreview(0)}
                               onError={(e) => {
                                 setFormData({ ...formData, front_view_url: '' });
@@ -945,7 +945,7 @@ const CharacterModal: React.FC<CharacterModalProps> = ({
                             <img 
                               src={formData.side_view_url} 
                               alt="侧面视图" 
-                              className="w-full aspect-square object-cover bg-slate-800/60 cursor-pointer"
+                              className="w-full aspect-square object-cover object-top bg-slate-800/60 cursor-pointer"
                               onClick={() => openViewPreview(1)}
                               onError={(e) => {
                                 setFormData({ ...formData, side_view_url: '' });
@@ -1001,7 +1001,7 @@ const CharacterModal: React.FC<CharacterModalProps> = ({
                             <img 
                               src={formData.back_view_url} 
                               alt="背面视图" 
-                              className="w-full aspect-square object-cover bg-slate-800/60 cursor-pointer"
+                              className="w-full aspect-square object-cover object-top bg-slate-800/60 cursor-pointer"
                               onClick={() => openViewPreview(2)}
                               onError={(e) => {
                                 setFormData({ ...formData, back_view_url: '' });

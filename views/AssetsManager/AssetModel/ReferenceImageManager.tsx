@@ -90,7 +90,7 @@ const ViewUploadSlot: React.FC<{
           <img
             src={image.image_url}
             alt={`${config.label}视图`}
-            className="w-full h-full object-cover cursor-pointer"
+            className="w-full h-full object-cover object-top cursor-pointer"
             onClick={() => onPreview(image)}
           />
           {/* 悬停操作 */}
@@ -638,7 +638,7 @@ const ReferenceImageManager: React.FC<ReferenceImageManagerProps> = ({
                   <img
                     src={image.image_url}
                     alt={image.description || '参考图'}
-                    className="w-full h-full object-cover"
+                    className="w-full h-full object-cover object-top"
                   />
                 </div>
 

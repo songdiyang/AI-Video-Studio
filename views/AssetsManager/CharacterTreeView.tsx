@@ -330,7 +330,7 @@ const CharacterTreeView: React.FC<CharacterTreeViewProps> = ({
               <img
                 src={character.imageUrl}
                 alt={character.name}
-                className="w-full h-full object-cover"
+                className="w-full h-full object-cover object-top"
                 loading="lazy"
               />
             ) : (
@@ -500,7 +500,7 @@ const CharacterTreeView: React.FC<CharacterTreeViewProps> = ({
             <img
               src={thumb}
               alt={state.name}
-              className="w-full h-full object-cover"
+              className="w-full h-full object-cover object-top"
               loading="lazy"
             />
           ) : state.is_base_model ? (

@@ -54,7 +54,7 @@ const CharacterList: React.FC<CharacterListProps> = ({ characters, tagGroups, on
                 <img
                   src={imageUrl}
                   alt={character.name}
-                  className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                  className="w-full h-full object-cover object-top transition-transform duration-300 group-hover:scale-105"
                   loading="lazy"
                 />
               ) : (
