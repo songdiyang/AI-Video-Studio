@@ -8,6 +8,9 @@ const router = express.Router();
 // 注册场景图片生成路由
 require('./generateImage')(router);
 
+// 注册场景图片提示词生成/优化路由
+require('./generateImagePrompt')(router);
+
 // 注册场景草图路由
 require('./sceneSketch')(router);
 

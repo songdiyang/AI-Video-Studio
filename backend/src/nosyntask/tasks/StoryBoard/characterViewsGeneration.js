@@ -260,7 +260,11 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
     hairstyle = '',       // 发型描述
     accessories = '',     // 配饰描述
     ageStage = '',        // 年龄阶段
-    bodyElements = ''     // 身体元素（纹身、疤痕、胎记等，白膜专用）
+    bodyElements = '',     // 身体元素（纹身、疤痕、胎记等，白膜专用）
+    // 前端自定义提示词（跳过 AI 提示词生成步骤）
+    customPromptFront,
+    customPromptSide,
+    customPromptBack
   } = inputParams;
 
 
@@ -425,7 +429,11 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
 
     let frontPrompt;
     const hasUserRefs = userReferenceUrls.length > 0;
-    if (hasUserRefs) {
+    // 优先使用前端自定义提示词
+    if (typeof customPromptFront === 'string' && customPromptFront.trim()) {
+      frontPrompt = customPromptFront.trim();
+      console.log('[CharacterViews] ✅ 正面视图使用前端自定义提示词（长度:', frontPrompt.length, '）');
+    } else if (hasUserRefs) {
       if (isBaseModel) {
         // ★ 白膜 + 有参考图：保留脸部发型，身体裸体 + 身体元素
         frontPrompt = buildBaseModelReferencePrompt('front', style, characterName, { gender, bodyElements });
@@ -510,7 +518,11 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
 
     let sidePrompt;
     const sideHasUserRefs = userReferenceUrls.length > 0;
-    if (sideHasUserRefs) {
+    // 优先使用前端自定义提示词
+    if (typeof customPromptSide === 'string' && customPromptSide.trim()) {
+      sidePrompt = customPromptSide.trim();
+      console.log('[CharacterViews] ✅ 侧面视图使用前端自定义提示词（长度:', sidePrompt.length, '）');
+    } else if (sideHasUserRefs) {
       if (isBaseModel) {
         sidePrompt = buildBaseModelReferencePrompt('side', style, characterName, { gender, bodyElements });
         console.log('[CharacterViews] ✅ 白膜模式 + 有参考图 → 侧面视图使用白膜专用提示词');
@@ -581,7 +593,11 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
 
     let backPrompt;
     const backHasUserRefs = userReferenceUrls.length > 0;
-    if (backHasUserRefs) {
+    // 优先使用前端自定义提示词
+    if (typeof customPromptBack === 'string' && customPromptBack.trim()) {
+      backPrompt = customPromptBack.trim();
+      console.log('[CharacterViews] ✅ 背面视图使用前端自定义提示词（长度:', backPrompt.length, '）');
+    } else if (backHasUserRefs) {
       if (isBaseModel) {
         backPrompt = buildBaseModelReferencePrompt('back', style, characterName, { gender, bodyElements });
         console.log('[CharacterViews] ✅ 白膜模式 + 有参考图 → 背面视图使用白膜专用提示词');
@@ -750,3 +766,4 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
 }
 
 module.exports = handleCharacterViewsGeneration;
+module.exports.generateViewPrompt = generateViewPrompt;

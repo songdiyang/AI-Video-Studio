@@ -1120,6 +1120,20 @@ html.theme-transitioning .excalidraw *::after {
   pointer-events: none;
 }
 
+/* =========== 分镜列表插入区域动画 =========== */
+.scene-insert-zone {
+  height: 0;
+  transition: height 0.12s ease-out;
+  margin: 1px 0;
+  padding: 3px 0;
+  box-sizing: content-box;
+}
+.scene-insert-zone.expanded {
+  height: 28px;
+  margin: 1px 0;
+  padding: 0;
+}
+
 /* =========== 骨架屏流光效果 =========== */
 @keyframes skeleton-shimmer {
   0% {

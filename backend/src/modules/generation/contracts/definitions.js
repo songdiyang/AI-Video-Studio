@@ -111,7 +111,10 @@ const operationContracts = [
         imageModel: { type: 'string', minLength: 1 },
         textModel: { type: 'string' },
         aspectRatio: { type: 'string' },
-        regenerateOnly: { type: 'array', items: { type: 'string', enum: ['front', 'side', 'back'] } }
+        regenerateOnly: { type: 'array', items: { type: 'string', enum: ['front', 'side', 'back'] } },
+        customPromptFront: { type: 'string' },
+        customPromptSide: { type: 'string' },
+        customPromptBack: { type: 'string' }
       }
     },
     scopeResolver: async ({ actor, input }) => {
@@ -135,7 +138,10 @@ const operationContracts = [
         personality: resources.character.personality,
         description: resources.character.description,
         style: input.style || null,
-        regenerateOnly: input.regenerateOnly || null
+        regenerateOnly: input.regenerateOnly || null,
+        customPromptFront: input.customPromptFront || null,
+        customPromptSide: input.customPromptSide || null,
+        customPromptBack: input.customPromptBack || null
       },
       options: {
         aspectRatio: input.aspectRatio || null
@@ -173,7 +179,10 @@ const operationContracts = [
         stateId: { type: 'integer', minimum: 1 },
         imageModel: { type: 'string', minLength: 1 },
         textModel: { type: 'string' },
-        regenerateOnly: { type: 'array', items: { type: 'string', enum: ['front', 'side', 'back'] } }
+        regenerateOnly: { type: 'array', items: { type: 'string', enum: ['front', 'side', 'back'] } },
+        customPromptFront: { type: 'string' },
+        customPromptSide: { type: 'string' },
+        customPromptBack: { type: 'string' }
       }
     },
     scopeResolver: async ({ actor, input }) => {
@@ -251,7 +260,10 @@ const operationContracts = [
           bodyElements: state.body_elements || null,
           isBaseModel: !!state.is_base_model,
           gender: resources.character.gender || 'unknown',
-          regenerateOnly: input.regenerateOnly || null
+          regenerateOnly: input.regenerateOnly || null,
+          customPromptFront: input.customPromptFront || null,
+          customPromptSide: input.customPromptSide || null,
+          customPromptBack: input.customPromptBack || null
         },
         options: {}
       };
@@ -355,7 +367,10 @@ const operationContracts = [
         width: { type: 'integer', minimum: 1 },
         height: { type: 'integer', minimum: 1 },
         aspectRatio: { type: 'string' },
-        style: { type: 'string' }
+        style: { type: 'string' },
+        // 前端用户可编辑后提交的自定义提示词（A面/B面）
+        customPromptA: { type: 'string' },
+        customPromptB: { type: 'string' }
       }
     },
     scopeResolver: async ({ actor, input }) => {
@@ -387,7 +402,10 @@ const operationContracts = [
           lighting: scene.lighting,
           mood: scene.mood,
           style: input.style || null,
-          allScenes: buildSceneSummaries(resources.allScenes)
+          allScenes: buildSceneSummaries(resources.allScenes),
+          // 透传用户编辑后的自定义提示词
+          customPromptA: typeof input.customPromptA === 'string' ? input.customPromptA : null,
+          customPromptB: typeof input.customPromptB === 'string' ? input.customPromptB : null
         },
         options: {
           width: input.width ?? null,
@@ -1142,6 +1160,216 @@ const operationContracts = [
       jobId: result.jobId,
       tasks: result.tasks,
       message: 'AI 优化任务已启动'
+    })
+  },
+  {
+    operationKey: 'single_image_prompt_optimize',
+    workflowType: 'single_image_prompt_optimization',
+    requestSchema: {
+      type: 'object',
+      required: ['storyboardId', 'prompt'],
+      properties: {
+        storyboardId: { type: 'integer', minimum: 1 },
+        prompt: { type: 'string', minLength: 1 },
+        textModel: { type: 'string' }
+      }
+    },
+    scopeResolver: async ({ actor, input }) => {
+      const storyboard = await requireStoryboardForUser(input.storyboardId, actor.userId);
+      return {
+        scope: {
+          projectId: storyboard.project_id,
+          scriptId: storyboard.script_id,
+          storyboardId: storyboard.id
+        },
+        resources: { storyboard }
+      };
+    },
+    defaultsResolver: async ({ input }) => ({
+      models: {
+        textModel: input.textModel || null
+      },
+      inputs: {
+        prompt: input.prompt
+      },
+      options: {}
+    }),
+    conflictKeyResolver: ({ scope }) => ({
+      key: 'storyboardId',
+      value: scope.storyboardId
+    }),
+    toJobParams: ({ contract, actor, scope, resolved }) =>
+      createCommand({
+        operationKey: contract.operationKey,
+        workflowType: contract.workflowType,
+        actor,
+        scope,
+        models: resolved.models,
+        inputs: resolved.inputs,
+        options: resolved.options
+      }),
+    responseMapper: ({ result }) => ({
+      success: true,
+      jobId: result.jobId,
+      tasks: result.tasks,
+      message: 'AI图片优化任务已启动'
+    })
+  },
+  {
+    operationKey: 'single_video_prompt_optimize',
+    workflowType: 'single_video_prompt_optimization',
+    requestSchema: {
+      type: 'object',
+      required: ['storyboardId', 'prompt'],
+      properties: {
+        storyboardId: { type: 'integer', minimum: 1 },
+        prompt: { type: 'string', minLength: 1 },
+        textModel: { type: 'string' }
+      }
+    },
+    scopeResolver: async ({ actor, input }) => {
+      const storyboard = await requireStoryboardForUser(input.storyboardId, actor.userId);
+      return {
+        scope: {
+          projectId: storyboard.project_id,
+          scriptId: storyboard.script_id,
+          storyboardId: storyboard.id
+        },
+        resources: { storyboard }
+      };
+    },
+    defaultsResolver: async ({ input }) => ({
+      models: {
+        textModel: input.textModel || null
+      },
+      inputs: {
+        prompt: input.prompt
+      },
+      options: {}
+    }),
+    conflictKeyResolver: ({ scope }) => ({
+      key: 'storyboardId',
+      value: scope.storyboardId
+    }),
+    toJobParams: ({ contract, actor, scope, resolved }) =>
+      createCommand({
+        operationKey: contract.operationKey,
+        workflowType: contract.workflowType,
+        actor,
+        scope,
+        models: resolved.models,
+        inputs: resolved.inputs,
+        options: resolved.options
+      }),
+    responseMapper: ({ result }) => ({
+      success: true,
+      jobId: result.jobId,
+      tasks: result.tasks,
+      message: 'AI视频优化任务已启动'
+    })
+  },
+  {
+    operationKey: 'batch_image_prompt_optimize',
+    workflowType: 'batch_image_prompt_optimization',
+    requestSchema: {
+      type: 'object',
+      required: ['scriptId'],
+      properties: {
+        scriptId: { type: 'integer', minimum: 1 },
+        textModel: { type: 'string' },
+        maxConcurrency: { type: 'integer', minimum: 1, default: 3 }
+      }
+    },
+    scopeResolver: async ({ actor, input }) => {
+      const script = await requireScriptForUser(input.scriptId, actor.userId);
+      return {
+        scope: {
+          projectId: script.project_id,
+          scriptId: script.id
+        },
+        resources: { script }
+      };
+    },
+    defaultsResolver: async ({ input }) => ({
+      models: {
+        textModel: input.textModel || null
+      },
+      inputs: {},
+      options: {
+        maxConcurrency: input.maxConcurrency ?? 3
+      }
+    }),
+    conflictKeyResolver: ({ scope }) => ({
+      key: 'scriptId',
+      value: scope.scriptId
+    }),
+    toJobParams: ({ contract, actor, scope, resolved }) =>
+      createCommand({
+        operationKey: contract.operationKey,
+        workflowType: contract.workflowType,
+        actor,
+        scope,
+        models: resolved.models,
+        inputs: resolved.inputs,
+        options: resolved.options
+      }),
+    responseMapper: ({ result }) => ({
+      success: true,
+      jobId: result.jobId,
+      tasks: result.tasks,
+      message: '批量图片提示词优化任务已启动'
+    })
+  },
+  {
+    operationKey: 'batch_video_prompt_optimize',
+    workflowType: 'batch_video_prompt_optimization',
+    requestSchema: {
+      type: 'object',
+      required: ['scriptId'],
+      properties: {
+        scriptId: { type: 'integer', minimum: 1 },
+        textModel: { type: 'string' },
+        maxConcurrency: { type: 'integer', minimum: 1, default: 3 }
+      }
+    },
+    scopeResolver: async ({ actor, input }) => {
+      const script = await requireScriptForUser(input.scriptId, actor.userId);
+      return {
+        scope: {
+          projectId: script.project_id,
+          scriptId: script.id
+        },
+        resources: { script }
+      };
+    },
+    defaultsResolver: async ({ input }) => ({
+      models: {
+        textModel: input.textModel || null
+      },
+      inputs: {},
+      options: {
+        maxConcurrency: input.maxConcurrency ?? 3
+      }
+    }),
+    conflictKeyResolver: ({ scope }) => ({
+      key: 'scriptId',
+      value: scope.scriptId
+    }),
+    toJobParams: ({ contract, actor, scope, resolved }) =>
+      createCommand({
+        operationKey: contract.operationKey,
+        workflowType: contract.workflowType,
+        actor,
+        scope,
+        models: resolved.models,
+        inputs: resolved.inputs,
+        options: resolved.options
+      }),
+    responseMapper: ({ result }) => ({
+      success: true,
+      jobId: result.jobId,
+      tasks: result.tasks,
+      message: '批量视频提示词优化任务已启动'
     })
   }
 ];

@@ -116,7 +116,11 @@ async function handleCameraRunGeneration(inputParams, onProgress) {
     if (charResult.status === 'fulfilled') {
       characterAppearance = charResult.value
         .filter(c => c.appearance)
-        .map(c => `${c.name}: ${c.appearance}`)
+        .map(c => {
+          // 提取简短的视觉标识符（50字以内），用于视频提示词中区分角色
+          const shortDesc = (c.appearance || '').slice(0, 50).replace(/\n/g, ' ');
+          return `${c.name}: ${shortDesc || '未设置外貌描述'}`;
+        })
         .join('\n');
     }
 
@@ -180,7 +184,7 @@ ${hasAction ? `首帧描述: ${startFrameDesc}\n尾帧描述: ${endFrameDesc}` :
 对白: ${dialogue || '无'}
 建议时长: ${duration}秒
 ${charNames.length > 0 ? `角色: ${charNames.join('、')}` : '无角色（空镜头）'}
-${characterAppearance ? `角色外貌: ${characterAppearance}` : ''}
+${characterAppearance ? `\n角色视觉标识符（用于视频提示词）：\n${characterAppearance}` : ''}
 视觉风格: ${visualStyle}`;
 
   // 首尾帧参考说明

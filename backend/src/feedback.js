@@ -1,6 +1,6 @@
 const express = require('express');
 const { queryOne, queryAll, execute } = require('./dbHelper');
-const { authMiddleware, requireAdmin } = require('./middleware');
+const { authMiddleware, requireAdmin, requireAdminOrOps } = require('./middleware');
 
 const router = express.Router();
 
@@ -75,8 +75,8 @@ router.get('/', authMiddleware, async (req, res) => {
   }
 });
 
-// GET /api/feedback/admin - 管理员获取所有反馈
-router.get('/admin', authMiddleware, requireAdmin, async (req, res) => {
+// GET /api/feedback/admin - 管理员/运维获取所有反馈
+router.get('/admin', authMiddleware, requireAdminOrOps, async (req, res) => {
   try {
     const { status, type, page = 1, limit = 20 } = req.query;
     const offset = (Math.max(1, Number(page)) - 1) * Number(limit);
@@ -176,8 +176,8 @@ router.post('/admin/:id/mail', authMiddleware, requireAdmin, async (req, res) =>
   }
 });
 
-// POST /api/feedback/admin/announce - 管理员群发公告站内信
-router.post('/admin/announce', authMiddleware, requireAdmin, async (req, res) => {
+// POST /api/feedback/admin/announce - 管理员/运维群发公告站内信
+router.post('/admin/announce', authMiddleware, requireAdminOrOps, async (req, res) => {
   try {
     const { title, content } = req.body;
 
@@ -208,7 +208,7 @@ router.post('/admin/announce', authMiddleware, requireAdmin, async (req, res) =>
 });
 
 // GET /api/feedback/admin/announcements - 获取公告历史列表
-router.get('/admin/announcements', authMiddleware, requireAdmin, async (req, res) => {
+router.get('/admin/announcements', authMiddleware, requireAdminOrOps, async (req, res) => {
   try {
     const { page = 1, limit = 10, q = '' } = req.query;
     const offset = (Math.max(1, Number(page)) - 1) * Number(limit);
@@ -258,7 +258,7 @@ router.get('/admin/announcements', authMiddleware, requireAdmin, async (req, res
 });
 
 // DELETE /api/feedback/admin/announcements/:id - 删除公告
-router.delete('/admin/announcements/:id', authMiddleware, requireAdmin, async (req, res) => {
+router.delete('/admin/announcements/:id', authMiddleware, requireAdminOrOps, async (req, res) => {
   try {
     const { id } = req.params;
     

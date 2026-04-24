@@ -34,95 +34,123 @@ const CharacterList: React.FC<CharacterListProps> = ({ characters, tagGroups, on
       variants={containerVariants}
       initial="hidden"
       animate="show"
-      className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-6"
+      className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mt-6"
     >
-      {characters.map((character) => (
-        <div
-          key={character.id}
-          className="bg-(--bg-card) border border-(--border-color) shadow-sm hover:shadow-md hover:shadow-(--accent)/5 transition-shadow cursor-pointer rounded-xl p-4 flex flex-col gap-3"
-          onClick={() => onEdit(character)}
-        >
-          <div className="flex items-start justify-between">
-            <h3 className="text-lg font-semibold text-(--text-primary)">{character.name}</h3>
-            <div className="flex gap-1">
-              <Button 
-                size="sm" 
-                isIconOnly 
-                variant="light" 
-                onClick={(e) => { e.stopPropagation(); onEdit(character); }} 
-                className="hover:bg-(--accent)/10"
-              >
-                <Edit className="w-4 h-4 text-(--accent)" />
-              </Button>
-              <Button 
-                size="sm" 
-                isIconOnly 
-                variant="light" 
-                onClick={(e) => { e.stopPropagation(); onDelete(character.id); }} 
-                className="hover:bg-red-500/10"
-              >
-                <Trash2 className="w-4 h-4 text-red-500" />
-              </Button>
+      {characters.map((character) => {
+        // 只展示正面图像一张
+        const imageUrl = character.front_view_url || 
+                        character.image_url;
+        const hasImage = !!imageUrl;
+
+        return (
+          <div
+            key={character.id}
+            className="bg-(--bg-card) border border-(--border-color) shadow-sm hover:shadow-lg hover:shadow-(--accent)/10 transition-all cursor-pointer rounded-xl overflow-hidden group"
+            onClick={() => onEdit(character)}
+          >
+            {/* 图片区域 - 主要展示 */}
+            <div className="relative aspect-[3/4] bg-gradient-to-br from-(--bg-hover) to-(--bg-card) overflow-hidden">
+              {hasImage ? (
+                <img
+                  src={imageUrl}
+                  alt={character.name}
+                  className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                  loading="lazy"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-(--text-muted)">
+                  <span className="text-4xl font-bold opacity-20">
+                    {character.name.charAt(0)}
+                  </span>
+                </div>
+              )}
+              
+              {/* 悬浮操作按钮 */}
+              <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <Button 
+                  size="sm" 
+                  isIconOnly 
+                  variant="solid"
+                  className="bg-(--bg-card)/90 backdrop-blur-sm hover:bg-(--accent)/20"
+                  onClick={(e) => { e.stopPropagation(); onEdit(character); }}
+                >
+                  <Edit className="w-4 h-4 text-(--accent)" />
+                </Button>
+                <Button 
+                  size="sm" 
+                  isIconOnly 
+                  variant="solid"
+                  className="bg-(--bg-card)/90 backdrop-blur-sm hover:bg-red-500/20"
+                  onClick={(e) => { e.stopPropagation(); onDelete(character.id); }}
+                >
+                  <Trash2 className="w-4 h-4 text-red-500" />
+                </Button>
+              </div>
+
+              {/* 状态数量徽章 */}
+              {character.states_count > 0 && (
+                <div className="absolute top-2 left-2">
+                  <Chip
+                    size="sm"
+                    variant="solid"
+                    className="bg-(--bg-card)/90 backdrop-blur-sm text-(--text-primary) font-medium"
+                    startContent={<Layers className="w-3 h-3" />}
+                  >
+                    {character.states_count}
+                  </Chip>
+                </div>
+              )}
             </div>
-          </div>
-          <p className="text-sm text-(--text-secondary) line-clamp-2 flex-1">{character.description}</p>
-          <div className="flex flex-wrap gap-2 mt-auto">
-            {character.project_name && (
-              <Chip 
-                size="sm" 
-                variant="flat" 
-                className="bg-emerald-500/10 text-emerald-400 font-medium"
-              >
-                {character.project_name}
-              </Chip>
-            )}
-            {/* 显示状态数量 */}
-            {character.states_count > 0 && (
-              <Chip
-                size="sm"
-                variant="flat"
-                className="bg-purple-500/10 text-purple-400 font-medium"
-                startContent={<Layers className="w-3 h-3" />}
-              >
-                {character.states_count} 状态
-              </Chip>
-            )}
-            {/* 显示分组标签（彩色） */}
-            {character.tag_groups_json && character.tag_groups_json.map((group) => 
-              group.tags.map((tag, idx) => {
-                const color = getGroupColor(group.groupId, tagGroups);
-                return (
+
+            {/* 信息区域 - 次要展示 */}
+            <div className="p-3 space-y-2">
+              <h3 className="text-base font-semibold text-(--text-primary) truncate">
+                {character.name}
+              </h3>
+              
+              {/* 描述文字（可选显示） */}
+              {character.description && (
+                <p className="text-xs text-(--text-muted) line-clamp-2 leading-relaxed">
+                  {character.description}
+                </p>
+              )}
+
+              {/* 标签区域 */}
+              <div className="flex flex-wrap gap-1.5">
+                {character.project_name && (
                   <Chip 
-                    key={`${group.groupId}-${idx}`}
                     size="sm" 
                     variant="flat" 
-                    style={{
-                      backgroundColor: `${color}25`,
-                      color: color,
-                      borderColor: `${color}50`,
-                      boxShadow: `0 1px 2px ${color}15`,
-                    }}
-                    className="font-medium border-1.5"
+                    className="bg-emerald-500/10 text-emerald-400 text-xs"
                   >
-                    {tag}
+                    {character.project_name}
                   </Chip>
-                );
-              })
-            )}
-            {/* 显示普通标签（兼容旧数据） */}
-            {character.tags && character.tags.split(',').map((tag, idx) => (
-              <Chip 
-                key={`plain-${idx}`} 
-                size="sm" 
-                variant="flat" 
-                className="bg-(--accent)/10 text-(--accent) font-medium"
-              >
-                {tag.trim()}
-              </Chip>
-            ))}
+                )}
+                {/* 显示分组标签（彩色） */}
+                {character.tag_groups_json && character.tag_groups_json.slice(0, 2).map((group) => 
+                  group.tags.slice(0, 1).map((tag, idx) => {
+                    const color = getGroupColor(group.groupId, tagGroups);
+                    return (
+                      <Chip 
+                        key={`${group.groupId}-${idx}`}
+                        size="sm" 
+                        variant="flat" 
+                        style={{
+                          backgroundColor: `${color}20`,
+                          color: color,
+                        }}
+                        className="text-xs"
+                      >
+                        {tag}
+                      </Chip>
+                    );
+                  })
+                )}
+              </div>
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </motion.div>
   );
 };

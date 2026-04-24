@@ -27,6 +27,11 @@ const DEFAULT_PARAMS: Record<string, any> = {
   VIDEO: {
     prompt: "A cat walking slowly",
     duration: 5
+  },
+  MULTIMODAL: {
+    prompt: "请分析这张图片的内容，描述画面中的主要元素、色彩风格和氛围。",
+    temperature: 0.7,
+    top_p: 0.9
   }
 };
 
@@ -315,7 +320,7 @@ const ModelTestModal: React.FC<ModelTestModalProps> = ({ isOpen, onClose, model 
                     <div className="flex items-center gap-2">
                       <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-400"></div>
                       <span className="text-sm text-blue-300">
-                        {model.category === 'TEXT' ? '文本生成中...' : model.category === 'IMAGE' ? '图片生成中（含轮询）...' : '视频生成中（含轮询）...'}
+                        {model.category === 'TEXT' ? '文本生成中...' : model.category === 'IMAGE' ? '图片生成中（含轮询）...' : model.category === 'MULTIMODAL' ? '多模态理解中...' : '视频生成中（含轮询）...'}
                       </span>
                     </div>
                     <Button size="sm" variant="flat" className="bg-red-500/10 text-red-400" onPress={() => { abortRef.current?.abort(); setTesting(false); }}>
@@ -323,7 +328,7 @@ const ModelTestModal: React.FC<ModelTestModalProps> = ({ isOpen, onClose, model 
                     </Button>
                   </div>
                   <p className="text-xs text-slate-500 mt-2">
-                    {model.category === 'TEXT' ? '通常几秒内完成' : '图片/视频模型会自动轮询直到完成，可能需要数分钟'}
+                    {model.category === 'TEXT' || model.category === 'MULTIMODAL' ? '通常几秒内完成' : '图片/视频模型会自动轮询直到完成，可能需要数分钟'}
                   </p>
                 </div>
               )}
@@ -338,8 +343,8 @@ const ModelTestModal: React.FC<ModelTestModalProps> = ({ isOpen, onClose, model 
                     )}
                   </div>
                   
-                  {/* TEXT 模型：显示文本内容（Markdown 渲染） */}
-                  {model.category === 'TEXT' && testResult.result.content && (
+                  {/* TEXT / MULTIMODAL 模型：显示文本内容（Markdown 渲染） */}
+                  {(model.category === 'TEXT' || model.category === 'MULTIMODAL') && testResult.result.content && (
                     <div className="bg-slate-800/40 rounded p-3 border border-slate-700/50 max-h-96 overflow-auto">
                       <SimpleMarkdown content={testResult.result.content} />
                     </div>

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Settings as SettingsIcon, Moon, Sun, Eye, Check, Send, 
-  Palette, MessageSquare, Info, ChevronRight, Sparkles, Monitor, Globe, RotateCcw, Maximize, Minimize, HardDrive, Trash2
+  Palette, MessageSquare, Info, ChevronRight, Sparkles, Monitor, Globe, RotateCcw, Maximize, Minimize, HardDrive, Trash2, Shield, EyeOff, Eye as EyeIcon
 } from 'lucide-react';
 import { useTheme, ThemeType } from '../../contexts/ThemeContext';
 import { useLanguage, LanguageType } from '../../contexts/LanguageContext';
@@ -223,6 +223,7 @@ const SETTING_SECTIONS: SettingSection[] = [
   { id: 'appearance', icon: <Palette className="w-4 h-4" /> },
   { id: 'language', icon: <Globe className="w-4 h-4" /> },
   { id: 'storage', icon: <HardDrive className="w-4 h-4" /> },
+  { id: 'security', icon: <Shield className="w-4 h-4" /> },
   { id: 'feedback', icon: <MessageSquare className="w-4 h-4" /> },
   { id: 'about', icon: <Info className="w-4 h-4" /> },
 ];
@@ -245,6 +246,17 @@ const Settings: React.FC = () => {
   const [isClearing, setIsClearing] = useState(false);
   const [cacheLoading, setCacheLoading] = useState(false);
 
+  // 安全设置状态
+  const [passwordHint, setPasswordHint] = useState('');
+  const [oldPassword, setOldPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showOldPassword, setShowOldPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [hintLoading, setHintLoading] = useState(false);
+  const [passwordLoading, setPasswordLoading] = useState(false);
+
   // 加载缓存统计
   const loadCacheStats = useCallback(async () => {
     if (!isCacheSupported()) return;
@@ -265,6 +277,26 @@ const Settings: React.FC = () => {
       loadCacheStats();
     }
   }, [activeSection, loadCacheStats]);
+
+  // 进入 security 区域时加载密码提示
+  useEffect(() => {
+    if (activeSection === 'security') {
+      const fetchHint = async () => {
+        try {
+          const token = getAuthToken();
+          if (!token) return;
+          const res = await fetch('/api/auth/password-hint', {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          if (res.ok) {
+            const data = await res.json();
+            setPasswordHint(data.hint || '');
+          }
+        } catch { /* ignore */ }
+      };
+      fetchHint();
+    }
+  }, [activeSection]);
 
   // 监听全屏状态变化
   useEffect(() => {
@@ -551,6 +583,192 @@ const Settings: React.FC = () => {
     </div>
   );
 
+  // 渲染安全设置区域
+  const renderSecuritySection = () => {
+    const sec = (t.settings as any).security || {};
+
+    const handleSaveHint = async () => {
+      setHintLoading(true);
+      try {
+        const token = getAuthToken();
+        const res = await fetch('/api/auth/password-hint', {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {})
+          },
+          body: JSON.stringify({ hint: passwordHint.trim() || null })
+        });
+        if (res.ok) {
+          showToast(sec.hintSaved || '密码提示已保存', 'success');
+        } else {
+          const data = await res.json().catch(() => ({}));
+          showToast(data.message || sec.hintSaveFailed || '保存失败', 'error');
+        }
+      } catch {
+        showToast(sec.networkError || '网络错误', 'error');
+      } finally {
+        setHintLoading(false);
+      }
+    };
+
+    const handleChangePassword = async () => {
+      if (newPassword !== confirmPassword) {
+        showToast(sec.passwordMismatch || '两次输入的新密码不一致', 'error');
+        return;
+      }
+      if (newPassword.length < 6) {
+        showToast(sec.passwordTooShort || '新密码至少需要 6 个字符', 'error');
+        return;
+      }
+      setPasswordLoading(true);
+      try {
+        const token = getAuthToken();
+        const res = await fetch('/api/auth/change-password', {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {})
+          },
+          body: JSON.stringify({ oldPassword, newPassword })
+        });
+        if (res.ok) {
+          showToast(sec.passwordChanged || '密码修改成功', 'success');
+          setOldPassword('');
+          setNewPassword('');
+          setConfirmPassword('');
+        } else {
+          const data = await res.json().catch(() => ({}));
+          showToast(data.message || sec.passwordChangeFailed || '密码修改失败', 'error');
+        }
+      } catch {
+        showToast(sec.networkError || '网络错误', 'error');
+      } finally {
+        setPasswordLoading(false);
+      }
+    };
+
+    const inputStyle = {
+      backgroundColor: 'var(--bg-input)',
+      border: '1px solid var(--border-color)',
+      color: 'var(--text-primary)',
+    };
+
+    return (
+      <div className="space-y-8">
+        {/* 密码提示 */}
+        <div>
+          <h3 className="text-sm font-medium mb-3" style={{ color: 'var(--text-primary)' }}>
+            {sec.hintTitle || '密码提示'}
+          </h3>
+          <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
+            {sec.hintDesc || '设置密码提示，帮助您回忆密码。请勿直接填写密码本身。'}
+          </p>
+          <div className="flex gap-3">
+            <input
+              value={passwordHint}
+              onChange={e => setPasswordHint(e.target.value)}
+              placeholder={sec.hintPlaceholder || '例如：我常用的密码组合'}
+              maxLength={255}
+              className="flex-1 rounded-xl px-4 py-3 text-sm transition-all"
+              style={inputStyle}
+            />
+            <button
+              onClick={handleSaveHint}
+              disabled={hintLoading}
+              className="px-6 py-3 rounded-xl font-medium text-sm transition-all shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{ backgroundColor: 'var(--accent-primary)', color: 'white' }}
+            >
+              {hintLoading ? (sec.saving || '保存中...') : (sec.save || '保存')}
+            </button>
+          </div>
+        </div>
+
+        {/* 修改密码 */}
+        <div>
+          <h3 className="text-sm font-medium mb-3" style={{ color: 'var(--text-primary)' }}>
+            {sec.changePasswordTitle || '修改密码'}
+          </h3>
+          <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
+            {sec.changePasswordDesc || '输入旧密码和新密码来修改您的登录密码。'}
+          </p>
+          <div className="space-y-3">
+            {/* 旧密码 */}
+            <div className="relative">
+              <input
+                type={showOldPassword ? 'text' : 'password'}
+                value={oldPassword}
+                onChange={e => setOldPassword(e.target.value)}
+                placeholder={sec.oldPasswordPlaceholder || '旧密码'}
+                className="w-full rounded-xl px-4 py-3 pr-10 text-sm transition-all"
+                style={inputStyle}
+              />
+              <button
+                type="button"
+                onClick={() => setShowOldPassword(!showOldPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                {showOldPassword ? <EyeOff className="w-4 h-4" /> : <EyeIcon className="w-4 h-4" />}
+              </button>
+            </div>
+            {/* 新密码 */}
+            <div className="relative">
+              <input
+                type={showNewPassword ? 'text' : 'password'}
+                value={newPassword}
+                onChange={e => setNewPassword(e.target.value)}
+                placeholder={sec.newPasswordPlaceholder || '新密码'}
+                className="w-full rounded-xl px-4 py-3 pr-10 text-sm transition-all"
+                style={inputStyle}
+              />
+              <button
+                type="button"
+                onClick={() => setShowNewPassword(!showNewPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                {showNewPassword ? <EyeOff className="w-4 h-4" /> : <EyeIcon className="w-4 h-4" />}
+              </button>
+            </div>
+            {/* 确认新密码 */}
+            <div className="relative">
+              <input
+                type={showConfirmPassword ? 'text' : 'password'}
+                value={confirmPassword}
+                onChange={e => setConfirmPassword(e.target.value)}
+                placeholder={sec.confirmPasswordPlaceholder || '确认新密码'}
+                className="w-full rounded-xl px-4 py-3 pr-10 text-sm transition-all"
+                style={inputStyle}
+              />
+              <button
+                type="button"
+                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <EyeIcon className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+          <button
+            onClick={handleChangePassword}
+            disabled={!oldPassword || !newPassword || !confirmPassword || passwordLoading}
+            className="w-full mt-4 py-3 rounded-xl font-medium text-sm transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{ backgroundColor: 'var(--accent-primary)', color: 'white' }}
+          >
+            {passwordLoading ? (
+              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <Shield className="w-4 h-4" />
+            )}
+            {passwordLoading ? (sec.changing || '修改中...') : (sec.changePasswordBtn || '修改密码')}
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   // 渲染关于区域
   const renderAboutSection = () => (
     <div className="space-y-6">
@@ -810,6 +1028,7 @@ const Settings: React.FC = () => {
       case 'appearance': return renderAppearanceSection();
       case 'language': return renderLanguageSection();
       case 'storage': return renderStorageSection();
+      case 'security': return renderSecuritySection();
       case 'feedback': return renderFeedbackSection();
       case 'about': return renderAboutSection();
       default: return renderAppearanceSection();

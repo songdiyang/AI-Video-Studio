@@ -62,7 +62,7 @@ const SceneCard: React.FC<SceneCardProps> = ({
   validationIssues
 }) => {
   const [isEditingDescription, setIsEditingDescription] = useState(false);
-  const [editedDescription, setEditedDescription] = useState(scene.description);
+  const [editedDescription, setEditedDescription] = useState(scene.baseDescription);
   const [isSavingDescription, setIsSavingDescription] = useState(false);
   const [showVideoPreview, setShowVideoPreview] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -72,9 +72,9 @@ const SceneCard: React.FC<SceneCardProps> = ({
 
   useEffect(() => {
     if (!isEditingDescription) {
-      setEditedDescription(scene.description);
+      setEditedDescription(scene.baseDescription);
     }
-  }, [scene.description, isEditingDescription]);
+  }, [scene.baseDescription, isEditingDescription]);
 
   const isGeneratingImage = imageTask?.status === 'pending' || imageTask?.status === 'running';
   const isGeneratingVideo = videoTask?.status === 'pending' || videoTask?.status === 'running';
@@ -289,7 +289,7 @@ const SceneCard: React.FC<SceneCardProps> = ({
   return (
     <>
       <Card
-        className={`transition-all cursor-pointer ${
+        className={`transition-all cursor-pointer rounded-lg ${
           isSelected
             ? 'border-l-2 border-l-[var(--accent)] border-y border-r border-[var(--border-color)] bg-[var(--bg-card-hover)]'
             : 'border border-[var(--border-color)] hover:border-[var(--accent)]/30 bg-[var(--bg-card)]'
@@ -297,9 +297,9 @@ const SceneCard: React.FC<SceneCardProps> = ({
         isPressable={false}
         onPress={() => onSelect(scene.id)}
       >
-        <CardBody className="p-2">
+        <CardBody className="p-1.5">
           <div 
-            className="flex gap-2"
+            className="flex gap-1.5"
             onClick={() => onSelect(scene.id)}
           >
             {/* 紧凑的序号 */}
@@ -392,7 +392,7 @@ const SceneCard: React.FC<SceneCardProps> = ({
             {/* 内容 */}
             <div className="flex-1 min-w-0">
               <p className="text-xs text-[var(--text-secondary)] line-clamp-2 leading-tight">
-                {scene.description || '暂无描述'}
+                {scene.baseDescription || '暂无描述'}
               </p>
               {/* 元数据标签 */}
               <div className="flex items-center gap-1 mt-1">

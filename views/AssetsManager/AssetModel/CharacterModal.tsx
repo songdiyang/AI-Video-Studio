@@ -726,10 +726,17 @@ const CharacterModal: React.FC<CharacterModalProps> = ({
                         <img 
                           src={formData.concept_image_url} 
                           alt="角色深度概念分解图" 
-                          className="w-full aspect-video object-cover bg-slate-800/60"
-                          onError={() => setFormData({ ...formData, concept_image_url: '' })}
+                          className="relative z-10 w-full aspect-video object-cover bg-slate-800/60 cursor-pointer"
+                          onClick={() => {
+                            if (!formData.concept_image_url) return;
+                            const slides = [{ src: formData.concept_image_url, alt: '概念分解图' }];
+                            openPreview(slides, 0);
+                          }}
+                          onError={(e) => {
+                            console.error('概念分解图加载失败:', formData.concept_image_url);
+                          }}
                         />
-                        <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all flex items-center justify-center gap-2">
+                        <div className="absolute inset-0 z-20 bg-black/0 group-hover:bg-black/30 transition-all flex items-center justify-center gap-2 pointer-events-none group-hover:pointer-events-auto">
                           <Button
                             size="sm"
                             className="opacity-0 group-hover:opacity-100 transition-opacity bg-blue-500 text-white"

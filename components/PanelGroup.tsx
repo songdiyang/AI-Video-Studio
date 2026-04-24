@@ -520,21 +520,36 @@ const PanelGroup: React.FC<PanelGroupProps> = ({
       if (dragStateRef.current.rafId !== null) {
         cancelAnimationFrame(dragStateRef.current.rafId);
       }
-      
+
       dragStateRef.current.isDragging = false;
       document.body.style.userSelect = '';
       document.body.style.cursor = '';
-      
+
       // 保存到 localStorage
       saveToStorage(panelStates);
-      
+
+      // 自动关闭：检查是否有面板大小小于阈值
+      const CLOSE_THRESHOLD = 5; // 5%
+      const leftIdx = dividerIndex;
+      const rightIdx = dividerIndex + 1;
+      const leftSt = panelStates.get(leftIdx);
+      const rightSt = panelStates.get(rightIdx);
+      const leftInf = panelInfosRef.current.get(leftIdx);
+      const rightInf = panelInfosRef.current.get(rightIdx);
+
+      if (leftSt && !leftSt.collapsed && leftInf?.collapsible && leftSt.size < CLOSE_THRESHOLD) {
+        setPanelCollapsed(leftIdx, true);
+      } else if (rightSt && !rightSt.collapsed && rightInf?.collapsible && rightSt.size < CLOSE_THRESHOLD) {
+        setPanelCollapsed(rightIdx, true);
+      }
+
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
     
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
-  }, [direction, panelStates, saveToStorage]);
+  }, [direction, panelStates, saveToStorage, setPanelCollapsed]);
 
   // 双击分割条切换相邻面板的折叠状态
   const handleDividerDoubleClick = useCallback((dividerIndex: number) => {

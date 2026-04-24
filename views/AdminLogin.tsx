@@ -20,9 +20,9 @@ const AdminLogin: React.FC = () => {
     try {
       const user = await loginWithAdminAccess(email, password, adminAccessKey);
 
-      if (user.role !== 'admin') {
+      if (user.role !== 'admin' && user.role !== 'ops') {
         logout();
-        showToast('权限不足，仅管理员可访问', 'error');
+        showToast('权限不足，仅管理员或运维可访问', 'error');
         setLoading(false);
         return;
       }

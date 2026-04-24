@@ -160,7 +160,7 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ isOpen, onClose }) => {
                     <StatCard
                       icon={<Sparkles className="w-5 h-5" />}
                       label={aiCallsLabel}
-                      value={0}
+                      value={stats.aiCallsCount}
                       color="#f59e0b"
                       delay={300}
                     />

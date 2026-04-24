@@ -1,5 +1,58 @@
 import { getAuthToken } from './auth';
 
+/**
+ * 将内网 MinIO URL 规范化为 /storage/ 相对路径
+ * 例: http://39.105.158.61:9000/nanostory/images/xxx.png → /storage/images/xxx.png
+ */
+function normalizeStorageUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  // 已经是 /storage/ 开头的相对路径，直接返回
+  if (url.startsWith('/storage/')) return url;
+  // 匹配 http(s)://{minio-host}:{port}/{bucket}/xxx 格式
+  const match = url.match(/^https?:\/\/[^/]+\/nanostory\/(.+)$/);
+  if (match) return `/storage/${match[1]}`;
+  return url;
+}
+
+/** 规范化角色数据中的所有 MinIO URL */
+function normalizeCharacterUrls<T extends Record<string, any>>(char: T): T {
+  if (!char) return char;
+  const urlFields = ['image_url', 'front_view_url', 'side_view_url', 'back_view_url', 'character_sheet_url', 'concept_image_url'];
+  const result = { ...char };
+  for (const field of urlFields) {
+    if (result[field]) {
+      result[field] = normalizeStorageUrl(result[field]);
+    }
+  }
+  return result;
+}
+
+/** 规范化场景数据中的所有 MinIO URL */
+function normalizeSceneUrls<T extends Record<string, any>>(scene: T): T {
+  if (!scene) return scene;
+  const urlFields = ['image_url'];
+  const result = { ...scene };
+  for (const field of urlFields) {
+    if (result[field]) {
+      result[field] = normalizeStorageUrl(result[field]);
+    }
+  }
+  return result;
+}
+
+/** 规范化角色状态数据中的所有 MinIO URL */
+function normalizeStateUrls<T extends Record<string, any>>(state: T): T {
+  if (!state) return state;
+  const urlFields = ['image_url', 'front_view_url', 'side_view_url', 'back_view_url'];
+  const result = { ...state };
+  for (const field of urlFields) {
+    if (result[field]) {
+      result[field] = normalizeStorageUrl(result[field]);
+    }
+  }
+  return result;
+}
+
 // 标签分组接口
 export interface TagGroup {
   id: number;
@@ -32,12 +85,15 @@ export interface Character {
   side_view_url?: string;
   back_view_url?: string;
   character_sheet_url?: string;
+  concept_image_url?: string;
+  concept_generation_status?: 'idle' | 'generating' | 'completed' | 'failed';
   generation_status?: 'idle' | 'generating' | 'completed' | 'failed';
   generation_prompt?: string;
   tags: string;
   tag_groups_json?: CharacterTagGroupEntry[] | null;
   project_name?: string;
   states_count?: number;
+  use_reference_images?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -241,7 +297,7 @@ export async function fetchCharacters(): Promise<Character[]> {
     throw new Error('获取角色列表失败');
   }
   const data = await response.json();
-  return data.characters || [];
+  return (data.characters || []).map(normalizeCharacterUrls);
 }
 
 /** 按项目获取角色列表（支持团队成员访问） */
@@ -256,7 +312,7 @@ export async function fetchCharactersByProject(projectId: number): Promise<Chara
     throw new Error('获取项目角色列表失败');
   }
   const data = await response.json();
-  return data.characters || [];
+  return (data.characters || []).map(normalizeCharacterUrls);
 }
 
 export async function createCharacter(character: Partial<Character>): Promise<Character> {
@@ -274,7 +330,7 @@ export async function createCharacter(character: Partial<Character>): Promise<Ch
     throw new Error(data.message || '创建角色失败');
   }
   const data = await response.json();
-  return data.character;
+  return normalizeCharacterUrls(data.character);
 }
 
 export async function updateCharacter(id: number, character: Partial<Character>): Promise<Character> {
@@ -292,7 +348,7 @@ export async function updateCharacter(id: number, character: Partial<Character>)
     throw new Error(data.message || '更新角色失败');
   }
   const data = await response.json();
-  return data.character;
+  return normalizeCharacterUrls(data.character);
 }
 
 export async function deleteCharacter(id: number): Promise<void> {
@@ -323,7 +379,7 @@ export async function fetchCharacter(characterId: number): Promise<Character> {
     throw new Error('获取角色详情失败');
   }
   const data = await response.json();
-  return data.character;
+  return normalizeCharacterUrls(data.character);
 }
 
 /**
@@ -363,7 +419,7 @@ export async function fetchScenes(): Promise<Scene[]> {
     throw new Error('获取场景列表失败');
   }
   const data = await response.json();
-  return data.scenes || [];
+  return (data.scenes || []).map(normalizeSceneUrls);
 }
 
 /** 按项目获取场景列表（支持团队成员访问） */
@@ -378,7 +434,7 @@ export async function fetchScenesByProject(projectId: number): Promise<Scene[]> 
     throw new Error('获取项目场景列表失败');
   }
   const data = await response.json();
-  return data.scenes || [];
+  return (data.scenes || []).map(normalizeSceneUrls);
 }
 
 export async function createScene(scene: Partial<Scene>): Promise<Scene> {
@@ -396,7 +452,7 @@ export async function createScene(scene: Partial<Scene>): Promise<Scene> {
     throw new Error(data.message || '创建场景失败');
   }
   const data = await response.json();
-  return data.scene;
+  return normalizeSceneUrls(data.scene);
 }
 
 export async function updateScene(id: number, scene: Partial<Scene>): Promise<Scene> {
@@ -414,7 +470,7 @@ export async function updateScene(id: number, scene: Partial<Scene>): Promise<Sc
     throw new Error(data.message || '更新场景失败');
   }
   const data = await response.json();
-  return data.scene;
+  return normalizeSceneUrls(data.scene);
 }
 
 export async function deleteScene(id: number): Promise<void> {
@@ -429,6 +485,107 @@ export async function deleteScene(id: number): Promise<void> {
     const data = await response.json();
     throw new Error(data.message || '删除场景失败');
   }
+}
+
+// ===================== 场景图片提示词生成/优化 =====================
+
+export interface GenerateScenePromptParams {
+  /** 文本模型名（必填） */
+  textModel: string;
+  /** 'A' | 'B' | 'both'，默认 'both' */
+  face?: 'A' | 'B' | 'both';
+  /** 当前 A 面提示词，传入代表"优化"模式 */
+  basePromptA?: string;
+  /** 当前 B 面提示词，传入代表"优化"模式 */
+  basePromptB?: string;
+  /** 用户对优化方向的自然语言建议（可选） */
+  userNote?: string;
+}
+
+export interface GenerateScenePromptResult {
+  message?: string;
+  sceneId: number;
+  face: 'A' | 'B' | 'both';
+  style?: string;
+  promptA?: string;
+  promptB?: string;
+}
+
+/**
+ * AI 生成或优化场景图片的提示词（纯文本接口，不生成图片）
+ * 未传 basePromptX → 首次生成；传入 basePromptX → 基于当前版本优化
+ */
+export async function generateSceneImagePrompt(
+  sceneId: number,
+  params: GenerateScenePromptParams
+): Promise<GenerateScenePromptResult> {
+  const token = getAuthToken();
+  const response = await fetch(`/api/scenes/${sceneId}/generate-image-prompt`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    },
+    body: JSON.stringify(params)
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.message || '生成场景提示词失败');
+  }
+  return data as GenerateScenePromptResult;
+}
+
+// ===================== 角色图片提示词生成/优化 =====================
+
+export interface GenerateCharacterPromptParams {
+  /** 文本模型名（必填） */
+  textModel: string;
+  /** 'front' | 'side' | 'back' | 'all'，默认 'all' */
+  views?: 'front' | 'side' | 'back' | 'all';
+  /** 当前正面提示词，传入代表"优化"模式 */
+  basePromptFront?: string;
+  /** 当前侧面提示词，传入代表"优化"模式 */
+  basePromptSide?: string;
+  /** 当前背面提示词，传入代表"优化"模式 */
+  basePromptBack?: string;
+  /** 用户对优化方向的自然语言建议（可选） */
+  userNote?: string;
+  /** 角色状态 ID（为状态生成时传入） */
+  stateId?: number;
+}
+
+export interface GenerateCharacterPromptResult {
+  message?: string;
+  characterId: number;
+  style?: string;
+  views: string[];
+  promptFront?: string;
+  promptSide?: string;
+  promptBack?: string;
+}
+
+/**
+ * AI 生成或优化角色三视图的提示词（纯文本接口，不生成图片）
+ * 未传 basePromptX → 首次生成；传入 basePromptX → 基于当前版本优化
+ */
+export async function generateCharacterImagePrompt(
+  characterId: number,
+  params: GenerateCharacterPromptParams
+): Promise<GenerateCharacterPromptResult> {
+  const token = getAuthToken();
+  const response = await fetch(`/api/characters/${characterId}/generate-image-prompt`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    },
+    body: JSON.stringify(params)
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.message || '生成角色提示词失败');
+  }
+  return data as GenerateCharacterPromptResult;
 }
 
 // 道具API
@@ -812,7 +969,7 @@ export async function fetchCharacterStates(characterId: number): Promise<Charact
     throw new Error(result.message || '获取角色状态失败');
   }
   const data = await response.json();
-  return data.states || [];
+  return (data.states || []).map(normalizeStateUrls);
 }
 
 /**
@@ -836,7 +993,17 @@ export async function fetchCharacterStatesByCategory(
     const result = await response.json();
     throw new Error(result.message || '获取角色状态分类失败');
   }
-  return response.json();
+  const result = await response.json();
+  // 规范化 states 和 grouped 中的 URL
+  if (result.states) {
+    result.states = result.states.map(normalizeStateUrls);
+  }
+  if (result.grouped) {
+    for (const key of Object.keys(result.grouped)) {
+      result.grouped[key] = result.grouped[key].map(normalizeStateUrls);
+    }
+  }
+  return result;
 }
 
 /**
@@ -860,7 +1027,7 @@ export async function createCharacterState(
     throw new Error(result.message || '创建角色状态失败');
   }
   const result = await response.json();
-  return result.state;
+  return normalizeStateUrls(result.state);
 }
 
 /**
@@ -885,7 +1052,7 @@ export async function updateCharacterState(
     throw new Error(result.message || '更新角色状态失败');
   }
   const result = await response.json();
-  return result.state;
+  return normalizeStateUrls(result.state);
 }
 
 /**
@@ -928,7 +1095,7 @@ export async function activateCharacterState(
     throw new Error(result.message || '激活状态失败');
   }
   const data = await response.json();
-  return data.state;
+  return normalizeStateUrls(data.state);
 }
 
 /**
@@ -953,7 +1120,7 @@ export async function duplicateCharacterState(
     throw new Error(result.message || '复制状态失败');
   }
   const data = await response.json();
-  return data.state;
+  return normalizeStateUrls(data.state);
 }
 
 /**
@@ -998,7 +1165,7 @@ export async function getActiveCharacterState(
     throw new Error(result.message || '获取激活状态失败');
   }
   const data = await response.json();
-  return data.state;
+  return data.state ? normalizeStateUrls(data.state) : null;
 }
 
 /**

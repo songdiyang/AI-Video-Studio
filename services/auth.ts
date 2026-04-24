@@ -8,7 +8,7 @@ export interface AuthUser {
 export interface AuthClaims {
   userId: number;
   email: string;
-  role: 'admin' | 'user';
+  role: 'admin' | 'user' | 'ops';
   exp?: number;
   iat?: number;
 }
@@ -46,8 +46,10 @@ function clearAuthStorage() {
   }
 }
 
-function normalizeRole(role: unknown): 'admin' | 'user' {
-  return role === 'admin' ? 'admin' : 'user';
+function normalizeRole(role: unknown): 'admin' | 'user' | 'ops' {
+  if (role === 'admin') return 'admin';
+  if (role === 'ops') return 'ops';
+  return 'user';
 }
 
 function getAdminAccessStorage(): Storage | null {
@@ -174,7 +176,16 @@ export function getAuthUser(): AuthUser | null {
 }
 
 export function isAdminUser(): boolean {
-  return getAuthClaims()?.role === 'admin';
+  const role = getAuthClaims()?.role;
+  return role === 'admin' || role === 'ops';
+}
+
+export function isOpsUser(): boolean {
+  return getAuthClaims()?.role === 'ops';
+}
+
+export function getUserRole(): 'admin' | 'user' | 'ops' {
+  return getAuthClaims()?.role || 'user';
 }
 
 export function getAdminAccessKey(): string | null {
@@ -235,7 +246,7 @@ function saveAuth(resp: AuthResponse) {
   localStorage.removeItem(LEGACY_AUTH_TOKEN_KEY);
   localStorage.setItem(USER_ROLE_KEY, user.role || 'user');
 
-  if (user.role !== 'admin') {
+  if (user.role !== 'admin' && user.role !== 'ops') {
     setAdminAccessKey(null);
   }
 }
@@ -309,7 +320,7 @@ export async function login(email: string, password: string): Promise<AuthUser> 
 export async function loginWithAdminAccess(email: string, password: string, adminAccessKey: string): Promise<AuthUser> {
   setAdminAccessKey(adminAccessKey);
   try {
-    const resp = await request('login', { email, password, adminAccessKey });
+    const resp = await request('admin-login', { email, password, adminAccessKey });
     return resp.user;
   } catch (error) {
     setAdminAccessKey(null);

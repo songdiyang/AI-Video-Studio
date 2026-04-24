@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Button, Input, Tabs, Tab, useDisclosure, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Popover, PopoverTrigger, PopoverContent, Select, SelectItem } from '@heroui/react';
-import { Users, MapPin, FileText, Plus, Search, Tag, Settings, X, Edit2, ChevronDown, ChevronRight, Shirt, FolderOpen, Package } from 'lucide-react';
+import { Button, Input, Tabs, Tab, useDisclosure, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Popover, PopoverTrigger, PopoverContent } from '@heroui/react';
+import { Users, MapPin, FileText, Plus, Search, Tag, Settings, Edit2, Shirt } from 'lucide-react';
 import { getAuthToken } from '../../services/auth';
 import { useSceneImageGeneration } from '../StoryBoard/hooks/useSceneImageGeneration';
 import SceneDetailModal from '../StoryBoard/ResourcePanel/SceneDetailModal';
@@ -15,9 +15,8 @@ import {
 } from '../../services/assets';
 import { Costume, fetchCostumes, createCostume, updateCostume, deleteCostume, COSTUME_CATEGORIES } from '../../services/costumes';
 import { Project, fetchProjects } from '../../services/projects';
-import { LayoutGrid, ListTree } from 'lucide-react';
 import CharacterList from './CharacterList';
-import CharacterTreeView from './CharacterTreeView';
+import ProjectSidebar from './ProjectSidebar';
 import SceneList from './SceneList';
 import PropList from './PropList';
 import CostumeList from './CostumeList';
@@ -26,7 +25,6 @@ import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import { useCurrentProject } from '../../contexts/WorkbenchContext';
 import { AIModel } from '../../components/AIModelSelector';
-import type { Character as TreeCharacter } from '../StoryBoard/ResourcePanel/types';
 import type { CharacterState } from '../../services/assets';
 
 type TabType = 'characters' | 'scenes' | 'props' | 'costumes';
@@ -295,26 +293,6 @@ const TagGroupManager: React.FC<TagGroupManagerProps> = ({ isOpen, onOpenChange,
   );
 };
 
-// 将 services/assets 的 Character(snake_case) 转换为 types.ts 的 Character(camelCase)
-function toTreeCharacter(c: Character): TreeCharacter {
-  return {
-    id: c.id,
-    name: c.name,
-    appearance: c.appearance,
-    personality: c.personality,
-    description: c.description,
-    imageUrl: c.image_url,
-    frontViewUrl: c.front_view_url,
-    sideViewUrl: c.side_view_url,
-    backViewUrl: c.back_view_url,
-    characterSheetUrl: c.character_sheet_url,
-    generationStatus: c.generation_status,
-    statesCount: c.states_count,
-    projectId: c.project_id,
-    gender: c.gender,
-  };
-}
-
 const AssetsManager: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabType>('characters');
   const [characters, setCharacters] = useState<Character[]>([]);
@@ -329,8 +307,6 @@ const AssetsManager: React.FC = () => {
   const [projectFilter, setProjectFilter] = useState<string>('all');
   // 用户的项目列表
   const [userProjects, setUserProjects] = useState<Project[]>([]);
-  // 角色视图模式：网格/树形
-  const [characterViewMode, setCharacterViewMode] = useState<'grid' | 'tree'>('grid');
   // 分组筛选状态：{ groupId: number, tag: string } | null
   const [activeGroupFilter, setActiveGroupFilter] = useState<{ groupId: number; tag: string } | null>(null);
   // 展开的分组
@@ -610,8 +586,25 @@ const AssetsManager: React.FC = () => {
     onDetailOpen();
   };
 
-  const handleGenerateSceneImage = async (sceneId: number, style: string, imageModel: string) => {
+  const handleGenerateSceneImage = async (sceneId: number, styleOrImageModel: string, imageModelOrOptions?: string | { customPromptA?: string; customPromptB?: string }) => {
     try {
+      // 兼容两种调用方式：
+      // 1. 旧方式 (sceneId, style, imageModel)
+      // 2. 新方式 (sceneId, imageModel, { customPromptA, customPromptB })
+      let imageModel = '';
+      let style = '';
+      let customPromptA: string | undefined;
+      let customPromptB: string | undefined;
+
+      if (typeof imageModelOrOptions === 'object') {
+        imageModel = styleOrImageModel;
+        customPromptA = imageModelOrOptions.customPromptA;
+        customPromptB = imageModelOrOptions.customPromptB;
+      } else {
+        style = styleOrImageModel;
+        imageModel = imageModelOrOptions || '';
+      }
+
       const token = getAuthToken();
       const res = await fetch(`/api/scenes/${sceneId}/generate-image`, {
         method: 'POST',
@@ -623,7 +616,9 @@ const AssetsManager: React.FC = () => {
           style, 
           imageModel, 
           width: 1024, 
-          height: 576 
+          height: 576,
+          customPromptA,
+          customPromptB
         })
       });
       
@@ -745,8 +740,17 @@ const AssetsManager: React.FC = () => {
   });
 
   return (
-    <div className="h-full bg-(--bg-app) overflow-y-auto p-6">
-      <div className="max-w-7xl mx-auto space-y-6">
+    <div className="h-full bg-(--bg-app) flex">
+      {/* 左侧边栏 - 项目快速切换 */}
+      <ProjectSidebar
+        projects={userProjects}
+        selectedProject={projectFilter}
+        onSelectProject={setProjectFilter}
+      />
+
+      {/* 主内容区 */}
+      <div className="flex-1 overflow-y-auto p-6">
+        <div className="max-w-7xl mx-auto space-y-6">
         {/* 头部 */}
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold pro-title">资产管理</h1>
@@ -771,58 +775,18 @@ const AssetsManager: React.FC = () => {
           </div>
         </div>
 
-        {/* 搜索 + 项目筛选 */}
-        <div className="flex gap-3 items-center">
-          <Input
-            placeholder="搜索资产..."
-            value={searchQuery}
-            onValueChange={setSearchQuery}
-            startContent={<Search className="w-4 h-4 text-(--text-muted)" />}
-            classNames={{
-              input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted)",
-              inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 focus-within:border-(--accent)/50 shadow-sm transition-all"
-            }}
-            className="flex-1"
-          />
-          <Select
-            selectedKeys={[projectFilter]}
-            onSelectionChange={(keys) => {
-              const val = Array.from(keys)[0] as string;
-              if (val) setProjectFilter(val);
-            }}
-            startContent={<FolderOpen className="w-4 h-4 text-(--text-muted)" />}
-            classNames={{
-              trigger: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 shadow-sm min-h-10 h-10",
-              value: "text-(--text-primary) text-sm",
-              popoverContent: "bg-(--bg-card) border border-(--border-color)"
-            }}
-            className="w-52 shrink-0"
-            aria-label="项目筛选"
-          >
-            {[
-              <SelectItem key="all" textValue="全部项目">
-                <div className="flex items-center gap-2">
-                  <Package className="w-3.5 h-3.5 text-(--text-muted)" />
-                  <span>全部项目</span>
-                </div>
-              </SelectItem>,
-              <SelectItem key="unused" textValue="未使用素材">
-                <div className="flex items-center gap-2">
-                  <X className="w-3.5 h-3.5 text-amber-500" />
-                  <span>未使用素材</span>
-                </div>
-              </SelectItem>,
-              ...userProjects.map((p) => (
-                <SelectItem key={String(p.id)} textValue={p.name}>
-                  <div className="flex items-center gap-2">
-                    <FolderOpen className="w-3.5 h-3.5 text-(--accent)" />
-                    <span className="truncate">{p.name}</span>
-                  </div>
-                </SelectItem>
-              ))
-            ]}
-          </Select>
-        </div>
+        {/* 搜索栏 */}
+        <Input
+          placeholder="搜索资产..."
+          value={searchQuery}
+          onValueChange={setSearchQuery}
+          startContent={<Search className="w-4 h-4 text-(--text-muted)" />}
+          classNames={{
+            input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted)",
+            inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 focus-within:border-(--accent)/50 shadow-sm transition-all"
+          }}
+          className="w-full"
+        />
 
         {/* 分组标签筛选（仅角色Tab显示） */}
         {activeTab === 'characters' && Object.keys(groupedTags).length > 0 && (
@@ -944,72 +908,20 @@ const AssetsManager: React.FC = () => {
               </div>
             }
           >
-            {/* 视图切换按钮组 */}
+            {/* 角色数量统计 */}
             <div className="flex items-center justify-between mt-4 mb-2">
               <span className="text-sm text-(--text-muted)">
                 共 {filteredCharacters.length} 个角色
               </span>
-              <div className="flex items-center gap-1 bg-(--bg-card) rounded-lg p-0.5 border border-(--border-color)">
-                <button
-                  className={`px-2.5 py-1.5 rounded-md text-sm transition-colors flex items-center gap-1.5 ${
-                    characterViewMode === 'grid'
-                      ? 'bg-amber-500/20 text-amber-400'
-                      : 'text-(--text-muted) hover:text-(--text-secondary)'
-                  }`}
-                  onClick={() => setCharacterViewMode('grid')}
-                  title="网格视图"
-                >
-                  <LayoutGrid className="w-4 h-4" />
-                  <span className="hidden sm:inline">网格</span>
-                </button>
-                <button
-                  className={`px-2.5 py-1.5 rounded-md text-sm transition-colors flex items-center gap-1.5 ${
-                    characterViewMode === 'tree'
-                      ? 'bg-amber-500/20 text-amber-400'
-                      : 'text-(--text-muted) hover:text-(--text-secondary)'
-                  }`}
-                  onClick={() => setCharacterViewMode('tree')}
-                  title="树形视图"
-                >
-                  <ListTree className="w-4 h-4" />
-                  <span className="hidden sm:inline">树形</span>
-                </button>
-              </div>
             </div>
 
-            {/* 根据视图模式渲染不同内容 */}
-            {characterViewMode === 'grid' ? (
-              <CharacterList 
-                characters={filteredCharacters} 
-                tagGroups={tagGroups}
-                onEdit={handleEdit} 
-                onDelete={handleDelete} 
-              />
-            ) : (
-              <CharacterTreeView
-                characters={filteredCharacters.map(toTreeCharacter)}
-                projectId={filteredCharacters[0]?.project_id ?? 0}
-                onSelectCharacter={(treeChar) => {
-                  // 找到原始 snake_case 角色数据用于编辑
-                  const original = characters.find(c => c.id === treeChar.id);
-                  if (original) handleEdit(original);
-                }}
-                onEditCharacter={(treeChar) => {
-                  const original = characters.find(c => c.id === treeChar.id);
-                  if (original) handleEdit(original);
-                }}
-                onEditState={(treeChar, _state) => {
-                  // 打开 CharacterModal，进入状态管理 Tab
-                  const original = characters.find(c => c.id === treeChar.id);
-                  if (original) handleEdit(original);
-                }}
-                onStateActivated={() => {
-                  // 状态激活后刷新角色列表
-                  loadData();
-                }}
-                className="mt-2 max-h-[calc(100vh-380px)]"
-              />
-            )}
+            {/* 网格视图 */}
+            <CharacterList 
+              characters={filteredCharacters} 
+              tagGroups={tagGroups}
+              onEdit={handleEdit} 
+              onDelete={handleDelete} 
+            />
           </Tab>
 
           <Tab
@@ -1121,8 +1033,9 @@ const AssetsManager: React.FC = () => {
           isOpen={isDetailOpen}
           onClose={onDetailOpenChange}
           scene={selectedScene}
-          onGenerateImage={(sceneId: number, imageModel: string) => handleGenerateSceneImage(sceneId, '', imageModel)}
+          onGenerateImage={(sceneId: number, imageModel: string, options?: { customPromptA?: string; customPromptB?: string }) => handleGenerateSceneImage(sceneId, imageModel, options)}
           isGenerating={isGenerating}
+          textModel={selectedTextModel}
         />
 
         {/* 标签分组管理模态框 */}
@@ -1132,6 +1045,7 @@ const AssetsManager: React.FC = () => {
           tagGroups={tagGroups}
           onRefresh={loadTagGroups}
         />
+      </div>
       </div>
     </div>
   );

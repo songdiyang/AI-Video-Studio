@@ -233,6 +233,9 @@ async function handleSceneVideoGeneration(inputParams, onProgress) {
   const prevSceneDesc = prevNeighbor?.prompt_template || '';
   const nextSceneDesc = nextNeighbor?.prompt_template || '';
 
+  // 提前获取 outputLang，避免 Promise.allSettled 内部 IIFE 引用时 TDZ 错误
+  const outputLang = textModel ? await getOutputLanguage(storyboard.project_id) : null;
+
   // 3.8 & 3.9 并行生成精细运镜 + 运动分解（两者互不依赖，可同时调用）
   let cameraRunPrompt = '';
   let motionBreakdownText = '';
@@ -405,8 +408,7 @@ async function handleSceneVideoGeneration(inputParams, onProgress) {
 
     const extraInfo = [charBlock, locInfo, sceneBlock, shotInfo, emotionInfo, dialogueInfo, voiceoverText, actionInfo, cameraInfo, endStateInfo, styleInfo, charConstraint, prevContext, nextContext, motionBreakdownText].filter(Boolean).join('\n');
 
-    // 获取项目输出语言设置
-    const outputLang = await getOutputLanguage(storyboard.project_id);
+    // outputLang 已在上方 Promise.allSettled 之前获取，此处复用
 
     // 条件化规则：仅在相关场景存在时才添加，减少无关 token 消耗
     const hasEnvEffects = /持续|全程|不间断|暴风雪|下雨|火焰|燃烧|篝火/.test(description);

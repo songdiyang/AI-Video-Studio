@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
-import { Card, CardBody, Button, Chip, Tooltip } from '@heroui/react';
-import { Edit, Trash2, Eye, Image, Upload, X } from 'lucide-react';
+import { Button, Chip, Tooltip } from '@heroui/react';
+import { Edit, Trash2, Eye, Image, Upload } from 'lucide-react';
 import { Scene, uploadSceneSketch, deleteSceneSketch } from '../../services/assets';
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
@@ -99,137 +99,142 @@ const SceneList: React.FC<SceneListProps> = ({ scenes, onEdit, onDelete, onViewD
         onChange={handleFileChange}
       />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-6 items-stretch">
-        {scenes.map((scene) => (
-          <Card 
-            key={scene.id} 
-            className="bg-(--bg-card) border border-(--border-color) shadow-sm hover:shadow-md hover:shadow-(--accent)/5 transition-shadow cursor-pointer h-full"
-            classNames={{ base: 'h-full', body: 'h-full' }}
-            isPressable
-            onPress={() => onEdit(scene)}
-          >
-            <CardBody className="p-4 flex flex-col gap-3 h-full">
-              {/* 草图预览区域 */}
-              {scene.sketch_url && (
-                <div className="relative group">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mt-6">
+        {scenes.map((scene) => {
+          const hasSketch = !!scene.sketch_url;
+
+          return (
+            <div
+              key={scene.id}
+              className="bg-(--bg-card) border border-(--border-color) shadow-sm hover:shadow-lg hover:shadow-(--accent)/10 transition-all cursor-pointer rounded-xl overflow-hidden group"
+              onClick={() => onEdit(scene)}
+            >
+              {/* 图片区域 - 主要展示 */}
+              <div className="relative aspect-[4/3] bg-gradient-to-br from-(--bg-hover) to-(--bg-card) overflow-hidden">
+                {hasSketch ? (
                   <img
                     src={scene.sketch_url}
-                    alt={`${scene.name} 草图`}
-                    className="w-full h-32 object-cover rounded-lg border border-(--border-color) cursor-pointer"
-                    onClick={() => setPreviewScene(scene)}
+                    alt={scene.name}
+                    className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                    loading="lazy"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setPreviewScene(scene);
+                    }}
                   />
-                  <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex items-center justify-center gap-2">
-                    <Tooltip content="查看大图">
-                      <Button
-                        size="sm"
-                        isIconOnly
-                        variant="flat"
-                        className="bg-white/20 text-white"
-                        onPress={() => setPreviewScene(scene)}
-                      >
-                        <Eye className="w-4 h-4" />
-                      </Button>
-                    </Tooltip>
-                    <Tooltip content="删除草图">
-                      <Button
-                        size="sm"
-                        isIconOnly
-                        variant="flat"
-                        className="bg-red-500/20 text-red-300 hover:bg-red-500/40"
-                        onPress={() => handleDeleteSketch(scene)}
-                      >
-                        <X className="w-4 h-4" />
-                      </Button>
-                    </Tooltip>
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-(--text-muted)">
+                    <span className="text-4xl font-bold opacity-20">
+                      {scene.name.charAt(0)}
+                    </span>
                   </div>
-                </div>
-              )}
-
-              <div className="flex items-start justify-between">
-                <h3 className="text-lg font-semibold text-(--text-primary)">{scene.name}</h3>
-                <div className="flex gap-1">
-                  {/* 草图操作按钮 */}
-                  <Tooltip content={scene.sketch_url ? '更换草图' : '上传草图'}>
+                )}
+                
+                {/* 悬浮操作按钮 */}
+                <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <Tooltip content={hasSketch ? '更换草图' : '上传草图'}>
                     <Button 
                       size="sm" 
                       isIconOnly 
-                      variant="light" 
+                      variant="solid"
+                      className="bg-(--bg-card)/90 backdrop-blur-sm hover:bg-purple-500/20"
                       onPress={() => handleUploadClick(scene.id)}
                       isLoading={uploadingSceneId === scene.id}
-                      className="hover:bg-purple-500/10"
                     >
-                      {scene.sketch_url ? (
+                      {hasSketch ? (
                         <Image className="w-4 h-4 text-purple-400" />
                       ) : (
                         <Upload className="w-4 h-4 text-purple-400" />
                       )}
                     </Button>
                   </Tooltip>
-                  {onViewDetail && (
-                    <Button 
-                      size="sm" 
-                      isIconOnly 
-                      variant="light" 
-                      onPress={() => onViewDetail(scene)} 
-                      className="hover:bg-emerald-500/10"
-                    >
-                      <Eye className="w-4 h-4 text-emerald-400" />
-                    </Button>
+                  {hasSketch && (
+                    <Tooltip content="查看大图">
+                      <Button
+                        size="sm"
+                        isIconOnly
+                        variant="solid"
+                        className="bg-(--bg-card)/90 backdrop-blur-sm hover:bg-(--accent)/20"
+                        onPress={() => setPreviewScene(scene)}
+                      >
+                        <Eye className="w-4 h-4 text-(--accent)" />
+                      </Button>
+                    </Tooltip>
                   )}
                   <Button 
                     size="sm" 
                     isIconOnly 
-                    variant="light" 
-                    onPress={() => onEdit(scene)} 
-                    className="hover:bg-(--accent)/10"
+                    variant="solid"
+                    className="bg-(--bg-card)/90 backdrop-blur-sm hover:bg-(--accent)/20"
+                    onClick={(e) => { e.stopPropagation(); onEdit(scene); }}
                   >
                     <Edit className="w-4 h-4 text-(--accent)" />
                   </Button>
                   <Button 
                     size="sm" 
                     isIconOnly 
-                    variant="light" 
-                    onPress={() => onDelete(scene.id)} 
-                    className="hover:bg-red-500/10"
+                    variant="solid"
+                    className="bg-(--bg-card)/90 backdrop-blur-sm hover:bg-red-500/20"
+                    onClick={(e) => { e.stopPropagation(); onDelete(scene.id); }}
                   >
                     <Trash2 className="w-4 h-4 text-red-500" />
                   </Button>
                 </div>
-              </div>
-              <p className="text-sm text-(--text-secondary) line-clamp-2 flex-1">{scene.description}</p>
-              <div className="flex flex-wrap gap-2 mt-auto">
-                {scene.project_name && (
-                  <Chip 
-                    size="sm" 
-                    variant="flat" 
-                    className="bg-emerald-500/10 text-emerald-400 font-medium"
-                  >
-                    {scene.project_name}
-                  </Chip>
+
+                {/* 草图状态徽章 */}
+                {hasSketch && (
+                  <div className="absolute top-2 left-2">
+                    <Chip
+                      size="sm"
+                      variant="solid"
+                      className="bg-purple-500/90 backdrop-blur-sm text-white font-medium"
+                      startContent={<Image className="w-3 h-3" />}
+                    >
+                      草图
+                    </Chip>
+                  </div>
                 )}
-                {scene.sketch_url && (
-                  <Chip 
-                    size="sm" 
-                    variant="flat" 
-                    className="bg-purple-500/10 text-purple-400 font-medium"
-                  >
-                    有草图
-                  </Chip>
-                )}
-                {scene.tags && scene.tags.split(',').map((tag, idx) => (
-                  <Chip 
-                    key={idx} 
-                    size="sm" 
-                    variant="flat" 
-                    className="bg-sky-500/10 text-sky-400 font-medium"
-                  >
-                    {tag.trim()}
-                  </Chip>
-                ))}
               </div>
-            </CardBody>
-          </Card>
-        ))}
+
+              {/* 信息区域 - 次要展示 */}
+              <div className="p-3 space-y-2">
+                <h3 className="text-base font-semibold text-(--text-primary) truncate">
+                  {scene.name}
+                </h3>
+                
+                {/* 描述文字（可选显示） */}
+                {scene.description && (
+                  <p className="text-xs text-(--text-muted) line-clamp-2 leading-relaxed">
+                    {scene.description}
+                  </p>
+                )}
+
+                {/* 标签区域 */}
+                <div className="flex flex-wrap gap-1.5">
+                  {scene.project_name && (
+                    <Chip 
+                      size="sm" 
+                      variant="flat" 
+                      className="bg-emerald-500/10 text-emerald-400 text-xs"
+                    >
+                      {scene.project_name}
+                    </Chip>
+                  )}
+                  {scene.tags && scene.tags.split(',').slice(0, 2).map((tag, idx) => (
+                    <Chip 
+                      key={idx} 
+                      size="sm" 
+                      variant="flat" 
+                      className="bg-sky-500/10 text-sky-400 text-xs"
+                    >
+                      {tag.trim()}
+                    </Chip>
+                  ))}
+                </div>
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       {/* 草图预览模态框 */}
@@ -239,14 +244,12 @@ const SceneList: React.FC<SceneListProps> = ({ scenes, onEdit, onDelete, onViewD
           onClick={() => setPreviewScene(null)}
         >
           <div className="relative max-w-4xl max-h-[90vh] p-4">
-            <Button
-              isIconOnly
-              variant="flat"
-              className="absolute top-2 right-2 bg-black/50 text-white z-10"
-              onPress={() => setPreviewScene(null)}
+            <button
+              className="absolute top-2 right-2 w-8 h-8 flex items-center justify-center rounded-full bg-black/50 text-white hover:bg-black/70 transition-colors z-10"
+              onClick={() => setPreviewScene(null)}
             >
-              <X className="w-5 h-5" />
-            </Button>
+              ✕
+            </button>
             <img
               src={previewScene.sketch_url || ''}
               alt={`${previewScene.name} 草图`}

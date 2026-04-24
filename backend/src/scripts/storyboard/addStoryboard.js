@@ -7,7 +7,7 @@ const { queryOne, execute } = require('../../dbHelper');
 
 async function addStoryboard(req, res) {
   const userId = req.user.id;
-  const { scriptId, idx, prompt_template, variables_json } = req.body || {};
+  const { scriptId, idx, description, prompt_template, variables_json } = req.body || {};
 
   if (!scriptId) {
     return res.status(400).json({ message: '缺少 scriptId' });
@@ -23,8 +23,8 @@ async function addStoryboard(req, res) {
     }
 
     const result = await execute(
-      'INSERT INTO storyboards (project_id, script_id, idx, prompt_template, variables_json) VALUES (?, ?, ?, ?, ?)',
-      [script.project_id, scriptId, idx || 0, prompt_template || '', JSON.stringify(variables_json || {})]
+      'INSERT INTO storyboards (project_id, script_id, idx, description, prompt_template, variables_json) VALUES (?, ?, ?, ?, ?, ?)',
+      [script.project_id, scriptId, idx || 0, description || prompt_template || '', '', JSON.stringify(variables_json || {})]
     );
 
     const id = result.insertId;

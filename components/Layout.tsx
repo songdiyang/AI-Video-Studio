@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Film, User, Package, LogOut, FolderOpen, Settings, Sparkles, Wifi, WifiOff, Pencil, Moon, Sun, Monitor, Contrast, BarChart3, LayoutTemplate, Users, Maximize, Minimize, BookOpen, Video, Image, UsersRound, Puzzle, Coins, ChevronDown, Check } from 'lucide-react';
+import { Film, User, Package, LogOut, FolderOpen, Settings, Sparkles, Wifi, WifiOff, Pencil, Moon, Sun, Monitor, Contrast, BarChart3, LayoutTemplate, Users, Maximize, Minimize, BookOpen, Video, Image, UsersRound, Puzzle, Coins, ChevronDown, Check, ShoppingBag } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from "@heroui/react";
 import { motion } from 'framer-motion';
@@ -116,8 +116,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     { path: '/projects', icon: FolderOpen, label: t.nav.projects },
     { path: '/teams', icon: UsersRound, label: '团队' },
     { path: '/sketch', icon: Pencil, label: t.nav.sketch },
-    { path: '/templates', icon: LayoutTemplate, label: (t as Record<string, unknown>).templates ? ((t as Record<string, unknown>).templates as Record<string, string>).title : '模板库' },
-    { path: '/community', icon: Users, label: (t as Record<string, unknown>).community ? ((t as Record<string, unknown>).community as Record<string, string>).title : '社区' },
+    { path: '/marketplace', icon: ShoppingBag, label: t.marketplace?.title || '模板市场' },
     { path: '/extensions', icon: Puzzle, label: '扩展' },
     { path: '/settings', icon: Settings, label: t.nav.settings },
   ], [t]);
@@ -130,8 +129,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     '/projects': t.nav.projects,
     '/teams': '我的团队',
     '/sketch': t.nav.sketch,
-    '/templates': (t as Record<string, unknown>).templates ? ((t as Record<string, unknown>).templates as Record<string, string>).title : '模板库',
-    '/community': (t as Record<string, unknown>).community ? ((t as Record<string, unknown>).community as Record<string, string>).title : '社区',
+    '/marketplace': t.marketplace?.title || '模板市场',
+    '/marketplace/seller': '卖家管理',
+    '/marketplace/create': '发布配方',
     '/settings': t.nav.settings,
     '/user-center': t.nav.userCenter,
   }), [t]);

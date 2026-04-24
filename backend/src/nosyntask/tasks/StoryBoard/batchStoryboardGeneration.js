@@ -19,6 +19,7 @@ const { parseScriptScenes } = require('../../../utils/parseScriptScenes');
 const { stripThinkTags, extractCodeBlock, extractJSON, stripInvisible } = require('../../../utils/washBody');
 const { getBatchSceneDurationConfig } = require('../../../durationConfigService');
 const { getNarrativePerspective, getBodyProportion } = require('../../../utils/getProjectStyle');
+const { analyzeActionAmplitude } = require('./analyzeActionType'); // 新增：动作类型分析器
 
 // 默认值（当数据库配置不可用时回退使用）
 const DEFAULT_MIN_SCENE_DURATION = 15;
@@ -530,21 +531,74 @@ async function handleBatchStoryboardGeneration(inputParams, onProgress) {
     scriptId,
     idxOffset + i,
     shot.description || '',
+    '',
     JSON.stringify(shot)
   ]);
 
   // 执行批量插入（单次网络往返替代 N 次）
   if (batchValues.length > 0) {
     await execute(
-      `INSERT INTO storyboards (project_id, script_id, idx, prompt_template, variables_json) VALUES ?`,
+      `INSERT INTO storyboards (project_id, script_id, idx, description, prompt_template, variables_json) VALUES ?`,
       [batchValues]
     );
   }
 
   console.log(`[BatchStoryboard] 已批量保存 ${allStoryboards.length} 个分镜到数据库`);
-  if (onProgress) onProgress(96);
+  if (onProgress) onProgress(92);
 
-  // 6. 提取场景信息并批量保存（性能优化：使用 INSERT ON DUPLICATE KEY UPDATE）
+  // 6. 【新增】智能分析所有分镜的动作类型
+  console.log('[BatchStoryboard] 开始智能分析分镜动作类型...');
+  try {
+    const { batchAnalyzeActions } = require('./analyzeActionType');
+    
+    // 准备分析数据
+    const storyboardsForAnalysis = allStoryboards.map(sb => ({
+      id: sb.id,
+      description: sb.description,
+      characters: sb.characters || []
+    }));
+    
+    // 批量分析
+    const analysisResults = batchAnalyzeActions(storyboardsForAnalysis);
+    
+    // 将分析结果更新到数据库
+    const updatePromises = analysisResults.map(result => {
+      const { storyboardId, analysis } = result;
+      return execute(
+        `UPDATE storyboards SET 
+          action_level = ?, 
+          video_strategy = ?, 
+          use_end_frame = ?,
+          action_analysis_reason = ?
+         WHERE id = ?`,
+        [
+          analysis.actionLevel,
+          analysis.strategy,
+          analysis.useEndFrame ? 1 : 0,
+          analysis.reason,
+          storyboardId
+        ]
+      ).catch(err => {
+        console.error(`[BatchStoryboard] 更新分镜 ${storyboardId} 动作分析失败:`, err.message);
+      });
+    });
+    
+    await Promise.all(updatePromises);
+    console.log(`[BatchStoryboard] 动作类型分析完成，已更新 ${analysisResults.length} 个分镜`);
+    
+    // 统计各种动作类型的数量
+    const stats = analysisResults.reduce((acc, r) => {
+      acc[r.analysis.actionLevel] = (acc[r.analysis.actionLevel] || 0) + 1;
+      return acc;
+    }, {});
+    console.log('[BatchStoryboard] 动作类型统计:', stats);
+  } catch (analysisError) {
+    console.error('[BatchStoryboard] 动作类型分析失败（不影响分镜）:', analysisError.message);
+  }
+
+  if (onProgress) onProgress(94);
+
+  // 7. 提取场景信息并批量保存（性能优化：使用 INSERT ON DUPLICATE KEY UPDATE）
   let scenesExtracted = 0;
   if (userId) {
     const locationMap = new Map();

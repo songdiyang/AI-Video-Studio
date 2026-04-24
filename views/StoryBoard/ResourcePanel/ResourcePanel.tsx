@@ -228,7 +228,7 @@ const ResourcePanel: React.FC<ResourcePanelProps> = ({
     setIsSceneImageModalOpen(false);
   };
 
-  const handleGenerateSceneImage = async (sceneId: number, imageModelName: string) => {
+  const handleGenerateSceneImage = async (sceneId: number, imageModelName: string, options?: { customPromptA?: string; customPromptB?: string }) => {
     try {
       if (!effectiveImageAspectRatio) {
         throw new Error('当前图片模型未配置可用长宽比');
@@ -244,7 +244,9 @@ const ResourcePanel: React.FC<ResourcePanelProps> = ({
         body: JSON.stringify({ 
           imageModel: imageModelName, 
           textModel,
-          aspectRatio: effectiveImageAspectRatio
+          aspectRatio: effectiveImageAspectRatio,
+          customPromptA: options?.customPromptA,
+          customPromptB: options?.customPromptB
         })
       });
 
@@ -373,6 +375,7 @@ const ResourcePanel: React.FC<ResourcePanelProps> = ({
         onGenerateImage={handleGenerateSceneImage}
         isGenerating={sceneImageMonitor.isTargetActive(selectedScene?.id)}
         imageModel={effectiveImageModel}
+        textModel={textModel}
       />
 
       <SceneImageModal

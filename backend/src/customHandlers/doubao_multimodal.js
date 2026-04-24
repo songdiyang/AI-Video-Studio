@@ -159,8 +159,13 @@ module.exports = {
   async call(model, params, rendered) {
     console.log('[Doubao Multimodal] 开始处理请求');
 
-    // 1. 获取API密钥
-    const apiKey = model.api_key || params.apiKey || process.env.ARK_API_KEY;
+    // 1. 获取API密钥（去除所有非法 HTTP header 字符：\r \n \0 等）
+    const rawApiKey = model.api_key || params.apiKey || process.env.ARK_API_KEY;
+    const apiKey = rawApiKey
+      ? String(rawApiKey)
+          .replace(/[\r\n\0]/g, '')   // 移除换行、回车、空字符
+          .trim()
+      : null;
     if (!apiKey) {
       throw new Error('豆包多模态 API Key 未配置：请在模型配置中设置 API Key 或配置环境变量 ARK_API_KEY');
     }
@@ -208,11 +213,14 @@ module.exports = {
     }
 
     // 6. 构建请求体
+    // 注意：火山引擎 Responses API 使用 max_output_tokens，不是 max_tokens
     const requestBody = {
       model: modelId,
       input: input,
       ...(params.temperature != null && { temperature: params.temperature }),
-      ...(params.max_tokens != null && { max_tokens: params.max_tokens })
+      ...((params.max_output_tokens != null || params.max_tokens != null) && {
+        max_output_tokens: params.max_output_tokens ?? params.max_tokens
+      })
     };
 
     console.log('[Doubao Multimodal] 请求体:', JSON.stringify(requestBody, null, 2));

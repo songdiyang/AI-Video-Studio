@@ -210,7 +210,10 @@ async function handleSceneImageGeneration(inputParams, onProgress) {
     width,
     height,
     referenceImageUrl,
-    styleDescription
+    styleDescription,
+    // 前端用户可编辑的自定义提示词；若传入则跳过对应面 AI 生成
+    customPromptA,
+    customPromptB
   } = inputParams;
 
 
@@ -252,20 +255,32 @@ async function handleSceneImageGeneration(inputParams, onProgress) {
 
   if (onProgress) onProgress(10);
 
-  // 步骤1：生成 A 面（正打）场景图片提示词
-  console.log('[SceneImageGen] 生成 A 面（正打）场景提示词...');
-  const scenePrompt = await generateScenePrompt(
-    sceneName, description, environment, lighting, mood,
-    style, resolvedTextModel, styleDescription
-  );
-  console.log(`\x1b[32m[SceneImageGen] A 面提示词: ${scenePrompt}\x1b[0m`);
-  trace('A面提示词生成完成', { prompt: scenePrompt });
+  // 步骤1：A 面（正打）场景提示词
+  // 优先使用前端传入的自定义提示词；否则调用 AI 生成
+  let scenePrompt;
+  if (typeof customPromptA === 'string' && customPromptA.trim()) {
+    scenePrompt = customPromptA.trim();
+    console.log('[SceneImageGen] 使用前端自定义 A 面提示词（长度:', scenePrompt.length, '）');
+    trace('A面使用自定义提示词', { prompt: scenePrompt });
+  } else {
+    console.log('[SceneImageGen] 生成 A 面（正打）场景提示词...');
+    scenePrompt = await generateScenePrompt(
+      sceneName, description, environment, lighting, mood,
+      style, resolvedTextModel, styleDescription
+    );
+    console.log(`\x1b[32m[SceneImageGen] A 面提示词: ${scenePrompt}\x1b[0m`);
+    trace('A面提示词生成完成', { prompt: scenePrompt });
+  }
 
   if (onProgress) onProgress(15);
 
-  // 步骤2：生成 B 面（反打）场景图片提示词
+  // 步骤2：B 面（反打）场景提示词
   let reversePrompt = '';
-  if (resolvedTextModel) {
+  if (typeof customPromptB === 'string' && customPromptB.trim()) {
+    reversePrompt = customPromptB.trim();
+    console.log('[SceneImageGen] 使用前端自定义 B 面提示词（长度:', reversePrompt.length, '）');
+    trace('B面使用自定义提示词', { prompt: reversePrompt });
+  } else if (resolvedTextModel) {
     reversePrompt = await generateReverseScenePrompt(
       sceneName, description, environment, lighting, mood,
       style, resolvedTextModel, scenePrompt, styleDescription
@@ -372,3 +387,5 @@ async function handleSceneImageGeneration(inputParams, onProgress) {
 }
 
 module.exports = handleSceneImageGeneration;
+module.exports.generateScenePrompt = generateScenePrompt;
+module.exports.generateReverseScenePrompt = generateReverseScenePrompt;

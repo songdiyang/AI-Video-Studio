@@ -248,7 +248,7 @@ const SimpleStoryBoard: React.FC<SimpleStoryBoardProps> = ({
   };
 
   // 场景图片生成
-  const handleGenerateSceneImage = async (sceneId: number, imageModel: string) => {
+  const handleGenerateSceneImage = async (sceneId: number, imageModel: string, options?: { customPromptA?: string; customPromptB?: string }) => {
     if (!sceneId || !imageModel) {
       showToast('缺少必要参数，请选择场景和模型', 'warning');
       return;
@@ -272,6 +272,8 @@ const SimpleStoryBoard: React.FC<SimpleStoryBoardProps> = ({
           textModel,
           aspectRatio: imageAspectRatio,
           resolution: imageResolution || undefined,
+          customPromptA: options?.customPromptA,
+          customPromptB: options?.customPromptB,
         }),
       });
 

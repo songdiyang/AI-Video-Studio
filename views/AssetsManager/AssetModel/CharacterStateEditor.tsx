@@ -18,6 +18,7 @@ import {
   AGE_STAGES
 } from '../../../services/assets';
 import { useToast } from '../../../contexts/ToastContext';
+import { usePreview } from '../../../components/PreviewProvider';
 import { useConfirm } from '../../../contexts/ConfirmContext';
 import { useAIModels } from '../../../hooks/useAIModels';
 import AIModelSelector from '../../../components/AIModelSelector';
@@ -127,6 +128,7 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
   });
   
   const { showToast } = useToast();
+    const { openPreview } = usePreview();
   const { confirm } = useConfirm();
   const { isOpen, onOpen, onOpenChange } = useDisclosure();
 
@@ -783,10 +785,23 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                         { url: baseModelState.front_view_url, label: '正面' },
                         { url: baseModelState.side_view_url, label: '侧面' },
                         { url: baseModelState.back_view_url, label: '背面' }
-                      ].map(({ url, label }) => (
+                      ].map(({ url, label }, idx) => (
                         <div key={label} className="space-y-1">
                           <p className="text-xs text-center" style={{ color: 'var(--text-muted)' }}>{label}</p>
-                          <div className="aspect-square rounded-lg overflow-hidden flex items-center justify-center" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-color)' }}>
+                          <div
+                            className={`aspect-square rounded-lg overflow-hidden flex items-center justify-center ${url ? 'cursor-pointer hover:opacity-90 transition-opacity' : ''}`}
+                            style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-color)' }}
+                            onClick={() => {
+                              if (!url) return;
+                              const slides = [
+                                baseModelState.front_view_url,
+                                baseModelState.side_view_url,
+                                baseModelState.back_view_url
+                              ].filter(Boolean).map(u => ({ src: u!, alt: '' }));
+                              const beforeCount = [baseModelState.front_view_url, baseModelState.side_view_url, baseModelState.back_view_url].slice(0, idx).filter(Boolean).length;
+                              openPreview(slides, beforeCount);
+                            }}
+                          >
                             {url ? (
                               <img src={url} alt={label} className="w-full h-full object-cover" />
                             ) : (
@@ -1114,10 +1129,22 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                               { url: state.front_view_url, label: '正面' },
                               { url: state.side_view_url, label: '侧面' },
                               { url: state.back_view_url, label: '背面' }
-                            ].map(({ url, label }) => (
+                            ].map(({ url, label }, idx) => (
                               <div key={label} className="space-y-1">
                                 <p className="text-xs text-default-400 dark:text-slate-500 text-center">{label}</p>
-                                <div className="aspect-square bg-default-100 dark:bg-slate-800/60 rounded-lg overflow-hidden border border-default-200 dark:border-slate-700/50 flex items-center justify-center">
+                                <div
+                                  className={`aspect-square bg-default-100 dark:bg-slate-800/60 rounded-lg overflow-hidden border border-default-200 dark:border-slate-700/50 flex items-center justify-center ${url ? 'cursor-pointer hover:opacity-90 transition-opacity' : ''}`}
+                                  onClick={() => {
+                                    if (!url) return;
+                                    const slides = [
+                                      state.front_view_url,
+                                      state.side_view_url,
+                                      state.back_view_url
+                                    ].filter(Boolean).map(u => ({ src: u!, alt: '' }));
+                                    const beforeCount = [state.front_view_url, state.side_view_url, state.back_view_url].slice(0, idx).filter(Boolean).length;
+                                    openPreview(slides, beforeCount);
+                                  }}
+                                >
                                   {url ? (
                                     <img src={url} alt={label} className="w-full h-full object-cover" />
                                   ) : (

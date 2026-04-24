@@ -223,6 +223,8 @@ export interface BlockEditorProps {
   onUpdateVoiceover?: (voiceover: string) => Promise<boolean>;
   negativePrompt?: string;
   onUpdateNegativePrompt?: (negativePrompt: string) => Promise<boolean>;
+  promptMode?: 'image' | 'video';
+  basePrompt?: string;
 }
 
 export interface ProjectCharacter {

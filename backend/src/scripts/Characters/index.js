@@ -10,6 +10,7 @@ const create = require('./create');
 const update = require('./update');
 const deleteCharacter = require('./delete');
 const generateViews = require('./generateViews');
+const generateImagePrompt = require('./generateImagePrompt');
 const uploadImage = require('./uploadImage');
 const tagGroups = require('./tagGroups');
 const states = require('./states');
@@ -22,6 +23,7 @@ getAll(router);
 getByProject(router);
 batchSave(router);
 generateViews(router);
+generateImagePrompt(router);
 uploadImage(router);   // 角色图片上传路由（/:id/upload-image）
 states(router);  // 角色状态路由（/:id/states）
 voiceConfig(router);  // 角色声音配置路由（/:id/voice）

@@ -148,8 +148,8 @@ function authMiddleware(req, res, next) {
     // 异步更新用户活跃时间（节流，不阻塞请求）
     updateLastActive(payload.userId);
 
-    // 非管理员用户检查令牌是否被全局失效
-    if (req.user.role !== 'admin') {
+    // 非管理员/运维用户检查令牌是否被全局失效
+    if (req.user.role !== 'admin' && req.user.role !== 'ops') {
       const iat = payload.iat || 0;
       getTokenInvalidatedBefore().then(invalidatedBefore => {
         if (invalidatedBefore > 0 && iat < invalidatedBefore) {
@@ -178,9 +178,35 @@ function requireAdmin(req, res, next) {
   next();
 }
 
+/**
+ * 允许管理员或运维角色访问的中间件
+ * 运维角色拥有有限的管理后台权限
+ */
+function requireAdminOrOps(req, res, next) {
+  if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'ops')) {
+    return res.status(403).json({ message: '权限不足，仅管理员或运维可访问' });
+  }
+
+  const accessCheck = validateAdminAccessRequest(req);
+  if (!accessCheck.ok) {
+    return res.status(accessCheck.status).json({ message: accessCheck.message });
+  }
+
+  next();
+}
+
+/**
+ * 检查当前用户是否为运维角色
+ */
+function isOpsRole(req) {
+  return req.user && req.user.role === 'ops';
+}
+
 module.exports = {
   authMiddleware,
   requireAdmin,
+  requireAdminOrOps,
+  isOpsRole,
   validateAdminAccessRequest,
   clearTokenInvalidationCache,
   ADMIN_ACCESS_KEY_HEADER,

@@ -146,39 +146,36 @@ const TrackballWidget: React.FC<TrackballWidgetProps> = ({
     window.addEventListener('mouseup', handleMouseUp);
   }, [matrix, onChange, disabled]);
 
-  // Generate circle points for a latitude or longitude line
-  const generateCirclePoints = (
-    axis: 'x' | 'y' | 'z',
-    angle: number,
-    steps: number = 48
-  ): string => {
-    const points: [number, number, number][] = [];
-    for (let i = 0; i <= steps; i++) {
-      const t = (i / steps) * Math.PI * 2;
-      let pt: [number, number, number];
-      const cosA = Math.cos(angle);
-      const sinA = Math.sin(angle);
-      switch (axis) {
-        case 'x': // latitude (rotation around x-axis)
-          pt = [Math.cos(t) * cosA, Math.sin(t), Math.cos(t) * sinA];
-          break;
-        case 'y': // longitude (rotation around y-axis)
-          pt = [Math.sin(t) * Math.cos(angle), Math.cos(t), Math.sin(t) * Math.sin(angle)];
-          break;
-        case 'z': // equator
-        default:
-          pt = [Math.cos(t), Math.sin(t), 0];
-          break;
-      }
-      points.push(pt);
-    }
+  // Generate cube edge with depth-based styling
+  const generateCubeEdge = (
+    p1: [number, number, number],
+    p2: [number, number, number],
+    color: string,
+    key: string
+  ) => {
+    const [sx, sy] = project(p1, matrix, r);
+    const [ex, ey] = project(p2, matrix, r);
+    // Average depth of the two endpoints
+    const d1 = matrix[6] * p1[0] + matrix[7] * p1[1] + matrix[8] * p1[2];
+    const d2 = matrix[6] * p2[0] + matrix[7] * p2[1] + matrix[8] * p2[2];
+    const avgDepth = (d1 + d2) / 2;
+    const isFront = avgDepth >= 0;
+    const opacity = isFront ? 0.7 : 0.2;
+    const width = isFront ? 1.5 : 0.8;
 
-    return points
-      .map((pt) => {
-        const [px, py] = project(pt, matrix, r);
-        return `${cx + px},${cy + py}`;
-      })
-      .join(' ');
+    return (
+      <line
+        key={key}
+        x1={cx + sx}
+        y1={cy + sy}
+        x2={cx + ex}
+        y2={cy + ey}
+        stroke={color}
+        strokeWidth={width}
+        strokeLinecap="round"
+        opacity={opacity}
+      />
+    );
   };
 
   // Generate axis arrow
@@ -206,64 +203,47 @@ const TrackballWidget: React.FC<TrackballWidgetProps> = ({
     );
   };
 
-  // Generate polyline for a circle with depth-based opacity segments
-  const generateDepthCircle = (
-    axis: 'x' | 'y' | 'z',
-    angle: number,
+  // Cube vertices (half-size = 0.7 to fit nicely within the widget)
+  const s = 0.7;
+  const cubeVerts: [number, number, number][] = [
+    [-s, -s, -s], [s, -s, -s], [s, s, -s], [-s, s, -s], // back face (z=-s)
+    [-s, -s,  s], [s, -s,  s], [s, s,  s], [-s, s,  s], // front face (z=+s)
+  ];
+  const cubeEdges: [number, number, string][] = [
+    [0, 1, 'back-bottom'], [1, 2, 'back-right'], [2, 3, 'back-top'], [3, 0, 'back-left'],
+    [4, 5, 'front-bottom'], [5, 6, 'front-right'], [6, 7, 'front-top'], [7, 4, 'front-left'],
+    [0, 4, 'left-bottom'], [1, 5, 'right-bottom'], [2, 6, 'right-top'], [3, 7, 'left-top'],
+  ];
+
+  // Generate a filled cube face with depth-based styling
+  const generateCubeFace = (
+    vertexIndices: number[],
     color: string,
-    steps: number = 48
+    key: string
   ) => {
-    const points3D: { pt: [number, number, number]; depth: number }[] = [];
-    for (let i = 0; i <= steps; i++) {
-      const t = (i / steps) * Math.PI * 2;
-      let pt: [number, number, number];
-      switch (axis) {
-        case 'x':
-          pt = [Math.cos(t) * Math.cos(angle), Math.sin(t), Math.cos(t) * Math.sin(angle)];
-          break;
-        case 'y':
-          pt = [Math.sin(t) * Math.cos(angle), Math.cos(t), Math.sin(t) * Math.sin(angle)];
-          break;
-        case 'z':
-        default:
-          pt = [Math.cos(t), Math.sin(t), 0];
-          break;
-      }
-      const depth = matrix[6] * pt[0] + matrix[7] * pt[1] + matrix[8] * pt[2];
-      points3D.push({ pt, depth });
-    }
-
-    // Split into front (depth >= 0) and back (depth < 0) segments
-    const segments: { points: string; isFront: boolean }[] = [];
-    let currentPoints: string[] = [];
-    let currentIsFront = points3D[0].depth >= 0;
-
-    for (const { pt, depth } of points3D) {
+    const projected = vertexIndices.map(i => {
+      const pt = cubeVerts[i];
       const [px, py] = project(pt, matrix, r);
-      const isFront = depth >= 0;
+      const depth = matrix[6] * pt[0] + matrix[7] * pt[1] + matrix[8] * pt[2];
+      return { x: cx + px, y: cy + py, depth };
+    });
+    const avgDepth = projected.reduce((sum, p) => sum + p.depth, 0) / projected.length;
+    const isFront = avgDepth >= 0;
+    const fillOpacity = isFront ? 0.15 : 0.04;
+    const strokeOpacity = isFront ? 0.6 : 0.15;
 
-      if (isFront !== currentIsFront && currentPoints.length > 0) {
-        segments.push({ points: currentPoints.join(' '), isFront: currentIsFront });
-        currentPoints = [currentPoints[currentPoints.length - 1]]; // overlap for continuity
-      }
-      currentIsFront = isFront;
-      currentPoints.push(`${cx + px},${cy + py}`);
-    }
-    if (currentPoints.length > 0) {
-      segments.push({ points: currentPoints.join(' '), isFront: currentIsFront });
-    }
-
-    return segments.map((seg, i) => (
-      <polyline
-        key={`${axis}-${angle}-${i}`}
-        points={seg.points}
-        fill="none"
+    return (
+      <polygon
+        key={key}
+        points={projected.map(p => `${p.x},${p.y}`).join(' ')}
+        fill={color}
+        fillOpacity={fillOpacity}
         stroke={color}
-        strokeWidth={seg.isFront ? 1.5 : 0.8}
-        opacity={seg.isFront ? 0.8 : 0.25}
+        strokeWidth={isFront ? 1.5 : 0.6}
+        strokeOpacity={strokeOpacity}
         strokeLinejoin="round"
       />
-    ));
+    );
   };
 
   return (
@@ -282,20 +262,23 @@ const TrackballWidget: React.FC<TrackballWidgetProps> = ({
         cy={cy}
         r={r}
         fill="rgba(0,0,0,0.3)"
-        stroke="rgba(255,255,255,0.2)"
+        stroke="rgba(255,255,255,0.15)"
         strokeWidth={1}
       />
 
-      {/* Grid lines (back half drawn first) */}
-      {/* Equator (z-axis circle) */}
-      {generateDepthCircle('z', 0, 'rgba(255,255,255,0.4)')}
-      {/* Latitude lines */}
-      {generateDepthCircle('x', Math.PI / 4, 'rgba(255,255,255,0.2)')}
-      {generateDepthCircle('x', -Math.PI / 4, 'rgba(255,255,255,0.2)')}
-      {/* Longitude lines */}
-      {generateDepthCircle('y', Math.PI / 4, 'rgba(255,255,255,0.2)')}
-      {generateDepthCircle('y', -Math.PI / 4, 'rgba(255,255,255,0.2)')}
-      {generateDepthCircle('y', 0, 'rgba(255,255,255,0.2)')}
+      {/* Cube faces (back faces first, then front) */}
+      {/* Back face (z=-s) */}
+      {generateCubeFace([0, 1, 2, 3], 'rgba(255,255,255,0.3)', 'face-back')}
+      {/* Left face (x=-s) */}
+      {generateCubeFace([0, 3, 7, 4], 'rgba(255,255,255,0.2)', 'face-left')}
+      {/* Bottom face (y=-s) */}
+      {generateCubeFace([0, 1, 5, 4], 'rgba(255,255,255,0.2)', 'face-bottom')}
+      {/* Right face (x=+s) */}
+      {generateCubeFace([1, 2, 6, 5], 'rgba(255,255,255,0.2)', 'face-right')}
+      {/* Top face (y=+s) */}
+      {generateCubeFace([3, 2, 6, 7], 'rgba(255,255,255,0.2)', 'face-top')}
+      {/* Front face (z=+s) — highlighted as the "正面" */}
+      {generateCubeFace([4, 5, 6, 7], 'rgba(59,130,246,0.8)', 'face-front')}
 
       {/* Axes */}
       {generateAxisLine([1, 0, 0], '#ef4444')}  {/* X - Red */}

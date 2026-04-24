@@ -1,4 +1,4 @@
-import React, { forwardRef, useImperativeHandle, useState, useCallback } from 'react';
+import React, { forwardRef, useImperativeHandle, useState, useCallback, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export interface ResizablePanelProps {
@@ -92,6 +92,15 @@ const ResizablePanel = forwardRef<ResizablePanelRef, ResizablePanelProps>((props
   const collapse = useCallback(() => handleCollapse(true), [handleCollapse]);
   const expand = useCallback(() => handleCollapse(false), [handleCollapse]);
   const toggle = useCallback(() => handleCollapse(!isCollapsed), [handleCollapse, isCollapsed]);
+
+  // 当 PanelGroup 设置折叠状态时，同步通知外部 onCollapse
+  const prevCollapsedRef = useRef(isCollapsed);
+  useEffect(() => {
+    if (isManagedByGroup && prevCollapsedRef.current !== isCollapsed) {
+      prevCollapsedRef.current = isCollapsed;
+      onCollapse?.(isCollapsed);
+    }
+  }, [isManagedByGroup, isCollapsed, onCollapse]);
 
   useImperativeHandle(ref, () => ({
     collapse,

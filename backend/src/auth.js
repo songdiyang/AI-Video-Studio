@@ -3,6 +3,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { queryOne, execute } = require('./dbHelper');
 const { JWT_SECRET, validateAdminAccessRequest } = require('./middleware');
+const { logAdminLogin } = require('./adminLogService');
 
 const router = express.Router();
 
@@ -154,7 +155,7 @@ router.post('/login-requirements', async (req, res) => {
   try {
     const row = await queryOne('SELECT role FROM users WHERE email = ?', [username]);
     return res.json({
-      requiresAdminAccess: row?.role === 'admin'
+      requiresAdminAccess: row?.role === 'admin' || row?.role === 'ops'
     });
   } catch (err) {
     console.error('DB error in login requirements:', err);
@@ -197,13 +198,13 @@ router.post('/login', async (req, res) => {
   try {
     const row = await queryOne('SELECT id, password_hash, role, is_active FROM users WHERE email = ?', [username]);
 
-    // 检查账号是否被禁用（管理员豁免）
-    if (row && row.is_active === 0 && row.role !== 'admin') {
+    // 检查账号是否被禁用（管理员和运维豁免）
+    if (row && row.is_active === 0 && row.role !== 'admin' && row.role !== 'ops') {
       return res.status(403).json({ message: '账号已被禁用，请联系管理员' });
     }
 
-    // 非管理员用户检查登录开关
-    if (row && row.role !== 'admin') {
+    // 非管理员/运维用户检查登录开关
+    if (row && row.role !== 'admin' && row.role !== 'ops') {
       try {
         const loginConfig = await queryOne(
           "SELECT config_value FROM system_configs WHERE config_key = 'enable_login' AND is_active = 1"
@@ -228,27 +229,24 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ message: '用户名或密码错误' });
     }
 
-    if (row.role === 'admin') {
-      const adminAccessCheck = validateAdminAccessRequest(req);
-      if (!adminAccessCheck.ok) {
-        const status = adminAccessCheck.reason === 'unconfigured' ? 503 : 401;
-        const message = adminAccessCheck.reason === 'unconfigured'
-          ? adminAccessCheck.message
-          : '用户名、密码或后台访问密钥错误';
-
-        return res.status(status).json({
-          message,
-          reason: adminAccessCheck.reason,
-          requiresAdminAccess: true
-        });
-      }
-    }
-
     const token = jwt.sign({ userId: row.id, email: username, role: row.role }, JWT_SECRET, { expiresIn: '7d' });
 
-    // 记录登录IP
+    // 记录登录IP及地理位置
     const loginIp = req.ip || req.connection?.remoteAddress || '';
     execute('UPDATE users SET last_login_ip = ?, last_active_at = NOW() WHERE id = ?', [loginIp, row.id]).catch(() => {});
+
+    // 异步解析 IP 地理位置
+    const { getLocationByIp } = require('./utils/ipLocation');
+    getLocationByIp(loginIp).then(location => {
+      if (location) {
+        execute('UPDATE users SET last_login_location = ? WHERE id = ?', [location, row.id]).catch(() => {});
+      }
+    }).catch(() => {});
+
+    // 如果是管理员或运维登录，记录操作日志
+    if (row.role === 'admin' || row.role === 'ops') {
+      logAdminLogin(row.id, loginIp, req.headers?.['user-agent'] || '').catch(() => {});
+    }
 
     return res.json({
       token,
@@ -257,6 +255,176 @@ router.post('/login', async (req, res) => {
   } catch (err) {
     console.error('DB error in login:', err);
     return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// 管理员/运维登录（强制校验后台访问密钥）
+router.post('/admin-login', async (req, res) => {
+  const { email, password, adminAccessKey } = req.body;
+
+  if (!email || !password) {
+    return res.status(400).json({ message: 'Username and password are required' });
+  }
+
+  let username = String(email).trim();
+
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(username)) {
+    return res.status(400).json({ message: '请输入有效的邮箱地址', reason: 'invalid_email' });
+  }
+
+  try {
+    const row = await queryOne('SELECT id, password_hash, role, is_active FROM users WHERE email = ?', [username]);
+
+    if (!row) {
+      return res.status(401).json({ message: '用户名或密码错误' });
+    }
+
+    // 仅允许 admin 和 ops 角色通过此接口登录
+    if (row.role !== 'admin' && row.role !== 'ops') {
+      return res.status(403).json({ message: '权限不足，仅管理员或运维可访问' });
+    }
+
+    const isValid = bcrypt.compareSync(password, row.password_hash);
+    if (!isValid) {
+      return res.status(401).json({ message: '用户名或密码错误' });
+    }
+
+    // 强制校验后台访问密钥
+    const adminAccessCheck = validateAdminAccessRequest(req);
+    if (!adminAccessCheck.ok) {
+      const status = adminAccessCheck.reason === 'unconfigured' ? 503 : 401;
+      const message = adminAccessCheck.reason === 'unconfigured'
+        ? adminAccessCheck.message
+        : '用户名、密码或后台访问密钥错误';
+
+      return res.status(status).json({
+        message,
+        reason: adminAccessCheck.reason,
+        requiresAdminAccess: true
+      });
+    }
+
+    const token = jwt.sign({ userId: row.id, email: username, role: row.role }, JWT_SECRET, { expiresIn: '7d' });
+
+    const loginIp = req.ip || req.connection?.remoteAddress || '';
+    execute('UPDATE users SET last_login_ip = ?, last_active_at = NOW() WHERE id = ?', [loginIp, row.id]).catch(() => {});
+
+    // 异步解析 IP 地理位置
+    const { getLocationByIp } = require('./utils/ipLocation');
+    getLocationByIp(loginIp).then(location => {
+      if (location) {
+        execute('UPDATE users SET last_login_location = ? WHERE id = ?', [location, row.id]).catch(() => {});
+      }
+    }).catch(() => {});
+
+    logAdminLogin(row.id, loginIp, req.headers?.['user-agent'] || '').catch(() => {});
+
+    return res.json({
+      token,
+      user: { id: row.id, email: username, role: row.role }
+    });
+  } catch (err) {
+    console.error('DB error in admin login:', err);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// 修改密码（需验证旧密码）
+router.put('/change-password', async (req, res) => {
+  const authHeader = req.headers['authorization'];
+  if (!authHeader) {
+    return res.status(401).json({ message: '未登录' });
+  }
+
+  const [scheme, token] = authHeader.split(' ');
+  if (scheme !== 'Bearer' || !token) {
+    return res.status(401).json({ message: '无效的认证信息' });
+  }
+
+  let userId;
+  try {
+    const payload = jwt.verify(token, JWT_SECRET);
+    userId = payload.userId;
+  } catch (e) {
+    return res.status(401).json({ message: '登录已过期，请重新登录' });
+  }
+
+  const { oldPassword, newPassword } = req.body;
+  if (!oldPassword || !newPassword) {
+    return res.status(400).json({ message: '请输入旧密码和新密码' });
+  }
+
+  const validation = validatePassword(newPassword);
+  if (!validation.valid) {
+    return res.status(400).json({ message: validation.message });
+  }
+
+  try {
+    const row = await queryOne('SELECT id, password_hash FROM users WHERE id = ?', [userId]);
+    if (!row) {
+      return res.status(404).json({ message: '用户不存在' });
+    }
+
+    const isValid = bcrypt.compareSync(oldPassword, row.password_hash);
+    if (!isValid) {
+      return res.status(400).json({ message: '旧密码不正确' });
+    }
+
+    const newHash = bcrypt.hashSync(newPassword, 10);
+    await execute('UPDATE users SET password_hash = ? WHERE id = ?', [newHash, userId]);
+    return res.json({ message: '密码修改成功' });
+  } catch (err) {
+    console.error('Change password error:', err);
+    return res.status(500).json({ message: '密码修改失败，请稍后重试' });
+  }
+});
+
+// 获取密码提示
+router.get('/password-hint', async (req, res) => {
+  const authHeader = req.headers['authorization'];
+  if (!authHeader) {
+    return res.status(401).json({ message: '未登录' });
+  }
+
+  const [scheme, token] = authHeader.split(' ');
+  if (scheme !== 'Bearer' || !token) {
+    return res.status(401).json({ message: '无效的认证信息' });
+  }
+
+  try {
+    const payload = jwt.verify(token, JWT_SECRET);
+    const row = await queryOne('SELECT password_hint FROM users WHERE id = ?', [payload.userId]);
+    return res.json({ hint: row?.password_hint || '' });
+  } catch (e) {
+    return res.status(401).json({ message: '登录已过期，请重新登录' });
+  }
+});
+
+// 设置密码提示
+router.put('/password-hint', async (req, res) => {
+  const authHeader = req.headers['authorization'];
+  if (!authHeader) {
+    return res.status(401).json({ message: '未登录' });
+  }
+
+  const [scheme, token] = authHeader.split(' ');
+  if (scheme !== 'Bearer' || !token) {
+    return res.status(401).json({ message: '无效的认证信息' });
+  }
+
+  try {
+    const payload = jwt.verify(token, JWT_SECRET);
+    const { hint } = req.body;
+
+    if (hint !== undefined && hint !== null && hint.length > 255) {
+      return res.status(400).json({ message: '密码提示不能超过 255 个字符' });
+    }
+
+    await execute('UPDATE users SET password_hint = ? WHERE id = ?', [hint || null, payload.userId]);
+    return res.json({ message: '密码提示已更新' });
+  } catch (e) {
+    return res.status(401).json({ message: '登录已过期，请重新登录' });
   }
 });
 

@@ -237,6 +237,18 @@ module.exports = {
     description: '风格一致性描述（由关联场景分析步骤输出）',
     category: 'scene'
   },
+  customPromptA: {
+    from: 'customPromptA',
+    defaultValue: null,
+    description: '用户自定义 A 面（正打）场景图像提示词，传入则跳过 AI 生成',
+    category: 'scene'
+  },
+  customPromptB: {
+    from: 'customPromptB',
+    defaultValue: null,
+    description: '用户自定义 B 面（反打）场景图像提示词，传入则跳过 AI 生成',
+    category: 'scene'
+  },
 
   // ================================================================
   //  角色相关
@@ -323,6 +335,24 @@ module.exports = {
     from: 'backViewUrl',
     defaultValue: null,
     description: '角色背面视图URL（用于概念分解图参考）',
+    category: 'character'
+  },
+  customPromptFront: {
+    from: 'customPromptFront',
+    defaultValue: null,
+    description: '用户自定义正面视图提示词，传入则跳过 AI 生成',
+    category: 'character'
+  },
+  customPromptSide: {
+    from: 'customPromptSide',
+    defaultValue: null,
+    description: '用户自定义侧面视图提示词，传入则跳过 AI 生成',
+    category: 'character'
+  },
+  customPromptBack: {
+    from: 'customPromptBack',
+    defaultValue: null,
+    description: '用户自定义背面视图提示词，传入则跳过 AI 生成',
     category: 'character'
   },
 
@@ -556,6 +586,16 @@ module.exports = {
     defaultValue: [],
     description: '颜色指令数组（每个元素含color/label/colorName）',
     category: 'magic_paint'
+  },
+
+  // ================================================================
+  //  高清修复（HD Repair）
+  // ================================================================
+  targetFrame: {
+    from: 'targetFrame',
+    defaultValue: 'first',
+    description: '修复目标帧（first=首帧，last=尾帧）',
+    category: 'hd_repair'
   },
 
   // ================================================================

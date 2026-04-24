@@ -18,6 +18,7 @@ interface SceneListProps {
   onMoveScene: (id: number, direction: 'up' | 'down') => void;
   onDeleteScene: (id: number) => void;
   onAddScene: () => void;
+  onInsertScene?: (index: number) => void;
   onUpdateDescription: (id: number, description: string) => Promise<boolean>;
   onGenerateImage: (id: number, prompt: string, regenerateTarget?: 'first' | 'last' | 'both', forceRegenerate?: boolean) => Promise<{ success: boolean; error?: string }>;
   onGenerateVideo: (id: number) => Promise<{ success: boolean; error?: string }>;
@@ -88,6 +89,7 @@ const SceneList: React.FC<SceneListProps> = ({
   onMoveScene,
   onDeleteScene,
   onAddScene,
+  onInsertScene,
   onUpdateDescription,
   onGenerateImage,
   onGenerateVideo,
@@ -98,6 +100,8 @@ const SceneList: React.FC<SceneListProps> = ({
 }) => {
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const [expandedInsertIndex, setExpandedInsertIndex] = useState<number | null>(null);
+  const insertTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // 标记首次加载完成，用于控制 layout 动画
   const [hasLoaded, setHasLoaded] = useState(false);
 
@@ -211,7 +215,7 @@ const SceneList: React.FC<SceneListProps> = ({
       {/* 分镜卡片列表 - 紧凑间距 */}
       <div 
         ref={scrollContainerRef}
-        className="flex-1 overflow-y-auto p-2 space-y-1.5 scroll-fade-top scroll-fade-bottom"
+        className="flex-1 overflow-y-auto p-2 space-y-1 scroll-fade-top scroll-fade-bottom"
       >
         {isLoading ? (
           <SceneListSkeleton />
@@ -220,52 +224,83 @@ const SceneList: React.FC<SceneListProps> = ({
             variants={containerVariants}
             initial="hidden"
             animate="show"
-            className="space-y-1.5"
+            className="space-y-0"
           >
             {scenes.map((scene, index) => (
-              <motion.div
-                key={scene.id}
-                data-scene-id={scene.id}
-                variants={itemVariants}
-                layout={hasLoaded}
-                draggable
-                onDragStart={(e) => handleDragStart(e as any, index)}
-                onDragOver={(e) => handleDragOver(e as any, index)}
-                onDragLeave={handleDragLeave}
-                onDrop={(e) => handleDrop(e as any, index)}
-                onDragEnd={handleDragEnd}
-                className={`${
-                  draggedIndex === index ? 'opacity-50 scale-95' : ''
-                } ${
-                  dragOverIndex === index ? 'transform translate-y-1' : ''
-                }`}
-                style={{
-                  // 性能优化：让浏览器跳过离屏元素的渲染
-                  contentVisibility: 'auto',
-                  containIntrinsicSize: '0 72px', // 紧凑卡片高度
-                }}
-              >
-                <SceneCard
-                  scene={scene}
-                  index={index}
-                  isSelected={selectedScene === scene.id}
-                  isFirst={index === 0}
-                  isLast={index === scenes.length - 1}
-                  projectId={projectId}
-                  scriptId={scriptId}
-                  onSelect={onSelectScene}
-                  onMoveUp={(id) => onMoveScene(id, 'up')}
-                  onMoveDown={(id) => onMoveScene(id, 'down')}
-                  onDelete={onDeleteScene}
-                  onUpdateDescription={onUpdateDescription}
-                  onGenerateImage={onGenerateImage}
-                  onGenerateVideo={onGenerateVideo}
-                  onUpdateScene={onUpdateScene}
-                  imageTask={tasks[`img_${scene.id}`]}
-                  videoTask={tasks[`vid_${scene.id}`]}
-                  validationIssues={sceneValidationMap?.get(scene.id)}
-                />
-              </motion.div>
+              <React.Fragment key={scene.id}>
+                <motion.div
+                  data-scene-id={scene.id}
+                  variants={itemVariants}
+                  layout={hasLoaded}
+                  draggable
+                  onDragStart={(e) => handleDragStart(e as any, index)}
+                  onDragOver={(e) => handleDragOver(e as any, index)}
+                  onDragLeave={handleDragLeave}
+                  onDrop={(e) => handleDrop(e as any, index)}
+                  onDragEnd={handleDragEnd}
+                  className={`${
+                    draggedIndex === index ? 'opacity-50 scale-95' : ''
+                  } ${
+                    dragOverIndex === index ? 'transform translate-y-1' : ''
+                  }`}
+                  style={{
+                    // 性能优化：让浏览器跳过离屏元素的渲染
+                    contentVisibility: 'auto',
+                    containIntrinsicSize: '0 72px', // 紧凑卡片高度
+                  }}
+                >
+                  <SceneCard
+                    scene={scene}
+                    index={index}
+                    isSelected={selectedScene === scene.id}
+                    isFirst={index === 0}
+                    isLast={index === scenes.length - 1}
+                    projectId={projectId}
+                    scriptId={scriptId}
+                    onSelect={onSelectScene}
+                    onMoveUp={(id) => onMoveScene(id, 'up')}
+                    onMoveDown={(id) => onMoveScene(id, 'down')}
+                    onDelete={onDeleteScene}
+                    onUpdateDescription={onUpdateDescription}
+                    onGenerateImage={onGenerateImage}
+                    onGenerateVideo={onGenerateVideo}
+                    onUpdateScene={onUpdateScene}
+                    imageTask={tasks[`img_${scene.id}`]}
+                    videoTask={tasks[`vid_${scene.id}`]}
+                    validationIssues={sceneValidationMap?.get(scene.id)}
+                  />
+                </motion.div>
+                {/* 分镜间插入区域 - 停疙0.3s展开动画 */}
+                {onInsertScene && index < scenes.length - 1 && (
+                  <div
+                    className={`scene-insert-zone relative flex items-center justify-center cursor-pointer${
+                      expandedInsertIndex === index ? ' expanded' : ''
+                    }`}
+                    onClick={() => onInsertScene(index + 1)}
+                    onMouseEnter={() => {
+                      if (insertTimerRef.current) clearTimeout(insertTimerRef.current);
+                      insertTimerRef.current = setTimeout(() => {
+                        setExpandedInsertIndex(index);
+                      }, 300);
+                    }}
+                    onMouseLeave={() => {
+                      if (insertTimerRef.current) clearTimeout(insertTimerRef.current);
+                      insertTimerRef.current = null;
+                      setExpandedInsertIndex(null);
+                    }}
+                    title="插入新分镜"
+                  >
+                    <div className={`absolute inset-x-0 flex items-center justify-center transition-opacity duration-150 z-10 ${
+                      expandedInsertIndex === index ? 'opacity-100' : 'opacity-0 pointer-events-none'
+                    }`}>
+                      <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-[var(--bg-primary)] border border-[var(--accent)]/40 shadow-md text-[10px] text-[var(--accent)] whitespace-nowrap">
+                        <Plus className="w-3 h-3" />
+                        插入分镜
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </React.Fragment>
             ))}
           </motion.div>
         )}

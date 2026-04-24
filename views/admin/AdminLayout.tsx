@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { ChevronDown, ChevronRight, LogOut, Settings, Users, Cpu, LayoutDashboard, Server, BarChart3, Gauge, CreditCard, Globe, MessageSquare, AlertTriangle, Megaphone, Calculator, Sun, Moon, Contrast } from 'lucide-react';
-import { getAuthUser, logout } from '../../services/auth';
+import { ChevronDown, ChevronRight, LogOut, Settings, Users, Cpu, LayoutDashboard, Server, BarChart3, Gauge, CreditCard, Globe, MessageSquare, AlertTriangle, Megaphone, Calculator, Sun, Moon, Contrast, ClipboardList } from 'lucide-react';
+import { getAuthUser, logout, getUserRole } from '../../services/auth';
+import { getAdminEmployeeId } from '../../services/admin';
 
 type AdminThemeType = 'dark' | 'light' | 'high-contrast';
 const ADMIN_THEME_KEY = 'nanostory-admin-theme';
@@ -20,6 +21,14 @@ const AdminLayout: React.FC = () => {
   const [expandedMenus, setExpandedMenus] = useState<Set<string>>(new Set(['system']));
   const authUser = getAuthUser();
   const userEmail = authUser?.email || 'Admin';
+  const currentRole = getUserRole();
+  const isOps = currentRole === 'ops';
+
+  // 运维角色可访问的系统管理子菜单 ID
+  const OPS_ALLOWED_SYSTEM_ITEMS = new Set([
+    'model-stats', 'users', 'subscriptions', 'feedback',
+    'error-monitor', 'announcements', 'admin-logs'
+  ]);
 
   const [adminTheme, setAdminTheme] = useState<AdminThemeType>(() => {
     try {
@@ -28,6 +37,13 @@ const AdminLayout: React.FC = () => {
     } catch {}
     return 'dark';
   });
+  const [employeeId, setEmployeeId] = useState<string>('');
+
+  useEffect(() => {
+    getAdminEmployeeId().then(data => {
+      setEmployeeId(data.employeeId);
+    }).catch(() => {});
+  }, []);
 
   // 管理后台主题隔离：根据管理员选择的主题设置 <html>，退出时还原用户主题
   useEffect(() => {
@@ -143,6 +159,12 @@ const AdminLayout: React.FC = () => {
           label: '公告管理',
           icon: <Megaphone className="w-4 h-4" />,
           path: '/admin/announcements'
+        },
+        {
+          id: 'admin-logs',
+          label: '操作日志',
+          icon: <ClipboardList className="w-4 h-4" />,
+          path: '/admin/logs'
         }
       ]
     }
@@ -258,7 +280,17 @@ const AdminLayout: React.FC = () => {
         </div>
 
         <nav className="flex-1 px-4 overflow-y-auto">
-          {menuItems.map(item => renderMenuItem(item))}
+          {menuItems.map(item => {
+            // 运维角色：过滤系统管理子菜单中不可见的项
+            if (isOps && item.children) {
+              const filteredItem = {
+                ...item,
+                children: item.children.filter(child => OPS_ALLOWED_SYSTEM_ITEMS.has(child.id))
+              };
+              return renderMenuItem(filteredItem);
+            }
+            return renderMenuItem(item);
+          })}
         </nav>
 
         <div className="p-4">
@@ -296,7 +328,14 @@ const AdminLayout: React.FC = () => {
             </div>
             <div className="flex-1 min-w-0">
               <p className={`text-sm font-medium truncate ${isLight ? 'text-slate-800' : 'text-white'}`}>{userEmail}</p>
-              <p className={`text-xs ${isLight ? 'text-slate-400' : 'text-white/70'}`}>管理员</p>
+              <div className={`text-xs flex items-center gap-1 ${isLight ? 'text-slate-400' : 'text-white/70'}`}>
+                <span>{isOps ? '运维' : '管理员'}</span>
+                {employeeId && (
+                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono ${isLight ? 'bg-indigo-100 text-indigo-600' : 'bg-white/20 text-white/90'}`}>
+                    {employeeId}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
 

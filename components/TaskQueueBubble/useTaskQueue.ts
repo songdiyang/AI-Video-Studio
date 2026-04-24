@@ -17,6 +17,10 @@ const REFRESH_ON_COMPLETE_TYPES = [
   'character_views_generation',  // 角色三视图生成
   'batch_prompt_optimization',   // 批量提示词优化
   'single_prompt_optimization',  // 单条提示词优化
+  'batch_image_prompt_optimization',   // 批量图片提示词优化
+  'single_image_prompt_optimization',  // 单条图片提示词优化
+  'batch_video_prompt_optimization',   // 批量视频提示词优化
+  'single_video_prompt_optimization',  // 单条视频提示词优化
 ];
 
 export interface UseTaskQueueOptions {

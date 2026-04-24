@@ -1,23 +1,26 @@
 import React, { useEffect, useState } from 'react';
 import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure } from '@heroui/react';
-import { Plus, Search, Edit, Trash2, User, Shield, ShieldOff, Globe, ArrowUpCircle, ArrowDownCircle, Send } from 'lucide-react';
-import { getAdminAuthHeaders } from '../../services/auth';
+import { Plus, Search, Edit, Trash2, User, Shield, ShieldOff, Globe, MapPin, ArrowUpCircle, ArrowDownCircle, Send } from 'lucide-react';
+import { getAdminAuthHeaders, getUserRole } from '../../services/auth';
 import { useConfirm } from '../../contexts/ConfirmContext';
 
 interface UserData {
   id: number;
   email: string;
-  role: 'user' | 'admin';
+  role: 'user' | 'admin' | 'ops';
   employee_id?: string;
   balance: number;
   is_active: number;
   last_login_ip: string | null;
+  last_login_location: string | null;
   last_active_at: string | null;
   created_at: string;
   updated_at: string;
 }
 
 const UserManagement: React.FC = () => {
+  const currentRole = getUserRole();
+  const isOps = currentRole === 'ops';
   const [users, setUsers] = useState<UserData[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -38,7 +41,7 @@ const UserManagement: React.FC = () => {
   const [formData, setFormData] = useState({
     email: '',
     password: '',
-    role: 'user' as 'user' | 'admin',
+    role: 'user' as 'user' | 'admin' | 'ops',
   });
 
   useEffect(() => {
@@ -277,15 +280,16 @@ const UserManagement: React.FC = () => {
                 <th className="text-left text-xs font-semibold text-gray-600 uppercase tracking-wider px-4 py-3">角色</th>
                 <th className="text-left text-xs font-semibold text-gray-600 uppercase tracking-wider px-4 py-3">积分</th>
                 <th className="text-left text-xs font-semibold text-gray-600 uppercase tracking-wider px-4 py-3">登录IP</th>
+                <th className="text-left text-xs font-semibold text-gray-600 uppercase tracking-wider px-4 py-3">登录地点</th>
                 <th className="text-left text-xs font-semibold text-gray-600 uppercase tracking-wider px-4 py-3">创建时间</th>
                 <th className="text-left text-xs font-semibold text-gray-600 uppercase tracking-wider px-4 py-3">操作</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={8} className="text-center py-12 text-gray-500 text-sm">加载中...</td></tr>
+                <tr><td colSpan={9} className="text-center py-12 text-gray-500 text-sm">加载中...</td></tr>
               ) : filteredUsers.length === 0 ? (
-                <tr><td colSpan={8} className="text-center py-12 text-gray-500 text-sm">暂无用户</td></tr>
+                <tr><td colSpan={9} className="text-center py-12 text-gray-500 text-sm">暂无用户</td></tr>
               ) : filteredUsers.map((user) => {
                 const status = getOnlineStatus(user.last_active_at);
                 const isDisabled = !user.is_active;
@@ -320,9 +324,11 @@ const UserManagement: React.FC = () => {
                       <span className={`inline-flex items-center px-2 py-1 text-xs font-medium rounded-md ${
                         user.role === 'admin'
                           ? 'bg-purple-50 text-purple-700'
+                          : user.role === 'ops'
+                          ? 'bg-cyan-50 text-cyan-700'
                           : 'bg-gray-100 text-gray-600'
                       }`}>
-                        {user.role === 'admin' ? '管理员' : '普通用户'}
+                        {user.role === 'admin' ? '管理员' : user.role === 'ops' ? '运维' : '普通用户'}
                       </span>
                     </td>
                     <td className="px-4 py-3.5">
@@ -345,51 +351,71 @@ const UserManagement: React.FC = () => {
                         <span className="text-xs text-gray-500">-</span>
                       )}
                     </td>
+                    <td className="px-4 py-3.5">
+                      {user.last_login_location ? (
+                        <div className="flex items-center gap-1.5">
+                          <MapPin className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                          <span className="text-xs font-medium text-gray-700">{user.last_login_location}</span>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-gray-400">-</span>
+                      )}
+                    </td>
                     <td className="px-4 py-3.5 text-xs text-gray-600 whitespace-nowrap">
                       {formatDate(user.created_at)}
                     </td>
                     <td className="px-4 py-3.5">
                       <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => openPointsModal(user, 'add')}
-                          className="p-1.5 rounded-md text-emerald-500 hover:bg-emerald-50 hover:text-emerald-600 transition-colors"
-                          title="增加积分"
-                        >
-                          <ArrowUpCircle className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => openPointsModal(user, 'subtract')}
-                          className="p-1.5 rounded-md text-red-400 hover:bg-red-50 hover:text-red-500 transition-colors"
-                          title="减少积分"
-                        >
-                          <ArrowDownCircle className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleToggleActive(user)}
-                          disabled={togglingId === user.id}
-                          className={`p-1.5 rounded-md transition-colors ${
-                            user.is_active
-                              ? 'text-amber-500 hover:bg-amber-50 hover:text-amber-600'
-                              : 'text-emerald-500 hover:bg-emerald-50 hover:text-emerald-600'
-                          }`}
-                          title={user.is_active ? '禁用账号' : '启用账号'}
-                        >
-                          {user.is_active ? <ShieldOff className="w-4 h-4" /> : <Shield className="w-4 h-4" />}
-                        </button>
-                        <button
-                          onClick={() => handleEdit(user)}
-                          className="p-1.5 rounded-md text-blue-500 hover:bg-blue-50 hover:text-blue-600 transition-colors"
-                          title="编辑"
-                        >
-                          <Edit className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(user.id)}
-                          className="p-1.5 rounded-md text-red-400 hover:bg-red-50 hover:text-red-500 transition-colors"
-                          title="删除"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        {/* 运维不能操作管理员和运维用户 */}
+                        {isOps && (user.role === 'admin' || user.role === 'ops') ? (
+                          <span className="text-xs text-gray-400">无权限</span>
+                        ) : (
+                          <>
+                            <button
+                              onClick={() => openPointsModal(user, 'add')}
+                              className="p-1.5 rounded-md text-emerald-500 hover:bg-emerald-50 hover:text-emerald-600 transition-colors"
+                              title="增加积分"
+                            >
+                              <ArrowUpCircle className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => openPointsModal(user, 'subtract')}
+                              className="p-1.5 rounded-md text-red-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+                              title="减少积分"
+                            >
+                              <ArrowDownCircle className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleToggleActive(user)}
+                              disabled={togglingId === user.id}
+                              className={`p-1.5 rounded-md transition-colors ${
+                                user.is_active
+                                  ? 'text-amber-500 hover:bg-amber-50 hover:text-amber-600'
+                                  : 'text-emerald-500 hover:bg-emerald-50 hover:text-emerald-600'
+                              }`}
+                              title={user.is_active ? '禁用账号' : '启用账号'}
+                            >
+                              {user.is_active ? <ShieldOff className="w-4 h-4" /> : <Shield className="w-4 h-4" />}
+                            </button>
+                            {/* 运维不能编辑用户（只能增删普通用户） */}
+                            {!isOps && (
+                              <button
+                                onClick={() => handleEdit(user)}
+                                className="p-1.5 rounded-md text-blue-500 hover:bg-blue-50 hover:text-blue-600 transition-colors"
+                                title="编辑"
+                              >
+                                <Edit className="w-4 h-4" />
+                              </button>
+                            )}
+                            <button
+                              onClick={() => handleDelete(user.id)}
+                              className="p-1.5 rounded-md text-red-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+                              title="删除"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -456,17 +482,32 @@ const UserManagement: React.FC = () => {
                   <p className="font-semibold text-sm">普通用户</p>
                   <p className="text-xs mt-0.5 text-current/80">标准权限</p>
                 </button>
-                <button
-                  onClick={() => setFormData({ ...formData, role: 'admin' })}
-                  className={`flex-1 px-4 py-3 rounded-lg border-2 transition-all text-left ${
-                    formData.role === 'admin'
-                      ? 'border-purple-500 bg-purple-50 text-purple-700'
-                      : 'border-gray-200 bg-gray-50 text-gray-600 hover:border-gray-300'
-                  }`}
-                >
-                  <p className="font-semibold text-sm">管理员</p>
-                  <p className="text-xs mt-0.5 text-current/80">完整权限</p>
-                </button>
+                {!isOps && (
+                  <>
+                    <button
+                      onClick={() => setFormData({ ...formData, role: 'ops' })}
+                      className={`flex-1 px-4 py-3 rounded-lg border-2 transition-all text-left ${
+                        formData.role === 'ops'
+                          ? 'border-cyan-500 bg-cyan-50 text-cyan-700'
+                          : 'border-gray-200 bg-gray-50 text-gray-600 hover:border-gray-300'
+                      }`}
+                    >
+                      <p className="font-semibold text-sm">运维</p>
+                      <p className="text-xs mt-0.5 text-current/80">运维权限</p>
+                    </button>
+                    <button
+                      onClick={() => setFormData({ ...formData, role: 'admin' })}
+                      className={`flex-1 px-4 py-3 rounded-lg border-2 transition-all text-left ${
+                        formData.role === 'admin'
+                          ? 'border-purple-500 bg-purple-50 text-purple-700'
+                          : 'border-gray-200 bg-gray-50 text-gray-600 hover:border-gray-300'
+                      }`}
+                    >
+                      <p className="font-semibold text-sm">管理员</p>
+                      <p className="text-xs mt-0.5 text-current/80">完整权限</p>
+                    </button>
+                  </>
+                )}
               </div>
             </div>
 

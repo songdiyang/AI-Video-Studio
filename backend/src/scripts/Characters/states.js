@@ -807,7 +807,7 @@ module.exports = (router) => {
   router.post('/:id/states/:stateId/generate-views', authMiddleware, async (req, res) => {
     const userId = req.user.id;
     const { id, stateId } = req.params;
-    const { imageModel, textModel, regenerateOnly } = req.body;
+    const { imageModel, textModel, regenerateOnly, customPromptFront, customPromptSide, customPromptBack } = req.body;
 
     try {
       // 前置校验：状态必须存在
@@ -833,7 +833,10 @@ module.exports = (router) => {
           stateId: Number(stateId),
           imageModel,
           textModel,
-          regenerateOnly
+          regenerateOnly,
+          customPromptFront,
+          customPromptSide,
+          customPromptBack
         },
         actor: { userId }
       });

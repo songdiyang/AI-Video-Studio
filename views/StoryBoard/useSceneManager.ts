@@ -42,7 +42,8 @@ export interface DialogueLine {
 export interface StoryboardScene {
   id: number;
   order: number;
-  description: string;
+  description: string;           // 图片提示词（对应 prompt_template）
+  baseDescription?: string;      // 原始分镜描述（对应 description）
   dialogue: string;
   dialogues: DialogueLine[];
   voiceover: string;
@@ -74,6 +75,7 @@ export interface StoryboardScene {
   shotLanguage?: ShotLanguage;  // 专业镜头参数
   isLocked?: boolean;           // 是否锁定
   negativePrompt?: string;      // 反向提示词
+  videoPrompt?: string;          // 视频生成专用提示词
 }
 
 export const useSceneManager = (scriptId: number | null, projectId?: number | null) => {
@@ -182,6 +184,7 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
               id: item.id || Date.now() + index,
               order: item.index || index + 1,
               description: item.prompt_template || '',
+              baseDescription: item.description || '',
               dialogue: vars.dialogue || '',
               dialogues: Array.isArray(vars.dialogues) ? vars.dialogues : [],
               voiceover: vars.voiceover || '',
@@ -209,7 +212,8 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
               sketchType: item.sketch_type || undefined,
               sketchData: item.sketch_data || undefined,
               controlStrength: item.control_strength ?? undefined,
-              negativePrompt: item.negative_prompt || undefined
+              negativePrompt: item.negative_prompt || undefined,
+              videoPrompt: item.video_prompt || undefined
             };
           });
 
@@ -241,7 +245,10 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
   };
 
   const addScene = async () => {
-    const idx = scenes.length;
+    await insertScene(scenes.length);
+  };
+
+  const insertScene = async (atIndex: number) => {
     const variables_json = {
       dialogue: '',
       duration: 5,
@@ -256,8 +263,9 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
     const tempId = Date.now();
     const newScene: StoryboardScene = {
       id: tempId,
-      order: idx + 1,
+      order: atIndex + 1,
       description: '',
+      baseDescription: '',
       dialogue: '',
       dialogues: [],
       voiceover: '',
@@ -266,24 +274,59 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
       props: [],
       location: ''
     };
-    setScenes(prev => [...prev, newScene]);
+
+    // 在指定位置插入
+    setScenes(prev => {
+      const newScenes = [...prev];
+      newScenes.splice(atIndex, 0, newScene);
+      // 重新计算 order
+      return newScenes.map((s, i) => ({ ...s, order: i + 1 }));
+    });
 
     if (scriptId) {
       try {
         const token = getAuthToken();
+        // 1. 创建新分镜
         const res = await fetch('/api/storyboards/add', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             ...(token ? { Authorization: `Bearer ${token}` } : {})
           },
-          body: JSON.stringify({ scriptId, idx, prompt_template: '', variables_json })
+          body: JSON.stringify({ scriptId, idx: atIndex, description: '', variables_json })
         });
         if (res.ok) {
           const data = await res.json();
           // 用真实 DB ID 替换临时 ID
-          setScenes(prev => prev.map(s => s.id === tempId ? { ...s, id: data.id } : s));
+          setScenes(prev => {
+            const newScenes = prev.map(s => s.id === tempId ? { ...s, id: data.id } : s);
+            // 重新排序所有分镜
+            return newScenes.map((s, i) => ({ ...s, order: i + 1 }));
+          });
           console.log('[useSceneManager] 分镜已保存到数据库, id:', data.id);
+
+          // 2. 重新排序所有分镜的 idx
+          setScenes(prev => {
+            const newScenes = prev.map(s => s.id === tempId ? { ...s, id: data.id } : s);
+            const sorted = newScenes.sort((a, b) => a.order - b.order);
+            const reorderBody = sorted.map((s, i) => ({ id: s.id, idx: i }));
+
+            // 异步调用 reorder API
+            fetch('/api/storyboards/reorder', {
+              method: 'PATCH',
+              headers: {
+                'Content-Type': 'application/json',
+                ...(token ? { Authorization: `Bearer ${token}` } : {})
+              },
+              body: JSON.stringify({ scriptId, order: reorderBody })
+            }).then(() => {
+              console.log('[useSceneManager] 分镜顺序已重新排序');
+            }).catch(err => {
+              console.error('[useSceneManager] 重新排序失败:', err);
+            });
+
+            return sorted.map((s, i) => ({ ...s, order: i + 1 }));
+          });
         } else {
           console.error('[useSceneManager] 保存分镜失败:', await res.text());
         }
@@ -345,6 +388,7 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
     }
   };
 
+  // 更新图片提示词（对应 prompt_template）
   const updateDescription = async (id: number, description: string) => {
     const previousScene = scenes.find((scene) => scene.id === id);
     if (!previousScene) {
@@ -366,7 +410,7 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        throw new Error(data.message || '保存镜头描述失败');
+        throw new Error(data.message || '保存图片提示词失败');
       }
 
       return true;
@@ -374,8 +418,111 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
       setScenes(prevScenes => prevScenes.map(s =>
         s.id === id ? { ...s, description: previousScene.description } : s
       ));
-      console.error('保存镜头描述失败:', error);
-      showToast('保存镜头描述失败，请稍后重试', 'error');
+      console.error('保存图片提示词失败:', error);
+      showToast('保存图片提示词失败，请稍后重试', 'error');
+      return false;
+    }
+  };
+
+  // 更新原始分镜描述（对应 description 字段）
+  const updateBaseDescription = async (id: number, baseDescription: string) => {
+    const previousScene = scenes.find((scene) => scene.id === id);
+    if (!previousScene) {
+      return false;
+    }
+
+    setScenes(prevScenes => prevScenes.map(s => s.id === id ? { ...s, baseDescription } : s));
+
+    try {
+      const token = getAuthToken();
+      const res = await fetch(`/api/storyboards/${id}/content`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ description: baseDescription })
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message || '保存分镜描述失败');
+      }
+
+      return true;
+    } catch (error: any) {
+      setScenes(prevScenes => prevScenes.map(s =>
+        s.id === id ? { ...s, baseDescription: previousScene.baseDescription } : s
+      ));
+      console.error('保存分镜描述失败:', error);
+      showToast('保存分镜描述失败，请稍后重试', 'error');
+      return false;
+    }
+  };
+
+  const updateVideoPrompt = async (id: number, videoPrompt: string) => {
+    const previousScene = scenes.find((scene) => scene.id === id);
+    if (!previousScene) {
+      return false;
+    }
+
+    setScenes(prevScenes => prevScenes.map(s => s.id === id ? { ...s, videoPrompt } : s));
+
+    try {
+      const token = getAuthToken();
+      const res = await fetch(`/api/storyboards/${id}/content`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ video_prompt: videoPrompt })
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message || '保存视频提示词失败');
+      }
+
+      return true;
+    } catch (error: any) {
+      setScenes(prevScenes => prevScenes.map(s =>
+        s.id === id ? { ...s, videoPrompt: previousScene.videoPrompt } : s
+      ));
+      console.error('保存视频提示词失败:', error);
+      showToast('保存视频提示词失败，请稍后重试', 'error');
+      return false;
+    }
+  };
+
+  // 更新视频首尾帧提示词（新版，支持首尾帧分离）
+  const updateVideoStartEndPrompts = async (id: number, videoStartPrompt: string, videoEndPrompt?: string) => {
+    const previousScene = scenes.find((scene) => scene.id === id);
+    if (!previousScene) return false;
+
+    try {
+      const token = getAuthToken();
+      const body: any = { video_start_prompt: videoStartPrompt };
+      if (videoEndPrompt !== undefined) body.video_end_prompt = videoEndPrompt;
+
+      const res = await fetch(`/api/storyboards/${id}/content`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify(body)
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message || '保存视频提示词失败');
+      }
+
+      return true;
+    } catch (error: any) {
+      console.error('保存视频首尾帧提示词失败:', error);
+      showToast('保存视频提示词失败，请稍后重试', 'error');
       return false;
     }
   };
@@ -590,9 +737,13 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
     isLoading,
     loadStoryboards,
     addScene,
+    insertScene,
     deleteScene,
     moveScene,
     updateDescription,
+    updateBaseDescription,
+    updateVideoPrompt,
+    updateVideoStartEndPrompts,
     updateDialogues,
     updateVoiceover,
     updateDirectorParams,

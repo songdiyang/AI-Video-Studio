@@ -8,7 +8,7 @@ interface SceneImageModalProps {
   onClose: () => void;
   scene: Scene | null;
   isGenerating: boolean;
-  onGenerate: (sceneId: number, imageModel: string) => void;
+  onGenerate: (sceneId: number, imageModel: string, options?: { customPromptA?: string; customPromptB?: string }) => void;
   imageModel: string;
 }
 
@@ -69,9 +69,13 @@ const SceneImageModal: React.FC<SceneImageModalProps> = ({
                         />
                       </div>
                       {scene.generation_prompt && (
-                        <div className="mt-2 p-2 bg-slate-800/60 rounded text-xs text-slate-400 max-h-20 overflow-y-auto">
-                          <span className="font-medium">提示词：</span>
-                          {scene.generation_prompt.substring(0, 80)}...
+                        <div className="mt-2 p-2 bg-slate-800/60 rounded border border-slate-700/30">
+                          <div className="flex items-center gap-1 mb-1">
+                            <span className="text-xs font-medium text-emerald-400">A 面提示词</span>
+                          </div>
+                          <p className="text-xs text-slate-300 leading-relaxed max-h-32 overflow-y-auto whitespace-pre-wrap break-all">
+                            {scene.generation_prompt}
+                          </p>
                         </div>
                       )}
                     </div>
@@ -90,9 +94,13 @@ const SceneImageModal: React.FC<SceneImageModalProps> = ({
                           />
                         </div>
                         {scene.reverse_generation_prompt && (
-                          <div className="mt-2 p-2 bg-slate-800/60 rounded text-xs text-slate-400 max-h-20 overflow-y-auto">
-                            <span className="font-medium">提示词：</span>
-                            {scene.reverse_generation_prompt.substring(0, 80)}...
+                          <div className="mt-2 p-2 bg-slate-800/60 rounded border border-slate-700/30">
+                            <div className="flex items-center gap-1 mb-1">
+                              <span className="text-xs font-medium text-blue-400">B 面提示词</span>
+                            </div>
+                            <p className="text-xs text-slate-300 leading-relaxed max-h-32 overflow-y-auto whitespace-pre-wrap break-all">
+                              {scene.reverse_generation_prompt}
+                            </p>
                           </div>
                         )}
                       </div>

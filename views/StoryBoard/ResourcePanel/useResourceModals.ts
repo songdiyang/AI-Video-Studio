@@ -33,7 +33,8 @@ export const useResourceModals = (options: UseResourceModalsOptions = {}) => {
     textModel: string,
     aspectRatio: string,
     characterId?: number,
-    mode?: 'style' | 'views' | 'all'
+    mode?: 'style' | 'views' | 'all',
+    customPrompts?: { customPromptFront?: string; customPromptSide?: string; customPromptBack?: string }
   ) => {
     // 如果是从角色卡片点击进来（没有 imageModel），先从数据库获取三视图数据
     if (!imageModel && !textModel && characterId) {
@@ -131,7 +132,9 @@ export const useResourceModals = (options: UseResourceModalsOptions = {}) => {
                 if (missing.length < 3) return { regenerateOnly: missing };
                 return {};
               })() : {})
-          )
+          ),
+          // 前端自定义提示词（跳过后端 AI 提示词生成步骤）
+          ...(customPrompts || {})
         })
       });
 

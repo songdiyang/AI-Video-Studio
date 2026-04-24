@@ -10,14 +10,14 @@ const { linkCharactersForStoryboard, linkScenesForStoryboard } = require('../../
 async function updateContent(req, res) {
   const userId = req.user.id;
   const storyboardId = Number(req.params.storyboardId);
-  const { prompt_template, spatial_description, dialogues, voiceover, characters, location, characterIds, sceneId, negative_prompt, duration } = req.body || {};
+  const { prompt_template, video_prompt, video_start_prompt, video_end_prompt, description, spatial_description, dialogues, voiceover, characters, location, characterIds, sceneId, negative_prompt, duration } = req.body || {};
 
   if (!storyboardId) {
     return res.status(400).json({ message: 'Invalid storyboard id' });
   }
 
   // 至少需要传递一个字段
-  if (prompt_template === undefined && spatial_description === undefined && dialogues === undefined && voiceover === undefined && characters === undefined && location === undefined && negative_prompt === undefined && duration === undefined) {
+  if (prompt_template === undefined && video_prompt === undefined && video_start_prompt === undefined && video_end_prompt === undefined && description === undefined && spatial_description === undefined && dialogues === undefined && voiceover === undefined && characters === undefined && location === undefined && negative_prompt === undefined && duration === undefined) {
     return res.status(400).json({ message: '需要提供至少一个可更新字段' });
   }
 
@@ -60,6 +60,26 @@ async function updateContent(req, res) {
     if (prompt_template !== undefined) {
       updates.push('prompt_template = ?');
       params.push(prompt_template);
+    }
+
+    if (video_prompt !== undefined) {
+      updates.push('video_prompt = ?');
+      params.push(video_prompt);
+    }
+
+    if (video_start_prompt !== undefined) {
+      updates.push('video_start_prompt = ?');
+      params.push(video_start_prompt);
+    }
+
+    if (video_end_prompt !== undefined) {
+      updates.push('video_end_prompt = ?');
+      params.push(video_end_prompt);
+    }
+
+    if (description !== undefined) {
+      updates.push('description = ?');
+      params.push(description);
     }
 
     if (negative_prompt !== undefined) {

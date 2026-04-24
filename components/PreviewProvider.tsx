@@ -55,6 +55,7 @@ export const PreviewProvider: React.FC<PreviewProviderProps> = ({ children }) =>
           view: ({ index: newIndex }) => setIndex(newIndex),
         }}
         plugins={[Zoom, Thumbnails, Video, Counter]}
+        portal={{ root: document.body }}
         zoom={{
           maxZoomPixelRatio: 3,
           zoomInMultiplier: 2,
@@ -71,6 +72,7 @@ export const PreviewProvider: React.FC<PreviewProviderProps> = ({ children }) =>
           autoPlay: true,
           loop: false,
         }}
+        styles={{ root: { zIndex: 9999 } }}
       />
     </PreviewContext.Provider>
   );

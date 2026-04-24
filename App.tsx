@@ -25,6 +25,11 @@ const Pricing = React.lazy(() => import('./views/Pricing'));
 const TemplateGallery = React.lazy(() => import('./views/TemplateGallery'));
 const Community = React.lazy(() => import('./views/Community'));
 const CreatorProfile = React.lazy(() => import('./views/Community/CreatorProfile'));
+const Marketplace = React.lazy(() => import('./views/Marketplace'));
+const TemplateDetail = React.lazy(() => import('./views/Marketplace/TemplateDetail'));
+const Shop = React.lazy(() => import('./views/Marketplace/Shop'));
+const SellerManagement = React.lazy(() => import('./views/Marketplace/SellerManagement'));
+const CreateRecipe = React.lazy(() => import('./views/Marketplace/CreateRecipe'));
 const Teams = React.lazy(() => import('./views/Teams'));
 const AcceptInvite = React.lazy(() => import('./views/AcceptInvite'));
 const Extensions = React.lazy(() => import('./views/Extensions'));
@@ -44,6 +49,7 @@ const FeedbackManagement = React.lazy(() => import('./views/admin/FeedbackManage
 const ErrorMonitor = React.lazy(() => import('./views/admin/ErrorMonitor'));
 const AnnouncementManagement = React.lazy(() => import('./views/admin/AnnouncementManagement'));
 const BillingConfig = React.lazy(() => import('./views/admin/BillingConfig'));
+const AdminLog = React.lazy(() => import('./views/admin/AdminLog'));
 
 // 加载中回退组件
 const LoadingFallback = () => (
@@ -120,6 +126,31 @@ const AnimatedRoutes: React.FC = () => {
         <Route path="/community/creator/:id" element={
           <Suspense fallback={<LoadingFallback />}>
             <PageTransition><CreatorProfile /></PageTransition>
+          </Suspense>
+        } />
+        <Route path="/marketplace" element={
+          <Suspense fallback={<LoadingFallback />}>
+            <PageTransition><Marketplace /></PageTransition>
+          </Suspense>
+        } />
+        <Route path="/marketplace/template/:id" element={
+          <Suspense fallback={<LoadingFallback />}>
+            <PageTransition><TemplateDetail /></PageTransition>
+          </Suspense>
+        } />
+        <Route path="/marketplace/shop/:userId" element={
+          <Suspense fallback={<LoadingFallback />}>
+            <PageTransition><Shop /></PageTransition>
+          </Suspense>
+        } />
+        <Route path="/marketplace/seller" element={
+          <Suspense fallback={<LoadingFallback />}>
+            <PageTransition><SellerManagement /></PageTransition>
+          </Suspense>
+        } />
+        <Route path="/marketplace/create" element={
+          <Suspense fallback={<LoadingFallback />}>
+            <PageTransition><CreateRecipe /></PageTransition>
           </Suspense>
         } />
         <Route path="/teams" element={
@@ -238,6 +269,11 @@ const App: React.FC = () => {
               <Route path="billing-config" element={
                 <Suspense fallback={<LoadingFallback />}>
                   <BillingConfig />
+                </Suspense>
+              } />
+              <Route path="logs" element={
+                <Suspense fallback={<LoadingFallback />}>
+                  <AdminLog />
                 </Suspense>
               } />
               <Route index element={<Navigate to="/admin/dashboard" replace />} />

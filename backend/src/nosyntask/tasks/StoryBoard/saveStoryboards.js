@@ -51,11 +51,12 @@ async function handleSaveStoryboards(inputParams, onProgress) {
       projectId,
       scriptId,
       idxOffset + i,
-      scene.description || scene.prompt_template || '',
+      scene.description || '',
+      '',
       JSON.stringify(scene.variables || scene)
     ]);
     await execute(
-      `INSERT INTO storyboards (project_id, script_id, idx, prompt_template, variables_json) VALUES ?`,
+      `INSERT INTO storyboards (project_id, script_id, idx, description, prompt_template, variables_json) VALUES ?`,
       [batchValues]
     );
   }

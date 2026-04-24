@@ -244,7 +244,7 @@ const SketchEditor: React.FC<SketchEditorProps> = ({
       
       if (standalone) {
         // 独立模式：通过回调传出数据，外部处理持久化
-        // 注意：父组件的异常不会传播回来，这是预期行为
+        // 自动保存只保存矢量数据，不导出 PNG（性能考虑）
         try {
           onSave({ sketchData });
         } catch (callbackError) {
@@ -413,8 +413,30 @@ const SketchEditor: React.FC<SketchEditorProps> = ({
       };
       
       if (standalone) {
-        // 独立模式：直接通过回调传出数据
-        onSave({ sketchData });
+        // 独立模式：导出 PNG 并保存矢量数据
+        const { exportToBlob: exportToBlobFn } = await import('@excalidraw/excalidraw');
+
+        const blob = await exportToBlobFn({
+          elements: elements as Parameters<typeof exportToBlobFn>[0]['elements'],
+          appState: {
+            ...(appState as object),
+            exportBackground: true,
+            viewBackgroundColor: backgroundType === 'white' ? '#ffffff' : 'transparent'
+          } as Parameters<typeof exportToBlobFn>[0]['appState'],
+          files: files as Parameters<typeof exportToBlobFn>[0]['files'],
+          mimeType: 'image/png',
+          quality: 1
+        });
+
+        // 将 blob 转为 base64 data URL
+        const sketchUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+
+        onSave({ sketchUrl, sketchData });
         setSaveStatus('saved');
         showToast('草图保存成功', 'success');
       } else if (storyboardId !== undefined) {

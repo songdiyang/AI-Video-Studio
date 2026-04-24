@@ -206,6 +206,37 @@ const TaskQueueBubble: React.FC = () => {
     springY.set(currentY);
   }, [isExpanded, hasFailedJobs, fetchJobs, setIsExpanded, springX, springY, getSnappedX]);
 
+  // ---- 面板拖拽逻辑 ----
+  const [panelOffset, setPanelOffset] = useState({ x: 0, y: 0 });
+  const [isPanelDragging, setIsPanelDragging] = useState(false);
+  const panelDragStart = useRef({ x: 0, y: 0, ox: 0, oy: 0 });
+
+  const handlePanelPointerDown = useCallback((e: React.PointerEvent) => {
+    // 只在标题栏拖拽，不拦截按钮点击
+    if ((e.target as HTMLElement).closest('button')) return;
+    e.preventDefault();
+    setIsPanelDragging(true);
+    panelDragStart.current = { x: e.clientX, y: e.clientY, ox: panelOffset.x, oy: panelOffset.y };
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+  }, [panelOffset]);
+
+  const handlePanelPointerMove = useCallback((e: React.PointerEvent) => {
+    if (!isPanelDragging) return;
+    const dx = e.clientX - panelDragStart.current.x;
+    const dy = e.clientY - panelDragStart.current.y;
+    setPanelOffset({ x: panelDragStart.current.ox + dx, y: panelDragStart.current.oy + dy });
+  }, [isPanelDragging]);
+
+  const handlePanelPointerUp = useCallback((e: React.PointerEvent) => {
+    setIsPanelDragging(false);
+    try { (e.target as HTMLElement).releasePointerCapture(e.pointerId); } catch {}
+  }, []);
+
+  // 展开时重置偏移
+  useEffect(() => {
+    if (isExpanded) setPanelOffset({ x: 0, y: 0 });
+  }, [isExpanded]);
+
   // 计算弹窗位置
   const getPopupPosition = () => {
     const margin = 12;
@@ -337,8 +368,8 @@ const TaskQueueBubble: React.FC = () => {
             transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
             className="fixed z-40 flex flex-col rounded-xl shadow-2xl overflow-hidden"
             style={{
-              left: popupPos.left,
-              top: popupPos.top,
+              left: popupPos.left + panelOffset.x,
+              top: popupPos.top + panelOffset.y,
               width: POPUP_WIDTH,
               maxHeight: POPUP_MAX_HEIGHT,
               backgroundColor: 'var(--bg-card)',
@@ -346,10 +377,13 @@ const TaskQueueBubble: React.FC = () => {
               backdropFilter: 'blur(12px)',
             }}
           >
-            {/* 标题栏 */}
+            {/* 标题栏 - 拖拽手柄 */}
             <div
-              className="flex items-center justify-between px-4 shrink-0"
+              className="flex items-center justify-between px-4 shrink-0 cursor-grab active:cursor-grabbing select-none"
               style={{ height: HEADER_HEIGHT, borderBottom: '1px solid var(--border)' }}
+              onPointerDown={handlePanelPointerDown}
+              onPointerMove={handlePanelPointerMove}
+              onPointerUp={handlePanelPointerUp}
             >
               <div className="flex items-center gap-2">
                 <ListTodo className="w-4 h-4" style={{ color: 'var(--text-secondary)' }} />

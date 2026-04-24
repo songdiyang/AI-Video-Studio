@@ -1,9 +1,9 @@
 import React, { useState, FormEvent, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Card, CardBody, Button, Input } from '@heroui/react';
-import { User, Lock, ArrowRight, KeyRound, Maximize2, Minimize2, Mail, AlertCircle } from 'lucide-react';
+import { User, Lock, ArrowRight, Maximize2, Minimize2, Mail, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { login, register, loginWithAdminAccess, getLoginRequirements, getRegistrationStatus } from '../services/auth';
+import { login, register, getRegistrationStatus } from '../services/auth';
 import { useToast } from '../contexts/ToastContext';
 import { useLanguage } from '../contexts/LanguageContext';
 
@@ -47,9 +47,6 @@ const Auth: React.FC = () => {
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [adminAccessKey, setAdminAccessKey] = useState('');
-  const [requiresAdminAccess, setRequiresAdminAccess] = useState(false);
-  const [checkingLoginRequirements, setCheckingLoginRequirements] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<{ username?: string; password?: string }>({});
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -96,48 +93,9 @@ const Auth: React.FC = () => {
 
   useEffect(() => {
     if (mode !== 'login') {
-      setRequiresAdminAccess(false);
-      setCheckingLoginRequirements(false);
-      setAdminAccessKey('');
       setCjkWarning(null);
-      return;
     }
-
-    const normalizedUsername = username.trim();
-    if (!normalizedUsername) {
-      setRequiresAdminAccess(false);
-      setCheckingLoginRequirements(false);
-      setAdminAccessKey('');
-      return;
-    }
-
-    let active = true;
-    setCheckingLoginRequirements(true);
-
-    const timer = window.setTimeout(async () => {
-      try {
-        const result = await getLoginRequirements(normalizedUsername);
-        if (!active) return;
-
-        setRequiresAdminAccess(result.requiresAdminAccess);
-        if (!result.requiresAdminAccess) {
-          setAdminAccessKey('');
-        }
-      } catch {
-        if (!active) return;
-        setRequiresAdminAccess(false);
-      } finally {
-        if (active) {
-          setCheckingLoginRequirements(false);
-        }
-      }
-    }, 300);
-
-    return () => {
-      active = false;
-      window.clearTimeout(timer);
-    };
-  }, [mode, username]);
+  }, [mode]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -198,28 +156,17 @@ const Auth: React.FC = () => {
       showToast(t.auth.fillAllFields, 'error');
       return;
     }
-    if (mode === 'login' && requiresAdminAccess && !adminAccessKey.trim()) {
-      showToast(t.auth.adminKeyRequired, 'error');
-      return;
-    }
 
     setLoading(true);
     try {
       if (mode === 'register') {
         await register(username, password);
       } else {
-        if (requiresAdminAccess) {
-          await loginWithAdminAccess(username, password, adminAccessKey);
-        } else {
-          await login(username, password);
-        }
+        await login(username, password);
       }
       // 登录成功后返回之前想访问的页面
       navigate(from, { replace: true });
     } catch (err: any) {
-      if (err?.reason === 'missing' || err?.reason === 'invalid') {
-        setRequiresAdminAccess(true);
-      }
       showToast(mode === 'login' ? t.auth.loginFailed : t.auth.registerFailed, 'error');
     } finally {
       setLoading(false);
@@ -429,39 +376,6 @@ const Auth: React.FC = () => {
                   }}
                 />
               </div>
-
-              {mode === 'login' && requiresAdminAccess ? (
-                <div className="space-y-2 animate-fade-in-up">
-                  <Input
-                    type="password"
-                    placeholder={t.auth.adminAccessKey}
-                    value={adminAccessKey}
-                    onValueChange={setAdminAccessKey}
-                    startContent={<KeyRound className="w-4 h-4 text-(--accent)" />}
-                    variant="flat"
-                    radius="lg"
-                    size="lg"
-                    classNames={{
-                      base: 'bg-transparent',
-                      input: 'bg-transparent text-(--text-primary) placeholder:text-(--text-muted)',
-                      inputWrapper: 'bg-(--bg-input) border border-(--accent)/50 hover:border-(--accent) data-[focus=true]:border-(--accent) shadow-[0_0_10px_rgba(59,130,246,0.15)]',
-                    }}
-                  />
-                  <div className="flex items-center gap-2 px-1">
-                    <div className="w-1.5 h-1.5 rounded-full bg-(--accent) animate-pulse" />
-                    <p className="text-xs text-(--accent) font-medium">
-                      {t.auth.adminAccountDetected}
-                    </p>
-                  </div>
-                </div>
-              ) : null}
-
-              {mode === 'login' && checkingLoginRequirements ? (
-                <div className="flex items-center gap-2 text-xs text-(--text-muted)">
-                  <div className="w-3 h-3 border-2 border-(--text-muted)/30 border-t-(--accent) rounded-full animate-spin" />
-                  {t.auth.checkingPermissions}
-                </div>
-              ) : null}
 
               <Button
                 type="submit"

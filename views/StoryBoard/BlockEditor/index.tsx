@@ -24,6 +24,8 @@ const BlockEditor: React.FC<BlockEditorProps> = ({
   onUpdateVoiceover,
   negativePrompt,
   onUpdateNegativePrompt,
+  promptMode = 'image',
+  basePrompt,
 }) => {
   // 将积木块转换为提示词文本
   const initialPrompt = initialBlocks
@@ -79,6 +81,8 @@ const BlockEditor: React.FC<BlockEditorProps> = ({
       onUpdateVoiceover={onUpdateVoiceover}
       negativePrompt={negativePrompt}
       onUpdateNegativePrompt={onUpdateNegativePrompt}
+      promptMode={promptMode}
+      basePrompt={basePrompt}
     />
   );
 };

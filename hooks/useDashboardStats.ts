@@ -11,6 +11,7 @@ interface DashboardStats {
   projectCount: number;
   scriptCount: number;
   storyboardCount: number;
+  aiCallsCount: number;
   recentProjects: RecentProject[];
 }
 
@@ -33,6 +34,7 @@ const defaultStats: DashboardStats = {
   projectCount: 0,
   scriptCount: 0,
   storyboardCount: 0,
+  aiCallsCount: 0,
   recentProjects: [],
 };
 
@@ -98,60 +100,27 @@ export function useDashboardStats(): UseDashboardStatsResult {
     setError(null);
 
     try {
-      // 获取项目列表
-      const res = await fetch('/api/projects', {
+      // 使用专用仪表盘统计端点（/api/stats/dashboard）
+      const res = await fetch('/api/stats/dashboard', {
         headers: { 'Authorization': `Bearer ${token}` }
       });
 
       if (!res.ok) {
-        throw new Error('Failed to fetch projects');
+        throw new Error('Failed to fetch dashboard stats');
       }
 
       const data = await res.json();
-      const projects = data.projects || [];
-
-      // 计算统计数据
-      const projectCount = projects.length;
-      
-      // 统计剧本和分镜数量（基于项目类型）
-      let scriptCount = 0;
-      let storyboardCount = 0;
-      
-      projects.forEach((project: { type?: string; settings_json?: string }) => {
-        if (project.type === 'script') {
-          scriptCount++;
-        }
-        // 尝试从 settings_json 获取更多信息
-        try {
-          const settings = project.settings_json ? JSON.parse(project.settings_json) : {};
-          if (settings.storyboardCount) {
-            storyboardCount += settings.storyboardCount;
-          }
-        } catch {
-          // 忽略解析错误
-        }
-      });
-
-      // 获取最近5个项目
-      const sortedProjects = [...projects]
-        .sort((a: { updated_at?: string }, b: { updated_at?: string }) => {
-          const dateA = new Date(a.updated_at || 0).getTime();
-          const dateB = new Date(b.updated_at || 0).getTime();
-          return dateB - dateA;
-        })
-        .slice(0, 5);
-
-      const recentProjects: RecentProject[] = sortedProjects.map((p: { id: number; name: string; updated_at?: string }) => ({
-        id: String(p.id),
-        name: p.name,
-        updatedAt: p.updated_at || new Date().toISOString(),
-      }));
 
       const newStats: DashboardStats = {
-        projectCount,
-        scriptCount,
-        storyboardCount,
-        recentProjects,
+        projectCount: data.projectCount || 0,
+        scriptCount: data.scriptCount || 0,
+        storyboardCount: data.storyboardCount || 0,
+        aiCallsCount: data.aiCallsCount || 0,
+        recentProjects: (data.recentProjects || []).map((p: { id: string; name: string; updatedAt: string }) => ({
+          id: String(p.id),
+          name: p.name,
+          updatedAt: p.updatedAt || new Date().toISOString(),
+        })),
       };
 
       setStats(newStats);

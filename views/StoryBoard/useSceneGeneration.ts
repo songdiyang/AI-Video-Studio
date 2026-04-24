@@ -485,6 +485,43 @@ export function useSceneGeneration({
     }
   };
 
+  // 启动高清修复 workflow
+  const generateHdRepair = async (id: number): Promise<{ success: boolean; error?: string }> => {
+    try {
+      if (isTaskActive(`img_${id}`)) {
+        return { success: false, error: '当前镜头正在生成，请等待完成后再试' };
+      }
+
+      if (!imageModel) {
+        return { success: false, error: '请先选择图片生成模型' };
+      }
+
+      const sceneIdx = scenes.findIndex(s => s.id === id);
+      const scene = sceneIdx >= 0 ? scenes[sceneIdx] : null;
+      if (!scene) {
+        return { success: false, error: '找不到分镜' };
+      }
+      if (!scene.startFrame && !scene.imageUrl) {
+        return { success: false, error: '当前分镜没有可修复的图片，请先生成' };
+      }
+
+      await runTask(`img_${id}`, 'hd_repair_generation', {
+        storyboardId: id,
+        imageModel,
+        textModel,
+        aspectRatio: imageAspectRatio,
+        targetFrame: 'first',
+        episodeNumber,
+        storyboardIndex: sceneIdx >= 0 ? sceneIdx + 1 : undefined,
+      });
+
+      return { success: true };
+    } catch (error: any) {
+      console.error('高清修复失败:', error);
+      return { success: false, error: error.message || '高清修复失败' };
+    }
+  };
+
   // 独立删除首帧
   const deleteFirstFrame = async (sceneId: number): Promise<{ success: boolean; error?: string; warnings?: string[] }> => {
     try {
@@ -554,6 +591,7 @@ export function useSceneGeneration({
     generateVideo,
     generateWithCamera,
     generateWithPaint,
+    generateHdRepair,
     deleteFirstFrame,
     deleteLastFrame
   };

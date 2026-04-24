@@ -20,6 +20,9 @@ export interface StoryboardItem {
   id?: number;
   index: number;
   prompt_template: string;
+  video_prompt?: string; // 旧版统一视频提示词（静态镜头使用）
+  video_start_prompt?: string; // 视频首帧提示词（动作镜头前半段）
+  video_end_prompt?: string; // 视频尾帧提示词（动作镜头后半段）
   variables: Record<string, unknown>;
   image_ref?: string | null;
   spatial_description?: SpatialDescription | null;
