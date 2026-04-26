@@ -44,6 +44,12 @@ async function handleBatchSceneVideoGeneration(inputParams, onProgress) {
     throw new Error('该剧本下没有分镜数据');
   }
 
+  const allCount = storyboards.length;
+  const lockedCount = storyboards.filter(sb => sb.is_locked).length;
+  if (lockedCount > 0) {
+    console.log(`[BatchSceneVideoGen] ${lockedCount}/${allCount} 个分镜已锁定，将被跳过`);
+  }
+
   const total = storyboards.length;
   let completed = 0;
   let skipped = 0;
@@ -73,6 +79,15 @@ async function handleBatchSceneVideoGeneration(inputParams, onProgress) {
 
   for (let i = 0; i < storyboards.length; i++) {
     const sb = storyboards[i];
+    
+    // 跳过锁定分镜
+    if (sb.is_locked) {
+      console.log(`[BatchSceneVideoGen] [${i + 1}/${total}] 分镜 ${sb.id} 已锁定，跳过`);
+      skipped++;
+      results.push({ storyboardId: sb.id, status: 'skipped_locked' });
+      continue;
+    }
+    
     const vars = safeParseVariables(sb.variables_json);
 
     const hasExistingVideo = !!sb.video_url;

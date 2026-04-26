@@ -264,7 +264,7 @@ async function handleSceneVideoGeneration(inputParams, onProgress) {
         console.log(`\x1b[32m[SceneVideoGen] 精细运镜提示词: ${prompt}\x1b[0m`);
         return prompt;
       })(),
-      // 运动分解
+      // 运动分解：已与图片层首/尾帧文本描述解耦，不再传入 startFrameDesc/endFrameDesc
       (async () => {
         trace('开始生成运动分解清单');
         const text = await generateMotionBreakdown({
@@ -273,9 +273,7 @@ async function handleSceneVideoGeneration(inputParams, onProgress) {
           variables,
           hasAction,
           characterAppearance,
-          sceneDetail,
-          startFrameDesc: variables.startFrame || '',
-          endFrameDesc: variables.endFrame || ''
+          sceneDetail
         });
         trace('运动分解清单结果', { content: text });
         return text;
@@ -377,7 +375,11 @@ async function handleSceneVideoGeneration(inputParams, onProgress) {
     const cameraInfo = cameraRunPrompt
       ? `【精细运镜提示词 - 必须融入】\n${cameraRunPrompt}`
       : (variables.cameraMovement ? `【运镜指令】${variables.cameraMovement}（视频必须体现此镜头运动）` : '');
-    const endStateInfo = variables.endState ? `【镜头结束状态】${variables.endState}（视频结束时画面必须呈现此状态）` : '';
+    // 结束状态仅在尾帧图存在时启用：其文本描述与尾帧画面强绑定，
+    // 尾帧删除后再注入会让视频残留「已删除尾帧的影子」
+    const endStateInfo = (lastFrameUrl && variables.endState)
+      ? `【镜头结束状态】${variables.endState}（视频结束时画面必须呈现此状态）`
+      : '';
 
     // 角色信息：有角色时提供详细外貌+参考图一致性约束，无角色时明确排除人物
     let charBlock;

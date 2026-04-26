@@ -211,27 +211,27 @@ async function handleParallelFrameGeneration(params, onProgress) {
     throw new Error('缺少必要参数: imageModel');
   }
 
-  // 0. 覆盖模式：先批量清除所有分镜的首尾帧
+  // 0. 覆盖模式：先批量清除所有未锁定分镜的首尾帧
   if (overwriteFrames) {
-    console.log('[ParallelFrameGen] 覆盖模式：清除所有已有首尾帧...');
+    console.log('[ParallelFrameGen] 覆盖模式：清除所有未锁定分镜的首尾帧...');
     await execute(
-      'UPDATE storyboards SET first_frame_url = NULL, last_frame_url = NULL, updated_scene_url = NULL WHERE script_id = ?',
+      'UPDATE storyboards SET first_frame_url = NULL, last_frame_url = NULL, updated_scene_url = NULL WHERE script_id = ? AND is_locked = FALSE',
       [scriptId]
     );
   }
 
-  // 1. 查询所有分镜
+  // 1. 查询所有分镜（含锁定状态，跳过已锁定）
   let storyboards;
   if (overwriteFrames) {
-    // 覆盖模式：处理所有分镜
+    // 覆盖模式：处理所有未锁定分镜
     storyboards = await queryAll(
-      'SELECT id FROM storyboards WHERE script_id = ? ORDER BY idx ASC',
+      'SELECT id FROM storyboards WHERE script_id = ? AND is_locked = FALSE ORDER BY idx ASC',
       [scriptId]
     );
   } else {
-    // 增量模式：只处理没有帧的分镜
+    // 增量模式：只处理没有帧且未锁定的分镜
     storyboards = await queryAll(
-      'SELECT id FROM storyboards WHERE script_id = ? AND (first_frame_url IS NULL OR first_frame_url = \'\') ORDER BY idx ASC',
+      'SELECT id FROM storyboards WHERE script_id = ? AND (first_frame_url IS NULL OR first_frame_url = \'\') AND is_locked = FALSE ORDER BY idx ASC',
       [scriptId]
     );
   }
@@ -252,12 +252,12 @@ async function handleParallelFrameGeneration(params, onProgress) {
     maxConcurrency
   }, onProgress);
 
-  // 计算跳过数量（覆盖模式下为0）
+  // 计算跳过数量（含锁定的分镜）
   const totalInScript = await queryOne(
     'SELECT COUNT(*) as count FROM storyboards WHERE script_id = ?',
     [scriptId]
   );
-  const skipped = overwriteFrames ? 0 : (totalInScript?.count || 0) - storyboardIds.length;
+  const skipped = (totalInScript?.count || 0) - storyboardIds.length;
 
   return {
     ...result,

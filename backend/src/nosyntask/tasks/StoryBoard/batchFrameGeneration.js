@@ -66,14 +66,20 @@ async function handleBatchFrameGeneration(inputParams, onProgress) {
     console.log('[BatchFrameGen] 已清除所有首尾帧');
   }
 
-  // 1. 查询所有分镜（按顺序）
+  // 1. 查询所有分镜（按顺序，含锁定状态）
   const storyboards = await queryAll(
-    'SELECT id, prompt_template, variables_json, first_frame_url, last_frame_url FROM storyboards WHERE script_id = ? ORDER BY idx ASC',
+    'SELECT id, prompt_template, variables_json, first_frame_url, last_frame_url, is_locked FROM storyboards WHERE script_id = ? ORDER BY idx ASC',
     [scriptId]
   );
 
   if (!storyboards || storyboards.length === 0) {
     throw new Error('该剧本下没有分镜数据');
+  }
+
+  const allCount = storyboards.length;
+  const lockedCount = storyboards.filter(sb => sb.is_locked).length;
+  if (lockedCount > 0) {
+    console.log(`[BatchFrameGen] ${lockedCount}/${allCount} 个分镜已锁定，将被跳过`);
   }
 
   // === 优化：预取项目视觉风格（只查询一次，所有分镜共享） ===
@@ -104,6 +110,21 @@ async function handleBatchFrameGeneration(inputParams, onProgress) {
   // 2. 串行遍历每个分镜
   for (let i = 0; i < storyboards.length; i++) {
     const sb = storyboards[i];
+    
+    // 跳过锁定分镜（仍取尾帧传递给下一个）
+    if (sb.is_locked) {
+      console.log(`[BatchFrameGen] [${i + 1}/${total}] 分镜 ${sb.id} 已锁定，跳过生成（仍传递尾帧给下一镜头）`);
+      const vars = typeof sb.variables_json === 'string'
+        ? JSON.parse(sb.variables_json || '{}')
+        : (sb.variables_json || {});
+      prevEndFrameUrl = getFinalFrameUrl(sb, vars);
+      prevDescription = sb.prompt_template || '';
+      prevEndState = vars.endState || null;
+      skipped++;
+      results.push({ storyboardId: sb.id, status: 'skipped_locked' });
+      continue;
+    }
+    
     const vars = typeof sb.variables_json === 'string'
       ? JSON.parse(sb.variables_json || '{}')
       : (sb.variables_json || {});

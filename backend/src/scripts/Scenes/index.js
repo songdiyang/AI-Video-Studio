@@ -106,7 +106,7 @@ router.get('/:id', authMiddleware, async (req, res) => {
 // 创建场景
 router.post('/', authMiddleware, async (req, res) => {
   const userId = req.user.id;
-  const { name, description, environment, lighting, mood, image_url, tags, spatial_layout, camera_defaults, project_id } = req.body;
+  const { name, description, environment, lighting, mood, image_url, tags, spatial_layout, camera_defaults, project_id, script_id, source } = req.body;
 
   if (!name) {
     return res.status(400).json({ message: '场景名称不能为空' });
@@ -126,9 +126,9 @@ router.post('/', authMiddleware, async (req, res) => {
 
   try {
     const result = await execute(
-      `INSERT INTO scenes (user_id, project_id, name, description, environment, lighting, mood, image_url, tags, spatial_layout, camera_defaults) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [userId, project_id || null, name, description || '', environment || '', lighting || '', mood || '', image_url || '', tags || '', spatialLayoutJson, cameraDefaultsJson]
+      `INSERT INTO scenes (user_id, project_id, script_id, name, description, environment, lighting, mood, image_url, tags, spatial_layout, camera_defaults, source) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [userId, project_id || null, script_id || null, name, description || '', environment || '', lighting || '', mood || '', image_url || '', tags || '', spatialLayoutJson, cameraDefaultsJson, source || 'manual']
     );
 
     const id = result.insertId;

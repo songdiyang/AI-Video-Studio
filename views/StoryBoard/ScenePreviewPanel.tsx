@@ -14,6 +14,8 @@ import FrameHistoryPanel from './FrameHistoryPanel';
 import { BlockEditorState } from './BlockEditor/types/blockTypes';
 import { bustCache } from '../../services/mediaCache';
 import { startWorkflow, getWorkflowStatus } from '../../hooks/useWorkflow';
+import StoryboardLockButton from './components/StoryboardLockButton';
+import VideoHistorySidebar from './components/VideoHistorySidebar';
 
 /** 角色选择器：Chip 标签 + 添加下拉 + 点击预览角色长相 */
 const CharacterTagSelector: React.FC<{
@@ -465,6 +467,10 @@ const DescriptionEditor: React.FC<{
       showToast('缺少项目信息', 'warning');
       return;
     }
+    if (scene.isLocked) {
+      showToast('该分镜已锁定，请先解锁后再优化提示词', 'warning');
+      return;
+    }
 
     // 轮询单个工作流直到完成，返回完整 result_data
     const pollUntilDone = async (jobId: number | string): Promise<any> => {
@@ -610,6 +616,7 @@ const DescriptionEditor: React.FC<{
       <textarea
         value={text}
         onChange={(e) => handleChange(e.target.value)}
+        disabled={scene.isLocked}
         className="flex-1 w-full bg-[var(--bg-input)] border border-[var(--border-color)] rounded-lg p-3 text-sm text-[var(--text-primary)] resize-none focus:outline-none focus:border-[var(--accent)]"
         placeholder="描述这个分镜的画面内容：场景、角色、动作、情绪、镜头等..."
       />
@@ -619,7 +626,7 @@ const DescriptionEditor: React.FC<{
         </span>
         <button
           onClick={handleDualOptimize}
-          disabled={isOptimizing || !text.trim()}
+          disabled={isOptimizing || !text.trim() || scene.isLocked}
           className="px-3 py-1.5 rounded-lg bg-[var(--accent)] text-white text-xs font-medium hover:bg-[var(--accent)]/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
         >
           {isOptimizing ? (
@@ -642,6 +649,8 @@ interface ScenePreviewPanelProps {
   onUpdateDescription: (description: string) => Promise<boolean>;
   onUpdateBaseDescription?: (baseDescription: string) => Promise<boolean>;
   onUpdateVideoPrompt?: (videoPrompt: string) => Promise<boolean>;
+  onUpdateFirstFramePrompt?: (firstFramePrompt: string) => Promise<boolean>;
+  onUpdateLastFramePrompt?: (lastFramePrompt: string) => Promise<boolean>;
   onUpdateDialogues?: (dialogues: DialogueLine[]) => Promise<boolean>;
   onUpdateVoiceover?: (voiceover: string) => Promise<boolean>;
   onUpdateCharactersAndLocation?: (characters: string[], location: string, characterIds?: number[], sceneId?: number) => Promise<boolean>;
@@ -670,6 +679,8 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
   onUpdateDescription,
   onUpdateBaseDescription,
   onUpdateVideoPrompt,
+  onUpdateFirstFramePrompt,
+  onUpdateLastFramePrompt,
   onUpdateDialogues,
   onUpdateVoiceover,
   onUpdateCharactersAndLocation,
@@ -690,9 +701,12 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
   const [showStartFrame, setShowStartFrame] = useState(true);
   const [internalDirectorSpaceExpanded, setInternalDirectorSpaceExpanded] = useState(false);
   const [promptMode, setPromptMode] = useState<'description' | 'image' | 'video'>('description');
+  // 图片提示词模式下的首/尾帧子标签（两个独立编辑区）
+  const [imageFrameTab, setImageFrameTab] = useState<'first' | 'last'>('first');
   // 优先使用外部控制，否则使用内部状态
   const isDirectorSpaceExpanded = directorSpaceOpen !== undefined ? directorSpaceOpen : internalDirectorSpaceExpanded;
   const [showHistory, setShowHistory] = useState(false);
+  const [showVideoHistory, setShowVideoHistory] = useState(false);
   const [showMagicSpace, setShowMagicSpace] = useState(false);
   // 历史版本预览状态：临时存储预览的帧 URL，不永久修改场景数据
   const [previewFrameUrl, setPreviewFrameUrl] = useState<string | null>(null);
@@ -704,10 +718,19 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
   const [currentEditorText, setCurrentEditorText] = useState<string>('');
   useEffect(() => {
     if (scene) {
-      const text = promptMode === 'video' ? (scene.videoPrompt || '') : (scene.description || '');
+      let text = '';
+      if (promptMode === 'video') {
+        text = scene.videoPrompt || '';
+      } else if (promptMode === 'image') {
+        text = imageFrameTab === 'first'
+          ? (scene.firstFramePrompt || scene.description || '')
+          : (scene.lastFramePrompt || scene.description || '');
+      } else {
+        text = scene.description || '';
+      }
       setCurrentEditorText(text);
     }
-  }, [scene?.id, scene?.description, scene?.videoPrompt, promptMode]);
+  }, [scene?.id, scene?.description, scene?.videoPrompt, scene?.firstFramePrompt, scene?.lastFramePrompt, promptMode, imageFrameTab]);
 
   // 切换分镜时清除历史版本预览状态
   useEffect(() => {
@@ -800,6 +823,11 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
   const handleGenerateImage = async () => {
     if (!scene) return;
 
+    if (scene.isLocked) {
+      showToast('该分镜已锁定，请先解锁后再生成图片', 'warning');
+      return;
+    }
+
     // 先保存当前编辑器文本
     const saved = await saveBeforeGenerate();
     if (!saved) return;
@@ -834,6 +862,11 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
   const handleGenerateVideo = async () => {
     if (!scene) return;
 
+    if (scene.isLocked) {
+      showToast('该分镜已锁定，请先解锁后再生成视频', 'warning');
+      return;
+    }
+
     // 先保存当前编辑器文本
     const saved = await saveBeforeGenerate();
     if (!saved) return;
@@ -853,6 +886,10 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
   // 删除帧（全部）
   const handleDeleteFrames = useCallback(async () => {
     if (!scene) return;
+    if (scene.isLocked) {
+      showToast('该分镜已锁定，请先解锁后再删除帧', 'warning');
+      return;
+    }
     try {
       const token = getAuthToken();
       await fetch(`/api/storyboards/${scene.id}/media`, {
@@ -876,6 +913,10 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
   // 独立删除首帧
   const handleDeleteFirstFrame = useCallback(async () => {
     if (!scene) return;
+    if (scene.isLocked) {
+      showToast('该分镜已锁定，请先解锁后再删除首帧', 'warning');
+      return;
+    }
     const confirmed = await confirm({
       title: '删除首帧',
       message: scene.videoUrl
@@ -910,6 +951,10 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
   // 独立删除尾帧
   const handleDeleteLastFrame = useCallback(async () => {
     if (!scene) return;
+    if (scene.isLocked) {
+      showToast('该分镜已锁定，请先解锁后再删除尾帧', 'warning');
+      return;
+    }
     const confirmed = await confirm({
       title: '删除尾帧',
       message: '确定要删除尾帧吗？首帧将保留，下次生成时可以参考首帧。',
@@ -942,6 +987,10 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
   // 删除视频
   const handleDeleteVideo = useCallback(async () => {
     if (!scene) return;
+    if (scene.isLocked) {
+      showToast('该分镜已锁定，请先解锁后再删除视频', 'warning');
+      return;
+    }
     try {
       const token = getAuthToken();
       await fetch(`/api/storyboards/${scene.id}/media`, {
@@ -962,38 +1011,12 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
     }
   }, [scene, onUpdateScene, showToast]);
 
-  // 空状态
-  if (!scene) {
-    return (
-      <div className="h-full flex items-center justify-center bg-[var(--bg-app)]">
-        <div className="text-center">
-          <Film className="w-16 h-16 mx-auto mb-4 text-[var(--text-muted)] opacity-30" />
-          <p className="text-sm text-[var(--text-muted)]">选择一个分镜以查看详情</p>
-        </div>
-      </div>
-    );
-  }
-
-  // 判断当前显示的媒体
-  const hasFrames = scene.startFrame || scene.endFrame;
-  const hasVideo = !!scene.videoUrl;
-  // 优先使用预览的帧 URL（如果有），否则使用场景的当前帧
-  const currentFrame = previewFrameUrl && previewFrameType === (showStartFrame ? 'first' : 'last')
-    ? previewFrameUrl
-    : (showStartFrame ? scene.startFrame : scene.endFrame);
-
-  // Lightbox 放大预览状态
+  // Lightbox 放大预览状态（必须在任何 early return 之前，避免 Hooks 数量不一致导致 React error #300）
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxZoom, setLightboxZoom] = useState(1);
   const [lightboxPos, setLightboxPos] = useState({ x: 0, y: 0 });
   const isDragging = useRef(false);
   const dragStart = useRef({ x: 0, y: 0, posX: 0, posY: 0 });
-
-  const openLightbox = () => {
-    setLightboxZoom(1);
-    setLightboxPos({ x: 0, y: 0 });
-    setLightboxOpen(true);
-  };
 
   const handleLightboxWheel = useCallback((e: React.WheelEvent) => {
     e.stopPropagation();
@@ -1015,6 +1038,32 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
   }, []);
 
   const handleLightboxMouseUp = useCallback(() => { isDragging.current = false; }, []);
+
+  // 空状态
+  if (!scene) {
+    return (
+      <div className="h-full flex items-center justify-center bg-[var(--bg-app)]">
+        <div className="text-center">
+          <Film className="w-16 h-16 mx-auto mb-4 text-[var(--text-muted)] opacity-30" />
+          <p className="text-sm text-[var(--text-muted)]">选择一个分镜以查看详情</p>
+        </div>
+      </div>
+    );
+  }
+
+  // 判断当前显示的媒体
+  const hasFrames = scene.startFrame || scene.endFrame;
+  const hasVideo = !!scene.videoUrl;
+  // 优先使用预览的帧 URL（如果有），否则使用场景的当前帧
+  const currentFrame = previewFrameUrl && previewFrameType === (showStartFrame ? 'first' : 'last')
+    ? previewFrameUrl
+    : (showStartFrame ? scene.startFrame : scene.endFrame);
+
+  const openLightbox = () => {
+    setLightboxZoom(1);
+    setLightboxPos({ x: 0, y: 0 });
+    setLightboxOpen(true);
+  };
 
   return (
     <div className="h-full flex flex-col bg-[var(--bg-app)]">
@@ -1068,24 +1117,76 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
           </div>
         )}
         {hasVideo ? (
-          // 视频预览
-          <div className="relative w-full h-full flex items-center justify-center">
-            <video
-              src={scene.videoUrl}
-              controls
-              className="max-w-full max-h-full rounded-lg shadow-2xl"
-              style={{ maxHeight: 'calc(100% - 2rem)' }}
+          // 视频预览 + 侧边栏
+          <div className="relative w-full h-full flex">
+            {/* 视频历史侧边栏 */}
+            <VideoHistorySidebar
+              storyboardId={scene.id}
+              currentVideoUrl={scene.videoUrl}
+              firstFrameUrl={scene.startFrame}
+              lastFrameUrl={scene.endFrame}
+              isOpen={showVideoHistory}
+              onToggle={() => setShowVideoHistory(prev => !prev)}
+              onSwitchVersion={(data) => {
+                if (onUpdateScene) {
+                  const updates: Partial<StoryboardScene> = {};
+                  if (data.videoUrl !== undefined) updates.videoUrl = data.videoUrl || undefined;
+                  if (data.firstFrameUrl) {
+                    updates.startFrame = data.firstFrameUrl;
+                    updates.imageUrl = data.firstFrameUrl;
+                  }
+                  if (data.lastFrameUrl) updates.endFrame = data.lastFrameUrl;
+                  onUpdateScene(updates);
+                }
+              }}
             />
-            <button
-              onClick={handleDeleteVideo}
-              disabled={isGenerating}
-              className={`absolute top-2 right-2 p-2 rounded-lg bg-black/50 text-white transition-colors ${
-                isGenerating ? 'opacity-40 cursor-not-allowed' : 'hover:bg-red-500/80'
-              }`}
-              title="删除视频"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
+            {/* 视频播放区 */}
+            <div className="flex-1 relative flex items-center justify-center min-w-0">
+              <video
+                key={scene.videoUrl}
+                src={scene.videoUrl}
+                controls
+                className="max-w-full max-h-full rounded-lg shadow-2xl"
+                style={{ maxHeight: 'calc(100% - 2rem)' }}
+              />
+              {/* 左上角：历史版本按钮 */}
+              <button
+                onClick={() => setShowHistory(true)}
+                disabled={isGenerating}
+                className={`absolute top-2 left-2 p-2 rounded-lg bg-black/50 text-white/80 transition-colors flex items-center gap-1.5 ${
+                  isGenerating ? 'opacity-40 cursor-not-allowed' : 'hover:bg-black/70 hover:text-white'
+                }`}
+                title="查看历史版本"
+              >
+                <History className="w-4 h-4" />
+                <span className="text-xs">历史版本</span>
+              </button>
+              {/* 右上角：删除视频 + 视频历史切换 */}
+              <div className="absolute top-2 right-2 flex items-center gap-1">
+                <button
+                  onClick={() => setShowVideoHistory(prev => !prev)}
+                  disabled={isGenerating}
+                  className={`p-2 rounded-lg bg-black/50 text-white/80 transition-colors flex items-center gap-1 ${
+                    showVideoHistory
+                      ? 'bg-rose-500/40 text-rose-300'
+                      : 'hover:bg-rose-500/30 hover:text-rose-300'
+                  }`}
+                  title={showVideoHistory ? '收起视频历史' : '视频历史'}
+                >
+                  <Film className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={handleDeleteVideo}
+                  disabled={isGenerating}
+                  className={`p-2 rounded-lg bg-black/50 text-white transition-colors ${
+                    isGenerating ? 'opacity-40 cursor-not-allowed' : 'hover:bg-red-500/80'
+                  }`}
+                  title="删除视频"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
           </div>
         ) : hasFrames ? (
           // 帧图片预览
@@ -1332,6 +1433,16 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
               分镜 #{sceneIndex + 1}
             </span>
             <div className="flex items-center gap-1.5">
+              <StoryboardLockButton
+                storyboardId={scene.id}
+                isLocked={scene.isLocked || false}
+                size="md"
+                onLockChange={(locked) => {
+                  if (onUpdateScene) {
+                    onUpdateScene({ isLocked: locked });
+                  }
+                }}
+              />
               {scene.shotType && (
                 <Chip size="sm" variant="flat" className="bg-cyan-500/20 text-cyan-400 text-xs">
                   <Camera className="w-3 h-3 mr-1" />
@@ -1431,6 +1542,36 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                   >
                     图片提示词
                   </button>
+                  {promptMode === 'image' && (
+                    <div className="flex items-center gap-0.5 ml-1 p-0.5 bg-[var(--bg-input)] rounded">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setImageFrameTab('first');
+                        }}
+                        className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${
+                          imageFrameTab === 'first'
+                            ? 'bg-blue-500/30 text-blue-300'
+                            : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+                        }`}
+                      >
+                        首帧
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setImageFrameTab('last');
+                        }}
+                        className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${
+                          imageFrameTab === 'last'
+                            ? 'bg-blue-500/30 text-blue-300'
+                            : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+                        }`}
+                      >
+                        尾帧
+                      </button>
+                    </div>
+                  )}
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
@@ -1453,7 +1594,15 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                   {promptMode === 'video'
                     ? (scene.videoPrompt ? scene.videoPrompt.slice(0, 30) + (scene.videoPrompt.length > 30 ? '...' : '') : '无视频提示词')
                     : promptMode === 'image'
-                    ? (scene.description ? scene.description.slice(0, 30) + (scene.description.length > 30 ? '...' : '') : '无图片提示词')
+                    ? (() => {
+                        const framePrompt = imageFrameTab === 'first'
+                          ? (scene.firstFramePrompt || scene.description || '')
+                          : (scene.lastFramePrompt || scene.description || '');
+                        const label = imageFrameTab === 'first' ? '首帧' : '尾帧';
+                        return framePrompt
+                          ? `[${label}] ${framePrompt.slice(0, 26)}${framePrompt.length > 26 ? '...' : ''}`
+                          : `无${label}提示词`;
+                      })()
                     : (scene.baseDescription ? scene.baseDescription.slice(0, 30) + (scene.baseDescription.length > 30 ? '...' : '') : '无分镜描述')
                   }
                 </span>
@@ -1495,17 +1644,24 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                   />
                 ) : (
                   <BlockEditor
-                    key={`${scene.id}-${promptMode}`}
+                    key={`${scene.id}-${promptMode}-${promptMode === 'image' ? imageFrameTab : ''}`}
                     storyboardId={scene.id}
                     projectId={projectId || undefined}
                     scriptId={scriptId || undefined}
                     promptMode={promptMode}
                     basePrompt={scene.baseDescription || ''}
-                    initialBlocks={
-                      (promptMode === 'video' ? scene.videoPrompt : scene.description)
-                        ? [{ id: 'init-text', type: 'text' as const, category: 'text' as const, data: { text: promptMode === 'video' ? (scene.videoPrompt || '') : (scene.description || '') }, position: { x: 0, y: 0 } }]
-                        : []
-                    }
+                    initialBlocks={(() => {
+                      const text = promptMode === 'video'
+                        ? scene.videoPrompt
+                        : promptMode === 'image'
+                          ? (imageFrameTab === 'first'
+                              ? (scene.firstFramePrompt || scene.description)
+                              : (scene.lastFramePrompt || scene.description))
+                          : scene.description;
+                      return text
+                        ? [{ id: 'init-text', type: 'text' as const, category: 'text' as const, data: { text }, position: { x: 0, y: 0 } }]
+                        : [];
+                    })()}
                     availableFrames={{
                       startFrame: scene.startFrame,
                       endFrame: scene.endFrame
@@ -1540,6 +1696,14 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                       if (promptMode === 'video' && onUpdateVideoPrompt) {
                         const success = await onUpdateVideoPrompt(state.generatedPrompt);
                         return success;
+                      }
+                      if (promptMode === 'image') {
+                        if (imageFrameTab === 'first' && onUpdateFirstFramePrompt) {
+                          return await onUpdateFirstFramePrompt(state.generatedPrompt);
+                        }
+                        if (imageFrameTab === 'last' && onUpdateLastFramePrompt) {
+                          return await onUpdateLastFramePrompt(state.generatedPrompt);
+                        }
                       }
                       const success = await onUpdateDescription(state.generatedPrompt);
                       return success;

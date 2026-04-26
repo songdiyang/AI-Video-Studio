@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardBody, Button, Input, Textarea, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure, Chip, Spinner } from '@heroui/react';
-import { FolderOpen, Plus, Edit, Trash2, Search, BookOpen, Clock, Palette, Sparkles, ImagePlus, Globe, Upload, Users } from 'lucide-react';
+import { FolderOpen, Plus, Edit, Trash2, Search, BookOpen, Clock, Palette, Sparkles, ImagePlus, Globe, Upload, Users, Crop } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Project, fetchProjects, createProject, updateProject, deleteProject, UserStylePreset, fetchMyStyles, createMyStyle, updateMyStyle, deleteMyStyle } from '../services/projects';
 import { Team, fetchTeams } from '../services/collaboration';
@@ -15,6 +15,7 @@ import { useVirtualList } from '../hooks/useVirtualList';
 import { usePreview } from '../components/PreviewProvider';
 import QuickStartWizard from '../components/QuickStartWizard';
 import UpgradePrompt from '../components/UpgradePrompt';
+import ImageCropperModal from '../components/ImageCropperModal';
 
 // 虚拟列表启用阈值
 const VIRTUAL_LIST_THRESHOLD = 20;
@@ -82,6 +83,9 @@ const Projects: React.FC = () => {
   const [coverGenerating, setCoverGenerating] = useState(false);
   const [coverUploading, setCoverUploading] = useState(false);
   const coverInputRef = useRef<HTMLInputElement>(null);
+  // 封面裁剪相关
+  const [cropperOpen, setCropperOpen] = useState(false);
+  const [cropperSource, setCropperSource] = useState<string>('');
   const [showQuickStart, setShowQuickStart] = useState(false);
   
   // 我的风格
@@ -108,6 +112,10 @@ const Projects: React.FC = () => {
     'animeJapanese': { prompt: '动漫风格, 赛璘珞上色, 鲜艳色彩, 干净线条, 漫画美学, 日式动画', labelKey: 'animeJapanese' },
     'realisticFilm': { prompt: '照片写实, 电影级打光, 胶片质感, 真实比例, 电影剧照, 自然色调', labelKey: 'realisticFilm' },
     'render3D': { prompt: '3D渲染, 皮克斯风格, 柔和光照, 次表面散射, 平滑着色, CG品质', labelKey: 'render3D' },
+    'pixar3D': { prompt: '3D渲染, 皮克斯动画风格, 圆润可爱角色造型, 柔和光照, 次表面散射, 大眼睛萌感, 鲜艳饱和色调, 毛发与布料细节质感, 美式家庭动画电影感', labelKey: 'pixar3D' },
+    'disney3D': { prompt: '3D渲染, 迪士尼CG动画风格, 精致五官, 梦幻光影, 童话公主质感, 优雅身型, 光滑高光表面, 明亮鲜亮色调, 高品质迪士尼CG美学', labelKey: 'disney3D' },
+    'chinese3D': { prompt: '3D渲染, 国漫CG风格, 东方美学, 水墨质感与CG融合, 仙侠飘逸氛围, 华丽东方特效, 中国神话元素, 古风服饰, 哪吒白蛇类国产动画质感', labelKey: 'chinese3D' },
+    'anime3D': { prompt: '3D渲染, 日式赛璐珞3D风格, 二次元线条感, 动漫大眼睛, 平涂阴影, 2D化3D质感, 日本动画CG美学, 鬼灭之刃类风格', labelKey: 'anime3D' },
     'watercolor': { prompt: '水彩插画, 柔和边缘, 粉彩色调, 绘本风格, 手绘纹理', labelKey: 'watercolor' },
     'cyberpunk': { prompt: '赛博朋克, 霓虹灯光, 暗黑氛围, 未来科幻, 高对比度, 科幻美学', labelKey: 'cyberpunk' },
     'americanComic': { prompt: '美式漫画风格, 粗犷描边, 动感明暗, 超级英雄美学, 鲜明色彩', labelKey: 'americanComic' },
@@ -561,6 +569,53 @@ const Projects: React.FC = () => {
     }
   };
 
+  // 打开裁剪器：基于当前封面
+  const handleOpenCropper = () => {
+    if (!formData.cover_url) {
+      showToast('请先选择或生成封面', 'warning');
+      return;
+    }
+    setCropperSource(formData.cover_url);
+    setCropperOpen(true);
+  };
+
+  // 应用裁剪结果：Blob → 走现有封面上传/预览逻辑
+  const handleCropped = async (blob: Blob) => {
+    const file = new File([blob], `cover-cropped-${Date.now()}.jpg`, { type: 'image/jpeg' });
+    // 编辑模式已有项目 ID：直接上传到服务端
+    if (editMode && currentId) {
+      setCoverUploading(true);
+      try {
+        const token = getAuthToken();
+        const fd = new FormData();
+        fd.append('cover', file);
+        const res = await fetch(`/api/projects/${currentId}/cover`, {
+          method: 'POST',
+          headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+          body: fd,
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.message || '裁剪封面上传失败');
+        }
+        const data = await res.json();
+        setFormData(prev => ({ ...prev, cover_url: data.coverUrl }));
+        await loadProjects();
+        showToast('裁剪完成，封面已更新', 'success');
+      } catch (error: any) {
+        console.error('裁剪封面上传失败:', error);
+        showToast(error.message || '裁剪封面上传失败', 'error');
+      } finally {
+        setCoverUploading(false);
+      }
+    } else {
+      // 新建模式：本地预览 + 待上传
+      const previewUrl = URL.createObjectURL(blob);
+      setFormData(prev => ({ ...prev, cover_url: previewUrl, _coverFile: file as any }));
+      showToast('裁剪完成，保存项目时将自动上传', 'success');
+    }
+  };
+
   const handleDelete = async (id: number) => {
     const confirmed = await confirm({
       title: t.projects.deleteConfirmTitle,
@@ -740,11 +795,20 @@ const Projects: React.FC = () => {
                         <CardBody className="p-0 h-full flex flex-col">
                           {/* 封面区域 */}
                           <div 
-                            className="h-28 bg-linear-to-br from-(--bg-card) to-(--bg-input) relative overflow-hidden rounded-t-2xl shrink-0"
+                            className="h-40 bg-linear-to-br from-(--bg-card) to-(--bg-input) relative overflow-hidden rounded-t-2xl shrink-0"
                             onDoubleClick={() => handleEnterProject(project)}
                           >
                             {project.cover_url ? (
-                              <img src={project.cover_url} alt={project.name} className="w-full h-full object-cover" />
+                              <>
+                                <img
+                                  src={project.cover_url}
+                                  alt={project.name}
+                                  loading="lazy"
+                                  className="w-full h-full object-cover object-top"
+                                />
+                                {/* 底部渐变遮罩，让封面与标题区自然过渡 */}
+                                <div className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-black/20 to-transparent" />
+                              </>
                             ) : (
                               <div className="w-full h-full flex items-center justify-center">
                                 <BookOpen className="w-10 h-10 text-(--accent)/30" />
@@ -823,11 +887,20 @@ const Projects: React.FC = () => {
                 <CardBody className="p-0">
                   {/* 封面区域 */}
                   <div 
-                    className="h-32 bg-linear-to-br from-(--bg-card) to-(--bg-input) relative overflow-hidden rounded-t-2xl"
+                    className="h-40 bg-linear-to-br from-(--bg-card) to-(--bg-input) relative overflow-hidden rounded-t-2xl"
                     onDoubleClick={() => handleEnterProject(project)}
                   >
                     {project.cover_url ? (
-                      <img src={project.cover_url} alt={project.name} className="w-full h-full object-cover" />
+                      <>
+                        <img
+                          src={project.cover_url}
+                          alt={project.name}
+                          loading="lazy"
+                          className="w-full h-full object-cover object-top"
+                        />
+                        {/* 底部渐变遮罩，让封面与标题区自然过渡 */}
+                        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-black/20 to-transparent" />
+                      </>
                     ) : (
                       <div className="w-full h-full flex items-center justify-center">
                         <BookOpen className="w-12 h-12 text-(--accent)/30" />
@@ -926,6 +999,14 @@ const Projects: React.FC = () => {
                               onClick={() => openPreview([{ src: formData.cover_url }])}
                               onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                             />
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleOpenCropper(); }}
+                              className="absolute top-2 left-2 px-2 h-6 rounded-md bg-black/55 text-white flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer text-xs hover:bg-black/70"
+                              title="裁剪封面"
+                            >
+                              <Crop className="w-3 h-3" />
+                              裁剪
+                            </button>
                             <button
                               onClick={() => setFormData(prev => ({ ...prev, cover_url: '' }))}
                               className="absolute top-2 right-2 w-6 h-6 rounded-full bg-black/50 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer text-xs"
@@ -1675,6 +1756,15 @@ const Projects: React.FC = () => {
             nextPlan={upgradeData.nextPlan}
           />
         )}
+
+        {/* 封面裁剪弹窗 */}
+        <ImageCropperModal
+          isOpen={cropperOpen}
+          imageUrl={cropperSource}
+          defaultAspect="16:9"
+          onClose={() => setCropperOpen(false)}
+          onCropped={handleCropped}
+        />
       </div>
     </div>
   );

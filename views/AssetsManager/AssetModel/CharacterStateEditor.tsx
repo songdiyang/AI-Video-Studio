@@ -861,7 +861,7 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                       placeholder="例: 左臂有龙纹身、右眼下方有一道疤痕、后背有大面积火焰纹身"
                       defaultValue={baseModelState.body_elements || ''}
                       onBlur={async (e) => {
-                        const newValue = (e.target as HTMLTextAreaElement).value;
+                        const newValue = (e.target as unknown as HTMLTextAreaElement).value;
                         if (newValue !== (baseModelState.body_elements || '')) {
                           try {
                             await updateCharacterState(characterId!, baseModelState.id, { body_elements: newValue });

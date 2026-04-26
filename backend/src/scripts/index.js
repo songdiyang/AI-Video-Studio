@@ -21,6 +21,8 @@ const deleteEpisode = require('./ScriptStudio/deleteEpisode');
 const updateScriptStatus = require('./ScriptStudio/updateScriptStatus');
 const cleanOrphanResources = require('./ScriptStudio/cleanOrphanResources');
 const { createOrUpdateDraft, saveDraftContent, deleteDraft } = require('./ScriptStudio/draftScript');
+const getScriptLibrary = require('./ScriptStudio/getScriptLibrary');
+const bindScriptToProject = require('./ScriptStudio/bindScriptToProject');
 
 const router = express.Router();
 
@@ -56,6 +58,13 @@ router.delete('/draft/:scriptId', authMiddleware, deleteDraft);
 
 // 清理孤立资源（角色/场景）
 router.post('/clean-orphans', authMiddleware, cleanOrphanResources);
+
+// ─── 剧本资源库（用户级）──────────────────────────────────────────
+// 获取当前用户的剧本库（个人剧本 + 所有项目剧本）
+router.get('/library', authMiddleware, getScriptLibrary);
+
+// 将个人剧本深拷贝绑定到目标项目（产生副本，原始不受影响）
+router.post('/bind', authMiddleware, bindScriptToProject);
 
 // 获取所有剧本（旧接口）
 router.get('/', authMiddleware, getAllScripts);

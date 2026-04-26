@@ -17,6 +17,7 @@ import { useConfirm } from '../../../contexts/ConfirmContext';
 import { SpatialDescription } from '../useSceneManager';
 import type { StoryboardValidationIssue } from '../utils/validateStoryboardContent';
 import { getWorstSeverity } from '../utils/validateStoryboardContent';
+import StoryboardLockButton from '../components/StoryboardLockButton';
 
 export interface SceneCardProps {
   scene: StoryboardScene;
@@ -292,7 +293,7 @@ const SceneCard: React.FC<SceneCardProps> = ({
         className={`transition-all cursor-pointer rounded-lg ${
           isSelected
             ? 'border-l-2 border-l-[var(--accent)] border-y border-r border-[var(--border-color)] bg-[var(--bg-card-hover)]'
-            : 'border border-[var(--border-color)] hover:border-[var(--accent)]/30 bg-[var(--bg-card)]'
+            : `border border-[var(--border-color)] hover:border-[var(--accent)]/30 bg-[var(--bg-card)]${scene.isLocked ? ' opacity-75' : ''}`
         }`}
         isPressable={false}
         onPress={() => onSelect(scene.id)}
@@ -417,11 +418,29 @@ const SceneCard: React.FC<SceneCardProps> = ({
                     视频
                   </span>
                 )}
+                {scene.isLocked && (
+                  <span className="text-[10px] px-1 py-0.5 rounded bg-amber-500/20 text-amber-400">
+                    已锁定
+                  </span>
+                )}
               </div>
             </div>
 
             {/* 操作按钮 */}
             <div className="flex items-center gap-1">
+              {/* 锁定按钮 */}
+              <div onClick={(e) => e.stopPropagation()}>
+                <StoryboardLockButton
+                  storyboardId={scene.id}
+                  isLocked={scene.isLocked || false}
+                  size="sm"
+                  onLockChange={(locked) => {
+                    if (onUpdateScene) {
+                      onUpdateScene(scene.id, { isLocked: locked });
+                    }
+                  }}
+                />
+              </div>
               {/* 草图按钮 - 已隐藏 */}
               {/*
               <Tooltip content={scene.sketchUrl ? "编辑草图" : "添加草图"}>

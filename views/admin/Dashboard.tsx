@@ -1,14 +1,12 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardBody, Tooltip, Progress } from '@heroui/react';
 import { 
   Users, Cpu, TrendingUp, Activity, Server, Database, Clock, HardDrive, 
   Radio, RefreshCw, Plus, BarChart3, Shield, CreditCard, Layers, 
-  Gauge, MemoryStick, Zap, AlertTriangle, CheckCircle2, XCircle,
-  MapPin, Calendar, ChevronLeft, ChevronRight
+  Gauge, MemoryStick, Zap, AlertTriangle, CheckCircle2, XCircle
 } from 'lucide-react';
-import { getAdminAuthHeaders, getUserRole } from '../../services/auth';
-import { CHINA_PROVINCES, findProvince, ProvinceShape, SVG_VIEWBOX } from './ChinaMapData';
+import { getAdminAuthHeaders } from '../../services/auth';
 
 interface DashboardStats {
   totalUsers: number;
@@ -95,33 +93,6 @@ interface HistoryStats {
   newUsers: { date: string; count: number }[];
 }
 
-interface HourlyDataPoint {
-  hour: string;
-  tasks: number;
-  completed: number;
-  failed: number;
-  requests: number;
-  activeUsers: number;
-}
-
-interface HourlyStatsResponse {
-  date: string;
-  hourlyData: HourlyDataPoint[];
-  hourlyRequestsByModel: { hour_slot: string; model_name: string; requests: number }[];
-}
-
-interface RegionDataPoint {
-  province: string;
-  requests: number;
-  users: number;
-  activeToday?: number;
-}
-
-interface RegionStatsResponse {
-  date: string;
-  regionData: RegionDataPoint[];
-}
-
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const [stats, setStats] = useState<DashboardStats>({ totalUsers: 0, totalModels: 0, todayRequests: 0, totalScripts: 0 });
@@ -132,10 +103,6 @@ const Dashboard: React.FC = () => {
   const [servicePortsLoading, setServicePortsLoading] = useState(false);
   const [resourcesLoading, setResourcesLoading] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [selectedDate, setSelectedDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
-  const [hourlyStats, setHourlyStats] = useState<HourlyStatsResponse | null>(null);
-  const [regionStats, setRegionStats] = useState<RegionStatsResponse | null>(null);
-  const [hourlyLoading, setHourlyLoading] = useState(false);
 
   const fetchStats = useCallback(async () => {
     try {
@@ -190,42 +157,12 @@ const Dashboard: React.FC = () => {
     }
   }, []);
 
-  const fetchHourlyStats = useCallback(async (date: string) => {
-    setHourlyLoading(true);
-    try {
-      const response = await fetch(`/api/admin/hourly-stats?date=${date}`, { headers: getAdminAuthHeaders() });
-      if (response.ok) setHourlyStats(await response.json());
-    } catch (error) {
-      console.error('获取小时统计失败:', error);
-    } finally {
-      setHourlyLoading(false);
-    }
-  }, []);
-
-  const fetchRegionStats = useCallback(async (date: string) => {
-    try {
-      const response = await fetch(`/api/admin/region-stats?date=${date}`, { headers: getAdminAuthHeaders() });
-      if (response.ok) setRegionStats(await response.json());
-    } catch (error) {
-      console.error('获取地区统计失败:', error);
-    }
-  }, []);
-
-  const changeDate = useCallback((delta: number) => {
-    const d = new Date(selectedDate + 'T00:00:00');
-    d.setDate(d.getDate() + delta);
-    const newDate = d.toISOString().slice(0, 10);
-    setSelectedDate(newDate);
-  }, [selectedDate]);
-
   useEffect(() => {
     fetchStats();
     fetchServerStatus();
     fetchServicePorts();
     fetchSystemResources();
     fetchHistoryStats();
-    fetchHourlyStats(selectedDate);
-    fetchRegionStats(selectedDate);
     // 每 15 秒刷新资源监控
     const resourceInterval = setInterval(fetchSystemResources, 15000);
     // 每 30 秒刷新服务状态
@@ -237,7 +174,7 @@ const Dashboard: React.FC = () => {
       clearInterval(resourceInterval);
       clearInterval(statusInterval);
     };
-  }, [fetchStats, fetchServerStatus, fetchServicePorts, fetchSystemResources, fetchHistoryStats, fetchHourlyStats, fetchRegionStats, selectedDate]);
+  }, [fetchStats, fetchServerStatus, fetchServicePorts, fetchSystemResources, fetchHistoryStats]);
 
   const getStatusColor = (status: ServicePortStatus['status']) => {
     switch (status) {
@@ -304,78 +241,6 @@ const Dashboard: React.FC = () => {
             />
           </Tooltip>
         ))}
-      </div>
-    );
-  };
-
-  // 按小时折线图组件（任务量/请求量）
-  const HourlyLineChart: React.FC<{
-    data: HourlyDataPoint[];
-    dataKey: 'tasks' | 'requests' | 'activeUsers';
-    color: string;
-    title: string;
-    subtitle?: string;
-  }> = ({ data, dataKey, color, title, subtitle }) => {
-    const svgW = 700;
-    const svgH = 180;
-    const padL = 40;
-    const padR = 12;
-    const padT = 12;
-    const padB = 24;
-    const plotW = svgW - padL - padR;
-    const plotH = svgH - padT - padB;
-
-    const values = data.map(d => d[dataKey]);
-    const maxVal = Math.max(...values, 1);
-    const niceMax = Math.ceil(maxVal / 5) * 5 || 5;
-    const total = values.reduce((a, b) => a + b, 0);
-
-    const toX = (i: number) => padL + (i / (data.length - 1)) * plotW;
-    const toY = (val: number) => padT + plotH - (val / niceMax) * plotH;
-
-    const linePath = data.map((d, i) => `${i === 0 ? 'M' : 'L'}${toX(i)},${toY(d[dataKey])}`).join(' ');
-    const areaPath = `${linePath} L${toX(data.length - 1)},${toY(0)} L${toX(0)},${toY(0)} Z`;
-
-    // X轴标签（每3小时）
-    const xLabels = data.filter((_, i) => i % 3 === 0);
-
-    return (
-      <div>
-        <div className="flex items-center gap-2 mb-2">
-          <div className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ backgroundColor: color }} />
-          <span className="text-xs font-medium text-slate-200">{title}</span>
-          <span className="text-[11px] text-slate-500">总计 {total}</span>
-          {subtitle && <span className="text-[10px] text-slate-600">{subtitle}</span>}
-        </div>
-        <svg viewBox={`0 0 ${svgW} ${svgH}`} className="w-full" style={{ height: 180 }}>
-          <defs>
-            <linearGradient id={`hourlyGrad-${dataKey}`} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={color} stopOpacity={0.25} />
-              <stop offset="100%" stopColor={color} stopOpacity={0.02} />
-            </linearGradient>
-          </defs>
-          {/* Y轴网格 */}
-          {[0, 0.25, 0.5, 0.75, 1].map((r, i) => {
-            const y = toY(Math.round(niceMax * r));
-            return (
-              <g key={i}>
-                <line x1={padL} y1={y} x2={svgW - padR} y2={y} stroke="#334155" strokeWidth={0.5} strokeDasharray="3 3" />
-                <text x={padL - 6} y={y + 3} textAnchor="end" className="fill-slate-500" fontSize={9}>{Math.round(niceMax * r)}</text>
-              </g>
-            );
-          })}
-          {/* X轴标签 */}
-          {xLabels.map((d, i) => (
-            <text key={i} x={toX(i * 3)} y={svgH - 4} textAnchor="middle" className="fill-slate-500" fontSize={9}>{d.hour}</text>
-          ))}
-          {/* 面积 + 折线 */}
-          <path d={areaPath} fill={`url(#hourlyGrad-${dataKey})`} />
-          <path d={linePath} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
-          {/* 数据点 */}
-          {data.filter((_, i) => i % 2 === 0).map((d, i) => (
-            <circle key={i} cx={toX(i * 2)} cy={toY(d[dataKey])} r={2.5} fill={color} stroke="#0f172a" strokeWidth={1} />
-          ))}
-        </svg>
       </div>
     );
   };
@@ -522,264 +387,6 @@ const Dashboard: React.FC = () => {
             );
           })}
         </div>
-      </div>
-    );
-  };
-
-  // 中国地图热力图组件
-  const ChinaMapChart: React.FC<{
-    regionData: RegionDataPoint[];
-  }> = ({ regionData }) => {
-    const svgW = SVG_VIEWBOX.width;
-    const svgH = SVG_VIEWBOX.height;
-
-    // Build data map: province name → stats
-    const dataMap = useMemo(() => {
-      const map: Record<string, RegionDataPoint> = {};
-      for (const r of regionData) {
-        map[r.province] = r;
-        const shape = findProvince(r.province);
-        if (shape && shape.name !== r.province) {
-          map[shape.name] = r;
-        }
-      }
-      return map;
-    }, [regionData]);
-
-    const maxRequests = Math.max(...regionData.map(r => r.requests), 1);
-    const [tooltip, setTooltip] = useState<{ x: number; y: number; province: string; data: RegionDataPoint } | null>(null);
-    const [hoveredProvince, setHoveredProvince] = useState<string | null>(null);
-
-    // 百分位数数组：避免数据偏斜，用百分位替代线性映射
-    const sortedRequests = useMemo(() => {
-      return regionData.map(r => r.requests).filter(v => v > 0).sort((a, b) => a - b);
-    }, [regionData]);
-
-    const getPercentile = useCallback((value: number): number => {
-      if (sortedRequests.length === 0) return 0;
-      const idx = sortedRequests.findIndex(v => v >= value);
-      if (idx < 0) return 1;
-      return idx / sortedRequests.length;
-    }, [sortedRequests]);
-
-    // 双端渐变色阶：蓝(低) → 浅蓝 → 黄(中) → 橙 → 红(高)
-    const getFillColor = useCallback((province: string) => {
-      const d = dataMap[province];
-      if (!d || d.requests === 0) return '#e8ecf1'; // 大陆无数据：浅灰白
-      const p = getPercentile(d.requests); // 0~1
-      // 5 段线性插值
-      const stops: [number, number, number, number][] = [
-        [0.00, 13, 71, 161],   // #0d47a1 深蓝
-        [0.25, 66, 165, 245],  // #42a5f5 蓝
-        [0.50, 253, 216, 53],  // #fdd835 金黄
-        [0.75, 255, 112, 67],  // #ff7043 橙
-        [1.00, 198, 40, 40],   // #c62828 红
-      ];
-      let lo = stops[0], hi = stops[stops.length - 1];
-      for (let i = 0; i < stops.length - 1; i++) {
-        if (p >= stops[i][0] && p <= stops[i + 1][0]) {
-          lo = stops[i]; hi = stops[i + 1]; break;
-        }
-      }
-      const range = hi[0] - lo[0];
-      const t = range === 0 ? 0 : (p - lo[0]) / range;
-      const r = Math.round(lo[1] + (hi[1] - lo[1]) * t);
-      const g = Math.round(lo[2] + (hi[2] - lo[2]) * t);
-      const b = Math.round(lo[3] + (hi[3] - lo[3]) * t);
-      return `rgb(${r},${g},${b})`;
-    }, [getPercentile, dataMap]);
-
-    // 判断文字颜色（深色底用白字，浅色底用黑字）
-    const getTextColor = useCallback((province: string) => {
-      const d = dataMap[province];
-      if (!d || d.requests === 0) return '#334155';
-      const p = getPercentile(d.requests);
-      return p > 0.4 ? '#ffffff' : '#1e293b';
-    }, [getPercentile, dataMap]);
-
-    return (
-      <div className="relative" style={{ height: svgH }}>
-        <svg viewBox={`0 0 ${svgW} ${svgH}`} className="w-full h-full" preserveAspectRatio="xMidYMid meet">
-          <defs>
-            {/* 省份悬浮发光 */}
-            <filter id="mapGlow" x="-20%" y="-20%" width="140%" height="140%">
-              <feGaussianBlur stdDeviation="4" result="blur" />
-              <feMerge>
-                <feMergeNode in="blur" />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
-            {/* 文字阴影 */}
-            <filter id="textShadow" x="-20%" y="-20%" width="140%" height="140%">
-              <feDropShadow dx="0" dy="0" stdDeviation="2.5" floodColor="#000" floodOpacity="0.45" />
-            </filter>
-          </defs>
-
-          {/* 背景：蓝色海洋 */}
-          <rect width={svgW} height={svgH} fill="#0d3b66" rx="8" />
-
-          {/* 省份多边形（GeoJSON 精确边界） */}
-          {CHINA_PROVINCES.map((prov) => {
-            const hasData = !!dataMap[prov.name];
-            const fill = getFillColor(prov.name);
-            const isHovered = hoveredProvince === prov.name;
-            return (
-              <g key={prov.name}>
-                {prov.paths.map((pathStr, pi) => (
-                  <path
-                    key={pi}
-                    d={pathStr}
-                    fill={fill}
-                    stroke={isHovered ? '#1e40af' : '#90a4ae'}
-                    strokeWidth={isHovered ? 2.2 : 0.7}
-                    strokeLinejoin="round"
-                    filter={isHovered && hasData ? 'url(#mapGlow)' : undefined}
-                    className="cursor-pointer transition-all duration-150"
-                    style={{ 
-                      opacity: hasData ? (hoveredProvince && !isHovered ? 0.5 : 1) : 0.3
-                    }}
-                    onMouseEnter={() => {
-                      if (hasData) setHoveredProvince(prov.name);
-                    }}
-                    onMouseMove={(e) => {
-                      if (hasData) {
-                        const svgEl = (e.currentTarget as SVGElement).closest('svg');
-                        if (svgEl) {
-                          const rect = svgEl.getBoundingClientRect();
-                          setTooltip({
-                            x: e.clientX - rect.left,
-                            y: e.clientY - rect.top,
-                            province: prov.name,
-                            data: dataMap[prov.name],
-                          });
-                        }
-                      }
-                    }}
-                    onMouseLeave={() => { setHoveredProvince(null); setTooltip(null); }}
-                  />
-                ))}
-              </g>
-            );
-          })}
-
-          {/* 省份名称 + 数值标签（较大省份 + 有数据） */}
-          {CHINA_PROVINCES.filter(p => {
-            if (!dataMap[p.name]) return false;
-            const smallSet = new Set(['北京','天津','上海','香港','澳门','宁夏','海南','重庆','台湾']);
-            return !smallSet.has(p.name);
-          }).map((prov) => {
-            const d = dataMap[prov.name];
-            const txtColor = getTextColor(prov.name);
-            return (
-            <g key={'lbl-' + prov.name}>
-              <text
-                x={prov.center[0]}
-                y={prov.center[1] - 5}
-                textAnchor="middle"
-                dominantBaseline="central"
-                className="pointer-events-none select-none"
-                fontSize={prov.name.length > 2 ? 11 : 12}
-                fontWeight={700}
-                fill={txtColor}
-                filter="url(#textShadow)"
-              >
-                {prov.name}
-              </text>
-              {d && d.requests > 0 && (
-                <text
-                  x={prov.center[0]}
-                  y={prov.center[1] + 10}
-                  textAnchor="middle"
-                  dominantBaseline="central"
-                  className="pointer-events-none select-none"
-                  fontSize={9}
-                  fontWeight={600}
-                  fill={txtColor}
-                  opacity={0.85}
-                  filter="url(#textShadow)"
-                >
-                  {d.requests.toLocaleString()}
-                </text>
-              )}
-            </g>
-            );
-          })}
-
-          {/* 小省份标注圆点 + 引线 + 数值 */}
-          {CHINA_PROVINCES.filter(p => {
-            if (!dataMap[p.name]) return false;
-            const smallSet = new Set(['北京','天津','上海','香港','澳门','宁夏','海南','重庆','台湾']);
-            return smallSet.has(p.name);
-          }).map((prov) => {
-            const cx = prov.center[0];
-            const cy = prov.center[1];
-            const d = dataMap[prov.name];
-            const txtColor = getTextColor(prov.name);
-            const labelX = cx > svgW - 100 ? cx - 20 : cx + 14;
-            const labelY = cy;
-            return (
-              <g key={'dot-' + prov.name}>
-                <circle cx={cx} cy={cy} r={3.5} fill={getFillColor(prov.name)} stroke="#546e7a" strokeWidth={0.8} />
-                <line x1={cx + (cx > svgW - 100 ? -2.5 : 2.5)} y1={cy} x2={cx > svgW - 100 ? labelX + 10 : labelX - 10} y2={labelY} stroke="#78909c" strokeWidth={0.5} strokeDasharray="2 2" />
-                <text
-                  x={labelX}
-                  y={labelY - 5}
-                  textAnchor={cx > svgW - 100 ? 'end' : 'start'}
-                  dominantBaseline="central"
-                  className="pointer-events-none select-none"
-                  fontSize={9}
-                  fontWeight={600}
-                  fill={txtColor}
-                  filter="url(#textShadow)"
-                >
-                  {prov.name}
-                </text>
-                {d && d.requests > 0 && (
-                  <text
-                    x={labelX}
-                    y={labelY + 8}
-                    textAnchor={cx > svgW - 100 ? 'end' : 'start'}
-                    dominantBaseline="central"
-                    className="pointer-events-none select-none"
-                    fontSize={8}
-                    fontWeight={600}
-                    fill={txtColor}
-                    opacity={0.8}
-                    filter="url(#textShadow)"
-                  >
-                    {d.requests.toLocaleString()}
-                  </text>
-                )}
-              </g>
-            );
-          })}
-
-          {/* 南海诸岛示意框（右下角） */}
-          <rect x={svgW - 100} y={svgH - 60} width={92} height={52} rx={6} fill="#0d3b66" stroke="#1e5a8a" strokeWidth={0.8} />
-          <rect x={svgW - 94} y={svgH - 54} width={80} height={38} rx={3} fill="#e8ecf1" stroke="#cbd5e1" strokeWidth={0.6} />
-          <circle cx={svgW - 74} cy={svgH - 40} r={2.5} fill="#334155" />
-          <circle cx={svgW - 58} cy={svgH - 36} r={2} fill="#334155" />
-          <circle cx={svgW - 42} cy={svgH - 40} r={1.8} fill="#334155" />
-          <circle cx={svgW - 36} cy={svgH - 30} r={1.5} fill="#334155" />
-          <text x={svgW - 54} y={svgH - 8} textAnchor="middle" className="pointer-events-none select-none" fontSize={8} fill="#64748b" fontWeight={500}>南海诸岛</text>
-        </svg>
-
-        {/* Tooltip */}
-        {tooltip && (
-          <div
-            className="absolute z-50 bg-slate-800/95 backdrop-blur-sm border border-slate-500/50 rounded-lg px-3.5 py-2.5 shadow-2xl pointer-events-none"
-            style={{ left: Math.min(tooltip.x + 14, svgW - 200), top: Math.max(tooltip.y - 36, 4) }}
-          >
-            <p className="text-xs font-bold text-slate-100 mb-1">{tooltip.province}</p>
-            <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[10px]">
-              <span className="text-cyan-400 font-medium">请求 {tooltip.data.requests.toLocaleString()}</span>
-              <span className="text-emerald-400 font-medium">用户 {tooltip.data.users}</span>
-              {tooltip.data.activeToday !== undefined && (
-                <span className="text-purple-400 font-medium">活跃 {tooltip.data.activeToday}</span>
-              )}
-            </div>
-          </div>
-        )}
       </div>
     );
   };
@@ -1080,118 +687,6 @@ const Dashboard: React.FC = () => {
         </Card>
       </div>
 
-      {/* 每日小时粒度统计 + 中国地图 */}
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-        {/* 左侧：折线图 */}
-        <div className="lg:col-span-3 space-y-4">
-          {/* 日期选择器 */}
-          <Card className="bg-slate-900/80 border border-slate-700/50">
-            <CardBody className="p-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-violet-500/10 rounded-xl flex items-center justify-center">
-                    <Calendar className="w-5 h-5 text-violet-400" />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-semibold text-slate-100">每日小时详情</h3>
-                    <p className="text-xs text-slate-500">按小时粒度查看任务与请求量</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => changeDate(-1)}
-                    className="p-1.5 hover:bg-slate-800 rounded-lg transition-colors"
-                  >
-                    <ChevronLeft className="w-4 h-4 text-slate-400" />
-                  </button>
-                  <input
-                    type="date"
-                    value={selectedDate}
-                    onChange={(e) => setSelectedDate(e.target.value)}
-                    max={new Date().toISOString().slice(0, 10)}
-                    className="bg-slate-800 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-violet-500"
-                  />
-                  <button
-                    onClick={() => changeDate(1)}
-                    disabled={selectedDate >= new Date().toISOString().slice(0, 10)}
-                    className="p-1.5 hover:bg-slate-800 rounded-lg transition-colors disabled:opacity-30"
-                  >
-                    <ChevronRight className="w-4 h-4 text-slate-400" />
-                  </button>
-                </div>
-              </div>
-            </CardBody>
-          </Card>
-
-          {/* 折线图 */}
-          <Card className="bg-slate-900/80 border border-slate-700/50">
-            <CardBody className="p-5">
-              {hourlyLoading ? (
-                <div className="text-slate-400 text-center py-12 text-sm">加载中...</div>
-              ) : hourlyStats ? (
-                <div className="space-y-6">
-                  {/* 任务量折线图 */}
-                  <HourlyLineChart
-                    data={hourlyStats.hourlyData}
-                    dataKey="tasks"
-                    color="#60a5fa"
-                    title="每小时任务量"
-                    subtitle={`完成 ${hourlyStats.hourlyData.reduce((s, d) => s + d.completed, 0)} · 失败 ${hourlyStats.hourlyData.reduce((s, d) => s + d.failed, 0)}`}
-                  />
-                  {/* 请求量折线图 */}
-                  <HourlyLineChart
-                    data={hourlyStats.hourlyData}
-                    dataKey="requests"
-                    color="#34d399"
-                    title="每小时请求量"
-                  />
-                </div>
-              ) : (
-                <div className="text-slate-400 text-center py-12 text-sm">暂无该日期数据</div>
-              )}
-            </CardBody>
-          </Card>
-        </div>
-
-        {/* 右侧：中国地图 */}
-        <div className="lg:col-span-2">
-          <Card className="bg-slate-900/80 border border-slate-700/50 h-full">
-            <CardBody className="p-5">
-              <div className="flex items-center gap-3 mb-3">
-                <div className="w-10 h-10 bg-rose-500/10 rounded-xl flex items-center justify-center">
-                  <MapPin className="w-5 h-5 text-rose-400" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-semibold text-slate-100">地区请求分布</h3>
-                  <p className="text-xs text-slate-500">
-                    {regionStats ? `${regionStats.date} · ${regionStats.regionData.length} 个地区` : '加载中...'}
-                  </p>
-                </div>
-              </div>
-              {regionStats && regionStats.regionData.length > 0 ? (
-                <ChinaMapChart regionData={regionStats.regionData} />
-              ) : (
-                <div className="flex items-center justify-center h-64 text-slate-400 text-sm">
-                  {regionStats ? '暂无地区数据' : '加载中...'}
-                </div>
-              )}
-              {/* 图例 — 连续渐变条 */}
-              {regionStats && regionStats.regionData.length > 0 && (
-                <div className="flex items-center gap-3 mt-3">
-                  <span className="text-[10px] text-slate-500 shrink-0">低</span>
-                  <div 
-                    className="flex-1 h-2.5 rounded-full"
-                    style={{ background: 'linear-gradient(to right, #0d47a1, #42a5f5, #fdd835, #ff7043, #c62828)' }}
-                  />
-                  <span className="text-[10px] text-slate-500 shrink-0">高</span>
-                  <span className="text-[10px] text-slate-600 shrink-0 ml-2">请求量</span>
-                </div>
-              )}
-            </CardBody>
-          </Card>
-        </div>
-      </div>
-
       {/* 7天历史趋势 */}
       {historyStats && (
         <Card className="bg-slate-900/80 border border-slate-700/50">
@@ -1313,14 +808,12 @@ const Dashboard: React.FC = () => {
           <CardBody className="p-5">
             <h3 className="text-sm font-semibold text-slate-100 mb-4">快速操作</h3>
             <div className="grid grid-cols-2 gap-2">
-              {getUserRole() !== 'ops' && (
-                <button onClick={() => navigate('/admin/ai-models')} className="text-left px-3 py-2.5 bg-slate-800/60 hover:bg-slate-800 rounded-lg transition-colors border border-slate-700/50 group">
-                  <div className="flex items-center gap-2">
-                    <Plus className="w-4 h-4 text-purple-400" />
-                    <span className="text-xs font-medium text-slate-200">AI模型</span>
-                  </div>
-                </button>
-              )}
+              <button onClick={() => navigate('/admin/ai-models')} className="text-left px-3 py-2.5 bg-slate-800/60 hover:bg-slate-800 rounded-lg transition-colors border border-slate-700/50 group">
+                <div className="flex items-center gap-2">
+                  <Plus className="w-4 h-4 text-purple-400" />
+                  <span className="text-xs font-medium text-slate-200">AI模型</span>
+                </div>
+              </button>
               <button onClick={() => navigate('/admin/users')} className="text-left px-3 py-2.5 bg-slate-800/60 hover:bg-slate-800 rounded-lg transition-colors border border-slate-700/50 group">
                 <div className="flex items-center gap-2">
                   <Users className="w-4 h-4 text-blue-400" />
@@ -1339,20 +832,18 @@ const Dashboard: React.FC = () => {
                   <span className="text-xs font-medium text-slate-200">模型统计</span>
                 </div>
               </button>
-              <button onClick={() => navigate('/admin/error-monitor')} className="text-left px-3 py-2.5 bg-slate-800/60 hover:bg-slate-800 rounded-lg transition-colors border border-slate-700/50 group">
+              <button onClick={() => navigate('/admin/task-errors')} className="text-left px-3 py-2.5 bg-slate-800/60 hover:bg-slate-800 rounded-lg transition-colors border border-slate-700/50 group">
                 <div className="flex items-center gap-2">
                   <AlertTriangle className="w-4 h-4 text-red-400" />
                   <span className="text-xs font-medium text-slate-200">错误监控</span>
                 </div>
               </button>
-              {getUserRole() !== 'ops' && (
-                <button onClick={() => navigate('/admin/rate-limits')} className="text-left px-3 py-2.5 bg-slate-800/60 hover:bg-slate-800 rounded-lg transition-colors border border-slate-700/50 group">
-                  <div className="flex items-center gap-2">
-                    <Shield className="w-4 h-4 text-amber-400" />
-                    <span className="text-xs font-medium text-slate-200">限流配置</span>
-                  </div>
-                </button>
-              )}
+              <button onClick={() => navigate('/admin/rate-limits')} className="text-left px-3 py-2.5 bg-slate-800/60 hover:bg-slate-800 rounded-lg transition-colors border border-slate-700/50 group">
+                <div className="flex items-center gap-2">
+                  <Shield className="w-4 h-4 text-amber-400" />
+                  <span className="text-xs font-medium text-slate-200">限流配置</span>
+                </div>
+              </button>
             </div>
           </CardBody>
         </Card>

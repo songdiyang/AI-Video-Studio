@@ -76,6 +76,8 @@ export interface StoryboardScene {
   isLocked?: boolean;           // 是否锁定
   negativePrompt?: string;      // 反向提示词
   videoPrompt?: string;          // 视频生成专用提示词
+  firstFramePrompt?: string;     // 图片首帧专用提示词（对应 first_frame_prompt）
+  lastFramePrompt?: string;      // 图片尾帧专用提示词（对应 last_frame_prompt）
 }
 
 export const useSceneManager = (scriptId: number | null, projectId?: number | null) => {
@@ -84,14 +86,17 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
   const [isLoading, setIsLoading] = useState(false);
   const { showToast } = useToast();
 
-  // 使用 ref 跟踪当前正在加载的 scriptId，防止竞态条件
-  const loadingScriptIdRef = useRef<number | null>(null);
+  // 使用 ref 跟踪当前正在加载的 key，防止竞态条件
+  // key 形如 "script:123" 或 "project:456"
+  const loadingKeyRef = useRef<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // scriptId 变化时重新加载
+  // scriptId / projectId 变化时重新加载
   useEffect(() => {
     if (scriptId) {
       loadStoryboards(scriptId);
+    } else if (projectId) {
+      loadStandaloneStoryboards(projectId);
     } else {
       setScenes([]);
       setSelectedScene(null);
@@ -104,11 +109,12 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
         abortControllerRef.current = null;
       }
     };
-  }, [scriptId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scriptId, projectId]);
 
   // 监听任务完成事件，刷新分镜数据
   useEffect(() => {
-    if (!scriptId) return;
+    if (!scriptId && !projectId) return;
 
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -122,7 +128,11 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
       }
       debounceTimer = setTimeout(() => {
         console.log('[useSceneManager] 执行分镜数据刷新');
-        loadStoryboards(scriptId);
+        if (scriptId) {
+          loadStoryboards(scriptId);
+        } else if (projectId) {
+          loadStandaloneStoryboards(projectId);
+        }
       }, 500);
     };
 
@@ -134,20 +144,64 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
         clearTimeout(debounceTimer);
       }
     };
-  }, [scriptId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scriptId, projectId]);
+
+  // 公共：将后端响应数据映射为前端 StoryboardScene[]
+  const mapStoryboardItems = (data: any[]): StoryboardScene[] => {
+    return data.map((item: any, index: number) => {
+      const vars = item.variables || {};
+      return {
+        id: item.id || Date.now() + index,
+        order: item.index || item.idx || index + 1,
+        description: item.prompt_template || '',
+        baseDescription: item.description || '',
+        dialogue: vars.dialogue || '',
+        dialogues: Array.isArray(vars.dialogues) ? vars.dialogues : [],
+        voiceover: vars.voiceover || '',
+        duration: vars.duration || 3,
+        imageUrl: item.image_ref || undefined,
+        videoUrl: item.video_url || vars.videoUrl || undefined,
+        characters: vars.characters || [],
+        props: vars.props || [],
+        location: vars.location || '',
+        shotType: vars.shotType || '',
+        emotion: vars.emotion || '',
+        hasAction: vars.hasAction || false,
+        startFrame: item.first_frame_url || undefined,
+        endFrame: item.last_frame_url || undefined,
+        startFrameDesc: vars.startFrame || undefined,
+        endFrameDesc: vars.endFrame || undefined,
+        cameraMovement: vars.cameraMovement || undefined,
+        endState: vars.endState || undefined,
+        linkedCharacters: item.linkedCharacters || [],
+        linkedScenes: item.linkedScenes || [],
+        directorParams: vars.directorParams || undefined,
+        spatialDescription: item.spatial_description || undefined,
+        sketchUrl: item.sketch_url || undefined,
+        sketchType: item.sketch_type || undefined,
+        sketchData: item.sketch_data || undefined,
+        controlStrength: item.control_strength ?? undefined,
+        negativePrompt: item.negative_prompt || undefined,
+        videoPrompt: item.video_prompt || undefined,
+        firstFramePrompt: item.first_frame_prompt || undefined,
+        lastFramePrompt: item.last_frame_prompt || undefined,
+        isLocked: item.is_locked || false
+      } as StoryboardScene;
+    });
+  };
 
   const loadStoryboards = async (targetScriptId: number) => {
     if (!targetScriptId) return;
 
-    // 取消之前的请求
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
 
-    // 创建新的 AbortController
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
-    loadingScriptIdRef.current = targetScriptId;
+    const key = `script:${targetScriptId}`;
+    loadingKeyRef.current = key;
 
     setIsLoading(true);
     try {
@@ -159,85 +213,89 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
         signal: abortController.signal
       });
 
-      // 检查请求是否已过期（用户切换到了其他 scriptId）
-      if (loadingScriptIdRef.current !== targetScriptId) {
+      if (loadingKeyRef.current !== key) {
         console.log('[useSceneManager] 请求已过期，忽略结果');
         return;
       }
 
       if (res.ok) {
         const data = await res.json();
-        console.log('[useSceneManager] 加载分镜数据，原始数据:', data.length, '条');
-        console.log('[useSceneManager] 第一条原始数据:', data[0]);
+        console.log('[useSceneManager] 加载分镜数据(script)，原始数据:', data.length, '条');
 
         if (data && data.length > 0) {
-          const loadedScenes: StoryboardScene[] = data.map((item: any, index: number) => {
-            const vars = item.variables || {};
-
-            // Debug: 检查 variables 字段
-            if (index === 0) {
-              console.log('[useSceneManager] 第一条 variables 字段:', vars);
-              console.log('[useSceneManager] characters 字段类型:', typeof vars.characters, '值:', vars.characters);
-            }
-
-            return {
-              id: item.id || Date.now() + index,
-              order: item.index || index + 1,
-              description: item.prompt_template || '',
-              baseDescription: item.description || '',
-              dialogue: vars.dialogue || '',
-              dialogues: Array.isArray(vars.dialogues) ? vars.dialogues : [],
-              voiceover: vars.voiceover || '',
-              duration: vars.duration || 3,
-              imageUrl: item.image_ref || undefined,
-              videoUrl: item.video_url || vars.videoUrl || undefined,
-              characters: vars.characters || [],
-              props: vars.props || [],
-              location: vars.location || '',
-              shotType: vars.shotType || '',
-              emotion: vars.emotion || '',
-              hasAction: vars.hasAction || false,
-              startFrame: item.first_frame_url || undefined,
-              endFrame: item.last_frame_url || undefined,
-              startFrameDesc: vars.startFrame || undefined,
-              endFrameDesc: vars.endFrame || undefined,
-              cameraMovement: vars.cameraMovement || undefined,
-              endState: vars.endState || undefined,
-              linkedCharacters: item.linkedCharacters || [],
-              linkedScenes: item.linkedScenes || [],
-              directorParams: vars.directorParams || undefined,  // 导演参数
-              spatialDescription: item.spatial_description || undefined,  // 空间描述
-              // 草图相关字段
-              sketchUrl: item.sketch_url || undefined,
-              sketchType: item.sketch_type || undefined,
-              sketchData: item.sketch_data || undefined,
-              controlStrength: item.control_strength ?? undefined,
-              negativePrompt: item.negative_prompt || undefined,
-              videoPrompt: item.video_prompt || undefined
-            };
-          });
-
-          console.log('[useSceneManager] 解析后的分镜数据，前3条角色:', loadedScenes.slice(0, 3).map(s => s.characters));
-
+          const loadedScenes = mapStoryboardItems(data);
           setScenes(loadedScenes);
           if (loadedScenes.length > 0) {
             setSelectedScene(loadedScenes[0].id);
           }
-
         } else {
           setScenes([]);
         }
       }
     } catch (error: any) {
-      // 忽略取消的请求
       if (error.name === 'AbortError') {
         console.log('[useSceneManager] 请求已取消');
         return;
       }
       console.error('加载分镜失败:', error);
     } finally {
-      // 只有当前请求才清除 loading 状态
-      if (loadingScriptIdRef.current === targetScriptId) {
+      if (loadingKeyRef.current === key) {
+        setIsLoading(false);
+        abortControllerRef.current = null;
+      }
+    }
+  };
+
+  // 自由分镜加载：GET /api/storyboards/project/:projectId/standalone
+  const loadStandaloneStoryboards = async (targetProjectId: number) => {
+    if (!targetProjectId) return;
+
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+    const key = `project:${targetProjectId}`;
+    loadingKeyRef.current = key;
+
+    setIsLoading(true);
+    try {
+      const token = getAuthToken();
+      const res = await fetch(`/api/storyboards/project/${targetProjectId}/standalone`, {
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        signal: abortController.signal
+      });
+
+      if (loadingKeyRef.current !== key) {
+        console.log('[useSceneManager] 请求已过期，忽略结果');
+        return;
+      }
+
+      if (res.ok) {
+        const data = await res.json();
+        console.log('[useSceneManager] 加载自由分镜数据(project)，原始数据:', data.length, '条');
+
+        if (data && data.length > 0) {
+          const loadedScenes = mapStoryboardItems(data);
+          setScenes(loadedScenes);
+          if (loadedScenes.length > 0) {
+            setSelectedScene(loadedScenes[0].id);
+          }
+        } else {
+          setScenes([]);
+          setSelectedScene(null);
+        }
+      }
+    } catch (error: any) {
+      if (error.name === 'AbortError') {
+        return;
+      }
+      console.error('加载自由分镜失败:', error);
+    } finally {
+      if (loadingKeyRef.current === key) {
         setIsLoading(false);
         abortControllerRef.current = null;
       }
@@ -286,7 +344,7 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
     if (scriptId) {
       try {
         const token = getAuthToken();
-        // 1. 创建新分镜
+        // 1. 创建新分镜（剧集模式）
         const res = await fetch('/api/storyboards/add', {
           method: 'POST',
           headers: {
@@ -332,6 +390,52 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
         }
       } catch (err) {
         console.error('[useSceneManager] 保存分镜网络错误:', err);
+      }
+    } else if (projectId) {
+      // 自由分镜模式：无 scriptId，仅传 projectId
+      try {
+        const token = getAuthToken();
+        const res = await fetch('/api/storyboards/add', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {})
+          },
+          body: JSON.stringify({ projectId, idx: atIndex, description: '', variables_json })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setScenes(prev => {
+            const newScenes = prev.map(s => s.id === tempId ? { ...s, id: data.id } : s);
+            return newScenes.map((s, i) => ({ ...s, order: i + 1 }));
+          });
+          console.log('[useSceneManager] 自由分镜已保存到数据库, id:', data.id);
+
+          setScenes(prev => {
+            const newScenes = prev.map(s => s.id === tempId ? { ...s, id: data.id } : s);
+            const sorted = newScenes.sort((a, b) => a.order - b.order);
+            const reorderBody = sorted.map((s, i) => ({ id: s.id, idx: i }));
+
+            fetch('/api/storyboards/reorder', {
+              method: 'PATCH',
+              headers: {
+                'Content-Type': 'application/json',
+                ...(token ? { Authorization: `Bearer ${token}` } : {})
+              },
+              body: JSON.stringify({ projectId, order: reorderBody })
+            }).then(() => {
+              console.log('[useSceneManager] 自由分镜顺序已重新排序');
+            }).catch(err => {
+              console.error('[useSceneManager] 自由分镜重新排序失败:', err);
+            });
+
+            return sorted.map((s, i) => ({ ...s, order: i + 1 }));
+          });
+        } else {
+          console.error('[useSceneManager] 保存自由分镜失败:', await res.text());
+        }
+      } catch (err) {
+        console.error('[useSceneManager] 保存自由分镜网络错误:', err);
       }
     }
   };
@@ -491,6 +595,74 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
       ));
       console.error('保存视频提示词失败:', error);
       showToast('保存视频提示词失败，请稍后重试', 'error');
+      return false;
+    }
+  };
+
+  // 更新图片首帧专用提示词（对应 first_frame_prompt）
+  const updateFirstFramePrompt = async (id: number, firstFramePrompt: string) => {
+    const previousScene = scenes.find((scene) => scene.id === id);
+    if (!previousScene) return false;
+
+    setScenes(prevScenes => prevScenes.map(s => s.id === id ? { ...s, firstFramePrompt } : s));
+
+    try {
+      const token = getAuthToken();
+      const res = await fetch(`/api/storyboards/${id}/content`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ first_frame_prompt: firstFramePrompt })
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message || '保存首帧提示词失败');
+      }
+
+      return true;
+    } catch (error: any) {
+      setScenes(prevScenes => prevScenes.map(s =>
+        s.id === id ? { ...s, firstFramePrompt: previousScene.firstFramePrompt } : s
+      ));
+      console.error('保存首帧提示词失败:', error);
+      showToast('保存首帧提示词失败，请稍后重试', 'error');
+      return false;
+    }
+  };
+
+  // 更新图片尾帧专用提示词（对应 last_frame_prompt）
+  const updateLastFramePrompt = async (id: number, lastFramePrompt: string) => {
+    const previousScene = scenes.find((scene) => scene.id === id);
+    if (!previousScene) return false;
+
+    setScenes(prevScenes => prevScenes.map(s => s.id === id ? { ...s, lastFramePrompt } : s));
+
+    try {
+      const token = getAuthToken();
+      const res = await fetch(`/api/storyboards/${id}/content`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ last_frame_prompt: lastFramePrompt })
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message || '保存尾帧提示词失败');
+      }
+
+      return true;
+    } catch (error: any) {
+      setScenes(prevScenes => prevScenes.map(s =>
+        s.id === id ? { ...s, lastFramePrompt: previousScene.lastFramePrompt } : s
+      ));
+      console.error('保存尾帧提示词失败:', error);
+      showToast('保存尾帧提示词失败，请稍后重试', 'error');
       return false;
     }
   };
@@ -669,17 +841,23 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
 
   // 将排序持久化到后端
   const persistReorder = async (orderedScenes: StoryboardScene[]) => {
-    if (!scriptId) return;
+    if (!scriptId && !projectId) return;
     try {
       const token = getAuthToken();
       const order = orderedScenes.map((s, i) => ({ id: s.id, idx: i }));
+      const body: Record<string, unknown> = { order };
+      if (scriptId) {
+        body.scriptId = scriptId;
+      } else if (projectId) {
+        body.projectId = projectId;
+      }
       const res = await fetch('/api/storyboards/reorder', {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
-        body: JSON.stringify({ scriptId, order })
+        body: JSON.stringify(body)
       });
       if (res.ok) {
         console.log('[useSceneManager] 排序已保存到数据库');
@@ -736,6 +914,13 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
     setSelectedScene,
     isLoading,
     loadStoryboards,
+    loadStandaloneStoryboards,
+    /** 通用刷新：根据 scriptId/projectId 自动走对应端点 */
+    refresh: () => {
+      if (scriptId) return loadStoryboards(scriptId);
+      if (projectId) return loadStandaloneStoryboards(projectId);
+      return Promise.resolve();
+    },
     addScene,
     insertScene,
     deleteScene,
@@ -744,6 +929,8 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
     updateBaseDescription,
     updateVideoPrompt,
     updateVideoStartEndPrompts,
+    updateFirstFramePrompt,
+    updateLastFramePrompt,
     updateDialogues,
     updateVoiceover,
     updateDirectorParams,

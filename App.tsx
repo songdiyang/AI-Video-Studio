@@ -7,6 +7,7 @@ import AdminRoute from './components/AdminRoute';
 import ProtectedRoute from './components/ProtectedRoute';
 import { PreviewProvider } from './components/PreviewProvider';
 import { WorkbenchProvider } from './contexts/WorkbenchContext';
+import { AIAssistantProvider } from './contexts/AIAssistantContext';
 import TaskQueueBubble from './components/TaskQueueBubble';
 import Skeleton from './components/Skeleton';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -16,6 +17,7 @@ import { PointsProvider } from './contexts/PointsContext';
 const DynamicWorkbench = React.lazy(() => import('./components/DynamicWorkbench'));
 const ScriptStudio = React.lazy(() => import('./views/ScriptStudio/index'));
 const AssetsManager = React.lazy(() => import('./views/AssetsManager'));
+const StoryBoardPage = React.lazy(() => import('./views/StoryBoardPage'));
 const Projects = React.lazy(() => import('./views/Projects'));
 const Settings = React.lazy(() => import('./views/Settings'));
 const UserCenter = React.lazy(() => import('./views/UserCenter'));
@@ -91,6 +93,11 @@ const AnimatedRoutes: React.FC = () => {
         <Route path="/assets" element={
           <Suspense fallback={<LoadingFallback />}>
             <PageTransition><AssetsManager /></PageTransition>
+          </Suspense>
+        } />
+        <Route path="/storyboard" element={
+          <Suspense fallback={<LoadingFallback />}>
+            <PageTransition><StoryBoardPage /></PageTransition>
           </Suspense>
         } />
         <Route path="/projects" element={
@@ -283,11 +290,13 @@ const App: React.FC = () => {
             <Route path="*" element={
               <ProtectedRoute>
                 <WorkbenchProvider>
-                  <PointsProvider>
-                    <Layout>
-                      <AnimatedRoutes />
-                    </Layout>
-                  </PointsProvider>
+                  <AIAssistantProvider>
+                    <PointsProvider>
+                      <Layout>
+                        <AnimatedRoutes />
+                      </Layout>
+                    </PointsProvider>
+                  </AIAssistantProvider>
                 </WorkbenchProvider>
               </ProtectedRoute>
             } />

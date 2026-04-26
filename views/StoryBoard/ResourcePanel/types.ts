@@ -42,7 +42,8 @@ export interface CharacterState {
   generation_prompt?: string;
   gender?: 'male' | 'female' | 'unknown';
   // 状态分类和标签
-  state_category?: 'daily' | 'costume' | 'time' | 'effect';
+  // 注：服务端支持单个或数组多选；与 services/assets.ts 的 StateCategory 保持一致
+  state_category?: 'daily' | 'costume' | 'time' | 'effect' | Array<'daily' | 'costume' | 'time' | 'effect'>;
   tags?: string;  // 状态标签JSON数组
   useReferenceImages?: boolean;  // 是否启用参考图功能
 }

@@ -1,11 +1,9 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Sparkles, Send, Paperclip, ImagePlus, Plus, History } from 'lucide-react';
+import { Sparkles, X, Send, Paperclip, ImagePlus, Trash2 } from 'lucide-react';
 import { getAuthToken } from '../../services/auth';
 import { useToast } from '../../contexts/ToastContext';
 import ChatMessageComponent, { ChatMessageData } from './ChatMessage';
 import MediaAttachment from './MediaAttachment';
-import HistoryPanel from './HistoryPanel';
-import { useAIAssistantSessions } from '../../hooks/useAIAssistantSessions';
 
 // ─── Types ──────────────────────────────────────────────────────────
 interface Attachment {
@@ -24,10 +22,20 @@ export interface AIAssistantPanelProps {
     video_url?: string;
     scene_description?: string;
   } | null;
+  /** 项目中所有分镜的简要列表（用于AI识别"第几个分镜"） */
   scenes?: { id: number; index: number; description?: string }[];
   onClose: () => void;
   onAction?: (action: string, params: any) => void;
 }
+
+// ─── Welcome message ────────────────────────────────────────────────
+const WELCOME_MESSAGE: ChatMessageData = {
+  id: 'welcome',
+  role: 'assistant',
+  content:
+    '你好！我是AI助手，可以帮你分析图片、视频和文档内容。你可以发送当前分镜帧让我进行分析，或者直接提问。',
+  timestamp: Date.now(),
+};
 
 // ─── Component ──────────────────────────────────────────────────────
 const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
@@ -37,52 +45,80 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
   onClose,
   onAction,
 }) => {
-  const {
-    sessions,
-    openTabs,
-    activeId,
-    activeTab,
-    isHistoryOpen,
-    setIsHistoryOpen,
-    createSession,
-    openSession,
-    closeTab,
-    deleteSession,
-    generateTitle,
-    appendMessage,
-    setTabMessages,
-    setTabLoading,
-  } = useAIAssistantSessions(projectId);
-
+  const [messages, setMessages] = useState<ChatMessageData[]>([WELCOME_MESSAGE]);
   const [inputText, setInputText] = useState('');
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
   const [selectedModel, setSelectedModel] = useState('');
-  const [modelOptions, setModelOptions] = useState<{ name: string; category?: string; description?: string }[]>([]);
+  const [streamingId, setStreamingId] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const titleGeneratedRef = useRef<Set<number>>(new Set());
   const { showToast } = useToast();
 
-  const activeMessages = activeTab?.messages || [];
-  const isLoading = activeTab?.isLoading || false;
-  const streamingId = activeTab?.streamingId || null;
+  // ── localStorage key ─────────────────────────────────────────────
+  const storageKey = projectId ? `ai_chat_${projectId}` : 'ai_chat_global';
 
-  // ── Auto-scroll ──────────────────────────────────────────────────
+  const loadMessages = useCallback(() => {
+    try {
+      const raw = localStorage.getItem(storageKey);
+      if (raw) {
+        const parsed = JSON.parse(raw) as ChatMessageData[];
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setMessages(parsed);
+          return;
+        }
+      }
+    } catch {
+      // ignore parse error
+    }
+    setMessages([WELCOME_MESSAGE]);
+  }, [storageKey]);
+
+  const saveMessages = useCallback((msgs: ChatMessageData[]) => {
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(msgs));
+    } catch {
+      // ignore storage error (e.g. quota exceeded)
+    }
+  }, [storageKey]);
+
+  const clearMessages = useCallback(() => {
+    localStorage.removeItem(storageKey);
+    setMessages([WELCOME_MESSAGE]);
+    showToast('对话记录已清空', 'info');
+  }, [storageKey, showToast]);
+
+  // ── Load messages on mount ───────────────────────────────────────
+  useEffect(() => {
+    loadMessages();
+  }, [loadMessages]);
+
+  // ── Persist messages on change ───────────────────────────────────
+  useEffect(() => {
+    // 不保存只有 welcome message 的空会话
+    if (messages.length > 1 || (messages.length === 1 && messages[0].id !== 'welcome')) {
+      saveMessages(messages);
+    }
+  }, [messages, saveMessages]);
+
+  // ── Auto-scroll to bottom ────────────────────────────────────────
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [activeMessages, isLoading, streamingId]);
+  }, [messages, isLoading, streamingId]);
 
-  // ── Auto-resize textarea ─────────────────────────────────────────
+  // ── Auto-resize textarea (max 3 rows) ────────────────────────────
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, 72)}px`;
+    el.style.height = `${Math.min(el.scrollHeight, 72)}px`; // ~3 rows
   }, [inputText]);
 
-  // ── Load models ──────────────────────────────────────────────────
+  // ── Load available multimodal models ─────────────────────────────
+  const [modelOptions, setModelOptions] = useState<{ name: string; category?: string; description?: string }[]>([]);
+
   useEffect(() => {
     const fetchModels = async () => {
       try {
@@ -94,6 +130,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
           const data = await res.json();
           const all: { name: string; type?: string; category?: string; description?: string }[] =
             data.models || [];
+          // AI 助手只使用 MULTIMODAL 模型（多模态理解模型既能处理文本也能处理图像/视频）
           const multimodalModels = all.filter(
             (m) => (m.type || m.category || '').toUpperCase() === 'MULTIMODAL'
           );
@@ -109,23 +146,21 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
     fetchModels();
   }, []);
 
-  // ── Auto-create first session if none open ───────────────────────
-  useEffect(() => {
-    if (openTabs.length === 0 && !activeId) {
-      createSession();
-    }
-  }, [openTabs.length, activeId]);
-
   // ── Attach current frame ─────────────────────────────────────────
   const attachCurrentFrame = useCallback(() => {
     if (!currentFrame?.first_frame_url) return;
+    // Avoid duplicate
     if (attachments.some((a) => a.url === currentFrame.first_frame_url)) {
       showToast('当前帧图片已添加', 'info');
       return;
     }
     setAttachments((prev) => [
       ...prev,
-      { type: 'image' as const, url: currentFrame.first_frame_url!, name: `帧#${currentFrame.id}` },
+      {
+        type: 'image' as const,
+        url: currentFrame.first_frame_url!,
+        name: `帧#${currentFrame.id}`,
+      },
     ]);
   }, [currentFrame, attachments, showToast]);
 
@@ -153,9 +188,8 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
   const handleSend = useCallback(async () => {
     const text = inputText.trim();
     if (!text && attachments.length === 0) return;
-    if (isLoading || !activeId) return;
+    if (isLoading) return;
 
-    const sessionId = activeId;
     const userMessage: ChatMessageData = {
       id: `msg-${Date.now()}`,
       role: 'user',
@@ -164,17 +198,19 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
       timestamp: Date.now(),
     };
 
-    appendMessage(sessionId, userMessage as any);
+    setMessages((prev) => [...prev, userMessage]);
     setInputText('');
     setAttachments([]);
-    setTabLoading(sessionId, true);
+    setIsLoading(true);
 
-    const apiMessages = [...activeMessages, userMessage].map((m) => ({
+    // Build messages payload for API
+    const apiMessages = [...messages.filter((m) => m.id !== 'welcome'), userMessage].map((m) => ({
       role: m.role,
       content: m.content,
       attachments: m.attachments,
     }));
 
+    // 判断当前模型是否支持流式
     const currentModel = modelOptions.find((m) => m.name === selectedModel);
     const isStream = currentModel?.category?.toUpperCase() === 'MULTIMODAL';
 
@@ -182,9 +218,13 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
       const token = getAuthToken();
 
       if (isStream) {
+        // ── 流式模式 ──────────────────────────────────────────────
         const assistantId = `msg-${Date.now()}-ai`;
-        setTabLoading(sessionId, true, assistantId);
-        appendMessage(sessionId, { id: assistantId, role: 'assistant', content: '', timestamp: Date.now() } as any);
+        setStreamingId(assistantId);
+        setMessages((prev) => [
+          ...prev,
+          { id: assistantId, role: 'assistant', content: '', timestamp: Date.now() },
+        ]);
 
         const res = await fetch('/api/ai-assistant/chat/stream', {
           method: 'POST',
@@ -193,7 +233,6 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
           },
           body: JSON.stringify({
-            sessionId,
             projectId,
             modelName: selectedModel,
             messages: apiMessages,
@@ -202,7 +241,11 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                   frameId: currentFrame.id,
                   frameIndex: currentFrame.index,
                   sceneDescription: currentFrame.scene_description,
-                  scenes: scenes?.map((s) => ({ id: s.id, index: s.index, description: s.description })),
+                  scenes: scenes?.map((s) => ({
+                    id: s.id,
+                    index: s.index,
+                    description: s.description,
+                  })),
                 }
               : undefined,
           }),
@@ -223,31 +266,35 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
+
           buffer += decoder.decode(value, { stream: true });
           const lines = buffer.split('\n');
           buffer = lines.pop() || '';
+
           for (const line of lines) {
             if (!line.trim() || !line.startsWith('data: ')) continue;
             const data = line.slice(6);
             if (data === '[DONE]') continue;
             try {
               const parsed = JSON.parse(data);
-              if (parsed.error) throw new Error(parsed.error);
+              if (parsed.error) {
+                throw new Error(parsed.error);
+              }
               if (parsed.delta) {
                 fullContent += parsed.delta;
-                setTabMessages(sessionId,
-                  activeMessages.concat([
-                    userMessage,
-                    { id: assistantId, role: 'assistant', content: fullContent, timestamp: Date.now() },
-                  ])
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantId ? { ...m, content: fullContent } : m
+                  )
                 );
               }
             } catch {
-              // ignore
+              // ignore parse errors for non-delta events
             }
           }
         }
 
+        // 解析建议
         const suggestionMatch = fullContent.match(/\[SUGGESTIONS\](.*?)\[\/SUGGESTIONS\]/s);
         let suggestions: any[] = [];
         let cleanContent = fullContent;
@@ -259,26 +306,23 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
           } catch { /* ignore */ }
         }
 
-        setTabMessages(sessionId,
-          activeMessages.concat([
-            userMessage,
-            { id: assistantId, role: 'assistant', content: cleanContent || '(无回复)', suggestions, timestamp: Date.now() },
-          ])
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantId
+              ? { ...m, content: cleanContent || '(无回复)', suggestions }
+              : m
+          )
         );
-        setTabLoading(sessionId, false, null);
+        setStreamingId(null);
 
+        // 自动执行生成类 action
         for (const sug of suggestions) {
           if (sug.action === 'generate_frame' || sug.action === 'generate_video') {
             onAction?.(sug.action, sug.params || {});
           }
         }
-
-        // 首次对话后生成标题
-        if (!titleGeneratedRef.current.has(sessionId)) {
-          titleGeneratedRef.current.add(sessionId);
-          generateTitle(sessionId, selectedModel);
-        }
       } else {
+        // ── 非流式模式 ────────────────────────────────────────────
         const res = await fetch('/api/ai-assistant/chat', {
           method: 'POST',
           headers: {
@@ -286,7 +330,6 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
           },
           body: JSON.stringify({
-            sessionId,
             projectId,
             modelName: selectedModel,
             messages: apiMessages,
@@ -295,7 +338,11 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                   frameId: currentFrame.id,
                   frameIndex: currentFrame.index,
                   sceneDescription: currentFrame.scene_description,
-                  scenes: scenes?.map((s) => ({ id: s.id, index: s.index, description: s.description })),
+                  scenes: scenes?.map((s) => ({
+                    id: s.id,
+                    index: s.index,
+                    description: s.description,
+                  })),
                 }
               : undefined,
           }),
@@ -307,6 +354,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
         }
 
         const data = await res.json();
+
         const assistantMessage: ChatMessageData = {
           id: `msg-${Date.now()}-ai`,
           role: 'assistant',
@@ -315,32 +363,31 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
           timestamp: Date.now(),
         };
 
-        setTabMessages(sessionId, [...activeMessages, userMessage, assistantMessage]);
-        setTabLoading(sessionId, false);
+        setMessages((prev) => [...prev, assistantMessage]);
 
+        // 自动执行生成类 action
         for (const sug of data.suggestions || []) {
           if (sug.action === 'generate_frame' || sug.action === 'generate_video') {
             onAction?.(sug.action, sug.params || {});
           }
         }
-
-        if (!titleGeneratedRef.current.has(sessionId)) {
-          titleGeneratedRef.current.add(sessionId);
-          generateTitle(sessionId, selectedModel);
-        }
       }
     } catch (err: any) {
       console.error('[AIAssistant] Chat error:', err);
+
       const errorMessage: ChatMessageData = {
         id: `msg-${Date.now()}-err`,
         role: 'system',
         content: `⚠️ ${err.message || '请求失败，请稍后重试'}`,
         timestamp: Date.now(),
       };
-      setTabMessages(sessionId, [...activeMessages, userMessage, errorMessage]);
-      setTabLoading(sessionId, false, null);
+
+      setMessages((prev) => [...prev, errorMessage]);
+      setStreamingId(null);
+    } finally {
+      setIsLoading(false);
     }
-  }, [inputText, attachments, isLoading, activeId, activeMessages, projectId, selectedModel, currentFrame, modelOptions]);
+  }, [inputText, attachments, isLoading, messages, projectId, selectedModel, currentFrame, modelOptions]);
 
   // ── Keyboard shortcut ────────────────────────────────────────────
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -350,6 +397,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
     }
   };
 
+  // ── Handle AI suggestion action ──────────────────────────────────
   const handleAction = (action: string, params: any) => {
     onAction?.(action, params);
   };
@@ -375,7 +423,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
   // ── Render ───────────────────────────────────────────────────────
   return (
     <div
-      className="flex flex-col h-full bg-[var(--bg-app)] border-l border-[var(--border-color)] w-full relative"
+      className="flex flex-col h-full bg-[var(--bg-app)] border-l border-[var(--border-color)] w-full"
       onDrop={handleDrop}
       onDragOver={handleDragOver}
     >
@@ -387,58 +435,46 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
         </div>
         <div className="flex items-center gap-1">
           <button
-            onClick={() => createSession()}
+            onClick={clearMessages}
             className="p-1 rounded hover:bg-[var(--bg-input)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
-            title="新建会话"
+            title="清空对话"
           >
-            <Plus size={15} />
+            <Trash2 size={14} />
           </button>
           <button
-            onClick={() => setIsHistoryOpen(true)}
+            onClick={onClose}
             className="p-1 rounded hover:bg-[var(--bg-input)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
-            title="历史会话"
+            title="关闭"
           >
-            <History size={15} />
+            <X size={15} />
           </button>
         </div>
       </div>
 
-      {/* ─ Tab bar ─────────────────────────────────────────── */}
-      {openTabs.length > 0 && (
-        <div className="flex items-center gap-1 px-2 py-1.5 border-b border-[var(--border-color)] overflow-x-auto">
-          {openTabs.map((tab) => {
-            const session = sessions.find((s) => s.id === tab.id);
-            const isActive = tab.id === activeId;
-            return (
-              <div
-                key={tab.id}
-                onClick={() => openSession(tab.id)}
-                className={`group flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] cursor-pointer whitespace-nowrap transition-colors max-w-[120px] ${
-                  isActive
-                    ? 'bg-[var(--accent)]/15 text-[var(--accent)] font-medium'
-                    : 'bg-[var(--bg-input)] text-[var(--text-muted)] hover:text-[var(--text-primary)]'
-                }`}
-              >
-                <span className="truncate">{session?.title || '新会话'}</span>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    closeTab(tab.id);
-                  }}
-                  className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-black/10 transition-opacity"
-                >
-                  <span className="text-[10px] leading-none">&times;</span>
-                </button>
-              </div>
-            );
-          })}
-        </div>
-      )}
+      {/* ─ Model selector ──────────────────────────────────── */}
+      <div className="px-3 py-2 border-b border-[var(--border-color)]">
+        <select
+          value={selectedModel}
+          onChange={(e) => setSelectedModel(e.target.value)}
+          className="w-full text-xs px-2 py-1.5 rounded-md bg-[var(--bg-input)] border border-[var(--border-color)] text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)] appearance-none cursor-pointer"
+        >
+          {modelOptions.length === 0 && (
+            <option value="" disabled>
+              加载模型中...
+            </option>
+          )}
+          {modelOptions.map((m) => (
+            <option key={m.name} value={m.name}>
+              {m.name}
+            </option>
+          ))}
+        </select>
+      </div>
 
       {/* ─ Messages list ───────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
-        {activeMessages.map((msg) => (
-          <ChatMessageComponent key={msg.id} message={msg as ChatMessageData} onAction={handleAction} />
+        {messages.map((msg) => (
+          <ChatMessageComponent key={msg.id} message={msg} onAction={handleAction} />
         ))}
         {isLoading && (
           <ChatMessageComponent
@@ -454,9 +490,26 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
         <div ref={messagesEndRef} />
       </div>
 
+      {/* ─ Attachments preview ─────────────────────────────── */}
+      {attachments.length > 0 && (
+        <div className="px-3 py-2 border-t border-[var(--border-color)] flex gap-2 flex-wrap">
+          {attachments.map((att, idx) => (
+            <MediaAttachment
+              key={`${att.url}-${idx}`}
+              type={att.type}
+              url={att.url}
+              name={att.name}
+              removable
+              onRemove={() => removeAttachment(idx)}
+              size="sm"
+            />
+          ))}
+        </div>
+      )}
+
       {/* ─ Current frame quick attach ──────────────────────── */}
       {currentFrame?.first_frame_url && (
-        <div className="px-3 pt-2">
+        <div className="px-3 py-1.5 border-t border-[var(--border-color)]">
           <button
             onClick={attachCurrentFrame}
             className="flex items-center gap-1 text-xs text-[var(--accent)] hover:text-[var(--accent-light)] transition-colors"
@@ -467,81 +520,35 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
         </div>
       )}
 
-      {/* ─ Unified Input container (Qoder-like) ─────────────── */}
-      <div className="p-3">
-        <div className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-input)] focus-within:ring-1 focus-within:ring-[var(--accent)] focus-within:border-[var(--accent)] transition-all overflow-hidden">
-          {attachments.length > 0 && (
-            <div className="px-2.5 pt-2.5 pb-1 flex gap-2 flex-wrap">
-              {attachments.map((att, idx) => (
-                <MediaAttachment
-                  key={`${att.url}-${idx}`}
-                  type={att.type}
-                  url={att.url}
-                  name={att.name}
-                  removable
-                  onRemove={() => removeAttachment(idx)}
-                  size="sm"
-                />
-              ))}
-            </div>
-          )}
+      {/* ─ Input area ──────────────────────────────────────── */}
+      <div className="px-3 py-2 border-t border-[var(--border-color)] flex items-end gap-2">
+        <button
+          onClick={openMediaPicker}
+          className="p-1.5 rounded hover:bg-[var(--bg-input)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors flex-shrink-0 mb-0.5"
+          title="添加附件"
+        >
+          <Paperclip size={15} />
+        </button>
 
-          <textarea
-            ref={textareaRef}
-            value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={activeId ? '输入消息，Ctrl+Enter 发送...' : '请先新建会话'}
-            rows={1}
-            disabled={!activeId}
-            className="w-full resize-none text-xs px-3 py-2 bg-transparent border-none text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none max-h-[96px] leading-relaxed disabled:opacity-50"
-          />
-
-          <div className="flex items-center justify-between gap-2 px-2 pb-2 pt-0.5">
-            <div className="flex items-center min-w-0 flex-1">
-              <select
-                value={selectedModel}
-                onChange={(e) => setSelectedModel(e.target.value)}
-                disabled={!activeId}
-                className="max-w-full text-[11px] px-2 py-1 rounded-md bg-transparent hover:bg-[var(--bg-app)] border border-[var(--border-color)]/60 text-[var(--text-muted)] hover:text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)] cursor-pointer truncate disabled:opacity-50"
-              >
-                {modelOptions.length === 0 && <option value="" disabled>加载模型中...</option>}
-                {modelOptions.map((m) => (
-                  <option key={m.name} value={m.name}>{m.name}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="flex items-center gap-1 flex-shrink-0">
-              <button
-                onClick={openMediaPicker}
-                disabled={!activeId}
-                className="p-1.5 rounded-md hover:bg-[var(--bg-app)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors disabled:opacity-50"
-              >
-                <Paperclip size={14} />
-              </button>
-              <button
-                onClick={handleSend}
-                disabled={isLoading || !activeId || (!inputText.trim() && attachments.length === 0)}
-                className="p-1.5 rounded-md bg-[var(--accent)] text-white hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
-              >
-                <Send size={14} />
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* History panel overlay */}
-      {isHistoryOpen && (
-        <HistoryPanel
-          sessions={sessions}
-          openTabIds={openTabs.map((t) => t.id)}
-          onOpen={openSession}
-          onDelete={deleteSession}
-          onClose={() => setIsHistoryOpen(false)}
+        <textarea
+          ref={textareaRef}
+          value={inputText}
+          onChange={(e) => setInputText(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="输入消息，Ctrl+Enter 发送..."
+          rows={1}
+          className="flex-1 resize-none text-xs px-2.5 py-1.5 rounded-lg bg-[var(--bg-input)] border border-[var(--border-color)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)] max-h-[72px] leading-relaxed"
         />
-      )}
+
+        <button
+          onClick={handleSend}
+          disabled={isLoading || (!inputText.trim() && attachments.length === 0)}
+          className="p-1.5 rounded-lg bg-[var(--accent)] text-white hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity flex-shrink-0 mb-0.5"
+          title="发送 (Ctrl+Enter)"
+        >
+          <Send size={15} />
+        </button>
+      </div>
 
       {/* Hidden file input */}
       <input

@@ -230,6 +230,121 @@ router.patch('/admin/errors/:jobId/status', authMiddleware, requireAdmin, async 
 });
 
 /**
+ * 管理员接口 - 获取失败任务错误种类统计（按错误消息模式分组）
+ */
+router.get('/admin/errors/stats', authMiddleware, requireAdmin, async (req, res) => {
+  try {
+    const { execute } = require('../dbHelper');
+    const jobs = await execute(
+      `SELECT wj.error_message, wj.workflow_type, wj.admin_resolved
+       FROM workflow_jobs wj
+       WHERE wj.status = 'failed'`
+    );
+
+    // 按错误消息模式分组统计
+    const patterns = {};
+    for (const job of jobs) {
+      const normalized = normalizeErrorMessage(job.error_message || '');
+      const key = normalized.pattern;
+      if (!patterns[key]) {
+        patterns[key] = {
+          pattern: key,
+          displaySample: normalized.sample,
+          workflowTypes: new Set(),
+          total: 0,
+          unresolved: 0
+        };
+      }
+      patterns[key].workflowTypes.add(job.workflow_type);
+      patterns[key].total++;
+      if (!job.admin_resolved) patterns[key].unresolved++;
+    }
+
+    const result = Object.values(patterns)
+      .map(p => ({
+        ...p,
+        workflowTypes: [...p.workflowTypes]
+      }))
+      .sort((a, b) => b.unresolved - a.unresolved || b.total - a.total);
+
+    res.json({ patterns: result });
+  } catch (error) {
+    console.error('[Admin Error Stats]', error);
+    res.status(500).json({ message: error.message || '获取错误统计失败' });
+  }
+});
+
+/**
+ * 规范化错误消息，提取核心模式（剥离变量部分）
+ */
+function normalizeErrorMessage(msg) {
+  if (!msg) return { pattern: '(空错误)', sample: '(空错误)' };
+  let normalized = msg;
+  // 剥离引号内的具体值（表名.列名保留，但纯数字ID替换）
+  normalized = normalized.replace(/\d+/g, '{N}');
+  // 剥离 IP 地址
+  normalized = normalized.replace(/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g, '{IP}');
+  // 剥离 UUID / hash
+  normalized = normalized.replace(/\b[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\b/gi, '{UUID}');
+  normalized = normalized.replace(/\b[a-f0-9]{32,}\b/gi, '{HASH}');
+  // 剥离路径中的动态片段
+  normalized = normalized.replace(/\/[a-zA-Z0-9_-]+\/[a-zA-Z0-9_-]+\/[a-zA-Z0-9_-]+/g, '/{path}/{path}/{path}');
+  normalized = normalized.replace(/\/[a-zA-Z0-9_-]+\/[a-zA-Z0-9_-]+/g, '/{path}/{path}');
+  // 收尾空白规范化
+  normalized = normalized.replace(/\s+/g, ' ').trim();
+  // 长度限制
+  const sample = msg.length > 120 ? msg.substring(0, 120) + '…' : msg;
+  return { pattern: normalized, sample };
+}
+
+/**
+ * 管理员接口 - 批量处理失败任务（标记 admin_resolved）
+ * 可按错误消息模式或 workflowType 批量操作
+ */
+router.post('/admin/errors/batch-resolve', authMiddleware, requireAdmin, async (req, res) => {
+  try {
+    const { errorPattern, workflowType, jobIds } = req.body;
+    const { execute } = require('../dbHelper');
+
+    let where = "WHERE wj.status = 'failed' AND wj.admin_resolved = 0";
+    const params = [];
+
+    if (jobIds && Array.isArray(jobIds) && jobIds.length > 0) {
+      const numericIds = jobIds.map(id => decodeId(id));
+      where += ` AND wj.id IN (${numericIds.map(() => '?').join(',')})`;
+      params.push(...numericIds);
+    } else {
+      if (workflowType) {
+        where += ' AND wj.workflow_type = ?';
+        params.push(workflowType);
+      }
+      if (errorPattern) {
+        // 用 LIKE 匹配原始错误消息中含有关键词的记录
+        // 提取 errorPattern 中的核心关键词进行匹配
+        const keywords = errorPattern
+          .replace(/\{N\}|\{IP\}|\{UUID\}|\{HASH\}|\{path\}/g, '%')
+          .replace(/\s+/g, '%')
+          .replace(/%%+/g, '%');
+        where += ' AND wj.error_message LIKE ?';
+        params.push(`%${keywords}%`);
+      }
+    }
+
+    const [result] = await execute(
+      `UPDATE workflow_jobs wj ${where.replace('WHERE', 'SET wj.admin_resolved = 1 WHERE')}`,
+      params
+    );
+
+    const count = result?.affectedRows || 0;
+    console.log(`[Admin Batch Resolve] 批量处理了 ${count} 个失败任务`);
+    res.json({ success: true, resolved: count, message: `已批量处理 ${count} 个任务` });
+  } catch (error) {
+    console.error('[Admin Batch Resolve]', error);
+    res.status(500).json({ message: error.message || '批量处理失败' });
+  }
+});
+
+/**
  * 批量标记失败/已取消的任务为已消费（一键清除错误信息）
  * 仅标记 is_consumed=1，不删除数据库记录
  */

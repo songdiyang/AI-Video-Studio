@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Button, Input, Tabs, Tab, useDisclosure, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Popover, PopoverTrigger, PopoverContent } from '@heroui/react';
-import { Users, MapPin, FileText, Plus, Search, Tag, Settings, Edit2, Shirt } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Button, Input, Tabs, Tab, useDisclosure, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Popover, PopoverTrigger, PopoverContent, Textarea } from '@heroui/react';
+import { Users, MapPin, FileText, Plus, Search, Tag, Settings, Edit2, Shirt, X, ChevronDown, ChevronRight, BookOpen, Sparkles } from 'lucide-react';
 import { getAuthToken } from '../../services/auth';
 import { useSceneImageGeneration } from '../StoryBoard/hooks/useSceneImageGeneration';
 import SceneDetailModal from '../StoryBoard/ResourcePanel/SceneDetailModal';
@@ -15,11 +16,20 @@ import {
 } from '../../services/assets';
 import { Costume, fetchCostumes, createCostume, updateCostume, deleteCostume, COSTUME_CATEGORIES } from '../../services/costumes';
 import { Project, fetchProjects } from '../../services/projects';
+import {
+  ScriptLibraryItem,
+  fetchScriptLibrary,
+  createScript as createScriptApi,
+  deleteScript as deleteScriptApi,
+  bindScriptToProject,
+} from '../../services/scripts';
 import CharacterList from './CharacterList';
 import ProjectSidebar from './ProjectSidebar';
 import SceneList from './SceneList';
 import PropList from './PropList';
 import CostumeList from './CostumeList';
+import ScriptList from './ScriptList';
+import ScriptGenerateModal from './ScriptGenerateModal';
 import { CharacterModal, SceneModal, PropModal, CostumeModal } from './AssetModel';
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
@@ -27,7 +37,7 @@ import { useCurrentProject } from '../../contexts/WorkbenchContext';
 import { AIModel } from '../../components/AIModelSelector';
 import type { CharacterState } from '../../services/assets';
 
-type TabType = 'characters' | 'scenes' | 'props' | 'costumes';
+type TabType = 'characters' | 'scenes' | 'props' | 'costumes' | 'scripts';
 
 // 标签分组管理面板组件
 interface TagGroupManagerProps {
@@ -299,6 +309,7 @@ const AssetsManager: React.FC = () => {
   const [scenes, setScenes] = useState<Scene[]>([]);
   const [props, setProps] = useState<Prop[]>([]);
   const [costumes, setCostumes] = useState<Costume[]>([]);
+  const [scripts, setScripts] = useState<ScriptLibraryItem[]>([]);
   const [tagGroups, setTagGroups] = useState<TagGroup[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -318,6 +329,7 @@ const AssetsManager: React.FC = () => {
   const { showToast } = useToast();
   const { confirm } = useConfirm();
   const { currentProject } = useCurrentProject();
+  const navigate = useNavigate();
 
   // 加载用户项目列表
   useEffect(() => {
@@ -334,6 +346,24 @@ const AssetsManager: React.FC = () => {
   // 场景详情模态框
   const { isOpen: isDetailOpen, onOpen: onDetailOpen, onOpenChange: onDetailOpenChange } = useDisclosure();
   const [selectedScene, setSelectedScene] = useState<Scene | null>(null);
+
+  // 剧本创建模态框
+  const {
+    isOpen: isScriptCreateOpen,
+    onOpen: onScriptCreateOpen,
+    onOpenChange: onScriptCreateOpenChange,
+  } = useDisclosure();
+  const [scriptCreateTitle, setScriptCreateTitle] = useState('');
+  const [scriptCreateContent, setScriptCreateContent] = useState('');
+  const [scriptCreateTargetProjectId, setScriptCreateTargetProjectId] = useState<string>('');
+  const [scriptCreating, setScriptCreating] = useState(false);
+
+  // AI 剧本生成模态框
+  const {
+    isOpen: isScriptGenerateOpen,
+    onOpen: onScriptGenerateOpen,
+    onOpenChange: onScriptGenerateOpenChange,
+  } = useDisclosure();
   
   const [formData, setFormData] = useState<any>({
     name: '',
@@ -425,6 +455,15 @@ const AssetsManager: React.FC = () => {
         } else {
           setCostumes([]);
         }
+      } else if (activeTab === 'scripts') {
+        // 剧本资源库：支持项目筛选
+        const all = await fetchScriptLibrary('all');
+        const filtered = filterProjectId
+          ? all.filter((s) => s.project_id === filterProjectId)
+          : projectFilter === 'unused'
+            ? all.filter((s) => s.project_id == null)
+            : all;
+        setScripts(filtered);
       } else {
         const data = await fetchProps();
         setProps(data);
@@ -442,10 +481,24 @@ const AssetsManager: React.FC = () => {
       case 'scenes': return '场景';
       case 'props': return '道具';
       case 'costumes': return '服装';
+      case 'scripts': return '剧本';
     }
   };
 
   const handleAdd = () => {
+    // 剧本 Tab：走独立的创建弹窗（内容只需 title + content）
+    if (activeTab === 'scripts') {
+      setScriptCreateTitle('');
+      setScriptCreateContent('');
+      // 默认归属：若已选项目则带入，否则"个人剧本库"
+      const defaultTarget = projectFilter !== 'all' && projectFilter !== 'unused'
+        ? String(projectFilter)
+        : '';
+      setScriptCreateTargetProjectId(defaultTarget);
+      onScriptCreateOpen();
+      return;
+    }
+
     setEditMode(false);
     setCurrentId(null);
     // 默认项目：如果当前筛选器选中了具体项目，自动填充
@@ -571,6 +624,8 @@ const AssetsManager: React.FC = () => {
         await deleteScene(id);
       } else if (activeTab === 'costumes') {
         await deleteCostume(id);
+      } else if (activeTab === 'scripts') {
+        await deleteScriptApi(id);
       } else {
         await deleteProp(id);
       }
@@ -739,6 +794,96 @@ const AssetsManager: React.FC = () => {
       (p.tags && p.tags.toLowerCase().includes(q));
   });
 
+  const filteredScripts = scripts.filter((s) => {
+    const q = searchQuery.toLowerCase();
+    if (!q) return true;
+    return (
+      (s.title || '').toLowerCase().includes(q) ||
+      (s.content || '').toLowerCase().includes(q) ||
+      (String(s.episode_number || '')).includes(q)
+    );
+  });
+
+  // 剧本创建提交
+  const handleScriptCreateSubmit = async () => {
+    if (!scriptCreateContent.trim()) {
+      showToast('请填写剧本内容', 'warning');
+      return;
+    }
+    setScriptCreating(true);
+    try {
+      const projectId = scriptCreateTargetProjectId ? Number(scriptCreateTargetProjectId) : null;
+      await createScriptApi({
+        projectId,
+        title: scriptCreateTitle.trim() || undefined,
+        content: scriptCreateContent,
+      });
+      showToast(projectId ? '剧本已保存到项目' : '已保存到个人剧本库', 'success');
+      onScriptCreateOpenChange();
+      await loadData();
+    } catch (err: any) {
+      console.error('[ScriptCreate]', err);
+      showToast(err?.message || '创建剧本失败', 'error');
+    } finally {
+      setScriptCreating(false);
+    }
+  };
+
+  // 剧本绑定提交
+  const handleScriptBind = async (payload: {
+    sourceScriptId: number;
+    targetProjectId: number;
+    titleOverride?: string;
+    bindAll?: boolean;
+    siblingIds?: number[];
+  }) => {
+    try {
+      const res = await bindScriptToProject(payload as any);
+      showToast(res.message || '已绑定到项目', 'success');
+      await loadData();
+    } catch (err: any) {
+      console.error('[ScriptBind]', err);
+      showToast(err?.message || '绑定失败', 'error');
+      throw err;
+    }
+  };
+
+  // 剧本批量删除（整组）
+  const handleScriptDeleteGroup = async (ids: number[]) => {
+    const confirmed = await confirm({
+      title: '删除整组剧本',
+      message: `确定要删除该剧本的全部 ${ids.length} 集吗？此操作不可撤销。`,
+      type: 'danger',
+      confirmText: '删除全部'
+    });
+    if (!confirmed) return;
+    try {
+      await Promise.all(ids.map(id => deleteScriptApi(id)));
+      showToast('已删除整组剧本', 'success');
+      await loadData();
+    } catch (err: any) {
+      console.error('[ScriptDeleteGroup]', err);
+      showToast(err?.message || '删除失败', 'error');
+    }
+  };
+
+  // 添加集数（个人剧本组内）
+  const handleScriptCreateEpisode = async (title: string, projectId: number | null, episodeNumber: number) => {
+    try {
+      await createScriptApi({
+        projectId,
+        title,
+        content: '',
+        episodeNumber,
+      });
+      showToast(`已添加第${episodeNumber}集`, 'success');
+      await loadData();
+    } catch (err: any) {
+      console.error('[ScriptCreateEpisode]', err);
+      showToast(err?.message || '添加集数失败', 'error');
+    }
+  };
+
   return (
     <div className="h-full bg-(--bg-app) flex">
       {/* 左侧边栏 - 项目快速切换 */}
@@ -763,6 +908,16 @@ const AssetsManager: React.FC = () => {
                 onPress={onTagManagerOpen}
               >
                 标签分组管理
+              </Button>
+            )}
+            {activeTab === 'scripts' && (
+              <Button
+                variant="flat"
+                className="pro-btn bg-violet-500/10 text-violet-500 hover:bg-violet-500/20"
+                startContent={<Sparkles className="w-4 h-4" />}
+                onPress={onScriptGenerateOpen}
+              >
+                AI 生成剧本
               </Button>
             )}
             <Button
@@ -973,6 +1128,28 @@ const AssetsManager: React.FC = () => {
               onDelete={handleDelete} 
             />
           </Tab>
+
+          <Tab
+            key="scripts"
+            title={
+              <div className="flex items-center gap-2">
+                <BookOpen className="w-4 h-4" />
+                <span>剧本 ({scripts.length})</span>
+              </div>
+            }
+          >
+            <ScriptList
+              scripts={filteredScripts}
+              projects={userProjects}
+              onDelete={handleDelete}
+              onDeleteGroup={handleScriptDeleteGroup}
+              onBind={handleScriptBind}
+              onCreateEpisode={handleScriptCreateEpisode}
+              onGenerateStoryboard={(script) => {
+                navigate(`/storyboard?scriptId=${script.id}`);
+              }}
+            />
+          </Tab>
         </Tabs>
 
         {/* 编辑/新增对话框 */}
@@ -1044,6 +1221,96 @@ const AssetsManager: React.FC = () => {
           onOpenChange={onTagManagerOpenChange}
           tagGroups={tagGroups}
           onRefresh={loadTagGroups}
+        />
+
+        {/* 剧本创建模态框 */}
+        <Modal isOpen={isScriptCreateOpen} onOpenChange={onScriptCreateOpenChange} size="2xl">
+          <ModalContent>
+            {(onClose) => (
+              <>
+                <ModalHeader>新建剧本</ModalHeader>
+                <ModalBody>
+                  <div className="space-y-3">
+                    <Input
+                      label="剧本标题（可选）"
+                      placeholder="留空则默认用集数"
+                      value={scriptCreateTitle}
+                      onValueChange={setScriptCreateTitle}
+                    />
+
+                    <div>
+                      <label className="text-xs text-(--text-muted) mb-1.5 block">归属</label>
+                      <div className="flex flex-wrap gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setScriptCreateTargetProjectId('')}
+                          className={`px-2.5 py-1 rounded-full text-xs font-medium transition-all border ${
+                            scriptCreateTargetProjectId === ''
+                              ? 'bg-(--accent)/20 text-(--accent-light) border-(--accent)/40'
+                              : 'bg-white/5 text-(--text-muted) border-white/10 hover:bg-white/10'
+                          }`}
+                        >
+                          个人剧本库
+                        </button>
+                        {userProjects.map((p) => (
+                          <button
+                            key={p.id}
+                            type="button"
+                            onClick={() => setScriptCreateTargetProjectId(String(p.id))}
+                            className={`px-2.5 py-1 rounded-full text-xs font-medium transition-all border ${
+                              scriptCreateTargetProjectId === String(p.id)
+                                ? 'bg-(--accent)/20 text-(--accent-light) border-(--accent)/40'
+                                : 'bg-white/5 text-(--text-muted) border-white/10 hover:bg-white/10'
+                            }`}
+                          >
+                            {p.name}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="text-[11px] text-(--text-muted) mt-1.5">
+                        个人剧本库：仅自己可见，可随后绑定到任意项目（会生成副本）
+                      </div>
+                    </div>
+
+                    <Textarea
+                      label="剧本内容"
+                      placeholder="粘贴或手写剧本内容..."
+                      value={scriptCreateContent}
+                      onValueChange={setScriptCreateContent}
+                      minRows={10}
+                      maxRows={20}
+                      isRequired
+                    />
+                  </div>
+                </ModalBody>
+                <ModalFooter>
+                  <Button variant="light" onPress={onClose}>取消</Button>
+                  <Button
+                    color="primary"
+                    onPress={handleScriptCreateSubmit}
+                    isDisabled={!scriptCreateContent.trim() || scriptCreating}
+                    isLoading={scriptCreating}
+                  >
+                    创建
+                  </Button>
+                </ModalFooter>
+              </>
+            )}
+          </ModalContent>
+        </Modal>
+
+        {/* AI 剧本生成弹窗 */}
+        <ScriptGenerateModal
+          isOpen={isScriptGenerateOpen}
+          onOpenChange={onScriptGenerateOpenChange}
+          projects={userProjects}
+          aiModels={aiModels}
+          defaultTextModel={selectedTextModel}
+          onSuccess={() => {
+            showToast('剧本生成成功', 'success');
+            loadData();
+          }}
+          onError={(msg) => showToast(msg, 'error')}
         />
       </div>
       </div>

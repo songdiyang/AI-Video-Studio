@@ -10,20 +10,26 @@ const { linkCharactersForStoryboard, linkScenesForStoryboard } = require('../../
 async function updateContent(req, res) {
   const userId = req.user.id;
   const storyboardId = Number(req.params.storyboardId);
-  const { prompt_template, video_prompt, video_start_prompt, video_end_prompt, description, spatial_description, dialogues, voiceover, characters, location, characterIds, sceneId, negative_prompt, duration } = req.body || {};
+  const { prompt_template, first_frame_prompt, last_frame_prompt, video_prompt, video_start_prompt, video_end_prompt, description, spatial_description, dialogues, voiceover, characters, location, characterIds, sceneId, negative_prompt, duration } = req.body || {};
 
   if (!storyboardId) {
     return res.status(400).json({ message: 'Invalid storyboard id' });
   }
 
   // 至少需要传递一个字段
-  if (prompt_template === undefined && video_prompt === undefined && video_start_prompt === undefined && video_end_prompt === undefined && description === undefined && spatial_description === undefined && dialogues === undefined && voiceover === undefined && characters === undefined && location === undefined && negative_prompt === undefined && duration === undefined) {
+  if (prompt_template === undefined && first_frame_prompt === undefined && last_frame_prompt === undefined && video_prompt === undefined && video_start_prompt === undefined && video_end_prompt === undefined && description === undefined && spatial_description === undefined && dialogues === undefined && voiceover === undefined && characters === undefined && location === undefined && negative_prompt === undefined && duration === undefined) {
     return res.status(400).json({ message: '需要提供至少一个可更新字段' });
   }
 
   // 验证 prompt_template 类型（如果传递了）
   if (prompt_template !== undefined && typeof prompt_template !== 'string') {
     return res.status(400).json({ message: 'prompt_template 必须是字符串' });
+  }
+  if (first_frame_prompt !== undefined && first_frame_prompt !== null && typeof first_frame_prompt !== 'string') {
+    return res.status(400).json({ message: 'first_frame_prompt 必须是字符串' });
+  }
+  if (last_frame_prompt !== undefined && last_frame_prompt !== null && typeof last_frame_prompt !== 'string') {
+    return res.status(400).json({ message: 'last_frame_prompt 必须是字符串' });
   }
 
   // 验证 dialogues 格式
@@ -33,7 +39,7 @@ async function updateContent(req, res) {
 
   try {
     const storyboard = await queryOne(
-      `SELECT s.id, s.variables_json, s.script_id
+      `SELECT s.id, s.variables_json, s.script_id, s.is_locked
        FROM storyboards s
        WHERE s.id = ?`,
       [storyboardId]
@@ -41,6 +47,11 @@ async function updateContent(req, res) {
 
     if (!storyboard) {
       return res.status(404).json({ message: 'Storyboard not found' });
+    }
+
+    // 检查分镜是否已锁定
+    if (storyboard.is_locked) {
+      return res.status(403).json({ message: '该分镜已锁定，请先解锁后再修改内容' });
     }
 
     // 通过剧本关联的项目检查编辑权限
@@ -60,6 +71,16 @@ async function updateContent(req, res) {
     if (prompt_template !== undefined) {
       updates.push('prompt_template = ?');
       params.push(prompt_template);
+    }
+
+    if (first_frame_prompt !== undefined) {
+      updates.push('first_frame_prompt = ?');
+      params.push(first_frame_prompt); // 允许 null / 空字符串
+    }
+
+    if (last_frame_prompt !== undefined) {
+      updates.push('last_frame_prompt = ?');
+      params.push(last_frame_prompt); // 允许 null / 空字符串
     }
 
     if (video_prompt !== undefined) {

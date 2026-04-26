@@ -652,13 +652,33 @@ async function handleBatchStoryboardGeneration(inputParams, onProgress) {
 
   if (onProgress) onProgress(98);
 
-  // 7. 建立资源关联
+  // 7. 建立资源关联（并收集一致性告警）
+  const linkWarnings = [];
   try {
     const { linkAllForScript } = require('../../../resourceLinks');
-    await linkAllForScript(scriptId, projectId);
-    console.log('[BatchStoryboard] 资源关联完成');
+    const linkResult = await linkAllForScript(scriptId, projectId);
+    console.log('[BatchStoryboard] 资源关联完成:', {
+      total: linkResult.total,
+      charLinked: linkResult.charLinked,
+      sceneLinked: linkResult.sceneLinked,
+      charNotFound: linkResult.charNotFound.length,
+      sceneNotFound: linkResult.sceneNotFound.length
+    });
+    // 关联一致性校验：variables.characters 里有名字但未匹配到 characters 表 → 帧生成一定会崩
+    // 这里在分镜阶段就暴露出来，避免"拖到帧生成才发现"
+    if (linkResult.charNotFound && linkResult.charNotFound.length > 0) {
+      const msg = `角色未建立关联：${linkResult.charNotFound.join('、')}（这些名字出现在分镜 variables.characters 中，但在项目角色表里找不到对应条目，首尾帧/视频生成时会报错）`;
+      console.warn(`\x1b[33m[BatchStoryboard] ⚠️ 一致性告警: ${msg}\x1b[0m`);
+      linkWarnings.push({ type: 'character_not_linked', names: linkResult.charNotFound, message: msg });
+    }
+    if (linkResult.sceneNotFound && linkResult.sceneNotFound.length > 0) {
+      const msg = `场景未建立关联：${linkResult.sceneNotFound.join('、')}（这些 location 出现在分镜 variables 中，但在项目场景表里找不到对应条目，帧/视频生成时会报错）`;
+      console.warn(`\x1b[33m[BatchStoryboard] ⚠️ 一致性告警: ${msg}\x1b[0m`);
+      linkWarnings.push({ type: 'scene_not_linked', names: linkResult.sceneNotFound, message: msg });
+    }
   } catch (linkError) {
     console.error('[BatchStoryboard] 资源关联失败（不影响分镜）:', linkError.message);
+    linkWarnings.push({ type: 'link_exception', message: linkError.message });
   }
 
   if (onProgress) onProgress(100);
@@ -675,7 +695,8 @@ async function handleBatchStoryboardGeneration(inputParams, onProgress) {
     characters: Array.from(allCharacters),
     locations: Array.from(allLocations),
     scenesExtracted,
-    tokens: totalTokens
+    tokens: totalTokens,
+    warnings: linkWarnings
   };
 }
 

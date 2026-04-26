@@ -23,19 +23,18 @@ const { traced, trace } = require('../../engine/generationTrace');
  * @param {boolean} opts.hasAction - 是否有动作
  * @param {string} [opts.characterAppearance] - 角色外貌描述
  * @param {string} [opts.sceneDetail] - 场景详情
- * @param {string} [opts.startFrameDesc] - 首帧描述（variables.startFrame）
- * @param {string} [opts.endFrameDesc] - 尾帧描述（variables.endFrame）
  * @returns {string} 运动分解文本（直接嵌入视频提示词）
+ *
+ * 注：图片层的首/尾帧文本描述（variables.startFrame / endFrame）不再引入，
+ * 以避免视频提示词受图片层残留的尾帧描述干扰。
  */
 async function _generateMotionBreakdown(opts) {
   const {
     textModel, description, variables, hasAction,
-    characterAppearance, sceneDetail,
-    startFrameDesc, endFrameDesc
+    characterAppearance, sceneDetail
   } = opts;
 
   const charNames = variables.characters || [];
-  const endState = variables.endState || '';
   const sceneState = variables.scene_state || 'normal';
   const environmentChange = variables.environment_change || '';
 
@@ -53,12 +52,6 @@ async function _generateMotionBreakdown(opts) {
     elementsContext += `${sceneDetail}\n`;
   }
 
-  const frameInfo = [];
-  if (startFrameDesc) frameInfo.push(`首帧描述: ${startFrameDesc}`);
-  if (endFrameDesc) frameInfo.push(`尾帧描述: ${endFrameDesc}`);
-  if (endState) frameInfo.push(`镜头结束状态: ${endState}`);
-  const frameBlock = frameInfo.length > 0 ? frameInfo.join('\n') : '';
-
   const envBlock = (sceneState === 'modified' && environmentChange)
     ? `环境变化: ${environmentChange}（本镜头中发生）`
     : (sceneState === 'inherit' && environmentChange)
@@ -71,9 +64,8 @@ async function _generateMotionBreakdown(opts) {
 ${description}
 
 ${elementsContext ? `【场景元素】\n${elementsContext}` : ''}
-${frameBlock ? `【帧信息】\n${frameBlock}` : ''}
 ${envBlock ? `【环境状态】\n${envBlock}` : ''}
-动作类型: ${hasAction ? '有动作（首帧→尾帧有明显变化）' : '静态镜头（画面变化微小）'}
+动作类型: ${hasAction ? '有动作（画面有明显变化）' : '静态镜头（画面变化微小）'}
 
 【你的任务】
 列出场景中所有可见元素（角色、物品、环境元素），对每个元素标注：

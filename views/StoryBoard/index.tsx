@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef, Component, ReactNode, lazy, Suspense } from 'react';
 import { Button, Select, SelectItem, Tooltip } from '@heroui/react';
-import { Wand2, RefreshCw, Download, Video, ImageIcon, Users, MapPin, Frame, Film, ChevronDown, Play, GitBranch, MessageSquare, Lock, Sparkles, List, FolderOpen, Blocks } from 'lucide-react';
+import { Wand2, RefreshCw, Download, Video, ImageIcon, Users, MapPin, Frame, Film, ChevronDown, Play, GitBranch, MessageSquare, Lock, Sparkles } from 'lucide-react';
 import { useSceneManager, StoryboardScene, DialogueLine } from './useSceneManager';
 import { useAutoStoryboard } from './useAutoStoryboard';
 import { useSceneGeneration } from './useSceneGeneration';
@@ -126,10 +126,6 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
   const [isTeamCollaborationOpen, setIsTeamCollaborationOpen] = useState(false);
   const [isFrameAnnotationOpen, setIsFrameAnnotationOpen] = useState(false);
   const [isAssistantOpen, setIsAssistantOpen] = useState(false);
-  const assistantOpenTimeRef = useRef<number>(0);
-  const leftPanelOpenTimeRef = useRef<number>(0);
-  const [isLeftPanelOpen, setIsLeftPanelOpen] = useState(true);
-  const [isDirectorSpaceOpen, setIsDirectorSpaceOpen] = useState(false);
   const resourcePanelRef = useRef<ResizablePanelRef>(null);
   const assistantPanelRef = useRef<ResizablePanelRef>(null);
   const [leftPanelTab, setLeftPanelTab] = useState<'scenes' | 'resources'>('scenes');
@@ -286,13 +282,13 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
   } = useSceneManager(currentScriptId, currentProjectId);
 
   // 项目角色和场景资源（供选择器使用）
-  const [projectCharacters, setProjectCharacters] = useState<{ id: number; name: string; image_url?: string; front_view_url?: string }[]>([]);
+  const [projectCharacters, setProjectCharacters] = useState<{ id: number; name: string; image_url?: string }[]>([]);
   const [projectScenes, setProjectScenes] = useState<{ id: number; name: string; description?: string }[]>([]);
 
   useEffect(() => {
     if (!currentProjectId) return;
     fetchCharactersByProject(currentProjectId)
-      .then(chars => setProjectCharacters(chars.map(c => ({ id: c.id, name: c.name, image_url: (c as any).image_url, front_view_url: (c as any).front_view_url }))))
+      .then(chars => setProjectCharacters(chars.map(c => ({ id: c.id, name: c.name, image_url: (c as any).image_url }))))
       .catch(() => {});
     fetchScenesByProject(currentProjectId)
       .then(scenes => setProjectScenes(scenes.map(s => ({ id: s.id, name: s.name, description: s.description }))))
@@ -482,10 +478,6 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
       let failedCount = 0;
       for (const scene of scenesData) {
         try {
-          // 如果场景已有提示词（用户编辑过或之前 AI 生成的），复用它以节省文本模型调用
-          const customPromptA = scene.generation_prompt || undefined;
-          const customPromptB = scene.reverse_generation_prompt || undefined;
-
           const response = await fetch(`/api/scenes/${scene.id}/generate-image`, {
             method: 'POST',
             headers: {
@@ -496,9 +488,7 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
               imageModel,
               textModel,
               aspectRatio: imageAspectRatio,
-              resolution: imageResolution || undefined,
-              customPromptA,
-              customPromptB
+              resolution: imageResolution || undefined
             })
           });
 
@@ -1167,92 +1157,27 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
               </Button>
             </Tooltip>
 
+            <Divider />
+
+            {/* AI 助手 */}
+            <IconButton
+              icon={<Sparkles className="w-4 h-4" />}
+              tooltip="AI 助手"
+              onClick={() => {
+                setIsAssistantOpen(true);
+                // 如果面板已存在但被折叠，展开它
+                requestAnimationFrame(() => {
+                  assistantPanelRef.current?.expand?.();
+                });
+              }}
+            />
           </div>
         </div>
 
-        {/* 第二行：面板控制按钮 + 模型设置 */}
-        <div className="h-10 px-4 flex items-center justify-between gap-4 border-t border-(--border-color) bg-(--bg-app)">
-          {/* 面板控制按钮栏 */}
-          <div className="flex items-center gap-1">
-                        <Tooltip content="分镜列表" placement="bottom">
-              <button
-                onClick={() => {
-                  setIsLeftPanelOpen(true);
-                  leftPanelOpenTimeRef.current = Date.now();
-                  // 清除即将使用的 localStorage 布局数据，防止 PanelGroup 恢复旧的折叠状态
-                  const nextKey = `panel-sizes-storyboard-layout-v4-L${isAssistantOpen ? 'R' : ''}`;
-                  try { localStorage.removeItem(nextKey); } catch {}
-                  setLeftPanelTab('scenes');
-                }}
-                className={`h-7 w-7 flex items-center justify-center rounded border transition-all duration-150 ${
-                  isLeftPanelOpen && leftPanelTab === 'scenes'
-                    ? 'bg-[var(--accent)]/15 text-[var(--accent)] border-[var(--accent)]/30'
-                    : 'bg-(--bg-card) text-(--text-muted) border-(--border-color) hover:text-(--text-secondary) hover:bg-(--bg-card-hover)'
-                }`}
-              >
-                <List className="w-3.5 h-3.5" />
-              </button>
-            </Tooltip>
-            <Tooltip content="资源列表" placement="bottom">
-              <button
-                onClick={() => {
-                  setIsLeftPanelOpen(true);
-                  leftPanelOpenTimeRef.current = Date.now();
-                  // 清除即将使用的 localStorage 布局数据，防止 PanelGroup 恢复旧的折叠状态
-                  const nextKey = `panel-sizes-storyboard-layout-v4-L${isAssistantOpen ? 'R' : ''}`;
-                  try { localStorage.removeItem(nextKey); } catch {}
-                  setLeftPanelTab('resources');
-                }}
-                className={`h-7 w-7 flex items-center justify-center rounded border transition-all duration-150 ${
-                  isLeftPanelOpen && leftPanelTab === 'resources'
-                    ? 'bg-[var(--accent)]/15 text-[var(--accent)] border-[var(--accent)]/30'
-                    : 'bg-(--bg-card) text-(--text-muted) border-(--border-color) hover:text-(--text-secondary) hover:bg-(--bg-card-hover)'
-                }`}
-              >
-                <FolderOpen className="w-3.5 h-3.5" />
-              </button>
-            </Tooltip>
-            <Tooltip content="AI 助手" placement="bottom">
-              <button
-                onClick={() => {
-                  setIsAssistantOpen(prev => {
-                    const next = !prev;
-                    if (next) {
-                      assistantOpenTimeRef.current = Date.now();
-                      // 清除即将使用的 localStorage 布局数据，防止 PanelGroup 恢复旧的折叠状态
-                      const nextKey = `panel-sizes-storyboard-layout-v4-${isLeftPanelOpen ? 'L' : ''}R`;
-                      try { localStorage.removeItem(nextKey); } catch {}
-                    }
-                    return next;
-                  });
-                }}
-                className={`h-7 w-7 flex items-center justify-center rounded border transition-all duration-150 ${
-                  isAssistantOpen
-                    ? 'bg-[var(--accent)]/15 text-[var(--accent)] border-[var(--accent)]/30'
-                    : 'bg-(--bg-card) text-(--text-muted) border-(--border-color) hover:text-(--text-secondary) hover:bg-(--bg-card-hover)'
-                }`}
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-              </button>
-            </Tooltip>
-            <Tooltip content="导演空间" placement="bottom">
-              <button
-                onClick={() => setIsDirectorSpaceOpen(prev => !prev)}
-                className={`h-7 w-7 flex items-center justify-center rounded border transition-all duration-150 ${
-                  isDirectorSpaceOpen
-                    ? 'bg-[var(--accent)]/15 text-[var(--accent)] border-[var(--accent)]/30'
-                    : 'bg-(--bg-card) text-(--text-muted) border-(--border-color) hover:text-(--text-secondary) hover:bg-(--bg-card-hover)'
-                }`}
-              >
-                <Blocks className="w-3.5 h-3.5" />
-              </button>
-            </Tooltip>
-          </div>
-
-          {/* 模型设置 */}
-          {(imageModel || videoModel) && (
-            <div className="flex items-center gap-4">
-              {imageModel && (
+        {/* 第二行：模型设置（仅当有模型时显示） */}
+        {(imageModel || videoModel) && (
+          <div className="h-10 px-4 flex items-center gap-4 border-t border-(--border-color) bg-(--bg-app)">
+            {imageModel && (
               <div className="flex items-center gap-2">
                 <ImageIcon className="w-3.5 h-3.5 text-cyan-400" />
                 <span className="text-xs text-(--text-muted)">图片:</span>
@@ -1311,7 +1236,6 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
           </div>
         )}
       </div>
-    </div>
 
       {/* 无剧本提示 */}
       {!currentScriptId && (
@@ -1329,34 +1253,14 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
         <div className="flex-1 overflow-hidden flex flex-col">
           {/* 双栏布局 */}
           <div className="flex-1 overflow-hidden">
-            <PanelGroup
-              direction="horizontal"
-              storageKey={`storyboard-layout-v4-${isLeftPanelOpen ? 'L' : ''}${isAssistantOpen ? 'R' : ''}`}
+            <PanelGroup 
+              direction="horizontal" 
+              storageKey={isAssistantOpen ? "storyboard-layout-v3-with-assistant" : "storyboard-layout-v2"}
               mobileDefaultPanel={1}
-              mobilePanelLabels={[
-                isLeftPanelOpen ? '分镜/资源' : null,
-                '预览编辑',
-                isAssistantOpen ? 'AI助手' : null,
-              ].filter(Boolean) as string[]}
+              mobilePanelLabels={isAssistantOpen ? ['分镜/资源', '预览编辑', 'AI助手'] : ['分镜/资源', '预览编辑']}
             >
               {/* 左侧：分镜列表 / 资源 Tab 切换 */}
-              {isLeftPanelOpen && (
-              <ResizablePanel
-                ref={resourcePanelRef}
-                defaultSize={isAssistantOpen ? 20 : 25}
-                minSize={15}
-                maxSize={35}
-                collapsible
-                title={leftPanelTab === 'scenes' ? '分镜列表' : '资源'}
-                onCollapse={(collapsed) => {
-                  if (collapsed) {
-                    // 忽略面板刚打开后 300ms 内的折叠回调，防止 PanelGroup 初始化误触
-                    const elapsed = Date.now() - leftPanelOpenTimeRef.current;
-                    if (elapsed < 500) return;
-                    setIsLeftPanelOpen(false);
-                  }
-                }}
-              >
+              <ResizablePanel ref={resourcePanelRef} defaultSize={isAssistantOpen ? 20 : 25} minSize={15} maxSize={35} title={leftPanelTab === 'scenes' ? '分镜列表' : '资源'} collapsible>
                 <div className="flex flex-col h-full overflow-hidden">
                   {/* Tab 切换栏 */}
                   <div className="flex items-center gap-0.5 px-2 py-1.5 border-b shrink-0" style={{ borderColor: 'var(--border-color)', backgroundColor: 'var(--bg-secondary)' }}>
@@ -1430,10 +1334,9 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
                   </div>
                 </div>
               </ResizablePanel>
-              )}
 
             {/* 中间：预览编辑 */}
-            <ResizablePanel defaultSize={!isLeftPanelOpen && !isAssistantOpen ? 100 : !isLeftPanelOpen || !isAssistantOpen ? 70 : 55} minSize={35} title="预览编辑">
+            <ResizablePanel defaultSize={isAssistantOpen ? 55 : 75} minSize={35} title="预览编辑">
               <ScenePreviewPanel
                 key={selectedScene ?? 'none'}
                 scene={selectedSceneData}
@@ -1469,8 +1372,6 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
                                 }}
                 imageTask={selectedScene ? tasks[`img_${selectedScene}`] : undefined}
                 videoTask={selectedScene ? tasks[`vid_${selectedScene}`] : undefined}
-                directorSpaceOpen={isDirectorSpaceOpen}
-                onDirectorSpaceToggle={() => setIsDirectorSpaceOpen(prev => !prev)}
               />
             </ResizablePanel>
 
@@ -1484,13 +1385,7 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
                 collapsible
                 title="AI助手"
                 onCollapse={(collapsed) => {
-                  if (collapsed) {
-                    // 忽略面板刚打开后 300ms 内的折叠回调，防止 PanelGroup 从 localStorage
-                    // 恢复折叠状态时误触关闭，导致按钮"失灵"
-                    const elapsed = Date.now() - assistantOpenTimeRef.current;
-                    if (elapsed < 500) return;
-                    setIsAssistantOpen(false);
-                  }
+                  if (collapsed) setIsAssistantOpen(false);
                 }}
               >
                 <Suspense fallback={

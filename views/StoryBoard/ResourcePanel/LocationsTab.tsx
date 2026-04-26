@@ -10,19 +10,34 @@ interface LocationsTabProps {
   activeSceneIds: string[];
   onPreview: (resource: ResourceItem) => void;
   onGenerateImage: (scene: Scene) => void;
+  onCreate?: () => void;
 }
 
-const LocationsTab: React.FC<LocationsTabProps> = ({ scenes, activeSceneIds, onPreview, onGenerateImage }) => {
+const LocationsTab: React.FC<LocationsTabProps> = ({ scenes, activeSceneIds, onPreview, onGenerateImage, onCreate }) => {
   const [previewImage, setPreviewImage] = useState<{ url: string; reverseUrl?: string; name: string } | null>(null);
 
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between mb-3">
         <span className="text-sm font-semibold" style={{ color: 'var(--text-secondary)' }}>全部场景 ({scenes.length})</span>
-        <Button size="sm" variant="light" style={{ color: 'var(--text-muted)' }} startContent={<Plus className="w-3 h-3" />}>
-          添加
+        <Button
+          size="sm"
+          variant="light"
+          style={{ color: 'var(--text-muted)' }}
+          startContent={<Plus className="w-3 h-3" />}
+          onPress={onCreate}
+          isDisabled={!onCreate}
+        >
+          新建
         </Button>
       </div>
+      {scenes.length === 0 && (
+        <div className="text-center py-8" style={{ color: 'var(--text-muted)' }}>
+          <span className="text-4xl block mb-2">📍</span>
+          <p className="text-sm">暂无场景</p>
+          <p className="text-xs mt-1">生成分镜后自动提取，或点击右上角"新建"手动添加</p>
+        </div>
+      )}
       {scenes.map((scene) => {
         const isGenerating = activeSceneIds.includes(String(scene.id));
         const hasImage = !!scene.image_url;

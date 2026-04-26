@@ -9,6 +9,7 @@
  */
 
 const { queryAll, execute } = require('../dbHelper');
+const { isNonCharacterEntity } = require('../utils/characterFilter');
 
 /**
  * 在内存中匹配角色名（支持精确/前缀/包含三级匹配）
@@ -106,6 +107,10 @@ async function linkAllForScript(scriptId, projectId) {
     // 角色关联 - 内存匹配
     const charNames = vars.characters || [];
     for (const name of charNames) {
+      // 集体词/群体名（如"西汉边军"、"村民"、"一群士兵"）不参与关联，也不计入 notFound
+      if (isNonCharacterEntity(name)) {
+        continue;
+      }
       const charId = matchCharacterName(name, charExactMap, allCharacters);
       if (charId) {
         charLinkValues.push([sb.id, charId]);

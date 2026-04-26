@@ -36,7 +36,7 @@ module.exports = (router) => {
       }
       const projectId = scriptInfo.project_id;
 
-      // 2. 查询分镜列表
+      // 2. 查询分镜列表（含锁定状态，用于跳过）
       let whereClause = 'script_id = ?';
       const whereParams = [scriptId];
       
@@ -47,7 +47,7 @@ module.exports = (router) => {
       }
 
       const storyboards = await queryAll(
-        `SELECT id, idx, prompt_template, variables_json, first_frame_url, last_frame_url 
+        `SELECT id, idx, prompt_template, variables_json, first_frame_url, last_frame_url, is_locked 
          FROM storyboards WHERE ${whereClause} ORDER BY idx ASC`,
         whereParams
       );
@@ -56,18 +56,25 @@ module.exports = (router) => {
         return res.status(400).json({ message: '没有需要生成的分镜' });
       }
 
-      // 3. 覆盖模式：清除已有帧
+      // 3. 覆盖模式：清除已有帧（跳过锁定分镜）
       if (overwriteFrames) {
-        console.log('[BatchGenerateFrames] 覆盖模式：清除所有已有首尾帧...');
+        console.log('[BatchGenerateFrames] 覆盖模式：清除未锁定分镜的首尾帧...');
         await execute(
-          `UPDATE storyboards SET first_frame_url = NULL, last_frame_url = NULL, updated_scene_url = NULL WHERE ${whereClause}`,
+          `UPDATE storyboards SET first_frame_url = NULL, last_frame_url = NULL, updated_scene_url = NULL WHERE ${whereClause} AND is_locked = FALSE`,
           whereParams
         );
       }
 
-      // 4. 过滤需要生成的分镜
+      // 4. 过滤需要生成的分镜（跳过锁定分镜）
       const storyboardItems = [];
+      let lockedSkipped = 0;
       for (const sb of storyboards) {
+        // 锁定分镜跳过
+        if (sb.is_locked) {
+          lockedSkipped++;
+          console.log(`[BatchGenerateFrames] 分镜 ${sb.idx} (id=${sb.id}) 已锁定，跳过`);
+          continue;
+        }
         const vars = typeof sb.variables_json === 'string'
           ? JSON.parse(sb.variables_json || '{}')
           : (sb.variables_json || {});
@@ -132,7 +139,8 @@ module.exports = (router) => {
         jobId,
         tasks,
         totalScenes: storyboardItems.length,
-        message: `批量帧生成任务已启动，共 ${storyboardItems.length} 个分镜`
+        lockedSkipped,
+        message: `批量帧生成任务已启动，共 ${storyboardItems.length} 个分镜${lockedSkipped > 0 ? `（已跳过 ${lockedSkipped} 个锁定分镜）` : ''}`
       });
     } catch (error) {
       sendGenerationError(res, error, '启动批量生成失败', '[BatchGenerateFrames]');

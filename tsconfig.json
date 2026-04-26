@@ -30,6 +30,8 @@
   },
   "exclude": [
     "backend/**",
-    "runtime/**"
+    "runtime/**",
+    "dist/**",
+    "node_modules/**"
   ]
 }

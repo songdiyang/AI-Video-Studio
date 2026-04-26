@@ -132,9 +132,11 @@ async function handleCameraRunGeneration(inputParams, onProgress) {
   const shotType = variables.shotType || '';
   const emotion = variables.emotion || '';
   const cameraMovement = variables.cameraMovement || '';
-  const endState = variables.endState || '';
-  const startFrameDesc = variables.startFrame || '';
-  const endFrameDesc = variables.endFrame || '';
+  // 结束状态仅在尾帧图存在时启用，避免尾帧删除后残留「影子」
+  // 图片层的首/尾帧文本描述（variables.startFrame / endFrame）不再引入运镜链路
+  const firstFrameUrl = storyboard.first_frame_url || null;
+  const lastFrameUrl = storyboard.last_frame_url || null;
+  const endState = (lastFrameUrl && variables.endState) ? variables.endState : '';
   let dialogue = '';
   if (variables.dialogues && Array.isArray(variables.dialogues) && variables.dialogues.length > 0) {
     dialogue = variables.dialogues.map(d => `${d.character} says "${d.line}"`).join('; ');
@@ -142,8 +144,6 @@ async function handleCameraRunGeneration(inputParams, onProgress) {
     dialogue = variables.dialogue || '';
   }
   const duration = variables.duration || (hasAction ? 3 : 2);
-  const firstFrameUrl = storyboard.first_frame_url || null;
-  const lastFrameUrl = storyboard.last_frame_url || null;
   const charNames = variables.characters || [];
   const currentIdx = storyboard.idx;
 
@@ -172,13 +172,12 @@ ${prevShot.hasAction ? '（动作镜头）' : '（静态镜头）'}`
 情绪: ${nextShot.emotion}`
     : '【这是最后一个镜头或下一镜头信息不可用】';
 
-  // 当前镜头信息
+  // 当前镜头信息（不再注入图片层的首/尾帧文本描述，避免视频提示词污染）
   const currentShotInfo = `【当前镜头（第${currentIdx + 1}镜）】
 描述: ${description}
 景别: ${shotType}
 基础运镜方向: ${cameraMovement || 'static'}
 是否有动作: ${hasAction ? '是' : '否'}
-${hasAction ? `首帧描述: ${startFrameDesc}\n尾帧描述: ${endFrameDesc}` : ''}
 结束状态: ${endState}
 情绪氛围: ${emotion}
 对白: ${dialogue || '无'}

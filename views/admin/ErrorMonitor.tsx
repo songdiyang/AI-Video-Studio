@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { AlertTriangle, Search, Filter, ChevronLeft, ChevronRight, RefreshCw, Clock, XCircle, X, CheckCircle, Server, Layers } from 'lucide-react';
+import { AlertTriangle, Search, Filter, ChevronLeft, ChevronRight, RefreshCw, Clock, XCircle, X, CheckCircle, Server, Layers, Square, CheckSquare, Tag, Zap } from 'lucide-react';
 import { getAdminAuthHeaders } from '../../services/auth';
 
 // ============ 任务错误相关类型 ============
@@ -41,6 +41,14 @@ interface Pagination {
   limit: number;
   total: number;
   totalPages: number;
+}
+
+interface ErrorPattern {
+  pattern: string;
+  displaySample: string;
+  workflowTypes: string[];
+  total: number;
+  unresolved: number;
 }
 
 const WORKFLOW_TYPE_NAMES: Record<string, string> = {
@@ -98,6 +106,16 @@ const ErrorMonitor: React.FC = () => {
   const [systemExpandedId, setSystemExpandedId] = useState<number | null>(null);
   const [systemUpdatingId, setSystemUpdatingId] = useState<number | null>(null);
   const [systemSearchQuery, setSystemSearchQuery] = useState('');
+
+  // 批量选择与错误种类
+  const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
+  const [selectedSystemIds, setSelectedSystemIds] = useState<Set<number>>(new Set());
+  const [taskErrorStats, setTaskErrorStats] = useState<ErrorPattern[]>([]);
+  const [systemErrorStats, setSystemErrorStats] = useState<ErrorPattern[]>([]);
+  const [selectedTaskPattern, setSelectedTaskPattern] = useState('');
+  const [selectedSystemPattern, setSelectedSystemPattern] = useState('');
+  const [batchProcessing, setBatchProcessing] = useState(false);
+  const [showSidebar, setShowSidebar] = useState(true);
 
   // ============ 任务错误 API ============
   const fetchTaskErrors = useCallback(async (page = 1) => {
@@ -173,14 +191,112 @@ const ErrorMonitor: React.FC = () => {
     }
   };
 
+  // ============ 错误种类统计 ============
+  const fetchTaskErrorStats = useCallback(async () => {
+    try {
+      const res = await fetch('/api/workflows/admin/errors/stats', { headers: getAdminAuthHeaders() });
+      if (!res.ok) throw new Error('请求失败');
+      const data = await res.json();
+      setTaskErrorStats(data.patterns || []);
+    } catch (err) {
+      console.error('[ErrorMonitor] 获取任务错误统计失败:', err);
+    }
+  }, []);
+
+  const fetchSystemErrorStats = useCallback(async () => {
+    try {
+      const res = await fetch('/api/admin/system-errors/stats', { headers: getAdminAuthHeaders() });
+      if (!res.ok) throw new Error('请求失败');
+      const data = await res.json();
+      // 转换系统错误 stats 为统一格式
+      const patterns: ErrorPattern[] = (data.stats || []).map((s: any) => ({
+        pattern: s.error_type,
+        displaySample: s.error_type,
+        workflowTypes: [],
+        total: s.total,
+        unresolved: s.unresolved
+      }));
+      setSystemErrorStats(patterns);
+    } catch (err) {
+      console.error('[ErrorMonitor] 获取系统错误统计失败:', err);
+    }
+  }, []);
+
+  // ============ 批量处理 ============
+  const batchResolveTasks = async (pattern?: string) => {
+    if (batchProcessing) return;
+    setBatchProcessing(true);
+    try {
+      const body: any = {};
+      if (selectedTaskIds.size > 0) {
+        body.jobIds = [...selectedTaskIds];
+      } else if (pattern) {
+        body.errorPattern = pattern;
+      } else if (taskTypeFilter) {
+        body.workflowType = taskTypeFilter;
+      }
+      const res = await fetch('/api/workflows/admin/errors/batch-resolve', {
+        method: 'POST',
+        headers: { ...getAdminAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      if (!res.ok) throw new Error('批量处理失败');
+      const data = await res.json();
+      alert(data.message || `已批量处理 ${data.resolved} 个任务`);
+      setSelectedTaskIds(new Set());
+      setSelectedTaskPattern('');
+      fetchTaskErrors(taskPagination.page);
+      fetchTaskErrorStats();
+    } catch (err) {
+      console.error('[ErrorMonitor] 批量处理任务失败:', err);
+      alert('批量处理失败，请重试');
+    } finally {
+      setBatchProcessing(false);
+    }
+  };
+
+  const batchResolveSystemErrors = async (pattern?: string) => {
+    if (batchProcessing) return;
+    setBatchProcessing(true);
+    try {
+      const body: any = {};
+      if (selectedSystemIds.size > 0) {
+        body.errorIds = [...selectedSystemIds];
+      } else if (pattern) {
+        body.errorPattern = pattern;
+      } else if (systemTypeFilter) {
+        body.errorType = systemTypeFilter;
+      }
+      const res = await fetch('/api/admin/system-errors/batch-resolve', {
+        method: 'POST',
+        headers: { ...getAdminAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      if (!res.ok) throw new Error('批量处理失败');
+      const data = await res.json();
+      alert(data.message || `已批量处理 ${data.resolved} 个错误`);
+      setSelectedSystemIds(new Set());
+      setSelectedSystemPattern('');
+      fetchSystemErrors(systemPagination.page);
+      fetchSystemErrorStats();
+    } catch (err) {
+      console.error('[ErrorMonitor] 批量处理系统错误失败:', err);
+      alert('批量处理失败，请重试');
+    } finally {
+      setBatchProcessing(false);
+    }
+  };
+
   // 初始加载
   useEffect(() => {
     if (activeTab === 'task') {
       fetchTaskErrors(1);
+      fetchTaskErrorStats();
     } else {
       fetchSystemErrors(1);
+      fetchSystemErrorStats();
     }
-  }, [activeTab, fetchTaskErrors, fetchSystemErrors]);
+  }, [activeTab, fetchTaskErrors, fetchSystemErrors, fetchTaskErrorStats, fetchSystemErrorStats]);
 
   // 渲染标签页
   const renderTabs = () => (
@@ -220,15 +336,135 @@ const ErrorMonitor: React.FC = () => {
     </div>
   );
 
+  // 渲染错误种类侧边栏
+  const renderErrorPatternSidebar = () => {
+    const patterns = activeTab === 'task' ? taskErrorStats : systemErrorStats;
+    const selectedPattern = activeTab === 'task' ? selectedTaskPattern : selectedSystemPattern;
+    const onSelect = activeTab === 'task'
+      ? (p: string) => { setSelectedTaskPattern(p === selectedTaskPattern ? '' : p); setSelectedTaskIds(new Set()); }
+      : (p: string) => { setSelectedSystemPattern(p === selectedSystemPattern ? '' : p); setSelectedSystemIds(new Set()); };
+    const onBatchResolve = activeTab === 'task'
+      ? (p: string) => batchResolveTasks(p)
+      : (p: string) => batchResolveSystemErrors(p);
+
+    return (
+      <div className="w-64 shrink-0">
+        <div className="rounded-xl border border-white/10 bg-white/[0.05] overflow-hidden">
+          <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Tag className="w-4 h-4 text-purple-400" />
+              <span className="text-sm font-semibold text-white">错误种类</span>
+            </div>
+            <button
+              onClick={() => {
+                activeTab === 'task'
+                  ? (fetchTaskErrorStats(), fetchTaskErrors(taskPagination.page))
+                  : (fetchSystemErrorStats(), fetchSystemErrors(systemPagination.page));
+              }}
+              className="p-1 rounded hover:bg-white/10 transition-colors"
+              title="刷新统计"
+            >
+              <RefreshCw className="w-3.5 h-3.5 text-white/60" />
+            </button>
+          </div>
+          <div className="max-h-[60vh] overflow-y-auto">
+            {patterns.length === 0 ? (
+              <div className="px-4 py-6 text-center text-sm text-white/50">
+                暂无错误记录
+              </div>
+            ) : (
+              patterns.map((p, idx) => {
+                const isActive = selectedPattern === p.pattern;
+                const displayLabel = activeTab === 'task'
+                  ? (p.displaySample.length > 50 ? p.displaySample.substring(0, 50) + '…' : p.displaySample)
+                  : (ERROR_TYPE_NAMES[p.pattern] || p.pattern);
+                return (
+                  <div
+                    key={idx}
+                    className={`px-4 py-2.5 border-b border-white/5 cursor-pointer transition-colors hover:bg-white/[0.06] ${
+                      isActive ? 'bg-purple-500/10 border-l-2 border-l-purple-400' : ''
+                    }`}
+                    onClick={() => onSelect(p.pattern)}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs text-white/80 truncate" title={p.displaySample}>
+                          {displayLabel}
+                        </div>
+                        {p.workflowTypes && p.workflowTypes.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {p.workflowTypes.slice(0, 2).map(wt => (
+                              <span key={wt} className="text-[10px] px-1.5 py-0.5 rounded bg-white/10 text-white/50">
+                                {WORKFLOW_TYPE_NAMES[wt] || wt}
+                              </span>
+                            ))}
+                            {p.workflowTypes.length > 2 && (
+                              <span className="text-[10px] text-white/40">+{p.workflowTypes.length - 2}</span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span className="text-[11px] font-mono text-red-400 font-semibold">{p.unresolved}</span>
+                        {p.total !== p.unresolved && (
+                          <span className="text-[11px] font-mono text-white/40">/{p.total}</span>
+                        )}
+                      </div>
+                    </div>
+                    {p.unresolved > 0 && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onBatchResolve(p.pattern); }}
+                        disabled={batchProcessing}
+                        className="mt-1.5 flex items-center gap-1 text-[11px] px-2 py-1 rounded-md bg-amber-500/15 text-amber-400 hover:bg-amber-500/25 transition-colors disabled:opacity-50"
+                      >
+                        <Zap className="w-3 h-3" />
+                        一键处理 ({p.unresolved})
+                      </button>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // 渲染任务错误表格
   // [虚拟列表评估] 不适用 useVirtualList：已实现服务端分页（每页 20 条），无需虚拟化
   const renderTaskErrors = () => {
     const query = taskSearchQuery.trim().toLowerCase();
-    const filteredTaskErrors = query
+    // 先按搜索关键词过滤，再按选中的错误模式过滤
+    let filteredTaskErrors = query
       ? taskErrors.filter(job =>
           (job.error_message || '').toLowerCase().includes(query)
         )
       : taskErrors;
+    if (selectedTaskPattern) {
+      // 客户端模式匹配：标准化后比较
+      filteredTaskErrors = filteredTaskErrors.filter(job => {
+        const msg = job.error_message || '';
+        const normalized = msg.replace(/\d+/g, '{N}').replace(/\s+/g, ' ').trim();
+        return normalized === selectedTaskPattern;
+      });
+    }
+
+    const allSelected = filteredTaskErrors.length > 0 && filteredTaskErrors.every(j => selectedTaskIds.has(j.id));
+    const toggleSelectAll = () => {
+      if (allSelected) {
+        setSelectedTaskIds(new Set());
+      } else {
+        setSelectedTaskIds(new Set(filteredTaskErrors.map(j => j.id)));
+      }
+    };
+    const toggleSelect = (id: string) => {
+      setSelectedTaskIds(prev => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id); else next.add(id);
+        return next;
+      });
+    };
 
     return (
     <>
@@ -273,11 +509,45 @@ const ErrorMonitor: React.FC = () => {
         </span>
       </div>
 
+      {/* 批量操作栏 */}
+      {(selectedTaskIds.size > 0 || selectedTaskPattern || taskTypeFilter) && (
+        <div className="flex items-center gap-3 mb-3 px-3 py-2 rounded-lg bg-amber-500/8 border border-amber-500/20">
+          <span className="text-sm text-amber-300">
+            {selectedTaskIds.size > 0
+              ? `已选中 ${selectedTaskIds.size} 条错误`
+              : selectedTaskPattern
+                ? `按错误种类筛选`
+                : `筛选类型: ${WORKFLOW_TYPE_NAMES[taskTypeFilter] || taskTypeFilter}`}
+          </span>
+          <button
+            onClick={() => batchResolveTasks()}
+            disabled={batchProcessing || (selectedTaskIds.size === 0 && !selectedTaskPattern && !taskTypeFilter)}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <Zap className="w-3.5 h-3.5" />
+            {batchProcessing ? '处理中…' : selectedTaskIds.size > 0 ? `批量处理 (${selectedTaskIds.size})` : '一键处理全部'}
+          </button>
+          {selectedTaskIds.size > 0 && (
+            <button
+              onClick={() => setSelectedTaskIds(new Set())}
+              className="text-xs px-2 py-1 rounded text-white/50 hover:text-white/80 transition-colors"
+            >
+              取消选择
+            </button>
+          )}
+        </div>
+      )}
+
       {/* 表格 */}
       <div className="rounded-xl border border-white/10 overflow-hidden bg-white/[0.06]">
         <table className="w-full">
           <thead>
             <tr className="border-b border-white/10 bg-white/10">
+              <th className="text-center px-3 py-3 w-10">
+                <button onClick={toggleSelectAll} className="text-white/60 hover:text-white/90 transition-colors">
+                  {allSelected ? <CheckSquare className="w-4 h-4 text-purple-400" /> : <Square className="w-4 h-4" />}
+                </button>
+              </th>
               <th className="text-left px-4 py-3 text-xs font-semibold text-white/80 uppercase tracking-wider">ID</th>
               <th className="text-left px-4 py-3 text-xs font-semibold text-white/80 uppercase tracking-wider">用户</th>
               <th className="text-left px-4 py-3 text-xs font-semibold text-white/80 uppercase tracking-wider">任务类型</th>
@@ -289,20 +559,20 @@ const ErrorMonitor: React.FC = () => {
           <tbody>
             {taskLoading && taskErrors.length === 0 ? (
               <tr>
-                <td colSpan={6} className="text-center py-12 text-white/70">
+                <td colSpan={7} className="text-center py-12 text-white/70">
                   <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2" />
                   加载中...
                 </td>
               </tr>
             ) : taskErrors.length === 0 ? (
               <tr>
-                <td colSpan={6} className="text-center py-12 text-white/70">
+                <td colSpan={7} className="text-center py-12 text-white/70">
                   暂无任务错误记录
                 </td>
               </tr>
             ) : filteredTaskErrors.length === 0 ? (
               <tr>
-                <td colSpan={6} className="text-center py-12 text-white/70">
+                <td colSpan={7} className="text-center py-12 text-white/70">
                   <Search className="w-5 h-5 mx-auto mb-2 opacity-50" />
                   未找到匹配「{taskSearchQuery}」的错误记录
                 </td>
@@ -314,6 +584,11 @@ const ErrorMonitor: React.FC = () => {
                     className="border-b border-white/10 hover:bg-white/[0.06] cursor-pointer transition-colors"
                     onClick={() => setTaskExpandedId(taskExpandedId === job.id ? null : job.id)}
                   >
+                    <td className="px-3 py-3 text-center" onClick={(e) => e.stopPropagation()}>
+                      <button onClick={() => toggleSelect(job.id)} className="text-white/50 hover:text-white/90 transition-colors">
+                        {selectedTaskIds.has(job.id) ? <CheckSquare className="w-4 h-4 text-purple-400" /> : <Square className="w-4 h-4" />}
+                      </button>
+                    </td>
                     <td className="px-4 py-3 text-sm text-white/70 font-mono">#{job.id}</td>
                     <td className="px-4 py-3 text-sm text-white/80">{job.user_email || `User #${job.user_id}`}</td>
                     <td className="px-4 py-3">
@@ -356,7 +631,7 @@ const ErrorMonitor: React.FC = () => {
                   </tr>
                   {taskExpandedId === job.id && (
                     <tr className="bg-white/[0.06]">
-                      <td colSpan={6} className="px-6 py-4">
+                      <td colSpan={7} className="px-6 py-4">
                         <div className="text-sm space-y-2">
                           <div>
                             <span className="text-white/70">完整错误：</span>
@@ -417,12 +692,34 @@ const ErrorMonitor: React.FC = () => {
   // [虚拟列表评估] 不适用 useVirtualList：已实现服务端分页（每页 20 条），无需虚拟化
   const renderSystemErrors = () => {
     const query = systemSearchQuery.trim().toLowerCase();
-    const filteredSystemErrors = query
+    let filteredSystemErrors = query
       ? systemErrors.filter(error =>
           (error.error_message || '').toLowerCase().includes(query) ||
           (error.error_stack || '').toLowerCase().includes(query)
         )
       : systemErrors;
+    // 按选中的错误模式过滤（系统错误用 error_type 过滤）
+    if (selectedSystemPattern) {
+      filteredSystemErrors = filteredSystemErrors.filter(error =>
+        error.error_type === selectedSystemPattern
+      );
+    }
+
+    const allSelected = filteredSystemErrors.length > 0 && filteredSystemErrors.every(e => selectedSystemIds.has(e.id));
+    const toggleSelectAll = () => {
+      if (allSelected) {
+        setSelectedSystemIds(new Set());
+      } else {
+        setSelectedSystemIds(new Set(filteredSystemErrors.map(e => e.id)));
+      }
+    };
+    const toggleSelect = (id: number) => {
+      setSelectedSystemIds(prev => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id); else next.add(id);
+        return next;
+      });
+    };
 
     return (
     <>
@@ -467,11 +764,45 @@ const ErrorMonitor: React.FC = () => {
         </span>
       </div>
 
+      {/* 批量操作栏 */}
+      {(selectedSystemIds.size > 0 || selectedSystemPattern || systemTypeFilter) && (
+        <div className="flex items-center gap-3 mb-3 px-3 py-2 rounded-lg bg-amber-500/8 border border-amber-500/20">
+          <span className="text-sm text-amber-300">
+            {selectedSystemIds.size > 0
+              ? `已选中 ${selectedSystemIds.size} 条错误`
+              : selectedSystemPattern
+                ? `筛选: ${ERROR_TYPE_NAMES[selectedSystemPattern] || selectedSystemPattern}`
+                : `筛选类型: ${ERROR_TYPE_NAMES[systemTypeFilter] || systemTypeFilter}`}
+          </span>
+          <button
+            onClick={() => batchResolveSystemErrors()}
+            disabled={batchProcessing || (selectedSystemIds.size === 0 && !selectedSystemPattern && !systemTypeFilter)}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <Zap className="w-3.5 h-3.5" />
+            {batchProcessing ? '处理中…' : selectedSystemIds.size > 0 ? `批量处理 (${selectedSystemIds.size})` : '一键处理全部'}
+          </button>
+          {selectedSystemIds.size > 0 && (
+            <button
+              onClick={() => setSelectedSystemIds(new Set())}
+              className="text-xs px-2 py-1 rounded text-white/50 hover:text-white/80 transition-colors"
+            >
+              取消选择
+            </button>
+          )}
+        </div>
+      )}
+
       {/* 表格 */}
       <div className="rounded-xl border border-white/10 overflow-hidden bg-white/[0.06]">
         <table className="w-full">
           <thead>
             <tr className="border-b border-white/10 bg-white/10">
+              <th className="text-center px-3 py-3 w-10">
+                <button onClick={toggleSelectAll} className="text-white/60 hover:text-white/90 transition-colors">
+                  {allSelected ? <CheckSquare className="w-4 h-4 text-purple-400" /> : <Square className="w-4 h-4" />}
+                </button>
+              </th>
               <th className="text-left px-4 py-3 text-xs font-semibold text-white/80 uppercase tracking-wider">ID</th>
               <th className="text-left px-4 py-3 text-xs font-semibold text-white/80 uppercase tracking-wider">类型</th>
               <th className="text-left px-4 py-3 text-xs font-semibold text-white/80 uppercase tracking-wider">来源</th>
@@ -483,20 +814,20 @@ const ErrorMonitor: React.FC = () => {
           <tbody>
             {systemLoading && systemErrors.length === 0 ? (
               <tr>
-                <td colSpan={6} className="text-center py-12 text-white/70">
+                <td colSpan={7} className="text-center py-12 text-white/70">
                   <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2" />
                   加载中...
                 </td>
               </tr>
             ) : systemErrors.length === 0 ? (
               <tr>
-                <td colSpan={6} className="text-center py-12 text-white/70">
+                <td colSpan={7} className="text-center py-12 text-white/70">
                   暂无系统错误记录
                 </td>
               </tr>
             ) : filteredSystemErrors.length === 0 ? (
               <tr>
-                <td colSpan={6} className="text-center py-12 text-white/70">
+                <td colSpan={7} className="text-center py-12 text-white/70">
                   <Search className="w-5 h-5 mx-auto mb-2 opacity-50" />
                   未找到匹配「{systemSearchQuery}」的错误记录
                 </td>
@@ -508,6 +839,11 @@ const ErrorMonitor: React.FC = () => {
                     className="border-b border-white/10 hover:bg-white/[0.06] cursor-pointer transition-colors"
                     onClick={() => setSystemExpandedId(systemExpandedId === error.id ? null : error.id)}
                   >
+                    <td className="px-3 py-3 text-center" onClick={(e) => e.stopPropagation()}>
+                      <button onClick={() => toggleSelect(error.id)} className="text-white/50 hover:text-white/90 transition-colors">
+                        {selectedSystemIds.has(error.id) ? <CheckSquare className="w-4 h-4 text-purple-400" /> : <Square className="w-4 h-4" />}
+                      </button>
+                    </td>
                     <td className="px-4 py-3 text-sm text-white/70 font-mono">#{error.id}</td>
                     <td className="px-4 py-3">
                       <span className={`text-xs px-2 py-1 rounded-full ${
@@ -558,7 +894,7 @@ const ErrorMonitor: React.FC = () => {
                   </tr>
                   {systemExpandedId === error.id && (
                     <tr className="bg-white/[0.06]">
-                      <td colSpan={6} className="px-6 py-4">
+                      <td colSpan={7} className="px-6 py-4">
                         <div className="text-sm space-y-3">
                           <div>
                             <span className="text-white/70">完整错误：</span>
@@ -670,7 +1006,12 @@ const ErrorMonitor: React.FC = () => {
         </div>
 
         {/* 内容区域 */}
-        {activeTab === 'task' ? renderTaskErrors() : renderSystemErrors()}
+        <div className="flex gap-4">
+          {renderErrorPatternSidebar()}
+          <div className="flex-1 min-w-0">
+            {activeTab === 'task' ? renderTaskErrors() : renderSystemErrors()}
+          </div>
+        </div>
       </div>
     </div>
   );

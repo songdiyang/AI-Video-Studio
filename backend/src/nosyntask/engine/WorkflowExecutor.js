@@ -605,7 +605,7 @@ class WorkflowExecutor {
         : inputParams;
 
       // 检查是否为重试（retrying → processing）
-      const oldTask = await queryOne('SELECT retry_count, user_id, workflow_type FROM generation_tasks g LEFT JOIN workflow_jobs w ON w.id = g.job_id WHERE g.id = ?', [taskId]);
+      const oldTask = await queryOne('SELECT g.retry_count, g.user_id, g.step_index, w.workflow_type FROM generation_tasks g LEFT JOIN workflow_jobs w ON w.id = g.job_id WHERE g.id = ?', [taskId]);
       const isRetry = oldTask?.retry_count > 0;
 
       // 更新任务状态为 processing

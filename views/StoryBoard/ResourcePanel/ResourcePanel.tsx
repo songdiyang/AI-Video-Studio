@@ -13,6 +13,7 @@ import CharacterDetailModal from './CharacterDetailModal';
 import CharacterLifecyclePanel from './CharacterLifecyclePanel';
 import SceneDetailModal from './SceneDetailModal';
 import SceneImageModal from './SceneImageModal';
+import CreateAssetModal, { CreateAssetType } from './CreateAssetModal';
 import { useResourceModals } from './useResourceModals';
 import { Character } from './types';
 import { getAuthToken } from '../../../services/auth';
@@ -66,6 +67,26 @@ const ResourcePanel: React.FC<ResourcePanelProps> = ({
   const [selectedScene, setSelectedScene] = useState<Scene | null>(null);
   const [isSceneDetailModalOpen, setIsSceneDetailModalOpen] = useState(false);
   const [isSceneImageModalOpen, setIsSceneImageModalOpen] = useState(false);
+
+  // 自由添加资产弹窗
+  const [createAssetType, setCreateAssetType] = useState<CreateAssetType | null>(null);
+  const handleOpenCreate = (type: CreateAssetType) => {
+    if (!projectId) {
+      showToast('请先选择项目', 'warning');
+      return;
+    }
+    setCreateAssetType(type);
+  };
+  const closeCreateModal = () => setCreateAssetType(null);
+  const handleAssetCreated = async () => {
+    if (createAssetType === 'character') {
+      await loadCharacters();
+      showToast('角色已创建', 'success');
+    } else if (createAssetType === 'scene') {
+      await loadScenes();
+      showToast('场景已创建', 'success');
+    }
+  };
 
   useEffect(() => {
     setSelectedCharacter((prev) => {
@@ -302,6 +323,7 @@ const ResourcePanel: React.FC<ResourcePanelProps> = ({
             onGenerateViews={handleGenerateViewsWrapper}
             onShowDetail={handleShowDetail}
             onOpenLifecycle={handleOpenLifecycle}
+            onCreate={() => handleOpenCreate('character')}
           />
         )}
 
@@ -310,11 +332,6 @@ const ResourcePanel: React.FC<ResourcePanelProps> = ({
             {isLoadingScenes ? (
               <div className="text-center py-8 text-(--text-muted)">
                 <p className="text-sm">加载场景中...</p>
-              </div>
-            ) : dbScenes.length === 0 ? (
-              <div className="text-center py-8 text-(--text-muted)">
-                <p className="text-sm">暂无场景数据</p>
-                <p className="text-xs mt-2">智能分镜生成后会自动提取场景</p>
               </div>
             ) : (
               <LocationsTab
@@ -326,6 +343,7 @@ const ResourcePanel: React.FC<ResourcePanelProps> = ({
                 onGenerateImage={(scene) => {
                   handleShowSceneImageModal(scene);
                 }}
+                onCreate={() => handleOpenCreate('scene')}
               />
             )}
           </>
@@ -393,6 +411,16 @@ const ResourcePanel: React.FC<ResourcePanelProps> = ({
         onClose={closeLifecyclePanel}
         character={lifecycleCharacter}
         onRefresh={loadCharacters}
+      />
+
+      {/* 自由添加角色 / 场景 */}
+      <CreateAssetModal
+        isOpen={!!createAssetType}
+        assetType={createAssetType || 'character'}
+        projectId={projectId ?? null}
+        scriptId={scriptId ?? null}
+        onClose={closeCreateModal}
+        onCreated={handleAssetCreated}
       />
     </div>
   );

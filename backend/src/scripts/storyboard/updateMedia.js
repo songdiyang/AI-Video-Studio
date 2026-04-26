@@ -20,9 +20,9 @@ async function updateMedia(req, res) {
   }
 
   try {
-    // 获取分镜信息，包含视频 URL 用于依赖检查
+    // 获取分镜信息，包含视频 URL 用于依赖检查和锁定状态
     const storyboard = await queryOne(
-      `SELECT s.id, s.project_id, s.video_url, s.first_frame_url, s.last_frame_url
+      `SELECT s.id, s.project_id, s.video_url, s.first_frame_url, s.last_frame_url, s.is_locked
        FROM storyboards s 
        JOIN scripts sc ON s.script_id = sc.id 
        WHERE s.id = ? AND sc.user_id = ?`,
@@ -31,6 +31,11 @@ async function updateMedia(req, res) {
 
     if (!storyboard) {
       return res.status(404).json({ message: 'Storyboard not found or access denied' });
+    }
+
+    // 检查分镜是否已锁定
+    if (storyboard.is_locked) {
+      return res.status(403).json({ message: '该分镜已锁定，请先解锁后再修改媒体资源' });
     }
 
     const updates = [];

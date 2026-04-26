@@ -483,6 +483,11 @@ async function handleFrameGeneration(inputParams, onProgress) {
   }
 
   const description = prompt || storyboard.prompt_template || '';
+
+  // 图片首/尾帧独立提示词（优先用专用字段，fallback 到综合 prompt_template）
+  // prompt 入参（若传入）作为最高优先级覆盖
+  const startDescription = prompt || storyboard.first_frame_prompt || storyboard.prompt_template || '';
+  const endDescription = prompt || storyboard.last_frame_prompt || storyboard.prompt_template || '';
   
   // 解析分镜空间描述
   let spatialDescription = null;
@@ -555,9 +560,9 @@ async function handleFrameGeneration(inputParams, onProgress) {
     console.log('[FrameGen] 🚀 优化模式：并行生成首尾帧提示词');
     if (onProgress) onProgress(13);
 
-    // 并行生成首尾帧提示词
+    // 并行生成首尾帧提示词（description 在各调用点单独传入，首/尾帧走各自的专用描述）
     const promptOpts = {
-      textModel, description, characterInfo, sceneInfo,
+      textModel, characterInfo, sceneInfo,
       shotType: variables.shotType, emotion: variables.emotion,
       visualStyle, startFrameDesc: variables.startFrame, endFrameDesc: variables.endFrame,
       dialogue: variables.dialogue, dialogues: variables.dialogues, sceneState, environmentChange,
@@ -567,6 +572,7 @@ async function handleFrameGeneration(inputParams, onProgress) {
     const [startPromptResult, endPromptResult] = await Promise.all([
       generateFramePrompt({
         ...promptOpts,
+        description: startDescription,
         frameType: 'start',
         prevDescription: resolvedPrevDescription || null,
         prevEndState: resolvedPrevEndState,
@@ -574,6 +580,7 @@ async function handleFrameGeneration(inputParams, onProgress) {
       }),
       generateFramePrompt({
         ...promptOpts,
+        description: endDescription,
         frameType: 'end',
         prevDescription: null,
         prevEndState: null,
@@ -704,7 +711,7 @@ async function handleFrameGeneration(inputParams, onProgress) {
     startPrompt = description;
     if (textModel) {
       console.log('[FrameGen] 使用文本模型生成首帧提示词...');
-      startPrompt = await generateFramePrompt({ textModel, description, frameType: 'start', characterInfo, sceneInfo, shotType: variables.shotType, emotion: variables.emotion, prevDescription: resolvedPrevDescription || null, visualStyle, startFrameDesc: variables.startFrame, endFrameDesc: variables.endFrame, dialogue: variables.dialogue, dialogues: variables.dialogues, prevEndState: resolvedPrevEndState, endState: variables.endState, sceneState, environmentChange, directorParams: variables.directorParams, spatialDescription, outputLang });
+      startPrompt = await generateFramePrompt({ textModel, description: startDescription, frameType: 'start', characterInfo, sceneInfo, shotType: variables.shotType, emotion: variables.emotion, prevDescription: resolvedPrevDescription || null, visualStyle, startFrameDesc: variables.startFrame, endFrameDesc: variables.endFrame, dialogue: variables.dialogue, dialogues: variables.dialogues, prevEndState: resolvedPrevEndState, endState: variables.endState, sceneState, environmentChange, directorParams: variables.directorParams, spatialDescription, outputLang });
       trace('首帧提示词', { prompt: startPrompt });
       console.log(`\x1b[32m[FrameGen] 首帧提示词: ${startPrompt}\x1b[0m`);
     } else {
@@ -761,7 +768,7 @@ async function handleFrameGeneration(inputParams, onProgress) {
     endPrompt = description;
     if (textModel) {
       console.log('[FrameGen] 使用文本模型生成尾帧提示词...');
-      endPrompt = await generateFramePrompt({ textModel, description, frameType: 'end', characterInfo, sceneInfo, shotType: variables.shotType, emotion: variables.emotion, prevDescription: null, visualStyle, startFrameDesc: variables.startFrame, endFrameDesc: variables.endFrame, dialogue: variables.dialogue, dialogues: variables.dialogues, prevEndState: null, endState: variables.endState, sceneState, environmentChange, directorParams: variables.directorParams, spatialDescription, outputLang, startPromptForRef: startPrompt });
+      endPrompt = await generateFramePrompt({ textModel, description: endDescription, frameType: 'end', characterInfo, sceneInfo, shotType: variables.shotType, emotion: variables.emotion, prevDescription: null, visualStyle, startFrameDesc: variables.startFrame, endFrameDesc: variables.endFrame, dialogue: variables.dialogue, dialogues: variables.dialogues, prevEndState: null, endState: variables.endState, sceneState, environmentChange, directorParams: variables.directorParams, spatialDescription, outputLang, startPromptForRef: startPrompt });
       trace('尾帧提示词', { prompt: endPrompt });
       console.log(`\x1b[32m[FrameGen] 尾帧提示词: ${endPrompt}\x1b[0m`);
     } else {

@@ -8,47 +8,8 @@ const router = express.Router();
 const { authMiddleware } = require('./middleware');
 const { callAIModel } = require('./aiModelService');
 const { withAIBillingContext } = require('./aiBillingContext');
-const { queryOne, queryAll, execute } = require('./dbHelper');
+const { queryOne } = require('./dbHelper');
 const fetch = require('node-fetch');
-
-/**
- * 校验用户是否拥有该 session
- */
-async function verifySessionOwner(sessionId, userId) {
-  const session = await queryOne(
-    'SELECT id, user_id FROM ai_assistant_sessions WHERE id = ?',
-    [sessionId]
-  );
-  return session && session.user_id === userId ? session : null;
-}
-
-/**
- * 插入消息
- */
-async function insertMessage(sessionId, role, content, attachments, suggestions) {
-  return execute(
-    'INSERT INTO ai_assistant_messages (session_id, role, content, attachments, suggestions) VALUES (?, ?, ?, ?, ?)',
-    [sessionId, role, content, attachments ? JSON.stringify(attachments) : null, suggestions ? JSON.stringify(suggestions) : null]
-  );
-}
-
-/**
- * 更新 session 统计信息
- */
-async function updateSessionMeta(sessionId, modelName, messageCountDelta = 0) {
-  const pool = require('./db').getPool();
-  const [rows] = await pool.query(
-    'SELECT COUNT(*) as cnt FROM ai_assistant_messages WHERE session_id = ?',
-    [sessionId]
-  );
-  const count = rows[0].cnt;
-  await execute(
-    `UPDATE ai_assistant_sessions
-     SET message_count = ?, model_name = COALESCE(?, model_name), last_message_at = NOW(), updated_at = NOW()
-     WHERE id = ?`,
-    [count, modelName, sessionId]
-  );
-}
 
 /**
  * 从 AI 回复中解析结构化建议
@@ -181,208 +142,13 @@ function extractUsage(result) {
   };
 }
 
-// ── Session CRUD ───────────────────────────────────────────────
-
-/**
- * GET /sessions
- * 列出用户的会话列表（按项目过滤）
- */
-router.get('/sessions', authMiddleware, async (req, res) => {
-  const userId = req.user.id;
-  const projectId = req.query.projectId ? parseInt(req.query.projectId, 10) : null;
-  try {
-    let rows;
-    if (projectId) {
-      rows = await queryAll(
-        'SELECT id, title, model_name, message_count, last_message_at, created_at FROM ai_assistant_sessions WHERE user_id = ? AND (project_id = ? OR project_id IS NULL) ORDER BY updated_at DESC',
-        [userId, projectId]
-      );
-    } else {
-      rows = await queryAll(
-        'SELECT id, title, model_name, message_count, last_message_at, created_at FROM ai_assistant_sessions WHERE user_id = ? ORDER BY updated_at DESC',
-        [userId]
-      );
-    }
-    res.json({ success: true, sessions: rows });
-  } catch (error) {
-    console.error('[AI Assistant] 获取会话列表失败:', error.message);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * POST /sessions
- * 创建新会话
- */
-router.post('/sessions', authMiddleware, async (req, res) => {
-  const userId = req.user.id;
-  const { projectId } = req.body;
-  try {
-    const result = await execute(
-      'INSERT INTO ai_assistant_sessions (user_id, project_id, title) VALUES (?, ?, ?)',
-      [userId, projectId || null, '新会话']
-    );
-    const sessionId = result.insertId;
-    const session = await queryOne(
-      'SELECT * FROM ai_assistant_sessions WHERE id = ?',
-      [sessionId]
-    );
-    res.json({ success: true, session });
-  } catch (error) {
-    console.error('[AI Assistant] 创建会话失败:', error.message);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * PATCH /sessions/:id
- * 重命名会话
- */
-router.patch('/sessions/:id', authMiddleware, async (req, res) => {
-  const userId = req.user.id;
-  const sessionId = parseInt(req.params.id, 10);
-  const { title } = req.body;
-  if (!title || typeof title !== 'string') {
-    return res.status(400).json({ success: false, error: '缺少 title 参数' });
-  }
-  try {
-    const session = await verifySessionOwner(sessionId, userId);
-    if (!session) {
-      return res.status(403).json({ success: false, error: '无权操作该会话' });
-    }
-    await execute(
-      'UPDATE ai_assistant_sessions SET title = ? WHERE id = ?',
-      [title.trim().substring(0, 120), sessionId]
-    );
-    res.json({ success: true });
-  } catch (error) {
-    console.error('[AI Assistant] 重命名会话失败:', error.message);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * DELETE /sessions/:id
- * 删除会话（级联删消息）
- */
-router.delete('/sessions/:id', authMiddleware, async (req, res) => {
-  const userId = req.user.id;
-  const sessionId = parseInt(req.params.id, 10);
-  try {
-    const session = await verifySessionOwner(sessionId, userId);
-    if (!session) {
-      return res.status(403).json({ success: false, error: '无权操作该会话' });
-    }
-    await execute('DELETE FROM ai_assistant_sessions WHERE id = ?', [sessionId]);
-    res.json({ success: true });
-  } catch (error) {
-    console.error('[AI Assistant] 删除会话失败:', error.message);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * GET /sessions/:id/messages
- * 获取会话消息列表
- */
-router.get('/sessions/:id/messages', authMiddleware, async (req, res) => {
-  const userId = req.user.id;
-  const sessionId = parseInt(req.params.id, 10);
-  try {
-    const session = await verifySessionOwner(sessionId, userId);
-    if (!session) {
-      return res.status(403).json({ success: false, error: '无权操作该会话' });
-    }
-    const rows = await queryAll(
-      'SELECT id, role, content, attachments, suggestions, created_at FROM ai_assistant_messages WHERE session_id = ? ORDER BY id ASC',
-      [sessionId]
-    );
-    const messages = rows.map(r => ({
-      id: String(r.id),
-      role: r.role,
-      content: r.content,
-      attachments: r.attachments ? JSON.parse(r.attachments) : undefined,
-      suggestions: r.suggestions ? JSON.parse(r.suggestions) : undefined,
-      timestamp: new Date(r.created_at).getTime(),
-    }));
-    res.json({ success: true, messages });
-  } catch (error) {
-    console.error('[AI Assistant] 获取消息失败:', error.message);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * POST /sessions/:id/generate-title
- * AI 自动生成会话标题
- */
-router.post('/sessions/:id/generate-title', authMiddleware, async (req, res) => {
-  const userId = req.user.id;
-  const sessionId = parseInt(req.params.id, 10);
-  const { modelName } = req.body;
-
-  try {
-    const session = await verifySessionOwner(sessionId, userId);
-    if (!session) {
-      return res.status(403).json({ success: false, error: '无权操作该会话' });
-    }
-
-    // 取首条用户消息
-    const firstMsg = await queryOne(
-      'SELECT content FROM ai_assistant_messages WHERE session_id = ? AND role = ? ORDER BY id ASC LIMIT 1',
-      [sessionId, 'user']
-    );
-
-    // 降级：直接截断首条用户消息
-    let title = '新会话';
-    if (firstMsg && firstMsg.content) {
-      const raw = firstMsg.content.trim();
-      title = raw.length > 40 ? raw.substring(0, 40) + '...' : raw;
-    }
-
-    // 尝试用 AI 生成更好的标题
-    if (modelName) {
-      try {
-        const promptMessages = [
-          { role: 'system', content: '请为以下用户问题生成一个简短的会话标题（10字以内，不要标点符号，不要加引号）：' },
-          { role: 'user', content: (firstMsg ? firstMsg.content : '').trim() }
-        ];
-        const result = await callAIModel(modelName, {
-          messages: promptMessages,
-          input: JSON.stringify(promptMessages)
-        });
-        const generated = extractReplyText(result);
-        if (generated && generated.trim()) {
-          const clean = generated.trim().replace(/^["']|["']$/g, '').replace(/\s+/g, ' ');
-          if (clean.length > 0 && clean.length <= 60) {
-            title = clean;
-          }
-        }
-      } catch (err) {
-        console.warn('[AI Assistant] AI 生成标题失败，降级:', err.message);
-      }
-    }
-
-    await execute(
-      'UPDATE ai_assistant_sessions SET title = ? WHERE id = ?',
-      [title, sessionId]
-    );
-    res.json({ success: true, title });
-  } catch (error) {
-    console.error('[AI Assistant] 生成标题失败:', error.message);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// ── Chat endpoints (with session persistence) ──────────────────
-
 /**
  * POST /chat
  * 多模态 AI 对话
  */
 router.post('/chat', authMiddleware, async (req, res) => {
   const userId = req.user.id;
-  const { projectId, modelName, messages, context, sessionId } = req.body;
+  const { projectId, modelName, messages, context } = req.body;
 
   // 参数验证
   if (!modelName) {
@@ -391,17 +157,8 @@ router.post('/chat', authMiddleware, async (req, res) => {
   if (!messages || !Array.isArray(messages) || messages.length === 0) {
     return res.status(400).json({ success: false, error: '缺少必填参数 messages，需要至少一条消息' });
   }
-  if (!sessionId) {
-    return res.status(400).json({ success: false, error: '缺少必填参数 sessionId' });
-  }
 
-  // 校验会话归属
-  const session = await verifySessionOwner(sessionId, userId);
-  if (!session) {
-    return res.status(403).json({ success: false, error: '无权操作该会话' });
-  }
-
-  console.log(`[AI Assistant] 用户 ${userId} 发起对话, 模型: ${modelName}, 会话: ${sessionId}`);
+  console.log(`[AI Assistant] 用户 ${userId} 发起对话, 模型: ${modelName}, 项目: ${projectId || 'N/A'}, 消息数: ${messages.length}`);
 
   try {
     // 转换 messages 格式
@@ -410,21 +167,19 @@ router.post('/chat', authMiddleware, async (req, res) => {
       content: transformMessageContent(msg.content)
     }));
 
-    // 将最后一条 user 消息持久化
-    const lastUserMsg = messages[messages.length - 1];
-    if (lastUserMsg && lastUserMsg.role === 'user') {
-      await insertMessage(sessionId, 'user', lastUserMsg.content || '', lastUserMsg.attachments, null);
-    }
-
     // 构建系统提示词
     const systemPrompt = buildSystemPrompt(context);
 
+    // 构建调用参数
+    // input 用于模板渲染（body_template 中的 {{input}} 占位符）
+    // messages 和 systemPrompt 用于 custom_handler（如 doubao_multimodal）
     const callParams = {
       messages: transformedMessages,
       systemPrompt,
       input: JSON.stringify(transformedMessages)
     };
 
+    // 使用计费上下文包裹调用
     const result = await withAIBillingContext(
       {
         userId,
@@ -435,6 +190,7 @@ router.post('/chat', authMiddleware, async (req, res) => {
       () => callAIModel(modelName, callParams)
     );
 
+    // 提取回复文本
     const rawReply = extractReplyText(result);
 
     if (!rawReply) {
@@ -442,12 +198,13 @@ router.post('/chat', authMiddleware, async (req, res) => {
       return res.status(500).json({ success: false, error: 'AI 返回内容为空，请稍后重试' });
     }
 
+    // 解析建议
     const { cleanReply, suggestions } = parseSuggestions(rawReply);
+
+    // 提取 usage
     const usage = extractUsage(result);
 
-    // 持久化 assistant 消息
-    await insertMessage(sessionId, 'assistant', cleanReply, null, suggestions);
-    await updateSessionMeta(sessionId, modelName);
+    console.log(`[AI Assistant] 对话完成, 回复长度: ${cleanReply.length}, 建议数: ${suggestions.length}`);
 
     res.json({
       success: true,
@@ -470,7 +227,7 @@ router.post('/chat', authMiddleware, async (req, res) => {
  */
 router.post('/chat/stream', authMiddleware, async (req, res) => {
   const userId = req.user.id;
-  const { projectId, modelName, messages, context, sessionId } = req.body;
+  const { projectId, modelName, messages, context } = req.body;
 
   if (!modelName) {
     return res.status(400).json({ success: false, error: '缺少必填参数 modelName' });
@@ -478,24 +235,10 @@ router.post('/chat/stream', authMiddleware, async (req, res) => {
   if (!messages || !Array.isArray(messages) || messages.length === 0) {
     return res.status(400).json({ success: false, error: '缺少必填参数 messages' });
   }
-  if (!sessionId) {
-    return res.status(400).json({ success: false, error: '缺少必填参数 sessionId' });
-  }
 
-  const session = await verifySessionOwner(sessionId, userId);
-  if (!session) {
-    return res.status(403).json({ success: false, error: '无权操作该会话' });
-  }
-
-  console.log(`[AI Assistant Stream] 用户 ${userId} 发起流式对话, 模型: ${modelName}, 会话: ${sessionId}`);
+  console.log(`[AI Assistant Stream] 用户 ${userId} 发起流式对话, 模型: ${modelName}`);
 
   try {
-    // 持久化最后一条 user 消息
-    const lastUserMsg = messages[messages.length - 1];
-    if (lastUserMsg && lastUserMsg.role === 'user') {
-      await insertMessage(sessionId, 'user', lastUserMsg.content || '', lastUserMsg.attachments, null);
-    }
-
     // 获取模型配置
     const model = await queryOne(
       'SELECT * FROM ai_model_configs WHERE name = ? AND is_active = 1',
@@ -577,7 +320,6 @@ router.post('/chat/stream', authMiddleware, async (req, res) => {
     // 读取流并转发（过滤掉 reasoning_content，只保留 output_text）
     const reader = response.body;
     let eventBuffer = '';
-    let fullContent = '';
 
     reader.on('data', (chunk) => {
       eventBuffer += chunk.toString('utf-8');
@@ -623,7 +365,6 @@ router.post('/chat/stream', authMiddleware, async (req, res) => {
                         parsed?.output_text?.delta ||
                         parsed?.delta || '';
           if (delta) {
-            fullContent += delta;
             res.write(`data: ${JSON.stringify({ delta })}\n\n`);
           }
         } catch {
@@ -634,26 +375,9 @@ router.post('/chat/stream', authMiddleware, async (req, res) => {
       }
     });
 
-    reader.on('end', async () => {
+    reader.on('end', () => {
       res.write('data: [DONE]\n\n');
       res.end();
-
-      try {
-        const suggestionMatch = fullContent.match(/\[SUGGESTIONS\](.*?)\[\/SUGGESTIONS\]/s);
-        let suggestions = [];
-        let cleanContent = fullContent;
-        if (suggestionMatch) {
-          try {
-            const parsed = JSON.parse(suggestionMatch[1]);
-            suggestions = parsed.suggestions || [];
-            cleanContent = fullContent.replace(/\[SUGGESTIONS\].*?\[\/SUGGESTIONS\]/s, '').trim();
-          } catch { /* ignore */ }
-        }
-        await insertMessage(sessionId, 'assistant', cleanContent || '(无回复)', null, suggestions);
-        await updateSessionMeta(sessionId, modelName);
-      } catch (err) {
-        console.error('[AI Assistant Stream] 持久化消息失败:', err.message);
-      }
     });
 
     reader.on('error', (err) => {

@@ -75,6 +75,25 @@ export async function fetchStoryboards(scriptId: number): Promise<StoryboardItem
   return (await res.json()) as StoryboardItem[];
 }
 
+/**
+ * 获取项目下的"自由分镜"（不绑定剧本）
+ * 与 fetchStoryboards 配对：剧集分镜走 scriptId，自由分镜走 projectId。
+ */
+export async function fetchStandaloneStoryboards(projectId: number): Promise<StoryboardItem[]> {
+  const res = await fetch(`/api/storyboards/project/${projectId}/standalone`, {
+    headers: {
+      ...authHeaders(),
+    },
+  });
+
+  if (!res.ok) {
+    const data = await res.json().catch(() => null);
+    throw new Error(data?.message || 'Failed to load standalone storyboards');
+  }
+
+  return (await res.json()) as StoryboardItem[];
+}
+
 export async function saveStoryboards(scriptId: number, items: StoryboardItem[]): Promise<void> {
   const res = await fetch(`/api/storyboards/${scriptId}`, {
     method: 'POST',

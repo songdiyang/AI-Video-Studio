@@ -11,6 +11,8 @@ import { Command } from '../hooks/useCommandPalette';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { useWorkbench } from '../contexts/WorkbenchContext';
+import { useAIAssistantUI } from '../contexts/AIAssistantContext';
+import AIAssistantDrawer from './AIAssistantDrawer';
 import OnboardingOverlay from './Onboarding/OnboardingOverlay';
 import DashboardPanel from './WorkflowDashboard/DashboardPanel';
 import { useOnboarding, OnboardingStep } from '../hooks/useOnboarding';
@@ -52,6 +54,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const { t, language, setLanguage } = useLanguage();
   const { theme, setTheme } = useTheme();
   const { projectType, currentProject, switchProject } = useWorkbench();
+  const { isOpen: isAIAssistantOpen, toggle: toggleAIAssistant, projectId: aiProjectId } = useAIAssistantUI();
   const { balance, isLowBalance, loading: pointsLoading, balanceAsCNY, openRechargeModal, isRechargeModalOpen, closeRechargeModal } = usePoints();
   const isAuth = location.pathname === '/auth';
   const isLoggedIn = !!getAuthToken();
@@ -502,8 +505,14 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         </div>
       </aside>
 
-      {/* 右侧主区域 */}
-      <div className="flex-1 flex flex-col min-w-0">
+      {/* 右侧主区域 - 打开 AI 助手时让出右侧空间，避免遮挡画面
+          注：不做 margin 过渡动画（大页面 transition-[margin] 会持续触发 layout），
+          Drawer 自身的滑入动画已提供视觉连续感 */}
+      <div
+        className={`flex-1 flex flex-col min-w-0 ${
+          isAIAssistantOpen && !isMobile ? 'mr-[440px]' : ''
+        }`}
+      >
         {/* 网络状态提示条 */}
         <NetworkStatusBar />
         
@@ -574,6 +583,22 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           
           {/* 右侧：辅助信息 */}
           <div className="flex items-center gap-4">
+            {/* AI 助手 - 项目级全局入口 */}
+            {isLoggedIn && (
+              <button
+                onClick={toggleAIAssistant}
+                disabled={!aiProjectId}
+                className={`p-1.5 rounded-lg transition-colors ${
+                  isAIAssistantOpen
+                    ? 'bg-[var(--accent)]/15 text-[var(--accent)]'
+                    : 'text-(--text-muted) hover:text-(--text-primary) hover:bg-white/5'
+                } disabled:opacity-40 disabled:cursor-not-allowed`}
+                aria-label="AI 助手"
+                title={aiProjectId ? 'AI 助手' : 'AI 助手（请先选择项目）'}
+              >
+                <Sparkles className="w-4 h-4" />
+              </button>
+            )}
             <button
               onClick={() => setIsDashboardOpen(true)}
               className="p-1.5 rounded-lg text-(--text-muted) hover:text-(--text-primary) hover:bg-white/5 transition-colors"
@@ -753,6 +778,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
       {/* 积分不足拦截弹窗 */}
       <InsufficientPointsModal />
+
+      {/* AI 助手全局浮层 - 独立组件，避免 Context Data 变化时重渲染 Layout */}
+      <AIAssistantDrawer />
     </div>
   );
 };

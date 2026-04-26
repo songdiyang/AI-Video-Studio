@@ -130,19 +130,19 @@ async function handleBatchSketchFrameGeneration(inputParams, onProgress) {
   console.log(`[BatchSketchGen] 开始批量草图帧生成，scriptId: ${scriptId}, 覆盖: ${overwriteFrames}, 并发: ${maxConcurrency}, 超时: ${Math.round(effectiveTimeout / 1000 / 60)}分钟`);
   console.log(`[BatchSketchGen] 单任务超时: ${Math.round(SINGLE_TASK_TIMEOUT_MS / 1000 / 60)}分钟`);
 
-  // 0. 覆盖模式：先批量清除有草图分镜的首尾帧
+  // 0. 覆盖模式：先批量清除有草图且未锁定分镜的首尾帧
   if (overwriteFrames) {
-    console.log('[BatchSketchGen] 覆盖模式：清除有草图分镜的首尾帧...');
+    console.log('[BatchSketchGen] 覆盖模式：清除有草图且未锁定分镜的首尾帧...');
     await execute(
-      'UPDATE storyboards SET first_frame_url = NULL, last_frame_url = NULL WHERE script_id = ? AND sketch_url IS NOT NULL AND sketch_url != ""',
+      'UPDATE storyboards SET first_frame_url = NULL, last_frame_url = NULL WHERE script_id = ? AND sketch_url IS NOT NULL AND sketch_url != "" AND is_locked = FALSE',
       [scriptId]
     );
     console.log('[BatchSketchGen] 已清除相关首尾帧');
   }
 
-  // 1. 查询所有分镜（按顺序）
+  // 1. 查询所有分镜（按顺序，含锁定状态）
   const storyboards = await queryAll(
-    'SELECT id, prompt_template, variables_json, first_frame_url, last_frame_url, sketch_url, sketch_type FROM storyboards WHERE script_id = ? ORDER BY idx ASC',
+    'SELECT id, prompt_template, variables_json, first_frame_url, last_frame_url, sketch_url, sketch_type, is_locked FROM storyboards WHERE script_id = ? ORDER BY idx ASC',
     [scriptId]
   );
 
@@ -151,9 +151,13 @@ async function handleBatchSketchFrameGeneration(inputParams, onProgress) {
   }
 
   const total = storyboards.length;
+  const lockedCount = storyboards.filter(sb => sb.is_locked).length;
+  if (lockedCount > 0) {
+    console.log(`[BatchSketchGen] ${lockedCount}/${total} 个分镜已锁定，将被跳过`);
+  }
 
-  // 2. 过滤出有草图的分镜
-  const storyboardsWithSketch = storyboards.filter(sb => sb.sketch_url && sb.sketch_url.trim() !== '');
+  // 2. 过滤出有草图且未锁定的分镜
+  const storyboardsWithSketch = storyboards.filter(sb => sb.sketch_url && sb.sketch_url.trim() !== '' && !sb.is_locked);
   const totalWithSketch = storyboardsWithSketch.length;
 
   if (totalWithSketch === 0) {

@@ -217,6 +217,40 @@ const ComicDramaWorkbench: React.FC<ComicDramaWorkbenchProps> = ({ projectId, ac
       console.error('刷新剧本失败:', error);
     }
   }, [projectId]);
+
+  // 新建下一集：创建一集空白草稿后自动切换
+  const handleCreateNextEpisode = useCallback(async () => {
+    try {
+      const maxEp = scripts.reduce((m, s) => Math.max(m, s.episode_number || 0), 0);
+      const nextEp = maxEp + 1;
+      const token = getAuthToken();
+      const res = await fetch('/api/scripts/draft', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          projectId,
+          episodeNumber: nextEp,
+          title: `第${nextEp}集`,
+          content: '',
+        }),
+      });
+      const data = await res.json().catch(() => ({} as any));
+      if (!res.ok) {
+        showToast(data?.message || '新建下一集失败', 'error');
+        return;
+      }
+      await refreshScripts();
+      setCurrentScriptId(data.scriptId);
+      setCurrentEpisode(data.episodeNumber || nextEp);
+      showToast(`已新建第${data.episodeNumber || nextEp}集`, 'success');
+    } catch (err) {
+      console.error('新建下一集失败:', err);
+      showToast('新建下一集失败，请稍后重试', 'error');
+    }
+  }, [projectId, scripts, refreshScripts, showToast]);
   
   // 加载中状态
   if (loading) {
@@ -260,6 +294,7 @@ const ComicDramaWorkbench: React.FC<ComicDramaWorkbenchProps> = ({ projectId, ac
               imageModel={selected.image || ''}
               videoModel={selected.video || ''}
               onEpisodeChange={handleScriptChange}
+              onCreateNextEpisode={handleCreateNextEpisode}
             />
           </Suspense>
         );

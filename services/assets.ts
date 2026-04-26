@@ -18,39 +18,39 @@ function normalizeStorageUrl(url: string | null | undefined): string | null {
 function normalizeCharacterUrls<T extends Record<string, any>>(char: T): T {
   if (!char) return char;
   const urlFields = ['image_url', 'front_view_url', 'side_view_url', 'back_view_url', 'character_sheet_url', 'concept_image_url'];
-  const result = { ...char };
+  const result: Record<string, any> = { ...char };
   for (const field of urlFields) {
     if (result[field]) {
       result[field] = normalizeStorageUrl(result[field]);
     }
   }
-  return result;
+  return result as T;
 }
 
 /** 规范化场景数据中的所有 MinIO URL */
 function normalizeSceneUrls<T extends Record<string, any>>(scene: T): T {
   if (!scene) return scene;
   const urlFields = ['image_url'];
-  const result = { ...scene };
+  const result: Record<string, any> = { ...scene };
   for (const field of urlFields) {
     if (result[field]) {
       result[field] = normalizeStorageUrl(result[field]);
     }
   }
-  return result;
+  return result as T;
 }
 
 /** 规范化角色状态数据中的所有 MinIO URL */
 function normalizeStateUrls<T extends Record<string, any>>(state: T): T {
   if (!state) return state;
   const urlFields = ['image_url', 'front_view_url', 'side_view_url', 'back_view_url'];
-  const result = { ...state };
+  const result: Record<string, any> = { ...state };
   for (const field of urlFields) {
     if (result[field]) {
       result[field] = normalizeStorageUrl(result[field]);
     }
   }
-  return result;
+  return result as T;
 }
 
 // 标签分组接口
@@ -116,6 +116,7 @@ export interface Scene {
   id: number;
   user_id: number;
   project_id?: number | null;
+  script_id?: number | null;
   name: string;
   description: string;
   environment: string;
@@ -128,6 +129,7 @@ export interface Scene {
   project_name?: string;
   spatial_layout?: SpatialLayout | null;
   camera_defaults?: CameraDefaults | null;
+  source?: string;
   created_at: string;
   updated_at: string;
 }

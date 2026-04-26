@@ -7,6 +7,7 @@ const getTemplates = require('./getTemplates');
 const autoGenerate = require('./autoGenerate');
 const autoGenerateByScene = require('./autoGenerateByScene');
 const getByScriptId = require('./getByScriptId');
+const getStandaloneByProject = require('./getStandaloneByProject');
 const saveManual = require('./saveManual');
 const batchGenerateFrames = require('./batchGenerateFrames');
 const batchGenerateVideos = require('./batchGenerateVideos');
@@ -63,6 +64,7 @@ batchOptimizePrompts(router);
 parallelGenerateFrames(router);  // 并发帧生成（独立模式）
 linkStoryboard(router);          // 单分镜独立关联
 saveManual(router);
+getStandaloneByProject(router);  // 必须放在 /:scriptId 之前（更具体的前缀路由优先）
 getByScriptId(router);  // 必须放在最后，因为 /:scriptId 会匹配所有路径
 
 module.exports = router;

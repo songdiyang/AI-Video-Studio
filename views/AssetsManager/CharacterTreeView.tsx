@@ -413,12 +413,14 @@ const CharacterTreeView: React.FC<CharacterTreeViewProps> = ({
             ) : states && states.length > 0 ? (
               // 按分类分组渲染状态
               (() => {
+                // 将 state_category 归一化为单值（首选数组第一个，否则原值，默认 daily）
+                const toCat = (v: any): string => Array.isArray(v) ? (v[0] || 'daily') : (v || 'daily');
                 // 排序：白膜置顶
                 const sorted = [...states].sort((a, b) => {
                   if (a.is_base_model && !b.is_base_model) return -1;
                   if (!a.is_base_model && b.is_base_model) return 1;
-                  const catA = a.state_category || 'daily';
-                  const catB = b.state_category || 'daily';
+                  const catA = toCat(a.state_category);
+                  const catB = toCat(b.state_category);
                   if (catA !== catB) return catA.localeCompare(catB);
                   return (a.sort_order || 0) - (b.sort_order || 0);
                 });
@@ -426,7 +428,7 @@ const CharacterTreeView: React.FC<CharacterTreeViewProps> = ({
                 // 按分类分组
                 const grouped: Record<string, CharacterState[]> = {};
                 for (const s of sorted) {
-                  const cat = s.state_category || 'daily';
+                  const cat = toCat(s.state_category);
                   if (!grouped[cat]) grouped[cat] = [];
                   grouped[cat].push(s);
                 }
@@ -475,7 +477,9 @@ const CharacterTreeView: React.FC<CharacterTreeViewProps> = ({
       && selectedId.stateId === state.id;
     const thumb = getStateThumbnail(state);
     const isActivating = activatingStateId === state.id;
-    const category = state.state_category || 'daily';
+    const category = (Array.isArray(state.state_category)
+      ? (state.state_category[0] || 'daily')
+      : (state.state_category || 'daily')) as 'daily' | 'costume' | 'time' | 'effect';
     const colors = CATEGORY_COLOR_MAP[category];
     const stateTags = parseTags(state.tags);
 

@@ -44,6 +44,14 @@ async function optimizeSinglePrompt({ storyboard, allStoryboards, currentIdx, mo
   // 提取视觉风格
   let visualStyle = '';
   let perspectiveInstruction = '';
+  // 拍摄视角（项目级配置，注入到 system prompt 强制 AI 遵守；第一人称项目禁止第三人称镜头）
+  try {
+    const { getNarrativePerspective } = require('../../../utils/getProjectStyle');
+    const perspective = await getNarrativePerspective(storyboard.project_id);
+    perspectiveInstruction = perspective.promptInstruction || '';
+  } catch (e) {
+    // 读取失败不影响优化本身
+  }
   try {
     const settings = typeof storyboard.settings_json === 'string'
       ? JSON.parse(storyboard.settings_json || '{}')
@@ -210,9 +218,9 @@ async function handleBatchPromptOptimization(inputParams, onProgress) {
     modelName = textModels[0].name;
   }
 
-  // 2. 查询所有分镜（含项目、剧本信息）
+  // 2. 查询所有分镜（含项目、剧本信息、锁定状态）
   const allStoryboards = await queryAll(
-    `SELECT s.id, s.script_id, s.idx, s.prompt_template, s.spatial_description,
+    `SELECT s.id, s.script_id, s.idx, s.prompt_template, s.spatial_description, s.is_locked,
             sc.project_id, sc.content AS script_content, sc.title AS script_title,
             p.settings_json, p.name AS project_name
      FROM storyboards s
@@ -227,8 +235,13 @@ async function handleBatchPromptOptimization(inputParams, onProgress) {
     return { total: 0, completed: 0, skipped: 0, failed: 0, results: [] };
   }
 
-  // 3. 过滤需要优化的分镜（有描述内容的）
-  const targetStoryboards = allStoryboards.filter(s => s.prompt_template && s.prompt_template.trim());
+  const lockedCount = allStoryboards.filter(s => s.is_locked).length;
+  if (lockedCount > 0) {
+    console.log(`[BatchPromptOptimize] ${lockedCount}/${allStoryboards.length} 个分镜已锁定，将被跳过`);
+  }
+
+  // 3. 过滤需要优化的分镜（有描述内容且未锁定）
+  const targetStoryboards = allStoryboards.filter(s => s.prompt_template && s.prompt_template.trim() && !s.is_locked);
   const skippedCount = allStoryboards.length - targetStoryboards.length;
 
   if (targetStoryboards.length === 0) {

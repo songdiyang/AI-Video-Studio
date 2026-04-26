@@ -447,7 +447,9 @@ const CharacterLifecyclePanel: React.FC<CharacterLifecyclePanelProps> = ({
                           const activeState = states.find(s => s.is_active);
                           if (!activeState) return null;
                           const thumb = activeState.image_url || activeState.front_view_url;
-                          const category = activeState.state_category || 'daily';
+                          const category = (Array.isArray(activeState.state_category)
+                            ? (activeState.state_category[0] || 'daily')
+                            : (activeState.state_category || 'daily')) as 'daily' | 'costume' | 'time' | 'effect';
                           const colors = CATEGORY_COLOR_MAP[category];
                           return (
                             <>
@@ -485,7 +487,9 @@ const CharacterLifecyclePanel: React.FC<CharacterLifecyclePanelProps> = ({
                   {stateViewMode === 'grid' && (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {filteredStates.map((state) => {
-                      const category = state.state_category || 'daily';
+                      const category = (Array.isArray(state.state_category)
+                        ? (state.state_category[0] || 'daily')
+                        : (state.state_category || 'daily')) as 'daily' | 'costume' | 'time' | 'effect';
                       const colors = CATEGORY_COLOR_MAP[category];
                       const stateTags = parseTags(state.tags);
                       return (
@@ -582,7 +586,9 @@ const CharacterLifecyclePanel: React.FC<CharacterLifecyclePanelProps> = ({
                       {filteredStates.map((state) => {
                         const thumb = state.image_url || state.front_view_url;
                         const isSelected = selectedState?.id === state.id;
-                        const category = state.state_category || 'daily';
+                        const category = (Array.isArray(state.state_category)
+                          ? (state.state_category[0] || 'daily')
+                          : (state.state_category || 'daily')) as 'daily' | 'costume' | 'time' | 'effect';
                         const colors = CATEGORY_COLOR_MAP[category];
                         const stateTags = parseTags(state.tags);
                         return (

@@ -1,6 +1,6 @@
 const express = require('express');
 const { queryOne, queryAll, execute } = require('./dbHelper');
-const { authMiddleware, requireAdmin, requireAdminOrOps, isOpsRole } = require('./middleware');
+const { authMiddleware, requireAdmin } = require('./middleware');
 const { parseJsonField } = require('./utils/parseJsonField');
 const { withAIBillingContext } = require('./aiBillingContext');
 const { createResourcePack, deductFromResourcePacks, syncUserBalance } = require('./resourcePackService');
@@ -13,12 +13,6 @@ const { getServerStatus } = require('./index');
 const { getSystemErrors, updateSystemErrorStatus, getSystemErrorStats } = require('./systemErrorService');
 const { logAdminAction, logAdminLogin, getAdminLogs, getAdminLogActions, getAdminLogTargetTypes } = require('./adminLogService');
 const os = require('os');
-
-// 根据角色生成工号前缀
-function generateEmployeeId(role) {
-  const prefix = role === 'ops' ? 'OPS-' : 'ADM-';
-  return prefix + Math.random().toString(36).substring(2, 8).toUpperCase();
-}
 
 const router = express.Router();
 
@@ -61,7 +55,7 @@ function runAsAdminTool(req, operationKey, resourceRefs, fn) {
   );
 }
 
-router.get('/stats', authMiddleware, requireAdminOrOps, async (req, res) => {
+router.get('/stats', authMiddleware, requireAdmin, async (req, res) => {
   try {
     const totalUsers = await queryOne('SELECT COUNT(*) as count FROM users');
     
@@ -90,7 +84,7 @@ router.get('/stats', authMiddleware, requireAdminOrOps, async (req, res) => {
 
 // 获取服务器状态信息
 // 检查各服务端口健康状态
-router.get('/service-ports-status', authMiddleware, requireAdminOrOps, async (_req, res) => {
+router.get('/service-ports-status', authMiddleware, requireAdmin, async (_req, res) => {
   const services = [
     {
       name: 'Backend',
@@ -190,7 +184,7 @@ router.get('/service-ports-status', authMiddleware, requireAdminOrOps, async (_r
   }
 });
 
-router.get('/server-status', authMiddleware, requireAdminOrOps, async (req, res) => {
+router.get('/server-status', authMiddleware, requireAdmin, async (req, res) => {
   try {
     const status = getServerStatus();
     
@@ -226,7 +220,7 @@ router.get('/server-status', authMiddleware, requireAdminOrOps, async (req, res)
 });
 
 // ====== 系统资源详细监控 ======
-router.get('/system-resources', authMiddleware, requireAdminOrOps, async (req, res) => {
+router.get('/system-resources', authMiddleware, requireAdmin, async (req, res) => {
   try {
     const mem = process.memoryUsage();
     const cpus = os.cpus();
@@ -349,174 +343,8 @@ router.get('/system-resources', authMiddleware, requireAdminOrOps, async (req, r
   }
 });
 
-// ====== 按小时粒度统计数据（按天切换） ======
-router.get('/hourly-stats', authMiddleware, requireAdminOrOps, async (req, res) => {
-  try {
-    const { date } = req.query;
-    if (!date) {
-      return res.status(400).json({ message: '缺少 date 参数 (YYYY-MM-DD)' });
-    }
-
-    const targetDate = date; // YYYY-MM-DD
-    const dayStart = `${targetDate} 00:00:00`;
-    const dayEnd = `${targetDate} 23:59:59`;
-
-    // 24小时槽位（00:00 ~ 23:00）
-    const hourSlots = [];
-    for (let h = 0; h < 24; h++) {
-      hourSlots.push(String(h).padStart(2, '0') + ':00');
-    }
-
-    // 按小时统计任务量（generation_tasks）
-    const hourlyTasks = await queryAll(`
-      SELECT 
-        DATE_FORMAT(created_at, '%H:00') as hour_slot,
-        COUNT(*) as task_count,
-        SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed_count,
-        SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed_count
-      FROM generation_tasks
-      WHERE created_at >= ? AND created_at <= ?
-      GROUP BY hour_slot
-      ORDER BY hour_slot ASC
-    `, [dayStart, dayEnd]);
-
-    // 按小时统计请求量（billing_records）
-    const hourlyRequests = await queryAll(`
-      SELECT 
-        DATE_FORMAT(created_at, '%H:00') as hour_slot,
-        COUNT(*) as request_count
-      FROM billing_records
-      WHERE created_at >= ? AND created_at <= ?
-      GROUP BY hour_slot
-      ORDER BY hour_slot ASC
-    `, [dayStart, dayEnd]);
-
-    // 按小时统计活跃用户（billing_records 去重 user_id）
-    const hourlyActiveUsers = await queryAll(`
-      SELECT 
-        DATE_FORMAT(created_at, '%H:00') as hour_slot,
-        COUNT(DISTINCT user_id) as active_users
-      FROM billing_records
-      WHERE created_at >= ? AND created_at <= ?
-      GROUP BY hour_slot
-      ORDER BY hour_slot ASC
-    `, [dayStart, dayEnd]);
-
-    // 按小时按模型统计请求量
-    const hourlyRequestsByModel = await queryAll(`
-      SELECT 
-        DATE_FORMAT(created_at, '%H:00') as hour_slot,
-        COALESCE(model_name, 'unknown') as model_name,
-        COUNT(*) as requests
-      FROM billing_records
-      WHERE created_at >= ? AND created_at <= ?
-      GROUP BY hour_slot, model_name
-      ORDER BY hour_slot ASC, model_name ASC
-    `, [dayStart, dayEnd]);
-
-    // 填充到 24 小时槽位
-    const tasksMap = {};
-    for (const t of hourlyTasks) tasksMap[t.hour_slot] = t;
-    const reqMap = {};
-    for (const r of hourlyRequests) reqMap[r.hour_slot] = r;
-    const usersMap = {};
-    for (const u of hourlyActiveUsers) usersMap[u.hour_slot] = u;
-
-    const hourlyData = hourSlots.map(slot => ({
-      hour: slot,
-      tasks: Number(tasksMap[slot]?.task_count || 0),
-      completed: Number(tasksMap[slot]?.completed_count || 0),
-      failed: Number(tasksMap[slot]?.failed_count || 0),
-      requests: Number(reqMap[slot]?.request_count || 0),
-      activeUsers: Number(usersMap[slot]?.active_users || 0),
-    }));
-
-    res.json({
-      date: targetDate,
-      hourlyData,
-      hourlyRequestsByModel,
-    });
-  } catch (error) {
-    console.error('[Admin] Get hourly stats error:', error);
-    res.status(500).json({ message: '获取小时统计失败' });
-  }
-});
-
-// ====== 按省份统计请求量/活跃度（中国地图数据） ======
-router.get('/region-stats', authMiddleware, requireAdminOrOps, async (req, res) => {
-  try {
-    const { date } = req.query;
-    let dateFilter = '';
-    let dateParams = [];
-
-    if (date) {
-      dateFilter = 'AND br.created_at >= ? AND br.created_at <= ?';
-      dateParams = [`${date} 00:00:00`, `${date} 23:59:59`];
-    } else {
-      // 默认今天
-      const today = new Date().toISOString().slice(0, 10);
-      dateFilter = 'AND br.created_at >= ? AND br.created_at <= ?';
-      dateParams = [`${today} 00:00:00`, `${today} 23:59:59`];
-    }
-
-    // 按省份统计请求量（通过 users.last_login_location 关联）
-    const regionRequests = await queryAll(`
-      SELECT 
-        u.last_login_location as province,
-        COUNT(*) as request_count,
-        COUNT(DISTINCT u.id) as user_count
-      FROM billing_records br
-      JOIN users u ON u.id = br.user_id
-      WHERE u.last_login_location IS NOT NULL
-        AND u.last_login_location != ''
-        ${dateFilter}
-      GROUP BY u.last_login_location
-      ORDER BY request_count DESC
-    `, dateParams);
-
-    // 按省份统计活跃用户（当天登录的）
-    const regionUsers = await queryAll(`
-      SELECT 
-        last_login_location as province,
-        COUNT(*) as user_count
-      FROM users
-      WHERE last_login_location IS NOT NULL
-        AND last_login_location != ''
-        ${date ? 'AND DATE(last_active_at) = ?' : 'AND DATE(last_active_at) = CURDATE()'}
-      GROUP BY last_login_location
-      ORDER BY user_count DESC
-    `, date ? [date] : []);
-
-    // 合并地区数据
-    const provinceMap = {};
-    for (const r of regionRequests) {
-      provinceMap[r.province] = { requests: Number(r.request_count), users: Number(r.user_count) };
-    }
-    for (const r of regionUsers) {
-      if (provinceMap[r.province]) {
-        provinceMap[r.province].activeToday = Number(r.user_count);
-      } else {
-        provinceMap[r.province] = { requests: 0, users: 0, activeToday: Number(r.user_count) };
-      }
-    }
-
-    const regionData = Object.entries(provinceMap).map(([province, data]) => ({
-      province,
-      ...data,
-    }));
-
-    res.json({
-      date: date || new Date().toISOString().slice(0, 10),
-      regionData,
-    });
-  } catch (error) {
-    console.error('[Admin] Get region stats error:', error);
-    res.status(500).json({ message: '获取地区统计失败' });
-  }
-});
-
 // ====== 历史统计数据（用于趋势图） ======
-router.get('/history-stats', authMiddleware, requireAdminOrOps, async (req, res) => {
+router.get('/history-stats', authMiddleware, requireAdmin, async (req, res) => {
   try {
     const { days = 7 } = req.query;
     const daysInt = Math.min(parseInt(days) || 7, 30);
@@ -524,15 +352,14 @@ router.get('/history-stats', authMiddleware, requireAdminOrOps, async (req, res)
     // 每日任务统计
     const dailyTasks = await queryAll(`
       SELECT 
-        DATE(gt.created_at) as date,
+        DATE(created_at) as date,
         COUNT(*) as total,
-        SUM(CASE WHEN gt.status = 'completed' THEN 1 ELSE 0 END) as completed,
-        SUM(CASE WHEN gt.status = 'failed' THEN 1 ELSE 0 END) as failed,
-        COALESCE(SUM(br.amount), 0) as total_cost
-      FROM generation_tasks gt
-      LEFT JOIN billing_records br ON br.generation_task_id = gt.id
-      WHERE gt.created_at >= DATE_SUB(CURDATE(), INTERVAL ? DAY)
-      GROUP BY DATE(gt.created_at)
+        SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
+        SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed,
+        SUM(cost) as total_cost
+      FROM generation_tasks
+      WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL ? DAY)
+      GROUP BY DATE(created_at)
       ORDER BY date ASC
     `, [daysInt]);
     
@@ -550,14 +377,13 @@ router.get('/history-stats', authMiddleware, requireAdminOrOps, async (req, res)
     // 每日模型使用分布
     const dailyModels = await queryAll(`
       SELECT 
-        DATE(gt.created_at) as date,
-        gt.model_name,
+        DATE(created_at) as date,
+        model_name,
         COUNT(*) as calls,
-        COALESCE(SUM(br.amount), 0) as cost
-      FROM generation_tasks gt
-      LEFT JOIN billing_records br ON br.generation_task_id = gt.id
-      WHERE gt.created_at >= DATE_SUB(CURDATE(), INTERVAL ? DAY)
-      GROUP BY DATE(gt.created_at), gt.model_name
+        SUM(cost) as cost
+      FROM generation_tasks
+      WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL ? DAY)
+      GROUP BY DATE(created_at), model_name
       ORDER BY date ASC, calls DESC
     `, [daysInt]);
     
@@ -601,7 +427,7 @@ router.get('/history-stats', authMiddleware, requireAdminOrOps, async (req, res)
 });
 
 // ====== 服务仪表盘 - 直接探测各服务健康状态 ======
-router.get('/services', authMiddleware, requireAdminOrOps, async (_req, res) => {
+router.get('/services', authMiddleware, requireAdmin, async (_req, res) => {
   const probeWithTimeout = async (url, timeoutMs = 3000) => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -726,10 +552,10 @@ router.get('/services', authMiddleware, requireAdminOrOps, async (_req, res) => 
   }
 });
 
-router.get('/users', authMiddleware, requireAdminOrOps, async (req, res) => {
+router.get('/users', authMiddleware, requireAdmin, async (req, res) => {
   try {
     const users = await queryAll(
-      'SELECT id, email, role, employee_id, balance, is_active, last_login_ip, last_login_location, last_active_at, created_at, updated_at FROM users ORDER BY id DESC'
+      'SELECT id, email, role, employee_id, balance, is_active, last_login_ip, last_active_at, created_at, updated_at FROM users ORDER BY id DESC'
     );
     res.json({ users });
   } catch (error) {
@@ -738,7 +564,7 @@ router.get('/users', authMiddleware, requireAdminOrOps, async (req, res) => {
   }
 });
 
-router.get('/users/:id', authMiddleware, requireAdminOrOps, async (req, res) => {
+router.get('/users/:id', authMiddleware, requireAdmin, async (req, res) => {
   const { id } = req.params;
   
   try {
@@ -758,20 +584,15 @@ router.get('/users/:id', authMiddleware, requireAdminOrOps, async (req, res) => 
   }
 });
 
-router.put('/users/:id', authMiddleware, requireAdminOrOps, async (req, res) => {
+router.put('/users/:id', authMiddleware, requireAdmin, async (req, res) => {
   const { id } = req.params;
   const { email, role } = req.body;
   const adminId = req.user.userId || req.user.id;
 
   try {
-    const user = await queryOne('SELECT id, email, role FROM users WHERE id = ?', [id]);
+    const user = await queryOne('SELECT id, email FROM users WHERE id = ?', [id]);
     if (!user) {
       return res.status(404).json({ message: '用户不存在' });
-    }
-
-    // 运维角色不能修改管理员或运维用户
-    if (isOpsRole(req) && (user.role === 'admin' || user.role === 'ops')) {
-      return res.status(403).json({ message: '运维角色无权修改管理员或运维用户' });
     }
 
     const updates = [];
@@ -781,15 +602,9 @@ router.put('/users/:id', authMiddleware, requireAdminOrOps, async (req, res) => 
       updates.push('email = ?');
       values.push(email);
     }
-    if (role !== undefined) {
-      // 运维角色不能修改任何用户的角色
-      if (isOpsRole(req)) {
-        return res.status(403).json({ message: '运维角色无权修改用户角色' });
-      }
-      if (['user', 'admin', 'ops'].includes(role)) {
-        updates.push('role = ?');
-        values.push(role);
-      }
+    if (role !== undefined && ['user', 'admin'].includes(role)) {
+      updates.push('role = ?');
+      values.push(role);
     }
     // balance 不再允许直接修改，必须通过 /users/:id/adjust-points 接口
 
@@ -826,7 +641,7 @@ router.put('/users/:id', authMiddleware, requireAdminOrOps, async (req, res) => 
  * POST /api/admin/users/:id/adjust-points - 管理员调整用户积分（增加/减少）
  * 必须填写站内信内容，操作后自动发送站内信通知用户
  */
-router.post('/users/:id/adjust-points', authMiddleware, requireAdminOrOps, async (req, res) => {
+router.post('/users/:id/adjust-points', authMiddleware, requireAdmin, async (req, res) => {
   const { id } = req.params;
   const { adjustmentType, amount, message } = req.body; // adjustmentType: 'add' | 'subtract'
   const adminId = req.user.userId || req.user.id;
@@ -844,14 +659,9 @@ router.post('/users/:id/adjust-points', authMiddleware, requireAdminOrOps, async
 
   try {
     // 获取用户当前余额
-    const user = await queryOne('SELECT id, balance, email, role FROM users WHERE id = ?', [id]);
+    const user = await queryOne('SELECT id, balance, email FROM users WHERE id = ?', [id]);
     if (!user) {
       return res.status(404).json({ message: '用户不存在' });
-    }
-
-    // 运维角色不能调整管理员或运维用户的积分
-    if (isOpsRole(req) && (user.role === 'admin' || user.role === 'ops')) {
-      return res.status(403).json({ message: '运维角色无权操作管理员或运维用户的积分' });
     }
 
     // 获取管理员信息（含工号）
@@ -863,7 +673,7 @@ router.post('/users/:id/adjust-points', authMiddleware, requireAdminOrOps, async
     // 如果管理员还没有工号，自动生成一个
     let employeeId = admin.employee_id;
     if (!employeeId) {
-      employeeId = generateEmployeeId(req.user.role);
+      employeeId = 'ADM-' + Math.random().toString(36).substring(2, 8).toUpperCase();
       await execute('UPDATE users SET employee_id = ? WHERE id = ?', [employeeId, adminId]);
       console.log(`[Admin] 自动生成工号: ${employeeId} (admin ID=${adminId})`);
     }
@@ -963,7 +773,7 @@ router.post('/users/:id/adjust-points', authMiddleware, requireAdminOrOps, async
 /**
  * GET /api/admin/me/employee-id - 获取当前管理员工号
  */
-router.get('/me/employee-id', authMiddleware, requireAdminOrOps, async (req, res) => {
+router.get('/me/employee-id', authMiddleware, requireAdmin, async (req, res) => {
   const adminId = req.user.userId || req.user.id;
   try {
     const admin = await queryOne('SELECT employee_id, email FROM users WHERE id = ?', [adminId]);
@@ -973,7 +783,7 @@ router.get('/me/employee-id', authMiddleware, requireAdminOrOps, async (req, res
     // 如果还没有工号，自动生成
     let employeeId = admin.employee_id;
     if (!employeeId) {
-      employeeId = generateEmployeeId(req.user.role);
+      employeeId = 'ADM-' + Math.random().toString(36).substring(2, 8).toUpperCase();
       await execute('UPDATE users SET employee_id = ? WHERE id = ?', [employeeId, adminId]);
     }
     res.json({ employeeId, email: admin.email });
@@ -988,7 +798,7 @@ router.get('/me/employee-id', authMiddleware, requireAdminOrOps, async (req, res
 /**
  * GET /api/admin/logs - 查询操作日志
  */
-router.get('/logs', authMiddleware, requireAdminOrOps, async (req, res) => {
+router.get('/logs', authMiddleware, requireAdmin, async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
     const limit = Math.min(100, parseInt(req.query.limit) || 20);
@@ -1010,7 +820,7 @@ router.get('/logs', authMiddleware, requireAdminOrOps, async (req, res) => {
 /**
  * GET /api/admin/logs/actions - 获取所有操作类型（用于筛选）
  */
-router.get('/logs/actions', authMiddleware, requireAdminOrOps, async (_req, res) => {
+router.get('/logs/actions', authMiddleware, requireAdmin, async (_req, res) => {
   try {
     const actions = await getAdminLogActions();
     res.json({ actions });
@@ -1023,7 +833,7 @@ router.get('/logs/actions', authMiddleware, requireAdminOrOps, async (_req, res)
 /**
  * GET /api/admin/logs/target-types - 获取所有目标类型（用于筛选）
  */
-router.get('/logs/target-types', authMiddleware, requireAdminOrOps, async (_req, res) => {
+router.get('/logs/target-types', authMiddleware, requireAdmin, async (_req, res) => {
   try {
     const targetTypes = await getAdminLogTargetTypes();
     res.json({ targetTypes });
@@ -1033,7 +843,7 @@ router.get('/logs/target-types', authMiddleware, requireAdminOrOps, async (_req,
   }
 });
 
-router.delete('/users/:id', authMiddleware, requireAdminOrOps, async (req, res) => {
+router.delete('/users/:id', authMiddleware, requireAdmin, async (req, res) => {
   const { id } = req.params;
   const adminId = req.user.userId || req.user.id;
 
@@ -1042,14 +852,9 @@ router.delete('/users/:id', authMiddleware, requireAdminOrOps, async (req, res) 
       return res.status(400).json({ message: '不能删除自己的账户' });
     }
 
-    const user = await queryOne('SELECT email, role FROM users WHERE id = ?', [id]);
+    const user = await queryOne('SELECT email FROM users WHERE id = ?', [id]);
     if (!user) {
       return res.status(404).json({ message: '用户不存在' });
-    }
-
-    // 运维角色不能删除管理员或运维用户
-    if (isOpsRole(req) && (user.role === 'admin' || user.role === 'ops')) {
-      return res.status(403).json({ message: '运维角色无权删除管理员或运维用户' });
     }
 
     await execute('DELETE FROM users WHERE id = ?', [id]);
@@ -1073,7 +878,7 @@ router.delete('/users/:id', authMiddleware, requireAdminOrOps, async (req, res) 
 });
 
 // 切换用户启用/禁用状态
-router.patch('/users/:id/toggle-active', authMiddleware, requireAdminOrOps, async (req, res) => {
+router.patch('/users/:id/toggle-active', authMiddleware, requireAdmin, async (req, res) => {
   const { id } = req.params;
   const { is_active } = req.body;
   const adminId = req.user.userId || req.user.id;
@@ -1086,11 +891,6 @@ router.patch('/users/:id/toggle-active', authMiddleware, requireAdminOrOps, asyn
     const user = await queryOne('SELECT id, email, role FROM users WHERE id = ?', [id]);
     if (!user) {
       return res.status(404).json({ message: '用户不存在' });
-    }
-
-    // 运维角色不能操作管理员或运维用户
-    if (isOpsRole(req) && (user.role === 'admin' || user.role === 'ops')) {
-      return res.status(403).json({ message: '运维角色无权操作管理员或运维用户' });
     }
 
     const newStatus = is_active ? 1 : 0;
@@ -1115,17 +915,12 @@ router.patch('/users/:id/toggle-active', authMiddleware, requireAdminOrOps, asyn
   }
 });
 
-router.post('/users', authMiddleware, requireAdminOrOps, async (req, res) => {
+router.post('/users', authMiddleware, requireAdmin, async (req, res) => {
   const { email, password, role, balance } = req.body;
   const adminId = req.user.userId || req.user.id;
 
   if (!email || !password) {
     return res.status(400).json({ message: '邮箱和密码不能为空' });
-  }
-
-  // 运维角色只能创建普通用户
-  if (isOpsRole(req) && role && role !== 'user') {
-    return res.status(403).json({ message: '运维角色只能创建普通用户' });
   }
 
   try {
@@ -1816,7 +1611,7 @@ router.delete('/rate-limit-configs/:id', authMiddleware, requireAdmin, async (re
  * 获取所有订阅计划（包括未激活的）
  * GET /api/admin/subscription-plans
  */
-router.get('/subscription-plans', authMiddleware, requireAdminOrOps, async (_req, res) => {
+router.get('/subscription-plans', authMiddleware, requireAdmin, async (_req, res) => {
   try {
     const plans = await queryAll(
       `SELECT id, name, display_name, price_monthly, price_yearly,
@@ -2039,7 +1834,7 @@ router.delete('/subscription-plans/:id', authMiddleware, requireAdmin, async (re
  *   - status: 筛选状态（active/expired/cancelled/trial）
  *   - planId: 筛选套餐
  */
-router.get('/subscriptions', authMiddleware, requireAdminOrOps, async (req, res) => {
+router.get('/subscriptions', authMiddleware, requireAdmin, async (req, res) => {
   const {
     page: rawPage = 1,
     limit: rawLimit = 20,
@@ -2271,7 +2066,7 @@ router.put('/subscriptions/:id', authMiddleware, requireAdmin, async (req, res) 
 /**
  * 获取系统错误列表
  */
-router.get('/system-errors', authMiddleware, requireAdminOrOps, async (req, res) => {
+router.get('/system-errors', authMiddleware, requireAdmin, async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
@@ -2292,7 +2087,7 @@ router.get('/system-errors', authMiddleware, requireAdminOrOps, async (req, res)
 /**
  * 获取系统错误统计
  */
-router.get('/system-errors/stats', authMiddleware, requireAdminOrOps, async (req, res) => {
+router.get('/system-errors/stats', authMiddleware, requireAdmin, async (req, res) => {
   try {
     const stats = await getSystemErrorStats();
     res.json({ stats });
@@ -2305,7 +2100,7 @@ router.get('/system-errors/stats', authMiddleware, requireAdminOrOps, async (req
 /**
  * 更新系统错误状态
  */
-router.patch('/system-errors/:id/status', authMiddleware, requireAdminOrOps, async (req, res) => {
+router.patch('/system-errors/:id/status', authMiddleware, requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const { is_resolved } = req.body;

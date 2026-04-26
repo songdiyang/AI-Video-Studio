@@ -28,8 +28,9 @@ export type BodyProportionRatio = 'h2_5' | 'h3' | 'h4' | 'h6' | 'h6_5' | 'h7' | 
 export const VISUAL_STYLE_BY_CATEGORY: Record<StyleCategory, string[]> = {
   live_action: ['realisticFilm', 'fashionPhoto', 'documentary', 'cinematicDrama'],
   anime: [
-    'animeJapanese', 'render3D', 'watercolor', 'cyberpunk',
-    'americanComic', 'pixelArt', 'chineseInk', 'shoujoManga', 'custom'
+    'animeJapanese', 'pixar3D', 'disney3D', 'chinese3D', 'anime3D',
+    'watercolor', 'cyberpunk', 'americanComic', 'pixelArt',
+    'chineseInk', 'shoujoManga', 'custom'
   ],
 };
 

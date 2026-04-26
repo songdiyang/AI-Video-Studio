@@ -1,4 +1,6 @@
 import React from 'react';
+import { Button } from '@heroui/react';
+import { Plus } from 'lucide-react';
 import { Character } from './types';
 import CharacterCard from './CharacterCard';
 import SimpleCharacterCard from './SimpleCharacterCard';
@@ -13,6 +15,7 @@ interface CharactersTabProps {
   onShowDetail: (character: Character) => void;
   onPreview?: (character: Character) => void;
   onOpenLifecycle?: (character: Character) => void;
+  onCreate?: () => void;
 }
 
 const CharactersTab: React.FC<CharactersTabProps> = ({
@@ -24,7 +27,8 @@ const CharactersTab: React.FC<CharactersTabProps> = ({
   onGenerateViews,
   onShowDetail,
   onPreview,
-  onOpenLifecycle
+  onOpenLifecycle,
+  onCreate,
 }) => {
   return (
     <div className="space-y-3">
@@ -32,6 +36,17 @@ const CharactersTab: React.FC<CharactersTabProps> = ({
         <span className="text-sm font-semibold text-slate-300">
           全部角色 ({dbCharacters.length > 0 ? dbCharacters.length : characters.length})
         </span>
+        {onCreate && (
+          <Button
+            size="sm"
+            variant="light"
+            className="h-7 px-2 text-xs text-(--text-muted) hover:text-(--text-primary)"
+            startContent={<Plus className="w-3 h-3" />}
+            onPress={onCreate}
+          >
+            新建
+          </Button>
+        )}
       </div>
       
       {isLoadingCharacters ? (
@@ -68,7 +83,7 @@ const CharactersTab: React.FC<CharactersTabProps> = ({
         <div className="text-center py-12 text-slate-400">
           <span className="text-4xl block mb-2">👤</span>
           <p className="text-sm">暂无角色</p>
-          <p className="text-xs mt-1">生成分镜后自动识别</p>
+          <p className="text-xs mt-1">生成分镜后自动识别，或点击右上角"新建"手动添加</p>
         </div>
       )}
     </div>
