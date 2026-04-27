@@ -2,7 +2,7 @@ import React, { useEffect, useCallback, useRef, useState, useMemo } from 'react'
 import { Button, Chip, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from '@heroui/react';
 import { 
   Play, Pause, SkipBack, SkipForward, Maximize2, Minimize2, 
-  Volume2, VolumeX, X, ChevronDown, ChevronUp
+  Volume2, VolumeX, X, ChevronDown, ChevronUp, Star, Shirt
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { StoryboardScene } from '../useSceneManager';
@@ -559,15 +559,40 @@ const AnimaticPreview: React.FC<AnimaticPreviewProps> = ({
                   </>
                 )}
                 
-                {/* 关联角色 */}
+                {/* 关联角色 - 增强芯片显示白膜/服装状态 */}
                 {currentStoryboard.linkedCharacters && currentStoryboard.linkedCharacters.length > 0 && (
                   <span className="text-white/50 text-xs">
                     角色：
-                    {currentStoryboard.linkedCharacters.map((char, i) => (
-                      <Chip key={char.character_id} size="sm" variant="flat" className="bg-green-500/20 text-green-300 ml-1">
-                        {char.name}
-                      </Chip>
-                    ))}
+                    {currentStoryboard.linkedCharacters.map((char, i) => {
+                      const hasBase = char.has_base_model;
+                      const stateLabel = char.active_state_name;
+                      const stateOutfit = char.active_state_outfit;
+                      const chipImage = char.active_state_image_url || char.base_front_view_url || char.image_url;
+                      return (
+                        <Chip
+                          key={char.character_id}
+                          size="sm"
+                          variant="flat"
+                          className="bg-green-500/20 text-green-300 ml-1"
+                          startContent={
+                            chipImage ? (
+                              <img src={chipImage} alt={char.name} className="w-4 h-4 rounded-full object-cover" />
+                            ) : undefined
+                          }
+                        >
+                          <span className="flex items-center gap-1">
+                            {char.name}
+                            {hasBase && <Star className="w-2.5 h-2.5 text-amber-400" />}
+                            {stateLabel && (
+                              <span className="inline-flex items-center gap-0.5 text-[9px] text-pink-400/80">
+                                <Shirt className="w-2 h-2" />
+                                {stateLabel}
+                              </span>
+                            )}
+                          </span>
+                        </Chip>
+                      );
+                    })}
                   </span>
                 )}
                 

@@ -50,16 +50,20 @@ router.get('/project/:projectId', authMiddleware, async (req, res) => {
       return res.status(403).json({ message: '无权访问该项目' });
     }
 
-    let sql = 'SELECT * FROM scenes WHERE project_id = ?';
-    const params = [projectId];
+    let sql = `SELECT DISTINCT s.*,
+                      COALESCE(spb.binding_type, CASE WHEN s.project_id = ? THEN 'owner' ELSE NULL END) AS binding_type
+               FROM scenes s
+               LEFT JOIN scene_project_bindings spb ON spb.scene_id = s.id AND spb.project_id = ?
+               WHERE (s.project_id = ? OR spb.project_id = ?)`;
+    const params = [projectId, projectId, projectId, projectId];
 
     // 如果提供了 scriptId，添加过滤条件
     if (scriptId) {
-      sql += ' AND script_id = ?';
+      sql += ' AND s.script_id = ?';
       params.push(scriptId);
     }
 
-    sql += ' ORDER BY created_at DESC';
+    sql += ' ORDER BY s.created_at DESC';
 
     const scenes = await queryAll(sql, params);
 
@@ -230,6 +234,282 @@ router.delete('/:id', authMiddleware, async (req, res) => {
   } catch (error) {
     console.error('[Scene Delete]', error);
     res.status(500).json({ message: '删除场景失败' });
+  }
+});
+
+// ========== 场景-项目一对多绑定 ==========
+async function requireSceneEditable(userId, sceneId) {
+  const scene = await queryOne('SELECT * FROM scenes WHERE id = ?', [sceneId]);
+  if (!scene) return { error: { status: 404, message: '场景不存在' } };
+  let hasAccess = false;
+  if (scene.project_id) {
+    const role = await getEffectiveProjectRole(userId, scene.project_id);
+    hasAccess = role && role !== 'viewer';
+  } else {
+    hasAccess = scene.user_id === userId;
+  }
+  if (!hasAccess) return { error: { status: 403, message: '无权操作该场景' } };
+  return { scene };
+}
+
+// 读取场景绑定的所有项目
+router.get('/:id/bindings', authMiddleware, async (req, res) => {
+  const userId = req.user.id;
+  const { id } = req.params;
+  try {
+    const check = await requireSceneEditable(userId, id);
+    if (check.error) return res.status(check.error.status).json({ message: check.error.message });
+    const bindings = await queryAll(
+      `SELECT b.project_id, b.binding_type, b.created_at,
+              p.title AS project_title, p.type AS project_type
+       FROM scene_project_bindings b
+       LEFT JOIN projects p ON p.id = b.project_id
+       WHERE b.scene_id = ?
+       ORDER BY b.binding_type = 'owner' DESC, b.created_at ASC`,
+      [id]
+    );
+    res.json({ sceneId: Number(id), bindings });
+  } catch (error) {
+    console.error('[Scene Bindings GET]', error);
+    res.status(500).json({ message: '获取场景绑定失败' });
+  }
+});
+
+// 添加绑定
+router.post('/:id/bindings', authMiddleware, async (req, res) => {
+  const userId = req.user.id;
+  const { id } = req.params;
+  const { projectId } = req.body || {};
+  if (!projectId) return res.status(400).json({ message: '缺少 projectId' });
+  try {
+    const check = await requireSceneEditable(userId, id);
+    if (check.error) return res.status(check.error.status).json({ message: check.error.message });
+    const role = await getEffectiveProjectRole(userId, projectId);
+    if (!role || role === 'viewer') {
+      return res.status(403).json({ message: '无权向该项目添加场景' });
+    }
+    const exists = await queryOne(
+      'SELECT * FROM scene_project_bindings WHERE scene_id = ? AND project_id = ?',
+      [id, projectId]
+    );
+    if (exists) return res.json({ message: '场景已绑定该项目', binding: exists });
+    await execute(
+      `INSERT INTO scene_project_bindings (scene_id, project_id, binding_type, created_at)
+       VALUES (?, ?, 'reference', NOW())`,
+      [id, projectId]
+    );
+    const binding = await queryOne(
+      'SELECT * FROM scene_project_bindings WHERE scene_id = ? AND project_id = ?',
+      [id, projectId]
+    );
+    res.status(201).json({ message: '已添加项目绑定', binding });
+  } catch (error) {
+    console.error('[Scene Bindings POST]', error);
+    res.status(500).json({ message: '添加项目绑定失败' });
+  }
+});
+
+// 解除绑定
+router.delete('/:id/bindings/:projectId', authMiddleware, async (req, res) => {
+  const userId = req.user.id;
+  const { id, projectId } = req.params;
+  try {
+    const check = await requireSceneEditable(userId, id);
+    if (check.error) return res.status(check.error.status).json({ message: check.error.message });
+    const binding = await queryOne(
+      'SELECT * FROM scene_project_bindings WHERE scene_id = ? AND project_id = ?',
+      [id, projectId]
+    );
+    if (!binding) return res.status(404).json({ message: '绑定不存在' });
+    if (binding.binding_type === 'owner') {
+      return res.status(400).json({
+        message: '不能解除原生项目绑定',
+        code: 'CANNOT_UNBIND_OWNER',
+      });
+    }
+    await execute(
+      'DELETE FROM scene_project_bindings WHERE scene_id = ? AND project_id = ?',
+      [id, projectId]
+    );
+    res.json({ message: '已解除项目绑定' });
+  } catch (error) {
+    console.error('[Scene Bindings DELETE]', error);
+    res.status(500).json({ message: '解除项目绑定失败' });
+  }
+});
+
+// ========== 场景按项目画风缓存 ==========
+const crypto = require('crypto');
+const { getVisualStylePrompt } = require('../../utils/getProjectStyle');
+
+function computeStyleFingerprint(styleText) {
+  return crypto.createHash('md5').update(String(styleText || '')).digest('hex');
+}
+
+// 读缓存
+router.get('/:id/styled', authMiddleware, async (req, res) => {
+  const userId = req.user.id;
+  const { id } = req.params;
+  const projectId = Number(req.query.projectId);
+  if (!projectId) return res.status(400).json({ message: '缺少 projectId' });
+  try {
+    const check = await requireSceneEditable(userId, id);
+    if (check.error) return res.status(check.error.status).json({ message: check.error.message });
+    const styled = await queryOne(
+      'SELECT * FROM scene_styled_images WHERE scene_id = ? AND project_id = ?',
+      [id, projectId]
+    );
+    const visualStylePrompt = await getVisualStylePrompt(projectId);
+    const currentFingerprint = computeStyleFingerprint(visualStylePrompt);
+    const stale = !!(styled && styled.style_fingerprint && styled.style_fingerprint !== currentFingerprint);
+    res.json({ styled: styled || null, styleFingerprint: currentFingerprint, stale });
+  } catch (error) {
+    console.error('[Scene Styled GET]', error);
+    res.status(500).json({ message: '获取场景画风图失败' });
+  }
+});
+
+// upsert
+router.post('/:id/styled', authMiddleware, async (req, res) => {
+  const userId = req.user.id;
+  const { id } = req.params;
+  const { projectId, imageUrl, generationStatus } = req.body || {};
+  if (!projectId) return res.status(400).json({ message: '缺少 projectId' });
+  try {
+    const check = await requireSceneEditable(userId, id);
+    if (check.error) return res.status(check.error.status).json({ message: check.error.message });
+    const visualStylePrompt = await getVisualStylePrompt(projectId);
+    const fingerprint = computeStyleFingerprint(visualStylePrompt);
+    const status = generationStatus || (imageUrl ? 'completed' : 'generating');
+    const existing = await queryOne(
+      'SELECT id FROM scene_styled_images WHERE scene_id = ? AND project_id = ?',
+      [id, projectId]
+    );
+    if (existing) {
+      await execute(
+        `UPDATE scene_styled_images
+         SET image_url = COALESCE(?, image_url),
+             style_fingerprint = ?,
+             generation_status = ?,
+             updated_at = NOW()
+         WHERE id = ?`,
+        [imageUrl || null, fingerprint, status, existing.id]
+      );
+    } else {
+      await execute(
+        `INSERT INTO scene_styled_images
+         (scene_id, project_id, image_url, style_fingerprint, generation_status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, NOW(), NOW())`,
+        [id, projectId, imageUrl || null, fingerprint, status]
+      );
+    }
+    const styled = await queryOne(
+      'SELECT * FROM scene_styled_images WHERE scene_id = ? AND project_id = ?',
+      [id, projectId]
+    );
+    res.json({ message: '已保存画风图', styled });
+  } catch (error) {
+    console.error('[Scene Styled POST]', error);
+    res.status(500).json({ message: '保存场景画风图失败' });
+  }
+});
+
+// 清除缓存
+router.delete('/:id/styled', authMiddleware, async (req, res) => {
+  const userId = req.user.id;
+  const { id } = req.params;
+  const projectId = Number(req.query.projectId);
+  if (!projectId) return res.status(400).json({ message: '缺少 projectId' });
+  try {
+    const check = await requireSceneEditable(userId, id);
+    if (check.error) return res.status(check.error.status).json({ message: check.error.message });
+    await execute(
+      'DELETE FROM scene_styled_images WHERE scene_id = ? AND project_id = ?',
+      [id, projectId]
+    );
+    res.json({ message: '已清除场景画风图缓存' });
+  } catch (error) {
+    console.error('[Scene Styled DELETE]', error);
+    res.status(500).json({ message: '清除场景画风图失败' });
+  }
+});
+
+// 触发场景画风生成（T3 图像生成任务链）
+// operationKey='scene_styled_generate'
+// 前置：1) 场景原图存在；2) 项目视觉风格已设置
+const { generationStartService, sendGenerationError } = require('../../modules/generation');
+router.post('/:id/styled/generate', authMiddleware, async (req, res) => {
+  const userId = req.user.id;
+  const { id } = req.params;
+  const { projectId, imageModel } = req.body || {};
+  if (!projectId) return res.status(400).json({ message: '缺少 projectId' });
+  if (!imageModel) return res.status(400).json({ message: '缺少 imageModel' });
+  try {
+    const check = await requireSceneEditable(userId, id);
+    if (check.error) return res.status(check.error.status).json({ message: check.error.message });
+
+    const scene = await queryOne('SELECT id, image_url FROM scenes WHERE id = ?', [id]);
+    if (!scene) return res.status(404).json({ message: '场景不存在' });
+    if (!scene.image_url) {
+      return res.status(409).json({
+        message: '场景原图尚未生成，请先生成基础场景图',
+        code: 'SCENE_BASE_IMAGE_MISSING',
+      });
+    }
+
+    const visualStylePrompt = await getVisualStylePrompt(projectId);
+    if (!visualStylePrompt) {
+      return res.status(409).json({
+        message: '该项目尚未设置视觉风格',
+        code: 'PROJECT_STYLE_MISSING',
+      });
+    }
+    const fingerprint = computeStyleFingerprint(visualStylePrompt);
+
+    // upsert generating
+    const existing = await queryOne(
+      'SELECT id FROM scene_styled_images WHERE scene_id = ? AND project_id = ?',
+      [id, projectId]
+    );
+    if (existing) {
+      await execute(
+        `UPDATE scene_styled_images SET style_fingerprint = ?, generation_status = 'generating', generation_error = NULL, updated_at = NOW() WHERE id = ?`,
+        [fingerprint, existing.id]
+      );
+    } else {
+      await execute(
+        `INSERT INTO scene_styled_images (scene_id, project_id, style_fingerprint, generation_status, created_at, updated_at)
+         VALUES (?, ?, ?, 'generating', NOW(), NOW())`,
+        [id, projectId, fingerprint]
+      );
+    }
+
+    const result = await generationStartService.start({
+      operationKey: 'scene_styled_generate',
+      rawInput: {
+        sceneId: Number(id),
+        projectId: Number(projectId),
+        imageModel,
+        styleFingerprint: fingerprint,
+      },
+      actor: { userId },
+    });
+
+    res.json(result.response || {
+      message: '场景画风图生成已启动',
+      jobId: result.jobId,
+      sceneId: Number(id),
+      projectId: Number(projectId),
+      styleFingerprint: fingerprint,
+      status: 'generating',
+    });
+  } catch (error) {
+    await execute(
+      `UPDATE scene_styled_images SET generation_status = 'failed', generation_error = ?, updated_at = NOW()
+       WHERE scene_id = ? AND project_id = ?`,
+      [error?.message || '启动失败', id, projectId]
+    ).catch(() => {});
+    sendGenerationError(res, error, '触发场景画风图生成失败', '[Scene Styled Generate]');
   }
 });
 

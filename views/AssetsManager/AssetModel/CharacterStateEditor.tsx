@@ -15,7 +15,12 @@ import {
   duplicateCharacterState,
   generateCharacterStateViews,
   fetchReferenceImages,
-  AGE_STAGES
+  fetchCharacterLoadout,
+  updateCharacterLoadout,
+  AGE_STAGES,
+  fetchCharacterStateStyled,
+  generateCharacterStateStyled,
+  CharacterStateStyledImage
 } from '../../../services/assets';
 import { useToast } from '../../../contexts/ToastContext';
 import { usePreview } from '../../../components/PreviewProvider';
@@ -71,12 +76,21 @@ interface CharacterStateEditorProps {
   characterId: number | null;
   disabled?: boolean;
   onStateActivated?: (state: CharacterState) => void;
+  /** 当前上下文项目ID。传入后启用"生成项目画风版"入口 */
+  projectId?: number | null;
+}
+
+interface StyledEntry {
+  styled: CharacterStateStyledImage | null;
+  styleFingerprint: string;
+  stale: boolean;
 }
 
 const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
   characterId,
   disabled = false,
-  onStateActivated
+  onStateActivated,
+  projectId = null
 }) => {
   const [states, setStates] = useState<CharacterState[]>([]);
   const [character, setCharacter] = useState<Character | null>(null);
@@ -85,8 +99,17 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
   const [activatingId, setActivatingId] = useState<number | null>(null);
   const [duplicatingId, setDuplicatingId] = useState<number | null>(null);
   const [generatingId, setGeneratingId] = useState<number | null>(null);
-  
-  // 分类筛选状态
+
+  // 项目画风（T3）
+  const [styledMap, setStyledMap] = useState<Record<number, StyledEntry>>({});
+  const [generatingStyledId, setGeneratingStyledId] = useState<number | null>(null);
+
+  // 当前装配（T5）
+  const [loadoutCostumeId, setLoadoutCostumeId] = useState<number | null>(null);
+  const [loadoutExpressionId, setLoadoutExpressionId] = useState<number | null>(null);
+  const [savingLoadout, setSavingLoadout] = useState(false);
+
+  // 筛选分类状态
   const [activeCategoryFilter, setActiveCategoryFilter] = useState<StateCategory | 'all'>('all');
   
   // 使用AI模型hook
@@ -137,18 +160,42 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
     if (!characterId) return;
     setLoading(true);
     try {
-      const [characterData, statesData] = await Promise.all([
+      const [characterData, statesData, loadoutData] = await Promise.all([
         fetchCharacter(characterId),
-        fetchCharacterStates(characterId)
+        fetchCharacterStates(characterId),
+        fetchCharacterLoadout(characterId).catch(() => null),
       ]);
       setCharacter(characterData);
       setStates(statesData);
+      if (loadoutData?.loadout) {
+        setLoadoutCostumeId(loadoutData.loadout.costumeStateId);
+        setLoadoutExpressionId(loadoutData.loadout.expressionStateId);
+      }
+
+      // 如果有上下文项目，并行拉取各状态的画风版缓存
+      if (projectId) {
+        const nonBaseStates = statesData.filter(s => !s.is_base_model);
+        const styledResults = await Promise.all(
+          nonBaseStates.map(s =>
+            fetchCharacterStateStyled(characterId, s.id, projectId)
+              .then(res => ({ id: s.id, res }))
+              .catch(() => null)
+          )
+        );
+        const map: Record<number, StyledEntry> = {};
+        styledResults.forEach(item => {
+          if (item) map[item.id] = item.res;
+        });
+        setStyledMap(map);
+      } else {
+        setStyledMap({});
+      }
     } catch (error: any) {
       console.error('加载角色数据失败:', error);
     } finally {
       setLoading(false);
     }
-  }, [characterId]);
+  }, [characterId, projectId]);
 
   useEffect(() => {
     loadStates();
@@ -508,6 +555,68 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
     }
   };
 
+  // 触发项目画风版生成
+  const handleGenerateStyled = async (state: CharacterState) => {
+    if (!characterId || !projectId) return;
+    if (!selected.image) {
+      showToast('请先选择图像生成模型', 'error');
+      return;
+    }
+    const hasViews = !!(state.front_view_url || state.side_view_url || state.back_view_url);
+    if (!hasViews) {
+      showToast('请先生成三视图白膜，再渲染项目画风版', 'warning');
+      return;
+    }
+    setGeneratingStyledId(state.id);
+    try {
+      await generateCharacterStateStyled(characterId, state.id, {
+        projectId,
+        imageModel: selected.image,
+        textModel: selected.text || undefined,
+      });
+      showToast('项目画风版生成任务已启动', 'success');
+      pollStyledStatus(state.id);
+    } catch (error: any) {
+      showToast(error?.message || '画风版生成失败', 'error');
+      setGeneratingStyledId(null);
+    }
+  };
+
+  // 轮询画风版状态
+  const pollStyledStatus = async (stateId: number) => {
+    if (!characterId || !projectId) return;
+    const maxAttempts = 60;
+    let attempts = 0;
+    const check = async () => {
+      try {
+        const res = await fetchCharacterStateStyled(characterId, stateId, projectId);
+        setStyledMap(prev => ({ ...prev, [stateId]: res }));
+        const status = res.styled?.generation_status;
+        if (status === 'completed') {
+          setGeneratingStyledId(null);
+          showToast('项目画风版已生成', 'success');
+          return;
+        }
+        if (status === 'failed') {
+          setGeneratingStyledId(null);
+          showToast(res.styled?.generation_error || '画风版生成失败', 'error');
+          return;
+        }
+        attempts++;
+        if (attempts < maxAttempts) {
+          setTimeout(check, 5000);
+        } else {
+          setGeneratingStyledId(null);
+          showToast('画风版生成超时，请稍后刷新查看', 'warning');
+        }
+      } catch (error) {
+        setGeneratingStyledId(null);
+        console.error('轮询画风状态失败:', error);
+      }
+    };
+    check();
+  };
+
   // 轮询生成状态
   const pollGenerationStatus = async (stateId: number) => {
     const maxAttempts = 60;
@@ -576,6 +685,8 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
 
   // 白膜状态
   const baseModelState = states.find(s => s.is_base_model);
+  // 白膜是否就绪：必须已生成正面三视图
+  const baseModelReady = !!(baseModelState && baseModelState.front_view_url);
 
   return (
     <div className="space-y-4">
@@ -596,13 +707,119 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
               variant="flat"
               className="bg-amber-500/10 text-amber-700 dark:text-amber-400 hover:bg-amber-500/20"
               startContent={<Star className="w-3 h-3" />}
+              isDisabled={!baseModelReady}
               onPress={handleCreateFromBaseModel}
+              title={baseModelReady ? '基于白膜新建状态' : '请先完成白膜三视图再新建状态/服装'}
             >
               基于白膜新建
             </Button>
           </div>
         )}
       </div>
+
+      {/* 白膜未就绪提示 */}
+      {!disabled && !baseModelReady && (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+          当前角色的白膜三视图尚未完成，请先在「白膜」区域生成三视图，再进行服装/状态创建与三视图生成。
+        </div>
+      )}
+
+      {/* 当前装配（导演空间调用时的属性叠加组合） */}
+      {!disabled && baseModelReady && states.length > 1 && (
+        <div className="rounded-lg border border-indigo-500/30 bg-indigo-500/5 px-3 py-2.5 space-y-2">
+          <div className="flex items-center gap-2 text-xs font-medium text-indigo-700 dark:text-indigo-300">
+            <Shirt className="w-3.5 h-3.5" />
+            当前装配
+            <span className="text-[10px] text-indigo-600/70 dark:text-indigo-400/70 font-normal">
+              导演空间调用角色时将按此装配叠加合成
+            </span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            <Select
+              size="sm"
+              label="当前服装"
+              placeholder="未指定（仅白膜）"
+              selectedKeys={loadoutCostumeId ? [String(loadoutCostumeId)] : []}
+              onSelectionChange={(keys) => {
+                const key = Array.from(keys as Set<string>)[0];
+                setLoadoutCostumeId(key ? Number(key) : null);
+              }}
+            >
+              {states.filter(s => !s.is_base_model && parseStateCategories(s.state_category).includes('costume')).map(s => (
+                <SelectItem key={String(s.id)} textValue={s.name}>
+                  {s.name}{s.outfit ? ` · ${s.outfit}` : ''}
+                </SelectItem>
+              )) as any}
+            </Select>
+            <Select
+              size="sm"
+              label="当前状态/表情"
+              placeholder="未指定"
+              selectedKeys={loadoutExpressionId ? [String(loadoutExpressionId)] : []}
+              onSelectionChange={(keys) => {
+                const key = Array.from(keys as Set<string>)[0];
+                setLoadoutExpressionId(key ? Number(key) : null);
+              }}
+            >
+              {states.filter(s => !s.is_base_model && !parseStateCategories(s.state_category).includes('costume')).map(s => (
+                <SelectItem key={String(s.id)} textValue={s.name}>
+                  {s.name}
+                </SelectItem>
+              )) as any}
+            </Select>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="flat"
+              color="primary"
+              isLoading={savingLoadout}
+              onPress={async () => {
+                if (!characterId) return;
+                setSavingLoadout(true);
+                try {
+                  await updateCharacterLoadout(characterId, {
+                    costumeStateId: loadoutCostumeId,
+                    expressionStateId: loadoutExpressionId,
+                  });
+                  showToast('装配已保存', 'success');
+                } catch (e: any) {
+                  showToast(e.message || '保存装配失败', 'error');
+                } finally {
+                  setSavingLoadout(false);
+                }
+              }}
+            >
+              保存装配
+            </Button>
+            {(loadoutCostumeId || loadoutExpressionId) && (
+              <Button
+                size="sm"
+                variant="light"
+                onPress={async () => {
+                  if (!characterId) return;
+                  setSavingLoadout(true);
+                  try {
+                    await updateCharacterLoadout(characterId, {
+                      costumeStateId: null,
+                      expressionStateId: null,
+                    });
+                    setLoadoutCostumeId(null);
+                    setLoadoutExpressionId(null);
+                    showToast('已清除装配', 'success');
+                  } catch (e: any) {
+                    showToast(e.message || '清除装配失败', 'error');
+                  } finally {
+                    setSavingLoadout(false);
+                  }
+                }}
+              >
+                清除
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* 分类筛选栏 */}
       {states.length > 0 && (
@@ -690,12 +907,13 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
               {/* 操作按钮 */}
               {!disabled && (
                 <div className="flex gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
-                  <Tooltip content="基于白膜创建新状态">
+                  <Tooltip content={baseModelReady ? '基于白膜创建新状态' : '请先完成白膜三视图再新建状态'}>
                     <Button
                       size="sm"
                       isIconOnly
                       variant="light"
                       className="text-default-400 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-amber-500/10"
+                      isDisabled={!baseModelReady}
                       onPress={handleCreateFromBaseModel}
                     >
                       <Plus className="w-3.5 h-3.5" />
@@ -1173,7 +1391,88 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                           </Button>
                         </div>
                       )}
-                      
+
+                      {/* 项目画风版（仅在传入 projectId 且三视图已就绪时显示） */}
+                      {projectId && hasViews && (() => {
+                        const entry = styledMap[state.id];
+                        const styled = entry?.styled || null;
+                        const isGenerating = generatingStyledId === state.id || styled?.generation_status === 'generating';
+                        const isFailed = styled?.generation_status === 'failed';
+                        const isCompleted = styled?.generation_status === 'completed';
+                        const isStale = !!entry?.stale;
+                        return (
+                          <div className="space-y-2 rounded-lg p-3" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
+                            <div className="flex items-center justify-between">
+                              <h5 className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
+                                项目画风版
+                                {isCompleted && !isStale && (
+                                  <span className="ml-2 text-xs px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-700 dark:text-emerald-400">已渲染</span>
+                                )}
+                                {isCompleted && isStale && (
+                                  <span className="ml-2 text-xs px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-700 dark:text-amber-400">画风已变更</span>
+                                )}
+                                {isGenerating && (
+                                  <span className="ml-2 text-xs px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-700 dark:text-indigo-400 inline-flex items-center gap-1">
+                                    <RefreshCw className="w-3 h-3 animate-spin" />生成中
+                                  </span>
+                                )}
+                                {isFailed && (
+                                  <span className="ml-2 text-xs px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-700 dark:text-rose-400">失败</span>
+                                )}
+                              </h5>
+                            </div>
+                            {isCompleted && (
+                              <div className="grid grid-cols-3 gap-2">
+                                {[
+                                  { url: styled?.front_view_url, label: '正面' },
+                                  { url: styled?.side_view_url, label: '侧面' },
+                                  { url: styled?.back_view_url, label: '背面' },
+                                ].map(({ url, label }, idx) => (
+                                  <div key={label} className="space-y-1">
+                                    <p className="text-xs text-center" style={{ color: 'var(--text-muted)' }}>{label}</p>
+                                    <div
+                                      className={`aspect-square rounded-lg overflow-hidden flex items-center justify-center ${url ? 'cursor-pointer hover:opacity-90 transition-opacity' : ''}`}
+                                      style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}
+                                      onClick={() => {
+                                        if (!url) return;
+                                        const urls = [styled?.front_view_url, styled?.side_view_url, styled?.back_view_url];
+                                        const slides = urls.filter(Boolean).map(u => ({ src: u as string, alt: '' }));
+                                        const beforeCount = urls.slice(0, idx).filter(Boolean).length;
+                                        openPreview(slides, beforeCount);
+                                      }}
+                                    >
+                                      {url ? (
+                                        <img src={url} alt={label} className="w-full h-full object-cover object-top" />
+                                      ) : (
+                                        <ImageIcon className="w-5 h-5 text-default-300 dark:text-slate-600" />
+                                      )}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            {isFailed && styled?.generation_error && (
+                              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{styled.generation_error}</p>
+                            )}
+                            {!disabled && (
+                              <Button
+                                size="sm"
+                                variant="flat"
+                                className="w-full bg-linear-to-r from-teal-500/20 to-emerald-500/20 text-teal-700 dark:text-teal-300 border border-teal-500/30"
+                                startContent={<Sparkles className="w-4 h-4" />}
+                                onPress={() => handleGenerateStyled(state)}
+                                isLoading={isGenerating}
+                                isDisabled={isGenerating}
+                              >
+                                {isCompleted
+                                  ? (isStale ? '画风已更新，重新渲染' : '重新渲染项目画风版')
+                                  : '为当前项目渲染画风版'}
+                              </Button>
+                            )}
+                          </div>
+                        );
+                      })()}
+
                       {/* 参考图提示：非白膜状态自动使用白膜三视图 */}
                       <div className="rounded-lg p-3" style={{ backgroundColor: 'var(--bg-secondary)' }}>
                         <p className="text-xs" style={{ color: 'var(--text-muted)' }}>

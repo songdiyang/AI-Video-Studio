@@ -17,9 +17,17 @@ async function getStoryboardLinks(storyboardId) {
 
   const [characters, scenes] = await Promise.all([
     queryAll(
-      `SELECT sc.character_id, sc.role_type, c.name, c.appearance, c.image_url
+      `SELECT sc.character_id, sc.role_type, c.name, c.appearance, c.image_url,
+              c.base_appearance, c.outfit_appearance,
+              bs.front_view_url AS base_front_view_url,
+              bs.is_base_model AS has_base_model,
+              cs.name AS active_state_name,
+              cs.outfit AS active_state_outfit,
+              cs.front_view_url AS active_state_image_url
        FROM storyboard_characters sc
        JOIN characters c ON c.id = sc.character_id
+       LEFT JOIN character_states bs ON bs.character_id = c.id AND bs.is_base_model = 1
+       LEFT JOIN character_states cs ON cs.character_id = c.id AND cs.is_active = 1 AND cs.is_base_model = 0
        WHERE sc.storyboard_id = ?`,
       [storyboardId]
     ),
@@ -54,9 +62,17 @@ async function getBatchStoryboardLinks(storyboardIds) {
 
   const [charRows, sceneRows] = await Promise.all([
     queryAll(
-      `SELECT sc.storyboard_id, sc.character_id, sc.role_type, c.name, c.appearance, c.image_url
+      `SELECT sc.storyboard_id, sc.character_id, sc.role_type, c.name, c.appearance, c.image_url,
+              c.base_appearance, c.outfit_appearance,
+              bs.front_view_url AS base_front_view_url,
+              bs.is_base_model AS has_base_model,
+              cs.name AS active_state_name,
+              cs.outfit AS active_state_outfit,
+              cs.front_view_url AS active_state_image_url
        FROM storyboard_characters sc
        JOIN characters c ON c.id = sc.character_id
+       LEFT JOIN character_states bs ON bs.character_id = c.id AND bs.is_base_model = 1
+       LEFT JOIN character_states cs ON cs.character_id = c.id AND cs.is_active = 1 AND cs.is_base_model = 0
        WHERE sc.storyboard_id IN (${placeholders})`,
       storyboardIds
     ),
@@ -77,7 +93,14 @@ async function getBatchStoryboardLinks(storyboardIds) {
         role_type: row.role_type,
         name: row.name,
         appearance: row.appearance,
-        image_url: row.image_url
+        image_url: row.image_url,
+        base_appearance: row.base_appearance,
+        outfit_appearance: row.outfit_appearance,
+        base_front_view_url: row.base_front_view_url,
+        has_base_model: row.has_base_model,
+        active_state_name: row.active_state_name,
+        active_state_outfit: row.active_state_outfit,
+        active_state_image_url: row.active_state_image_url
       });
     }
   }

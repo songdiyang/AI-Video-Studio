@@ -125,9 +125,11 @@ async function handleSceneVideoGeneration(inputParams, onProgress) {
         : Promise.resolve([]),
       hasCharacters
         ? queryAll(
-            `SELECT c.name, c.appearance, c.description
+            `SELECT c.name, c.appearance, c.base_appearance, c.outfit_appearance, c.description,
+                    cs.name AS active_state_name, cs.outfit AS active_outfit, cs.hairstyle AS active_hairstyle, cs.accessories AS active_accessories, cs.age_stage AS active_age_stage
              FROM storyboard_characters sc
              JOIN characters c ON sc.character_id = c.id
+             LEFT JOIN character_states cs ON cs.character_id = c.id AND cs.is_active = 1 AND cs.is_base_model = 0
              WHERE sc.storyboard_id = ? AND c.name IN (${charNames.map(() => '?').join(',')})`,
             [storyboardId, ...charNames]
           )
@@ -161,14 +163,30 @@ async function handleSceneVideoGeneration(inputParams, onProgress) {
     characterMap = {};
     if (charResult.status === 'fulfilled' && charResult.value.length > 0) {
       characterAppearance = charResult.value
-        .filter(c => c.appearance)
-        .map(c => `${c.name}: ${c.appearance}`)
+        .filter(c => c.appearance || c.base_appearance)
+        .map(c => {
+          const parts = [];
+          if (c.base_appearance) parts.push(c.base_appearance);
+          const outfitDesc = c.active_outfit || c.outfit_appearance;
+          if (outfitDesc) parts.push(outfitDesc);
+          if (c.active_hairstyle) parts.push(`发型: ${c.active_hairstyle}`);
+          if (c.active_accessories) parts.push(`配饰: ${c.active_accessories}`);
+          if (c.active_age_stage) parts.push(`年龄: ${c.active_age_stage}`);
+          const fullAppearance = parts.length > 0 ? parts.join('；') : c.appearance;
+          return `${c.name}: ${fullAppearance}${c.active_state_name ? ` (状态: ${c.active_state_name})` : ''}`;
+        })
         .join('\n');
       // 同时构建角色名→外貌映射
       charResult.value.forEach(c => {
-        if (c.name) characterMap[c.name] = c.appearance || c.description || '';
+        if (c.name) {
+          const parts = [];
+          if (c.base_appearance) parts.push(c.base_appearance);
+          const outfitDesc = c.active_outfit || c.outfit_appearance;
+          if (outfitDesc) parts.push(outfitDesc);
+          characterMap[c.name] = parts.length > 0 ? parts.join('；') : (c.appearance || c.description || '');
+        }
       });
-      console.log('[SceneVideoGen] 查询到角色外貌:', characterAppearance.substring(0, 120));
+      console.log('[SceneVideoGen] 查询到角色外貌（含白膜/服装分层）:', characterAppearance.substring(0, 120));
     } else if (charResult.status === 'rejected') {
       console.warn('[SceneVideoGen] 查询角色外貌失败:', charResult.reason?.message);
     }
@@ -186,9 +204,11 @@ async function handleSceneVideoGeneration(inputParams, onProgress) {
     const [charResult, sceneResult] = await Promise.allSettled([
       hasCharacters
         ? queryAll(
-            `SELECT c.name, c.appearance, c.description
+            `SELECT c.name, c.appearance, c.base_appearance, c.outfit_appearance, c.description,
+                    cs.name AS active_state_name, cs.outfit AS active_outfit, cs.hairstyle AS active_hairstyle, cs.accessories AS active_accessories, cs.age_stage AS active_age_stage
              FROM storyboard_characters sc
              JOIN characters c ON sc.character_id = c.id
+             LEFT JOIN character_states cs ON cs.character_id = c.id AND cs.is_active = 1 AND cs.is_base_model = 0
              WHERE sc.storyboard_id = ? AND c.name IN (${charNames.map(() => '?').join(',')})`,
             [storyboardId, ...charNames]
           )
@@ -208,14 +228,30 @@ async function handleSceneVideoGeneration(inputParams, onProgress) {
     characterMap = {};
     if (charResult.status === 'fulfilled' && charResult.value.length > 0) {
       characterAppearance = charResult.value
-        .filter(c => c.appearance)
-        .map(c => `${c.name}: ${c.appearance}`)
+        .filter(c => c.appearance || c.base_appearance)
+        .map(c => {
+          const parts = [];
+          if (c.base_appearance) parts.push(c.base_appearance);
+          const outfitDesc = c.active_outfit || c.outfit_appearance;
+          if (outfitDesc) parts.push(outfitDesc);
+          if (c.active_hairstyle) parts.push(`发型: ${c.active_hairstyle}`);
+          if (c.active_accessories) parts.push(`配饰: ${c.active_accessories}`);
+          if (c.active_age_stage) parts.push(`年龄: ${c.active_age_stage}`);
+          const fullAppearance = parts.length > 0 ? parts.join('；') : c.appearance;
+          return `${c.name}: ${fullAppearance}${c.active_state_name ? ` (状态: ${c.active_state_name})` : ''}`;
+        })
         .join('\n');
       // 同时构建角色名→外貌映射
       charResult.value.forEach(c => {
-        if (c.name) characterMap[c.name] = c.appearance || c.description || '';
+        if (c.name) {
+          const parts = [];
+          if (c.base_appearance) parts.push(c.base_appearance);
+          const outfitDesc = c.active_outfit || c.outfit_appearance;
+          if (outfitDesc) parts.push(outfitDesc);
+          characterMap[c.name] = parts.length > 0 ? parts.join('；') : (c.appearance || c.description || '');
+        }
       });
-      console.log('[SceneVideoGen] 查询到角色外貌:', characterAppearance.substring(0, 120));
+      console.log('[SceneVideoGen] 查询到角色外貌（含白膜/服装分层）:', characterAppearance.substring(0, 120));
     } else if (charResult.status === 'rejected') {
       console.warn('[SceneVideoGen] 查询角色外貌失败:', charResult.reason?.message);
     }

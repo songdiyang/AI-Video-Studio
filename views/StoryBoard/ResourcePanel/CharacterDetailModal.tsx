@@ -418,6 +418,21 @@ const CharacterDetailModal: React.FC<CharacterDetailModalProps> = ({
                       {character.source === 'ai_extracted' ? 'AI提取' : '本地'}
                     </Chip>
                   )}
+                  {/* 白膜/服装分层标识 */}
+                  {(() => {
+                    const hasBaseViews = character.has_base_model_views === true || character.has_base_model_views === 1
+                      || !!states.find(s => s.is_base_model && s.front_view_url);
+                    return hasBaseViews ? (
+                      <Chip size="sm" variant="flat" className="bg-amber-500/10 text-amber-400">
+                        ★ 白膜已生成
+                      </Chip>
+                    ) : null;
+                  })()}
+                  {character.active_state_name && (
+                    <Chip size="sm" variant="flat" className="bg-pink-500/10 text-pink-400">
+                      {character.active_state_name}
+                    </Chip>
+                  )}
                 </div>
               </div>
               {/* 删除按钮 */}
@@ -1001,6 +1016,69 @@ const CharacterDetailModal: React.FC<CharacterDetailModalProps> = ({
                     </AnimatePresence>
                   </div>
                 )}
+
+                {/* 白膜+服装分层信息面板 */}
+                <div className="rounded-lg p-4 border" style={{ backgroundColor: 'rgba(245,158,11,0.05)', borderColor: 'rgba(245,158,11,0.2)' }}>
+                  <h4 className="text-sm font-bold mb-3 flex items-center gap-2" style={{ color: 'var(--text-secondary)' }}>
+                    <span className="w-1 h-4 bg-amber-500 rounded" />
+                    角色分层构成
+                  </h4>
+                  {/* 分层说明 */}
+                  <div className="mb-3 p-2.5 rounded-lg" style={{ backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border)' }}>
+                    <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                      角色在分镜中的表现 = <span className="text-cyan-400 font-medium">白膜体貌</span>（不可更换的身体特征） + <span className="text-pink-400 font-medium">服装装饰</span>（可更换的穿戴物品） + <span className="text-purple-400 font-medium">状态属性</span>（年龄/发型/配饰）。先生成白膜确保体貌一致性，再叠加服装状态。
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    {/* 白膜体貌 */}
+                    <div className="rounded-lg p-3 border" style={{ backgroundColor: 'rgba(6,182,212,0.05)', borderColor: 'rgba(6,182,212,0.2)' }}>
+                      <div className="flex items-center gap-2 mb-2">
+                        <Star className="w-4 h-4 text-amber-400" />
+                        <span className="text-xs font-bold text-cyan-400">白膜体貌</span>
+                        {(() => {
+                          const baseState = states.find(s => s.is_base_model);
+                          const hasBaseViews = !!(baseState?.front_view_url);
+                          return hasBaseViews ? (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30">已生成</span>
+                          ) : (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-500/15 text-slate-400 border border-slate-500/30">未生成</span>
+                          );
+                        })()}
+                      </div>
+                      <p className="text-xs whitespace-pre-wrap line-clamp-4" style={{ color: 'var(--text-muted)' }}>
+                        {character.base_appearance || character.appearance || '暂无白膜体貌描述'}
+                      </p>
+                    </div>
+                    {/* 服装装饰 */}
+                    <div className="rounded-lg p-3 border" style={{ backgroundColor: 'rgba(236,72,153,0.05)', borderColor: 'rgba(236,72,153,0.2)' }}>
+                      <div className="flex items-center gap-2 mb-2">
+                        <Layers className="w-4 h-4 text-pink-400" />
+                        <span className="text-xs font-bold text-pink-400">服装装饰</span>
+                        {(() => {
+                          const activeState = states.find(s => s.is_active && !s.is_base_model);
+                          return activeState?.name ? (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-pink-500/15 text-pink-400 border border-pink-500/30">{activeState.name}</span>
+                          ) : null;
+                        })()}
+                      </div>
+                      <p className="text-xs whitespace-pre-wrap line-clamp-4" style={{ color: 'var(--text-muted)' }}>
+                        {character.outfit_appearance || (() => {
+                          const activeState = states.find(s => s.is_active && !s.is_base_model);
+                          return activeState?.outfit || '暂无服装描述';
+                        })()}
+                      </p>
+                    </div>
+                  </div>
+                  {/* 组合结果预览 */}
+                  <div className="mt-3 p-2.5 rounded-lg flex items-center gap-2" style={{ backgroundColor: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.15)' }}>
+                    <span className="text-[10px] text-amber-400 font-bold shrink-0">组合结果</span>
+                    <span className="text-[10px] text-cyan-400/60 shrink-0">体貌</span>
+                    <span className="text-[10px] text-slate-500">+</span>
+                    <span className="text-[10px] text-pink-400/60 shrink-0">服装</span>
+                    <span className="text-[10px] text-slate-500">=</span>
+                    <span className="text-[10px] truncate" style={{ color: 'var(--text-muted)' }}>{character.appearance || '暂无'}</span>
+                  </div>
+                </div>
 
                 {/* 外貌描述 */}
                 <div className="rounded-lg p-4 border" style={{ backgroundColor: 'rgba(59,130,246,0.05)', borderColor: 'rgba(59,130,246,0.2)' }}>

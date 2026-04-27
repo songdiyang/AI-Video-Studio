@@ -2,6 +2,8 @@ export interface Character {
   id: number;
   name: string;
   appearance?: string;
+  base_appearance?: string;  // 白膜体貌描述（不含服装的身体特征）
+  outfit_appearance?: string;  // 服装外貌描述（服装、配饰等可更换装饰）
   personality?: string;
   description?: string;
   imageUrl?: string;
@@ -17,6 +19,12 @@ export interface Character {
   projectId?: number;  // 所属项目ID
   gender?: 'male' | 'female' | 'unknown';  // 性别
   useReferenceImages?: boolean;  // 是否启用参考图功能
+  // 白膜/服装状态概要（来自 getByProject API 的 LEFT JOIN）
+  base_model_image_url?: string;  // 白膜正面图 URL
+  has_base_model_views?: boolean | number;  // 是否已生成白膜三视图
+  active_state_name?: string;  // 当前激活状态名称
+  active_state_outfit?: string;  // 当前激活状态服装描述
+  active_state_image_url?: string;  // 当前激活状态正面图
 }
 
 // 角色状态接口

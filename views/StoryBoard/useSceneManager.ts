@@ -10,6 +10,14 @@ export interface LinkedCharacter {
   name: string;
   appearance?: string;
   image_url?: string;
+  // 白膜/服装分层信息（来自 queryLinks 的 LEFT JOIN）
+  base_appearance?: string;        // 白膜体貌描述
+  outfit_appearance?: string;      // 服装外貌描述
+  base_front_view_url?: string;    // 白膜正面图 URL
+  has_base_model?: number;         // 是否有白膜状态（1=有）
+  active_state_name?: string;      // 当前激活状态名称
+  active_state_outfit?: string;    // 当前激活状态服装描述
+  active_state_image_url?: string; // 当前激活状态正面图 URL
 }
 
 export interface LinkedScene {

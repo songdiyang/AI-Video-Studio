@@ -5,12 +5,14 @@ import { useSceneManager, StoryboardScene, DialogueLine } from './useSceneManage
 import { useAutoStoryboard } from './useAutoStoryboard';
 import { useSceneGeneration } from './useSceneGeneration';
 import { useWorkflowRecovery } from './hooks/useWorkflowRecovery';
+import { useBatchResourceGeneration } from './hooks/useBatchResourceGeneration';
 import { batchValidateScenes } from '../../services/storyboards';
 import EpisodeSelector from './EpisodeSelector';
 import AutoStoryboardModal from './AutoStoryboardModal';
 import BatchDownloadModal from './BatchDownloadModal';
 import SceneList from './SceneList';
 import ResourcePanel from './ResourcePanel';
+import ScriptOutlinePanel from './ScriptOutlinePanel';
 import ScenePreviewPanel from './ScenePreviewPanel';
 import { PanelGroup } from '../../components/PanelGroup';
 import ResizablePanel, { ResizablePanelRef } from '../../components/ResizablePanel';
@@ -110,6 +112,10 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
   const [currentProjectId, setCurrentProjectId] = useState<number | null>(projectId || null);
   const [currentEpisode, setCurrentEpisode] = useState(episodeNumber);
   
+  // 模型选择（本地可变，同步外部 props）
+  const [currentImageModel, setCurrentImageModel] = useState(imageModel);
+  const [currentVideoModel, setCurrentVideoModel] = useState(videoModel);
+
   const [showBatchDownloadModal, setShowBatchDownloadModal] = useState(false);
   const [imageAspectRatio, setImageAspectRatio] = useState(projectSettings?.imageAspectRatio || '');
   const [videoAspectRatio, setVideoAspectRatio] = useState(projectSettings?.videoAspectRatio || '');
@@ -117,10 +123,7 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
   const [imageResolution, setImageResolution] = useState(projectSettings?.imageResolution || '');
   const [videoResolution, setVideoResolution] = useState(projectSettings?.videoResolution || '');
 
-  // 项目级参数（只读，由项目设置决定）
-  const [isSubmittingCharacterBatch, setIsSubmittingCharacterBatch] = useState(false);
-  const [isSubmittingSceneBatch, setIsSubmittingSceneBatch] = useState(false);
-    const [isOptimizingAllPrompts, setIsOptimizingAllPrompts] = useState(false);
+  const [isOptimizingAllPrompts, setIsOptimizingAllPrompts] = useState(false);
   const [isAnimaticOpen, setIsAnimaticOpen] = useState(false);
   const [isVersionHistoryOpen, setIsVersionHistoryOpen] = useState(false);
   const [isTeamCollaborationOpen, setIsTeamCollaborationOpen] = useState(false);
@@ -128,8 +131,13 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
   const [isAssistantOpen, setIsAssistantOpen] = useState(false);
   const resourcePanelRef = useRef<ResizablePanelRef>(null);
   const assistantPanelRef = useRef<ResizablePanelRef>(null);
-  const [leftPanelTab, setLeftPanelTab] = useState<'scenes' | 'resources'>('scenes');
+  const [leftPanelTab, setLeftPanelTab] = useState<'scenes' | 'resources' | 'outline'>('scenes');
   const { showToast } = useToast();
+
+  // 剧本大纲内容
+  const [scriptContent, setScriptContent] = useState<string | null>(null);
+  const [scriptTitle, setScriptTitle] = useState<string>('');
+  const [isLoadingScript, setIsLoadingScript] = useState(false);
 
   // 批量生成提交状态追踪
   const [isBatchFrameSubmitting, setIsBatchFrameSubmitting] = useState(false);
@@ -145,14 +153,14 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
   }, [models]);
 
   const imageModelConfig = useMemo(() => {
-    const model = modelMap.get(imageModel);
+    const model = modelMap.get(currentImageModel);
     return model && (model.type || model.category)?.toUpperCase() === 'IMAGE' ? model : undefined;
-  }, [modelMap, imageModel]);
+  }, [modelMap, currentImageModel]);
 
   const videoModelConfig = useMemo(() => {
-    const model = modelMap.get(videoModel);
+    const model = modelMap.get(currentVideoModel);
     return model && (model.type || model.category)?.toUpperCase() === 'VIDEO' ? model : undefined;
-  }, [modelMap, videoModel]);
+  }, [modelMap, currentVideoModel]);
 
   const imageAspectRatioOptions = useMemo(
     () => normalizeCapabilityOptions(imageModelConfig?.supportedAspectRatios, 'aspectRatio'),
@@ -191,7 +199,13 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
     if (episodeNumber !== undefined && episodeNumber !== currentEpisode) {
       setCurrentEpisode(episodeNumber);
     }
-  }, [scriptId, projectId, episodeNumber, currentScriptId, currentProjectId, currentEpisode]);
+    if (imageModel !== undefined && imageModel !== currentImageModel) {
+      setCurrentImageModel(imageModel);
+    }
+    if (videoModel !== undefined && videoModel !== currentVideoModel) {
+      setCurrentVideoModel(videoModel);
+    }
+  }, [scriptId, projectId, episodeNumber, imageModel, videoModel, currentScriptId, currentProjectId, currentEpisode, currentImageModel, currentVideoModel]);
 
   // 图片比例/分辨率由项目设置统一管理，不再随模型选项自动变更
   // 仅在项目未设置时回退使用模型默认值
@@ -267,6 +281,7 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
     setSelectedScene,
     isLoading,
     loadStoryboards,
+    refresh: refreshScenes,
     addScene,
     insertScene,
     deleteScene,
@@ -282,18 +297,43 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
   } = useSceneManager(currentScriptId, currentProjectId);
 
   // 项目角色和场景资源（供选择器使用）
-  const [projectCharacters, setProjectCharacters] = useState<{ id: number; name: string; image_url?: string }[]>([]);
+  const [projectCharacters, setProjectCharacters] = useState<{ id: number; name: string; image_url?: string; front_view_url?: string; base_appearance?: string; outfit_appearance?: string; has_base_model?: number; active_state_name?: string; active_state_outfit?: string; active_state_image_url?: string; base_front_view_url?: string }[]>([]);
   const [projectScenes, setProjectScenes] = useState<{ id: number; name: string; description?: string }[]>([]);
 
   useEffect(() => {
     if (!currentProjectId) return;
     fetchCharactersByProject(currentProjectId)
-      .then(chars => setProjectCharacters(chars.map(c => ({ id: c.id, name: c.name, image_url: (c as any).image_url }))))
+      .then(chars => setProjectCharacters(chars.map(c => ({ id: c.id, name: c.name, image_url: (c as any).image_url, front_view_url: (c as any).front_view_url || (c as any).frontView_url, base_appearance: (c as any).base_appearance, outfit_appearance: (c as any).outfit_appearance, has_base_model: (c as any).has_base_model_views ? 1 : 0, active_state_name: (c as any).active_state_name, active_state_outfit: (c as any).active_state_outfit, active_state_image_url: (c as any).active_state_image_url, base_front_view_url: (c as any).base_model_image_url }))))
       .catch(() => {});
     fetchScenesByProject(currentProjectId)
       .then(scenes => setProjectScenes(scenes.map(s => ({ id: s.id, name: s.name, description: s.description }))))
       .catch(() => {});
   }, [currentProjectId]);
+
+  // 加载剧本内容（大纲面板用）
+  useEffect(() => {
+    if (!currentScriptId) {
+      setScriptContent(null);
+      setScriptTitle('');
+      return;
+    }
+    setIsLoadingScript(true);
+    const token = getAuthToken();
+    fetch(`/api/scripts/project/${currentProjectId}/episode/${currentEpisode}`, {
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    })
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        const script = data?.script;
+        setScriptContent(script?.content || null);
+        setScriptTitle(script?.title || `第${currentEpisode}集`);
+      })
+      .catch(() => {
+        setScriptContent(null);
+        setScriptTitle('');
+      })
+      .finally(() => setIsLoadingScript(false));
+  }, [currentScriptId, currentProjectId, currentEpisode]);
 
   // 2. 自动分镜
   const autoStoryboard = useAutoStoryboard({
@@ -317,214 +357,36 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
     episodeNumber: currentEpisode,
     scenes,
     setScenes,
-    imageModel,
+    imageModel: currentImageModel,
     imageAspectRatio,
     textModel,
-    videoModel,
+    videoModel: currentVideoModel,
     videoAspectRatio,
     videoDuration,
     videoResolution
   });
 
-  const characterBatchRecovery = useWorkflowRecovery({
+  // 批量资源生成（角色/场景）
+  const batchResource = useBatchResourceGeneration({
     projectId: currentProjectId,
-    workflowTypes: ['character_views_generation'],
-    isActive: true,
-    logPrefix: '[StoryBoardCharacterBatch]'
+    scriptId: currentScriptId,
+    imageModel,
+    textModel,
+    imageAspectRatio,
+    imageResolution: imageResolution || undefined,
+    onCharactersComplete: () => {
+      // 刷新项目角色数据
+      if (currentProjectId) {
+        fetchCharactersByProject(currentProjectId).then(setProjectCharacters).catch(() => {});
+      }
+    },
+    onScenesComplete: () => {
+      // 刷新项目场景数据
+      if (currentProjectId) {
+        fetchScenesByProject(currentProjectId, currentScriptId || undefined).then(setProjectScenes).catch(() => {});
+      }
+    },
   });
-
-  const sceneBatchRecovery = useWorkflowRecovery({
-    projectId: currentProjectId,
-    workflowTypes: ['scene_image_generation'],
-    isActive: true,
-    logPrefix: '[StoryBoardSceneBatch]'
-  });
-
-  // 批量生成功能
-  const handleBatchCharacterGeneration = async () => {
-    if (isSubmittingCharacterBatch || characterBatchRecovery.isGenerating) {
-      showToast('角色批量生成任务正在进行中', 'warning');
-      return;
-    }
-    if (!currentProjectId || !currentScriptId) {
-      showToast('请先选择项目和剧本', 'warning');
-      return;
-    }
-    if (!imageModel) {
-      showToast('请先选择图像模型', 'warning');
-      return;
-    }
-    if (!imageAspectRatio) {
-      showToast('当前图片模型未配置可用长宽比', 'warning');
-      return;
-    }
-
-    try {
-      setIsSubmittingCharacterBatch(true);
-      showToast('正在启动角色批量生成...', 'info');
-      
-      // 获取所有角色数据（不过滤 scriptId，角色是项目级别的）
-      const token = getAuthToken();
-      const charRes = await fetch(`/api/characters/project/${currentProjectId}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      
-      if (!charRes.ok) {
-        throw new Error('获取角色数据失败');
-      }
-      
-      const result = await charRes.json();
-      const characters = result.characters || [];
-      
-      if (characters.length === 0) {
-        showToast('没有找到角色数据', 'warning');
-        return;
-      }
-      
-      // 为每个角色启动生成任务
-      let startedCount = 0;
-      let recoveredCount = 0;
-      let failedCount = 0;
-      for (const character of characters) {
-        try {
-          const response = await fetch(`/api/characters/${character.id}/generate-views`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${token}`
-            },
-            body: JSON.stringify({
-              imageModel,
-              textModel,
-              style: '',
-              aspectRatio: imageAspectRatio,
-              resolution: imageResolution || undefined
-            })
-          });
-
-          const data = await response.json().catch(() => ({}));
-          if (response.ok) {
-            startedCount += 1;
-          } else if (response.status === 409 && data.jobId) {
-            recoveredCount += 1;
-          } else {
-            failedCount += 1;
-            console.error(`生成角色 ${character.name} 图片失败:`, data.message || response.statusText);
-          }
-        } catch (err) {
-          failedCount += 1;
-          console.error(`生成角色 ${character.name} 图片失败:`, err);
-        }
-      }
-
-      await characterBatchRecovery.checkAndResume();
-      
-      // Show summary with failure count if any
-      if (failedCount > 0) {
-        console.error('角色批量生成存在失败项:', {
-          total: characters.length,
-          startedCount,
-          recoveredCount,
-          failedCount
-        });
-      }
-    } catch (error: any) {
-      showToast('角色批量生成失败，请稍后重试', 'error');
-      console.error('角色批量生成失败:', error);
-    } finally {
-      setIsSubmittingCharacterBatch(false);
-    }
-  };
-
-  const handleBatchSceneGeneration = async () => {
-    if (isSubmittingSceneBatch || sceneBatchRecovery.isGenerating) {
-      showToast('场景批量生成任务正在进行中', 'warning');
-      return;
-    }
-    if (!currentProjectId || !currentScriptId) {
-      showToast('请先选择项目和剧本', 'warning');
-      return;
-    }
-    if (!imageAspectRatio) {
-      showToast('当前图片模型未配置可用长宽比', 'warning');
-      return;
-    }
-
-    try {
-      setIsSubmittingSceneBatch(true);
-      showToast('正在启动场景批量生成...', 'info');
-      
-      // 获取所有场景数据
-      const token = getAuthToken();
-      const sceneRes = await fetch(`/api/scenes/project/${currentProjectId}?scriptId=${currentScriptId}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      
-      if (!sceneRes.ok) {
-        throw new Error('获取场景数据失败');
-      }
-      
-      const result = await sceneRes.json();
-      const scenesData = result.scenes || [];
-      
-      if (scenesData.length === 0) {
-        showToast('没有找到场景数据', 'warning');
-        return;
-      }
-      
-      // 为每个场景启动生成任务
-      let startedCount = 0;
-      let recoveredCount = 0;
-      let failedCount = 0;
-      for (const scene of scenesData) {
-        try {
-          const response = await fetch(`/api/scenes/${scene.id}/generate-image`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${token}`
-            },
-            body: JSON.stringify({
-              imageModel,
-              textModel,
-              aspectRatio: imageAspectRatio,
-              resolution: imageResolution || undefined
-            })
-          });
-
-          const data = await response.json().catch(() => ({}));
-          if (response.ok) {
-            startedCount += 1;
-          } else if (response.status === 409 && data.jobId) {
-            recoveredCount += 1;
-          } else {
-            failedCount += 1;
-            console.error(`生成场景 ${scene.name} 图片失败:`, data.message || response.statusText);
-          }
-        } catch (err) {
-          failedCount += 1;
-          console.error(`生成场景 ${scene.name} 图片失败:`, err);
-        }
-      }
-
-      await sceneBatchRecovery.checkAndResume();
-      
-      // Show summary with failure count if any
-      if (failedCount > 0) {
-        console.error('场景批量生成存在失败项:', {
-          total: scenesData.length,
-          startedCount,
-          recoveredCount,
-          failedCount
-        });
-      }
-    } catch (error: any) {
-      showToast('场景批量生成失败，请稍后重试', 'error');
-      console.error('场景批量生成失败:', error);
-    } finally {
-      setIsSubmittingSceneBatch(false);
-    }
-  };
 
   // 批量优化全部分镜提示词（工作流模式 - 持久化任务）
   const handleBatchOptimizePrompts = async (targetType: 'image' | 'video' = 'image') => {
@@ -532,8 +394,8 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
       showToast('正在优化中，请稍候', 'warning');
       return;
     }
-    if (!currentScriptId) {
-      showToast('请先选择剧本', 'warning');
+    if (!currentProjectId) {
+      showToast('请先选择项目', 'warning');
       return;
     }
     if (scenes.length === 0) {
@@ -573,8 +435,8 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
   };
 
   const handleBatchFrameGeneration = async (overwrite = false) => {
-    if (!currentScriptId) {
-      showToast('请先选择剧本', 'warning');
+    if (!currentProjectId) {
+      showToast('请先选择项目', 'warning');
       return;
     }
     if (!imageModel) {
@@ -611,7 +473,7 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
       const sceneIds = targetScenes.map(s => s.id!);
       let validSceneIds = sceneIds;
       try {
-        const validation = await batchValidateScenes(sceneIds, currentScriptId, 'frame');
+        const validation = await batchValidateScenes(sceneIds, currentScriptId, 'frame', currentProjectId);
         validSceneIds = validation.results.filter(r => r.ready).map(r => r.sceneId);
         const skippedCount = validation.results.filter(r => !r.ready).length;
         if (skippedCount > 0) {
@@ -652,7 +514,7 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
   };
 
   const handleBatchVideoGeneration = async (overwrite = false) => {
-    if (!currentScriptId || scenes.length === 0) {
+    if (!currentProjectId || scenes.length === 0) {
       showToast('请先生成分镜', 'warning');
       return;
     }
@@ -682,7 +544,7 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
       const sceneIds = targetScenes.map(s => s.id!);
       let validSceneIds = sceneIds;
       try {
-        const validation = await batchValidateScenes(sceneIds, currentScriptId, 'video');
+        const validation = await batchValidateScenes(sceneIds, currentScriptId, 'video', currentProjectId);
         validSceneIds = validation.results.filter(r => r.ready).map(r => r.sceneId);
         const skippedCount = validation.results.filter(r => !r.ready).length;
         if (skippedCount > 0) {
@@ -729,8 +591,8 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
 
   // 5. 导入分镜
   const handleImportScenes = async (importedScenes: any[]) => {
-    if (!currentScriptId) {
-      showToast('请先选择一个剧本', 'warning');
+    if (!currentProjectId) {
+      showToast('请先选择项目', 'warning');
       return;
     }
 
@@ -756,7 +618,10 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
 
       // 保存到数据库
       const token = getAuthToken();
-      const res = await fetch(`/api/storyboards/${currentScriptId}`, {
+      const endpoint = currentScriptId
+        ? `/api/storyboards/${currentScriptId}`
+        : `/api/storyboards/project/${currentProjectId}/standalone`;
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -773,7 +638,7 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
       showToast(`成功导入 ${formattedScenes.length} 个分镜！`, 'success');
       
       // 重新加载分镜列表
-      await loadStoryboards(currentScriptId);
+      await refreshScenes();
       
     } catch (error: any) {
       console.error('[ImportScenes] 保存失败:', error);
@@ -878,8 +743,8 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
     {
       ...STORYBOARD_SHORTCUTS_CONFIG.REFRESH_LIST,
       action: () => {
-        if (currentScriptId && !isLoading) {
-          loadStoryboards(currentScriptId);
+        if (currentProjectId && !isLoading) {
+          refreshScenes();
         }
       },
     },
@@ -938,7 +803,7 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
   ], [scenes, selectedScene, setSelectedScene, deleteScene, addScene, currentScriptId, isLoading, loadStoryboards, moveScene, generateImage, generateVideo, showToast]);
 
   // 注册快捷键（只在有剧本ID且 Animatic 预览未打开时启用）
-  useKeyboardShortcuts(storyboardShortcuts, !!currentScriptId && !isAnimaticOpen);
+  useKeyboardShortcuts(storyboardShortcuts, !!currentProjectId && !isAnimaticOpen);
 
   // Debug: 检查角色数据
   useEffect(() => {
@@ -1018,8 +883,8 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
             <IconButton
               icon={<RefreshCw className="w-4 h-4" />}
               tooltip="刷新分镜列表"
-              onClick={() => currentScriptId && loadStoryboards(currentScriptId)}
-              disabled={!currentScriptId}
+              onClick={() => refreshScenes()}
+              disabled={!currentProjectId}
               loading={isLoading}
             />
             {scenes.length > 0 && (
@@ -1074,7 +939,7 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
               icon={<ImageIcon className="w-4 h-4" />}
               tooltip="批量优化提示词(图片)"
               onClick={() => handleBatchOptimizePrompts('image')}
-              disabled={!currentScriptId || isOptimizingAllPrompts || scenes.length === 0}
+              disabled={!currentProjectId || isOptimizingAllPrompts || scenes.length === 0}
               loading={isOptimizingAllPrompts}
               variant="default"
             />
@@ -1082,31 +947,31 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
               icon={<Video className="w-4 h-4" />}
               tooltip="批量优化提示词(视频)"
               onClick={() => handleBatchOptimizePrompts('video')}
-              disabled={!currentScriptId || isOptimizingAllPrompts || scenes.length === 0}
+              disabled={!currentProjectId || isOptimizingAllPrompts || scenes.length === 0}
               loading={isOptimizingAllPrompts}
               variant="default"
             />
             <IconButton
               icon={<Users className="w-4 h-4" />}
               tooltip="批量生成角色"
-              onClick={handleBatchCharacterGeneration}
-              disabled={!currentScriptId || isSubmittingCharacterBatch || characterBatchRecovery.isGenerating}
-              loading={isSubmittingCharacterBatch || characterBatchRecovery.isGenerating}
+              onClick={batchResource.handleBatchCharacterGeneration}
+              disabled={!currentProjectId || batchResource.isSubmittingCharacterBatch || batchResource.isCharacterBatchGenerating}
+              loading={batchResource.isSubmittingCharacterBatch || batchResource.isCharacterBatchGenerating}
               variant="warning"
             />
             <IconButton
               icon={<MapPin className="w-4 h-4" />}
               tooltip="批量生成场景"
-              onClick={handleBatchSceneGeneration}
-              disabled={!currentScriptId || isSubmittingSceneBatch || sceneBatchRecovery.isGenerating}
-              loading={isSubmittingSceneBatch || sceneBatchRecovery.isGenerating}
+              onClick={batchResource.handleBatchSceneGeneration}
+              disabled={!currentProjectId || batchResource.isSubmittingSceneBatch || batchResource.isSceneBatchGenerating}
+              loading={batchResource.isSubmittingSceneBatch || batchResource.isSceneBatchGenerating}
               variant="success"
             />
             <IconButton
               icon={<Frame className="w-4 h-4" />}
               tooltip="批量生成首尾帧"
               onClick={handleBatchFrameGeneration}
-              disabled={!currentScriptId || isBatchFrameSubmitting || isRunning}
+              disabled={!currentProjectId || isBatchFrameSubmitting || isRunning}
               loading={isBatchFrameSubmitting}
               variant="warning"
             />
@@ -1114,7 +979,7 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
               icon={<Film className="w-4 h-4" />}
               tooltip="批量生成视频"
               onClick={handleBatchVideoGeneration}
-              disabled={!currentScriptId || isBatchVideoSubmitting || isRunning}
+              disabled={!currentProjectId || isBatchVideoSubmitting || isRunning}
               loading={isBatchVideoSubmitting}
               variant="danger"
             />
@@ -1174,82 +1039,21 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
           </div>
         </div>
 
-        {/* 第二行：模型设置（仅当有模型时显示） */}
-        {(imageModel || videoModel) && (
-          <div className="h-10 px-4 flex items-center gap-4 border-t border-(--border-color) bg-(--bg-app)">
-            {imageModel && (
-              <div className="flex items-center gap-2">
-                <ImageIcon className="w-3.5 h-3.5 text-cyan-400" />
-                <span className="text-xs text-(--text-muted)">图片:</span>
-                <span className="text-xs font-medium text-(--text-secondary)">{imageModel}</span>
-                {imageAspectRatio && (
-                  <Tooltip content="在项目设置中修改" placement="bottom">
-                    <div className="flex items-center gap-1 h-7 px-2 rounded-md bg-(--bg-card) border border-(--border-color) opacity-70 cursor-default">
-                      <Lock className="w-3 h-3 text-(--text-muted)" />
-                      <span className="text-xs text-(--text-secondary)">{imageAspectRatio}</span>
-                    </div>
-                  </Tooltip>
-                )}
-                {imageResolution && (
-                  <Tooltip content="在项目设置中修改" placement="bottom">
-                    <div className="flex items-center gap-1 h-7 px-2 rounded-md bg-(--bg-card) border border-(--border-color) opacity-70 cursor-default">
-                      <Lock className="w-3 h-3 text-(--text-muted)" />
-                      <span className="text-xs text-(--text-secondary)">{imageResolution}</span>
-                    </div>
-                  </Tooltip>
-                )}
-              </div>
-            )}
-
-            {videoModel && (
-              <div className="flex items-center gap-2">
-                <Video className="w-3.5 h-3.5 text-rose-400" />
-                <span className="text-xs text-(--text-muted)">视频:</span>
-                <span className="text-xs font-medium text-(--text-secondary)">{videoModel}</span>
-                {videoAspectRatio && (
-                  <Tooltip content="在项目设置中修改" placement="bottom">
-                    <div className="flex items-center gap-1 h-7 px-2 rounded-md bg-(--bg-card) border border-(--border-color) opacity-70 cursor-default">
-                      <Lock className="w-3 h-3 text-(--text-muted)" />
-                      <span className="text-xs text-(--text-secondary)">{videoAspectRatio}</span>
-                    </div>
-                  </Tooltip>
-                )}
-                {videoResolution && (
-                  <Tooltip content="在项目设置中修改" placement="bottom">
-                    <div className="flex items-center gap-1 h-7 px-2 rounded-md bg-(--bg-card) border border-(--border-color) opacity-70 cursor-default">
-                      <Lock className="w-3 h-3 text-(--text-muted)" />
-                      <span className="text-xs text-(--text-secondary)">{videoResolution}</span>
-                    </div>
-                  </Tooltip>
-                )}
-                {/* 视频时长：锁定显示分镜中的时长，不可编辑 */}
-                <Tooltip content="时长由分镜设置决定" placement="bottom">
-                  <div className="flex items-center gap-1 h-7 px-2 rounded-md bg-(--bg-card) border border-(--border-color) opacity-70 cursor-default">
-                    <Lock className="w-3 h-3 text-(--text-muted)" />
-                    <span className="text-xs text-(--text-secondary)">
-                      {currentSceneDuration ? `${currentSceneDuration}秒` : '待选择分镜'}
-                    </span>
-                  </div>
-                </Tooltip>
-              </div>
-            )}
-          </div>
-        )}
       </div>
 
-      {/* 无剧本提示 */}
-      {!currentScriptId && (
+      {/* 无项目提示 */}
+      {!currentProjectId && (
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center">
             <Wand2 className="w-16 h-16 mx-auto mb-4 text-(--text-muted) opacity-30" />
-            <p className="text-lg font-medium text-(--text-secondary)">请先生成剧本</p>
-            <p className="text-sm mt-1 text-(--text-muted)">生成剧本后，可以自动将剧本转换为分镜</p>
+            <p className="text-lg font-medium text-(--text-secondary)">请先选择项目</p>
+            <p className="text-sm mt-1 text-(--text-muted)">选择项目后即可开始分镜创作</p>
           </div>
         </div>
       )}
 
       {/* 主内容区 - 双栏布局 */}
-      {currentScriptId && (
+      {currentProjectId && (
         <div className="flex-1 overflow-hidden flex flex-col">
           {/* 双栏布局 */}
           <div className="flex-1 overflow-hidden">
@@ -1260,7 +1064,7 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
               mobilePanelLabels={isAssistantOpen ? ['分镜/资源', '预览编辑', 'AI助手'] : ['分镜/资源', '预览编辑']}
             >
               {/* 左侧：分镜列表 / 资源 Tab 切换 */}
-              <ResizablePanel ref={resourcePanelRef} defaultSize={isAssistantOpen ? 20 : 25} minSize={15} maxSize={35} title={leftPanelTab === 'scenes' ? '分镜列表' : '资源'} collapsible>
+              <ResizablePanel ref={resourcePanelRef} defaultSize={isAssistantOpen ? 20 : 25} minSize={15} maxSize={35} title={leftPanelTab === 'scenes' ? '分镜列表' : leftPanelTab === 'resources' ? '资源' : '大纲'} collapsible>
                 <div className="flex flex-col h-full overflow-hidden">
                   {/* Tab 切换栏 */}
                   <div className="flex items-center gap-0.5 px-2 py-1.5 border-b shrink-0" style={{ borderColor: 'var(--border-color)', backgroundColor: 'var(--bg-secondary)' }}>
@@ -1285,6 +1089,17 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
                       style={leftPanelTab === 'resources' ? { backgroundColor: 'color-mix(in srgb, var(--accent) 15%, transparent)' } : {}}
                     >
                       资源
+                    </button>
+                    <button
+                      onClick={() => setLeftPanelTab('outline')}
+                      className={`flex-1 px-3 py-1 text-xs font-medium rounded-md transition-all ${
+                        leftPanelTab === 'outline'
+                          ? 'text-[var(--accent)]'
+                          : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+                      }`}
+                      style={leftPanelTab === 'outline' ? { backgroundColor: 'color-mix(in srgb, var(--accent) 15%, transparent)' } : {}}
+                    >
+                      大纲
                     </button>
                   </div>
 
@@ -1317,7 +1132,7 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
                         batchVideoProgress={0}
                         isLoading={isLoading}
                       />
-                    ) : (
+                    ) : leftPanelTab === 'resources' ? (
                       <ResourcePanel
                         characters={allCharacters}
                         locations={allLocations}
@@ -1329,6 +1144,12 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
                         imageAspectRatio={imageAspectRatio}
                         textModel={textModel}
                         models={models}
+                      />
+                    ) : (
+                      <ScriptOutlinePanel
+                        scriptContent={scriptContent}
+                        scriptTitle={scriptTitle}
+                        isLoading={isLoadingScript}
                       />
                     )}
                   </div>
@@ -1372,6 +1193,11 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
                                 }}
                 imageTask={selectedScene ? tasks[`img_${selectedScene}`] : undefined}
                 videoTask={selectedScene ? tasks[`vid_${selectedScene}`] : undefined}
+                models={models}
+                imageModel={currentImageModel}
+                videoModel={currentVideoModel}
+                onImageModelChange={setCurrentImageModel}
+                onVideoModelChange={setCurrentVideoModel}
               />
             </ResizablePanel>
 
@@ -1444,7 +1270,7 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
           onClose={() => setIsVersionHistoryOpen(false)}
           onRestoreVersion={(version) => {
             console.log('[StoryBoard] 版本已恢复:', version);
-            loadStoryboards(currentScriptId!);
+            refreshScenes();
           }}
         />
       )}

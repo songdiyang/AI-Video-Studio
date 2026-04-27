@@ -286,7 +286,7 @@ const ScriptList: React.FC<ScriptListProps> = ({
                       {group.episodes.length > 1 ? ` - ${group.episodes[group.episodes.length - 1].episode_number}` : ''} 集)
                     </span>
                   </div>
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1.5 flex-wrap">
                     {group.isPersonal ? (
                       <>
                         <UserIcon className="w-3 h-3" />
@@ -296,6 +296,13 @@ const ScriptList: React.FC<ScriptListProps> = ({
                       <>
                         <Folder className="w-3 h-3" />
                         <span className="truncate">{group.projectName}</span>
+                        {/* 原生剧本徐章：项目剧本且无 source_script_id */}
+                        {!firstSourceId && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-violet-500/10 text-violet-500 border border-violet-500/20">
+                            <FileText className="w-2.5 h-2.5" />
+                            原生剧本
+                          </span>
+                        )}
                       </>
                     )}
                   </div>

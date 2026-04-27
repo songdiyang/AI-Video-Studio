@@ -123,12 +123,25 @@ async function handleSingleFrameGeneration(inputParams, onProgress) {
       // 支持多角色：characterInfo 可能是对象（单角色）或数组（多角色）
       const characters = Array.isArray(characterInfo) ? characterInfo : [characterInfo];
 
+      // 构建角色完整外貌：白膜体貌 + 服装状态
+      const buildComposedAppearance = (char) => {
+        const parts = [];
+        if (char.base_appearance) parts.push(char.base_appearance);
+        const outfitDesc = char.costume_outfit || char.outfit_appearance;
+        if (outfitDesc) parts.push(outfitDesc);
+        if (char.costume_hairstyle) parts.push(`发型: ${char.costume_hairstyle}`);
+        if (char.costume_accessories) parts.push(`配饰: ${char.costume_accessories}`);
+        if (char.costume_age_stage) parts.push(`年龄: ${char.costume_age_stage}`);
+        return parts.length > 0 ? parts.join('；') : char.appearance;
+      };
+
       if (characters.length === 1) {
         // 单角色
         const char = characters[0];
+        const composedAppearance = buildComposedAppearance(char);
         charBlock = `【角色信息】
 角色名称: ${char.name}
-外貌特征: ${char.appearance}
+外貌特征: ${composedAppearance}
 角色描述: ${char.description}
 （已提供角色参考图，角色的发型、发色、瞳色、服装款式和颜色、体型比例、配饰必须与参考图一致。但角色的姿势、位置、朝向、表情以文字描述和上一镜头结束状态为准，不要从角色立绘中复制姿态。）`;
         charConstraint = `- 角色外貌、服装、发型必须与参考图完全一致，不得自行创造角色形象
@@ -136,11 +149,12 @@ async function handleSingleFrameGeneration(inputParams, onProgress) {
 - 角色身体结构必须正常：头部在肩膀上方，四肢正常连接，禁止畸变`;
       } else {
         // 多角色
-        const charInfoText = characters.map(char =>
-          `角色名称: ${char.name}
-外貌特征: ${char.appearance}
-角色描述: ${char.description}`
-        ).join('\n\n');
+        const charInfoText = characters.map(char => {
+          const composedAppearance = buildComposedAppearance(char);
+          return `角色名称: ${char.name}
+外貌特征: ${composedAppearance}
+角色描述: ${char.description}`;
+        }).join('\n\n');
 
         charBlock = `【角色信息（多角色场景）】
 ${charInfoText}

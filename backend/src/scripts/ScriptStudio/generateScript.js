@@ -8,6 +8,10 @@ const { VISUAL_STYLE_PRESETS } = require('../../utils/getProjectStyle');
 const { callAIModel } = require('../../aiModelService');
 const { withAIBillingContext } = require('../../aiBillingContext');
 const { generationStartService, sendGenerationError } = require('../../modules/generation');
+const { getEffectiveProjectRole } = require('../../middleware/collaborationAuth');
+
+// editor 以上的角色可触发剧本生成
+const WRITABLE_ROLES = new Set(['owner', 'admin', 'editor']);
 
 /**
  * 自动为项目设置叙事风格（AI推荐）
@@ -146,10 +150,16 @@ async function generateScript(req, res) {
 
   // 确定集数（默认为下一集）
   let targetEpisode = episodeNumber;
-
+  
   try {
+    // 协作鉴权：owner / admin / editor 均可触发剧本生成
+    const projectRole = await getEffectiveProjectRole(userId, projectId);
+    if (!projectRole || !WRITABLE_ROLES.has(projectRole)) {
+      return res.status(403).json({ message: '无权在该项目生成剧本' });
+    }
+  
     // === 性能优化：合并多个查询为一个联合查询 ===
-    // 原先有5次独立查询，现在合并为1次
+    // 原先有 5 次独立查询，现在合并为 1 次
     const combinedQuery = await queryOne(`
       SELECT 
         p.id as project_id,
@@ -160,11 +170,11 @@ async function generateScript(req, res) {
         (SELECT id FROM scripts WHERE project_id = ? AND episode_number = ? LIMIT 1) as existing_script_id,
         (SELECT status FROM scripts WHERE project_id = ? AND episode_number = ? LIMIT 1) as existing_script_status
       FROM projects p
-      WHERE p.id = ? AND p.user_id = ?
-    `, [projectId, projectId, episodeNumber || 9999, projectId, episodeNumber || 9999, projectId, userId]);
-
+      WHERE p.id = ?
+    `, [projectId, projectId, episodeNumber || 9999, projectId, episodeNumber || 9999, projectId]);
+  
     if (!combinedQuery || !combinedQuery.project_id) {
-      return res.status(404).json({ message: '项目不存在或无权访问' });
+      return res.status(404).json({ message: '项目不存在' });
     }
 
     const project = {

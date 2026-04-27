@@ -24,7 +24,7 @@ module.exports = (router) => {
   router.post('/auto-generate-by-scene/:scriptId', authMiddleware, async (req, res) => {
     const userId = req.user.id;
     const scriptId = Number(req.params.scriptId);
-    const { textModel, clearExisting = true } = req.body || {};
+    const { textModel, clearExisting = true, appendMode } = req.body || {};
 
     if (!textModel) {
       return res.status(400).json({ message: '缺少模型名称，请选择一个文本模型' });
@@ -36,7 +36,8 @@ module.exports = (router) => {
         rawInput: {
           scriptId,
           textModel,
-          clearExisting
+          clearExisting: appendMode ? false : clearExisting,
+          appendMode: !!appendMode
         },
         actor: { userId }
       });

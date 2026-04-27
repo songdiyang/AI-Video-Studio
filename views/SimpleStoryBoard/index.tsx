@@ -4,11 +4,10 @@ import { useAutoStoryboard } from '../StoryBoard/useAutoStoryboard';
 import { useSceneGeneration } from '../StoryBoard/useSceneGeneration';
 import { useBatchFrameGeneration } from '../StoryBoard/hooks/useBatchFrameGeneration';
 import { useBatchSceneVideoGeneration } from '../StoryBoard/hooks/useBatchSceneVideoGeneration';
-import { useWorkflowRecovery } from '../StoryBoard/hooks/useWorkflowRecovery';
+import { useBatchResourceGeneration } from '../StoryBoard/hooks/useBatchResourceGeneration';
 import { useWorkflowTargetMonitor } from '../StoryBoard/hooks/useWorkflowTargetMonitor';
 import { useCharacterData } from '../StoryBoard/ResourcePanel/useCharacterData';
 import { useSceneData } from '../StoryBoard/ResourcePanel/useSceneData';
-import { useToast } from '../../contexts/ToastContext';
 import DarkEpisodeSelector from './DarkEpisodeSelector';
 import AutoStoryboardModal from '../StoryBoard/AutoStoryboardModal';
 import StoryboardTable from './StoryboardTable';
@@ -53,9 +52,6 @@ const SimpleStoryBoard: React.FC<SimpleStoryBoardProps> = ({
   const [currentScriptId, setCurrentScriptId] = useState<number | null>(scriptId || null);
   const [currentProjectId, setCurrentProjectId] = useState<number | null>(projectId || null);
   const [currentEpisode, setCurrentEpisode] = useState(episodeNumber);
-  const [isSubmittingCharacterBatch, setIsSubmittingCharacterBatch] = useState(false);
-  const [isSubmittingSceneBatch, setIsSubmittingSceneBatch] = useState(false);
-  const { showToast } = useToast();
 
   // 右侧面板联动状态
   const [selectedCharName, setSelectedCharName] = useState<string | null>(null);
@@ -107,6 +103,18 @@ const SimpleStoryBoard: React.FC<SimpleStoryBoardProps> = ({
     onScenesGenerated: (newScenes) => setScenes(newScenes),
   });
 
+  // 批量资源生成（角色/场景）
+  const batchResource = useBatchResourceGeneration({
+    projectId: currentProjectId,
+    scriptId: currentScriptId,
+    imageModel,
+    textModel,
+    imageAspectRatio,
+    imageResolution: imageResolution || undefined,
+    onCharactersComplete: () => loadCharacters(),
+    onScenesComplete: () => loadScenes(),
+  });
+
   const { generateImage, generateVideo, tasks } = useSceneGeneration({
     projectId: currentProjectId,
     scriptId: currentScriptId,
@@ -118,20 +126,6 @@ const SimpleStoryBoard: React.FC<SimpleStoryBoardProps> = ({
     videoModel,
     videoAspectRatio,
     videoDuration,
-  });
-
-  const characterBatchRecovery = useWorkflowRecovery({
-    projectId: currentProjectId,
-    workflowTypes: ['character_views_generation'],
-    isActive: true,
-    logPrefix: '[SimpleStoryBoardCharacterBatch]',
-  });
-
-  const sceneBatchRecovery = useWorkflowRecovery({
-    projectId: currentProjectId,
-    workflowTypes: ['scene_image_generation'],
-    isActive: true,
-    logPrefix: '[SimpleStoryBoardSceneBatch]',
   });
 
   const batchFrameGen = useBatchFrameGeneration({
@@ -169,6 +163,7 @@ const SimpleStoryBoard: React.FC<SimpleStoryBoardProps> = ({
   // 数据库角色/场景
   const { dbCharacters, isLoadingCharacters, loadCharacters } = useCharacterData(currentProjectId, currentScriptId);
   const { dbScenes, isLoadingScenes, loadScenes } = useSceneData(currentProjectId, currentScriptId);
+  const { showToast } = useToast();
 
   useWorkflowTargetMonitor({
     projectId: currentProjectId ?? null,
@@ -291,123 +286,6 @@ const SimpleStoryBoard: React.FC<SimpleStoryBoardProps> = ({
     }
   };
 
-  // 批量生成角色
-  const handleBatchCharacterGeneration = async () => {
-    if (isSubmittingCharacterBatch || characterBatchRecovery.isGenerating) {
-      showToast('角色批量生成任务正在进行中', 'warning');
-      return;
-    }
-    if (!currentProjectId || !currentScriptId) {
-      showToast('请先选择项目和剧本', 'warning');
-      return;
-    }
-    if (!imageModel) {
-      showToast('请先选择图像模型', 'warning');
-      return;
-    }
-    if (!imageAspectRatio) {
-      showToast('当前图片模型未配置可用长宽比', 'warning');
-      return;
-    }
-    try {
-      setIsSubmittingCharacterBatch(true);
-      showToast('正在启动角色批量生成...', 'info');
-      const token = getAuthToken();
-      // 不过滤 scriptId，角色是项目级别的
-      const charRes = await fetch(`/api/characters/project/${currentProjectId}`, {
-        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) }
-      });
-      if (!charRes.ok) throw new Error('获取角色数据失败');
-      const result = await charRes.json();
-      const characters = result.characters || [];
-      if (characters.length === 0) {
-        showToast('没有找到角色数据', 'warning');
-        return;
-      }
-      let startedCount = 0;
-      let recoveredCount = 0;
-      for (const character of characters) {
-        const response = await fetch(`/api/characters/${character.id}/generate-views`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-          },
-          body: JSON.stringify({ imageModel, textModel, style: '', aspectRatio: imageAspectRatio, resolution: imageResolution || undefined })
-        });
-        const data = await response.json().catch(() => ({}));
-        if (response.ok) {
-          startedCount += 1;
-        } else if (response.status === 409 && data.jobId) {
-          recoveredCount += 1;
-        }
-      }
-      await characterBatchRecovery.checkAndResume();
-      loadCharacters();
-    } catch (error: any) {
-      console.error('角色批量生成失败:', error);
-      showToast('角色批量生成失败，请稍后重试', 'error');
-    } finally {
-      setIsSubmittingCharacterBatch(false);
-    }
-  };
-
-  // 批量生成场景
-  const handleBatchSceneGeneration = async () => {
-    if (isSubmittingSceneBatch || sceneBatchRecovery.isGenerating) {
-      showToast('场景批量生成任务正在进行中', 'warning');
-      return;
-    }
-    if (!currentProjectId || !currentScriptId) {
-      showToast('请先选择项目和剧本', 'warning');
-      return;
-    }
-    if (!imageModel) {
-      showToast('请先选择图像模型', 'warning');
-      return;
-    }
-    try {
-      setIsSubmittingSceneBatch(true);
-      showToast('正在启动场景批量生成...', 'info');
-      const token = getAuthToken();
-      const sceneRes = await fetch(`/api/scenes/project/${currentProjectId}?scriptId=${currentScriptId}`, {
-        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) }
-      });
-      if (!sceneRes.ok) throw new Error('获取场景数据失败');
-      const result = await sceneRes.json();
-      const sceneList = result.scenes || [];
-      if (sceneList.length === 0) {
-        showToast('没有找到场景数据', 'warning');
-        return;
-      }
-      let startedCount = 0;
-      let recoveredCount = 0;
-      for (const scene of sceneList) {
-        const response = await fetch(`/api/scenes/${scene.id}/generate-image`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-          },
-          body: JSON.stringify({ imageModel, textModel, aspectRatio: imageAspectRatio, resolution: imageResolution || undefined })
-        });
-        const data = await response.json().catch(() => ({}));
-        if (response.ok) {
-          startedCount += 1;
-        } else if (response.status === 409 && data.jobId) {
-          recoveredCount += 1;
-        }
-      }
-      await sceneBatchRecovery.checkAndResume();
-      loadScenes();
-    } catch (error: any) {
-      console.error('场景批量生成失败:', error);
-      showToast('场景批量生成失败，请稍后重试', 'error');
-    } finally {
-      setIsSubmittingSceneBatch(false);
-    }
-  };
-
   // 批量生成首尾帧
   const handleBatchFrameGeneration = async () => {
     if (!currentScriptId || scenes.length === 0) {
@@ -458,9 +336,9 @@ const SimpleStoryBoard: React.FC<SimpleStoryBoardProps> = ({
             size="sm"
             className="bg-gradient-to-r from-violet-600 to-purple-600 text-white font-bold shadow-md hover:shadow-lg hover:from-violet-700 hover:to-purple-700 transition-all cursor-pointer"
             startContent={<Users className="w-3.5 h-3.5" />}
-            onPress={handleBatchCharacterGeneration}
-            isDisabled={!currentScriptId || isSubmittingCharacterBatch || characterBatchRecovery.isGenerating}
-            isLoading={isSubmittingCharacterBatch || characterBatchRecovery.isGenerating}
+            onPress={batchResource.handleBatchCharacterGeneration}
+            isDisabled={!currentScriptId || batchResource.isSubmittingCharacterBatch || batchResource.isCharacterBatchGenerating}
+            isLoading={batchResource.isSubmittingCharacterBatch || batchResource.isCharacterBatchGenerating}
           >
             批量生成角色
           </Button>
@@ -468,9 +346,9 @@ const SimpleStoryBoard: React.FC<SimpleStoryBoardProps> = ({
             size="sm"
             className="bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold shadow-md hover:shadow-lg hover:from-emerald-700 hover:to-teal-700 transition-all cursor-pointer"
             startContent={<Image className="w-3.5 h-3.5" />}
-            onPress={handleBatchSceneGeneration}
-            isDisabled={!currentScriptId || isSubmittingSceneBatch || sceneBatchRecovery.isGenerating}
-            isLoading={isSubmittingSceneBatch || sceneBatchRecovery.isGenerating}
+            onPress={batchResource.handleBatchSceneGeneration}
+            isDisabled={!currentScriptId || batchResource.isSubmittingSceneBatch || batchResource.isSceneBatchGenerating}
+            isLoading={batchResource.isSubmittingSceneBatch || batchResource.isSceneBatchGenerating}
           >
             批量生成场景
           </Button>
@@ -508,19 +386,19 @@ const SimpleStoryBoard: React.FC<SimpleStoryBoardProps> = ({
         </div>
       </div>
 
-      {/* 无剧本提示 */}
-      {!currentScriptId && (
+      {/* 无项目提示 */}
+      {!currentProjectId && (
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center" style={{ color: 'var(--text-muted)' }}>
             <Wand2 className="w-12 h-12 mx-auto mb-3" style={{ color: 'var(--text-muted)' }} />
-            <p className="text-sm font-medium">请先生成剧本</p>
-            <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>生成剧本后，可以自动将剧本转换为分镜</p>
+            <p className="text-sm font-medium">请先选择项目</p>
+            <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>选择项目后即可开始分镜创作</p>
           </div>
         </div>
       )}
 
       {/* 主内容 */}
-      {currentScriptId && (
+      {currentProjectId && (
         <div className="flex-1 flex overflow-hidden">
           {/* 左侧：表格 */}
           <StoryboardTable
@@ -565,8 +443,6 @@ const SimpleStoryBoard: React.FC<SimpleStoryBoardProps> = ({
       <AutoStoryboardModal
         isOpen={autoStoryboard.showConfirmModal}
         onOpenChange={autoStoryboard.setShowConfirmModal}
-        dontShowAgain={autoStoryboard.dontShowAgain}
-        onDontShowAgainChange={autoStoryboard.setDontShowAgain}
         onConfirm={autoStoryboard.handleConfirmGenerate}
       />
 

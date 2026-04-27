@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useStoryboardGeneration, GenerationProgress } from './hooks/useStoryboardGeneration';
 import { StoryboardScene } from './useSceneManager';
 import { getAuthToken } from '../../services/auth';
+import { GenerateMode } from './AutoStoryboardModal';
 
 interface UseAutoStoryboardOptions {
   scriptId: number | null;
@@ -11,8 +12,8 @@ interface UseAutoStoryboardOptions {
   textModel: string;
   onScenesGenerated: (scenes: StoryboardScene[]) => void;
   onError?: (message: string) => void;
-  loadStoryboards?: (scriptId: number) => Promise<void>; // 新增：增量加载回调
-  useSceneMode?: boolean; // 新增：是否使用按场景生成模式
+  loadStoryboards?: (scriptId: number) => Promise<void>; // 增量加载回调
+  useSceneMode?: boolean; // 是否使用按场景生成模式
 }
 
 export function useAutoStoryboard({
@@ -24,11 +25,9 @@ export function useAutoStoryboard({
   onScenesGenerated,
   onError,
   loadStoryboards,
-  useSceneMode = true // 默认使用按场景生成模式
+  useSceneMode = true
 }: UseAutoStoryboardOptions) {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
-  const [dontShowAgain, setDontShowAgain] = useState(false);
-  const [isCleaning, setIsCleaning] = useState(false);
 
   // 使用分镜生成 hook
   const { isGenerating, startGeneration, progress, job } = useStoryboardGeneration({
@@ -49,7 +48,7 @@ export function useAutoStoryboard({
   // 点击自动分镜按钮
   const handleAutoGenerateClick = () => {
     if (!scriptId) {
-      onError?.('请先选择或生成一个剧本');
+      onError?.('智能分镜需要绑定剧本作为参考');
       return;
     }
     if (!textModel) {
@@ -58,22 +57,18 @@ export function useAutoStoryboard({
     }
 
     if (!hasExistingScenes) {
-      startGeneration(textModel, useSceneMode);
+      // 无现有分镜，直接生成
+      startGeneration(textModel, useSceneMode, false);
       return;
     }
 
-    const skipConfirm = sessionStorage.getItem('skipStoryboardConfirm') === 'true';
-    if (skipConfirm) {
-      cleanAndGenerate();
-    } else {
-      setShowConfirmModal(true);
-    }
+    // 有现有分镜，弹出确认弹窗让用户选择
+    setShowConfirmModal(true);
   };
 
-  // 清理旧数据后启动生成
+  // 清理旧数据后启动生成（覆盖模式）
   const cleanAndGenerate = async () => {
     if (!scriptId) return;
-    setIsCleaning(true);
     try {
       const token = getAuthToken();
       const res = await fetch('/api/storyboards/clean-before-regenerate', {
@@ -94,31 +89,29 @@ export function useAutoStoryboard({
     } catch (err: any) {
       console.error('[AutoStoryboard] 清理失败:', err);
       onError?.('清理旧数据失败: ' + err.message);
-      setIsCleaning(false);
       return;
     }
-    setIsCleaning(false);
-    startGeneration(textModel, useSceneMode);
+    startGeneration(textModel, useSceneMode, false);
   };
 
-  // 确认弹窗后执行
-  const handleConfirmGenerate = () => {
-    if (dontShowAgain) {
-      sessionStorage.setItem('skipStoryboardConfirm', 'true');
-    }
+  // 确认弹窗回调 - 根据模式执行
+  const handleConfirmGenerate = (mode: GenerateMode) => {
     setShowConfirmModal(false);
-    cleanAndGenerate();
+    if (mode === 'overwrite') {
+      cleanAndGenerate();
+    } else {
+      // 追加模式：不清理，直接生成并传入 appendMode=true
+      startGeneration(textModel, useSceneMode, true);
+    }
   };
 
   return {
-    isGenerating: isGenerating || isCleaning,
+    isGenerating,
     showConfirmModal,
     setShowConfirmModal,
-    dontShowAgain,
-    setDontShowAgain,
     handleAutoGenerateClick,
     handleConfirmGenerate,
-    progress, // 新增：实时进度信息
-    job // 新增：工作流状态
+    progress,
+    job
   };
 }

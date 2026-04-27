@@ -52,6 +52,8 @@ const handleBatchImagePromptOptimization = require('./tasks/StoryBoard/batchImag
 const handleSingleImagePromptOptimization = require('./tasks/StoryBoard/singleImagePromptOptimization');
 const handleBatchVideoPromptOptimization = require('./tasks/StoryBoard/batchVideoPromptOptimization');
 const handleSingleVideoPromptOptimization = require('./tasks/StoryBoard/singleVideoPromptOptimization');
+const handleCharacterStateStyledGeneration = require('./tasks/StoryBoard/characterStateStyledGeneration');
+const handleSceneStyledGeneration = require('./tasks/StoryBoard/sceneStyledGeneration');
 
 // 独立帧生成模块（支持并发）
 const { handleParallelFrameGeneration } = require('./tasks/StoryBoard/independentFrameGeneration');
@@ -140,7 +142,7 @@ const WORKFLOW_DEFINITIONS = {
         dependencies: [0], // 依赖步骤0（storyboard_generation）
         buildInput: createBuildInput([
           { key: 'scenes', from: ctx => ctx.previousResults[0]?.scenes || [] },
-          'scriptId', 'projectId', 'userId'
+          'scriptId', 'projectId', 'userId', 'appendMode'
         ])
       },
       {
@@ -150,7 +152,7 @@ const WORKFLOW_DEFINITIONS = {
         dependencies: [1], // 依赖步骤1（save_storyboards）
         buildInput: createBuildInput([
           { key: 'scenes', from: ctx => ctx.previousResults[0]?.scenes || [] },
-          'scriptContent', 'projectId', 'scriptId', 'userId', 'textModel'
+          'scriptContent', 'projectId', 'scriptId', 'userId', 'textModel', 'appendMode'
         ])
       },
       {
@@ -276,8 +278,8 @@ const WORKFLOW_DEFINITIONS = {
         handler: handleBatchSaveStoryboards,
         dependencies: sceneDeps,
         buildInput: createBuildInput([
-          'scriptId', 'projectId', 'userId',
-          { key: 'clearExisting', defaultValue: true },
+          'scriptId', 'projectId', 'userId', 'appendMode',
+          { key: 'clearExisting', from: ctx => ctx.jobParams.appendMode ? false : (ctx.jobParams.clearExisting !== false) },
           {
             key: 'sceneResults',
             from: ctx => {
@@ -315,7 +317,7 @@ const WORKFLOW_DEFINITIONS = {
               return allScenes;
             }
           },
-          'scriptContent', 'projectId', 'scriptId', 'userId', 'textModel'
+          'scriptContent', 'projectId', 'scriptId', 'userId', 'textModel', 'appendMode'
         ])
       });
 
@@ -626,6 +628,44 @@ const WORKFLOW_DEFINITIONS = {
           'customPromptFront', 'customPromptSide', 'customPromptBack',
           { key: 'width', defaultValue: 1920 },
           { key: 'height', defaultValue: 2880 }
+        ])
+      }
+    ]
+  },
+
+  /**
+   * 角色状态按项目画风渲染（T3 图像生成任务链）
+   * 以白膜三视图为参考，注入项目画风 + 状态服装/发型 → 回写 character_state_styled_images
+   */
+  character_state_styled_generation: {
+    name: '角色状态项目画风渲染',
+    steps: [
+      {
+        type: 'character_state_styled_generation',
+        targetType: 'character_state',
+        handler: handleCharacterStateStyledGeneration,
+        buildInput: createBuildInput([
+          'characterId', 'stateId', 'projectId', 'imageModel', 'textModel',
+          { key: 'styleFingerprint', from: 'styleFingerprint', defaultValue: '' }
+        ])
+      }
+    ]
+  },
+
+  /**
+   * 场景按项目画风渲染
+   * 以场景原图为参考，注入项目画风 → 回写 scene_styled_images
+   */
+  scene_styled_generation: {
+    name: '场景项目画风渲染',
+    steps: [
+      {
+        type: 'scene_styled_generation',
+        targetType: 'scene',
+        handler: handleSceneStyledGeneration,
+        buildInput: createBuildInput([
+          'sceneId', 'projectId', 'imageModel',
+          { key: 'styleFingerprint', from: 'styleFingerprint', defaultValue: '' }
         ])
       }
     ]

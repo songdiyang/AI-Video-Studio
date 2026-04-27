@@ -131,7 +131,7 @@ async function handleSingleVideoPromptOptimization(inputParams, onProgress) {
                       visualStyle.toLowerCase().includes('cinematic') ||
                       visualStyle.toLowerCase().includes('photography');
 
-  // 7. 构建角色和场景上下文
+  // 7. 构建角色和场景上下文（使用白膜+服装分层 + 激活状态）
   // 【重要改进】：用简短外貌描述替代角色名字，因为视频模型无法识别角色名字
   let characterContext = '';
   let characterVisualIdentifiers = []; // 用于视频提示词的视觉标识符列表
@@ -141,16 +141,28 @@ async function handleSingleVideoPromptOptimization(inputParams, onProgress) {
     try {
       const charNames = currentCharacters.map(n => `'${n.replace(/'/g, "''")}'`).join(',');
       const charDetails = await queryAll(
-        `SELECT name, appearance, description FROM characters WHERE project_id = ? AND name IN (${charNames})`,
+        `SELECT c.name, c.appearance, c.base_appearance, c.outfit_appearance, c.description,
+                cs.name AS active_state_name, cs.outfit AS active_outfit, cs.hairstyle AS active_hairstyle, cs.accessories AS active_accessories, cs.age_stage AS active_age_stage
+         FROM characters c
+         LEFT JOIN character_states cs ON cs.character_id = c.id AND cs.is_active = 1 AND cs.is_base_model = 0
+         WHERE c.project_id = ? AND c.name IN (${charNames})`,
         [storyboard.project_id]
       );
       if (charDetails.length > 0) {
-        characterContext += '\n角色外貌特征：';
+        characterContext += '\n角色外貌特征（白膜体貌+服装状态）：';
         for (const cd of charDetails) {
-          characterContext += `\n  - ${cd.name}：${(cd.appearance || '未设置').slice(0, 200)}`;
+          const parts = [];
+          if (cd.base_appearance) parts.push(cd.base_appearance);
+          const outfitDesc = cd.active_outfit || cd.outfit_appearance;
+          if (outfitDesc) parts.push(outfitDesc);
+          if (cd.active_hairstyle) parts.push(`发型: ${cd.active_hairstyle}`);
+          if (cd.active_accessories) parts.push(`配饰: ${cd.active_accessories}`);
+          if (cd.active_age_stage) parts.push(`年龄: ${cd.active_age_stage}`);
+          const fullAppearance = parts.length > 0 ? parts.join('；') : cd.appearance;
+          characterContext += `\n  - ${cd.name}：${(fullAppearance || '未设置').slice(0, 300)}${cd.active_state_name ? `（状态: ${cd.active_state_name}）` : ''}`;
           
           // 提取简短的视觉标识符（20-30字），用于视频提示词中区分角色
-          const shortDesc = (cd.appearance || cd.description || '').slice(0, 50).replace(/\n/g, ' ');
+          const shortDesc = (fullAppearance || cd.description || '').slice(0, 50).replace(/\n/g, ' ');
           characterVisualIdentifiers.push({
             name: cd.name,
             visualId: shortDesc || '未设置外貌描述'

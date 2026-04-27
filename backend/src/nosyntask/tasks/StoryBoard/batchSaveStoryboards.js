@@ -8,7 +8,7 @@
  * output: { totalScenes, totalShots, totalDuration, characters, locations, scenesExtracted }
  */
 
-const { queryOne, execute } = require('../../../dbHelper');
+const { queryOne, queryAll, execute } = require('../../../dbHelper');
 
 const DEFAULT_SHOT_DURATION = 2;
 
@@ -24,6 +24,7 @@ async function handleBatchSaveStoryboards(inputParams, onProgress) {
     projectId,
     userId,
     clearExisting = true,
+    appendMode = false,
     sceneResults // 由 buildInput 从 previousResults 中收集的场景结果数组
   } = inputParams;
 
@@ -130,19 +131,42 @@ async function handleBatchSaveStoryboards(inputParams, onProgress) {
 
     if (sceneValues.length > 0) {
       try {
-        await execute(
-          `INSERT INTO scenes (user_id, project_id, script_id, name, description, mood, environment, lighting, source)
-           VALUES ?
-           ON DUPLICATE KEY UPDATE
-             description = COALESCE(NULLIF(description, ''), VALUES(description)),
-             mood = COALESCE(NULLIF(mood, ''), VALUES(mood)),
-             environment = COALESCE(NULLIF(environment, ''), VALUES(environment)),
-             lighting = COALESCE(NULLIF(lighting, ''), VALUES(lighting)),
-             script_id = VALUES(script_id),
-             updated_at = CURRENT_TIMESTAMP`,
-          [sceneValues]
-        );
-        scenesExtracted = sceneValues.length;
+        if (appendMode) {
+          // 追加模式：跳过同名场景，只插入新场景
+          const existingSceneNames = await queryAll(
+            `SELECT name FROM scenes WHERE project_id = ? AND user_id = ?`,
+            [projectId, userId]
+          );
+          const existingNameSet = new Set(existingSceneNames.map(r => r.name));
+          const newSceneValues = sceneValues.filter(v => !existingNameSet.has(v[3]));
+          const skippedCount = sceneValues.length - newSceneValues.length;
+          if (skippedCount > 0) {
+            console.log(`[BatchSave] 追加模式跳过 ${skippedCount} 个同名场景`);
+          }
+          if (newSceneValues.length > 0) {
+            await execute(
+              `INSERT INTO scenes (user_id, project_id, script_id, name, description, mood, environment, lighting, source)
+               VALUES ?`,
+              [newSceneValues]
+            );
+            scenesExtracted = newSceneValues.length;
+          }
+        } else {
+          // 非追加模式：upsert（原有逻辑）
+          await execute(
+            `INSERT INTO scenes (user_id, project_id, script_id, name, description, mood, environment, lighting, source)
+             VALUES ?
+             ON DUPLICATE KEY UPDATE
+               description = COALESCE(NULLIF(description, ''), VALUES(description)),
+               mood = COALESCE(NULLIF(mood, ''), VALUES(mood)),
+               environment = COALESCE(NULLIF(environment, ''), VALUES(environment)),
+               lighting = COALESCE(NULLIF(lighting, ''), VALUES(lighting)),
+               script_id = VALUES(script_id),
+               updated_at = CURRENT_TIMESTAMP`,
+            [sceneValues]
+          );
+          scenesExtracted = sceneValues.length;
+        }
       } catch (dbError) {
         console.error('[BatchSave] 批量保存场景失败:', dbError.message);
       }

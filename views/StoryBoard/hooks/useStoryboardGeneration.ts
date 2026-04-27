@@ -72,7 +72,7 @@ export function useStoryboardGeneration({
   });
 
   // 启动分镜生成
-  const startGeneration = useCallback(async (textModel: string, byScene: boolean = false) => {
+  const startGeneration = useCallback(async (textModel: string, byScene: boolean = false, appendMode: boolean = false) => {
     if (!scriptId) {
       showToast('请先选择或生成一个剧本', 'warning');
       return;
@@ -95,7 +95,7 @@ export function useStoryboardGeneration({
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
-        body: JSON.stringify({ textModel })
+        body: JSON.stringify({ textModel, appendMode })
       });
 
       const data = await res.json();

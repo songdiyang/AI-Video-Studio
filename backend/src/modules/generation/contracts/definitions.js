@@ -291,6 +291,82 @@ const operationContracts = [
     })
   },
   {
+    operationKey: 'character_state_styled_generate',
+    workflowType: 'character_state_styled_generation',
+    requestSchema: {
+      type: 'object',
+      required: ['characterId', 'stateId', 'projectId', 'imageModel'],
+      properties: {
+        characterId: { type: 'integer', minimum: 1 },
+        stateId: { type: 'integer', minimum: 1 },
+        projectId: { type: 'integer', minimum: 1 },
+        imageModel: { type: 'string', minLength: 1 },
+        textModel: { type: 'string' },
+        styleFingerprint: { type: 'string' }
+      }
+    },
+    scopeResolver: async ({ actor, input }) => {
+      const character = await requireCharacterForUser(input.characterId, actor.userId);
+      // stateId 归属校验
+      const state = await queryOne(
+        'SELECT id FROM character_states WHERE id = ? AND character_id = ?',
+        [input.stateId, character.id]
+      );
+      if (!state) {
+        throw new HttpError(404, '角色状态不存在');
+      }
+      // 项目可见性（读取）— 可能是 owner 或 reference，均允许用其画风渲染
+      const { getEffectiveProjectRole } = require('../../../middleware/collaborationAuth');
+      const projectRole = await getEffectiveProjectRole(actor.userId, input.projectId);
+      if (!projectRole) {
+        throw new HttpError(403, '无权访问目标项目');
+      }
+      return {
+        scope: {
+          projectId: input.projectId,
+          characterId: character.id,
+          stateId: input.stateId
+        },
+        resources: { character }
+      };
+    },
+    defaultsResolver: async ({ input }) => ({
+      models: {
+        imageModel: input.imageModel,
+        textModel: input.textModel || null
+      },
+      inputs: {
+        characterId: input.characterId,
+        stateId: input.stateId,
+        projectId: input.projectId,
+        styleFingerprint: input.styleFingerprint || ''
+      },
+      options: {}
+    }),
+    conflictKeyResolver: ({ scope }) => ({
+      key: 'stateId',
+      value: scope.stateId
+    }),
+    toJobParams: ({ contract, actor, scope, resolved }) =>
+      createCommand({
+        operationKey: contract.operationKey,
+        workflowType: contract.workflowType,
+        actor,
+        scope,
+        models: resolved.models,
+        inputs: resolved.inputs,
+        options: resolved.options
+      }),
+    responseMapper: ({ result, command }) => ({
+      message: '角色状态项目画风渲染已启动',
+      jobId: result.jobId,
+      characterId: command.scope.characterId,
+      stateId: command.scope.stateId,
+      projectId: command.scope.projectId,
+      status: 'generating'
+    })
+  },
+  {
     operationKey: 'character_concept_breakdown',
     workflowType: 'character_concept_breakdown',
     requestSchema: {
@@ -432,6 +508,68 @@ const operationContracts = [
       message: '场景图片生成已启动',
       jobId: result.jobId,
       sceneId: command.scope.sceneId,
+      status: 'generating'
+    })
+  },
+  {
+    operationKey: 'scene_styled_generate',
+    workflowType: 'scene_styled_generation',
+    requestSchema: {
+      type: 'object',
+      required: ['sceneId', 'projectId', 'imageModel'],
+      properties: {
+        sceneId: { type: 'integer', minimum: 1 },
+        projectId: { type: 'integer', minimum: 1 },
+        imageModel: { type: 'string', minLength: 1 },
+        styleFingerprint: { type: 'string' }
+      }
+    },
+    scopeResolver: async ({ actor, input }) => {
+      const scene = await requireSceneForUser(input.sceneId, actor.userId);
+      const { getEffectiveProjectRole } = require('../../../middleware/collaborationAuth');
+      const projectRole = await getEffectiveProjectRole(actor.userId, input.projectId);
+      if (!projectRole) {
+        throw new HttpError(403, '无权访问目标项目');
+      }
+      return {
+        scope: {
+          projectId: input.projectId,
+          sceneId: scene.id
+        },
+        resources: { scene }
+      };
+    },
+    defaultsResolver: async ({ input }) => ({
+      models: {
+        imageModel: input.imageModel,
+        textModel: null
+      },
+      inputs: {
+        sceneId: input.sceneId,
+        projectId: input.projectId,
+        styleFingerprint: input.styleFingerprint || ''
+      },
+      options: {}
+    }),
+    conflictKeyResolver: ({ scope }) => ({
+      key: 'sceneId',
+      value: scope.sceneId
+    }),
+    toJobParams: ({ contract, actor, scope, resolved }) =>
+      createCommand({
+        operationKey: contract.operationKey,
+        workflowType: contract.workflowType,
+        actor,
+        scope,
+        models: resolved.models,
+        inputs: resolved.inputs,
+        options: resolved.options
+      }),
+    responseMapper: ({ result, command }) => ({
+      message: '场景项目画风渲染已启动',
+      jobId: result.jobId,
+      sceneId: command.scope.sceneId,
+      projectId: command.scope.projectId,
       status: 'generating'
     })
   },

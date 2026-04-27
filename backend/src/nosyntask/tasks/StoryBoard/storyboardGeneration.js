@@ -445,28 +445,41 @@ async function handleStoryboardGeneration(inputParams, onProgress) {
     };
   }
 
-  // 查询项目中已有的角色及外观特征（如果有）
+  // 查询项目中已有的角色及外观特征（使用白膜+服装分层组合 + 激活状态）
   let characterAppearanceSection = '';
   if (projectId) {
     try {
       const existingChars = await queryAll(
-        `SELECT name, appearance, description FROM characters WHERE project_id = ? AND appearance IS NOT NULL AND appearance != ''`,
+        `SELECT c.name, c.appearance, c.base_appearance, c.outfit_appearance, c.description,
+                cs.name AS active_state_name, cs.outfit AS active_outfit, cs.hairstyle AS active_hairstyle, cs.accessories AS active_accessories, cs.age_stage AS active_age_stage
+         FROM characters c
+         LEFT JOIN character_states cs ON cs.character_id = c.id AND cs.is_active = 1 AND cs.is_base_model = 0
+         WHERE c.project_id = ? AND (c.appearance IS NOT NULL AND c.appearance != '')`,
         [projectId]
       );
       if (existingChars.length > 0) {
-        const charLines = existingChars.map(c =>
-          `- ${c.name}：${c.appearance}${c.description ? `（${c.description}）` : ''}`
-        ).join('\n');
+        const charLines = existingChars.map(c => {
+          // 组合完整外貌：白膜体貌 + 服装 + 激活状态属性
+          const parts = [];
+          if (c.base_appearance) parts.push(`体貌: ${c.base_appearance}`);
+          const outfitDesc = c.active_outfit || c.outfit_appearance;
+          if (outfitDesc) parts.push(`服装: ${outfitDesc}`);
+          if (c.active_hairstyle) parts.push(`发型: ${c.active_hairstyle}`);
+          if (c.active_accessories) parts.push(`配饰: ${c.active_accessories}`);
+          if (c.active_age_stage) parts.push(`年龄: ${c.active_age_stage}`);
+          const fullAppearance = parts.length > 0 ? parts.join('；') : c.appearance;
+          return `- ${c.name}：${fullAppearance}${c.active_state_name ? `（状态: ${c.active_state_name}）` : ''}${c.description ? `，${c.description}` : ''}`;
+        }).join('\n');
         characterAppearanceSection = `
 
-**【项目角色外观特征表】**
-以下是本项目中已定义的角色及其固定外观特征，在生成分镜描述时：
-- 每次提到角色时，必须在 description 中包含该角色的关键外观特征（如发型、服装等），而不是仅写角色名
-- 例如：不要写"小明走进房间"，而要写"穿黑色西装的短发男生走进房间"或"小明（穿黑色西装的短发男生）走进房间"
+**【项目角色外观特征表 - 白膜+服装分层】**
+以下是本项目中已定义的角色及其完整外观特征，角色外貌 = 白膜体貌（不可更换的身体特征） + 服装状态（可更换的穿戴物品）。在生成分镜描述时：
+- 每次提到角色时，必须在 description 中包含该角色的完整外貌特征（体貌+服装），而不是仅写角色名
+- 例如：不要写"小明走进房间"，而要写"穿黑色西装的短发男生走进房间"
 - characters 数组中仍然使用角色名
 ${charLines}
 `;
-        console.log(`[StoryboardGen] 已注入 ${existingChars.length} 个角色外观特征`);
+        console.log(`[StoryboardGen] 已注入 ${existingChars.length} 个角色外观特征（含白膜/服装分层）`);
       }
     } catch (e) {
       console.warn('[StoryboardGen] 查询角色外观失败（忽略）:', e.message);

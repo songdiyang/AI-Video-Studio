@@ -78,6 +78,8 @@ export interface Character {
   name: string;
   description: string;
   appearance: string;
+  base_appearance?: string;   // 白膜体貌描述（不含服装的身体特征）
+  outfit_appearance?: string; // 服装外貌描述（服装、配饰等可更换装饰）
   personality: string;
   gender?: 'male' | 'female' | 'unknown';
   image_url: string;
@@ -94,6 +96,12 @@ export interface Character {
   project_name?: string;
   states_count?: number;
   use_reference_images?: boolean;
+  // 白膜/服装状态概要（来自 getByProject API 的 LEFT JOIN）
+  base_model_image_url?: string;     // 白膜正面图 URL
+  has_base_model_views?: boolean | number; // 是否已生成白膜三视图
+  active_state_name?: string;        // 当前激活状态名称
+  active_state_outfit?: string;      // 当前激活状态服装描述
+  active_state_image_url?: string;   // 当前激活状态正面图
   created_at: string;
   updated_at: string;
 }
@@ -1679,4 +1687,473 @@ export async function checkUploadStatus(): Promise<{
     throw new Error(result.message || '检查上传服务状态失败');
   }
   return response.json();
+}
+
+// ============================================================
+// 角色装配 + 合成预览 (T5)
+// ============================================================
+
+export interface CharacterLoadout {
+  costumeStateId: number | null;
+  expressionStateId: number | null;
+  costume?: CharacterState | null;
+  expression?: CharacterState | null;
+}
+
+export interface CharacterCompositeResponse {
+  characterId: number;
+  characterName: string;
+  projectId: number;
+  loadout: {
+    costumeStateId: number | null;
+    expressionStateId: number | null;
+    costume: CharacterState | null;
+    expression: CharacterState | null;
+  };
+  baseState: CharacterState;
+  previewUrl: string | null;
+  compositePrompt: string;
+  visualStylePrompt: string | null;
+  sources: {
+    baseStyledHit: boolean;
+    costumeStyledHit: boolean;
+    costumeRawHit: boolean;
+  };
+}
+
+/** 读取角色当前装配 */
+export async function fetchCharacterLoadout(characterId: number): Promise<{ characterId: number; loadout: CharacterLoadout }> {
+  const token = getAuthToken();
+  const response = await fetch(`/api/characters/${characterId}/loadout`, {
+    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) }
+  });
+  if (!response.ok) {
+    const r = await response.json().catch(() => ({}));
+    throw new Error(r.message || '获取装配信息失败');
+  }
+  return response.json();
+}
+
+/** 更新角色当前装配（传 null 清空） */
+export async function updateCharacterLoadout(
+  characterId: number,
+  data: { costumeStateId?: number | null; expressionStateId?: number | null }
+): Promise<{ message: string; characterId: number; loadout: { costumeStateId: number | null; expressionStateId: number | null } }> {
+  const token = getAuthToken();
+  const response = await fetch(`/api/characters/${characterId}/loadout`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) {
+    const r = await response.json().catch(() => ({}));
+    throw new Error(r.message || '更新装配失败');
+  }
+  return response.json();
+}
+
+/** 获取角色合成预览（基于项目画风 + 白膜 + 装配） */
+export async function fetchCharacterComposite(
+  characterId: number,
+  projectId: number,
+  overrides?: { costumeStateId?: number; expressionStateId?: number }
+): Promise<CharacterCompositeResponse> {
+  const token = getAuthToken();
+  const params = new URLSearchParams({ projectId: String(projectId) });
+  if (overrides?.costumeStateId != null) params.append('costumeStateId', String(overrides.costumeStateId));
+  if (overrides?.expressionStateId != null) params.append('expressionStateId', String(overrides.expressionStateId));
+  const response = await fetch(`/api/characters/${characterId}/composite?${params.toString()}`, {
+    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) }
+  });
+  if (!response.ok) {
+    const r = await response.json().catch(() => ({}));
+    const err: any = new Error(r.message || '获取合成预览失败');
+    err.code = r.code;
+    throw err;
+  }
+  return response.json();
+}
+
+// ============================================================
+// 角色-项目 一对多绑定 (T6)
+// ============================================================
+
+export interface ProjectBinding {
+  project_id: number;
+  binding_type: 'owner' | 'reference';
+  created_at: string;
+  project_title?: string;
+  project_type?: string;
+}
+
+/** 读取角色绑定的所有项目 */
+export async function fetchCharacterBindings(characterId: number): Promise<{ characterId: number; bindings: ProjectBinding[] }> {
+  const token = getAuthToken();
+  const response = await fetch(`/api/characters/${characterId}/bindings`, {
+    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) }
+  });
+  if (!response.ok) {
+    const r = await response.json().catch(() => ({}));
+    throw new Error(r.message || '获取角色绑定失败');
+  }
+  return response.json();
+}
+
+/** 添加角色-项目绑定 */
+export async function addCharacterBinding(characterId: number, projectId: number): Promise<{ message: string }> {
+  const token = getAuthToken();
+  const response = await fetch(`/api/characters/${characterId}/bindings`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify({ projectId }),
+  });
+  if (!response.ok) {
+    const r = await response.json().catch(() => ({}));
+    throw new Error(r.message || '添加绑定失败');
+  }
+  return response.json();
+}
+
+/** 解除角色-项目绑定（不能解除 owner） */
+export async function removeCharacterBinding(characterId: number, projectId: number): Promise<{ message: string }> {
+  const token = getAuthToken();
+  const response = await fetch(`/api/characters/${characterId}/bindings/${projectId}`, {
+    method: 'DELETE',
+    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) }
+  });
+  if (!response.ok) {
+    const r = await response.json().catch(() => ({}));
+    const err: any = new Error(r.message || '解除绑定失败');
+    err.code = r.code;
+    throw err;
+  }
+  return response.json();
+}
+
+/** 读取场景绑定的所有项目 (T7) */
+export async function fetchSceneBindings(sceneId: number): Promise<{ sceneId: number; bindings: ProjectBinding[] }> {
+  const token = getAuthToken();
+  const response = await fetch(`/api/scenes/${sceneId}/bindings`, {
+    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) }
+  });
+  if (!response.ok) {
+    const r = await response.json().catch(() => ({}));
+    throw new Error(r.message || '获取场景绑定失败');
+  }
+  return response.json();
+}
+
+/** 添加场景-项目绑定 */
+export async function addSceneBinding(sceneId: number, projectId: number): Promise<{ message: string }> {
+  const token = getAuthToken();
+  const response = await fetch(`/api/scenes/${sceneId}/bindings`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify({ projectId }),
+  });
+  if (!response.ok) {
+    const r = await response.json().catch(() => ({}));
+    throw new Error(r.message || '添加绑定失败');
+  }
+  return response.json();
+}
+
+/** 解除场景-项目绑定 */
+export async function removeSceneBinding(sceneId: number, projectId: number): Promise<{ message: string }> {
+  const token = getAuthToken();
+  const response = await fetch(`/api/scenes/${sceneId}/bindings/${projectId}`, {
+    method: 'DELETE',
+    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) }
+  });
+  if (!response.ok) {
+    const r = await response.json().catch(() => ({}));
+    const err: any = new Error(r.message || '解除绑定失败');
+    err.code = r.code;
+    throw err;
+  }
+  return response.json();
+}
+
+// ============================================================
+// T3: 按项目画风渲染（角色状态 / 场景）
+// ============================================================
+
+export interface CharacterStateStyledImage {
+  id: number;
+  state_id: number;
+  project_id: number;
+  style_fingerprint: string | null;
+  front_view_url: string | null;
+  side_view_url: string | null;
+  back_view_url: string | null;
+  generation_status: 'idle' | 'generating' | 'completed' | 'failed' | string;
+  generation_error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CharacterStateStyledResponse {
+  styled: CharacterStateStyledImage | null;
+  styleFingerprint: string;
+  stale: boolean;
+}
+
+export interface SceneStyledImage {
+  id: number;
+  scene_id: number;
+  project_id: number;
+  style_fingerprint: string | null;
+  image_url: string | null;
+  reverse_image_url: string | null;
+  generation_status: 'idle' | 'generating' | 'completed' | 'failed' | string;
+  generation_error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SceneStyledResponse {
+  styled: SceneStyledImage | null;
+  styleFingerprint: string;
+  stale: boolean;
+}
+
+export interface StyledGenerateResponse {
+  message: string;
+  jobId?: number;
+  status: string;
+  styleFingerprint: string;
+  pendingImplementation?: boolean;
+  [key: string]: any;
+}
+
+/** 读取角色状态按项目画风的渲染缓存 */
+export async function fetchCharacterStateStyled(
+  characterId: number,
+  stateId: number,
+  projectId: number
+): Promise<CharacterStateStyledResponse> {
+  const token = getAuthToken();
+  const response = await fetch(
+    `/api/characters/${characterId}/states/${stateId}/styled?projectId=${projectId}`,
+    { headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) } }
+  );
+  if (!response.ok) {
+    const r = await response.json().catch(() => ({}));
+    throw new Error(r.message || '读取画风图失败');
+  }
+  const data = await response.json();
+  // URL 规范化
+  if (data?.styled) {
+    data.styled.front_view_url = normalizeStorageUrl(data.styled.front_view_url);
+    data.styled.side_view_url = normalizeStorageUrl(data.styled.side_view_url);
+    data.styled.back_view_url = normalizeStorageUrl(data.styled.back_view_url);
+  }
+  return data;
+}
+
+/** 触发角色状态的项目画风渲染（实际异步 workflow） */
+export async function generateCharacterStateStyled(
+  characterId: number,
+  stateId: number,
+  body: { projectId: number; imageModel: string; textModel?: string }
+): Promise<StyledGenerateResponse> {
+  const token = getAuthToken();
+  const response = await fetch(
+    `/api/characters/${characterId}/states/${stateId}/styled/generate`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify(body),
+    }
+  );
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const err: any = new Error(data?.message || '画风图生成启动失败');
+    err.code = data?.code;
+    err.status = response.status;
+    throw err;
+  }
+  return data as StyledGenerateResponse;
+}
+
+/** 清除角色状态的项目画风缓存 */
+export async function clearCharacterStateStyled(
+  characterId: number,
+  stateId: number,
+  projectId: number
+): Promise<{ message: string }> {
+  const token = getAuthToken();
+  const response = await fetch(
+    `/api/characters/${characterId}/states/${stateId}/styled?projectId=${projectId}`,
+    { method: 'DELETE', headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) } }
+  );
+  if (!response.ok) {
+    const r = await response.json().catch(() => ({}));
+    throw new Error(r.message || '清除画风图失败');
+  }
+  return response.json();
+}
+
+/** 读取场景按项目画风的渲染缓存 */
+export async function fetchSceneStyled(
+  sceneId: number,
+  projectId: number
+): Promise<SceneStyledResponse> {
+  const token = getAuthToken();
+  const response = await fetch(
+    `/api/scenes/${sceneId}/styled?projectId=${projectId}`,
+    { headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) } }
+  );
+  if (!response.ok) {
+    const r = await response.json().catch(() => ({}));
+    throw new Error(r.message || '读取场景画风图失败');
+  }
+  const data = await response.json();
+  if (data?.styled) {
+    data.styled.image_url = normalizeStorageUrl(data.styled.image_url);
+    data.styled.reverse_image_url = normalizeStorageUrl(data.styled.reverse_image_url);
+  }
+  return data;
+}
+
+/** 触发场景的项目画风渲染 */
+export async function generateSceneStyled(
+  sceneId: number,
+  body: { projectId: number; imageModel: string }
+): Promise<StyledGenerateResponse> {
+  const token = getAuthToken();
+  const response = await fetch(`/api/scenes/${sceneId}/styled/generate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify(body),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const err: any = new Error(data?.message || '场景画风图生成启动失败');
+    err.code = data?.code;
+    err.status = response.status;
+    throw err;
+  }
+  return data as StyledGenerateResponse;
+}
+
+/** 清除场景的项目画风缓存 */
+export async function clearSceneStyled(sceneId: number, projectId: number): Promise<{ message: string }> {
+  const token = getAuthToken();
+  const response = await fetch(`/api/scenes/${sceneId}/styled?projectId=${projectId}`, {
+    method: 'DELETE',
+    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) }
+  });
+  if (!response.ok) {
+    const r = await response.json().catch(() => ({}));
+    throw new Error(r.message || '清除场景画风图失败');
+  }
+  return response.json();
+}
+
+// ============ AI 智能生成角色 ============
+
+export interface AiCharacterDraft {
+  name: string;
+  gender: 'male' | 'female' | 'unknown';
+  base_appearance: string;
+  outfit_appearance: string;
+  personality: string;
+  description: string;
+}
+
+export interface AiDraftResponse {
+  draft: AiCharacterDraft;
+  projectStyle: {
+    projectId: number;
+    projectName: string;
+    visualStyle: string;
+    visualStylePrompt: string;
+    hasStyle: boolean;
+  };
+  estimatedResources: {
+    character: number;
+    costume: number;
+    baseState: number;
+    costumeState: number;
+  };
+  estimatedCredits: {
+    whiteModel: number;
+    styledState: number;
+    totalImages: number;
+    note: string;
+  };
+}
+
+export interface AiCommitResponse {
+  message: string;
+  characterId: number;
+  costumeId: number | null;
+  baseStateId: number;
+  jobId: string;
+  followUp: {
+    pendingCostumeState: boolean;
+    api: string | null;
+    note: string | null;
+  };
+}
+
+/** AI 出角色草稿（不入库） */
+export async function aiGenerateCharacterDraft(params: {
+  projectId: number;
+  userDescription: string;
+  textModel?: string;
+}): Promise<AiDraftResponse> {
+  const token = getAuthToken();
+  const response = await fetch('/api/characters/ai-generate-draft', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    },
+    body: JSON.stringify(params)
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data?.message || 'AI 生成草稿失败');
+  return data;
+}
+
+/** 确认草稿 → 落库 + 启动白膜 workflow */
+export async function aiCommitCharacterDraft(params: {
+  projectId: number;
+  draft: AiCharacterDraft;
+  imageModel: string;
+  textModel?: string;
+}): Promise<AiCommitResponse> {
+  const token = getAuthToken();
+  const response = await fetch('/api/characters/ai-generate-commit', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    },
+    body: JSON.stringify(params)
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data?.message || 'AI 提交角色失败');
+  return data;
+}
+
+/** 白膜完成后，启动默认服装状态画风版 workflow */
+export async function generateDefaultCostumeState(
+  characterId: number,
+  params: { imageModel?: string; textModel?: string } = {}
+): Promise<{ message: string; characterId: number; stateId: number; jobId: string; status: string }> {
+  const token = getAuthToken();
+  const response = await fetch(`/api/characters/${characterId}/generate-default-costume-state`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    },
+    body: JSON.stringify(params)
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data?.message || '启动默认服装状态画风版失败');
+  return data;
 }

@@ -47,11 +47,12 @@ function buildReferenceGuidedPrompt(view, style, characterName, options = {}) {
   return `match the character appearance in the reference image exactly, preserve all facial features face shape eye shape eye color hair style hair color skin tone body proportions from reference, keep identical clothing outfit style color fabric pattern accessories jewelry headwear footwear from reference image, character design reference sheet style, ${styleKeywords}, single character, solo, one person, full body, ${viewAngle}, simple clean background, even soft lighting, neutral natural expression`;
 }
 
-// 白膜模式：基础人体形态提示词（不包含任何服装/装饰/装备）
+// 白膜模式：标准化基础着装提示词（白色背心 + 白色短裤，类似游戏建模 T-pose 白模）
+// 目的：避免裸体（合规 + 模型质量），且统一中性着装以免干扰后续服装叠加判断
 const BASE_MODEL_BODY = {
-  male: 'nude male body, bare skin, no clothing, no accessories, no equipment, anatomical reference, clean body silhouette, natural skin tone, muscular anatomy visible',
-  female: 'nude female body, bare skin, no clothing, no accessories, no equipment, anatomical reference, clean body silhouette, natural skin tone, body anatomy visible',
-  unknown: 'nude body, bare skin, no clothing, no accessories, no equipment, anatomical reference, clean body silhouette, natural skin tone'
+  male: 'male character wearing plain pure white sleeveless tank top and plain pure white short shorts, standardized base model outfit, no logos no patterns no text no prints, no accessories, no jewelry, no equipment, no footwear, bare arms and legs visible, clean body silhouette, natural skin tone, game engine base mesh style',
+  female: 'female character wearing plain pure white sleeveless tank top and plain pure white short shorts, standardized base model outfit, no logos no patterns no text no prints, no accessories, no jewelry, no equipment, no footwear, bare arms and legs visible, clean body silhouette, natural skin tone, game engine base mesh style',
+  unknown: 'character wearing plain pure white sleeveless tank top and plain pure white short shorts, standardized base model outfit, no logos no patterns no text no prints, no accessories, no jewelry, no equipment, no footwear, bare arms and legs visible, clean body silhouette, natural skin tone, game engine base mesh style'
 };
 
 /**
@@ -128,15 +129,17 @@ async function generateViewPrompt(view, characterName, appearance, description, 
     ? `\n- 【身体元素标记】角色身体上有以下永久性标记，必须在生成的图像中体现：${bodyElements}`
     : '';
   const baseModelNote = isBaseModel 
-    ? `\n\n【白膜模式 - 基础人体形态】此角色正在生成基础白膜版本，要求生成纯粹的人体基础形态：
+    ? `\n\n【白膜模式 - 标准化基础着装】此角色正在生成基础白膜版本，类似游戏建模里的 base mesh，穿着统一的标准化占位着装（白色背心 + 白色短裤），以便后续叠加服装和配饰：
 - 身体描述必须为：${baseModelBodyPrompt}
-- 绝对不能包含任何服装（衣服、裤子、裙子、鞋子等）
-- 绝对不能包含任何装饰品（首饰、帽子、眼镜、发饰等）
-- 绝对不能包含任何装备（武器、背包、道具等）
+- 必须穿着：纯白色无花纹无 logo 的贴身背心（无袖）+ 纯白色短裤，仅此两件
+- 严禁穿着任何其他服装（裙子、外套、披风、长裤、裤装、盔甲、战袍等都不行）
+- 严禁添加任何装饰品（首饰、帽子、眼镜、发饰、徽章等）
+- 严禁添加任何装备（武器、背包、道具、腰带、挂件等）
+- 严禁添加鞋子袜子，手臂和腿部必须裸露可见
 - 保留角色的面部特征（脸型、眼睛、鼻子、嘴巴等）和发型发色
 - 保留角色的体型比例（身高、体型、肤色等）
-- 只展示人体的基本结构、肌肉轮廓和皮肤${bodyElementsNote}
-- 此基础形态将作为后续添加服装和装饰的基础参考`
+- 展示人体的基本结构、肌肉轮廓和皮肤${bodyElementsNote}
+- 此基础形态将作为后续叠加服装和装饰的纯净基准参考`
     : '';
 
   // 侧面/背面时强调与正面图严格一致
@@ -162,7 +165,7 @@ async function generateViewPrompt(view, characterName, appearance, description, 
     : appearance;
 
   const clothingRule = isBaseModel
-    ? `4. 【白膜模式】角色必须是裸体基础形态，不能包含任何服装、装饰品或装备。只描述人体的基本结构（肤色、体型、肌肉轮廓）和面部/头发特征。必须包含: ${baseModelBodyPrompt}`
+    ? `4. 【白膜模式】角色必须穿着统一的标准化白膜着装：纯白色无花纹贴身背心 + 纯白色短裤，类似游戏建模 base mesh。不能包含任何其他服装、装饰品、装备或鞋子。重点描述人体的基本结构（肤色、体型、肌肉轮廓）和面部/头发特征。必须包含: ${baseModelBodyPrompt}`
     : '4. 必须包含角色的完整外貌特征（服装、发型、体型、配饰、肤色等），越详细越好。每一个服装细节都必须逐项写出：衣服的款式、颜色、材质、层次（内衣/外衣/披风/盔甲等）、领口样式、袖口样式、腰带、鞋子等';
 
   const fullPrompt = `你是一个专业的角色设计图提示词专家。你的任务是生成用于 AI 绘图的单个角色参考图提示词。

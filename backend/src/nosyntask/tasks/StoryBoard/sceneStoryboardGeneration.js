@@ -184,21 +184,33 @@ async function handleSceneStoryboardGeneration(inputParams, onProgress) {
 
   if (onProgress) onProgress(10);
 
-  // 查询项目中已有的角色及外观特征
+  // 查询项目中已有的角色及外观特征（使用白膜+服装分层组合 + 激活状态）
   let characterAppearanceSection = '';
   if (projectId) {
     try {
       const existingChars = await queryAll(
-        `SELECT name, appearance, description FROM characters WHERE project_id = ? AND appearance IS NOT NULL AND appearance != ''`,
+        `SELECT c.name, c.appearance, c.base_appearance, c.outfit_appearance, c.description,
+                cs.name AS active_state_name, cs.outfit AS active_outfit, cs.hairstyle AS active_hairstyle, cs.accessories AS active_accessories, cs.age_stage AS active_age_stage
+         FROM characters c
+         LEFT JOIN character_states cs ON cs.character_id = c.id AND cs.is_active = 1 AND cs.is_base_model = 0
+         WHERE c.project_id = ? AND (c.appearance IS NOT NULL AND c.appearance != '')`,
         [projectId]
       );
       if (existingChars.length > 0) {
-        const charLines = existingChars.map(c =>
-          `- ${c.name}：${c.appearance}${c.description ? `（${c.description}）` : ''}`
-        ).join('\n');
+        const charLines = existingChars.map(c => {
+          const parts = [];
+          if (c.base_appearance) parts.push(`体貌: ${c.base_appearance}`);
+          const outfitDesc = c.active_outfit || c.outfit_appearance;
+          if (outfitDesc) parts.push(`服装: ${outfitDesc}`);
+          if (c.active_hairstyle) parts.push(`发型: ${c.active_hairstyle}`);
+          if (c.active_accessories) parts.push(`配饰: ${c.active_accessories}`);
+          if (c.active_age_stage) parts.push(`年龄: ${c.active_age_stage}`);
+          const fullAppearance = parts.length > 0 ? parts.join('；') : c.appearance;
+          return `- ${c.name}：${fullAppearance}${c.active_state_name ? `（状态: ${c.active_state_name}）` : ''}${c.description ? `，${c.description}` : ''}`;
+        }).join('\n');
         characterAppearanceSection = `
-**【角色外观特征表】**
-以下角色有固定外观特征，在 description 中提到角色时须包含其关键外观特征（发型、服装等），而非仅写角色名。characters 数组仍使用角色名。
+**【角色外观特征表 - 白膜+服装分层】**
+角色外貌 = 白膜体貌（不可更换的身体特征） + 服装状态（可更换的穿戴物品）。在 description 中提到角色时须包含其完整外貌特征（体貌+服装），而非仅写角色名。characters 数组仍使用角色名。
 ${charLines}
 
 `;

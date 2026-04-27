@@ -36,6 +36,8 @@ interface CharacterModalProps {
   selectedImageModel?: string;
   selectedTextModel?: string;
   userProjects?: Project[];
+  /** 当前上下文项目ID，用于状态编辑器展示"项目画风版"入口 */
+  projectId?: number | null;
 }
 
 const CharacterModal: React.FC<CharacterModalProps> = ({
@@ -51,7 +53,8 @@ const CharacterModal: React.FC<CharacterModalProps> = ({
   aiModels = [],
   selectedImageModel = '',
   userProjects = [],
-  selectedTextModel = ''
+  selectedTextModel = '',
+  projectId = null
 }) => {
   // 当前选择的分组（用于添加新标签）
   const [selectedGroupId, setSelectedGroupId] = useState<string>('');
@@ -490,12 +493,50 @@ const CharacterModal: React.FC<CharacterModalProps> = ({
 
                   <div className="space-y-1.5">
                     <Textarea
-                      label="外观特征（AI生成核心参数）"
-                      placeholder={"请详细描述角色的固定外观特征，AI 将以此识别角色。\n示例：穿黑色西装的短发男生、扎高马尾穿白衬衫的女生\n\n建议包含：发型发色、服装款式颜色、配饰、体型、肤色、年龄特征等"}
-                      value={formData.appearance}
-                      onValueChange={(val) => setFormData({ ...formData, appearance: val })}
+                      label="白膜体貌（不可更换的身体特征）"
+                      placeholder={"描述角色的身体特征（不含服装），白膜生成会基于此描述。\n示例：18岁女性，165cm偏瘦体型，浅肤色，长黑发微卷，琥珀色瞳孔，猫脸型，左眼角小泪痣\n\n包含：年龄段、性别、身高体型、肤色、发型发色、瞳色瞳型、脸型五官、永久身体标记（疤痕/胎记/纹身）"}
+                      value={formData.base_appearance || ''}
+                      onValueChange={(val) => setFormData({ ...formData, base_appearance: val, appearance: [val, formData.outfit_appearance || ''].filter(Boolean).join('；') })}
                       minRows={3}
                       maxRows={6}
+                      classNames={{
+                        input: "bg-transparent text-slate-100 placeholder:text-slate-500",
+                        label: "text-cyan-400 font-medium",
+                        inputWrapper: "bg-slate-800/60 border border-cyan-500/30 hover:border-cyan-500/50 shadow-sm"
+                      }}
+                    />
+                    <p className="text-[10px] text-cyan-400/70 px-1">
+                      白膜体貌是角色的基础形态，先生成白膜再叠加服装。此处只描述身体不可更换的特征
+                    </p>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Textarea
+                      label="服装描述（可更换的穿戴物品）"
+                      placeholder={"描述角色的服装和配饰，默认服装状态会基于此生成。\n示例：白色长袖衬衫，深蓝百褶裙，黑色过膝袜，棕色皮带，银色十字架项链\n\n包含：服装款式/颜色/材质、配饰、帽子、鞋子等"}
+                      value={formData.outfit_appearance || ''}
+                      onValueChange={(val) => setFormData({ ...formData, outfit_appearance: val, appearance: [formData.base_appearance || '', val].filter(Boolean).join('；') })}
+                      minRows={3}
+                      maxRows={6}
+                      classNames={{
+                        input: "bg-transparent text-slate-100 placeholder:text-slate-500",
+                        label: "text-pink-400 font-medium",
+                        inputWrapper: "bg-slate-800/60 border border-pink-500/30 hover:border-pink-500/50 shadow-sm"
+                      }}
+                    />
+                    <p className="text-[10px] text-pink-400/70 px-1">
+                      服装是可更换的，通过角色状态管理不同服装。此处为默认服装
+                    </p>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Textarea
+                      label="完整外貌（自动组合，可微调）"
+                      placeholder="白膜体貌 + 服装描述的自动组合结果，可在此微调"
+                      value={formData.appearance}
+                      onValueChange={(val) => setFormData({ ...formData, appearance: val })}
+                      minRows={2}
+                      maxRows={4}
                       classNames={{
                         input: "bg-transparent text-slate-100 placeholder:text-slate-500",
                         label: "text-amber-400 font-medium",
@@ -503,7 +544,7 @@ const CharacterModal: React.FC<CharacterModalProps> = ({
                       }}
                     />
                     <p className="text-[10px] text-amber-400/70 px-1">
-                      此字段是 AI 识别角色的核心依据，请确保描述唯一、具体且固定
+                      完整外貌 = 白膜体貌 + 服装描述，AI 识别角色的核心依据
                     </p>
                   </div>
 
@@ -1074,6 +1115,7 @@ const CharacterModal: React.FC<CharacterModalProps> = ({
                   <CharacterStateEditor
                     characterId={editMode && formData.id ? formData.id : null}
                     disabled={!editMode || !formData.id}
+                    projectId={projectId}
                     onStateActivated={(state: CharacterState) => {
                       // 当状态被激活时，更新角色主图
                       if (state.image_url || state.front_view_url) {

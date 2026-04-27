@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Modal,
   ModalContent,
@@ -12,7 +12,7 @@ import {
   SelectItem,
   Progress,
 } from '@heroui/react';
-import { Sparkles, Wand2, AlertCircle } from 'lucide-react';
+import { Sparkles, Wand2, Info } from 'lucide-react';
 import { useWorkflow, consumeWorkflow } from '../../hooks/useWorkflow';
 import { getAuthToken } from '../../services/auth';
 import type { Project } from '../../services/projects';
@@ -47,6 +47,7 @@ const ScriptGenerateModal: React.FC<ScriptGenerateModalProps> = ({
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [length, setLength] = useState('短篇');
+  const [episodeInput, setEpisodeInput] = useState<string>('');
   const [textModel, setTextModel] = useState(defaultTextModel || '');
   const [generating, setGenerating] = useState(false);
   const [generatingScriptId, setGeneratingScriptId] = useState<number | null>(null);
@@ -58,25 +59,55 @@ const ScriptGenerateModal: React.FC<ScriptGenerateModalProps> = ({
     progress: number;
   } | null>(null);
 
-  // 可用文本模型
-  const textModels = aiModels.filter(
-    (m) => (m.type || m.category || '').toUpperCase() === 'TEXT'
+  // 可用文本模型（用 useMemo 稳定引用，避免触发下方 useEffect 预期外重置）
+  const textModels = useMemo(
+    () => aiModels.filter((m) => (m.type || m.category || '').toUpperCase() === 'TEXT'),
+    [aiModels]
   );
 
-  // 当模态框打开时，重置状态
+  // 检测项目是否已设置叙事风格
+  const selectedProjectStyleInfo = useMemo(() => {
+    if (!projectId) return null;
+    const project = projects.find((p) => String(p.id) === projectId);
+    if (!project) return null;
+    let hasStoryStyle = false;
+    let hasVisualStyle = false;
+    try {
+      const raw = (project as any).settings_json;
+      const settings = typeof raw === 'string' ? (raw ? JSON.parse(raw) : {}) : (raw || {});
+      hasStoryStyle = !!settings?.storyStyle;
+      hasVisualStyle = !!settings?.visualStyle;
+    } catch {
+      hasStoryStyle = false;
+      hasVisualStyle = false;
+    }
+    return { hasStoryStyle, hasVisualStyle, projectName: project.name };
+  }, [projectId, projects]);
+
+  // 集数输入校验
+  const episodeNumberParsed = useMemo(() => {
+    if (!episodeInput.trim()) return null;
+    const n = Number(episodeInput.trim());
+    if (!Number.isInteger(n) || n < 1) return NaN;
+    return n;
+  }, [episodeInput]);
+
+  // 当模态框打开时，重置状态 (只依赖 isOpen，避免中途调用等导致 projectId 被清空)
   useEffect(() => {
     if (isOpen) {
       setProjectId('');
       setTitle('');
       setDescription('');
       setLength('短篇');
+      setEpisodeInput('');
       setTextModel(defaultTextModel || textModels[0]?.name || '');
       setGenerating(false);
       setGeneratingScriptId(null);
       setJobId(null);
       setProgressInfo(null);
     }
-  }, [isOpen, defaultTextModel, textModels]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
 
   // 工作流轮询
   const { job, isRunning, isCompleted, isFailed } = useWorkflow(jobId, {
@@ -181,12 +212,16 @@ const ScriptGenerateModal: React.FC<ScriptGenerateModalProps> = ({
       onError?.('请选择目标项目');
       return;
     }
-    if (!description.trim() && !title.trim()) {
-      onError?.('请至少填写标题或故事概述');
+    if (!description.trim()) {
+      onError?.('请填写故事概述');
       return;
     }
     if (!textModel) {
       onError?.('请选择文本模型');
+      return;
+    }
+    if (Number.isNaN(episodeNumberParsed)) {
+      onError?.('目标集数需为大于等于 1 的整数');
       return;
     }
 
@@ -205,6 +240,7 @@ const ScriptGenerateModal: React.FC<ScriptGenerateModalProps> = ({
           description: description.trim(),
           length,
           textModel,
+          ...(episodeNumberParsed ? { episodeNumber: episodeNumberParsed } : {}),
         }),
       });
 
@@ -226,7 +262,8 @@ const ScriptGenerateModal: React.FC<ScriptGenerateModalProps> = ({
     !generating &&
     projectId &&
     textModel &&
-    (title.trim() || description.trim());
+    description.trim() &&
+    !Number.isNaN(episodeNumberParsed);
 
   return (
     <Modal isOpen={isOpen} onOpenChange={onOpenChange} size="xl" scrollBehavior="inside">
@@ -240,7 +277,7 @@ const ScriptGenerateModal: React.FC<ScriptGenerateModalProps> = ({
             <ModalBody className="space-y-4">
               {/* 项目选择 */}
               <Select
-                label="目标项目 *"
+                label="目标项目"
                 selectedKeys={projectId ? [projectId] : []}
                 onSelectionChange={(keys) => {
                   const k = Array.from(keys)[0] as string;
@@ -257,6 +294,16 @@ const ScriptGenerateModal: React.FC<ScriptGenerateModalProps> = ({
                 ))}
               </Select>
 
+              {/* 风格提示：项目尚未设置叙事风格时提醒自动推荐 */}
+              {selectedProjectStyleInfo && !selectedProjectStyleInfo.hasStoryStyle && (
+                <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-500/10 border border-amber-500/30">
+                  <Info className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+                  <p className="text-xs text-amber-700 dark:text-amber-300">
+                    项目「{selectedProjectStyleInfo.projectName}」尚未设置叙事风格，首次生成时将自动调用 AI 推荐并写入项目设置，可能多花 10–30 秒。如需自定义风格，请先在项目设置中配置。
+                  </p>
+                </div>
+              )}
+
               {/* 标题 */}
               <Input
                 label="剧本标题"
@@ -268,7 +315,7 @@ const ScriptGenerateModal: React.FC<ScriptGenerateModalProps> = ({
 
               {/* 故事概述 */}
               <Textarea
-                label="故事概述 *"
+                label="故事概述"
                 placeholder="描述你的故事创意、角色设定、剧情走向等..."
                 value={description}
                 onValueChange={setDescription}
@@ -313,6 +360,20 @@ const ScriptGenerateModal: React.FC<ScriptGenerateModalProps> = ({
                   ))}
                 </Select>
               </div>
+
+              {/* 目标集数（可选） */}
+              <Input
+                label="目标集数"
+                placeholder="留空 = 自动生成下一集，或输入整数指定集数（如 1 重写第一集草稿）"
+                value={episodeInput}
+                onValueChange={setEpisodeInput}
+                isDisabled={generating}
+                type="number"
+                min={1}
+                isInvalid={Number.isNaN(episodeNumberParsed)}
+                errorMessage={Number.isNaN(episodeNumberParsed) ? '集数需为大于等于 1 的整数' : undefined}
+                description="如果该集已存在且状态为草稿，将覆盖重生；已完成的集数不能重复生成。"
+              />
 
               {/* 生成进度 */}
               {generating && progressInfo && (

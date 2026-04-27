@@ -19,6 +19,32 @@ const { generationStartService, sendGenerationError } = require('../../modules/g
 const AGE_STAGES = ['童年', '少年', '青年', '中年', '老年'];
 
 /**
+ * 白膜就绪守卫：校验角色是否已有白膜三视图
+ * 返回 { ready: boolean, reason?: string, baseState?: object }
+ * 规则：必须存在 is_base_model=1 且 front_view_url 非空的状态
+ */
+async function checkBaseModelReady(characterId) {
+  const baseState = await queryOne(
+    `SELECT id, front_view_url, side_view_url, back_view_url, generation_status
+     FROM character_states
+     WHERE character_id = ? AND is_base_model = 1
+     ORDER BY id ASC LIMIT 1`,
+    [characterId]
+  );
+  if (!baseState) {
+    return { ready: false, reason: '角色尚未生成白膜状态，请先在角色管理中生成白膜三视图' };
+  }
+  if (!baseState.front_view_url) {
+    return {
+      ready: false,
+      reason: '角色白膜三视图尚未生成完成，请先完成白膜三视图再进行后续操作',
+      baseState,
+    };
+  }
+  return { ready: true, baseState };
+}
+
+/**
  * 获取默认文本模型
  */
 async function getDefaultTextModel() {
@@ -425,6 +451,16 @@ module.exports = (router) => {
         return res.status(404).json({ message: '角色不存在或无权访问' });
       }
 
+      // 硬强制：未完成白膜三视图的角色禁止创建服装/状态
+      const baseCheck = await checkBaseModelReady(id);
+      if (!baseCheck.ready) {
+        return res.status(409).json({
+          message: baseCheck.reason,
+          code: 'BASE_MODEL_NOT_READY',
+          baseState: baseCheck.baseState || null,
+        });
+      }
+
       // 获取当前最大排序值
       const maxOrder = await queryOne(
         'SELECT MAX(sort_order) as max_order FROM character_states WHERE character_id = ?',
@@ -819,6 +855,18 @@ module.exports = (router) => {
         return res.status(404).json({ message: '角色状态不存在' });
       }
 
+      // 硬强制：非白膜状态必须白膜就绪后才能生成三视图
+      if (!existingState.is_base_model) {
+        const baseCheck = await checkBaseModelReady(id);
+        if (!baseCheck.ready) {
+          return res.status(409).json({
+            message: baseCheck.reason,
+            code: 'BASE_MODEL_NOT_READY',
+            baseState: baseCheck.baseState || null,
+          });
+        }
+      }
+
       // 更新状态为生成中
       await execute(
         `UPDATE character_states SET generation_status = 'generating', updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
@@ -979,3 +1027,7 @@ module.exports = (router) => {
     }
   });
 };
+
+// 导出守卫函数，供其他模块（linkCharacters、styledImages、create）复用
+module.exports.checkBaseModelReady = checkBaseModelReady;
+module.exports.ensureBaseModelState = ensureBaseModelState;

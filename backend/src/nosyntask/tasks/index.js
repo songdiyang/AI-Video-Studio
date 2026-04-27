@@ -37,6 +37,8 @@ const handleMagicPaintGeneration = require('./StoryBoard/magicPaintGeneration');
 const handleHdRepairGeneration = require('./StoryBoard/hdRepairGeneration');
 const handleBatchPromptOptimization = require('./StoryBoard/batchPromptOptimization');
 const handleSinglePromptOptimization = require('./StoryBoard/singlePromptOptimization');
+const handleCharacterStateStyledGeneration = require('./StoryBoard/characterStateStyledGeneration');
+const handleSceneStyledGeneration = require('./StoryBoard/sceneStyledGeneration');
 
 module.exports = {
   handleScriptGeneration,
@@ -73,5 +75,7 @@ module.exports = {
   handleMagicPaintGeneration,
   handleHdRepairGeneration,
   handleBatchPromptOptimization,
-  handleSinglePromptOptimization
+  handleSinglePromptOptimization,
+  handleCharacterStateStyledGeneration,
+  handleSceneStyledGeneration
 };

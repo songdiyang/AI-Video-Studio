@@ -5,7 +5,7 @@
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Button, Tabs, Tab } from '@heroui/react';
-import { Save, Trash2, Wand2, Type, Camera, Users, MapPin, Zap, History, RotateCcw, GitCompare, Sparkles, Undo2, Loader2, MessageCircle, Plus, X as XIcon, Mic } from 'lucide-react';
+import { Save, Trash2, Wand2, Users, MapPin, MessageCircle, Mic, History, RotateCcw, GitCompare, Sparkles, Undo2, Loader2, Plus, X as XIcon, Star } from 'lucide-react';
 import { useToast } from '../../../contexts/ToastContext';
 import { BLOCK_OPTIONS } from './utils/blockRegistry';
 import { getAuthToken } from '../../../services/auth';
@@ -51,9 +51,16 @@ interface Character {
   id: number;
   name: string;
   appearance?: string;
+  base_appearance?: string;        // 白膜体貌描述
+  outfit_appearance?: string;      // 服装外貌描述
   personality?: string;
   description?: string;
   imageUrl?: string;
+  // 白膜/服装状态概要
+  has_base_model_views?: boolean | number;  // 是否已生成白膜三视图
+  active_state_name?: string;      // 当前激活状态名称
+  active_state_image_url?: string; // 当前激活状态正面图
+  base_model_image_url?: string;   // 白膜正面图 URL
 }
 
 interface SceneItem {
@@ -154,13 +161,10 @@ function getRangeFromPoint(x: number, y: number): Range | null {
 }
 
 const COMPONENT_CATEGORIES = [
-  { key: 'text', label: '文本', icon: Type },
-  { key: 'shot', label: '镜头', icon: Camera },
   { key: 'character', label: '角色', icon: Users },
   { key: 'dialogue', label: '台词', icon: MessageCircle },
   { key: 'voiceover', label: '画外音', icon: Mic },
   { key: 'scene', label: '场景', icon: MapPin },
-  { key: 'action', label: '动作', icon: Zap },
 ];
 
 const DialogEditor: React.FC<DialogEditorProps> = ({
@@ -187,7 +191,7 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
   const lastRenderedRef = useRef('');
   const [promptText, setPromptText] = useState(initialPrompt);
   const [isDirty, setIsDirty] = useState(false);
-  const [activeTab, setActiveTab] = useState('shot');
+  const [activeTab, setActiveTab] = useState('character');
   const [referenceImages, setReferenceImages] = useState<ReferenceImage[]>([]);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [characters, setCharacters] = useState<Character[]>([]);
@@ -551,9 +555,17 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
           id: c.id,
           name: c.name,
           appearance: c.appearance,
+          base_appearance: c.base_appearance,
+          outfit_appearance: c.outfit_appearance,
           personality: c.personality,
           description: c.description,
           imageUrl: c.image_url || c.imageUrl,
+          base_model_image_url: c.base_model_image_url,
+          has_base_model_views: c.has_base_model_views,
+          active_state_name: c.active_state_name,
+          active_state_outfit: c.active_state_outfit,
+          active_state_image_url: c.active_state_image_url,
+          statesCount: c.states_count || 0,
         }));
         setCharacters(mapped);
       }
@@ -1000,80 +1012,59 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
                   <div className="text-xs text-[var(--text-muted)] py-2">暂无角色</div>
                 ) : (
                   <div className="space-y-2">
-                    {characters.map(char => (
-                      <div
-                        key={char.id}
-                        draggable
-                        onDragStart={(e) => {
-                          e.dataTransfer.setData('application/json', JSON.stringify({
-                            componentType: 'character',
-                            template: `${char.name}，`
-                          }));
-                        }}
-                        onClick={() => insertComponent(`${char.name}，`)}
-                        className="flex items-center gap-2 p-2 rounded bg-rose-500/10 hover:bg-rose-500/20 cursor-grab transition-colors"
-                      >
-                        {char.imageUrl ? (
-                          <img src={char.imageUrl} alt={char.name} className="w-8 h-8 rounded-full object-cover" />
-                        ) : (
-                          <div className="w-8 h-8 rounded-full bg-rose-500/20 flex items-center justify-center text-xs text-rose-600">
-                            {char.name.charAt(0)}
+                    {characters.map(char => {
+                      const hasBaseViews = char.has_base_model_views === true || char.has_base_model_views === 1;
+                      const charImage = char.active_state_image_url || char.imageUrl;
+                      return (
+                        <div
+                          key={char.id}
+                          draggable
+                          onDragStart={(e) => {
+                            e.dataTransfer.setData('application/json', JSON.stringify({
+                              componentType: 'character',
+                              template: `${char.name}，`
+                            }));
+                          }}
+                          onClick={() => insertComponent(`${char.name}，`)}
+                          className="flex items-center gap-2 p-2 rounded bg-rose-500/10 hover:bg-rose-500/20 cursor-grab transition-colors"
+                        >
+                          <div className="relative shrink-0">
+                            {charImage ? (
+                              <img src={charImage} alt={char.name} className="w-8 h-8 rounded-full object-cover" />
+                            ) : (
+                              <div className="w-8 h-8 rounded-full bg-rose-500/20 flex items-center justify-center text-xs text-rose-600">
+                                {char.name.charAt(0)}
+                              </div>
+                            )}
+                            {/* 白膜指示点 */}
+                            {hasBaseViews && (
+                              <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-amber-500 rounded-full flex items-center justify-center border border-rose-900">
+                                <Star className="w-1.5 h-1.5 text-white fill-white" />
+                              </div>
+                            )}
                           </div>
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <div className="text-xs font-medium text-rose-700 truncate">{char.name}</div>
-                          {char.appearance && (
-                            <div className="text-[10px] text-rose-500/70 truncate">{char.appearance.slice(0, 20)}...</div>
-                          )}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1">
+                              <span className="text-xs font-medium text-rose-700 truncate">{char.name}</span>
+                              {char.active_state_name && (
+                                <span className="text-[9px] px-1 py-0 rounded bg-pink-500/15 text-pink-500 truncate max-w-16">{char.active_state_name}</span>
+                              )}
+                            </div>
+                            {char.base_appearance ? (
+                              <div className="text-[10px] text-rose-500/70 truncate">
+                                <span className="text-cyan-500/60">体貌</span> + <span className="text-pink-500/60">服装</span>: {(char.base_appearance || '').slice(0, 15)}...
+                              </div>
+                            ) : char.appearance ? (
+                              <div className="text-[10px] text-rose-500/70 truncate">{char.appearance.slice(0, 20)}...</div>
+                            ) : null}
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
             )}
-            <div>
-              <div className="text-xs text-[var(--text-muted)] mb-2">位置</div>
-              <div className="flex flex-wrap gap-1.5">
-                {BLOCK_OPTIONS.characterPosition.map(opt => (
-                  <button
-                    key={opt.value}
-                    onClick={() => insertComponent(`位于画面${opt.label}，`)}
-                    className="px-2 py-1 rounded bg-rose-500/10 text-rose-600 text-xs hover:bg-rose-500/20 transition-colors"
-                    draggable
-                    onDragStart={(e) => {
-                      e.dataTransfer.setData('application/json', JSON.stringify({
-                        componentType: 'position',
-                        template: `位于画面${opt.label}，`
-                      }));
-                    }}
-                  >
-                    {opt.icon} {opt.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div>
-              <div className="text-xs text-[var(--text-muted)] mb-2">景深层次</div>
-              <div className="flex flex-wrap gap-1.5">
-                {BLOCK_OPTIONS.verticalPosition.map(opt => (
-                  <button
-                    key={opt.value}
-                    onClick={() => insertComponent(`位于${opt.label}，`)}
-                    className="px-2 py-1 rounded bg-rose-500/10 text-rose-600 text-xs hover:bg-rose-500/20 transition-colors"
-                    draggable
-                    onDragStart={(e) => {
-                      e.dataTransfer.setData('application/json', JSON.stringify({
-                        componentType: 'depth',
-                        template: `位于${opt.label}，`
-                      }));
-                    }}
-                  >
-                    {opt.icon} {opt.label}
-                  </button>
-                ))}
-              </div>
-            </div>
           </div>
         );
       case 'scene':
@@ -1147,48 +1138,6 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
                 )}
               </div>
             )}
-            <div>
-              <div className="text-xs text-[var(--text-muted)] mb-2">光线</div>
-              <div className="flex flex-wrap gap-1.5">
-                {BLOCK_OPTIONS.lighting.map(opt => (
-                  <button
-                    key={opt.value}
-                    onClick={() => insertComponent(`${opt.label}，`)}
-                    className="px-2 py-1 rounded bg-emerald-500/10 text-emerald-600 text-xs hover:bg-emerald-500/20 transition-colors"
-                    draggable
-                    onDragStart={(e) => {
-                      e.dataTransfer.setData('application/json', JSON.stringify({
-                        componentType: 'lighting',
-                        template: `${opt.label}，`
-                      }));
-                    }}
-                  >
-                    {opt.icon} {opt.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div>
-              <div className="text-xs text-[var(--text-muted)] mb-2">氛围</div>
-              <div className="flex flex-wrap gap-1.5">
-                {BLOCK_OPTIONS.atmosphere.map(opt => (
-                  <button
-                    key={opt.value}
-                    onClick={() => insertComponent(`${opt.label}氛围，`)}
-                    className="px-2 py-1 rounded bg-emerald-500/10 text-emerald-600 text-xs hover:bg-emerald-500/20 transition-colors"
-                    draggable
-                    onDragStart={(e) => {
-                      e.dataTransfer.setData('application/json', JSON.stringify({
-                        componentType: 'atmosphere',
-                        template: `${opt.label}氛围，`
-                      }));
-                    }}
-                  >
-                    {opt.icon} {opt.label}
-                  </button>
-                ))}
-              </div>
-            </div>
           </div>
         );
       case 'action':

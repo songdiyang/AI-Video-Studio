@@ -30,6 +30,9 @@ import PropList from './PropList';
 import CostumeList from './CostumeList';
 import ScriptList from './ScriptList';
 import ScriptGenerateModal from './ScriptGenerateModal';
+import CharacterDraftPreviewModal from './CharacterDraftPreviewModal';
+import { useWorkflow, consumeWorkflow } from '../../hooks/useWorkflow';
+import { generateDefaultCostumeState } from '../../services/assets';
 import { CharacterModal, SceneModal, PropModal, CostumeModal } from './AssetModel';
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
@@ -364,6 +367,49 @@ const AssetsManager: React.FC = () => {
     onOpen: onScriptGenerateOpen,
     onOpenChange: onScriptGenerateOpenChange,
   } = useDisclosure();
+
+  // AI 生成角色模态框
+  const {
+    isOpen: isCharGenOpen,
+    onOpen: onCharGenOpen,
+    onOpenChange: onCharGenOpenChange,
+  } = useDisclosure();
+
+  // 白膜 workflow 轮询：完成后自动触发默认服装画风版
+  const [pendingCharGen, setPendingCharGen] = useState<{ characterId: number; jobId: string } | null>(null);
+  useWorkflow(pendingCharGen?.jobId || null, {
+    onCompleted: async (completedJob) => {
+      const ctx = pendingCharGen;
+      if (!ctx) return;
+      try {
+        await consumeWorkflow(completedJob.id);
+      } catch (e) {
+        console.warn('[AssetsManager] 白膜 workflow 标记消费失败:', e);
+      }
+      try {
+        await generateDefaultCostumeState(ctx.characterId, {
+          imageModel: selectedImageModel || undefined,
+          textModel: selectedTextModel || undefined,
+        });
+        showToast('白膜生成完成，正在生成默认服装画风版…', 'success');
+        loadData();
+      } catch (e: any) {
+        console.error('[AssetsManager] 启动默认服装画风版失败:', e);
+        showToast(e?.message || '启动默认服装画风版失败', 'error');
+      } finally {
+        setPendingCharGen(null);
+      }
+    },
+    onFailed: async (failedJob) => {
+      try {
+        await consumeWorkflow(failedJob.id);
+      } catch (e) {
+        console.warn('[AssetsManager] 白膜 workflow 标记消费失败:', e);
+      }
+      showToast('角色白膜生成失败，请重试', 'error');
+      setPendingCharGen(null);
+    },
+  });
   
   const [formData, setFormData] = useState<any>({
     name: '',
@@ -901,14 +947,31 @@ const AssetsManager: React.FC = () => {
           <h1 className="text-2xl font-bold pro-title">资产管理</h1>
           <div className="flex gap-2">
             {activeTab === 'characters' && (
-              <Button
-                variant="flat"
-                className="pro-btn"
-                startContent={<Settings className="w-4 h-4" />}
-                onPress={onTagManagerOpen}
-              >
-                标签分组管理
-              </Button>
+              <>
+                <Button
+                  variant="flat"
+                  className="pro-btn bg-violet-500/10 text-violet-500 hover:bg-violet-500/20"
+                  startContent={<Sparkles className="w-4 h-4" />}
+                  onPress={() => {
+                    const pid = projectFilter !== 'all' && projectFilter !== 'unused' ? Number(projectFilter) : null;
+                    if (!pid) {
+                      showToast('请先在左侧选择目标项目，AI 生成的角色将绑定到项目的画风', 'warning');
+                      return;
+                    }
+                    onCharGenOpen();
+                  }}
+                >
+                  AI 生成角色
+                </Button>
+                <Button
+                  variant="flat"
+                  className="pro-btn"
+                  startContent={<Settings className="w-4 h-4" />}
+                  onPress={onTagManagerOpen}
+                >
+                  标签分组管理
+                </Button>
+              </>
             )}
             {activeTab === 'scripts' && (
               <Button
@@ -1168,6 +1231,7 @@ const AssetsManager: React.FC = () => {
             selectedImageModel={selectedImageModel}
             selectedTextModel={selectedTextModel}
             userProjects={userProjects}
+            projectId={formData.project_id || getActiveProjectId()}
           />
         )}
         
@@ -1180,6 +1244,8 @@ const AssetsManager: React.FC = () => {
             setFormData={setFormData}
             onSave={handleSave}
             userProjects={userProjects}
+            projectId={formData.project_id || getActiveProjectId()}
+            selectedImageModel={selectedImageModel}
           />
         )}
         
@@ -1312,6 +1378,30 @@ const AssetsManager: React.FC = () => {
           }}
           onError={(msg) => showToast(msg, 'error')}
         />
+
+        {/* AI 生成角色弹窗 */}
+        {(() => {
+          const pid = projectFilter !== 'all' && projectFilter !== 'unused' ? Number(projectFilter) : null;
+          const pname = pid ? userProjects.find((p) => p.id === pid)?.name : undefined;
+          if (!pid) return null;
+          return (
+            <CharacterDraftPreviewModal
+              isOpen={isCharGenOpen}
+              onOpenChange={onCharGenOpenChange}
+              projectId={pid}
+              projectName={pname}
+              aiModels={aiModels}
+              defaultTextModel={selectedTextModel}
+              defaultImageModel={selectedImageModel}
+              onCommitted={(res) => {
+                showToast('角色已创建，正在生成白膜三视图…', 'success');
+                setPendingCharGen({ characterId: res.characterId, jobId: res.jobId });
+                loadData();
+              }}
+              onError={(msg) => showToast(msg, 'error')}
+            />
+          );
+        })()}
       </div>
       </div>
     </div>

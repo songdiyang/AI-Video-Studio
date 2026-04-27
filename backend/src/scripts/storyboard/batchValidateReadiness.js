@@ -15,7 +15,7 @@ const { isNonCharacterEntity, MIN_CHARACTER_APPEARANCE } = require('../../utils/
 
 module.exports = async (req, res) => {
   try {
-    const { sceneIds, scriptId, type } = req.body;
+    const { sceneIds, scriptId, projectId, type } = req.body;
     const userId = req.user.id;
 
     // 参数校验
@@ -23,29 +23,42 @@ module.exports = async (req, res) => {
       return res.status(400).json({ error: 'sceneIds 参数必须为非空数组' });
     }
 
-    if (!scriptId) {
-      return res.status(400).json({ error: 'scriptId 参数必填' });
+    if (!scriptId && !projectId) {
+      return res.status(400).json({ error: 'scriptId 或 projectId 参数必填' });
     }
 
     if (!type || !['frame', 'video'].includes(type)) {
       return res.status(400).json({ error: 'type 参数必须为 frame 或 video' });
     }
 
-    // Verify script ownership
-    const script = await queryOne(
-      'SELECT id FROM scripts WHERE id = ? AND user_id = ?',
-      [scriptId, userId]
-    );
-    if (!script) {
-      return res.status(404).json({ error: '剧本不存在或无权访问' });
+    // Verify ownership
+    if (scriptId) {
+      const script = await queryOne(
+        'SELECT id FROM scripts WHERE id = ? AND user_id = ?',
+        [scriptId, userId]
+      );
+      if (!script) {
+        return res.status(404).json({ error: '剧本不存在或无权访问' });
+      }
+    } else {
+      const { getEffectiveProjectRole } = require('../../middleware/collaborationAuth');
+      const role = await getEffectiveProjectRole(userId, projectId);
+      if (!role) {
+        return res.status(403).json({ error: '无权访问该项目' });
+      }
     }
 
     // 1. 批量获取所有分镜数据
     const placeholders = sceneIds.map(() => '?').join(',');
-    const storyboards = await queryAll(
-      `SELECT * FROM storyboards WHERE id IN (${placeholders}) AND script_id = ?`,
-      [...sceneIds, scriptId]
-    );
+    const storyboards = scriptId
+      ? await queryAll(
+          `SELECT * FROM storyboards WHERE id IN (${placeholders}) AND script_id = ?`,
+          [...sceneIds, scriptId]
+        )
+      : await queryAll(
+          `SELECT * FROM storyboards WHERE id IN (${placeholders}) AND project_id = ? AND script_id IS NULL`,
+          [...sceneIds, projectId]
+        );
 
     // 建立 id -> storyboard 映射
     const storyboardMap = {};
@@ -87,12 +100,17 @@ module.exports = async (req, res) => {
       scenesByStoryboard[s.storyboard_id].push(s);
     });
 
-    // 4. 统计同一剧本中每个角色在所有分镜中的出现次数
+    // 4. 统计同一剧本/项目中每个角色在所有分镜中的出现次数
     const charAppearanceMap = {};
-    const allScriptStoryboards = await queryAll(
-      `SELECT variables_json FROM storyboards WHERE script_id = ?`,
-      [scriptId]
-    );
+    const allScriptStoryboards = scriptId
+      ? await queryAll(
+          `SELECT variables_json FROM storyboards WHERE script_id = ?`,
+          [scriptId]
+        )
+      : await queryAll(
+          `SELECT variables_json FROM storyboards WHERE project_id = ? AND script_id IS NULL`,
+          [projectId]
+        );
     for (const sb of allScriptStoryboards) {
       let vars = {};
       try { vars = typeof sb.variables_json === 'string' ? JSON.parse(sb.variables_json) : (sb.variables_json || {}); } catch { vars = {}; }

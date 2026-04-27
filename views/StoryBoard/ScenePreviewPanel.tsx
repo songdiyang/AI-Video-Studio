@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Button, Textarea, Chip } from '@heroui/react';
-import { ImageIcon, Video, Film, Camera, Users, MapPin, Zap, X, Trash2, ZoomIn, ZoomOut, RotateCw, Maximize2, Blocks, ChevronDown, ChevronUp, History, Loader2, Pencil, Check, Plus, Search, Sparkles, Clock, Wand2 } from 'lucide-react';
+import { Button, Textarea, Chip, Select, SelectItem } from '@heroui/react';
+import { ImageIcon, Video, Film, Camera, Users, MapPin, Zap, X, Trash2, ZoomIn, ZoomOut, RotateCw, Maximize2, Blocks, ChevronDown, ChevronUp, History, Loader2, Pencil, Check, Plus, Search, Sparkles, Clock, Wand2, Star, Shirt, Settings2 } from 'lucide-react';
 import { StoryboardScene, DialogueLine } from './useSceneManager';
 import { TaskState } from '../../hooks/useTaskRunner';
 import MagicSpacePanel, { CameraGenerateParams, PaintGenerateParams } from './MagicSpace';
@@ -17,10 +17,10 @@ import { startWorkflow, getWorkflowStatus } from '../../hooks/useWorkflow';
 import StoryboardLockButton from './components/StoryboardLockButton';
 import VideoHistorySidebar from './components/VideoHistorySidebar';
 
-/** 角色选择器：Chip 标签 + 添加下拉 + 点击预览角色长相 */
+/** 角色选择器：Chip 标签 + 添加下拉 + 点击预览角色长相（增强：显示白膜/服装状态） */
 const CharacterTagSelector: React.FC<{
   characters: string[];
-  projectCharacters: { id: number; name: string; image_url?: string; front_view_url?: string }[];
+  projectCharacters: { id: number; name: string; image_url?: string; front_view_url?: string; base_appearance?: string; outfit_appearance?: string; has_base_model?: number; active_state_name?: string; active_state_outfit?: string; active_state_image_url?: string; base_front_view_url?: string }[];
   onSave: (characters: string[]) => void;
 }> = ({ characters, projectCharacters, onSave }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -65,9 +65,14 @@ const CharacterTagSelector: React.FC<{
       <Users className="w-3 h-3 text-[var(--text-muted)] shrink-0" />
       {characters.map(name => {
         const charData = projectCharacters.find(c => c.name === name);
-        const charImageUrl = charData?.front_view_url || charData?.image_url;
+        const charImageUrl = charData?.active_state_image_url || charData?.base_front_view_url || charData?.front_view_url || charData?.image_url;
+        const hasBase = charData?.has_base_model;
+        const stateLabel = charData?.active_state_name;
         return (
           <span key={name} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-blue-500/15 text-blue-400 rounded text-xs group/char">
+            {charImageUrl ? (
+              <img src={charImageUrl} alt={name} className="w-3.5 h-3.5 rounded-full object-cover shrink-0" />
+            ) : null}
             {charImageUrl ? (
               <button
                 onClick={(e) => { e.stopPropagation(); setPreviewChar({ name, imageUrl: charImageUrl }); }}
@@ -78,6 +83,13 @@ const CharacterTagSelector: React.FC<{
               </button>
             ) : (
               <span>{name}</span>
+            )}
+            {hasBase && <Star className="w-2.5 h-2.5 text-amber-400" />}
+            {stateLabel && (
+              <span className="inline-flex items-center gap-0.5 text-[9px] text-pink-400/80 max-w-12 truncate">
+                <Shirt className="w-2 h-2 shrink-0" />
+                {stateLabel}
+              </span>
             )}
             <button onClick={() => toggleCharacter(name)} className="hover:text-red-400 transition-colors">
               <X className="w-2.5 h-2.5" />
@@ -112,6 +124,7 @@ const CharacterTagSelector: React.FC<{
             )}
             {filtered.map(c => {
               const selected = characters.includes(c.name);
+              const charImg = c.active_state_image_url || c.base_front_view_url || c.front_view_url || c.image_url;
               return (
                 <button
                   key={c.id}
@@ -121,7 +134,14 @@ const CharacterTagSelector: React.FC<{
                   }`}
                 >
                   {selected ? <Check className="w-3 h-3 shrink-0" /> : <div className="w-3 h-3 shrink-0" />}
+                  {charImg ? <img src={charImg} alt={c.name} className="w-4 h-4 rounded-full object-cover shrink-0" /> : null}
                   <span className="truncate">{c.name}</span>
+                  {c.has_base_model && <Star className="w-2.5 h-2.5 text-amber-400 shrink-0" />}
+                  {c.active_state_name && (
+                    <span className="text-[9px] text-pink-400/80 truncate max-w-16 shrink-0">
+                      <Shirt className="w-2 h-2 inline" /> {c.active_state_name}
+                    </span>
+                  )}
                 </button>
               );
             })}
@@ -654,7 +674,7 @@ interface ScenePreviewPanelProps {
   onUpdateDialogues?: (dialogues: DialogueLine[]) => Promise<boolean>;
   onUpdateVoiceover?: (voiceover: string) => Promise<boolean>;
   onUpdateCharactersAndLocation?: (characters: string[], location: string, characterIds?: number[], sceneId?: number) => Promise<boolean>;
-  projectCharacters?: { id: number; name: string; image_url?: string }[];
+  projectCharacters?: { id: number; name: string; image_url?: string; front_view_url?: string; base_appearance?: string; outfit_appearance?: string; has_base_model?: number; active_state_name?: string; active_state_outfit?: string; active_state_image_url?: string; base_front_view_url?: string }[];
   projectScenes?: { id: number; name: string; description?: string }[];
   onGenerateImage: (id: number, prompt: string, regenerateTarget?: 'first' | 'last' | 'both', forceRegenerate?: boolean) => Promise<{ success: boolean; error?: string }>;
   onGenerateVideo: (id: number) => Promise<{ success: boolean; error?: string }>;
@@ -669,6 +689,16 @@ interface ScenePreviewPanelProps {
   directorSpaceOpen?: boolean;
   /** 导演空间切换回调（外部控制时用于切换显隐） */
   onDirectorSpaceToggle?: () => void;
+  /** 模型列表 */
+  models?: { name: string; type?: string; category?: string; description?: string; priceSummary?: string }[];
+  /** 当前图片模型 */
+  imageModel?: string;
+  /** 当前视频模型 */
+  videoModel?: string;
+  /** 图片模型切换回调 */
+  onImageModelChange?: (model: string) => void;
+  /** 视频模型切换回调 */
+  onVideoModelChange?: (model: string) => void;
 }
 
 const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
@@ -696,7 +726,12 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
   imageTask,
   videoTask,
   directorSpaceOpen,
-  onDirectorSpaceToggle
+  onDirectorSpaceToggle,
+  models = [],
+  imageModel: propImageModel,
+  videoModel: propVideoModel,
+  onImageModelChange,
+  onVideoModelChange
 }) => {
   const [showStartFrame, setShowStartFrame] = useState(true);
   const [internalDirectorSpaceExpanded, setInternalDirectorSpaceExpanded] = useState(false);
@@ -713,6 +748,22 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
   const [previewFrameType, setPreviewFrameType] = useState<'first' | 'last' | null>(null);
   const { showToast } = useToast();
   const { confirm } = useConfirm();
+
+  // 模型过滤
+  const imageModels = useMemo(() => {
+    const uniqueMap = new Map<string, typeof models[number]>();
+    models.filter(m => (m.type || m.category)?.toUpperCase() === 'IMAGE').forEach(m => {
+      if (!uniqueMap.has(m.name)) uniqueMap.set(m.name, m);
+    });
+    return Array.from(uniqueMap.values());
+  }, [models]);
+  const videoModels = useMemo(() => {
+    const uniqueMap = new Map<string, typeof models[number]>();
+    models.filter(m => (m.type || m.category)?.toUpperCase() === 'VIDEO').forEach(m => {
+      if (!uniqueMap.has(m.name)) uniqueMap.set(m.name, m);
+    });
+    return Array.from(uniqueMap.values());
+  }, [models]);
 
   // 追踪编辑器当前文本（可能未保存）
   const [currentEditorText, setCurrentEditorText] = useState<string>('');
@@ -1735,35 +1786,85 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
         */}
 
         {/* 生成操作 */}
-        <div className="px-4 py-3 border-t border-[var(--border-color)] flex items-center gap-2">
-          <Button
-            size="sm"
-            className={hasFrames 
-              ? "bg-[var(--bg-app)] text-[var(--text-secondary)] border border-[var(--border-color)]"
-              : "pro-btn-primary"
-            }
-            startContent={<ImageIcon className="w-4 h-4" />}
-            onPress={handleGenerateImage}
-            isLoading={isGeneratingImage}
-            isDisabled={isGeneratingImage || isGeneratingVideo}
-          >
-            {hasFrames ? '重新生成帧' : '生成首尾帧'}
-          </Button>
-          
-          {hasFrames && (
+        <div className="px-4 py-3 border-t border-[var(--border-color)] flex items-center gap-2 flex-wrap">
+          {/* 图片生成 + 模型选择 */}
+          <div className="flex items-center gap-1.5">
             <Button
               size="sm"
-              className={hasVideo
+              className={hasFrames 
                 ? "bg-[var(--bg-app)] text-[var(--text-secondary)] border border-[var(--border-color)]"
-                : "bg-rose-500/20 text-rose-400 border border-rose-500/30"
+                : "pro-btn-primary"
               }
-              startContent={<Film className="w-4 h-4" />}
-              onPress={handleGenerateVideo}
-              isLoading={isGeneratingVideo}
+              startContent={<ImageIcon className="w-4 h-4" />}
+              onPress={handleGenerateImage}
+              isLoading={isGeneratingImage}
               isDisabled={isGeneratingImage || isGeneratingVideo}
             >
-              {hasVideo ? '重新生成视频' : '生成视频'}
+              {hasFrames ? '重新生成帧' : '生成首尾帧'}
             </Button>
+            {imageModels.length > 0 && onImageModelChange && (
+              <Select
+                size="sm"
+                selectedKeys={propImageModel ? [propImageModel] : []}
+                onChange={(e) => onImageModelChange(e.target.value)}
+                classNames={{
+                  trigger: "h-8 min-w-[140px] bg-[var(--bg-input)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:border-[var(--accent)]/50",
+                  value: "text-xs",
+                  selectorIcon: "text-[var(--text-muted)]"
+                }}
+                popoverProps={{
+                  classNames: { content: "bg-[var(--bg-elevated)] border border-[var(--border-color)]" }
+                }}
+                aria-label="图片模型"
+              >
+                {imageModels.map((m) => (
+                  <SelectItem key={m.name} textValue={m.name}>
+                    <span className="text-xs">{m.name}</span>
+                  </SelectItem>
+                ))}
+              </Select>
+            )}
+          </div>
+          
+          {/* 视频生成 + 模型选择 */}
+          {hasFrames && (
+            <div className="flex items-center gap-1.5">
+              <Button
+                size="sm"
+                className={hasVideo
+                  ? "bg-[var(--bg-app)] text-[var(--text-secondary)] border border-[var(--border-color)]"
+                  : "bg-rose-500/20 text-rose-400 border border-rose-500/30"
+                }
+                startContent={<Film className="w-4 h-4" />}
+                onPress={handleGenerateVideo}
+                isLoading={isGeneratingVideo}
+                isDisabled={isGeneratingImage || isGeneratingVideo}
+              >
+                {hasVideo ? '重新生成视频' : '生成视频'}
+              </Button>
+              {videoModels.length > 0 && onVideoModelChange && (
+                <Select
+                  size="sm"
+                  selectedKeys={propVideoModel ? [propVideoModel] : []}
+                  onChange={(e) => onVideoModelChange(e.target.value)}
+                  classNames={{
+                    trigger: "h-8 min-w-[140px] bg-[var(--bg-input)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:border-[var(--accent)]/50",
+                    value: "text-xs",
+                    selectorIcon: "text-[var(--text-muted)]"
+                  }}
+                  popoverProps={{
+                    classNames: { content: "bg-[var(--bg-elevated)] border border-[var(--border-color)]" }
+                  }}
+                  aria-label="视频模型"
+                >
+                  {videoModels.map((m) => (
+                    <SelectItem key={m.name} textValue={m.name}>
+                      <span className="text-xs">{m.name}</span>
+                    </SelectItem>
+                  ))}
+                </Select>
+              )}
+            </div>
           )}
 
           {/* 状态提示 */}

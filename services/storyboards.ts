@@ -119,8 +119,9 @@ export interface BatchValidationResult {
 
 export async function batchValidateScenes(
   sceneIds: number[],
-  scriptId: number,
-  type: 'frame' | 'video'
+  scriptId: number | null,
+  type: 'frame' | 'video',
+  projectId?: number | null
 ): Promise<{ results: BatchValidationResult[] }> {
   const res = await fetch('/api/storyboards/batch-validate', {
     method: 'POST',
@@ -128,7 +129,7 @@ export async function batchValidateScenes(
       'Content-Type': 'application/json',
       ...authHeaders(),
     },
-    body: JSON.stringify({ sceneIds, scriptId, type }),
+    body: JSON.stringify({ sceneIds, scriptId: scriptId || undefined, projectId: projectId || undefined, type }),
   });
 
   const data = await res.json().catch(() => null);

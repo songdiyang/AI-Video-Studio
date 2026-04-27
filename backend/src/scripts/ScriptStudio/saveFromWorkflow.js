@@ -4,6 +4,9 @@
  */
 
 const { queryOne, execute } = require('../../dbHelper');
+const { getEffectiveProjectRole } = require('../../middleware/collaborationAuth');
+
+const WRITABLE_ROLES = new Set(['owner', 'admin', 'editor']);
 
 /**
  * 安全解析 result_data（可能是 JSON 字符串或已解析对象）
@@ -25,15 +28,26 @@ async function saveFromWorkflow(req, res) {
   }
 
   try {
-    // 验证 scriptId 归属
+    // 验证 scriptId 存在，并检查协作鉴权
     const script = await queryOne(
-      'SELECT id, project_id, episode_number, status FROM scripts WHERE id = ? AND user_id = ?',
-      [scriptId, userId]
+      'SELECT id, user_id, project_id, episode_number, status FROM scripts WHERE id = ?',
+      [scriptId]
     );
-    
+
     if (!script) {
-      console.warn('[Save Script from Workflow] 剧本不存在或无权:', { scriptId, userId });
-      return res.status(404).json({ message: '剧本不存在或无权访问' });
+      console.warn('[Save Script from Workflow] 剧本不存在:', { scriptId });
+      return res.status(404).json({ message: '剧本不存在' });
+    }
+
+    // owner / admin / editor 均可回写
+    if (script.user_id !== userId) {
+      const role = script.project_id
+        ? await getEffectiveProjectRole(userId, script.project_id)
+        : null;
+      if (!role || !WRITABLE_ROLES.has(role)) {
+        console.warn('[Save Script from Workflow] 无权访问:', { scriptId, userId });
+        return res.status(403).json({ message: '无权保存该剧本' });
+      }
     }
 
     // 如果剧本已经是 completed 状态，直接返回成功（幂等处理）

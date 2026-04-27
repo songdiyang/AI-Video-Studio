@@ -49,15 +49,23 @@ const collectCandidateImages = traced('收集候选参考图', async function _c
   // 构建并行查询 Promise
   const queryPromises = [];
   
-  // 1. 角色查询（如果有角色）
+  // 1. 角色查询（如果有角色）- 含白膜/服装状态三视图
   let linkedCharsPromise = null;
   if (validCharNames.length > 0) {
     const placeholders = validCharNames.map(() => '?').join(',');
     linkedCharsPromise = queryAll(
-      `SELECT c.id, c.name, c.description, c.appearance, c.personality,
-              c.image_url, c.front_view_url, c.side_view_url, c.back_view_url
+      `SELECT c.id, c.name, c.description, c.appearance, c.base_appearance, c.outfit_appearance, c.personality,
+              c.image_url, c.front_view_url, c.side_view_url, c.back_view_url,
+              bs.id AS base_state_id, bs.front_view_url AS base_front_view_url,
+              bs.side_view_url AS base_side_view_url, bs.back_view_url AS base_back_view_url,
+              cs.id AS costume_state_id, cs.name AS costume_state_name,
+              cs.front_view_url AS costume_front_view_url,
+              cs.side_view_url AS costume_side_view_url, cs.back_view_url AS costume_back_view_url,
+              cs.outfit AS costume_outfit, cs.accessories AS costume_accessories, cs.hairstyle AS costume_hairstyle, cs.age_stage AS costume_age_stage
        FROM storyboard_characters sc
        JOIN characters c ON sc.character_id = c.id
+       LEFT JOIN character_states bs ON bs.character_id = c.id AND bs.is_base_model = 1
+       LEFT JOIN character_states cs ON cs.character_id = c.id AND cs.is_active = 1 AND cs.is_base_model = 0
        WHERE sc.storyboard_id = ? AND c.name IN (${placeholders})`,
       [storyboardId, ...validCharNames]
     );
@@ -100,7 +108,7 @@ const collectCandidateImages = traced('收集候选参考图', async function _c
       charMap.set(row.name, row);
     }
 
-    // 校验每个角色是否关联 + 收集 charIds 用于批量查参考图
+    // 校验每个角色是否关联 + 收集白膜/服装/兆底三视图
     for (const charName of validCharNames) {
       const linkedChar = charMap.get(charName);
       if (!linkedChar) {
@@ -109,39 +117,108 @@ const collectCandidateImages = traced('收集候选参考图', async function _c
       assertNonEmptyString(linkedChar.description, 'description', `角色「${charName}」`);
       assertNonEmptyString(linkedChar.appearance, 'appearance', `角色「${charName}」`);
       assertNonEmptyString(linkedChar.personality, 'personality', `角色「${charName}」`);
-      assertNonEmptyString(linkedChar.image_url, 'image_url', `角色「${charName}」`);
 
       allCharacterInfos.push({
         name: linkedChar.name,
         appearance: linkedChar.appearance,
         description: linkedChar.description,
-        personality: linkedChar.personality
+        personality: linkedChar.personality,
+        // 白膜+服装分层外貌信息（用于帧生成提示词构建）
+        base_appearance: linkedChar.base_appearance,
+        outfit_appearance: linkedChar.outfit_appearance,
+        costume_outfit: linkedChar.costume_outfit,
+        costume_accessories: linkedChar.costume_accessories
       });
-      // 三视图候选
-      const frontUrl = linkedChar.front_view_url || linkedChar.image_url;
-      candidateImages.push({
-        id: `char_${charName}_front`,
-        label: `角色「${charName}」正面图`,
-        url: frontUrl,
-        description: `角色「${charName}」正面视图，用于保持角色外貌一致性（发型、服装、体型），不要复制立绘姿势`
-      });
-      if (linkedChar.side_view_url) {
+
+      // === 优先使用白膜三视图（体貌参考）+ 服装状态三视图（服装参考）===
+      const hasBaseViews = linkedChar.base_front_view_url;
+      const hasCostumeViews = linkedChar.costume_front_view_url;
+
+      if (hasBaseViews) {
+        // 白膜正面图 - 体貌参考（肤色、体型、五官、发型等不可更换特征）
         candidateImages.push({
-          id: `char_${charName}_side`,
-          label: `角色「${charName}」侧面图`,
-          url: linkedChar.side_view_url,
-          description: `角色「${charName}」侧面视图，适用于侧面、过肩镜头，或角色侧对观众说话的场景`
+          id: `char_${charName}_base_front`,
+          label: `角色「${charName}」白膜正面图 - 体貌参考`,
+          url: linkedChar.base_front_view_url,
+          description: `角色「${charName}」白膜正面视图，用于保持角色体貌一致性（肤色、体型、五官、发型、瞳色），不要复制立绘姿势，服装以当前场景为准`
         });
+        if (linkedChar.base_side_view_url) {
+          candidateImages.push({
+            id: `char_${charName}_base_side`,
+            label: `角色「${charName}」白膜侧面图 - 体貌参考`,
+            url: linkedChar.base_side_view_url,
+            description: `角色「${charName}」白膜侧面视图，适用于侧面、过肩镜头，保持体貌一致性`
+          });
+        }
+        if (linkedChar.base_back_view_url) {
+          candidateImages.push({
+            id: `char_${charName}_base_back`,
+            label: `角色「${charName}」白膜背面图 - 体貌参考`,
+            url: linkedChar.base_back_view_url,
+            description: `角色「${charName}」白膜背面视图，适用于背面镜头，保持体貌一致性`
+          });
+        }
+        console.log(`[CandidateImages] 角色「${charName}」白膜三视图: 正面=${!!linkedChar.base_front_view_url}, 侧面=${!!linkedChar.base_side_view_url}, 背面=${!!linkedChar.base_back_view_url}`);
       }
-      if (linkedChar.back_view_url) {
+
+      if (hasCostumeViews) {
+        // 服装状态正面图 - 服装参考（服装款式、配饰等可更换特征）
+        const costumeLabel = linkedChar.costume_state_name || '服装';
         candidateImages.push({
-          id: `char_${charName}_back`,
-          label: `角色「${charName}」背面图`,
-          url: linkedChar.back_view_url,
-          description: `角色「${charName}」背面视图，适用于背面镜头，或角色背对观众的场景`
+          id: `char_${charName}_costume_front`,
+          label: `角色「${charName}」「${costumeLabel}」正面图 - 服装参考`,
+          url: linkedChar.costume_front_view_url,
+          description: `角色「${charName}」「${costumeLabel}」正面视图，用于保持服装配饰一致性（服装款式、颜色、配饰、鞋子），不要复制立绘姿势`
         });
+        if (linkedChar.costume_side_view_url) {
+          candidateImages.push({
+            id: `char_${charName}_costume_side`,
+            label: `角色「${charName}」「${costumeLabel}」侧面图 - 服装参考`,
+            url: linkedChar.costume_side_view_url,
+            description: `角色「${charName}」「${costumeLabel}」侧面视图，保持服装配饰一致性`
+          });
+        }
+        if (linkedChar.costume_back_view_url) {
+          candidateImages.push({
+            id: `char_${charName}_costume_back`,
+            label: `角色「${charName}」「${costumeLabel}」背面图 - 服装参考`,
+            url: linkedChar.costume_back_view_url,
+            description: `角色「${charName}」「${costumeLabel}」背面视图，保持服装配饰一致性`
+          });
+        }
+        console.log(`[CandidateImages] 角色「${charName}」服装三视图: 正面=${!!linkedChar.costume_front_view_url}, 侧面=${!!linkedChar.costume_side_view_url}, 背面=${!!linkedChar.costume_back_view_url}`);
       }
-      console.log(`[CandidateImages] 角色「${charName}」三视图: 正面=${!!frontUrl}, 侧面=${!!linkedChar.side_view_url}, 背面=${!!linkedChar.back_view_url}`);
+
+      // 兜底：无白膜也无服装三视图时，使用角色级三视图（兼容老数据）
+      if (!hasBaseViews && !hasCostumeViews) {
+        const frontUrl = linkedChar.front_view_url || linkedChar.image_url;
+        if (frontUrl) {
+          assertNonEmptyString(linkedChar.image_url, 'image_url', `角色「${charName}」`);
+          candidateImages.push({
+            id: `char_${charName}_front`,
+            label: `角色「${charName}」正面图`,
+            url: frontUrl,
+            description: `角色「${charName}」正面视图，用于保持角色外貌一致性（发型、服装、体型），不要复制立绘姿势`
+          });
+          if (linkedChar.side_view_url) {
+            candidateImages.push({
+              id: `char_${charName}_side`,
+              label: `角色「${charName}」侧面图`,
+              url: linkedChar.side_view_url,
+              description: `角色「${charName}」侧面视图，适用于侧面、过肩镜头，或角色侧对观众说话的场景`
+            });
+          }
+          if (linkedChar.back_view_url) {
+            candidateImages.push({
+              id: `char_${charName}_back`,
+              label: `角色「${charName}」背面图`,
+              url: linkedChar.back_view_url,
+              description: `角色「${charName}」背面视图，适用于背面镜头，或角色背对观众的场景`
+            });
+          }
+        }
+        console.log(`[CandidateImages] 角色「${charName}」(兆底)角色级三视图: 正面=${!!frontUrl}, 侧面=${!!linkedChar.side_view_url}, 背面=${!!linkedChar.back_view_url}`);
+      }
     }
 
     // 注意：用户上传的参考图不在此处收集，参考图仅用于三视图生成阶段（characterViewsGeneration.js）

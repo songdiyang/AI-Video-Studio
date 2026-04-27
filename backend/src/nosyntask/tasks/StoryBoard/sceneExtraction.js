@@ -10,7 +10,10 @@ const handleRepairJsonResponse = require('./repairJsonResponse');
 const { stripThinkTags, extractCodeBlock, extractJSON, stripInvisible, safeParseJSON } = require('../../../utils/washBody');
 
 async function handleSceneExtraction(inputParams, onProgress) {
-  const { scenes, scriptContent, textModel: modelName, projectId, scriptId, userId } = inputParams;
+  const { scenes, scriptContent, textModel: modelName, projectId, scriptId, userId, appendMode, conflictStrategy } = inputParams;
+
+  // 解析冲突策略：兼容旧版 appendMode 参数
+  const effectiveStrategy = conflictStrategy || (appendMode ? 'skip' : 'overwrite');
 
   if (!modelName) {
     throw new Error('textModel 参数是必需的');
@@ -222,21 +225,41 @@ ${contentForAnalysis}
       try {
         const existingId = existingMap.get(scene.name);
         if (existingId) {
-          // 更新现有场景
-          await execute(
-            `UPDATE scenes 
-             SET description = ?, environment = ?, lighting = ?, mood = ?, script_id = ?, updated_at = CURRENT_TIMESTAMP
-             WHERE id = ?`,
-            [
-              scene.description || '',
-              scene.environment || '',
-              scene.lighting || '',
-              scene.mood || '',
-              scriptId || null,
-              existingId
-            ]
-          );
-          console.log('[SceneExtraction] 更新场景:', scene.name);
+          if (effectiveStrategy === 'skip') {
+            // 跳过策略：跳过同名场景
+            console.log('[SceneExtraction] 跳过同名场景:', scene.name);
+          } else if (effectiveStrategy === 'smart') {
+            // 智能覆盖策略：只更新空白字段
+            await execute(
+              `UPDATE scenes 
+               SET 
+                 description = COALESCE(NULLIF(description, ''), ?),
+                 environment = COALESCE(NULLIF(environment, ''), ?),
+                 lighting = COALESCE(NULLIF(lighting, ''), ?),
+                 mood = COALESCE(NULLIF(mood, ''), ?),
+                 script_id = ?,
+                 updated_at = CURRENT_TIMESTAMP
+               WHERE id = ?`,
+              [scene.description || '', scene.environment || '', scene.lighting || '', scene.mood || '', scriptId || null, existingId]
+            );
+            console.log('[SceneExtraction] 智能覆盖场景:', scene.name, '(只填充空白字段)');
+          } else {
+            // 覆盖策略：更新现有场景
+            await execute(
+              `UPDATE scenes 
+               SET description = ?, environment = ?, lighting = ?, mood = ?, script_id = ?, updated_at = CURRENT_TIMESTAMP
+               WHERE id = ?`,
+              [
+                scene.description || '',
+                scene.environment || '',
+                scene.lighting || '',
+                scene.mood || '',
+                scriptId || null,
+                existingId
+              ]
+            );
+            console.log('[SceneExtraction] 更新场景:', scene.name);
+          }
         } else {
           // 插入新场景
           await execute(
