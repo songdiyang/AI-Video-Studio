@@ -20,7 +20,7 @@ import VideoHistorySidebar from './components/VideoHistorySidebar';
 /** 角色选择器：Chip 标签 + 添加下拉 + 点击预览角色长相（增强：显示白膜/服装状态） */
 const CharacterTagSelector: React.FC<{
   characters: string[];
-  projectCharacters: { id: number; name: string; image_url?: string; front_view_url?: string; base_appearance?: string; outfit_appearance?: string; has_base_model?: number; active_state_name?: string; active_state_outfit?: string; active_state_image_url?: string; base_front_view_url?: string }[];
+  projectCharacters: { id: number; name: string; image_url?: string; front_view_url?: string; base_appearance?: string; outfit_appearance?: string; has_base_model?: number; has_base_model_views?: number; states_count?: number; active_state_name?: string; active_state_outfit?: string; active_state_image_url?: string; base_front_view_url?: string }[];
   onSave: (characters: string[]) => void;
 }> = ({ characters, projectCharacters, onSave }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -67,11 +67,22 @@ const CharacterTagSelector: React.FC<{
         const charData = projectCharacters.find(c => c.name === name);
         const charImageUrl = charData?.active_state_image_url || charData?.base_front_view_url || charData?.front_view_url || charData?.image_url;
         const hasBase = charData?.has_base_model;
+        const hasReadyViews = !!(charData?.has_base_model_views);
         const stateLabel = charData?.active_state_name;
+        // 没有白膜/图片的角色显示灰色，提示资产不完善
+        const isIncomplete = !hasReadyViews;
         return (
-          <span key={name} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-blue-500/15 text-blue-400 rounded text-xs group/char">
+          <span
+            key={name}
+            className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs group/char ${
+              isIncomplete
+                ? 'bg-slate-500/15 text-slate-400 border border-dashed border-slate-500/30'
+                : 'bg-blue-500/15 text-blue-400'
+            }`}
+            title={isIncomplete ? '该角色尚未生成白膜，请在资源面板完善资产' : ''}
+          >
             {charImageUrl ? (
-              <img src={charImageUrl} alt={name} className="w-3.5 h-3.5 rounded-full object-cover shrink-0" />
+              <img src={charImageUrl} alt={name} className={`w-3.5 h-3.5 rounded-full object-cover shrink-0 ${isIncomplete ? 'opacity-50' : ''}`} />
             ) : null}
             {charImageUrl ? (
               <button
@@ -84,12 +95,18 @@ const CharacterTagSelector: React.FC<{
             ) : (
               <span>{name}</span>
             )}
-            {hasBase && <Star className="w-2.5 h-2.5 text-amber-400" />}
-            {stateLabel && (
-              <span className="inline-flex items-center gap-0.5 text-[9px] text-pink-400/80 max-w-12 truncate">
-                <Shirt className="w-2 h-2 shrink-0" />
-                {stateLabel}
-              </span>
+            {isIncomplete ? (
+              <span className="text-[9px] text-orange-400/80">!</span>
+            ) : (
+              <>
+                {Boolean(hasBase) && <Star className="w-2.5 h-2.5 text-amber-400" />}
+                {stateLabel && (
+                  <span className="inline-flex items-center gap-0.5 text-[9px] text-pink-400/80 max-w-12 truncate">
+                    <Shirt className="w-2 h-2 shrink-0" />
+                    {stateLabel}
+                  </span>
+                )}
+              </>
             )}
             <button onClick={() => toggleCharacter(name)} className="hover:text-red-400 transition-colors">
               <X className="w-2.5 h-2.5" />
@@ -125,22 +142,33 @@ const CharacterTagSelector: React.FC<{
             {filtered.map(c => {
               const selected = characters.includes(c.name);
               const charImg = c.active_state_image_url || c.base_front_view_url || c.front_view_url || c.image_url;
+              const hasReadyState = !!(c.has_base_model_views);
+              const isDisabled = !hasReadyState;
               return (
                 <button
                   key={c.id}
-                  onClick={() => toggleCharacter(c.name)}
+                  onClick={() => !isDisabled && toggleCharacter(c.name)}
                   className={`w-full text-left px-2 py-1 rounded text-xs transition-colors flex items-center gap-2 ${
-                    selected ? 'bg-blue-500/20 text-blue-400' : 'hover:bg-[var(--bg-card-hover)] text-[var(--text-secondary)]'
+                    isDisabled
+                      ? 'opacity-50 cursor-not-allowed text-[var(--text-muted)]'
+                      : selected ? 'bg-blue-500/20 text-blue-400' : 'hover:bg-[var(--bg-card-hover)] text-[var(--text-secondary)]'
                   }`}
+                  title={isDisabled ? '请先生成白膜设定图后再添加到分镜' : ''}
                 >
                   {selected ? <Check className="w-3 h-3 shrink-0" /> : <div className="w-3 h-3 shrink-0" />}
                   {charImg ? <img src={charImg} alt={c.name} className="w-4 h-4 rounded-full object-cover shrink-0" /> : null}
                   <span className="truncate">{c.name}</span>
-                  {c.has_base_model && <Star className="w-2.5 h-2.5 text-amber-400 shrink-0" />}
-                  {c.active_state_name && (
-                    <span className="text-[9px] text-pink-400/80 truncate max-w-16 shrink-0">
-                      <Shirt className="w-2 h-2 inline" /> {c.active_state_name}
-                    </span>
+                  {isDisabled ? (
+                    <span className="text-[9px] text-red-400/80 shrink-0 whitespace-nowrap">缺少状态</span>
+                  ) : (
+                    <>
+                      {Boolean(c.has_base_model) && <Star className="w-2.5 h-2.5 text-amber-400 shrink-0" />}
+                      {c.active_state_name && (
+                        <span className="text-[9px] text-pink-400/80 truncate max-w-16 shrink-0">
+                          <Shirt className="w-2 h-2 inline" /> {c.active_state_name}
+                        </span>
+                      )}
+                    </>
                   )}
                 </button>
               );
@@ -674,7 +702,7 @@ interface ScenePreviewPanelProps {
   onUpdateDialogues?: (dialogues: DialogueLine[]) => Promise<boolean>;
   onUpdateVoiceover?: (voiceover: string) => Promise<boolean>;
   onUpdateCharactersAndLocation?: (characters: string[], location: string, characterIds?: number[], sceneId?: number) => Promise<boolean>;
-  projectCharacters?: { id: number; name: string; image_url?: string; front_view_url?: string; base_appearance?: string; outfit_appearance?: string; has_base_model?: number; active_state_name?: string; active_state_outfit?: string; active_state_image_url?: string; base_front_view_url?: string }[];
+  projectCharacters?: { id: number; name: string; image_url?: string; front_view_url?: string; base_appearance?: string; outfit_appearance?: string; has_base_model?: number; has_base_model_views?: number; states_count?: number; active_state_name?: string; active_state_outfit?: string; active_state_image_url?: string; base_front_view_url?: string }[];
   projectScenes?: { id: number; name: string; description?: string }[];
   onGenerateImage: (id: number, prompt: string, regenerateTarget?: 'first' | 'last' | 'both', forceRegenerate?: boolean) => Promise<{ success: boolean; error?: string }>;
   onGenerateVideo: (id: number) => Promise<{ success: boolean; error?: string }>;

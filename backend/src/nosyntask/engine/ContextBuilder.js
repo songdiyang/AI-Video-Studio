@@ -45,7 +45,9 @@ class ContextBuilder {
       jobParams,
       previousResults,
       userId: job.user_id,
-      projectId: job.project_id
+      projectId: job.project_id,
+      jobId: job.id,
+      parentJobId: job.parent_job_id || null
     };
   }
 }

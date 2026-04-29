@@ -4,6 +4,7 @@ import { Edit, Trash2, Eye, Image, Upload } from 'lucide-react';
 import { Scene, uploadSceneSketch, deleteSceneSketch } from '../../services/assets';
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
+import { usePreview } from '../../components/PreviewProvider';
 
 interface SceneListProps {
   scenes: Scene[];
@@ -16,9 +17,9 @@ interface SceneListProps {
 const SceneList: React.FC<SceneListProps> = ({ scenes, onEdit, onDelete, onViewDetail, onSceneUpdate }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadingSceneId, setUploadingSceneId] = useState<number | null>(null);
-  const [previewScene, setPreviewScene] = useState<Scene | null>(null);
   const { showToast } = useToast();
   const { confirm } = useConfirm();
+  const { openPreview } = usePreview();
 
   // 重置上传状态
   const resetUploadState = () => {
@@ -102,6 +103,9 @@ const SceneList: React.FC<SceneListProps> = ({ scenes, onEdit, onDelete, onViewD
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mt-6">
         {scenes.map((scene) => {
           const hasSketch = !!scene.sketch_url;
+          const hasImage = !!scene.image_url;
+          const displayUrl = scene.image_url || scene.sketch_url;
+          const hasDisplay = !!displayUrl;
 
           return (
             <div
@@ -109,17 +113,23 @@ const SceneList: React.FC<SceneListProps> = ({ scenes, onEdit, onDelete, onViewD
               className="bg-(--bg-card) border border-(--border-color) shadow-sm hover:shadow-lg hover:shadow-(--accent)/10 transition-all cursor-pointer rounded-xl overflow-hidden group"
               onClick={() => onEdit(scene)}
             >
-              {/* 图片区域 - 主要展示 */}
+              {/* 图片区域 - 优先显示生成图，其次草图 */}
               <div className="relative aspect-[4/3] bg-gradient-to-br from-(--bg-hover) to-(--bg-card) overflow-hidden">
-                {hasSketch ? (
+                {hasDisplay ? (
                   <img
-                    src={scene.sketch_url}
+                    src={displayUrl}
                     alt={scene.name}
                     className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                     loading="lazy"
                     onClick={(e) => {
                       e.stopPropagation();
-                      setPreviewScene(scene);
+                      // 收集所有可预览的图片
+                      const slides: { src: string; alt: string }[] = [];
+                      if (scene.image_url) slides.push({ src: scene.image_url, alt: `${scene.name} - 场景图` });
+                      if (scene.reverse_image_url) slides.push({ src: scene.reverse_image_url, alt: `${scene.name} - 反面` });
+                      if (scene.sketch_url && scene.image_url) slides.push({ src: scene.sketch_url, alt: `${scene.name} - 草图` });
+                      if (slides.length === 0 && scene.sketch_url) slides.push({ src: scene.sketch_url, alt: `${scene.name} - 草图` });
+                      if (slides.length > 0) openPreview(slides, 0);
                     }}
                   />
                 ) : (
@@ -148,14 +158,20 @@ const SceneList: React.FC<SceneListProps> = ({ scenes, onEdit, onDelete, onViewD
                       )}
                     </Button>
                   </Tooltip>
-                  {hasSketch && (
+                  {hasDisplay && (
                     <Tooltip content="查看大图">
                       <Button
                         size="sm"
                         isIconOnly
                         variant="solid"
                         className="bg-(--bg-card)/90 backdrop-blur-sm hover:bg-(--accent)/20"
-                        onPress={() => setPreviewScene(scene)}
+                        onPress={() => {
+                          const slides: { src: string; alt: string }[] = [];
+                          if (scene.image_url) slides.push({ src: scene.image_url, alt: `${scene.name} - 场景图` });
+                          if (scene.reverse_image_url) slides.push({ src: scene.reverse_image_url, alt: `${scene.name} - 反面` });
+                          if (scene.sketch_url) slides.push({ src: scene.sketch_url, alt: `${scene.name} - 草图` });
+                          if (slides.length > 0) openPreview(slides, 0);
+                        }}
                       >
                         <Eye className="w-4 h-4 text-(--accent)" />
                       </Button>
@@ -181,17 +197,29 @@ const SceneList: React.FC<SceneListProps> = ({ scenes, onEdit, onDelete, onViewD
                   </Button>
                 </div>
 
-                {/* 草图状态徽章 */}
-                {hasSketch && (
-                  <div className="absolute top-2 left-2">
-                    <Chip
-                      size="sm"
-                      variant="solid"
-                      className="bg-purple-500/90 backdrop-blur-sm text-white font-medium"
-                      startContent={<Image className="w-3 h-3" />}
-                    >
-                      草图
-                    </Chip>
+                {/* 图片来源徽章 */}
+                {(hasImage || hasSketch) && (
+                  <div className="absolute top-2 left-2 flex gap-1">
+                    {hasImage && (
+                      <Chip
+                        size="sm"
+                        variant="solid"
+                        className="bg-emerald-500/90 backdrop-blur-sm text-white font-medium"
+                        startContent={<Image className="w-3 h-3" />}
+                      >
+                        场景图
+                      </Chip>
+                    )}
+                    {hasSketch && !hasImage && (
+                      <Chip
+                        size="sm"
+                        variant="solid"
+                        className="bg-purple-500/90 backdrop-blur-sm text-white font-medium"
+                        startContent={<Image className="w-3 h-3" />}
+                      >
+                        草图
+                      </Chip>
+                    )}
                   </div>
                 )}
               </div>
@@ -220,14 +248,14 @@ const SceneList: React.FC<SceneListProps> = ({ scenes, onEdit, onDelete, onViewD
                       {scene.project_name}
                     </Chip>
                   )}
-                  {scene.tags && scene.tags.split(',').slice(0, 2).map((tag, idx) => (
+                  {scene.tags && scene.tags.split(/[,，]/).map(t => t.trim()).filter(Boolean).slice(0, 3).map((tag, idx) => (
                     <Chip 
                       key={idx} 
                       size="sm" 
                       variant="flat" 
-                      className="bg-sky-500/10 text-sky-400 text-xs"
+                      className="bg-blue-500/10 text-blue-600 dark:text-blue-300 border border-blue-500/20 text-xs"
                     >
-                      {tag.trim()}
+                      {tag}
                     </Chip>
                   ))}
                 </div>
@@ -237,29 +265,6 @@ const SceneList: React.FC<SceneListProps> = ({ scenes, onEdit, onDelete, onViewD
         })}
       </div>
 
-      {/* 草图预览模态框 */}
-      {previewScene && (
-        <div 
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
-          onClick={() => setPreviewScene(null)}
-        >
-          <div className="relative max-w-4xl max-h-[90vh] p-4">
-            <button
-              className="absolute top-2 right-2 w-8 h-8 flex items-center justify-center rounded-full bg-black/50 text-white hover:bg-black/70 transition-colors z-10"
-              onClick={() => setPreviewScene(null)}
-            >
-              ✕
-            </button>
-            <img
-              src={previewScene.sketch_url || ''}
-              alt={`${previewScene.name} 草图`}
-              className="max-w-full max-h-[85vh] object-contain rounded-lg"
-              onClick={(e) => e.stopPropagation()}
-            />
-            <p className="text-center text-white mt-2 text-sm">{previewScene.name} - 草图</p>
-          </div>
-        </div>
-      )}
     </>
   );
 };

@@ -11,11 +11,15 @@ interface CharactersTabProps {
   isLoadingCharacters: boolean;
   scenes?: any[];
   activeCharacterIds?: string[];
+  /** 分镜状态覆写映射：characterId -> 状态信息 */
+  storyboardStates?: Record<number, { stateId: number; stateName: string; stateImage?: string; stateOutfit?: string }>;
   onGenerateViews: (charName: string, characterId: number) => void;
   onShowDetail: (character: Character) => void;
   onPreview?: (character: Character) => void;
   onOpenLifecycle?: (character: Character) => void;
   onCreate?: () => void;
+  onDelete?: (character: Character) => void;
+  onStoryboardStateChange?: (characterId: number, state: { stateId: number; stateName: string; stateImage?: string; stateOutfit?: string } | null) => void;
 }
 
 const CharactersTab: React.FC<CharactersTabProps> = ({
@@ -24,11 +28,14 @@ const CharactersTab: React.FC<CharactersTabProps> = ({
   isLoadingCharacters,
   scenes,
   activeCharacterIds = [],
+  storyboardStates = {},
   onGenerateViews,
   onShowDetail,
   onPreview,
   onOpenLifecycle,
   onCreate,
+  onDelete,
+  onStoryboardStateChange,
 }) => {
   return (
     <div className="space-y-3">
@@ -61,9 +68,12 @@ const CharactersTab: React.FC<CharactersTabProps> = ({
             character={char}
             scenes={scenes}
             isGenerating={activeCharacterIds.includes(String(char.id))}
+            storyboardState={storyboardStates[char.id] || null}
             onGenerateViews={onGenerateViews}
             onShowDetail={onShowDetail}
             onOpenLifecycle={onOpenLifecycle}
+            onDelete={onDelete}
+            onStoryboardStateChange={onStoryboardStateChange}
           />
         ))
       ) : characters.length > 0 ? (

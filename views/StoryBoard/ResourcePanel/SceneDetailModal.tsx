@@ -3,6 +3,7 @@ import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Button, Chip,
 import { MapPin, Wand2, Loader2, Sparkles, ChevronDown, ChevronUp, Pencil } from 'lucide-react';
 import { getAuthToken } from '../../../services/auth';
 import { generateSceneImagePrompt } from '../../../services/assets';
+import SceneElementsPanel from './SceneElementsPanel';
 
 interface Scene {
   id: number;
@@ -285,6 +286,15 @@ const SceneDetailModal: React.FC<SceneDetailModalProps> = ({
                       ))}
                     </div>
                   </div>
+                )}
+
+                {/* ========== 场景元素（影棚） ========== */}
+                {scene.id && (
+                  <SceneElementsPanel
+                    sceneId={scene.id}
+                    imageModel={imageModel}
+                    textModel={textModel}
+                  />
                 )}
 
                 {/* ========== 图片生成 & 提示词编辑区 ========== */}

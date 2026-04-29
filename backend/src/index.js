@@ -33,6 +33,7 @@ const billingRoutes = require('./billing');
 const userRoutes = require('./users');
 const characterRoutes = require('./scripts/Characters');
 const sceneRoutes = require('./scripts/Scenes');
+const sceneElementsRoutes = require('./scripts/SceneElements');
 const propsRoutes = require('./scripts/Props');
 const assetsRoutes = require('./scripts/Assets');
 const costumeRoutes = require('./scripts/Costumes');
@@ -146,6 +147,7 @@ app.use('/api/billing', billingRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/characters', characterRoutes);
 app.use('/api/scenes', sceneRoutes);
+app.use('/api/scene-elements', sceneElementsRoutes);
 app.use('/api/props', propsRoutes);
 app.use('/api/costumes', costumeRoutes);
 app.use('/api', assetsRoutes);  // 参考图路由（/api/reference-images）

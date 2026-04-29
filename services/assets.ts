@@ -17,7 +17,7 @@ function normalizeStorageUrl(url: string | null | undefined): string | null {
 /** 规范化角色数据中的所有 MinIO URL */
 function normalizeCharacterUrls<T extends Record<string, any>>(char: T): T {
   if (!char) return char;
-  const urlFields = ['image_url', 'front_view_url', 'side_view_url', 'back_view_url', 'character_sheet_url', 'concept_image_url'];
+  const urlFields = ['image_url', 'front_view_url', 'side_view_url', 'back_view_url', 'character_sheet_url', 'concept_image_url', 'base_model_image_url', 'active_state_image_url', 'first_state_front_view_url'];
   const result: Record<string, any> = { ...char };
   for (const field of urlFields) {
     if (result[field]) {
@@ -30,7 +30,7 @@ function normalizeCharacterUrls<T extends Record<string, any>>(char: T): T {
 /** 规范化场景数据中的所有 MinIO URL */
 function normalizeSceneUrls<T extends Record<string, any>>(scene: T): T {
   if (!scene) return scene;
-  const urlFields = ['image_url'];
+  const urlFields = ['image_url', 'reverse_image_url', 'reference_image_url', 'panorama_image_url'];
   const result: Record<string, any> = { ...scene };
   for (const field of urlFields) {
     if (result[field]) {
@@ -98,10 +98,11 @@ export interface Character {
   use_reference_images?: boolean;
   // 白膜/服装状态概要（来自 getByProject API 的 LEFT JOIN）
   base_model_image_url?: string;     // 白膜正面图 URL
-  has_base_model_views?: boolean | number; // 是否已生成白膜三视图
+  has_base_model_views?: number; // 是否已生成白膜三视图（0/1）
   active_state_name?: string;        // 当前激活状态名称
   active_state_outfit?: string;      // 当前激活状态服装描述
   active_state_image_url?: string;   // 当前激活状态正面图
+  first_state_front_view_url?: string; // 第一个角色状态的正面图（白膜优先，列表预览用）
   created_at: string;
   updated_at: string;
 }
@@ -133,6 +134,8 @@ export interface Scene {
   image_url: string;
   reverse_image_url?: string;
   sketch_url?: string | null;
+  reference_image_url?: string | null;
+  panorama_image_url?: string | null;
   tags: string;
   project_name?: string;
   spatial_layout?: SpatialLayout | null;
@@ -222,6 +225,7 @@ export interface CharacterState {
   hairstyle?: string;        // 发型描述
   accessories?: string;      // 配饰JSON
   body_elements?: string;    // 身体元素（纹身、疤痕、胎记等，白膜专用）
+  held_props?: string;       // 手持道具描述（当前状态下角色手里拿着或身上携带的物品）
   use_reference_images?: boolean; // 是否使用参考图生成
   is_active?: boolean;       // 是否激活
   generation_prompt?: string;
@@ -432,10 +436,13 @@ export async function fetchScenes(): Promise<Scene[]> {
   return (data.scenes || []).map(normalizeSceneUrls);
 }
 
-/** 按项目获取场景列表（支持团队成员访问） */
-export async function fetchScenesByProject(projectId: number): Promise<Scene[]> {
+/** 按项目获取场景列表（支持团队成员访问）；可选 scriptId 按剧本过滤 */
+export async function fetchScenesByProject(projectId: number, scriptId?: number): Promise<Scene[]> {
   const token = getAuthToken();
-  const response = await fetch(`/api/scenes/project/${projectId}`, {
+  const url = scriptId
+    ? `/api/scenes/project/${projectId}?scriptId=${scriptId}`
+    : `/api/scenes/project/${projectId}`;
+  const response = await fetch(url, {
     headers: {
       ...(token ? { Authorization: `Bearer ${token}` } : {})
     }
@@ -1066,6 +1073,29 @@ export async function updateCharacterState(
 }
 
 /**
+ * 清除白膜角色设定图（让用户可重新生成）
+ * 后端会同步清空 character_states 的 image_url/三视图 URL 以及 characters 表的 image_url/character_sheet_url
+ */
+export async function deleteCharacterStateBaseModelImage(
+  characterId: number,
+  stateId: number
+): Promise<CharacterState> {
+  const token = getAuthToken();
+  const response = await fetch(`/api/characters/${characterId}/states/${stateId}/base-model-image`, {
+    method: 'DELETE',
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    }
+  });
+  if (!response.ok) {
+    const result = await response.json();
+    throw new Error(result.message || '清除白膜角色设定图失败');
+  }
+  const result = await response.json();
+  return normalizeStateUrls(result.state);
+}
+
+/**
  * 删除角色状态
  */
 export async function deleteCharacterState(
@@ -1140,7 +1170,7 @@ export async function duplicateCharacterState(
 export async function generateCharacterStateViews(
   characterId: number,
   stateId: number,
-  params: { imageModel: string; textModel?: string; regenerateOnly?: ('front' | 'side' | 'back')[] }
+  params: { imageModel: string; textModel?: string; regenerateOnly?: ('front' | 'side' | 'back')[]; generateMode?: 'design_sheet' | 'three_views' }
 ): Promise<{ message: string; jobId: string; characterId: number; stateId: number; status: string }> {
   const token = getAuthToken();
   const response = await fetch(`/api/characters/${characterId}/states/${stateId}/generate-views`, {
@@ -1587,6 +1617,134 @@ export async function getSceneSketch(
   return response.json();
 }
 
+/**
+ * 上传场景参考图
+ * @param sceneId 场景ID
+ * @param file 参考图文件
+ * @returns 参考图URL
+ */
+export async function uploadSceneReferenceImage(
+  sceneId: number,
+  file: File
+): Promise<{ reference_image_url: string }> {
+  const token = getAuthToken();
+  const formData = new FormData();
+  formData.append('reference_image', file);
+
+  const response = await fetch(`/api/scenes/${sceneId}/reference-image`, {
+    method: 'POST',
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    },
+    body: formData
+  });
+
+  if (!response.ok) {
+    const result = await response.json();
+    throw new Error(result.message || '上传场景参考图失败');
+  }
+  return response.json();
+}
+
+/**
+ * 删除场景参考图
+ * @param sceneId 场景ID
+ */
+export async function deleteSceneReferenceImage(sceneId: number): Promise<void> {
+  const token = getAuthToken();
+  const response = await fetch(`/api/scenes/${sceneId}/reference-image`, {
+    method: 'DELETE',
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    }
+  });
+
+  if (!response.ok) {
+    const result = await response.json();
+    throw new Error(result.message || '删除场景参考图失败');
+  }
+}
+
+/**
+ * 启动场景全景图生成（360°×180°等距柱状，球体内壁贴图用）
+ * @param sceneId 场景ID
+ * @param imageModel 图像模型名称
+ * @param options textModel / style 可选
+ */
+export async function generateScenePanorama(
+  sceneId: number,
+  imageModel: string,
+  options: { textModel?: string; style?: string } = {}
+): Promise<{ jobId: string; sceneId: number; status: string; message?: string }> {
+  const token = getAuthToken();
+  const response = await fetch(`/api/scenes/${sceneId}/generate-panorama`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    },
+    body: JSON.stringify({
+      imageModel,
+      textModel: options.textModel,
+      style: options.style
+    })
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const err: any = new Error(data.message || '启动全景图生成失败');
+    err.status = response.status;
+    err.jobId = data.jobId;
+    throw err;
+  }
+  return data;
+}
+
+/**
+ * 删除场景全景图
+ * @param sceneId 场景ID
+ */
+export async function deleteScenePanorama(sceneId: number): Promise<void> {
+  const token = getAuthToken();
+  const response = await fetch(`/api/scenes/${sceneId}/panorama`, {
+    method: 'DELETE',
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    }
+  });
+
+  if (!response.ok) {
+    const result = await response.json();
+    throw new Error(result.message || '删除场景全景图失败');
+  }
+}
+
+/**
+ * 从全景图裁切透视视图（漫剧正反打 A/B 面工具）
+ * @param sceneId 场景ID
+ * @param params yaw / pitch / fov / outW / outH / label
+ */
+export async function cutSceneFromPanorama(
+  sceneId: number,
+  params: { yaw: number; pitch?: number; fov?: number; outW?: number; outH?: number; label?: string }
+): Promise<{ cutUrl: string; yaw: number; pitch: number; fov: number; outW: number; outH: number; durationMs: number }> {
+  const token = getAuthToken();
+  const response = await fetch(`/api/scenes/${sceneId}/cut-from-panorama`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    },
+    body: JSON.stringify(params)
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.message || '裁切全景图失败');
+  }
+  return data;
+}
+
 // ============================================================
 // 文件上传 API
 // ============================================================
@@ -1715,8 +1873,6 @@ export interface CharacterCompositeResponse {
   compositePrompt: string;
   visualStylePrompt: string | null;
   sources: {
-    baseStyledHit: boolean;
-    costumeStyledHit: boolean;
     costumeRawHit: boolean;
   };
 }
@@ -1875,181 +2031,9 @@ export async function removeSceneBinding(sceneId: number, projectId: number): Pr
 }
 
 // ============================================================
-// T3: 按项目画风渲染（角色状态 / 场景）
+// （已移除）按项目画风渲染的角色状态 / 场景缓存接口
+// 该模块已在 2026-04 下线，渲染通过三视图管线统一处理
 // ============================================================
-
-export interface CharacterStateStyledImage {
-  id: number;
-  state_id: number;
-  project_id: number;
-  style_fingerprint: string | null;
-  front_view_url: string | null;
-  side_view_url: string | null;
-  back_view_url: string | null;
-  generation_status: 'idle' | 'generating' | 'completed' | 'failed' | string;
-  generation_error: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface CharacterStateStyledResponse {
-  styled: CharacterStateStyledImage | null;
-  styleFingerprint: string;
-  stale: boolean;
-}
-
-export interface SceneStyledImage {
-  id: number;
-  scene_id: number;
-  project_id: number;
-  style_fingerprint: string | null;
-  image_url: string | null;
-  reverse_image_url: string | null;
-  generation_status: 'idle' | 'generating' | 'completed' | 'failed' | string;
-  generation_error: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface SceneStyledResponse {
-  styled: SceneStyledImage | null;
-  styleFingerprint: string;
-  stale: boolean;
-}
-
-export interface StyledGenerateResponse {
-  message: string;
-  jobId?: number;
-  status: string;
-  styleFingerprint: string;
-  pendingImplementation?: boolean;
-  [key: string]: any;
-}
-
-/** 读取角色状态按项目画风的渲染缓存 */
-export async function fetchCharacterStateStyled(
-  characterId: number,
-  stateId: number,
-  projectId: number
-): Promise<CharacterStateStyledResponse> {
-  const token = getAuthToken();
-  const response = await fetch(
-    `/api/characters/${characterId}/states/${stateId}/styled?projectId=${projectId}`,
-    { headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) } }
-  );
-  if (!response.ok) {
-    const r = await response.json().catch(() => ({}));
-    throw new Error(r.message || '读取画风图失败');
-  }
-  const data = await response.json();
-  // URL 规范化
-  if (data?.styled) {
-    data.styled.front_view_url = normalizeStorageUrl(data.styled.front_view_url);
-    data.styled.side_view_url = normalizeStorageUrl(data.styled.side_view_url);
-    data.styled.back_view_url = normalizeStorageUrl(data.styled.back_view_url);
-  }
-  return data;
-}
-
-/** 触发角色状态的项目画风渲染（实际异步 workflow） */
-export async function generateCharacterStateStyled(
-  characterId: number,
-  stateId: number,
-  body: { projectId: number; imageModel: string; textModel?: string }
-): Promise<StyledGenerateResponse> {
-  const token = getAuthToken();
-  const response = await fetch(
-    `/api/characters/${characterId}/states/${stateId}/styled/generate`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-      body: JSON.stringify(body),
-    }
-  );
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const err: any = new Error(data?.message || '画风图生成启动失败');
-    err.code = data?.code;
-    err.status = response.status;
-    throw err;
-  }
-  return data as StyledGenerateResponse;
-}
-
-/** 清除角色状态的项目画风缓存 */
-export async function clearCharacterStateStyled(
-  characterId: number,
-  stateId: number,
-  projectId: number
-): Promise<{ message: string }> {
-  const token = getAuthToken();
-  const response = await fetch(
-    `/api/characters/${characterId}/states/${stateId}/styled?projectId=${projectId}`,
-    { method: 'DELETE', headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) } }
-  );
-  if (!response.ok) {
-    const r = await response.json().catch(() => ({}));
-    throw new Error(r.message || '清除画风图失败');
-  }
-  return response.json();
-}
-
-/** 读取场景按项目画风的渲染缓存 */
-export async function fetchSceneStyled(
-  sceneId: number,
-  projectId: number
-): Promise<SceneStyledResponse> {
-  const token = getAuthToken();
-  const response = await fetch(
-    `/api/scenes/${sceneId}/styled?projectId=${projectId}`,
-    { headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) } }
-  );
-  if (!response.ok) {
-    const r = await response.json().catch(() => ({}));
-    throw new Error(r.message || '读取场景画风图失败');
-  }
-  const data = await response.json();
-  if (data?.styled) {
-    data.styled.image_url = normalizeStorageUrl(data.styled.image_url);
-    data.styled.reverse_image_url = normalizeStorageUrl(data.styled.reverse_image_url);
-  }
-  return data;
-}
-
-/** 触发场景的项目画风渲染 */
-export async function generateSceneStyled(
-  sceneId: number,
-  body: { projectId: number; imageModel: string }
-): Promise<StyledGenerateResponse> {
-  const token = getAuthToken();
-  const response = await fetch(`/api/scenes/${sceneId}/styled/generate`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-    body: JSON.stringify(body),
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const err: any = new Error(data?.message || '场景画风图生成启动失败');
-    err.code = data?.code;
-    err.status = response.status;
-    throw err;
-  }
-  return data as StyledGenerateResponse;
-}
-
-/** 清除场景的项目画风缓存 */
-export async function clearSceneStyled(sceneId: number, projectId: number): Promise<{ message: string }> {
-  const token = getAuthToken();
-  const response = await fetch(`/api/scenes/${sceneId}/styled?projectId=${projectId}`, {
-    method: 'DELETE',
-    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) }
-  });
-  if (!response.ok) {
-    const r = await response.json().catch(() => ({}));
-    throw new Error(r.message || '清除场景画风图失败');
-  }
-  return response.json();
-}
 
 // ============ AI 智能生成角色 ============
 
@@ -2155,5 +2139,33 @@ export async function generateDefaultCostumeState(
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data?.message || '启动默认服装状态画风版失败');
+  return data;
+}
+
+/** AI 出场景草稿（轻量模式，不入库，前端自行调 createScene 落库） */
+export interface AiSceneDraft {
+  name: string;
+  description: string;
+  environment: string;
+  lighting: string;
+  mood: string;
+}
+
+export async function aiGenerateSceneDraft(params: {
+  projectId: number;
+  userDescription: string;
+  textModel?: string;
+}): Promise<{ draft: AiSceneDraft; projectStyle: { projectId: number; projectName: string; visualStylePrompt: string; hasStyle: boolean } }> {
+  const token = getAuthToken();
+  const response = await fetch('/api/scenes/ai-generate-draft', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    },
+    body: JSON.stringify(params)
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data?.message || 'AI 生成场景草稿失败');
   return data;
 }

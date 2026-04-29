@@ -45,6 +45,17 @@ interface UseStoryboardGenerationProps {
   onComplete: () => void;
 }
 
+export interface StartGenerationOptions {
+  /** 已有分镜时的冲突策略：skip=跳过同名 | smart=仅补空白 | overwrite=完全覆盖 */
+  conflictStrategy?: 'skip' | 'smart' | 'overwrite';
+  /** 追加模式，保留旧分镜（通常与 skip/smart 配合） */
+  appendMode?: boolean;
+  /** 弱绑定的参考剧本正文，仅作为 prompt 上下文 */
+  referenceScriptContent?: string | null;
+  /** 参考剧本标题 */
+  referenceScriptTitle?: string | null;
+}
+
 export function useStoryboardGeneration({
   scriptId,
   projectId,
@@ -72,7 +83,12 @@ export function useStoryboardGeneration({
   });
 
   // 启动分镜生成
-  const startGeneration = useCallback(async (textModel: string, byScene: boolean = false, appendMode: boolean = false) => {
+  const startGeneration = useCallback(async (
+    textModel: string,
+    byScene: boolean = false,
+    appendMode: boolean = false,
+    options: StartGenerationOptions = {}
+  ) => {
     if (!scriptId) {
       showToast('请先选择或生成一个剧本', 'warning');
       return;
@@ -85,17 +101,26 @@ export function useStoryboardGeneration({
     try {
       const token = getAuthToken();
       // 根据 byScene 参数选择不同的 API
-      const apiUrl = byScene 
+      const apiUrl = byScene
         ? `/api/storyboards/auto-generate-by-scene/${scriptId}`
         : `/api/storyboards/auto-generate/${scriptId}`;
-        
+
+      // 组装请求体：显式传 appendMode 与 conflictStrategy
+      const body: Record<string, any> = {
+        textModel,
+        appendMode: !!(options.appendMode ?? appendMode)
+      };
+      if (options.conflictStrategy) body.conflictStrategy = options.conflictStrategy;
+      if (options.referenceScriptContent) body.referenceScriptContent = options.referenceScriptContent;
+      if (options.referenceScriptTitle) body.referenceScriptTitle = options.referenceScriptTitle;
+
       const res = await fetch(apiUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
-        body: JSON.stringify({ textModel, appendMode })
+        body: JSON.stringify(body)
       });
 
       const data = await res.json();
@@ -120,10 +145,10 @@ export function useStoryboardGeneration({
   // 计算实时进度信息
   const progress = useMemo<GenerationProgress | null>(() => {
     if (!recovery.job || !recovery.job.tasks || recovery.job.tasks.length === 0) return null;
-    
+
     const tasks = recovery.job.tasks;
     const totalSteps = tasks.length;
-    
+
     // 找到当前正在执行或下一个pending的步骤
     let currentTask = tasks.find((t: any) => t.status === 'processing');
     if (!currentTask) {
@@ -133,38 +158,38 @@ export function useStoryboardGeneration({
       // 所有都完成了
       currentTask = tasks[tasks.length - 1];
     }
-    
+
     const currentStep = (currentTask?.step_index ?? 0) + 1;
     const taskType = currentTask?.task_type || '';
     const stepName = STEP_NAMES[taskType] || taskType;
     const stepStatus = currentTask?.status || 'pending';
-    
+
     // 计算总体进度
     const completedCount = tasks.filter((t: any) => t.status === 'completed').length;
     const processingTask = tasks.find((t: any) => t.status === 'processing');
     const processingProgress = processingTask?.progress || 0;
-    
+
     // 每个步骤占 100/totalSteps %，当前步骤按其 progress 比例计算
     const overallProgress = Math.round(
-      (completedCount / totalSteps) * 100 + 
+      (completedCount / totalSteps) * 100 +
       (processingProgress / 100) * (100 / totalSteps)
     );
 
     // Build per-scene status from job metadata and tasks
     const sceneStatuses: SceneProgress[] = [];
     const inputParams = recovery.job.input_params as any;
-    
+
     // Try to extract scene info from input params or tasks
     if (inputParams?.scenes && Array.isArray(inputParams.scenes)) {
       inputParams.scenes.forEach((scene: any, index: number) => {
         const sceneId = scene.id || scene.sceneId || index;
         // Check if there's a task for this scene
-        const sceneTask = tasks.find((t: any) => 
-          t.metadata?.sceneId === sceneId || 
+        const sceneTask = tasks.find((t: any) =>
+          t.metadata?.sceneId === sceneId ||
           t.metadata?.scene_id === sceneId ||
           t.metadata?.sceneIndex === index
         );
-        
+
         let status: SceneProgress['status'] = 'pending';
         if (sceneTask) {
           switch (sceneTask.status) {
@@ -178,7 +203,7 @@ export function useStoryboardGeneration({
         } else if (index === completedCount && processingTask) {
           status = 'generating';
         }
-        
+
         sceneStatuses.push({ sceneId, sceneIndex: index, status });
       });
     } else {
@@ -195,7 +220,7 @@ export function useStoryboardGeneration({
         sceneStatuses.push({ sceneId, sceneIndex: index, status });
       });
     }
-    
+
     return {
       currentStep,
       totalSteps,

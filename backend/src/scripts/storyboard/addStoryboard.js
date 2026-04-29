@@ -12,7 +12,7 @@ const { getEffectiveProjectRole } = require('../../middleware/collaborationAuth'
 
 async function addStoryboard(req, res) {
   const userId = req.user.id;
-  const { scriptId, projectId, idx, description, prompt_template, variables_json } = req.body || {};
+  const { scriptId, projectId, idx, description, prompt_template, variables_json, episodeNumber } = req.body || {};
 
   if (!scriptId && !projectId) {
     return res.status(400).json({ message: '缺少 scriptId 或 projectId' });
@@ -21,6 +21,7 @@ async function addStoryboard(req, res) {
   try {
     let finalProjectId;
     let finalScriptId = null;
+    let finalEpisodeNumber = null;
 
     if (scriptId) {
       // 绑定剧本模式：通过剧本推导 project_id，并校验权限
@@ -37,6 +38,7 @@ async function addStoryboard(req, res) {
       }
       finalProjectId = script.project_id;
       finalScriptId = scriptId;
+      // 绑定剧本模式下集数由 scripts.episode_number 推导，storyboards.episode_number 维持 NULL
     } else {
       // 自由分镜模式：校验用户对 projectId 的权限
       const role = await getEffectiveProjectRole(userId, projectId);
@@ -44,15 +46,18 @@ async function addStoryboard(req, res) {
         return res.status(403).json({ message: '无权访问该项目' });
       }
       finalProjectId = Number(projectId);
+      // 自由分镜模式：按集数标签归档，未提供时默认第 1 集
+      const parsedEp = Number(episodeNumber);
+      finalEpisodeNumber = Number.isFinite(parsedEp) && parsedEp >= 1 ? parsedEp : 1;
     }
 
     const result = await execute(
-      'INSERT INTO storyboards (project_id, script_id, idx, description, prompt_template, variables_json) VALUES (?, ?, ?, ?, ?, ?)',
-      [finalProjectId, finalScriptId, idx || 0, description || prompt_template || '', '', JSON.stringify(variables_json || {})]
+      'INSERT INTO storyboards (project_id, script_id, episode_number, idx, description, prompt_template, variables_json) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [finalProjectId, finalScriptId, finalEpisodeNumber, idx || 0, description || prompt_template || '', '', JSON.stringify(variables_json || {})]
     );
 
     const id = result.insertId;
-    console.log(`[AddStoryboard] 新增分镜 id=${id}, projectId=${finalProjectId}, scriptId=${finalScriptId || 'NULL'}, idx=${idx}`);
+    console.log(`[AddStoryboard] 新增分镜 id=${id}, projectId=${finalProjectId}, scriptId=${finalScriptId || 'NULL'}, episode=${finalEpisodeNumber || 'NULL'}, idx=${idx}`);
 
     res.json({ id, message: '分镜已添加' });
   } catch (err) {

@@ -12,7 +12,13 @@ module.exports = (router) => {
 
     try {
       let sql = `SELECT c.*, p.name AS project_name,
-         (SELECT COUNT(*) FROM character_states WHERE character_id = c.id) AS states_count
+         (SELECT COUNT(*) FROM character_states WHERE character_id = c.id) AS states_count,
+         (SELECT COALESCE(front_view_url, image_url)
+          FROM character_states
+          WHERE character_id = c.id
+            AND (front_view_url IS NOT NULL OR image_url IS NOT NULL)
+          ORDER BY is_base_model DESC, COALESCE(sort_order, 0) ASC, id ASC
+          LIMIT 1) AS first_state_front_view_url
          FROM characters c 
          LEFT JOIN projects p ON c.project_id = p.id 
          WHERE c.user_id = ?`;

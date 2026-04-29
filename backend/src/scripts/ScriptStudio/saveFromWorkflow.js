@@ -5,6 +5,7 @@
 
 const { queryOne, execute } = require('../../dbHelper');
 const { getEffectiveProjectRole } = require('../../middleware/collaborationAuth');
+const { safeDecodeId } = require('../../utils/workflowId');
 
 const WRITABLE_ROLES = new Set(['owner', 'admin', 'editor']);
 
@@ -21,10 +22,17 @@ async function saveFromWorkflow(req, res) {
   const { scriptId, jobId } = req.body;
   const userId = req.user.id;
 
-  console.log('[Save Script from Workflow] 开始处理:', { scriptId, jobId, userId });
+  // jobId 前端以 16 进制字符串传入，需解码为数据库真实自增 id
+  const numericJobId = safeDecodeId(jobId);
+
+  console.log('[Save Script from Workflow] 开始处理:', { scriptId, jobId, numericJobId, userId });
 
   if (!scriptId || !jobId) {
     return res.status(400).json({ message: '缺少必要参数 scriptId 或 jobId' });
+  }
+
+  if (numericJobId === null || !Number.isInteger(numericJobId)) {
+    return res.status(400).json({ message: 'jobId 格式错误', detail: `无法解析 jobId=${jobId}` });
   }
 
   try {
@@ -66,17 +74,17 @@ async function saveFromWorkflow(req, res) {
       `SELECT result_data, status FROM generation_tasks 
        WHERE job_id = ? AND task_type = 'script_generation' 
        ORDER BY id DESC LIMIT 1`,
-      [jobId]
+      [numericJobId]
     );
 
     // 备用查询1：如果主查询未命中，尝试只按 jobId 查询（可能 task_type 不匹配）
     if (!task) {
-      console.warn('[Save Script from Workflow] 主查询未命中，尝试备用查询 (仅 jobId):', jobId);
+      console.warn('[Save Script from Workflow] 主查询未命中，尝试备用查询 (仅 jobId):', numericJobId);
       task = await queryOne(
         `SELECT result_data, status, task_type FROM generation_tasks 
          WHERE job_id = ? AND status = 'completed'
          ORDER BY id DESC LIMIT 1`,
-        [jobId]
+        [numericJobId]
       );
       if (task) {
         console.log('[Save Script from Workflow] 备用查询1命中，task_type:', task.task_type);
@@ -100,15 +108,15 @@ async function saveFromWorkflow(req, res) {
     }
 
     if (!task) {
-      console.error('[Save Script from Workflow] 所有查询均未找到任务:', { jobId, scriptId, projectId: script.project_id });
+      console.error('[Save Script from Workflow] 所有查询均未找到任务:', { jobId, numericJobId, scriptId, projectId: script.project_id });
       return res.status(400).json({ 
         message: '未找到工作流生成结果，请重新生成剧本',
-        detail: `jobId=${jobId} 未找到已完成的生成任务`
+        detail: `jobId=${jobId} (decoded=${numericJobId}) 未找到已完成的生成任务`
       });
     }
 
     if (task.status !== 'completed') {
-      console.warn('[Save Script from Workflow] 任务未完成:', { jobId, status: task.status });
+      console.warn('[Save Script from Workflow] 任务未完成:', { jobId, numericJobId, status: task.status });
       return res.status(400).json({ 
         message: `工作流任务状态为 ${task.status}，尚未完成`,
         detail: `当前状态: ${task.status}`
@@ -118,7 +126,7 @@ async function saveFromWorkflow(req, res) {
     const result = parseResultData(task.result_data);
     if (!result || !result.content) {
       console.error('[Save Script from Workflow] result_data 解析失败或无 content:', { 
-        jobId, hasResultData: !!task.result_data, type: typeof task.result_data 
+        jobId, numericJobId, hasResultData: !!task.result_data, type: typeof task.result_data 
       });
       return res.status(400).json({ 
         message: '生成结果数据异常，缺少剧本内容',

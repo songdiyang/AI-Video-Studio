@@ -6,7 +6,7 @@ module.exports = (router) => {
   router.post('/auto-generate/:scriptId', authMiddleware, async (req, res) => {
     const userId = req.user.id;
     const scriptId = Number(req.params.scriptId);
-    const { textModel, appendMode } = req.body || {};
+    const { textModel, appendMode, referenceScriptContent, referenceScriptTitle, conflictStrategy } = req.body || {};
 
     if (!textModel) {
       return res.status(400).json({ message: '缺少模型名称，请选择一个文本模型' });
@@ -18,7 +18,10 @@ module.exports = (router) => {
         rawInput: {
           scriptId,
           textModel,
-          appendMode: !!appendMode
+          appendMode: !!appendMode,
+          ...(referenceScriptContent ? { referenceScriptContent: String(referenceScriptContent) } : {}),
+          ...(referenceScriptTitle ? { referenceScriptTitle: String(referenceScriptTitle) } : {}),
+          ...(conflictStrategy ? { conflictStrategy: String(conflictStrategy) } : {})
         },
         actor: { userId }
       });

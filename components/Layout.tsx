@@ -583,18 +583,17 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           
           {/* 右侧：辅助信息 */}
           <div className="flex items-center gap-4">
-            {/* AI 助手 - 项目级全局入口 */}
+            {/* AI 助手 - 全局常驻入口（无项目时使用全局会话） */}
             {isLoggedIn && (
               <button
                 onClick={toggleAIAssistant}
-                disabled={!aiProjectId}
                 className={`p-1.5 rounded-lg transition-colors ${
                   isAIAssistantOpen
                     ? 'bg-[var(--accent)]/15 text-[var(--accent)]'
                     : 'text-(--text-muted) hover:text-(--text-primary) hover:bg-white/5'
-                } disabled:opacity-40 disabled:cursor-not-allowed`}
+                }`}
                 aria-label="AI 助手"
-                title={aiProjectId ? 'AI 助手' : 'AI 助手（请先选择项目）'}
+                title={aiProjectId ? 'AI 助手' : 'AI 助手（全局会话）'}
               >
                 <Sparkles className="w-4 h-4" />
               </button>

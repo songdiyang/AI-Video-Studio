@@ -11,8 +11,9 @@ const { queryOne } = require('../dbHelper');
 const CONFLICT_GROUPS = [
   // ---- 角色/场景/道具资产 ----
   { paramKey: 'characterId',  members: ['character_views_generation'] },
-  { paramKey: 'stateId',      members: ['character_state_views_generation', 'character_state_styled_generation'] },
-  { paramKey: 'sceneId',      members: ['scene_image_generation', 'scene_styled_generation'] },
+  { paramKey: 'stateId',      members: ['character_state_views_generation'] },
+  { paramKey: 'sceneId',      members: ['scene_image_generation', 'scene_panorama_generation', 'scene_elements_extraction'] },
+  { paramKey: 'elementId',    members: ['scene_element_generation'] },
 
   // ---- 分镜生成（同一 script 同时只能有一个分镜类工作流运行） ----
   { paramKey: 'scriptId',     members: ['storyboard_generation', 'batch_storyboard_generation', 'scene_storyboard_generation'] },

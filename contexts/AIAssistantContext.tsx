@@ -7,11 +7,11 @@
  *  1) AIAssistantUIContext      —— 轻量 UI 状态（isOpen/projectId/toggle...）
  *                                   Layout/顶栏按钮等顶层组件仅订阅它。
  *
- *  2) AIAssistantDataContext    —— 注册的重数据（currentFrame/scenes/onAction）
+ *  2) AIAssistantDataContext    —— 注册的重数据（currentFrame/scenes/characters/locations/scripts/onAction）
  *                                   仅 AIAssistantPanel 订阅，Panel 关闭时不卸载数据。
  *
- *  3) AIAssistantSettersContext —— 稳定 setter（setFrame/setScenes/setOnAction/clearContext）
- *                                   工作台（如 StoryBoard）只订阅它，永远稳定，
+ *  3) AIAssistantSettersContext —— 稳定 setter（setFrame/setScenes/setCharacters/setLocations/setScripts/setOnAction/clearContext）
+ *                                   工作台（如 StoryBoard / AssetsManager）只订阅它，永远稳定，
  *                                   从而避免 dataValue 变化导致 StoryBoard 全量重渲染。
  *
  * 对外 API 保持兼容：
@@ -50,6 +50,24 @@ export interface AIAssistantSceneSummary {
 
 export type AIAssistantAction = (action: string, params: any) => void;
 
+export interface AIAssistantCharacterSummary {
+  id: number;
+  name: string;
+  description?: string;
+}
+
+export interface AIAssistantLocationSummary {
+  id: number;
+  name: string;
+  description?: string;
+}
+
+export interface AIAssistantScriptSummary {
+  id: number;
+  episode_number: number;
+  title?: string;
+}
+
 export interface AIAssistantUIContextValue {
   isOpen: boolean;
   open: () => void;
@@ -61,12 +79,18 @@ export interface AIAssistantUIContextValue {
 export interface AIAssistantDataContextValue {
   currentFrame: AIAssistantFrameContext | null;
   scenes: AIAssistantSceneSummary[];
+  characters: AIAssistantCharacterSummary[];
+  locations: AIAssistantLocationSummary[];
+  scripts: AIAssistantScriptSummary[];
   onAction: AIAssistantAction | null;
 }
 
 export interface AIAssistantSettersContextValue {
   setFrame: (frame: AIAssistantFrameContext | null) => void;
   setScenes: (scenes: AIAssistantSceneSummary[]) => void;
+  setCharacters: (list: AIAssistantCharacterSummary[]) => void;
+  setLocations: (list: AIAssistantLocationSummary[]) => void;
+  setScripts: (list: AIAssistantScriptSummary[]) => void;
   setOnAction: (handler: AIAssistantAction | null) => void;
   clearContext: () => void;
 }
@@ -104,6 +128,9 @@ export const AIAssistantProvider: React.FC<AIAssistantProviderProps> = ({ childr
   // —— Data 状态 —— 仅影响 AIAssistantPanel
   const [currentFrame, setCurrentFrame] = useState<AIAssistantFrameContext | null>(null);
   const [scenes, setScenesState] = useState<AIAssistantSceneSummary[]>([]);
+  const [characters, setCharactersState] = useState<AIAssistantCharacterSummary[]>([]);
+  const [locations, setLocationsState] = useState<AIAssistantLocationSummary[]>([]);
+  const [scripts, setScriptsState] = useState<AIAssistantScriptSummary[]>([]);
   const onActionRef = useRef<AIAssistantAction | null>(null);
   const [onActionVersion, setOnActionVersion] = useState(0);
 
@@ -146,6 +173,57 @@ export const AIAssistantProvider: React.FC<AIAssistantProviderProps> = ({ childr
     });
   }, []);
 
+  const setCharacters = useCallback((next: AIAssistantCharacterSummary[]) => {
+    setCharactersState((prev) => {
+      if (prev === next) return prev;
+      if (prev.length === next.length) {
+        let same = true;
+        for (let i = 0; i < prev.length; i++) {
+          if (prev[i].id !== next[i].id || prev[i].name !== next[i].name || prev[i].description !== next[i].description) {
+            same = false;
+            break;
+          }
+        }
+        if (same) return prev;
+      }
+      return next;
+    });
+  }, []);
+
+  const setLocations = useCallback((next: AIAssistantLocationSummary[]) => {
+    setLocationsState((prev) => {
+      if (prev === next) return prev;
+      if (prev.length === next.length) {
+        let same = true;
+        for (let i = 0; i < prev.length; i++) {
+          if (prev[i].id !== next[i].id || prev[i].name !== next[i].name || prev[i].description !== next[i].description) {
+            same = false;
+            break;
+          }
+        }
+        if (same) return prev;
+      }
+      return next;
+    });
+  }, []);
+
+  const setScripts = useCallback((next: AIAssistantScriptSummary[]) => {
+    setScriptsState((prev) => {
+      if (prev === next) return prev;
+      if (prev.length === next.length) {
+        let same = true;
+        for (let i = 0; i < prev.length; i++) {
+          if (prev[i].id !== next[i].id || prev[i].episode_number !== next[i].episode_number || prev[i].title !== next[i].title) {
+            same = false;
+            break;
+          }
+        }
+        if (same) return prev;
+      }
+      return next;
+    });
+  }, []);
+
   const setOnAction = useCallback((handler: AIAssistantAction | null) => {
     const prev = onActionRef.current;
     onActionRef.current = handler;
@@ -159,6 +237,9 @@ export const AIAssistantProvider: React.FC<AIAssistantProviderProps> = ({ childr
   const clearContext = useCallback(() => {
     setCurrentFrame(null);
     setScenesState([]);
+    setCharactersState([]);
+    setLocationsState([]);
+    setScriptsState([]);
     if (onActionRef.current !== null) {
       onActionRef.current = null;
       setOnActionVersion((v) => v + 1);
@@ -169,6 +250,9 @@ export const AIAssistantProvider: React.FC<AIAssistantProviderProps> = ({ childr
   useEffect(() => {
     setCurrentFrame(null);
     setScenesState([]);
+    setCharactersState([]);
+    setLocationsState([]);
+    setScriptsState([]);
     if (onActionRef.current !== null) {
       onActionRef.current = null;
       setOnActionVersion((v) => v + 1);
@@ -185,14 +269,14 @@ export const AIAssistantProvider: React.FC<AIAssistantProviderProps> = ({ childr
   }, [onActionVersion]);
 
   const dataValue = useMemo<AIAssistantDataContextValue>(
-    () => ({ currentFrame, scenes, onAction }),
-    [currentFrame, scenes, onAction],
+    () => ({ currentFrame, scenes, characters, locations, scripts, onAction }),
+    [currentFrame, scenes, characters, locations, scripts, onAction],
   );
 
   // setter 永远稳定，settersValue 永不变化，订阅方不会因此重渲染
   const settersValue = useMemo<AIAssistantSettersContextValue>(
-    () => ({ setFrame, setScenes, setOnAction, clearContext }),
-    [setFrame, setScenes, setOnAction, clearContext],
+    () => ({ setFrame, setScenes, setCharacters, setLocations, setScripts, setOnAction, clearContext }),
+    [setFrame, setScenes, setCharacters, setLocations, setScripts, setOnAction, clearContext],
   );
 
   return (
@@ -251,10 +335,13 @@ export function useAIAssistant(): AIAssistantContextValue {
 export function useAIAssistantWorkbenchContext(params: {
   frame?: AIAssistantFrameContext | null;
   scenes?: AIAssistantSceneSummary[];
+  characters?: AIAssistantCharacterSummary[];
+  locations?: AIAssistantLocationSummary[];
+  scripts?: AIAssistantScriptSummary[];
   onAction?: AIAssistantAction | null;
 }) {
-  const { setFrame, setScenes, setOnAction } = useAIAssistantSetters();
-  const { frame, scenes, onAction } = params;
+  const { setFrame, setScenes, setCharacters, setLocations, setScripts, setOnAction } = useAIAssistantSetters();
+  const { frame, scenes, characters, locations, scripts, onAction } = params;
 
   useEffect(() => {
     setFrame(frame ?? null);
@@ -263,6 +350,18 @@ export function useAIAssistantWorkbenchContext(params: {
   useEffect(() => {
     setScenes(scenes ?? []);
   }, [scenes, setScenes]);
+
+  useEffect(() => {
+    setCharacters(characters ?? []);
+  }, [characters, setCharacters]);
+
+  useEffect(() => {
+    setLocations(locations ?? []);
+  }, [locations, setLocations]);
+
+  useEffect(() => {
+    setScripts(scripts ?? []);
+  }, [scripts, setScripts]);
 
   // 通过 ref 缓存最新 onAction，注册一个稳定 wrapper
   const onActionRef = useRef<AIAssistantAction | null>(onAction ?? null);

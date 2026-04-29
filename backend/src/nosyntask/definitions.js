@@ -25,6 +25,9 @@ const {
   handleStoryboardGeneration,
   handleCharacterViewsGeneration,
   handleSceneImageGeneration,
+  handleScenePanoramaGeneration,
+  handleSceneElementsExtraction,
+  handleSceneElementGeneration,
   handleBatchFrameGeneration,
   handleBatchSceneVideoGeneration,
   handleSceneStyleAnalysis,
@@ -52,8 +55,11 @@ const handleBatchImagePromptOptimization = require('./tasks/StoryBoard/batchImag
 const handleSingleImagePromptOptimization = require('./tasks/StoryBoard/singleImagePromptOptimization');
 const handleBatchVideoPromptOptimization = require('./tasks/StoryBoard/batchVideoPromptOptimization');
 const handleSingleVideoPromptOptimization = require('./tasks/StoryBoard/singleVideoPromptOptimization');
-const handleCharacterStateStyledGeneration = require('./tasks/StoryBoard/characterStateStyledGeneration');
-const handleSceneStyledGeneration = require('./tasks/StoryBoard/sceneStyledGeneration');
+
+// AI 助手长任务 handlers
+const handleAIAssistantPlanner = require('./tasks/AIAssistant/planner');
+const handleAIAssistantExecutor = require('./tasks/AIAssistant/executor');
+const handleAIAssistantObserver = require('./tasks/AIAssistant/observer');
 
 // 独立帧生成模块（支持并发）
 const { handleParallelFrameGeneration } = require('./tasks/StoryBoard/independentFrameGeneration');
@@ -132,6 +138,7 @@ const WORKFLOW_DEFINITIONS = {
         // dependencies: [] - 无依赖，立即执行
         buildInput: createBuildInput([
           'scriptContent', 'scriptTitle', 'textModel', 'projectId',
+          'referenceScriptContent', 'referenceScriptTitle',
           { key: 'think', defaultValue: false }
         ])
       },
@@ -152,7 +159,8 @@ const WORKFLOW_DEFINITIONS = {
         dependencies: [1], // 依赖步骤1（save_storyboards）
         buildInput: createBuildInput([
           { key: 'scenes', from: ctx => ctx.previousResults[0]?.scenes || [] },
-          'scriptContent', 'projectId', 'scriptId', 'userId', 'textModel', 'appendMode'
+          'scriptContent', 'projectId', 'scriptId', 'userId', 'textModel', 'appendMode',
+          'referenceScriptContent', 'conflictStrategy'
         ])
       },
       {
@@ -185,6 +193,7 @@ const WORKFLOW_DEFINITIONS = {
         buildInput: createBuildInput([
           'sceneContent', 'sceneName', 'sceneNumber', 'totalScenes',
           'previousSceneContext', 'scriptTitle', 'textModel', 'projectId',
+          'referenceScriptContent', 'referenceScriptTitle',
           { key: 'think', defaultValue: false }
         ])
       },
@@ -240,7 +249,8 @@ const WORKFLOW_DEFINITIONS = {
             dependencies: [0],
             buildInput: createBuildInput([
               { key: 'scenes', from: ctx => ctx.previousResults[0]?.scenes || [] },
-              'scriptContent', 'projectId', 'scriptId', 'userId', 'textModel'
+              'scriptContent', 'projectId', 'scriptId', 'userId', 'textModel',
+              'referenceScriptContent', 'conflictStrategy'
             ])
           }
         ];
@@ -263,6 +273,7 @@ const WORKFLOW_DEFINITIONS = {
             { key: 'sceneNumber', from: () => scene.sceneNumber },
             { key: 'totalScenes', from: () => totalScenes },
             'scriptTitle', 'textModel', 'projectId',
+            'referenceScriptContent', 'referenceScriptTitle',
             { key: 'think', defaultValue: false }
           ])
         });
@@ -317,7 +328,8 @@ const WORKFLOW_DEFINITIONS = {
               return allScenes;
             }
           },
-          'scriptContent', 'projectId', 'scriptId', 'userId', 'textModel', 'appendMode'
+          'scriptContent', 'projectId', 'scriptId', 'userId', 'textModel', 'appendMode',
+          'referenceScriptContent', 'conflictStrategy'
         ])
       });
 
@@ -487,6 +499,62 @@ const WORKFLOW_DEFINITIONS = {
   },
 
   /**
+   * 场景全景图生成（equirectangular 360°×180° 等距柱状投影）
+   */
+  scene_panorama_generation: {
+    name: '场景全景图生成',
+    steps: [
+      {
+        type: 'scene_panorama_generation',
+        targetType: 'scene',
+        handler: handleScenePanoramaGeneration,
+        buildInput: createBuildInput([
+          'sceneId', 'sceneName', 'description', 'environment',
+          'lighting', 'mood', 'style',
+          'imageModel', 'textModel',
+          'elementImageUrls', 'elementPositions'
+        ])
+      }
+    ]
+  },
+
+  /**
+   * 场景元素抽取（从场景描述抽出建筑/场景元素清单）
+   */
+  scene_elements_extraction: {
+    name: '场景元素抽取',
+    steps: [
+      {
+        type: 'scene_elements_extraction',
+        targetType: 'scene',
+        handler: handleSceneElementsExtraction,
+        buildInput: createBuildInput([
+          'sceneId', 'sceneName', 'description', 'environment',
+          'lighting', 'mood', 'textModel'
+        ])
+      }
+    ]
+  },
+
+  /**
+   * 场景元素图片生成（单个元素独立立绘）
+   */
+  scene_element_generation: {
+    name: '场景元素图片生成',
+    steps: [
+      {
+        type: 'scene_element_generation',
+        targetType: 'scene_element',
+        handler: handleSceneElementGeneration,
+        buildInput: createBuildInput([
+          'elementId', 'elementName', 'elementDescription', 'elementCategory',
+          'imageModel', 'textModel'
+        ])
+      }
+    ]
+  },
+
+  /**
    * 批量分镜帧生成（一键生成一集所有分镜图片）
    * 
    * 动态步骤模式：每个分镜作为独立的任务显示在任务栏中
@@ -623,49 +691,11 @@ const WORKFLOW_DEFINITIONS = {
           'characterId', 'characterName', 'appearance', 'personality',
           'description', 'style', 'projectId', 'imageModel', 'textModel', 'aspectRatio',
           'regenerateOnly',
-          'stateId', 'outfit', 'hairstyle', 'accessories', 'ageStage', 'bodyElements',
+          'stateId', 'outfit', 'hairstyle', 'accessories', 'ageStage', 'bodyElements', 'heldProps',
           'isBaseModel', 'gender',
           'customPromptFront', 'customPromptSide', 'customPromptBack',
           { key: 'width', defaultValue: 1920 },
           { key: 'height', defaultValue: 2880 }
-        ])
-      }
-    ]
-  },
-
-  /**
-   * 角色状态按项目画风渲染（T3 图像生成任务链）
-   * 以白膜三视图为参考，注入项目画风 + 状态服装/发型 → 回写 character_state_styled_images
-   */
-  character_state_styled_generation: {
-    name: '角色状态项目画风渲染',
-    steps: [
-      {
-        type: 'character_state_styled_generation',
-        targetType: 'character_state',
-        handler: handleCharacterStateStyledGeneration,
-        buildInput: createBuildInput([
-          'characterId', 'stateId', 'projectId', 'imageModel', 'textModel',
-          { key: 'styleFingerprint', from: 'styleFingerprint', defaultValue: '' }
-        ])
-      }
-    ]
-  },
-
-  /**
-   * 场景按项目画风渲染
-   * 以场景原图为参考，注入项目画风 → 回写 scene_styled_images
-   */
-  scene_styled_generation: {
-    name: '场景项目画风渲染',
-    steps: [
-      {
-        type: 'scene_styled_generation',
-        targetType: 'scene',
-        handler: handleSceneStyledGeneration,
-        buildInput: createBuildInput([
-          'sceneId', 'projectId', 'imageModel',
-          { key: 'styleFingerprint', from: 'styleFingerprint', defaultValue: '' }
         ])
       }
     ]
@@ -921,6 +951,55 @@ const WORKFLOW_DEFINITIONS = {
         buildInput: createBuildInput([
           'scriptId', 'textModel',
           { key: 'maxConcurrency', defaultValue: 3 }
+        ])
+      }
+    ]
+  },
+
+  /**
+   * AI 助手长任务（单轮规划-执行-观察，MVP）
+   *
+   * 流程：
+   *   Step 0: ai_plan     —— 调 LLM（function calling），输出 tool_calls[] 或 final reply
+   *   Step 1: ai_execute  —— 对每个 tool_call 启动子 workflow，并发等待全部完成
+   *   Step 2: ai_observe  —— 汇总结果为最终回复
+   */
+  ai_assistant_session: {
+    name: 'AI 助手会话',
+    steps: [
+      {
+        type: 'ai_plan',
+        targetType: 'ai_assistant',
+        displayName: '规划',
+        handler: handleAIAssistantPlanner,
+        buildInput: createBuildInput([
+          'message', 'conversation', 'textModel', 'projectId', 'userId'
+        ])
+      },
+      {
+        type: 'ai_execute',
+        targetType: 'ai_assistant',
+        displayName: '执行子任务',
+        dependencies: [0],
+        handler: handleAIAssistantExecutor,
+        buildInput: createBuildInput([
+          { key: 'tool_calls', from: ctx => ctx.previousResults[0]?.tool_calls || [] },
+          { key: 'parentJobId', from: ctx => ctx.jobId },
+          'userId', 'projectId', 'defaultTextModel', 'defaultImageModel'
+        ])
+      },
+      {
+        type: 'ai_observe',
+        targetType: 'ai_assistant',
+        displayName: '汇总回复',
+        dependencies: [1],
+        handler: handleAIAssistantObserver,
+        buildInput: createBuildInput([
+          { key: 'reply_text', from: ctx => ctx.previousResults[0]?.reply_text || null },
+          { key: 'rejected_tools', from: ctx => ctx.previousResults[0]?.rejected_tools || [] },
+          { key: 'tool_calls', from: ctx => ctx.previousResults[0]?.tool_calls || [] },
+          { key: 'invocations', from: ctx => ctx.previousResults[1]?.invocations || [] },
+          'textModel', 'message'
         ])
       }
     ]

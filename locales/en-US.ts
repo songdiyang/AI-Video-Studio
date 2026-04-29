@@ -108,6 +108,8 @@ const enUS: Translations = {
       appearanceDesc: 'Interface theme and style',
       language: 'Language',
       languageDesc: 'Switch display language',
+      ai_assistant: 'AI Assistant',
+      ai_assistantDesc: 'AI conversation context & behavior settings',
       storage: 'Storage',
       storageDesc: 'Cache & local data',
       security: 'Security',

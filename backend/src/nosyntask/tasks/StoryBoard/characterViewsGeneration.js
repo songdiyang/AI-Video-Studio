@@ -32,8 +32,15 @@ const composeCharacterSheet = require('../../../utils/composeCharacterSheet');
 /**
  * 有参考图时，构建简化提示词（让参考图主导角色外貌，提示词仅指定风格+视角）
  * 跳过 LLM 翻译，直接输出英文关键词，节省成本且避免文字描述与参考图冲突
+ *
+ * 当传入状态属性（outfit/hairstyle/accessories/ageStage）时：
+ *   - 参考图一般是白膜设定图（裸熊 / 白色占位装），不能让 AI 原样复刻服装
+ *   - 仅保留参考图的脸部、发色、体型、肤色等身份特征
+ *   - 服装/发型/配饰必须按状态属性覆盖重绘
+ * 否则保持原行为（完整复刻参考图）。
  */
 function buildReferenceGuidedPrompt(view, style, characterName, options = {}) {
+  const { outfit = '', hairstyle = '', accessories = '', ageStage = '', heldProps = '' } = options;
   const viewConfig = {
     front: 'front view, eye-level shot, facing directly at the camera, standing upright with relaxed natural posture, arms at sides, feet shoulder-width apart, looking straight ahead',
     side: 'side view, profile shot, turned 90 degrees to the right, full body, standing upright, showing full side profile silhouette, arms naturally at sides',
@@ -41,6 +48,26 @@ function buildReferenceGuidedPrompt(view, style, characterName, options = {}) {
   };
   const viewAngle = viewConfig[view] || viewConfig.front;
   const styleKeywords = style || 'anime style';
+
+  // 收集状态级别外貌属性（服装/发型/配饰/年龄阶段/手持道具）
+  const stateAttrs = [];
+  if (outfit) stateAttrs.push(`wearing ${outfit}`);
+  if (hairstyle) stateAttrs.push(`hairstyle: ${hairstyle}`);
+  if (accessories) stateAttrs.push(`accessories: ${accessories}`);
+  if (ageStage) stateAttrs.push(`age stage: ${ageStage}`);
+  if (heldProps) stateAttrs.push(`holding/carrying: ${heldProps}`);
+  const hasStateAttrs = stateAttrs.length > 0;
+
+  if (hasStateAttrs) {
+    // ★ 状态生成：参考图用于锁定身份（脸/发/体型），服装等按状态描述覆盖重绘
+    const outfitEmphasis = outfit
+      ? `, the character MUST clearly be wearing: ${outfit} (this overrides any clothing in the reference image)`
+      : '';
+    const hairEmphasis = hairstyle
+      ? `, the hairstyle MUST be: ${hairstyle} (overrides hairstyle in the reference image)`
+      : '';
+    return `match the character face and body identity from the reference image exactly, preserve all facial features face shape eye shape eye color skin tone body proportions from reference image, keep the same character identity, IMPORTANT: the reference image is only a base model placeholder with plain white tank top and white shorts, do NOT copy the clothing from the reference image, instead apply the following state appearance: ${stateAttrs.join(', ')}${outfitEmphasis}${hairEmphasis}, character design reference sheet style, ${styleKeywords}, single character, solo, one person, full body, ${viewAngle}, simple clean background, even soft lighting, neutral natural expression`;
+  }
 
   // 简化提示词：参考图匹配指令放最前面（Seedream 对前面的 token 给予更高权重）
   // 逐项列出需要保留的外貌特征，强化保真度
@@ -97,9 +124,10 @@ function buildBaseModelReferencePrompt(view, style, characterName, options = {})
  * @param {string} options.accessories - 配饰描述（状态级别）
  * @param {string} options.ageStage - 年龄阶段（状态级别）
  * @param {string} options.bodyElements - 身体元素描述（纹身/疤痕/胎记等，白膜专用）
+ * @param {string} options.heldProps - 手持/携带道具描述（状态级别，白膜不使用）
  */
 async function generateViewPrompt(view, characterName, appearance, description, style, textModel, options = {}) {
-  const { isBaseModel = false, gender = 'unknown', outfit, hairstyle, accessories, ageStage, bodyProportionInstruction, bodyElements } = options;
+  const { isBaseModel = false, gender = 'unknown', outfit, hairstyle, accessories, ageStage, bodyProportionInstruction, bodyElements, heldProps } = options;
   
   const viewConfig = {
     front: {
@@ -154,12 +182,16 @@ async function generateViewPrompt(view, characterName, appearance, description, 
    - 提示词中必须逐项重复正面图的外貌特征描述，确保每个细节都被包含`
     : '';
 
-  // 组装完整的外貌描述：基础外貌 + 状态级别属性（服装/发型/配饰/年龄阶段）
+  // 组装完整的外貌描述：基础外貌 + 状态级别属性（服装/发型/配饰/年龄阶段/手持道具）
+  // ★ 白膜模式：不叠加任何状态量（服装/发型/配饰/年龄/手持道具），白膜只表达永久体貌特征
   const stateAppearanceParts = [];
-  if (ageStage) stateAppearanceParts.push(`年龄阶段: ${ageStage}`);
-  if (outfit) stateAppearanceParts.push(`服装: ${outfit}`);
-  if (hairstyle) stateAppearanceParts.push(`发型: ${hairstyle}`);
-  if (accessories) stateAppearanceParts.push(`配饰: ${accessories}`);
+  if (!isBaseModel) {
+    if (ageStage) stateAppearanceParts.push(`年龄阶段: ${ageStage}`);
+    if (outfit) stateAppearanceParts.push(`服装: ${outfit}`);
+    if (hairstyle) stateAppearanceParts.push(`发型: ${hairstyle}`);
+    if (accessories) stateAppearanceParts.push(`配饰: ${accessories}`);
+    if (heldProps) stateAppearanceParts.push(`手持道具: ${heldProps}`);
+  }
   const composedAppearance = stateAppearanceParts.length > 0
     ? `${appearance || ''}${appearance ? '；' : ''}${stateAppearanceParts.join('；')}`
     : appearance;
@@ -238,6 +270,78 @@ ${isNonFront ? '\n【再次强调】提示词中必须完整重复上面的「�
 }
 
 /**
+ * 白膜模式专用：使用 AI 生成角色设定图（三视角 turnaround）的提示词
+ * 与 generateViewPrompt 的区别：要求在同一张图上展示正面/侧面/背面三个视角
+ */
+async function generateDesignSheetPrompt(characterName, appearance, description, style, textModel, options = {}) {
+  const { gender = 'unknown', bodyProportionInstruction, bodyElements } = options;
+  const bodyPrompt = BASE_MODEL_BODY[gender] || BASE_MODEL_BODY.unknown;
+  const bodyElementsNote = bodyElements
+    ? `\n- 【身体元素标记】角色身体上有以下永久性标记，必须在生成的图像中体现：${bodyElements}`
+    : '';
+
+  const fullPrompt = `你是一个专业的角色设计图提示词专家。你的任务是生成用于 AI 绘图的「角色设定图 / Character Design Reference Sheet」提示词。
+
+核心要求（必须严格遵守）：
+1. 提示词必须用英文输出，逗号分隔的关键词格式
+2. 【关键】这是一张角色设定图（Character Design Reference Sheet），需要在同一张图上展示同一角色的正面、侧面、背面三个视角的全身立绘，类似游戏角色的 turnaround reference sheet
+3. 必须包含：character design reference sheet, turnaround, front view, side view, back view, same character, full body, simple clean white background, professional character sheet layout
+4. 【画风一致性】角色的绘制风格必须严格匹配下方「风格要求」。提示词的前几个关键词必须是风格描述词
+5. 【白膜模式】角色必须穿着统一的标准化白膜着装：纯白色无花纹贴身背心 + 纯白色短裤，类似游戏建模 base mesh。不能包含任何其他服装、装饰品、装备或鞋子。必须包含: ${bodyPrompt}
+6. 绝对不要加入任何场景、背景元素、故事情节
+7. 保持中性自然表情
+8. 长度控制在 100-180 个单词
+
+---
+
+请为以下角色生成角色设定图的提示词：
+
+★ 风格要求（最优先）：${style || '动漫风格'}
+${bodyProportionInstruction ? `★ 体型比例要求：${bodyProportionInstruction}` : ''}
+角色名称：${characterName || '未命名角色'}
+外貌特征：${appearance || '无'}
+角色描述：${description || '无'}${bodyElementsNote}
+
+请直接输出英文提示词，不要包含任何解释。`;
+
+  console.log('[CharacterViews] 使用 AI 生成白膜设定图提示词...');
+
+  const response = await handleBaseTextModelCall({
+    prompt: fullPrompt,
+    textModel: textModel,
+    maxTokens: 2048,
+    temperature: 0.7
+  });
+
+  let prompt = '';
+  if (typeof response === 'string') {
+    prompt = response;
+  } else if (response && response.content) {
+    prompt = response.content;
+  } else if (response && response.text) {
+    prompt = response.text;
+  } else if (response && response.message) {
+    prompt = response.message;
+  } else if (response && response.taskId) {
+    throw new Error(`错误：调用了图片生成模型而非文本模型。响应: ${JSON.stringify(response).substring(0, 200)}`);
+  }
+
+  if (!prompt) {
+    console.error('[CharacterViews] 无法提取设定图提示词，完整响应:', JSON.stringify(response));
+    throw new Error(`AI 响应中没有内容。响应类型: ${typeof response}`);
+  }
+
+  prompt = String(prompt)
+    .replace(/^["']|["']$/g, '')
+    .replace(/\n+/g, ', ')
+    .replace(/,\s*,/g, ',')
+    .trim();
+
+  console.log('[CharacterViews] ✅ 白膜设定图提示词生成完成:', prompt.substring(0, 100) + '...');
+  return prompt;
+}
+
+/**
  * 主处理函数
  */
 async function handleCharacterViewsGeneration(inputParams, onProgress) {
@@ -264,10 +368,13 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
     accessories = '',     // 配饰描述
     ageStage = '',        // 年龄阶段
     bodyElements = '',     // 身体元素（纹身、疤痕、胎记等，白膜专用）
+    heldProps = '',       // 手持/携带道具（非白膜状态下角色手里拿着或携带的物品）
     // 前端自定义提示词（跳过 AI 提示词生成步骤）
     customPromptFront,
     customPromptSide,
-    customPromptBack
+    customPromptBack,
+    // 生成模式：'design_sheet'（默认，白膜用）| 'three_views'（独立三视图）
+    generateMode
   } = inputParams;
 
 
@@ -402,268 +509,232 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
       }
     }
   } else if (!isBaseModel && isStateGeneration && characterId) {
-    // ★ 非白膜状态生成：只用白膜三视图作为参考（不查询用户参考图）
-    const baseModelState = await queryOne(
-      `SELECT front_view_url, side_view_url, back_view_url FROM character_states 
-       WHERE character_id = ? AND is_base_model = 1 AND front_view_url IS NOT NULL AND front_view_url != ''`,
+    // ★ 非白膜状态生成：使用白膜设定图 (image_url) 作为参考
+    const baseModelRow = await queryOne(
+      `SELECT image_url FROM character_states 
+       WHERE character_id = ? AND is_base_model = 1 AND image_url IS NOT NULL AND image_url != ''`,
       [characterId]
     );
-    if (baseModelState) {
-      const baseModelUrls = [baseModelState.front_view_url, baseModelState.side_view_url, baseModelState.back_view_url]
-        .filter(Boolean)
-        .map(url => resolveToInternalUrl(url))
-        .filter(Boolean);
-      if (baseModelUrls.length > 0) {
-        userReferenceUrls = baseModelUrls;
-        console.log(`[CharacterViews] ✅ 非白膜状态生成：使用白膜三视图作为唯一参考 (${baseModelUrls.length} 张):`, baseModelUrls);
+    if (baseModelRow?.image_url) {
+      const designSheetUrl = resolveToInternalUrl(baseModelRow.image_url);
+      if (designSheetUrl) {
+        userReferenceUrls = [designSheetUrl];
+        console.log('[CharacterViews] ✅ 非白膜状态生成：使用白膜设定图作为参考:', designSheetUrl);
       }
     } else {
-      console.log('[CharacterViews] 非白膜状态生成：白膜无三视图，将纯靠提示词生成');
+      console.log('[CharacterViews] 非白膜状态生成：白膜无设定图，将纯靠提示词生成');
     }
   } else {
     console.log('[CharacterViews] 角色级别生成或无 characterId，跳过参考图查询');
   }
 
-  // === 正面视图 ===
-  let persistedFrontUrl = existingViews.front_view_url || null;
-  let lastGeneratedPrompt = ''; // 记录最新的英文提示词，用于存储到 generation_prompt
-  if (needFront) {
-    console.log('[CharacterViews] 生成正面视图...');
+  // 白膜三视图模式下，额外将已有设定图 (image_url) 加入参考
+  if (isBaseModel && generateMode === 'three_views' && stateId) {
+    const ownState = await queryOne('SELECT image_url FROM character_states WHERE id = ?', [stateId]);
+    if (ownState?.image_url) {
+      const designSheetUrl = resolveToInternalUrl(ownState.image_url);
+      if (designSheetUrl) {
+        userReferenceUrls.unshift(designSheetUrl);
+        console.log('[CharacterViews] ✅ 白膜三视图模式：将设定图作为首要参考:', designSheetUrl);
+      }
+    }
+  }
 
-    let frontPrompt;
+  // === 白膜设定图模式：生成单张 AI 角色设定图（含正/侧/背三视角 turnaround）===
+  // 仅当白膜模式且未明确要求三视图时走此分支
+  if (isBaseModel && generateMode !== 'three_views') {
+    console.log('[CharacterViews] ★ 白膜模式：生成单张角色设定图（三视角 turnaround）');
+
+    let designSheetPrompt;
     const hasUserRefs = userReferenceUrls.length > 0;
-    // 优先使用前端自定义提示词
-    if (typeof customPromptFront === 'string' && customPromptFront.trim()) {
-      frontPrompt = customPromptFront.trim();
-      console.log('[CharacterViews] ✅ 正面视图使用前端自定义提示词（长度:', frontPrompt.length, '）');
-    } else if (hasUserRefs) {
-      if (isBaseModel) {
-        // ★ 白膜 + 有参考图：保留脸部发型，身体裸体 + 身体元素
-        frontPrompt = buildBaseModelReferencePrompt('front', style, characterName, { gender, bodyElements });
-        console.log('[CharacterViews] ✅ 白膜模式 + 有参考图 → 使用白膜专用提示词（保留脸部发型，裸体基础形态）');
-      } else {
-        // ★ 非白膜 + 有参考图：使用通用简化提示词，让参考图主导角色外貌（跳过 LLM 翻译，节省成本）
-        frontPrompt = buildReferenceGuidedPrompt('front', style, characterName, { isBaseModel, gender });
-        console.log('[CharacterViews] ✅ 有参考图 → 使用简化提示词（参考图优先，跳过 LLM）');
-      }
-    } else {
-      // 无参考图：使用 AI 根据外貌描述生成详细英文提示词
-      frontPrompt = await generateViewPrompt('front', characterName, appearance, description, style, textModel, { isBaseModel, gender, outfit, hairstyle, accessories, ageStage, bodyProportionInstruction, bodyElements });
-    }
-    lastGeneratedPrompt = frontPrompt; // 保存英文提示词
-    // 构建图片生成参数：优先使用具体尺寸，否则使用 aspectRatio
-    const frontGenParams = {
-      prompt: frontPrompt,
-      imageModel: imageModel,
-      aspectRatio
-    };
-    // 如果传入了具体 width/height，优先使用它们
-    if (width && height) {
-      frontGenParams.width = width;
-      frontGenParams.height = height;
-      delete frontGenParams.aspectRatio;
-    }
 
-    // 如果有用户参考图，传递给正面视图生成
     if (hasUserRefs) {
-      frontGenParams.imageUrls = [...userReferenceUrls];
-      frontGenParams.strength = 0.10; // 极低 strength → 最大程度保留参考图外貌（正面与参考图同角度，几乎无需变形）
-      console.log('[CharacterViews] 正面视图使用用户参考图 (strength=0.10):', userReferenceUrls);
+      // 有参考图：保留脸部发型，白膜标准着装，三视角设定图
+      const bodyPrompt = BASE_MODEL_BODY[gender] || BASE_MODEL_BODY.unknown;
+      const bodyElementsPrompt = bodyElements ? `, body markings and features: ${bodyElements}` : '';
+      designSheetPrompt = `match the character face and hairstyle from the reference image exactly, preserve all facial features face shape eye shape eye color hair style hair color hair length from reference, keep identical face proportions from reference image, character design reference sheet, three-angle turnaround showing front view side view and back view of the same character on one image, ${bodyPrompt}${bodyElementsPrompt}, ${style || 'anime style'}, full body, simple clean white background, even soft lighting, neutral natural expression, professional character sheet layout`;
+      console.log('[CharacterViews] ✅ 白膜设定图：有参考图 → 使用简化提示词（保留脸部发型）');
+    } else {
+      // 无参考图：使用 AI 根据外貌描述生成详细提示词
+      designSheetPrompt = await generateDesignSheetPrompt(characterName, appearance, description, style, textModel, { gender, bodyProportionInstruction, bodyElements });
     }
 
-    const frontResult = await handleImageGeneration(frontGenParams, (progress) => {
-      if (onProgress) onProgress(5 + progress * 0.2);
-    });
-    const frontViewUrl = frontResult.image_url;
-    console.log('[CharacterViews] ✅ 正面视图生成完成');
+    if (onProgress) onProgress(10);
 
-    persistedFrontUrl = await downloadAndStore(
-      frontViewUrl,
-      `${storageBase}/front_${ts}`,
+    // 生成设定图（横版 16:9，适合三视角排列）
+    const sheetGenParams = {
+      prompt: designSheetPrompt,
+      imageModel: imageModel,
+      aspectRatio: '16:9'
+    };
+    if (hasUserRefs) {
+      sheetGenParams.imageUrls = [...userReferenceUrls];
+      sheetGenParams.strength = 0.15;
+      console.log('[CharacterViews] 白膜设定图使用参考图 (strength=0.15):', userReferenceUrls);
+    }
+
+    const sheetResult = await handleImageGeneration(sheetGenParams, (progress) => {
+      if (onProgress) onProgress(10 + progress * 0.7);
+    });
+    const sheetImageUrl = sheetResult.image_url;
+    console.log('[CharacterViews] ✅ 白膜角色设定图生成完成');
+
+    // 持久化到存储
+    const persistedSheetUrl = await downloadAndStore(
+      sheetImageUrl,
+      `${storageBase}/design_sheet_${ts}`,
       { fallbackExt: '.png' }
     );
 
-    if (targetId && persistedFrontUrl) {
+    if (onProgress) onProgress(85);
+
+    // 更新数据库：白膜设定图存入 image_url，不写 front/side/back_view_url
+    if (isStateGeneration && stateId && persistedSheetUrl) {
       const updateResult = await execute(
-        `UPDATE ${targetTable} SET front_view_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-        [persistedFrontUrl, targetId]
+        `UPDATE character_states SET image_url = ?, generation_status = 'completed', generation_prompt = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+        [persistedSheetUrl, designSheetPrompt || '', stateId]
       );
-      assertUpdated(updateResult, '[CharacterViews] 正面视图');
+      assertUpdated(updateResult, '[CharacterViews] 白膜设定图(状态)');
       await assertPersistedFields({
-        table: targetTable,
-        id: targetId,
-        fields: ['front_view_url'],
-        label: '[CharacterViews] 正面视图'
+        table: 'character_states',
+        id: stateId,
+        fields: ['image_url'],
+        label: '[CharacterViews] 白膜设定图(状态)'
       });
-      console.log(`[CharacterViews] ✅ 正面视图已保存到 ${targetTable}`);
+      console.log('[CharacterViews] ✅ 白膜设定图已保存到 character_states.image_url');
     }
-  } else {
-    console.log('[CharacterViews] ✅ 正面视图已存在，跳过生成');
+    // 同步更新角色级别 image_url + character_sheet_url
+    if (characterId && persistedSheetUrl) {
+      await execute(
+        `UPDATE characters SET image_url = ?, character_sheet_url = ?, generation_status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+        [persistedSheetUrl, persistedSheetUrl, characterId]
+      );
+      console.log('[CharacterViews] ✅ 白膜设定图已保存到 characters (image_url + character_sheet_url)');
+    }
+
+    if (onProgress) onProgress(100);
+
+    console.log('[CharacterViews] ✅ 白膜设定图生成完成');
+    return {
+      frontViewUrl: null,
+      sideViewUrl: null,
+      backViewUrl: null,
+      imageUrl: persistedSheetUrl,
+      characterSheetUrl: persistedSheetUrl,
+      imageModel,
+      textModel,
+      aspectRatio: '16:9',
+      stateId: stateId || null,
+      isStateGeneration,
+      isDesignSheet: true
+    };
   }
 
-  if (onProgress) onProgress(30);
-
-  // 收集参考图片 URL（用于保持角色一致性）
-  // 用户参考图排在前面作为主要参考，自生成视图在后面保持一致性
-  const referenceUrls = [...userReferenceUrls];
-  if (persistedFrontUrl) {
-    referenceUrls.push(resolveToInternalUrl(persistedFrontUrl));
-    console.log('[CharacterViews] 正面视图将作为参考图传递给后续生成');
-  }
-  if (referenceUrls.length > 0) {
-    console.log(`[CharacterViews] 侧面/背面参考图列表 (${referenceUrls.length} 张):`, referenceUrls);
-  }
-
-  // === 侧面视图 ===
+  // === 三视图并行生成（直接参考白膜设定图） ===
+  let persistedFrontUrl = existingViews.front_view_url || null;
   let persistedSideUrl = existingViews.side_view_url || null;
-  if (needSide) {
-    console.log('[CharacterViews] 生成侧面视图...');
-
-    let sidePrompt;
-    const sideHasUserRefs = userReferenceUrls.length > 0;
-    // 优先使用前端自定义提示词
-    if (typeof customPromptSide === 'string' && customPromptSide.trim()) {
-      sidePrompt = customPromptSide.trim();
-      console.log('[CharacterViews] ✅ 侧面视图使用前端自定义提示词（长度:', sidePrompt.length, '）');
-    } else if (sideHasUserRefs) {
-      if (isBaseModel) {
-        sidePrompt = buildBaseModelReferencePrompt('side', style, characterName, { gender, bodyElements });
-        console.log('[CharacterViews] ✅ 白膜模式 + 有参考图 → 侧面视图使用白膜专用提示词');
-      } else {
-        sidePrompt = buildReferenceGuidedPrompt('side', style, characterName, { isBaseModel, gender });
-        console.log('[CharacterViews] ✅ 有参考图 → 侧面视图使用简化提示词');
-      }
-    } else {
-      sidePrompt = await generateViewPrompt('side', characterName, appearance, description, style, textModel, { isBaseModel, gender, outfit, hairstyle, accessories, ageStage, bodyProportionInstruction, bodyElements });
-    }
-    const sideGenParams = {
-      prompt: sidePrompt,
-      imageModel: imageModel,
-      aspectRatio
-    };
-    // 如果传入了具体 width/height，优先使用它们
-    if (width && height) {
-      sideGenParams.width = width;
-      sideGenParams.height = height;
-      delete sideGenParams.aspectRatio;
-    }
-    if (referenceUrls.length > 0) {
-      sideGenParams.imageUrls = referenceUrls;
-      if (sideHasUserRefs) sideGenParams.strength = 0.15;
-      console.log(`[CharacterViews] 侧面视图参考图${sideHasUserRefs ? ' (strength=0.15)' : ''}:`, referenceUrls);
-    }
-    const sideResult = await handleImageGeneration(sideGenParams, (progress) => {
-      if (onProgress) onProgress(30 + progress * 0.25);
-    });
-    const sideViewUrl = sideResult.image_url;
-    console.log('[CharacterViews] ✅ 侧面视图生成完成');
-
-    persistedSideUrl = await downloadAndStore(
-      sideViewUrl,
-      `${storageBase}/side_${ts}`,
-      { fallbackExt: '.png' }
-    );
-
-    if (targetId && persistedSideUrl) {
-      const updateResult = await execute(
-        `UPDATE ${targetTable} SET side_view_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-        [persistedSideUrl, targetId]
-      );
-      assertUpdated(updateResult, '[CharacterViews] 侧面视图');
-      await assertPersistedFields({
-        table: targetTable,
-        id: targetId,
-        fields: ['side_view_url'],
-        label: '[CharacterViews] 侧面视图'
-      });
-      console.log(`[CharacterViews] ✅ 侧面视图已保存到 ${targetTable}`);
-    }
-  } else {
-    console.log('[CharacterViews] ✅ 侧面视图已存在，跳过生成');
-  }
-
-  if (onProgress) onProgress(60);
-
-  // 累加侧面视图到参考图
-  if (persistedSideUrl) {
-    referenceUrls.push(resolveToInternalUrl(persistedSideUrl));
-  }
-
-  // === 背面视图 ===
   let persistedBackUrl = existingViews.back_view_url || null;
-  if (needBack) {
-    console.log('[CharacterViews] 生成背面视图...');
+  let lastGeneratedPrompt = '';
 
-    let backPrompt;
-    const backHasUserRefs = userReferenceUrls.length > 0;
-    // 优先使用前端自定义提示词
-    if (typeof customPromptBack === 'string' && customPromptBack.trim()) {
-      backPrompt = customPromptBack.trim();
-      console.log('[CharacterViews] ✅ 背面视图使用前端自定义提示词（长度:', backPrompt.length, '）');
-    } else if (backHasUserRefs) {
-      if (isBaseModel) {
-        backPrompt = buildBaseModelReferencePrompt('back', style, characterName, { gender, bodyElements });
-        console.log('[CharacterViews] ✅ 白膜模式 + 有参考图 → 背面视图使用白膜专用提示词');
-      } else {
-        backPrompt = buildReferenceGuidedPrompt('back', style, characterName, { isBaseModel, gender });
-        console.log('[CharacterViews] ✅ 有参考图 → 背面视图使用简化提示词');
-      }
-    } else {
-      backPrompt = await generateViewPrompt('back', characterName, appearance, description, style, textModel, { isBaseModel, gender, outfit, hairstyle, accessories, ageStage, bodyProportionInstruction, bodyElements });
-    }
-    const backGenParams = {
-      prompt: backPrompt,
-      imageModel: imageModel,
-      aspectRatio
-    };
-    // 如果传入了具体 width/height，优先使用它们
-    if (width && height) {
-      backGenParams.width = width;
-      backGenParams.height = height;
-      delete backGenParams.aspectRatio;
-    }
-    if (referenceUrls.length > 0) {
-      backGenParams.imageUrls = referenceUrls;
-      if (backHasUserRefs) backGenParams.strength = 0.20;
-      console.log(`[CharacterViews] 背面视图参考图${backHasUserRefs ? ' (strength=0.20)' : ''}:`, referenceUrls);
-    }
-    const backResult = await handleImageGeneration(backGenParams, (progress) => {
-      if (onProgress) onProgress(60 + progress * 0.25);
-    });
-    const backViewUrl = backResult.image_url;
-    console.log('[CharacterViews] ✅ 背面视图生成完成');
+  const viewsToGenerate = [];
+  if (needFront) viewsToGenerate.push({ view: 'front', customPrompt: customPromptFront });
+  if (needSide) viewsToGenerate.push({ view: 'side', customPrompt: customPromptSide });
+  if (needBack) viewsToGenerate.push({ view: 'back', customPrompt: customPromptBack });
 
-    persistedBackUrl = await downloadAndStore(
-      backViewUrl,
-      `${storageBase}/back_${ts}`,
-      { fallbackExt: '.png' }
+  if (viewsToGenerate.length > 0) {
+    const hasUserRefs = userReferenceUrls.length > 0;
+    console.log(`[CharacterViews] 开始并行生成 ${viewsToGenerate.length} 个视图${hasUserRefs ? '（参考白膜设定图）' : '（纯描述生成）'}...`);
+
+    // Step 1: 并行构建提示词
+    const promptResults = await Promise.all(
+      viewsToGenerate.map(async ({ view, customPrompt }) => {
+        if (typeof customPrompt === 'string' && customPrompt.trim()) {
+          console.log(`[CharacterViews] ${view}视图使用前端自定义提示词`);
+          return { view, prompt: customPrompt.trim() };
+        }
+        if (hasUserRefs) {
+          if (isBaseModel) {
+            return { view, prompt: buildBaseModelReferencePrompt(view, style, characterName, { gender, bodyElements }) };
+          }
+          // 非白膜状态：参考图通常是白膜设定图，必须把状态服装/发型/配饰传入以覆盖参考图占位装
+          return { view, prompt: buildReferenceGuidedPrompt(view, style, characterName, { isBaseModel, gender, outfit, hairstyle, accessories, ageStage, heldProps }) };
+        }
+        const prompt = await generateViewPrompt(view, characterName, appearance, description, style, textModel, { isBaseModel, gender, outfit, hairstyle, accessories, ageStage, bodyProportionInstruction, bodyElements, heldProps });
+        return { view, prompt };
+      })
+    );
+    lastGeneratedPrompt = promptResults[0]?.prompt || '';
+
+    if (onProgress) onProgress(10);
+
+    // Step 2: 并行生成图片
+    let completedCount = 0;
+    const imageResults = await Promise.all(
+      promptResults.map(async ({ view, prompt }) => {
+        const genParams = { prompt, imageModel, aspectRatio };
+        if (width && height) {
+          genParams.width = width;
+          genParams.height = height;
+          delete genParams.aspectRatio;
+        }
+        if (hasUserRefs) {
+          genParams.imageUrls = [...userReferenceUrls];
+          genParams.strength = 0.15;
+          console.log(`[CharacterViews] ${view}视图参考白膜设定图 (strength=0.15):`, userReferenceUrls);
+        }
+        const result = await handleImageGeneration(genParams);
+        completedCount++;
+        if (onProgress) onProgress(10 + Math.round((completedCount / viewsToGenerate.length) * 60));
+        console.log(`[CharacterViews] ✅ ${view}视图生成完成 (${completedCount}/${viewsToGenerate.length})`);
+        return { view, imageUrl: result.image_url, prompt };
+      })
     );
 
-    if (targetId && persistedBackUrl) {
+    // Step 3: 并行持久化到存储
+    const persistResults = await Promise.all(
+      imageResults.map(async ({ view, imageUrl, prompt }) => {
+        const persistedUrl = await downloadAndStore(
+          imageUrl,
+          `${storageBase}/${view}_${ts}`,
+          { fallbackExt: '.png' }
+        );
+        return { view, persistedUrl, prompt };
+      })
+    );
+
+    if (onProgress) onProgress(80);
+
+    // Step 4: 更新数据库 + 同步跟踪变量
+    for (const { view, persistedUrl } of persistResults) {
+      if (!targetId || !persistedUrl) continue;
+      const urlField = `${view}_view_url`;
       const updateResult = await execute(
-        `UPDATE ${targetTable} SET back_view_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-        [persistedBackUrl, targetId]
+        `UPDATE ${targetTable} SET ${urlField} = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+        [persistedUrl, targetId]
       );
-      assertUpdated(updateResult, '[CharacterViews] 背面视图');
+      assertUpdated(updateResult, `[CharacterViews] ${view}视图`);
       await assertPersistedFields({
         table: targetTable,
         id: targetId,
-        fields: ['back_view_url'],
-        label: '[CharacterViews] 背面视图'
+        fields: [urlField],
+        label: `[CharacterViews] ${view}视图`
       });
-      console.log(`[CharacterViews] ✅ 背面视图已保存到 ${targetTable}`);
+      console.log(`[CharacterViews] ✅ ${view}视图已保存到 ${targetTable}`);
+      if (view === 'front') persistedFrontUrl = persistedUrl;
+      else if (view === 'side') persistedSideUrl = persistedUrl;
+      else if (view === 'back') persistedBackUrl = persistedUrl;
     }
   } else {
-    console.log('[CharacterViews] ✅ 背面视图已存在，跳过生成');
+    console.log('[CharacterViews] 所有视图已存在，跳过生成');
   }
 
   if (onProgress) onProgress(85);
 
   // === 合成角色设定图 ===
   let characterSheetUrl = null;
+  const composedAppearance = [appearance, outfit ? `服装: ${outfit}` : '', hairstyle ? `发型: ${hairstyle}` : '', accessories ? `配饰: ${accessories}` : '', ageStage ? `年龄: ${ageStage}` : ''].filter(Boolean).join('；');
   try {
     console.log('[CharacterViews] 开始合成角色设定图...');
-    const composedAppearance = [appearance, outfit ? `服装: ${outfit}` : '', hairstyle ? `发型: ${hairstyle}` : '', accessories ? `配饰: ${accessories}` : '', ageStage ? `年龄: ${ageStage}` : ''].filter(Boolean).join('；');
     const sheetBuffer = await composeCharacterSheet({
       frontViewUrl: persistedFrontUrl,
       sideViewUrl: persistedSideUrl,

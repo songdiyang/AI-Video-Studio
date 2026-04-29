@@ -14,6 +14,10 @@ interface UseAutoStoryboardOptions {
   onError?: (message: string) => void;
   loadStoryboards?: (scriptId: number) => Promise<void>; // 增量加载回调
   useSceneMode?: boolean; // 是否使用按场景生成模式
+  /** 弱绑定参考剧本正文（仅作为 AI 生成 prompt 的补充上下文） */
+  referenceScriptContent?: string | null;
+  /** 弱绑定参考剧本标题 */
+  referenceScriptTitle?: string | null;
 }
 
 export function useAutoStoryboard({
@@ -25,9 +29,13 @@ export function useAutoStoryboard({
   onScenesGenerated,
   onError,
   loadStoryboards,
-  useSceneMode = true
+  useSceneMode = true,
+  referenceScriptContent,
+  referenceScriptTitle
 }: UseAutoStoryboardOptions) {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
+  // 不再提醒（预留，目前仅本地 state，不持久化）
+  const [dontShowAgain, setDontShowAgain] = useState(false);
 
   // 使用分镜生成 hook
   const { isGenerating, startGeneration, progress, job } = useStoryboardGeneration({
@@ -45,6 +53,12 @@ export function useAutoStoryboard({
     }
   });
 
+  // 抽出公共的启动参数（参考剧本 + 标题）
+  const buildReferenceOptions = () => ({
+    referenceScriptContent: referenceScriptContent || undefined,
+    referenceScriptTitle: referenceScriptTitle || undefined
+  });
+
   // 点击自动分镜按钮
   const handleAutoGenerateClick = () => {
     if (!scriptId) {
@@ -57,8 +71,11 @@ export function useAutoStoryboard({
     }
 
     if (!hasExistingScenes) {
-      // 无现有分镜，直接生成
-      startGeneration(textModel, useSceneMode, false);
+      // 无现有分镜，直接生成（skip 语义对空分镜等价于 overwrite，不影响）
+      startGeneration(textModel, useSceneMode, false, {
+        conflictStrategy: 'skip',
+        ...buildReferenceOptions()
+      });
       return;
     }
 
@@ -66,7 +83,7 @@ export function useAutoStoryboard({
     setShowConfirmModal(true);
   };
 
-  // 清理旧数据后启动生成（覆盖模式）
+  // 清理旧数据后启动生成（完全覆盖模式）
   const cleanAndGenerate = async () => {
     if (!scriptId) return;
     try {
@@ -91,7 +108,10 @@ export function useAutoStoryboard({
       onError?.('清理旧数据失败: ' + err.message);
       return;
     }
-    startGeneration(textModel, useSceneMode, false);
+    startGeneration(textModel, useSceneMode, false, {
+      conflictStrategy: 'overwrite',
+      ...buildReferenceOptions()
+    });
   };
 
   // 确认弹窗回调 - 根据模式执行
@@ -99,10 +119,14 @@ export function useAutoStoryboard({
     setShowConfirmModal(false);
     if (mode === 'overwrite') {
       cleanAndGenerate();
-    } else {
-      // 追加模式：不清理，直接生成并传入 appendMode=true
-      startGeneration(textModel, useSceneMode, true);
+      return;
     }
+    // skip / smart 都走追加模式 + 对应去重策略
+    startGeneration(textModel, useSceneMode, true, {
+      conflictStrategy: mode,
+      appendMode: true,
+      ...buildReferenceOptions()
+    });
   };
 
   return {
@@ -111,7 +135,10 @@ export function useAutoStoryboard({
     setShowConfirmModal,
     handleAutoGenerateClick,
     handleConfirmGenerate,
+    dontShowAgain,
+    setDontShowAgain,
     progress,
     job
   };
 }
+

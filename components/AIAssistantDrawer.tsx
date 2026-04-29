@@ -13,7 +13,7 @@ const AIAssistantPanel = lazy(() => import('./AIAssistantPanel'));
 
 const AIAssistantDrawer: React.FC = () => {
   const { isOpen, close, projectId } = useAIAssistantUI();
-  const { currentFrame, scenes, onAction } = useAIAssistantData();
+  const { currentFrame, scenes, onAction, characters, locations, scripts } = useAIAssistantData();
 
   return (
     <AnimatePresence>
@@ -38,6 +38,9 @@ const AIAssistantDrawer: React.FC = () => {
               projectId={projectId}
               currentFrame={currentFrame}
               scenes={scenes}
+              characters={characters}
+              locations={locations}
+              scripts={scripts}
               onClose={close}
               onAction={onAction || undefined}
             />

@@ -396,7 +396,26 @@ router.get('/:jobId', authMiddleware, async (req, res) => {
     const { jobId } = req.params;
     const numericJobId = decodeId(jobId);
 
-    const job = await generationQueryService.getJob(numericJobId);
+    // 先按 hex 解析查询；如果找不到且入参为纯数字，回退按十进制解析（兼容早期未编码的 jobId）
+    let job;
+    try {
+      job = await generationQueryService.getJob(numericJobId);
+    } catch (primaryErr) {
+      if (/^\d+$/.test(String(jobId))) {
+        const decimalJobId = parseInt(jobId, 10);
+        if (decimalJobId !== numericJobId) {
+          try {
+            job = await generationQueryService.getJob(decimalJobId);
+          } catch (_) {
+            throw primaryErr;
+          }
+        } else {
+          throw primaryErr;
+        }
+      } else {
+        throw primaryErr;
+      }
+    }
 
     // 验证所有权
     if (job.user_id !== userId) {

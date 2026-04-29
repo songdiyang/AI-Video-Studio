@@ -19,11 +19,11 @@ async function getStoryboardLinks(storyboardId) {
     queryAll(
       `SELECT sc.character_id, sc.role_type, c.name, c.appearance, c.image_url,
               c.base_appearance, c.outfit_appearance,
-              bs.front_view_url AS base_front_view_url,
+              COALESCE(bs.image_url, bs.front_view_url) AS base_front_view_url,
               bs.is_base_model AS has_base_model,
               cs.name AS active_state_name,
               cs.outfit AS active_state_outfit,
-              cs.front_view_url AS active_state_image_url
+              COALESCE(cs.image_url, cs.front_view_url) AS active_state_image_url
        FROM storyboard_characters sc
        JOIN characters c ON c.id = sc.character_id
        LEFT JOIN character_states bs ON bs.character_id = c.id AND bs.is_base_model = 1
@@ -64,11 +64,11 @@ async function getBatchStoryboardLinks(storyboardIds) {
     queryAll(
       `SELECT sc.storyboard_id, sc.character_id, sc.role_type, c.name, c.appearance, c.image_url,
               c.base_appearance, c.outfit_appearance,
-              bs.front_view_url AS base_front_view_url,
+              COALESCE(bs.image_url, bs.front_view_url) AS base_front_view_url,
               bs.is_base_model AS has_base_model,
               cs.name AS active_state_name,
               cs.outfit AS active_state_outfit,
-              cs.front_view_url AS active_state_image_url
+              COALESCE(cs.image_url, cs.front_view_url) AS active_state_image_url
        FROM storyboard_characters sc
        JOIN characters c ON c.id = sc.character_id
        LEFT JOIN character_states bs ON bs.character_id = c.id AND bs.is_base_model = 1

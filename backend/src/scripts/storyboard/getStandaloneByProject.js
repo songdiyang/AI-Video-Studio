@@ -26,6 +26,10 @@ module.exports = (router) => {
   router.get('/project/:projectId/standalone', authMiddleware, async (req, res) => {
     const userId = req.user.id;
     const projectId = Number(req.params.projectId);
+    // 可选集数过滤：传入时仅返回归档于该集的分镜（旧数据 episode_number 回填为 1）
+    const rawEp = req.query.episode;
+    const episodeFilter = rawEp !== undefined && rawEp !== '' ? Number(rawEp) : null;
+    const useEpisode = Number.isFinite(episodeFilter) && episodeFilter >= 1 ? episodeFilter : null;
 
     try {
       // 权限校验：项目存在且当前用户可访问
@@ -38,11 +42,16 @@ module.exports = (router) => {
         return res.status(403).json({ message: '无权访问该项目' });
       }
 
-      // 查询自由分镜（script_id IS NULL）
-      const storyboards = await queryAll(
-        'SELECT * FROM storyboards WHERE project_id = ? AND script_id IS NULL ORDER BY idx ASC',
-        [projectId]
-      );
+      // 查询自由分镜（script_id IS NULL），按集数可选过滤
+      let sql = 'SELECT * FROM storyboards WHERE project_id = ? AND script_id IS NULL';
+      const params = [projectId];
+      if (useEpisode !== null) {
+        // 旧数据 episode_number 已回填为 1；新数据写入时也默认 1，因此直接相等过滤即可
+        sql += ' AND episode_number = ?';
+        params.push(useEpisode);
+      }
+      sql += ' ORDER BY idx ASC';
+      const storyboards = await queryAll(sql, params);
 
       // 批量补齐资源关联
       const sbIds = storyboards.map(sb => sb.id);

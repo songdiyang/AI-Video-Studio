@@ -219,9 +219,15 @@ async function handleSceneImageGeneration(inputParams, onProgress) {
 
   // 项目视觉风格（必填，未设置则报错）
   let projectId = null;
+  let effectiveReferenceImageUrl = referenceImageUrl || null;
   if (sceneId) {
-    const scene = await queryOne('SELECT project_id FROM scenes WHERE id = ?', [sceneId]);
+    const scene = await queryOne('SELECT project_id, reference_image_url FROM scenes WHERE id = ?', [sceneId]);
     projectId = scene?.project_id;
+    // 如果前端未显式传参考图，则从场景记录中自动读取
+    if (!effectiveReferenceImageUrl && scene?.reference_image_url) {
+      effectiveReferenceImageUrl = scene.reference_image_url;
+      console.log('[SceneImageGen] 从场景记录读取参考图:', effectiveReferenceImageUrl);
+    }
   }
   const style = await requireVisualStyle(projectId);
 
@@ -231,7 +237,7 @@ async function handleSceneImageGeneration(inputParams, onProgress) {
     style: style.substring(0, 60) + (style.length > 60 ? '...' : ''),
     imageModel: resolvedImageModel,
     aspectRatio: aspectRatio || `${width}x${height}`,
-    hasReferenceImage: !!referenceImageUrl,
+    hasReferenceImage: !!effectiveReferenceImageUrl,
     hasStyleDescription: !!styleDescription
   });
 
@@ -294,9 +300,9 @@ async function handleSceneImageGeneration(inputParams, onProgress) {
   // 步骤3：并行生成 A/B 两面场景图片
   console.log('[SceneImageGen] 并行生成 A/B 两面场景图片...');
   const imageParamsA = { prompt: scenePrompt, imageModel: resolvedImageModel, aspectRatio, resolution, width, height };
-  if (referenceImageUrl) {
-    imageParamsA.imageUrl = referenceImageUrl;
-    console.log('[SceneImageGen] A 面使用参考图:', referenceImageUrl);
+  if (effectiveReferenceImageUrl) {
+    imageParamsA.imageUrl = effectiveReferenceImageUrl;
+    console.log('[SceneImageGen] A 面使用参考图:', effectiveReferenceImageUrl);
   }
 
   // A/B 面并行生成
@@ -307,8 +313,8 @@ async function handleSceneImageGeneration(inputParams, onProgress) {
   let generateB = null;
   if (reversePrompt) {
     const imageParamsB = { prompt: reversePrompt, imageModel: resolvedImageModel, aspectRatio, resolution, width, height };
-    if (referenceImageUrl) {
-      imageParamsB.imageUrl = referenceImageUrl;
+    if (effectiveReferenceImageUrl) {
+      imageParamsB.imageUrl = effectiveReferenceImageUrl;
     }
     generateB = handleImageGeneration(imageParamsB, (progress) => {
       if (onProgress) onProgress(55 + progress * 0.3); // 55% -> 85%

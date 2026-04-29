@@ -37,11 +37,13 @@ class WorkflowEngine {
    * @param {object} params.jobParams - 传给工作流的业务参数（如 title, description 等）
    * @returns {Promise<{ jobId: number, tasks: Array }>}
    */
-  async startWorkflow(workflowType, { userId, projectId, jobParams }) {
+  async startWorkflow(workflowType, { userId, projectId, jobParams, parentJobId = null, metadata = null }) {
     const { jobId, tasks } = await this.starter.startWorkflow(workflowType, {
       userId,
       projectId,
-      jobParams
+      jobParams,
+      parentJobId,
+      metadata
     });
 
     // 异步触发执行（不阻塞返回）

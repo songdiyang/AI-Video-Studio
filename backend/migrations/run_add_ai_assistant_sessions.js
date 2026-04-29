@@ -19,8 +19,17 @@ async function migrate() {
     const sqlPath = path.join(__dirname, 'add_ai_assistant_sessions.sql');
     const sql = fs.readFileSync(sqlPath, 'utf-8');
 
+    // 去除 -- 注释（避免拆分后整条语句被注释吃掉）
+    const cleanedSql = sql
+      .split('\n')
+      .map((line) => {
+        const idx = line.indexOf('--');
+        return idx >= 0 ? line.substring(0, idx) : line;
+      })
+      .join('\n');
+
     // 拆分多个语句并逐个执行
-    const statements = sql
+    const statements = cleanedSql
       .split(';')
       .map((s) => s.trim())
       .filter((s) => s.length > 0);

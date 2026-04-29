@@ -19,25 +19,25 @@ const { generationStartService, sendGenerationError } = require('../../modules/g
 const AGE_STAGES = ['童年', '少年', '青年', '中年', '老年'];
 
 /**
- * 白膜就绪守卫：校验角色是否已有白膜三视图
+ * 白膜就绪守卫：校验角色是否已有白膜设定图或三视图
  * 返回 { ready: boolean, reason?: string, baseState?: object }
- * 规则：必须存在 is_base_model=1 且 front_view_url 非空的状态
+ * 规则：必须存在 is_base_model=1 且 image_url 或 front_view_url 任一非空的状态
  */
 async function checkBaseModelReady(characterId) {
   const baseState = await queryOne(
-    `SELECT id, front_view_url, side_view_url, back_view_url, generation_status
+    `SELECT id, image_url, front_view_url, side_view_url, back_view_url, generation_status
      FROM character_states
      WHERE character_id = ? AND is_base_model = 1
      ORDER BY id ASC LIMIT 1`,
     [characterId]
   );
   if (!baseState) {
-    return { ready: false, reason: '角色尚未生成白膜状态，请先在角色管理中生成白膜三视图' };
+    return { ready: false, reason: '角色尚未生成白膜状态，请先在角色管理中生成角色设定图' };
   }
-  if (!baseState.front_view_url) {
+  if (!baseState.front_view_url && !baseState.image_url) {
     return {
       ready: false,
-      reason: '角色白膜三视图尚未生成完成，请先完成白膜三视图再进行后续操作',
+      reason: '角色白膜设定图尚未生成完成，请先生成角色设定图再进行后续操作',
       baseState,
     };
   }
@@ -84,6 +84,7 @@ async function cleanAppearanceForBaseModel(appearance) {
 
 【必须去掉的内容】：
 - 所有服装/服饰描述（衣服、裤子、裙子、鞋子、帽子、配饰等）
+- 所有手持/携带道具描述（如剑、书本、胡萝卜、水杯、武器、包袋等手里拿着或身上携带的物品）
 - 所有场景描述（"在xxx场景中"等）
 - 所有性格/情感描述（"性格开朗"、"带有生活磨损感"等主观描述）
 - 所有风格描述（"纪实风格"、"日常真实"等）
@@ -410,7 +411,7 @@ module.exports = (router) => {
       name, description, appearance, image_url, 
       front_view_url, side_view_url, back_view_url, sort_order,
       // 新增外观属性字段
-      outfit, age_stage, hairstyle, accessories, body_elements, is_active, generation_prompt,
+      outfit, age_stage, hairstyle, accessories, body_elements, held_props, is_active, generation_prompt,
       // 状态分类和标签
       state_category, tags
     } = req.body;
@@ -481,13 +482,13 @@ module.exports = (router) => {
         `INSERT INTO character_states (
           character_id, name, description, appearance, image_url, 
           front_view_url, side_view_url, back_view_url, sort_order,
-          outfit, age_stage, hairstyle, accessories, body_elements, is_active, generation_prompt, generation_status,
+          outfit, age_stage, hairstyle, accessories, body_elements, held_props, is_active, generation_prompt, generation_status,
           state_category, tags
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'idle', ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'idle', ?, ?)`,
         [
           id, name.trim(), description || '', appearance || '', image_url || '',
           front_view_url || '', side_view_url || '', back_view_url || '', newSortOrder,
-          outfit || '', age_stage || '', hairstyle || '', accessories || '', body_elements || '', is_active ? 1 : 0, generation_prompt || '',
+          outfit || '', age_stage || '', hairstyle || '', accessories || '', body_elements || '', held_props || '', is_active ? 1 : 0, generation_prompt || '',
           normalizedCategory, parsedTags
         ]
       );
@@ -518,7 +519,7 @@ module.exports = (router) => {
       name, description, appearance, image_url, 
       front_view_url, side_view_url, back_view_url, sort_order,
       // 新增外观属性字段
-      outfit, age_stage, hairstyle, accessories, body_elements, is_active, generation_prompt, generation_status,
+      outfit, age_stage, hairstyle, accessories, body_elements, held_props, is_active, generation_prompt, generation_status,
       // 状态分类和标签
       state_category, tags
     } = req.body;
@@ -559,6 +560,7 @@ module.exports = (router) => {
         try {
           parsedTags = typeof tags === 'string' ? tags : JSON.stringify(tags);
         } catch (err) {
+          console.warn('[Update Character State][400] tags parse failed:', { stateId, tags, err: err.message });
           return res.status(400).json({ message: '标签格式错误，应为JSON数组' });
         }
       }
@@ -569,6 +571,7 @@ module.exports = (router) => {
         const cats = Array.isArray(state_category) ? state_category : (typeof state_category === 'string' && state_category.startsWith('[') ? JSON.parse(state_category) : [state_category]);
         const invalid = cats.filter(c => !STATE_CATEGORIES.includes(c));
         if (invalid.length > 0) {
+          console.warn('[Update Character State][400] invalid state_category:', { stateId, state_category, cats, invalid });
           return res.status(400).json({ message: `无效的状态分类: ${invalid.join(', ')}，可选值: ${STATE_CATEGORIES.join(', ')}` });
         }
         normalizedCategory = JSON.stringify(cats);
@@ -582,7 +585,8 @@ module.exports = (router) => {
         ['age_stage', age_stage, existingState.age_stage],
         ['hairstyle', hairstyle, existingState.hairstyle],
         ['accessories', accessories, existingState.accessories],
-        ['body_elements', body_elements, existingState.body_elements]
+        ['body_elements', body_elements, existingState.body_elements],
+        ['held_props', held_props, existingState.held_props]
       ].some(([, newVal, oldVal]) => newVal !== undefined && String(newVal || '') !== String(oldVal || ''));
 
       // 如果外貌属性变了且未显式传入 generation_prompt，则清除它
@@ -594,7 +598,7 @@ module.exports = (router) => {
         `UPDATE character_states 
          SET name = ?, description = ?, appearance = ?, image_url = ?, 
              front_view_url = ?, side_view_url = ?, back_view_url = ?, sort_order = ?,
-             outfit = ?, age_stage = ?, hairstyle = ?, accessories = ?, body_elements = ?,
+             outfit = ?, age_stage = ?, hairstyle = ?, accessories = ?, body_elements = ?, held_props = ?,
              is_active = ?, generation_prompt = ?, generation_status = ?,
              state_category = ?, tags = ?,
              updated_at = CURRENT_TIMESTAMP
@@ -613,6 +617,7 @@ module.exports = (router) => {
           hairstyle !== undefined ? hairstyle : (existingState.hairstyle || ''),
           accessories !== undefined ? accessories : (existingState.accessories || ''),
           body_elements !== undefined ? body_elements : (existingState.body_elements || ''),
+          held_props !== undefined ? held_props : (existingState.held_props || ''),
           is_active !== undefined ? (is_active ? 1 : 0) : existingState.is_active,
           finalGenerationPrompt,
           generation_status !== undefined ? generation_status : (existingState.generation_status || 'idle'),
@@ -625,7 +630,7 @@ module.exports = (router) => {
       const state = await queryOne('SELECT * FROM character_states WHERE id = ?', [stateId]);
 
       // 计算变更差异并记录历史
-      const trackFields = ['name', 'description', 'appearance', 'image_url', 'front_view_url', 'side_view_url', 'back_view_url', 'sort_order', 'outfit', 'age_stage', 'hairstyle', 'accessories', 'body_elements', 'is_active', 'generation_prompt', 'generation_status', 'state_category', 'tags'];
+      const trackFields = ['name', 'description', 'appearance', 'image_url', 'front_view_url', 'side_view_url', 'back_view_url', 'sort_order', 'outfit', 'age_stage', 'hairstyle', 'accessories', 'body_elements', 'held_props', 'is_active', 'generation_prompt', 'generation_status', 'state_category', 'tags'];
       const changes = {};
       for (const field of trackFields) {
         const oldVal = existingState[field];
@@ -692,6 +697,72 @@ module.exports = (router) => {
     } catch (error) {
       console.error('[Delete Character State]', error);
       res.status(500).json({ message: '删除角色状态失败' });
+    }
+  });
+
+  // DELETE /api/characters/:id/states/:stateId/base-model-image - 清空白膜角色设定图（让用户可重新生成）
+  // 同步清空 character_states.image_url 与 characters.image_url / character_sheet_url
+  router.delete('/:id/states/:stateId/base-model-image', authMiddleware, async (req, res) => {
+    const userId = req.user.id;
+    const { id, stateId } = req.params;
+
+    try {
+      const character = await queryOne(
+        'SELECT id FROM characters WHERE id = ? AND user_id = ?',
+        [id, userId]
+      );
+      if (!character) {
+        return res.status(404).json({ message: '角色不存在或无权访问' });
+      }
+
+      const existingState = await queryOne(
+        'SELECT * FROM character_states WHERE id = ? AND character_id = ?',
+        [stateId, id]
+      );
+      if (!existingState) {
+        return res.status(404).json({ message: '状态不存在' });
+      }
+      if (!existingState.is_base_model) {
+        return res.status(400).json({ message: '仅白膜状态支持该操作' });
+      }
+
+      // 清空白膜状态的设定图及三视图 URL，同时清除 generation_prompt 避免下次生成沿用旧 prompt
+      await execute(
+        `UPDATE character_states
+         SET image_url = '', front_view_url = '', side_view_url = '', back_view_url = '',
+             generation_status = 'idle', generation_prompt = '', updated_at = CURRENT_TIMESTAMP
+         WHERE id = ?`,
+        [stateId]
+      );
+
+      // 同步清空 characters 表中的冗余字段，避免列表/头像 fallback 仍显示旧图
+      await execute(
+        `UPDATE characters
+         SET image_url = '', character_sheet_url = '', updated_at = CURRENT_TIMESTAMP
+         WHERE id = ?`,
+        [id]
+      );
+
+      // 记录历史
+      await recordStateHistory({
+        characterId: id,
+        stateId: parseInt(stateId),
+        action: 'updated',
+        changes: {
+          image_url: { from: existingState.image_url, to: '' },
+          front_view_url: { from: existingState.front_view_url, to: '' },
+          side_view_url: { from: existingState.side_view_url, to: '' },
+          back_view_url: { from: existingState.back_view_url, to: '' },
+          generation_status: { from: existingState.generation_status, to: 'idle' }
+        },
+        performedBy: userId
+      });
+
+      const state = await queryOne('SELECT * FROM character_states WHERE id = ?', [stateId]);
+      res.json({ message: '白膜角色设定图已清除', state });
+    } catch (error) {
+      console.error('[Delete Base Model Image]', error);
+      res.status(500).json({ message: '清除白膜角色设定图失败' });
     }
   });
 
@@ -800,9 +871,9 @@ module.exports = (router) => {
         `INSERT INTO character_states (
           character_id, name, description, appearance, image_url,
           front_view_url, side_view_url, back_view_url, sort_order,
-          outfit, age_stage, hairstyle, accessories, is_active, generation_prompt, generation_status,
+          outfit, age_stage, hairstyle, accessories, body_elements, held_props, is_active, generation_prompt, generation_status,
           state_category, tags
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 'idle', ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 'idle', ?, ?)`,
         [
           id,
           newName || `${sourceState.name} (副本)`,
@@ -815,6 +886,8 @@ module.exports = (router) => {
           sourceState.age_stage || '',
           sourceState.hairstyle || '',
           sourceState.accessories || '',
+          sourceState.body_elements || '',
+          sourceState.held_props || '',
           sourceState.generation_prompt || '',
           sourceState.state_category || 'daily',
           sourceState.tags || null
@@ -971,8 +1044,9 @@ module.exports = (router) => {
   "age_stage": "年龄阶段（童年/少年/青年/中年/老年，如果描述中未提及则留空）",
   "outfit": "服装描述（详细描述服装款式、颜色、材质等，用中文）",
   "hairstyle": "发型描述（详细描述发型、发色等，用中文）",
-  "accessories": "配饰描述（眼镜、饰品、武器等，用中文，逗号分隔）",
-  "appearance": "综合外貌描述（结合角色基础外貌和当前状态变化的完整中文描述，重点突出与基础外貌不同的部分）"
+  "accessories": "配饰描述（眼镜、饰品、项链等佩戴在身上的饰品，用中文，逗号分隔）",
+  "held_props": "手持道具描述（当前状态下角色手里拿着或身上携带的物品，如剑、书本、胡萝卜、水杯、武器、包袋等，用中文，逗号分隔）",
+  "appearance": "综合外貌描述（结合角色基础外貌和当前状态变化的完整中文描述，重点突出与基础外貌不同的部分，不要包含服装/配饰/手持道具等可变状态属性）"
 }
 
 注意：

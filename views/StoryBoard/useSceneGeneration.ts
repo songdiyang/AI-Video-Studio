@@ -1,5 +1,6 @@
 import { useEffect, Dispatch, SetStateAction } from 'react';
 import { getAuthToken } from '../../services/auth';
+import { updateScene } from '../../services/assets';
 import { useTaskRunner, TaskState } from '../../hooks/useTaskRunner';
 import { WorkflowJob } from '../../hooks/useWorkflow';
 import { StoryboardScene } from './useSceneManager';
@@ -193,6 +194,19 @@ export function useSceneGeneration({
           }
           if (Object.keys(payload).length > 0) {
             void persistStoryboardMedia(sceneId, payload);
+          }
+
+          // ── 回写到关联场景资产 ──────────────────────────
+          // 将工作台生成的首帧图片绑定到分镜关联的场景资产 image_url
+          if (startFrame) {
+            const storyboardScene = scenes.find(s => s.id === sceneId);
+            if (storyboardScene?.linkedScenes?.length) {
+              for (const ls of storyboardScene.linkedScenes) {
+                updateScene(ls.scene_id, { image_url: startFrame }).catch(err => {
+                  console.warn('[useSceneGeneration] 同步场景资产图片失败:', ls.scene_id, err);
+                });
+              }
+            }
           }
         }
       } else if (key.startsWith('vid_')) {

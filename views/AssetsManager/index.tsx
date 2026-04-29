@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button, Input, Tabs, Tab, useDisclosure, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Popover, PopoverTrigger, PopoverContent, Textarea } from '@heroui/react';
-import { Users, MapPin, FileText, Plus, Search, Tag, Settings, Edit2, Shirt, X, ChevronDown, ChevronRight, BookOpen, Sparkles } from 'lucide-react';
+import { Users, MapPin, FileText, Plus, Search, Tag, Settings, Edit2, X, ChevronDown, ChevronRight, BookOpen, Sparkles } from 'lucide-react';
 import { getAuthToken } from '../../services/auth';
 import { useSceneImageGeneration } from '../StoryBoard/hooks/useSceneImageGeneration';
 import SceneDetailModal from '../StoryBoard/ResourcePanel/SceneDetailModal';
@@ -12,9 +12,12 @@ import {
   updateCharacter, updateScene, updateProp,
   deleteCharacter, deleteScene, deleteProp,
   fetchTagGroups, createTagGroup, updateTagGroup, deleteTagGroup,
-  TAG_GROUP_COLORS
+  TAG_GROUP_COLORS,
+  generateCharacterViews,
+  generateCharacterStateViews,
+  createCharacterState,
+  fetchCharacterStates,
 } from '../../services/assets';
-import { Costume, fetchCostumes, createCostume, updateCostume, deleteCostume, COSTUME_CATEGORIES } from '../../services/costumes';
 import { Project, fetchProjects } from '../../services/projects';
 import {
   ScriptLibraryItem,
@@ -27,20 +30,21 @@ import CharacterList from './CharacterList';
 import ProjectSidebar from './ProjectSidebar';
 import SceneList from './SceneList';
 import PropList from './PropList';
-import CostumeList from './CostumeList';
+import SceneElementList from './SceneElementList';
 import ScriptList from './ScriptList';
 import ScriptGenerateModal from './ScriptGenerateModal';
 import CharacterDraftPreviewModal from './CharacterDraftPreviewModal';
 import { useWorkflow, consumeWorkflow } from '../../hooks/useWorkflow';
 import { generateDefaultCostumeState } from '../../services/assets';
-import { CharacterModal, SceneModal, PropModal, CostumeModal } from './AssetModel';
+import { CharacterModal, SceneModal, PropModal } from './AssetModel';
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import { useCurrentProject } from '../../contexts/WorkbenchContext';
 import { AIModel } from '../../components/AIModelSelector';
 import type { CharacterState } from '../../services/assets';
+import { useAIAssistantWorkbenchContext } from '../../contexts/AIAssistantContext';
 
-type TabType = 'characters' | 'scenes' | 'props' | 'costumes' | 'scripts';
+type TabType = 'characters' | 'scenes' | 'props' | 'scripts' | 'scene-elements';
 
 // 标签分组管理面板组件
 interface TagGroupManagerProps {
@@ -311,7 +315,7 @@ const AssetsManager: React.FC = () => {
   const [characters, setCharacters] = useState<Character[]>([]);
   const [scenes, setScenes] = useState<Scene[]>([]);
   const [props, setProps] = useState<Prop[]>([]);
-  const [costumes, setCostumes] = useState<Costume[]>([]);
+  const [sceneElements, setSceneElements] = useState<import('../../services/sceneElements').SceneElement[]>([]);
   const [scripts, setScripts] = useState<ScriptLibraryItem[]>([]);
   const [tagGroups, setTagGroups] = useState<TagGroup[]>([]);
   const [loading, setLoading] = useState(false);
@@ -410,7 +414,121 @@ const AssetsManager: React.FC = () => {
       setPendingCharGen(null);
     },
   });
-  
+
+  // ── AI 助手上下文注册：资产管理侧 ─────────────────────────────
+  const handleAIAction = useCallback((action: string, params: any) => {
+    const toastOk = (m: string) => showToast(m, 'success');
+    const toastErr = (prefix: string) => (e: any) => showToast(prefix + ': ' + (e?.message || e), 'error');
+    const ensureProject = () => {
+      const pid = projectFilter !== 'all' && projectFilter !== 'unused' ? Number(projectFilter) : currentProject?.id || null;
+      if (!pid) { showToast('未选择项目', 'warning'); return null; }
+      return pid;
+    };
+
+    // ── 白膌三视图生成（作用于角色的「白膌状态」而非角色本体）──
+    if (action === 'generate_base_model') {
+      const id = Number(params?.characterId); if (!id) { showToast('缺少 characterId', 'warning'); return; }
+      // 查找该角色的白膌状态，对状态集合中的 base_model state 生成三视图
+      fetchCharacterStates(id)
+        .then((states) => {
+          const baseState = states.find((s) => s.is_base_model);
+          if (!baseState || !baseState.id) {
+            // 无白膌状态 → 降级为旧接口（导致 character 字段直生）
+            return generateCharacterViews(id, {
+              imageModel: params?.imageModel || selectedImageModel || undefined,
+              textModel: params?.textModel || selectedTextModel || undefined,
+            } as any).then((res) => {
+              toastOk('白膌三视图生成已启动');
+              if (res?.jobId) setPendingCharGen({ characterId: id, jobId: res.jobId });
+            });
+          }
+          return generateCharacterStateViews(id, baseState.id, {
+            imageModel: params?.imageModel || selectedImageModel,
+            textModel: params?.textModel || selectedTextModel || undefined,
+          }).then(() => {
+            toastOk('白膌状态三视图生成已启动');
+            loadData();
+          });
+        })
+        .catch(toastErr('生成失败'));
+    }
+    // ── 角色状态三视图生成 ──
+    else if (action === 'generate_state_views') {
+      const charId = Number(params?.characterId); const stateId = Number(params?.stateId);
+      if (!charId || !stateId) { showToast('缺少 characterId 或 stateId', 'warning'); return; }
+      generateCharacterStateViews(charId, stateId, {
+        imageModel: params?.imageModel || selectedImageModel,
+        textModel: params?.textModel || selectedTextModel || undefined,
+      })
+        .then(() => { toastOk('状态三视图生成已启动'); loadData(); })
+        .catch(toastErr('状态三视图生成失败'));
+    }
+    // ── 创建角色状态 ──
+    else if (action === 'create_state') {
+      const charId = Number(params?.characterId); if (!charId) { showToast('缺少 characterId', 'warning'); return; }
+      createCharacterState(charId, {
+        name: params?.name || '新状态',
+        description: params?.description,
+        state_category: params?.state_category || 'daily',
+        outfit: params?.outfit,
+        age_stage: params?.age_stage,
+        hairstyle: params?.hairstyle,
+      } as any)
+        .then(() => { toastOk('角色状态已创建'); loadData(); })
+        .catch(toastErr('创建状态失败'));
+    }
+    // ── 角色 CRUD ──
+    else if (action === 'create_character') {
+      const pid = ensureProject(); if (!pid) return;
+      createCharacter({ projectId: pid, name: String(params?.name || '新角色'), description: params?.description, base_appearance: params?.base_appearance } as any)
+        .then(c => { toastOk(`已创建角色「${c.name}」`); loadData(); })
+        .catch(toastErr('创建角色失败'));
+    } else if (action === 'update_character') {
+      const id = Number(params?.characterId); if (!id) { showToast('缺少 characterId', 'warning'); return; }
+      updateCharacter(id, params?.fields || {})
+        .then(() => { toastOk('角色已更新'); loadData(); })
+        .catch(toastErr('更新角色失败'));
+    } else if (action === 'delete_character') {
+      const id = Number(params?.characterId); if (!id) { showToast('缺少 characterId', 'warning'); return; }
+      deleteCharacter(id)
+        .then(() => { toastOk('角色已删除'); loadData(); })
+        .catch(toastErr('删除角色失败'));
+    }
+    // ── 场景 CRUD ──
+    else if (action === 'create_location') {
+      const pid = ensureProject(); if (!pid) return;
+      createScene({ project_id: pid, name: String(params?.name || '新场景'), description: params?.description } as any)
+        .then(s => { toastOk(`已创建场景「${s.name}」`); loadData(); })
+        .catch(toastErr('创建场景失败'));
+    } else if (action === 'update_location') {
+      const id = Number(params?.locationId); if (!id) { showToast('缺少 locationId', 'warning'); return; }
+      updateScene(id, params?.fields || {})
+        .then(() => { toastOk('场景已更新'); loadData(); })
+        .catch(toastErr('更新场景失败'));
+    } else if (action === 'delete_location') {
+      const id = Number(params?.locationId); if (!id) { showToast('缺少 locationId', 'warning'); return; }
+      deleteScene(id)
+        .then(() => { toastOk('场景已删除'); loadData(); })
+        .catch(toastErr('删除场景失败'));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectFilter, currentProject, selectedImageModel, selectedTextModel, showToast]);
+
+  // 注册角色/场景/onAction 到 AI 助手全局上下文
+  const aiCharacters = useMemo(() =>
+    characters.map(c => ({ id: c.id, name: c.name, description: (c as any).base_appearance || c.description })),
+    [characters]
+  );
+  const aiLocations = useMemo(() =>
+    scenes.map(s => ({ id: s.id, name: s.name, description: s.description })),
+    [scenes]
+  );
+  useAIAssistantWorkbenchContext({
+    characters: aiCharacters,
+    locations: aiLocations,
+    onAction: handleAIAction,
+  });
+
   const [formData, setFormData] = useState<any>({
     name: '',
     description: '',
@@ -493,14 +611,6 @@ const AssetsManager: React.FC = () => {
           ? await fetchScenesByProject(filterProjectId)
           : await fetchScenes();
         setScenes(data);
-      } else if (activeTab === 'costumes') {
-        const projectId = filterProjectId || currentProject?.id || (characters.length > 0 ? (characters[0] as any).project_id : null);
-        if (projectId) {
-          const data = await fetchCostumes(projectId);
-          setCostumes(data);
-        } else {
-          setCostumes([]);
-        }
       } else if (activeTab === 'scripts') {
         // 剧本资源库：支持项目筛选
         const all = await fetchScriptLibrary('all');
@@ -510,6 +620,12 @@ const AssetsManager: React.FC = () => {
             ? all.filter((s) => s.project_id == null)
             : all;
         setScripts(filtered);
+      } else if (activeTab === 'scene-elements') {
+        const { listSceneElements } = await import('../../services/sceneElements');
+        const data = await listSceneElements({
+          projectId: filterProjectId || undefined,
+        });
+        setSceneElements(data);
       } else {
         const data = await fetchProps();
         setProps(data);
@@ -526,7 +642,6 @@ const AssetsManager: React.FC = () => {
       case 'characters': return '角色';
       case 'scenes': return '场景';
       case 'props': return '道具';
-      case 'costumes': return '服装';
       case 'scripts': return '剧本';
     }
   };
@@ -566,7 +681,7 @@ const AssetsManager: React.FC = () => {
     onOpen();
   };
 
-  const handleEdit = (item: Character | Scene | Prop | Costume) => {
+  const handleEdit = (item: Character | Scene | Prop) => {
     setEditMode(true);
     setCurrentId(item.id);
     setFormData(item);
@@ -628,17 +743,6 @@ const AssetsManager: React.FC = () => {
         } else {
           await createScene({ ...formData, project_id: activeProjectId || undefined } as any);
         }
-      } else if (activeTab === 'costumes') {
-        if (editMode && currentId) {
-          await updateCostume(currentId, formData);
-        } else {
-          const projectId = activeProjectId || (characters.length > 0 ? (characters[0] as any).project_id : null);
-          if (!projectId) {
-            showToast('无法创建服装：缺少项目ID', 'error');
-            return;
-          }
-          await createCostume({ ...formData, project_id: projectId });
-        }
       } else {
         if (editMode && currentId) {
           await updateProp(currentId, formData);
@@ -668,10 +772,11 @@ const AssetsManager: React.FC = () => {
         await deleteCharacter(id);
       } else if (activeTab === 'scenes') {
         await deleteScene(id);
-      } else if (activeTab === 'costumes') {
-        await deleteCostume(id);
       } else if (activeTab === 'scripts') {
         await deleteScriptApi(id);
+      } else if (activeTab === 'scene-elements') {
+        const { deleteSceneElement } = await import('../../services/sceneElements');
+        await deleteSceneElement(id);
       } else {
         await deleteProp(id);
       }
@@ -963,14 +1068,6 @@ const AssetsManager: React.FC = () => {
                 >
                   AI 生成角色
                 </Button>
-                <Button
-                  variant="flat"
-                  className="pro-btn"
-                  startContent={<Settings className="w-4 h-4" />}
-                  onPress={onTagManagerOpen}
-                >
-                  标签分组管理
-                </Button>
               </>
             )}
             {activeTab === 'scripts' && (
@@ -1177,18 +1274,35 @@ const AssetsManager: React.FC = () => {
           </Tab>
 
           <Tab
-            key="costumes"
+            key="scene-elements"
             title={
               <div className="flex items-center gap-2">
-                <Shirt className="w-4 h-4" />
-                <span>服装 ({costumes.length})</span>
+                <MapPin className="w-4 h-4" />
+                <span>场景元素 ({sceneElements.length})</span>
               </div>
             }
           >
-            <CostumeList 
-              costumes={costumes} 
-              onEdit={handleEdit} 
-              onDelete={handleDelete} 
+            <SceneElementList
+              elements={sceneElements}
+              onDelete={handleDelete}
+              onGenerate={async (el) => {
+                if (!selectedImageModel) {
+                  showToast('请先选择图像模型', 'warning');
+                  return;
+                }
+                try {
+                  const { generateSceneElementImage } = await import('../../services/sceneElements');
+                  await generateSceneElementImage(el.id, {
+                    imageModel: selectedImageModel,
+                    textModel: selectedTextModel || undefined,
+                  });
+                  showToast('元素图片生成已启动', 'success');
+                  loadData();
+                } catch (err: any) {
+                  console.error('[SceneElement][generate]', err);
+                  showToast(err?.message || '启动元素生成失败', 'error');
+                }
+              }}
             />
           </Tab>
 
@@ -1227,9 +1341,6 @@ const AssetsManager: React.FC = () => {
             tagGroups={tagGroups}
             onTagGroupsChange={loadTagGroups}
             onRefreshCharacter={handleRefreshCharacter}
-            aiModels={aiModels}
-            selectedImageModel={selectedImageModel}
-            selectedTextModel={selectedTextModel}
             userProjects={userProjects}
             projectId={formData.project_id || getActiveProjectId()}
           />
@@ -1244,24 +1355,11 @@ const AssetsManager: React.FC = () => {
             setFormData={setFormData}
             onSave={handleSave}
             userProjects={userProjects}
-            projectId={formData.project_id || getActiveProjectId()}
-            selectedImageModel={selectedImageModel}
           />
         )}
         
         {activeTab === 'props' && (
           <PropModal
-            isOpen={isOpen}
-            onOpenChange={onOpenChange}
-            editMode={editMode}
-            formData={formData}
-            setFormData={setFormData}
-            onSave={handleSave}
-          />
-        )}
-
-        {activeTab === 'costumes' && (
-          <CostumeModal
             isOpen={isOpen}
             onOpenChange={onOpenChange}
             editMode={editMode}
@@ -1281,13 +1379,7 @@ const AssetsManager: React.FC = () => {
           textModel={selectedTextModel}
         />
 
-        {/* 标签分组管理模态框 */}
-        <TagGroupManager
-          isOpen={isTagManagerOpen}
-          onOpenChange={onTagManagerOpenChange}
-          tagGroups={tagGroups}
-          onRefresh={loadTagGroups}
-        />
+        {/* 标签分组管理模态框已移除入口，所谓“当前状态”交由工作台在分镜时主动选择 */}
 
         {/* 剧本创建模态框 */}
         <Modal isOpen={isScriptCreateOpen} onOpenChange={onScriptCreateOpenChange} size="2xl">

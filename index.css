@@ -3,6 +3,11 @@
 
 @variant dark (&:where(.dark, .dark *));
 
+/* 隐藏滚动条工具类 */
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
 /* =========== 专业影视制作软件风格主题系统 =========== */
 /* 参考 Premiere Pro / DaVinci Resolve 的专业NLE软件风格 */
 

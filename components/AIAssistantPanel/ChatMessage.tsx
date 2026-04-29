@@ -1,9 +1,20 @@
 import React from 'react';
-import { Bot, User, Zap } from 'lucide-react';
+import { Check, AlertTriangle } from 'lucide-react';
 import MediaAttachment from './MediaAttachment';
 
+const DESTRUCTIVE_ACTIONS: ReadonlySet<string> = new Set([
+  'delete_scene', 'update_scene', 'insert_scene',
+  'update_scene_dialogues', 'update_scene_characters_location',
+  'move_scene', 'reorder_scenes',
+  'delete_character', 'update_character',
+  'delete_location', 'update_location',
+  'delete_script', 'bind_script',
+  'update_project',
+  'restore_version',
+]);
+
 export interface ChatMessageAttachment {
-  type: 'image' | 'video' | 'file';
+  type: 'image' | 'video' | 'file' | 'script';
   url: string;
   name?: string;
 }
@@ -120,15 +131,8 @@ const ChatMessageComponent: React.FC<ChatMessageProps> = ({ message, onAction })
 
   if (message.isLoading) {
     return (
-      <div className="flex justify-start">
-        <div className="flex items-start gap-2 max-w-[85%]">
-          <div className="w-6 h-6 rounded-full bg-[var(--accent)]/15 flex items-center justify-center flex-shrink-0 mt-0.5">
-            <Bot size={13} className="text-[var(--accent)]" />
-          </div>
-          <div className="px-3 py-2 rounded-xl rounded-tl-sm bg-[var(--bg-card)] border border-[var(--border-color)]">
-            <LoadingDots />
-          </div>
-        </div>
+      <div className="px-1 py-1">
+        <LoadingDots />
       </div>
     );
   }
@@ -136,33 +140,18 @@ const ChatMessageComponent: React.FC<ChatMessageProps> = ({ message, onAction })
   if (isSystem) {
     return (
       <div className="flex justify-center px-4 py-1">
-        <span className="text-[10px] text-[var(--text-muted)] italic">{message.content}</span>
+        <span className="text-[10px] text-[var(--text-muted)] italic whitespace-pre-wrap">{message.content}</span>
       </div>
     );
   }
 
-  return (
-    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
-      <div className={`flex items-start gap-2 max-w-[85%] ${isUser ? 'flex-row-reverse' : ''}`}>
-        {/* Avatar */}
-        <div
-          className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 ${
-            isUser
-              ? 'bg-accent-500/20'
-              : 'bg-[var(--accent)]/15'
-          }`}
-        >
-          {isUser ? (
-            <User size={13} className="text-accent-400" />
-          ) : (
-            <Bot size={13} className="text-[var(--accent)]" />
-          )}
-        </div>
-
-        <div className="flex flex-col gap-1">
-          {/* Attachments */}
+  // ── 用户消息：右边气泡，无头像 ────────────────────────────
+  if (isUser) {
+    return (
+      <div className="flex justify-end">
+        <div className="flex flex-col gap-1 max-w-[85%]">
           {message.attachments && message.attachments.length > 0 && (
-            <div className={`flex gap-1.5 flex-wrap ${isUser ? 'justify-end' : 'justify-start'}`}>
+            <div className="flex gap-1.5 flex-wrap justify-end">
               {message.attachments.map((att, idx) => (
                 <MediaAttachment
                   key={`${att.url}-${idx}`}
@@ -174,40 +163,63 @@ const ChatMessageComponent: React.FC<ChatMessageProps> = ({ message, onAction })
               ))}
             </div>
           )}
-
-          {/* Content bubble */}
-          <div
-            className={`px-3 py-2 rounded-xl text-xs leading-relaxed whitespace-pre-wrap break-words ${
-              isUser
-                ? 'rounded-tr-sm bg-[var(--accent)] text-white'
-                : 'rounded-tl-sm bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-primary)]'
-            }`}
-          >
-            {isUser ? message.content : renderMarkdown(message.content)}
+          <div className="px-3 py-2 rounded-xl rounded-tr-sm bg-[var(--accent)] text-white text-xs leading-relaxed whitespace-pre-wrap break-words">
+            {message.content}
           </div>
-
-          {/* Suggestions */}
-          {!isUser && message.suggestions && message.suggestions.length > 0 && (
-            <div className="flex gap-1.5 flex-wrap mt-0.5">
-              {message.suggestions.map((s, idx) => (
-                <button
-                  key={`${s.action}-${idx}`}
-                  onClick={() => onAction?.(s.action, s.params)}
-                  className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium border border-[var(--accent)]/30 text-[var(--accent)] bg-[var(--accent)]/5 hover:bg-[var(--accent)]/15 transition-colors"
-                >
-                  <Zap size={10} />
-                  {s.label}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* Timestamp */}
-          <span className={`text-[9px] text-[var(--text-muted)] ${isUser ? 'text-right' : 'text-left'}`}>
+          <span className="text-[9px] text-[var(--text-muted)] text-right">
             {new Date(message.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
           </span>
         </div>
       </div>
+    );
+  }
+
+  // ── AI 消息：全宽无气泡无头像（Qoder 风格） ──────────────────
+  return (
+    <div className="w-full flex flex-col gap-1">
+      {message.attachments && message.attachments.length > 0 && (
+        <div className="flex gap-1.5 flex-wrap">
+          {message.attachments.map((att, idx) => (
+            <MediaAttachment
+              key={`${att.url}-${idx}`}
+              type={att.type}
+              url={att.url}
+              name={att.name}
+              size="md"
+            />
+          ))}
+        </div>
+      )}
+
+      <div className="text-xs leading-relaxed whitespace-pre-wrap break-words text-[var(--text-primary)]">
+        {renderMarkdown(message.content)}
+      </div>
+
+      {message.suggestions && message.suggestions.length > 0 && (
+        <div className="flex gap-1.5 flex-wrap mt-0.5 justify-end">
+          {message.suggestions.map((s, idx) => {
+            const destructive = DESTRUCTIVE_ACTIONS.has(s.action);
+            return (
+              <span
+                key={`${s.action}-${idx}`}
+                className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium border cursor-default select-none ${
+                  destructive
+                    ? 'border-amber-500/30 text-amber-400/70 bg-amber-500/5'
+                    : 'border-emerald-500/30 text-emerald-400/70 bg-emerald-500/5'
+                }`}
+                title="已执行"
+              >
+                <Check size={10} />
+                {s.label}
+              </span>
+            );
+          })}
+        </div>
+      )}
+
+      <span className="text-[9px] text-[var(--text-muted)] text-right">
+        {new Date(message.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+      </span>
     </div>
   );
 };

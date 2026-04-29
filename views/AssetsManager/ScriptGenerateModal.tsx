@@ -24,13 +24,27 @@ interface AIModel {
   category?: string;
 }
 
+/** 生成完成后回传的剧本信息（用于弱绑定参考剧本场景） */
+export interface ScriptGeneratedPayload {
+  scriptId: number;
+  content: string;
+  title: string;
+  projectId: number;
+  episodeNumber: number;
+}
+
 interface ScriptGenerateModalProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
   projects: Project[];
   aiModels: AIModel[];
   defaultTextModel?: string;
-  onSuccess?: () => void;
+  /** 锁定目标项目（传入后项目选择器不可改，用于已在项目上下文中触发时） */
+  lockProjectId?: number;
+  /** 锁定目标集数（传入后隐藏集数输入，自动生成该集；用于分镜工作台等已有集数上下文的场景） */
+  lockEpisodeNumber?: number;
+  /** 生成成功回调，payload 可能为空以兼容旧调用方 */
+  onSuccess?: (payload?: ScriptGeneratedPayload) => void;
   onError?: (msg: string) => void;
 }
 
@@ -40,6 +54,8 @@ const ScriptGenerateModal: React.FC<ScriptGenerateModalProps> = ({
   projects,
   aiModels,
   defaultTextModel,
+  lockProjectId,
+  lockEpisodeNumber,
   onSuccess,
   onError,
 }) => {
@@ -84,20 +100,24 @@ const ScriptGenerateModal: React.FC<ScriptGenerateModalProps> = ({
     return { hasStoryStyle, hasVisualStyle, projectName: project.name };
   }, [projectId, projects]);
 
-  // 集数输入校验
+  // 集数：lockEpisodeNumber 优先，否则走用户输入
   const episodeNumberParsed = useMemo(() => {
+    if (lockEpisodeNumber != null) return lockEpisodeNumber;
     if (!episodeInput.trim()) return null;
     const n = Number(episodeInput.trim());
     if (!Number.isInteger(n) || n < 1) return NaN;
     return n;
-  }, [episodeInput]);
+  }, [episodeInput, lockEpisodeNumber]);
 
   // 当模态框打开时，重置状态 (只依赖 isOpen，避免中途调用等导致 projectId 被清空)
   useEffect(() => {
     if (isOpen) {
-      setProjectId('');
-      setTitle('');
-      setDescription('');
+      // 若父组件锁定了项目，直接使用之（不展示项目选择自由度）
+      setProjectId(lockProjectId ? String(lockProjectId) : '');
+      // 锁定项目场景：默认剧本标题 = 项目名，故事概述 = 项目描述（用户仍可修改）
+      const lockedProject = lockProjectId ? projects.find((p) => p.id === lockProjectId) : null;
+      setTitle(lockedProject?.name || '');
+      setDescription(lockedProject?.description || '');
       setLength('短篇');
       setEpisodeInput('');
       setTextModel(defaultTextModel || textModels[0]?.name || '');
@@ -167,7 +187,34 @@ const ScriptGenerateModal: React.FC<ScriptGenerateModalProps> = ({
         // 标记工作流已消费
         await consumeWorkflow(completedJob.id);
 
-        onSuccess?.();
+        // 若调用方关心 payload（如分镜面板的弱绑定参考剧本），则回拉剧本内容再回传
+        let payload: ScriptGeneratedPayload | undefined;
+        try {
+          const pid = Number(projectId);
+          const epi = Number(data.episodeNumber);
+          if (pid && epi) {
+            const detailRes = await fetch(`/api/scripts/project/${pid}/episode/${epi}`, {
+              headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+            });
+            if (detailRes.ok) {
+              const detailData = await detailRes.json();
+              const script = detailData?.script;
+              if (script) {
+                payload = {
+                  scriptId: Number(data.scriptId || generatingScriptId),
+                  content: script.content || '',
+                  title: script.title || `第${epi}集`,
+                  projectId: pid,
+                  episodeNumber: epi,
+                };
+              }
+            }
+          }
+        } catch (e) {
+          console.warn('[ScriptGenerateModal] 回拉剧本内容失败（不影响成功提示）:', e);
+        }
+
+        onSuccess?.(payload);
         onOpenChange(false);
       } catch (err: any) {
         console.error('[ScriptGenerateModal] 保存失败:', err);
@@ -285,7 +332,8 @@ const ScriptGenerateModal: React.FC<ScriptGenerateModalProps> = ({
                 }}
                 placeholder="选择要生成剧本的项目"
                 isRequired
-                isDisabled={generating}
+                isDisabled={generating || !!lockProjectId}
+                description={lockProjectId ? (lockEpisodeNumber ? `已锁定到当前项目，将生成第 ${lockEpisodeNumber} 集剧本` : '已锁定到当前项目，新剧本将作为下一集草稿保存') : undefined}
               >
                 {projects.map((p) => (
                   <SelectItem key={String(p.id)} textValue={p.name}>
@@ -361,19 +409,21 @@ const ScriptGenerateModal: React.FC<ScriptGenerateModalProps> = ({
                 </Select>
               </div>
 
-              {/* 目标集数（可选） */}
-              <Input
-                label="目标集数"
-                placeholder="留空 = 自动生成下一集，或输入整数指定集数（如 1 重写第一集草稿）"
-                value={episodeInput}
-                onValueChange={setEpisodeInput}
-                isDisabled={generating}
-                type="number"
-                min={1}
-                isInvalid={Number.isNaN(episodeNumberParsed)}
-                errorMessage={Number.isNaN(episodeNumberParsed) ? '集数需为大于等于 1 的整数' : undefined}
-                description="如果该集已存在且状态为草稿，将覆盖重生；已完成的集数不能重复生成。"
-              />
+              {/* 目标集数（lockEpisodeNumber 锁定时隐藏） */}
+              {lockEpisodeNumber == null && (
+                <Input
+                  label="目标集数"
+                  placeholder="留空 = 自动生成下一集，或输入整数指定集数（如 1 重写第一集草稿）"
+                  value={episodeInput}
+                  onValueChange={setEpisodeInput}
+                  isDisabled={generating}
+                  type="number"
+                  min={1}
+                  isInvalid={Number.isNaN(episodeNumberParsed)}
+                  errorMessage={Number.isNaN(episodeNumberParsed) ? '集数需为大于等于 1 的整数' : undefined}
+                  description="如果该集已存在且状态为草稿，将覆盖重生；已完成的集数不能重复生成。"
+                />
+              )}
 
               {/* 生成进度 */}
               {generating && progressInfo && (

@@ -13,6 +13,7 @@ const { getEffectiveProjectRole } = require('../../middleware/collaborationAuth'
 //   active_state_name      - 当前激活状态名称
 //   active_state_outfit    - 当前激活状态服装描述
 //   active_state_image_url - 当前激活状态正面图
+//   first_state_front_view_url - 第一个角色状态的正面图（白膜优先，用于列表预览）
 module.exports = (router) => {
   router.get('/project/:projectId', authMiddleware, async (req, res) => {
     const userId = req.user.id;
@@ -28,11 +29,17 @@ module.exports = (router) => {
 
       let sql = `SELECT DISTINCT c.*,
          (SELECT COUNT(*) FROM character_states WHERE character_id = c.id) AS states_count,
-         bs.front_view_url AS base_model_image_url,
-         CASE WHEN bs.front_view_url IS NOT NULL AND bs.front_view_url != '' THEN 1 ELSE 0 END AS has_base_model_views,
+         COALESCE(bs.image_url, bs.front_view_url) AS base_model_image_url,
+         CASE WHEN (bs.image_url IS NOT NULL AND bs.image_url != '') OR (bs.front_view_url IS NOT NULL AND bs.front_view_url != '') THEN 1 ELSE 0 END AS has_base_model_views,
          acs.name AS active_state_name,
          acs.outfit AS active_state_outfit,
-         acs.front_view_url AS active_state_image_url,
+         COALESCE(acs.image_url, acs.front_view_url) AS active_state_image_url,
+         (SELECT COALESCE(front_view_url, image_url)
+          FROM character_states
+          WHERE character_id = c.id
+            AND (front_view_url IS NOT NULL OR image_url IS NOT NULL)
+          ORDER BY is_base_model DESC, COALESCE(sort_order, 0) ASC, id ASC
+          LIMIT 1) AS first_state_front_view_url,
          COALESCE(cpb.binding_type, CASE WHEN c.project_id = ? THEN 'owner' ELSE NULL END) AS binding_type
          FROM characters c
          LEFT JOIN character_states bs ON bs.character_id = c.id AND bs.is_base_model = 1

@@ -15,6 +15,9 @@ const handleSceneVideoGeneration = require('./StoryBoard/sceneVideoGeneration');
 const handleStoryboardGeneration = require('./StoryBoard/storyboardGeneration');
 const handleCharacterViewsGeneration = require('./StoryBoard/characterViewsGeneration');
 const handleSceneImageGeneration = require('./StoryBoard/sceneImageGeneration');
+const handleScenePanoramaGeneration = require('./StoryBoard/scenePanoramaGeneration');
+const handleSceneElementsExtraction = require('./StoryBoard/sceneElementsExtraction');
+const handleSceneElementGeneration = require('./StoryBoard/sceneElementGeneration');
 const handleBaseTextModelCall = require('./base/baseTextModelCall');
 const handleBatchFrameGeneration = require('./StoryBoard/batchFrameGeneration');
 const handleBatchSceneVideoGeneration = require('./StoryBoard/batchSceneVideoGeneration');
@@ -37,8 +40,11 @@ const handleMagicPaintGeneration = require('./StoryBoard/magicPaintGeneration');
 const handleHdRepairGeneration = require('./StoryBoard/hdRepairGeneration');
 const handleBatchPromptOptimization = require('./StoryBoard/batchPromptOptimization');
 const handleSinglePromptOptimization = require('./StoryBoard/singlePromptOptimization');
-const handleCharacterStateStyledGeneration = require('./StoryBoard/characterStateStyledGeneration');
-const handleSceneStyledGeneration = require('./StoryBoard/sceneStyledGeneration');
+
+// AI 助手长任务：规划/执行/观察
+const handleAIAssistantPlanner = require('./AIAssistant/planner');
+const handleAIAssistantExecutor = require('./AIAssistant/executor');
+const handleAIAssistantObserver = require('./AIAssistant/observer');
 
 module.exports = {
   handleScriptGeneration,
@@ -53,6 +59,9 @@ module.exports = {
   handleStoryboardGeneration,
   handleCharacterViewsGeneration,
   handleSceneImageGeneration,
+  handleScenePanoramaGeneration,
+  handleSceneElementsExtraction,
+  handleSceneElementGeneration,
   handleBaseTextModelCall,
   handleBatchFrameGeneration,
   handleBatchSceneVideoGeneration,
@@ -76,6 +85,7 @@ module.exports = {
   handleHdRepairGeneration,
   handleBatchPromptOptimization,
   handleSinglePromptOptimization,
-  handleCharacterStateStyledGeneration,
-  handleSceneStyledGeneration
+  handleAIAssistantPlanner,
+  handleAIAssistantExecutor,
+  handleAIAssistantObserver
 };

@@ -172,29 +172,11 @@ module.exports = (router) => {
       // 项目画风提示词
       const visualStylePrompt = await getVisualStylePrompt(projectId);
 
-      // 按项目画风缓存的白膜/服装画风图
-      const [baseStyled, costumeStyled] = await Promise.all([
-        queryOne(
-          'SELECT front_view_url FROM character_state_styled_images WHERE state_id = ? AND project_id = ?',
-          [baseState.id, projectId]
-        ),
-        costume
-          ? queryOne(
-              'SELECT front_view_url FROM character_state_styled_images WHERE state_id = ? AND project_id = ?',
-              [costume.id, projectId]
-            )
-          : null,
-      ]);
-
       // 显示 URL 回退策略：
-      // 1) 服装状态的项目画风图 front_view_url
-      // 2) 服装状态原始 front_view_url（不带项目画风）
-      // 3) 白膜的项目画风图 front_view_url
-      // 4) 白膜原始 front_view_url
+      // 1) 服装状态原始 front_view_url
+      // 2) 白膜原始 front_view_url
       const previewUrl =
-        (costumeStyled && costumeStyled.front_view_url) ||
         (costume && costume.front_view_url) ||
-        (baseStyled && baseStyled.front_view_url) ||
         baseState.front_view_url ||
         null;
 
@@ -238,8 +220,6 @@ module.exports = (router) => {
         visualStylePrompt,
         // 便于前端展示各来源是否命中
         sources: {
-          baseStyledHit: !!(baseStyled && baseStyled.front_view_url),
-          costumeStyledHit: !!(costumeStyled && costumeStyled.front_view_url),
           costumeRawHit: !!(costume && costume.front_view_url),
         },
       });

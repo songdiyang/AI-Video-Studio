@@ -182,6 +182,11 @@ const PanelGroup: React.FC<PanelGroupProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const panelInfosRef = useRef<Map<number, PanelInfo>>(new Map());
   const [panelStates, setPanelStates] = useState<Map<number, PanelState>>(new Map());
+  // 同步最新 panelStates 到 ref，供拖拽松开时读取最新值（避免闭包 stale）
+  const panelStatesRef = useRef<Map<number, PanelState>>(panelStates);
+  useEffect(() => {
+    panelStatesRef.current = panelStates;
+  }, [panelStates]);
   const [isInitialized, setIsInitialized] = useState(false);
   
   // 响应式断点
@@ -489,17 +494,20 @@ const PanelGroup: React.FC<PanelGroupProps> = ({
         let newLeftSize = startSizes[leftIndex] + deltaPercent;
         let newRightSize = startSizes[rightIndex] - deltaPercent;
         
-        // 应用约束
-        if (newLeftSize < leftInfo.minSize) {
-          newLeftSize = leftInfo.minSize;
+        // 应用约束——collapsible 面板允许跌破 minSize 到 0，使拖到阻中时容易触发自动折叠
+        const leftMinEffective = leftInfo.collapsible ? 0 : leftInfo.minSize;
+        const rightMinEffective = rightInfo.collapsible ? 0 : rightInfo.minSize;
+        
+        if (newLeftSize < leftMinEffective) {
+          newLeftSize = leftMinEffective;
           newRightSize = startSizes[leftIndex] + startSizes[rightIndex] - newLeftSize;
         }
         if (newLeftSize > leftInfo.maxSize) {
           newLeftSize = leftInfo.maxSize;
           newRightSize = startSizes[leftIndex] + startSizes[rightIndex] - newLeftSize;
         }
-        if (newRightSize < rightInfo.minSize) {
-          newRightSize = rightInfo.minSize;
+        if (newRightSize < rightMinEffective) {
+          newRightSize = rightMinEffective;
           newLeftSize = startSizes[leftIndex] + startSizes[rightIndex] - newRightSize;
         }
         if (newRightSize > rightInfo.maxSize) {
@@ -525,15 +533,18 @@ const PanelGroup: React.FC<PanelGroupProps> = ({
       document.body.style.userSelect = '';
       document.body.style.cursor = '';
 
-      // 保存到 localStorage
-      saveToStorage(panelStates);
+      // 读取最新的面板尺寸（不用闭包里的 stale panelStates）
+      const latestStates = panelStatesRef.current;
 
-      // 自动关闭：检查是否有面板大小小于阈值
-      const CLOSE_THRESHOLD = 5; // 5%
+      // 保存到 localStorage
+      saveToStorage(latestStates);
+
+      // 自动关闭：检查相邻面板是否小于阈值
+      const CLOSE_THRESHOLD = 10; // 10% —— 拖到此值以下松开将自动折叠
       const leftIdx = dividerIndex;
       const rightIdx = dividerIndex + 1;
-      const leftSt = panelStates.get(leftIdx);
-      const rightSt = panelStates.get(rightIdx);
+      const leftSt = latestStates.get(leftIdx);
+      const rightSt = latestStates.get(rightIdx);
       const leftInf = panelInfosRef.current.get(leftIdx);
       const rightInf = panelInfosRef.current.get(rightIdx);
 
@@ -571,6 +582,111 @@ const PanelGroup: React.FC<PanelGroupProps> = ({
       setPanelCollapsed(rightIndex, false);
     }
   }, [panelStates, setPanelCollapsed]);
+
+  // 从折叠态缝上按下：仅当鼠标满足拖动位移阈值时才展开并跟随鼠标调整尺寸；纯点击保持折叠
+  const startResizeFromCollapsed = useCallback((index: number, startPos: number) => {
+    if (!containerRef.current) return;
+    const isHorizontal = direction === 'horizontal';
+    const containerRect = containerRef.current.getBoundingClientRect();
+    const panelInfo = panelInfosRef.current.get(index);
+    if (!panelInfo) return;
+
+    const containerSize = isHorizontal ? containerRect.width : containerRect.height;
+    const containerStart = isHorizontal ? containerRect.left : containerRect.top;
+    const panelsCount = panelInfosRef.current.size;
+    const isLeftAligned = index === 0;
+    const isRightAligned = index === panelsCount - 1;
+    // 只支持首/尾面板的折叠拖拽（典型侧边栏场景）
+    if (!isLeftAligned && !isRightAligned) return;
+
+    let rafId: number | null = null;
+    let hasMoved = false;
+    const MOVE_THRESHOLD = 4; // 像素：超过此位移才视为拖动
+
+    const handleMove = (e: MouseEvent) => {
+      if (rafId !== null) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        const currentPos = isHorizontal ? e.clientX : e.clientY;
+        if (!hasMoved) {
+          if (Math.abs(currentPos - startPos) < MOVE_THRESHOLD) return;
+          // 首次超过阈值：激活拖拽状态并改为 resize 光标
+          hasMoved = true;
+          document.body.style.userSelect = 'none';
+          document.body.style.cursor = isHorizontal ? 'col-resize' : 'row-resize';
+        }
+
+        let targetPercent: number;
+        if (isLeftAligned) {
+          targetPercent = ((currentPos - containerStart) / containerSize) * 100;
+        } else {
+          const containerEnd = containerStart + containerSize;
+          targetPercent = ((containerEnd - currentPos) / containerSize) * 100;
+        }
+        // 约束在 [0, maxSize]
+        targetPercent = Math.min(panelInfo.maxSize, Math.max(0, targetPercent));
+
+        setPanelStates(prev => {
+          const newStates = new Map(prev);
+          const currentSt = newStates.get(index);
+          if (!currentSt) return prev;
+
+          const oldSize = currentSt.collapsed ? 0 : currentSt.size;
+          const delta = targetPercent - oldSize;
+
+          let totalOther = 0;
+          newStates.forEach((st, idx) => {
+            if (idx !== index && !st.collapsed) totalOther += st.size;
+          });
+
+          if (totalOther > 0) {
+            newStates.forEach((st, idx) => {
+              if (idx !== index && !st.collapsed) {
+                const ratio = st.size / totalOther;
+                const otherInfo = panelInfosRef.current.get(idx);
+                const minForOther = otherInfo?.minSize ?? 0;
+                const proposedSize = st.size - delta * ratio;
+                newStates.set(idx, { ...st, size: Math.max(minForOther, proposedSize) });
+              }
+            });
+          }
+
+          newStates.set(index, { collapsed: false, size: targetPercent });
+          return newStates;
+        });
+      });
+    };
+
+    const handleUp = () => {
+      if (rafId !== null) cancelAnimationFrame(rafId);
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+
+      // 纯点击（未拖动）：什么都不做，保持折叠
+      if (!hasMoved) {
+        document.removeEventListener('mousemove', handleMove);
+        document.removeEventListener('mouseup', handleUp);
+        return;
+      }
+
+      // 拖动过：延一帧读最新 ref，若被压到阈值以下则重新折叠
+      setTimeout(() => {
+        const latest = panelStatesRef.current;
+        const fs = latest.get(index);
+        const CLOSE_THRESHOLD = 10;
+        if (fs && !fs.collapsed && fs.size < CLOSE_THRESHOLD) {
+          setPanelCollapsed(index, true);
+        } else {
+          saveToStorage(latest);
+        }
+      }, 0);
+
+      document.removeEventListener('mousemove', handleMove);
+      document.removeEventListener('mouseup', handleUp);
+    };
+
+    document.addEventListener('mousemove', handleMove);
+    document.addEventListener('mouseup', handleUp);
+  }, [direction, setPanelCollapsed, saveToStorage]);
 
   // Context 值
   const contextValue = useMemo<PanelGroupContextType>(() => ({
@@ -727,6 +843,7 @@ const PanelGroup: React.FC<PanelGroupProps> = ({
           __onCollapse: (collapsed: boolean) => setPanelCollapsed(index, collapsed),
           __direction: direction,
           __index: index,
+          __startResizeFromCollapsed: (startPos: number) => startResizeFromCollapsed(index, startPos),
         });
         
         result.push(
@@ -737,15 +854,20 @@ const PanelGroup: React.FC<PanelGroupProps> = ({
         
         // 在面板之间添加分割条（最后一个面板后不添加）
         if (index < childrenArray.length - 1) {
-          result.push(
-            <Divider
-              key={`divider-${index}`}
-              index={index}
-              direction={direction}
-              onDragStart={handleDragStart}
-              onDoubleClick={handleDividerDoubleClick}
-            />
-          );
+          // 相邻任一面板处于折叠态时隐藏分割条，避免与折叠缝的点击区域重叠
+          const leftCollapsed = state?.collapsed ?? false;
+          const rightCollapsed = panelStates.get(index + 1)?.collapsed ?? false;
+          if (!leftCollapsed && !rightCollapsed) {
+            result.push(
+              <Divider
+                key={`divider-${index}`}
+                index={index}
+                direction={direction}
+                onDragStart={handleDragStart}
+                onDoubleClick={handleDividerDoubleClick}
+              />
+            );
+          }
         }
       }
     });

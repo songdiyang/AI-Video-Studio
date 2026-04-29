@@ -54,10 +54,10 @@ const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ isOpen, onClose, on
     narrativePerspective: '' as '' | 'first_person' | 'third_person',
     mangaLayout: '' as '' | 'page' | 'strip' | 'free',
     mangaPanelStyle: '',
-    imageAspectRatio: '',
-    imageResolution: '',
-    videoAspectRatio: '',
-    videoResolution: '',
+    imageAspectRatio: '16:9',
+    imageResolution: '1080p',
+    videoAspectRatio: '16:9',
+    videoResolution: '1080p',
     videoDuration: '' as '' | '15' | '30' | '60' | '180',
     videoAspect: '' as '' | '9:16' | '16:9' | '1:1',
     videoStyle: '',
@@ -126,7 +126,7 @@ const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ isOpen, onClose, on
         storyStyle: '', storyConstraints: '',
         narrativePerspective: '' as '' | 'first_person' | 'third_person',
         mangaLayout: '', mangaPanelStyle: '',
-        imageAspectRatio: '', imageResolution: '', videoAspectRatio: '', videoResolution: '',
+        imageAspectRatio: '16:9', imageResolution: '1080p', videoAspectRatio: '16:9', videoResolution: '1080p',
         videoDuration: '', videoAspect: '', videoStyle: '',
         novelGenre: '', novelWritingStyle: '', novelChapterLength: '', novelTarget: '',
         outputLanguage: 'zh'
@@ -259,7 +259,9 @@ const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ isOpen, onClose, on
   const handleCreateProject = async () => {
     const missing = validateRequiredFields();
     if (missing.length > 0) {
-      setCreateError(`您还没有选择：${missing.join('、')}`);
+      const msg = `您还没有选择：${missing.join('、')}`;
+      setCreateError(msg);
+      showToast(msg, 'warning');
       return;
     }
     setCreating(true);

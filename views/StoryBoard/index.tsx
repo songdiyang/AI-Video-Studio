@@ -11,13 +11,17 @@ import EpisodeSelector from './EpisodeSelector';
 import AutoStoryboardModal from './AutoStoryboardModal';
 import BatchDownloadModal from './BatchDownloadModal';
 import SceneList from './SceneList';
-import ResourcePanel from './ResourcePanel';
+import ResourcePanel, { StoryboardStateOverride } from './ResourcePanel';
 import ScriptOutlinePanel from './ScriptOutlinePanel';
 import ScenePreviewPanel from './ScenePreviewPanel';
+import ScriptGenerateModal, { type ScriptGeneratedPayload } from '../AssetsManager/ScriptGenerateModal';
+import { fetchProject, updateProject, type Project } from '../../services/projects';
 import { PanelGroup } from '../../components/PanelGroup';
 import ResizablePanel, { ResizablePanelRef } from '../../components/ResizablePanel';
 import { getAuthToken } from '../../services/auth';
-import { fetchCharactersByProject, fetchScenesByProject } from '../../services/assets';
+import { fetchCharactersByProject, fetchScenesByProject, createCharacter, updateCharacter, deleteCharacter, generateCharacterViews, createScene as createSceneAsset, updateScene as updateSceneAsset, deleteScene as deleteSceneAsset } from '../../services/assets';
+import { createScript as createScriptApi, deleteScript as deleteScriptApi } from '../../services/scripts';
+import { addProjectCollaborator } from '../../services/collaboration';
 import { useToast } from '../../contexts/ToastContext';
 import { AIModel } from '../../components/AIModelSelector';
 import { normalizeCapabilityOptions } from '../../utils/modelCapabilities';
@@ -88,6 +92,8 @@ interface StoryBoardProps {
   imageModel: string;
   videoModel: string;
   onEpisodeChange?: (episodeNumber: number, scriptId: number) => void;
+  /** 外部接管“新建下一集”的回调；未传时由 StoryBoard 内部默认实现处理 */
+  onCreateNextEpisode?: () => void | Promise<void>;
   projectSettings?: {
     imageAspectRatio?: string;
     imageResolution?: string;
@@ -106,11 +112,14 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
   imageModel,
   videoModel,
   onEpisodeChange,
+  onCreateNextEpisode,
   projectSettings
 }) => {
   const [currentScriptId, setCurrentScriptId] = useState<number | null>(scriptId || null);
   const [currentProjectId, setCurrentProjectId] = useState<number | null>(projectId || null);
   const [currentEpisode, setCurrentEpisode] = useState(episodeNumber);
+  // 无参考剧本模式下记录用户已到达过的最大集数，让 Select 保留 1..max 选项，支持自由回切
+  const [standaloneMaxEpisode, setStandaloneMaxEpisode] = useState<number>(episodeNumber || 1);
   
   // 模型选择（本地可变，同步外部 props）
   const [currentImageModel, setCurrentImageModel] = useState(imageModel);
@@ -128,7 +137,7 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
   const [isVersionHistoryOpen, setIsVersionHistoryOpen] = useState(false);
   const [isTeamCollaborationOpen, setIsTeamCollaborationOpen] = useState(false);
   const [isFrameAnnotationOpen, setIsFrameAnnotationOpen] = useState(false);
-  const [isAssistantOpen, setIsAssistantOpen] = useState(false);
+  const [isAssistantOpen, setIsAssistantOpen] = useState(true);
   const resourcePanelRef = useRef<ResizablePanelRef>(null);
   const assistantPanelRef = useRef<ResizablePanelRef>(null);
   const [leftPanelTab, setLeftPanelTab] = useState<'scenes' | 'resources' | 'outline'>('scenes');
@@ -138,6 +147,15 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
   const [scriptContent, setScriptContent] = useState<string | null>(null);
   const [scriptTitle, setScriptTitle] = useState<string>('');
   const [isLoadingScript, setIsLoadingScript] = useState(false);
+
+  // 参考剧本（弱绑定）——用户在大纲面板中自由选择的剧本，仅用于大纲展示与创作参考，
+  // 不影响 currentScriptId 和 AI 分镜的强绑定关系。
+  const [referenceScriptContent, setReferenceScriptContent] = useState<string | null>(null);
+  const [referenceScriptTitle, setReferenceScriptTitle] = useState<string>('');
+
+  // 生成新剧本弹窗（弱绑定参考剧本）
+  const [isGenerateScriptOpen, setIsGenerateScriptOpen] = useState(false);
+  const [currentProject, setCurrentProject] = useState<Project | null>(null);
 
   // 批量生成提交状态追踪
   const [isBatchFrameSubmitting, setIsBatchFrameSubmitting] = useState(false);
@@ -196,7 +214,9 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
     if (projectId !== undefined && projectId !== currentProjectId) {
       setCurrentProjectId(projectId || null);
     }
-    if (episodeNumber !== undefined && episodeNumber !== currentEpisode) {
+    // 仅在绑定参考剧本时从外部 props 同步集数；
+    // 无参考剧本模式下 currentEpisode 由本地 state + localStorage 独占，避免用户手动切换后被默认的 episodeNumber (通常为 1) 立即覆盖
+    if (scriptId && episodeNumber !== undefined && episodeNumber !== currentEpisode) {
       setCurrentEpisode(episodeNumber);
     }
     if (imageModel !== undefined && imageModel !== currentImageModel) {
@@ -288,22 +308,53 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
     updateDescription,
     updateBaseDescription,
     updateVideoPrompt,
+    updateFirstFramePrompt,
+    updateLastFramePrompt,
     updateDialogues,
     updateVoiceover,
     moveScene,
     reorderScenes,
     updateCharactersAndLocation,
     updateDuration
-  } = useSceneManager(currentScriptId, currentProjectId);
+  } = useSceneManager(currentScriptId, currentProjectId, currentEpisode);
 
   // 项目角色和场景资源（供选择器使用）
-  const [projectCharacters, setProjectCharacters] = useState<{ id: number; name: string; image_url?: string; front_view_url?: string; base_appearance?: string; outfit_appearance?: string; has_base_model?: number; active_state_name?: string; active_state_outfit?: string; active_state_image_url?: string; base_front_view_url?: string }[]>([]);
+  const [projectCharacters, setProjectCharacters] = useState<{ id: number; name: string; image_url?: string; front_view_url?: string; base_appearance?: string; outfit_appearance?: string; has_base_model?: number; has_base_model_views?: number; states_count?: number; active_state_name?: string; active_state_outfit?: string; active_state_image_url?: string; base_front_view_url?: string }[]>([]);
   const [projectScenes, setProjectScenes] = useState<{ id: number; name: string; description?: string }[]>([]);
+  // 分镜状态覆写：用户在资源面板选择的角色状态，不影响全局激活状态
+  const [storyboardStates, setStoryboardStates] = useState<Record<number, StoryboardStateOverride>>({});
+
+  const handleStoryboardStateChange = (characterId: number, state: StoryboardStateOverride | null) => {
+    setStoryboardStates(prev => {
+      const next = { ...prev };
+      if (state) {
+        next[characterId] = state;
+      } else {
+        delete next[characterId];
+      }
+      return next;
+    });
+  };
+
+  // 合并分镜状态覆写到 projectCharacters，供 CharacterTagSelector 使用
+  const effectiveProjectCharacters = useMemo(() => {
+    if (Object.keys(storyboardStates).length === 0) return projectCharacters;
+    return projectCharacters.map(c => {
+      const override = storyboardStates[c.id];
+      if (!override) return c;
+      return {
+        ...c,
+        active_state_name: override.stateName,
+        active_state_outfit: override.stateOutfit || c.active_state_outfit,
+        active_state_image_url: override.stateImage || c.active_state_image_url,
+      };
+    });
+  }, [projectCharacters, storyboardStates]);
 
   useEffect(() => {
     if (!currentProjectId) return;
     fetchCharactersByProject(currentProjectId)
-      .then(chars => setProjectCharacters(chars.map(c => ({ id: c.id, name: c.name, image_url: (c as any).image_url, front_view_url: (c as any).front_view_url || (c as any).frontView_url, base_appearance: (c as any).base_appearance, outfit_appearance: (c as any).outfit_appearance, has_base_model: (c as any).has_base_model_views ? 1 : 0, active_state_name: (c as any).active_state_name, active_state_outfit: (c as any).active_state_outfit, active_state_image_url: (c as any).active_state_image_url, base_front_view_url: (c as any).base_model_image_url }))))
+      .then(chars => setProjectCharacters(chars.map(c => ({ id: c.id, name: c.name, image_url: (c as any).image_url, front_view_url: (c as any).front_view_url || (c as any).frontView_url, base_appearance: (c as any).base_appearance, outfit_appearance: (c as any).outfit_appearance, has_base_model: (c as any).has_base_model_views ? 1 : 0, has_base_model_views: (c as any).has_base_model_views ? 1 : 0, states_count: (c as any).states_count || 0, active_state_name: (c as any).active_state_name, active_state_outfit: (c as any).active_state_outfit, active_state_image_url: (c as any).active_state_image_url, base_front_view_url: (c as any).base_model_image_url }))))
       .catch(() => {});
     fetchScenesByProject(currentProjectId)
       .then(scenes => setProjectScenes(scenes.map(s => ({ id: s.id, name: s.name, description: s.description }))))
@@ -335,6 +386,19 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
       .finally(() => setIsLoadingScript(false));
   }, [currentScriptId, currentProjectId, currentEpisode]);
 
+  // 加载当前项目详情（为 ScriptGenerateModal 提供 projects 数据）
+  useEffect(() => {
+    if (!currentProjectId) {
+      setCurrentProject(null);
+      return;
+    }
+    let cancelled = false;
+    fetchProject(currentProjectId)
+      .then((p) => { if (!cancelled) setCurrentProject(p); })
+      .catch(() => { if (!cancelled) setCurrentProject(null); });
+    return () => { cancelled = true; };
+  }, [currentProjectId]);
+
   // 2. 自动分镜
   const autoStoryboard = useAutoStoryboard({
     scriptId: currentScriptId,
@@ -347,7 +411,9 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
       if (newScenes.length > 0) setSelectedScene(newScenes[0].id);
     },
     onError: (msg) => showToast(msg, 'error'),
-    loadStoryboards // 传入增量加载函数，避免整页刷新
+    loadStoryboards, // 传入增量加载函数，避免整页刷新
+    referenceScriptContent,
+    referenceScriptTitle
   });
 
   // 5. 场景图片/视频生成
@@ -583,10 +649,82 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
 
 
   // 4. 集数切换
-  const handleEpisodeSelect = (script: Script) => {
+  const handleEpisodeSelect = (script: Script | null) => {
+    if (!script) {
+      // 切回自由创作：解绑剧本，保留当前 episode 标签
+      setCurrentScriptId(null);
+      return;
+    }
     setCurrentScriptId(script.id);
     setCurrentEpisode(script.episode_number);
     onEpisodeChange?.(script.episode_number, script.id);
+  };
+
+  // 4.1 未绑参考剧本时：集数作为「进度标签」，纯前端 localStorage 持久化，不参与数据归档
+  const handleStandaloneEpisodeChange = (episode: number) => {
+    if (!isNaN(episode) && episode >= 1) {
+      setCurrentEpisode(episode);
+      // 同步上浮最大集数（用户添加时自然扩展，回切时保留原有上限）
+      setStandaloneMaxEpisode(prev => Math.max(prev, episode));
+      if (currentProjectId) {
+        try {
+          localStorage.setItem(`nano_progress_episode_${currentProjectId}`, String(episode));
+          const prevMaxRaw = localStorage.getItem(`nano_progress_max_episode_${currentProjectId}`);
+          const prevMax = prevMaxRaw ? parseInt(prevMaxRaw, 10) : 0;
+          if (episode > (isNaN(prevMax) ? 0 : prevMax)) {
+            localStorage.setItem(`nano_progress_max_episode_${currentProjectId}`, String(episode));
+          }
+        } catch {
+          // localStorage 不可用时静默失败
+        }
+      }
+    }
+  };
+
+  // 进入某项目时，未绑参考剧本的进度标签从 localStorage 恢复（含当前集 + 最大集）
+  useEffect(() => {
+    if (!currentProjectId || currentScriptId) return;
+    try {
+      const raw = localStorage.getItem(`nano_progress_episode_${currentProjectId}`);
+      const maxRaw = localStorage.getItem(`nano_progress_max_episode_${currentProjectId}`);
+      const cur = raw ? parseInt(raw, 10) : NaN;
+      const mx = maxRaw ? parseInt(maxRaw, 10) : NaN;
+      if (!isNaN(cur) && cur >= 1 && cur !== currentEpisode) {
+        setCurrentEpisode(cur);
+      }
+      const baseline = !isNaN(cur) ? cur : (currentEpisode || 1);
+      setStandaloneMaxEpisode(Math.max(isNaN(mx) ? 0 : mx, baseline, 1));
+    } catch {
+      // 忽略
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentProjectId, currentScriptId]);
+
+  // 4.2 绑定剧本模式下：新建下一集（自动取 maxEpisode+1，创建空白集后切换）
+  const handleCreateNextEpisode = async () => {
+    if (!currentProjectId) { showToast('未选择项目', 'warning'); return; }
+    const currentScript = scripts.find(s => s.id === currentScriptId);
+    const title = currentScript?.title || '未命名剧本';
+    const maxEp = scripts.reduce((m, s) => Math.max(m, s.episode_number || 0), 0);
+    const nextEp = maxEp + 1;
+    try {
+      const res = await createScriptApi({
+        projectId: currentProjectId,
+        title,
+        content: '',
+        episodeNumber: nextEp,
+      } as any);
+      showToast(`已添加第${nextEp}集`, 'success');
+      // 通知父组件切换到新集数（父组件需重新拉 scripts 列表）
+      if (res?.scriptId) {
+        onEpisodeChange?.(nextEp, res.scriptId);
+        setCurrentScriptId(res.scriptId);
+        setCurrentEpisode(nextEp);
+      }
+    } catch (err: any) {
+      console.error('[StoryBoard.createNextEpisode]', err);
+      showToast(err?.message || '添加集数失败', 'error');
+    }
   };
 
   // 5. 导入分镜
@@ -869,7 +1007,11 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
             <EpisodeSelector
               scripts={scripts}
               currentEpisode={currentEpisode}
+              currentScriptId={currentScriptId}
               onSelect={handleEpisodeSelect}
+              onStandaloneEpisodeChange={handleStandaloneEpisodeChange}
+              standaloneMaxEpisode={standaloneMaxEpisode}
+              onCreateNextEpisode={onCreateNextEpisode || handleCreateNextEpisode}
             />
             {scenes.length > 0 && (
               <span className="text-xs text-(--text-muted) px-2 py-0.5 rounded bg-(--bg-app)">
@@ -986,6 +1128,22 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
 
             <Divider />
 
+            {/* AI 智能分镜 */}
+            <Tooltip content="由剧本自动拆分镜头" placement="bottom">
+              <Button
+                size="sm"
+                variant="flat"
+                color="primary"
+                className="h-8 px-3 font-medium"
+                startContent={<Sparkles className="w-4 h-4" />}
+                onPress={autoStoryboard.handleAutoGenerateClick}
+                isDisabled={!currentProjectId || !currentScriptId || autoStoryboard.isGenerating}
+                isLoading={autoStoryboard.isGenerating}
+              >
+                智能分镜
+              </Button>
+            </Tooltip>
+
             {/* 播放分镜 */}
             {scenes.length > 0 && (
               <Tooltip content="播放分镜预览" placement="bottom">
@@ -1002,40 +1160,6 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
                 </Button>
               </Tooltip>
             )}
-
-            {/* 主操作 */}
-            <Tooltip content={autoStoryboard.isGenerating 
-              ? (autoStoryboard.progress 
-                ? `${autoStoryboard.progress.currentStep}/${autoStoryboard.progress.totalSteps} ${autoStoryboard.progress.stepName}`
-                : '生成中...')
-              : '智能生成分镜'
-            } placement="bottom">
-              <Button
-                size="sm"
-                className="pro-btn-primary h-8 px-3 font-medium"
-                startContent={!autoStoryboard.isGenerating && <Wand2 className="w-4 h-4" />}
-                onPress={autoStoryboard.handleAutoGenerateClick}
-                isLoading={autoStoryboard.isGenerating}
-                isDisabled={!currentScriptId || autoStoryboard.isGenerating}
-              >
-                {autoStoryboard.isGenerating ? '生成中...' : '智能分镜'}
-              </Button>
-            </Tooltip>
-
-            <Divider />
-
-            {/* AI 助手 */}
-            <IconButton
-              icon={<Sparkles className="w-4 h-4" />}
-              tooltip="AI 助手"
-              onClick={() => {
-                setIsAssistantOpen(true);
-                // 如果面板已存在但被折叠，展开它
-                requestAnimationFrame(() => {
-                  assistantPanelRef.current?.expand?.();
-                });
-              }}
-            />
           </div>
         </div>
 
@@ -1064,7 +1188,7 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
               mobilePanelLabels={isAssistantOpen ? ['分镜/资源', '预览编辑', 'AI助手'] : ['分镜/资源', '预览编辑']}
             >
               {/* 左侧：分镜列表 / 资源 Tab 切换 */}
-              <ResizablePanel ref={resourcePanelRef} defaultSize={isAssistantOpen ? 20 : 25} minSize={15} maxSize={35} title={leftPanelTab === 'scenes' ? '分镜列表' : leftPanelTab === 'resources' ? '资源' : '大纲'} collapsible>
+              <ResizablePanel ref={resourcePanelRef} defaultSize={isAssistantOpen ? 20 : 25} minSize={15} maxSize={35} collapsedSize={8} title={leftPanelTab === 'scenes' ? '分镜列表' : leftPanelTab === 'resources' ? '资源' : '大纲'} collapsible>
                 <div className="flex flex-col h-full overflow-hidden">
                   {/* Tab 切换栏 */}
                   <div className="flex items-center gap-0.5 px-2 py-1.5 border-b shrink-0" style={{ borderColor: 'var(--border-color)', backgroundColor: 'var(--bg-secondary)' }}>
@@ -1144,12 +1268,22 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
                         imageAspectRatio={imageAspectRatio}
                         textModel={textModel}
                         models={models}
+                        storyboardStates={storyboardStates}
+                        onStoryboardStateChange={handleStoryboardStateChange}
                       />
                     ) : (
                       <ScriptOutlinePanel
-                        scriptContent={scriptContent}
-                        scriptTitle={scriptTitle}
+                        scriptContent={scriptContent || referenceScriptContent}
+                        scriptTitle={scriptContent ? scriptTitle : referenceScriptTitle}
                         isLoading={isLoadingScript}
+                        projectId={currentProjectId}
+                        canPick={true}
+                        isBoundViaEpisode={!!scriptContent && !!currentScriptId}
+                        onPickScript={(_id, item) => {
+                          setReferenceScriptContent(item?.content || null);
+                          setReferenceScriptTitle(item?.title || (item ? `剧本 #${item.id}` : ''));
+                        }}
+                        onCreateNewScript={() => setIsGenerateScriptOpen(true)}
                       />
                     )}
                   </div>
@@ -1179,7 +1313,7 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
                   if (selectedScene) return await updateCharactersAndLocation(selectedScene, characters, location, characterIds, sceneId);
                   return false;
                 }}
-                projectCharacters={projectCharacters}
+                projectCharacters={effectiveProjectCharacters}
                 projectScenes={projectScenes}
                 onGenerateImage={generateImage}
                 onGenerateVideo={generateVideo}
@@ -1208,11 +1342,9 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
                 defaultSize={25}
                 minSize={18}
                 maxSize={40}
+                collapsedSize={8}
                 collapsible
                 title="AI助手"
-                onCollapse={(collapsed) => {
-                  if (collapsed) setIsAssistantOpen(false);
-                }}
               >
                 <Suspense fallback={
                   <div className="flex items-center justify-center h-full text-sm text-(--text-muted)">
@@ -1222,6 +1354,8 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
                 }>
                   <AIAssistantPanel
                     projectId={currentProjectId}
+                    projectName={currentProject?.name}
+                    projectDescription={currentProject?.description}
                     currentFrame={selectedSceneData ? {
                       id: selectedSceneData.id,
                       index: scenes.findIndex(s => s.id === selectedSceneData.id) + 1,
@@ -1234,21 +1368,203 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
                       id: s.id!,
                       index: idx + 1,
                       description: s.description,
+                      first_frame_url: (s as any).startFrame,
+                      last_frame_url: (s as any).endFrame,
+                      video_url: (s as any).videoUrl,
+                      first_frame_prompt: (s as any).firstFramePrompt,
+                      last_frame_prompt: (s as any).lastFramePrompt,
+                      video_prompt: (s as any).videoPrompt,
                     }))}
+                    characters={projectCharacters.map(c => ({ id: c.id, name: c.name, description: c.base_appearance || c.outfit_appearance }))}
+                    locations={projectScenes.map(l => ({ id: l.id, name: l.name, description: l.description }))}
+                    scripts={scripts.map(sc => ({ id: sc.id, episode_number: sc.episode_number, title: sc.title }))}
                     onClose={() => setIsAssistantOpen(false)}
                     onAction={(action, params) => {
-                      const sceneId = params?.sceneId || selectedSceneData?.id;
-                      if (!sceneId) {
-                        showToast('请先选择分镜', 'warning');
-                        return;
-                      }
+                      const sceneIdFrom = (p: any) => Number(p?.sceneId || selectedSceneData?.id);
+                      const toastOk = (m: string) => showToast(m, 'success');
+                      const toastErr = (prefix: string) => (e: any) => showToast(prefix + ': ' + (e?.message || e), 'error');
+                      const ensureProject = () => { if (!currentProjectId) { showToast('未选择项目', 'warning'); return false; } return true; };
+
+                      // ── 分镜：生成与质检 ──────────────────────────
                       if (action === 'generate_frame') {
-                        const prompt = params?.prompt || selectedSceneData?.description || '';
-                        generateImage(Number(sceneId), prompt);
+                        const sceneId = sceneIdFrom(params);
+                        if (!sceneId) { showToast('请先选择分镜', 'warning'); return; }
+                        const target = scenes.find(s => s.id === sceneId);
+                        const prompt = params?.prompt || target?.description || selectedSceneData?.description || '';
+                        generateImage(sceneId, prompt);
                       } else if (action === 'generate_video') {
-                        generateVideo(Number(sceneId));
-                      } else {
-                        console.log('[AI Assistant] Action:', action, params);
+                        const sceneId = sceneIdFrom(params);
+                        if (!sceneId) { showToast('请先选择分镜', 'warning'); return; }
+                        generateVideo(sceneId);
+                      } else if (action === 'auto_storyboard') {
+                        autoStoryboard.setShowConfirmModal(true);
+                      } else if (action === 'optimize_prompt' || action === 'upload_material') {
+                        showToast(`请在分镜卡片上手动${action === 'optimize_prompt' ? '触发提示词优化' : '上传素材'}`, 'info');
+                      }
+                      // ── 分镜 CRUD ──────────────────────────────────
+                      else if (action === 'insert_scene') {
+                        const atIndex = typeof params?.atIndex === 'number' ? params.atIndex : scenes.length;
+                        insertScene(Math.max(0, Math.min(atIndex, scenes.length)))
+                          .then(() => toastOk(`已在位置 ${atIndex + 1} 插入新分镜`))
+                          .catch(toastErr('插入失败'));
+                      } else if (action === 'delete_scene') {
+                        const sceneId = sceneIdFrom(params);
+                        if (!sceneId) { showToast('缺少 sceneId', 'warning'); return; }
+                        deleteScene(sceneId).then(() => toastOk('分镜已删除')).catch(toastErr('删除失败'));
+                      } else if (action === 'update_scene') {
+                        const sceneId = sceneIdFrom(params);
+                        const field = String(params?.field || '');
+                        const rawValue = params?.value;
+                        if (!sceneId || !field) { showToast('缺少 sceneId 或 field', 'warning'); return; }
+                        if (field === 'voiceover') {
+                          Promise.resolve(updateVoiceover(sceneId, String(rawValue ?? ''))).then(() => toastOk('旁白已更新')).catch(toastErr('更新失败'));
+                        } else if (field === 'duration') {
+                          const d = Number(rawValue); if (!Number.isFinite(d) || d <= 0) { showToast('duration 必须为正数秒', 'warning'); return; }
+                          Promise.resolve(updateDuration(sceneId, d)).then(() => toastOk(`时长已更新为 ${d}s`)).catch(toastErr('更新失败'));
+                        } else {
+                          const fieldMap: Record<string, (id: number, v: string) => any> = {
+                            description: updateDescription,
+                            base_description: updateBaseDescription,
+                            first_frame_prompt: updateFirstFramePrompt,
+                            last_frame_prompt: updateLastFramePrompt,
+                            video_prompt: updateVideoPrompt,
+                          };
+                          const fn = fieldMap[field];
+                          if (!fn) { showToast(`不支持的字段: ${field}`, 'warning'); return; }
+                          Promise.resolve(fn(sceneId, String(rawValue ?? ''))).then(() => toastOk(`已更新 ${field}`)).catch(toastErr('更新失败'));
+                        }
+                      } else if (action === 'update_scene_dialogues') {
+                        const sceneId = sceneIdFrom(params);
+                        if (!sceneId) { showToast('缺少 sceneId', 'warning'); return; }
+                        const raw = params?.dialogues;
+                        const list = Array.isArray(raw) ? raw.map((d: any, i: number) => typeof d === 'string'
+                          ? { character: '', line: d, order: i }
+                          : { character: String(d.character || ''), line: String(d.line || d.text || ''), order: i })
+                          : [];
+                        Promise.resolve(updateDialogues(sceneId, list as any)).then(() => toastOk('对白已更新')).catch(toastErr('更新失败'));
+                      } else if (action === 'update_scene_characters_location') {
+                        const sceneId = sceneIdFrom(params);
+                        if (!sceneId) { showToast('缺少 sceneId', 'warning'); return; }
+                        const characters: string[] = Array.isArray(params?.characters) ? params.characters.map(String) : [];
+                        const location: string = String(params?.location || '');
+                        const characterIds: number[] | undefined = Array.isArray(params?.characterIds) ? params.characterIds.map(Number) : undefined;
+                        const locationId: number | undefined = params?.locationId != null ? Number(params.locationId) : undefined;
+                        Promise.resolve(updateCharactersAndLocation(sceneId, characters, location, characterIds, locationId)).then(() => toastOk('角色/场景绑定已更新')).catch(toastErr('更新失败'));
+                      } else if (action === 'move_scene') {
+                        const sceneId = sceneIdFrom(params);
+                        const direction = params?.direction === 'down' ? 'down' : 'up';
+                        if (!sceneId) { showToast('缺少 sceneId', 'warning'); return; }
+                        moveScene(sceneId, direction as 'up' | 'down');
+                        toastOk(`已${direction === 'up' ? '上移' : '下移'}分镜`);
+                      } else if (action === 'reorder_scenes') {
+                        const ids: number[] = Array.isArray(params?.sceneIds) ? params.sceneIds.map(Number) : [];
+                        if (ids.length === 0) { showToast('sceneIds 为空', 'warning'); return; }
+                        const byId = new Map(scenes.map(s => [s.id, s]));
+                        const reordered = ids.map(id => byId.get(id)).filter(Boolean) as typeof scenes;
+                        if (reordered.length !== scenes.length) { showToast('sceneIds 与当前分镜不匹配', 'warning'); return; }
+                        reorderScenes(reordered);
+                        toastOk('分镜顺序已更新');
+                      }
+                      // ── 角色 CRUD + 白膜 ──────────────────────────
+                      else if (action === 'create_character') {
+                        if (!ensureProject()) return;
+                        createCharacter({ projectId: currentProjectId!, name: String(params?.name || '新角色'), description: params?.description, base_appearance: params?.base_appearance } as any)
+                          .then(c => { toastOk(`已创建角色「${c.name}」`); fetchCharactersByProject(currentProjectId!).then(setProjectCharacters).catch(() => {}); })
+                          .catch(toastErr('创建角色失败'));
+                      } else if (action === 'update_character') {
+                        const id = Number(params?.characterId); if (!id) { showToast('缺少 characterId', 'warning'); return; }
+                        updateCharacter(id, params?.fields || {})
+                          .then(() => { toastOk('角色已更新'); if (currentProjectId) fetchCharactersByProject(currentProjectId).then(setProjectCharacters).catch(() => {}); })
+                          .catch(toastErr('更新角色失败'));
+                      } else if (action === 'delete_character') {
+                        const id = Number(params?.characterId); if (!id) { showToast('缺少 characterId', 'warning'); return; }
+                        deleteCharacter(id)
+                          .then(() => { toastOk('角色已删除'); if (currentProjectId) fetchCharactersByProject(currentProjectId).then(setProjectCharacters).catch(() => {}); })
+                          .catch(toastErr('删除角色失败'));
+                      } else if (action === 'generate_base_model') {
+                        const id = Number(params?.characterId); if (!id) { showToast('缺少 characterId', 'warning'); return; }
+                        generateCharacterViews(id, { imageModel: params?.imageModel, textModel: params?.textModel, aspectRatio: params?.aspectRatio } as any)
+                          .then(() => toastOk('白膜生成任务已启动')).catch(toastErr('生成失败'));
+                      }
+                      // ── 场景（Location）CRUD ───────────────────────
+                      else if (action === 'create_location') {
+                        if (!ensureProject()) return;
+                        createSceneAsset({ project_id: currentProjectId!, name: String(params?.name || '新场景'), description: params?.description } as any)
+                          .then(s => { toastOk(`已创建场景「${s.name}」`); fetchScenesByProject(currentProjectId!, currentScriptId || undefined).then(setProjectScenes).catch(() => {}); })
+                          .catch(toastErr('创建场景失败'));
+                      } else if (action === 'update_location') {
+                        const id = Number(params?.locationId); if (!id) { showToast('缺少 locationId', 'warning'); return; }
+                        updateSceneAsset(id, params?.fields || {})
+                          .then(() => { toastOk('场景已更新'); if (currentProjectId) fetchScenesByProject(currentProjectId, currentScriptId || undefined).then(setProjectScenes).catch(() => {}); })
+                          .catch(toastErr('更新场景失败'));
+                      } else if (action === 'delete_location') {
+                        const id = Number(params?.locationId); if (!id) { showToast('缺少 locationId', 'warning'); return; }
+                        deleteSceneAsset(id)
+                          .then(() => { toastOk('场景已删除'); if (currentProjectId) fetchScenesByProject(currentProjectId, currentScriptId || undefined).then(setProjectScenes).catch(() => {}); })
+                          .catch(toastErr('删除场景失败'));
+                      }
+                      // ── 剧本 ──────────────────────────────────────
+                      else if (action === 'create_script') {
+                        if (!ensureProject()) return;
+                        createScriptApi({ projectId: currentProjectId!, title: params?.title, episodeNumber: params?.episodeNumber, content: String(params?.content || '') } as any)
+                          .then(() => { toastOk('剧本已创建，刷新后可见'); }).catch(toastErr('创建剧本失败'));
+                      } else if (action === 'delete_script') {
+                        const id = Number(params?.scriptId); if (!id) { showToast('缺少 scriptId', 'warning'); return; }
+                        deleteScriptApi(id).then(() => toastOk('剧本已删除，刷新后可见')).catch(toastErr('删除剧本失败'));
+                      } else if (action === 'bind_script') {
+                        const id = params?.scriptId == null ? null : Number(params.scriptId);
+                        setCurrentScriptId(id);
+                        toastOk(id ? `已绑定剧本 #${id}` : '已解绑参考剧本');
+                      } else if (action === 'switch_episode') {
+                        const ep = Number(params?.episodeNumber);
+                        if (!Number.isFinite(ep) || ep <= 0) { showToast('episodeNumber 非法', 'warning'); return; }
+                        setCurrentEpisode(ep);
+                        toastOk(`已切换到第 ${ep} 集`);
+                      }
+                      // ── 项目 ──────────────────────────────────────
+                      else if (action === 'update_project') {
+                        if (!ensureProject()) return;
+                        const fields = params?.fields || {};
+                        const payload: any = {};
+                        if (fields.name != null) payload.name = String(fields.name);
+                        if (fields.description != null) payload.description = String(fields.description);
+                        // art_style 合并到 settings_json
+                        if (fields.art_style != null) {
+                          try {
+                            const raw = currentProject?.settings_json;
+                            const parsed = raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : {};
+                            parsed.art_style = String(fields.art_style);
+                            payload.settings_json = JSON.stringify(parsed);
+                          } catch { payload.settings_json = JSON.stringify({ art_style: String(fields.art_style) }); }
+                        }
+                        updateProject(currentProjectId!, payload)
+                          .then(p => { setCurrentProject(p); toastOk('项目已更新'); })
+                          .catch(toastErr('更新项目失败'));
+                      }
+                      // ── 协作 ──────────────────────────────────────
+                      else if (action === 'invite_member') {
+                        if (!ensureProject()) return;
+                        const username = String(params?.username || '').trim();
+                        if (!username) { showToast('缺少 username', 'warning'); return; }
+                        const role = params?.role === 'viewer' ? 'viewer' : 'editor';
+                        addProjectCollaborator(currentProjectId!, { username, role })
+                          .then(() => toastOk(`已邀请 ${username} 为 ${role}`))
+                          .catch(toastErr('邀请失败'));
+                      } else if (action === 'assign_task') {
+                        showToast('请打开「任务分配」面板手动分配（AI 暂不直接写入任务表）', 'info');
+                      }
+                      // ── 版本回滚 ────────────────────────────────
+                      else if (action === 'restore_version') {
+                        const versionId = Number(params?.versionId); if (!versionId) { showToast('缺少 versionId', 'warning'); return; }
+                        const restoreType = params?.restoreType === 'create_new' ? 'create_new' : 'single';
+                        const token = getAuthToken();
+                        fetch(`/api/version/restore/${versionId}?restoreType=${restoreType}`, { method: 'PUT', headers: { Authorization: `Bearer ${token}` } })
+                          .then(async r => { if (!r.ok) throw new Error(await r.text()); refreshScenes(); toastOk('版本已回滚'); })
+                          .catch(toastErr('回滚失败'));
+                      }
+                      else {
+                        console.log('[AI Assistant] 未处理的 action:', action, params);
+                        showToast(`未识别的 action: ${action}`, 'warning');
                       }
                     }}
                   />
@@ -1318,6 +1634,29 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
         onClose={() => setIsAnimaticOpen(false)}
         storyboards={scenes}
       />
+
+      {/* 生成新剧本弹窗（弱绑定参考剧本） */}
+      {currentProjectId && currentProject && (
+        <ScriptGenerateModal
+          isOpen={isGenerateScriptOpen}
+          onOpenChange={setIsGenerateScriptOpen}
+          projects={[currentProject]}
+          aiModels={models as any}
+          defaultTextModel={textModel}
+          lockProjectId={currentProjectId}
+          lockEpisodeNumber={currentEpisode}
+          onSuccess={(payload?: ScriptGeneratedPayload) => {
+            if (payload?.content) {
+              setReferenceScriptContent(payload.content);
+              setReferenceScriptTitle(payload.title || `新剧本`);
+              showToast('新剧本已生成，已自动设为本次分镜的参考剧本', 'success');
+            } else {
+              showToast('剧本生成成功', 'success');
+            }
+          }}
+          onError={(msg) => showToast(msg, 'error')}
+        />
+      )}
     </div>
   );
 };

@@ -95,30 +95,40 @@ ${contentForAnalysis}
 - 只输出 JSON 数组，不要添加其他说明文字
 
 **外貌分层描述要求 - 极其重要：**
-角色的外貌必须分为两层，这是为了先生成白膜基础体，再叠加服装：
+角色的外貌必须分为三层（身体/服装/手持道具），这是为了先生成白膜基础体，再按状态叠加服装与道具：
 
 1. base_appearance（白膜体貌 - 不可更换的身体特征）：
    - 必须明确描述：年龄段、性别、身高体型、肤色
    - 必须明确描述：发型（长度/颜色/样式）、瞳色、眼型、脸型、五官特征
    - 必须描述：永久身体标记（疤痕、胎记、纹身等）
-   - 绝对不能包含任何服装、配饰、装备等可更换物品的描述
+   - 绝对不能包含任何服装、配饰、装备、手持道具等可更换物品的描述
 
 2. outfit_appearance（服装装饰 - 可更换的穿戴物品）：
    - 必须明确描述服装的具体款式、颜色、材质、层次（内衣/外衣/披风等）
-   - 必须描述所有配饰：帽子、头饰、耳环、项链、腰带、武器等
+   - 必须描述所有穿戴类配饰：帽子、头饰、耳环、项链、腰带等
    - 如果是古装/历史题材，必须描述符合时代的具体服饰名称（如汉服、铠甲、道袍等）
    - 禁止使用模糊描述如"穿着古装"、"传统服饰"，必须具体到款式和颜色
+   - **绝对不能包含手里拿着/抱着/背着的可拆离物品**（如剑、书本、胡萝卜、水杯、伞、包袋等）——这些属于第 4 层
 
 3. appearance（完整外貌 = base_appearance + outfit_appearance 的自然组合）：
    - 将白膜体貌和服装装饰组合成一段完整的外貌描述
+   - 不要把手持道具写进来
+
+4. held_props（手持道具 - 当前剧本中该角色典型携带/手持的可拆离物品）：
+   - 只收录角色"手里拿着/抱着/背着/随身携带"的可拆离物品，如：剑、盾、书本、胡萝卜、水杯、法杖、灯笼、包袋、雨伞、武器等
+   - 不包含穿戴类（帽子/耳环/项链/腰带属于 outfit_appearance）
+   - 不包含永久身体特征（疤痕/胎记等属于 base_appearance）
+   - 如果剧本中该角色未明确手持任何物品，返回空字符串 ""
+   - 多个道具用中文逗号分隔，如："长剑，水囊"
 
 请严格按以下 JSON 格式返回：
 [
   {
     "name": "角色名",
     "base_appearance": "白膜体貌描述（年龄、性别、体型、肤色、发型瞳色、五官等不可更换的身体特征）",
-    "outfit_appearance": "服装装饰描述（服装款式/颜色/材质、配饰、鞋子等可更换穿戴物品）",
-    "appearance": "完整外貌描述（白膜体貌 + 服装装饰的自然组合）",
+    "outfit_appearance": "服装装饰描述（服装款式/颜色/材质、穿戴类配饰、鞋子等）",
+    "held_props": "手持道具描述（剧本中该角色手里拿着/抱着/携带的可拆离物品，如剑、书本、胡萝卜等，没有则填空字符串）",
+    "appearance": "完整外貌描述（白膜体貌 + 服装装饰的自然组合，不含手持道具）",
     "personality": "性格描述（性格特点、行为习惯等）",
     "description": "角色简介（背景、身份、在故事中的作用等）"
   }
@@ -189,13 +199,16 @@ ${contentForAnalysis}
 
   if (onProgress) onProgress(80);
 
-  // 解析角色分层外貌：确保 base_appearance / outfit_appearance 存在
-  // 兼容旧版 AI 输出（可能不包含 base_appearance / outfit_appearance）
+  // 解析角色分层外貌：确保 base_appearance / outfit_appearance / held_props 存在
+  // 兼容旧版 AI 输出（可能不包含 base_appearance / outfit_appearance / held_props）
   for (const character of characters) {
     if (!character.base_appearance && character.appearance) {
       // 旧版 AI 输出没有分层，直接使用完整 appearance 作为兜底
       character.base_appearance = character.appearance;
       character.outfit_appearance = '';
+    }
+    if (typeof character.held_props !== 'string') {
+      character.held_props = '';
     }
     if (!character.appearance) {
       character.appearance = [character.base_appearance, character.outfit_appearance].filter(Boolean).join('；') || '';
@@ -263,21 +276,21 @@ ${contentForAnalysis}
               ]
             );
             character.id = existingId;
-            // 更新白膜状态的 appearance 为 base_appearance
+            // 更新白膜状态的 appearance 为 base_appearance（白膜不携带任何道具）
             try {
               await execute(
                 `UPDATE character_states SET appearance = ? WHERE character_id = ? AND is_base_model = 1`,
                 [character.base_appearance || '', existingId]
               );
-              // 更新默认服装状态的 outfit
+              // 更新默认服装状态的 outfit + held_props（手持道具叠加到该状态）
               await execute(
-                `UPDATE character_states SET outfit = ?, appearance = ? WHERE character_id = ? AND is_base_model = 0 AND name = '默认服装'`,
-                [character.outfit_appearance || '', character.appearance || '', existingId]
+                `UPDATE character_states SET outfit = ?, appearance = ?, held_props = ? WHERE character_id = ? AND is_base_model = 0 AND name = '默认服装'`,
+                [character.outfit_appearance || '', character.appearance || '', character.held_props || '', existingId]
               );
             } catch (stateErr) {
               console.warn('[CharacterExtraction] 更新角色白膜/服装状态失败:', character.name, stateErr.message);
             }
-            console.log('[CharacterExtraction] 更新角色:', character.name, '(含分层外貌)');
+            console.log('[CharacterExtraction] 更新角色:', character.name, '(含分层外貌+手持道具)');
           }
         } else {
           // 插入新角色（含分层外貌字段）
@@ -307,15 +320,15 @@ ${contentForAnalysis}
             [character.id, character.base_appearance || '', gender]
           );
 
-          // 创建默认服装状态：outfit 使用 outfit_appearance，appearance 使用完整外貌
+          // 创建默认服装状态：outfit 使用 outfit_appearance，held_props 使用剧本拆出的手持道具
           await execute(
             `INSERT INTO character_states (
-              character_id, is_base_model, name, description, appearance, outfit, gender, is_active, generation_status, state_category
-            ) VALUES (?, 0, '默认服装', '角色默认服装状态', ?, ?, ?, 0, 'idle', '"costume"')`,
-            [character.id, character.appearance || '', character.outfit_appearance || '', gender]
+              character_id, is_base_model, name, description, appearance, outfit, held_props, gender, is_active, generation_status, state_category
+            ) VALUES (?, 0, '默认服装', '角色默认服装状态', ?, ?, ?, ?, 0, 'idle', '"costume"')`,
+            [character.id, character.appearance || '', character.outfit_appearance || '', character.held_props || '', gender]
           );
 
-          console.log('[CharacterExtraction] 新增角色:', character.name, '(含白膜+默认服装状态)');
+          console.log('[CharacterExtraction] 新增角色:', character.name, '(含白膜+默认服装状态+手持道具)');
         }
       } catch (dbError) {
         console.error('[CharacterExtraction] 保存角色失败:', character.name, dbError);
@@ -380,7 +393,7 @@ ${contentForAnalysis}
       // 调用 AI 为遗漏角色生成详情
       let missingCharDetails = new Map();
       try {
-        const missingPrompt = `你是一个专业的剧本分析助手。以下角色在分镜中出现但缺少详细信息，请根据场景上下文为每个角色生成详细信息，并将角色外貌严格分为「白膜体貌」和「服装装饰」两层。
+        const missingPrompt = `你是一个专业的剧本分析助手。以下角色在分镜中出现但缺少详细信息，请根据场景上下文为每个角色生成详细信息，并将角色外貌严格分为「白膜体貌」「服装装饰」「手持道具」三层。
 ${visualStyleHint}
 ${missingContext}
 
@@ -389,17 +402,19 @@ ${missingContext}
 [
   {
     "name": "角色名（必须与上面提供的角色名完全一致）",
-    "base_appearance": "白膜体貌描述（年龄、性别、体型、肤色、发型瞳色、五官等不可更换的身体特征，不能包含服装）",
-    "outfit_appearance": "服装装饰描述（服装款式/颜色/材质、配饰、鞋子等可更换穿戴物品）",
-    "appearance": "完整外貌描述（白膜体貌 + 服装装饰的自然组合）",
+    "base_appearance": "白膜体貌描述（年龄、性别、体型、肤色、发型瞳色、五官等不可更换的身体特征，不能包含服装与道具）",
+    "outfit_appearance": "服装装饰描述（服装款式/颜色/材质、穿戴类配饰、鞋子等，不能包含手里的可拆离物品）",
+    "held_props": "手持道具描述（剧本中该角色手里拿着/抱着/背着的可拆离物品，没有则填空字符串）",
+    "appearance": "完整外貌描述（白膜体貌 + 服装装饰的自然组合，不含手持道具）",
     "personality": "性格描述（性格特点、行为习惯等）",
     "description": "角色简介（背景、身份、在故事中的作用等）"
   }
 ]
 
 **外貌分层描述要求：**
-- base_appearance: 只包含不可更换的身体特征（年龄、性别、体型、肤色、发型发色、瞳色、五官、永久身体标记），绝对不能包含服装
-- outfit_appearance: 只包含可更换的穿戴物品（服装款式/颜色/材质、配饰、鞋子等）
+- base_appearance: 只包含不可更换的身体特征（年龄、性别、体型、肤色、发型发色、瞳色、五官、永久身体标记），绝对不能包含服装与道具
+- outfit_appearance: 只包含可更换的穿戴物品（服装款式/颜色/材质、穿戴类配饰、鞋子等），禁止把手里拿的东西写进来
+- held_props: 只包含手里拿着/抱着/背着/随身携带的可拆离物品（如剑、书本、胡萝卜、水杯、伞、灯笼、包袋、武器等），无则空字符串
 - 必须明确描述：年龄段、性别、身高体型、肤色、发型（长度/颜色/样式）、瞳色
 - 必须明确描述服装的具体款式、颜色、材质
 - 如果是非人类角色（动物、怪物等），必须描述体型、毛色/皮肤、特征部位等
@@ -477,6 +492,14 @@ ${missingContext}
                     `UPDATE character_states SET appearance = COALESCE(NULLIF(appearance, ''), ?) WHERE character_id = ? AND is_base_model = 1`,
                     [detail.base_appearance || detail.appearance || '', existingId]
                   );
+                  // 智能覆盖：默认服装状态的 outfit/held_props 为空时才填充
+                  await exHelper(
+                    `UPDATE character_states SET
+                        outfit = COALESCE(NULLIF(outfit, ''), ?),
+                        held_props = COALESCE(NULLIF(held_props, ''), ?)
+                     WHERE character_id = ? AND is_base_model = 0 AND name = '默认服装'`,
+                    [detail.outfit_appearance || '', detail.held_props || '', existingId]
+                  );
                 } catch (e) { /* ignore */ }
               }
               characters.push({
@@ -497,11 +520,15 @@ ${missingContext}
                   `UPDATE characters SET appearance = ?, base_appearance = ?, outfit_appearance = ?, personality = ?, description = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
                   [detail.appearance || '', detail.base_appearance || detail.appearance || '', detail.outfit_appearance || '', detail.personality || '', detail.description || '', existingId]
                 );
-                // 同步更新白膜状态
+                // 同步更新白膜状态 + 默认服装状态（含手持道具）
                 try {
                   await exHelper(
                     `UPDATE character_states SET appearance = ? WHERE character_id = ? AND is_base_model = 1`,
                     [detail.base_appearance || detail.appearance || '', existingId]
+                  );
+                  await exHelper(
+                    `UPDATE character_states SET outfit = ?, appearance = ?, held_props = ? WHERE character_id = ? AND is_base_model = 0 AND name = '默认服装'`,
+                    [detail.outfit_appearance || '', detail.appearance || '', detail.held_props || '', existingId]
                   );
                 } catch (e) { /* ignore */ }
               }
@@ -540,11 +567,11 @@ ${missingContext}
                  VALUES (?, 1, '基础白膜', '角色基础白膜版本', ?, 'unknown', 1, 'idle')`,
                 [newCharId, baseApp]
               );
-              // 创建默认服装状态
+              // 创建默认服装状态（含手持道具）
               await exHelper(
-                `INSERT INTO character_states (character_id, is_base_model, name, description, appearance, outfit, gender, is_active, generation_status, state_category)
-                 VALUES (?, 0, '默认服装', '角色默认服装状态', ?, ?, 'unknown', 0, 'idle', '"costume"')`,
-                [newCharId, fullApp, outfitApp]
+                `INSERT INTO character_states (character_id, is_base_model, name, description, appearance, outfit, held_props, gender, is_active, generation_status, state_category)
+                 VALUES (?, 0, '默认服装', '角色默认服装状态', ?, ?, ?, 'unknown', 0, 'idle', '"costume"')`,
+                [newCharId, fullApp, outfitApp, detail.held_props || '']
               );
             } catch (stateErr) {
               console.warn('[CharacterExtraction] 创建遗漏角色的白膜/服装状态失败:', name, stateErr.message);
@@ -621,8 +648,9 @@ ${missingContext}
           console.log(`[CharacterExtraction] ✅ 角色 ${character.name} 白膜三视图生成完成`);
 
           // 白膜生成完成后，获取默认服装状态并生成服装三视图
+          // 多查一个 held_props，保证自动三视图与状态字段语义一致
           const costumeState = await qo(
-            `SELECT id FROM character_states WHERE character_id = ? AND is_base_model = 0 AND name = '默认服装'`,
+            `SELECT id, outfit, held_props FROM character_states WHERE character_id = ? AND is_base_model = 0 AND name = '默认服装'`,
             [character.id]
           );
           if (costumeState) {
@@ -639,7 +667,8 @@ ${missingContext}
               isBaseModel: false,
               gender: baseState.gender || 'unknown',
               stateId: costumeState.id,
-              outfit: character.outfit_appearance || ''
+              outfit: costumeState.outfit || character.outfit_appearance || '',
+              heldProps: costumeState.held_props || ''
             }, null);
             console.log(`[CharacterExtraction] ✅ 角色 ${character.name} 默认服装三视图生成完成`);
           }

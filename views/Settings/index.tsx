@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Settings as SettingsIcon, Moon, Sun, Eye, Check, Send, 
-  Palette, MessageSquare, Info, ChevronRight, Sparkles, Monitor, Globe, RotateCcw, Maximize, Minimize, HardDrive, Trash2, Shield, EyeOff, Eye as EyeIcon
+  Palette, MessageSquare, Info, ChevronRight, Sparkles, Monitor, Globe, RotateCcw, Maximize, Minimize, HardDrive, Trash2, Shield, EyeOff, Eye as EyeIcon, Bot
 } from 'lucide-react';
 import { useTheme, ThemeType } from '../../contexts/ThemeContext';
 import { useLanguage, LanguageType } from '../../contexts/LanguageContext';
@@ -222,6 +222,7 @@ interface SettingSection {
 const SETTING_SECTIONS: SettingSection[] = [
   { id: 'appearance', icon: <Palette className="w-4 h-4" /> },
   { id: 'language', icon: <Globe className="w-4 h-4" /> },
+  { id: 'ai_assistant', icon: <Bot className="w-4 h-4" /> },
   { id: 'storage', icon: <HardDrive className="w-4 h-4" /> },
   { id: 'security', icon: <Shield className="w-4 h-4" /> },
   { id: 'feedback', icon: <MessageSquare className="w-4 h-4" /> },
@@ -233,6 +234,31 @@ const Settings: React.FC = () => {
   const { language, setLanguage, t } = useLanguage();
   const { showToast } = useToast();
   const [activeSection, setActiveSection] = useState('appearance');
+
+  // AI 助手设置项
+  const AI_SETTINGS_KEY = 'ai_assistant_settings_v1';
+  const [aiIncludeContext, setAiIncludeContext] = useState(true);
+  const [aiHistoryLimit, setAiHistoryLimit] = useState<number>(50);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(AI_SETTINGS_KEY);
+      if (raw) {
+        const s = JSON.parse(raw);
+        if (typeof s.includeContext === 'boolean') setAiIncludeContext(s.includeContext);
+        if (typeof s.historyLimit === 'number') setAiHistoryLimit(s.historyLimit);
+      }
+    } catch { /* ignore */ }
+  }, []);
+
+  const saveAiSettings = useCallback((patch: Record<string, any>) => {
+    try {
+      const raw = localStorage.getItem(AI_SETTINGS_KEY);
+      const prev = raw ? JSON.parse(raw) : {};
+      const next = { ...prev, ...patch };
+      localStorage.setItem(AI_SETTINGS_KEY, JSON.stringify(next));
+    } catch { /* ignore */ }
+  }, []);
 
   // 反馈功能状态
   const [type, setType] = useState<FeedbackType>('feature');
@@ -912,6 +938,69 @@ const Settings: React.FC = () => {
     </div>
   );
 
+  // 渲染 AI 助手设置区域
+  const renderAiAssistantSection = () => (
+    <div className="space-y-6">
+      {/* 注入项目上下文 */}
+      <label
+        className="flex items-start justify-between gap-4 p-4 rounded-xl cursor-pointer transition-colors"
+        style={{ backgroundColor: 'var(--bg-body)', border: '1px solid var(--border-color)' }}
+      >
+        <div className="flex-1">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>注入项目上下文</span>
+          </div>
+          <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+            开启后将角色、场景、剧本、分镜清单注入 AI 系统提示词。关闭可减少 token 消耗。
+          </p>
+        </div>
+        <input
+          type="checkbox"
+          checked={aiIncludeContext}
+          onChange={(e) => {
+            setAiIncludeContext(e.target.checked);
+            saveAiSettings({ includeContext: e.target.checked });
+          }}
+          className="mt-1 w-4 h-4"
+          style={{ accentColor: 'var(--accent-primary)' }}
+        />
+      </label>
+
+      {/* 历史消息上限 */}
+      <div
+        className="p-4 rounded-xl"
+        style={{ backgroundColor: 'var(--bg-body)', border: '1px solid var(--border-color)' }}
+      >
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>历史消息上限</span>
+          <span className="text-xs font-mono" style={{ color: 'var(--accent-primary)' }}>{aiHistoryLimit === 0 ? '不限' : aiHistoryLimit}</span>
+        </div>
+        <p className="text-xs leading-relaxed mb-3" style={{ color: 'var(--text-muted)' }}>
+          每次发送时最多携带多少条历史消息。越小越省 token，越大上下文越完整。
+        </p>
+        <div className="flex items-center gap-2">
+          {[10, 20, 50, 100, 0].map((n) => (
+            <button
+              key={n}
+              onClick={() => {
+                setAiHistoryLimit(n);
+                saveAiSettings({ historyLimit: n });
+              }}
+              className="flex-1 py-1.5 rounded-lg text-xs font-medium transition-colors"
+              style={{
+                backgroundColor: aiHistoryLimit === n ? 'var(--accent-primary)' : 'var(--bg-card)',
+                color: aiHistoryLimit === n ? 'white' : 'var(--text-muted)',
+                border: `1px solid ${aiHistoryLimit === n ? 'var(--accent-primary)' : 'var(--border-color)'}`,
+              }}
+            >
+              {n === 0 ? '不限' : n}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+
   // 渲染存储管理区域
   const renderStorageSection = () => {
     const st = (t.settings as any).storage || {};
@@ -1027,6 +1116,7 @@ const Settings: React.FC = () => {
     switch (activeSection) {
       case 'appearance': return renderAppearanceSection();
       case 'language': return renderLanguageSection();
+      case 'ai_assistant': return renderAiAssistantSection();
       case 'storage': return renderStorageSection();
       case 'security': return renderSecuritySection();
       case 'feedback': return renderFeedbackSection();

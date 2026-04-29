@@ -185,7 +185,9 @@ async function handleBatchSceneStep(inputParams, onProgress) {
     scriptTitle, 
     textModel: modelName, 
     projectId,
-    think 
+    think,
+    referenceScriptContent,
+    referenceScriptTitle
   } = inputParams;
 
   if (!sceneContent || !modelName) {
@@ -193,6 +195,16 @@ async function handleBatchSceneStep(inputParams, onProgress) {
   }
 
   if (onProgress) onProgress(10);
+
+  // 弱绑定的参考剧本上下文
+  let referenceSection = '';
+  if (referenceScriptContent && String(referenceScriptContent).trim()) {
+    const MAX_REF_LENGTH = 1500;
+    const refText = String(referenceScriptContent).trim();
+    const clipped = refText.length > MAX_REF_LENGTH ? refText.slice(0, MAX_REF_LENGTH) + '\n...(参考剧本过长，已截断)' : refText;
+    const refTitle = referenceScriptTitle ? String(referenceScriptTitle) : '参考剧本';
+    referenceSection = `\n\n【参考剧本·${refTitle}】\n以下仅供参考（风格、人物关系等），不要把它的情节加入本场分镜。\n${clipped}\n`;
+  }
 
   // 获取时长配置
   let durationConfig;
@@ -251,7 +263,7 @@ ${charLines}
 
 【场景内容】
 ${sceneContent}
-
+${referenceSection}
 ---
 ${characterAppearanceSection}
 【分镜转化要求】

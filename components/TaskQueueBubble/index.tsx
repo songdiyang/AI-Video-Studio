@@ -277,7 +277,7 @@ const TaskQueueBubble: React.FC = () => {
       <motion.div
         initial={{ scale: 0, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
-        className="fixed z-50 flex items-center justify-center rounded-full shadow-lg select-none"
+        className="fixed z-[200] flex items-center justify-center rounded-full shadow-lg select-none"
         style={{
           x: springX,
           y: springY,
@@ -366,7 +366,7 @@ const TaskQueueBubble: React.FC = () => {
             animate={{ opacity: 1, scale: 1, x: 0 }}
             exit={{ opacity: 0, scale: 0.9, x: snapSide === 'right' ? 20 : -20 }}
             transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
-            className="fixed z-40 flex flex-col rounded-xl shadow-2xl overflow-hidden"
+            className="fixed z-[190] flex flex-col rounded-xl shadow-2xl overflow-hidden"
             style={{
               left: popupPos.left + panelOffset.x,
               top: popupPos.top + panelOffset.y,

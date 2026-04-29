@@ -28,6 +28,15 @@ const getGroupColor = (groupId: number, tagGroups: TagGroup[]): string => {
   return group?.color || '#6366f1';
 };
 
+/** 列表预览图：优先使用第一个角色状态的正面图（白膜优先）。 */
+const resolvePreviewUrl = (character: Character): string | undefined => {
+  return character.first_state_front_view_url
+    || character.base_model_image_url
+    || character.front_view_url
+    || character.image_url
+    || undefined;
+};
+
 const CharacterList: React.FC<CharacterListProps> = ({ characters, tagGroups, onEdit, onDelete }) => {
   return (
     <motion.div 
@@ -37,10 +46,7 @@ const CharacterList: React.FC<CharacterListProps> = ({ characters, tagGroups, on
       className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mt-6"
     >
       {characters.map((character) => {
-        // 只展示正面图像一张
-        const imageUrl = character.front_view_url || 
-                        character.image_url;
-        const hasImage = !!imageUrl;
+        const previewUrl = resolvePreviewUrl(character);
 
         return (
           <div
@@ -48,25 +54,23 @@ const CharacterList: React.FC<CharacterListProps> = ({ characters, tagGroups, on
             className="bg-(--bg-card) border border-(--border-color) shadow-sm hover:shadow-lg hover:shadow-(--accent)/10 transition-all cursor-pointer rounded-xl overflow-hidden group"
             onClick={() => onEdit(character)}
           >
-            {/* 图片区域 - 主要展示 */}
+            {/* 图片区域 - 直接展示第一个角色状态的正面图 */}
             <div className="relative aspect-[3/4] bg-gradient-to-br from-(--bg-hover) to-(--bg-card) overflow-hidden">
-              {hasImage ? (
+              {previewUrl ? (
                 <img
-                  src={imageUrl}
+                  src={previewUrl}
                   alt={character.name}
                   className="w-full h-full object-cover object-top transition-transform duration-300 group-hover:scale-105"
                   loading="lazy"
                 />
               ) : (
                 <div className="w-full h-full flex items-center justify-center text-(--text-muted)">
-                  <span className="text-4xl font-bold opacity-20">
-                    {character.name.charAt(0)}
-                  </span>
+                  <span className="text-4xl font-bold opacity-20">{character.name.charAt(0)}</span>
                 </div>
               )}
               
               {/* 悬浮操作按钮 */}
-              <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
                 <Button 
                   size="sm" 
                   isIconOnly 
@@ -89,7 +93,7 @@ const CharacterList: React.FC<CharacterListProps> = ({ characters, tagGroups, on
 
               {/* 状态数量徽章 */}
               {character.states_count > 0 && (
-                <div className="absolute top-2 left-2">
+                <div className="absolute top-2 left-2 z-10">
                   <Chip
                     size="sm"
                     variant="solid"
@@ -126,26 +130,18 @@ const CharacterList: React.FC<CharacterListProps> = ({ characters, tagGroups, on
                     {character.project_name}
                   </Chip>
                 )}
-                {/* 显示分组标签（彩色） */}
-                {character.tag_groups_json && character.tag_groups_json.slice(0, 2).map((group) => 
-                  group.tags.slice(0, 1).map((tag, idx) => {
-                    const color = getGroupColor(group.groupId, tagGroups);
-                    return (
-                      <Chip 
-                        key={`${group.groupId}-${idx}`}
-                        size="sm" 
-                        variant="flat" 
-                        style={{
-                          backgroundColor: `${color}20`,
-                          color: color,
-                        }}
-                        className="text-xs"
-                      >
-                        {tag}
-                      </Chip>
-                    );
-                  })
-                )}
+                {/* 分组标签展示已移除：标签分组功能不再维护，统一使用基础信息 tags 字段 */}
+                {/* 显示用户自定义标签（基础信息 tags 字段） */}
+                {character.tags && character.tags.split(/[,，]/).map(t => t.trim()).filter(Boolean).slice(0, 3).map((tag, idx) => (
+                  <Chip
+                    key={`tag-${idx}`}
+                    size="sm"
+                    variant="flat"
+                    className="bg-blue-500/10 text-blue-600 dark:text-blue-300 border border-blue-500/20 text-xs"
+                  >
+                    {tag}
+                  </Chip>
+                ))}
               </div>
             </div>
           </div>

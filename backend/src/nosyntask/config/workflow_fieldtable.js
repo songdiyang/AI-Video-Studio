@@ -143,6 +143,24 @@ module.exports = {
     description: '剧本标题（用于分镜生成等）',
     category: 'script'
   },
+  referenceScriptContent: {
+    from: 'referenceScriptContent',
+    defaultValue: null,
+    description: '弱绑定的参考剧本正文（仅作为 AI 生成 prompt 的补充上下文，不改变主 scriptId）',
+    category: 'script'
+  },
+  referenceScriptTitle: {
+    from: 'referenceScriptTitle',
+    defaultValue: null,
+    description: '弱绑定的参考剧本标题（用于 prompt 标签说明）',
+    category: 'script'
+  },
+  conflictStrategy: {
+    from: 'conflictStrategy',
+    defaultValue: null,
+    description: '角色/场景去重策略：skip=跳过同名 | smart=仅补空白字段 | overwrite=完全覆盖。为 null 时回退到 appendMode 推导',
+    category: 'scene'
+  },
 
   // ================================================================
   //  场景相关
@@ -317,6 +335,12 @@ module.exports = {
     from: 'bodyElements',
     defaultValue: '',
     description: '白膜身体元素描述（纹身、疤痕、胎记等永久性身体标记）',
+    category: 'character'
+  },
+  heldProps: {
+    from: 'heldProps',
+    defaultValue: '',
+    description: '角色状态手持/携带道具描述（剑、书本、水杯等手里拿着或身上携带的物品）',
     category: 'character'
   },
   frontViewUrl: {
@@ -527,6 +551,46 @@ module.exports = {
   },
 
   // ================================================================
+  //  场景元素（影棚）
+  // ================================================================
+  elementId: {
+    from: 'elementId',
+    defaultValue: null,
+    description: '场景元素 ID',
+    category: 'scene_element'
+  },
+  elementName: {
+    from: 'elementName',
+    defaultValue: null,
+    description: '场景元素名称',
+    category: 'scene_element'
+  },
+  elementDescription: {
+    from: 'elementDescription',
+    defaultValue: null,
+    description: '场景元素外观/材质描述',
+    category: 'scene_element'
+  },
+  elementCategory: {
+    from: 'elementCategory',
+    defaultValue: 'scenery',
+    description: "场景元素类别：building | scenery",
+    category: 'scene_element'
+  },
+  elementImageUrls: {
+    from: 'elementImageUrls',
+    defaultValue: [],
+    description: '已生成的元素图 URL 数组，用于全景合成时作为多图参考',
+    category: 'scene_element'
+  },
+  elementPositions: {
+    from: 'elementPositions',
+    defaultValue: [],
+    description: '元素空间位置描述数组，与 elementImageUrls 位串对齐，用于拼接 prompt',
+    category: 'scene_element'
+  },
+
+  // ================================================================
   //  魔术空间-视角（Camera Control）
   // ================================================================
   compositeImageUrl: {
@@ -674,5 +738,40 @@ module.exports = {
     defaultValue: '',
     description: '已有章节内容（续写模式使用）',
     category: 'novel'
+  },
+
+  // ================================================================
+  //  AI 助手长任务（ai_assistant_session）
+  // ================================================================
+  message: {
+    from: 'message',
+    defaultValue: '',
+    description: '用户当前消息（AI 助手）',
+    category: 'ai_assistant'
+  },
+  conversation: {
+    from: 'conversation',
+    defaultValue: [],
+    description: '历史对话数组 [{role,content}]（AI 助手）',
+    category: 'ai_assistant'
+  },
+  defaultTextModel: {
+    from: 'defaultTextModel',
+    defaultValue: null,
+    description: '默认文本模型（子 workflow 带入时使用）',
+    category: 'ai_assistant'
+  },
+  defaultImageModel: {
+    from: 'defaultImageModel',
+    defaultValue: null,
+    description: '默认图片模型（子 workflow 带入时使用）',
+    category: 'ai_assistant'
+  },
+  parentJobId: {
+    from: null,
+    resolver: (ctx) => ctx.jobId,
+    defaultValue: null,
+    description: '当前执行中的 AI 助手主 workflow jobId（从 context.jobId 取）',
+    category: 'ai_assistant'
   }
 };

@@ -35,6 +35,7 @@
     "@ffmpeg/ffmpeg": "^0.12.15",
     "@ffmpeg/util": "^0.12.2",
     "@heroui/react": "^2.8.7",
+    "@types/three": "^0.184.0",
     "framer-motion": "^12.23.26",
     "jszip": "^3.10.1",
     "lucide-react": "^0.562.0",
@@ -42,6 +43,7 @@
     "react-dom": "^19.2.3",
     "react-router-dom": "^7.11.0",
     "socket.io-client": "^4.8.3",
+    "three": "^0.184.0",
     "undici": "^7.24.7",
     "yet-another-react-lightbox": "^3.28.0"
   },

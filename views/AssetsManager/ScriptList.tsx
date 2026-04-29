@@ -35,6 +35,7 @@ import {
 } from 'lucide-react';
 import type { ScriptLibraryItem } from '../../services/scripts';
 import type { Project } from '../../services/projects';
+import MarkdownRenderer from '../../components/MarkdownRenderer';
 
 // 剧本组：同 title 的多集集合
 interface ScriptGroup {
@@ -463,14 +464,18 @@ const ScriptList: React.FC<ScriptListProps> = ({
                         />
                       ))}
                     </Tabs>
-                    <pre className="whitespace-pre-wrap font-sans text-sm text-(--text-primary) leading-relaxed">
-                      {viewingGroup.episodes[viewEpisodeIdx]?.content || '（空）'}
-                    </pre>
+                    <div className="max-h-[60vh] overflow-y-auto pr-1">
+                      <MarkdownRenderer
+                        content={viewingGroup.episodes[viewEpisodeIdx]?.content || '（空）'}
+                      />
+                    </div>
                   </div>
                 ) : (
-                  <pre className="whitespace-pre-wrap font-sans text-sm text-(--text-primary) leading-relaxed">
-                    {viewingGroup?.episodes[0]?.content || '（空）'}
-                  </pre>
+                  <div className="max-h-[60vh] overflow-y-auto pr-1">
+                    <MarkdownRenderer
+                      content={viewingGroup?.episodes[0]?.content || '（空）'}
+                    />
+                  </div>
                 )}
               </ModalBody>
               <ModalFooter>

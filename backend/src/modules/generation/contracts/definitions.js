@@ -1,13 +1,16 @@
 const { getSceneCount, parseScriptScenes } = require('../../../utils/parseScriptScenes');
 const { HttpError } = require('../utils/httpErrors');
 const { queryOne, queryAll } = require('../../../dbHelper');
+const { encodeId } = require('../../../utils/workflowId');
 const {
   requireProjectForUser,
   requireScriptForUser,
   requireCharacterForUser,
   requireSceneForUser,
   listScenesForProject,
-  requireStoryboardForUser
+  requireStoryboardForUser,
+  requireSceneElementForUser,
+  listEnabledSceneElementLinks
 } = require('./repositories');
 
 function createCommand({ operationKey, workflowType, actor, scope, models, inputs, options }) {
@@ -92,7 +95,7 @@ const operationContracts = [
         options: resolved.options
       }),
     responseMapper: ({ result, command }) => ({
-      jobId: result.jobId,
+      jobId: encodeId(result.jobId),
       tasks: result.tasks,
       workflowType: command.workflowType,
       operationKey: command.operationKey,
@@ -134,7 +137,8 @@ const operationContracts = [
       },
       inputs: {
         characterName: resources.character.name,
-        appearance: resources.character.appearance,
+        // 白膜角色设定图：优先用纯净 base_appearance，避免服装等状态量污染白膜 prompt
+        appearance: resources.character.base_appearance || resources.character.appearance,
         personality: resources.character.personality,
         description: resources.character.description,
         style: input.style || null,
@@ -163,7 +167,7 @@ const operationContracts = [
       }),
     responseMapper: ({ result, command }) => ({
       message: '三视图生成已启动',
-      jobId: result.jobId,
+      jobId: encodeId(result.jobId),
       characterId: command.scope.characterId,
       status: 'generating'
     })
@@ -182,7 +186,8 @@ const operationContracts = [
         regenerateOnly: { type: 'array', items: { type: 'string', enum: ['front', 'side', 'back'] } },
         customPromptFront: { type: 'string' },
         customPromptSide: { type: 'string' },
-        customPromptBack: { type: 'string' }
+        customPromptBack: { type: 'string' },
+        generateMode: { type: 'string', enum: ['design_sheet', 'three_views'] }
       }
     },
     scopeResolver: async ({ actor, input }) => {
@@ -206,39 +211,7 @@ const operationContracts = [
         throw new HttpError(404, '角色状态不存在');
       }
 
-      // 白膜校验：必须有参考图或已生成的状态图片
-      if (state.is_base_model) {
-        let hasReference = false;
-        // 检查角色级参考图
-        const useRefImages = state.use_reference_images !== 0 && state.use_reference_images !== false;
-        if (useRefImages) {
-          const refImages = await queryAll(
-            `SELECT id FROM asset_reference_images
-             WHERE asset_type = 'character' AND asset_id = ? AND is_enabled = 1
-             LIMIT 1`,
-            [input.characterId]
-          );
-          if (refImages.length > 0) hasReference = true;
-        }
-        // 检查是否有其他已生成状态图片
-        if (!hasReference) {
-          const otherState = await queryOne(
-            `SELECT id FROM character_states
-             WHERE character_id = ? AND is_base_model = 0
-               AND front_view_url IS NOT NULL AND front_view_url != ''
-             LIMIT 1`,
-            [input.characterId]
-          );
-          if (otherState) hasReference = true;
-        }
-        // 白膜已有自身图片也算有参考
-        if (!hasReference && (state.front_view_url || state.image_url)) {
-          hasReference = true;
-        }
-        if (!hasReference) {
-          throw new HttpError(400, '生成白膜需要角色参考图或已有状态图片，请先在「参考图」页面上传参考图，或先为其他状态生成图片');
-        }
-      }
+      // 白膜生成不再强制要求参考图，有则用、无则纯描述生成
 
       return {
         models: {
@@ -248,7 +221,8 @@ const operationContracts = [
         inputs: {
           characterId: input.characterId,
           characterName: resources.character.name,
-          appearance: resources.character.appearance,
+          // 状态级三视图：使用纯净 base_appearance 作为基线，服装/配饰/发型由下面独立字段叠加，避免重复/冲突
+          appearance: resources.character.base_appearance || resources.character.appearance,
           personality: resources.character.personality,
           description: resources.character.description,
           style: null,
@@ -258,12 +232,14 @@ const operationContracts = [
           accessories: state.accessories || null,
           ageStage: state.age_stage || null,
           bodyElements: state.body_elements || null,
+          heldProps: state.held_props || null,
           isBaseModel: !!state.is_base_model,
           gender: resources.character.gender || 'unknown',
           regenerateOnly: input.regenerateOnly || null,
           customPromptFront: input.customPromptFront || null,
           customPromptSide: input.customPromptSide || null,
-          customPromptBack: input.customPromptBack || null
+          customPromptBack: input.customPromptBack || null,
+          generateMode: input.generateMode || null
         },
         options: {}
       };
@@ -284,85 +260,9 @@ const operationContracts = [
       }),
     responseMapper: ({ result, command }) => ({
       message: '状态三视图生成已启动',
-      jobId: result.jobId,
+      jobId: encodeId(result.jobId),
       characterId: command.scope.characterId,
       stateId: command.scope.stateId,
-      status: 'generating'
-    })
-  },
-  {
-    operationKey: 'character_state_styled_generate',
-    workflowType: 'character_state_styled_generation',
-    requestSchema: {
-      type: 'object',
-      required: ['characterId', 'stateId', 'projectId', 'imageModel'],
-      properties: {
-        characterId: { type: 'integer', minimum: 1 },
-        stateId: { type: 'integer', minimum: 1 },
-        projectId: { type: 'integer', minimum: 1 },
-        imageModel: { type: 'string', minLength: 1 },
-        textModel: { type: 'string' },
-        styleFingerprint: { type: 'string' }
-      }
-    },
-    scopeResolver: async ({ actor, input }) => {
-      const character = await requireCharacterForUser(input.characterId, actor.userId);
-      // stateId 归属校验
-      const state = await queryOne(
-        'SELECT id FROM character_states WHERE id = ? AND character_id = ?',
-        [input.stateId, character.id]
-      );
-      if (!state) {
-        throw new HttpError(404, '角色状态不存在');
-      }
-      // 项目可见性（读取）— 可能是 owner 或 reference，均允许用其画风渲染
-      const { getEffectiveProjectRole } = require('../../../middleware/collaborationAuth');
-      const projectRole = await getEffectiveProjectRole(actor.userId, input.projectId);
-      if (!projectRole) {
-        throw new HttpError(403, '无权访问目标项目');
-      }
-      return {
-        scope: {
-          projectId: input.projectId,
-          characterId: character.id,
-          stateId: input.stateId
-        },
-        resources: { character }
-      };
-    },
-    defaultsResolver: async ({ input }) => ({
-      models: {
-        imageModel: input.imageModel,
-        textModel: input.textModel || null
-      },
-      inputs: {
-        characterId: input.characterId,
-        stateId: input.stateId,
-        projectId: input.projectId,
-        styleFingerprint: input.styleFingerprint || ''
-      },
-      options: {}
-    }),
-    conflictKeyResolver: ({ scope }) => ({
-      key: 'stateId',
-      value: scope.stateId
-    }),
-    toJobParams: ({ contract, actor, scope, resolved }) =>
-      createCommand({
-        operationKey: contract.operationKey,
-        workflowType: contract.workflowType,
-        actor,
-        scope,
-        models: resolved.models,
-        inputs: resolved.inputs,
-        options: resolved.options
-      }),
-    responseMapper: ({ result, command }) => ({
-      message: '角色状态项目画风渲染已启动',
-      jobId: result.jobId,
-      characterId: command.scope.characterId,
-      stateId: command.scope.stateId,
-      projectId: command.scope.projectId,
       status: 'generating'
     })
   },
@@ -425,7 +325,7 @@ const operationContracts = [
       }),
     responseMapper: ({ result, command }) => ({
       message: '概念分解图生成已启动',
-      jobId: result.jobId,
+      jobId: encodeId(result.jobId),
       characterId: command.scope.characterId,
       status: 'generating'
     })
@@ -506,51 +406,69 @@ const operationContracts = [
       }),
     responseMapper: ({ result, command }) => ({
       message: '场景图片生成已启动',
-      jobId: result.jobId,
+      jobId: encodeId(result.jobId),
       sceneId: command.scope.sceneId,
       status: 'generating'
     })
   },
   {
-    operationKey: 'scene_styled_generate',
-    workflowType: 'scene_styled_generation',
+    operationKey: 'scene_panorama_generate',
+    workflowType: 'scene_panorama_generation',
     requestSchema: {
       type: 'object',
-      required: ['sceneId', 'projectId', 'imageModel'],
+      required: ['sceneId', 'imageModel'],
       properties: {
         sceneId: { type: 'integer', minimum: 1 },
-        projectId: { type: 'integer', minimum: 1 },
         imageModel: { type: 'string', minLength: 1 },
-        styleFingerprint: { type: 'string' }
+        textModel: { type: 'string' },
+        style: { type: 'string' }
       }
     },
     scopeResolver: async ({ actor, input }) => {
       const scene = await requireSceneForUser(input.sceneId, actor.userId);
-      const { getEffectiveProjectRole } = require('../../../middleware/collaborationAuth');
-      const projectRole = await getEffectiveProjectRole(actor.userId, input.projectId);
-      if (!projectRole) {
-        throw new HttpError(403, '无权访问目标项目');
-      }
       return {
         scope: {
-          projectId: input.projectId,
+          projectId: scene.project_id,
           sceneId: scene.id
         },
         resources: { scene }
       };
     },
-    defaultsResolver: async ({ input }) => ({
-      models: {
-        imageModel: input.imageModel,
-        textModel: null
-      },
-      inputs: {
-        sceneId: input.sceneId,
-        projectId: input.projectId,
-        styleFingerprint: input.styleFingerprint || ''
-      },
-      options: {}
-    }),
+    defaultsResolver: async ({ input, resources }) => {
+      const scene = resources.scene;
+      if (!scene.name && !scene.description && !scene.environment) {
+        throw new HttpError(400, '场景信息不足，至少需要提供场景名称、描述或环境描述之一');
+      }
+
+      // 查询已关联且已生成的元素图，作为多图参考注入全景合成
+      const links = await listEnabledSceneElementLinks(scene.id);
+      const completedLinks = links.filter(l => l.generation_status === 'completed' && l.image_url);
+      const elementImageUrls = completedLinks.map(l => l.image_url);
+      const elementPositions = completedLinks.map(l => ({
+        name: l.name,
+        category: l.category,
+        description: l.description || '',
+        positionHint: l.position_hint || ''
+      }));
+
+      return {
+        models: {
+          imageModel: input.imageModel,
+          textModel: input.textModel || null
+        },
+        inputs: {
+          sceneName: scene.name,
+          description: scene.description,
+          environment: scene.environment,
+          lighting: scene.lighting,
+          mood: scene.mood,
+          style: input.style || null,
+          elementImageUrls,
+          elementPositions
+        },
+        options: {}
+      };
+    },
     conflictKeyResolver: ({ scope }) => ({
       key: 'sceneId',
       value: scope.sceneId
@@ -566,10 +484,129 @@ const operationContracts = [
         options: resolved.options
       }),
     responseMapper: ({ result, command }) => ({
-      message: '场景项目画风渲染已启动',
-      jobId: result.jobId,
+      message: '场景全景图生成已启动',
+      jobId: encodeId(result.jobId),
       sceneId: command.scope.sceneId,
-      projectId: command.scope.projectId,
+      status: 'generating'
+    })
+  },
+  {
+    operationKey: 'scene_elements_extract',
+    workflowType: 'scene_elements_extraction',
+    requestSchema: {
+      type: 'object',
+      required: ['sceneId', 'textModel'],
+      properties: {
+        sceneId: { type: 'integer', minimum: 1 },
+        textModel: { type: 'string', minLength: 1 }
+      }
+    },
+    scopeResolver: async ({ actor, input }) => {
+      const scene = await requireSceneForUser(input.sceneId, actor.userId);
+      return {
+        scope: {
+          projectId: scene.project_id,
+          sceneId: scene.id
+        },
+        resources: { scene }
+      };
+    },
+    defaultsResolver: async ({ input, resources }) => {
+      const scene = resources.scene;
+      if (!scene.name && !scene.description && !scene.environment) {
+        throw new HttpError(400, '场景信息不足，至少需要提供场景名称、描述或环境描述之一');
+      }
+      return {
+        models: {
+          textModel: input.textModel
+        },
+        inputs: {
+          sceneName: scene.name,
+          description: scene.description,
+          environment: scene.environment,
+          lighting: scene.lighting,
+          mood: scene.mood
+        },
+        options: {}
+      };
+    },
+    conflictKeyResolver: ({ scope }) => ({
+      key: 'sceneId',
+      value: scope.sceneId
+    }),
+    toJobParams: ({ contract, actor, scope, resolved }) =>
+      createCommand({
+        operationKey: contract.operationKey,
+        workflowType: contract.workflowType,
+        actor,
+        scope,
+        models: resolved.models,
+        inputs: resolved.inputs,
+        options: resolved.options
+      }),
+    responseMapper: ({ result, command }) => ({
+      message: '场景元素抽取已启动',
+      jobId: encodeId(result.jobId),
+      sceneId: command.scope.sceneId,
+      status: 'generating'
+    })
+  },
+  {
+    operationKey: 'scene_element_generate',
+    workflowType: 'scene_element_generation',
+    requestSchema: {
+      type: 'object',
+      required: ['elementId', 'imageModel'],
+      properties: {
+        elementId: { type: 'integer', minimum: 1 },
+        imageModel: { type: 'string', minLength: 1 },
+        textModel: { type: 'string' }
+      }
+    },
+    scopeResolver: async ({ actor, input }) => {
+      const element = await requireSceneElementForUser(input.elementId, actor.userId);
+      return {
+        scope: {
+          projectId: element.project_id,
+          elementId: element.id
+        },
+        resources: { element }
+      };
+    },
+    defaultsResolver: async ({ input, resources }) => {
+      const element = resources.element;
+      return {
+        models: {
+          imageModel: input.imageModel,
+          textModel: input.textModel || null
+        },
+        inputs: {
+          elementId: element.id,
+          elementName: element.name,
+          elementDescription: element.description || '',
+          elementCategory: element.category || 'scenery'
+        },
+        options: {}
+      };
+    },
+    conflictKeyResolver: ({ scope }) => ({
+      key: 'elementId',
+      value: scope.elementId
+    }),
+    toJobParams: ({ contract, actor, scope, resolved }) =>
+      createCommand({
+        operationKey: contract.operationKey,
+        workflowType: contract.workflowType,
+        actor,
+        scope,
+        models: resolved.models,
+        inputs: resolved.inputs,
+        options: resolved.options
+      }),
+    responseMapper: ({ result, command }) => ({
+      message: '元素图片生成已启动',
+      jobId: encodeId(result.jobId),
+      elementId: command.scope.elementId,
       status: 'generating'
     })
   },
@@ -581,7 +618,11 @@ const operationContracts = [
       required: ['scriptId', 'textModel'],
       properties: {
         scriptId: { type: 'integer', minimum: 1 },
-        textModel: { type: 'string', minLength: 1 }
+        textModel: { type: 'string', minLength: 1 },
+        appendMode: { type: 'boolean', default: false },
+        referenceScriptContent: { type: 'string' },
+        referenceScriptTitle: { type: 'string' },
+        conflictStrategy: { type: 'string', enum: ['skip', 'smart', 'overwrite'] }
       }
     },
     scopeResolver: async ({ actor, input }) => {
@@ -602,7 +643,11 @@ const operationContracts = [
       inputs: {
         episodeNumber: resources.script.episode_number,
         scriptContent: resources.script.content,
-        scriptTitle: resources.script.title || `第${resources.script.episode_number}集`
+        scriptTitle: resources.script.title || `第${resources.script.episode_number}集`,
+        appendMode: !!input.appendMode,
+        ...(input.referenceScriptContent ? { referenceScriptContent: input.referenceScriptContent } : {}),
+        ...(input.referenceScriptTitle ? { referenceScriptTitle: input.referenceScriptTitle } : {}),
+        ...(input.conflictStrategy ? { conflictStrategy: input.conflictStrategy } : {})
       },
       options: {}
     }),
@@ -622,7 +667,7 @@ const operationContracts = [
       }),
     responseMapper: ({ result, command }) => ({
       message: '分镜生成已启动',
-      jobId: result.jobId,
+      jobId: encodeId(result.jobId),
       scriptId: command.scope.scriptId
     })
   },
@@ -635,7 +680,11 @@ const operationContracts = [
       properties: {
         scriptId: { type: 'integer', minimum: 1 },
         textModel: { type: 'string', minLength: 1 },
-        clearExisting: { type: 'boolean', default: true }
+        clearExisting: { type: 'boolean', default: true },
+        appendMode: { type: 'boolean', default: false },
+        referenceScriptContent: { type: 'string' },
+        referenceScriptTitle: { type: 'string' },
+        conflictStrategy: { type: 'string', enum: ['skip', 'smart', 'overwrite'] }
       }
     },
     scopeResolver: async ({ actor, input }) => {
@@ -662,13 +711,18 @@ const operationContracts = [
         },
         inputs: {
           scriptContent: resources.script.content,
+          scriptTitle: resources.script.title || `第${resources.script.episode_number}集`,
           episodeNumber: resources.script.episode_number,
           totalScenes,
           parsedScenes: parsedScenes.map((s, i) => ({
             sceneNumber: s.sceneNumber || (i + 1),
             sceneName: s.sceneName || `场景${s.sceneNumber || (i + 1)}`,
             content: s.content
-          }))
+          })),
+          appendMode: !!input.appendMode,
+          ...(input.referenceScriptContent ? { referenceScriptContent: input.referenceScriptContent } : {}),
+          ...(input.referenceScriptTitle ? { referenceScriptTitle: input.referenceScriptTitle } : {}),
+          ...(input.conflictStrategy ? { conflictStrategy: input.conflictStrategy } : {})
         },
         options: {
           clearExisting: input.clearExisting
@@ -693,7 +747,7 @@ const operationContracts = [
       message: `已启动分镜生成（共 ${command.inputs.totalScenes} 个场景）`,
       scriptId: command.scope.scriptId,
       totalScenes: command.inputs.totalScenes,
-      jobId: result.jobId
+      jobId: encodeId(result.jobId)
     })
   },
   {
@@ -753,7 +807,7 @@ const operationContracts = [
       }),
     responseMapper: ({ result }) => ({
       success: true,
-      jobId: result.jobId,
+      jobId: encodeId(result.jobId),
       tasks: result.tasks,
       message: '批量帧生成任务已启动'
     })
@@ -813,7 +867,7 @@ const operationContracts = [
       }),
     responseMapper: ({ result }) => ({
       success: true,
-      jobId: result.jobId,
+      jobId: encodeId(result.jobId),
       tasks: result.tasks,
       message: '并发帧生成任务已启动（独立模式）'
     })
@@ -875,7 +929,7 @@ const operationContracts = [
       }),
     responseMapper: ({ result }) => ({
       success: true,
-      jobId: result.jobId,
+      jobId: encodeId(result.jobId),
       tasks: result.tasks,
       message: '批量视频生成任务已启动'
     })
@@ -938,7 +992,7 @@ const operationContracts = [
         options: resolved.options
       }),
     responseMapper: ({ result, command }) => ({
-      jobId: result.jobId,
+      jobId: encodeId(result.jobId),
       tasks: result.tasks,
       workflowType: command.workflowType,
       operationKey: command.operationKey,
@@ -1003,7 +1057,7 @@ const operationContracts = [
         options: resolved.options
       }),
     responseMapper: ({ result, command }) => ({
-      jobId: result.jobId,
+      jobId: encodeId(result.jobId),
       tasks: result.tasks,
       workflowType: command.workflowType,
       operationKey: command.operationKey,
@@ -1078,7 +1132,7 @@ const operationContracts = [
         options: resolved.options
       }),
     responseMapper: ({ result, command }) => ({
-      jobId: result.jobId,
+      jobId: encodeId(result.jobId),
       tasks: result.tasks,
       workflowType: command.workflowType,
       operationKey: command.operationKey,
@@ -1143,7 +1197,7 @@ const operationContracts = [
         options: resolved.options
       }),
     responseMapper: ({ result, command }) => ({
-      jobId: result.jobId,
+      jobId: encodeId(result.jobId),
       tasks: result.tasks,
       workflowType: command.workflowType,
       operationKey: command.operationKey,
@@ -1190,7 +1244,7 @@ const operationContracts = [
         options: resolved.options
       }),
     responseMapper: ({ result }) => ({
-      jobId: result.jobId,
+      jobId: encodeId(result.jobId),
       tasks: result.tasks,
       message: '解析任务已启动'
     })
@@ -1242,7 +1296,7 @@ const operationContracts = [
       }),
     responseMapper: ({ result }) => ({
       success: true,
-      jobId: result.jobId,
+      jobId: encodeId(result.jobId),
       tasks: result.tasks,
       message: '批量提示词优化任务已启动'
     })
@@ -1295,7 +1349,7 @@ const operationContracts = [
       }),
     responseMapper: ({ result }) => ({
       success: true,
-      jobId: result.jobId,
+      jobId: encodeId(result.jobId),
       tasks: result.tasks,
       message: 'AI 优化任务已启动'
     })
@@ -1348,7 +1402,7 @@ const operationContracts = [
       }),
     responseMapper: ({ result }) => ({
       success: true,
-      jobId: result.jobId,
+      jobId: encodeId(result.jobId),
       tasks: result.tasks,
       message: 'AI图片优化任务已启动'
     })
@@ -1401,7 +1455,7 @@ const operationContracts = [
       }),
     responseMapper: ({ result }) => ({
       success: true,
-      jobId: result.jobId,
+      jobId: encodeId(result.jobId),
       tasks: result.tasks,
       message: 'AI视频优化任务已启动'
     })
@@ -1453,7 +1507,7 @@ const operationContracts = [
       }),
     responseMapper: ({ result }) => ({
       success: true,
-      jobId: result.jobId,
+      jobId: encodeId(result.jobId),
       tasks: result.tasks,
       message: '批量图片提示词优化任务已启动'
     })
@@ -1505,7 +1559,7 @@ const operationContracts = [
       }),
     responseMapper: ({ result }) => ({
       success: true,
-      jobId: result.jobId,
+      jobId: encodeId(result.jobId),
       tasks: result.tasks,
       message: '批量视频提示词优化任务已启动'
     })

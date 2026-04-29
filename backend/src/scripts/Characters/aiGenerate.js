@@ -13,6 +13,7 @@ const { getEffectiveProjectRole } = require('../../middleware/collaborationAuth'
 const { getVisualStylePrompt } = require('../../utils/getProjectStyle');
 const { generationStartService, sendGenerationError } = require('../../modules/generation');
 const handleBaseTextModelCall = require('../../nosyntask/tasks/base/baseTextModelCall');
+const { withAIBillingContext } = require('../../aiBillingContext');
 const { stripThinkTags, extractCodeBlock, extractJSON, stripInvisible, safeParseJSON } = require('../../utils/washBody');
 
 const WRITABLE_ROLES = new Set(['owner', 'admin', 'editor']);
@@ -152,17 +153,26 @@ module.exports = (router) => {
       } catch (_) { settings = {}; }
       const visualStylePrompt = await getVisualStylePrompt(projectId);
 
-      // 调用文本模型生成草稿
+      // 调用文本模型生成草稿（包裹计费上下文）
       const prompt = buildDraftPrompt(userDescription, visualStylePrompt);
-      const response = await withTimeout(
-        handleBaseTextModelCall({
-          prompt,
-          textModel,
-          maxTokens: 1500,
-          temperature: 0.7
-        }),
-        AI_CALL_TIMEOUT,
-        `AI 调用超时（${Math.round(AI_CALL_TIMEOUT / 1000)}秒）`
+      const response = await withAIBillingContext(
+        {
+          userId,
+          projectId,
+          sourceType: 'route',
+          operationKey: 'character_ai_generate_draft',
+          resourceRefs: { projectId }
+        },
+        () => withTimeout(
+          handleBaseTextModelCall({
+            prompt,
+            textModel,
+            maxTokens: 1500,
+            temperature: 0.7
+          }),
+          AI_CALL_TIMEOUT,
+          `AI 调用超时（${Math.round(AI_CALL_TIMEOUT / 1000)}秒）`
+        )
       );
 
       let content = '';
@@ -183,10 +193,10 @@ module.exports = (router) => {
         costumeState: 1 // 白膜完成后自动创建
       };
 
-      // 粗略预估：白膜三视图 3 张 + 画风版默认服装 3 张 = 约 6 张图片积分
+      // 粗略预估：白膜三视图 3 张 + 默认服装状态三视图 3 张 = 约 6 张图片积分
       const estimatedCredits = {
         whiteModel: 3,  // 张
-        styledState: 3, // 张
+        costumeState: 3, // 张
         totalImages: 6,
         note: '实际消耗以生成时结算为准'
       };
@@ -299,7 +309,7 @@ module.exports = (router) => {
 
       // --- d. 启动白膜三视图 workflow ---
       // 白膜完成后，前端根据 jobId 监听完成回调，再主动调用 POST /:id/generate-default-costume-state
-      // 来创建默认服装状态 + 启动画风版 workflow。
+      // 来创建默认服装状态 + 启动状态三视图 workflow。
       // 这种前端驱动的串联避免了 handler 内 actor/userId 透传和 schema 校验风险。
       const jobResult = await generationStartService.start({
         operationKey: 'character_views_generate',
@@ -320,7 +330,7 @@ module.exports = (router) => {
         followUp: {
           pendingCostumeState: !!costumeId,
           api: costumeId ? `/api/characters/${characterId}/generate-default-costume-state` : null,
-          note: costumeId ? '前端监听白膜 jobId 完成后，调用 followUp.api 启动默认服装状态画风版生成' : null
+          note: costumeId ? '前端监听白膜 jobId 完成后，调用 followUp.api 启动默认服装状态三视图生成' : null
         }
       });
     } catch (error) {
@@ -330,7 +340,7 @@ module.exports = (router) => {
 
   /**
    * POST /api/characters/:id/generate-default-costume-state
-   * 白膜三视图完成后，前端主动调用此接口创建"默认服装"状态并启动画风版 workflow
+   * 白膜三视图完成后，前端主动调用此接口创建"默认服装"状态并启动状态三视图 workflow
    * 入参: { imageModel?, textModel? }
    * 出参: { stateId, jobId }
    */
@@ -355,7 +365,7 @@ module.exports = (router) => {
 
       // 白膜三视图必须先完成
       if (!character.front_view_url) {
-        return res.status(400).json({ message: '白膜正面视图尚未生成，不能启动默认服装状态画风版' });
+        return res.status(400).json({ message: '白膜正面视图尚未生成，不能启动默认服装状态三视图' });
       }
 
       // 找到已绑定的服装（is_equipped=1）
@@ -392,19 +402,18 @@ module.exports = (router) => {
         const stateResult = await execute(
           `INSERT INTO character_states
             (character_id, is_base_model, name, description, appearance, outfit, gender, costume_id, is_active, generation_status, state_category)
-           VALUES (?, 0, '默认服装', '角色默认服装状态（基于白膜 + 项目画风渲染）', ?, ?, ?, ?, 0, 'idle', '"costume"')`,
+           VALUES (?, 0, '默认服装', '角色默认服装状态（基于白膜三视图生成）', ?, ?, ?, ?, 0, 'idle', '"costume"')`,
           [characterId, fullAppearance, character.outfit_appearance || '', character.gender || 'unknown', equipped.costume_id]
         );
         stateId = stateResult.insertId;
       }
 
-      // 启动画风版 workflow
+      // 启动状态三视图 workflow
       const result = await generationStartService.start({
-        operationKey: 'character_state_styled_generate',
+        operationKey: 'character_state_views_generate',
         rawInput: {
           characterId,
           stateId,
-          projectId: character.project_id,
           imageModel,
           textModel
         },
@@ -412,14 +421,14 @@ module.exports = (router) => {
       });
 
       res.json(result.response || {
-        message: '默认服装状态画风版生成已启动',
+        message: '默认服装状态三视图生成已启动',
         characterId,
         stateId,
         jobId: result.jobId,
         status: 'generating'
       });
     } catch (error) {
-      sendGenerationError(res, error, '启动默认服装状态画风版失败', '[AI Default Costume State]');
+      sendGenerationError(res, error, '启动默认服装状态三视图失败', '[AI Default Costume State]');
     }
   });
 };

@@ -132,6 +132,20 @@ class JobStatusManager {
         console.warn('[PubSub] 发布工作流完成事件失败:', err.message);
       });
     }
+
+    // 如果有父 workflow，发布子 workflow 完成事件（供 AI 助手等调度方监听）
+    if (job?.parent_job_id && PubSubService && PubSubService.isAvailable()) {
+      PubSubService.publish('child_workflow:completed', {
+        jobId: jobId,
+        parentJobId: job.parent_job_id,
+        userId: job.user_id,
+        status: 'completed',
+        workflowType: job.workflow_type,
+        completedAt: new Date().toISOString()
+      }).catch(err => {
+        console.warn('[PubSub] 发布子工作流完成事件失败:', err.message);
+      });
+    }
   }
 
   /**
@@ -163,6 +177,21 @@ class JobStatusManager {
         failedAt: new Date().toISOString()
       }).catch(err => {
         console.warn('[PubSub] 发布工作流失败事件失败:', err.message);
+      });
+    }
+
+    // 子 workflow 失败同样向父发布
+    if (job?.parent_job_id && PubSubService && PubSubService.isAvailable()) {
+      PubSubService.publish('child_workflow:failed', {
+        jobId: jobId,
+        parentJobId: job.parent_job_id,
+        userId: job.user_id,
+        status: 'failed',
+        workflowType: job.workflow_type,
+        error: errorMessage || '未知错误',
+        failedAt: new Date().toISOString()
+      }).catch(err => {
+        console.warn('[PubSub] 发布子工作流失败事件失败:', err.message);
       });
     }
   }

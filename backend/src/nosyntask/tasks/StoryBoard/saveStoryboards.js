@@ -150,29 +150,74 @@ async function handleSaveStoryboards(inputParams, onProgress) {
   if (onProgress) onProgress(60);
 
   // ============================================
-  // 从 scenes.props 汇总道具信息，保存到 props 表
+  // 从 scenes.props（场景级）+ scenes.characterStates[].heldProps（角色级手持道具）
+  // 两条源头汇总，只将复用度高的（≥ 2 分镜 或 ≥ 2 角色持有）沉淀为独立道具资产
   // ============================================
   let propsExtracted = 0;
-  const propNameToId = new Map(); // propName -> propId
+  const propNameToId = new Map(); // normalizedName -> propId
+  const scenePropLinks = []; // { sceneIdx, propName }[] 所有发生过的道具关联候选（筛选后再入库）
 
   if (userId) {
-    // 收集所有道具名称
-    const allPropNames = new Set();
-    for (const scene of scenes) {
+    // 轻度归一化：去掉常见前缀修饰词
+    const PREFIXES = ['手持的', '手里的', '手中的', '拿着的', '抱着的', '背着的', '戴着的', '握着的', '举着的', '带着的', '携着的', '捕着的'];
+    const normalize = (raw) => {
+      if (!raw) return '';
+      let name = String(raw).trim();
+      for (const pre of PREFIXES) {
+        if (name.startsWith(pre)) { name = name.slice(pre.length); break; }
+      }
+      return name.trim();
+    };
+    const splitAndNormalize = (raw) => String(raw || '').split(/[,，、；;]/).map(s => normalize(s)).filter(Boolean);
+
+    // 统计每个道具的复用度：出现分镜数 & 持有角色数
+    const propStats = new Map(); // normalizedName -> { scenes: Set<sceneIdx>, characters: Set<characterName> }
+    for (let i = 0; i < scenes.length; i++) {
+      const scene = scenes[i];
+      const sceneNames = new Set();
+
+      // 场景级道具
       if (Array.isArray(scene.props)) {
-        scene.props.forEach(p => {
-          if (p && p.trim()) allPropNames.add(p.trim());
-        });
+        for (const p of scene.props) {
+          for (const n of splitAndNormalize(p)) {
+            sceneNames.add(n);
+            if (!propStats.has(n)) propStats.set(n, { scenes: new Set(), characters: new Set() });
+            propStats.get(n).scenes.add(i);
+          }
+        }
+      }
+
+      // 角色级手持道具
+      if (Array.isArray(scene.characterStates)) {
+        for (const cs of scene.characterStates) {
+          if (!cs?.heldProps) continue;
+          for (const n of splitAndNormalize(cs.heldProps)) {
+            sceneNames.add(n);
+            if (!propStats.has(n)) propStats.set(n, { scenes: new Set(), characters: new Set() });
+            propStats.get(n).scenes.add(i);
+            if (cs.character) propStats.get(n).characters.add(String(cs.character).trim());
+          }
+        }
+      }
+
+      // 暂存本镜下的道具，后面根据筛选结果再建关联
+      for (const n of sceneNames) {
+        scenePropLinks.push({ sceneIdx: i, propName: n });
       }
     }
 
-    console.log('[SaveStoryboards] 从分镜汇总了', allPropNames.size, '个道具');
+    // 筛选“复用性高”的道具：出现在 ≥ 2 个分镜 或 被 ≥ 2 个不同角色持有
+    const reusableSet = new Set();
+    for (const [name, stat] of propStats.entries()) {
+      if (stat.scenes.size >= 2 || stat.characters.size >= 2) {
+        reusableSet.add(name);
+      }
+    }
+    console.log(`[SaveStoryboards] 道具统计: 候选 ${propStats.size} 个，沉淀 ${reusableSet.size} 个（复用性高）`);
 
-    // 批量查询已有道具 + 批量插入新道具
-    if (allPropNames.size > 0) {
-      const propNameArr = Array.from(allPropNames);
+    if (reusableSet.size > 0) {
+      const propNameArr = Array.from(reusableSet);
       try {
-        // 一次性查询所有已存在的道具
         const existingProps = await queryAll(
           `SELECT id, name FROM props WHERE project_id = ? AND user_id = ? AND name IN (?)`,
           [projectId, userId, propNameArr]
@@ -181,15 +226,17 @@ async function handleSaveStoryboards(inputParams, onProgress) {
           propNameToId.set(p.name, p.id);
         }
 
-        // 筛选需要新增的道具
         const newProps = propNameArr.filter(n => !propNameToId.has(n));
         if (newProps.length > 0) {
-          const propValues = newProps.map(n => [userId, projectId, n, `从分镜自动提取的道具：${n}`, '未分类']);
+          const propValues = newProps.map(n => {
+            const stat = propStats.get(n);
+            const note = `从分镜自动提取的道具：${n}（出现于 ${stat.scenes.size} 个分镜，${stat.characters.size} 位角色持有）`;
+            return [userId, projectId, n, note, '未分类'];
+          });
           const insertResult = await execute(
             `INSERT INTO props (user_id, project_id, name, description, category) VALUES ?`,
             [propValues]
           );
-          // 获取批量插入的 id（MySQL 连续自增）
           const firstId = insertResult.insertId;
           newProps.forEach((n, i) => {
             propNameToId.set(n, firstId + i);
@@ -217,27 +264,23 @@ async function handleSaveStoryboards(inputParams, onProgress) {
 
   if (onProgress) onProgress(90);
 
-  // 建立分镜与道具的关联（优化：使用内存中的 scenes 数据，无需重新查询 DB）
-  if (propNameToId.size > 0) {
+  // 建立分镜与道具的关联（场景级 props + 角色级 heldProps 合并后关联，仅限沉淀的复用道具）
+  if (propNameToId.size > 0 && scenePropLinks.length > 0) {
     try {
-      // 直接使用内存中的 scenes 数据（已经保存到 DB 且有对应的 idx 顺序）
-      // 但需要获取 DB 中的 storyboard id，因为批量 INSERT 时 id 是自增的
       const storyboards = await queryAll(
         'SELECT id, idx FROM storyboards WHERE script_id = ? ORDER BY idx',
         [scriptId]
       );
+      // idx -> storyboard.id（追加模式下 scene[i] 对应实际 idx = idxOffset + i）
+      const idxToSbId = new Map();
+      for (const sb of storyboards) idxToSbId.set(sb.idx, sb.id);
 
-      // 收集所有关联关系后批量插入
       const linkValues = [];
-      for (let i = 0; i < storyboards.length && i < scenes.length; i++) {
-        const sb = storyboards[i];
-        const scene = scenes[i]; // scenes 按 idx 顺序，与 storyboards 对应
-        const sceneProps = scene?.props || [];
-        for (const propName of sceneProps) {
-          const propId = propNameToId.get(propName?.trim());
-          if (propId) {
-            linkValues.push([sb.id, propId]);
-          }
+      for (const link of scenePropLinks) {
+        const sbId = idxToSbId.get(idxOffset + link.sceneIdx);
+        const propId = propNameToId.get(link.propName);
+        if (sbId && propId) {
+          linkValues.push([sbId, propId]);
         }
       }
       if (linkValues.length > 0) {
@@ -246,7 +289,7 @@ async function handleSaveStoryboards(inputParams, onProgress) {
           [linkValues]
         );
       }
-      console.log('[SaveStoryboards] 分镜-道具关联完成');
+      console.log(`[SaveStoryboards] 分镜-道具关联完成，共 ${linkValues.length} 条`);
     } catch (linkPropErr) {
       console.error('[SaveStoryboards] 分镜-道具关联失败:', linkPropErr.message);
     }

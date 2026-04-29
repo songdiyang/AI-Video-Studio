@@ -104,6 +104,7 @@ CREATE TABLE IF NOT EXISTS storyboards (
   id INT AUTO_INCREMENT PRIMARY KEY,
   project_id INT NOT NULL COMMENT '所属项目ID',
   script_id INT NOT NULL,
+  episode_number INT DEFAULT NULL COMMENT '无参考剧本模式下的集数标签（script_id IS NULL 时生效）',
   idx INT NOT NULL COMMENT '分镜序号',
   prompt_template TEXT COMMENT '提示词模板',
   variables_json TEXT COMMENT '变量（JSON格式）',
@@ -136,7 +137,8 @@ CREATE TABLE IF NOT EXISTS storyboards (
   FOREIGN KEY (script_id) REFERENCES scripts(id) ON DELETE CASCADE,
   INDEX idx_project_id (project_id),
   INDEX idx_script_id (script_id),
-  INDEX idx_idx (idx)
+  INDEX idx_idx (idx),
+  INDEX idx_project_episode (project_id, episode_number)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- 角色表

@@ -420,7 +420,7 @@ function withTimeout(promise, ms, errorMessage) {
 const AI_CALL_TIMEOUT = parseInt(process.env.STORYBOARD_AI_TIMEOUT, 10) || 120000;
 
 async function handleStoryboardGeneration(inputParams, onProgress) {
-  const { scriptContent, scriptTitle, textModel: modelName, projectId, think } = inputParams;
+  const { scriptContent, scriptTitle, textModel: modelName, projectId, think, referenceScriptContent, referenceScriptTitle } = inputParams;
 
   if (!scriptContent || scriptContent.trim() === '') {
     throw new Error('剧本内容为空，无法生成分镜');
@@ -431,6 +431,17 @@ async function handleStoryboardGeneration(inputParams, onProgress) {
   }
 
   if (onProgress) onProgress(10);
+
+  // 弱绑定的参考剧本上下文（如用户在大纲面板选择了另一份剧本作为参考）
+  let referenceSection = '';
+  if (referenceScriptContent && String(referenceScriptContent).trim()) {
+    const MAX_REF_LENGTH = 2000;
+    const refText = String(referenceScriptContent).trim();
+    const clipped = refText.length > MAX_REF_LENGTH ? refText.slice(0, MAX_REF_LENGTH) + '\n...(参考剧本过长，已截断)' : refText;
+    const refTitle = referenceScriptTitle ? String(referenceScriptTitle) : '参考剧本';
+    referenceSection = `\n\n【参考剧本·${refTitle}】\n以下剧本仅供参考（如风格、人物关系、前后情节），不要把它的情节加入本次分镜。当前剧本才是转化目标。\n${clipped}\n`;
+    console.log(`[StoryboardGen] 已注入参考剧本上下文（${clipped.length} 字）`);
+  }
 
   // 从数据库读取时长配置
   let durationConfig;
@@ -451,7 +462,7 @@ async function handleStoryboardGeneration(inputParams, onProgress) {
     try {
       const existingChars = await queryAll(
         `SELECT c.name, c.appearance, c.base_appearance, c.outfit_appearance, c.description,
-                cs.name AS active_state_name, cs.outfit AS active_outfit, cs.hairstyle AS active_hairstyle, cs.accessories AS active_accessories, cs.age_stage AS active_age_stage
+                cs.name AS active_state_name, cs.outfit AS active_outfit, cs.held_props AS active_held_props, cs.hairstyle AS active_hairstyle, cs.accessories AS active_accessories, cs.age_stage AS active_age_stage
          FROM characters c
          LEFT JOIN character_states cs ON cs.character_id = c.id AND cs.is_active = 1 AND cs.is_base_model = 0
          WHERE c.project_id = ? AND (c.appearance IS NOT NULL AND c.appearance != '')`,
@@ -459,11 +470,12 @@ async function handleStoryboardGeneration(inputParams, onProgress) {
       );
       if (existingChars.length > 0) {
         const charLines = existingChars.map(c => {
-          // 组合完整外貌：白膜体貌 + 服装 + 激活状态属性
+          // 组合完整外貌：白膜体貌 + 服装 + 手持道具 + 激活状态属性
           const parts = [];
           if (c.base_appearance) parts.push(`体貌: ${c.base_appearance}`);
           const outfitDesc = c.active_outfit || c.outfit_appearance;
-          if (outfitDesc) parts.push(`服装: ${outfitDesc}`);
+          if (outfitDesc) parts.push(`默认服装: ${outfitDesc}`);
+          if (c.active_held_props) parts.push(`默认手持道具: ${c.active_held_props}`);
           if (c.active_hairstyle) parts.push(`发型: ${c.active_hairstyle}`);
           if (c.active_accessories) parts.push(`配饰: ${c.active_accessories}`);
           if (c.active_age_stage) parts.push(`年龄: ${c.active_age_stage}`);
@@ -472,14 +484,15 @@ async function handleStoryboardGeneration(inputParams, onProgress) {
         }).join('\n');
         characterAppearanceSection = `
 
-**【项目角色外观特征表 - 白膜+服装分层】**
-以下是本项目中已定义的角色及其完整外观特征，角色外貌 = 白膜体貌（不可更换的身体特征） + 服装状态（可更换的穿戴物品）。在生成分镜描述时：
+**【项目角色外观特征表 - 白膜+服装+手持道具分层】**
+以下是本项目中已定义的角色及其完整外观特征。角色外貌 = 白膜体貌（不可更换的身体特征）+ 默认服装（可更换的穿戴物品）+ 默认手持道具（可变更的手持/随身物）。在生成分镜描述时：
 - 每次提到角色时，必须在 description 中包含该角色的完整外貌特征（体貌+服装），而不是仅写角色名
 - 例如：不要写"小明走进房间"，而要写"穿黑色西装的短发男生走进房间"
 - characters 数组中仍然使用角色名
+- 每个分镜必须在 characterStates 中为出场角色标注当前镜头的服装（outfit）与手持道具（heldProps），剧情未明确变化时沿用上面列出的默认值
 ${charLines}
 `;
-        console.log(`[StoryboardGen] 已注入 ${existingChars.length} 个角色外观特征（含白膜/服装分层）`);
+        console.log(`[StoryboardGen] 已注入 ${existingChars.length} 个角色外观特征（含白膜/服装/手持道具分层）`);
       }
     } catch (e) {
       console.warn('[StoryboardGen] 查询角色外观失败（忽略）:', e.message);
@@ -501,7 +514,7 @@ ${charLines}
 
 【剧本内容】
 ${scriptContent}
-
+${referenceSection}
 ---
 ${characterAppearanceSection}
 【分镜转化要求】
@@ -517,26 +530,33 @@ ${characterAppearanceSection}
    - 空镜头（无角色）的 characters 为空数组 []
    - 【重要】characters 只填写有具体名字的角色，不要填写泛称群体如"人群"、"路人"、"群众"、"众人"、"行人"、"观众"、"围观者"、"士兵"、"村民"等
 
-3. **道具识别**：
-   - 识别画面中的重要道具（如手机、书本、传单、钥匙等）
-   - props 数组记录画面中出现的道具名称
-   - 只记录剧情相关的重要道具，忽略背景装饰
+3. **道具识别（两级）**：
+   - **场景级道具（props 数组）**：记录画面里出现但不属于任何角色随身携带的道具，如桌上的手机、墙上的画、地上的传单、环境里的书本等；只记录剧情相关的，忽略背景装饰
+   - **角色级手持道具（characterStates[].heldProps）**：该角色在此镜中手里/身上真正携带的物品，如手持的剑、抱着的猫、背着的书包、戴着的项链等
+   - 同一物品若已在 heldProps 中标注，就不必再放进场景级 props
 
-4. **场景转换**：
+4. **角色服装与手持道具识别（characterStates 数组，极其重要）**：
+   - 为 characters 数组里每个有名字的出场角色，在 characterStates 里输出一条 {character, outfit, heldProps}
+   - **outfit（该镜服装）**：剧情未明确变化时，直接沿用上面【角色外观特征表】里的"默认服装"；剧情出现换装/脱外套/睡觉/穿制服等明确转变时，才写新的服装
+   - **heldProps（该镜手持道具）**：剧情未明确变化时，沿用【角色外观特征表】里的"默认手持道具"；剧情出现拿起/放下/交接等动作时，才写新的手持物。没有任何手持物则填空字符串 ""
+   - 群众/泛称角色（如"人群"）不要出现在 characterStates 中
+   - characterStates 的 character 名称必须与 characters 数组里对应的角色名完全一致
+
+5. **场景转换**：
    - 切换到新场景时，先用远景/全景建立环境
    - 明确记录 location 字段
 
-5. **表情与动作**：
+6. **表情与动作**：
    - 用简单自然的语言描述角色的微表情和细微动作
    - 例如：「眉头微皱」「嘴角上扬」「眉头轻轻一挑」
    - 有动作的镜头 hasAction=true，并填写 startFrame 和 endFrame
 
-6. **画面描述**：
+7. **画面描述**：
    - description 简洁描述画面内容，包含角色位置和动作
    - 不需要复杂的光影、色调、景深等艺术描述
    - 保持朴实简单的风格
 
-7. **endState 记录**：
+8. **endState 记录**：
    - 简要记录镜头结束时角色的位置、姿势、表情
    - 确保相邻镜头状态连贯
 
@@ -553,16 +573,17 @@ ${characterAppearanceSection}
 - dialogues: 结构化对白数组，格式为 [{"character": "角色名", "line": "台词内容"}]，多人对话时按说话顺序排列。没有对白则为空数组 []
 - duration: 时长（秒，一般2-4秒）
 - characters: 出场角色数组（【重要】必须包含 description 中的所有角色名）
-- props: 画面中的重要道具数组（如 ["手机", "传单", "书本"]）
+- characterStates: 每个出场角色在本镜的服装/手持道具，格式 [{"character": "角色名", "outfit": "服装描述", "heldProps": "手持道具描述或空字符串"}]
+- props: 场景级道具数组（画面里不属于任何角色随身的道具，如 ["桌上的手机", "墙上的画"]）
 - location: 场景地点
 - emotion: 情绪氛围
 - cameraMovement: 镜头运动（"static"/"push"/"pull"/"pan"/"tilt"/"track"/"dolly"/"zoom"/"orbit"/"dolly_zoom"/"crane"/"handheld"/"steadicam"/"whip_pan"）
 
 [示例】
 [
-  {"order": 1, "shotType": "全景", "description": "早晨的客厅，阳光从窗帘缝隙透入，小明坐在沙发上看手机", "hasAction": false, "endState": "小明坐在沙发上，手持手机，表情平静", "dialogue": "", "duration": 2, "characters": ["小明"], "props": ["手机"], "location": "客厅", "emotion": "平静", "cameraMovement": "static"},
-  {"order": 2, "shotType": "近景", "description": "小明抬头看向门口，眉头微皱", "hasAction": true, "startFrame": "小明低头看手机", "endFrame": "小明抬头，眉头微皱，望向门口", "endState": "小明坐在沙发上，抬头望向门口，眉头微皱", "dialogue": "", "duration": 2, "characters": ["小明"], "props": [], "location": "客厅", "emotion": "疑惑", "cameraMovement": "static"},
-  {"order": 3, "shotType": "近景", "description": "小明开口说话", "hasAction": false, "endState": "小明坐在沙发上，面向门口", "dialogue": "谁在门外？", "duration": 2, "characters": ["小明"], "props": [], "location": "客厅", "emotion": "疑惑", "cameraMovement": "static"}
+  {"order": 1, "shotType": "全景", "description": "早晨的客厅，阳光从窗帘缝隙透入，穿白色T恤、牛仔裤的小明坐在沙发上看手机", "hasAction": false, "endState": "小明坐在沙发上，手持手机，表情平静", "dialogue": "", "duration": 2, "characters": ["小明"], "characterStates": [{"character": "小明", "outfit": "白色T恤、牛仔裤", "heldProps": "手机"}], "props": [], "location": "客厅", "emotion": "平静", "cameraMovement": "static"},
+  {"order": 2, "shotType": "近景", "description": "小明抬头看向门口，眉头微皱", "hasAction": true, "startFrame": "小明低头看手机", "endFrame": "小明抬头，眉头微皱，望向门口", "endState": "小明坐在沙发上，抬头望向门口，眉头微皱", "dialogue": "", "duration": 2, "characters": ["小明"], "characterStates": [{"character": "小明", "outfit": "白色T恤、牛仔裤", "heldProps": "手机"}], "props": [], "location": "客厅", "emotion": "疑惑", "cameraMovement": "static"},
+  {"order": 3, "shotType": "近景", "description": "换上睡衣的小明开口说话", "hasAction": false, "endState": "小明坐在沙发上，面向门口", "dialogue": "谁在门外？", "duration": 2, "characters": ["小明"], "characterStates": [{"character": "小明", "outfit": "蓝色条纹睡衣", "heldProps": ""}], "props": [], "location": "客厅", "emotion": "疑惑", "cameraMovement": "static"}
 ]
 
 只输出 JSON 数组，不要其他内容。`;

@@ -16,6 +16,7 @@ export interface AIModel {
   supportedAspectRatios?: unknown;
   supportedDurations?: unknown;
   supportedResolutions?: unknown;
+  supports_tool_calling?: boolean;
 }
 
 interface AIModelSelectorProps {

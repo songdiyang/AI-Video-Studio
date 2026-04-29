@@ -1,24 +1,33 @@
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Card, CardBody, Button, Tooltip } from '@heroui/react';
-import { Layers, Eye, Loader2, User, RefreshCw, Star, Shirt } from 'lucide-react';
-import { Character } from './types';
+import { Layers, Eye, Loader2, User, Star, Shirt, Trash2, ChevronDown, Check } from 'lucide-react';
+import { Character, CharacterState } from './types';
+import { fetchCharacterStates } from '../../../services/assets';
 
 interface CharacterCardProps {
   character: Character;
   scenes?: any[];
   isGenerating?: boolean;
+  /** 分镜面板选中的状态（不影响全局激活状态） */
+  storyboardState?: { stateId: number; stateName: string; stateImage?: string; stateOutfit?: string } | null;
   onGenerateViews: (charName: string, characterId: number) => void;
   onShowDetail: (character: Character) => void;
   onOpenLifecycle?: (character: Character) => void;
+  onDelete?: (character: Character) => void;
+  /** 用户在资源面板选择了某个状态用于分镜 */
+  onStoryboardStateChange?: (characterId: number, state: { stateId: number; stateName: string; stateImage?: string; stateOutfit?: string } | null) => void;
 }
 
 const CharacterCard: React.FC<CharacterCardProps> = ({
   character,
   scenes,
   isGenerating = false,
+  storyboardState,
   onGenerateViews,
   onShowDetail,
-  onOpenLifecycle
+  onOpenLifecycle,
+  onDelete,
+  onStoryboardStateChange,
 }) => {
   // 双击打开生命周期管理界面
   const handleDoubleClick = () => {
@@ -27,22 +36,78 @@ const CharacterCard: React.FC<CharacterCardProps> = ({
 
   const hasBaseModelViews = character.has_base_model_views === true || character.has_base_model_views === 1;
   const statesCount = character.statesCount ?? 0;
-  const activeStateName = character.active_state_name;
-  const activeOutfit = character.active_state_outfit;
-  const activeStateImage = character.active_state_image_url;
+
+  // 如果有分镜覆写状态，优先显示；否则用全局激活状态
+  const displayStateName = storyboardState?.stateName ?? character.active_state_name;
+  const displayStateOutfit = storyboardState?.stateOutfit ?? character.active_state_outfit;
+  const displayStateImage = storyboardState?.stateImage ?? character.active_state_image_url;
+
+  // 状态选择下拉
+  const [isStateDropdownOpen, setIsStateDropdownOpen] = useState(false);
+  const [statesList, setStatesList] = useState<CharacterState[] | null>(null);
+  const [isLoadingStates, setIsLoadingStates] = useState(false);
+  const stateDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isStateDropdownOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (stateDropdownRef.current && !stateDropdownRef.current.contains(e.target as Node)) {
+        setIsStateDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [isStateDropdownOpen]);
+
+  const handleOpenStateDropdown = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (isStateDropdownOpen) {
+      setIsStateDropdownOpen(false);
+      return;
+    }
+    setIsStateDropdownOpen(true);
+    // 懒加载状态列表
+    if (!statesList) {
+      setIsLoadingStates(true);
+      try {
+        const states = await fetchCharacterStates(character.id);
+        setStatesList(states.filter(s => !s.is_base_model)); // 只显示非白膜状态
+      } catch {
+        setStatesList([]);
+      } finally {
+        setIsLoadingStates(false);
+      }
+    }
+  };
+
+  const handleSelectState = (state: CharacterState) => {
+    const imageUrl = state.image_url || state.front_view_url;
+    onStoryboardStateChange?.(character.id, {
+      stateId: state.id,
+      stateName: state.name,
+      stateImage: imageUrl,
+      stateOutfit: state.outfit,
+    });
+    setIsStateDropdownOpen(false);
+  };
+
+  const handleClearStateOverride = () => {
+    onStoryboardStateChange?.(character.id, null);
+    setIsStateDropdownOpen(false);
+  };
 
   return (
     <Card
-      className="bg-slate-800/60 shadow-sm hover:shadow-md hover:shadow-blue-500/5 transition-shadow border border-slate-700/50 cursor-pointer"
+      className="w-full bg-slate-800/60 shadow-sm hover:shadow-md hover:shadow-blue-500/5 transition-shadow border border-slate-700/50 cursor-pointer"
       isPressable
       onPress={handleDoubleClick}
     >
-      <CardBody className="p-4">
+      <CardBody className="p-3">
         <div className="flex items-start gap-3 mb-3">
           <div className="relative shrink-0">
             <div className="w-12 h-12 rounded-full bg-blue-500/10 flex items-center justify-center border border-blue-500/20">
-              {activeStateImage || character.imageUrl ? (
-                <img src={activeStateImage || character.imageUrl} alt={character.name} className="w-full h-full rounded-full object-cover" />
+              {displayStateImage || character.imageUrl ? (
+                <img src={displayStateImage || character.imageUrl} alt={character.name} className="w-full h-full rounded-full object-cover" />
               ) : (
                 <User className="w-6 h-6 text-blue-400" />
               )}
@@ -63,7 +128,7 @@ const CharacterCard: React.FC<CharacterCardProps> = ({
                 {scenes?.filter(s => s.characters?.includes(character.name)).length || 0} 次
               </span>
             </div>
-            {/* 白膜/服装分层标识行 */}
+            {/* 白膜/服装分层标识行 + 状态选择器 */}
             <div className="flex items-center gap-1.5 mb-1 flex-wrap">
               {hasBaseModelViews ? (
                 <Tooltip content="白膜三视图已生成，角色体貌一致性有保障">
@@ -80,14 +145,66 @@ const CharacterCard: React.FC<CharacterCardProps> = ({
                   </span>
                 </Tooltip>
               )}
-              {activeStateName && (
-                <Tooltip content={`当前激活状态: ${activeStateName}${activeOutfit ? '，服装: ' + activeOutfit : ''}`}>
-                  <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-pink-500/15 text-pink-400 border border-pink-500/30">
+              {/* 状态选择器：可点击切换分镜使用的状态 */}
+              <div className="relative" ref={stateDropdownRef}>
+                <Tooltip content={statesCount > 0 ? '点击选择分镜使用的状态' : '暂无可用状态'}>
+                  <button
+                    onClick={handleOpenStateDropdown}
+                    className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium border transition-colors ${
+                      storyboardState
+                        ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/25'
+                        : displayStateName
+                          ? 'bg-pink-500/15 text-pink-400 border-pink-500/30 hover:bg-pink-500/25'
+                          : 'bg-slate-500/15 text-slate-400 border-slate-500/30 hover:bg-slate-500/25'
+                    }`}
+                    disabled={statesCount === 0}
+                  >
                     <Shirt className="w-2.5 h-2.5" />
-                    {activeStateName}
-                  </span>
+                    {displayStateName || '选择状态'}
+                    {statesCount > 0 && <ChevronDown className="w-2.5 h-2.5" />}
+                  </button>
                 </Tooltip>
-              )}
+                {/* 状态下拉菜单 */}
+                {isStateDropdownOpen && (
+                  <div className="absolute top-full left-0 mt-1 z-50 w-44 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg shadow-xl p-1.5 space-y-0.5">
+                    {isLoadingStates ? (
+                      <div className="text-xs text-[var(--text-muted)] px-2 py-2 text-center">加载中...</div>
+                    ) : !statesList || statesList.length === 0 ? (
+                      <div className="text-xs text-[var(--text-muted)] px-2 py-2 text-center">暂无非白膜状态</div>
+                    ) : (
+                      <>
+                        {storyboardState && (
+                          <button
+                            onClick={handleClearStateOverride}
+                            className="w-full text-left px-2 py-1 rounded text-xs text-slate-400 hover:bg-slate-500/10 transition-colors flex items-center gap-1.5"
+                          >
+                            <div className="w-3 h-3 shrink-0" />
+                            <span className="text-[var(--text-muted)]">恢复默认</span>
+                          </button>
+                        )}
+                        {statesList.map(st => {
+                          const isSelected = storyboardState?.stateId === st.id;
+                          const stImg = st.image_url || st.front_view_url;
+                          return (
+                            <button
+                              key={st.id}
+                              onClick={() => handleSelectState(st)}
+                              className={`w-full text-left px-2 py-1 rounded text-xs transition-colors flex items-center gap-1.5 ${
+                                isSelected ? 'bg-emerald-500/20 text-emerald-400' : 'hover:bg-[var(--bg-card-hover)] text-[var(--text-secondary)]'
+                              }`}
+                            >
+                              {isSelected ? <Check className="w-3 h-3 shrink-0" /> : <div className="w-3 h-3 shrink-0" />}
+                              {stImg ? <img src={stImg} className="w-4 h-4 rounded-full object-cover shrink-0" alt="" /> : null}
+                              <span className="truncate flex-1">{st.name}</span>
+                              {st.outfit && <span className="text-[9px] text-pink-400/60 truncate max-w-12">{st.outfit}</span>}
+                            </button>
+                          );
+                        })}
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
               {statesCount > 0 && (
                 <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700/50 text-slate-400">
                   {statesCount} 状态
@@ -100,9 +217,9 @@ const CharacterCard: React.FC<CharacterCardProps> = ({
                 <p className="text-xs text-cyan-400/80 line-clamp-1">
                   <span className="font-semibold text-cyan-400/60">体貌：</span>{character.base_appearance}
                 </p>
-                {character.outfit_appearance && (
+                {(displayStateOutfit || character.outfit_appearance) && (
                   <p className="text-xs text-pink-400/80 line-clamp-1">
-                    <span className="font-semibold text-pink-400/60">服装：</span>{character.outfit_appearance}
+                    <span className="font-semibold text-pink-400/60">服装：</span>{displayStateOutfit || character.outfit_appearance}
                   </p>
                 )}
               </div>
@@ -118,11 +235,11 @@ const CharacterCard: React.FC<CharacterCardProps> = ({
             )}
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button
             size="sm"
             variant="flat"
-            className="flex-1 bg-purple-500/10 text-purple-400 text-xs font-medium"
+            className="flex-1 min-w-[5rem] bg-purple-500/10 text-purple-400 text-xs font-medium"
             startContent={isGenerating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Layers className="w-3 h-3" />}
             onPress={() => onGenerateViews(character.name, character.id)}
             isDisabled={isGenerating}
@@ -132,12 +249,26 @@ const CharacterCard: React.FC<CharacterCardProps> = ({
           <Button
             size="sm"
             variant="flat"
-            className="flex-1 bg-blue-500/10 text-blue-400 text-xs font-medium"
+            className="flex-1 min-w-[5rem] bg-blue-500/10 text-blue-400 text-xs font-medium"
             startContent={<Eye className="w-3 h-3" />}
             onPress={() => onShowDetail(character)}
           >
             详情
           </Button>
+          {onDelete && (
+            <Tooltip content="删除角色">
+              <Button
+                size="sm"
+                variant="flat"
+                isIconOnly
+                className="shrink-0 min-w-8 w-8 h-8 bg-red-500/10 text-red-400 hover:bg-red-500/20"
+                onPress={() => onDelete(character)}
+                aria-label="删除角色"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </Button>
+            </Tooltip>
+          )}
         </div>
       </CardBody>
     </Card>

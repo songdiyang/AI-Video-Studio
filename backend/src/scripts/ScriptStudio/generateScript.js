@@ -9,6 +9,7 @@ const { callAIModel } = require('../../aiModelService');
 const { withAIBillingContext } = require('../../aiBillingContext');
 const { generationStartService, sendGenerationError } = require('../../modules/generation');
 const { getEffectiveProjectRole } = require('../../middleware/collaborationAuth');
+const { encodeId } = require('../../utils/workflowId');
 
 // editor 以上的角色可触发剧本生成
 const WRITABLE_ROLES = new Set(['owner', 'admin', 'editor']);
@@ -168,10 +169,11 @@ async function generateScript(req, res) {
         p.settings_json,
         (SELECT MAX(episode_number) FROM scripts WHERE project_id = ?) as max_episode,
         (SELECT id FROM scripts WHERE project_id = ? AND episode_number = ? LIMIT 1) as existing_script_id,
-        (SELECT status FROM scripts WHERE project_id = ? AND episode_number = ? LIMIT 1) as existing_script_status
+        (SELECT status FROM scripts WHERE project_id = ? AND episode_number = ? LIMIT 1) as existing_script_status,
+        (SELECT updated_at FROM scripts WHERE project_id = ? AND episode_number = ? LIMIT 1) as existing_script_updated_at
       FROM projects p
       WHERE p.id = ?
-    `, [projectId, projectId, episodeNumber || 9999, projectId, episodeNumber || 9999, projectId]);
+    `, [projectId, projectId, episodeNumber || 9999, projectId, episodeNumber || 9999, projectId, episodeNumber || 9999, projectId]);
   
     if (!combinedQuery || !combinedQuery.project_id) {
       return res.status(404).json({ message: '项目不存在' });
@@ -216,10 +218,21 @@ async function generateScript(req, res) {
     let scriptId;
     if (combinedQuery.existing_script_id && combinedQuery.existing_script_status) {
       if (combinedQuery.existing_script_status === 'generating') {
-        return res.status(400).json({ message: `第${targetEpisode}集正在生成中，请稍候` });
-      }
-      if (combinedQuery.existing_script_status === 'draft') {
-        // 草稿状态，更新为生成中
+        // 陈旧状态检测：若 generating 状态超过 10 分钟未更新，视为卡死的任务，允许重启
+        const updatedAt = combinedQuery.existing_script_updated_at;
+        const STALE_MINUTES = 10;
+        const isStale = updatedAt && (Date.now() - new Date(updatedAt).getTime()) > STALE_MINUTES * 60 * 1000;
+        if (!isStale) {
+          return res.status(400).json({ message: `第${targetEpisode}集正在生成中，请稍候` });
+        }
+        console.warn(`[Generate Script] 检测到陈旧的 generating 状态（>${STALE_MINUTES}分钟），强制重置脚本 ID=${combinedQuery.existing_script_id}`);
+        await execute(
+          'UPDATE scripts SET status = ?, title = ?, content = \'\', updated_at = NOW() WHERE id = ?',
+          ['generating', title || `第${targetEpisode}集`, combinedQuery.existing_script_id]
+        );
+        scriptId = combinedQuery.existing_script_id;
+      } else if (combinedQuery.existing_script_status === 'draft' || combinedQuery.existing_script_status === 'failed') {
+        // 草稿或生成失败状态，允许重新生成
         await execute(
           'UPDATE scripts SET status = ?, title = ?, updated_at = NOW() WHERE id = ?',
           ['generating', title || `第${targetEpisode}集`, combinedQuery.existing_script_id]
@@ -262,9 +275,9 @@ async function generateScript(req, res) {
     
     const jobId = result.jobId;
 
-    // 返回工作流信息
+    // 返回工作流信息（jobId 统一编码为 16 进制字符串，与 /api/workflows/:jobId 路由保持一致）
     res.json({
-      jobId,
+      jobId: encodeId(jobId),
       scriptId,
       episodeNumber: targetEpisode,
       title: title || `第${targetEpisode}集`,

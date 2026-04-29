@@ -1,8 +1,8 @@
 import React from 'react';
-import { Image, Film, FileText, X } from 'lucide-react';
+import { Film, FileText, BookText, X } from 'lucide-react';
 
 export interface MediaAttachmentProps {
-  type: 'image' | 'video' | 'file';
+  type: 'image' | 'video' | 'file' | 'script';
   url: string;
   name?: string;
   removable?: boolean;
@@ -48,11 +48,13 @@ const MediaAttachment: React.FC<MediaAttachmentProps> = ({
         <div className="w-full h-full flex flex-col items-center justify-center gap-1 p-1">
           {type === 'video' ? (
             <Film size={s.icon} className="text-[var(--text-muted)]" />
+          ) : type === 'script' ? (
+            <BookText size={s.icon} className="text-[var(--accent)]" />
           ) : (
             <FileText size={s.icon} className="text-[var(--text-muted)]" />
           )}
           {name && (
-            <span className={`${s.text} text-[var(--text-muted)] truncate w-full text-center px-1`}>
+            <span className={`${s.text} ${type === 'script' ? 'text-[var(--accent)]' : 'text-[var(--text-muted)]'} truncate w-full text-center px-1`}>
               {name}
             </span>
           )}

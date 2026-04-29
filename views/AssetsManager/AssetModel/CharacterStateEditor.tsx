@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Button, Input, Textarea, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure, Card, CardBody, Select, SelectItem, Tooltip, Chip } from '@heroui/react';
-import { Plus, Edit2, Trash2, ChevronDown, ChevronRight, Image as ImageIcon, Star, Copy, RefreshCw, Shirt, Calendar, Scissors, Clock, Sparkles, User, X, Tag } from 'lucide-react';
+import { Button, Input, Textarea, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure, Card, CardBody, Select, SelectItem, Tooltip, Chip, Popover, PopoverTrigger, PopoverContent } from '@heroui/react';
+import { Plus, Edit2, Trash2, ChevronDown, ChevronRight, Image as ImageIcon, Star, Copy, RefreshCw, Shirt, Calendar, Scissors, Clock, Sparkles, User, X, Tag, Layers, Download } from 'lucide-react';
 import {
   Character,
   CharacterState,
@@ -11,16 +11,21 @@ import {
   createCharacterState,
   updateCharacterState,
   deleteCharacterState,
+  deleteCharacterStateBaseModelImage,
   activateCharacterState,
   duplicateCharacterState,
   generateCharacterStateViews,
+  generateConceptBreakdown,
+  getCharacterViewStatus,
+  downloadCharacterView,
   fetchReferenceImages,
   fetchCharacterLoadout,
   updateCharacterLoadout,
   AGE_STAGES,
-  fetchCharacterStateStyled,
-  generateCharacterStateStyled,
-  CharacterStateStyledImage
+  TagGroup,
+  CharacterTagGroupEntry,
+  TAG_GROUP_COLORS,
+  createTagGroup
 } from '../../../services/assets';
 import { useToast } from '../../../contexts/ToastContext';
 import { usePreview } from '../../../components/PreviewProvider';
@@ -76,21 +81,27 @@ interface CharacterStateEditorProps {
   characterId: number | null;
   disabled?: boolean;
   onStateActivated?: (state: CharacterState) => void;
-  /** 当前上下文项目ID。传入后启用"生成项目画风版"入口 */
+  /** 当前上下文项目ID（保留用于其它上下文相关逻辑） */
   projectId?: number | null;
-}
-
-interface StyledEntry {
-  styled: CharacterStateStyledImage | null;
-  styleFingerprint: string;
-  stale: boolean;
+  /** 标签分组列表 */
+  tagGroups?: TagGroup[];
+  /** 标签分组变更回调 */
+  onTagGroupsChange?: () => void;
+  /** 角色表单数据（用于标签分组编辑） */
+  formData?: any;
+  /** 更新角色表单数据 */
+  setFormData?: (data: any) => void;
 }
 
 const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
   characterId,
   disabled = false,
   onStateActivated,
-  projectId = null
+  projectId = null,
+  tagGroups = [],
+  onTagGroupsChange,
+  formData: charFormData,
+  setFormData: setCharFormData
 }) => {
   const [states, setStates] = useState<CharacterState[]>([]);
   const [character, setCharacter] = useState<Character | null>(null);
@@ -99,10 +110,7 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
   const [activatingId, setActivatingId] = useState<number | null>(null);
   const [duplicatingId, setDuplicatingId] = useState<number | null>(null);
   const [generatingId, setGeneratingId] = useState<number | null>(null);
-
-  // 项目画风（T3）
-  const [styledMap, setStyledMap] = useState<Record<number, StyledEntry>>({});
-  const [generatingStyledId, setGeneratingStyledId] = useState<number | null>(null);
+  const [deletingViewsId, setDeletingViewsId] = useState<number | null>(null);
 
   // 当前装配（T5）
   const [loadoutCostumeId, setLoadoutCostumeId] = useState<number | null>(null);
@@ -118,6 +126,7 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
   // AI生成对话框状态
   const [isGenerateModalOpen, setIsGenerateModalOpen] = useState(false);
   const [generatingState, setGeneratingState] = useState<CharacterState | null>(null);
+  const [baseModelGenerateMode, setBaseModelGenerateMode] = useState<'design_sheet' | 'three_views'>('design_sheet');
   const [naturalLanguageInput, setNaturalLanguageInput] = useState('');
   const [analyzing, setAnalyzing] = useState(false);
   const [generatedTags, setGeneratedTags] = useState<{
@@ -126,8 +135,20 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
     outfit: string;
     hairstyle: string;
     accessories: string;
+    held_props: string;
     appearance: string;
   } | null>(null);
+
+  // 概念分解图状态
+  const [isGeneratingConcept, setIsGeneratingConcept] = useState(false);
+  const [conceptGenerationError, setConceptGenerationError] = useState<string | null>(null);
+
+  // 标签分组状态
+  const [selectedGroupId, setSelectedGroupId] = useState<string>('');
+  const [newTagInput, setNewTagInput] = useState('');
+  const [isCreatingGroup, setIsCreatingGroup] = useState(false);
+  const [newGroupName, setNewGroupName] = useState('');
+  const [newGroupColor, setNewGroupColor] = useState(TAG_GROUP_COLORS[0]);
   
   // 编辑状态表单
   const [editingState, setEditingState] = useState<CharacterState | null>(null);
@@ -143,6 +164,7 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
     age_stage: '',
     hairstyle: '',
     accessories: '',
+    held_props: '',
     is_active: false,
     state_category: 'daily',
     tags: '[]',
@@ -170,25 +192,6 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
       if (loadoutData?.loadout) {
         setLoadoutCostumeId(loadoutData.loadout.costumeStateId);
         setLoadoutExpressionId(loadoutData.loadout.expressionStateId);
-      }
-
-      // 如果有上下文项目，并行拉取各状态的画风版缓存
-      if (projectId) {
-        const nonBaseStates = statesData.filter(s => !s.is_base_model);
-        const styledResults = await Promise.all(
-          nonBaseStates.map(s =>
-            fetchCharacterStateStyled(characterId, s.id, projectId)
-              .then(res => ({ id: s.id, res }))
-              .catch(() => null)
-          )
-        );
-        const map: Record<number, StyledEntry> = {};
-        styledResults.forEach(item => {
-          if (item) map[item.id] = item.res;
-        });
-        setStyledMap(map);
-      } else {
-        setStyledMap({});
       }
     } catch (error: any) {
       console.error('加载角色数据失败:', error);
@@ -252,6 +255,7 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
       age_stage: '',
       hairstyle: '',
       accessories: '',
+      held_props: '',
       is_active: false,
       state_category: presetCategory ? [presetCategory] : ['daily'],
       tags: '[]',
@@ -276,6 +280,7 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
       age_stage: baseModel?.age_stage || '',
       hairstyle: baseModel?.hairstyle || '',
       accessories: baseModel?.accessories || '',
+      held_props: '',
       is_active: false,
       state_category: ['daily'],
       tags: '[]',
@@ -299,6 +304,7 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
       age_stage: state.age_stage || '',
       hairstyle: state.hairstyle || '',
       accessories: state.accessories || '',
+      held_props: state.held_props || '',
       is_active: state.is_active || false,
       state_category: parseStateCategories(state.state_category),
       tags: state.tags || '[]',
@@ -338,7 +344,30 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
     try {
       const saveData = { ...formData };
       delete (saveData as any).tagInput;
-      
+
+      // 防御性清洗：确保 state_category 为合法数组，避免后端 400 “无效的状态分类”
+      const ALLOWED_CATS = ['daily', 'costume', 'time', 'effect'];
+      const rawCat = (saveData as any).state_category;
+      let cats: string[] = [];
+      if (Array.isArray(rawCat)) cats = rawCat as string[];
+      else if (typeof rawCat === 'string' && rawCat) {
+        try {
+          const parsed = rawCat.startsWith('[') ? JSON.parse(rawCat) : [rawCat];
+          if (Array.isArray(parsed)) cats = parsed;
+        } catch { cats = [rawCat]; }
+      }
+      cats = cats.map(c => String(c || '').trim()).filter(c => ALLOWED_CATS.includes(c));
+      if (cats.length === 0) cats = ['daily'];
+      (saveData as any).state_category = cats;
+
+      // 防御性清洗：tags 为 JSON 数组字符串
+      const rawTags = (saveData as any).tags;
+      if (Array.isArray(rawTags)) {
+        (saveData as any).tags = JSON.stringify(rawTags);
+      } else if (typeof rawTags !== 'string') {
+        (saveData as any).tags = '[]';
+      }
+
       if (editingState) {
         await updateCharacterState(characterId!, editingState.id, saveData);
         showToast(andRegenerate ? '外貌属性已保存，正在启动生成...' : '状态更新成功', 'success');
@@ -471,25 +500,7 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
       return;
     }
 
-    // 白膜前置校验：必须有参考图或已有状态图片
-    if (generatingState.is_base_model) {
-      const hasOwnViews = !!(generatingState.front_view_url || generatingState.image_url);
-      const hasOtherStatesWithImages = states.some(
-        s => !s.is_base_model && (s.front_view_url || s.image_url)
-      );
-      if (!hasOwnViews && !hasOtherStatesWithImages) {
-        // 还需检查角色参考图（需要异步查询）
-        try {
-          const refImages = await fetchReferenceImages('character', characterId!, true);
-          if (!refImages || refImages.length === 0) {
-            showToast('生成白膜需要角色参考图或已有状态图片，请先在「参考图」页面上传参考图，或先为其他状态生成图片', 'error');
-            return;
-          }
-        } catch {
-          // 参考图查询失败时仍然允许提交，由后端做最终校验
-        }
-      }
-    }
+    // 白膜生成无前置条件限制，有参考图就用、没有就纯描述生成
 
     setGeneratingId(generatingState.id);
     setIsGenerateModalOpen(false);
@@ -503,17 +514,28 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
           outfit: generatedTags.outfit,
           hairstyle: generatedTags.hairstyle,
           accessories: generatedTags.accessories,
+          held_props: generatedTags.held_props || '',
           appearance: generatedTags.appearance
         });
       }
 
       // 调用状态级别三视图生成API（后端会自动组装外貌属性）
-      await generateCharacterStateViews(characterId!, generatingState.id, {
+      const generateParams: any = {
         imageModel: selected.image,
         textModel: selected.text || undefined
-      });
+      };
+      // 白膜状态：根据模式传递 generateMode
+      if (generatingState.is_base_model && baseModelGenerateMode === 'three_views') {
+        generateParams.generateMode = 'three_views';
+      }
+      await generateCharacterStateViews(characterId!, generatingState.id, generateParams);
       
-      showToast('三视图生成任务已启动', 'success');
+      showToast(
+        generatingState.is_base_model && baseModelGenerateMode !== 'three_views'
+          ? '角色设定图生成任务已启动' 
+          : '三视图生成任务已启动',
+        'success'
+      );
       await loadStates();
       pollGenerationStatus(generatingState.id);
     } catch (error: any) {
@@ -540,7 +562,8 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
         hairstyle: state.hairstyle,
         accessories: state.accessories,
         age_stage: state.age_stage,
-        body_elements: state.body_elements
+        body_elements: state.body_elements,
+        held_props: state.held_props || ''
       });
 
       await generateCharacterStateViews(characterId!, state.id, {
@@ -548,6 +571,7 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
         textModel: selected.text || undefined
       });
       showToast('三视图生成任务已启动', 'success');
+      await loadStates();
       pollGenerationStatus(state.id);
     } catch (error: any) {
       showToast(error.message || '生成失败', 'error');
@@ -555,66 +579,25 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
     }
   };
 
-  // 触发项目画风版生成
-  const handleGenerateStyled = async (state: CharacterState) => {
-    if (!characterId || !projectId) return;
-    if (!selected.image) {
-      showToast('请先选择图像生成模型', 'error');
-      return;
-    }
-    const hasViews = !!(state.front_view_url || state.side_view_url || state.back_view_url);
-    if (!hasViews) {
-      showToast('请先生成三视图白膜，再渲染项目画风版', 'warning');
-      return;
-    }
-    setGeneratingStyledId(state.id);
+  // 删除当前状态的三视图（清空 front/side/back URL，不删除状态本身）
+  const handleDeleteViews = async (state: CharacterState) => {
+    if (deletingViewsId) return;
+    setDeletingViewsId(state.id);
     try {
-      await generateCharacterStateStyled(characterId, state.id, {
-        projectId,
-        imageModel: selected.image,
-        textModel: selected.text || undefined,
+      await updateCharacterState(characterId!, state.id, {
+        front_view_url: '',
+        side_view_url: '',
+        back_view_url: '',
+        image_url: '',
+        generation_status: 'idle'
       });
-      showToast('项目画风版生成任务已启动', 'success');
-      pollStyledStatus(state.id);
+      showToast('三视图已删除', 'success');
+      await loadStates();
     } catch (error: any) {
-      showToast(error?.message || '画风版生成失败', 'error');
-      setGeneratingStyledId(null);
+      showToast(error.message || '删除三视图失败', 'error');
+    } finally {
+      setDeletingViewsId(null);
     }
-  };
-
-  // 轮询画风版状态
-  const pollStyledStatus = async (stateId: number) => {
-    if (!characterId || !projectId) return;
-    const maxAttempts = 60;
-    let attempts = 0;
-    const check = async () => {
-      try {
-        const res = await fetchCharacterStateStyled(characterId, stateId, projectId);
-        setStyledMap(prev => ({ ...prev, [stateId]: res }));
-        const status = res.styled?.generation_status;
-        if (status === 'completed') {
-          setGeneratingStyledId(null);
-          showToast('项目画风版已生成', 'success');
-          return;
-        }
-        if (status === 'failed') {
-          setGeneratingStyledId(null);
-          showToast(res.styled?.generation_error || '画风版生成失败', 'error');
-          return;
-        }
-        attempts++;
-        if (attempts < maxAttempts) {
-          setTimeout(check, 5000);
-        } else {
-          setGeneratingStyledId(null);
-          showToast('画风版生成超时，请稍后刷新查看', 'warning');
-        }
-      } catch (error) {
-        setGeneratingStyledId(null);
-        console.error('轮询画风状态失败:', error);
-      }
-    };
-    check();
   };
 
   // 轮询生成状态
@@ -654,6 +637,110 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
     checkStatus();
   };
 
+  // ─── 概念分解图（角色级，展示在白膜状态卡） ───────────────────────────
+  const handleGenerateConcept = useCallback(async () => {
+    if (!characterId) return;
+    if (!selected.image) {
+      showToast('请先选择图像生成模型', 'error');
+      return;
+    }
+    setIsGeneratingConcept(true);
+    setConceptGenerationError(null);
+    try {
+      await generateConceptBreakdown(characterId, {
+        imageModel: selected.image,
+        textModel: selected.text || undefined
+      });
+      // 轮询概念分解图状态
+      const poll = async (attempts = 0) => {
+        if (attempts > 60) {
+          setIsGeneratingConcept(false);
+          showToast('概念分解图生成超时', 'warning');
+          return;
+        }
+        try {
+          const result = await getCharacterViewStatus(characterId);
+          const status = result.conceptStatus || 'idle';
+          if (status === 'completed') {
+            setIsGeneratingConcept(false);
+            // 重新加载角色数据以获取概念图 URL
+            const ch = await fetchCharacter(characterId);
+            setCharacter(ch);
+            showToast('概念分解图生成完成', 'success');
+            return;
+          }
+          if (status === 'failed') {
+            setIsGeneratingConcept(false);
+            setConceptGenerationError('生成失败，请重试');
+            return;
+          }
+          setTimeout(() => poll(attempts + 1), 3000);
+        } catch {
+          setIsGeneratingConcept(false);
+        }
+      };
+      poll();
+    } catch (error: any) {
+      setIsGeneratingConcept(false);
+      setConceptGenerationError(error.message || '启动概念分解图生成失败');
+    }
+  }, [characterId, selected.image, selected.text, showToast]);
+
+  // ─── 标签分组管理 ─────────────────────────────────────────
+  const getTagGroupsJson = (): CharacterTagGroupEntry[] => {
+    return charFormData?.tag_groups_json || [];
+  };
+
+  const handleAddGroupTag = () => {
+    if (!selectedGroupId || !newTagInput.trim() || !setCharFormData || !charFormData) return;
+    const groupId = parseInt(selectedGroupId);
+    const group = tagGroups.find(g => g.id === groupId);
+    if (!group) return;
+    const tagName = newTagInput.trim();
+    const currentGroups = getTagGroupsJson();
+    const existingEntry = currentGroups.find(e => e.groupId === groupId);
+    let newGroups: CharacterTagGroupEntry[];
+    if (existingEntry) {
+      if (existingEntry.tags.includes(tagName)) { setNewTagInput(''); return; }
+      newGroups = currentGroups.map(e => e.groupId === groupId ? { ...e, tags: [...e.tags, tagName] } : e);
+    } else {
+      newGroups = [...currentGroups, { groupId, groupName: group.name, tags: [tagName] }];
+    }
+    setCharFormData({ ...charFormData, tag_groups_json: newGroups });
+    setNewTagInput('');
+  };
+
+  const handleRemoveGroupTag = (groupId: number, tagName: string) => {
+    if (!setCharFormData || !charFormData) return;
+    const currentGroups = getTagGroupsJson();
+    const newGroups = currentGroups
+      .map(e => e.groupId === groupId ? { ...e, tags: e.tags.filter(t => t !== tagName) } : e)
+      .filter(e => e.tags.length > 0);
+    setCharFormData({ ...charFormData, tag_groups_json: newGroups });
+  };
+
+  const handleCreateGroup = async () => {
+    if (!newGroupName.trim()) return;
+    try {
+      await createTagGroup({ name: newGroupName.trim(), color: newGroupColor });
+      setNewGroupName('');
+      setNewGroupColor(TAG_GROUP_COLORS[0]);
+      setIsCreatingGroup(false);
+      onTagGroupsChange?.();
+    } catch (error: any) {
+      console.error('创建分组失败:', error);
+    }
+  };
+
+  const getGroupColor = (groupId: number): string => {
+    const group = tagGroups.find(g => g.id === groupId);
+    return group?.color || '#6366f1';
+  };
+
+  const handleGroupTagInputKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') { e.preventDefault(); handleAddGroupTag(); }
+  };
+
   // 渲染分类标签（支持多分类）
   const renderCategoryChip = (category: StateCategory | StateCategory[] | string, size: 'sm' | 'md' = 'sm') => {
     const cats = parseStateCategories(category as any);
@@ -686,7 +773,7 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
   // 白膜状态
   const baseModelState = states.find(s => s.is_base_model);
   // 白膜是否就绪：必须已生成正面三视图
-  const baseModelReady = !!(baseModelState && baseModelState.front_view_url);
+  const baseModelReady = !!(baseModelState && (baseModelState.front_view_url || baseModelState.image_url));
 
   return (
     <div className="space-y-4">
@@ -709,7 +796,7 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
               startContent={<Star className="w-3 h-3" />}
               isDisabled={!baseModelReady}
               onPress={handleCreateFromBaseModel}
-              title={baseModelReady ? '基于白膜新建状态' : '请先完成白膜三视图再新建状态/服装'}
+              title={baseModelReady ? '基于白膜新建状态' : '请先生成白膜角色设定图再新建状态/服装'}
             >
               基于白膜新建
             </Button>
@@ -720,106 +807,12 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
       {/* 白膜未就绪提示 */}
       {!disabled && !baseModelReady && (
         <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
-          当前角色的白膜三视图尚未完成，请先在「白膜」区域生成三视图，再进行服装/状态创建与三视图生成。
+          当前角色的白膜设定图尚未生成，请先在「白膜」区域生成角色设定图，再进行服装/状态创建与三视图生成。
         </div>
       )}
 
-      {/* 当前装配（导演空间调用时的属性叠加组合） */}
-      {!disabled && baseModelReady && states.length > 1 && (
-        <div className="rounded-lg border border-indigo-500/30 bg-indigo-500/5 px-3 py-2.5 space-y-2">
-          <div className="flex items-center gap-2 text-xs font-medium text-indigo-700 dark:text-indigo-300">
-            <Shirt className="w-3.5 h-3.5" />
-            当前装配
-            <span className="text-[10px] text-indigo-600/70 dark:text-indigo-400/70 font-normal">
-              导演空间调用角色时将按此装配叠加合成
-            </span>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-            <Select
-              size="sm"
-              label="当前服装"
-              placeholder="未指定（仅白膜）"
-              selectedKeys={loadoutCostumeId ? [String(loadoutCostumeId)] : []}
-              onSelectionChange={(keys) => {
-                const key = Array.from(keys as Set<string>)[0];
-                setLoadoutCostumeId(key ? Number(key) : null);
-              }}
-            >
-              {states.filter(s => !s.is_base_model && parseStateCategories(s.state_category).includes('costume')).map(s => (
-                <SelectItem key={String(s.id)} textValue={s.name}>
-                  {s.name}{s.outfit ? ` · ${s.outfit}` : ''}
-                </SelectItem>
-              )) as any}
-            </Select>
-            <Select
-              size="sm"
-              label="当前状态/表情"
-              placeholder="未指定"
-              selectedKeys={loadoutExpressionId ? [String(loadoutExpressionId)] : []}
-              onSelectionChange={(keys) => {
-                const key = Array.from(keys as Set<string>)[0];
-                setLoadoutExpressionId(key ? Number(key) : null);
-              }}
-            >
-              {states.filter(s => !s.is_base_model && !parseStateCategories(s.state_category).includes('costume')).map(s => (
-                <SelectItem key={String(s.id)} textValue={s.name}>
-                  {s.name}
-                </SelectItem>
-              )) as any}
-            </Select>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              variant="flat"
-              color="primary"
-              isLoading={savingLoadout}
-              onPress={async () => {
-                if (!characterId) return;
-                setSavingLoadout(true);
-                try {
-                  await updateCharacterLoadout(characterId, {
-                    costumeStateId: loadoutCostumeId,
-                    expressionStateId: loadoutExpressionId,
-                  });
-                  showToast('装配已保存', 'success');
-                } catch (e: any) {
-                  showToast(e.message || '保存装配失败', 'error');
-                } finally {
-                  setSavingLoadout(false);
-                }
-              }}
-            >
-              保存装配
-            </Button>
-            {(loadoutCostumeId || loadoutExpressionId) && (
-              <Button
-                size="sm"
-                variant="light"
-                onPress={async () => {
-                  if (!characterId) return;
-                  setSavingLoadout(true);
-                  try {
-                    await updateCharacterLoadout(characterId, {
-                      costumeStateId: null,
-                      expressionStateId: null,
-                    });
-                    setLoadoutCostumeId(null);
-                    setLoadoutExpressionId(null);
-                    showToast('已清除装配', 'success');
-                  } catch (e: any) {
-                    showToast(e.message || '清除装配失败', 'error');
-                  } finally {
-                    setSavingLoadout(false);
-                  }
-                }}
-              >
-                清除
-              </Button>
-            )}
-          </div>
-        </div>
-      )}
+      {/* 当前装配（当前服装 / 当前状态）UI 已移除：
+          根据产品决策，角色的当前装配 / 表情不再在资源中预设，改由工作台（导演空间）在分镜时自由选择 */}
 
       {/* 分类筛选栏 */}
       {states.length > 0 && (
@@ -836,7 +829,7 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
           </button>
           {STATE_CATEGORIES.map(cat => {
             const count = categoryCounts[cat.key] || 0;
-            const colors = CATEGORY_COLOR_MAP[cat.key];
+            const colors = CATEGORY_COLOR_MAP[cat.key] || CATEGORY_COLOR_MAP.daily;
             return (
               <button
                 key={cat.key}
@@ -871,9 +864,9 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
               
               {/* 白膜标识 */}
               <div className="relative">
-                {baseModelState.image_url || baseModelState.front_view_url ? (
+                {(baseModelState.image_url || baseModelState.front_view_url || character?.image_url || character?.front_view_url) ? (
                   <img
-                    src={baseModelState.image_url || baseModelState.front_view_url}
+                    src={baseModelState.image_url || baseModelState.front_view_url || character?.image_url || character?.front_view_url}
                     alt={baseModelState.name}
                     className="w-12 h-12 rounded-lg object-cover border border-amber-500/40"
                   />
@@ -986,61 +979,69 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                   </div>
                 )}
 
-                {/* 白膜三视图 */}
-                {(baseModelState.front_view_url || baseModelState.side_view_url || baseModelState.back_view_url || baseModelState.generation_status === 'generating') && (
+                {/* 角色设定图 */}
+                {(baseModelState.image_url || baseModelState.generation_status === 'generating') && (
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <h5 className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>三视图</h5>
-                      {baseModelState.generation_status === 'generating' && (
-                        <span className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
-                          <RefreshCw className="w-3 h-3 animate-spin" />
-                          生成中...
-                        </span>
-                      )}
+                      <h5 className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>角色设定图</h5>
+                      <div className="flex items-center gap-2">
+                        {baseModelState.generation_status === 'generating' && (
+                          <span className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                            <RefreshCw className="w-3 h-3 animate-spin" />
+                            生成中...
+                          </span>
+                        )}
+                        {!disabled && baseModelState.image_url && baseModelState.generation_status !== 'generating' && (
+                          <Tooltip content="删除当前白膜设定图，稍后可重新生成">
+                            <Button
+                              size="sm"
+                              isIconOnly
+                              variant="light"
+                              className="text-default-400 hover:text-danger hover:bg-danger-50 h-6 w-6 min-w-6"
+                              onPress={async () => {
+                                try {
+                                  const updated = await deleteCharacterStateBaseModelImage(characterId!, baseModelState.id);
+                                  setStates(prev => prev.map(s => s.id === baseModelState.id ? { ...s, ...updated } : s));
+                                  setCharacter(prev => prev ? { ...prev, image_url: '', character_sheet_url: '' } : prev);
+                                  showToast('白膜设定图已删除，可重新生成', 'success');
+                                } catch (err: any) {
+                                  showToast(err.message || '删除失败', 'error');
+                                }
+                              }}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </Button>
+                          </Tooltip>
+                        )}
+                      </div>
                     </div>
-                    <div className="grid grid-cols-3 gap-2">
-                      {[
-                        { url: baseModelState.front_view_url, label: '正面' },
-                        { url: baseModelState.side_view_url, label: '侧面' },
-                        { url: baseModelState.back_view_url, label: '背面' }
-                      ].map(({ url, label }, idx) => (
-                        <div key={label} className="space-y-1">
-                          <p className="text-xs text-center" style={{ color: 'var(--text-muted)' }}>{label}</p>
-                          <div
-                            className={`aspect-square rounded-lg overflow-hidden flex items-center justify-center ${url ? 'cursor-pointer hover:opacity-90 transition-opacity' : ''}`}
-                            style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-color)' }}
-                            onClick={() => {
-                              if (!url) return;
-                              const slides = [
-                                baseModelState.front_view_url,
-                                baseModelState.side_view_url,
-                                baseModelState.back_view_url
-                              ].filter(Boolean).map(u => ({ src: u!, alt: '' }));
-                              const beforeCount = [baseModelState.front_view_url, baseModelState.side_view_url, baseModelState.back_view_url].slice(0, idx).filter(Boolean).length;
-                              openPreview(slides, beforeCount);
-                            }}
-                          >
-                            {url ? (
-                              <img src={url} alt={label} className="w-full h-full object-cover object-top" />
-                            ) : (
-                              <ImageIcon className="w-6 h-6 text-default-300" />
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+                    {baseModelState.image_url ? (
+                      <div
+                        className="rounded-lg overflow-hidden cursor-pointer hover:opacity-90 transition-opacity"
+                        style={{ border: '1px solid var(--border-color)' }}
+                        onClick={() => openPreview([{ src: baseModelState.image_url!, alt: '角色设定图' }], 0)}
+                      >
+                        <img src={baseModelState.image_url} alt="角色设定图" className="w-full object-contain" style={{ maxHeight: '300px' }} />
+                      </div>
+                    ) : (
+                      <div className="aspect-video rounded-lg flex items-center justify-center" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-color)' }}>
+                        <ImageIcon className="w-8 h-8 text-default-300" />
+                      </div>
+                    )}
                   </div>
                 )}
+
+
                 
                 {/* AI生成三视图按钮 */}
                 {!disabled && baseModelState.generation_status !== 'generating' && (
                   <div className="space-y-2">
                     {/* 白膜无图时显示提示 */}
-                    {!baseModelState.front_view_url && !baseModelState.side_view_url && !baseModelState.back_view_url && (
+                    {!baseModelState.image_url && (
                       <div className="p-2.5 rounded-lg bg-amber-500/5 border border-amber-500/20">
                         <p className="text-xs text-amber-700 dark:text-amber-400 leading-relaxed">
-                          白膜是角色的基础形态参考，生成其他状态图片时会以白膜为基准保持一致性。
-                          你可以先为其他状态生成图片，白膜生成时会自动参考已有的状态图片。
+                          白膜是角色的基础形态参考。点击下方按钮生成角色设定图（含正/侧/背三视角），
+                          生成其他状态图片时会以白膜为基准保持一致性。
                         </p>
                       </div>
                     )}
@@ -1050,11 +1051,12 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                       variant="flat"
                       className="w-full bg-linear-to-r from-amber-500/20 to-purple-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/30"
                       startContent={<RefreshCw className="w-4 h-4" />}
-                      onPress={() => openGenerateModal(baseModelState)}
+                      onPress={() => { setBaseModelGenerateMode('design_sheet'); openGenerateModal(baseModelState); }}
                       isLoading={generatingId === baseModelState.id}
                     >
-                      {baseModelState.front_view_url ? '重新生成白膜三视图' : 'AI生成白膜三视图'}
+                      {baseModelState.image_url ? '重新生成角色设定图' : 'AI生成角色设定图'}
                     </Button>
+
                   </div>
                 )}
                 
@@ -1095,11 +1097,14 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                     />
                   </div>
                 )}
+
               </div>
             )}
           </CardBody>
         </Card>
       )}
+
+      {/* 标签分组管理 UI 已移除：基础信息 Tab 的标签即可满足管理/搜索分类需求 */}
 
       {/* 其他状态列表 */}
       {loading ? (
@@ -1121,7 +1126,7 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
             const stateTags = parseTags(state.tags);
             const categories = parseStateCategories(state.state_category);
             const primaryCategory = categories[0] || 'daily';
-            const colors = CATEGORY_COLOR_MAP[primaryCategory];
+            const colors = CATEGORY_COLOR_MAP[primaryCategory] || CATEGORY_COLOR_MAP.daily;
             
             return (
               <Card 
@@ -1147,9 +1152,9 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                     
                     {/* 状态主图 */}
                     <div className="relative">
-                      {state.image_url || state.front_view_url ? (
+                      {(state.image_url || state.front_view_url || (state.is_active && (character?.image_url || character?.front_view_url))) ? (
                         <img
-                          src={state.image_url || state.front_view_url}
+                          src={state.image_url || state.front_view_url || character?.image_url || character?.front_view_url}
                           alt={state.name}
                           className="w-10 h-10 rounded object-cover"
                           style={{ border: '1px solid var(--border-color)' }}
@@ -1269,7 +1274,7 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                   {isExpanded && (
                     <div className="px-4 pb-4 pt-2 border-t border-default-200 dark:border-slate-700/30 space-y-4">
                       {/* 外观属性展示 */}
-                      {(state.outfit || state.age_stage || state.hairstyle || state.accessories) && (
+                      {(state.outfit || state.age_stage || state.hairstyle || state.accessories || state.held_props) && (
                         <div className="grid grid-cols-2 gap-2">
                           {state.age_stage && (
                             <div className="bg-purple-500/10 rounded-lg p-2 border border-purple-500/20">
@@ -1307,16 +1312,19 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                               <p className="text-sm text-default-700 dark:text-slate-200 truncate">{state.accessories}</p>
                             </div>
                           )}
+                          {state.held_props && (
+                            <div className="bg-emerald-500/10 rounded-lg p-2 border border-emerald-500/20">
+                              <div className="flex items-center gap-1.5 text-xs text-emerald-700 dark:text-emerald-400 mb-0.5">
+                                <Sparkles className="w-3 h-3" />
+                                手持道具
+                              </div>
+                              <p className="text-sm text-default-700 dark:text-slate-200 truncate">{state.held_props}</p>
+                            </div>
+                          )}
                         </div>
                       )}
                       
-                      {/* 外貌描述 */}
-                      {state.appearance && (
-                        <div className="bg-blue-500/5 rounded-lg p-3 border border-blue-500/20">
-                          <h5 className="text-xs font-medium text-default-500 dark:text-slate-400 mb-1">外貌特征</h5>
-                          <p className="text-sm text-default-600 dark:text-slate-300 whitespace-pre-wrap">{state.appearance}</p>
-                        </div>
-                      )}
+                      {/* 外貌特征展示已移除：状态图 = 白膜图 + 白膜提示词 + 状态提示词，上方已有服装/发型/配饰/年龄/手持道具独立字段，appearance 混合字段没必要再展示 */}
 
                       {/* 展开的标签展示 */}
                       {stateTags.length > 0 && (
@@ -1335,11 +1343,26 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                         <div className="space-y-2">
                           <div className="flex items-center justify-between">
                             <h5 className="text-xs font-medium text-default-500 dark:text-slate-400">三视图</h5>
-                            {state.generation_status === 'generating' && (
+                            {state.generation_status === 'generating' ? (
                               <span className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
                                 <RefreshCw className="w-3 h-3 animate-spin" />
                                 生成中...
                               </span>
+                            ) : (
+                              hasViews && !disabled && (
+                                <Button
+                                  size="sm"
+                                  variant="light"
+                                  color="danger"
+                                  isIconOnly
+                                  isLoading={deletingViewsId === state.id}
+                                  onPress={() => handleDeleteViews(state)}
+                                  className="h-6 min-w-6 w-6"
+                                  aria-label="删除三视图"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </Button>
+                              )
                             )}
                           </div>
                           <div className="grid grid-cols-3 gap-2">
@@ -1384,94 +1407,13 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                             variant="flat"
                             className="w-full bg-linear-to-r from-purple-500/20 to-pink-500/20 text-purple-700 dark:text-purple-300 border border-purple-500/30"
                             startContent={<RefreshCw className="w-4 h-4" />}
-                            onPress={() => openGenerateModal(state)}
+                            onPress={() => handleGenerateViews(state)}
                             isLoading={generatingId === state.id}
                           >
                             {hasViews ? '重新生成三视图' : 'AI生成三视图'}
                           </Button>
                         </div>
                       )}
-
-                      {/* 项目画风版（仅在传入 projectId 且三视图已就绪时显示） */}
-                      {projectId && hasViews && (() => {
-                        const entry = styledMap[state.id];
-                        const styled = entry?.styled || null;
-                        const isGenerating = generatingStyledId === state.id || styled?.generation_status === 'generating';
-                        const isFailed = styled?.generation_status === 'failed';
-                        const isCompleted = styled?.generation_status === 'completed';
-                        const isStale = !!entry?.stale;
-                        return (
-                          <div className="space-y-2 rounded-lg p-3" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
-                            <div className="flex items-center justify-between">
-                              <h5 className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
-                                项目画风版
-                                {isCompleted && !isStale && (
-                                  <span className="ml-2 text-xs px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-700 dark:text-emerald-400">已渲染</span>
-                                )}
-                                {isCompleted && isStale && (
-                                  <span className="ml-2 text-xs px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-700 dark:text-amber-400">画风已变更</span>
-                                )}
-                                {isGenerating && (
-                                  <span className="ml-2 text-xs px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-700 dark:text-indigo-400 inline-flex items-center gap-1">
-                                    <RefreshCw className="w-3 h-3 animate-spin" />生成中
-                                  </span>
-                                )}
-                                {isFailed && (
-                                  <span className="ml-2 text-xs px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-700 dark:text-rose-400">失败</span>
-                                )}
-                              </h5>
-                            </div>
-                            {isCompleted && (
-                              <div className="grid grid-cols-3 gap-2">
-                                {[
-                                  { url: styled?.front_view_url, label: '正面' },
-                                  { url: styled?.side_view_url, label: '侧面' },
-                                  { url: styled?.back_view_url, label: '背面' },
-                                ].map(({ url, label }, idx) => (
-                                  <div key={label} className="space-y-1">
-                                    <p className="text-xs text-center" style={{ color: 'var(--text-muted)' }}>{label}</p>
-                                    <div
-                                      className={`aspect-square rounded-lg overflow-hidden flex items-center justify-center ${url ? 'cursor-pointer hover:opacity-90 transition-opacity' : ''}`}
-                                      style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}
-                                      onClick={() => {
-                                        if (!url) return;
-                                        const urls = [styled?.front_view_url, styled?.side_view_url, styled?.back_view_url];
-                                        const slides = urls.filter(Boolean).map(u => ({ src: u as string, alt: '' }));
-                                        const beforeCount = urls.slice(0, idx).filter(Boolean).length;
-                                        openPreview(slides, beforeCount);
-                                      }}
-                                    >
-                                      {url ? (
-                                        <img src={url} alt={label} className="w-full h-full object-cover object-top" />
-                                      ) : (
-                                        <ImageIcon className="w-5 h-5 text-default-300 dark:text-slate-600" />
-                                      )}
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                            {isFailed && styled?.generation_error && (
-                              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{styled.generation_error}</p>
-                            )}
-                            {!disabled && (
-                              <Button
-                                size="sm"
-                                variant="flat"
-                                className="w-full bg-linear-to-r from-teal-500/20 to-emerald-500/20 text-teal-700 dark:text-teal-300 border border-teal-500/30"
-                                startContent={<Sparkles className="w-4 h-4" />}
-                                onPress={() => handleGenerateStyled(state)}
-                                isLoading={isGenerating}
-                                isDisabled={isGenerating}
-                              >
-                                {isCompleted
-                                  ? (isStale ? '画风已更新，重新渲染' : '重新渲染项目画风版')
-                                  : '为当前项目渲染画风版'}
-                              </Button>
-                            )}
-                          </div>
-                        );
-                      })()}
 
                       {/* 参考图提示：非白膜状态自动使用白膜三视图 */}
                       <div className="rounded-lg p-3" style={{ backgroundColor: 'var(--bg-secondary)' }}>
@@ -1716,10 +1658,23 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                               inputWrapper: "bg-slate-800/60 border border-slate-600/50"
                             }}
                           />
+                          
+                          <Input
+                            size="sm"
+                            label="手持道具"
+                            placeholder="如：剑、书本、胡萝卜、水杯（角色手里拿着或身上携带的物品）"
+                            value={formData.held_props || ''}
+                            onValueChange={(val) => setFormData({ ...formData, held_props: val })}
+                            classNames={{
+                              input: "bg-transparent text-slate-100",
+                              label: "text-slate-400 text-xs",
+                              inputWrapper: "bg-slate-800/60 border border-slate-600/50"
+                            }}
+                          />
                         </div>
                         
                         {/* 外貌提示词预览 */}
-                        {(formData.outfit || formData.hairstyle || formData.accessories || formData.age_stage || formData.appearance) && (
+                        {(formData.outfit || formData.hairstyle || formData.accessories || formData.held_props || formData.age_stage || formData.appearance) && (
                           <div className="mt-3 p-2.5 rounded-lg bg-purple-500/5 border border-purple-500/20">
                             <div className="flex items-center gap-1.5 mb-1.5">
                               <Sparkles className="w-3 h-3 text-purple-400" />
@@ -1731,7 +1686,8 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                                 formData.age_stage ? `年龄阶段: ${formData.age_stage}` : '',
                                 formData.outfit ? `服装: ${formData.outfit}` : '',
                                 formData.hairstyle ? `发型: ${formData.hairstyle}` : '',
-                                formData.accessories ? `配饰: ${formData.accessories}` : ''
+                                formData.accessories ? `配饰: ${formData.accessories}` : '',
+                                formData.held_props ? `手持道具: ${formData.held_props}` : ''
                               ].filter(Boolean).join('；')}
                             </p>
                             <p className="text-xs text-slate-500 mt-1.5">
@@ -1742,60 +1698,9 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                       </div>
                     </div>
                     
-                    {/* 右侧：三视图 */}
+                    {/* 右侧：三视图（主图URL 为内部存储路径，不对用户展示） */}
                     <div className="space-y-3">
-                      <Input
-                        label="主图URL"
-                        placeholder="状态主图"
-                        value={formData.image_url || ''}
-                        onValueChange={(val) => setFormData({ ...formData, image_url: val })}
-                        classNames={{
-                          input: "bg-transparent text-slate-100",
-                          label: "text-slate-400 font-medium",
-                          inputWrapper: "bg-slate-800/60 border border-slate-600/50"
-                        }}
-                      />
-                      
                       <label className="text-sm font-medium text-slate-400">三视图</label>
-                      
-                      <Input
-                        size="sm"
-                        label="正面视图URL"
-                        placeholder="正面视图"
-                        value={formData.front_view_url || ''}
-                        onValueChange={(val) => setFormData({ ...formData, front_view_url: val })}
-                        classNames={{
-                          input: "bg-transparent text-slate-100",
-                          label: "text-slate-400 text-xs",
-                          inputWrapper: "bg-slate-800/60 border border-slate-600/50"
-                        }}
-                      />
-                      
-                      <Input
-                        size="sm"
-                        label="侧面视图URL"
-                        placeholder="侧面视图"
-                        value={formData.side_view_url || ''}
-                        onValueChange={(val) => setFormData({ ...formData, side_view_url: val })}
-                        classNames={{
-                          input: "bg-transparent text-slate-100",
-                          label: "text-slate-400 text-xs",
-                          inputWrapper: "bg-slate-800/60 border border-slate-600/50"
-                        }}
-                      />
-                      
-                      <Input
-                        size="sm"
-                        label="背面视图URL"
-                        placeholder="背面视图"
-                        value={formData.back_view_url || ''}
-                        onValueChange={(val) => setFormData({ ...formData, back_view_url: val })}
-                        classNames={{
-                          input: "bg-transparent text-slate-100",
-                          label: "text-slate-400 text-xs",
-                          inputWrapper: "bg-slate-800/60 border border-slate-600/50"
-                        }}
-                      />
                       
                       {/* 三视图预览 */}
                       <div className="grid grid-cols-3 gap-2 mt-2">
@@ -1864,7 +1769,9 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
               <ModalHeader className="text-slate-100">
                 <div className="flex items-center gap-2">
                   <RefreshCw className="w-5 h-5 text-purple-400" />
-                  {generatingState?.is_base_model ? 'AI生成白膜三视图' : 'AI生成角色状态图片'}
+                  {generatingState?.is_base_model 
+                    ? (baseModelGenerateMode === 'three_views' ? 'AI生成白膜三视图' : 'AI生成角色设定图')
+                    : 'AI生成角色状态图片'}
                 </div>
               </ModalHeader>
               <ModalBody className="space-y-4">
@@ -1880,7 +1787,9 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                       <p className="text-sm font-medium text-slate-200">参考角色：{character.name}</p>
                       <p className="text-xs text-slate-500">
                         {generatingState?.is_base_model 
-                          ? '将基于角色基础外貌生成白膜三视图（裸体基础形态）' 
+                          ? (baseModelGenerateMode === 'three_views' 
+                              ? '将基于角色设定图生成独立三视图（用于分镜管线）' 
+                              : '将基于角色基础外貌生成角色设定图（含正/侧/背三视角）')
                           : '将基于此角色生成新的状态图片'}
                       </p>
                     </div>
@@ -1891,7 +1800,9 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                 {generatingState?.is_base_model && (
                   <div className="p-3 bg-amber-500/10 rounded-lg border border-amber-500/30">
                     <p className="text-sm text-amber-300 leading-relaxed">
-                      白膜是角色的裸体基础形态，用于后续各状态图片生成的参考基准。无需额外描述，将直接使用角色的基础外貌特征生成三视图。
+                      {baseModelGenerateMode === 'three_views' 
+                        ? '将基于已有角色设定图生成正面、侧面、背面独立三视图，用于分镜生成管线中按镜头角度选取参考图。'
+                        : '白膜是角色的基础形态参考。将生成包含正面、侧面、背面三视角的角色设定图，用于后续各状态图片生成的参考基准。'}
                     </p>
                   </div>
                 )}
@@ -2015,7 +1926,9 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                   isDisabled={!selected.image || (!generatingState?.is_base_model && !generatedTags)}
                   startContent={<RefreshCw className="w-4 h-4" />}
                 >
-                  {generatingState?.is_base_model ? '生成白膜三视图' : '生成图片'}
+                  {generatingState?.is_base_model 
+                    ? (baseModelGenerateMode === 'three_views' ? '生成三视图' : '生成角色设定图')
+                    : '生成图片'}
                 </Button>
               </ModalFooter>
             </>

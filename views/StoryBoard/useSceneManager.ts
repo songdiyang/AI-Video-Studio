@@ -88,23 +88,26 @@ export interface StoryboardScene {
   lastFramePrompt?: string;      // 图片尾帧专用提示词（对应 last_frame_prompt）
 }
 
-export const useSceneManager = (scriptId: number | null, projectId?: number | null) => {
+export const useSceneManager = (scriptId: number | null, projectId?: number | null, episodeNumber?: number) => {
   const [scenes, setScenes] = useState<StoryboardScene[]>([]);
   const [selectedScene, setSelectedScene] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const { showToast } = useToast();
 
   // 使用 ref 跟踪当前正在加载的 key，防止竞态条件
-  // key 形如 "script:123" 或 "project:456"
+  // key 形如 "script:123" 或 "project:456:ep:2"
   const loadingKeyRef = useRef<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // scriptId / projectId 变化时重新加载
+  // standalone 模式下使用的集数，未提供时默认 1（与后端行为一致）
+  const effectiveEpisode = Number.isFinite(episodeNumber) && (episodeNumber as number) >= 1 ? (episodeNumber as number) : 1;
+
+  // scriptId / projectId / episodeNumber 变化时重新加载
   useEffect(() => {
     if (scriptId) {
       loadStoryboards(scriptId);
     } else if (projectId) {
-      loadStandaloneStoryboards(projectId);
+      loadStandaloneStoryboards(projectId, effectiveEpisode);
     } else {
       setScenes([]);
       setSelectedScene(null);
@@ -118,7 +121,7 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scriptId, projectId]);
+  }, [scriptId, projectId, effectiveEpisode]);
 
   // 监听任务完成事件，刷新分镜数据
   useEffect(() => {
@@ -139,7 +142,7 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
         if (scriptId) {
           loadStoryboards(scriptId);
         } else if (projectId) {
-          loadStandaloneStoryboards(projectId);
+          loadStandaloneStoryboards(projectId, effectiveEpisode);
         }
       }, 500);
     };
@@ -153,7 +156,7 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scriptId, projectId]);
+  }, [scriptId, projectId, effectiveEpisode]);
 
   // 公共：将后端响应数据映射为前端 StoryboardScene[]
   const mapStoryboardItems = (data: any[]): StoryboardScene[] => {
@@ -254,8 +257,8 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
     }
   };
 
-  // 自由分镜加载：GET /api/storyboards/project/:projectId/standalone
-  const loadStandaloneStoryboards = async (targetProjectId: number) => {
+  // 自由分镜加载：GET /api/storyboards/project/:projectId/standalone?episode=N
+  const loadStandaloneStoryboards = async (targetProjectId: number, episode: number = 1) => {
     if (!targetProjectId) return;
 
     if (abortControllerRef.current) {
@@ -264,13 +267,13 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
 
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
-    const key = `project:${targetProjectId}`;
+    const key = `project:${targetProjectId}:ep:${episode}`;
     loadingKeyRef.current = key;
 
     setIsLoading(true);
     try {
       const token = getAuthToken();
-      const res = await fetch(`/api/storyboards/project/${targetProjectId}/standalone`, {
+      const res = await fetch(`/api/storyboards/project/${targetProjectId}/standalone?episode=${episode}`, {
         headers: {
           ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
@@ -409,7 +412,7 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
             'Content-Type': 'application/json',
             ...(token ? { Authorization: `Bearer ${token}` } : {})
           },
-          body: JSON.stringify({ projectId, idx: atIndex, description: '', variables_json })
+          body: JSON.stringify({ projectId, idx: atIndex, description: '', variables_json, episodeNumber: effectiveEpisode })
         });
         if (res.ok) {
           const data = await res.json();

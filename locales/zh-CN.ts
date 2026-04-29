@@ -106,6 +106,8 @@ const zhCN = {
       appearanceDesc: '界面主题与风格',
       language: '语言',
       languageDesc: '切换界面显示语言',
+      ai_assistant: 'AI 助手',
+      ai_assistantDesc: 'AI 对话上下文与行为设置',
       storage: '存储',
       storageDesc: '缓存与本地数据',
       security: '安全',

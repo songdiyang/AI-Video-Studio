@@ -48,6 +48,8 @@ interface InternalPanelProps extends ResizablePanelProps {
   __isMobile?: boolean;
   /** 由 PanelGroup 注入的平板标志 */
   __isTablet?: boolean;
+  /** 由 PanelGroup 注入的折叠态上的拖拽启动函数 */
+  __startResizeFromCollapsed?: (startPos: number) => void;
 }
 
 const ResizablePanel = forwardRef<ResizablePanelRef, ResizablePanelProps>((props, ref) => {
@@ -71,6 +73,7 @@ const ResizablePanel = forwardRef<ResizablePanelRef, ResizablePanelProps>((props
     __index,
     __isMobile,
     __isTablet,
+    __startResizeFromCollapsed,
   } = props as InternalPanelProps;
 
   // 独立使用时的内部折叠状态
@@ -181,7 +184,7 @@ const ResizablePanel = forwardRef<ResizablePanelRef, ResizablePanelProps>((props
       style={style}
       layout={!__isMobile}
     >
-      {/* 折叠状态下的窄条 */}
+      {/* 折叠状态下的缝（VSCode 风格的细竖条，hover 高亮，点击展开） */}
       <AnimatePresence mode="wait">
         {isCollapsed ? (
           <motion.div
@@ -191,28 +194,35 @@ const ResizablePanel = forwardRef<ResizablePanelRef, ResizablePanelProps>((props
             exit={{ opacity: 0 }}
             transition={{ duration: 0.15 }}
             className={`
-              absolute inset-0 flex items-center justify-center
-              bg-[var(--bg-card)] border-[var(--border-color)]
-              cursor-pointer hover:bg-[var(--bg-card-hover)]
+              group absolute inset-0 flex items-center justify-center
+              bg-[var(--border-color)]/30 hover:bg-[var(--accent)]/60
               transition-colors duration-150
-              ${isHorizontal ? 'border-r' : 'border-b'}
+              ${isHorizontal ? 'cursor-col-resize' : 'cursor-row-resize'}
             `}
-            onClick={expand}
+            onMouseDown={(e) => {
+              // 按下缝：立即展开并授权 PanelGroup 接管后续拖拽
+              if (__startResizeFromCollapsed) {
+                e.preventDefault();
+                __startResizeFromCollapsed(isHorizontal ? e.clientX : e.clientY);
+              } else {
+                // 独立使用场景的 fallback：仅点击展开
+                expand();
+              }
+            }}
+            title={title ? `拖动展开 ${title}` : '拖动展开面板'}
           >
-            <div className={`flex items-center gap-1.5 ${isHorizontal ? 'flex-col' : 'flex-row'}`}>
-              <CollapseIcon />
-              {title && (
-                <span 
-                  className={`
-                    text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider
-                    ${isHorizontal ? 'writing-mode-vertical-lr rotate-180' : ''}
-                  `}
-                  style={isHorizontal ? { writingMode: 'vertical-lr' } : undefined}
-                >
-                  {title}
-                </span>
-              )}
-            </div>
+            {/* 中央一条极细的高亮叠加层：hover 时更明显 */}
+            <div
+              className={`
+                pointer-events-none absolute
+                ${isHorizontal
+                  ? 'top-0 bottom-0 left-1/2 -translate-x-1/2 w-[1px]'
+                  : 'left-0 right-0 top-1/2 -translate-y-1/2 h-[1px]'
+                }
+                bg-[var(--border-color)] group-hover:bg-[var(--accent)]
+                transition-colors duration-150
+              `}
+            />
           </motion.div>
         ) : (
           <motion.div

@@ -237,6 +237,81 @@ async function runMigration() {
 
     console.log('[迁移 4] 完成 ✓\n');
 
+    // =============================================
+    // 迁移 5: add_scene_panorama.sql - 场景全景图
+    // =============================================
+    console.log('[迁移 5] add_scene_panorama.sql - 场景全景图字段');
+    console.log('-------------------------------------------');
+
+    console.log('5.1 添加 scenes.panorama_image_url 字段...');
+    try {
+      await connection.execute(`
+        ALTER TABLE scenes ADD COLUMN panorama_image_url VARCHAR(1024) DEFAULT NULL
+        COMMENT '360x180 等距柱状全景图 URL（2:1 长图，球体内壁贴图用）'
+      `);
+      console.log('    ✓ 成功添加 panorama_image_url 字段');
+    } catch (err) {
+      if (err.code === 'ER_DUP_FIELDNAME') {
+        console.log('    - panorama_image_url 字段已存在，跳过');
+      } else {
+        throw err;
+      }
+    }
+
+    console.log('[迁移 5] 完成 ✓\n');
+
+    // =============================================
+    // 迁移 6: add_scene_elements.sql - 场景元素沉淀（影棚）
+    // =============================================
+    console.log('[迁移 6] add_scene_elements.sql - 场景元素沉淀');
+    console.log('-------------------------------------------');
+
+    // 6.1 创建 scene_elements 表
+    console.log('6.1 创建 scene_elements 表...');
+    await connection.execute(`
+      CREATE TABLE IF NOT EXISTS scene_elements (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        project_id INT NOT NULL,
+        category ENUM('building', 'scenery') NOT NULL DEFAULT 'scenery' COMMENT '元素类别：建筑/场景',
+        name VARCHAR(128) NOT NULL,
+        description TEXT DEFAULT NULL,
+        image_url VARCHAR(1024) DEFAULT NULL,
+        generation_prompt TEXT DEFAULT NULL,
+        generation_status ENUM('pending', 'generating', 'completed', 'failed') NOT NULL DEFAULT 'pending',
+        sort_order INT DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+        INDEX idx_user_project (user_id, project_id),
+        INDEX idx_project_category (project_id, category),
+        INDEX idx_status (generation_status)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='场景元素库（影棚）'
+    `);
+    console.log('    ✓ scene_elements 表已就绪');
+
+    // 6.2 创建 scene_element_links 表
+    console.log('6.2 创建 scene_element_links 表...');
+    await connection.execute(`
+      CREATE TABLE IF NOT EXISTS scene_element_links (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        scene_id INT NOT NULL,
+        element_id INT NOT NULL,
+        position_hint VARCHAR(128) DEFAULT NULL,
+        sort_order INT DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (scene_id) REFERENCES scenes(id) ON DELETE CASCADE,
+        FOREIGN KEY (element_id) REFERENCES scene_elements(id) ON DELETE CASCADE,
+        UNIQUE KEY uniq_scene_element (scene_id, element_id),
+        INDEX idx_scene (scene_id),
+        INDEX idx_element (element_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='场景-元素关联'
+    `);
+    console.log('    ✓ scene_element_links 表已就绪');
+
+    console.log('[迁移 6] 完成 ✓\n');
+
     console.log('========================================');
     console.log('所有迁移执行完成!');
     console.log('========================================');

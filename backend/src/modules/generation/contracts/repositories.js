@@ -99,6 +99,31 @@ async function requireStateForUser(stateId, characterId, userId) {
   return { character, state };
 }
 
+async function requireSceneElementForUser(elementId, userId) {
+  const element = await queryOne(
+    'SELECT * FROM scene_elements WHERE id = ? AND user_id = ?',
+    [elementId, userId]
+  );
+
+  if (!element) {
+    throw new HttpError(404, '场景元素不存在或无权访问');
+  }
+
+  return element;
+}
+
+async function listEnabledSceneElementLinks(sceneId) {
+  return queryAll(
+    `SELECT l.element_id, l.position_hint, l.sort_order,
+            e.name, e.category, e.description, e.image_url, e.generation_status
+     FROM scene_element_links l
+     JOIN scene_elements e ON e.id = l.element_id
+     WHERE l.scene_id = ?
+     ORDER BY l.sort_order ASC, l.id ASC`,
+    [sceneId]
+  );
+}
+
 module.exports = {
   requireProjectForUser,
   requireScriptForUser,
@@ -106,5 +131,7 @@ module.exports = {
   requireSceneForUser,
   listScenesForProject,
   requireStoryboardForUser,
-  requireStateForUser
+  requireStateForUser,
+  requireSceneElementForUser,
+  listEnabledSceneElementLinks
 };

@@ -8,21 +8,152 @@ import {
 
 const ACTION_LABELS: Record<string, string> = {
   login: '登录',
+  logout: '登出',
   create: '创建',
   update: '更新',
   delete: '删除',
   toggle: '切换状态',
   adjust_points: '调整积分',
+  enable: '启用',
+  disable: '禁用',
+  reset_password: '重置密码',
+  assign_role: '分配角色',
+  grant: '授权',
+  revoke: '撤销授权',
+  export: '导出',
+  import: '导入',
 };
 
 const ACTION_COLORS: Record<string, string> = {
   login: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
+  logout: 'bg-slate-500/10 text-slate-400 border-slate-500/20',
   create: 'bg-green-500/10 text-green-400 border-green-500/20',
   update: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20',
   delete: 'bg-red-500/10 text-red-400 border-red-500/20',
   toggle: 'bg-purple-500/10 text-purple-400 border-purple-500/20',
   adjust_points: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+  enable: 'bg-green-500/10 text-green-400 border-green-500/20',
+  disable: 'bg-gray-500/10 text-gray-400 border-gray-500/20',
+  reset_password: 'bg-orange-500/10 text-orange-400 border-orange-500/20',
+  assign_role: 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20',
+  grant: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20',
+  revoke: 'bg-rose-500/10 text-rose-400 border-rose-500/20',
+  export: 'bg-teal-500/10 text-teal-400 border-teal-500/20',
+  import: 'bg-sky-500/10 text-sky-400 border-sky-500/20',
 };
+
+// 目标类型中文映射
+const TARGET_TYPE_LABELS: Record<string, string> = {
+  system: '系统',
+  user: '用户',
+  admin: '管理员',
+  ai_model: 'AI 模型',
+  ai_model_config: 'AI 模型配置',
+  prop: '道具',
+  script: '剧本',
+  storyboard: '分镜',
+  characters: '角色',
+  character: '角色',
+  scene: '场景',
+  scenes: '场景',
+  costume: '服装',
+  costumes: '服装',
+  project: '项目',
+  projects: '项目',
+  role: '角色权限',
+  permission: '权限',
+  notification: '通知',
+  subscription: '订阅',
+  points: '积分',
+  order: '订单',
+  invoice: '账单',
+  template: '模板',
+  marketplace: '市场',
+};
+
+// 详情字段中文映射
+const DETAIL_FIELD_LABELS: Record<string, string> = {
+  adjustmentType: '调整类型',
+  amount: '金额',
+  reason: '原因',
+  role: '角色',
+  balance: '余额',
+  points: '积分',
+  email: '邮箱',
+  username: '用户名',
+  password: '密码',
+  status: '状态',
+  enabled: '启用',
+  disabled: '禁用',
+  name: '名称',
+  description: '描述',
+  category: '分类',
+  type: '类型',
+  provider: '提供商',
+  model: '模型',
+  reset: '重置',
+  employee_id: '员工号',
+  employeeId: '员工号',
+  old: '旧值',
+  new: '新值',
+  before: '变更前',
+  after: '变更后',
+  count: '数量',
+  ip: 'IP',
+  userAgent: '浏览器',
+};
+
+// 详情字段值中文映射
+const DETAIL_VALUE_LABELS: Record<string, string> = {
+  add: '增加',
+  deduct: '扣除',
+  set: '设置',
+  admin: '管理员',
+  user: '普通用户',
+  operator: '运营',
+  editor: '编辑',
+  viewer: '查看者',
+  owner: '所有者',
+  active: '启用',
+  inactive: '停用',
+  enabled: '启用',
+  disabled: '禁用',
+  true: '是',
+  false: '否',
+};
+
+/** 把一个 details 对象转成中文可读字符串 */
+function formatDetails(details: any): string {
+  if (details === null || details === undefined) return '';
+  let obj: any = details;
+  if (typeof details === 'string') {
+    try {
+      obj = JSON.parse(details);
+    } catch {
+      return details;
+    }
+  }
+  if (typeof obj !== 'object' || Array.isArray(obj)) {
+    return JSON.stringify(obj);
+  }
+  const parts: string[] = [];
+  for (const [k, v] of Object.entries(obj)) {
+    const label = DETAIL_FIELD_LABELS[k] || k;
+    let valueStr: string;
+    if (v === null || v === undefined) {
+      valueStr = '-';
+    } else if (typeof v === 'boolean') {
+      valueStr = v ? '是' : '否';
+    } else if (typeof v === 'object') {
+      valueStr = JSON.stringify(v);
+    } else {
+      const s = String(v);
+      valueStr = DETAIL_VALUE_LABELS[s] || s;
+    }
+    parts.push(`${label}：${valueStr}`);
+  }
+  return parts.join('；');
+}
 
 const AdminLogPage: React.FC = () => {
   const { showToast } = useToast();
@@ -154,7 +285,7 @@ const AdminLogPage: React.FC = () => {
             >
               <option value="">全部目标</option>
               {targetTypes.map(t => (
-                <option key={t} value={t}>{t}</option>
+                <option key={t} value={t}>{TARGET_TYPE_LABELS[t] || t}</option>
               ))}
             </select>
           </div>
@@ -255,7 +386,7 @@ const AdminLogPage: React.FC = () => {
                       {log.target_type && (
                         <div className="flex items-center gap-1.5">
                           <Target className="w-3.5 h-3.5 text-[var(--text-muted)]" />
-                          <span className="text-[var(--text-secondary)] text-xs">{log.target_type}</span>
+                          <span className="text-[var(--text-secondary)] text-xs">{TARGET_TYPE_LABELS[log.target_type] || log.target_type}</span>
                           {log.target_id && (
                             <span className="text-[var(--text-muted)] text-xs">#{log.target_id}</span>
                           )}
@@ -266,12 +397,16 @@ const AdminLogPage: React.FC = () => {
                       )}
                     </td>
                     <td className="px-4 py-3">
-                      {log.details ? (
-                        <div className="text-xs text-[var(--text-secondary)] max-w-[200px] truncate" title={JSON.stringify(log.details)}>
-                          <FileText className="w-3 h-3 inline mr-1" />
-                          {JSON.stringify(log.details)}
-                        </div>
-                      ) : (
+                      {log.details ? (() => {
+                        const cn = formatDetails(log.details);
+                        const raw = typeof log.details === 'string' ? log.details : JSON.stringify(log.details);
+                        return (
+                          <div className="text-xs text-[var(--text-secondary)] max-w-[240px] truncate" title={cn || raw}>
+                            <FileText className="w-3 h-3 inline mr-1" />
+                            {cn || raw}
+                          </div>
+                        );
+                      })() : (
                         <span className="text-[var(--text-muted)] text-xs">-</span>
                       )}
                     </td>

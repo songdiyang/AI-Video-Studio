@@ -37,6 +37,8 @@ export const useCharacterData = (projectId?: number | null, scriptId?: number | 
           id: c.id,
           name: c.name,
           appearance: c.appearance,
+          base_appearance: c.base_appearance,
+          outfit_appearance: c.outfit_appearance,
           personality: c.personality,
           description: c.description,
           source: c.source,
@@ -47,6 +49,13 @@ export const useCharacterData = (projectId?: number | null, scriptId?: number | 
           characterSheetUrl: c.character_sheet_url || c.characterSheetUrl,
           generationPrompt: c.generation_prompt || c.generationPrompt,
           generationStatus: c.generation_status || c.generationStatus,
+          gender: c.gender,
+          statesCount: c.states_count ?? 0,
+          base_model_image_url: c.base_model_image_url,
+          has_base_model_views: c.has_base_model_views,
+          active_state_name: c.active_state_name,
+          active_state_outfit: c.active_state_outfit,
+          active_state_image_url: c.active_state_image_url,
         }));
         setDbCharacters(mapped);
         console.log('[ResourcePanel] 加载了', mapped.length, '个角色');

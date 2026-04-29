@@ -59,14 +59,21 @@ async function refineViewPrompt({
   const angle = viewAngles[view] || viewAngles.front;
 
   // 状态级外貌组合
+  // ★ 白膜模式：不叠加任何状态量（服装/发型/配饰/年龄/手持道具），外貌回退到纯净 base_appearance
   const stateParts = [];
-  if (options.outfit) stateParts.push(`服装: ${options.outfit}`);
-  if (options.hairstyle) stateParts.push(`发型: ${options.hairstyle}`);
-  if (options.accessories) stateParts.push(`配饰: ${options.accessories}`);
-  if (options.ageStage) stateParts.push(`年龄阶段: ${options.ageStage}`);
+  if (!options.isBaseModel) {
+    if (options.outfit) stateParts.push(`服装: ${options.outfit}`);
+    if (options.hairstyle) stateParts.push(`发型: ${options.hairstyle}`);
+    if (options.accessories) stateParts.push(`配饰: ${options.accessories}`);
+    if (options.ageStage) stateParts.push(`年龄阶段: ${options.ageStage}`);
+    if (options.heldProps) stateParts.push(`手持道具: ${options.heldProps}`);
+  }
+  const baseAppearance = options.isBaseModel
+    ? (character.base_appearance || character.appearance || '')
+    : (character.appearance || '');
   const composedAppearance = stateParts.length > 0
-    ? `${character.appearance || ''}${character.appearance ? '；' : ''}${stateParts.join('；')}`
-    : character.appearance;
+    ? `${baseAppearance}${baseAppearance ? '；' : ''}${stateParts.join('；')}`
+    : baseAppearance;
 
   // 侧面/背面时追加一致性约束
   const consistencyBlock = view !== 'front' && frontPromptForConsistency
@@ -188,7 +195,8 @@ module.exports = (router) => {
         accessories: stateData?.accessories || '',
         ageStage: stateData?.age_stage || '',
         bodyProportionInstruction,
-        bodyElements: stateData?.body_elements || ''
+        bodyElements: stateData?.body_elements || '',
+        heldProps: stateData?.held_props || ''
       };
 
       // 在计费上下文中执行所有 AI 模型调用

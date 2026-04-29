@@ -15,6 +15,7 @@ import ResourceSidebar from './ResourceSidebar';
 import { Wand2, Users, Image, Film, Video, Play } from 'lucide-react';
 import { Button } from '@heroui/react';
 import { getAuthToken } from '../../services/auth';
+import { useToast } from '../../contexts/ToastContext';
 import { AIModel } from '../../components/AIModelSelector';
 import { normalizeCapabilityOptions } from '../../utils/modelCapabilities';
 import { AnimaticPreview } from '../StoryBoard/AnimaticPreview';

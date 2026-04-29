@@ -19,10 +19,23 @@ import { Character } from './types';
 import { getAuthToken } from '../../../services/auth';
 import { deleteCharacter, uploadCharacterImage } from '../../../services/assets';
 import { useToast } from '../../../contexts/ToastContext';
+import { useConfirm } from '../../../contexts/ConfirmContext';
 import { useWorkflowTargetMonitor } from '../hooks/useWorkflowTargetMonitor';
 import { normalizeCapabilityOptions } from '../../../utils/modelCapabilities';
 
-const ResourcePanel: React.FC<ResourcePanelProps> = ({ 
+export interface StoryboardStateOverride {
+  stateId: number;
+  stateName: string;
+  stateImage?: string;
+  stateOutfit?: string;
+}
+
+const ResourcePanel: React.FC<ResourcePanelProps & {
+  /** 分镜状态覆写回调 - 用户在资源面板选择某角色的分镜状态时触发 */
+  onStoryboardStateChange?: (characterId: number, state: StoryboardStateOverride | null) => void;
+  /** 当前分镜状态覆写映射 */
+  storyboardStates?: Record<number, StoryboardStateOverride>;
+}> = ({ 
   characters, 
   props,
   projectId,
@@ -32,9 +45,12 @@ const ResourcePanel: React.FC<ResourcePanelProps> = ({
   imageAspectRatio,
   textModel,
   models = [],
+  onStoryboardStateChange,
+  storyboardStates = {},
 }) => {
   const [activeTab, setActiveTab] = useState<TabType>('characters');
   const { showToast } = useToast();
+  const { confirm } = useConfirm();
 
   // 当用户未手动选择图片模型时，自动从可用模型列表中选取第一个 IMAGE 模型作为 fallback
   const effectiveImageModel = useMemo(() => {
@@ -199,6 +215,25 @@ const ResourcePanel: React.FC<ResourcePanelProps> = ({
     }
   };
 
+  // 资源卡片上的快捷删除（带二次确认）
+  const handleDeleteCharacterFromCard = async (character: Character) => {
+    const ok = await confirm({
+      title: '删除角色',
+      message: `确定要删除角色「${character.name}」吗？该操作将同步移除其白膜、服装、状态等衍生资源，且不可撤销。`,
+      confirmText: '删除',
+      cancelText: '取消',
+      type: 'danger',
+    });
+    if (!ok) return;
+    try {
+      await deleteCharacter(character.id);
+      showToast('角色已删除', 'success');
+      await loadCharacters();
+    } catch (error: any) {
+      showToast('删除失败: ' + (error?.message || '未知错误'), 'error');
+    }
+  };
+
   const handleUploadCharacterImage = async (characterId: number, file: File) => {
     try {
       await uploadCharacterImage(characterId, file);
@@ -320,10 +355,13 @@ const ResourcePanel: React.FC<ResourcePanelProps> = ({
             isLoadingCharacters={isLoadingCharacters}
             scenes={scenes}
             activeCharacterIds={characterViewMonitor.activeTargetIds}
+            storyboardStates={storyboardStates}
             onGenerateViews={handleGenerateViewsWrapper}
             onShowDetail={handleShowDetail}
             onOpenLifecycle={handleOpenLifecycle}
             onCreate={() => handleOpenCreate('character')}
+            onDelete={handleDeleteCharacterFromCard}
+            onStoryboardStateChange={onStoryboardStateChange}
           />
         )}
 

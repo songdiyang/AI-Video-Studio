@@ -14,7 +14,6 @@ const generateImagePrompt = require('./generateImagePrompt');
 const uploadImage = require('./uploadImage');
 const tagGroups = require('./tagGroups');
 const states = require('./states');
-const styledImages = require('./styledImages');
 const loadout = require('./loadout');
 const bindings = require('./bindings');
 const voiceConfig = require('./voiceConfig');
@@ -30,7 +29,6 @@ generateViews(router);
 generateImagePrompt(router);
 uploadImage(router);   // 角色图片上传路由（/:id/upload-image）
 states(router);  // 角色状态路由（/:id/states）
-styledImages(router);  // 角色状态按项目画风缓存（/:id/states/:stateId/styled）
 loadout(router);  // 角色当前装配 + 合成预览（/:id/loadout, /:id/composite）
 bindings(router);  // 角色一对多项目绑定（/:id/bindings）
 voiceConfig(router);  // 角色声音配置路由（/:id/voice）
