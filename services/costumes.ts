@@ -18,8 +18,12 @@ export interface Costume {
   side_view_url: string;
   back_view_url: string;
   tags: string;
+  generation_status?: 'pending' | 'generating' | 'completed' | 'failed';
+  generation_prompt?: string;
   created_at: string;
   updated_at: string;
+  character_name?: string;
+  character_id?: number;
 }
 
 export interface CharacterCostume {
@@ -82,11 +86,12 @@ export type CostumeCategory = typeof COSTUME_CATEGORIES[number];
  * 获取项目的服装列表
  */
 export async function fetchCostumes(
-  projectId: number,
+  projectId?: number | null,
   filters?: { category?: string; gender?: string }
 ): Promise<Costume[]> {
   const token = getAuthToken();
-  const params = new URLSearchParams({ projectId: String(projectId) });
+  const params = new URLSearchParams();
+  if (projectId) params.set('projectId', String(projectId));
   if (filters?.category) params.set('category', filters.category);
   if (filters?.gender) params.set('gender', filters.gender);
 
@@ -281,7 +286,7 @@ export async function removeCharacterCostume(characterId: number, costumeId: num
 }
 
 /**
- * 获取角色当前穿戴的服装
+ * 获取当前穿戴的服装
  */
 export async function fetchEquippedCostume(characterId: number): Promise<Costume | null> {
   const token = getAuthToken();
@@ -298,4 +303,30 @@ export async function fetchEquippedCostume(characterId: number): Promise<Costume
 
   const data = await response.json();
   return data.costume;
+}
+
+/**
+ * 生成服装三视图（异步任务）
+ * 基于通用白色 mannequin + outfit 描述，跨角色复用
+ */
+export async function generateCostumeViews(
+  costumeId: number,
+  params: { imageModel: string; textModel?: string; aspectRatio?: string }
+): Promise<{ jobId: string; status: string; costumeId: number; message?: string }> {
+  const token = getAuthToken();
+  const response = await fetch(`/api/costumes/${costumeId}/generate-views`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    },
+    body: JSON.stringify(params)
+  });
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.message || '服装三视图生成失败');
+  }
+
+  return await response.json();
 }

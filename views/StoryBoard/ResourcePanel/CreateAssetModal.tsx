@@ -46,7 +46,7 @@ const TYPE_CONFIG: Record<CreateAssetType, { title: string; icon: React.ReactNod
     placeholder: '例如：男主 / 李明 / 神秘访客',
   },
   scene: {
-    title: '新建场景',
+    title: '新建影棚',
     icon: <MapPin className="w-4 h-4" />,
     placeholder: '例如：夜晚街道 / 主角家客厅',
   },
@@ -54,7 +54,7 @@ const TYPE_CONFIG: Record<CreateAssetType, { title: string; icon: React.ReactNod
 
 const AI_PLACEHOLDER: Record<CreateAssetType, string> = {
   character: '用一段话描述角色：性别、年龄、身份、性格、外貌特征、着装风格等。例如：25 岁的都市职场女性，干练短发，一袭黑色西装，冷静果断但内心柔软。',
-  scene: '用一段话描述场景：地点、时代、氛围、光线、关键物件等。例如：民国时期的昏黄茶馆，木质桌椅，煤油灯光，烟雾缭绕，略带压抑的市井气息。',
+  scene: '用一段话描述影棚：地点、时代、氛围、光线、关键物件等。例如：民国时期的昏黄茶馆，木质桌椅，煤油灯光，烟雾缭绕，略带压抑的市井气息。',
 };
 
 const CreateAssetModal: React.FC<CreateAssetModalProps> = ({
@@ -293,7 +293,7 @@ const CreateAssetModal: React.FC<CreateAssetModalProps> = ({
                 placeholder={
                   assetType === 'character'
                     ? '简单描述角色身份、性格、特征等'
-                    : '简单描述场景地点、环境、氛围等'
+                    : '简单描述影棚地点、环境、氛围等'
                 }
                 value={description}
                 onValueChange={setDescription}

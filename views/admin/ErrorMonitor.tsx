@@ -53,7 +53,7 @@ interface ErrorPattern {
 
 const WORKFLOW_TYPE_NAMES: Record<string, string> = {
   'script_only': '剧本生成',
-  'storyboard_generation': '智能分镜',
+  'storyboard_generation': '智能拆分',
   'scene_storyboard_generation': '场景分镜',
   'batch_storyboard_generation': '分镜生成',
   'frame_generation': '首尾帧生成',

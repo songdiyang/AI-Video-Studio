@@ -6,11 +6,18 @@ const {
   requireProjectForUser,
   requireScriptForUser,
   requireCharacterForUser,
+  requireCostumeForUser,
   requireSceneForUser,
   listScenesForProject,
   requireStoryboardForUser,
   requireSceneElementForUser,
-  listEnabledSceneElementLinks
+  listEnabledSceneElementLinks,
+  requireStudioForUser,
+  requireEnvironmentForUser,
+  requireBuildingForUser,
+  listStudioBuildings,
+  getStudioEnvironment,
+  listStudioElementLinks
 } = require('./repositories');
 
 function createCommand({ operationKey, workflowType, actor, scope, models, inputs, options }) {
@@ -331,6 +338,62 @@ const operationContracts = [
     })
   },
   {
+    operationKey: 'costume_views_generate',
+    workflowType: 'costume_views_generation',
+    requestSchema: {
+      type: 'object',
+      required: ['costumeId', 'imageModel'],
+      properties: {
+        costumeId: { type: 'integer', minimum: 1 },
+        imageModel: { type: 'string', minLength: 1 },
+        textModel: { type: 'string' },
+        aspectRatio: { type: 'string' }
+      }
+    },
+    scopeResolver: async ({ actor, input }) => {
+      const costume = await requireCostumeForUser(input.costumeId, actor.userId);
+      return {
+        scope: {
+          projectId: costume.project_id,
+          costumeId: costume.id
+        },
+        resources: { costume }
+      };
+    },
+    defaultsResolver: async ({ input, resources }) => ({
+      models: {
+        imageModel: input.imageModel,
+        textModel: input.textModel || null
+      },
+      inputs: {
+        costumeId: resources.costume.id
+      },
+      options: {
+        aspectRatio: input.aspectRatio || null
+      }
+    }),
+    conflictKeyResolver: ({ scope }) => ({
+      key: 'costumeId',
+      value: scope.costumeId
+    }),
+    toJobParams: ({ contract, actor, scope, resolved }) =>
+      createCommand({
+        operationKey: contract.operationKey,
+        workflowType: contract.workflowType,
+        actor,
+        scope,
+        models: resolved.models,
+        inputs: resolved.inputs,
+        options: resolved.options
+      }),
+    responseMapper: ({ result, command }) => ({
+      message: '服装三视图生成已启动',
+      jobId: encodeId(result.jobId),
+      costumeId: command.scope.costumeId,
+      status: 'generating'
+    })
+  },
+  {
     operationKey: 'scene_image_generate',
     workflowType: 'scene_image_generation',
     requestSchema: {
@@ -412,12 +475,14 @@ const operationContracts = [
     })
   },
   {
+    // 软弃用提示：scene_panorama_generate 已改为基于 studioId；旧 sceneId 版本仍生效但只聚合场景自身的元素（无环境/建筑）
     operationKey: 'scene_panorama_generate',
     workflowType: 'scene_panorama_generation',
     requestSchema: {
       type: 'object',
-      required: ['sceneId', 'imageModel'],
+      required: ['imageModel'],
       properties: {
+        studioId: { type: 'integer', minimum: 1 },
         sceneId: { type: 'integer', minimum: 1 },
         imageModel: { type: 'string', minLength: 1 },
         textModel: { type: 'string' },
@@ -425,23 +490,87 @@ const operationContracts = [
       }
     },
     scopeResolver: async ({ actor, input }) => {
+      // 优先 studioId，兼容旧 sceneId
+      if (input.studioId) {
+        const studio = await requireStudioForUser(input.studioId, actor.userId);
+        return {
+          scope: {
+            projectId: studio.project_id,
+            studioId: studio.id,
+            sceneId: null
+          },
+          resources: { studio }
+        };
+      }
       const scene = await requireSceneForUser(input.sceneId, actor.userId);
       return {
         scope: {
           projectId: scene.project_id,
-          sceneId: scene.id
+          sceneId: scene.id,
+          studioId: null
         },
         resources: { scene }
       };
     },
-    defaultsResolver: async ({ input, resources }) => {
+    defaultsResolver: async ({ input, resources, scope }) => {
+      // 新路径：基于 studio（环境+建筑+元素）
+      if (scope.studioId) {
+        const studio = resources.studio;
+        const environment = await getStudioEnvironment(scope.studioId);
+        const buildings = await listStudioBuildings(scope.studioId);
+        const elementLinks = await listStudioElementLinks(scope.studioId);
+        const completedElements = elementLinks.filter(l => l.generation_status === 'completed' && l.image_url);
+
+        return {
+          models: {
+            imageModel: input.imageModel,
+            textModel: input.textModel || null
+          },
+          inputs: {
+            studioName: studio.name,
+            description: studio.description || '',
+            environment: environment ? {
+              name: environment.name,
+              description: environment.description || '',
+              timeOfDay: environment.time_of_day || '',
+              weather: environment.weather || '',
+              lighting: environment.lighting || '',
+              mood: environment.mood || ''
+            } : null,
+            buildings: buildings.filter(b => b.generation_status === 'completed' && b.image_url).map(b => ({
+              name: b.name,
+              description: b.description || '',
+              interiorExterior: b.interior_exterior || 'exterior',
+              structureType: b.structure_type || '',
+              imageUrl: b.image_url
+            })),
+            elementImageUrls: completedElements.map(l => l.image_url),
+            elementPositions: completedElements.map(l => ({
+              name: l.name,
+              category: l.category,
+              description: l.description || '',
+              sortOrder: l.sort_order || 0
+            })),
+            style: input.style || null
+          },
+          options: {}
+        };
+      }
+
+      // 旧路径兼容：基于 scene
       const scene = resources.scene;
       if (!scene.name && !scene.description && !scene.environment) {
         throw new HttpError(400, '场景信息不足，至少需要提供场景名称、描述或环境描述之一');
       }
 
-      // 查询已关联且已生成的元素图，作为多图参考注入全景合成
-      const links = await listEnabledSceneElementLinks(scene.id);
+      let links = await listEnabledSceneElementLinks(scene.id);
+      if ((!links || links.length === 0) && scene.studio_id) {
+        const studioLinks = await listStudioElementLinks(scene.studio_id);
+        links = studioLinks.map(l => ({
+          ...l,
+          position_hint: ''
+        }));
+      }
       const completedLinks = links.filter(l => l.generation_status === 'completed' && l.image_url);
       const elementImageUrls = completedLinks.map(l => l.image_url);
       const elementPositions = completedLinks.map(l => ({
@@ -470,8 +599,8 @@ const operationContracts = [
       };
     },
     conflictKeyResolver: ({ scope }) => ({
-      key: 'sceneId',
-      value: scope.sceneId
+      key: scope.studioId ? 'studioId' : 'sceneId',
+      value: scope.studioId || scope.sceneId
     }),
     toJobParams: ({ contract, actor, scope, resolved }) =>
       createCommand({
@@ -484,9 +613,10 @@ const operationContracts = [
         options: resolved.options
       }),
     responseMapper: ({ result, command }) => ({
-      message: '场景全景图生成已启动',
+      message: command.scope.studioId ? '场景全景图生成已启动（基于场景）' : '场景全景图生成已启动',
       jobId: encodeId(result.jobId),
-      sceneId: command.scope.sceneId,
+      studioId: command.scope.studioId || null,
+      sceneId: command.scope.sceneId || null,
       status: 'generating'
     })
   },
@@ -1562,6 +1692,246 @@ const operationContracts = [
       jobId: encodeId(result.jobId),
       tasks: result.tasks,
       message: '批量视频提示词优化任务已启动'
+    })
+  },
+  {
+    // 阶段1: 从剧本拆分环境与建筑
+    operationKey: 'studio_components_extract',
+    workflowType: 'studio_components_extraction',
+    requestSchema: {
+      type: 'object',
+      required: ['projectId', 'scriptId', 'textModel'],
+      properties: {
+        projectId: { type: 'integer', minimum: 1 },
+        scriptId: { type: 'integer', minimum: 1 },
+        textModel: { type: 'string', minLength: 1 }
+      }
+    },
+    scopeResolver: async ({ actor, input }) => {
+      const project = await requireProjectForUser(input.projectId, actor.userId);
+      const script = await requireScriptForUser(input.scriptId, actor.userId);
+      ensureScriptHasContent(script);
+      return {
+        scope: {
+          projectId: project.id,
+          scriptId: script.id
+        },
+        resources: { project, script }
+      };
+    },
+    defaultsResolver: async ({ input, resources }) => ({
+      models: {
+        textModel: input.textModel
+      },
+      inputs: {
+        episodeNumber: resources.script.episode_number,
+        scriptTitle: resources.script.title || `第${resources.script.episode_number}集`,
+        scriptContent: resources.script.content
+      },
+      options: {}
+    }),
+    conflictKeyResolver: ({ scope }) => ({
+      key: 'scriptId',
+      value: scope.scriptId
+    }),
+    toJobParams: ({ contract, actor, scope, resolved }) =>
+      createCommand({
+        operationKey: contract.operationKey,
+        workflowType: contract.workflowType,
+        actor,
+        scope,
+        models: resolved.models,
+        inputs: resolved.inputs,
+        options: resolved.options
+      }),
+    responseMapper: ({ result, command }) => ({
+      message: '已从剧本拆分环境与建筑',
+      jobId: encodeId(result.jobId),
+      scriptId: command.scope.scriptId,
+      status: 'pending'
+    })
+  },
+  {
+    // 阶段2: 拼接场景（环境+建筑+元素 → studio）
+    operationKey: 'studio_compose_from_script',
+    workflowType: 'studio_compose_from_script',
+    requestSchema: {
+      type: 'object',
+      required: ['projectId', 'scriptId', 'textModel'],
+      properties: {
+        projectId: { type: 'integer', minimum: 1 },
+        scriptId: { type: 'integer', minimum: 1 },
+        textModel: { type: 'string', minLength: 1 }
+      }
+    },
+    scopeResolver: async ({ actor, input }) => {
+      const project = await requireProjectForUser(input.projectId, actor.userId);
+      const script = await requireScriptForUser(input.scriptId, actor.userId);
+      ensureScriptHasContent(script);
+      return {
+        scope: {
+          projectId: project.id,
+          scriptId: script.id
+        },
+        resources: { project, script }
+      };
+    },
+    defaultsResolver: async ({ input, resources }) => ({
+      models: {
+        textModel: input.textModel
+      },
+      inputs: {
+        episodeNumber: resources.script.episode_number,
+        scriptTitle: resources.script.title || `第${resources.script.episode_number}集`,
+        scriptContent: resources.script.content
+      },
+      options: {}
+    }),
+    conflictKeyResolver: ({ scope }) => ({
+      key: 'scriptId',
+      value: scope.scriptId
+    }),
+    toJobParams: ({ contract, actor, scope, resolved }) =>
+      createCommand({
+        operationKey: contract.operationKey,
+        workflowType: contract.workflowType,
+        actor,
+        scope,
+        models: resolved.models,
+        inputs: resolved.inputs,
+        options: resolved.options
+      }),
+    responseMapper: ({ result, command }) => ({
+      message: '已从剧本拼接生成场景',
+      jobId: encodeId(result.jobId),
+      scriptId: command.scope.scriptId,
+      status: 'pending'
+    })
+  },
+  {
+    // 环境氛围图生成
+    operationKey: 'environment_image_generate',
+    workflowType: 'environment_image_generation',
+    requestSchema: {
+      type: 'object',
+      required: ['environmentId', 'imageModel'],
+      properties: {
+        environmentId: { type: 'integer', minimum: 1 },
+        imageModel: { type: 'string', minLength: 1 },
+        textModel: { type: 'string' }
+      }
+    },
+    scopeResolver: async ({ actor, input }) => {
+      const env = await requireEnvironmentForUser(input.environmentId, actor.userId);
+      return {
+        scope: {
+          projectId: env.project_id,
+          environmentId: env.id
+        },
+        resources: { env }
+      };
+    },
+    defaultsResolver: async ({ input, resources }) => {
+      const env = resources.env;
+      return {
+        models: {
+          imageModel: input.imageModel,
+          textModel: input.textModel || null
+        },
+        inputs: {
+          environmentId: env.id,
+          environmentName: env.name,
+          description: env.description || '',
+          timeOfDay: env.time_of_day || '',
+          weather: env.weather || '',
+          lighting: env.lighting || '',
+          mood: env.mood || '',
+          generationPrompt: env.generation_prompt || null
+        },
+        options: {}
+      };
+    },
+    conflictKeyResolver: ({ scope }) => ({
+      key: 'environmentId',
+      value: scope.environmentId
+    }),
+    toJobParams: ({ contract, actor, scope, resolved }) =>
+      createCommand({
+        operationKey: contract.operationKey,
+        workflowType: contract.workflowType,
+        actor,
+        scope,
+        models: resolved.models,
+        inputs: resolved.inputs,
+        options: resolved.options
+      }),
+    responseMapper: ({ result, command }) => ({
+      message: '环境氛围图生成已启动',
+      jobId: encodeId(result.jobId),
+      environmentId: command.scope.environmentId,
+      status: 'generating'
+    })
+  },
+  {
+    // 建筑结构图生成
+    operationKey: 'building_image_generate',
+    workflowType: 'building_image_generation',
+    requestSchema: {
+      type: 'object',
+      required: ['buildingId', 'imageModel'],
+      properties: {
+        buildingId: { type: 'integer', minimum: 1 },
+        imageModel: { type: 'string', minLength: 1 },
+        textModel: { type: 'string' }
+      }
+    },
+    scopeResolver: async ({ actor, input }) => {
+      const building = await requireBuildingForUser(input.buildingId, actor.userId);
+      return {
+        scope: {
+          projectId: building.project_id,
+          buildingId: building.id
+        },
+        resources: { building }
+      };
+    },
+    defaultsResolver: async ({ input, resources }) => {
+      const building = resources.building;
+      return {
+        models: {
+          imageModel: input.imageModel,
+          textModel: input.textModel || null
+        },
+        inputs: {
+          buildingId: building.id,
+          buildingName: building.name,
+          description: building.description || '',
+          interiorExterior: building.interior_exterior || 'exterior',
+          structureType: building.structure_type || '',
+          generationPrompt: building.generation_prompt || null
+        },
+        options: {}
+      };
+    },
+    conflictKeyResolver: ({ scope }) => ({
+      key: 'buildingId',
+      value: scope.buildingId
+    }),
+    toJobParams: ({ contract, actor, scope, resolved }) =>
+      createCommand({
+        operationKey: contract.operationKey,
+        workflowType: contract.workflowType,
+        actor,
+        scope,
+        models: resolved.models,
+        inputs: resolved.inputs,
+        options: resolved.options
+      }),
+    responseMapper: ({ result, command }) => ({
+      message: '建筑结构图生成已启动',
+      jobId: encodeId(result.jobId),
+      buildingId: command.scope.buildingId,
+      status: 'generating'
     })
   }
 ];

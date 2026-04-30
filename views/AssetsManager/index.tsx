@@ -19,6 +19,9 @@ import {
   fetchCharacterStates,
 } from '../../services/assets';
 import { Project, fetchProjects } from '../../services/projects';
+
+import { fetchCostumes, deleteCostume as deleteCostumeApi, generateCostumeViews } from '../../services/costumes';
+import type { Costume } from '../../services/costumes';
 import {
   ScriptLibraryItem,
   fetchScriptLibrary,
@@ -30,13 +33,14 @@ import CharacterList from './CharacterList';
 import ProjectSidebar from './ProjectSidebar';
 import SceneList from './SceneList';
 import PropList from './PropList';
-import SceneElementList from './SceneElementList';
+
+import StudioList from './StudioList';
 import ScriptList from './ScriptList';
 import ScriptGenerateModal from './ScriptGenerateModal';
 import CharacterDraftPreviewModal from './CharacterDraftPreviewModal';
 import { useWorkflow, consumeWorkflow } from '../../hooks/useWorkflow';
 import { generateDefaultCostumeState } from '../../services/assets';
-import { CharacterModal, SceneModal, PropModal } from './AssetModel';
+import { CharacterModal, SceneModal, PropModal, StudioModal } from './AssetModel';
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import { useCurrentProject } from '../../contexts/WorkbenchContext';
@@ -44,7 +48,7 @@ import { AIModel } from '../../components/AIModelSelector';
 import type { CharacterState } from '../../services/assets';
 import { useAIAssistantWorkbenchContext } from '../../contexts/AIAssistantContext';
 
-type TabType = 'characters' | 'scenes' | 'props' | 'scripts' | 'scene-elements';
+type TabType = 'characters' | 'studios' | 'props' | 'costumes' | 'scripts';
 
 // 标签分组管理面板组件
 interface TagGroupManagerProps {
@@ -315,7 +319,8 @@ const AssetsManager: React.FC = () => {
   const [characters, setCharacters] = useState<Character[]>([]);
   const [scenes, setScenes] = useState<Scene[]>([]);
   const [props, setProps] = useState<Prop[]>([]);
-  const [sceneElements, setSceneElements] = useState<import('../../services/sceneElements').SceneElement[]>([]);
+  const [studios, setStudios] = useState<import('../../services/studios').Studio[]>([]);
+  const [costumes, setCostumes] = useState<Costume[]>([]);
   const [scripts, setScripts] = useState<ScriptLibraryItem[]>([]);
   const [tagGroups, setTagGroups] = useState<TagGroup[]>([]);
   const [loading, setLoading] = useState(false);
@@ -353,6 +358,11 @@ const AssetsManager: React.FC = () => {
   // 场景详情模态框
   const { isOpen: isDetailOpen, onOpen: onDetailOpen, onOpenChange: onDetailOpenChange } = useDisclosure();
   const [selectedScene, setSelectedScene] = useState<Scene | null>(null);
+
+  // 影棚模态框
+  const { isOpen: isStudioOpen, onOpen: onStudioOpen, onOpenChange: onStudioOpenChange } = useDisclosure();
+  const [editingStudioId, setEditingStudioId] = useState<number | null>(null);
+  const [studioEditMode, setStudioEditMode] = useState(false);
 
   // 剧本创建模态框
   const {
@@ -497,19 +507,19 @@ const AssetsManager: React.FC = () => {
     // ── 场景 CRUD ──
     else if (action === 'create_location') {
       const pid = ensureProject(); if (!pid) return;
-      createScene({ project_id: pid, name: String(params?.name || '新场景'), description: params?.description } as any)
-        .then(s => { toastOk(`已创建场景「${s.name}」`); loadData(); })
-        .catch(toastErr('创建场景失败'));
+      createScene({ project_id: pid, name: String(params?.name || '新影棚'), description: params?.description } as any)
+        .then(s => { toastOk(`已创建影棚「${s.name}」`); loadData(); })
+        .catch(toastErr('创建影棚失败'));
     } else if (action === 'update_location') {
       const id = Number(params?.locationId); if (!id) { showToast('缺少 locationId', 'warning'); return; }
       updateScene(id, params?.fields || {})
-        .then(() => { toastOk('场景已更新'); loadData(); })
-        .catch(toastErr('更新场景失败'));
+        .then(() => { toastOk('影棚已更新'); loadData(); })
+        .catch(toastErr('更新影棚失败'));
     } else if (action === 'delete_location') {
       const id = Number(params?.locationId); if (!id) { showToast('缺少 locationId', 'warning'); return; }
       deleteScene(id)
-        .then(() => { toastOk('场景已删除'); loadData(); })
-        .catch(toastErr('删除场景失败'));
+        .then(() => { toastOk('影棚已删除'); loadData(); })
+        .catch(toastErr('删除影棚失败'));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectFilter, currentProject, selectedImageModel, selectedTextModel, showToast]);
@@ -580,7 +590,7 @@ const AssetsManager: React.FC = () => {
   const { isGenerating } = useSceneImageGeneration({
     sceneId: selectedScene?.id?.toString() || null,
     projectId: null,
-    isActive: activeTab === 'scenes' && isDetailOpen,
+    isActive: false,
     onComplete: () => {
       loadData();
     }
@@ -606,11 +616,6 @@ const AssetsManager: React.FC = () => {
           ? await fetchCharactersByProject(filterProjectId)
           : await fetchCharacters();
         setCharacters(data);
-      } else if (activeTab === 'scenes') {
-        const data = filterProjectId
-          ? await fetchScenesByProject(filterProjectId)
-          : await fetchScenes();
-        setScenes(data);
       } else if (activeTab === 'scripts') {
         // 剧本资源库：支持项目筛选
         const all = await fetchScriptLibrary('all');
@@ -620,12 +625,14 @@ const AssetsManager: React.FC = () => {
             ? all.filter((s) => s.project_id == null)
             : all;
         setScripts(filtered);
-      } else if (activeTab === 'scene-elements') {
-        const { listSceneElements } = await import('../../services/sceneElements');
-        const data = await listSceneElements({
-          projectId: filterProjectId || undefined,
-        });
-        setSceneElements(data);
+      } else if (activeTab === 'studios') {
+        const { listStudios } = await import('../../services/studios');
+        const data = await listStudios(filterProjectId || undefined);
+        setStudios(data);
+      } else if (activeTab === 'costumes') {
+        // 服装支持全部项目/未使用素材筛选，空项目时不筛选项目
+        const data = await fetchCostumes(filterProjectId || null);
+        setCostumes(data);
       } else {
         const data = await fetchProps();
         setProps(data);
@@ -640,13 +647,22 @@ const AssetsManager: React.FC = () => {
   const getTabLabel = () => {
     switch (activeTab) {
       case 'characters': return '角色';
-      case 'scenes': return '场景';
+      case 'studios': return '影棚';
       case 'props': return '道具';
+      case 'costumes': return '服装';
       case 'scripts': return '剧本';
     }
   };
 
   const handleAdd = () => {
+    // 影棚 Tab：走独立的 StudioModal
+    if (activeTab === 'studios') {
+      setStudioEditMode(false);
+      setEditingStudioId(null);
+      onStudioOpen();
+      return;
+    }
+
     // 剧本 Tab：走独立的创建弹窗（内容只需 title + content）
     if (activeTab === 'scripts') {
       setScriptCreateTitle('');
@@ -686,6 +702,12 @@ const AssetsManager: React.FC = () => {
     setCurrentId(item.id);
     setFormData(item);
     onOpen();
+  };
+
+  const handleEditStudio = (studio: import('../../services/studios').Studio) => {
+    setStudioEditMode(true);
+    setEditingStudioId(studio.id);
+    onStudioOpen();
   };
 
   // 刷新当前编辑的角色数据
@@ -737,12 +759,6 @@ const AssetsManager: React.FC = () => {
             return; // 不关闭弹窗
           }
         }
-      } else if (activeTab === 'scenes') {
-        if (editMode && currentId) {
-          await updateScene(currentId, formData);
-        } else {
-          await createScene({ ...formData, project_id: activeProjectId || undefined } as any);
-        }
       } else {
         if (editMode && currentId) {
           await updateProp(currentId, formData);
@@ -770,13 +786,13 @@ const AssetsManager: React.FC = () => {
     try {
       if (activeTab === 'characters') {
         await deleteCharacter(id);
-      } else if (activeTab === 'scenes') {
-        await deleteScene(id);
       } else if (activeTab === 'scripts') {
         await deleteScriptApi(id);
-      } else if (activeTab === 'scene-elements') {
-        const { deleteSceneElement } = await import('../../services/sceneElements');
-        await deleteSceneElement(id);
+      } else if (activeTab === 'studios') {
+        const { deleteStudio } = await import('../../services/studios');
+        await deleteStudio(id);
+      } else if (activeTab === 'costumes') {
+        await deleteCostumeApi(id);
       } else {
         await deleteProp(id);
       }
@@ -836,7 +852,7 @@ const AssetsManager: React.FC = () => {
       console.log('[AssetsManager] 场景图片生成已启动:', data.jobId);
     } catch (error: any) {
       console.error('[AssetsManager] 生成场景图片失败:', error);
-      showToast('生成场景图片失败，请稍后重试', 'error');
+      showToast('生成影棚图片失败，请稍后重试', 'error');
       throw error;
     }
   };
@@ -887,7 +903,6 @@ const AssetsManager: React.FC = () => {
       });
     };
     if (activeTab === 'characters') characters.forEach(c => extractTags(c.tags));
-    else if (activeTab === 'scenes') scenes.forEach(s => extractTags(s.tags));
     else props.forEach(p => extractTags(p.tags));
     return Object.entries(tagCount)
       .sort((a, b) => b[1] - a[1])
@@ -943,6 +958,26 @@ const AssetsManager: React.FC = () => {
     return (p.name || '').toLowerCase().includes(q) ||
       (p.description || '').toLowerCase().includes(q) ||
       (p.tags && p.tags.toLowerCase().includes(q));
+  });
+
+  const filteredStudios = studios.filter((s) => {
+    const q = searchQuery.toLowerCase();
+    if (!q) return true;
+    return (
+      (s.name || '').toLowerCase().includes(q) ||
+      (s.description || '').toLowerCase().includes(q)
+    );
+  });
+
+  const filteredCostumes = costumes.filter((c) => {
+    const q = searchQuery.toLowerCase();
+    if (!q) return true;
+    return (
+      (c.name || '').toLowerCase().includes(q) ||
+      (c.description || '').toLowerCase().includes(q) ||
+      (c.category || '').toLowerCase().includes(q) ||
+      (c.tags || '').toLowerCase().includes(q)
+    );
   });
 
   const filteredScripts = scripts.filter((s) => {
@@ -1041,7 +1076,42 @@ const AssetsManager: React.FC = () => {
       <ProjectSidebar
         projects={userProjects}
         selectedProject={projectFilter}
+        activeTab={activeTab}
         onSelectProject={setProjectFilter}
+        onSelectResourceType={(pid, tab) => {
+          setProjectFilter(pid);
+          setActiveTab(tab as TabType);
+        }}
+        onSelectAsset={(tabType, asset) => {
+          const pid = String(asset.project_id || projectFilter);
+          setProjectFilter(pid);
+          setActiveTab(tabType as TabType);
+        }}
+        onEditAsset={(tabType, asset) => {
+          const pid = String(asset.project_id || projectFilter);
+          setProjectFilter(pid);
+          setActiveTab(tabType as TabType);
+          // 影棚走 StudioModal
+          if (tabType === 'studios') {
+            setStudioEditMode(true);
+            setEditingStudioId(asset.id);
+            onStudioOpen();
+            return;
+          }
+          // 剧本走独立创建弹窗（编辑模式）
+          if (tabType === 'scripts') {
+            setScriptCreateTitle(asset.title || '');
+            setScriptCreateContent(asset.content || '');
+            setScriptCreateTargetProjectId(String(asset.project_id || ''));
+            onScriptCreateOpen();
+            return;
+          }
+          // 角色/道具/服装走通用弹窗
+          setEditMode(true);
+          setCurrentId(asset.id);
+          setFormData(asset);
+          onOpen();
+        }}
       />
 
       {/* 主内容区 */}
@@ -1240,24 +1310,6 @@ const AssetsManager: React.FC = () => {
           </Tab>
 
           <Tab
-            key="scenes"
-            title={
-              <div className="flex items-center gap-2">
-                <MapPin className="w-4 h-4" />
-                <span>场景 ({scenes.length})</span>
-              </div>
-            }
-          >
-            <SceneList 
-              scenes={filteredScenes} 
-              onEdit={handleEdit} 
-              onDelete={handleDelete}
-              onViewDetail={handleViewSceneDetail}
-              onSceneUpdate={loadData}
-            />
-          </Tab>
-
-          <Tab
             key="props"
             title={
               <div className="flex items-center gap-2">
@@ -1274,35 +1326,119 @@ const AssetsManager: React.FC = () => {
           </Tab>
 
           <Tab
-            key="scene-elements"
+            key="costumes"
             title={
               <div className="flex items-center gap-2">
-                <MapPin className="w-4 h-4" />
-                <span>场景元素 ({sceneElements.length})</span>
+                <Tag className="w-4 h-4" />
+                <span>服装 ({costumes.length})</span>
               </div>
             }
           >
-            <SceneElementList
-              elements={sceneElements}
+            <div className="space-y-3 mt-4">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-(--text-muted)">
+                  共 {filteredCostumes.length} 件服装
+                </span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {filteredCostumes.map((c) => {
+                  const hasViews = !!(c.image_url || c.front_view_url);
+                  const isGenerating = c.generation_status === 'generating';
+                  const handleGenCostumeViews = async () => {
+                    if (!selectedImageModel) {
+                      showToast('请先配置图像模型', 'warning');
+                      return;
+                    }
+                    try {
+                      await generateCostumeViews(c.id, { imageModel: selectedImageModel });
+                      showToast('服装三视图生成已启动', 'success');
+                      setTimeout(() => loadData(), 500);
+                    } catch (e: any) {
+                      showToast(e.message || '生成失败', 'error');
+                    }
+                  };
+                  return (
+                    <div
+                      key={c.id}
+                      className="bg-(--bg-card) border border-(--border-color) rounded-xl p-4 hover:border-(--accent)/30 transition-all"
+                    >
+                      {c.image_url ? (
+                        <img src={c.image_url} alt={c.name} className="w-full aspect-[2/3] object-cover rounded-lg mb-2" />
+                      ) : (
+                        <div className="w-full aspect-[2/3] bg-(--bg-muted) rounded-lg mb-2 flex items-center justify-center text-(--text-muted) text-xs">
+                          无图片
+                        </div>
+                      )}
+                      {hasViews && (
+                        <div className="grid grid-cols-3 gap-1 mb-2">
+                          <img src={c.front_view_url} alt="正" className="w-full aspect-[2/3] object-cover rounded" />
+                          <img src={c.side_view_url} alt="侧" className="w-full aspect-[2/3] object-cover rounded" />
+                          <img src={c.back_view_url} alt="背" className="w-full aspect-[2/3] object-cover rounded" />
+                        </div>
+                      )}
+                      <h3 className="font-semibold text-(--text-primary) truncate">{c.name}</h3>
+                      {c.character_name && (
+                        <div className="text-xs text-(--text-muted) mt-0.5 flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-(--accent)" />
+                          所属角色: {c.character_name}
+                        </div>
+                      )}
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {c.category && (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/15 text-purple-300">{c.category}</span>
+                        )}
+                        {c.gender && (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-300">{c.gender}</span>
+                        )}
+                      </div>
+                      {c.description && (
+                        <p className="text-xs text-(--text-muted) mt-2 line-clamp-2">{c.description}</p>
+                      )}
+                      {c.generation_status && c.generation_status !== 'pending' && (
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full mt-2 inline-block ${
+                          c.generation_status === 'completed' ? 'bg-green-500/15 text-green-400' :
+                          c.generation_status === 'generating' ? 'bg-blue-500/15 text-blue-400 animate-pulse' :
+                          'bg-red-500/15 text-red-400'
+                        }`}>{c.generation_status}</span>
+                      )}
+                      <div className="flex gap-2 mt-2">
+                        <Button
+                          size="sm"
+                          color="primary"
+                          variant="flat"
+                          className="text-xs flex-1"
+                          isDisabled={isGenerating}
+                          onPress={handleGenCostumeViews}
+                        >
+                          {isGenerating ? '生成中…' : hasViews ? '重新生成' : '生成设定图'}
+                        </Button>
+                        <Button size="sm" variant="flat" className="text-xs" onPress={() => handleDelete(c.id)}>删除</Button>
+                      </div>
+                    </div>
+                  );
+                })}
+                {filteredCostumes.length === 0 && (
+                  <div className="col-span-full text-center text-(--text-muted) py-12">
+                    暂无服装，通过角色 AI 生成或手动创建
+                  </div>
+                )}
+              </div>
+            </div>
+          </Tab>
+
+          <Tab
+            key="studios"
+            title={
+              <div className="flex items-center gap-2">
+                <MapPin className="w-4 h-4" />
+                <span>影棚 ({studios.length})</span>
+              </div>
+            }
+          >
+            <StudioList
+              studios={filteredStudios}
+              onEdit={handleEditStudio}
               onDelete={handleDelete}
-              onGenerate={async (el) => {
-                if (!selectedImageModel) {
-                  showToast('请先选择图像模型', 'warning');
-                  return;
-                }
-                try {
-                  const { generateSceneElementImage } = await import('../../services/sceneElements');
-                  await generateSceneElementImage(el.id, {
-                    imageModel: selectedImageModel,
-                    textModel: selectedTextModel || undefined,
-                  });
-                  showToast('元素图片生成已启动', 'success');
-                  loadData();
-                } catch (err: any) {
-                  console.error('[SceneElement][generate]', err);
-                  showToast(err?.message || '启动元素生成失败', 'error');
-                }
-              }}
             />
           </Tab>
 
@@ -1346,17 +1482,6 @@ const AssetsManager: React.FC = () => {
           />
         )}
         
-        {activeTab === 'scenes' && (
-          <SceneModal
-            isOpen={isOpen}
-            onOpenChange={onOpenChange}
-            editMode={editMode}
-            formData={formData}
-            setFormData={setFormData}
-            onSave={handleSave}
-            userProjects={userProjects}
-          />
-        )}
         
         {activeTab === 'props' && (
           <PropModal
@@ -1368,6 +1493,16 @@ const AssetsManager: React.FC = () => {
             onSave={handleSave}
           />
         )}
+
+        {/* 影棚编辑模态框 */}
+        <StudioModal
+          isOpen={isStudioOpen}
+          onOpenChange={onStudioOpenChange}
+          editMode={studioEditMode}
+          studioId={editingStudioId}
+          projectId={getActiveProjectId()}
+          onSaved={loadData}
+        />
 
         {/* 场景详情模态框 */}
         <SceneDetailModal

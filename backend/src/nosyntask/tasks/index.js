@@ -14,6 +14,7 @@ const handleSingleFrameGeneration = require('./StoryBoard/singleFrameGeneration'
 const handleSceneVideoGeneration = require('./StoryBoard/sceneVideoGeneration');
 const handleStoryboardGeneration = require('./StoryBoard/storyboardGeneration');
 const handleCharacterViewsGeneration = require('./StoryBoard/characterViewsGeneration');
+const handleCostumeViewsGeneration = require('./StoryBoard/costumeViewsGeneration');
 const handleSceneImageGeneration = require('./StoryBoard/sceneImageGeneration');
 const handleScenePanoramaGeneration = require('./StoryBoard/scenePanoramaGeneration');
 const handleSceneElementsExtraction = require('./StoryBoard/sceneElementsExtraction');
@@ -40,6 +41,9 @@ const handleMagicPaintGeneration = require('./StoryBoard/magicPaintGeneration');
 const handleHdRepairGeneration = require('./StoryBoard/hdRepairGeneration');
 const handleBatchPromptOptimization = require('./StoryBoard/batchPromptOptimization');
 const handleSinglePromptOptimization = require('./StoryBoard/singlePromptOptimization');
+const handleStudioComponentsCompose = require('./Studio/studioComponentsCompose');
+const handleEnvironmentImageGeneration = require('./Studio/environmentImageGeneration');
+const handleBuildingImageGeneration = require('./Studio/buildingImageGeneration');
 
 // AI 助手长任务：规划/执行/观察
 const handleAIAssistantPlanner = require('./AIAssistant/planner');
@@ -58,6 +62,7 @@ module.exports = {
   handleSceneVideoGeneration,
   handleStoryboardGeneration,
   handleCharacterViewsGeneration,
+  handleCostumeViewsGeneration,
   handleSceneImageGeneration,
   handleScenePanoramaGeneration,
   handleSceneElementsExtraction,
@@ -85,6 +90,9 @@ module.exports = {
   handleHdRepairGeneration,
   handleBatchPromptOptimization,
   handleSinglePromptOptimization,
+  handleStudioComponentsCompose,
+  handleEnvironmentImageGeneration,
+  handleBuildingImageGeneration,
   handleAIAssistantPlanner,
   handleAIAssistantExecutor,
   handleAIAssistantObserver

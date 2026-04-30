@@ -287,7 +287,11 @@ ${characterAppearanceSection}
 - dialogues: 结构化对白数组，格式为 [{"character": "角色名", "line": "台词内容"}]，没有对白则为空数组 []
 - duration: 时长（秒，一般2-4秒）
 - characters: 出场角色数组
-- location: 场景地点
+- location: 场景地点（如"教室"、"客厅"、"操场"）
+- environment: 环境类型（"室内"/"室外"/"自然景观"/"城市街景"/"其他"）
+- buildings: 建筑列表（该场景中出现的具体建筑名称数组，如["教学楼", "宿舍楼"]，没有则填空数组[]）
+- timeOfDay: 时间段（"白天"/"夜晚"/"正午"/"黄昏"/"黎明"/"深夜"）
+- weather: 天气状况（"晴天"/"阴天"/"雨天"/"雪天"/"雾天"/"多云"）
 - emotion: 情绪氛围
 - cameraMovement: 镜头运动（"static"/"push"/"pull"/"pan"/"tilt"/"track"/"dolly"/"zoom"/"orbit"/"dolly_zoom"/"crane"/"handheld"/"steadicam"/"whip_pan"）
 

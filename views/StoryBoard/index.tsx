@@ -141,6 +141,27 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
   const resourcePanelRef = useRef<ResizablePanelRef>(null);
   const assistantPanelRef = useRef<ResizablePanelRef>(null);
   const [leftPanelTab, setLeftPanelTab] = useState<'scenes' | 'resources' | 'outline'>('scenes');
+
+  // 智能拆分加载提示语
+  const LOADING_TIPS = useMemo(() => [
+    '桃小绒正在钓鱼...',
+    '虾片正在修理 bug...',
+    '真的有人会看这些 tips 吗？',
+    'AI 正在努力理解剧本的深层含义...',
+    '分镜师正在画草图，稍等片刻...',
+    '影棚搭建中，油漆还没干...',
+    '角色们正在化妆间准备登场...',
+    '摄影师正在调焦距...',
+    '导演喊了 Action，演员各就各位...',
+    '正在给场景打光，亮一点还是暗一点？',
+    '剧本里的伏笔正在被拆解...',
+    '每个分镜都在寻找最合适的角度...',
+    '建筑工人正在搭建木屋...',
+    '环境氛围正在渲染中，请深呼吸...',
+    'AI 说："这波操作有点秀"',
+  ], []);
+  const [tipIndex, setTipIndex] = useState(0);
+
   const { showToast } = useToast();
 
   // 剧本大纲内容
@@ -415,6 +436,15 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
     referenceScriptContent,
     referenceScriptTitle
   });
+
+  // 智能拆分加载提示语轮播
+  useEffect(() => {
+    if (!autoStoryboard.isGenerating) return;
+    const interval = setInterval(() => {
+      setTipIndex(prev => (prev + 1) % LOADING_TIPS.length);
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [autoStoryboard.isGenerating, LOADING_TIPS.length]);
 
   // 5. 场景图片/视频生成
   const { generateImage, generateVideo, generateWithCamera, generateWithPaint, generateHdRepair, tasks, isRunning } = useSceneGeneration({
@@ -1103,7 +1133,7 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
             />
             <IconButton
               icon={<MapPin className="w-4 h-4" />}
-              tooltip="批量生成场景"
+              tooltip="批量生成影棚"
               onClick={batchResource.handleBatchSceneGeneration}
               disabled={!currentProjectId || batchResource.isSubmittingSceneBatch || batchResource.isSceneBatchGenerating}
               loading={batchResource.isSubmittingSceneBatch || batchResource.isSceneBatchGenerating}
@@ -1128,8 +1158,8 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
 
             <Divider />
 
-            {/* AI 智能分镜 */}
-            <Tooltip content="由剧本自动拆分镜头" placement="bottom">
+            {/* AI 智能拆分 */}
+            <Tooltip content="由剧本自动拆分镜头和影棚" placement="bottom">
               <Button
                 size="sm"
                 variant="flat"
@@ -1140,7 +1170,7 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
                 isDisabled={!currentProjectId || !currentScriptId || autoStoryboard.isGenerating}
                 isLoading={autoStoryboard.isGenerating}
               >
-                智能分镜
+                智能拆分
               </Button>
             </Tooltip>
 
@@ -1180,7 +1210,7 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
       {currentProjectId && (
         <div className="flex-1 overflow-hidden flex flex-col">
           {/* 双栏布局 */}
-          <div className="flex-1 overflow-hidden">
+          <div className="flex-1 overflow-hidden relative">
             <PanelGroup 
               direction="horizontal" 
               storageKey={isAssistantOpen ? "storyboard-layout-v3-with-assistant" : "storyboard-layout-v2"}
@@ -1449,7 +1479,7 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
                         const location: string = String(params?.location || '');
                         const characterIds: number[] | undefined = Array.isArray(params?.characterIds) ? params.characterIds.map(Number) : undefined;
                         const locationId: number | undefined = params?.locationId != null ? Number(params.locationId) : undefined;
-                        Promise.resolve(updateCharactersAndLocation(sceneId, characters, location, characterIds, locationId)).then(() => toastOk('角色/场景绑定已更新')).catch(toastErr('更新失败'));
+                        Promise.resolve(updateCharactersAndLocation(sceneId, characters, location, characterIds, locationId)).then(() => toastOk('角色/影棚绑定已更新')).catch(toastErr('更新失败'));
                       } else if (action === 'move_scene') {
                         const sceneId = sceneIdFrom(params);
                         const direction = params?.direction === 'down' ? 'down' : 'up';
@@ -1489,19 +1519,19 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
                       // ── 场景（Location）CRUD ───────────────────────
                       else if (action === 'create_location') {
                         if (!ensureProject()) return;
-                        createSceneAsset({ project_id: currentProjectId!, name: String(params?.name || '新场景'), description: params?.description } as any)
-                          .then(s => { toastOk(`已创建场景「${s.name}」`); fetchScenesByProject(currentProjectId!, currentScriptId || undefined).then(setProjectScenes).catch(() => {}); })
-                          .catch(toastErr('创建场景失败'));
+                        createSceneAsset({ project_id: currentProjectId!, name: String(params?.name || '新影棚'), description: params?.description } as any)
+                          .then(s => { toastOk(`已创建影棚「${s.name}」`); fetchScenesByProject(currentProjectId!, currentScriptId || undefined).then(setProjectScenes).catch(() => {}); })
+                          .catch(toastErr('创建影棚失败'));
                       } else if (action === 'update_location') {
                         const id = Number(params?.locationId); if (!id) { showToast('缺少 locationId', 'warning'); return; }
                         updateSceneAsset(id, params?.fields || {})
-                          .then(() => { toastOk('场景已更新'); if (currentProjectId) fetchScenesByProject(currentProjectId, currentScriptId || undefined).then(setProjectScenes).catch(() => {}); })
-                          .catch(toastErr('更新场景失败'));
+                          .then(() => { toastOk('影棚已更新'); if (currentProjectId) fetchScenesByProject(currentProjectId, currentScriptId || undefined).then(setProjectScenes).catch(() => {}); })
+                          .catch(toastErr('更新影棚失败'));
                       } else if (action === 'delete_location') {
                         const id = Number(params?.locationId); if (!id) { showToast('缺少 locationId', 'warning'); return; }
                         deleteSceneAsset(id)
-                          .then(() => { toastOk('场景已删除'); if (currentProjectId) fetchScenesByProject(currentProjectId, currentScriptId || undefined).then(setProjectScenes).catch(() => {}); })
-                          .catch(toastErr('删除场景失败'));
+                          .then(() => { toastOk('影棚已删除'); if (currentProjectId) fetchScenesByProject(currentProjectId, currentScriptId || undefined).then(setProjectScenes).catch(() => {}); })
+                          .catch(toastErr('删除影棚失败'));
                       }
                       // ── 剧本 ──────────────────────────────────────
                       else if (action === 'create_script') {
@@ -1572,6 +1602,29 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
               </ResizablePanel>
             )}
           </PanelGroup>
+
+            {/* 智能拆分中遮罩 */}
+            {autoStoryboard.isGenerating && (
+              <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/60 backdrop-blur-sm">
+                <div className="w-12 h-12 border-4 border-(--accent) border-t-transparent rounded-full animate-spin mb-4" />
+                <div className="text-lg font-semibold text-white mb-1">正在智能拆分中</div>
+                <div className="text-sm text-white/70">请稍候，AI 正在分析剧本并生成分镜与影棚...</div>
+                {autoStoryboard.progress && (
+                  <div className="mt-4 w-64">
+                    <div className="h-1.5 bg-white/20 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-(--accent) rounded-full transition-all duration-500"
+                        style={{ width: `${autoStoryboard.progress.overallProgress || 0}%` }}
+                      />
+                    </div>
+                    <div className="text-xs text-white/60 mt-1.5 flex items-center justify-between">
+                      <span className="text-white/40 italic">{LOADING_TIPS[tipIndex]}</span>
+                      <span>{autoStoryboard.progress.overallProgress ? `${autoStoryboard.progress.overallProgress}%` : ''}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
         </div>
         </div>
       )}

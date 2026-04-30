@@ -141,7 +141,7 @@ const SceneElementsPanel: React.FC<SceneElementsPanelProps> = ({
       <div className="flex items-start justify-between gap-2 mb-3">
         <h4 className="text-sm font-bold text-slate-300 flex items-center gap-2">
           <Layers className="w-4 h-4 text-amber-400" />
-          场景元素（影棚）
+          影棚元素
           <span className="text-xs text-slate-500 font-normal">
             {total > 0 ? `${completed}/${total} 已生成` : '尚未建立'}
           </span>
@@ -191,13 +191,13 @@ const SceneElementsPanel: React.FC<SceneElementsPanelProps> = ({
         </div>
       ) : links.length === 0 ? (
         <div className="py-6 text-center text-slate-500 text-sm border border-dashed border-slate-600/40 rounded">
-          暂无元素。点击「AI 抽取元素」从场景描述中提取建筑/场景元素清单。
+          暂无元素。点击「AI 抽取元素」从影棚描述中提取建筑/影棚元素清单。
         </div>
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
           {links.map((l) => {
             const CatIcon = l.category === 'building' ? Hammer : Mountain;
-            const catLabel = l.category === 'building' ? '建筑' : '场景';
+            const catLabel = l.category === 'building' ? '建筑' : '影棚';
             const statusText = STATUS_TEXT[l.generation_status] || l.generation_status;
             const statusClass = STATUS_CLASS[l.generation_status] || 'bg-slate-600/30 text-slate-300';
             const isGenerating = l.generation_status === 'generating' || generatingIds.has(l.id);
@@ -276,7 +276,7 @@ const SceneElementsPanel: React.FC<SceneElementsPanelProps> = ({
 
       {total > 0 && (
         <p className="text-[11px] text-slate-500 mt-3">
-          提示：生成场景全景图时，已完成的元素图片会自动作为参考图注入，保证拼接后风格与形态一致。
+          提示：生成影棚全景图时，已完成的元素图片会自动作为参考图注入，保证拼接后风格与形态一致。
         </p>
       )}
     </div>

@@ -24,6 +24,7 @@ const {
   handleSceneVideoGeneration,
   handleStoryboardGeneration,
   handleCharacterViewsGeneration,
+  handleCostumeViewsGeneration,
   handleSceneImageGeneration,
   handleScenePanoramaGeneration,
   handleSceneElementsExtraction,
@@ -55,6 +56,13 @@ const handleBatchImagePromptOptimization = require('./tasks/StoryBoard/batchImag
 const handleSingleImagePromptOptimization = require('./tasks/StoryBoard/singleImagePromptOptimization');
 const handleBatchVideoPromptOptimization = require('./tasks/StoryBoard/batchVideoPromptOptimization');
 const handleSingleVideoPromptOptimization = require('./tasks/StoryBoard/singleVideoPromptOptimization');
+
+// 影棚组装工作流 handlers
+const handleStudioComponentsExtract = require('./tasks/Studio/studioComponentsExtract');
+const handleStudioComposeFromScript = require('./tasks/Studio/studioComposeFromScript');
+const handleStudioComponentsCompose = require('./tasks/Studio/studioComponentsCompose');
+const handleEnvironmentImageGeneration = require('./tasks/Studio/environmentImageGeneration');
+const handleBuildingImageGeneration = require('./tasks/Studio/buildingImageGeneration');
 
 // AI 助手长任务 handlers
 const handleAIAssistantPlanner = require('./tasks/AIAssistant/planner');
@@ -115,21 +123,24 @@ const WORKFLOW_DEFINITIONS = {
   },
 
   /**
-   * 智能分镜（优化后）- 4 步骤，3 次 AI 调用
+   * 智能拆分（T8 聚合版）- 5 步骤
    * 
-   * 流程（支持并行）：
-   *   1. storyboard_generation  - AI 生成分镜内容
-   *   2. save_storyboards       - 保存分镜 + 从 location 字段提取场景（无 AI）
-   *   3. character_extraction   - AI 提取角色详情 ← 与步骤4并行执行
-   *   4. scene_state_analysis   - AI 分析环境状态 ← 与步骤3并行执行
+   * 流程：
+   *   0. storyboard_generation  - AI 生成分镜内容（含 environment/buildings/timeOfDay/weather）
+   *   1. save_storyboards       - 保存分镜 + 从分镜 variables 聚合：
+   *                                scenes（旧）/ studios / studio_states
+   *                                / props / storyboard_props / studio_prop_links
+   *                                / storyboard_scenes.studio_state_id 回写
+   *   2. character_extraction   - AI 提取角色详情（写 characters + costumes）
+   *   3. scene_state_analysis   - AI 分析环境连续性（写分镜 variables_json）
+   *   4. studio_components_compose - 从分镜提取环境与建筑并组装影棚
    * 
-   * dependencies 字段说明：
-   *   - 步骤的 dependencies 数组指定它依赖的步骤索引（从0开始）
-   *   - 当一个步骤的所有依赖都完成后，它可以开始执行
-   *   - 多个步骤如果依赖相同的步骤，可以并行执行
+   * 注：
+   *   - 步骤 2 和 3 依赖步骤 1，可并行执行
+   *   - 步骤 4 依赖步骤 1（需要 studios 已创建）
    */
   storyboard_generation: {
-    name: '智能分镜',
+    name: '智能拆分',
     steps: [
       {
         type: 'storyboard_generation',
@@ -170,6 +181,17 @@ const WORKFLOW_DEFINITIONS = {
         dependencies: [1], // 也依赖步骤1，与步骤2并行执行
         buildInput: createBuildInput([
           'scriptId', 'textModel', { key: 'think', defaultValue: false }
+        ])
+      },
+      {
+        type: 'studio_components_compose',
+        targetType: 'studio',
+        handler: handleStudioComponentsCompose,
+        displayName: '组装影棚（环境+建筑）',
+        dependencies: [1], // 依赖步骤1（save_storyboards，需要studios已创建）
+        buildInput: createBuildInput([
+          { key: 'scenes', from: ctx => ctx.previousResults[0]?.scenes || [] },
+          'projectId', 'scriptId', 'userId', 'textModel'
         ])
       }
     ]
@@ -330,6 +352,31 @@ const WORKFLOW_DEFINITIONS = {
           },
           'scriptContent', 'projectId', 'scriptId', 'userId', 'textModel', 'appendMode',
           'referenceScriptContent', 'conflictStrategy'
+        ])
+      });
+
+      // 影棚组装步骤：依赖保存步骤
+      steps.push({
+        type: 'studio_components_compose',
+        targetType: 'studio',
+        displayName: '组装影棚（环境+建筑）',
+        handler: handleStudioComponentsCompose,
+        dependencies: [saveStepIndex],
+        buildInput: createBuildInput([
+          {
+            key: 'scenes',
+            from: ctx => {
+              // 从所有场景步骤的 previousResults 中汇总 scenes
+              const allScenes = [];
+              for (let j = 0; j < totalScenes; j++) {
+                if (ctx.previousResults[j]?.scenes) {
+                  allScenes.push(...ctx.previousResults[j].scenes);
+                }
+              }
+              return allScenes;
+            }
+          },
+          'projectId', 'scriptId', 'userId', 'textModel'
         ])
       });
 
@@ -671,6 +718,24 @@ const WORKFLOW_DEFINITIONS = {
           'customPromptFront', 'customPromptSide', 'customPromptBack',
           { key: 'width', defaultValue: 1920 },
           { key: 'height', defaultValue: 2880 }
+        ])
+      }
+    ]
+  },
+
+  /**
+   * 服装三视图生成
+   * 基于通用白色 mannequin + outfit 描述，生成服装三视图
+   */
+  costume_views_generation: {
+    name: '服装三视图生成',
+    steps: [
+      {
+        type: 'costume_views_generation',
+        targetType: 'costume',
+        handler: handleCostumeViewsGeneration,
+        buildInput: createBuildInput([
+          'costumeId', 'projectId', 'imageModel', 'textModel', 'aspectRatio'
         ])
       }
     ]
@@ -1048,4 +1113,80 @@ module.exports = {
     handleBatchFrameGeneration,
     handleBatchSceneVideoGeneration
   }
+};
+
+// ============================================================
+// 影棚剧本拆分组装工作流
+// ============================================================
+
+WORKFLOW_DEFINITIONS['studio_components_extraction'] = {
+  name: '剧本拆解：环境与建筑',
+  steps: [
+    {
+      type: 'ai_execute',
+      targetType: 'studio',
+      displayName: '从剧本拆分环境与建筑',
+      handler: handleStudioComponentsExtract,
+      buildInput: createBuildInput([
+        'projectId', 'scriptId', 'textModel'
+      ])
+    }
+  ]
+};
+
+WORKFLOW_DEFINITIONS['studio_compose_from_script'] = {
+  name: '影棚组装：环境+建筑=影棚',
+  steps: [
+    {
+      type: 'ai_execute',
+      targetType: 'studio',
+      displayName: '从剧本组装影棚',
+      handler: handleStudioComposeFromScript,
+      buildInput: createBuildInput([
+        'projectId', 'scriptId', 'textModel'
+      ])
+    }
+  ]
+};
+
+/**
+ * 环境氛围图生成
+ */
+WORKFLOW_DEFINITIONS['environment_image_generation'] = {
+  name: '环境氛围图生成',
+  steps: [
+    {
+      type: 'environment_image_generation',
+      targetType: 'environment',
+      displayName: '环境氛围图生成',
+      handler: handleEnvironmentImageGeneration,
+      buildInput: createBuildInput([
+        'environmentId', 'environmentName', 'description',
+        'timeOfDay', 'weather', 'lighting', 'mood',
+        'imageModel', 'textModel',
+        { key: 'generationPrompt', from: ctx => ctx.generationPrompt || null }
+      ])
+    }
+  ]
+};
+
+/**
+ * 建筑结构图生成
+ */
+WORKFLOW_DEFINITIONS['building_image_generation'] = {
+  name: '建筑结构图生成',
+  steps: [
+    {
+      type: 'building_image_generation',
+      targetType: 'building',
+      displayName: '建筑结构图生成',
+      handler: handleBuildingImageGeneration,
+      buildInput: createBuildInput([
+        'buildingId', 'buildingName', 'description',
+        'interiorExterior', 'structureType',
+        'imageModel', 'textModel',
+        { key: 'generationPrompt', from: ctx => ctx.generationPrompt || null }
+      ])
+    }
+  ]
 };

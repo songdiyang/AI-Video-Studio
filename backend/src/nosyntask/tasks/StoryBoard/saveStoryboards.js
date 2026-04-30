@@ -295,10 +295,226 @@ async function handleSaveStoryboards(inputParams, onProgress) {
     }
   }
 
-  if (onProgress) onProgress(100);
-  console.log(`[SaveStoryboards] 完成，已保存 ${scenes.length} 个分镜，${scenesExtracted} 个场景，${propsExtracted} 个新道具`);
+  // ============================================
+  // T8 新增：聚合写 studios + studio_states + studio_prop_links
+  //   - 每个 location → 一个 studio（本体）
+  //   - 每个 (location, time_of_day, weather) 组合 → 一个 studio_state
+  //   - 道具按 studio 聚合 → studio_prop_links
+  //   - 回写 storyboards.idx 对应的 scene 的 studio_state_id（通过 storyboard_scenes 链接）
+  // ============================================
+  let studiosCreated = 0;
+  let studioStatesCreated = 0;
+  let studioPropLinkCount = 0;
+  const locationToStudioId = new Map();     // locationName -> studio.id
+  const studioStateKeyToId = new Map();     // `${studioId}|${timeOfDay}|${weather}` -> studio_state.id
 
-  return { saved: scenes.length, scenesExtracted, propsExtracted };
+  if (userId) {
+    try {
+      // 1) 汇总每个 location 的聚合信息
+      const locAggregate = new Map(); // locName -> { descriptions, timeOfDay, weather, lighting, mood, sceneIdxs:Set, states:Map<key,{timeOfDay,weather,lighting,mood,sceneIdxs:Set,description}> }
+      for (let i = 0; i < scenes.length; i++) {
+        const sc = scenes[i];
+        const loc = (sc.location || '').trim();
+        if (!loc) continue;
+        if (!locAggregate.has(loc)) {
+          locAggregate.set(loc, {
+            descriptions: [],
+            sceneIdxs: new Set(),
+            states: new Map()
+          });
+        }
+        const agg = locAggregate.get(loc);
+        agg.sceneIdxs.add(i);
+        if (sc.description) agg.descriptions.push(sc.description);
+
+        const timeOfDay = (sc.timeOfDay || sc.time_of_day || '').trim();
+        const weather = (sc.weather || '').trim();
+        const lighting = (sc.lighting || '').trim();
+        const mood = (sc.emotion || sc.mood || '').trim();
+        const stateKey = `${timeOfDay}|${weather}|${lighting}|${mood}`;
+        if (!agg.states.has(stateKey)) {
+          agg.states.set(stateKey, {
+            timeOfDay, weather, lighting, mood,
+            sceneIdxs: new Set(),
+            description: sc.description || ''
+          });
+        }
+        agg.states.get(stateKey).sceneIdxs.add(i);
+      }
+
+      // 2) upsert studios（本体）
+      if (locAggregate.size > 0) {
+        const existingStudios = await queryAll(
+          'SELECT id, name FROM studios WHERE project_id = ? AND user_id = ?',
+          [projectId, userId]
+        );
+        const existingStudioMap = new Map(existingStudios.map(s => [s.name, s.id]));
+
+        const newStudioRows = [];
+        for (const [locName, agg] of locAggregate.entries()) {
+          if (existingStudioMap.has(locName)) {
+            locationToStudioId.set(locName, existingStudioMap.get(locName));
+          } else {
+            newStudioRows.push([userId, projectId, locName, agg.descriptions[0] || '']);
+          }
+        }
+        if (newStudioRows.length > 0) {
+          const ret = await execute(
+            `INSERT INTO studios (user_id, project_id, name, description) VALUES ?`,
+            [newStudioRows]
+          );
+          const firstId = ret.insertId;
+          newStudioRows.forEach((row, idx) => {
+            locationToStudioId.set(row[2], firstId + idx);
+          });
+          studiosCreated = newStudioRows.length;
+        }
+        console.log(`[SaveStoryboards] studios 聚合：新增 ${studiosCreated} 个，共 ${locationToStudioId.size} 个`);
+      }
+
+      // 3) upsert studio_states（按 location x 时段/天气/光照/氛围）
+      const newStateRows = [];
+      const stateRowMeta = []; // 记录每行对应的 (studioId, key, sceneIdxs)
+      for (const [locName, agg] of locAggregate.entries()) {
+        const studioId = locationToStudioId.get(locName);
+        if (!studioId) continue;
+        for (const [key, st] of agg.states.entries()) {
+          const stateName = [
+            locName,
+            st.timeOfDay || null,
+            st.weather || null
+          ].filter(Boolean).join('·') || locName;
+          newStateRows.push([
+            userId, projectId, studioId, stateName,
+            st.description || null,
+            st.timeOfDay || null,
+            st.weather || null,
+            st.lighting || null,
+            st.mood || null
+          ]);
+          stateRowMeta.push({ studioId, key: `${studioId}|${key}`, sceneIdxs: st.sceneIdxs });
+        }
+      }
+
+      if (newStateRows.length > 0) {
+        // 简化：非追加模式下，新 script 运行时清掉本项目下的旧状态，再重建
+        if (!appendMode) {
+          await execute(
+            `DELETE FROM studio_states WHERE user_id = ? AND project_id = ? AND studio_id IN (?)`,
+            [userId, projectId, Array.from(locationToStudioId.values())]
+          ).catch(() => {});
+        }
+        const ret = await execute(
+          `INSERT INTO studio_states (user_id, project_id, studio_id, name, description, time_of_day, weather, lighting, mood) VALUES ?`,
+          [newStateRows]
+        );
+        const firstId = ret.insertId;
+        stateRowMeta.forEach((m, idx) => {
+          studioStateKeyToId.set(m.key, firstId + idx);
+        });
+        studioStatesCreated = newStateRows.length;
+        console.log(`[SaveStoryboards] studio_states 新增 ${studioStatesCreated} 条`);
+      }
+
+      // 4) studio_prop_links：沉淀的复用道具按 studio 聚合
+      if (propNameToId.size > 0) {
+        const studioPropSet = new Set(); // `${studioId}|${propId}`
+        for (const link of scenePropLinks) {
+          const sc = scenes[link.sceneIdx];
+          const loc = (sc?.location || '').trim();
+          const studioId = locationToStudioId.get(loc);
+          const propId = propNameToId.get(link.propName);
+          if (studioId && propId) studioPropSet.add(`${studioId}|${propId}`);
+        }
+        if (studioPropSet.size > 0) {
+          const linkRows = Array.from(studioPropSet).map(k => {
+            const [sid, pid] = k.split('|').map(Number);
+            return [sid, pid];
+          });
+          await execute(
+            `INSERT IGNORE INTO studio_prop_links (studio_id, prop_id) VALUES ?`,
+            [linkRows]
+          );
+          studioPropLinkCount = linkRows.length;
+          console.log(`[SaveStoryboards] studio_prop_links 写入 ${studioPropLinkCount} 条`);
+        }
+      }
+
+      // 5) 回写 storyboard_scenes.studio_state_id
+      //    需要：每个 storyboard idx → studio_state_id 映射
+      if (studioStateKeyToId.size > 0) {
+        const storyboardsRows = await queryAll(
+          'SELECT id, idx FROM storyboards WHERE script_id = ? ORDER BY idx',
+          [scriptId]
+        );
+        const idxToSbId2 = new Map();
+        for (const sb of storyboardsRows) idxToSbId2.set(sb.idx, sb.id);
+
+        // 每个 scene[i] → 对应 state_id
+        const sceneToStateId = new Map(); // sceneIdx -> stateId
+        for (let i = 0; i < scenes.length; i++) {
+          const sc = scenes[i];
+          const loc = (sc.location || '').trim();
+          const studioId = locationToStudioId.get(loc);
+          if (!studioId) continue;
+          const timeOfDay = (sc.timeOfDay || sc.time_of_day || '').trim();
+          const weather = (sc.weather || '').trim();
+          const lighting = (sc.lighting || '').trim();
+          const mood = (sc.emotion || sc.mood || '').trim();
+          const key = `${studioId}|${timeOfDay}|${weather}|${lighting}|${mood}`;
+          const stateId = studioStateKeyToId.get(key);
+          if (stateId) sceneToStateId.set(i, stateId);
+        }
+
+        // 通过 storyboard_scenes 链接表反查 scene_id，然后 UPDATE studio_state_id
+        // 旧 scene（scenes 表）通过 name=location 匹配
+        const locToOldSceneId = new Map();
+        const oldScenesRows = await queryAll(
+          'SELECT id, name FROM scenes WHERE project_id = ? AND user_id = ?',
+          [projectId, userId]
+        );
+        for (const row of oldScenesRows) locToOldSceneId.set(row.name, row.id);
+
+        const updatePairs = []; // [storyboard_id, scene_id, studio_state_id]
+        for (let i = 0; i < scenes.length; i++) {
+          const sc = scenes[i];
+          const loc = (sc.location || '').trim();
+          const oldSceneId = locToOldSceneId.get(loc);
+          const sbId = idxToSbId2.get(idxOffset + i);
+          const stateId = sceneToStateId.get(i);
+          if (oldSceneId && sbId && stateId) {
+            updatePairs.push([sbId, oldSceneId, stateId]);
+          }
+        }
+        if (updatePairs.length > 0) {
+          // 先确保 storyboard_scenes 有记录（可能之前已由 linkAllForScript 建好），再 UPDATE
+          for (const [sbId, sceneId, stateId] of updatePairs) {
+            await execute(
+              `INSERT INTO storyboard_scenes (storyboard_id, scene_id, studio_state_id)
+               VALUES (?, ?, ?)
+               ON DUPLICATE KEY UPDATE studio_state_id = VALUES(studio_state_id)`,
+              [sbId, sceneId, stateId]
+            );
+          }
+          console.log(`[SaveStoryboards] storyboard_scenes.studio_state_id 回写 ${updatePairs.length} 条`);
+        }
+      }
+    } catch (aggErr) {
+      console.error('[SaveStoryboards] studio/state/prop 聚合失败（不影响分镜保存）:', aggErr.message);
+    }
+  }
+
+  if (onProgress) onProgress(100);
+  console.log(`[SaveStoryboards] 完成，已保存 ${scenes.length} 个分镜，${scenesExtracted} 个场景，${propsExtracted} 个新道具，${studiosCreated} 个新场景(studio)，${studioStatesCreated} 个场景状态，${studioPropLinkCount} 条场景-道具关联`);
+
+  return {
+    saved: scenes.length,
+    scenesExtracted,
+    propsExtracted,
+    studiosCreated,
+    studioStatesCreated,
+    studioPropLinkCount
+  };
 }
 
 module.exports = handleSaveStoryboards;

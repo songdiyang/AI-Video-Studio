@@ -18,6 +18,7 @@ const STEP_NAMES: Record<string, string> = {
   save_storyboards: '保存分镜数据',
   character_extraction: '提取角色信息',
   scene_state_analysis: '分析场景状态',
+  studio_components_compose: '组装影棚组件',
   frame_generation: '生成首尾帧',
   single_frame_generation: '生成单帧'
 };

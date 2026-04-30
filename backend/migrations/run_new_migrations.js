@@ -312,6 +312,247 @@ async function runMigration() {
 
     console.log('[迁移 6] 完成 ✓\n');
 
+    // =============================================
+    // 迁移 7: add_studios.sql - 影棚实体
+    // =============================================
+    console.log('[迁移 7] add_studios.sql - 影棚实体与关联');
+    console.log('-------------------------------------------');
+
+    // 7.1 创建 studios 表
+    console.log('7.1 创建 studios 表...');
+    await connection.execute(`
+      CREATE TABLE IF NOT EXISTS studios (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        project_id INT NOT NULL,
+        name VARCHAR(128) NOT NULL,
+        description TEXT DEFAULT NULL,
+        cover_image_url VARCHAR(1024) DEFAULT NULL,
+        sort_order INT DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+        INDEX idx_user_project (user_id, project_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='影棚（场景与元素的地点聚合）'
+    `);
+    console.log('    ✓ studios 表已就绪');
+
+    // 7.2 scenes 表添加 studio_id 字段
+    console.log('7.2 添加 scenes.studio_id 字段...');
+    try {
+      await connection.execute(`
+        ALTER TABLE scenes ADD COLUMN studio_id INT DEFAULT NULL AFTER project_id
+      `);
+      console.log('    ✓ 成功添加 studio_id 字段');
+    } catch (err) {
+      if (err.code === 'ER_DUP_FIELDNAME') {
+        console.log('    - studio_id 字段已存在，跳过');
+      } else {
+        throw err;
+      }
+    }
+
+    console.log('7.3 创建 scenes.studio_id 索引与外键...');
+    try {
+      await connection.execute(`ALTER TABLE scenes ADD INDEX idx_studio (studio_id)`);
+      console.log('    ✓ 成功创建 idx_studio 索引');
+    } catch (err) {
+      if (err.code === 'ER_DUP_KEYNAME') {
+        console.log('    - idx_studio 索引已存在，跳过');
+      } else {
+        throw err;
+      }
+    }
+    try {
+      await connection.execute(`
+        ALTER TABLE scenes ADD CONSTRAINT fk_scenes_studio
+        FOREIGN KEY (studio_id) REFERENCES studios(id) ON DELETE SET NULL
+      `);
+      console.log('    ✓ 成功创建 fk_scenes_studio 外键');
+    } catch (err) {
+      if (err.code === 'ER_FK_DUP_NAME' || err.code === 'ER_DUP_KEYNAME' || err.errno === 1826 || err.errno === 1022) {
+        console.log('    - fk_scenes_studio 外键已存在，跳过');
+      } else {
+        throw err;
+      }
+    }
+
+    // 7.4 创建 studio_element_links 表
+    console.log('7.4 创建 studio_element_links 表...');
+    await connection.execute(`
+      CREATE TABLE IF NOT EXISTS studio_element_links (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        studio_id INT NOT NULL,
+        element_id INT NOT NULL,
+        sort_order INT DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (studio_id) REFERENCES studios(id) ON DELETE CASCADE,
+        FOREIGN KEY (element_id) REFERENCES scene_elements(id) ON DELETE CASCADE,
+        UNIQUE KEY uniq_studio_element (studio_id, element_id),
+        INDEX idx_studio (studio_id),
+        INDEX idx_element (element_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='影棚-场景元素关联'
+    `);
+    console.log('    ✓ studio_element_links 表已就绪');
+
+    console.log('[迁移 7] 完成 ✓\n');
+
+    // =============================================
+    // 迁移 8: add_environments_buildings.sql - 场景概念重构
+    // 新增 environments(1:1)、buildings(1:N) 独立资产
+    // 破坏性清理旧 storyboards/scenes 数据（用户已确认）
+    // =============================================
+    console.log('[迁移 8] add_environments_buildings.sql - 场景概念重构');
+    console.log('-------------------------------------------');
+
+    // 8.1 创建 environments 表
+    console.log('8.1 创建 environments 表...');
+    await connection.execute(`
+      CREATE TABLE IF NOT EXISTS environments (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        project_id INT NOT NULL,
+        name VARCHAR(128) NOT NULL,
+        description TEXT DEFAULT NULL,
+        time_of_day VARCHAR(64) DEFAULT NULL,
+        weather VARCHAR(64) DEFAULT NULL,
+        lighting VARCHAR(128) DEFAULT NULL,
+        mood VARCHAR(128) DEFAULT NULL,
+        image_url VARCHAR(1024) DEFAULT NULL,
+        generation_prompt TEXT DEFAULT NULL,
+        generation_status ENUM('pending','generating','completed','failed') NOT NULL DEFAULT 'pending',
+        sort_order INT DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+        INDEX idx_user_project (user_id, project_id),
+        INDEX idx_status (generation_status)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='环境资产库'
+    `);
+    console.log('    ✓ environments 表已就绪');
+
+    // 8.2 创建 buildings 表
+    console.log('8.2 创建 buildings 表...');
+    await connection.execute(`
+      CREATE TABLE IF NOT EXISTS buildings (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        project_id INT NOT NULL,
+        name VARCHAR(128) NOT NULL,
+        description TEXT DEFAULT NULL,
+        interior_exterior ENUM('interior','exterior','both') NOT NULL DEFAULT 'exterior',
+        structure_type VARCHAR(128) DEFAULT NULL,
+        image_url VARCHAR(1024) DEFAULT NULL,
+        generation_prompt TEXT DEFAULT NULL,
+        generation_status ENUM('pending','generating','completed','failed') NOT NULL DEFAULT 'pending',
+        sort_order INT DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+        INDEX idx_user_project (user_id, project_id),
+        INDEX idx_status (generation_status)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='建筑资产库'
+    `);
+    console.log('    ✓ buildings 表已就绪');
+
+    // 8.3 studios 表添加 environment_id 字段 + 索引 + 外键
+    console.log('8.3 添加 studios.environment_id 字段...');
+    try {
+      await connection.execute(`ALTER TABLE studios ADD COLUMN environment_id INT DEFAULT NULL AFTER project_id`);
+      console.log('    ✓ 成功添加 environment_id 字段');
+    } catch (err) {
+      if (err.code === 'ER_DUP_FIELDNAME') {
+        console.log('    - environment_id 字段已存在，跳过');
+      } else { throw err; }
+    }
+    try {
+      await connection.execute(`ALTER TABLE studios ADD INDEX idx_env (environment_id)`);
+      console.log('    ✓ 成功创建 idx_env 索引');
+    } catch (err) {
+      if (err.code === 'ER_DUP_KEYNAME') {
+        console.log('    - idx_env 索引已存在，跳过');
+      } else { throw err; }
+    }
+    try {
+      await connection.execute(`
+        ALTER TABLE studios ADD CONSTRAINT fk_studios_env
+        FOREIGN KEY (environment_id) REFERENCES environments(id) ON DELETE SET NULL
+      `);
+      console.log('    ✓ 成功创建 fk_studios_env 外键');
+    } catch (err) {
+      if (err.code === 'ER_FK_DUP_NAME' || err.code === 'ER_DUP_KEYNAME' || err.errno === 1826 || err.errno === 1022) {
+        console.log('    - fk_studios_env 外键已存在，跳过');
+      } else { throw err; }
+    }
+
+    // 8.4 创建 studio_building_links 表
+    console.log('8.4 创建 studio_building_links 表...');
+    await connection.execute(`
+      CREATE TABLE IF NOT EXISTS studio_building_links (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        studio_id INT NOT NULL,
+        building_id INT NOT NULL,
+        sort_order INT DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (studio_id) REFERENCES studios(id) ON DELETE CASCADE,
+        FOREIGN KEY (building_id) REFERENCES buildings(id) ON DELETE CASCADE,
+        UNIQUE KEY uk_studio_building (studio_id, building_id),
+        INDEX idx_studio (studio_id),
+        INDEX idx_building (building_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='场景-建筑关联'
+    `);
+    console.log('    ✓ studio_building_links 表已就绪');
+
+    // 8.5 破坏性清理（用户已确认）
+    console.log('8.5 破坏性清理 storyboard_scenes / storyboards / scene_element_links / scenes ...');
+    await connection.execute(`DELETE FROM storyboard_scenes`);
+    await connection.execute(`DELETE FROM storyboards`);
+    await connection.execute(`DELETE FROM scene_element_links`);
+    await connection.execute(`DELETE FROM scenes`);
+    console.log('    ✓ 历史分镜/场景数据已清空');
+
+    // 8.6 storyboard_scenes 加 studio_id 字段（scene_id 允许 NULL）
+    console.log('8.6 调整 storyboard_scenes 结构（scene_id -> NULL 可，新增 studio_id）...');
+    try {
+      await connection.execute(`ALTER TABLE storyboard_scenes MODIFY COLUMN scene_id INT NULL`);
+      console.log('    ✓ scene_id 已改为 NULL 允许');
+    } catch (err) {
+      // 已经允许 NULL，继续
+      console.log('    - scene_id 修改跳过（可能已允许 NULL）:', err.code || err.message);
+    }
+    try {
+      await connection.execute(`ALTER TABLE storyboard_scenes ADD COLUMN studio_id INT NULL AFTER scene_id`);
+      console.log('    ✓ 成功添加 studio_id 字段');
+    } catch (err) {
+      if (err.code === 'ER_DUP_FIELDNAME') {
+        console.log('    - studio_id 字段已存在，跳过');
+      } else { throw err; }
+    }
+    try {
+      await connection.execute(`ALTER TABLE storyboard_scenes ADD INDEX idx_studio_id (studio_id)`);
+      console.log('    ✓ 成功创建 idx_studio_id 索引');
+    } catch (err) {
+      if (err.code === 'ER_DUP_KEYNAME') {
+        console.log('    - idx_studio_id 索引已存在，跳过');
+      } else { throw err; }
+    }
+    try {
+      await connection.execute(`
+        ALTER TABLE storyboard_scenes ADD CONSTRAINT fk_sb_scenes_studio
+        FOREIGN KEY (studio_id) REFERENCES studios(id) ON DELETE CASCADE
+      `);
+      console.log('    ✓ 成功创建 fk_sb_scenes_studio 外键');
+    } catch (err) {
+      if (err.code === 'ER_FK_DUP_NAME' || err.code === 'ER_DUP_KEYNAME' || err.errno === 1826 || err.errno === 1022) {
+        console.log('    - fk_sb_scenes_studio 外键已存在，跳过');
+      } else { throw err; }
+    }
+
+    console.log('[迁移 8] 完成 ✓\n');
+
     console.log('========================================');
     console.log('所有迁移执行完成!');
     console.log('========================================');

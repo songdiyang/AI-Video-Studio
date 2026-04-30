@@ -29,9 +29,10 @@ router.get('/', authMiddleware, async (req, res) => {
 
   try {
     const scenes = await queryAll(
-      `SELECT s.*, p.name AS project_name 
+      `SELECT s.*, p.name AS project_name, st.name AS studio_name
        FROM scenes s 
        LEFT JOIN projects p ON s.project_id = p.id 
+       LEFT JOIN studios st ON st.id = s.studio_id
        WHERE s.user_id = ? 
        ORDER BY s.created_at DESC`,
       [userId]
@@ -60,9 +61,11 @@ router.get('/project/:projectId', authMiddleware, async (req, res) => {
     }
 
     let sql = `SELECT DISTINCT s.*,
-                      COALESCE(spb.binding_type, CASE WHEN s.project_id = ? THEN 'owner' ELSE NULL END) AS binding_type
+                      COALESCE(spb.binding_type, CASE WHEN s.project_id = ? THEN 'owner' ELSE NULL END) AS binding_type,
+                      st.name AS studio_name
                FROM scenes s
                LEFT JOIN scene_project_bindings spb ON spb.scene_id = s.id AND spb.project_id = ?
+               LEFT JOIN studios st ON st.id = s.studio_id
                WHERE (s.project_id = ? OR spb.project_id = ?)`;
     const params = [projectId, projectId, projectId, projectId];
 

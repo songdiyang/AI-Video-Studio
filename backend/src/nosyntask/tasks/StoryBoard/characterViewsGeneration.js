@@ -509,7 +509,10 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
       }
     }
   } else if (!isBaseModel && isStateGeneration && characterId) {
-    // ★ 非白膜状态生成：使用白膜设定图 (image_url) 作为参考
+    // ★ 非白膜状态生成：白膜设定图（身份锚）+ 服装三视图（服装锚）
+    const refUrls = [];
+
+    // 1) 白膜设定图
     const baseModelRow = await queryOne(
       `SELECT image_url FROM character_states 
        WHERE character_id = ? AND is_base_model = 1 AND image_url IS NOT NULL AND image_url != ''`,
@@ -518,11 +521,42 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
     if (baseModelRow?.image_url) {
       const designSheetUrl = resolveToInternalUrl(baseModelRow.image_url);
       if (designSheetUrl) {
-        userReferenceUrls = [designSheetUrl];
-        console.log('[CharacterViews] ✅ 非白膜状态生成：使用白膜设定图作为参考:', designSheetUrl);
+        refUrls.push(designSheetUrl);
+        console.log('[CharacterViews] ✅ 非白膜状态生成：已加白膜设定图:', designSheetUrl);
       }
-    } else {
-      console.log('[CharacterViews] 非白膜状态生成：白膜无设定图，将纯靠提示词生成');
+    }
+
+    // 2) 状态关联的 costume 三视图（若有）
+    if (stateId) {
+      const costumeRow = await queryOne(
+        `SELECT c.front_view_url, c.side_view_url, c.back_view_url, c.image_url
+         FROM character_states s
+         LEFT JOIN costumes c ON s.costume_id = c.id
+         WHERE s.id = ?`,
+        [stateId]
+      );
+      if (costumeRow) {
+        const costumeUrls = [costumeRow.front_view_url, costumeRow.side_view_url, costumeRow.back_view_url]
+          .filter(Boolean)
+          .map(url => resolveToInternalUrl(url))
+          .filter(Boolean);
+        if (costumeUrls.length > 0) {
+          refUrls.push(...costumeUrls);
+          console.log(`[CharacterViews] ✅ 非白膜状态生成：已加 ${costumeUrls.length} 张服装三视图作参考`);
+        } else if (costumeRow.image_url) {
+          // 服装无三视图但有主图，也能用
+          const costumeMain = resolveToInternalUrl(costumeRow.image_url);
+          if (costumeMain) {
+            refUrls.push(costumeMain);
+            console.log('[CharacterViews] ✅ 非白膜状态生成：已加服装主图作参考:', costumeMain);
+          }
+        }
+      }
+    }
+
+    userReferenceUrls = refUrls;
+    if (userReferenceUrls.length === 0) {
+      console.log('[CharacterViews] 非白膜状态生成：白膜无设定图且服装无图，纯靠提示词生成');
     }
   } else {
     console.log('[CharacterViews] 角色级别生成或无 characterId，跳过参考图查询');

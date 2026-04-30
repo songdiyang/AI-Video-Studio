@@ -300,10 +300,10 @@ const SceneDropdownSelector: React.FC<{
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="flex items-center gap-1 text-[var(--text-muted)] cursor-pointer hover:text-[var(--accent)] transition-colors text-xs group"
-        title="点击选择场景"
+        title="点击选择影棚"
       >
         <MapPin className="w-3 h-3" />
-        <span>{location || '选择场景'}</span>
+        <span>{location || '选择影棚'}</span>
         <ChevronDown className="w-2.5 h-2.5 opacity-60 group-hover:opacity-100 transition-opacity" />
       </button>
 
@@ -314,14 +314,14 @@ const SceneDropdownSelector: React.FC<{
             <input
               ref={inputRef}
               className="flex-1 bg-transparent text-xs text-[var(--text-primary)] placeholder-[var(--text-muted)] outline-none"
-              placeholder="搜索场景..."
+              placeholder="搜索影棚..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
           <div className="max-h-36 overflow-y-auto space-y-0.5">
             {filtered.length === 0 && !search.trim() && (
-              <div className="text-xs text-[var(--text-muted)] px-2 py-1">项目暂无场景资源</div>
+              <div className="text-xs text-[var(--text-muted)] px-2 py-1">项目暂无影棚资源</div>
             )}
             {filtered.map(s => (
               <button
@@ -340,7 +340,7 @@ const SceneDropdownSelector: React.FC<{
               onClick={() => selectScene(search.trim())}
               className="w-full text-left px-2 py-1 rounded text-xs text-[var(--accent)] hover:bg-[var(--accent)]/10 transition-colors flex items-center gap-1"
             >
-              <Plus className="w-3 h-3" /> 使用自定义场景 "{search.trim()}"
+              <Plus className="w-3 h-3" /> 使用自定义影棚 "{search.trim()}"
             </button>
           )}
         </div>
@@ -666,7 +666,7 @@ const DescriptionEditor: React.FC<{
         onChange={(e) => handleChange(e.target.value)}
         disabled={scene.isLocked}
         className="flex-1 w-full bg-[var(--bg-input)] border border-[var(--border-color)] rounded-lg p-3 text-sm text-[var(--text-primary)] resize-none focus:outline-none focus:border-[var(--accent)]"
-        placeholder="描述这个分镜的画面内容：场景、角色、动作、情绪、镜头等..."
+        placeholder="描述这个分镜的画面内容：影棚、角色、动作、情绪、镜头等..."
       />
       <div className="flex items-center justify-between">
         <span className="text-xs text-[var(--text-muted)]">

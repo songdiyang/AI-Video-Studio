@@ -138,6 +138,8 @@ export interface Scene {
   panorama_image_url?: string | null;
   tags: string;
   project_name?: string;
+  studio_id?: number | null;
+  studio_name?: string | null;
   spatial_layout?: SpatialLayout | null;
   camera_defaults?: CameraDefaults | null;
   source?: string;

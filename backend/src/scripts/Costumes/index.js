@@ -7,44 +7,42 @@
  * - PUT /api/costumes/:id - 更新服装
  * - DELETE /api/costumes/:id - 删除服装
  */
+const express = require('express');
 const { queryOne, queryAll, execute } = require('../../dbHelper');
 const { authMiddleware } = require('../../middleware');
+const { generationStartService, sendGenerationError } = require('../../modules/generation');
 
-module.exports = (router) => {
-  // GET /api/costumes - 获取项目的服装列表
+const router = express.Router();
+
+module.exports = router;
   router.get('/', authMiddleware, async (req, res) => {
     const userId = req.user.id;
     const { projectId, category, gender } = req.query;
 
-    if (!projectId) {
-      return res.status(400).json({ message: '缺少 projectId' });
-    }
-
     try {
-      // 验证用户是否属于该项目
-      const project = await queryOne(
-        'SELECT id FROM projects WHERE id = ? AND user_id = ?',
-        [projectId, userId]
-      );
+      let sql = `SELECT c.*, ch.name as character_name, ch.id as character_id
+                   FROM costumes c
+                   LEFT JOIN character_costumes cc ON c.id = cc.costume_id
+                   LEFT JOIN characters ch ON cc.character_id = ch.id
+                   WHERE c.user_id = ?`;
+      const params = [userId];
 
-      if (!project) {
-        return res.status(403).json({ message: '无权访问此项目的服装' });
+      if (projectId) {
+        sql += ' AND c.project_id = ?';
+        params.push(Number(projectId));
       }
 
-      let sql = 'SELECT * FROM costumes WHERE project_id = ?';
-      const params = [projectId];
-
       if (category) {
-        sql += ' AND category = ?';
+        sql += ' AND c.category = ?';
         params.push(category);
       }
 
       if (gender && gender !== 'all') {
-        sql += ' AND (gender = ? OR gender = "unisex")';
+        sql += ' AND (c.gender = ? OR c.gender = "unisex")';
         params.push(gender);
       }
 
-      sql += ' ORDER BY created_at DESC';
+      sql += ' ORDER BY c.created_at DESC';
 
       const costumes = await queryAll(sql, params);
       res.json({ costumes });
@@ -188,4 +186,29 @@ module.exports = (router) => {
       res.status(500).json({ message: '删除服装失败' });
     }
   });
-};
+
+  // POST /api/costumes/:id/generate-views - 生成服装三视图
+  router.post('/:id/generate-views', authMiddleware, async (req, res) => {
+    const userId = req.user.id;
+    const costumeId = Number(req.params.id);
+
+    try {
+      const result = await generationStartService.start({
+        operationKey: 'costume_views_generate',
+        rawInput: {
+          costumeId,
+          ...req.body
+        },
+        actor: { userId }
+      });
+
+      res.json(result.response || {
+        message: '服装三视图生成已启动',
+        jobId: result.jobId,
+        costumeId,
+        status: 'generating'
+      });
+    } catch (error) {
+      sendGenerationError(res, error, '生成服装三视图失败', '[Generate Costume Views]');
+    }
+  });

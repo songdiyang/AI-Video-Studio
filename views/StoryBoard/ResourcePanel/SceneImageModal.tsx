@@ -34,7 +34,7 @@ const SceneImageModal: React.FC<SceneImageModalProps> = ({
             <ModalHeader className="text-slate-100 font-bold">
               <div className="flex items-center gap-2">
                 <ImageIcon className="w-5 h-5 text-emerald-400" />
-                场景图片 - {scene?.name}
+                影棚图片 - {scene?.name}
                 {scene?.image_url && scene?.reverse_image_url && (
                   <span className="text-xs px-2 py-1 rounded-full bg-emerald-500/20 text-emerald-400 ml-2">
                     A/B 面已生成
@@ -47,7 +47,7 @@ const SceneImageModal: React.FC<SceneImageModalProps> = ({
               {scene?.image_url && (
                 <div className="mb-6">
                   <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-sm font-semibold text-slate-300">场景图片</h3>
+                    <h3 className="text-sm font-semibold text-slate-300">影棚图片</h3>
                     {scene.reverse_image_url && (
                       <span className="text-xs text-slate-400 flex items-center gap-1">
                         <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
@@ -123,7 +123,7 @@ const SceneImageModal: React.FC<SceneImageModalProps> = ({
 
               {/* 场景信息预览 */}
               <div className="mb-6 bg-slate-800/60 rounded-lg p-4 border border-slate-700/50">
-                <h3 className="text-sm font-semibold text-slate-300 mb-3">场景信息</h3>
+                <h3 className="text-sm font-semibold text-slate-300 mb-3">影棚信息</h3>
                 <div className="space-y-2 text-sm">
                   {scene?.description && (
                     <div>
@@ -166,7 +166,7 @@ const SceneImageModal: React.FC<SceneImageModalProps> = ({
                 <div className="flex items-center justify-center py-12">
                   <div className="text-center">
                     <div className="inline-block animate-spin rounded-full h-10 w-10 border-b-4 border-emerald-500 mb-4"></div>
-                    <p className="text-slate-400">正在生成场景图片...</p>
+                    <p className="text-slate-400">正在生成影棚图片...</p>
                     <p className="text-xs text-slate-400 mt-2">这可能需要几分钟时间</p>
                   </div>
                 </div>

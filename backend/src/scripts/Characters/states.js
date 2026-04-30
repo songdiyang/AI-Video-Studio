@@ -45,6 +45,37 @@ async function checkBaseModelReady(characterId) {
 }
 
 /**
+ * 服装就绪守卫：校验角色状态的关联服装是否已生成三视图
+ * 仅对有关联 costume_id 的非白膜状态进行检查
+ * 返回 { ready: boolean, reason?: string, costume?: object }
+ */
+async function checkCostumeReady(stateId) {
+  const state = await queryOne(
+    `SELECT id, is_base_model, costume_id FROM character_states WHERE id = ?`,
+    [stateId]
+  );
+  // 白膜状态或无服装关联的状态无需检查
+  if (!state || state.is_base_model || !state.costume_id) {
+    return { ready: true };
+  }
+  const costume = await queryOne(
+    `SELECT id, name, front_view_url, side_view_url, back_view_url, generation_status FROM costumes WHERE id = ?`,
+    [state.costume_id]
+  );
+  if (!costume) {
+    return { ready: false, reason: '关联的服装资源不存在，请重新创建或联系管理员' };
+  }
+  if (!costume.image_url && !costume.front_view_url) {
+    return {
+      ready: false,
+      reason: `服装「${costume.name}」的设定图尚未生成，请先到资产管理页的服装 Tab 中生成服装设定图，再生成角色状态图`,
+      costume,
+    };
+  }
+  return { ready: true, costume };
+}
+
+/**
  * 获取默认文本模型
  */
 async function getDefaultTextModel() {
@@ -936,6 +967,15 @@ module.exports = (router) => {
             message: baseCheck.reason,
             code: 'BASE_MODEL_NOT_READY',
             baseState: baseCheck.baseState || null,
+          });
+        }
+        // 检查关联服装是否已生成三视图
+        const costumeCheck = await checkCostumeReady(stateId);
+        if (!costumeCheck.ready) {
+          return res.status(409).json({
+            message: costumeCheck.reason,
+            code: 'COSTUME_NOT_READY',
+            costume: costumeCheck.costume || null,
           });
         }
       }

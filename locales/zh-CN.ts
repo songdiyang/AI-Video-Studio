@@ -952,7 +952,7 @@ const zhCN = {
       subtitle: '从剧本到成片，一站式 AI 漫剧创作',
       scriptStudio: {
         title: '智能剧本工作室',
-        desc: 'AI 辅助剧本创作，智能分镜建议',
+        desc: 'AI 辅助剧本创作，智能拆分建议',
       },
       storyboard: {
         title: '分镜管理系统',

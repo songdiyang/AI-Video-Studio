@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { getAuthToken } from '../../../services/auth';
+import type { Environment } from '../../../services/environments';
+import type { Building } from '../../../services/buildings';
 
 export interface Scene {
   id: number;
@@ -9,11 +11,16 @@ export interface Scene {
   lighting?: string;
   mood?: string;
   image_url?: string;
-  reverse_image_url?: string; // B 面图 URL
-  generation_prompt?: string; // A 面生成提示词
-  reverse_generation_prompt?: string; // B 面生成提示词
+  reverse_image_url?: string;
+  generation_prompt?: string;
+  reverse_generation_prompt?: string;
   generation_status?: string;
   tags?: string;
+  studio_id?: number | null;
+  studio_name?: string | null;
+  // 新场景概念：environment + buildings 聚合
+  _environment?: Environment | null;
+  _buildings?: Building[];
 }
 
 export const useSceneData = (projectId?: number | null, scriptId?: number | null) => {
@@ -21,22 +28,18 @@ export const useSceneData = (projectId?: number | null, scriptId?: number | null
   const [isLoadingScenes, setIsLoadingScenes] = useState(false);
 
   useEffect(() => {
-    if (projectId && scriptId) {
-      loadScenes();
+    if (projectId) {
+      loadStudios();
     }
   }, [projectId, scriptId]);
 
-  const loadScenes = async () => {
-    if (!projectId || !scriptId) {
-      console.log('[ResourcePanel] 缺少 projectId 或 scriptId，跳过加载场景');
-      return;
-    }
+  const loadStudios = async () => {
+    if (!projectId) return;
     
     setIsLoadingScenes(true);
     try {
       const token = getAuthToken();
-      // 强制传递 scriptId 给后端
-      const res = await fetch(`/api/scenes/project/${projectId}?scriptId=${scriptId}`, {
+      const res = await fetch(`/api/studios?projectId=${projectId}`, {
         headers: {
           ...(token ? { Authorization: `Bearer ${token}` } : {})
         }
@@ -44,8 +47,19 @@ export const useSceneData = (projectId?: number | null, scriptId?: number | null
 
       if (res.ok) {
         const data = await res.json();
-        setDbScenes(data.scenes || []);
-        console.log('[ResourcePanel] 加载了', data.scenes?.length || 0, '个场景');
+        const studios = (data.studios || []).map((s: any) => ({
+          id: s.id,
+          name: s.name,
+          description: s.description || '',
+          image_url: s.cover_image_url || null,
+          studio_id: s.id,
+          studio_name: s.name,
+          generation_status: 'pending',
+          _environment: s.environment || null,
+          _buildings: Array.isArray(s.buildings) ? s.buildings : [],
+        }));
+        setDbScenes(studios);
+        console.log('[ResourcePanel] 加载了', studios.length, '个场景（Studios）');
       }
     } catch (error) {
       console.error('[ResourcePanel] 加载场景失败:', error);
@@ -54,5 +68,5 @@ export const useSceneData = (projectId?: number | null, scriptId?: number | null
     }
   };
 
-  return { dbScenes, isLoadingScenes, loadScenes };
+  return { dbScenes, isLoadingScenes, loadScenes: loadStudios };
 };

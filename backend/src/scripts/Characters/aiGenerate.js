@@ -270,6 +270,7 @@ module.exports = (router) => {
 
       // --- b. INSERT costumes（如果有 outfit_appearance）---
       let costumeId = null;
+      let costumeJobId = null;
       if (outfitApp) {
         try {
           const costumeResult = await execute(
@@ -293,6 +294,19 @@ module.exports = (router) => {
             `INSERT INTO character_costumes (character_id, costume_id, is_equipped) VALUES (?, ?, 1)`,
             [characterId, costumeId]
           );
+
+          // ★ 并行启动服装三视图生成（基于通用 mannequin，不依赖角色白膜）
+          try {
+            const costumeJob = await generationStartService.start({
+              operationKey: 'costume_views_generate',
+              rawInput: { costumeId, imageModel, textModel },
+              actor: { userId }
+            });
+            costumeJobId = costumeJob.jobId;
+            console.log('[AI Generate Commit] 服装三视图生成已启动 costumeId=%s jobId=%s', costumeId, costumeJobId);
+          } catch (viewsErr) {
+            console.warn('[AI Generate Commit] 服装三视图启动失败，用户可手动重试:', viewsErr.message);
+          }
         } catch (costumeErr) {
           console.warn('[AI Generate Commit] 创建服装资产失败，跳过:', costumeErr.message);
         }
@@ -327,6 +341,7 @@ module.exports = (router) => {
         costumeId,
         baseStateId,
         jobId: jobResult.jobId,
+        costumeJobId,
         followUp: {
           pendingCostumeState: !!costumeId,
           api: costumeId ? `/api/characters/${characterId}/generate-default-costume-state` : null,

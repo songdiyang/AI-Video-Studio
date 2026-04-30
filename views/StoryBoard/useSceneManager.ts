@@ -836,7 +836,7 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
       });
 
       if (!res.ok) {
-        throw new Error('保存角色/场景失败');
+        throw new Error('保存角色/影棚失败');
       }
       return true;
     } catch (error: any) {
@@ -845,7 +845,7 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
         s.id === id ? { ...s, characters: previousScene.characters, location: previousScene.location } : s
       ));
       console.error('保存角色/场景失败:', error);
-      showToast('保存角色/场景失败，请稍后重试', 'error');
+      showToast('保存角色/影棚失败，请稍后重试', 'error');
       return false;
     }
   };

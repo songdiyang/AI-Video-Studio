@@ -574,7 +574,12 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
       await loadStates();
       pollGenerationStatus(state.id);
     } catch (error: any) {
-      showToast(error.message || '生成失败', 'error');
+      // 服装未就绪时给出引导提示
+      if (error?.code === 'COSTUME_NOT_READY') {
+        showToast(error.message || '服装设定图尚未生成', 'warning');
+      } else {
+        showToast(error.message || '生成失败', 'error');
+      }
       setGeneratingId(null);
     }
   };

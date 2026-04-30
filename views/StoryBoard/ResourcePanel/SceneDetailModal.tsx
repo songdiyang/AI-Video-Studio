@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Button, Chip, Textarea } from '@heroui/react';
-import { MapPin, Wand2, Loader2, Sparkles, ChevronDown, ChevronUp, Pencil } from 'lucide-react';
+import { MapPin, Wand2, Loader2, Sparkles, ChevronDown, ChevronUp, Pencil, Cloud, Building2 } from 'lucide-react';
 import { getAuthToken } from '../../../services/auth';
 import { generateSceneImagePrompt } from '../../../services/assets';
 import SceneElementsPanel from './SceneElementsPanel';
+import type { Environment } from '../../../services/environments';
+import type { Building } from '../../../services/buildings';
 
 interface Scene {
   id: number;
@@ -19,6 +21,10 @@ interface Scene {
   tags?: string;
   source?: string;
   generation_status?: string;
+  studio_id?: number | null;
+  studio_name?: string | null;
+  _environment?: Environment | null;
+  _buildings?: Building[];
 }
 
 interface SceneDetailModalProps {
@@ -157,7 +163,17 @@ const SceneDetailModal: React.FC<SceneDetailModalProps> = ({
               </div>
               <div className="flex-1">
                 <h3 className="text-xl font-bold text-slate-100">{scene.name}</h3>
-                <div className="flex items-center gap-2 mt-1">
+                <div className="flex items-center gap-2 mt-1 flex-wrap">
+                  {scene.studio_name && (
+                    <Chip
+                      size="sm"
+                      variant="flat"
+                      className="bg-violet-500/10 text-violet-300"
+                      title="所属影棚"
+                    >
+                      🎬 {scene.studio_name}
+                    </Chip>
+                  )}
                   {scene.source && (
                     <Chip size="sm" variant="flat" className="bg-slate-700/50 text-slate-400">
                       {scene.source === 'ai_extracted' ? 'AI提取' : '本地'}
@@ -222,12 +238,44 @@ const SceneDetailModal: React.FC<SceneDetailModalProps> = ({
                   </div>
                 )}
 
+                {/* 环境 / 建筑摘要 */}
+                {(scene._environment || (scene._buildings && scene._buildings.length > 0)) && (
+                  <div className="bg-slate-800/60 rounded-lg p-4 border border-slate-700/50 space-y-3">
+                    <h4 className="text-sm font-bold text-slate-300 flex items-center gap-2">
+                      <span className="w-1 h-4 bg-sky-500 rounded"></span>
+                      影棚组件
+                    </h4>
+                    {scene._environment && (
+                      <div className="flex items-center gap-2">
+                        <Cloud className="w-4 h-4 text-sky-400 shrink-0" />
+                        <span className="text-xs text-slate-400">环境</span>
+                        <Chip size="sm" variant="flat" className="bg-sky-500/10 text-sky-300">
+                          {scene._environment.name}
+                        </Chip>
+                      </div>
+                    )}
+                    {scene._buildings && scene._buildings.length > 0 && (
+                      <div className="flex items-start gap-2">
+                        <Building2 className="w-4 h-4 text-amber-400 mt-0.5 shrink-0" />
+                        <span className="text-xs text-slate-400 pt-0.5">建筑</span>
+                        <div className="flex flex-wrap gap-1.5">
+                          {scene._buildings.map((b) => (
+                            <Chip key={b.id} size="sm" variant="flat" className="bg-amber-500/10 text-amber-300">
+                              {b.name}
+                            </Chip>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* 场景描述 */}
                 {scene.description && (
                   <div className="bg-slate-800/60 rounded-lg p-4 border border-slate-700/50">
                     <h4 className="text-sm font-bold text-slate-300 mb-2 flex items-center gap-2">
                       <span className="w-1 h-4 bg-slate-500 rounded"></span>
-                      场景描述
+                      影棚描述
                     </h4>
                     <p className="text-sm text-slate-400 leading-relaxed whitespace-pre-wrap">
                       {scene.description}
@@ -302,7 +350,7 @@ const SceneDetailModal: React.FC<SceneDetailModalProps> = ({
                   <div className="bg-blue-500/5 rounded-lg p-4 border border-blue-500/20">
                     <h4 className="text-sm font-bold text-slate-300 mb-3 flex items-center gap-2">
                       <Wand2 className="w-4 h-4 text-blue-400" />
-                      生成场景图片
+                      生成影棚图片
                     </h4>
                     <div className="space-y-3">
                       {imageModel ? (
@@ -321,7 +369,7 @@ const SceneDetailModal: React.FC<SceneDetailModalProps> = ({
                         >
                           <span className="flex items-center gap-2 text-sm font-medium text-slate-300">
                             <Pencil className="w-3.5 h-3.5 text-blue-400" />
-                            场景图像提示词
+                            影棚图像提示词
                             {hasAnyPrompt && (
                               <span className="text-xs text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded">
                                 已编辑
@@ -421,7 +469,7 @@ const SceneDetailModal: React.FC<SceneDetailModalProps> = ({
                       )}
 
                       {!textModel && !hasAnyPrompt && (
-                        <p className="text-xs text-amber-500 text-center">请先选择文本模型，生成图片前将自动为您生成场景提示词</p>
+                        <p className="text-xs text-amber-500 text-center">请先选择文本模型，生成图片前将自动为您生成影棚提示词</p>
                       )}
 
                       {/* 最终：生成场景图片 */}
@@ -440,7 +488,7 @@ const SceneDetailModal: React.FC<SceneDetailModalProps> = ({
                         {generating || isGenerating ? '生成图片中...' :
                          generatingPrompt ? '生成提示词中...' :
                          promptReady ? '确认提示词并生成图片' :
-                         '生成场景图片'}
+                         '生成影棚图片'}
                       </Button>
                     </div>
                   </div>

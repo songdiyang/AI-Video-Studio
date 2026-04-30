@@ -431,8 +431,8 @@ AI 生成剧本（通过工作流执行）
 ### script_only - 剧本生成
 **参数：** \`title, description, style, length, textModel, projectId, episodeNumber\`
 
-### storyboard_generation - 智能分镜
-自动生成分镜 + 提取角色 + 分析场景状态（4步骤，3次AI调用，支持并行）
+### storyboard_generation - 智能拆分
+自动生成分镜 + 提取角色 + 分析场景状态 + 组装影棚（5步骤，支持并行）
 
 **参数：** \`scriptContent, scriptTitle, textModel, scriptId, projectId\`
 

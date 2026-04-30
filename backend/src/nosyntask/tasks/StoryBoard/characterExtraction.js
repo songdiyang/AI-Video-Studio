@@ -97,11 +97,13 @@ ${contentForAnalysis}
 **外貌分层描述要求 - 极其重要：**
 角色的外貌必须分为三层（身体/服装/手持道具），这是为了先生成白膜基础体，再按状态叠加服装与道具：
 
-1. base_appearance（白膜体貌 - 不可更换的身体特征）：
-   - 必须明确描述：年龄段、性别、身高体型、肤色
+1. base_appearance（白膜体貌 - 不可更换的身体特征，作为所有状态的生成基准）：
+   - 必须明确描述：初始年龄段（如幼年/少年/青年）、性别、身高体型
    - 必须明确描述：发型（长度/颜色/样式）、瞳色、眼型、脸型、五官特征
    - 必须描述：永久身体标记（疤痕、胎记、纹身等）
-   - 绝对不能包含任何服装、配饰、装备、手持道具等可更换物品的描述
+   - **绝对不能包含任何服装、配饰、装备、手持道具等可更换物品的描述**
+   - **绝对不能包含任何临时性污垢、泥土、灰尘、湿身、血迹等可清洁/可恢复的状态描述**——这些属于可叠加的「效果状态」，不属于白膜
+   - **注意：白膜的年龄是角色的基准初始年龄。如果剧本中该角色在不同阶段有不同的年龄/身高体型，这些变化属于「时间状态」，不要写入白膜，而是在 time_states 中体现**
 
 2. outfit_appearance（服装装饰 - 可更换的穿戴物品）：
    - 必须明确描述服装的具体款式、颜色、材质、层次（内衣/外衣/披风等）
@@ -121,14 +123,22 @@ ${contentForAnalysis}
    - 如果剧本中该角色未明确手持任何物品，返回空字符串 ""
    - 多个道具用中文逗号分隔，如："长剑，水囊"
 
+5. time_states（时间状态变化 - 可选，如果剧本中角色有明显年龄/体型变化）：
+   - 只收录剧本中明确出现的、与白膜初始状态不同的年龄阶段
+   - 每个时间状态包含：age_stage（童年/少年/青年/中年/老年）、height_change（身高变化描述，如"长高到180cm"）、body_change（体型变化描述，如"变得健壮"）
+   - 如果剧本中角色没有年龄变化，返回空数组 []
+
 请严格按以下 JSON 格式返回：
 [
   {
     "name": "角色名",
-    "base_appearance": "白膜体貌描述（年龄、性别、体型、肤色、发型瞳色、五官等不可更换的身体特征）",
+    "base_appearance": "白膜体貌描述（初始年龄、性别、体型、肤色、发型瞳色、五官等不可更换的身体特征）",
     "outfit_appearance": "服装装饰描述（服装款式/颜色/材质、穿戴类配饰、鞋子等）",
     "held_props": "手持道具描述（剧本中该角色手里拿着/抱着/携带的可拆离物品，如剑、书本、胡萝卜等，没有则填空字符串）",
     "appearance": "完整外貌描述（白膜体貌 + 服装装饰的自然组合，不含手持道具）",
+    "time_states": [
+      {"age_stage": "少年", "height_change": "长高到150cm", "body_change": "体型变得修长"}
+    ],
     "personality": "性格描述（性格特点、行为习惯等）",
     "description": "角色简介（背景、身份、在故事中的作用等）"
   }
@@ -199,8 +209,8 @@ ${contentForAnalysis}
 
   if (onProgress) onProgress(80);
 
-  // 解析角色分层外貌：确保 base_appearance / outfit_appearance / held_props 存在
-  // 兼容旧版 AI 输出（可能不包含 base_appearance / outfit_appearance / held_props）
+  // 解析角色分层外貌：确保 base_appearance / outfit_appearance / held_props / time_states 存在
+  // 兼容旧版 AI 输出（可能不包含 base_appearance / outfit_appearance / held_props / time_states）
   for (const character of characters) {
     if (!character.base_appearance && character.appearance) {
       // 旧版 AI 输出没有分层，直接使用完整 appearance 作为兜底
@@ -212,6 +222,9 @@ ${contentForAnalysis}
     }
     if (!character.appearance) {
       character.appearance = [character.base_appearance, character.outfit_appearance].filter(Boolean).join('；') || '';
+    }
+    if (!Array.isArray(character.time_states)) {
+      character.time_states = [];
     }
   }
 
@@ -287,6 +300,14 @@ ${contentForAnalysis}
                 `UPDATE character_states SET outfit = ?, appearance = ?, held_props = ? WHERE character_id = ? AND is_base_model = 0 AND name = '默认服装'`,
                 [character.outfit_appearance || '', character.appearance || '', character.held_props || '', existingId]
               );
+              // 查询默认服装状态的 ID，供后续 costume 关联使用
+              const defaultState = await queryOne(
+                `SELECT id FROM character_states WHERE character_id = ? AND is_base_model = 0 AND name = '默认服装' LIMIT 1`,
+                [existingId]
+              );
+              if (defaultState) {
+                character.defaultStateId = defaultState.id;
+              }
             } catch (stateErr) {
               console.warn('[CharacterExtraction] 更新角色白膜/服装状态失败:', character.name, stateErr.message);
             }
@@ -321,17 +342,99 @@ ${contentForAnalysis}
           );
 
           // 创建默认服装状态：outfit 使用 outfit_appearance，held_props 使用剧本拆出的手持道具
-          await execute(
+          const costumeStateResult = await execute(
             `INSERT INTO character_states (
               character_id, is_base_model, name, description, appearance, outfit, held_props, gender, is_active, generation_status, state_category
-            ) VALUES (?, 0, '默认服装', '角色默认服装状态', ?, ?, ?, ?, 0, 'idle', '"costume"')`,
+            ) VALUES (?, 0, '默认服装', '角色默认服装状态', ?, ?, ?, ?, 0, 'idle', 'costume')`,
             [character.id, character.appearance || '', character.outfit_appearance || '', character.held_props || '', gender]
           );
+          character.defaultStateId = costumeStateResult.insertId;
 
-          console.log('[CharacterExtraction] 新增角色:', character.name, '(含白膜+默认服装状态+手持道具)');
+          // 创建时间状态：如果剧本中有年龄/体型变化
+          if (character.time_states && character.time_states.length > 0) {
+            for (const ts of character.time_states) {
+              const timeAppearance = [
+                character.base_appearance,
+                ts.height_change || '',
+                ts.body_change || ''
+              ].filter(Boolean).join('；');
+              await execute(
+                `INSERT INTO character_states (
+                  character_id, is_base_model, name, description, appearance, age_stage, gender, is_active, generation_status, state_category
+                ) VALUES (?, 0, ?, ?, ?, ?, ?, 0, 'idle', 'time')`,
+                [
+                  character.id,
+                  `${ts.age_stage || '时间变化'}`,
+                  `角色在${ts.age_stage || '不同阶段'}时的体貌状态`,
+                  timeAppearance || character.base_appearance || '',
+                  ts.age_stage || '',
+                  gender
+                ]
+              );
+            }
+            console.log('[CharacterExtraction] 创建时间状态:', character.name, character.time_states.length, '个');
+          }
+
+          console.log('[CharacterExtraction] 新增角色:', character.name, '(含白膜+默认服装状态+手持道具+时间状态)');
         }
       } catch (dbError) {
         console.error('[CharacterExtraction] 保存角色失败:', character.name, dbError);
+      }
+    }
+
+    // === 为角色创建/更新服装资源（costumes）===
+    for (const character of characters) {
+      if (!character.id || !character.outfit_appearance) continue;
+      try {
+        // 检查角色是否已有 costume 关联
+        const existingLink = await queryOne(
+          `SELECT cc.costume_id FROM character_costumes cc WHERE cc.character_id = ? LIMIT 1`,
+          [character.id]
+        );
+        if (existingLink) {
+          // 更新现有 costume 的描述
+          await execute(
+            `UPDATE costumes SET description = ?, outfit_prompt = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+            [character.outfit_appearance, character.outfit_appearance, existingLink.costume_id]
+          );
+          // 将 costume_id 关联到默认服装状态
+          if (character.defaultStateId) {
+            await execute(
+              `UPDATE character_states SET costume_id = ? WHERE id = ?`,
+              [existingLink.costume_id, character.defaultStateId]
+            );
+          }
+        } else {
+          // 创建新 costume
+          const costumeResult = await execute(
+            `INSERT INTO costumes (user_id, project_id, name, description, category, gender, outfit_prompt, generation_status)
+             VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')`,
+            [
+              userId,
+              projectId,
+              `${character.name}的默认服装`,
+              character.outfit_appearance,
+              '日常',
+              character.gender || 'unisex',
+              character.outfit_appearance
+            ]
+          );
+          // 建立角色与服装的关联
+          await execute(
+            `INSERT INTO character_costumes (character_id, costume_id, is_equipped) VALUES (?, ?, 1)`,
+            [character.id, costumeResult.insertId]
+          );
+          // 将 costume_id 关联到默认服装状态
+          if (character.defaultStateId) {
+            await execute(
+              `UPDATE character_states SET costume_id = ? WHERE id = ?`,
+              [costumeResult.insertId, character.defaultStateId]
+            );
+          }
+          console.log('[CharacterExtraction] 创建服装资源:', character.name, costumeResult.insertId);
+        }
+      } catch (costumeErr) {
+        console.warn('[CharacterExtraction] 创建服装资源失败:', character.name, costumeErr.message);
       }
     }
   } else {

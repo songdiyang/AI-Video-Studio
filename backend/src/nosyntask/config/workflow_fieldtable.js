@@ -213,6 +213,48 @@ module.exports = {
     description: '环境描述',
     category: 'scene'
   },
+  environmentId: {
+    from: 'environmentId',
+    defaultValue: null,
+    description: '环境资产 ID',
+    category: 'scene'
+  },
+  environmentName: {
+    from: 'environmentName',
+    defaultValue: null,
+    description: '环境名称',
+    category: 'scene'
+  },
+  buildingId: {
+    from: 'buildingId',
+    defaultValue: null,
+    description: '建筑资产 ID',
+    category: 'scene'
+  },
+  buildingName: {
+    from: 'buildingName',
+    defaultValue: null,
+    description: '建筑名称',
+    category: 'scene'
+  },
+  interiorExterior: {
+    from: 'interiorExterior',
+    defaultValue: 'exterior',
+    description: '室内/室外（interior/exterior/both）',
+    category: 'scene'
+  },
+  structureType: {
+    from: 'structureType',
+    defaultValue: null,
+    description: '建筑结构类型',
+    category: 'scene'
+  },
+  generationPrompt: {
+    from: 'generationPrompt',
+    defaultValue: null,
+    description: 'AI 生成的图片提示词（已有则跳过生成）',
+    category: 'generation'
+  },
   lighting: {
     from: 'lighting',
     defaultValue: null,
@@ -223,6 +265,18 @@ module.exports = {
     from: 'mood',
     defaultValue: null,
     description: '氛围描述',
+    category: 'scene'
+  },
+  timeOfDay: {
+    from: 'timeOfDay',
+    defaultValue: null,
+    description: '时间段（白天/夜晚/黄昏等）',
+    category: 'scene'
+  },
+  weather: {
+    from: 'weather',
+    defaultValue: null,
+    description: '天气状况（晴天/阴天/雨天等）',
     category: 'scene'
   },
   scenes: {
@@ -548,6 +602,16 @@ module.exports = {
     defaultValue: null,
     description: '道具图片 URL',
     category: 'prop'
+  },
+
+  // ================================================================
+  //  服装相关 (Costume)
+  // ================================================================
+  costumeId: {
+    from: 'costumeId',
+    defaultValue: null,
+    description: '服装 ID',
+    category: 'costume'
   },
 
   // ================================================================

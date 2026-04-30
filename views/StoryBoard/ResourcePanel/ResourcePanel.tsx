@@ -18,6 +18,7 @@ import { useResourceModals } from './useResourceModals';
 import { Character } from './types';
 import { getAuthToken } from '../../../services/auth';
 import { deleteCharacter, uploadCharacterImage } from '../../../services/assets';
+import { extractStudioComponentsFromScript, composeStudiosFromScript } from '../../../services/studios';
 import { useToast } from '../../../contexts/ToastContext';
 import { useConfirm } from '../../../contexts/ConfirmContext';
 import { useWorkflowTargetMonitor } from '../hooks/useWorkflowTargetMonitor';
@@ -84,6 +85,10 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
   const [isSceneDetailModalOpen, setIsSceneDetailModalOpen] = useState(false);
   const [isSceneImageModalOpen, setIsSceneImageModalOpen] = useState(false);
 
+  // 两阶段 AI 工作流 loading 状态
+  const [isExtractingComponents, setIsExtractingComponents] = useState(false);
+  const [isComposingStudios, setIsComposingStudios] = useState(false);
+
   // 自由添加资产弹窗
   const [createAssetType, setCreateAssetType] = useState<CreateAssetType | null>(null);
   const handleOpenCreate = (type: CreateAssetType) => {
@@ -100,7 +105,7 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
       showToast('角色已创建', 'success');
     } else if (createAssetType === 'scene') {
       await loadScenes();
-      showToast('场景已创建', 'success');
+      showToast('影棚已创建', 'success');
     }
   };
 
@@ -145,10 +150,10 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
     isActive: true,
     onCompleted: async (job) => {
       await loadScenes();
-      showToast(`场景图片生成完成：${job.input_params?.sceneName || '场景'}`, 'success');
+      showToast(`影棚图片生成完成：${job.input_params?.sceneName || '影棚'}`, 'success');
     },
     onFailed: async (job) => {
-      showToast(`场景图片生成失败：${job.input_params?.sceneName || '场景'}`, 'error');
+      showToast(`影棚图片生成失败：${job.input_params?.sceneName || '影棚'}`, 'error');
     }
   });
 
@@ -310,7 +315,7 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
       if (!res.ok) {
         if (res.status === 409 && data.jobId) {
           await sceneImageMonitor.refreshNow();
-          showToast('已恢复该场景正在执行的生成任务', 'info');
+          showToast('已恢复该影棚正在执行的生成任务', 'info');
           return;
         }
 
@@ -323,8 +328,40 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
       await sceneImageMonitor.refreshNow();
     } catch (error: any) {
       console.error('[ResourcePanel] 生成场景图片失败:', error);
-      showToast('生成场景图片失败: ' + error.message, 'error');
+      showToast('生成影棚图片失败: ' + error.message, 'error');
       throw error;
+    }
+  };
+
+  const handleExtractStudioComponents = async () => {
+    if (!projectId) { showToast('请先选择项目', 'warning'); return; }
+    if (!scriptId) { showToast('请先选择剧本', 'warning'); return; }
+    if (!textModel) { showToast('请先选择文本模型', 'warning'); return; }
+    setIsExtractingComponents(true);
+    try {
+      const res = await extractStudioComponentsFromScript({ projectId, scriptId, textModel });
+      showToast(res.message || '已启动拆分影棚组件', 'success');
+      setTimeout(() => { loadScenes(); }, 1500);
+    } catch (error: any) {
+      showToast('启动失败: ' + (error?.message || '未知错误'), 'error');
+    } finally {
+      setIsExtractingComponents(false);
+    }
+  };
+
+  const handleComposeStudiosFromScript = async () => {
+    if (!projectId) { showToast('请先选择项目', 'warning'); return; }
+    if (!scriptId) { showToast('请先选择剧本', 'warning'); return; }
+    if (!textModel) { showToast('请先选择文本模型', 'warning'); return; }
+    setIsComposingStudios(true);
+    try {
+      const res = await composeStudiosFromScript({ projectId, scriptId, textModel });
+      showToast(res.message || '已启动拼接影棚', 'success');
+      setTimeout(() => { loadScenes(); }, 1500);
+    } catch (error: any) {
+      showToast('启动失败: ' + (error?.message || '未知错误'), 'error');
+    } finally {
+      setIsComposingStudios(false);
     }
   };
 
@@ -369,7 +406,7 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
           <>
             {isLoadingScenes ? (
               <div className="text-center py-8 text-(--text-muted)">
-                <p className="text-sm">加载场景中...</p>
+                <p className="text-sm">加载影棚中...</p>
               </div>
             ) : (
               <LocationsTab
@@ -382,6 +419,10 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
                   handleShowSceneImageModal(scene);
                 }}
                 onCreate={() => handleOpenCreate('scene')}
+                onExtractComponents={scriptId ? handleExtractStudioComponents : undefined}
+                onComposeFromScript={scriptId ? handleComposeStudiosFromScript : undefined}
+                isExtracting={isExtractingComponents}
+                isComposing={isComposingStudios}
               />
             )}
           </>

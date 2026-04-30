@@ -40,6 +40,19 @@ async function requireCharacterForUser(characterId, userId) {
   return character;
 }
 
+async function requireCostumeForUser(costumeId, userId) {
+  const costume = await queryOne(
+    'SELECT * FROM costumes WHERE id = ? AND user_id = ?',
+    [costumeId, userId]
+  );
+
+  if (!costume) {
+    throw new HttpError(404, '服装不存在或无权访问');
+  }
+
+  return costume;
+}
+
 async function requireSceneForUser(sceneId, userId) {
   const scene = await queryOne(
     'SELECT * FROM scenes WHERE id = ? AND user_id = ?',
@@ -124,14 +137,95 @@ async function listEnabledSceneElementLinks(sceneId) {
   );
 }
 
+async function requireStudioForUser(studioId, userId) {
+  const studio = await queryOne(
+    'SELECT * FROM studios WHERE id = ? AND user_id = ?',
+    [studioId, userId]
+  );
+
+  if (!studio) {
+    throw new HttpError(404, '场景不存在或无权访问');
+  }
+
+  return studio;
+}
+
+async function requireEnvironmentForUser(environmentId, userId) {
+  const env = await queryOne(
+    'SELECT * FROM environments WHERE id = ? AND user_id = ?',
+    [environmentId, userId]
+  );
+
+  if (!env) {
+    throw new HttpError(404, '环境不存在或无权访问');
+  }
+
+  return env;
+}
+
+async function requireBuildingForUser(buildingId, userId) {
+  const building = await queryOne(
+    'SELECT * FROM buildings WHERE id = ? AND user_id = ?',
+    [buildingId, userId]
+  );
+
+  if (!building) {
+    throw new HttpError(404, '建筑不存在或无权访问');
+  }
+
+  return building;
+}
+
+async function listStudioBuildings(studioId) {
+  return queryAll(
+    `SELECT b.id, b.name, b.description, b.interior_exterior, b.structure_type,
+            b.image_url, b.generation_status, l.sort_order
+     FROM studio_building_links l
+     JOIN buildings b ON b.id = l.building_id
+     WHERE l.studio_id = ?
+     ORDER BY l.sort_order ASC, l.id ASC`,
+    [studioId]
+  );
+}
+
+async function getStudioEnvironment(studioId) {
+  return queryOne(
+    `SELECT e.id, e.name, e.description, e.time_of_day, e.weather, e.lighting, e.mood,
+            e.image_url, e.generation_status
+     FROM studios s
+     JOIN environments e ON e.id = s.environment_id
+     WHERE s.id = ?`,
+    [studioId]
+  ) || null;
+}
+
+async function listStudioElementLinks(studioId) {
+  return queryAll(
+    `SELECT l.element_id, l.sort_order,
+            e.name, e.category, e.description, e.image_url, e.generation_status
+     FROM studio_element_links l
+     JOIN scene_elements e ON e.id = l.element_id
+     WHERE l.studio_id = ?
+     ORDER BY l.sort_order ASC, l.id ASC`,
+    [studioId]
+  );
+}
+
 module.exports = {
   requireProjectForUser,
   requireScriptForUser,
   requireCharacterForUser,
+  requireCostumeForUser,
   requireSceneForUser,
   listScenesForProject,
   requireStoryboardForUser,
   requireStateForUser,
   requireSceneElementForUser,
-  listEnabledSceneElementLinks
+  listEnabledSceneElementLinks,
+  requireStudioForUser,
+  requireEnvironmentForUser,
+  requireBuildingForUser,
+  listStudioBuildings,
+  getStudioEnvironment,
+  listStudioElementLinks
 };

@@ -9,7 +9,7 @@ interface TabButtonsProps {
 const TabButtons: React.FC<TabButtonsProps> = ({ activeTab, onTabChange }) => {
   const tabs: { key: TabType; label: string }[] = [
     { key: 'characters', label: '角色' },
-    { key: 'locations', label: '场景' },
+    { key: 'locations', label: '影棚' },
     { key: 'props', label: '道具' }
   ];
 
