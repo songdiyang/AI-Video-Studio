@@ -17,7 +17,7 @@ import CreateAssetModal, { CreateAssetType } from './CreateAssetModal';
 import { useResourceModals } from './useResourceModals';
 import { Character } from './types';
 import { getAuthToken } from '../../../services/auth';
-import { deleteCharacter, uploadCharacterImage } from '../../../services/assets';
+import { deleteCharacter, uploadCharacterImage, extractPropsFromScript } from '../../../services/assets';
 import { extractStudioComponentsFromScript, composeStudiosFromScript } from '../../../services/studios';
 import { useToast } from '../../../contexts/ToastContext';
 import { useConfirm } from '../../../contexts/ConfirmContext';
@@ -88,6 +88,9 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
   // 两阶段 AI 工作流 loading 状态
   const [isExtractingComponents, setIsExtractingComponents] = useState(false);
   const [isComposingStudios, setIsComposingStudios] = useState(false);
+
+  // 道具提取 loading 状态
+  const [isExtractingProps, setIsExtractingProps] = useState(false);
 
   // 自由添加资产弹窗
   const [createAssetType, setCreateAssetType] = useState<CreateAssetType | null>(null);
@@ -365,6 +368,26 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
     }
   };
 
+  const handleExtractPropsFromScript = async () => {
+    if (!projectId) { showToast('请先选择项目', 'warning'); return; }
+    if (!scriptId) { showToast('请先选择剧本', 'warning'); return; }
+    if (!textModel) { showToast('请先选择文本模型', 'warning'); return; }
+    setIsExtractingProps(true);
+    try {
+      const res = await extractPropsFromScript({
+        projectId,
+        scriptId,
+        textModel,
+        imageModel: effectiveImageModel
+      });
+      showToast(res.message || '已启动从剧本提取道具', 'success');
+    } catch (error: any) {
+      showToast('启动失败: ' + (error?.message || '未知错误'), 'error');
+    } finally {
+      setIsExtractingProps(false);
+    }
+  };
+
   return (
     <div className="h-full flex flex-col bg-(--bg-app)">
       {/* 头部 */}
@@ -431,6 +454,8 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
         {activeTab === 'props' && (
           <PropsTab
             props={props}
+            isExtracting={isExtractingProps}
+            onExtractFromScript={scriptId ? handleExtractPropsFromScript : undefined}
           />
         )}
       </div>

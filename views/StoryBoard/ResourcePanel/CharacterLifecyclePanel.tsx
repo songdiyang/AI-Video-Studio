@@ -293,7 +293,7 @@ const CharacterLifecyclePanel: React.FC<CharacterLifecyclePanelProps> = ({
     return (
       <div className="flex gap-2 mt-2">
         {views.map((view, idx) => (
-          <div key={idx} className="flex-1 aspect-square bg-slate-800 rounded-lg overflow-hidden border border-slate-700">
+          <div key={idx} className="flex-1 aspect-[3/4] bg-slate-800 rounded-lg overflow-hidden border border-slate-700">
             {view.url ? (
               <img 
                 src={view.url} 

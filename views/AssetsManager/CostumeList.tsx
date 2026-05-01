@@ -86,9 +86,9 @@ const CostumeList: React.FC<CostumeListProps> = ({ costumes, onEdit, onDelete })
         <div className="flex items-start gap-3">
           {/* 预览图 */}
           <div className="w-20 h-20 rounded-lg overflow-hidden bg-(--bg-secondary) shrink-0 flex items-center justify-center border border-(--border-color)">
-            {costume.front_view_url || costume.image_url ? (
-              <img 
-                src={costume.front_view_url || costume.image_url} 
+            {costume.image_url ? (
+              <img
+                src={costume.image_url}
                 alt={costume.name}
                 className="w-full h-full object-cover"
               />

@@ -187,7 +187,7 @@ module.exports = router;
     }
   });
 
-  // POST /api/costumes/:id/generate-views - 生成服装三视图
+  // POST /api/costumes/:id/generate-views - 生成服装设定图
   router.post('/:id/generate-views', authMiddleware, async (req, res) => {
     const userId = req.user.id;
     const costumeId = Number(req.params.id);
@@ -203,12 +203,12 @@ module.exports = router;
       });
 
       res.json(result.response || {
-        message: '服装三视图生成已启动',
+        message: '服装设定图生成已启动',
         jobId: result.jobId,
         costumeId,
         status: 'generating'
       });
     } catch (error) {
-      sendGenerationError(res, error, '生成服装三视图失败', '[Generate Costume Views]');
+      sendGenerationError(res, error, '生成服装设定图失败', '[Generate Costume Views]');
     }
   });

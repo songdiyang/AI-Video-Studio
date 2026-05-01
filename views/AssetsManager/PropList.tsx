@@ -3,6 +3,7 @@ import { Card, CardBody, Button, Chip } from '@heroui/react';
 import { Edit, Trash2 } from 'lucide-react';
 import { Prop } from '../../services/assets';
 import { useVirtualList } from '../../hooks/useVirtualList';
+import { usePreview } from '../../components/PreviewProvider';
 
 // 虚拟列表启用阈值
 const VIRTUAL_LIST_THRESHOLD = 20;
@@ -16,15 +17,17 @@ interface PropListProps {
 }
 
 const PropList: React.FC<PropListProps> = ({ props, onEdit, onDelete }) => {
+  const { openPreview } = usePreview();
+
   // 虚拟列表容器 ref 和高度状态
   const listContainerRef = useRef<HTMLDivElement>(null);
   const [containerHeight, setContainerHeight] = useState(400);
-  
+
   // 监听容器高度变化
   useEffect(() => {
     const container = listContainerRef.current;
     if (!container) return;
-    
+
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const height = entry.contentRect.height;
@@ -33,14 +36,14 @@ const PropList: React.FC<PropListProps> = ({ props, onEdit, onDelete }) => {
         }
       }
     });
-    
+
     observer.observe(container);
     return () => observer.disconnect();
   }, []);
 
   // 判断是否启用虚拟列表
   const useVirtual = props.length > VIRTUAL_LIST_THRESHOLD;
-  
+
   // 虚拟列表 hook
   const { virtualItems, containerProps, wrapperProps } = useVirtualList({
     itemCount: props.length,
@@ -51,8 +54,8 @@ const PropList: React.FC<PropListProps> = ({ props, onEdit, onDelete }) => {
 
   // 渲染单个卡片
   const renderPropCard = (prop: Prop, style?: React.CSSProperties) => (
-    <Card 
-      key={prop.id} 
+    <Card
+      key={prop.id}
       className="bg-(--bg-card) border border-(--border-color) shadow-sm hover:shadow-md hover:shadow-(--accent)/5 transition-shadow h-full cursor-pointer"
       classNames={{ base: 'h-full', body: 'h-full' }}
       style={style}
@@ -60,23 +63,40 @@ const PropList: React.FC<PropListProps> = ({ props, onEdit, onDelete }) => {
       onPress={() => onEdit(prop)}
     >
       <CardBody className="p-4 flex flex-col gap-3 h-full">
+        {/* 道具图片 */}
+        {prop.image_url ? (
+          <img
+            src={prop.image_url}
+            alt={prop.name}
+            className="w-full aspect-video object-cover rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
+            onClick={(e) => {
+              e.stopPropagation();
+              openPreview([{ src: prop.image_url, alt: prop.name }], 0);
+            }}
+          />
+        ) : (
+          <div className="w-full aspect-video bg-(--bg-muted) rounded-lg flex items-center justify-center text-(--text-muted) text-xs">
+            无图片
+          </div>
+        )}
+
         <div className="flex items-start justify-between">
           <h3 className="text-lg font-semibold text-(--text-primary)">{prop.name}</h3>
           <div className="flex gap-1">
-            <Button 
-              size="sm" 
-              isIconOnly 
-              variant="light" 
-              onPress={() => onEdit(prop)} 
+            <Button
+              size="sm"
+              isIconOnly
+              variant="light"
+              onPress={() => onEdit(prop)}
               className="hover:bg-(--accent)/10"
             >
               <Edit className="w-4 h-4 text-(--accent)" />
             </Button>
-            <Button 
-              size="sm" 
-              isIconOnly 
-              variant="light" 
-              onPress={() => onDelete(prop.id)} 
+            <Button
+              size="sm"
+              isIconOnly
+              variant="light"
+              onPress={() => onDelete(prop.id)}
               className="hover:bg-red-500/10"
             >
               <Trash2 className="w-4 h-4 text-red-500" />
@@ -85,21 +105,27 @@ const PropList: React.FC<PropListProps> = ({ props, onEdit, onDelete }) => {
         </div>
         <p className="text-sm text-(--text-secondary) line-clamp-2 flex-1">{prop.description}</p>
         <div className="flex flex-wrap gap-2 mt-auto">
-        {prop.category && (
-          <Chip size="sm" variant="flat" className="bg-amber-500/10 text-amber-400 font-medium">
-            {prop.category}
-          </Chip>
-        )}
-        {prop.tags && prop.tags.split(',').map((tag, idx) => (
-          <Chip 
-            key={idx} 
-            size="sm" 
-            variant="flat" 
-            className="bg-purple-500/10 text-purple-400 font-medium"
-          >
-            {tag.trim()}
-          </Chip>
-        ))}
+          {/* 道具类型标签 */}
+          {prop.prop_type && (
+            <Chip size="sm" variant="flat" className={prop.prop_type === 'permanent' ? 'bg-blue-500/10 text-blue-400 font-medium' : 'bg-cyan-500/10 text-cyan-400 font-medium'}>
+              {prop.prop_type === 'permanent' ? '永久道具' : '交互道具'}
+            </Chip>
+          )}
+          {/* 生成状态标签 */}
+          {prop.generation_status && (
+            <Chip size="sm" variant="flat" className={
+              prop.generation_status === 'completed' ? 'bg-green-500/10 text-green-400 font-medium' :
+              prop.generation_status === 'generating' ? 'bg-amber-500/10 text-amber-400 font-medium' :
+              'bg-red-500/10 text-red-400 font-medium'
+            }>
+              {prop.generation_status === 'completed' ? '已生成' :
+               prop.generation_status === 'generating' ? '生成中' :
+               prop.generation_status === 'idle' ? '待生成' : '生成失败'}
+            </Chip>
+          )}
+          {prop.category && (
+            <Chip size="sm" variant="flat">{prop.category}</Chip>
+          )}
         </div>
       </CardBody>
     </Card>

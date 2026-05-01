@@ -306,7 +306,7 @@ export async function fetchEquippedCostume(characterId: number): Promise<Costume
 }
 
 /**
- * 生成服装三视图（异步任务）
+ * 生成服装设定图（异步任务）
  * 基于通用白色 mannequin + outfit 描述，跨角色复用
  */
 export async function generateCostumeViews(
@@ -325,7 +325,29 @@ export async function generateCostumeViews(
 
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
-    throw new Error(data.message || '服装三视图生成失败');
+    throw new Error(data.message || '服装设定图生成失败');
+  }
+
+  return await response.json();
+}
+
+export async function generatePropViews(
+  propId: number,
+  params: { imageModel: string; textModel?: string; aspectRatio?: string }
+): Promise<{ jobId: string; status: string; propId: number; message?: string }> {
+  const token = getAuthToken();
+  const response = await fetch(`/api/props/${propId}/generate-views`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    },
+    body: JSON.stringify(params)
+  });
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.message || '道具设定图生成失败');
   }
 
   return await response.json();

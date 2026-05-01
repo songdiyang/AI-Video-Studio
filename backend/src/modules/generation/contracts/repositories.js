@@ -53,6 +53,19 @@ async function requireCostumeForUser(costumeId, userId) {
   return costume;
 }
 
+async function requirePropForUser(propId, userId) {
+  const prop = await queryOne(
+    'SELECT * FROM props WHERE id = ? AND user_id = ?',
+    [propId, userId]
+  );
+
+  if (!prop) {
+    throw new HttpError(404, '道具不存在或无权访问');
+  }
+
+  return prop;
+}
+
 async function requireSceneForUser(sceneId, userId) {
   const scene = await queryOne(
     'SELECT * FROM scenes WHERE id = ? AND user_id = ?',
@@ -216,6 +229,7 @@ module.exports = {
   requireScriptForUser,
   requireCharacterForUser,
   requireCostumeForUser,
+  requirePropForUser,
   requireSceneForUser,
   listScenesForProject,
   requireStoryboardForUser,

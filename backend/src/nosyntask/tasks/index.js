@@ -34,7 +34,7 @@ const handleBatchSaveStoryboards = require('./StoryBoard/batchSaveStoryboards');
 const handleSketchPreprocess = require('./StoryBoard/sketchPreprocess');
 const handleSketchToImage = require('./StoryBoard/sketchToImage');
 const handleBatchSketchFrameGeneration = require('./StoryBoard/batchSketchFrameGeneration');
-const { handlePropPromptGeneration, handlePropImageGeneration } = require('./StoryBoard/propGeneration');
+const { handlePropViewsGeneration, handlePropPromptGeneration, handlePropImageGeneration } = require('./StoryBoard/propGeneration');
 const handleConceptBreakdownGeneration = require('./StoryBoard/conceptBreakdownGeneration');
 const handleCameraFrameGeneration = require('./StoryBoard/cameraFrameGeneration');
 const handleMagicPaintGeneration = require('./StoryBoard/magicPaintGeneration');
@@ -82,6 +82,7 @@ module.exports = {
   handleSketchPreprocess,
   handleSketchToImage,
   handleBatchSketchFrameGeneration,
+  handlePropViewsGeneration,
   handlePropPromptGeneration,
   handlePropImageGeneration,
   handleConceptBreakdownGeneration,

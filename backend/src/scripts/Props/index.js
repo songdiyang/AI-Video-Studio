@@ -2,6 +2,7 @@ const express = require('express');
 const { queryOne, queryAll, execute } = require('../../dbHelper');
 const { authMiddleware } = require('../../middleware');
 const { getEffectiveProjectRole } = require('../../middleware/collaborationAuth');
+const { generationStartService, sendGenerationError } = require('../../modules/generation');
 const generateImage = require('./generateImage');
 const states = require('./states');
 
@@ -54,7 +55,7 @@ router.get('/project/:projectId', authMiddleware, async (req, res) => {
 router.post('/', authMiddleware, async (req, res) => {
   try {
     const userId = req.user.id;
-    const { project_id, name, description, category, image_url, tags } = req.body;
+    const { project_id, name, description, category, image_url, tags, prop_type } = req.body;
 
     if (!name || !project_id) {
       return res.status(400).json({ message: '道具名称和项目ID为必填项' });
@@ -67,9 +68,9 @@ router.post('/', authMiddleware, async (req, res) => {
     }
 
     const result = await execute(
-      `INSERT INTO props (user_id, project_id, name, description, category, image_url, tags) 
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [userId, project_id, name, description || '', category || '', image_url || '', tags || '']
+      `INSERT INTO props (user_id, project_id, name, description, category, image_url, tags, prop_type) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [userId, project_id, name, description || '', category || '', image_url || '', tags || '', prop_type || 'interactive']
     );
 
     const prop = await queryOne('SELECT * FROM props WHERE id = ?', [result.insertId]);
@@ -85,7 +86,7 @@ router.put('/:id', authMiddleware, async (req, res) => {
   try {
     const userId = req.user.id;
     const { id } = req.params;
-    const { name, description, category, image_url, tags } = req.body;
+    const { name, description, category, image_url, tags, prop_type, is_equipped, front_view_url, side_view_url, back_view_url, generation_status, generation_prompt } = req.body;
 
     // 验证道具权限
     const prop = await queryOne(
@@ -111,14 +112,21 @@ router.put('/:id', authMiddleware, async (req, res) => {
 
     await execute(
       `UPDATE props 
-       SET name = ?, description = ?, category = ?, image_url = ?, tags = ?
+       SET name = ?, description = ?, category = ?, image_url = ?, tags = ?, prop_type = ?, is_equipped = ?, front_view_url = ?, side_view_url = ?, back_view_url = ?, generation_status = ?, generation_prompt = ?
        WHERE id = ?`,
       [
-        name || prop.name,
+        name !== undefined ? name : prop.name,
         description !== undefined ? description : prop.description,
         category !== undefined ? category : prop.category,
         image_url !== undefined ? image_url : prop.image_url,
         tags !== undefined ? tags : prop.tags,
+        prop_type !== undefined ? prop_type : prop.prop_type,
+        is_equipped !== undefined ? is_equipped : prop.is_equipped,
+        front_view_url !== undefined ? front_view_url : prop.front_view_url,
+        side_view_url !== undefined ? side_view_url : prop.side_view_url,
+        back_view_url !== undefined ? back_view_url : prop.back_view_url,
+        generation_status !== undefined ? generation_status : prop.generation_status,
+        generation_prompt !== undefined ? generation_prompt : prop.generation_prompt,
         id
       ]
     );
@@ -164,6 +172,51 @@ router.delete('/:id', authMiddleware, async (req, res) => {
   } catch (error) {
     console.error('[Delete Prop]', error);
     res.status(500).json({ message: '删除道具失败' });
+  }
+});
+
+// POST /api/props/:id/generate-views - 生成道具设定图
+router.post('/:id/generate-views', authMiddleware, async (req, res) => {
+  const userId = req.user.id;
+  const propId = Number(req.params.id);
+
+  try {
+    const result = await generationStartService.start({
+      operationKey: 'prop_views_generate',
+      rawInput: {
+        propId,
+        ...req.body
+      },
+      actor: { userId }
+    });
+
+    res.json(result.response || {
+      message: '道具设定图生成已启动',
+      jobId: result.jobId,
+      propId,
+      status: 'generating'
+    });
+  } catch (error) {
+    sendGenerationError(res, error, '生成道具设定图失败', '[Generate Prop Views]');
+  }
+});
+
+// POST /api/props/extract-from-script - 从剧本提取道具
+router.post('/extract-from-script', authMiddleware, async (req, res) => {
+  const userId = req.user.id;
+  try {
+    const result = await generationStartService.start({
+      operationKey: 'script_props_extract',
+      rawInput: req.body || {},
+      actor: { userId }
+    });
+    res.json(result.response || {
+      message: '已启动从剧本提取道具',
+      jobId: result.jobId,
+      status: 'pending'
+    });
+  } catch (err) {
+    sendGenerationError(res, err, '启动道具提取失败', '[Props][ExtractFromScript]');
   }
 });
 

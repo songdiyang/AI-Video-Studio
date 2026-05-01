@@ -33,6 +33,7 @@ import { useConfirm } from '../../../contexts/ConfirmContext';
 import { useAIModels } from '../../../hooks/useAIModels';
 import AIModelSelector from '../../../components/AIModelSelector';
 import { getAuthToken } from '../../../services/auth';
+import { generateCostumeViews, fetchCharacterCostumes, Costume } from '../../../services/costumes';
 
 // 状态分类图标映射
 const CATEGORY_ICON_MAP: Record<StateCategory, React.ElementType> = {
@@ -111,6 +112,7 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
   const [duplicatingId, setDuplicatingId] = useState<number | null>(null);
   const [generatingId, setGeneratingId] = useState<number | null>(null);
   const [deletingViewsId, setDeletingViewsId] = useState<number | null>(null);
+  const [regeneratingView, setRegeneratingView] = useState<{ stateId: number; view: 'front' | 'side' | 'back' } | null>(null);
 
   // 当前装配（T5）
   const [loadoutCostumeId, setLoadoutCostumeId] = useState<number | null>(null);
@@ -149,10 +151,22 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
   const [isCreatingGroup, setIsCreatingGroup] = useState(false);
   const [newGroupName, setNewGroupName] = useState('');
   const [newGroupColor, setNewGroupColor] = useState(TAG_GROUP_COLORS[0]);
-  
+
+  // 道具叠加弹窗状态
+  const [equipPropModalOpen, setEquipPropModalOpen] = useState(false);
+  const [equippingState, setEquippingState] = useState<CharacterState | null>(null);
+  const [projectProps, setProjectProps] = useState<Array<{ id: number; name: string; image_url: string; prop_type: string }>>([]);
+  const [selectedPropId, setSelectedPropId] = useState<string>('');
+  const [handPosition, setHandPosition] = useState<string>('right');
+  const [usageMode, setUsageMode] = useState<string>('hold');
+  const [equipping, setEquipping] = useState(false);
+
+  // 角色服装列表
+  const [characterCostumes, setCharacterCostumes] = useState<(Costume & { is_equipped: boolean })[]>([]);
+
   // 编辑状态表单
   const [editingState, setEditingState] = useState<CharacterState | null>(null);
-  const [formData, setFormData] = useState<Partial<CharacterState> & { tagInput?: string }>({
+  const [formData, setFormData] = useState<Partial<CharacterState> & { tagInput?: string; costume_id?: number | null }>({
     name: '',
     description: '',
     appearance: '',
@@ -169,7 +183,8 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
     state_category: 'daily',
     tags: '[]',
     tagInput: '',
-    use_reference_images: true
+    use_reference_images: true,
+    costume_id: null
   });
   
   const { showToast } = useToast();
@@ -182,13 +197,15 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
     if (!characterId) return;
     setLoading(true);
     try {
-      const [characterData, statesData, loadoutData] = await Promise.all([
+      const [characterData, statesData, loadoutData, costumesData] = await Promise.all([
         fetchCharacter(characterId),
         fetchCharacterStates(characterId),
         fetchCharacterLoadout(characterId).catch(() => null),
+        fetchCharacterCostumes(characterId).catch(() => ({ costumes: [], characterGender: '' })),
       ]);
       setCharacter(characterData);
       setStates(statesData);
+      setCharacterCostumes(costumesData.costumes || []);
       if (loadoutData?.loadout) {
         setLoadoutCostumeId(loadoutData.loadout.costumeStateId);
         setLoadoutExpressionId(loadoutData.loadout.expressionStateId);
@@ -259,7 +276,8 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
       is_active: false,
       state_category: presetCategory ? [presetCategory] : ['daily'],
       tags: '[]',
-      tagInput: ''
+      tagInput: '',
+      costume_id: null
     });
     onOpen();
   };
@@ -284,7 +302,8 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
       is_active: false,
       state_category: ['daily'],
       tags: '[]',
-      tagInput: ''
+      tagInput: '',
+      costume_id: null
     });
     onOpen();
   };
@@ -309,7 +328,8 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
       state_category: parseStateCategories(state.state_category),
       tags: state.tags || '[]',
       tagInput: '',
-      use_reference_images: state.use_reference_images !== false
+      use_reference_images: state.use_reference_images !== false,
+      costume_id: (state as any).costume_id || null
     });
     onOpen();
   };
@@ -345,19 +365,11 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
       const saveData = { ...formData };
       delete (saveData as any).tagInput;
 
-      // 防御性清洗：确保 state_category 为合法数组，避免后端 400 “无效的状态分类”
-      const ALLOWED_CATS = ['daily', 'costume', 'time', 'effect'];
-      const rawCat = (saveData as any).state_category;
-      let cats: string[] = [];
-      if (Array.isArray(rawCat)) cats = rawCat as string[];
-      else if (typeof rawCat === 'string' && rawCat) {
-        try {
-          const parsed = rawCat.startsWith('[') ? JSON.parse(rawCat) : [rawCat];
-          if (Array.isArray(parsed)) cats = parsed;
-        } catch { cats = [rawCat]; }
-      }
-      cats = cats.map(c => String(c || '').trim()).filter(c => ALLOWED_CATS.includes(c));
-      if (cats.length === 0) cats = ['daily'];
+      // 自动推断状态分类
+      const cats: string[] = [];
+      if (saveData.costume_id || saveData.outfit) cats.push('costume');
+      if (saveData.body_elements) cats.push('effect');
+      if (cats.length === 0) cats.push('daily');
       (saveData as any).state_category = cats;
 
       // 防御性清洗：tags 为 JSON 数组字符串
@@ -566,9 +578,11 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
         held_props: state.held_props || ''
       });
 
+      const hasExistingViews = !!(state.front_view_url || state.side_view_url || state.back_view_url);
       await generateCharacterStateViews(characterId!, state.id, {
         imageModel: selected.image,
-        textModel: selected.text || undefined
+        textModel: selected.text || undefined,
+        regenerateOnly: hasExistingViews ? ['front', 'side', 'back'] : undefined
       });
       showToast('三视图生成任务已启动', 'success');
       await loadStates();
@@ -581,6 +595,134 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
         showToast(error.message || '生成失败', 'error');
       }
       setGeneratingId(null);
+    }
+  };
+
+  // 单独重新生成某一个视图
+  const handleRegenerateSingleView = async (state: CharacterState, view: 'front' | 'side' | 'back') => {
+    if (!selected.image) {
+      showToast('请先选择图像生成模型', 'error');
+      return;
+    }
+    setRegeneratingView({ stateId: state.id, view });
+    try {
+      await updateCharacterState(characterId!, state.id, {
+        appearance: state.appearance,
+        outfit: state.outfit,
+        hairstyle: state.hairstyle,
+        accessories: state.accessories,
+        age_stage: state.age_stage,
+        body_elements: state.body_elements,
+        held_props: state.held_props || ''
+      });
+      await generateCharacterStateViews(characterId!, state.id, {
+        imageModel: selected.image,
+        textModel: selected.text || undefined,
+        regenerateOnly: [view]
+      });
+      showToast(`${view === 'front' ? '正面' : view === 'side' ? '侧面' : '背面'}视图重新生成已启动`, 'success');
+      await loadStates();
+      pollGenerationStatus(state.id);
+    } catch (error: any) {
+      if (error?.code === 'COSTUME_NOT_READY') {
+        showToast(error.message || '服装设定图尚未生成', 'warning');
+      } else {
+        showToast(error.message || '生成失败', 'error');
+      }
+      setRegeneratingView(null);
+    }
+  };
+
+  // 快速生成关联服装的设定图
+  const handleGenerateCostume = async (costumeId: number, costumeName?: string) => {
+    if (!selected.image) {
+      showToast('请先选择图像生成模型', 'error');
+      return;
+    }
+    try {
+      await generateCostumeViews(costumeId, {
+        imageModel: selected.image,
+        textModel: selected.text || undefined
+      });
+      showToast(`「${costumeName || '服装'}」设定图生成已启动`, 'success');
+      await loadStates();
+    } catch (error: any) {
+      showToast(error.message || '服装设定图生成失败', 'error');
+    }
+  };
+
+  // 道具叠加弹窗
+  const openEquipPropModal = async (state: CharacterState) => {
+    setEquippingState(state);
+    setSelectedPropId('');
+    setHandPosition('right');
+    setUsageMode('hold');
+    setEquipPropModalOpen(true);
+    // 加载项目道具列表（永久道具）
+    try {
+      const token = getAuthToken();
+      const projectId = character?.project_id;
+      if (!projectId) return;
+      const res = await fetch(`/api/props/project/${projectId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        // 过滤出永久道具且未叠加的
+        const equippedIds = new Set(state.equipped_props?.map(ep => ep.prop_id) || []);
+        setProjectProps((data.props || []).filter((p: any) => p.prop_type === 'permanent' && !equippedIds.has(p.id)));
+      }
+    } catch (err) {
+      console.error('加载项目道具失败:', err);
+    }
+  };
+
+  const handleEquipProp = async () => {
+    if (!equippingState || !selectedPropId) return;
+    setEquipping(true);
+    try {
+      const token = getAuthToken();
+      const res = await fetch(`/api/characters/${characterId}/states/${equippingState.id}/props`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          propId: Number(selectedPropId),
+          handPosition,
+          usageMode
+        })
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message || '叠加道具失败');
+      }
+      showToast('道具叠加成功', 'success');
+      setEquipPropModalOpen(false);
+      await loadStates();
+    } catch (error: any) {
+      showToast(error.message || '叠加道具失败', 'error');
+    } finally {
+      setEquipping(false);
+    }
+  };
+
+  const handleUnequipProp = async (state: CharacterState, propId: number) => {
+    try {
+      const token = getAuthToken();
+      const res = await fetch(`/api/characters/${characterId}/states/${state.id}/props/${propId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message || '解绑道具失败');
+      }
+      showToast('道具已解绑', 'success');
+      await loadStates();
+    } catch (error: any) {
+      showToast(error.message || '解绑道具失败', 'error');
     }
   };
 
@@ -609,36 +751,40 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
   const pollGenerationStatus = async (stateId: number) => {
     const maxAttempts = 60;
     let attempts = 0;
-    
+
     const checkStatus = async () => {
       try {
         const states = await fetchCharacterStates(characterId!);
         const state = states.find(s => s.id === stateId);
-        
+
         if (state?.generation_status === 'completed') {
           setStates(states);
           setGeneratingId(null);
+          setRegeneratingView(null);
           showToast('三视图生成完成', 'success');
           return;
         } else if (state?.generation_status === 'failed') {
           setGeneratingId(null);
+          setRegeneratingView(null);
           showToast('三视图生成失败', 'error');
           return;
         }
-        
+
         attempts++;
         if (attempts < maxAttempts) {
           setTimeout(checkStatus, 5000);
         } else {
           setGeneratingId(null);
+          setRegeneratingView(null);
           showToast('生成超时，请稍后刷新查看', 'warning');
         }
       } catch (error) {
         setGeneratingId(null);
+        setRegeneratingView(null);
         console.error('轮询生成状态失败:', error);
       }
     };
-    
+
     checkStatus();
   };
 
@@ -1249,6 +1395,17 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                             <Copy className="w-3.5 h-3.5" />
                           </Button>
                         </Tooltip>
+                        <Tooltip content="叠加道具">
+                          <Button
+                            size="sm"
+                            isIconOnly
+                            variant="light"
+                            className="text-default-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-500/10"
+                            onPress={() => openEquipPropModal(state)}
+                          >
+                            <Sparkles className="w-3.5 h-3.5" />
+                          </Button>
+                        </Tooltip>
                         <Tooltip content="编辑">
                           <Button
                             size="sm"
@@ -1279,7 +1436,7 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                   {isExpanded && (
                     <div className="px-4 pb-4 pt-2 border-t border-default-200 dark:border-slate-700/30 space-y-4">
                       {/* 外观属性展示 */}
-                      {(state.outfit || state.age_stage || state.hairstyle || state.accessories || state.held_props) && (
+                      {(state.outfit || state.age_stage || state.hairstyle || state.accessories || (state.equipped_props && state.equipped_props.length > 0)) && (
                         <div className="grid grid-cols-2 gap-2">
                           {state.age_stage && (
                             <div className="bg-purple-500/10 rounded-lg p-2 border border-purple-500/20">
@@ -1295,6 +1452,50 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                               <div className="flex items-center gap-1.5 text-xs text-pink-700 dark:text-pink-400 mb-0.5">
                                 <Shirt className="w-3 h-3" />
                                 服装
+                                {state.costume_name && (
+                                  <span
+                                    className="ml-1 text-[10px] px-1.5 py-0.5 rounded-full bg-pink-500/20 text-pink-600 dark:text-pink-300 cursor-pointer hover:bg-pink-500/30 transition-colors"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (state.costume_image_url) {
+                                        openPreview([{ src: state.costume_image_url, alt: state.costume_name || '服装设定图' }], 0);
+                                      }
+                                    }}
+                                    title={state.costume_image_url ? '点击预览服装设定图' : '服装设定图尚未生成'}
+                                  >
+                                    {state.costume_name}
+                                  </span>
+                                )}
+                                {state.costume_generation_status && (
+                                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+                                    state.costume_generation_status === 'completed'
+                                      ? 'bg-green-500/15 text-green-600 dark:text-green-400'
+                                      : state.costume_generation_status === 'generating'
+                                      ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
+                                      : 'bg-red-500/15 text-red-600 dark:text-red-400'
+                                  }`}>
+                                    {state.costume_generation_status === 'completed'
+                                      ? '已生成'
+                                      : state.costume_generation_status === 'generating'
+                                      ? '生成中'
+                                      : state.costume_generation_status === 'pending'
+                                      ? '待生成'
+                                      : '生成失败'}
+                                  </span>
+                                )}
+                                {state.costume_id && (state.costume_generation_status === 'pending' || state.costume_generation_status === 'failed' || !state.costume_generation_status) && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleGenerateCostume(state.costume_id!, state.costume_name || undefined);
+                                    }}
+                                    className="ml-auto text-[10px] px-2 py-0.5 rounded-full bg-pink-500 text-white hover:bg-pink-600 transition-colors flex items-center gap-1"
+                                    title="生成服装设定图"
+                                  >
+                                    <RefreshCw className="w-2.5 h-2.5" />
+                                    生成设定图
+                                  </button>
+                                )}
                               </div>
                               <p className="text-sm text-default-700 dark:text-slate-200 truncate">{state.outfit}</p>
                             </div>
@@ -1317,13 +1518,32 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                               <p className="text-sm text-default-700 dark:text-slate-200 truncate">{state.accessories}</p>
                             </div>
                           )}
-                          {state.held_props && (
+                          {/* 已叠加道具 */}
+                          {state.equipped_props && state.equipped_props.length > 0 && (
                             <div className="bg-emerald-500/10 rounded-lg p-2 border border-emerald-500/20">
-                              <div className="flex items-center gap-1.5 text-xs text-emerald-700 dark:text-emerald-400 mb-0.5">
+                              <div className="flex items-center gap-1.5 text-xs text-emerald-700 dark:text-emerald-400 mb-1">
                                 <Sparkles className="w-3 h-3" />
-                                手持道具
+                                已叠加道具
                               </div>
-                              <p className="text-sm text-default-700 dark:text-slate-200 truncate">{state.held_props}</p>
+                              <div className="flex flex-wrap gap-1.5">
+                                {state.equipped_props.map((ep) => (
+                                  <Chip
+                                    key={ep.prop_id}
+                                    size="sm"
+                                    variant="flat"
+                                    className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 cursor-pointer hover:bg-emerald-500/25"
+                                    onClose={() => handleUnequipProp(state, ep.prop_id)}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (ep.image_url) {
+                                        openPreview([{ src: ep.image_url, alt: ep.name }], 0);
+                                      }
+                                    }}
+                                  >
+                                    {ep.name}
+                                  </Chip>
+                                ))}
+                              </div>
                             </div>
                           )}
                         </div>
@@ -1372,33 +1592,51 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                           </div>
                           <div className="grid grid-cols-3 gap-2">
                             {[
-                              { url: state.front_view_url, label: '正面' },
-                              { url: state.side_view_url, label: '侧面' },
-                              { url: state.back_view_url, label: '背面' }
-                            ].map(({ url, label }, idx) => (
-                              <div key={label} className="space-y-1">
-                                <p className="text-xs text-default-400 dark:text-slate-500 text-center">{label}</p>
-                                <div
-                                  className={`aspect-square bg-default-100 dark:bg-slate-800/60 rounded-lg overflow-hidden border border-default-200 dark:border-slate-700/50 flex items-center justify-center ${url ? 'cursor-pointer hover:opacity-90 transition-opacity' : ''}`}
-                                  onClick={() => {
-                                    if (!url) return;
-                                    const slides = [
-                                      state.front_view_url,
-                                      state.side_view_url,
-                                      state.back_view_url
-                                    ].filter(Boolean).map(u => ({ src: u!, alt: '' }));
-                                    const beforeCount = [state.front_view_url, state.side_view_url, state.back_view_url].slice(0, idx).filter(Boolean).length;
-                                    openPreview(slides, beforeCount);
-                                  }}
-                                >
-                                  {url ? (
-                                    <img src={url} alt={label} className="w-full h-full object-cover object-top" />
-                                  ) : (
-                                    <ImageIcon className="w-6 h-6 text-default-300 dark:text-slate-600" />
-                                  )}
+                              { url: state.front_view_url, label: '正面', view: 'front' as const },
+                              { url: state.side_view_url, label: '侧面', view: 'side' as const },
+                              { url: state.back_view_url, label: '背面', view: 'back' as const }
+                            ].map(({ url, label, view }, idx) => {
+                              const isRegenerating = regeneratingView?.stateId === state.id && regeneratingView?.view === view;
+                              return (
+                                <div key={label} className="space-y-1">
+                                  <div className="flex items-center justify-between px-0.5">
+                                    <p className="text-xs text-default-400 dark:text-slate-500">{label}</p>
+                                    {!disabled && state.generation_status !== 'generating' && (
+                                      <Button
+                                        size="sm"
+                                        variant="light"
+                                        isIconOnly
+                                        className="h-5 min-w-5 w-5"
+                                        isLoading={isRegenerating}
+                                        onPress={() => handleRegenerateSingleView(state, view)}
+                                        aria-label={`重新生成${label}视图`}
+                                      >
+                                        <RefreshCw className="w-3 h-3 text-default-400 dark:text-slate-500" />
+                                      </Button>
+                                    )}
+                                  </div>
+                                  <div
+                                    className={`aspect-[3/4] bg-default-100 dark:bg-slate-800/60 rounded-lg overflow-hidden border border-default-200 dark:border-slate-700/50 flex items-center justify-center ${url ? 'cursor-pointer hover:opacity-90 transition-opacity' : ''}`}
+                                    onClick={() => {
+                                      if (!url) return;
+                                      const slides = [
+                                        state.front_view_url,
+                                        state.side_view_url,
+                                        state.back_view_url
+                                      ].filter(Boolean).map(u => ({ src: u!, alt: '' }));
+                                      const beforeCount = [state.front_view_url, state.side_view_url, state.back_view_url].slice(0, idx).filter(Boolean).length;
+                                      openPreview(slides, beforeCount);
+                                    }}
+                                  >
+                                    {url ? (
+                                      <img src={url} alt={label} className="w-full h-full object-cover object-top" />
+                                    ) : (
+                                      <ImageIcon className="w-6 h-6 text-default-300 dark:text-slate-600" />
+                                    )}
+                                  </div>
                                 </div>
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         </div>
                       )}
@@ -1439,7 +1677,7 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
       <Modal
         isOpen={isOpen}
         onOpenChange={onOpenChange}
-        size="3xl"
+        size="5xl"
         scrollBehavior="inside"
         classNames={{
           base: "bg-slate-900/95 backdrop-blur-xl border border-slate-700/50",
@@ -1449,7 +1687,6 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
       >
         <ModalContent>
           {(onClose) => {
-            const currentTags = parseTags(formData.tags);
             const isBaseModel = editingState?.is_base_model;
             
             return (
@@ -1474,44 +1711,30 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                         }}
                       />
                       
-                      {/* 状态分类选择器（多选） */}
+                      {/* 状态分类（自动推断，只读展示） */}
                       <div className="space-y-1.5">
-                        <label className="text-xs font-medium text-slate-400">状态分类（可多选）</label>
-                        <div className="grid grid-cols-2 gap-2">
-                          {STATE_CATEGORIES.map(cat => {
-                            const IconComp = CATEGORY_ICON_MAP[cat.key];
-                            const colors = CATEGORY_COLOR_MAP[cat.key];
-                            const currentCats = parseStateCategories(formData.state_category);
-                            const isSelected = currentCats.includes(cat.key);
-                            return (
-                              <button
-                                key={cat.key}
-                                type="button"
-                                className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm transition-colors ${
-                                  isSelected
-                                    ? `${colors.bg} ${colors.text} ${colors.border}`
-                                    : 'border-slate-600/50 text-slate-400 hover:border-slate-500 hover:text-slate-300'
-                                }`}
-                                onClick={() => {
-                                  if (isBaseModel) return;
-                                  let newCats: StateCategory[];
-                                  if (isSelected) {
-                                    // 取消选择（至少保留一个）
-                                    newCats = currentCats.filter(c => c !== cat.key);
-                                    if (newCats.length === 0) newCats = [cat.key];
-                                  } else {
-                                    // 添加选择
-                                    newCats = [...currentCats, cat.key];
-                                  }
-                                  setFormData({ ...formData, state_category: newCats });
-                                }}
-                                disabled={isBaseModel}
-                              >
-                                <IconComp className="w-4 h-4" />
-                                {cat.label}
-                              </button>
-                            );
-                          })}
+                        <label className="text-xs font-medium text-slate-400">状态分类（自动）</label>
+                        <div className="flex flex-wrap gap-1.5">
+                          {(() => {
+                            const cats: StateCategory[] = [];
+                            if (formData.costume_id || formData.outfit) cats.push('costume');
+                            if (formData.body_elements) cats.push('effect');
+                            if (cats.length === 0) cats.push('daily');
+                            return cats.map(cat => {
+                              const IconComp = CATEGORY_ICON_MAP[cat];
+                              const colors = CATEGORY_COLOR_MAP[cat];
+                              const config = STATE_CATEGORIES.find(c => c.key === cat);
+                              return (
+                                <div
+                                  key={cat}
+                                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs ${colors.bg} ${colors.text} ${colors.border} border`}
+                                >
+                                  <IconComp className="w-3 h-3" />
+                                  {config?.label || cat}
+                                </div>
+                              );
+                            });
+                          })()}
                         </div>
                       </div>
                       
@@ -1540,147 +1763,221 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                           inputWrapper: "bg-slate-800/60 border border-slate-600/50"
                         }}
                       />
-
-                      {/* 状态标签编辑 */}
-                      <div className="space-y-2">
-                        <label className="text-xs font-medium text-slate-400 flex items-center gap-1.5">
-                          <Tag className="w-3.5 h-3.5" />
-                          状态标签
-                        </label>
-                        {/* 已添加的标签 */}
-                        {currentTags.length > 0 && (
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            {currentTags.map((tag, idx) => (
-                              <Chip
-                                key={idx}
-                                size="sm"
-                                variant="flat"
-                                onClose={() => handleRemoveTag(tag)}
-                                classNames={{
-                                  base: "bg-slate-700/50 border border-slate-600/30",
-                                  content: "text-xs text-slate-300"
-                                }}
-                              >
-                                {tag}
-                              </Chip>
-                            ))}
-                          </div>
-                        )}
-                        {/* 添加标签输入 */}
-                        <div className="flex gap-2">
-                          <Input
-                            size="sm"
-                            placeholder="输入标签后回车添加"
-                            value={formData.tagInput || ''}
-                            onValueChange={(val) => setFormData({ ...formData, tagInput: val })}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
-                                e.preventDefault();
-                                handleAddTag();
-                              }
-                            }}
-                            classNames={{
-                              input: "bg-transparent text-slate-100 text-xs",
-                              inputWrapper: "bg-slate-800/60 border border-slate-600/50"
-                            }}
-                          />
-                          <Button
-                            size="sm"
-                            variant="flat"
-                            className="bg-slate-700/50 text-slate-300 shrink-0"
-                            onPress={handleAddTag}
-                            isDisabled={!formData.tagInput?.trim()}
-                          >
-                            添加
-                          </Button>
+                    </div>
+                    
+                    {/* 右侧：三视图 + 外观属性卡片 */}
+                    <div className="space-y-3">
+                      {/* 三视图预览 */}
+                      <div>
+                        <label className="text-sm font-medium text-slate-400 mb-2 block">三视图</label>
+                        <div className="grid grid-cols-3 gap-2">
+                          {[{ key: 'front_view_url', label: '正面' }, { key: 'side_view_url', label: '侧面' }, { key: 'back_view_url', label: '背面' }].map(({ key, label }) => {
+                            const url = formData[key as keyof typeof formData];
+                            return (
+                              <div key={key} className="space-y-1">
+                                <p className="text-xs text-slate-500 text-center">{label}</p>
+                                <div className="aspect-[3/4] bg-slate-800/60 rounded-lg overflow-hidden border border-slate-700/50 flex items-center justify-center">
+                                  {url ? (
+                                    <img src={String(url)} alt={label} className="w-full h-full object-cover object-top" />
+                                  ) : (
+                                    <ImageIcon className="w-6 h-6 text-slate-600" />
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
                       
-                      {/* 外观属性区域 */}
-                      <div className="pt-2 border-t border-slate-700/30">
-                        <label className="text-sm font-medium text-slate-400 flex items-center gap-2 mb-3">
-                          <Shirt className="w-4 h-4" />
-                          外观属性
-                        </label>
+                      {/* 外观属性卡片列表 */}
+                      <label className="text-sm font-medium text-slate-400 flex items-center gap-2">
+                        <Shirt className="w-4 h-4" />
+                        外观属性
+                      </label>
+                      
+                      <div className="space-y-2.5">
+                        {/* 服装卡片 */}
+                        <Card className="bg-slate-800/40 border border-slate-700/40">
+                          <CardBody className="p-3 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-1.5">
+                                <Shirt className="w-3.5 h-3.5 text-pink-400" />
+                                <span className="text-xs font-medium text-slate-300">服装</span>
+                              </div>
+                              {formData.costume_id && (
+                                <Button
+                                  size="sm"
+                                  variant="light"
+                                  className="h-5 px-1.5 text-[10px] text-slate-500 min-w-0"
+                                  onPress={() => setFormData({ ...formData, costume_id: null, outfit: '' })}
+                                >
+                                  清除
+                                </Button>
+                              )}
+                            </div>
+                            {characterCostumes.length > 0 ? (
+                              <div className="grid grid-cols-4 gap-1.5">
+                                {characterCostumes.map((costume) => {
+                                  const isSelected = formData.costume_id === costume.id;
+                                  return (
+                                    <div
+                                      key={costume.id}
+                                      className={`relative rounded-md border overflow-hidden cursor-pointer transition-all ${
+                                        isSelected
+                                          ? 'border-pink-500/60 ring-1 ring-pink-500/40'
+                                          : 'border-slate-700/50 hover:border-slate-500/50'
+                                      }`}
+                                      onClick={() => setFormData({
+                                        ...formData,
+                                        costume_id: costume.id,
+                                        outfit: costume.outfit_prompt || costume.name
+                                      })}
+                                    >
+                                      <div className="aspect-square bg-slate-800/60 flex items-center justify-center overflow-hidden">
+                                        {costume.image_url ? (
+                                          <img src={costume.image_url} alt={costume.name} className="w-full h-full object-cover" />
+                                        ) : (
+                                          <Shirt className="w-4 h-4 text-slate-600" />
+                                        )}
+                                      </div>
+                                      <div className="px-1 py-0.5">
+                                        <p className={`text-[10px] truncate text-center ${isSelected ? 'text-pink-400 font-medium' : 'text-slate-400'}`}>
+                                          {costume.name}
+                                        </p>
+                                      </div>
+                                      {isSelected && (
+                                        <div className="absolute top-0.5 right-0.5 w-3.5 h-3.5 rounded-full bg-pink-500 flex items-center justify-center">
+                                          <svg className="w-2 h-2 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                          </svg>
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            ) : (
+                              <div className="text-center py-2 rounded-md bg-slate-800/40 border border-slate-700/30">
+                                <p className="text-[10px] text-slate-500">暂无服装</p>
+                              </div>
+                            )}
+                            {(!formData.costume_id || formData.costume_id === null) && (
+                              <Input
+                                size="sm"
+                                placeholder="自定义服装描述，如：学生制服、战斗服"
+                                value={formData.outfit || ''}
+                                onValueChange={(val) => setFormData({ ...formData, outfit: val })}
+                                classNames={{
+                                  input: "bg-transparent text-slate-100 text-xs",
+                                  inputWrapper: "bg-slate-800/60 border border-slate-600/50 h-8 min-h-0"
+                                }}
+                              />
+                            )}
+                            {formData.costume_id && formData.outfit && (
+                              <Chip size="sm" variant="flat" className="bg-pink-500/10 text-pink-400 text-[10px]">
+                                已选：{formData.outfit}
+                              </Chip>
+                            )}
+                          </CardBody>
+                        </Card>
                         
-                        <div className="space-y-2">
-                          <Select
-                            label="年龄阶段"
-                            placeholder="选择年龄阶段"
-                            selectedKeys={formData.age_stage ? [formData.age_stage] : []}
-                            onSelectionChange={(keys) => {
-                              const value = Array.from(keys)[0] as string;
-                              setFormData({ ...formData, age_stage: value || '' });
-                            }}
-                            classNames={{
-                              trigger: "bg-slate-800/60 border border-slate-600/50",
-                              value: "text-slate-100",
-                              label: "text-slate-400 text-xs"
-                            }}
-                          >
-                            {AGE_STAGES.map((stage) => (
-                              <SelectItem key={stage} textValue={stage}>
-                                {stage}
-                              </SelectItem>
-                            ))}
-                          </Select>
+                        {/* 年龄 / 发型 / 配饰 三个小卡片 */}
+                        <div className="grid grid-cols-3 gap-2">
+                          {/* 年龄阶段卡片 */}
+                          <Card className="bg-slate-800/40 border border-slate-700/40">
+                            <CardBody className="p-3 space-y-2">
+                              <div className="flex items-center gap-1.5">
+                                <Calendar className="w-3.5 h-3.5 text-purple-400" />
+                                <span className="text-xs font-medium text-slate-300">年龄</span>
+                              </div>
+                              <Select
+                                size="sm"
+                                placeholder="选择"
+                                selectedKeys={formData.age_stage ? [formData.age_stage] : []}
+                                onSelectionChange={(keys) => {
+                                  const value = Array.from(keys)[0] as string;
+                                  setFormData({ ...formData, age_stage: value || '' });
+                                }}
+                                classNames={{
+                                  trigger: "bg-slate-800/60 border border-slate-600/50 h-8 min-h-0",
+                                  value: "text-slate-100 text-xs",
+                                  label: "hidden"
+                                }}
+                              >
+                                {AGE_STAGES.map((stage) => (
+                                  <SelectItem key={stage} textValue={stage}>
+                                    {stage}
+                                  </SelectItem>
+                                ))}
+                              </Select>
+                            </CardBody>
+                          </Card>
                           
-                          <Input
-                            size="sm"
-                            label="服装描述"
-                            placeholder="如：学生制服、休闲装、战斗服"
-                            value={formData.outfit || ''}
-                            onValueChange={(val) => setFormData({ ...formData, outfit: val })}
-                            classNames={{
-                              input: "bg-transparent text-slate-100",
-                              label: "text-slate-400 text-xs",
-                              inputWrapper: "bg-slate-800/60 border border-slate-600/50"
-                            }}
-                          />
+                          {/* 发型卡片 */}
+                          <Card className="bg-slate-800/40 border border-slate-700/40">
+                            <CardBody className="p-3 space-y-2">
+                              <div className="flex items-center gap-1.5">
+                                <Scissors className="w-3.5 h-3.5 text-amber-400" />
+                                <span className="text-xs font-medium text-slate-300">发型</span>
+                              </div>
+                              <Input
+                                size="sm"
+                                placeholder="如：长发、短发"
+                                value={formData.hairstyle || ''}
+                                onValueChange={(val) => setFormData({ ...formData, hairstyle: val })}
+                                classNames={{
+                                  input: "bg-transparent text-slate-100 text-xs",
+                                  inputWrapper: "bg-slate-800/60 border border-slate-600/50 h-8 min-h-0"
+                                }}
+                              />
+                            </CardBody>
+                          </Card>
                           
-                          <Input
-                            size="sm"
-                            label="发型描述"
-                            placeholder="如：长发、短发、马尾"
-                            value={formData.hairstyle || ''}
-                            onValueChange={(val) => setFormData({ ...formData, hairstyle: val })}
-                            classNames={{
-                              input: "bg-transparent text-slate-100",
-                              label: "text-slate-400 text-xs",
-                              inputWrapper: "bg-slate-800/60 border border-slate-600/50"
-                            }}
-                          />
-                          
-                          <Input
-                            size="sm"
-                            label="配饰描述"
-                            placeholder="如：眼镜、项链、帽子"
-                            value={formData.accessories || ''}
-                            onValueChange={(val) => setFormData({ ...formData, accessories: val })}
-                            classNames={{
-                              input: "bg-transparent text-slate-100",
-                              label: "text-slate-400 text-xs",
-                              inputWrapper: "bg-slate-800/60 border border-slate-600/50"
-                            }}
-                          />
-                          
-                          <Input
-                            size="sm"
-                            label="手持道具"
-                            placeholder="如：剑、书本、胡萝卜、水杯（角色手里拿着或身上携带的物品）"
-                            value={formData.held_props || ''}
-                            onValueChange={(val) => setFormData({ ...formData, held_props: val })}
-                            classNames={{
-                              input: "bg-transparent text-slate-100",
-                              label: "text-slate-400 text-xs",
-                              inputWrapper: "bg-slate-800/60 border border-slate-600/50"
-                            }}
-                          />
+                          {/* 配饰卡片 */}
+                          <Card className="bg-slate-800/40 border border-slate-700/40">
+                            <CardBody className="p-3 space-y-2">
+                              <div className="flex items-center gap-1.5">
+                                <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+                                <span className="text-xs font-medium text-slate-300">配饰</span>
+                              </div>
+                              <Input
+                                size="sm"
+                                placeholder="如：眼镜、项链"
+                                value={formData.accessories || ''}
+                                onValueChange={(val) => setFormData({ ...formData, accessories: val })}
+                                classNames={{
+                                  input: "bg-transparent text-slate-100 text-xs",
+                                  inputWrapper: "bg-slate-800/60 border border-slate-600/50 h-8 min-h-0"
+                                }}
+                              />
+                            </CardBody>
+                          </Card>
                         </div>
                         
-                        {/* 外貌提示词预览 */}
-                        {(formData.outfit || formData.hairstyle || formData.accessories || formData.held_props || formData.age_stage || formData.appearance) && (
-                          <div className="mt-3 p-2.5 rounded-lg bg-purple-500/5 border border-purple-500/20">
+                        {/* 效果/附加描述卡片 */}
+                        <Card className="bg-slate-800/40 border border-slate-700/40">
+                          <CardBody className="p-3 space-y-2">
+                            <div className="flex items-center gap-1.5">
+                              <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+                              <span className="text-xs font-medium text-slate-300">效果 / 附加描述</span>
+                            </div>
+                            <Textarea
+                              size="sm"
+                              placeholder="自由描述角色的特殊状态效果，如：身上有泥巴、淋湿了、发光、受伤流血、满脸通红..."
+                              value={formData.body_elements || ''}
+                              onValueChange={(val) => setFormData({ ...formData, body_elements: val })}
+                              minRows={2}
+                              classNames={{
+                                input: "bg-transparent text-slate-100 text-xs",
+                                inputWrapper: "bg-slate-800/60 border border-slate-600/50"
+                              }}
+                            />
+                          </CardBody>
+                        </Card>
+                        
+                        {/* 生成提示词预览 */}
+                        {(formData.outfit || formData.hairstyle || formData.accessories || formData.held_props || formData.age_stage || formData.appearance || formData.body_elements) && (
+                          <div className="p-2.5 rounded-lg bg-purple-500/5 border border-purple-500/20">
                             <div className="flex items-center gap-1.5 mb-1.5">
                               <Sparkles className="w-3 h-3 text-purple-400" />
                               <span className="text-xs font-medium text-purple-400">生成提示词预览</span>
@@ -1688,42 +1985,16 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                             <p className="text-xs text-slate-400 leading-relaxed">
                               {[
                                 formData.appearance || '',
-                                formData.age_stage ? `年龄阶段: ${formData.age_stage}` : '',
+                                formData.age_stage ? `年龄: ${formData.age_stage}` : '',
                                 formData.outfit ? `服装: ${formData.outfit}` : '',
                                 formData.hairstyle ? `发型: ${formData.hairstyle}` : '',
                                 formData.accessories ? `配饰: ${formData.accessories}` : '',
-                                formData.held_props ? `手持道具: ${formData.held_props}` : ''
+                                formData.body_elements ? `效果: ${formData.body_elements}` : '',
+                                formData.held_props ? `手持: ${formData.held_props}` : ''
                               ].filter(Boolean).join('；')}
-                            </p>
-                            <p className="text-xs text-slate-500 mt-1.5">
-                              生成图像时将基于以上描述构建提示词，修改外观属性后重新生成即可反映变化
                             </p>
                           </div>
                         )}
-                      </div>
-                    </div>
-                    
-                    {/* 右侧：三视图（主图URL 为内部存储路径，不对用户展示） */}
-                    <div className="space-y-3">
-                      <label className="text-sm font-medium text-slate-400">三视图</label>
-                      
-                      {/* 三视图预览 */}
-                      <div className="grid grid-cols-3 gap-2 mt-2">
-                        {[{ key: 'front_view_url', label: '正面' }, { key: 'side_view_url', label: '侧面' }, { key: 'back_view_url', label: '背面' }].map(({ key, label }) => {
-                          const url = formData[key as keyof typeof formData];
-                          return (
-                            <div key={key} className="space-y-1">
-                              <p className="text-xs text-slate-500 text-center">{label}</p>
-                              <div className="aspect-square bg-slate-800/60 rounded-lg overflow-hidden border border-slate-700/50 flex items-center justify-center">
-                                {url ? (
-                                  <img src={String(url)} alt={label} className="w-full h-full object-cover object-top" />
-                                ) : (
-                                  <ImageIcon className="w-6 h-6 text-slate-600" />
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
                       </div>
                     </div>
                   </div>
@@ -1934,6 +2205,68 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                   {generatingState?.is_base_model 
                     ? (baseModelGenerateMode === 'three_views' ? '生成三视图' : '生成角色设定图')
                     : '生成图片'}
+                </Button>
+              </ModalFooter>
+            </>
+          )}
+        </ModalContent>
+      </Modal>
+
+      {/* 道具叠加弹窗 */}
+      <Modal isOpen={equipPropModalOpen} onOpenChange={setEquipPropModalOpen} size="md">
+        <ModalContent>
+          {(onClose) => (
+            <>
+              <ModalHeader>叠加道具到状态「{equippingState?.name}」</ModalHeader>
+              <ModalBody className="space-y-4">
+                {projectProps.length === 0 ? (
+                  <p className="text-sm text-slate-400">当前项目没有可用的永久道具，请先到资产管理中创建永久道具。</p>
+                ) : (
+                  <>
+                    <Select
+                      label="选择道具"
+                      selectedKeys={selectedPropId ? [selectedPropId] : []}
+                      onSelectionChange={(keys) => setSelectedPropId(Array.from(keys)[0] as string)}
+                    >
+                      {projectProps.map((prop) => (
+                        <SelectItem key={String(prop.id)} textValue={prop.name}>
+                          {prop.name}
+                        </SelectItem>
+                      ))}
+                    </Select>
+                    <Select
+                      label="手持位置"
+                      selectedKeys={[handPosition]}
+                      onSelectionChange={(keys) => setHandPosition(Array.from(keys)[0] as string)}
+                    >
+                      <SelectItem key="right">右手</SelectItem>
+                      <SelectItem key="left">左手</SelectItem>
+                      <SelectItem key="both">双手</SelectItem>
+                      <SelectItem key="back">背后</SelectItem>
+                      <SelectItem key="waist">腰间</SelectItem>
+                    </Select>
+                    <Select
+                      label="持握方式"
+                      selectedKeys={[usageMode]}
+                      onSelectionChange={(keys) => setUsageMode(Array.from(keys)[0] as string)}
+                    >
+                      <SelectItem key="hold">持握</SelectItem>
+                      <SelectItem key="wear">佩戴</SelectItem>
+                      <SelectItem key="carry">背负</SelectItem>
+                      <SelectItem key="ground">放置</SelectItem>
+                    </Select>
+                  </>
+                )}
+              </ModalBody>
+              <ModalFooter>
+                <Button variant="light" onPress={onClose}>取消</Button>
+                <Button
+                  color="primary"
+                  isDisabled={!selectedPropId || projectProps.length === 0}
+                  isLoading={equipping}
+                  onPress={handleEquipProp}
+                >
+                  确认叠加
                 </Button>
               </ModalFooter>
             </>

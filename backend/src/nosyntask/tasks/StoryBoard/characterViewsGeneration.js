@@ -355,7 +355,7 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
     projectId,
     imageModel,
     textModel,
-    aspectRatio = '9:16',  // 默认 9:16 竖版比例
+    aspectRatio = '3:4',  // 默认 3:4 竖版比例
     width,
     height,
     regenerateOnly,   // 可选：补全模式，如 ['side', 'back']
@@ -418,6 +418,27 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
   const needSide = needsGeneration('side');
   const needBack = needsGeneration('back');
 
+  // 查询状态关联的道具，拼入 heldProps（替代旧 held_props 纯文本字段）
+  let effectiveHeldProps = heldProps || '';
+  if (stateId && !isBaseModel) {
+    const propRows = await queryAll(
+      `SELECT p.name, csp.hand_position, csp.usage_mode
+       FROM character_state_props csp
+       JOIN props p ON csp.prop_id = p.id
+       WHERE csp.character_state_id = ?`,
+      [stateId]
+    );
+    if (propRows.length > 0) {
+      const propDescs = propRows.map(r => {
+        const handMap = { right: '右手', left: '左手', both: '双手', back: '背后', waist: '腰间' };
+        const usageMap = { hold: '持握', wear: '佩戴', carry: '背负', ground: '放置' };
+        return `${r.name}(${handMap[r.hand_position] || r.hand_position}${usageMap[r.usage_mode] ? '/' + usageMap[r.usage_mode] : ''})`;
+      });
+      effectiveHeldProps = propDescs.join('，');
+      console.log(`[CharacterViews] 状态关联道具: ${effectiveHeldProps}`);
+    }
+  }
+
   console.log('[CharacterViews] 开始生成三视图:', {
     characterId,
     characterName,
@@ -437,7 +458,8 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
     gender,
     outfit: outfit || 'N/A',
     hairstyle: hairstyle || 'N/A',
-    ageStage: ageStage || 'N/A'
+    ageStage: ageStage || 'N/A',
+    heldProps: effectiveHeldProps || 'N/A'
   });
 
   if (!imageModel) {
@@ -509,12 +531,12 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
       }
     }
   } else if (!isBaseModel && isStateGeneration && characterId) {
-    // ★ 非白膜状态生成：白膜设定图（身份锚）+ 服装三视图（服装锚）
+    // ★ 非白膜状态生成：白膜设定图（身份锚）+ 服装设定图（服装锚）
     const refUrls = [];
 
     // 1) 白膜设定图
     const baseModelRow = await queryOne(
-      `SELECT image_url FROM character_states 
+      `SELECT image_url FROM character_states
        WHERE character_id = ? AND is_base_model = 1 AND image_url IS NOT NULL AND image_url != ''`,
       [characterId]
     );
@@ -526,29 +548,50 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
       }
     }
 
-    // 2) 状态关联的 costume 三视图（若有）
+    // 2) 状态关联的 costume 设定图（若有）
     if (stateId) {
       const costumeRow = await queryOne(
-        `SELECT c.front_view_url, c.side_view_url, c.back_view_url, c.image_url
+        `SELECT c.image_url, c.front_view_url, c.side_view_url, c.back_view_url
          FROM character_states s
          LEFT JOIN costumes c ON s.costume_id = c.id
          WHERE s.id = ?`,
         [stateId]
       );
       if (costumeRow) {
-        const costumeUrls = [costumeRow.front_view_url, costumeRow.side_view_url, costumeRow.back_view_url]
-          .filter(Boolean)
-          .map(url => resolveToInternalUrl(url))
-          .filter(Boolean);
-        if (costumeUrls.length > 0) {
-          refUrls.push(...costumeUrls);
-          console.log(`[CharacterViews] ✅ 非白膜状态生成：已加 ${costumeUrls.length} 张服装三视图作参考`);
-        } else if (costumeRow.image_url) {
-          // 服装无三视图但有主图，也能用
+        // 优先使用新的单张设定图
+        if (costumeRow.image_url) {
           const costumeMain = resolveToInternalUrl(costumeRow.image_url);
           if (costumeMain) {
             refUrls.push(costumeMain);
-            console.log('[CharacterViews] ✅ 非白膜状态生成：已加服装主图作参考:', costumeMain);
+            console.log('[CharacterViews] ✅ 非白膜状态生成：已加服装设定图作参考:', costumeMain);
+          }
+        } else {
+          // 兼容老数据：回退到旧的三视图字段
+          const costumeUrls = [costumeRow.front_view_url, costumeRow.side_view_url, costumeRow.back_view_url]
+            .filter(Boolean)
+            .map(url => resolveToInternalUrl(url))
+            .filter(Boolean);
+          if (costumeUrls.length > 0) {
+            refUrls.push(...costumeUrls);
+            console.log(`[CharacterViews] ✅ 非白膜状态生成：已加 ${costumeUrls.length} 张服装旧视图作参考`);
+          }
+        }
+      }
+
+      // 3) 状态关联的道具设定图（若有）
+      const propRows = await queryAll(
+        `SELECT p.image_url, p.name, csp.hand_position, csp.usage_mode
+         FROM character_state_props csp
+         JOIN props p ON csp.prop_id = p.id
+         WHERE csp.character_state_id = ? AND p.image_url IS NOT NULL AND p.image_url != ''`,
+        [stateId]
+      );
+      if (propRows.length > 0) {
+        for (const propRow of propRows) {
+          const propUrl = resolveToInternalUrl(propRow.image_url);
+          if (propUrl) {
+            refUrls.push(propUrl);
+            console.log(`[CharacterViews] ✅ 非白膜状态生成：已加道具「${propRow.name}」设定图作参考 (${propRow.hand_position}/${propRow.usage_mode})`);
           }
         }
       }
@@ -691,9 +734,9 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
             return { view, prompt: buildBaseModelReferencePrompt(view, style, characterName, { gender, bodyElements }) };
           }
           // 非白膜状态：参考图通常是白膜设定图，必须把状态服装/发型/配饰传入以覆盖参考图占位装
-          return { view, prompt: buildReferenceGuidedPrompt(view, style, characterName, { isBaseModel, gender, outfit, hairstyle, accessories, ageStage, heldProps }) };
+          return { view, prompt: buildReferenceGuidedPrompt(view, style, characterName, { isBaseModel, gender, outfit, hairstyle, accessories, ageStage, heldProps: effectiveHeldProps }) };
         }
-        const prompt = await generateViewPrompt(view, characterName, appearance, description, style, textModel, { isBaseModel, gender, outfit, hairstyle, accessories, ageStage, bodyProportionInstruction, bodyElements, heldProps });
+        const prompt = await generateViewPrompt(view, characterName, appearance, description, style, textModel, { isBaseModel, gender, outfit, hairstyle, accessories, ageStage, bodyProportionInstruction, bodyElements, heldProps: effectiveHeldProps });
         return { view, prompt };
       })
     );

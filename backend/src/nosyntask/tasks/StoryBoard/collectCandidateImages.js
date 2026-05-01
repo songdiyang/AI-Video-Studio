@@ -186,10 +186,10 @@ const collectCandidateImages = traced('收集候选参考图', async function _c
             description: `角色「${charName}」「${costumeLabel}」背面视图，保持服装配饰一致性`
           });
         }
-        console.log(`[CandidateImages] 角色「${charName}」服装三视图: 正面=${!!linkedChar.costume_front_view_url}, 侧面=${!!linkedChar.costume_side_view_url}, 背面=${!!linkedChar.costume_back_view_url}`);
+        console.log(`[CandidateImages] 角色「${charName}」服装视图: 正面=${!!linkedChar.costume_front_view_url}, 侧面=${!!linkedChar.costume_side_view_url}, 背面=${!!linkedChar.costume_back_view_url}`);
       }
 
-      // 兜底：无白膜也无服装三视图时，使用角色级三视图（兼容老数据）
+      // 兜底：无白膜也无服装视图时，使用角色级视图（兼容老数据）
       if (!hasBaseViews && !hasCostumeViews) {
         const frontUrl = linkedChar.front_view_url || linkedChar.image_url;
         if (frontUrl) {

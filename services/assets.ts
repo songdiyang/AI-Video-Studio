@@ -159,8 +159,24 @@ export interface Prop {
   generation_status?: 'idle' | 'generating' | 'completed' | 'failed';
   generation_prompt?: string;
   style_config?: PropStyleConfig | null;
+  // 道具系统扩展字段
+  prop_type?: 'permanent' | 'interactive';
+  is_equipped?: boolean;
+  front_view_url?: string;
+  side_view_url?: string;
+  back_view_url?: string;
   created_at: string;
   updated_at: string;
+}
+
+// 角色状态关联的道具信息
+export interface EquippedProp {
+  prop_id: number;
+  name: string;
+  image_url: string;
+  prop_type: 'permanent' | 'interactive';
+  hand_position: string;
+  usage_mode: string;
 }
 
 // 道具样式配置接口
@@ -235,6 +251,12 @@ export interface CharacterState {
   // 状态分类和标签
   state_category?: StateCategory | StateCategory[];  // 状态分类（支持多选）
   tags?: string;                   // 状态标签JSON数组
+  // 关联服装资产信息（LEFT JOIN costumes）
+  costume_name?: string | null;
+  costume_image_url?: string | null;
+  costume_generation_status?: 'pending' | 'generating' | 'completed' | 'failed' | null;
+  // 关联道具信息（LEFT JOIN character_state_props + props）
+  equipped_props?: EquippedProp[];
 }
 
 // 状态分类类型
@@ -670,6 +692,28 @@ export async function deleteProp(id: number): Promise<void> {
     const data = await response.json();
     throw new Error(data.message || '删除道具失败');
   }
+}
+
+export async function extractPropsFromScript(payload: {
+  projectId: number;
+  scriptId: number;
+  textModel: string;
+  imageModel?: string;
+}): Promise<{ message: string; jobId?: string; status: string }> {
+  const token = getAuthToken();
+  const response = await fetch('/api/props/extract-from-script', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    },
+    body: JSON.stringify(payload)
+  });
+  if (!response.ok) {
+    const data = await response.json();
+    throw new Error(data.message || '提取道具失败');
+  }
+  return response.json();
 }
 
 // ============================================================

@@ -272,6 +272,22 @@ const PropModal: React.FC<PropModalProps> = ({
                         }}
                       />
 
+                      <Select
+                        label="道具类型"
+                        selectedKeys={formData.prop_type ? [formData.prop_type] : ['interactive']}
+                        onSelectionChange={(keys) => {
+                          const selected = Array.from(keys)[0] as string;
+                          if (selected) setFormData({ ...formData, prop_type: selected });
+                        }}
+                        classNames={{
+                          trigger: 'bg-content2 border-divider',
+                          popoverContent: 'bg-content1',
+                        }}
+                      >
+                        <SelectItem key="permanent" textValue="永久道具">永久道具</SelectItem>
+                        <SelectItem key="interactive" textValue="交互道具">交互道具</SelectItem>
+                      </Select>
+
                       <Input
                         label="道具分类"
                         placeholder="如：武器、工具、装饰品等"

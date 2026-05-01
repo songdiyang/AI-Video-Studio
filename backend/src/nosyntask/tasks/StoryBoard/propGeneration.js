@@ -1,208 +1,144 @@
 /**
- * 道具生成处理器
- * 
- * 两步流程：
- *   1. handlePropPromptGeneration - 调用文本模型生成道具描述提示词
- *   2. handlePropImageGeneration - 调用图像模型生成道具图片
- * 
- * 输出：
- *   - prompt: 生成的英文提示词
- *   - imageUrl: 道具图片URL
+ * 道具设定图生成任务
+ * 基于道具描述直接生成 16:9 单张道具设定图（参考服装设定图模式）
+ *
+ * input: {
+ *   propId: number,
+ *   projectId: number,
+ *   imageModel: string,
+ *   textModel?: string,
+ *   aspectRatio?: string
+ * }
+ *
+ * output: {
+ *   propId,
+ *   imageUrl,
+ *   prompt
+ * }
  */
 
-const handleBaseTextModelCall = require('../base/baseTextModelCall');
-const handleBaseImageModelCall = require('../base/imageGeneration');
+const handleImageGeneration = require('../base/imageGeneration');
+const { execute, queryOne } = require('../../../dbHelper');
+const { downloadAndStore } = require('../../../utils/fileStorage');
+const { requireVisualStyle } = require('../../../utils/getProjectStyle');
 
-// 道具提示词生成模板
-const PROP_PROMPT_TEMPLATE = `你是一个专业的道具设计师，根据以下信息生成道具的详细英文描述，用于AI图像生成。
+function buildPropPrompt(style, propName, propDesc, propCategory, styleConfig) {
+  const styleKeywords = style || 'anime style';
 
-【道具信息】
-道具名称：{propName}
-道具描述：{propDescription}
-道具分类：{propCategory}
-
-【样式配置】
-{styleConfig}
-
-【输出要求】
-生成一段适合 AI 图像生成的英文提示词，描述这个道具的外观细节。
-
-必须包含以下方面：
-1. 主体描述：道具的基本形态和用途
-2. 材质纹理：材料质感（如金属光泽、木质纹理、塑料质感等）
-3. 颜色配色：主色调和辅助色
-4. 细节特征：独特的设计元素或装饰
-5. 光影表现：反光、阴影、透明度等
-6. 拍摄风格：产品摄影风格，白色/简洁背景，专业打光
-
-【格式要求】
-- 直接输出英文提示词，不要包含任何解释
-- 使用逗号分隔的短语
-- 包含以下固定后缀：product photography, studio lighting, white background, high detail, 8k quality
-
-【示例输出】
-A vintage brass pocket watch, intricate Roman numerals on ivory dial, ornate engravings on the case, warm golden patina, mechanical gears visible through glass back, soft reflective surface, product photography, studio lighting, white background, high detail, 8k quality`;
-
-/**
- * 格式化样式配置为可读文本
- */
-function formatStyleConfig(config) {
-  if (!config || typeof config !== 'object') {
-    return '无特殊样式要求';
+  // 解析样式配置
+  const configParts = [];
+  if (styleConfig) {
+    const sc = typeof styleConfig === 'string' ? JSON.parse(styleConfig) : styleConfig;
+    if (sc.material) configParts.push(`made of ${sc.material}`);
+    if (sc.primaryColor) configParts.push(`primary color ${sc.primaryColor}`);
+    if (sc.secondaryColor) configParts.push(`accent color ${sc.secondaryColor}`);
+    if (sc.texture) configParts.push(`${sc.texture} texture`);
+    if (sc.size) configParts.push(`size: ${sc.size}`);
+    if (sc.condition) configParts.push(`${sc.condition} condition`);
+    if (sc.details) configParts.push(sc.details);
   }
+  const configDesc = configParts.length > 0 ? configParts.join(', ') : '';
 
-  const styleLabels = {
-    material: '材质',
-    primaryColor: '主色调',
-    secondaryColor: '辅助色',
-    texture: '纹理',
-    size: '尺寸',
-    condition: '状态',
-    style: '风格',
-    era: '年代',
-    details: '细节'
-  };
+  const baseDesc = propDesc || propName;
+  const categoryHint = propCategory ? `${propCategory}, ` : '';
 
-  const parts = [];
-  for (const [key, value] of Object.entries(config)) {
-    if (value && styleLabels[key]) {
-      parts.push(`${styleLabels[key]}：${value}`);
-    }
-  }
-
-  return parts.length > 0 ? parts.join('\n') : '无特殊样式要求';
+  return `prop design reference sheet, a standalone ${categoryHint}item displayed on clean light gray background, ${baseDesc}, ${configDesc}, shown from multiple angles in a single wide 16:9 image, left: front view showing full face of the item, center: side profile view showing thickness and silhouette, right: back view / detail view, consistent design across all angles, ${styleKeywords}, product photography, studio lighting, even soft light, no dramatic shadow, highly detailed, crisp line art feel`;
 }
 
-/**
- * 步骤1：生成道具描述提示词
- * 
- * @param {Object} inputParams
- * @param {number} inputParams.propId - 道具ID
- * @param {string} inputParams.propName - 道具名称
- * @param {string} inputParams.propDescription - 道具描述
- * @param {string} inputParams.propCategory - 道具分类
- * @param {Object} inputParams.propStyleConfig - 样式配置
- * @param {string} inputParams.textModel - 文本模型名称
- * @param {function} onProgress - 进度回调
- * @returns {Promise<{prompt: string}>}
- */
+async function handlePropViewsGeneration(inputParams, onProgress) {
+  const { propId, projectId, imageModel, aspectRatio } = inputParams;
+
+  if (!propId) throw new Error('propId 参数必需');
+  if (!imageModel) throw new Error('imageModel 参数必需');
+
+  // 加载道具信息
+  const prop = await queryOne('SELECT * FROM props WHERE id = ?', [propId]);
+  if (!prop) throw new Error('道具不存在');
+
+  const propName = prop.name;
+  const propDesc = prop.description || prop.name;
+  const propCategory = prop.category || '';
+  const styleConfig = prop.style_config || null;
+  const style = await requireVisualStyle(projectId || prop.project_id);
+
+  console.log('[PropViews] 开始生成道具设定图', {
+    propId, name: propName, category: propCategory, imageModel
+  });
+
+  if (onProgress) onProgress(5);
+
+  // 标记生成中
+  await execute(
+    `UPDATE props SET generation_status = 'generating', updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+    [propId]
+  );
+
+  const ts = Date.now();
+  const storageBase = `images/props/${propId}`;
+
+  try {
+    // 构建 prompt 并生成 16:9 道具设定图
+    const prompt = buildPropPrompt(style, propName, propDesc, propCategory, styleConfig);
+    const genParams = {
+      prompt,
+      imageModel,
+      aspectRatio: aspectRatio || '16:9'
+    };
+    const r = await handleImageGeneration(genParams);
+
+    if (onProgress) onProgress(70);
+
+    // 持久化到存储
+    const persistedUrl = await downloadAndStore(
+      r.image_url,
+      `${storageBase}/design_${ts}`,
+      { fallbackExt: '.png' }
+    );
+
+    if (onProgress) onProgress(90);
+
+    // 入库
+    await execute(
+      `UPDATE props SET
+        image_url = ?,
+        generation_status = 'completed',
+        generation_prompt = ?,
+        updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+      [persistedUrl, prompt, propId]
+    );
+
+    if (onProgress) onProgress(100);
+    console.log('[PropViews] 道具设定图生成完成', { propId });
+
+    return {
+      propId,
+      imageUrl: persistedUrl,
+      prompt
+    };
+  } catch (err) {
+    console.error('[PropViews] 生成失败:', err.message);
+    await execute(
+      `UPDATE props SET generation_status = 'failed', updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      [propId]
+    );
+    throw err;
+  }
+}
+
+// 保留旧接口兼容
 async function handlePropPromptGeneration(inputParams, onProgress) {
-  const {
-    propId,
-    propName,
-    propDescription,
-    propCategory,
-    propStyleConfig,
-    textModel
-  } = inputParams;
-
-  if (!propName) {
-    throw new Error('道具名称不能为空');
-  }
-
-  if (!textModel) {
-    throw new Error('textModel 参数是必需的');
-  }
-
-  console.log('[PropGen] 开始生成道具提示词:', propName);
-
-  // 构建提示词
-  const prompt = PROP_PROMPT_TEMPLATE
-    .replace('{propName}', propName || '')
-    .replace('{propDescription}', propDescription || '无详细描述')
-    .replace('{propCategory}', propCategory || '通用道具')
-    .replace('{styleConfig}', formatStyleConfig(propStyleConfig));
-
-  if (onProgress) onProgress(10);
-
-  // 调用文本模型
-  const result = await handleBaseTextModelCall({
-    prompt,
-    textModel,
-    maxTokens: 1024,
-    temperature: 0.7
-  }, (p) => onProgress && onProgress(10 + p * 0.8));
-
-  if (onProgress) onProgress(100);
-
-  // 提取生成的提示词（去掉可能的引号和多余空白）
-  let generatedPrompt = result.content.trim();
-  
-  // 如果模型返回了带引号的内容，去除引号
-  if (generatedPrompt.startsWith('"') && generatedPrompt.endsWith('"')) {
-    generatedPrompt = generatedPrompt.slice(1, -1);
-  }
-  if (generatedPrompt.startsWith("'") && generatedPrompt.endsWith("'")) {
-    generatedPrompt = generatedPrompt.slice(1, -1);
-  }
-
-  console.log('[PropGen] 提示词生成完成:', generatedPrompt.substring(0, 100) + '...');
-
-  return {
-    prompt: generatedPrompt,
-    propId,
-    propName,
-    tokens: result.tokens || 0
-  };
+  console.warn('[PropGen] handlePropPromptGeneration 已废弃，请使用 prop_views_generation');
+  return { prompt: '', propId: inputParams.propId };
 }
 
-/**
- * 步骤2：生成道具图片
- * 
- * @param {Object} inputParams
- * @param {number} inputParams.propId - 道具ID
- * @param {string} inputParams.imageModel - 图像模型名称
- * @param {string} inputParams.aspectRatio - 画面比例
- * @param {function} onProgress - 进度回调
- * @returns {Promise<{imageUrl: string}>}
- */
 async function handlePropImageGeneration(inputParams, onProgress) {
-  const {
-    propId,
-    imageModel,
-    aspectRatio = '1:1',  // 道具图默认正方形
-    prompt  // 从上一步骤获取
-  } = inputParams;
-
-  if (!imageModel) {
-    throw new Error('imageModel 参数是必需的');
-  }
-
-  if (!prompt) {
-    throw new Error('prompt 参数是必需的（应由上一步骤提供）');
-  }
-
-  console.log('[PropGen] 开始生成道具图片, propId:', propId);
-
-  if (onProgress) onProgress(10);
-
-  // 调用图像模型
-  const result = await handleBaseImageModelCall({
-    prompt,
-    imageModel,
-    aspectRatio,
-    width: 1024,
-    height: 1024
-  }, (p) => onProgress && onProgress(10 + p * 0.8));
-
-  if (onProgress) onProgress(100);
-
-  const imageUrl = result.imageUrl || result.url || result.image_url;
-
-  if (!imageUrl) {
-    throw new Error('图像模型未返回有效的图片URL');
-  }
-
-  console.log('[PropGen] 道具图片生成完成:', imageUrl);
-
-  return {
-    imageUrl,
-    propId,
-    prompt
-  };
+  console.warn('[PropGen] handlePropImageGeneration 已废弃，请使用 prop_views_generation');
+  return { imageUrl: '', propId: inputParams.propId, prompt: '' };
 }
 
 module.exports = {
+  handlePropViewsGeneration,
   handlePropPromptGeneration,
   handlePropImageGeneration
 };

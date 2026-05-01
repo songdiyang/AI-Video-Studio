@@ -1,7 +1,7 @@
 /**
- * 服装三视图生成任务
- * 基于无角色的通用白色 mannequin（人台）+ 服装描述，生成服装的正/侧/背三视图
- * 跨角色复用：一套服装三视图可被多个角色引用
+ * 服装设定图生成任务
+ * 基于无角色的通用白色 mannequin（人台）+ 服装描述，生成一张 16:9 服装设定图
+ * 跨角色复用：一套服装设定图可被多个角色引用
  *
  * input: {
  *   costumeId: number,
@@ -13,13 +13,13 @@
  *
  * output: {
  *   costumeId,
- *   frontViewUrl, sideViewUrl, backViewUrl, imageUrl
+ *   imageUrl
  * }
  */
 
 const handleImageGeneration = require('../base/imageGeneration');
 const { execute, queryOne } = require('../../../dbHelper');
-const { downloadAndStore, resolveToInternalUrl } = require('../../../utils/fileStorage');
+const { downloadAndStore } = require('../../../utils/fileStorage');
 const { requireVisualStyle } = require('../../../utils/getProjectStyle');
 
 // 通用服装人台（白色简单人形 mannequin），刻意避开任何角色身份
@@ -29,17 +29,10 @@ const MANNEQUIN_BODY = {
   unisex: 'androgynous mannequin body, neutral facial features, average proportions, plain white skin tone, simple generic human form, no distinct personality or character identity, T-pose neutral standing, clean empty background'
 };
 
-const VIEW_CFG = {
-  front: 'front view, eye-level shot, full body, facing camera, arms slightly away from body to fully reveal the outfit, costume fully visible',
-  side: 'side view, profile shot, full body, 90 degrees right profile, showing outfit silhouette and side details',
-  back: 'back view, rear shot, full body, facing completely away, showing the back of the outfit in full detail'
-};
-
-function buildCostumePrompt(view, style, outfitDesc, gender) {
+function buildCostumePrompt(style, outfitDesc, gender) {
   const mannequin = MANNEQUIN_BODY[gender] || MANNEQUIN_BODY.unisex;
-  const viewAngle = VIEW_CFG[view] || VIEW_CFG.front;
   const styleKeywords = style || 'anime style';
-  return `product reference sheet of a standalone costume/outfit displayed on a generic mannequin, ${mannequin}, the mannequin is wearing: ${outfitDesc}, the outfit must be fully visible and clear, preserve all costume details fabric texture color pattern trim buttons seams accessories attached to the outfit, ${viewAngle}, ${styleKeywords}, clean solid light gray background, even soft studio lighting, no dramatic shadow, no extra props, no weapons, no held items, neutral pose, professional costume turnaround reference sheet`;
+  return `costume design reference sheet, three-view turnaround of a standalone costume/outfit displayed on three identical generic mannequins arranged horizontally in a single wide 16:9 image, ${mannequin}, left mannequin shows front view, center mannequin shows side profile view, right mannequin shows back view, all three mannequins are wearing the exact same outfit: ${outfitDesc}, the outfit must be fully visible and clear on every view, preserve all costume details fabric texture color pattern trim buttons seams accessories attached to the outfit, arms slightly away from body to fully reveal the outfit, ${styleKeywords}, clean solid light gray background, even soft studio lighting, no dramatic shadow, no extra props, no weapons, no held items, neutral pose, professional costume turnaround reference sheet, highly detailed, consistent design across all three angles, crisp line art feel`;
 }
 
 async function handleCostumeViewsGeneration(inputParams, onProgress) {
@@ -53,12 +46,12 @@ async function handleCostumeViewsGeneration(inputParams, onProgress) {
   if (!costume) throw new Error('服装不存在');
 
   const outfitDesc = costume.outfit_prompt || costume.description || costume.name;
-  if (!outfitDesc) throw new Error('服装缺少描述或提示词，无法生成三视图');
+  if (!outfitDesc) throw new Error('服装缺少描述或提示词，无法生成设定图');
 
   const gender = costume.gender || 'unisex';
   const style = await requireVisualStyle(projectId || costume.project_id);
 
-  console.log('[CostumeViews] 开始生成服装三视图', {
+  console.log('[CostumeViews] 开始生成服装设定图', {
     costumeId, name: costume.name, gender, imageModel
   });
 
@@ -72,67 +65,45 @@ async function handleCostumeViewsGeneration(inputParams, onProgress) {
 
   const ts = Date.now();
   const storageBase = `images/costumes/${costumeId}`;
-  const views = ['front', 'side', 'back'];
 
   try {
-    // 并行生成三视图
-    const results = await Promise.all(
-      views.map(async (view) => {
-        const prompt = buildCostumePrompt(view, style, outfitDesc, gender);
-        const genParams = {
-          prompt,
-          imageModel,
-          aspectRatio: aspectRatio || '2:3'
-        };
-        const r = await handleImageGeneration(genParams);
-        return { view, imageUrl: r.image_url, prompt };
-      })
-    );
+    // 生成单张 16:9 服装设定图
+    const prompt = buildCostumePrompt(style, outfitDesc, gender);
+    const genParams = {
+      prompt,
+      imageModel,
+      aspectRatio: aspectRatio || '16:9'
+    };
+    const r = await handleImageGeneration(genParams);
 
     if (onProgress) onProgress(70);
 
     // 持久化到存储
-    const persisted = await Promise.all(
-      results.map(async ({ view, imageUrl, prompt }) => {
-        const persistedUrl = await downloadAndStore(
-          imageUrl,
-          `${storageBase}/${view}_${ts}`,
-          { fallbackExt: '.png' }
-        );
-        return { view, persistedUrl, prompt };
-      })
+    const persistedUrl = await downloadAndStore(
+      r.image_url,
+      `${storageBase}/design_${ts}`,
+      { fallbackExt: '.png' }
     );
 
     if (onProgress) onProgress(90);
 
     // 入库
-    const urlMap = {};
-    let firstPrompt = '';
-    for (const { view, persistedUrl, prompt } of persisted) {
-      urlMap[`${view}_view_url`] = persistedUrl;
-      if (!firstPrompt) firstPrompt = prompt;
-    }
-    const mainImage = urlMap.front_view_url || null;
     await execute(
       `UPDATE costumes SET
-        front_view_url = ?, side_view_url = ?, back_view_url = ?,
-        image_url = COALESCE(?, image_url),
+        image_url = ?,
         generation_status = 'completed',
         generation_prompt = ?,
         updated_at = CURRENT_TIMESTAMP
        WHERE id = ?`,
-      [urlMap.front_view_url, urlMap.side_view_url, urlMap.back_view_url, mainImage, firstPrompt, costumeId]
+      [persistedUrl, prompt, costumeId]
     );
 
     if (onProgress) onProgress(100);
-    console.log('[CostumeViews] ✅ 服装三视图生成完成', { costumeId });
+    console.log('[CostumeViews] ✅ 服装设定图生成完成', { costumeId });
 
     return {
       costumeId,
-      frontViewUrl: urlMap.front_view_url,
-      sideViewUrl: urlMap.side_view_url,
-      backViewUrl: urlMap.back_view_url,
-      imageUrl: mainImage
+      imageUrl: persistedUrl
     };
   } catch (err) {
     console.error('[CostumeViews] 生成失败:', err.message);

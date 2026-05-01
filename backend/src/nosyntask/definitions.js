@@ -42,6 +42,7 @@ const {
   handleSketchPreprocess,
   handleSketchToImage,
   handleBatchSketchFrameGeneration,
+  handlePropViewsGeneration,
   handlePropPromptGeneration,
   handlePropImageGeneration,
   handleConceptBreakdownGeneration,
@@ -63,6 +64,7 @@ const handleStudioComposeFromScript = require('./tasks/Studio/studioComposeFromS
 const handleStudioComponentsCompose = require('./tasks/Studio/studioComponentsCompose');
 const handleEnvironmentImageGeneration = require('./tasks/Studio/environmentImageGeneration');
 const handleBuildingImageGeneration = require('./tasks/Studio/buildingImageGeneration');
+const handleScriptPropsExtract = require('./tasks/StoryBoard/scriptPropsExtract');
 
 // AI 助手长任务 handlers
 const handleAIAssistantPlanner = require('./tasks/AIAssistant/planner');
@@ -724,11 +726,11 @@ const WORKFLOW_DEFINITIONS = {
   },
 
   /**
-   * 服装三视图生成
-   * 基于通用白色 mannequin + outfit 描述，生成服装三视图
+   * 服装设定图生成
+   * 基于通用白色 mannequin + outfit 描述，生成服装设定图
    */
   costume_views_generation: {
-    name: '服装三视图生成',
+    name: '服装设定图生成',
     steps: [
       {
         type: 'costume_views_generation',
@@ -863,11 +865,41 @@ const WORKFLOW_DEFINITIONS = {
   },
 
   /**
-   * 道具图片生成
-   * 
-   * 流程：
-   *   1. prop_prompt_generation - AI 生成道具描述提示词
-   *   2. prop_image_generation  - 调用图像模型生成道具图片
+   * 道具设定图生成（单步流程，参考服装设定图模式）
+   */
+  prop_views_generation: {
+    name: '道具设定图生成',
+    steps: [
+      {
+        type: 'prop_views_generation',
+        targetType: 'prop',
+        handler: handlePropViewsGeneration,
+        buildInput: createBuildInput([
+          'propId', 'projectId', 'imageModel', 'aspectRatio'
+        ])
+      }
+    ],
+    onComplete: async (job, results, { queryOne, execute }) => {
+      const propId = job.input_params.propId;
+      const result = results[0];
+
+      if (result && result.imageUrl) {
+        await execute(
+          `UPDATE props SET
+            image_url = ?,
+            generation_status = 'completed',
+            generation_prompt = ?,
+            updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?`,
+          [result.imageUrl, result.prompt || '', propId]
+        );
+        console.log('[PropViews] 道具设定图已保存, propId:', propId);
+      }
+    }
+  },
+
+  /**
+   * 道具图片生成（旧两步流程，保留兼容）
    */
   prop_image_generation: {
     name: '道具图片生成',
@@ -885,26 +917,24 @@ const WORKFLOW_DEFINITIONS = {
         type: 'prop_image_generation',
         targetType: 'prop',
         handler: handlePropImageGeneration,
-        dependencies: [0],  // 依赖第一步的提示词
+        dependencies: [0],
         buildInput: createBuildInput([
           'propId', 'imageModel', 'aspectRatio'
         ]),
-        // 从上一步获取 prompt
         injectFromPrevious: {
           prompt: { stepIndex: 0, key: 'prompt' }
         }
       }
     ],
     onComplete: async (job, results, { queryOne, execute }) => {
-      // 更新 props 表的 image_url 和 generation_status
       const propId = job.input_params.propId;
-      const imageResult = results[1];  // 第二步的结果
-      const promptResult = results[0]; // 第一步的结果
-      
+      const imageResult = results[1];
+      const promptResult = results[0];
+
       if (imageResult && imageResult.imageUrl) {
         await execute(
-          `UPDATE props SET 
-            image_url = ?, 
+          `UPDATE props SET
+            image_url = ?,
             generation_status = 'completed',
             generation_prompt = ?
           WHERE id = ?`,
@@ -1129,6 +1159,21 @@ WORKFLOW_DEFINITIONS['studio_components_extraction'] = {
       handler: handleStudioComponentsExtract,
       buildInput: createBuildInput([
         'projectId', 'scriptId', 'textModel'
+      ])
+    }
+  ]
+};
+
+WORKFLOW_DEFINITIONS['script_props_extraction'] = {
+  name: '剧本道具提取',
+  steps: [
+    {
+      type: 'ai_execute',
+      targetType: 'prop',
+      displayName: '从剧本提取道具',
+      handler: handleScriptPropsExtract,
+      buildInput: createBuildInput([
+        'projectId', 'scriptId', 'textModel', 'imageModel'
       ])
     }
   ]

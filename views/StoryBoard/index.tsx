@@ -372,6 +372,9 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
     });
   }, [projectCharacters, storyboardStates]);
 
+  // 项目道具数据
+  const [projectProps, setProjectProps] = useState<any[]>([]);
+
   useEffect(() => {
     if (!currentProjectId) return;
     fetchCharactersByProject(currentProjectId)
@@ -380,6 +383,14 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
     fetchScenesByProject(currentProjectId)
       .then(scenes => setProjectScenes(scenes.map(s => ({ id: s.id, name: s.name, description: s.description }))))
       .catch(() => {});
+    // 加载项目道具
+    const token = getAuthToken();
+    fetch(`/api/props/project/${currentProjectId}`, {
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) }
+    })
+      .then(res => res.ok ? res.json() : null)
+      .then(data => setProjectProps(data?.props || []))
+      .catch(() => setProjectProps([]));
   }, [currentProjectId]);
 
   // 加载剧本内容（大纲面板用）
@@ -1290,7 +1301,7 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
                       <ResourcePanel
                         characters={allCharacters}
                         locations={allLocations}
-                        props={allProps}
+                        props={projectProps}
                         projectId={currentProjectId}
                         scriptId={currentScriptId}
                         scenes={scenes}

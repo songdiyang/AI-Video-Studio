@@ -67,10 +67,18 @@ export interface ResourceItem {
   generationStatus?: string;
 }
 
+export interface PropItem {
+  id: number;
+  name: string;
+  image_url?: string;
+  prop_type?: 'permanent' | 'interactive';
+  generation_status?: string;
+}
+
 export interface ResourcePanelProps {
   characters: string[];
   locations: string[];
-  props: string[];
+  props: PropItem[];
   projectId?: number | null;
   scriptId?: number | null;
   scenes?: any[];

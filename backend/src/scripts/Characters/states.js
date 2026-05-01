@@ -264,11 +264,54 @@ module.exports = (router) => {
       await ensureBaseModelState(id);
 
       const states = await queryAll(
-        'SELECT * FROM character_states WHERE character_id = ? ORDER BY sort_order ASC, created_at ASC',
+        `SELECT s.*,
+                c.id AS costume_id_ref, c.name AS costume_name, c.image_url AS costume_image_url,
+                c.generation_status AS costume_generation_status
+         FROM character_states s
+         LEFT JOIN costumes c ON s.costume_id = c.id
+         WHERE s.character_id = ?
+         ORDER BY s.sort_order ASC, s.created_at ASC`,
         [id]
       );
 
-      res.json({ states });
+      // 查询所有状态的关联道具
+      const stateIds = states.map(s => s.id);
+      let equippedPropsMap = {};
+      if (stateIds.length > 0) {
+        const propsRows = await queryAll(
+          `SELECT csp.character_state_id,
+                  p.id AS prop_id, p.name AS prop_name, p.image_url AS prop_image_url,
+                  p.prop_type, csp.hand_position, csp.usage_mode
+           FROM character_state_props csp
+           JOIN props p ON csp.prop_id = p.id
+           WHERE csp.character_state_id IN (${stateIds.map(() => '?').join(',')})`,
+          stateIds
+        );
+        for (const row of propsRows) {
+          if (!equippedPropsMap[row.character_state_id]) {
+            equippedPropsMap[row.character_state_id] = [];
+          }
+          equippedPropsMap[row.character_state_id].push({
+            prop_id: row.prop_id,
+            name: row.prop_name,
+            image_url: row.prop_image_url,
+            prop_type: row.prop_type,
+            hand_position: row.hand_position,
+            usage_mode: row.usage_mode,
+          });
+        }
+      }
+
+      // 将查询结果中的服装字段和道具字段映射到状态对象
+      const normalizedStates = states.map(row => ({
+        ...row,
+        costume_name: row.costume_name || null,
+        costume_image_url: row.costume_image_url || null,
+        costume_generation_status: row.costume_generation_status || null,
+        equipped_props: equippedPropsMap[row.id] || [],
+      }));
+
+      res.json({ states: normalizedStates });
     } catch (error) {
       console.error('[Get Character States]', error);
       res.status(500).json({ message: '获取角色状态失败' });
@@ -1016,6 +1059,149 @@ module.exports = (router) => {
         [stateId]
       ).catch(() => {});
       sendGenerationError(res, error, '启动状态三视图生成失败', '[Generate State Views]');
+    }
+  });
+
+  // POST /api/characters/:id/states/:stateId/props - 为角色状态叠加道具
+  router.post('/:id/states/:stateId/props', authMiddleware, async (req, res) => {
+    const userId = req.user.id;
+    const { id, stateId } = req.params;
+    const { propId, handPosition = 'right', usageMode = 'hold' } = req.body;
+
+    if (!propId) {
+      return res.status(400).json({ message: '道具ID不能为空' });
+    }
+
+    try {
+      // 验证角色所有权
+      const character = await queryOne(
+        'SELECT id FROM characters WHERE id = ? AND user_id = ?',
+        [id, userId]
+      );
+      if (!character) {
+        return res.status(404).json({ message: '角色不存在或无权访问' });
+      }
+
+      // 验证状态存在
+      const state = await queryOne(
+        'SELECT * FROM character_states WHERE id = ? AND character_id = ?',
+        [stateId, id]
+      );
+      if (!state) {
+        return res.status(404).json({ message: '状态不存在' });
+      }
+
+      // 验证道具存在且属于同一项目
+      const prop = await queryOne(
+        `SELECT p.* FROM props p
+         JOIN characters ch ON ch.project_id = p.project_id
+         WHERE p.id = ? AND ch.id = ?`,
+        [propId, id]
+      );
+      if (!prop) {
+        return res.status(404).json({ message: '道具不存在或不属于当前项目' });
+      }
+
+      // 检查是否已叠加
+      const existing = await queryOne(
+        'SELECT * FROM character_state_props WHERE character_state_id = ? AND prop_id = ?',
+        [stateId, propId]
+      );
+      if (existing) {
+        // 更新手持位置和持握方式
+        await execute(
+          `UPDATE character_state_props
+           SET hand_position = ?, usage_mode = ?, updated_at = CURRENT_TIMESTAMP
+           WHERE character_state_id = ? AND prop_id = ?`,
+          [handPosition, usageMode, stateId, propId]
+        );
+      } else {
+        // 插入新关联
+        await execute(
+          `INSERT INTO character_state_props
+             (character_state_id, prop_id, prop_type, is_equipped, hand_position, usage_mode)
+           VALUES (?, ?, ?, 1, ?, ?)`,
+          [stateId, propId, prop.prop_type || 'permanent', handPosition, usageMode]
+        );
+      }
+
+      // 清除 generation_prompt，下次生成时会重新构建 prompt（包含道具）
+      await execute(
+        `UPDATE character_states SET generation_prompt = '', updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+        [stateId]
+      );
+
+      // 记录历史
+      await recordStateHistory({
+        characterId: id,
+        stateId: parseInt(stateId),
+        action: 'prop_equipped',
+        changes: { prop_id: propId, prop_name: prop.name, hand_position: handPosition, usage_mode: usageMode },
+        performedBy: userId
+      });
+
+      res.json({ message: `道具「${prop.name}」已叠加到状态`, prop_id: propId });
+    } catch (error) {
+      console.error('[Equip Prop]', error);
+      res.status(500).json({ message: '叠加道具失败' });
+    }
+  });
+
+  // DELETE /api/characters/:id/states/:stateId/props/:propId - 解绑道具
+  router.delete('/:id/states/:stateId/props/:propId', authMiddleware, async (req, res) => {
+    const userId = req.user.id;
+    const { id, stateId, propId } = req.params;
+
+    try {
+      // 验证角色所有权
+      const character = await queryOne(
+        'SELECT id FROM characters WHERE id = ? AND user_id = ?',
+        [id, userId]
+      );
+      if (!character) {
+        return res.status(404).json({ message: '角色不存在或无权访问' });
+      }
+
+      // 验证状态存在
+      const state = await queryOne(
+        'SELECT * FROM character_states WHERE id = ? AND character_id = ?',
+        [stateId, id]
+      );
+      if (!state) {
+        return res.status(404).json({ message: '状态不存在' });
+      }
+
+      // 获取道具信息用于返回
+      const prop = await queryOne(
+        'SELECT name FROM props WHERE id = ?',
+        [propId]
+      );
+
+      // 删除关联
+      await execute(
+        'DELETE FROM character_state_props WHERE character_state_id = ? AND prop_id = ?',
+        [stateId, propId]
+      );
+
+      // 清除 generation_prompt
+      await execute(
+        `UPDATE character_states SET generation_prompt = '', updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+        [stateId]
+      );
+
+      // 记录历史
+      await recordStateHistory({
+        characterId: id,
+        stateId: parseInt(stateId),
+        action: 'prop_unequipped',
+        changes: { prop_id: parseInt(propId), prop_name: prop?.name },
+        performedBy: userId
+      });
+
+      res.json({ message: `道具「${prop?.name || ''}」已解绑`, prop_id: parseInt(propId) });
+    } catch (error) {
+      console.error('[Unequip Prop]', error);
+      res.status(500).json({ message: '解绑道具失败' });
     }
   });
 

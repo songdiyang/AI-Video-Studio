@@ -677,7 +677,7 @@ const CharacterDetailModal: React.FC<CharacterDetailModalProps> = ({
                         <div key={view.label} className="space-y-1">
                           <p className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>{view.label}</p>
                           <div
-                            className="aspect-square rounded-lg overflow-hidden border group cursor-pointer relative transition-opacity duration-300"
+                            className="aspect-[3/4] rounded-lg overflow-hidden border group cursor-pointer relative transition-opacity duration-300"
                             style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border)' }}
                             onClick={() => openViewPreview(view.idx)}
                           >

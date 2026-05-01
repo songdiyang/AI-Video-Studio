@@ -295,7 +295,7 @@ module.exports = (router) => {
             [characterId, costumeId]
           );
 
-          // ★ 并行启动服装三视图生成（基于通用 mannequin，不依赖角色白膜）
+          // ★ 并行启动服装设定图生成（基于通用 mannequin，不依赖角色白膜）
           try {
             const costumeJob = await generationStartService.start({
               operationKey: 'costume_views_generate',
@@ -303,9 +303,9 @@ module.exports = (router) => {
               actor: { userId }
             });
             costumeJobId = costumeJob.jobId;
-            console.log('[AI Generate Commit] 服装三视图生成已启动 costumeId=%s jobId=%s', costumeId, costumeJobId);
+            console.log('[AI Generate Commit] 服装设定图生成已启动 costumeId=%s jobId=%s', costumeId, costumeJobId);
           } catch (viewsErr) {
-            console.warn('[AI Generate Commit] 服装三视图启动失败，用户可手动重试:', viewsErr.message);
+            console.warn('[AI Generate Commit] 服装设定图启动失败，用户可手动重试:', viewsErr.message);
           }
         } catch (costumeErr) {
           console.warn('[AI Generate Commit] 创建服装资产失败，跳过:', costumeErr.message);

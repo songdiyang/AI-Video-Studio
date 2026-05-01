@@ -7,6 +7,7 @@ const {
   requireScriptForUser,
   requireCharacterForUser,
   requireCostumeForUser,
+  requirePropForUser,
   requireSceneForUser,
   listScenesForProject,
   requireStoryboardForUser,
@@ -387,9 +388,65 @@ const operationContracts = [
         options: resolved.options
       }),
     responseMapper: ({ result, command }) => ({
-      message: '服装三视图生成已启动',
+      message: '服装设定图生成已启动',
       jobId: encodeId(result.jobId),
       costumeId: command.scope.costumeId,
+      status: 'generating'
+    })
+  },
+  {
+    operationKey: 'prop_views_generate',
+    workflowType: 'prop_views_generation',
+    requestSchema: {
+      type: 'object',
+      required: ['propId', 'imageModel'],
+      properties: {
+        propId: { type: 'integer', minimum: 1 },
+        imageModel: { type: 'string', minLength: 1 },
+        textModel: { type: 'string' },
+        aspectRatio: { type: 'string' }
+      }
+    },
+    scopeResolver: async ({ actor, input }) => {
+      const prop = await requirePropForUser(input.propId, actor.userId);
+      return {
+        scope: {
+          projectId: prop.project_id,
+          propId: prop.id
+        },
+        resources: { prop }
+      };
+    },
+    defaultsResolver: async ({ input, resources }) => ({
+      models: {
+        imageModel: input.imageModel,
+        textModel: input.textModel || null
+      },
+      inputs: {
+        propId: resources.prop.id
+      },
+      options: {
+        aspectRatio: input.aspectRatio || null
+      }
+    }),
+    conflictKeyResolver: ({ scope }) => ({
+      key: 'propId',
+      value: scope.propId
+    }),
+    toJobParams: ({ contract, actor, scope, resolved }) =>
+      createCommand({
+        operationKey: contract.operationKey,
+        workflowType: contract.workflowType,
+        actor,
+        scope,
+        models: resolved.models,
+        inputs: resolved.inputs,
+        options: resolved.options
+      }),
+    responseMapper: ({ result, command }) => ({
+      message: '道具设定图生成已启动',
+      jobId: encodeId(result.jobId),
+      propId: command.scope.propId,
       status: 'generating'
     })
   },
@@ -1746,6 +1803,64 @@ const operationContracts = [
       }),
     responseMapper: ({ result, command }) => ({
       message: '已从剧本拆分环境与建筑',
+      jobId: encodeId(result.jobId),
+      scriptId: command.scope.scriptId,
+      status: 'pending'
+    })
+  },
+  {
+    // 从剧本提取道具
+    operationKey: 'script_props_extract',
+    workflowType: 'script_props_extraction',
+    requestSchema: {
+      type: 'object',
+      required: ['projectId', 'scriptId', 'textModel'],
+      properties: {
+        projectId: { type: 'integer', minimum: 1 },
+        scriptId: { type: 'integer', minimum: 1 },
+        textModel: { type: 'string', minLength: 1 },
+        imageModel: { type: 'string', minLength: 1 }
+      }
+    },
+    scopeResolver: async ({ actor, input }) => {
+      const project = await requireProjectForUser(input.projectId, actor.userId);
+      const script = await requireScriptForUser(input.scriptId, actor.userId);
+      ensureScriptHasContent(script);
+      return {
+        scope: {
+          projectId: project.id,
+          scriptId: script.id
+        },
+        resources: { project, script }
+      };
+    },
+    defaultsResolver: async ({ input, resources }) => ({
+      models: {
+        textModel: input.textModel,
+        imageModel: input.imageModel || resources.project.default_image_model || null
+      },
+      inputs: {
+        projectId: resources.project.id,
+        scriptId: resources.script.id
+      },
+      options: {}
+    }),
+    conflictKeyResolver: ({ scope }) => ({
+      key: 'scriptId',
+      value: scope.scriptId
+    }),
+    toJobParams: ({ contract, actor, scope, resolved }) =>
+      createCommand({
+        operationKey: contract.operationKey,
+        workflowType: contract.workflowType,
+        actor,
+        scope,
+        models: resolved.models,
+        inputs: resolved.inputs,
+        options: resolved.options
+      }),
+    responseMapper: ({ result, command }) => ({
+      message: '已从剧本提取道具',
       jobId: encodeId(result.jobId),
       scriptId: command.scope.scriptId,
       status: 'pending'

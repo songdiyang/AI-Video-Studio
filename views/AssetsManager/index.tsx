@@ -44,6 +44,7 @@ import { CharacterModal, SceneModal, PropModal, StudioModal } from './AssetModel
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import { useCurrentProject } from '../../contexts/WorkbenchContext';
+import { usePreview } from '../../components/PreviewProvider';
 import { AIModel } from '../../components/AIModelSelector';
 import type { CharacterState } from '../../services/assets';
 import { useAIAssistantWorkbenchContext } from '../../contexts/AIAssistantContext';
@@ -341,6 +342,7 @@ const AssetsManager: React.FC = () => {
   const { showToast } = useToast();
   const { confirm } = useConfirm();
   const { currentProject } = useCurrentProject();
+  const { openPreview } = usePreview();
   const navigate = useNavigate();
 
   // 加载用户项目列表
@@ -1342,7 +1344,7 @@ const AssetsManager: React.FC = () => {
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                 {filteredCostumes.map((c) => {
-                  const hasViews = !!(c.image_url || c.front_view_url);
+                  const hasImage = !!c.image_url;
                   const isGenerating = c.generation_status === 'generating';
                   const handleGenCostumeViews = async () => {
                     if (!selectedImageModel) {
@@ -1351,7 +1353,7 @@ const AssetsManager: React.FC = () => {
                     }
                     try {
                       await generateCostumeViews(c.id, { imageModel: selectedImageModel });
-                      showToast('服装三视图生成已启动', 'success');
+                      showToast('服装设定图生成已启动', 'success');
                       setTimeout(() => loadData(), 500);
                     } catch (e: any) {
                       showToast(e.message || '生成失败', 'error');
@@ -1363,17 +1365,15 @@ const AssetsManager: React.FC = () => {
                       className="bg-(--bg-card) border border-(--border-color) rounded-xl p-4 hover:border-(--accent)/30 transition-all"
                     >
                       {c.image_url ? (
-                        <img src={c.image_url} alt={c.name} className="w-full aspect-[2/3] object-cover rounded-lg mb-2" />
+                        <img
+                          src={c.image_url}
+                          alt={c.name}
+                          className="w-full aspect-video object-cover rounded-lg mb-2 cursor-pointer hover:opacity-90 transition-opacity"
+                          onClick={() => openPreview([{ src: c.image_url!, alt: c.name }], 0)}
+                        />
                       ) : (
-                        <div className="w-full aspect-[2/3] bg-(--bg-muted) rounded-lg mb-2 flex items-center justify-center text-(--text-muted) text-xs">
+                        <div className="w-full aspect-video bg-(--bg-muted) rounded-lg mb-2 flex items-center justify-center text-(--text-muted) text-xs">
                           无图片
-                        </div>
-                      )}
-                      {hasViews && (
-                        <div className="grid grid-cols-3 gap-1 mb-2">
-                          <img src={c.front_view_url} alt="正" className="w-full aspect-[2/3] object-cover rounded" />
-                          <img src={c.side_view_url} alt="侧" className="w-full aspect-[2/3] object-cover rounded" />
-                          <img src={c.back_view_url} alt="背" className="w-full aspect-[2/3] object-cover rounded" />
                         </div>
                       )}
                       <h3 className="font-semibold text-(--text-primary) truncate">{c.name}</h3>
@@ -1410,7 +1410,7 @@ const AssetsManager: React.FC = () => {
                           isDisabled={isGenerating}
                           onPress={handleGenCostumeViews}
                         >
-                          {isGenerating ? '生成中…' : hasViews ? '重新生成' : '生成设定图'}
+                          {isGenerating ? '生成中…' : hasImage ? '重新生成' : '生成设定图'}
                         </Button>
                         <Button size="sm" variant="flat" className="text-xs" onPress={() => handleDelete(c.id)}>删除</Button>
                       </div>

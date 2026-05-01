@@ -711,7 +711,7 @@ ${missingContext}
     }
   }
 
-  // === 异步触发白膜+默认服装三视图生成 ===
+  // === 异步触发白膜+默认服装设定图生成 ===
   // 对每个新创建或被覆盖更新的角色，如果提供了 imageModel，则异步触发白膜三视图生成
   // 白膜生成完成后，前端可通过工作流监听自动触发默认服装状态生成
   const { imageModel } = inputParams;
@@ -750,14 +750,14 @@ ${missingContext}
           }, null);
           console.log(`[CharacterExtraction] ✅ 角色 ${character.name} 白膜三视图生成完成`);
 
-          // 白膜生成完成后，获取默认服装状态并生成服装三视图
-          // 多查一个 held_props，保证自动三视图与状态字段语义一致
+          // 白膜生成完成后，获取默认服装状态并生成服装设定图
+          // 多查一个 held_props，保证自动设定图与状态字段语义一致
           const costumeState = await qo(
             `SELECT id, outfit, held_props FROM character_states WHERE character_id = ? AND is_base_model = 0 AND name = '默认服装'`,
             [character.id]
           );
           if (costumeState) {
-            console.log(`[CharacterExtraction] 开始生成角色 ${character.name} 的默认服装三视图...`);
+            console.log(`[CharacterExtraction] 开始生成角色 ${character.name} 的默认服装设定图...`);
             await handleCharacterViewsGeneration({
               characterId: character.id,
               characterName: character.name,
@@ -773,7 +773,7 @@ ${missingContext}
               outfit: costumeState.outfit || character.outfit_appearance || '',
               heldProps: costumeState.held_props || ''
             }, null);
-            console.log(`[CharacterExtraction] ✅ 角色 ${character.name} 默认服装三视图生成完成`);
+            console.log(`[CharacterExtraction] ✅ 角色 ${character.name} 默认服装设定图生成完成`);
           }
         } catch (viewGenErr) {
           console.error(`[CharacterExtraction] 角色 ${character.name} 三视图生成失败:`, viewGenErr.message);
