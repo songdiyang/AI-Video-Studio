@@ -64,6 +64,9 @@ const handleStudioComposeFromScript = require('./tasks/Studio/studioComposeFromS
 const handleStudioComponentsCompose = require('./tasks/Studio/studioComponentsCompose');
 const handleEnvironmentImageGeneration = require('./tasks/Studio/environmentImageGeneration');
 const handleBuildingImageGeneration = require('./tasks/Studio/buildingImageGeneration');
+const handleEnvironmentPanoramaGeneration = require('./tasks/Studio/environmentPanoramaGeneration');
+const handleEnvironmentVariantPanoramaGeneration = require('./tasks/Studio/environmentVariantPanoramaGeneration');
+const handleVariantFacesGeneration = require('./tasks/Studio/variantFacesGeneration');
 const handleScriptPropsExtract = require('./tasks/StoryBoard/scriptPropsExtract');
 
 // AI 助手长任务 handlers
@@ -1216,6 +1219,26 @@ WORKFLOW_DEFINITIONS['environment_image_generation'] = {
 };
 
 /**
+ * 环境全景图生成
+ */
+WORKFLOW_DEFINITIONS['environment_panorama_generation'] = {
+  name: '环境全景图生成',
+  steps: [
+    {
+      type: 'environment_panorama_generation',
+      targetType: 'environment',
+      displayName: '环境全景图生成',
+      handler: handleEnvironmentPanoramaGeneration,
+      buildInput: createBuildInput([
+        'environmentId', 'environmentName', 'description',
+        'timeOfDay', 'weather', 'lighting', 'mood',
+        'imageModel', 'textModel'
+      ])
+    }
+  ]
+};
+
+/**
  * 建筑结构图生成
  */
 WORKFLOW_DEFINITIONS['building_image_generation'] = {
@@ -1230,7 +1253,48 @@ WORKFLOW_DEFINITIONS['building_image_generation'] = {
         'buildingId', 'buildingName', 'description',
         'interiorExterior', 'structureType',
         'imageModel', 'textModel',
+        { key: 'viewType', from: ctx => ctx.viewType || null },
         { key: 'generationPrompt', from: ctx => ctx.generationPrompt || null }
+      ])
+    }
+  ]
+};
+
+/**
+ * 环境变体全景图生成
+ */
+WORKFLOW_DEFINITIONS['environment_variant_panorama_generation'] = {
+  name: '环境变体全景图生成',
+  steps: [
+    {
+      type: 'environment_variant_panorama_generation',
+      targetType: 'environment_variant',
+      displayName: '环境变体全景图生成',
+      handler: handleEnvironmentVariantPanoramaGeneration,
+      buildInput: createBuildInput([
+        'environmentId', 'variantId', 'environmentName', 'description',
+        'timeOfDay', 'weather', 'lighting', 'mood',
+        'imageModel', 'textModel'
+      ])
+    }
+  ]
+};
+
+/**
+ * 环境变体8方位场景图生成
+ */
+WORKFLOW_DEFINITIONS['variant_faces_generation'] = {
+  name: '环境变体8方位场景图生成',
+  steps: [
+    {
+      type: 'variant_faces_generation',
+      targetType: 'environment_variant',
+      displayName: '环境变体8方位场景图生成',
+      handler: handleVariantFacesGeneration,
+      buildInput: createBuildInput([
+        'environmentId', 'variantId', 'environmentName', 'description',
+        'timeOfDay', 'weather', 'lighting', 'mood',
+        'imageModel', 'textModel'
       ])
     }
   ]

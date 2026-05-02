@@ -221,6 +221,21 @@ export interface PropGenerationStatusResponse {
 // 角色状态接口
 // ============================================================
 
+/** 音色配置（参考 Seedance 1.5 + TTS 参数体系） */
+export interface VoiceConfig {
+  voice_description: string;     // 音色描述，如"清脆甜美的少女音"
+  gender: 'male' | 'female' | 'neutral';
+  age_group: 'child' | 'teen' | 'young' | 'middle' | 'elder';
+  language: string;              // 语言，如 zh-CN
+  emotion: 'neutral' | 'cheerful' | 'sad' | 'angry' | 'excited' | 'calm' | 'shy' | 'brave';
+  style: 'gentle' | 'lively' | 'serious' | 'playful' | 'elegant' | 'rough' | 'soft';
+  speed: number;                 // 语速 0.5~2.0
+  pitch: number;                 // 音高 -10~10
+  volume: number;                // 音量 0.5~2.0
+  dialect?: string;              // 方言
+  seedance_prompt?: string;      // Seedance 1.5 英文音色提示词
+}
+
 export interface CharacterState {
   id: number;
   character_id: number;
@@ -251,6 +266,8 @@ export interface CharacterState {
   // 状态分类和标签
   state_category?: StateCategory | StateCategory[];  // 状态分类（支持多选）
   tags?: string;                   // 状态标签JSON数组
+  // 音色配置
+  voice_config?: VoiceConfig | string | null;
   // 关联服装资产信息（LEFT JOIN costumes）
   costume_name?: string | null;
   costume_image_url?: string | null;

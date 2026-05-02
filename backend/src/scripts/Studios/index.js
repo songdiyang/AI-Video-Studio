@@ -42,6 +42,7 @@ router.get('/', authMiddleware, async (req, res) => {
       `SELECT s.id, s.user_id, s.project_id, s.name, s.description, s.cover_image_url,
               s.sort_order, s.environment_id, s.created_at, s.updated_at,
               e.name AS environment_name, e.image_url AS environment_image_url,
+              e.panorama_image_url AS environment_panorama_image_url,
               (SELECT COUNT(*) FROM scenes sc WHERE sc.studio_id = s.id) AS scene_count,
               (SELECT COUNT(*) FROM studio_element_links l WHERE l.studio_id = s.id) AS element_count
        FROM studios s
@@ -72,7 +73,7 @@ router.get('/', authMiddleware, async (req, res) => {
     const studios = rows.map((r) => ({
       ...r,
       environment: r.environment_id
-        ? { id: r.environment_id, name: r.environment_name, image_url: r.environment_image_url }
+        ? { id: r.environment_id, name: r.environment_name, image_url: r.environment_image_url, panorama_image_url: r.environment_panorama_image_url }
         : null,
       buildings: buildingsByStudio.get(r.id) || [],
     }));

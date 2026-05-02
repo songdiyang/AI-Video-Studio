@@ -40,7 +40,14 @@ async function handleSaveStoryboards(inputParams, onProgress) {
     idxOffset = (maxIdxRow?.maxIdx ?? -1) + 1;
     console.log(`[SaveStoryboards] 追加模式，从 idx=${idxOffset} 开始`);
   } else {
-    // 非追加模式：删除该剧本的旧分镜
+    // 非追加模式（完全覆盖）：先清理本剧本独占的影棚/环境/建筑资源，再删旧分镜
+    try {
+      const cleanupScriptStudioAssets = require('../Studio/cleanupScriptStudioAssets');
+      const cleaned = await cleanupScriptStudioAssets(scriptId, projectId, userId);
+      console.log('[SaveStoryboards] 完全覆盖前清理:', cleaned);
+    } catch (cleanupErr) {
+      console.error('[SaveStoryboards] 清理旧影棚资源失败（不影响后续流程）:', cleanupErr.message);
+    }
     await execute('DELETE FROM storyboards WHERE script_id = ?', [scriptId]);
     console.log('[SaveStoryboards] 已删除旧分镜');
   }

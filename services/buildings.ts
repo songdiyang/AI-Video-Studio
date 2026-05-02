@@ -18,6 +18,8 @@ export interface Building {
   interior_exterior: 'interior' | 'exterior' | 'both';
   structure_type: string | null;
   image_url: string | null;
+  interior_image_url: string | null;
+  exterior_image_url: string | null;
   generation_prompt: string | null;
   generation_status: 'pending' | 'generating' | 'completed' | 'failed';
   sort_order: number;
@@ -102,9 +104,18 @@ export async function deleteBuilding(id: number): Promise<void> {
   await handle<{ message: string }>(resp);
 }
 
+export async function deleteBuildingImage(id: number): Promise<void> {
+  const resp = await fetch(`/api/buildings/${id}/image`, {
+    method: 'DELETE',
+    headers: { ...authHeaders() }
+  });
+  await handle<{ message: string }>(resp);
+}
+
 export async function generateBuildingImage(id: number, payload: {
   imageModel: string;
   textModel?: string;
+  viewType?: 'interior' | 'exterior' | 'both';
 }): Promise<{ jobId: string; buildingId: number; status: string }> {
   const resp = await fetch(`/api/buildings/${id}/generate-image`, {
     method: 'POST',

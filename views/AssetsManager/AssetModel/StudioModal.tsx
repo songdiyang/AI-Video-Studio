@@ -11,10 +11,18 @@ import {
   attachBuildingToStudio, detachBuildingFromStudio,
   attachElementToStudio, detachElementFromStudio,
 } from '../../../services/studios';
-import { listEnvironments, Environment } from '../../../services/environments';
-import { listBuildings, Building } from '../../../services/buildings';
+import {
+  listEnvironments, Environment,
+  generateEnvironmentPanorama, deleteEnvironmentPanorama,
+} from '../../../services/environments';
+import {
+  listBuildings, Building,
+  generateBuildingImage,
+} from '../../../services/buildings';
 import { listSceneElements, SceneElement } from '../../../services/sceneElements';
 import { useToast } from '../../../contexts/ToastContext';
+import { useAIModels } from '../../../hooks/useAIModels';
+import PanoramaViewer from '../../../components/PanoramaViewer';
 
 interface StudioModalProps {
   isOpen: boolean;
@@ -29,8 +37,13 @@ const StudioModal: React.FC<StudioModalProps> = ({
   isOpen, onOpenChange, editMode, studioId, projectId, onSaved,
 }) => {
   const { showToast } = useToast();
+  const { selected: aiSelected } = useAIModels(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  // 生成状态
+  const [generatingEnvPano, setGeneratingEnvPano] = useState(false);
+  const [generatingBuildingView, setGeneratingBuildingView] = useState<Record<number, { interior?: boolean; exterior?: boolean }>>({});
 
   // 基础信息
   const [name, setName] = useState('');
@@ -197,6 +210,70 @@ const StudioModal: React.FC<StudioModalProps> = ({
     }
   };
 
+  // ===== 影棚图生成（全景图+参考图） =====
+  const handleGenerateEnvPanorama = async (environmentId: number) => {
+    const imageModel = aiSelected?.image;
+    if (!imageModel) {
+      showToast('请先在 AI 模型配置中选择图像模型', 'error');
+      return;
+    }
+    setGeneratingEnvPano(true);
+    try {
+      await generateEnvironmentPanorama(environmentId, {
+        imageModel,
+        textModel: aiSelected?.text || undefined,
+      });
+      showToast('影棚图生成已启动', 'success');
+      loadAll();
+      onSaved();
+    } catch (err: any) {
+      showToast(err?.message || '启动影棚图生成失败', 'error');
+    } finally {
+      setGeneratingEnvPano(false);
+    }
+  };
+
+  const handleDeleteEnvPanorama = async (environmentId: number) => {
+    try {
+      await deleteEnvironmentPanorama(environmentId);
+      showToast('影棚图已删除', 'success');
+      loadAll();
+      onSaved();
+    } catch (err: any) {
+      showToast(err?.message || '删除全景图失败', 'error');
+    }
+  };
+
+  // ===== 建筑视图生成 =====
+  const handleGenerateBuildingView = async (buildingId: number, viewType: 'interior' | 'exterior') => {
+    const imageModel = aiSelected?.image;
+    if (!imageModel) {
+      showToast('请先在 AI 模型配置中选择图像模型', 'error');
+      return;
+    }
+    setGeneratingBuildingView(prev => ({
+      ...prev,
+      [buildingId]: { ...prev[buildingId], [viewType]: true }
+    }));
+    try {
+      await generateBuildingImage(buildingId, {
+        imageModel,
+        textModel: aiSelected?.text || undefined,
+        viewType,
+      });
+      showToast(`${viewType === 'interior' ? '室内' : '室外'}图生成已启动`, 'success');
+      loadAll();
+      onSaved();
+    } catch (err: any) {
+      showToast(err?.message || '生成失败', 'error');
+    } finally {
+      setGeneratingBuildingView(prev => ({
+        ...prev,
+        [buildingId]: { ...prev[buildingId], [viewType]: false }
+      }));
+    }
+  };
+
   // 候选池过滤
   const currentEnv = detail?.environment || null;
   const studioBuildingIds = new Set((detail?.buildings || []).map(b => b.id));
@@ -305,6 +382,61 @@ const StudioModal: React.FC<StudioModalProps> = ({
                             )}
                           </div>
 
+                          {/* 影棚全景图 */}
+                          {currentEnv && (
+                            <div>
+                              <div className="text-xs text-(--text-muted) mb-2 flex items-center justify-between">
+                                <span>影棚全景图</span>
+                                <div className="flex items-center gap-1">
+                                  {currentEnv.panorama_image_url ? (
+                                    <>
+                                      <Button
+                                        size="sm"
+                                        variant="light"
+                                        color="danger"
+                                        className="h-6 text-[11px]"
+                                        onPress={() => handleDeleteEnvPanorama(currentEnv.id)}
+                                      >
+                                        删除
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        variant="flat"
+                                        color="primary"
+                                        className="h-6 text-[11px]"
+                                        isLoading={generatingEnvPano}
+                                        onPress={() => handleGenerateEnvPanorama(currentEnv.id)}
+                                      >
+                                        重新生成
+                                      </Button>
+                                    </>
+                                  ) : (
+                                    <Button
+                                      size="sm"
+                                      variant="flat"
+                                      color="primary"
+                                      className="h-6 text-[11px]"
+                                      isLoading={generatingEnvPano}
+                                      onPress={() => handleGenerateEnvPanorama(currentEnv.id)}
+                                    >
+                                      生成影棚图
+                                    </Button>
+                                  )}
+                                </div>
+                              </div>
+                              {currentEnv.panorama_image_url ? (
+                                <div className="rounded-md overflow-hidden border border-(--border-color)" style={{ height: 200 }}>
+                                  <PanoramaViewer
+                                    src={currentEnv.panorama_image_url}
+                                    autoRotateSpeed={0.02}
+                                  />
+                                </div>
+                              ) : (
+                                <div className="text-xs text-(--text-muted)">尚未生成影棚图</div>
+                              )}
+                            </div>
+                          )}
+
                           <div>
                             <div className="text-xs text-(--text-muted) mb-2">项目内可选环境</div>
                             {projectEnvironments.length ? (
@@ -367,41 +499,105 @@ const StudioModal: React.FC<StudioModalProps> = ({
                             <div className="text-xs text-(--text-muted) mb-2">已关联建筑</div>
                             {detail?.buildings?.length ? (
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                                {detail.buildings.map(b => (
-                                  <div
-                                    key={b.id}
-                                    className="flex items-center gap-3 p-2 rounded-md bg-(--bg-app) border border-(--border-color)"
-                                  >
-                                    {b.image_url ? (
-                                      <Image
-                                        src={b.image_url}
-                                        alt={b.name}
-                                        removeWrapper
-                                        className="w-12 h-12 object-cover rounded shrink-0"
-                                      />
-                                    ) : (
-                                      <div className="w-12 h-12 rounded bg-(--bg-input) flex items-center justify-center text-(--text-muted) shrink-0">
-                                        <Building2 className="w-5 h-5" />
+                                {detail.buildings.map(b => {
+                                  // 影棚组装时允许自由选择生成室内或室外视图
+                                  const canInterior = true;
+                                  const canExterior = true;
+                                  const genState = generatingBuildingView[b.id] || {};
+                                  return (
+                                    <div
+                                      key={b.id}
+                                      className="p-2 rounded-md bg-(--bg-app) border border-(--border-color) space-y-2"
+                                    >
+                                      <div className="flex items-center gap-3">
+                                        {b.image_url ? (
+                                          <Image
+                                            src={b.image_url}
+                                            alt={b.name}
+                                            removeWrapper
+                                            className="w-12 h-12 object-cover rounded shrink-0"
+                                          />
+                                        ) : (
+                                          <div className="w-12 h-12 rounded bg-(--bg-input) flex items-center justify-center text-(--text-muted) shrink-0">
+                                            <Building2 className="w-5 h-5" />
+                                          </div>
+                                        )}
+                                        <div className="flex-1 min-w-0">
+                                          <div className="text-sm text-(--text-primary) truncate">{b.name}</div>
+                                          <div className="text-[11px] text-(--text-muted) truncate">
+                                            {b.description || '无描述'}
+                                          </div>
+                                        </div>
+                                        <Button
+                                          size="sm"
+                                          isIconOnly
+                                          variant="light"
+                                          onPress={() => handleDetachBuilding(b.id)}
+                                          className="hover:bg-red-500/10"
+                                          title="解除建筑"
+                                        >
+                                          <X className="w-4 h-4 text-red-500" />
+                                        </Button>
                                       </div>
-                                    )}
-                                    <div className="flex-1 min-w-0">
-                                      <div className="text-sm text-(--text-primary) truncate">{b.name}</div>
-                                      <div className="text-[11px] text-(--text-muted) truncate">
-                                        {b.description || '无描述'}
+
+                                      {/* 室内/室外视图 */}
+                                      <div className="flex items-center gap-2">
+                                        {canInterior && (
+                                          <div className="flex items-center gap-1.5 flex-1">
+                                            {b.interior_image_url ? (
+                                              <Image
+                                                src={b.interior_image_url}
+                                                alt="室内"
+                                                removeWrapper
+                                                className="w-8 h-8 object-cover rounded shrink-0"
+                                              />
+                                            ) : (
+                                              <div className="w-8 h-8 rounded bg-(--bg-input) flex items-center justify-center text-(--text-muted) shrink-0 text-[10px]">
+                                                内
+                                              </div>
+                                            )}
+                                            <Button
+                                              size="sm"
+                                              variant="flat"
+                                              color="primary"
+                                              className="h-6 text-[10px] px-2"
+                                              isLoading={genState.interior}
+                                              onPress={() => handleGenerateBuildingView(b.id, 'interior')}
+                                            >
+                                              {b.interior_image_url ? '重新生成室内' : '生成室内'}
+                                            </Button>
+                                          </div>
+                                        )}
+                                        {canExterior && (
+                                          <div className="flex items-center gap-1.5 flex-1">
+                                            {b.exterior_image_url ? (
+                                              <Image
+                                                src={b.exterior_image_url}
+                                                alt="室外"
+                                                removeWrapper
+                                                className="w-8 h-8 object-cover rounded shrink-0"
+                                              />
+                                            ) : (
+                                              <div className="w-8 h-8 rounded bg-(--bg-input) flex items-center justify-center text-(--text-muted) shrink-0 text-[10px]">
+                                                外
+                                              </div>
+                                            )}
+                                            <Button
+                                              size="sm"
+                                              variant="flat"
+                                              color="primary"
+                                              className="h-6 text-[10px] px-2"
+                                              isLoading={genState.exterior}
+                                              onPress={() => handleGenerateBuildingView(b.id, 'exterior')}
+                                            >
+                                              {b.exterior_image_url ? '重新生成室外' : '生成室外'}
+                                            </Button>
+                                          </div>
+                                        )}
                                       </div>
                                     </div>
-                                    <Button
-                                      size="sm"
-                                      isIconOnly
-                                      variant="light"
-                                      onPress={() => handleDetachBuilding(b.id)}
-                                      className="hover:bg-red-500/10"
-                                      title="解除建筑"
-                                    >
-                                      <X className="w-4 h-4 text-red-500" />
-                                    </Button>
-                                  </div>
-                                ))}
+                                  );
+                                })}
                               </div>
                             ) : (
                               <div className="text-xs text-(--text-muted)">尚未关联任何建筑</div>

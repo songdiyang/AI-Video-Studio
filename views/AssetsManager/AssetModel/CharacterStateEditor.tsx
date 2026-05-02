@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Button, Input, Textarea, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure, Card, CardBody, Select, SelectItem, Tooltip, Chip, Popover, PopoverTrigger, PopoverContent } from '@heroui/react';
-import { Plus, Edit2, Trash2, ChevronDown, ChevronRight, Image as ImageIcon, Star, Copy, RefreshCw, Shirt, Calendar, Scissors, Clock, Sparkles, User, X, Tag, Layers, Download } from 'lucide-react';
+import { Plus, Edit2, Trash2, ChevronDown, ChevronRight, Image as ImageIcon, Star, Copy, RefreshCw, Shirt, Calendar, Scissors, Clock, Sparkles, User, X, Tag, Layers, Download, Volume2, Wand2 } from 'lucide-react';
 import {
   Character,
   CharacterState,
@@ -184,8 +184,12 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
     tags: '[]',
     tagInput: '',
     use_reference_images: true,
-    costume_id: null
+    costume_id: null,
+    voice_config: null
   });
+
+  // 音色分析状态
+  const [analyzingVoice, setAnalyzingVoice] = useState(false);
   
   const { showToast } = useToast();
     const { openPreview } = usePreview();
@@ -311,6 +315,11 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
   // 打开编辑弹窗
   const handleEdit = (state: CharacterState) => {
     setEditingState(state);
+    // 解析 voice_config（兼容字符串JSON和对象）
+    let voiceConfig = state.voice_config || null;
+    if (typeof voiceConfig === 'string') {
+      try { voiceConfig = JSON.parse(voiceConfig); } catch { voiceConfig = null; }
+    }
     setFormData({
       name: state.name,
       description: state.description,
@@ -329,7 +338,8 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
       tags: state.tags || '[]',
       tagInput: '',
       use_reference_images: state.use_reference_images !== false,
-      costume_id: (state as any).costume_id || null
+      costume_id: (state as any).costume_id || null,
+      voice_config: voiceConfig
     });
     onOpen();
   };
@@ -502,6 +512,69 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
       showToast(error.message || '分析失败', 'error');
     } finally {
       setAnalyzing(false);
+    }
+  };
+
+  // AI分析角色音色
+  const analyzeVoice = async () => {
+    if (!selected.text) {
+      showToast('请先选择文本分析模型', 'error');
+      return;
+    }
+    if (!character) {
+      showToast('角色信息未加载', 'error');
+      return;
+    }
+
+    setAnalyzingVoice(true);
+    try {
+      const token = getAuthToken();
+      const response = await fetch(`/api/characters/${characterId}/states/analyze`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({
+          type: 'voice',
+          description: formData.description || '',
+          characterName: character.name,
+          characterAppearance: formData.appearance || character.appearance || '',
+          textModel: selected.text
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('音色分析失败');
+      }
+
+      const data = await response.json();
+      const voiceTags = data.tags || data.voice || data;
+      if (voiceTags && typeof voiceTags === 'object') {
+        setFormData(prev => ({
+          ...prev,
+          voice_config: {
+            voice_description: voiceTags.voice_description || '',
+            gender: voiceTags.gender || 'neutral',
+            age_group: voiceTags.age_group || 'young',
+            language: voiceTags.language || 'zh-CN',
+            emotion: voiceTags.emotion || 'neutral',
+            style: voiceTags.style || 'gentle',
+            speed: typeof voiceTags.speed === 'number' ? voiceTags.speed : 1.0,
+            pitch: typeof voiceTags.pitch === 'number' ? voiceTags.pitch : 0,
+            volume: typeof voiceTags.volume === 'number' ? voiceTags.volume : 1.0,
+            dialect: voiceTags.dialect || '',
+            seedance_prompt: voiceTags.seedance_prompt || ''
+          }
+        }));
+        showToast('音色分析完成', 'success');
+      } else {
+        throw new Error('返回数据格式异常');
+      }
+    } catch (error: any) {
+      showToast(error.message || '音色分析失败', 'error');
+    } finally {
+      setAnalyzingVoice(false);
     }
   };
 
@@ -1975,6 +2048,192 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                           </CardBody>
                         </Card>
                         
+                        {/* 角色音色配置卡片 */}
+                        <Card className="bg-slate-800/40 border border-slate-700/40">
+                          <CardBody className="p-3 space-y-2.5">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-1.5">
+                                <Volume2 className="w-3.5 h-3.5 text-orange-400" />
+                                <span className="text-xs font-medium text-slate-300">角色音色</span>
+                              </div>
+                              <Button
+                                size="sm"
+                                variant="flat"
+                                className="h-6 px-2 text-[10px] bg-orange-500/10 text-orange-400 border border-orange-500/20"
+                                startContent={<Wand2 className="w-3 h-3" />}
+                                isLoading={analyzingVoice}
+                                isDisabled={!selected.text || analyzingVoice}
+                                onPress={analyzeVoice}
+                              >
+                                {analyzingVoice ? '分析中...' : 'AI分析音色'}
+                              </Button>
+                            </div>
+
+                            {/* 音色描述 */}
+                            <Input
+                              size="sm"
+                              placeholder="音色描述，如：清脆甜美的少女音"
+                              value={(formData.voice_config as any)?.voice_description || ''}
+                              onValueChange={(val) => setFormData({
+                                ...formData,
+                                voice_config: { ...(formData.voice_config as any || {}), voice_description: val }
+                              })}
+                              classNames={{
+                                input: "bg-transparent text-slate-100 text-xs",
+                                inputWrapper: "bg-slate-800/60 border border-slate-600/50 h-8 min-h-0"
+                              }}
+                            />
+
+                            {/* 性别 / 年龄段 / 语言 */}
+                            <div className="grid grid-cols-3 gap-2">
+                              <Select
+                                size="sm"
+                                placeholder="性别"
+                                selectedKeys={(formData.voice_config as any)?.gender ? [(formData.voice_config as any).gender] : []}
+                                onSelectionChange={(keys) => {
+                                  const value = Array.from(keys)[0] as string;
+                                  setFormData({ ...formData, voice_config: { ...(formData.voice_config as any || {}), gender: value } });
+                                }}
+                                classNames={{
+                                  trigger: "bg-slate-800/60 border border-slate-600/50 h-8 min-h-0",
+                                  value: "text-slate-100 text-xs",
+                                  label: "hidden"
+                                }}
+                              >
+                                <SelectItem key="male" textValue="男性">男性</SelectItem>
+                                <SelectItem key="female" textValue="女性">女性</SelectItem>
+                                <SelectItem key="neutral" textValue="中性">中性</SelectItem>
+                              </Select>
+                              <Select
+                                size="sm"
+                                placeholder="年龄段"
+                                selectedKeys={(formData.voice_config as any)?.age_group ? [(formData.voice_config as any).age_group] : []}
+                                onSelectionChange={(keys) => {
+                                  const value = Array.from(keys)[0] as string;
+                                  setFormData({ ...formData, voice_config: { ...(formData.voice_config as any || {}), age_group: value } });
+                                }}
+                                classNames={{
+                                  trigger: "bg-slate-800/60 border border-slate-600/50 h-8 min-h-0",
+                                  value: "text-slate-100 text-xs",
+                                  label: "hidden"
+                                }}
+                              >
+                                <SelectItem key="child" textValue="儿童">儿童</SelectItem>
+                                <SelectItem key="teen" textValue="少年">少年</SelectItem>
+                                <SelectItem key="young" textValue="青年">青年</SelectItem>
+                                <SelectItem key="middle" textValue="中年">中年</SelectItem>
+                                <SelectItem key="elder" textValue="老年">老年</SelectItem>
+                              </Select>
+                              <Input
+                                size="sm"
+                                placeholder="语言"
+                                value={(formData.voice_config as any)?.language || ''}
+                                onValueChange={(val) => setFormData({ ...formData, voice_config: { ...(formData.voice_config as any || {}), language: val } })}
+                                classNames={{
+                                  input: "bg-transparent text-slate-100 text-xs",
+                                  inputWrapper: "bg-slate-800/60 border border-slate-600/50 h-8 min-h-0"
+                                }}
+                              />
+                            </div>
+
+                            {/* 情感 / 风格 */}
+                            <div className="grid grid-cols-2 gap-2">
+                              <Select
+                                size="sm"
+                                placeholder="情感基调"
+                                selectedKeys={(formData.voice_config as any)?.emotion ? [(formData.voice_config as any).emotion] : []}
+                                onSelectionChange={(keys) => {
+                                  const value = Array.from(keys)[0] as string;
+                                  setFormData({ ...formData, voice_config: { ...(formData.voice_config as any || {}), emotion: value } });
+                                }}
+                                classNames={{
+                                  trigger: "bg-slate-800/60 border border-slate-600/50 h-8 min-h-0",
+                                  value: "text-slate-100 text-xs",
+                                  label: "hidden"
+                                }}
+                              >
+                                <SelectItem key="neutral" textValue="平静">平静</SelectItem>
+                                <SelectItem key="cheerful" textValue="欢快">欢快</SelectItem>
+                                <SelectItem key="sad" textValue="悲伤">悲伤</SelectItem>
+                                <SelectItem key="angry" textValue="愤怒">愤怒</SelectItem>
+                                <SelectItem key="excited" textValue="兴奋">兴奋</SelectItem>
+                                <SelectItem key="calm" textValue="沉稳">沉稳</SelectItem>
+                                <SelectItem key="shy" textValue="害羞">害羞</SelectItem>
+                                <SelectItem key="brave" textValue="勇敢">勇敢</SelectItem>
+                              </Select>
+                              <Select
+                                size="sm"
+                                placeholder="声音风格"
+                                selectedKeys={(formData.voice_config as any)?.style ? [(formData.voice_config as any).style] : []}
+                                onSelectionChange={(keys) => {
+                                  const value = Array.from(keys)[0] as string;
+                                  setFormData({ ...formData, voice_config: { ...(formData.voice_config as any || {}), style: value } });
+                                }}
+                                classNames={{
+                                  trigger: "bg-slate-800/60 border border-slate-600/50 h-8 min-h-0",
+                                  value: "text-slate-100 text-xs",
+                                  label: "hidden"
+                                }}
+                              >
+                                <SelectItem key="gentle" textValue="温柔">温柔</SelectItem>
+                                <SelectItem key="lively" textValue="活泼">活泼</SelectItem>
+                                <SelectItem key="serious" textValue="严肃">严肃</SelectItem>
+                                <SelectItem key="playful" textValue="俏皮">俏皮</SelectItem>
+                                <SelectItem key="elegant" textValue="优雅">优雅</SelectItem>
+                                <SelectItem key="rough" textValue="粗犷">粗犷</SelectItem>
+                                <SelectItem key="soft" textValue="柔和">柔和</SelectItem>
+                              </Select>
+                            </div>
+
+                            {/* 语速 / 音高 / 音量 */}
+                            <div className="grid grid-cols-3 gap-2">
+                              {[
+                                { key: 'speed', label: '语速', min: 0.5, max: 2.0, step: 0.1 },
+                                { key: 'pitch', label: '音高', min: -10, max: 10, step: 1 },
+                                { key: 'volume', label: '音量', min: 0.5, max: 2.0, step: 0.1 }
+                              ].map(({ key, label, min, max, step }) => (
+                                <div key={key} className="space-y-1">
+                                  <label className="text-[10px] text-slate-500">{label}</label>
+                                  <Input
+                                    size="sm"
+                                    type="number"
+                                    min={min}
+                                    max={max}
+                                    step={step}
+                                    value={String((formData.voice_config as any)?.[key] ?? (key === 'pitch' ? 0 : 1.0))}
+                                    onValueChange={(val) => {
+                                      const num = parseFloat(val);
+                                      setFormData({
+                                        ...formData,
+                                        voice_config: { ...(formData.voice_config as any || {}), [key]: isNaN(num) ? (key === 'pitch' ? 0 : 1.0) : num }
+                                      });
+                                    }}
+                                    classNames={{
+                                      input: "bg-transparent text-slate-100 text-xs",
+                                      inputWrapper: "bg-slate-800/60 border border-slate-600/50 h-8 min-h-0"
+                                    }}
+                                  />
+                                </div>
+                              ))}
+                            </div>
+
+                            {/* Seedance 提示词 */}
+                            <Input
+                              size="sm"
+                              placeholder="Seedance 1.5 英文音色提示词"
+                              value={(formData.voice_config as any)?.seedance_prompt || ''}
+                              onValueChange={(val) => setFormData({
+                                ...formData,
+                                voice_config: { ...(formData.voice_config as any || {}), seedance_prompt: val }
+                              })}
+                              classNames={{
+                                input: "bg-transparent text-slate-100 text-xs",
+                                inputWrapper: "bg-slate-800/60 border border-slate-600/50 h-8 min-h-0"
+                              }}
+                            />
+                          </CardBody>
+                        </Card>
+
                         {/* 生成提示词预览 */}
                         {(formData.outfit || formData.hairstyle || formData.accessories || formData.held_props || formData.age_stage || formData.appearance || formData.body_elements) && (
                           <div className="p-2.5 rounded-lg bg-purple-500/5 border border-purple-500/20">

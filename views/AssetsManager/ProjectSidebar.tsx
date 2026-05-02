@@ -15,6 +15,7 @@ interface ProjectSidebarProps {
   selectedProject: string;
   activeTab?: string;
   onSelectProject: (projectId: string) => void;
+  onOpenProject?: (projectId: string) => void;
   onSelectResourceType?: (projectId: string, tabType: string) => void;
   onSelectAsset?: (tabType: string, asset: any) => void;
   onEditAsset?: (tabType: string, asset: any) => void;
@@ -39,6 +40,7 @@ const ProjectSidebar: React.FC<ProjectSidebarProps> = ({
   selectedProject,
   activeTab,
   onSelectProject,
+  onOpenProject,
   onSelectResourceType,
   onSelectAsset,
   onEditAsset,
@@ -183,12 +185,13 @@ const ProjectSidebar: React.FC<ProjectSidebarProps> = ({
                 </button>
                 <button
                   onClick={() => onSelectProject(projectIdStr)}
-                  className={`flex-1 flex items-center gap-2 px-2 py-2 rounded-lg transition-all text-left ${
+                  onDoubleClick={() => onOpenProject?.(projectIdStr)}
+                  className={`flex-1 flex items-center gap-2 px-2 py-2 rounded-lg transition-all text-left select-none ${
                     isSelected && !onSelectResourceType
-                      ? 'bg-(--accent)/15 text-(--accent-light) border border-(--accent)/30'
-                      : 'text-(--text-secondary) hover:bg-(--bg-hover) border border-transparent'
+                      ? 'bg-sky-500/15 text-sky-600 dark:text-sky-400 border border-sky-500/40'
+                      : 'text-(--text-secondary) hover:bg-sky-500/10 hover:text-sky-600 dark:hover:text-sky-400 border border-transparent'
                   }`}
-                  title={project.name}
+                  title={`单击选中，双击打开：${project.name}`}
                 >
                   <FolderOpen className="w-4 h-4 shrink-0" />
                   <span className="text-sm font-medium truncate">{project.name}</span>

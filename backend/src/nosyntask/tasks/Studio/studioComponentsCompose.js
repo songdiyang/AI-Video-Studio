@@ -17,6 +17,67 @@
 
 const { execute, queryAll, queryOne } = require('../../../dbHelper');
 const handleBaseTextModelCall = require('../base/baseTextModelCall');
+const { isInvalidEnvName } = require('./environmentDescriptionSanitizer');
+
+// ============================================
+// 环境数据清洗辅助函数
+// ============================================
+
+/** 常见建筑关键词，用于从环境名/描述中剔除 */
+const BUILDING_KEYWORDS = ['屋', '房', '室', '厅', '楼', '阁', '桥', '亭', '塔', '殿', '榭', '廊', '庙', '堡', '窑', '棚', '舍', '坞', '巢'];
+
+/** 常见角色动作模式，用于过滤环境描述中的角色活动 */
+const ROLE_ACTION_PATTERNS = [
+  /[^，。]*(?:沿着|站在|坐在|躺在|走在|跑向|看向|望着|跳着|蹦着|转身|回头|抬头|低头|蹲下|趴下|伸手|指着|抱着|拉着|推着|背着)[^，。]*[，。]?/g,
+  /[^，。]*(?:小熊|小兔|小猫|小狗|小狐狸|小刺猬|小鹿|小松鼠|小猴子|小熊猫)[^，。]*[，。]?/g,
+];
+
+/** 清洗环境描述：去建筑、去角色 */
+function sanitizeEnvDescription(description, buildingNames) {
+  let result = String(description || '').trim();
+  // 去掉包含建筑名的片段
+  for (const bName of buildingNames || []) {
+    if (!bName) continue;
+    const escaped = bName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    result = result.replace(new RegExp(`[^，。]*${escaped}[^，。]*[，。]?`, 'g'), '');
+  }
+  // 去掉通用建筑关键词相关片段
+  for (const kw of BUILDING_KEYWORDS) {
+    result = result.replace(new RegExp(`[^，。]*${kw}[^，。]*[，。]?`, 'g'), '');
+  }
+  // 去掉角色动作描述
+  for (const pattern of ROLE_ACTION_PATTERNS) {
+    result = result.replace(pattern, '');
+  }
+  // 清理残留标点
+  result = result.replace(/[，。]{2,}/g, '，').replace(/^[，。]+|[，。]+$/g, '').trim();
+  return result;
+}
+
+/** 清洗环境名：去建筑、去连接词、去后缀 */
+function sanitizeEnvName(name, buildingNames) {
+  let result = String(name || '').trim();
+  // 去掉 "_环境" / "环境" 后缀
+  result = result.replace(/[_\-]?环境$/g, '').trim();
+  // 去掉已知建筑名（全局替换）
+  for (const bName of buildingNames || []) {
+    if (bName && result.includes(bName)) {
+      result = result.replace(new RegExp(bName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '').trim();
+    }
+  }
+  // 去掉通用建筑关键词（全局替换）
+  for (const kw of BUILDING_KEYWORDS) {
+    const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    result = result.replace(new RegExp(escaped, 'g'), '').trim();
+  }
+  // 清理连接词残留
+  result = result.replace(/^[前後后旁侧边上边下边里外边]+/g, '').replace(/[前後后旁侧边上边下边里外边]+$/g, '').trim();
+  // 清理可能产生的孤立单字（如"小木"中的"木"）
+  result = result.replace(/^[木石砖瓦铁钢]+/g, '').replace(/[木石砖瓦铁钢]+$/g, '').trim();
+  // 清理空字符
+  result = result.replace(/[_\-]+/g, '').replace(/\s+/g, '').trim();
+  return result || '自然场景';
+}
 
 // ============================================
 // 提示词生成辅助函数
@@ -26,19 +87,19 @@ const handleBaseTextModelCall = require('../base/baseTextModelCall');
  * 为环境生成英文图片提示词
  */
 async function generateEnvironmentPrompt(locName, description, timeOfDay, weather, lighting, mood, textModel) {
-  const prompt = `你是一个专业的图片生成提示词专家。请根据以下环境信息生成高质量的环境氛围图提示词（用于 AI 绘图工具）。
+  const prompt = `你是一个专业的图片生成提示词专家。请根据以下环境信息生成高质量的自然环境氛围图提示词（用于 AI 绘图工具）。
 
 要求：
 1. 提示词必须用英文输出
 2. 使用逗号分隔的关键词格式
-3. 包含：场景环境、光照效果、氛围、构图、画质描述
+3. 包含：自然场景环境、光照效果、氛围、构图、画质描述
 4. 长度控制在 80-120 个单词
-5. 重点描述环境细节、光影效果、氛围营造
-6. 严格禁止出现任何人物、角色、人影、剪影
-7. 在提示词开头加上 "empty scene, no people, no characters, uninhabited,"
+5. 重点描述自然环境细节、光影效果、氛围营造（草地、溪流、沙地、花海、山丘、湖泊等）
+6. **严格禁止出现任何建筑、房屋、桥梁、亭台、人造结构、人物、角色、人影、剪影**
+7. 在提示词开头加上 "natural landscape, empty scene, no buildings, no architecture, no people, no characters, uninhabited,"
 
-场景名称：${locName}
-场景描述：${description || '无'}
+环境名称：${locName}
+环境描述：${description || '无'}
 时间段：${timeOfDay || '白天'}
 天气：${weather || '晴天'}
 光照：${lighting || '自然光'}
@@ -220,46 +281,11 @@ async function handleStudioComponentsCompose(inputParams, onProgress) {
     console.log(`[StudioComponentsCompose] 创建 ${studiosCreated} 个 studios`);
   }
 
-  if (onProgress) onProgress(18);
-
-  // 2.1 创建 studio_states
-  const studioStateKeyToId = new Map();
-  const newStateRows = [];
-  const stateRowMeta = [];
-
-  for (const [locName, agg] of locationAgg.entries()) {
-    const studioId = locationToStudioId.get(locName);
-    if (!studioId) continue;
-
-    const timeOfDay = agg.timeOfDay || '白天';
-    const weather = agg.weather || '晴天';
-    const stateKey = `${studioId}|${timeOfDay}|${weather}`;
-
-    if (!studioStateKeyToId.has(stateKey)) {
-      const stateName = `${timeOfDay}_${weather}`;
-      newStateRows.push([
-        userId, projectId, studioId, stateName, agg.descriptions[0] || '',
-        timeOfDay, weather, agg.lighting || '', agg.mood || ''
-      ]);
-      stateRowMeta.push({ key: stateKey, studioId, locName, timeOfDay, weather });
-      studioStateKeyToId.set(stateKey, null);
-    }
-  }
-
-  if (newStateRows.length > 0) {
-    const ret = await execute(
-      `INSERT INTO studio_states (user_id, project_id, studio_id, name, description, time_of_day, weather, lighting, mood) VALUES ?`,
-      [newStateRows]
-    );
-    const firstId = ret.insertId;
-    stateRowMeta.forEach((m, idx) => {
-      studioStateKeyToId.set(m.key, firstId + idx);
-    });
-    studioStatesCreated = newStateRows.length;
-    console.log(`[StudioComponentsCompose] 创建 ${studioStatesCreated} 个 studio_states`);
-  }
-
   if (onProgress) onProgress(25);
+
+  // 注意：studio_states 的创建与 storyboard_scenes.studio_state_id 的回写
+  // 已由 save_storyboards 步骤（按 time|weather|lighting|mood 4 维 key）完成，
+  // 此处不再重复插入，避免同一 studio 下出现两套状态记录。
 
   // ============================================
   // 3. 查询已有的 environments、buildings
@@ -289,14 +315,33 @@ async function handleStudioComponentsCompose(inputParams, onProgress) {
   // 4.1 创建 environments
   const newEnvRows = [];
   const newEnvMeta = []; // 记录 location 聚合信息，用于后续生成 prompt
+  const skippedInvalidEnvs = [];
   for (const [locName, agg] of locationAgg.entries()) {
-    const envName = `${locName}_环境`;
+    // 环境名优先使用分镜中标注的纯粹环境名，其次尝试从 location 中剔除建筑名
+    let envName = Array.from(agg.environments)[0] || locName;
+    // 使用统一清洗函数：去建筑名、去连接词、去后缀
+    envName = sanitizeEnvName(envName, agg.buildings);
+    if (!envName) envName = sanitizeEnvName(locName, agg.buildings) || '';
+
+    // 二次校验：命中黑名单（"内"、"外"、"自然景观" 等）或过短的直接跳过，不污染资产库
+    if (isInvalidEnvName(envName)) {
+      console.warn(`[StudioComponentsCompose] 跳过无效环境名: location="${locName}" envName="${envName}"`);
+      skippedInvalidEnvs.push({ locName, envName });
+      continue;
+    }
+
     const envKey = `${projectId}|${envName}`;
     
     if (envMap.has(envKey)) {
       envNameToId.set(envName, envMap.get(envKey));
     } else if (!envNameToId.has(envName)) {
-      const description = agg.descriptions[0] || '';
+      // 环境描述使用统一清洗函数：去建筑、去角色
+      const rawDesc = agg.descriptions[0] || '';
+      let description = sanitizeEnvDescription(rawDesc, agg.buildings);
+      if (!description) {
+        // 兜底：用时间+天气+氛围生成简洁环境描述
+        description = `${agg.timeOfDay || '白天'}，${agg.weather || '晴朗'}，${agg.mood || '宁静'}的自然场景`;
+      }
       newEnvRows.push([
         userId, projectId, envName, description,
         agg.timeOfDay || null,
@@ -438,12 +483,13 @@ async function handleStudioComponentsCompose(inputParams, onProgress) {
 
   // ============================================
   // 6. 建立关联关系
+  //    - studios.environment_id：1:1 直接回写（不存在 studio_environment_links 表）
+  //    - studio_building_links：1:N 多对多
   // ============================================
   let studioEnvLinksCreated = 0;
   let studioBuildingLinksCreated = 0;
 
-  // 6.1 studio_environment_links
-  const studioEnvLinkRows = [];
+  // 6.1 回写 studios.environment_id（环境名取值与第4步一致：已 sanitize）
   for (const [locName, agg] of locationAgg.entries()) {
     const studioId = locationToStudioId.get(locName);
     if (!studioId) {
@@ -451,21 +497,24 @@ async function handleStudioComponentsCompose(inputParams, onProgress) {
       continue;
     }
 
-    const fullEnvName = `${locName}_环境`;
-    const envId = envNameToId.get(fullEnvName);
+    let envName = Array.from(agg.environments)[0] || locName;
+    envName = sanitizeEnvName(envName, agg.buildings);
+    if (!envName) envName = sanitizeEnvName(locName, agg.buildings) || '自然场景';
+
+    const envId = envNameToId.get(envName);
     if (envId) {
-      studioEnvLinkRows.push([studioId, envId]);
+      try {
+        await execute(
+          `UPDATE studios SET environment_id = ? WHERE id = ? AND (environment_id IS NULL OR environment_id != ?)`,
+          [envId, studioId, envId]
+        );
+        studioEnvLinksCreated++;
+      } catch (err) {
+        console.warn(`[StudioComponentsCompose] 回写 studio.environment_id 失败: studioId=${studioId}, envId=${envId}`, err.message);
+      }
     }
   }
-
-  if (studioEnvLinkRows.length > 0) {
-    await execute(
-      `INSERT IGNORE INTO studio_environment_links (studio_id, environment_id) VALUES ?`,
-      [studioEnvLinkRows]
-    );
-    studioEnvLinksCreated = studioEnvLinkRows.length;
-    console.log(`[StudioComponentsCompose] 创建 ${studioEnvLinksCreated} 条 studio_environment_links`);
-  }
+  console.log(`[StudioComponentsCompose] studios.environment_id 回写 ${studioEnvLinksCreated} 条`);
 
   if (onProgress) onProgress(80);
 
@@ -495,48 +544,8 @@ async function handleStudioComponentsCompose(inputParams, onProgress) {
   if (onProgress) onProgress(90);
 
   // ============================================
-  // 7. 回写 storyboard_scenes.studio_state_id
+  // 7. storyboard_scenes.studio_state_id 的回写由 save_storyboards 负责，此处不再处理
   // ============================================
-  if (scriptId) {
-    try {
-      const locToStateId = new Map();
-      for (const [locName, agg] of locationAgg.entries()) {
-        const studioId = locationToStudioId.get(locName);
-        if (!studioId) continue;
-        const timeOfDay = agg.timeOfDay || '白天';
-        const weather = agg.weather || '晴天';
-        const stateKey = `${studioId}|${timeOfDay}|${weather}`;
-        const stateId = studioStateKeyToId.get(stateKey);
-        if (stateId) {
-          locToStateId.set(locName, stateId);
-        }
-      }
-
-      const storyboardScenes = await queryAll(
-        `SELECT ss.storyboard_id, ss.scene_id, s.name as scene_name
-         FROM storyboard_scenes ss
-         JOIN scenes s ON s.id = ss.scene_id
-         JOIN storyboards sb ON sb.id = ss.storyboard_id
-         WHERE sb.script_id = ?`,
-        [scriptId]
-      );
-
-      let updatedCount = 0;
-      for (const row of storyboardScenes) {
-        const stateId = locToStateId.get(row.scene_name);
-        if (stateId) {
-          await execute(
-            `UPDATE storyboard_scenes SET studio_state_id = ? WHERE storyboard_id = ? AND scene_id = ?`,
-            [stateId, row.storyboard_id, row.scene_id]
-          );
-          updatedCount++;
-        }
-      }
-      console.log(`[StudioComponentsCompose] storyboard_scenes.studio_state_id 回写 ${updatedCount} 条`);
-    } catch (updateErr) {
-      console.error('[StudioComponentsCompose] studio_state_id 回写失败（非致命）:', updateErr.message);
-    }
-  }
 
   if (onProgress) onProgress(100);
 

@@ -5,7 +5,7 @@
  *   POST   /                  新建建筑 { projectId, name, description?, interiorExterior?, structureType? }
  *   PATCH  /:id               更新建筑
  *   DELETE /:id               删除（级联删除 studio_building_links）
- *   POST   /:id/generate-image  启动建筑结构图生成
+ *   POST   /:id/generate-image  启动建筑结构图生成（body 可含 viewType: 'interior' | 'exterior'）
  */
 const express = require('express');
 const { generationStartService, sendGenerationError } = require('../../modules/generation');
@@ -40,7 +40,8 @@ router.get('/', authMiddleware, async (req, res) => {
     }
     const rows = await queryAll(
       `SELECT id, user_id, project_id, name, description, interior_exterior,
-              structure_type, image_url, generation_prompt, generation_status,
+              structure_type, image_url, interior_image_url, exterior_image_url,
+              generation_prompt, generation_status,
               sort_order, created_at, updated_at
        FROM buildings
        WHERE ${clauses.join(' AND ')}
@@ -129,6 +130,8 @@ router.patch('/:id', authMiddleware, async (req, res) => {
       description: 'description',
       structureType: 'structure_type',
       imageUrl: 'image_url',
+      interiorImageUrl: 'interior_image_url',
+      exteriorImageUrl: 'exterior_image_url',
       generationPrompt: 'generation_prompt',
       sortOrder: 'sort_order'
     };
@@ -175,6 +178,25 @@ router.delete('/:id', authMiddleware, async (req, res) => {
   } catch (err) {
     console.error('[Buildings][delete]', err);
     res.status(500).json({ message: '删除建筑失败' });
+  }
+});
+
+// DELETE /:id/image  清空建筑设定图
+router.delete('/:id/image', authMiddleware, async (req, res) => {
+  const userId = req.user.id;
+  const id = Number(req.params.id);
+  try {
+    const b = await ensureOwned(id, userId);
+    if (!b) return res.status(404).json({ message: '建筑不存在或无权访问' });
+    await execute(
+      `UPDATE buildings SET image_url = NULL, interior_image_url = NULL, exterior_image_url = NULL,
+       generation_status = 'pending', generation_prompt = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      [id]
+    );
+    res.json({ message: '设定图已删除' });
+  } catch (err) {
+    console.error('[Buildings][deleteImage]', err);
+    res.status(500).json({ message: '删除设定图失败' });
   }
 });
 

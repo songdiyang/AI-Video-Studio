@@ -56,9 +56,9 @@ server {
         proxy_send_timeout 600s;
     }
 
-    # MinIO 对象存储反向代理
+    # MinIO 对象存储反向代理（远程服务器）
     location ^~ /storage/ {
-        proxy_pass http://nanostory-minio:9000/nanostory/;
+        proxy_pass http://39.105.158.61:9000/nanostory/;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;

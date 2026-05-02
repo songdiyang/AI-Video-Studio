@@ -189,6 +189,22 @@ async function requireBuildingForUser(buildingId, userId) {
   return building;
 }
 
+async function requireEnvironmentVariantForUser(variantId, userId) {
+  const variant = await queryOne(
+    `SELECT ev.*, e.user_id AS env_user_id, e.project_id, e.name AS env_name, e.description AS env_description
+     FROM environment_variants ev
+     JOIN environments e ON e.id = ev.environment_id
+     WHERE ev.id = ? AND e.user_id = ?`,
+    [variantId, userId]
+  );
+
+  if (!variant) {
+    throw new HttpError(404, '环境变体不存在或无权访问');
+  }
+
+  return variant;
+}
+
 async function listStudioBuildings(studioId) {
   return queryAll(
     `SELECT b.id, b.name, b.description, b.interior_exterior, b.structure_type,
@@ -239,6 +255,7 @@ module.exports = {
   requireStudioForUser,
   requireEnvironmentForUser,
   requireBuildingForUser,
+  requireEnvironmentVariantForUser,
   listStudioBuildings,
   getStudioEnvironment,
   listStudioElementLinks

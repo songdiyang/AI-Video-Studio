@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button, Input, Tabs, Tab, useDisclosure, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Popover, PopoverTrigger, PopoverContent, Textarea } from '@heroui/react';
-import { Users, MapPin, FileText, Plus, Search, Tag, Settings, Edit2, X, ChevronDown, ChevronRight, BookOpen, Sparkles } from 'lucide-react';
+import { Users, MapPin, FileText, Plus, Search, Tag, Settings, Edit2, X, ChevronDown, ChevronRight, BookOpen, Sparkles, Cloud, Building2, Wand2 } from 'lucide-react';
 import { getAuthToken } from '../../services/auth';
 import { useSceneImageGeneration } from '../StoryBoard/hooks/useSceneImageGeneration';
 import SceneDetailModal from '../StoryBoard/ResourcePanel/SceneDetailModal';
@@ -29,12 +29,32 @@ import {
   deleteScript as deleteScriptApi,
   bindScriptToProject,
 } from '../../services/scripts';
+import {
+  Environment,
+  listEnvironments,
+  createEnvironment,
+  updateEnvironment,
+  deleteEnvironment,
+  generateEnvironmentImage,
+  sanitizeEnvironmentDescriptions,
+} from '../../services/environments';
+import {
+  Building,
+  listBuildings,
+  createBuilding,
+  updateBuilding,
+  deleteBuilding,
+  generateBuildingImage,
+  deleteBuildingImage,
+} from '../../services/buildings';
 import CharacterList from './CharacterList';
 import ProjectSidebar from './ProjectSidebar';
 import SceneList from './SceneList';
 import PropList from './PropList';
 
 import StudioList from './StudioList';
+import EnvironmentList from './EnvironmentList';
+import BuildingList from './BuildingList';
 import ScriptList from './ScriptList';
 import ScriptGenerateModal from './ScriptGenerateModal';
 import CharacterDraftPreviewModal from './CharacterDraftPreviewModal';
@@ -49,7 +69,7 @@ import { AIModel } from '../../components/AIModelSelector';
 import type { CharacterState } from '../../services/assets';
 import { useAIAssistantWorkbenchContext } from '../../contexts/AIAssistantContext';
 
-type TabType = 'characters' | 'studios' | 'props' | 'costumes' | 'scripts';
+type TabType = 'characters' | 'studios' | 'props' | 'costumes' | 'scripts' | 'environments' | 'buildings';
 
 // 标签分组管理面板组件
 interface TagGroupManagerProps {
@@ -323,6 +343,8 @@ const AssetsManager: React.FC = () => {
   const [studios, setStudios] = useState<import('../../services/studios').Studio[]>([]);
   const [costumes, setCostumes] = useState<Costume[]>([]);
   const [scripts, setScripts] = useState<ScriptLibraryItem[]>([]);
+  const [environments, setEnvironments] = useState<Environment[]>([]);
+  const [buildings, setBuildings] = useState<Building[]>([]);
   const [tagGroups, setTagGroups] = useState<TagGroup[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -365,6 +387,33 @@ const AssetsManager: React.FC = () => {
   const { isOpen: isStudioOpen, onOpen: onStudioOpen, onOpenChange: onStudioOpenChange } = useDisclosure();
   const [editingStudioId, setEditingStudioId] = useState<number | null>(null);
   const [studioEditMode, setStudioEditMode] = useState(false);
+
+  // 环境模态框
+  const { isOpen: isEnvOpen, onOpen: onEnvOpen, onOpenChange: onEnvOpenChange } = useDisclosure();
+  const [editingEnvId, setEditingEnvId] = useState<number | null>(null);
+  const [envEditMode, setEnvEditMode] = useState(false);
+  const [envForm, setEnvForm] = useState({
+    name: '',
+    description: '',
+    timeOfDay: '',
+    weather: '',
+    lighting: '',
+    mood: '',
+    terrainType: '',
+    project_id: undefined as number | undefined,
+  });
+
+  // 建筑模态框
+  const { isOpen: isBldOpen, onOpen: onBldOpen, onOpenChange: onBldOpenChange } = useDisclosure();
+  const [editingBldId, setEditingBldId] = useState<number | null>(null);
+  const [bldEditMode, setBldEditMode] = useState(false);
+  const [bldForm, setBldForm] = useState({
+    name: '',
+    description: '',
+    interiorExterior: 'both' as 'interior' | 'exterior' | 'both',
+    structureType: '',
+    project_id: undefined as number | undefined,
+  });
 
   // 剧本创建模态框
   const {
@@ -555,9 +604,22 @@ const AssetsManager: React.FC = () => {
     tag_groups_json: null
   });
 
+  // 挂载 & 切换项目筛选时：并发加载所有资源（保证 Tab 徽标首次渲染就正确）
   useEffect(() => {
+    loadAllData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectFilter]);
+
+  // 切换当前 Tab 时：只刷当前 tab 一种资源（保持数据新鲜），跳过首次挂载避免与 loadAllData 重复
+  const didMountRef = React.useRef(false);
+  useEffect(() => {
+    if (!didMountRef.current) {
+      didMountRef.current = true;
+      return;
+    }
     loadData();
-  }, [activeTab, projectFilter]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
 
   useEffect(() => {
     loadTagGroups();
@@ -635,12 +697,62 @@ const AssetsManager: React.FC = () => {
         // 服装支持全部项目/未使用素材筛选，空项目时不筛选项目
         const data = await fetchCostumes(filterProjectId || null);
         setCostumes(data);
+      } else if (activeTab === 'environments') {
+        const data = await listEnvironments(filterProjectId || undefined);
+        setEnvironments(data);
+      } else if (activeTab === 'buildings') {
+        const data = await listBuildings(filterProjectId || undefined);
+        setBuildings(data);
       } else {
         const data = await fetchProps();
         setProps(data);
       }
     } catch (error) {
       console.error('加载数据失败:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /**
+   * 并发加载所有资源类型。
+   * 用于：组件挂载 / 切换项目筛选时 —— 保证 Tab 徽标 (角色(2)/道具(0)/...) 在首次渲染时就正确。
+   * 单个资源拉取失败不影响其他资源，使用 allSettled。
+   */
+  const loadAllData = async () => {
+    setLoading(true);
+    try {
+      const filterProjectId = projectFilter !== 'all' && projectFilter !== 'unused' ? Number(projectFilter) : null;
+      const studiosService = import('../../services/studios');
+      const results = await Promise.allSettled([
+        filterProjectId ? fetchCharactersByProject(filterProjectId) : fetchCharacters(),
+        fetchScriptLibrary('all'),
+        studiosService.then(({ listStudios }) => listStudios(filterProjectId || undefined)),
+        fetchCostumes(filterProjectId || null),
+        listEnvironments(filterProjectId || undefined),
+        listBuildings(filterProjectId || undefined),
+        fetchProps(),
+      ]);
+      if (results[0].status === 'fulfilled') setCharacters(results[0].value as Character[]);
+      if (results[1].status === 'fulfilled') {
+        const all = results[1].value as ScriptLibraryItem[];
+        const filtered = filterProjectId
+          ? all.filter((s) => s.project_id === filterProjectId)
+          : projectFilter === 'unused'
+            ? all.filter((s) => s.project_id == null)
+            : all;
+        setScripts(filtered);
+      }
+      if (results[2].status === 'fulfilled') setStudios(results[2].value as import('../../services/studios').Studio[]);
+      if (results[3].status === 'fulfilled') setCostumes(results[3].value as Costume[]);
+      if (results[4].status === 'fulfilled') setEnvironments(results[4].value as Environment[]);
+      if (results[5].status === 'fulfilled') setBuildings(results[5].value as Building[]);
+      if (results[6].status === 'fulfilled') setProps(results[6].value as Prop[]);
+      results.forEach((r, idx) => {
+        if (r.status === 'rejected') {
+          console.error(`[AssetsManager] 资源加载失败 idx=${idx}:`, r.reason);
+        }
+      });
     } finally {
       setLoading(false);
     }
@@ -653,6 +765,8 @@ const AssetsManager: React.FC = () => {
       case 'props': return '道具';
       case 'costumes': return '服装';
       case 'scripts': return '剧本';
+      case 'environments': return '环境';
+      case 'buildings': return '建筑';
     }
   };
 
@@ -662,6 +776,41 @@ const AssetsManager: React.FC = () => {
       setStudioEditMode(false);
       setEditingStudioId(null);
       onStudioOpen();
+      return;
+    }
+
+    // 环境 Tab
+    if (activeTab === 'environments') {
+      setEnvEditMode(false);
+      setEditingEnvId(null);
+      const defaultProjectId = (projectFilter !== 'all' && projectFilter !== 'unused') ? Number(projectFilter) : undefined;
+      setEnvForm({
+        name: '',
+        description: '',
+        timeOfDay: '',
+        weather: '',
+        lighting: '',
+        mood: '',
+        terrainType: '',
+        project_id: defaultProjectId,
+      });
+      onEnvOpen();
+      return;
+    }
+
+    // 建筑 Tab
+    if (activeTab === 'buildings') {
+      setBldEditMode(false);
+      setEditingBldId(null);
+      const defaultProjectId = (projectFilter !== 'all' && projectFilter !== 'unused') ? Number(projectFilter) : undefined;
+      setBldForm({
+        name: '',
+        description: '',
+        interiorExterior: 'both',
+        structureType: '',
+        project_id: defaultProjectId,
+      });
+      onBldOpen();
       return;
     }
 
@@ -712,6 +861,125 @@ const AssetsManager: React.FC = () => {
     onStudioOpen();
   };
 
+  const handleEditEnvironment = (env: Environment) => {
+    setEnvEditMode(true);
+    setEditingEnvId(env.id);
+    setEnvForm({
+      name: env.name,
+      description: env.description || '',
+      timeOfDay: env.time_of_day || '',
+      weather: env.weather || '',
+      lighting: env.lighting || '',
+      mood: env.mood || '',
+      terrainType: env.terrain_type || '',
+      project_id: env.project_id,
+    });
+    onEnvOpen();
+  };
+
+  const handleGenerateEnvImage = async (env: Environment, mode: 'front' | 'back' | 'both' = 'both') => {
+    if (!selectedImageModel) {
+      showToast('请先在 AI 模型配置中选择图像模型', 'error');
+      return;
+    }
+    try {
+      await generateEnvironmentImage(env.id, {
+        imageModel: selectedImageModel,
+        textModel: selectedTextModel || undefined,
+        mode,
+      });
+      const label = mode === 'front' ? '正面图' : mode === 'back' ? '背面图' : '环境图';
+      showToast(`${label}生成已启动`, 'success');
+      loadData();
+    } catch (err: any) {
+      showToast(err?.message || '启动环境图生成失败', 'error');
+    }
+  };
+
+  // 更新环境数据（地貌识别后刷新本地状态）
+  const handleUpdateEnvironment = (updatedEnv: Environment) => {
+    setEnvironments((prev) =>
+      prev.map((e) => (e.id === updatedEnv.id ? updatedEnv : e))
+    );
+  };
+
+  const [sanitizingEnvs, setSanitizingEnvs] = useState(false);
+  const handleSanitizeEnvDescriptions = async () => {
+    const pid = projectFilter !== 'all' && projectFilter !== 'unused' ? Number(projectFilter) : null;
+    if (!pid) {
+      showToast('请先在左侧选择具体项目', 'error');
+      return;
+    }
+    setSanitizingEnvs(true);
+    try {
+      const result = await sanitizeEnvironmentDescriptions(pid);
+      if (result.changed > 0) {
+        showToast(`已清洗 ${result.changed}/${result.total} 条环境描述`, 'success');
+      } else {
+        showToast('所有环境描述均已为纯自然场景描述', 'success');
+      }
+      await loadData();
+    } catch (err: any) {
+      showToast(err?.message || '清洗环境描述失败', 'error');
+    } finally {
+      setSanitizingEnvs(false);
+    }
+  };
+
+  const handleEditBuilding = (b: Building) => {
+    setBldEditMode(true);
+    setEditingBldId(b.id);
+    setBldForm({
+      name: b.name,
+      description: b.description || '',
+      interiorExterior: b.interior_exterior || 'both',
+      structureType: b.structure_type || '',
+      project_id: b.project_id,
+    });
+    onBldOpen();
+  };
+
+  const handleGenerateBuildingImage = async (b: Building, viewType: 'interior' | 'exterior' | 'both' = 'both') => {
+    if (!selectedImageModel) {
+      showToast('请先在 AI 模型配置中选择图像模型', 'error');
+      return;
+    }
+    // 依据 interior_exterior 把 'both' 收敛为实际可用范围
+    let effectiveViewType: 'interior' | 'exterior' | 'both' = viewType;
+    if (viewType === 'both') {
+      if (b.interior_exterior === 'interior') effectiveViewType = 'interior';
+      else if (b.interior_exterior === 'exterior') effectiveViewType = 'exterior';
+      else effectiveViewType = 'both';
+    }
+    try {
+      await generateBuildingImage(b.id, {
+        imageModel: selectedImageModel,
+        textModel: selectedTextModel || undefined,
+        viewType: effectiveViewType,
+      });
+      const label =
+        effectiveViewType === 'interior'
+          ? '室内设计草图'
+          : effectiveViewType === 'exterior'
+            ? '外景四方位图'
+            : '建筑图（室外+室内）';
+      showToast(`${label}生成已启动`, 'success');
+      loadData();
+    } catch (err: any) {
+      showToast(err?.message || '建筑设定图生成失败', 'error');
+    }
+  };
+
+  const handleDeleteBuildingImage = async (id: number) => {
+    try {
+      await deleteBuildingImage(id);
+      showToast('设定图已删除', 'success');
+      loadData();
+    } catch (err: any) {
+      showToast(err?.message || '删除设定图失败', 'error');
+    }
+  };
+
   // 刷新当前编辑的角色数据
   const handleRefreshCharacter = useCallback(async () => {
     if (!currentId) return;
@@ -738,13 +1006,13 @@ const AssetsManager: React.FC = () => {
   const handleSave = async () => {
     // 优先使用表单中用户选择的项目，其次使用筛选器/上下文推断
     const activeProjectId = formData.project_id || getActiveProjectId();
-
-    // 创建时非“未使用素材”模式下需要项目ID
+  
+    // 创建时非"未使用素材"模式下需要项目ID
     if (!editMode && !activeProjectId && projectFilter !== 'unused') {
       showToast('请先选择一个所属项目', 'error');
       return;
     }
-
+  
     try {
       if (activeTab === 'characters') {
         if (editMode && currentId) {
@@ -775,6 +1043,83 @@ const AssetsManager: React.FC = () => {
       showToast('保存失败，请稍后重试', 'error');
     }
   };
+  
+  const handleSaveEnvironment = async () => {
+    const activeProjectId = envForm.project_id || getActiveProjectId();
+    if (!envEditMode && !activeProjectId && projectFilter !== 'unused') {
+      showToast('请先选择一个所属项目', 'error');
+      return;
+    }
+    if (!envForm.name.trim()) {
+      showToast('环境名称不能为空', 'error');
+      return;
+    }
+    try {
+      if (envEditMode && editingEnvId) {
+        await updateEnvironment(editingEnvId, {
+          name: envForm.name,
+          description: envForm.description || null,
+          timeOfDay: envForm.timeOfDay || null,
+          weather: envForm.weather || null,
+          lighting: envForm.lighting || null,
+          mood: envForm.mood || null,
+          terrainType: envForm.terrainType || null,
+        });
+      } else {
+        await createEnvironment({
+          projectId: activeProjectId || 0,
+          name: envForm.name,
+          description: envForm.description,
+          timeOfDay: envForm.timeOfDay,
+          weather: envForm.weather,
+          lighting: envForm.lighting,
+          mood: envForm.mood,
+        });
+      }
+      await loadData();
+      onEnvOpenChange();
+      showToast(envEditMode ? '环境更新成功' : '环境创建成功', 'success');
+    } catch (error: any) {
+      console.error('环境保存失败:', error);
+      showToast('保存失败，请稍后重试', 'error');
+    }
+  };
+  
+  const handleSaveBuilding = async () => {
+    const activeProjectId = bldForm.project_id || getActiveProjectId();
+    if (!bldEditMode && !activeProjectId && projectFilter !== 'unused') {
+      showToast('请先选择一个所属项目', 'error');
+      return;
+    }
+    if (!bldForm.name.trim()) {
+      showToast('建筑名称不能为空', 'error');
+      return;
+    }
+    try {
+      if (bldEditMode && editingBldId) {
+        await updateBuilding(editingBldId, {
+          name: bldForm.name,
+          description: bldForm.description || null,
+          interiorExterior: bldForm.interiorExterior,
+          structureType: bldForm.structureType || null,
+        });
+      } else {
+        await createBuilding({
+          projectId: activeProjectId || 0,
+          name: bldForm.name,
+          description: bldForm.description,
+          interiorExterior: bldForm.interiorExterior,
+          structureType: bldForm.structureType,
+        });
+      }
+      await loadData();
+      onBldOpenChange();
+      showToast(bldEditMode ? '建筑更新成功' : '建筑创建成功', 'success');
+    } catch (error: any) {
+      console.error('建筑保存失败:', error);
+      showToast('保存失败，请稍后重试', 'error');
+    }
+  };
 
   const handleDelete = async (id: number) => {
     const confirmed = await confirm({
@@ -795,6 +1140,10 @@ const AssetsManager: React.FC = () => {
         await deleteStudio(id);
       } else if (activeTab === 'costumes') {
         await deleteCostumeApi(id);
+      } else if (activeTab === 'environments') {
+        await deleteEnvironment(id);
+      } else if (activeTab === 'buildings') {
+        await deleteBuilding(id);
       } else {
         await deleteProp(id);
       }
@@ -992,6 +1341,34 @@ const AssetsManager: React.FC = () => {
     );
   });
 
+  // 建筑关键词过滤：环境名中不得包含建筑词
+  const BUILDING_KEYWORDS = ['屋', '房', '室', '厅', '楼', '阁', '桥', '亭', '塔', '殿', '榭', '廊', '庙', '堡', '窑', '棚', '舍', '坞', '巢'];
+  const cleanEnvironments = environments.filter((e) => {
+    const name = (e.name || '').replace(/[_\-]/g, '');
+    return !BUILDING_KEYWORDS.some(kw => name.includes(kw));
+  });
+
+  const filteredEnvironments = cleanEnvironments.filter((e) => {
+    const q = searchQuery.toLowerCase();
+    if (!q) return true;
+    return (
+      (e.name || '').toLowerCase().includes(q) ||
+      (e.description || '').toLowerCase().includes(q) ||
+      (e.weather || '').toLowerCase().includes(q) ||
+      (e.time_of_day || '').toLowerCase().includes(q)
+    );
+  });
+
+  const filteredBuildings = buildings.filter((b) => {
+    const q = searchQuery.toLowerCase();
+    if (!q) return true;
+    return (
+      (b.name || '').toLowerCase().includes(q) ||
+      (b.description || '').toLowerCase().includes(q) ||
+      (b.structure_type || '').toLowerCase().includes(q)
+    );
+  });
+
   // 剧本创建提交
   const handleScriptCreateSubmit = async () => {
     if (!scriptCreateContent.trim()) {
@@ -1080,6 +1457,7 @@ const AssetsManager: React.FC = () => {
         selectedProject={projectFilter}
         activeTab={activeTab}
         onSelectProject={setProjectFilter}
+        onOpenProject={(pid) => navigate(`/projects/${pid}`)}
         onSelectResourceType={(pid, tab) => {
           setProjectFilter(pid);
           setActiveTab(tab as TabType);
@@ -1427,6 +1805,67 @@ const AssetsManager: React.FC = () => {
           </Tab>
 
           <Tab
+            key="environments"
+            title={
+              <div className="flex items-center gap-2">
+                <Cloud className="w-4 h-4" />
+                <span>环境 ({cleanEnvironments.length})</span>
+              </div>
+            }
+          >
+            <div className="flex items-center justify-between mt-4 mb-2">
+              <span className="text-sm text-(--text-muted)">
+                共 {filteredEnvironments.length} 个环境
+              </span>
+              {filteredEnvironments.length > 0 && projectFilter !== 'all' && projectFilter !== 'unused' && (
+                <Button
+                  size="sm"
+                  variant="flat"
+                  color="warning"
+                  isLoading={sanitizingEnvs}
+                  onPress={handleSanitizeEnvDescriptions}
+                  startContent={!sanitizingEnvs ? <Sparkles className="w-3.5 h-3.5" /> : undefined}
+                  title="一键去除描述中的角色活动与建筑/人造物描述，只保留纯自然场景描述"
+                >
+                  {sanitizingEnvs ? '清洗中…' : '清洗描述'}
+                </Button>
+              )}
+            </div>
+            <EnvironmentList
+              environments={filteredEnvironments}
+              onEdit={handleEditEnvironment}
+              onDelete={handleDelete}
+              onGenerateImage={handleGenerateEnvImage}
+              onUpdateEnvironment={handleUpdateEnvironment}
+              selectedImageModel={selectedImageModel}
+              selectedTextModel={selectedTextModel}
+            />
+          </Tab>
+
+          <Tab
+            key="buildings"
+            title={
+              <div className="flex items-center gap-2">
+                <Building2 className="w-4 h-4" />
+                <span>建筑 ({buildings.length})</span>
+              </div>
+            }
+          >
+            <div className="flex items-center justify-between mt-4 mb-2">
+              <span className="text-sm text-(--text-muted)">
+                共 {filteredBuildings.length} 个建筑
+              </span>
+            </div>
+            <BuildingList
+              buildings={filteredBuildings}
+              onEdit={handleEditBuilding}
+              onDelete={handleDelete}
+              onGenerateImage={handleGenerateBuildingImage}
+              onDeleteImage={handleDeleteBuildingImage}
+            />
+          </Tab>
+
+          <Tab
             key="studios"
             title={
               <div className="flex items-center gap-2">
@@ -1439,6 +1878,8 @@ const AssetsManager: React.FC = () => {
               studios={filteredStudios}
               onEdit={handleEditStudio}
               onDelete={handleDelete}
+              selectedImageModel={selectedImageModel}
+              selectedTextModel={selectedTextModel}
             />
           </Tab>
 
@@ -1503,6 +1944,375 @@ const AssetsManager: React.FC = () => {
           projectId={getActiveProjectId()}
           onSaved={loadData}
         />
+
+        {/* 环境编辑模态框 */}
+        <Modal isOpen={isEnvOpen} onOpenChange={onEnvOpenChange} size="lg">
+          <ModalContent>
+            {(onClose) => (
+              <>
+                <ModalHeader>{envEditMode ? '编辑环境' : '新建环境'}</ModalHeader>
+                <ModalBody className="space-y-4">
+                  <Input
+                    label="名称"
+                    placeholder="如：蜜糖草地、沙地、溪流..."
+                    value={envForm.name}
+                    onValueChange={(v) => setEnvForm((p) => ({ ...p, name: v }))}
+                    isRequired
+                  />
+                  <Textarea
+                    label="描述"
+                    placeholder="环境氛围描述..."
+                    value={envForm.description}
+                    onValueChange={(v) => setEnvForm((p) => ({ ...p, description: v }))}
+                  />
+                  <div className="grid grid-cols-2 gap-3">
+                    <Input
+                      label="时间"
+                      placeholder="如：清晨、黄昏"
+                      value={envForm.timeOfDay}
+                      onValueChange={(v) => setEnvForm((p) => ({ ...p, timeOfDay: v }))}
+                    />
+                    <Input
+                      label="天气"
+                      placeholder="如：晴朗、雨天"
+                      value={envForm.weather}
+                      onValueChange={(v) => setEnvForm((p) => ({ ...p, weather: v }))}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Input
+                      label="光照"
+                      placeholder="如：柔和、强烈"
+                      value={envForm.lighting}
+                      onValueChange={(v) => setEnvForm((p) => ({ ...p, lighting: v }))}
+                    />
+                    <Input
+                      label="氛围"
+                      placeholder="如：温馨、神秘"
+                      value={envForm.mood}
+                      onValueChange={(v) => setEnvForm((p) => ({ ...p, mood: v }))}
+                    />
+                  </div>
+                  {/* 地貌类型显示（只读，由 AI 识别生成） */}
+                  {envForm.terrainType && envForm.terrainType.length > 0 && (
+                    <div>
+                      <label className="text-xs text-(--text-muted) mb-1.5 block">地貌类型（AI识别）</label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {envForm.terrainType.split(',').filter(Boolean).map((type: string) => (
+                          <span
+                            key={type}
+                            className="px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-500 border border-emerald-500/20"
+                          >
+                            {type}
+                          </span>
+                        ))}
+                      </div>
+                      <p className="text-[10px] text-(--text-muted) mt-1">点击卡片上的扫描图标可重新识别地貌类型</p>
+                    </div>
+                  )}
+                  <div>
+                    <label className="text-xs text-(--text-muted) mb-1.5 block">归属项目</label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {userProjects.map((p) => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => setEnvForm((prev) => ({ ...prev, project_id: p.id }))}
+                          className={`px-2.5 py-1 rounded-full text-xs font-medium transition-all border ${
+                            envForm.project_id === p.id
+                              ? 'bg-(--accent)/20 text-(--accent-light) border-(--accent)/40'
+                              : 'bg-white/5 text-(--text-muted) border-white/10 hover:bg-white/10'
+                          }`}
+                        >
+                          {p.name}
+                        </button>
+                      ))}
+                      {userProjects.length === 0 && (
+                        <span className="text-xs text-(--text-muted)">暂无项目</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* 环境图生成区（仅编辑模式可见）*/}
+                  {envEditMode && editingEnvId && (() => {
+                    const editingEnv = environments.find((e) => e.id === editingEnvId);
+                    if (!editingEnv) return null;
+                    const envIsGenerating = editingEnv.generation_status === 'generating';
+                    return (
+                      <div className="border-t border-(--border-color) pt-3">
+                        <div className="flex items-center justify-between mb-2">
+                          <label className="text-xs text-(--text-muted) font-medium">环境图</label>
+                          {envIsGenerating && (
+                            <span className="text-[10px] text-blue-500 flex items-center gap-1">
+                              <span className="inline-block w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
+                              生成中…
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex gap-2 mb-2">
+                          <div className="flex-1 relative">
+                            {editingEnv.image_url ? (
+                              <img
+                                src={editingEnv.image_url}
+                                alt={`${editingEnv.name} · 正面`}
+                                className="w-full h-24 object-cover rounded border border-(--border-color)"
+                              />
+                            ) : (
+                              <div className="w-full h-24 rounded bg-(--bg-input) border border-dashed border-(--border-color) flex items-center justify-center text-[11px] text-(--text-muted)">
+                                正面未生成
+                              </div>
+                            )}
+                            <span className="absolute bottom-1 left-1 bg-black/60 text-white text-[10px] px-1 rounded">正面</span>
+                          </div>
+                          <div className="flex-1 relative">
+                            {editingEnv.image_back_url ? (
+                              <img
+                                src={editingEnv.image_back_url}
+                                alt={`${editingEnv.name} · 背面`}
+                                className="w-full h-24 object-cover rounded border border-(--border-color)"
+                              />
+                            ) : (
+                              <div className="w-full h-24 rounded bg-(--bg-input) border border-dashed border-(--border-color) flex items-center justify-center text-[11px] text-(--text-muted)">
+                                背面未生成
+                              </div>
+                            )}
+                            <span className="absolute bottom-1 left-1 bg-black/60 text-white text-[10px] px-1 rounded">背面</span>
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            size="sm"
+                            color="primary"
+                            variant="solid"
+                            isLoading={envIsGenerating}
+                            isDisabled={envIsGenerating}
+                            onPress={() => handleGenerateEnvImage(editingEnv, 'both')}
+                            startContent={!envIsGenerating ? <Wand2 className="w-3.5 h-3.5" /> : undefined}
+                          >
+                            {editingEnv.image_url || editingEnv.image_back_url ? '一键重新生成' : '一键生成（正+背）'}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="flat"
+                            color="primary"
+                            isLoading={envIsGenerating}
+                            isDisabled={envIsGenerating}
+                            onPress={() => handleGenerateEnvImage(editingEnv, 'front')}
+                          >
+                            {editingEnv.image_url ? '重新生成正面' : '生成正面'}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="flat"
+                            color="primary"
+                            isLoading={envIsGenerating}
+                            isDisabled={envIsGenerating}
+                            onPress={() => handleGenerateEnvImage(editingEnv, 'back')}
+                          >
+                            {editingEnv.image_back_url ? '重新生成背面' : '生成背面'}
+                          </Button>
+                        </div>
+                        <p className="text-[10px] text-(--text-muted) mt-1.5">
+                          正/背图基于对方做 i2i 参考，保持画风与色彩一致。生成后可关闭弹窗查看。
+                        </p>
+                      </div>
+                    );
+                  })()}
+                </ModalBody>
+                <ModalFooter>
+                  <Button variant="light" onPress={onClose}>取消</Button>
+                  <Button color="primary" onPress={handleSaveEnvironment}>
+                    {envEditMode ? '保存' : '创建'}
+                  </Button>
+                </ModalFooter>
+              </>
+            )}
+          </ModalContent>
+        </Modal>
+
+        {/* 建筑编辑模态框 */}
+        <Modal isOpen={isBldOpen} onOpenChange={onBldOpenChange} size="lg">
+          <ModalContent>
+            {(onClose) => (
+              <>
+                <ModalHeader>{bldEditMode ? '编辑建筑' : '新建建筑'}</ModalHeader>
+                <ModalBody className="space-y-4">
+                  <Input
+                    label="名称"
+                    placeholder="如：蜜糖小屋、石桥..."
+                    value={bldForm.name}
+                    onValueChange={(v) => setBldForm((p) => ({ ...p, name: v }))}
+                    isRequired
+                  />
+                  <Textarea
+                    label="描述"
+                    placeholder="建筑结构描述..."
+                    value={bldForm.description}
+                    onValueChange={(v) => setBldForm((p) => ({ ...p, description: v }))}
+                  />
+                  <div>
+                    <label className="text-xs text-(--text-muted) mb-1.5 block">室内外类型</label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {[
+                        { key: 'interior', label: '室内' },
+                        { key: 'exterior', label: '室外' },
+                        { key: 'both', label: '室内+室外' },
+                      ].map((opt) => (
+                        <button
+                          key={opt.key}
+                          type="button"
+                          onClick={() => setBldForm((p) => ({ ...p, interiorExterior: opt.key as any }))}
+                          className={`px-2.5 py-1 rounded-full text-xs font-medium transition-all border ${
+                            bldForm.interiorExterior === opt.key
+                              ? 'bg-(--accent)/20 text-(--accent-light) border-(--accent)/40'
+                              : 'bg-white/5 text-(--text-muted) border-white/10 hover:bg-white/10'
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <Input
+                    label="结构类型"
+                    placeholder="如：residential、commercial"
+                    value={bldForm.structureType}
+                    onValueChange={(v) => setBldForm((p) => ({ ...p, structureType: v }))}
+                  />
+                  <div>
+                    <label className="text-xs text-(--text-muted) mb-1.5 block">归属项目</label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {userProjects.map((p) => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => setBldForm((prev) => ({ ...prev, project_id: p.id }))}
+                          className={`px-2.5 py-1 rounded-full text-xs font-medium transition-all border ${
+                            bldForm.project_id === p.id
+                              ? 'bg-(--accent)/20 text-(--accent-light) border-(--accent)/40'
+                              : 'bg-white/5 text-(--text-muted) border-white/10 hover:bg-white/10'
+                          }`}
+                        >
+                          {p.name}
+                        </button>
+                      ))}
+                      {userProjects.length === 0 && (
+                        <span className="text-xs text-(--text-muted)">暂无项目</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* 建筑图生成区（仅编辑模式可见）*/}
+                  {bldEditMode && editingBldId && (() => {
+                    const editingBld = buildings.find((b) => b.id === editingBldId);
+                    if (!editingBld) return null;
+                    const bldIsGenerating = editingBld.generation_status === 'generating';
+                    const ie = editingBld.interior_exterior || 'both';
+                    const canGenExterior = ie === 'exterior' || ie === 'both';
+                    const canGenInterior = ie === 'interior' || ie === 'both';
+                    return (
+                      <div className="border-t border-(--border-color) pt-3">
+                        <div className="flex items-center justify-between mb-2">
+                          <label className="text-xs text-(--text-muted) font-medium">建筑图</label>
+                          {bldIsGenerating && (
+                            <span className="text-[10px] text-blue-500 flex items-center gap-1">
+                              <span className="inline-block w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
+                              生成中…
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex gap-2 mb-2">
+                          {canGenExterior && (
+                            <div className="flex-1 relative">
+                              {editingBld.exterior_image_url ? (
+                                <img
+                                  src={editingBld.exterior_image_url}
+                                  alt={`${editingBld.name} · 外景四方位`}
+                                  className="w-full aspect-video object-cover rounded border border-(--border-color)"
+                                />
+                              ) : (
+                                <div className="w-full aspect-video rounded bg-(--bg-input) border border-dashed border-(--border-color) flex items-center justify-center text-[11px] text-(--text-muted)">
+                                  外景未生成
+                                </div>
+                              )}
+                              <span className="absolute bottom-1 left-1 bg-black/60 text-white text-[10px] px-1 rounded">外景·四方位</span>
+                            </div>
+                          )}
+                          {canGenInterior && (
+                            <div className="flex-1 relative">
+                              {editingBld.interior_image_url ? (
+                                <img
+                                  src={editingBld.interior_image_url}
+                                  alt={`${editingBld.name} · 内景草图`}
+                                  className="w-full aspect-video object-cover rounded border border-(--border-color)"
+                                />
+                              ) : (
+                                <div className="w-full aspect-video rounded bg-(--bg-input) border border-dashed border-(--border-color) flex items-center justify-center text-[11px] text-(--text-muted)">
+                                  内景草图未生成
+                                </div>
+                              )}
+                              <span className="absolute bottom-1 left-1 bg-black/60 text-white text-[10px] px-1 rounded">内景·设计草图</span>
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {ie === 'both' && (
+                            <Button
+                              size="sm"
+                              color="primary"
+                              variant="solid"
+                              isLoading={bldIsGenerating}
+                              isDisabled={bldIsGenerating}
+                              onPress={() => handleGenerateBuildingImage(editingBld, 'both')}
+                              startContent={!bldIsGenerating ? <Wand2 className="w-3.5 h-3.5" /> : undefined}
+                            >
+                              {editingBld.exterior_image_url || editingBld.interior_image_url ? '一键重新生成（外+内）' : '一键生成（外景+内景）'}
+                            </Button>
+                          )}
+                          {canGenExterior && (
+                            <Button
+                              size="sm"
+                              variant={ie === 'both' ? 'flat' : 'solid'}
+                              color="primary"
+                              isLoading={bldIsGenerating}
+                              isDisabled={bldIsGenerating}
+                              onPress={() => handleGenerateBuildingImage(editingBld, 'exterior')}
+                              startContent={!bldIsGenerating && ie !== 'both' ? <Wand2 className="w-3.5 h-3.5" /> : undefined}
+                            >
+                              {editingBld.exterior_image_url ? '重新生成外景四方位' : '生成外景四方位'}
+                            </Button>
+                          )}
+                          {canGenInterior && (
+                            <Button
+                              size="sm"
+                              variant={ie === 'both' ? 'flat' : 'solid'}
+                              color="primary"
+                              isLoading={bldIsGenerating}
+                              isDisabled={bldIsGenerating}
+                              onPress={() => handleGenerateBuildingImage(editingBld, 'interior')}
+                              startContent={!bldIsGenerating && ie !== 'both' ? <Wand2 className="w-3.5 h-3.5" /> : undefined}
+                            >
+                              {editingBld.interior_image_url ? '重新生成内景草图' : '生成内景设计草图'}
+                            </Button>
+                          )}
+                        </div>
+                        <p className="text-[10px] text-(--text-muted) mt-1.5">
+                          外景 = 一张图四方位正交参考（前/后/左/右）；内景 = 手绘设计草图（布局/陈设/动线）。
+                        </p>
+                      </div>
+                    );
+                  })()}
+                </ModalBody>
+                <ModalFooter>
+                  <Button variant="light" onPress={onClose}>取消</Button>
+                  <Button color="primary" onPress={handleSaveBuilding}>
+                    {bldEditMode ? '保存' : '创建'}
+                  </Button>
+                </ModalFooter>
+              </>
+            )}
+          </ModalContent>
+        </Modal>
 
         {/* 场景详情模态框 */}
         <SceneDetailModal

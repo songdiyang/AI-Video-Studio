@@ -16,6 +16,7 @@ const {
   requireStudioForUser,
   requireEnvironmentForUser,
   requireBuildingForUser,
+  requireEnvironmentVariantForUser,
   listStudioBuildings,
   getStudioEnvironment,
   listStudioElementLinks
@@ -1933,6 +1934,75 @@ const operationContracts = [
       properties: {
         environmentId: { type: 'integer', minimum: 1 },
         imageModel: { type: 'string', minLength: 1 },
+        textModel: { type: 'string' },
+        mode: { type: 'string', enum: ['front', 'back', 'both'] }
+      }
+    },
+    scopeResolver: async ({ actor, input }) => {
+      const env = await requireEnvironmentForUser(input.environmentId, actor.userId);
+      return {
+        scope: {
+          projectId: env.project_id,
+          environmentId: env.id
+        },
+        resources: { env }
+      };
+    },
+    defaultsResolver: async ({ input, resources }) => {
+      const env = resources.env;
+      const mode = (input.mode === 'front' || input.mode === 'back') ? input.mode : 'both';
+      return {
+        models: {
+          imageModel: input.imageModel,
+          textModel: input.textModel || null
+        },
+        inputs: {
+          environmentId: env.id,
+          environmentName: env.name,
+          description: env.description || '',
+          timeOfDay: env.time_of_day || '',
+          weather: env.weather || '',
+          lighting: env.lighting || '',
+          mood: env.mood || '',
+          generationPrompt: env.generation_prompt || null,
+          mode,
+          existingImageUrl: env.image_url || null,
+          existingBackImageUrl: env.image_back_url || null
+        },
+        options: {}
+      };
+    },
+    conflictKeyResolver: ({ scope }) => ({
+      key: 'environmentId',
+      value: scope.environmentId
+    }),
+    toJobParams: ({ contract, actor, scope, resolved }) =>
+      createCommand({
+        operationKey: contract.operationKey,
+        workflowType: contract.workflowType,
+        actor,
+        scope,
+        models: resolved.models,
+        inputs: resolved.inputs,
+        options: resolved.options
+      }),
+    responseMapper: ({ result, command }) => ({
+      message: '环境氛围图生成已启动',
+      jobId: encodeId(result.jobId),
+      environmentId: command.scope.environmentId,
+      status: 'generating'
+    })
+  },
+  {
+    // 环境全景图生成
+    operationKey: 'environment_panorama_generate',
+    workflowType: 'environment_panorama_generation',
+    requestSchema: {
+      type: 'object',
+      required: ['environmentId', 'imageModel'],
+      properties: {
+        environmentId: { type: 'integer', minimum: 1 },
+        imageModel: { type: 'string', minLength: 1 },
         textModel: { type: 'string' }
       }
     },
@@ -1960,8 +2030,7 @@ const operationContracts = [
           timeOfDay: env.time_of_day || '',
           weather: env.weather || '',
           lighting: env.lighting || '',
-          mood: env.mood || '',
-          generationPrompt: env.generation_prompt || null
+          mood: env.mood || ''
         },
         options: {}
       };
@@ -1981,7 +2050,7 @@ const operationContracts = [
         options: resolved.options
       }),
     responseMapper: ({ result, command }) => ({
-      message: '环境氛围图生成已启动',
+      message: '环境全景图生成已启动',
       jobId: encodeId(result.jobId),
       environmentId: command.scope.environmentId,
       status: 'generating'
@@ -1997,7 +2066,8 @@ const operationContracts = [
       properties: {
         buildingId: { type: 'integer', minimum: 1 },
         imageModel: { type: 'string', minLength: 1 },
-        textModel: { type: 'string' }
+        textModel: { type: 'string' },
+        viewType: { type: 'string', enum: ['interior', 'exterior', 'both'] }
       }
     },
     scopeResolver: async ({ actor, input }) => {
@@ -2023,6 +2093,7 @@ const operationContracts = [
           description: building.description || '',
           interiorExterior: building.interior_exterior || 'exterior',
           structureType: building.structure_type || '',
+          viewType: input.viewType || null,
           generationPrompt: building.generation_prompt || null
         },
         options: {}
@@ -2046,6 +2117,140 @@ const operationContracts = [
       message: '建筑结构图生成已启动',
       jobId: encodeId(result.jobId),
       buildingId: command.scope.buildingId,
+      status: 'generating'
+    })
+  },
+  {
+    // 环境变体全景图生成
+    operationKey: 'environment_variant_panorama_generate',
+    workflowType: 'environment_variant_panorama_generation',
+    requestSchema: {
+      type: 'object',
+      required: ['environmentId', 'variantId', 'imageModel'],
+      properties: {
+        environmentId: { type: 'integer', minimum: 1 },
+        variantId: { type: 'integer', minimum: 1 },
+        imageModel: { type: 'string', minLength: 1 },
+        textModel: { type: 'string' }
+      }
+    },
+    scopeResolver: async ({ actor, input }) => {
+      const variant = await requireEnvironmentVariantForUser(input.variantId, actor.userId);
+      return {
+        scope: {
+          projectId: variant.project_id,
+          environmentId: variant.environment_id,
+          variantId: variant.id
+        },
+        resources: { variant }
+      };
+    },
+    defaultsResolver: async ({ input, resources }) => {
+      const variant = resources.variant;
+      return {
+        models: {
+          imageModel: input.imageModel,
+          textModel: input.textModel || null
+        },
+        inputs: {
+          environmentId: variant.environment_id,
+          variantId: variant.id,
+          environmentName: variant.env_name || '',
+          description: variant.env_description || '',
+          timeOfDay: variant.time_of_day || '',
+          weather: variant.weather || '',
+          lighting: variant.lighting || '',
+          mood: variant.mood || ''
+        },
+        options: {}
+      };
+    },
+    conflictKeyResolver: ({ scope }) => ({
+      key: 'variantId',
+      value: scope.variantId
+    }),
+    toJobParams: ({ contract, actor, scope, resolved }) =>
+      createCommand({
+        operationKey: contract.operationKey,
+        workflowType: contract.workflowType,
+        actor,
+        scope,
+        models: resolved.models,
+        inputs: resolved.inputs,
+        options: resolved.options
+      }),
+    responseMapper: ({ result, command }) => ({
+      message: '环境变体全景图生成已启动',
+      jobId: encodeId(result.jobId),
+      variantId: command.scope.variantId,
+      environmentId: command.scope.environmentId,
+      status: 'generating'
+    })
+  },
+  {
+    // 环境变体8方位场景图生成
+    operationKey: 'variant_faces_generate',
+    workflowType: 'variant_faces_generation',
+    requestSchema: {
+      type: 'object',
+      required: ['environmentId', 'variantId', 'imageModel'],
+      properties: {
+        environmentId: { type: 'integer', minimum: 1 },
+        variantId: { type: 'integer', minimum: 1 },
+        imageModel: { type: 'string', minLength: 1 },
+        textModel: { type: 'string' }
+      }
+    },
+    scopeResolver: async ({ actor, input }) => {
+      const variant = await requireEnvironmentVariantForUser(input.variantId, actor.userId);
+      return {
+        scope: {
+          projectId: variant.project_id,
+          environmentId: variant.environment_id,
+          variantId: variant.id
+        },
+        resources: { variant }
+      };
+    },
+    defaultsResolver: async ({ input, resources }) => {
+      const variant = resources.variant;
+      return {
+        models: {
+          imageModel: input.imageModel,
+          textModel: input.textModel || null
+        },
+        inputs: {
+          environmentId: variant.environment_id,
+          variantId: variant.id,
+          environmentName: variant.env_name || '',
+          description: variant.env_description || '',
+          timeOfDay: variant.time_of_day || '',
+          weather: variant.weather || '',
+          lighting: variant.lighting || '',
+          mood: variant.mood || ''
+        },
+        options: {}
+      };
+    },
+    conflictKeyResolver: ({ scope }) => ({
+      key: 'variantId',
+      value: scope.variantId
+    }),
+    toJobParams: ({ contract, actor, scope, resolved }) =>
+      createCommand({
+        operationKey: contract.operationKey,
+        workflowType: contract.workflowType,
+        actor,
+        scope,
+        models: resolved.models,
+        inputs: resolved.inputs,
+        options: resolved.options
+      }),
+    responseMapper: ({ result, command }) => ({
+      message: '环境变体8方位场景图生成已启动',
+      jobId: encodeId(result.jobId),
+      variantId: command.scope.variantId,
+      environmentId: command.scope.environmentId,
       status: 'generating'
     })
   }

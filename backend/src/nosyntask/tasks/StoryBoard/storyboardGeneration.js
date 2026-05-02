@@ -575,8 +575,8 @@ ${characterAppearanceSection}
 - characters: 出场角色数组（【重要】必须包含 description 中的所有角色名）
 - characterStates: 每个出场角色在本镜的服装/手持道具，格式 [{"character": "角色名", "outfit": "服装描述", "heldProps": "手持道具描述或空字符串"}]
 - props: 场景级道具数组（画面里不属于任何角色随身的道具，如 ["桌上的手机", "墙上的画"]）
-- location: 场景地点（如"教室"、"客厅"、"操场"）
-- environment: 环境类型（"室内"/"室外"/"自然景观"/"城市街景"/"其他"）
+- location: 场景地点（**必须是具体地点名**，2-12字中文，如"客厅"、"学校操场"、"蜜糖草地"、"林间小溪"；**禁止**输出"内"、"外"、"内景"、"外景"、"日"、"夜"、"未知"这类场景标记词，也禁止留空）
+- environment: **具体自然环境名称**（2-8字中文，如"蜜糖草地"、"金色沙滩"、"林间小溪"、"雪原山丘"、"花海"、"卧室"、"教室"等；如果该镜在室内/建筑内则填写具体房间名如"卧室"、"厨房"；**严格禁止**输出"室内"、"室外"、"自然景观"、"城市街景"、"其他"、"场景"这种分类词或泛化词；如果实在没有可独立描述的环境（纯人物特写），可留空字符串 ""）
 - buildings: 建筑列表（该场景中出现的具体建筑名称数组，如["教学楼", "宿舍楼"]，没有则填空数组[]）
 - timeOfDay: 时间段（"白天"/"夜晚"/"正午"/"黄昏"/"黎明"/"深夜"）
 - weather: 天气状况（"晴天"/"阴天"/"雨天"/"雪天"/"雾天"/"多云"）
@@ -585,9 +585,9 @@ ${characterAppearanceSection}
 
 [示例】
 [
-  {"order": 1, "shotType": "全景", "description": "早晨的客厅，阳光从窗帘缝隙透入，穿白色T恤、牛仔裤的小明坐在沙发上看手机", "hasAction": false, "endState": "小明坐在沙发上，手持手机，表情平静", "dialogue": "", "duration": 2, "characters": ["小明"], "characterStates": [{"character": "小明", "outfit": "白色T恤、牛仔裤", "heldProps": "手机"}], "props": [], "location": "客厅", "environment": "室内", "buildings": [], "timeOfDay": "白天", "weather": "晴天", "emotion": "平静", "cameraMovement": "static"},
-  {"order": 2, "shotType": "近景", "description": "小明抬头看向门口，眉头微皱", "hasAction": true, "startFrame": "小明低头看手机", "endFrame": "小明抬头，眉头微皱，望向门口", "endState": "小明坐在沙发上，抬头望向门口，眉头微皱", "dialogue": "", "duration": 2, "characters": ["小明"], "characterStates": [{"character": "小明", "outfit": "白色T恤、牛仔裤", "heldProps": "手机"}], "props": [], "location": "客厅", "environment": "室内", "buildings": [], "timeOfDay": "白天", "weather": "晴天", "emotion": "疑惑", "cameraMovement": "static"},
-  {"order": 3, "shotType": "远景", "description": "学校的教学楼前，穿校服的小红和小刚站在台阶上聊天", "hasAction": false, "endState": "小红和小刚站在教学楼前", "dialogue": "", "duration": 3, "characters": ["小红", "小刚"], "characterStates": [{"character": "小红", "outfit": "蓝色校服", "heldProps": ""}, {"character": "小刚", "outfit": "蓝色校服", "heldProps": "书包"}], "props": [], "location": "学校操场", "environment": "室外", "buildings": ["教学楼", "操场看台"], "timeOfDay": "正午", "weather": "晴天", "emotion": "轻松", "cameraMovement": "static"}
+  {"order": 1, "shotType": "全景", "description": "早晨的客厅，阳光从窗帘缝隙透入，穿白色T恤、牛仔裤的小明坐在沙发上看手机", "hasAction": false, "endState": "小明坐在沙发上，手持手机，表情平静", "dialogue": "", "duration": 2, "characters": ["小明"], "characterStates": [{"character": "小明", "outfit": "白色T恤、牛仔裤", "heldProps": "手机"}], "props": [], "location": "客厅", "environment": "客厅", "buildings": [], "timeOfDay": "白天", "weather": "晴天", "emotion": "平静", "cameraMovement": "static"},
+  {"order": 2, "shotType": "近景", "description": "小明抬头看向门口，眉头微皱", "hasAction": true, "startFrame": "小明低头看手机", "endFrame": "小明抬头，眉头微皱，望向门口", "endState": "小明坐在沙发上，抬头望向门口，眉头微皱", "dialogue": "", "duration": 2, "characters": ["小明"], "characterStates": [{"character": "小明", "outfit": "白色T恤、牛仔裤", "heldProps": "手机"}], "props": [], "location": "客厅", "environment": "客厅", "buildings": [], "timeOfDay": "白天", "weather": "晴天", "emotion": "疑惑", "cameraMovement": "static"},
+  {"order": 3, "shotType": "远景", "description": "学校的教学楼前，穿校服的小红和小刚站在台阶上聊天", "hasAction": false, "endState": "小红和小刚站在教学楼前", "dialogue": "", "duration": 3, "characters": ["小红", "小刚"], "characterStates": [{"character": "小红", "outfit": "蓝色校服", "heldProps": ""}, {"character": "小刚", "outfit": "蓝色校服", "heldProps": "书包"}], "props": [], "location": "学校操场", "environment": "校园操场", "buildings": ["教学楼", "操场看台"], "timeOfDay": "正午", "weather": "晴天", "emotion": "轻松", "cameraMovement": "static"}
 ]
 
 只输出 JSON 数组，不要其他内容。`;

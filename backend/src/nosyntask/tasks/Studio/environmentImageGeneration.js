@@ -86,11 +86,20 @@ async function handleEnvironmentImageGeneration(inputParams, onProgress) {
     mood,
     imageModel,
     textModel,
-    generationPrompt
+    generationPrompt,
+    mode: rawMode,
+    existingImageUrl,
+    existingBackImageUrl
   } = inputParams;
 
   if (!environmentId) throw new Error('缺少必要参数：environmentId');
   if (!imageModel) throw new Error('imageModel 参数是必需的');
+
+  // 生成模式：front=仅正面，back=仅背面，both=正+背
+  const mode = (rawMode === 'front' || rawMode === 'back') ? rawMode : 'both';
+
+  const hasExistingFront = !!existingImageUrl;
+  const hasExistingBack = !!existingBackImageUrl;
 
   // 标记生成中
   await execute(
@@ -111,7 +120,6 @@ async function handleEnvironmentImageGeneration(inputParams, onProgress) {
       finalPrompt = await generateEnvironmentPrompt(
         environmentName, description, timeOfDay, weather, lighting, mood, style, textModel
       );
-      // 回写提示词到数据库
       await execute(
         'UPDATE environments SET generation_prompt = ? WHERE id = ?',
         [finalPrompt, environmentId]
@@ -119,48 +127,96 @@ async function handleEnvironmentImageGeneration(inputParams, onProgress) {
     }
 
     if (!finalPrompt) {
-      // 无提示词时用简单拼接回退
       finalPrompt = `empty scene, no people, no characters, uninhabited, ${environmentName || ''}, ${description || ''}, ${timeOfDay || 'daytime'} ${weather || 'clear'} weather, ${lighting || 'natural light'}, ${mood || ''} atmosphere, anime style, high quality, detailed, cinematic`;
     }
 
-    console.log(`[EnvironmentImageGen] 提示词: ${finalPrompt.substring(0, 150)}...`);
-    if (onProgress) onProgress(20);
+    const reversePromptPrefix = 'reverse angle view, 180 degree opposite direction, same location from opposite side, same art style, same color palette, same lighting, consistent environment, ';
+    const withReverse = (base) => reversePromptPrefix + base.replace(/^empty scene[^,]*,\s*/i, 'empty scene, no people, no characters, uninhabited, ');
 
-    // 步骤2：调用图像模型
-    const imageResult = await handleImageGeneration({
-      prompt: finalPrompt,
-      imageModel,
-      aspectRatio: '1:1',
-      width: 1024,
-      height: 1024
-    }, (p) => onProgress && onProgress(20 + p * 0.6));
+    console.log(`[EnvironmentImageGen] mode=${mode}, hasFront=${hasExistingFront}, hasBack=${hasExistingBack}, prompt: ${finalPrompt.substring(0, 120)}...`);
+    if (onProgress) onProgress(15);
 
-    const rawUrl = imageResult.image_url;
+    let persistedFrontUrl = null;
+    let persistedBackUrl = null;
 
-    // 持久化图片
-    const persistedUrl = await downloadAndStore(
-      rawUrl,
-      `images/environments/${environmentId}`,
-      { fallbackExt: '.png' }
-    );
+    // 工具函数：调用图像生成 + 持久化
+    const genAndStore = async (prompt, refImageUrl, progressStart, progressRange) => {
+      const callArgs = {
+        prompt,
+        imageModel,
+        aspectRatio: '1:1',
+        width: 1024,
+        height: 1024
+      };
+      if (refImageUrl) callArgs.imageUrl = refImageUrl;
+      const result = await handleImageGeneration(
+        callArgs,
+        (p) => onProgress && onProgress(progressStart + p * (progressRange / 100))
+      );
+      return downloadAndStore(
+        result.image_url,
+        `images/environments/${environmentId}`,
+        { fallbackExt: '.png' }
+      );
+    };
 
-    if (onProgress) onProgress(92);
+    // —— front：生成正面图 ——
+    // 若已有背面图，以背面图作为 i2i 参考（反向视角）生成正面；否则直接 t2i
+    if (mode === 'front') {
+      const refUrl = hasExistingBack ? existingBackImageUrl : null;
+      const prompt = refUrl ? withReverse(finalPrompt) : finalPrompt;
+      persistedFrontUrl = await genAndStore(prompt, refUrl, 15, 75);
+      await execute("UPDATE environments SET image_url = ? WHERE id = ?", [persistedFrontUrl, environmentId]);
+      if (onProgress) onProgress(95);
+    }
 
-    // 更新数据库
+    // —— back：生成背面图 ——
+    // 有正面 → i2i 参考生成背面
+    // 无正面 → 先 t2i 生成正面落库，再以正面参考生成背面
+    if (mode === 'back') {
+      let refForBack = existingImageUrl;
+      if (!hasExistingFront) {
+        // 先生成正面
+        persistedFrontUrl = await genAndStore(finalPrompt, null, 15, 35);
+        await execute("UPDATE environments SET image_url = ? WHERE id = ?", [persistedFrontUrl, environmentId]);
+        refForBack = persistedFrontUrl;
+        if (onProgress) onProgress(55);
+      }
+      persistedBackUrl = await genAndStore(withReverse(finalPrompt), refForBack, hasExistingFront ? 15 : 55, hasExistingFront ? 75 : 35);
+      await execute("UPDATE environments SET image_back_url = ? WHERE id = ?", [persistedBackUrl, environmentId]);
+      if (onProgress) onProgress(95);
+    }
+
+    // —— both：先生成正面，再以正面参考生成背面（背面失败非致命）——
+    if (mode === 'both') {
+      persistedFrontUrl = await genAndStore(finalPrompt, null, 15, 40);
+      await execute("UPDATE environments SET image_url = ? WHERE id = ?", [persistedFrontUrl, environmentId]);
+      if (onProgress) onProgress(55);
+
+      try {
+        persistedBackUrl = await genAndStore(withReverse(finalPrompt), persistedFrontUrl, 55, 35);
+        await execute("UPDATE environments SET image_back_url = ? WHERE id = ?", [persistedBackUrl, environmentId]);
+      } catch (backErr) {
+        console.warn(`[EnvironmentImageGen] 背面图生成失败（非致命，保留正面图）:`, backErr.message);
+      }
+    }
+
+    // 结束：标记 completed
     await execute(
-      "UPDATE environments SET image_url = ?, generation_status = 'completed' WHERE id = ?",
-      [persistedUrl, environmentId]
+      "UPDATE environments SET generation_status = 'completed' WHERE id = ?",
+      [environmentId]
     );
 
     if (onProgress) onProgress(100);
-    console.log(`[EnvironmentImageGen] 环境图片生成完成: environmentId=${environmentId}`);
+    console.log(`[EnvironmentImageGen] 完成: envId=${environmentId}, mode=${mode}, front=${persistedFrontUrl ? 'yes' : 'skip'}, back=${persistedBackUrl ? 'yes' : 'skip'}`);
 
     return {
-      imageUrl: persistedUrl,
-      environmentId
+      imageUrl: persistedFrontUrl,
+      imageBackUrl: persistedBackUrl,
+      environmentId,
+      mode
     };
   } catch (err) {
-    // 标记失败
     await execute(
       "UPDATE environments SET generation_status = 'failed' WHERE id = ?",
       [environmentId]

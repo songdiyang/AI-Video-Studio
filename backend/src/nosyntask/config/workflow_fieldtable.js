@@ -219,6 +219,12 @@ module.exports = {
     description: '环境资产 ID',
     category: 'scene'
   },
+  variantId: {
+    from: 'variantId',
+    defaultValue: null,
+    description: '环境时间变体 ID（环境在不同时间状态下的变体）',
+    category: 'scene'
+  },
   environmentName: {
     from: 'environmentName',
     defaultValue: null,

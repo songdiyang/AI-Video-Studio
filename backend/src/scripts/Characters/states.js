@@ -487,7 +487,9 @@ module.exports = (router) => {
       // 新增外观属性字段
       outfit, age_stage, hairstyle, accessories, body_elements, held_props, is_active, generation_prompt,
       // 状态分类和标签
-      state_category, tags
+      state_category, tags,
+      // 音色配置
+      voice_config
     } = req.body;
 
     if (!name || !name.trim()) {
@@ -552,18 +554,23 @@ module.exports = (router) => {
         );
       }
 
+      // 序列化音色配置
+      const serializedVoiceConfig = voice_config !== undefined
+        ? (typeof voice_config === 'string' ? voice_config : JSON.stringify(voice_config))
+        : null;
+
       const result = await execute(
         `INSERT INTO character_states (
           character_id, name, description, appearance, image_url, 
           front_view_url, side_view_url, back_view_url, sort_order,
           outfit, age_stage, hairstyle, accessories, body_elements, held_props, is_active, generation_prompt, generation_status,
-          state_category, tags
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'idle', ?, ?)`,
+          state_category, tags, voice_config
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'idle', ?, ?, ?)`,
         [
           id, name.trim(), description || '', appearance || '', image_url || '',
           front_view_url || '', side_view_url || '', back_view_url || '', newSortOrder,
           outfit || '', age_stage || '', hairstyle || '', accessories || '', body_elements || '', held_props || '', is_active ? 1 : 0, generation_prompt || '',
-          normalizedCategory, parsedTags
+          normalizedCategory, parsedTags, serializedVoiceConfig
         ]
       );
 
@@ -595,7 +602,9 @@ module.exports = (router) => {
       // 新增外观属性字段
       outfit, age_stage, hairstyle, accessories, body_elements, held_props, is_active, generation_prompt, generation_status,
       // 状态分类和标签
-      state_category, tags
+      state_category, tags,
+      // 音色配置
+      voice_config
     } = req.body;
 
     try {
@@ -668,13 +677,18 @@ module.exports = (router) => {
         ? generation_prompt
         : (appearanceChanged ? '' : (existingState.generation_prompt || ''));
 
+      // 序列化音色配置
+      const serializedVoiceConfig = voice_config !== undefined
+        ? (typeof voice_config === 'string' ? voice_config : JSON.stringify(voice_config))
+        : undefined;
+
       await execute(
         `UPDATE character_states 
          SET name = ?, description = ?, appearance = ?, image_url = ?, 
              front_view_url = ?, side_view_url = ?, back_view_url = ?, sort_order = ?,
              outfit = ?, age_stage = ?, hairstyle = ?, accessories = ?, body_elements = ?, held_props = ?,
              is_active = ?, generation_prompt = ?, generation_status = ?,
-             state_category = ?, tags = ?,
+             state_category = ?, tags = ?, voice_config = ?,
              updated_at = CURRENT_TIMESTAMP
          WHERE id = ?`,
         [
@@ -697,6 +711,7 @@ module.exports = (router) => {
           generation_status !== undefined ? generation_status : (existingState.generation_status || 'idle'),
           normalizedCategory !== undefined ? normalizedCategory : (existingState.state_category || '["daily"]'),
           parsedTags !== null ? parsedTags : (existingState.tags || null),
+          serializedVoiceConfig !== undefined ? serializedVoiceConfig : existingState.voice_config,
           stateId
         ]
       );
@@ -1233,15 +1248,12 @@ module.exports = (router) => {
     }
   });
 
-  // POST /api/characters/:id/states/analyze - AI分析自然语言描述生成状态标签
+  // POST /api/characters/:id/states/analyze - AI分析自然语言描述生成状态标签或音色配置
   router.post('/:id/states/analyze', authMiddleware, async (req, res) => {
     const userId = req.user.id;
     const { id } = req.params;
-    const { description, characterName, characterAppearance, textModel } = req.body;
+    const { description, characterName, characterAppearance, textModel, type } = req.body;
 
-    if (!description || !description.trim()) {
-      return res.status(400).json({ message: '请输入状态描述' });
-    }
     if (!textModel) {
       return res.status(400).json({ message: '请选择文本分析模型' });
     }
@@ -1256,9 +1268,43 @@ module.exports = (router) => {
         return res.status(404).json({ message: '角色不存在或无权访问' });
       }
 
-      // 调用文本模型分析自然语言描述
+      // 调用文本模型分析
       const handleBaseTextModelCall = require('../../nosyntask/tasks/base/baseTextModelCall');
-      const analysisPrompt = `你是一个角色设计专家。请分析以下角色状态的自然语言描述，提取结构化的外貌属性。
+
+      let analysisPrompt;
+      if (type === 'voice') {
+        // 音色分析模式
+        analysisPrompt = `你是一位声音设计专家，擅长根据角色设定推断最适合的音色特征。
+
+角色名称：${characterName || '未命名角色'}
+角色基础外貌：${characterAppearance || '无'}
+状态描述：${description || '无'}
+
+请分析这个角色应该拥有什么样的声音，并输出以下 JSON 格式（不要包含任何其他内容）：
+{
+  "voice_description": "音色中文描述（如：清脆甜美的少女音，带有一点害羞的颤音；或低沉稳重的成年男性嗓音）",
+  "gender": "性别（male/female/neutral）",
+  "age_group": "年龄段（child/teen/young/middle/elder）",
+  "language": "主要语言（如 zh-CN）",
+  "emotion": "情感基调（neutral/cheerful/sad/angry/excited/calm/shy/brave）",
+  "style": "声音风格（gentle/lively/serious/playful/elegant/rough/soft）",
+  "speed": 语速数值（0.5~2.0，正常为1.0）,
+  "pitch": 音高数值（-10~10，正常为0）,
+  "volume": 音量数值（0.5~2.0，正常为1.0）,
+  "dialect": "方言（如无方言留空字符串）",
+  "seedance_prompt": "Seedance 1.5 英文音色提示词（用英文描述该角色的声音特征、语气、情感，用于 AI 视频生成时的配音描述）"
+}
+
+注意：
+1. 请根据角色的年龄、性别、外貌、性格推断最合适的音色
+2. speed/pitch/volume 输出数字，不要带引号
+3. 保持输出纯JSON格式，不要有额外的解释`;
+      } else {
+        // 默认：外貌属性分析模式
+        if (!description || !description.trim()) {
+          return res.status(400).json({ message: '请输入状态描述' });
+        }
+        analysisPrompt = `你是一个角色设计专家。请分析以下角色状态的自然语言描述，提取结构化的外貌属性。
 
 角色名称：${characterName || '未命名角色'}
 角色基础外貌：${characterAppearance || '无'}
@@ -1280,6 +1326,7 @@ module.exports = (router) => {
 2. appearance 应该是一个完整的、可以直接用于AI绘图提示词生成的中文外貌描述
 3. outfit/hairstyle/accessories 要尽可能详细和具体
 4. 保持输出纯JSON格式，不要有额外的解释`;
+      }
 
       const response = await handleBaseTextModelCall({
         prompt: analysisPrompt,

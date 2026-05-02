@@ -44,6 +44,7 @@ const handleSinglePromptOptimization = require('./StoryBoard/singlePromptOptimiz
 const handleStudioComponentsCompose = require('./Studio/studioComponentsCompose');
 const handleEnvironmentImageGeneration = require('./Studio/environmentImageGeneration');
 const handleBuildingImageGeneration = require('./Studio/buildingImageGeneration');
+const handleEnvironmentPanoramaGeneration = require('./Studio/environmentPanoramaGeneration');
 
 // AI 助手长任务：规划/执行/观察
 const handleAIAssistantPlanner = require('./AIAssistant/planner');
@@ -94,6 +95,7 @@ module.exports = {
   handleStudioComponentsCompose,
   handleEnvironmentImageGeneration,
   handleBuildingImageGeneration,
+  handleEnvironmentPanoramaGeneration,
   handleAIAssistantPlanner,
   handleAIAssistantExecutor,
   handleAIAssistantObserver
