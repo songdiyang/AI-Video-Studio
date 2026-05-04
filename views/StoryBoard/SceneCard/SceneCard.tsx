@@ -397,10 +397,10 @@ const SceneCard: React.FC<SceneCardProps> = ({
                 {scene.baseDescription || '暂无描述'}
               </p>
               {/* 元数据标签 */}
-              <div className="flex items-center gap-1 mt-1">
+              <div className="flex items-center gap-1 mt-1 flex-wrap">
                 {/* 可编辑的景别选择器 */}
                 {onUpdateScene && (
-                  <div onClick={(e) => e.stopPropagation()}>
+                  <div onClick={(e) => e.stopPropagation()} className="flex-shrink-0">
                     <ShotSizeSelector
                       value={scene.shotType}
                       onChange={async (newValue) => {

@@ -81,17 +81,20 @@ export const ShotSizeSelector: React.FC<ShotSizeSelectorProps> = ({
         disabled={disabled}
         onClick={onClick}
         classNames={{
-          trigger: 'bg-transparent min-w-0 h-auto px-0 py-0',
+          trigger: 'bg-transparent min-w-0 h-auto px-0 py-0 max-w-[120px]',
           value: 'text-[10px] px-1 py-0.5 rounded',
+          listbox: 'max-h-60',
         }}
         renderValue={(items) => (
-          <span className={`${colorClass} text-[10px] px-1 py-0.5 rounded`}>
+          <span className={`${colorClass} text-[10px] px-1 py-0.5 rounded inline-block`}>
             {currentLabel}
           </span>
         )}
         popoverProps={{
+          placement: 'bottom-start',
+          shouldFlip: true,
           classNames: {
-            content: 'bg-[var(--bg-card)] border border-[var(--border-default)]',
+            content: 'bg-[var(--bg-card)] border border-[var(--border-default)] max-w-[200px]',
           },
         }}
       >
