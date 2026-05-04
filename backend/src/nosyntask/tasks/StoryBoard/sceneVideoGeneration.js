@@ -80,11 +80,17 @@ async function handleSceneVideoGeneration(inputParams, onProgress) {
     variables = safeParseVariables(storyboard.variables_json);
   }
   const hasAction = variables.hasAction || false;
-  const description = storyboard.prompt_template || '';
+  
+  // 强制要求视频提示词，不再向后兼容降级到图片提示词
+  if (!storyboard.video_prompt) {
+    throw new Error('分镜缺少视频提示词，请在导演空间的"视频提示词"标签中编辑后再生成视频');
+  }
+  const description = storyboard.video_prompt;
+  
   const firstFrameUrl = storyboard.first_frame_url || null;
   const lastFrameUrl = storyboard.last_frame_url || null;
   const effectiveStartFrame = firstFrameUrl || lastFrameUrl;
-  trace('查询分镜数据', { storyboardId, idx: storyboard.idx, hasAction, location: variables.location, hasFirstFrame: !!firstFrameUrl, hasLastFrame: !!lastFrameUrl, effectiveStartFrame: !!effectiveStartFrame });
+  trace('查询分镜数据', { storyboardId, idx: storyboard.idx, hasAction, location: variables.location, hasFirstFrame: !!firstFrameUrl, hasLastFrame: !!lastFrameUrl, effectiveStartFrame: !!effectiveStartFrame, useVideoPrompt: true });
 
   // 2. 校验帧完整性（至少需要一张帧图片；动作镜头允许纯提示词）
   if (hasAction) {
