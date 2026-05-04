@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Button, Textarea, Chip, Select, SelectItem } from '@heroui/react';
-import { ImageIcon, Video, Film, Camera, Users, MapPin, Zap, X, Trash2, ZoomIn, ZoomOut, RotateCw, Maximize2, Blocks, ChevronDown, ChevronUp, History, Loader2, Pencil, Check, Plus, Search, Sparkles, Clock, Wand2, Star, Shirt, Settings2 } from 'lucide-react';
+import { ImageIcon, Video, Film, Camera, Users, MapPin, Zap, X, Trash2, ZoomIn, ZoomOut, RotateCw, Maximize2, Blocks, ChevronDown, ChevronUp, History, Loader2, Pencil, Check, Plus, Search, Sparkles, Clock, Wand2, Star, Shirt, Settings2, Package } from 'lucide-react';
 import { StoryboardScene, DialogueLine } from './useSceneManager';
 import { TaskState } from '../../hooks/useTaskRunner';
 import MagicSpacePanel, { CameraGenerateParams, PaintGenerateParams } from './MagicSpace';
@@ -16,6 +16,7 @@ import { bustCache } from '../../services/mediaCache';
 import { startWorkflow, getWorkflowStatus } from '../../hooks/useWorkflow';
 import StoryboardLockButton from './components/StoryboardLockButton';
 import VideoHistorySidebar from './components/VideoHistorySidebar';
+import { ShotSizeSelector } from './components/ShotSizeSelector';
 
 /** 角色选择器：Chip 标签 + 添加下拉 + 点击预览角色长相（增强：显示白膜/服装状态） */
 const CharacterTagSelector: React.FC<{
@@ -257,6 +258,127 @@ const CharacterTagSelector: React.FC<{
             </button>
             <span className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white/60 text-sm">{previewChar.name}</span>
           </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+/** 道具选择器：多选标签 + 添加下拉 */
+const PropsTagSelector: React.FC<{
+  props: string[];
+  projectProps: { id: number; name: string; image_url?: string }[];
+  onSave: (props: string[]) => void;
+}> = ({ props: selectedProps, projectProps, onSave }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setIsOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [isOpen]);
+
+  useEffect(() => { if (isOpen) inputRef.current?.focus(); }, [isOpen]);
+
+  const toggleProp = (name: string) => {
+    if (selectedProps.includes(name)) {
+      onSave(selectedProps.filter(p => p !== name));
+    } else {
+      onSave([...selectedProps, name]);
+    }
+  };
+
+  const addCustom = () => {
+    const trimmed = search.trim();
+    if (trimmed && !selectedProps.includes(trimmed)) {
+      onSave([...selectedProps, trimmed]);
+      setSearch('');
+    }
+  };
+
+  const filtered = projectProps.filter(p =>
+    !search || p.name.toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <div ref={containerRef} className="relative flex items-center gap-1 flex-wrap">
+      <Package className="w-3 h-3 text-[var(--text-muted)] shrink-0" />
+      {selectedProps.length === 0 && (
+        <span className="text-[var(--text-muted)] text-xs">道具</span>
+      )}
+      {selectedProps.map(name => {
+        const propData = projectProps.find(p => p.name === name);
+        return (
+          <span
+            key={name}
+            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs bg-teal-500/15 text-teal-400"
+          >
+            {propData?.image_url ? (
+              <img src={propData.image_url} alt={name} className="w-3.5 h-3.5 rounded object-cover shrink-0" />
+            ) : null}
+            <span className="truncate max-w-20">{name}</span>
+            <button onClick={() => toggleProp(name)} className="hover:text-red-400 transition-colors">
+              <X className="w-2.5 h-2.5" />
+            </button>
+          </span>
+        );
+      })}
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-4 h-4 flex items-center justify-center rounded bg-teal-500/20 text-teal-500 hover:bg-teal-500/30 transition-colors"
+        title="添加道具"
+      >
+        <Plus className="w-3 h-3" />
+      </button>
+
+      {isOpen && (
+        <div className="absolute top-full left-0 mt-1 z-50 w-48 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg shadow-xl p-2 space-y-1">
+          <div className="flex items-center gap-1 border-b border-[var(--border-color)] pb-1 mb-1">
+            <Search className="w-3 h-3 text-[var(--text-muted)]" />
+            <input
+              ref={inputRef}
+              className="flex-1 bg-transparent text-xs text-[var(--text-primary)] placeholder-[var(--text-muted)] outline-none"
+              placeholder="搜索或输入道具名..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') addCustom(); }}
+            />
+          </div>
+          <div className="max-h-36 overflow-y-auto space-y-0.5">
+            {filtered.length === 0 && !search.trim() && (
+              <div className="text-xs text-[var(--text-muted)] px-2 py-1">项目暂无道具资源</div>
+            )}
+            {filtered.map(p => {
+              const selected = selectedProps.includes(p.name);
+              return (
+                <button
+                  key={p.id}
+                  onClick={() => toggleProp(p.name)}
+                  className={`w-full text-left px-2 py-1 rounded text-xs transition-colors flex items-center gap-2 ${
+                    selected ? 'bg-teal-500/20 text-teal-400' : 'hover:bg-[var(--bg-card-hover)] text-[var(--text-secondary)]'
+                  }`}
+                >
+                  {selected ? <Check className="w-3 h-3 shrink-0" /> : <div className="w-3 h-3 shrink-0" />}
+                  {p.image_url ? <img src={p.image_url} alt={p.name} className="w-4 h-4 rounded object-cover shrink-0" /> : null}
+                  <span className="truncate">{p.name}</span>
+                </button>
+              );
+            })}
+          </div>
+          {search.trim() && !projectProps.find(p => p.name === search.trim()) && (
+            <button
+              onClick={addCustom}
+              className="w-full text-left px-2 py-1 rounded text-xs text-teal-400 hover:bg-teal-500/10 transition-colors flex items-center gap-1"
+            >
+              <Plus className="w-3 h-3" /> 添加自定义道具 "{search.trim()}"
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -704,6 +826,8 @@ interface ScenePreviewPanelProps {
   onUpdateCharactersAndLocation?: (characters: string[], location: string, characterIds?: number[], sceneId?: number) => Promise<boolean>;
   projectCharacters?: { id: number; name: string; image_url?: string; front_view_url?: string; base_appearance?: string; outfit_appearance?: string; has_base_model?: number; has_base_model_views?: number; states_count?: number; active_state_name?: string; active_state_outfit?: string; active_state_image_url?: string; base_front_view_url?: string }[];
   projectScenes?: { id: number; name: string; description?: string }[];
+  projectProps?: { id: number; name: string; image_url?: string }[];
+  onUpdateProps?: (props: string[]) => Promise<boolean>;
   onGenerateImage: (id: number, prompt: string, regenerateTarget?: 'first' | 'last' | 'both', forceRegenerate?: boolean) => Promise<{ success: boolean; error?: string }>;
   onGenerateVideo: (id: number) => Promise<{ success: boolean; error?: string }>;
   onGenerateWithCamera?: (id: number, cameraParams: CameraGenerateParams) => Promise<{ success: boolean; error?: string }>;
@@ -744,6 +868,8 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
   onUpdateCharactersAndLocation,
   projectCharacters = [],
   projectScenes = [],
+  projectProps = [],
+  onUpdateProps,
   onGenerateImage,
   onGenerateVideo,
   onGenerateWithCamera,
@@ -1522,7 +1648,18 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                   }
                 }}
               />
-              {scene.shotType && (
+              {/* 可编辑的景别选择器 */}
+              {onUpdateScene && (
+                <ShotSizeSelector
+                  value={scene.shotType}
+                  onChange={(newValue) => {
+                    onUpdateScene({ shotType: newValue });
+                  }}
+                  compact={false}
+                />
+              )}
+              {/* 只读模式：显示普通标签 */}
+              {!onUpdateScene && scene.shotType && (
                 <Chip size="sm" variant="flat" className="bg-cyan-500/20 text-cyan-400 text-xs">
                   <Camera className="w-3 h-3 mr-1" />
                   {scene.shotType}
@@ -1547,6 +1684,14 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                   .filter((id): id is number => id !== undefined);
                 const curSceneId = projectScenes.find(s => s.name === scene.location)?.id;
                 onUpdateCharactersAndLocation?.(chars, scene.location || '', charIds, curSceneId);
+              }}
+            />
+            <PropsTagSelector
+              props={scene.props || []}
+              projectProps={projectProps}
+              onSave={(props) => {
+                onUpdateScene?.({ props });
+                onUpdateProps?.(props);
               }}
             />
             <SceneDropdownSelector

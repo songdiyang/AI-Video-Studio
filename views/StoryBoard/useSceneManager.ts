@@ -86,6 +86,8 @@ export interface StoryboardScene {
   videoPrompt?: string;          // 视频生成专用提示词
   firstFramePrompt?: string;     // 图片首帧专用提示词（对应 first_frame_prompt）
   lastFramePrompt?: string;      // 图片尾帧专用提示词（对应 last_frame_prompt）
+  // 分镜级角色状态覆写：characterId -> { stateId, stateName, stateImage, stateOutfit }
+  characterStates?: Record<number, { stateId: number; stateName: string; stateImage?: string; stateOutfit?: string }>;
 }
 
 export const useSceneManager = (scriptId: number | null, projectId?: number | null, episodeNumber?: number) => {
@@ -197,6 +199,7 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
         videoPrompt: item.video_prompt || undefined,
         firstFramePrompt: item.first_frame_prompt || undefined,
         lastFramePrompt: item.last_frame_prompt || undefined,
+        characterStates: vars.characterStates || undefined,
         isLocked: item.is_locked || false
       } as StoryboardScene;
     });
@@ -918,6 +921,119 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
     }
   };
 
+  const updateProps = async (id: number, props: string[]) => {
+    const previousScene = scenes.find((scene) => scene.id === id);
+    if (!previousScene) return false;
+
+    // 本地先更新
+    setScenes(prevScenes => prevScenes.map(s =>
+      s.id === id ? { ...s, props } : s
+    ));
+
+    try {
+      const token = getAuthToken();
+      const res = await fetch(`/api/storyboards/${id}/content`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ props })
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message || '保存道具失败');
+      }
+
+      return true;
+    } catch (error: any) {
+      // 回滚
+      setScenes(prevScenes => prevScenes.map(s =>
+        s.id === id ? { ...s, props: previousScene.props } : s
+      ));
+      console.error('保存道具失败:', error);
+      showToast('保存道具失败，请稍后重试', 'error');
+      return false;
+    }
+  };
+
+  // 更新景别并保存到后端
+  const updateShotType = async (id: number, shotType: string) => {
+    const previousScene = scenes.find((scene) => scene.id === id);
+    if (!previousScene) return false;
+
+    // 本地先更新
+    setScenes(prevScenes => prevScenes.map(s =>
+      s.id === id ? { ...s, shotType } : s
+    ));
+
+    try {
+      const token = getAuthToken();
+      const res = await fetch(`/api/storyboards/${id}/content`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ shotType })
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message || '保存景别失败');
+      }
+
+      return true;
+    } catch (error: any) {
+      // 回滚
+      setScenes(prevScenes => prevScenes.map(s =>
+        s.id === id ? { ...s, shotType: previousScene.shotType } : s
+      ));
+      console.error('保存景别失败:', error);
+      showToast('保存景别失败，请稍后重试', 'error');
+      return false;
+    }
+  };
+
+  // 更新分镜级角色状态覆写
+  const updateCharacterStates = async (id: number, characterStates: Record<number, { stateId: number; stateName: string; stateImage?: string; stateOutfit?: string }>) => {
+    const previousScene = scenes.find((scene) => scene.id === id);
+    if (!previousScene) return false;
+
+    // 本地先更新
+    setScenes(prevScenes => prevScenes.map(s =>
+      s.id === id ? { ...s, characterStates } : s
+    ));
+
+    try {
+      const token = getAuthToken();
+      const res = await fetch(`/api/storyboards/${id}/content`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ characterStates })
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message || '保存角色状态失败');
+      }
+
+      return true;
+    } catch (error: any) {
+      // 回滚
+      setScenes(prevScenes => prevScenes.map(s =>
+        s.id === id ? { ...s, characterStates: previousScene.characterStates } : s
+      ));
+      console.error('保存角色状态失败:', error);
+      showToast('保存角色状态失败，请稍后重试', 'error');
+      return false;
+    }
+  };
+
   return {
     scenes,
     setScenes,
@@ -946,6 +1062,9 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
     updateVoiceover,
     updateDirectorParams,
     updateCharactersAndLocation,
+    updateProps,
+    updateShotType,
+    updateCharacterStates,
     updateDuration,
     reorderScenes
   };

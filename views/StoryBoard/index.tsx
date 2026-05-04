@@ -336,25 +336,29 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
     moveScene,
     reorderScenes,
     updateCharactersAndLocation,
+    updateProps,
+    updateShotType,
+    updateCharacterStates,
     updateDuration
   } = useSceneManager(currentScriptId, currentProjectId, currentEpisode);
 
   // 项目角色和场景资源（供选择器使用）
   const [projectCharacters, setProjectCharacters] = useState<{ id: number; name: string; image_url?: string; front_view_url?: string; base_appearance?: string; outfit_appearance?: string; has_base_model?: number; has_base_model_views?: number; states_count?: number; active_state_name?: string; active_state_outfit?: string; active_state_image_url?: string; base_front_view_url?: string }[]>([]);
   const [projectScenes, setProjectScenes] = useState<{ id: number; name: string; description?: string }[]>([]);
-  // 分镜状态覆写：用户在资源面板选择的角色状态，不影响全局激活状态
-  const [storyboardStates, setStoryboardStates] = useState<Record<number, StoryboardStateOverride>>({});
+  // 分镜级角色状态覆写：从当前选中分镜的 characterStates 字段读取
+  const selectedSceneObj = scenes.find(s => s.id === selectedScene);
+  const storyboardStates: Record<number, StoryboardStateOverride> = selectedSceneObj?.characterStates || {};
 
-  const handleStoryboardStateChange = (characterId: number, state: StoryboardStateOverride | null) => {
-    setStoryboardStates(prev => {
-      const next = { ...prev };
-      if (state) {
-        next[characterId] = state;
-      } else {
-        delete next[characterId];
-      }
-      return next;
-    });
+  const handleStoryboardStateChange = async (characterId: number, state: StoryboardStateOverride | null) => {
+    if (!selectedScene) return;
+    const currentStates = { ...(selectedSceneObj?.characterStates || {}) };
+    if (state) {
+      currentStates[characterId] = state;
+    } else {
+      delete currentStates[characterId];
+    }
+    // 持久化到当前分镜
+    await updateCharacterStates(selectedScene, currentStates);
   };
 
   // 合并分镜状态覆写到 projectCharacters，供 CharacterTagSelector 使用
@@ -869,9 +873,15 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
   };
 
   // 处理选中分镜的更新
-  const handleUpdateSelectedScene = (updates: Partial<StoryboardScene>) => {
+  const handleUpdateSelectedScene = async (updates: Partial<StoryboardScene>) => {
     if (selectedScene) {
+      // 先本地更新
       setScenes(prev => prev.map(s => s.id === selectedScene ? { ...s, ...updates } : s));
+      
+      // 如果是更新 shotType，则持久化到后端
+      if (updates.shotType !== undefined) {
+        await updateShotType(selectedScene, updates.shotType);
+      }
     }
   };
   
@@ -1285,8 +1295,14 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
                         onReorderScenes={reorderScenes}
                         onGenerateImage={generateImage}
                         onGenerateVideo={generateVideo}
-                        onUpdateScene={(id, updates) => {
+                        onUpdateScene={async (id, updates) => {
+                          // 先本地更新
                           setScenes(prev => prev.map(s => s.id === id ? { ...s, ...updates } : s));
+                          
+                          // 如果是更新 shotType，则持久化到后端
+                          if (updates.shotType !== undefined) {
+                            await updateShotType(id, updates.shotType);
+                          }
                         }}
                         tasks={tasks}
                         onBatchGenerate={(overwrite) => handleBatchFrameGeneration(overwrite)}
@@ -1356,6 +1372,11 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
                 }}
                 projectCharacters={effectiveProjectCharacters}
                 projectScenes={projectScenes}
+                projectProps={projectProps}
+                onUpdateProps={async (props) => {
+                  if (selectedScene) return await updateProps(selectedScene, props);
+                  return false;
+                }}
                 onGenerateImage={generateImage}
                 onGenerateVideo={generateVideo}
                 onGenerateWithCamera={generateWithCamera}

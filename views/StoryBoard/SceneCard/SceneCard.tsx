@@ -18,6 +18,7 @@ import { SpatialDescription } from '../useSceneManager';
 import type { StoryboardValidationIssue } from '../utils/validateStoryboardContent';
 import { getWorstSeverity } from '../utils/validateStoryboardContent';
 import StoryboardLockButton from '../components/StoryboardLockButton';
+import { ShotSizeSelector } from '../components/ShotSizeSelector';
 
 export interface SceneCardProps {
   scene: StoryboardScene;
@@ -397,7 +398,23 @@ const SceneCard: React.FC<SceneCardProps> = ({
               </p>
               {/* 元数据标签 */}
               <div className="flex items-center gap-1 mt-1">
-                {scene.shotType && (
+                {/* 可编辑的景别选择器 */}
+                {onUpdateScene && (
+                  <div onClick={(e) => e.stopPropagation()}>
+                    <ShotSizeSelector
+                      value={scene.shotType}
+                      onChange={async (newValue) => {
+                        // 先本地更新
+                        onUpdateScene(scene.id, { shotType: newValue });
+                        // 然后保存到后端（通过父组件传递的回调或直接调用API）
+                        // 这里我们依赖父组件来处理持久化
+                      }}
+                      compact={true}
+                    />
+                  </div>
+                )}
+                {/* 只读模式：显示普通标签 */}
+                {!onUpdateScene && scene.shotType && (
                   <span className="text-[10px] px-1 py-0.5 rounded bg-cyan-500/20 text-cyan-400">
                     {scene.shotType}
                   </span>

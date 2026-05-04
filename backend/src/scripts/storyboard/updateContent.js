@@ -10,14 +10,14 @@ const { linkCharactersForStoryboard, linkScenesForStoryboard } = require('../../
 async function updateContent(req, res) {
   const userId = req.user.id;
   const storyboardId = Number(req.params.storyboardId);
-  const { prompt_template, first_frame_prompt, last_frame_prompt, video_prompt, video_start_prompt, video_end_prompt, description, spatial_description, dialogues, voiceover, characters, location, characterIds, sceneId, negative_prompt, duration } = req.body || {};
+  const { prompt_template, first_frame_prompt, last_frame_prompt, video_prompt, video_start_prompt, video_end_prompt, description, spatial_description, dialogues, voiceover, characters, location, characterIds, sceneId, negative_prompt, duration, props, characterStates, shotType } = req.body || {};
 
   if (!storyboardId) {
     return res.status(400).json({ message: 'Invalid storyboard id' });
   }
 
   // 至少需要传递一个字段
-  if (prompt_template === undefined && first_frame_prompt === undefined && last_frame_prompt === undefined && video_prompt === undefined && video_start_prompt === undefined && video_end_prompt === undefined && description === undefined && spatial_description === undefined && dialogues === undefined && voiceover === undefined && characters === undefined && location === undefined && negative_prompt === undefined && duration === undefined) {
+  if (prompt_template === undefined && first_frame_prompt === undefined && last_frame_prompt === undefined && video_prompt === undefined && video_start_prompt === undefined && video_end_prompt === undefined && description === undefined && spatial_description === undefined && dialogues === undefined && voiceover === undefined && characters === undefined && location === undefined && negative_prompt === undefined && duration === undefined && props === undefined && characterStates === undefined && shotType === undefined) {
     return res.status(400).json({ message: '需要提供至少一个可更新字段' });
   }
 
@@ -117,8 +117,8 @@ async function updateContent(req, res) {
       params.push(spatialDescJson);
     }
 
-    // 处理 dialogues / voiceover / characters / location / duration：更新到 variables_json 中
-    if (dialogues !== undefined || voiceover !== undefined || characters !== undefined || location !== undefined || duration !== undefined) {
+    // 处理 dialogues / voiceover / characters / location / duration / props / shotType：更新到 variables_json 中
+    if (dialogues !== undefined || voiceover !== undefined || characters !== undefined || location !== undefined || duration !== undefined || props !== undefined || characterStates !== undefined || shotType !== undefined) {
       let vars = {};
       try {
         vars = JSON.parse(storyboard.variables_json || '{}');
@@ -150,6 +150,20 @@ async function updateContent(req, res) {
 
       if (duration !== undefined) {
         vars.duration = typeof duration === 'number' ? duration : 3;
+      }
+
+      if (props !== undefined) {
+        vars.props = Array.isArray(props) ? props : [];
+      }
+
+      if (characterStates !== undefined) {
+        // characterStates 是一个对象：{ characterId: { stateId, stateName, stateImage, stateOutfit } }
+        vars.characterStates = (characterStates && typeof characterStates === 'object') ? characterStates : {};
+      }
+
+      if (shotType !== undefined) {
+        // 景别：中景、近景、特写等
+        vars.shotType = typeof shotType === 'string' ? shotType.trim() : '';
       }
 
       updates.push('variables_json = ?');
