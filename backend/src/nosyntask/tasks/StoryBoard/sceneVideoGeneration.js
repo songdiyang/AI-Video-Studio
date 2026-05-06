@@ -22,6 +22,8 @@ const handleBaseTextModelCall = require('../base/baseTextModelCall');
 const { requireVisualStyle, getOutputLanguage } = require('../../../utils/getProjectStyle');
 const handleCameraRunGeneration = require('./cameraRunGeneration');
 const { generateMotionBreakdown } = require('./motionBreakdown');
+const handleVisionFrameAnalysis = require('./visionFrameAnalysis');
+const handleLastFramePromptGeneration = require('./lastFramePromptGeneration');
 const { trace } = require('../../engine/generationTrace');
 const { assertUpdated, assertPersistedFields } = require('./persistenceGuard');
 const { resolveMediaUrl } = require('../base/mediaResultResolver');
@@ -278,7 +280,66 @@ async function handleSceneVideoGeneration(inputParams, onProgress) {
   // 提前获取 outputLang，避免 Promise.allSettled 内部 IIFE 引用时 TDZ 错误
   const outputLang = textModel ? await getOutputLanguage(storyboard.project_id) : null;
 
-  // 3.8 & 3.9 并行生成精细运镜 + 运动分解（两者互不依赖，可同时调用）
+  // 3.8 多模态视觉分析（首帧/尾帧图片识别）
+  let visualAnalysis = null;
+  let lastFramePrompt = null;
+
+  if (textModel && effectiveStartFrame) {
+    try {
+      console.log('[SceneVideoGen] 开始多模态视觉分析...');
+      const analysisImages = [];
+      if (effectiveStartFrame) analysisImages.push(effectiveStartFrame);
+      if (hasAction && lastFrameUrl && lastFrameUrl !== effectiveStartFrame) {
+        analysisImages.push(lastFrameUrl);
+      }
+
+      visualAnalysis = await handleVisionFrameAnalysis(
+        {
+          imageUrls: analysisImages,
+          description,
+          textModel
+        },
+        (p) => { if (onProgress) onProgress(10 + p * 0.08); }
+      );
+
+      if (visualAnalysis) {
+        trace('多模态视觉分析完成', {
+          visualDescription: visualAnalysis.visualDescription?.substring(0, 100),
+          characterCount: visualAnalysis.characters?.length
+        });
+        console.log(`\x1b[32m[SceneVideoGen] 视觉分析完成: ${visualAnalysis.visualDescription?.substring(0, 80)}...\x1b[0m`);
+
+        // 动作镜头且缺少尾帧时，自动生成尾帧提示词
+        if (hasAction && !lastFrameUrl && visualAnalysis) {
+          try {
+            console.log('[SceneVideoGen] 动作镜头缺少尾帧，基于视觉分析生成尾帧提示词...');
+            const lastFrameResult = await handleLastFramePromptGeneration(
+              {
+                firstFrameVisual: visualAnalysis,
+                description,
+                endState: variables.endState || '',
+                textModel,
+                variables
+              },
+              (p) => { if (onProgress) onProgress(18 + p * 0.02); }
+            );
+            lastFramePrompt = lastFrameResult.lastFramePrompt;
+            trace('尾帧提示词生成完成', { lastFramePrompt: lastFramePrompt?.substring(0, 100) });
+            console.log(`\x1b[32m[SceneVideoGen] 尾帧提示词: ${lastFramePrompt?.substring(0, 80)}...\x1b[0m`);
+          } catch (lfErr) {
+            console.warn('[SceneVideoGen] 尾帧提示词生成失败:', lfErr.message);
+          }
+        }
+      } else {
+        console.log('[SceneVideoGen] 视觉分析返回空，将使用纯文本方案');
+      }
+    } catch (visionErr) {
+      console.warn('[SceneVideoGen] 多模态视觉分析失败，降级到纯文本方案:', visionErr.message);
+      visualAnalysis = null;
+    }
+  }
+
+  // 3.9 并行生成精细运镜 + 运动分解（作为补充，不依赖视觉分析）
   let cameraRunPrompt = '';
   let motionBreakdownText = '';
   if (textModel) {
@@ -299,14 +360,14 @@ async function handleSceneVideoGeneration(inputParams, onProgress) {
               outputLang
             }
           },
-          (p) => { if (onProgress) onProgress(10 + p * 0.05); }
+          (p) => { if (onProgress) onProgress(20 + p * 0.05); }
         );
         const prompt = result.cameraRunPrompt || '';
         trace('精细运镜生成完成', { prompt });
         console.log(`\x1b[32m[SceneVideoGen] 精细运镜提示词: ${prompt}\x1b[0m`);
         return prompt;
       })(),
-      // 运动分解：已与图片层首/尾帧文本描述解耦，不再传入 startFrameDesc/endFrameDesc
+      // 运动分解
       (async () => {
         trace('开始生成运动分解清单');
         const text = await generateMotionBreakdown({
@@ -423,11 +484,24 @@ async function handleSceneVideoGeneration(inputParams, onProgress) {
       ? `【镜头结束状态】${variables.endState}（视频结束时画面必须呈现此状态）`
       : '';
 
-    // 角色信息：有角色时提供详细外貌+参考图一致性约束，无角色时明确排除人物
+    // 角色信息：优先使用多模态视觉分析结果，回退到数据库查询结果
     let charBlock;
     let charConstraint;
     if (hasCharacters) {
-      const appearanceLine = characterAppearance ? `\n外貌特征: ${characterAppearance}` : '';
+      let appearanceLine = '';
+      if (visualAnalysis && visualAnalysis.characters && visualAnalysis.characters.length > 0) {
+        // 使用多模态分析的角色外貌（更精准）
+        appearanceLine = '\n外貌特征（基于首帧图片识别）: ' + visualAnalysis.characters.map(c => {
+          const parts = [];
+          if (c.appearance) parts.push(c.appearance);
+          if (c.clothing) parts.push(c.clothing);
+          if (c.pose) parts.push(c.pose);
+          return `${c.name}: ${parts.join('，')}`;
+        }).join('；');
+      } else if (characterAppearance) {
+        // 回退到数据库查询
+        appearanceLine = `\n外貌特征: ${characterAppearance}`;
+      }
       charBlock = `【角色信息】
 角色: ${charNames.join('、')}${appearanceLine}
 （角色参考图已融入首帧，视频中角色必须与首帧完全一致）`;
@@ -445,10 +519,23 @@ async function handleSceneVideoGeneration(inputParams, onProgress) {
 - 如果首帧图片中没有人物，视频中也绝对不能凭空出现人物`;
     }
 
-    // 场景详细信息
-    const sceneBlock = sceneDetail
-      ? `【场景详情】\n${sceneDetail}\n（已提供场景参考图作为首帧背景，视频场景必须一致）`
-      : '';
+    // 场景信息：优先使用多模态视觉分析结果
+    let sceneBlock;
+    if (visualAnalysis && visualAnalysis.scene) {
+      const vs = visualAnalysis.scene;
+      const sceneLines = [];
+      if (vs.environment) sceneLines.push(`环境: ${vs.environment}`);
+      if (vs.lighting) sceneLines.push(`光照: ${vs.lighting}`);
+      if (vs.mood) sceneLines.push(`氛围: ${vs.mood}`);
+      if (vs.colorTone) sceneLines.push(`色调: ${vs.colorTone}`);
+      sceneBlock = `【场景详情（基于首帧图片识别）】\n${sceneLines.join('\n')}\n（已提供场景参考图作为首帧背景，视频场景必须一致）`;
+    } else if (sceneDetail) {
+      sceneBlock = `【场景详情】\n${sceneDetail}\n（已提供场景参考图作为首帧背景，视频场景必须一致）`;
+    } else {
+      sceneBlock = '';
+    }
+
+    // sceneBlock 已在上方定义（优先使用多模态视觉分析结果）
 
     const extraInfo = [charBlock, locInfo, sceneBlock, shotInfo, emotionInfo, dialogueInfo, voiceoverText, actionInfo, cameraInfo, endStateInfo, styleInfo, charConstraint, prevContext, nextContext, motionBreakdownText].filter(Boolean).join('\n');
 

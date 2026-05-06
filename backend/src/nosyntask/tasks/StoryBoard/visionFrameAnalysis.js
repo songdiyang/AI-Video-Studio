@@ -1,0 +1,183 @@
+/**
+ * 多模态首帧/尾帧视觉分析处理器
+ *
+ * 功能：调用多模态大模型识别图片中的视觉元素，生成结构化分析结果
+ *
+ * 输入:  { imageUrls: string[], description: string, textModel: string }
+ * 输出:  { visualDescription: string, characters: Array, scene: Object, composition: Object }
+ *
+ * 降级策略：如果模型不支持 vision 或调用失败，返回 null，由调用方回退到纯文本方案
+ */
+
+const { callAIModel } = require('../../../aiModelService');
+const { trace } = require('../../engine/generationTrace');
+
+/** 安全解析 JSON */
+function safeJsonParse(text) {
+  if (!text) return null;
+  try {
+    // 尝试提取 JSON 代码块
+    const jsonMatch = text.match(/```json\s*([\s\S]*?)```/) || text.match(/```\s*([\s\S]*?)```/);
+    const jsonText = jsonMatch ? jsonMatch[1].trim() : text.trim();
+    return JSON.parse(jsonText);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 检测模型是否可能支持 vision
+ * 基于模型名称和配置进行启发式判断
+ */
+function isVisionCapable(modelName) {
+  if (!modelName) return false;
+  const visionKeywords = ['vision', 'multimodal', 'vl', '4o', 'opus', 'gemini', 'pro-vision'];
+  const name = modelName.toLowerCase();
+  return visionKeywords.some(k => name.includes(k));
+}
+
+/**
+ * 构建多模态 messages（OpenAI 兼容格式）
+ */
+function buildVisionMessages(imageUrls, description) {
+  const content = [];
+
+  // 先放图片（让模型先看图）
+  for (const url of imageUrls) {
+    if (url) {
+      content.push({
+        type: 'image_url',
+        image_url: { url }
+      });
+    }
+  }
+
+  // 再放文本提示词
+  const textPrompt = `请详细分析上面${imageUrls.length > 1 ? '这些图片' : '这张图片'}中的视觉元素，并参考以下分镜描述：
+"${description || '无描述'}"
+
+请输出结构化分析（JSON格式）：
+{
+  "visualDescription": "详细的画面描述（200字以内）",
+  "characters": [
+    {
+      "name": "角色名（如无法识别填'未知角色'）",
+      "appearance": "外貌特征（发型、五官、体型）",
+      "clothing": "服装描述（颜色、款式、配饰）",
+      "pose": "姿态动作"
+    }
+  ],
+  "scene": {
+    "environment": "场景环境（室内/室外、建筑、自然元素）",
+    "lighting": "光照条件（方向、色温、强度）",
+    "mood": "氛围情绪",
+    "colorTone": "主色调和配色方案"
+  },
+  "composition": {
+    "shotType": "景别（特写/近景/中景/全景/远景）",
+    "cameraAngle": "机位角度（平视/俯视/仰视）",
+    "framing": "构图方式"
+  },
+  "objects": ["画面中所有可见物体的清单"]
+}
+
+注意：
+1. 必须基于图片实际内容，不要编造图片中没有的元素
+2. 角色服装颜色必须准确描述
+3. 如果有多张图片，请对比分析它们之间的关系（如首尾帧的连续性）
+4. 仅输出 JSON，不要输出其他文字`;
+
+  content.push({
+    type: 'text',
+    text: textPrompt
+  });
+
+  return [{ role: 'user', content }];
+}
+
+/**
+ * 多模态视觉分析主函数
+ */
+async function handleVisionFrameAnalysis(inputParams, onProgress) {
+  const { imageUrls, description, textModel: modelName } = inputParams;
+
+  if (!imageUrls || !Array.isArray(imageUrls) || imageUrls.length === 0) {
+    console.log('[VisionAnalysis] 无图片URL，跳过视觉分析');
+    return null;
+  }
+
+  if (!modelName) {
+    console.log('[VisionAnalysis] 无模型配置，跳过视觉分析');
+    return null;
+  }
+
+  // 启发式检测模型是否支持 vision
+  if (!isVisionCapable(modelName)) {
+    console.log(`[VisionAnalysis] 模型 ${modelName} 可能不支持 vision，尝试调用（失败将降级）`);
+  }
+
+  console.log('[VisionAnalysis] 开始视觉分析，图片数:', imageUrls.length, '模型:', modelName);
+  if (onProgress) onProgress(10);
+
+  try {
+    const messages = buildVisionMessages(imageUrls, description);
+
+    if (onProgress) onProgress(30);
+
+    const result = await callAIModel(modelName, {
+      messages,
+      maxTokens: 4096,
+      temperature: 0.3
+    });
+
+    if (onProgress) onProgress(80);
+
+    const content = result?.content || result?.text || '';
+    if (!content) {
+      console.warn('[VisionAnalysis] 模型返回空内容');
+      return null;
+    }
+
+    // 解析 JSON 结果
+    const parsed = safeJsonParse(content);
+    if (!parsed) {
+      console.warn('[VisionAnalysis] 无法解析模型返回的 JSON，原始内容:', content.substring(0, 200));
+      // 降级：将原始文本作为 visualDescription
+      return {
+        visualDescription: content.substring(0, 500),
+        characters: [],
+        scene: {},
+        composition: {},
+        objects: [],
+        _raw: content
+      };
+    }
+
+    const output = {
+      visualDescription: parsed.visualDescription || '',
+      characters: parsed.characters || [],
+      scene: parsed.scene || {},
+      composition: parsed.composition || {},
+      objects: parsed.objects || [],
+      _raw: content
+    };
+
+    trace('视觉分析完成', {
+      imageCount: imageUrls.length,
+      visualDescription: output.visualDescription.substring(0, 100),
+      characterCount: output.characters.length
+    });
+
+    console.log('[VisionAnalysis] 分析完成，角色数:', output.characters.length);
+    if (onProgress) onProgress(100);
+
+    return output;
+
+  } catch (error) {
+    console.error('[VisionAnalysis] 视觉分析失败:', error.message);
+    // 降级返回 null，由调用方处理
+    return null;
+  }
+}
+
+module.exports = handleVisionFrameAnalysis;

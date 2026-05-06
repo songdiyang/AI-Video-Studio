@@ -986,6 +986,28 @@ module.exports = {
   },
 
   // ================================================================
+  //  视觉分析 (Vision Analysis)
+  // ================================================================
+  imageUrls: {
+    from: 'imageUrls',
+    defaultValue: null,
+    description: '图片 URL 数组（用于多模态视觉分析）',
+    category: 'vision'
+  },
+  firstFrameVisual: {
+    from: 'firstFrameVisual',
+    defaultValue: null,
+    description: '首帧多模态视觉分析结果（结构化对象）',
+    category: 'vision'
+  },
+  lastFramePrompt: {
+    from: 'lastFramePrompt',
+    defaultValue: null,
+    description: '尾帧提示词（由视觉分析生成）',
+    category: 'vision'
+  },
+
+  // ================================================================
   //  剧本相关（AI助手工具透传）
   // ================================================================
   rawText: {

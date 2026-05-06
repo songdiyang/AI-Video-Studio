@@ -27,6 +27,8 @@ const { assertUpdated, assertPersistedFields } = require('./persistenceGuard');
 const { resolveMediaUrl } = require('../base/mediaResultResolver');
 const { saveFrameHistory, getNextVersionNumber, generateBatchId } = require('./saveFrameHistory');
 const { mergeNegativeIntoPositive } = require('../../utils/negativeToPositive');
+const handleVisionFrameAnalysis = require('./visionFrameAnalysis');
+const handleLastFramePromptGeneration = require('./lastFramePromptGeneration');
 
 /**
  * 生成单张图片（通过 submitAndPoll 自动处理同步/异步）
@@ -780,12 +782,50 @@ async function handleFrameGeneration(inputParams, onProgress) {
     // 5. 生成尾帧提示词
     if (onProgress) onProgress(50);
     endPrompt = description;
-    if (textModel) {
+
+    // 优先使用多模态视觉分析 + 尾帧提示词生成（如果首帧已存在）
+    let usedVisionBasedPrompt = false;
+    if (textModel && persistedStartFrame && !startPrompt) {
+      // 单独生成尾帧的场景：已有首帧，需要基于首帧视觉分析生成尾帧
+      try {
+        console.log('[FrameGen] 基于首帧多模态分析生成尾帧提示词...');
+        const visualAnalysis = await handleVisionFrameAnalysis(
+          {
+            imageUrls: [persistedStartFrame],
+            description,
+            textModel
+          },
+          (p) => { if (onProgress) onProgress(50 + p * 0.03); }
+        );
+
+        if (visualAnalysis) {
+          const lastFrameResult = await handleLastFramePromptGeneration(
+            {
+              firstFrameVisual: visualAnalysis,
+              description,
+              endState: variables.endState || '',
+              textModel,
+              variables
+            },
+            (p) => { if (onProgress) onProgress(53 + p * 0.02); }
+          );
+          endPrompt = lastFrameResult.lastFramePrompt;
+          usedVisionBasedPrompt = true;
+          trace('尾帧提示词(基于视觉分析)', { prompt: endPrompt });
+          console.log(`\x1b[32m[FrameGen] 尾帧提示词(视觉分析): ${endPrompt.substring(0, 100)}...\x1b[0m`);
+        }
+      } catch (visionErr) {
+        console.warn('[FrameGen] 基于视觉分析的尾帧提示词生成失败，回退到传统方案:', visionErr.message);
+      }
+    }
+
+    // 回退到传统尾帧提示词生成
+    if (!usedVisionBasedPrompt && textModel) {
       console.log('[FrameGen] 使用文本模型生成尾帧提示词...');
       endPrompt = await generateFramePrompt({ textModel, description: endDescription, frameType: 'end', characterInfo, sceneInfo, shotType: variables.shotType, emotion: variables.emotion, prevDescription: null, visualStyle, startFrameDesc: variables.startFrame, endFrameDesc: variables.endFrame, dialogue: variables.dialogue, dialogues: variables.dialogues, prevEndState: null, endState: variables.endState, sceneState, environmentChange, directorParams: variables.directorParams, spatialDescription, outputLang, startPromptForRef: startPrompt });
       trace('尾帧提示词', { prompt: endPrompt });
       console.log(`\x1b[32m[FrameGen] 尾帧提示词: ${endPrompt}\x1b[0m`);
-    } else {
+    } else if (!usedVisionBasedPrompt) {
       endPrompt = `${description}，画面结束时刻，动作完成状态，延续前一帧的场景和角色`;
     }
 

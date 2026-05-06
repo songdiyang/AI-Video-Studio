@@ -222,9 +222,13 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
             {[
               ...scripts.map((s) => (
                 <SelectItem key={String(s.id)} textValue={`第${s.episode_number}集`}>
-                  <div className="flex items-center justify-between w-full">
-                    <span>第{s.episode_number}集</span>
-                    {s.title && <span className="text-xs text-[var(--text-muted)] truncate ml-2 max-w-[80px]">{s.title}</span>}
+                  <div className="flex items-center gap-2 w-full min-w-0">
+                    <span className="shrink-0">第{s.episode_number}集</span>
+                    {s.title && (
+                      <span className="text-xs text-[var(--text-muted)] truncate">
+                        {s.title}
+                      </span>
+                    )}
                   </div>
                 </SelectItem>
               )),
