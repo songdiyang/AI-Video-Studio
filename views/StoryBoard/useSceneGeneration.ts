@@ -4,7 +4,7 @@ import { updateScene } from '../../services/assets';
 import { useTaskRunner, TaskState } from '../../hooks/useTaskRunner';
 import { WorkflowJob } from '../../hooks/useWorkflow';
 import { StoryboardScene } from './useSceneManager';
-import { CameraGenerateParams, PaintGenerateParams } from './MagicSpace';
+import { CameraGenerateParams, PaintGenerateParams, SketchGenerateParams } from './MagicSpace';
 
 interface UseSceneGenerationOptions {
   projectId: number | null;
@@ -135,7 +135,7 @@ export function useSceneGeneration({
   useEffect(() => {
     if (!projectId) return;
     recoverTasks(
-      ['frame_generation', 'single_frame_generation', 'scene_video', 'camera_frame_generation'],
+      ['frame_generation', 'single_frame_generation', 'scene_video', 'camera_frame_generation', 'sketch_frame_generation'],
       jobToTaskKey
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -499,6 +499,71 @@ export function useSceneGeneration({
     }
   };
 
+  // 启动草图生成 workflow
+  const generateWithSketch = async (id: number, sketchParams: SketchGenerateParams): Promise<{ success: boolean; error?: string }> => {
+    try {
+      if (isTaskActive(`img_${id}`)) {
+        return { success: false, error: '当前镜头正在生成，请等待完成后再试' };
+      }
+
+      if (!imageModel) {
+        return { success: false, error: '请先选择图片生成模型' };
+      }
+
+      // 上传草图 PNG 到对象存储
+      let sketchUrl = '';
+      try {
+        const base64Data = sketchParams.sketchImageBase64;
+        const byteString = atob(base64Data.split(',')[1]);
+        const mimeString = base64Data.split(',')[0].split(':')[1].split(';')[0];
+        const ab = new ArrayBuffer(byteString.length);
+        const ia = new Uint8Array(ab);
+        for (let i = 0; i < byteString.length; i++) {
+          ia[i] = byteString.charCodeAt(i);
+        }
+        const blob = new Blob([ab], { type: mimeString });
+        const token = getAuthToken();
+        const formData = new FormData();
+        formData.append('file', blob, `sketch_${id}_${Date.now()}.png`);
+        formData.append('path_prefix', 'images/sketches');
+
+        const uploadRes = await fetch('/api/upload/general', {
+          method: 'POST',
+          headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+          body: formData,
+        });
+
+        if (!uploadRes.ok) throw new Error(`上传草图失败: HTTP ${uploadRes.status}`);
+        const uploadData = await uploadRes.json();
+        sketchUrl = uploadData.url || uploadData.fileUrl || uploadData.filePath || '';
+        if (!sketchUrl) throw new Error('上传草图返回无效URL');
+      } catch (uploadErr: any) {
+        console.error('[useSceneGeneration] 上传草图失败:', uploadErr);
+        return { success: false, error: uploadErr.message || '上传草图失败' };
+      }
+
+      console.log('[useSceneGeneration] 草图生成, sketchUrl:', sketchUrl);
+
+      const sceneIdx = scenes.findIndex(s => s.id === id);
+      await runTask(`img_${id}`, 'sketch_frame_generation', {
+        storyboardId: id,
+        sketchUrl,
+        sketchType: 'storyboard_sketch',
+        prompt: sketchParams.prompt || '',
+        imageModel,
+        textModel,
+        aspectRatio: imageAspectRatio,
+        episodeNumber,
+        storyboardIndex: sceneIdx >= 0 ? sceneIdx + 1 : undefined,
+      });
+
+      return { success: true };
+    } catch (error: any) {
+      console.error('草图生成失败:', error);
+      return { success: false, error: error.message || '草图生成失败' };
+    }
+  };
+
   // 启动高清修复 workflow
   const generateHdRepair = async (id: number): Promise<{ success: boolean; error?: string }> => {
     try {
@@ -605,6 +670,7 @@ export function useSceneGeneration({
     generateVideo,
     generateWithCamera,
     generateWithPaint,
+    generateWithSketch,
     generateHdRepair,
     deleteFirstFrame,
     deleteLastFrame

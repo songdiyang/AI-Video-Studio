@@ -1,11 +1,12 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { Button } from '@heroui/react';
-import { Wand2, X, RotateCcw, Sparkles, Compass, Maximize2, Camera } from 'lucide-react';
+import { Wand2, X, RotateCcw, Sparkles, Compass, Maximize2, Camera, Pencil } from 'lucide-react';
 import TrackballWidget, { Rotation } from './TrackballWidget';
 import LightingWidget, { LightingDirection } from './LightingWidget';
 import Scene3DViewer, { SceneCamera, SceneLighting } from './Scene3DViewer';
 import ImageCanvas, { ImageCanvasHandle } from './ImageCanvas';
 import PaintCanvas, { PaintCanvasHandle, ColorInstruction } from './PaintCanvas';
+import SketchCanvas, { SketchCanvasHandle } from './SketchCanvas';
 import { useWorkbench } from '../../../contexts/WorkbenchContext';
 import { fetchCharactersByProject } from '../../../services/assets';
 
@@ -29,13 +30,20 @@ export interface PaintGenerateParams {
   colorInstructions: ColorInstruction[];
 }
 
-type MagicSpaceMode = 'camera' | 'paint' | 'expand';
+export interface SketchGenerateParams {
+  sketchImageBase64: string;
+  sourceImageUrl: string;
+  prompt?: string;
+}
+
+type MagicSpaceMode = 'camera' | 'paint' | 'expand' | 'sketch';
 
 interface MagicSpacePanelProps {
   sourceImageUrl: string;
   aspectRatio: string;
   onGenerateWithCamera: (params: CameraGenerateParams) => void;
   onGenerateWithPaint: (params: PaintGenerateParams) => void;
+  onGenerateWithSketch?: (params: SketchGenerateParams) => void;
   onCancel: () => void;
   isGenerating: boolean;
 }
@@ -45,6 +53,7 @@ const MagicSpacePanel: React.FC<MagicSpacePanelProps> = ({
   aspectRatio,
   onGenerateWithCamera,
   onGenerateWithPaint,
+  onGenerateWithSketch,
   onCancel,
   isGenerating,
 }) => {
@@ -78,6 +87,10 @@ const MagicSpacePanel: React.FC<MagicSpacePanelProps> = ({
   // 涂改模式状态
   const paintCanvasRef = useRef<PaintCanvasHandle>(null);
   const [strokeCount, setStrokeCount] = useState(0);
+
+  // 草图模式状态
+  const sketchCanvasRef = useRef<SketchCanvasHandle>(null);
+  const [sketchElementCount, setSketchElementCount] = useState(0);
 
   // Character panel open state (no longer hides widgets)
   const [, setIsCharacterPanelOpen] = useState(false);
@@ -147,6 +160,16 @@ const MagicSpacePanel: React.FC<MagicSpacePanelProps> = ({
           sourceImageUrl,
           lighting,
         });
+      } else if (activeMode === 'sketch') {
+        // 草图模式
+        if (!sketchCanvasRef.current || !onGenerateWithSketch) return;
+        const sketchImageBase64 = await sketchCanvasRef.current.exportSketchImage();
+        if (!sketchImageBase64) return;
+
+        onGenerateWithSketch({
+          sketchImageBase64,
+          sourceImageUrl,
+        });
       } else {
         // 涂改模式
         if (!paintCanvasRef.current) return;
@@ -167,12 +190,13 @@ const MagicSpacePanel: React.FC<MagicSpacePanelProps> = ({
     } catch (err) {
       console.error('[MagicSpace] Export failed:', err);
     }
-  }, [activeMode, rotation, zoomLevel, imageOffset, expandMode, lighting, sourceImageUrl, onGenerateWithCamera, onGenerateWithPaint]);
+  }, [activeMode, rotation, zoomLevel, imageOffset, expandMode, lighting, sourceImageUrl, onGenerateWithCamera, onGenerateWithPaint, onGenerateWithSketch]);
 
   const handleCancel = useCallback(() => {
     cameraCanvasRef.current?.resetCanvas();
     expandCanvasRef.current?.resetCanvas();
     paintCanvasRef.current?.resetCanvas();
+    sketchCanvasRef.current?.resetCanvas();
     setRotation({ x: 0, y: 0, z: 0 });
     setZoomLevel(1);
     setImageOffset({ x: 0, y: 0 });
@@ -191,6 +215,8 @@ const MagicSpacePanel: React.FC<MagicSpacePanelProps> = ({
       setZoomLevel(1);
       setImageOffset({ x: 0, y: 0 });
       setExpandMode('expand');
+    } else if (activeMode === 'sketch') {
+      sketchCanvasRef.current?.resetCanvas();
     } else {
       paintCanvasRef.current?.resetCanvas();
     }
@@ -202,7 +228,7 @@ const MagicSpacePanel: React.FC<MagicSpacePanelProps> = ({
     { axis: 'z' as const, label: 'Z', color: '#3b82f6', title: '翻滚' },
   ];
 
-  const canGenerate = activeMode === 'camera' || activeMode === 'expand' || (activeMode === 'paint' && strokeCount > 0);
+  const canGenerate = activeMode === 'camera' || activeMode === 'expand' || (activeMode === 'paint' && strokeCount > 0) || (activeMode === 'sketch' && sketchElementCount > 0);
 
   return (
     <div className="h-full flex flex-col bg-[var(--bg-app)] rounded-lg overflow-hidden">
@@ -241,6 +267,17 @@ const MagicSpacePanel: React.FC<MagicSpacePanelProps> = ({
           >
             <Camera className="w-3.5 h-3.5" />
             视角
+          </button>
+          <button
+            onClick={() => setActiveMode('sketch')}
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-all ${
+              activeMode === 'sketch'
+                ? 'bg-amber-500/30 text-amber-200 border border-amber-400/40'
+                : 'text-white/50 hover:text-white/80 hover:bg-white/10'
+            }`}
+          >
+            <Pencil className="w-3.5 h-3.5" />
+            草图
           </button>
         </div>
         <button
@@ -401,6 +438,12 @@ const MagicSpacePanel: React.FC<MagicSpacePanelProps> = ({
             onStrokeCountChange={setStrokeCount}
           />
         )}
+        {activeMode === 'sketch' && (
+          <SketchCanvas
+            ref={sketchCanvasRef}
+            onStrokeCountChange={setSketchElementCount}
+          />
+        )}
       </div>
 
       {/* 底部控制面板 */}
@@ -438,14 +481,18 @@ const MagicSpacePanel: React.FC<MagicSpacePanelProps> = ({
               ? '视角生成'
               : activeMode === 'expand'
                 ? (expandMode === 'expand' ? '扩图生成' : '聚焦生成')
-                : '魔术生成'}
+                : activeMode === 'sketch'
+                  ? '草图生成'
+                  : '魔术生成'}
           </Button>
           <span className="text-[10px] text-white/30">
             {activeMode === 'camera'
               ? '根据摄影机和打光角度生成新视角'
               : activeMode === 'expand'
                 ? (expandMode === 'expand' ? 'AI将填充空白区域' : 'AI将放大局部细节')
-                : (strokeCount > 0 ? `已涂抹 ${strokeCount} 笔` : '请先涂抹需要修改的区域')}
+                : activeMode === 'sketch'
+                  ? (sketchElementCount > 0 ? `已绘制 ${sketchElementCount} 个元素` : '请先手绘场景草图')
+                  : (strokeCount > 0 ? `已涂抹 ${strokeCount} 笔` : '请先涂抹需要修改的区域')}
           </span>
         </div>
       </div>

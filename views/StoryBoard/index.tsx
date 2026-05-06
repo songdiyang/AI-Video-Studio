@@ -457,7 +457,7 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
   }, [autoStoryboard.isGenerating, LOADING_TIPS.length]);
 
   // 5. 场景图片/视频生成
-  const { generateImage, generateVideo, generateWithCamera, generateWithPaint, generateHdRepair, tasks, isRunning } = useSceneGeneration({
+  const { generateImage, generateVideo, generateWithCamera, generateWithPaint, generateWithSketch, generateHdRepair, tasks, isRunning } = useSceneGeneration({
     projectId: currentProjectId,
     scriptId: currentScriptId,
     episodeNumber: currentEpisode,
@@ -1305,6 +1305,7 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
                 onGenerateVideo={generateVideo}
                 onGenerateWithCamera={generateWithCamera}
                 onGenerateWithPaint={generateWithPaint}
+                onGenerateWithSketch={generateWithSketch}
                 onGenerateHdRepair={generateHdRepair}
                                 onUpdateScene={handleUpdateSelectedScene}
                                 onUpdateDuration={(duration) => {

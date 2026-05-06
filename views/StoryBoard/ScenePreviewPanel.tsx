@@ -3,7 +3,7 @@ import { Button, Textarea, Chip, Select, SelectItem } from '@heroui/react';
 import { ImageIcon, Video, Film, Camera, Users, MapPin, Zap, X, Trash2, ZoomIn, ZoomOut, RotateCw, Maximize2, Blocks, ChevronDown, ChevronUp, History, Loader2, Pencil, Check, Plus, Search, Sparkles, Clock, Wand2, Star, Shirt, Settings2, Package } from 'lucide-react';
 import { StoryboardScene, DialogueLine } from './useSceneManager';
 import { TaskState } from '../../hooks/useTaskRunner';
-import MagicSpacePanel, { CameraGenerateParams, PaintGenerateParams } from './MagicSpace';
+import MagicSpacePanel, { CameraGenerateParams, PaintGenerateParams, SketchGenerateParams } from './MagicSpace';
 import { getAuthToken } from '../../services/auth';
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
@@ -832,6 +832,7 @@ interface ScenePreviewPanelProps {
   onGenerateVideo: (id: number) => Promise<{ success: boolean; error?: string }>;
   onGenerateWithCamera?: (id: number, cameraParams: CameraGenerateParams) => Promise<{ success: boolean; error?: string }>;
   onGenerateWithPaint?: (id: number, paintParams: PaintGenerateParams) => Promise<{ success: boolean; error?: string }>;
+  onGenerateWithSketch?: (id: number, sketchParams: SketchGenerateParams) => Promise<{ success: boolean; error?: string }>;
   onGenerateHdRepair?: (id: number) => Promise<{ success: boolean; error?: string }>;
   onUpdateScene?: (updates: Partial<StoryboardScene>) => void;
   onUpdateDuration?: (duration: number) => Promise<boolean>;
@@ -874,6 +875,7 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
   onGenerateVideo,
   onGenerateWithCamera,
   onGenerateWithPaint,
+  onGenerateWithSketch,
   onGenerateHdRepair,
   onUpdateScene,
   onUpdateDuration,
@@ -1291,6 +1293,15 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
               setShowMagicSpace(false);
             } else {
               showToast(result.error || '涂改生成失败', 'error');
+            }
+          }}
+          onGenerateWithSketch={async (params) => {
+            if (!onGenerateWithSketch) return;
+            const result = await onGenerateWithSketch(scene.id, params);
+            if (result.success) {
+              setShowMagicSpace(false);
+            } else {
+              showToast(result.error || '草图生成失败', 'error');
             }
           }}
           onCancel={() => setShowMagicSpace(false)}
