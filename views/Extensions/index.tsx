@@ -1,23 +1,20 @@
 /**
- * 扩展中心页面
- * 提供可扩展的功能模块入口，首个扩展为API接口文档
+ * 扩展市场页面
+ * 支持浏览、搜索、安装、管理扩展
  */
 
-import React, { useState, useMemo } from 'react';
-import { FileText, BookOpen, ChevronRight, Search, ExternalLink, Download } from 'lucide-react';
-
-// ============ 扩展项定义 ============
-
-interface ExtensionItem {
-  id: string;
-  title: string;
-  description: string;
-  icon: React.ReactNode;
-  category: string;
-  version: string;
-  author: string;
-  content: string; // Markdown 内容
-}
+import React, { useState, useEffect, useMemo } from 'react';
+import {
+  BookOpen, Search, ExternalLink, Download, Puzzle, Grid3X3, List,
+  Star, DownloadIcon, Check, Plus, Settings, ToggleLeft, ToggleRight,
+  Trash2, ChevronRight, Package, User, Calendar, Tag, Loader2
+} from 'lucide-react';
+import { useLanguage } from '../../contexts/LanguageContext';
+import {
+  Extension, ExtensionDetail, UserExtension,
+  getExtensions, getExtensionCategories, getExtensionDetail,
+  getUserExtensions, installExtension, uninstallExtension, toggleExtension
+} from '../../services/extensions';
 
 // ============ 简易 Markdown 渲染器 ============
 
@@ -33,49 +30,32 @@ const MarkdownRenderer: React.FC<{ content: string }> = ({ content }) => {
 
 function renderMarkdown(md: string): string {
   let html = md
-    // 代码块
     .replace(/```(\w*)\n([\s\S]*?)```/g, (_m, lang, code) =>
       `<pre class="md-code-block"><code class="language-${lang}">${escapeHtml(code.trim())}</code></pre>`)
-    // 行内代码
     .replace(/`([^`]+)`/g, '<code class="md-inline-code">$1</code>')
-    // 标题
     .replace(/^#### (.+)$/gm, '<h4 class="md-h4">$1</h4>')
     .replace(/^### (.+)$/gm, '<h3 class="md-h3">$1</h3>')
     .replace(/^## (.+)$/gm, '<h2 class="md-h2">$1</h2>')
     .replace(/^# (.+)$/gm, '<h1 class="md-h1">$1</h1>')
-    // 粗体/斜体
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    // 分隔线
     .replace(/^---$/gm, '<hr class="md-hr"/>')
-    // 表格
     .replace(/^\|(.+)\|$/gm, (line) => {
       const cells = line.split('|').filter(c => c.trim() !== '');
-      if (cells.every(c => /^[\s-:]+$/.test(c))) {
-        return '<!--table-sep-->';
-      }
-      const isHeader = false; // 简化处理
+      if (cells.every(c => /^[\s-:]+$/.test(c))) return '<!--table-sep-->';
       const cellHtml = cells.map(c => `<td class="md-td">${c.trim()}</td>`).join('');
       return `<tr>${cellHtml}</tr>`;
     })
-    // 无序列表
     .replace(/^- (.+)$/gm, '<li class="md-li">$1</li>')
-    // 有序列表
     .replace(/^\d+\. (.+)$/gm, '<li class="md-li-ordered">$1</li>');
 
-  // 包裹连续 <tr> 为 <table>
   html = html.replace(/((?:<tr>.*<\/tr>\s*(?:<!--table-sep-->\s*)?)+)/g, (block) => {
     const cleaned = block.replace(/<!--table-sep-->/g, '');
     return `<table class="md-table">${cleaned}</table>`;
   });
-
-  // 包裹连续 <li> 为 <ul>
   html = html.replace(/((?:<li class="md-li">.*<\/li>\s*)+)/g, '<ul class="md-ul">$1</ul>');
   html = html.replace(/((?:<li class="md-li-ordered">.*<\/li>\s*)+)/g, '<ol class="md-ol">$1</ol>');
-
-  // 段落（非标签行）
   html = html.replace(/^(?!<[a-z/!])((?!^\s*$).+)$/gm, '<p class="md-p">$1</p>');
-
   return html;
 }
 
@@ -83,712 +63,719 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-// ============ API 文档内容 ============
-
-const API_DOC_CONTENT = `# 饺子动漫 API 接口文档
-
-## 概述
-
-饺子动漫是一个 AI 驱动的动漫/短剧创作平台，提供从剧本生成、分镜制作、角色设计到视频合成的全流程 API。
-
-**Base URL:** \`http://localhost:4001/api\`
-
-**认证方式:** Bearer Token - 在请求头中添加 \`Authorization: Bearer <token>\`
-
-**响应格式:** JSON
-
----
-
-## 1. 认证接口
-
-### POST /api/auth/register
-注册新用户
-
-**请求体：**
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| email | string | 是 | 邮箱地址 |
-| password | string | 是 | 密码（至少6位） |
-
-### POST /api/auth/login
-用户登录，返回 JWT Token
-
-**请求体：**
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| email | string | 是 | 邮箱地址 |
-| password | string | 是 | 密码 |
-
-**响应：** \`{ token, user: { id, email, avatar_url } }\`
-
----
-
-## 2. 项目管理接口
-
-### GET /api/projects
-获取当前用户的项目列表
-
-### POST /api/projects
-创建新项目
-
-**请求体：**
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| name | string | 是 | 项目名称 |
-| description | string | 否 | 项目描述 |
-| type | string | 否 | 项目类型 |
-| team_id | number | 否 | 关联团队ID（团队项目） |
-
-### PUT /api/projects/:id
-更新项目信息
-
-### DELETE /api/projects/:id
-删除项目
-
-### GET /api/projects/style-presets
-获取视觉风格预设列表
-
-### POST /api/projects/suggest-settings
-AI 智能推荐项目设置
-
----
-
-## 3. 剧本管理接口
-
-### POST /api/scripts/create
-手动创建剧本
-
-**请求体：**
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| projectId | number | 是 | 项目ID |
-| title | string | 是 | 剧本标题 |
-| content | string | 是 | 剧本内容 |
-| episodeNumber | number | 否 | 集数 |
-
-### POST /api/scripts/generate
-AI 生成剧本（通过工作流执行）
-
-### GET /api/scripts/project/:projectId
-获取项目的所有剧本列表
-
-### GET /api/scripts/project/:projectId/episode/:episodeNumber
-获取指定集的剧本
-
-### GET /api/scripts/project/:projectId/recap
-获取前情回顾数据
-
-### PUT /api/scripts/:id
-更新剧本内容
-
-### DELETE /api/scripts/:id
-删除剧本
-
-### DELETE /api/scripts/:id/episode
-删除某集（含分镜+剧本+孤立资源清理）
-
-### POST /api/scripts/draft
-创建或更新草稿
-
-### PUT /api/scripts/draft/:scriptId
-保存草稿内容
-
-### DELETE /api/scripts/draft/:scriptId
-删除草稿
-
-### POST /api/scripts/clean-orphans
-清理孤立资源（未被引用的角色/场景）
-
----
-
-## 4. 分镜管理接口
-
-### GET /api/storyboards/:scriptId
-获取剧本下所有分镜列表（含关联的角色、场景数据）
-
-### POST /api/storyboards/add
-添加新分镜
-
-**请求体：**
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| scriptId | number | 是 | 所属剧本ID |
-| index | number | 否 | 插入位置 |
-| prompt_template | string | 否 | 分镜描述提示词 |
-
-### DELETE /api/storyboards/scene/:storyboardId
-删除指定分镜
-
-### PATCH /api/storyboards/reorder
-重新排序分镜
-
-**请求体：** \`{ scriptId, storyboardIds: [id1, id2, ...] }\`
-
-### PATCH /api/storyboards/:storyboardId/content
-更新分镜内容（提示词、变量等）
-
-**请求体：**
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| prompt_template | string | 分镜描述提示词 |
-| variables_json | object | 变量数据（角色、场景、动作等） |
-
-### PATCH /api/storyboards/:storyboardId/media
-更新分镜媒体（首帧/尾帧/视频）
-
-### GET /api/storyboards/:storyboardId/validate?type=frame|video
-预检分镜资源就绪状态
-- \`type=frame\`：检查生成首尾帧的前置条件
-- \`type=video\`：检查生成视频的前置条件
-
-### POST /api/storyboards/batch-validate
-批量验证多个分镜的就绪状态
-
-### POST /api/storyboards/clean-before-regenerate
-重新生成前清理旧数据
-
-### POST /api/storyboards/fix-links
-修复分镜与角色/场景的关联关系
-
-### GET /api/storyboards/shot-language-options
-获取镜头语言选项（景别、视角、运镜等）
-
----
-
-## 5. 版本管理接口
-
-### 提示词版本管理
-
-#### GET /api/storyboards/:storyboardId/prompt-history
-获取提示词版本历史列表
-
-#### POST /api/storyboards/:storyboardId/prompt-history
-手动保存提示词新版本
-
-#### PUT /api/storyboards/:storyboardId/prompt-history/:historyId/restore
-恢复到指定提示词版本
-
-### 帧图版本管理
-
-#### GET /api/storyboards/:storyboardId/frame-history
-获取帧图版本历史
-
-#### POST /api/storyboards/:storyboardId/frame-history
-保存帧图版本
-
-#### PUT /api/storyboards/:storyboardId/frame-history/:historyId/restore
-恢复到指定帧图版本
-
-#### DELETE /api/storyboards/:storyboardId/frame-history/:historyId
-删除帧图历史记录
-
-### 草图版本管理
-
-#### POST /api/storyboards/:storyboardId/sketch
-上传草图
-
-#### DELETE /api/storyboards/:storyboardId/sketch
-删除草图
-
-#### PUT /api/storyboards/:storyboardId/sketch-settings
-更新草图设置（控制强度等）
-
-#### PUT /api/storyboards/:storyboardId/sketch-data
-保存草图矢量数据（Excalidraw）
-
-#### GET /api/storyboards/:storyboardId/sketch/history
-获取草图版本历史
-
-#### POST /api/storyboards/:storyboardId/sketch/restore/:version
-恢复指定版本草图
-
----
-
-## 6. 角色管理接口
-
-### GET /api/characters/project/:projectId
-获取项目的所有角色
-
-### POST /api/characters
-创建角色
-
-**请求体：**
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| name | string | 是 | 角色名称 |
-| description | string | 否 | 角色描述 |
-| appearance | string | 否 | 外貌描述 |
-| personality | string | 否 | 性格描述 |
-| image_url | string | 否 | 角色图片URL |
-| project_id | number | 是 | 所属项目ID |
-
-### PUT /api/characters/:id
-更新角色信息
-
-### DELETE /api/characters/:id
-删除角色
-
----
-
-## 7. 场景管理接口
-
-### GET /api/scenes/project/:projectId
-获取项目的所有场景（支持可选 \`?scriptId=\` 过滤）
-
-### GET /api/scenes/:id
-获取单个场景详情
-
-### POST /api/scenes
-创建场景
-
-**请求体：**
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| name | string | 是 | 场景名称 |
-| description | string | 否 | 场景描述 |
-| environment | string | 否 | 环境描述 |
-| lighting | string | 否 | 光照描述 |
-| mood | string | 否 | 氛围描述 |
-| image_url | string | 否 | 场景图片URL（A面） |
-
-### PUT /api/scenes/:id
-更新场景
-
-### DELETE /api/scenes/:id
-删除场景
-
-### POST /api/scenes/:sceneId/sketch
-上传场景草图
-
-### GET /api/scenes/:sceneId/sketch
-获取场景草图
-
----
-
-## 8. 道具管理接口
-
-### GET /api/props/project/:projectId
-获取项目的所有道具
-
-### POST /api/props
-创建道具
-
-### PUT /api/props/:id
-更新道具
-
-### DELETE /api/props/:id
-删除道具
-
----
-
-## 9. 工作流引擎接口
-
-工作流是饺子动漫的核心异步任务引擎，用于处理所有AI生成任务。
-
-### GET /api/workflows/types
-获取所有可用的工作流类型
-
-### POST /api/workflows
-启动工作流
-
-**请求体：**
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| workflowType | string | 是 | 工作流类型（见下方列表） |
-| projectId | number | 否 | 项目ID |
-| params | object | 是 | 工作流参数（因类型而异） |
-
-**响应：** \`{ jobId, tasks, message }\`
-
-### GET /api/workflows
-获取用户的工作流列表
-
-**查询参数：**
-- \`projectId\` - 按项目过滤
-- \`workflowType\` - 按类型过滤
-- \`status\` - 按状态过滤
-- \`limit\` - 返回数量限制
-
-### GET /api/workflows/:jobId
-获取工作流详细状态（含所有子任务），支持 ETag 缓存
-
-### GET /api/workflows/active?projectId=
-查询项目的活跃（未消费）工作流
-
-### POST /api/workflows/:jobId/resume
-恢复失败的工作流（断点续传）
-
-### POST /api/workflows/:jobId/cancel
-取消工作流
-
-### POST /api/workflows/:jobId/consume
-标记工作流已消费（前端已读取结果）
-
----
-
-## 10. 工作流类型详解
-
-### script_only - 剧本生成
-**参数：** \`title, description, style, length, textModel, projectId, episodeNumber\`
-
-### storyboard_generation - 智能拆分
-自动生成分镜 + 提取角色 + 分析场景状态 + 组装影棚（5步骤，支持并行）
-
-**参数：** \`scriptContent, scriptTitle, textModel, scriptId, projectId\`
-
-### batch_storyboard_generation - 批量分镜生成
-按场景拆分，每个场景独立并发生成
-
-**参数：** \`scriptId, projectId, textModel, clearExisting\`
-
-### frame_generation - 分镜首尾帧生成
-生成有动作分镜的首帧和尾帧
-
-**参数：** \`storyboardId, prompt, imageModel, textModel, aspectRatio\`
-
-### single_frame_generation - 分镜单帧生成
-生成无动作分镜的单帧
-
-**参数：** \`storyboardId, description, imageModel, textModel, aspectRatio\`
-
-### batch_frame_generation - 批量帧生成
-一键生成一集所有分镜图片（链式传递）
-
-**参数：** \`scriptId, imageModel, textModel, overwriteFrames, aspectRatio, resolution, maxConcurrency\`
-
-### parallel_frame_generation - 并发帧生成
-每个分镜独立并发生成（速度更快，连贯性略低）
-
-**参数：** \`scriptId, imageModel, textModel, overwriteFrames, aspectRatio, resolution, maxConcurrency\`
-
-### scene_video - 分镜视频生成
-单个分镜的视频生成
-
-**参数：** \`storyboardId, videoModel, textModel, duration, aspectRatio\`
-
-### batch_scene_video_generation - 批量视频生成
-一键生成一集所有分镜视频
-
-**参数：** \`scriptId, videoModel, textModel, duration, aspectRatio, resolution, overwriteVideos, maxConcurrency\`
-
-### scene_image_generation - 场景图片生成
-生成场景A面和B面图片（2步：风格分析 + 图片生成）
-
-**参数：** \`sceneId, sceneName, description, environment, lighting, mood, style, imageModel, textModel, aspectRatio\`
-
-### character_views_generation - 角色三视图生成
-生成角色多视角图片
-
-**参数：** \`characterId, characterName, appearance, personality, description, style, projectId, imageModel, textModel\`
-
-### camera_run_generation - 精细运镜生成
-为单个分镜生成精细运镜提示词
-
-**参数：** \`storyboardId, textModel\`
-
-### sketch_frame_generation - 草图帧生成
-草图转图片（2步：预处理 + AI生成）
-
-**参数：** \`storyboardId, sketchUrl, sketchType, prompt, imageModel, textModel, aspectRatio, controlStrength\`
-
-### batch_sketch_frame_generation - 批量草图帧生成
-一键将一集所有已上传草图的分镜转为图片
-
-**参数：** \`scriptId, imageModel, textModel, aspectRatio, controlStrength, overwriteFrames, maxConcurrency\`
-
-### prop_image_generation - 道具图片生成
-AI 生成道具图片（2步：提示词生成 + 图片生成）
-
-**参数：** \`propId, propName, propDescription, propCategory, propStyleConfig, textModel, imageModel, aspectRatio\`
-
----
-
-## 11. 团队协作接口
-
-### GET /api/teams
-获取用户所有团队
-
-### POST /api/teams
-创建新团队
-
-**请求体：** \`{ name, description }\`
-
-### GET /api/teams/:teamId
-获取团队详情
-
-### PUT /api/teams/:teamId
-更新团队信息
-
-### DELETE /api/teams/:teamId
-删除团队（仅团队主）
-
-### GET /api/teams/:teamId/members
-获取团队成员列表
-
-### POST /api/teams/:teamId/members
-邀请成员（发送邮件邀请）
-
-**请求体：** \`{ email, role }\`
-
-### DELETE /api/teams/:teamId/members/:userId
-移除团队成员
-
-### POST /api/teams/:teamId/leave
-退出团队
-
-### POST /api/teams/join
-加入团队（通过邀请码）
-
-### GET /api/teams/:teamId/projects
-获取团队项目列表
-
----
-
-## 12. 分镜关联管理接口
-
-### POST /api/storyboards/link-storyboard/:storyboardId/scenes
-关联场景到分镜
-
-### POST /api/storyboards/auto-generate-by-scene/:scriptId
-按场景自动生成分镜
-
-### GET /api/storyboards/preview-scenes/:scriptId
-预览剧本的场景列表
-
----
-
-## 13. 其他接口
-
-### 内部邮件系统
-- \`GET /api/mail\` - 获取邮件列表
-- \`POST /api/mail\` - 发送邮件
-- \`PUT /api/mail/:id/read\` - 标记已读
-
-### 用户反馈
-- \`POST /api/feedback\` - 提交反馈
-- \`GET /api/feedback\` - 获取反馈列表（管理员）
-
-### 模板库
-- \`GET /api/templates\` - 获取模板列表
-- \`GET /api/templates/:id\` - 获取模板详情
-- \`POST /api/templates\` - 创建模板
-- \`POST /api/templates/:id/use\` - 使用模板创建项目
-
-### 社区
-- \`GET /api/community/works\` - 获取社区作品列表
-- \`POST /api/community/works\` - 发布作品到社区
-- \`POST /api/community/works/:id/like\` - 点赞
-- \`POST /api/community/works/:id/comment\` - 评论
-
-### 订阅管理
-- \`GET /api/subscriptions/plans\` - 获取订阅计划
-- \`POST /api/subscriptions/subscribe\` - 创建订阅
-
-### 文件代理
-- \`GET /api/files/*\` - 代理访问生成的文件资源
-
-### AI 模型配置
-- \`GET /api/ai-models\` - 获取可用AI模型列表
-- \`GET /api/ai-models/config\` - 获取模型配置
-
-### 系统配置
-- \`GET /api/system-configs\` - 获取系统配置
-- \`PUT /api/system-configs\` - 更新系统配置（管理员）
-
-### 健康检查
-- \`GET /api/health\` - 服务健康状态 -> \`{ status: "ok" }\`
-
----
-
-## 14. WebSocket 实时通信
-
-**连接地址：** \`ws://localhost:4002\`
-
-用于实时推送工作流任务状态变更。连接后，系统会自动推送当前用户关联的工作流进度更新。
-
----
-
-## 15. 通用说明
-
-### 认证
-除 \`/api/auth/login\`、\`/api/auth/register\`、\`/api/health\` 外，所有接口均需携带 Bearer Token。
-
-### 错误响应格式
-\`\`\`json
-{
-  "message": "错误描述",
-  "error": "详细错误信息（部分接口）"
+// ============ 分类颜色映射 ============
+
+const CATEGORY_COLORS: Record<string, string> = {
+  productivity: 'rgb(59,130,246)',
+  theme: 'rgb(168,85,247)',
+  tool: 'rgb(34,197,94)',
+  integration: 'rgb(249,115,22)',
+  other: 'rgb(156,163,175)',
+};
+
+function getCategoryColor(category: string): string {
+  return CATEGORY_COLORS[category] || CATEGORY_COLORS.other;
 }
-\`\`\`
-
-### 状态码
-- \`200\` 成功
-- \`400\` 参数错误
-- \`401\` 未认证
-- \`403\` 无权限
-- \`404\` 资源不存在
-- \`409\` 冲突（如任务已在执行中）
-- \`500\` 服务器内部错误
-`;
-
-// ============ 扩展列表 ============
-
-const EXTENSIONS: ExtensionItem[] = [
-  {
-    id: 'api-docs',
-    title: '饺子动漫 API 接口文档',
-    description: '项目完整API接口、工作流程及功能说明，方便第三方系统调用和集成',
-    icon: <FileText className="w-6 h-6 text-blue-500" />,
-    category: '开发者工具',
-    version: '1.0.0',
-    author: '饺子动画团队',
-    content: API_DOC_CONTENT,
-  },
-];
 
 // ============ 主组件 ============
 
+type TabType = 'marketplace' | 'installed';
+type SortType = 'download' | 'newest' | 'rating' | 'name';
+
 const Extensions: React.FC = () => {
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const { t } = useLanguage();
+
+  // Tab 状态
+  const [activeTab, setActiveTab] = useState<TabType>('marketplace');
+
+  // 市场列表状态
+  const [extensions, setExtensions] = useState<Extension[]>([]);
+  const [total, setTotal] = useState(0);
+  const [categories, setCategories] = useState<{ category: string; count: number }[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [sortBy, setSortBy] = useState<SortType>('download');
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(false);
 
-  const selectedExtension = EXTENSIONS.find(e => e.id === selectedId);
+  // 已安装扩展状态
+  const [userExtensions, setUserExtensions] = useState<UserExtension[]>([]);
+  const [userExtsLoading, setUserExtsLoading] = useState(false);
 
-  const filteredExtensions = useMemo(() => {
-    if (!searchQuery.trim()) return EXTENSIONS;
-    const q = searchQuery.toLowerCase();
-    return EXTENSIONS.filter(e =>
-      e.title.toLowerCase().includes(q) ||
-      e.description.toLowerCase().includes(q) ||
-      e.category.toLowerCase().includes(q)
-    );
-  }, [searchQuery]);
+  // 详情状态
+  const [selectedExtension, setSelectedExtension] = useState<ExtensionDetail | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+
+  // 操作状态
+  const [installingId, setInstallingId] = useState<number | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  // 加载市场数据
+  const loadMarketplace = async (p = 1) => {
+    setLoading(true);
+    setActionError(null);
+    try {
+      const res = await getExtensions({
+        q: searchQuery || undefined,
+        category: selectedCategory || undefined,
+        sort: sortBy,
+        page: p,
+        limit: 20,
+      });
+      setExtensions(p === 1 ? res.extensions : [...extensions, ...res.extensions]);
+      setTotal(res.total);
+      setPage(p);
+    } catch (e: any) {
+      setActionError(e.message || '加载失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 加载分类
+  const loadCategories = async () => {
+    try {
+      const res = await getExtensionCategories();
+      setCategories(res.categories);
+    } catch { /* ignore */ }
+  };
+
+  // 加载已安装扩展
+  const loadUserExtensions = async () => {
+    setUserExtsLoading(true);
+    try {
+      const res = await getUserExtensions();
+      setUserExtensions(res.extensions);
+    } catch (e: any) {
+      setActionError(e.message || '加载已安装扩展失败');
+    } finally {
+      setUserExtsLoading(false);
+    }
+  };
+
+  // 初始加载
+  useEffect(() => {
+    loadCategories();
+    loadMarketplace(1);
+    loadUserExtensions();
+  }, []);
+
+  // 搜索/分类/排序变化时重新加载
+  useEffect(() => {
+    const timer = setTimeout(() => loadMarketplace(1), 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery, selectedCategory, sortBy]);
+
+  // 查看扩展详情
+  const handleSelectExtension = async (ext: Extension) => {
+    setDetailLoading(true);
+    setSelectedExtension(null);
+    try {
+      const detail = await getExtensionDetail(ext.id);
+      setSelectedExtension(detail);
+    } catch (e: any) {
+      setActionError(e.message || '加载详情失败');
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
+  // 安装扩展
+  const handleInstall = async (ext: Extension, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setInstallingId(ext.id);
+    setActionError(null);
+    try {
+      await installExtension(ext.id);
+      await loadUserExtensions();
+      // 如果当前在详情页，刷新一下
+      if (selectedExtension?.id === ext.id) {
+        const detail = await getExtensionDetail(ext.id);
+        setSelectedExtension(detail);
+      }
+    } catch (err: any) {
+      setActionError(err.message || '安装失败');
+    } finally {
+      setInstallingId(null);
+    }
+  };
+
+  // 卸载扩展
+  const handleUninstall = async (extId: number, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setActionError(null);
+    try {
+      await uninstallExtension(extId);
+      await loadUserExtensions();
+      if (selectedExtension?.id === extId) setSelectedExtension(null);
+    } catch (err: any) {
+      setActionError(err.message || '卸载失败');
+    }
+  };
+
+  // 启用/禁用扩展
+  const handleToggle = async (ext: UserExtension, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setActionError(null);
+    try {
+      await toggleExtension(ext.extension_id, !ext.is_enabled);
+      await loadUserExtensions();
+    } catch (err: any) {
+      setActionError(err.message || '操作失败');
+    }
+  };
+
+  // 检查扩展是否已安装
+  const isInstalled = (extId: number) => userExtensions.some(ue => ue.extension_id === extId);
+  const getUserExt = (extId: number) => userExtensions.find(ue => ue.extension_id === extId);
+
+  // 翻译辅助
+  const getCategoryLabel = (cat: string) => {
+    const map: Record<string, string> = {
+      productivity: '效率工具',
+      theme: '主题外观',
+      tool: '实用工具',
+      integration: '集成',
+      other: '其他',
+    };
+    return map[cat] || cat;
+  };
+
+  const getSortLabel = (sort: SortType) => {
+    const map: Record<string, string> = {
+      download: '最多下载',
+      newest: '最新发布',
+      rating: '最高评分',
+      name: '名称排序',
+    };
+    return map[sort] || sort;
+  };
 
   return (
     <div className="flex h-full overflow-hidden" style={{ backgroundColor: 'var(--bg-body)' }}>
-      {/* 左侧扩展列表 */}
-      <div className="w-80 flex-shrink-0 border-r flex flex-col" style={{ borderColor: 'var(--border-color)', backgroundColor: 'var(--bg-card)' }}>
+      {/* 左侧边栏 */}
+      <div className="w-72 flex-shrink-0 border-r flex flex-col" style={{ borderColor: 'var(--border-color)', backgroundColor: 'var(--bg-card)' }}>
         {/* 头部 */}
         <div className="p-4 border-b" style={{ borderColor: 'var(--border-color)' }}>
           <h2 className="text-lg font-bold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
-            <BookOpen className="w-5 h-5 text-blue-500" />
-            扩展中心
+            <Puzzle className="w-5 h-5 text-blue-500" />
+            扩展市场
           </h2>
           <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-            {EXTENSIONS.length} 个可用扩展
+            浏览和管理扩展
           </p>
-          {/* 搜索框 */}
-          <div className="mt-3 relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
-            <input
-              type="text"
-              placeholder="搜索扩展..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg border outline-none focus:ring-1 focus:ring-blue-500"
-              style={{
-                backgroundColor: 'var(--bg-input, var(--bg-body))',
-                borderColor: 'var(--border-color)',
-                color: 'var(--text-primary)',
-              }}
-            />
-          </div>
         </div>
 
-        {/* 扩展列表 */}
-        <div className="flex-1 overflow-y-auto p-3 space-y-2">
-          {filteredExtensions.map(ext => (
-            <div
-              key={ext.id}
-              onClick={() => setSelectedId(ext.id)}
-              className={`p-3 rounded-xl cursor-pointer transition-all duration-200 border ${
-                selectedId === ext.id
-                  ? 'border-blue-500/50 shadow-md'
-                  : 'border-transparent hover:border-[var(--border-color)]'
-              }`}
-              style={{
-                backgroundColor: selectedId === ext.id ? 'var(--accent-bg, rgba(59,130,246,0.08))' : 'transparent',
-              }}
-            >
-              <div className="flex items-start gap-3">
-                <div className="p-2 rounded-lg" style={{ backgroundColor: 'rgba(59,130,246,0.1)' }}>
-                  {ext.icon}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <h3 className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
-                      {ext.title}
-                    </h3>
-                    <ChevronRight className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
-                  </div>
-                  <p className="text-xs mt-1 line-clamp-2" style={{ color: 'var(--text-muted)' }}>
-                    {ext.description}
-                  </p>
-                  <div className="flex items-center gap-2 mt-2">
-                    <span className="text-[10px] px-1.5 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(59,130,246,0.1)', color: 'rgb(59,130,246)' }}>
-                      {ext.category}
-                    </span>
-                    <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
-                      v{ext.version}
-                    </span>
-                  </div>
-                </div>
+        {/* Tab 切换 */}
+        <div className="flex border-b" style={{ borderColor: 'var(--border-color)' }}>
+          <button
+            onClick={() => setActiveTab('marketplace')}
+            className={`flex-1 py-2.5 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors ${
+              activeTab === 'marketplace' ? 'border-b-2 border-blue-500 text-blue-500' : ''
+            }`}
+            style={{ color: activeTab === 'marketplace' ? undefined : 'var(--text-muted)' }}
+          >
+            <Grid3X3 className="w-3.5 h-3.5" />
+            市场
+          </button>
+          <button
+            onClick={() => { setActiveTab('installed'); loadUserExtensions(); }}
+            className={`flex-1 py-2.5 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors ${
+              activeTab === 'installed' ? 'border-b-2 border-blue-500 text-blue-500' : ''
+            }`}
+            style={{ color: activeTab === 'installed' ? undefined : 'var(--text-muted)' }}
+          >
+            <Package className="w-3.5 h-3.5" />
+            已安装
+            {userExtensions.length > 0 && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-500/10 text-blue-500">
+                {userExtensions.length}
+              </span>
+            )}
+          </button>
+        </div>
+
+        {activeTab === 'marketplace' ? (
+          <>
+            {/* 搜索 */}
+            <div className="p-3">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
+                <input
+                  type="text"
+                  placeholder="搜索扩展..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg border outline-none focus:ring-1 focus:ring-blue-500"
+                  style={{
+                    backgroundColor: 'var(--bg-input, var(--bg-body))',
+                    borderColor: 'var(--border-color)',
+                    color: 'var(--text-primary)',
+                  }}
+                />
               </div>
             </div>
-          ))}
-        </div>
+
+            {/* 分类 */}
+            <div className="px-3 pb-2">
+              <div className="text-[10px] font-medium uppercase tracking-wider mb-2" style={{ color: 'var(--text-muted)' }}>
+                分类
+              </div>
+              <div className="space-y-0.5">
+                <button
+                  onClick={() => setSelectedCategory('')}
+                  className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition-colors flex items-center justify-between ${
+                    selectedCategory === '' ? 'bg-blue-500/10 text-blue-500' : 'hover:bg-[var(--bg-hover)]'
+                  }`}
+                  style={{ color: selectedCategory === '' ? undefined : 'var(--text-secondary)' }}
+                >
+                  <span>全部</span>
+                  <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{total}</span>
+                </button>
+                {categories.map(cat => (
+                  <button
+                    key={cat.category}
+                    onClick={() => setSelectedCategory(cat.category === selectedCategory ? '' : cat.category)}
+                    className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition-colors flex items-center justify-between ${
+                      selectedCategory === cat.category ? 'bg-blue-500/10 text-blue-500' : 'hover:bg-[var(--bg-hover)]'
+                    }`}
+                    style={{ color: selectedCategory === cat.category ? undefined : 'var(--text-secondary)' }}
+                  >
+                    <span>{getCategoryLabel(cat.category)}</span>
+                    <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{cat.count}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* 排序 */}
+            <div className="px-3 pb-3">
+              <div className="text-[10px] font-medium uppercase tracking-wider mb-2" style={{ color: 'var(--text-muted)' }}>
+                排序
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {(['download', 'newest', 'rating', 'name'] as SortType[]).map(sort => (
+                  <button
+                    key={sort}
+                    onClick={() => setSortBy(sort)}
+                    className={`px-2 py-1 rounded-md text-[10px] transition-colors ${
+                      sortBy === sort ? 'bg-blue-500/10 text-blue-500' : 'bg-[var(--bg-body)]'
+                    }`}
+                    style={{ color: sortBy === sort ? undefined : 'var(--text-muted)' }}
+                  >
+                    {getSortLabel(sort)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </>
+        ) : (
+          /* 已安装扩展列表 */
+          <div className="flex-1 overflow-y-auto p-3 space-y-2">
+            {userExtsLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="w-5 h-5 animate-spin" style={{ color: 'var(--text-muted)' }} />
+              </div>
+            ) : userExtensions.length === 0 ? (
+              <div className="text-center py-8" style={{ color: 'var(--text-muted)' }}>
+                <Package className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                <p className="text-xs">尚未安装扩展</p>
+                <button
+                  onClick={() => setActiveTab('marketplace')}
+                  className="text-xs text-blue-500 mt-2 hover:underline"
+                >
+                  去市场浏览
+                </button>
+              </div>
+            ) : (
+              userExtensions.map(ue => (
+                <div
+                  key={ue.extension_id}
+                  className="p-3 rounded-xl border transition-all duration-200"
+                  style={{
+                    borderColor: 'var(--border-color)',
+                    backgroundColor: selectedExtension?.id === ue.extension_id ? 'var(--accent-bg, rgba(59,130,246,0.08))' : 'transparent',
+                    opacity: ue.is_enabled ? 1 : 0.5,
+                  }}
+                >
+                  <div className="flex items-start gap-2.5">
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: 'rgba(59,130,246,0.1)' }}>
+                      <Puzzle className="w-4 h-4 text-blue-500" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <h3 className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
+                          {ue.display_name}
+                        </h3>
+                        <span className="text-[10px] px-1 py-0.5 rounded bg-[var(--bg-body)]" style={{ color: 'var(--text-muted)' }}>
+                          v{ue.installed_version}
+                        </span>
+                      </div>
+                      <p className="text-[10px] mt-0.5 truncate" style={{ color: 'var(--text-muted)' }}>
+                        {ue.description || '无描述'}
+                      </p>
+                      <div className="flex items-center gap-1 mt-2">
+                        <button
+                          onClick={(e) => handleToggle(ue, e)}
+                          className="p-1 rounded transition-colors hover:bg-[var(--bg-hover)]"
+                          title={ue.is_enabled ? '禁用' : '启用'}
+                        >
+                          {ue.is_enabled ? (
+                            <ToggleRight className="w-4 h-4 text-green-500" />
+                          ) : (
+                            <ToggleLeft className="w-4 h-4" style={{ color: 'var(--text-muted)' }} />
+                          )}
+                        </button>
+                        <button
+                          onClick={(e) => handleUninstall(ue.extension_id, e)}
+                          className="p-1 rounded transition-colors hover:bg-red-500/10 text-red-500"
+                          title="卸载"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                        {ue.latest_version !== ue.installed_version && (
+                          <span className="text-[10px] text-orange-500 ml-auto">有更新</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
       </div>
 
-      {/* 右侧内容区域 */}
+      {/* 中间/右侧内容区域 */}
       <div className="flex-1 overflow-y-auto">
-        {selectedExtension ? (
-          <div className="max-w-4xl mx-auto p-6 pb-20">
-            {/* 文档头部 */}
-            <div className="flex items-center gap-3 mb-6 pb-4 border-b" style={{ borderColor: 'var(--border-color)' }}>
-              <div className="p-2.5 rounded-xl" style={{ backgroundColor: 'rgba(59,130,246,0.1)' }}>
-                {selectedExtension.icon}
+        {activeTab === 'marketplace' ? (
+          <>
+            {/* 错误提示 */}
+            {actionError && (
+              <div className="mx-6 mt-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-500 text-xs">
+                {actionError}
               </div>
-              <div className="flex-1">
-                <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
-                  {selectedExtension.title}
-                </h1>
-                <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                  {selectedExtension.author} · v{selectedExtension.version}
-                </p>
+            )}
+
+            {/* 扩展卡片网格 */}
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+                  {selectedCategory ? getCategoryLabel(selectedCategory) : '全部扩展'}
+                  <span className="text-xs font-normal ml-2" style={{ color: 'var(--text-muted)' }}>
+                    共 {total} 个
+                  </span>
+                </h3>
               </div>
-              <button
-                onClick={() => {
-                  const blob = new Blob([selectedExtension.content], { type: 'text/markdown;charset=utf-8' });
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement('a');
-                  a.href = url;
-                  a.download = `${selectedExtension.title}.md`;
-                  document.body.appendChild(a);
-                  a.click();
-                  document.body.removeChild(a);
-                  URL.revokeObjectURL(url);
-                }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
-                style={{
-                  backgroundColor: 'rgba(59,130,246,0.1)',
-                  color: 'rgb(59,130,246)',
-                }}
-                onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'rgba(59,130,246,0.2)')}
-                onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'rgba(59,130,246,0.1)')}
-                title="下载为 Markdown 文件"
-              >
-                <Download className="w-4 h-4" />
-                下载文档
-              </button>
+
+              {loading && extensions.length === 0 ? (
+                <div className="flex items-center justify-center py-20">
+                  <Loader2 className="w-6 h-6 animate-spin" style={{ color: 'var(--text-muted)' }} />
+                </div>
+              ) : extensions.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-20" style={{ color: 'var(--text-muted)' }}>
+                  <Search className="w-10 h-10 mb-3 opacity-20" />
+                  <p className="text-sm">未找到扩展</p>
+                  <p className="text-xs mt-1">尝试其他搜索词或分类</p>
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {extensions.map(ext => {
+                      const installed = isInstalled(ext.id);
+                      const userExt = getUserExt(ext.id);
+                      return (
+                        <div
+                          key={ext.id}
+                          onClick={() => handleSelectExtension(ext)}
+                          className={`p-4 rounded-xl border cursor-pointer transition-all duration-200 hover:shadow-md ${
+                            selectedExtension?.id === ext.id ? 'border-blue-500/50 shadow-md' : ''
+                          }`}
+                          style={{
+                            borderColor: selectedExtension?.id === ext.id ? undefined : 'var(--border-color)',
+                            backgroundColor: 'var(--bg-card)',
+                          }}
+                        >
+                          <div className="flex items-start gap-3">
+                            <div
+                              className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+                              style={{ backgroundColor: `${getCategoryColor(ext.category)}15` }}
+                            >
+                              <Puzzle className="w-5 h-5" style={{ color: getCategoryColor(ext.category) }} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <h4 className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
+                                  {ext.display_name}
+                                </h4>
+                                {installed && (
+                                  <span className="text-[10px] px-1 py-0.5 rounded-full bg-green-500/10 text-green-500 flex-shrink-0">
+                                    已安装
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-xs mt-0.5 line-clamp-2" style={{ color: 'var(--text-muted)' }}>
+                                {ext.description || '暂无描述'}
+                              </p>
+                              <div className="flex items-center gap-3 mt-2.5">
+                                <span className="flex items-center gap-1 text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                                  <DownloadIcon className="w-3 h-3" />
+                                  {ext.download_count}
+                                </span>
+                                <span className="flex items-center gap-1 text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                                  <Star className="w-3 h-3" />
+                                  {ext.rating}
+                                </span>
+                                <span
+                                  className="text-[10px] px-1.5 py-0.5 rounded-full flex-shrink-0"
+                                  style={{
+                                    backgroundColor: `${getCategoryColor(ext.category)}15`,
+                                    color: getCategoryColor(ext.category),
+                                  }}
+                                >
+                                  {getCategoryLabel(ext.category)}
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-between mt-2">
+                                <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                                  {ext.author || '未知作者'} · v{ext.version}
+                                </span>
+                                {installed ? (
+                                  <button
+                                    onClick={(e) => handleUninstall(ext.id, e)}
+                                    className="text-[10px] px-2 py-1 rounded-md border transition-colors hover:bg-red-500/10 hover:border-red-500/30 hover:text-red-500"
+                                    style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}
+                                  >
+                                    卸载
+                                  </button>
+                                ) : (
+                                  <button
+                                    onClick={(e) => handleInstall(ext, e)}
+                                    disabled={installingId === ext.id}
+                                    className="text-[10px] px-2 py-1 rounded-md bg-blue-500 text-white transition-colors hover:bg-blue-600 disabled:opacity-50 flex items-center gap-1"
+                                  >
+                                    {installingId === ext.id ? (
+                                      <Loader2 className="w-3 h-3 animate-spin" />
+                                    ) : (
+                                      <Plus className="w-3 h-3" />
+                                    )}
+                                    安装
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* 加载更多 */}
+                  {extensions.length < total && (
+                    <div className="flex justify-center mt-6">
+                      <button
+                        onClick={() => loadMarketplace(page + 1)}
+                        disabled={loading}
+                        className="px-4 py-2 rounded-lg text-xs border transition-colors hover:bg-[var(--bg-hover)] disabled:opacity-50"
+                        style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}
+                      >
+                        {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : '加载更多'}
+                      </button>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
-            {/* Markdown 内容 */}
-            <MarkdownRenderer content={selectedExtension.content} />
-          </div>
+
+            {/* 扩展详情面板（点击卡片后显示在下方或右侧，这里复用原有布局） */}
+            {selectedExtension && (
+              <div className="border-t" style={{ borderColor: 'var(--border-color)' }}>
+                <div className="max-w-4xl mx-auto p-6 pb-20">
+                  {/* 详情头部 */}
+                  <div className="flex items-start gap-4 mb-6 pb-4 border-b" style={{ borderColor: 'var(--border-color)' }}>
+                    <div
+                      className="w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0"
+                      style={{ backgroundColor: `${getCategoryColor(selectedExtension.category)}15` }}
+                    >
+                      <Puzzle className="w-7 h-7" style={{ color: getCategoryColor(selectedExtension.category) }} />
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
+                          {selectedExtension.display_name}
+                        </h1>
+                        <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: 'var(--bg-body)', color: 'var(--text-muted)' }}>
+                          v{selectedExtension.version}
+                        </span>
+                      </div>
+                      <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
+                        {selectedExtension.description || '暂无描述'}
+                      </p>
+                      <div className="flex items-center gap-4 mt-2">
+                        <span className="flex items-center gap-1 text-xs" style={{ color: 'var(--text-muted)' }}>
+                          <User className="w-3.5 h-3.5" />
+                          {selectedExtension.author || '未知作者'}
+                        </span>
+                        <span className="flex items-center gap-1 text-xs" style={{ color: 'var(--text-muted)' }}>
+                          <DownloadIcon className="w-3.5 h-3.5" />
+                          {selectedExtension.download_count} 次下载
+                        </span>
+                        <span className="flex items-center gap-1 text-xs" style={{ color: 'var(--text-muted)' }}>
+                          <Star className="w-3.5 h-3.5" />
+                          {selectedExtension.rating}
+                        </span>
+                        <span
+                          className="text-xs px-2 py-0.5 rounded-full"
+                          style={{
+                            backgroundColor: `${getCategoryColor(selectedExtension.category)}15`,
+                            color: getCategoryColor(selectedExtension.category),
+                          }}
+                        >
+                          {getCategoryLabel(selectedExtension.category)}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {isInstalled(selectedExtension.id) ? (
+                        <>
+                          <button
+                            onClick={() => handleToggle(getUserExt(selectedExtension.id)!)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border"
+                            style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}
+                          >
+                            {getUserExt(selectedExtension.id)?.is_enabled ? (
+                              <ToggleRight className="w-4 h-4 text-green-500" />
+                            ) : (
+                              <ToggleLeft className="w-4 h-4" />
+                            )}
+                            {getUserExt(selectedExtension.id)?.is_enabled ? '已启用' : '已禁用'}
+                          </button>
+                          <button
+                            onClick={() => handleUninstall(selectedExtension.id)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border hover:bg-red-500/10 hover:border-red-500/30 hover:text-red-500"
+                            style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                            卸载
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          onClick={() => handleInstall(selectedExtension)}
+                          disabled={installingId === selectedExtension.id}
+                          className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium transition-colors bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-50"
+                        >
+                          {installingId === selectedExtension.id ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Plus className="w-4 h-4" />
+                          )}
+                          安装
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* README */}
+                  {selectedExtension.readme ? (
+                    <MarkdownRenderer content={selectedExtension.readme} />
+                  ) : (
+                    <div className="text-center py-12" style={{ color: 'var(--text-muted)' }}>
+                      <FileText className="w-10 h-10 mx-auto mb-3 opacity-20" />
+                      <p className="text-sm">暂无文档</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </>
         ) : (
-          <div className="flex flex-col items-center justify-center h-full" style={{ color: 'var(--text-muted)' }}>
-            <ExternalLink className="w-12 h-12 mb-4 opacity-30" />
-            <p className="text-sm font-medium">选择左侧扩展查看详情</p>
-            <p className="text-xs mt-1">点击扩展卡片即可打开文档</p>
+          /* 已安装扩展详情/管理 */
+          <div className="p-6">
+            <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>
+              已安装扩展管理
+            </h3>
+            {userExtensions.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20" style={{ color: 'var(--text-muted)' }}>
+                <Package className="w-12 h-12 mb-4 opacity-20" />
+                <p className="text-sm">尚未安装任何扩展</p>
+                <button
+                  onClick={() => setActiveTab('marketplace')}
+                  className="mt-3 px-4 py-2 rounded-lg bg-blue-500 text-white text-xs hover:bg-blue-600 transition-colors"
+                >
+                  去扩展市场浏览
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {userExtensions.map(ue => (
+                  <div
+                    key={ue.extension_id}
+                    className="p-4 rounded-xl border flex items-start gap-4"
+                    style={{ borderColor: 'var(--border-color)', backgroundColor: 'var(--bg-card)' }}
+                  >
+                    <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: 'rgba(59,130,246,0.1)' }}>
+                      <Puzzle className="w-6 h-6 text-blue-500" />
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+                          {ue.display_name}
+                        </h4>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ backgroundColor: 'var(--bg-body)', color: 'var(--text-muted)' }}>
+                          v{ue.installed_version}
+                        </span>
+                        {ue.latest_version !== ue.installed_version && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-500/10 text-orange-500">
+                            可更新至 v{ue.latest_version}
+                          </span>
+                        )}
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${ue.is_enabled ? 'bg-green-500/10 text-green-500' : 'bg-gray-500/10 text-gray-500'}`}>
+                          {ue.is_enabled ? '已启用' : '已禁用'}
+                        </span>
+                      </div>
+                      <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                        {ue.description || '无描述'}
+                      </p>
+                      <div className="flex items-center gap-4 mt-2 text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                        <span className="flex items-center gap-1">
+                          <User className="w-3 h-3" />
+                          {ue.author || '未知作者'}
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <Tag className="w-3 h-3" />
+                          {getCategoryLabel(ue.category)}
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <Calendar className="w-3 h-3" />
+                          {new Date(ue.installed_at).toLocaleDateString()}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => handleToggle(ue)}
+                        className="p-2 rounded-lg transition-colors hover:bg-[var(--bg-hover)]"
+                        title={ue.is_enabled ? '禁用' : '启用'}
+                      >
+                        {ue.is_enabled ? (
+                          <ToggleRight className="w-5 h-5 text-green-500" />
+                        ) : (
+                          <ToggleLeft className="w-5 h-5" style={{ color: 'var(--text-muted)' }} />
+                        )}
+                      </button>
+                      <button
+                        onClick={() => handleUninstall(ue.extension_id)}
+                        className="p-2 rounded-lg transition-colors hover:bg-red-500/10 text-red-500"
+                        title="卸载"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>

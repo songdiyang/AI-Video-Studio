@@ -32,12 +32,13 @@ const { downloadAndStore } = require('../../../utils/fileStorage');
  * AI 生成建筑图片提示词
  * @param {string} viewType - 'interior' | 'exterior' | null，指定生成室内还是室外视角
  *   - 'exterior'：四方位正交视图（front/back/left/right）合成 2×2 网格，建筑参考图
- *   - 'interior'：房屋内部设计草图 / 线稿平立面，表达空间布局与家具陈设
+ *   - 'interior'：3×3 九宫格内景综合图 —— 6 个室内方位视角 + 3 个细节特写，
+ *     涵盖入口/后墙/左墙/右墙主视 + 俯视平面 + 等距轴测，以及家具/材质/陈设特写
  */
 async function generateBuildingPrompt(buildingName, description, interiorExterior, structureType, style, textModel, viewType) {
   const effectiveView = viewType || interiorExterior || 'exterior';
   const isInterior = effectiveView === 'interior';
-  const viewLabel = isInterior ? '室内设计草图' : '室外四方位参考图';
+  const viewLabel = isInterior ? '室内九宫格综合图（6视角+3特写）' : '室外四方位参考图';
 
   const exteriorSpec = `
 【外景专项要求 - 极其重要】
@@ -54,11 +55,23 @@ async function generateBuildingPrompt(buildingName, description, interiorExterio
 
   const interiorSpec = `
 【内景专项要求 - 极其重要】
-- 画面为"室内设计草图"（interior design sketch）风格：手绘线稿 + 轻度水彩淡彩上色
-- 展示建筑内部空间布局：家具陈设、墙体分隔、门窗位置、动线
-- 可采用等距轴测视角（isometric cutaway）或一点透视室内视图
-- 线条干净、标注感强、设计图风格（architectural interior design sketch, concept art）
-- 暖色调柔和打光，表达材质与氛围但不追求照片级写实`;
+- 画面整体为 1:1 正方形（square 1:1 aspect ratio），3×3 网格布局（3x3 grid layout, 9 panels total），一张图同时包含 9 个内部视图
+- 第一行（主视 1/3）：
+  · 左上：entrance interior view（从门内朝入口看的室内正视）
+  · 中上：back wall interior view（朝后墙的室内视角）
+  · 右上：left wall interior view（朝左墙的室内视角）
+- 第二行（主视 2/3 + 俯视 + 轴测）：
+  · 左中：right wall interior view（朝右墙的室内视角）
+  · 正中：overhead floor plan（俯视平面布局图，顶视）
+  · 右中：isometric cutaway view（3/4 等距轴测剖切视角）
+- 第三行（细节特写 3 张）：
+  · 左下：furniture closeup detail（家具细节特写）
+  · 中下：material & texture closeup detail（墙面/地面材质与纹理特写）
+  · 右下：decor & props closeup detail（陈设/装饰物特写）
+- 每一格下方用英文标注视角/特写名（e.g. "Entrance" / "Back Wall" / "Left Wall" / "Right Wall" / "Overhead Plan" / "Isometric" / "Furniture Detail" / "Material Detail" / "Decor Detail"）
+- 9 格之间保持相同的室内空间、相同的家具与陈设、相同的材质配色、相同的画风与光照，互相呼应
+- 画风：手绘线稿 + 轻度水彩淡彩上色（hand drawn lines with soft watercolor tint），室内设计参考图 / architectural interior reference sheet, concept art
+- 禁止出现任何人物；暖色柔和打光；线条干净、标注感强；不追求照片级写实`;
 
   const prompt = `你是一个专业的图片生成提示词专家。请根据以下建筑信息生成高质量的建筑${viewLabel}提示词（用于 AI 绘图工具）。
 
@@ -155,7 +168,7 @@ async function handleBuildingImageGeneration(inputParams, onProgress) {
       if (!prompt) {
         // fallback
         if (singleView === 'interior') {
-          prompt = `single isolated building, no people, no characters, ${buildingName || ''}, ${description || ''}, interior design sketch, architectural interior concept art, hand drawn lines with soft watercolor, isometric cutaway view, furniture layout, spatial plan, ${structureType || ''}, clean lines, warm lighting, high detail`;
+          prompt = `single isolated building interior, no people, no characters, ${buildingName || ''}, ${description || ''}, square 1:1 aspect ratio, 3x3 grid layout showing 9 interior panels, row1: entrance view, back wall view, left wall view; row2: right wall view, overhead floor plan, isometric cutaway view; row3: furniture closeup detail, material texture closeup detail, decor closeup detail, each panel labeled in English, hand drawn lines with soft watercolor tint, architectural interior reference sheet, concept art, same space same materials same lighting across 9 panels, ${structureType || ''}, clean lines, warm lighting, high detail`;
         } else {
           prompt = `single isolated building, no people, no characters, ${buildingName || ''}, ${description || ''}, wide 16:9 aspect ratio, 2x2 grid layout showing four orthographic views, front view top-left, back view top-right, left side view bottom-left, right side view bottom-right, labeled Front Back Left Right, same building same materials same color palette same art style same lighting, orthographic projection, architectural reference sheet, turnaround sheet, white clean background, ${structureType || ''}, high quality, detailed`;
         }
@@ -163,10 +176,11 @@ async function handleBuildingImageGeneration(inputParams, onProgress) {
 
       console.log(`[BuildingImageGen] view=${singleView} 提示词: ${prompt.substring(0, 160)}...`);
 
-      // 外景 4 视角采用 16:9 横向布局（一张图四格横向排列更清晰）；内景 1:1
+      // 外景 4 视角采用 16:9 横向布局（一张图四格横向排列更清晰）；
+      // 内景 3×3 九宫格采用 1:1 正方形，尺寸放大到 1920×1920 以保证 9 个小格的可辨识度
       const isExterior = singleView === 'exterior';
-      const width = isExterior ? 1920 : 1024;
-      const height = isExterior ? 1080 : 1024;
+      const width = isExterior ? 1920 : 1920;
+      const height = isExterior ? 1080 : 1920;
       const aspectRatio = isExterior ? '16:9' : '1:1';
 
       const imageResult = await handleImageGeneration({
@@ -183,8 +197,10 @@ async function handleBuildingImageGeneration(inputParams, onProgress) {
         storagePath,
         { fallbackExt: '.png' }
       );
+      // 追加时间戳破缓存（URL 路径固定，重新生成后浏览器可能命中旧缓存）
+      const cacheBustedUrl = `${persistedUrl}?t=${Date.now()}`;
 
-      return { prompt, persistedUrl };
+      return { prompt, persistedUrl: cacheBustedUrl };
     };
 
     let exteriorPersisted = null;

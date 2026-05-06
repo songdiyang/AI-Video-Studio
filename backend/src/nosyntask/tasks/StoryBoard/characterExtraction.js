@@ -711,79 +711,6 @@ ${missingContext}
     }
   }
 
-  // === 异步触发白膜+默认服装设定图生成 ===
-  // 对每个新创建或被覆盖更新的角色，如果提供了 imageModel，则异步触发白膜三视图生成
-  // 白膜生成完成后，前端可通过工作流监听自动触发默认服装状态生成
-  const { imageModel } = inputParams;
-  const charactersNeedingViews = characters.filter(c => c.id && effectiveStrategy !== 'skip');
-  if (imageModel && charactersNeedingViews.length > 0 && projectId) {
-    console.log(`[CharacterExtraction] 异步触发 ${charactersNeedingViews.length} 个角色的白膜三视图生成...`);
-    // 异步触发，不阻塞主流程
-    setImmediate(async () => {
-      const handleCharacterViewsGeneration = require('./characterViewsGeneration');
-      const { queryOne: qo } = require('../../../dbHelper');
-      for (const character of charactersNeedingViews) {
-        try {
-          // 获取角色的白膜状态 ID
-          const baseState = await qo(
-            'SELECT id, gender FROM character_states WHERE character_id = ? AND is_base_model = 1',
-            [character.id]
-          );
-          if (!baseState) {
-            console.warn(`[CharacterExtraction] 角色 ${character.name} 无白膜状态，跳过三视图生成`);
-            continue;
-          }
-          // 先生成白膜三视图
-          console.log(`[CharacterExtraction] 开始生成角色 ${character.name} 的白膜三视图...`);
-          await handleCharacterViewsGeneration({
-            characterId: character.id,
-            characterName: character.name,
-            appearance: character.base_appearance || character.appearance || '',
-            description: character.description || '',
-            personality: character.personality || '',
-            projectId,
-            imageModel,
-            textModel: modelName,
-            isBaseModel: true,
-            gender: baseState.gender || 'unknown',
-            stateId: baseState.id
-          }, null);
-          console.log(`[CharacterExtraction] ✅ 角色 ${character.name} 白膜三视图生成完成`);
-
-          // 白膜生成完成后，获取默认服装状态并生成服装设定图
-          // 多查一个 held_props，保证自动设定图与状态字段语义一致
-          const costumeState = await qo(
-            `SELECT id, outfit, held_props FROM character_states WHERE character_id = ? AND is_base_model = 0 AND name = '默认服装'`,
-            [character.id]
-          );
-          if (costumeState) {
-            console.log(`[CharacterExtraction] 开始生成角色 ${character.name} 的默认服装设定图...`);
-            await handleCharacterViewsGeneration({
-              characterId: character.id,
-              characterName: character.name,
-              appearance: character.appearance || '',
-              description: character.description || '',
-              personality: character.personality || '',
-              projectId,
-              imageModel,
-              textModel: modelName,
-              isBaseModel: false,
-              gender: baseState.gender || 'unknown',
-              stateId: costumeState.id,
-              outfit: costumeState.outfit || character.outfit_appearance || '',
-              heldProps: costumeState.held_props || ''
-            }, null);
-            console.log(`[CharacterExtraction] ✅ 角色 ${character.name} 默认服装设定图生成完成`);
-          }
-        } catch (viewGenErr) {
-          console.error(`[CharacterExtraction] 角色 ${character.name} 三视图生成失败:`, viewGenErr.message);
-        }
-      }
-    });
-  } else if (!imageModel && charactersNeedingViews.length > 0) {
-    console.log('[CharacterExtraction] 未提供 imageModel，跳过自动三视图生成（前端可手动触发）');
-  }
-
   if (onProgress) onProgress(100);
 
   console.log('[CharacterExtraction] 校验报告:', JSON.stringify({
@@ -792,12 +719,24 @@ ${missingContext}
     filtered: validation.filtered
   }));
 
+  // 标记需要生成设定图的角色（供后续工作流步骤使用）
+  const charactersNeedingViews = characters.filter(c => c.id && effectiveStrategy !== 'skip');
+
   return {
     characters,
     count: characters.length,
     tokens: result.tokens || 0,
     provider: result._model?.provider || 'unknown',
-    validation
+    validation,
+    charactersNeedingViews: charactersNeedingViews.map(c => ({
+      id: c.id,
+      name: c.name,
+      appearance: c.appearance || '',
+      baseAppearance: c.base_appearance || c.appearance || '',
+      outfitAppearance: c.outfit_appearance || '',
+      personality: c.personality || '',
+      description: c.description || ''
+    }))
   };
 }
 

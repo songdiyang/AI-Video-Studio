@@ -16,7 +16,7 @@ import { bustCache } from '../../services/mediaCache';
 import { startWorkflow, getWorkflowStatus } from '../../hooks/useWorkflow';
 import StoryboardLockButton from './components/StoryboardLockButton';
 import VideoHistorySidebar from './components/VideoHistorySidebar';
-import { ShotSizeSelector } from './components/ShotSizeSelector';
+import { ShotSizeSelector, ShotSizeBadge } from './components/ShotSizeSelector';
 
 /** 角色选择器：Chip 标签 + 添加下拉 + 点击预览角色长相（增强：显示白膜/服装状态） */
 const CharacterTagSelector: React.FC<{
@@ -1658,12 +1658,9 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                   compact={false}
                 />
               )}
-              {/* 只读模式：显示普通标签 */}
-              {!onUpdateScene && scene.shotType && (
-                <Chip size="sm" variant="flat" className="bg-cyan-500/20 text-cyan-400 text-xs">
-                  <Camera className="w-3 h-3 mr-1" />
-                  {scene.shotType}
-                </Chip>
+              {/* 只读模式：显示中文景别标签 */}
+              {!onUpdateScene && (
+                <ShotSizeBadge value={scene.shotType} />
               )}
               {scene.hasAction && (
                 <Chip size="sm" variant="flat" className="bg-amber-500/20 text-amber-400 text-xs">

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Card, CardBody, Button, Chip } from '@heroui/react';
-import { Cpu, Edit, Trash2, Play } from 'lucide-react';
+import { Cpu, Edit, Trash2, Play, Zap } from 'lucide-react';
 import { AIModel } from './types';
 
 interface ModelCardProps {
@@ -27,12 +27,31 @@ const ModelCard: React.FC<ModelCardProps> = ({ model, onEdit, onDelete, onTest }
       <CardBody className="p-6">
         <div className="flex items-start justify-between mb-4">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 bg-purple-500/10 rounded-xl flex items-center justify-center">
-              <Cpu className="w-6 h-6 text-purple-400" />
+            <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${model.provider_id && model.model_id ? 'bg-blue-500/10' : 'bg-purple-500/10'}`}>
+              {model.provider_id && model.model_id ? (
+                <Zap className="w-6 h-6 text-blue-400" />
+              ) : (
+                <Cpu className="w-6 h-6 text-purple-400" />
+              )}
             </div>
             <div>
-              <h3 className="font-semibold text-slate-100">{model.name}</h3>
-              <p className="text-sm text-slate-500">{model.provider}</p>
+              <div className="flex items-center gap-2">
+                <h3 className="font-semibold text-slate-100">{model.name}</h3>
+                {model.provider_id && model.model_id && (
+                  <Chip size="sm" className="bg-blue-500/10 text-blue-400 text-xs">
+                    <span className="flex items-center gap-1">
+                      <Zap className="w-3 h-3" />
+                      适配层
+                    </span>
+                  </Chip>
+                )}
+              </div>
+              <p className="text-sm text-slate-500">
+                {model.provider}
+                {model.model_id && (
+                  <span className="text-blue-400 ml-1">/ {model.model_id}</span>
+                )}
+              </p>
             </div>
           </div>
           <Chip 

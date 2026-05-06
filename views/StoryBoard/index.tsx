@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef, Component, ReactNode, lazy, Suspense } from 'react';
 import { Button, Select, SelectItem, Tooltip } from '@heroui/react';
-import { Wand2, RefreshCw, Download, Video, ImageIcon, Users, MapPin, Frame, Film, ChevronDown, Play, GitBranch, MessageSquare, Lock, Sparkles } from 'lucide-react';
+import { Wand2, RefreshCw, Download, Video, ImageIcon, Users, MapPin, Frame, Film, ChevronDown, Play, MessageSquare, Lock, Sparkles } from 'lucide-react';
 import { useSceneManager, StoryboardScene, DialogueLine } from './useSceneManager';
 import { useAutoStoryboard } from './useAutoStoryboard';
 import { useSceneGeneration } from './useSceneGeneration';
@@ -19,7 +19,7 @@ import { fetchProject, updateProject, type Project } from '../../services/projec
 import { PanelGroup } from '../../components/PanelGroup';
 import ResizablePanel, { ResizablePanelRef } from '../../components/ResizablePanel';
 import { getAuthToken } from '../../services/auth';
-import { fetchCharactersByProject, fetchScenesByProject, createCharacter, updateCharacter, deleteCharacter, generateCharacterViews, createScene as createSceneAsset, updateScene as updateSceneAsset, deleteScene as deleteSceneAsset } from '../../services/assets';
+import { fetchCharactersByProject, fetchScenesByProject, createCharacter, updateCharacter, deleteCharacter, generateCharacterViews, generateCharacterStateViews, fetchCharacterStates, createScene as createSceneAsset, updateScene as updateSceneAsset, deleteScene as deleteSceneAsset } from '../../services/assets';
 import { createScript as createScriptApi, deleteScript as deleteScriptApi } from '../../services/scripts';
 import { addProjectCollaborator } from '../../services/collaboration';
 import { useToast } from '../../contexts/ToastContext';
@@ -28,10 +28,7 @@ import { normalizeCapabilityOptions } from '../../utils/modelCapabilities';
 import { useKeyboardShortcuts, ShortcutConfig, STORYBOARD_SHORTCUTS_CONFIG, VIDEO_COMPOSITION_SHORTCUTS_CONFIG } from '../../hooks/useKeyboardShortcuts';
 // 导入 AnimaticPreview 组件
 import { AnimaticPreview } from './AnimaticPreview';
-// 导入版本控制和协作组件
-import VersionHistoryPanel from './VersionHistoryPanel';
-import TeamCollaborationPanel from './TeamCollaborationPanel';
-import FrameAnnotationPanel from './FrameAnnotationPanel';
+import StoryboardCommentPanel from './StoryboardCommentPanel';
 
 // AI辅助面板 - 懒加载
 const AIAssistantPanel = lazy(() => import('../../components/AIAssistantPanel'));
@@ -134,9 +131,7 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
 
   const [isOptimizingAllPrompts, setIsOptimizingAllPrompts] = useState(false);
   const [isAnimaticOpen, setIsAnimaticOpen] = useState(false);
-  const [isVersionHistoryOpen, setIsVersionHistoryOpen] = useState(false);
-  const [isTeamCollaborationOpen, setIsTeamCollaborationOpen] = useState(false);
-  const [isFrameAnnotationOpen, setIsFrameAnnotationOpen] = useState(false);
+  const [isCommentPanelOpen, setIsCommentPanelOpen] = useState(false);
   const [isAssistantOpen, setIsAssistantOpen] = useState(true);
   const resourcePanelRef = useRef<ResizablePanelRef>(null);
   const assistantPanelRef = useRef<ResizablePanelRef>(null);
@@ -1091,90 +1086,19 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
 
             <Divider />
 
-            {/* 版本控制与协作 */}
-            <IconButton
-              icon={<GitBranch className="w-4 h-4" />}
-              tooltip="版本历史"
-              onClick={() => {
-                if (selectedScene) {
-                  setIsVersionHistoryOpen(true);
-                } else {
-                  showToast('请先选择一个分镜', 'info');
-                }
-              }}
-              disabled={!selectedScene}
-              variant="default"
-            />
-            <IconButton
-              icon={<Users className="w-4 h-4" />}
-              tooltip="团队协作"
-              onClick={() => setIsTeamCollaborationOpen(!isTeamCollaborationOpen)}
-              variant="default"
-            />
+            {/* 分镜批注 */}
             <IconButton
               icon={<MessageSquare className="w-4 h-4" />}
-              tooltip="帧批注"
+              tooltip="分镜批注"
               onClick={() => {
                 if (selectedScene) {
-                  setIsFrameAnnotationOpen(true);
+                  setIsCommentPanelOpen(true);
                 } else {
                   showToast('请先选择一个分镜', 'info');
                 }
               }}
               disabled={!selectedScene}
               variant="default"
-            />
-
-            <Divider />
-
-            {/* 批量生成操作 */}
-            <IconButton
-              icon={<ImageIcon className="w-4 h-4" />}
-              tooltip="批量优化提示词(图片)"
-              onClick={() => handleBatchOptimizePrompts('image')}
-              disabled={!currentProjectId || isOptimizingAllPrompts || scenes.length === 0}
-              loading={isOptimizingAllPrompts}
-              variant="default"
-            />
-            <IconButton
-              icon={<Video className="w-4 h-4" />}
-              tooltip="批量优化提示词(视频)"
-              onClick={() => handleBatchOptimizePrompts('video')}
-              disabled={!currentProjectId || isOptimizingAllPrompts || scenes.length === 0}
-              loading={isOptimizingAllPrompts}
-              variant="default"
-            />
-            <IconButton
-              icon={<Users className="w-4 h-4" />}
-              tooltip="批量生成角色"
-              onClick={batchResource.handleBatchCharacterGeneration}
-              disabled={!currentProjectId || batchResource.isSubmittingCharacterBatch || batchResource.isCharacterBatchGenerating}
-              loading={batchResource.isSubmittingCharacterBatch || batchResource.isCharacterBatchGenerating}
-              variant="warning"
-            />
-            <IconButton
-              icon={<MapPin className="w-4 h-4" />}
-              tooltip="批量生成影棚"
-              onClick={batchResource.handleBatchSceneGeneration}
-              disabled={!currentProjectId || batchResource.isSubmittingSceneBatch || batchResource.isSceneBatchGenerating}
-              loading={batchResource.isSubmittingSceneBatch || batchResource.isSceneBatchGenerating}
-              variant="success"
-            />
-            <IconButton
-              icon={<Frame className="w-4 h-4" />}
-              tooltip="批量生成首尾帧"
-              onClick={handleBatchFrameGeneration}
-              disabled={!currentProjectId || isBatchFrameSubmitting || isRunning}
-              loading={isBatchFrameSubmitting}
-              variant="warning"
-            />
-            <IconButton
-              icon={<Film className="w-4 h-4" />}
-              tooltip="批量生成视频"
-              onClick={handleBatchVideoGeneration}
-              disabled={!currentProjectId || isBatchVideoSubmitting || isRunning}
-              loading={isBatchVideoSubmitting}
-              variant="danger"
             />
 
             <Divider />
@@ -1442,6 +1366,12 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
                     scripts={scripts.map(sc => ({ id: sc.id, episode_number: sc.episode_number, title: sc.title }))}
                     onClose={() => setIsAssistantOpen(false)}
                     onAction={(action, params) => {
+                      // ── 抽屉控制 ──────────────────────────────────
+                      if (action === 're-open-drawer') {
+                        setIsAssistantOpen(true);
+                        return;
+                      }
+                      
                       const sceneIdFrom = (p: any) => Number(p?.sceneId || selectedSceneData?.id);
                       const toastOk = (m: string) => showToast(m, 'success');
                       const toastErr = (prefix: string) => (e: any) => showToast(prefix + ': ' + (e?.message || e), 'error');
@@ -1545,8 +1475,22 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
                           .catch(toastErr('删除角色失败'));
                       } else if (action === 'generate_base_model') {
                         const id = Number(params?.characterId); if (!id) { showToast('缺少 characterId', 'warning'); return; }
-                        generateCharacterViews(id, { imageModel: params?.imageModel, textModel: params?.textModel, aspectRatio: params?.aspectRatio } as any)
-                          .then(() => toastOk('白膜生成任务已启动')).catch(toastErr('生成失败'));
+                        // 先查找角色的白膜状态，优先使用状态级别接口生成
+                        fetchCharacterStates(id)
+                          .then((states) => {
+                            const baseState = states.find((s: any) => s.is_base_model);
+                            if (baseState?.id) {
+                              return generateCharacterStateViews(id, baseState.id, {
+                                imageModel: params?.imageModel,
+                                textModel: params?.textModel,
+                                generateMode: params?.generateMode
+                              });
+                            }
+                            // 无白膜状态 → 降级为旧接口
+                            return generateCharacterViews(id, { imageModel: params?.imageModel, textModel: params?.textModel, aspectRatio: params?.aspectRatio } as any);
+                          })
+                          .then(() => toastOk('白膜生成任务已启动'))
+                          .catch(toastErr('生成失败'));
                       }
                       // ── 场景（Location）CRUD ───────────────────────
                       else if (action === 'create_location') {
@@ -1661,38 +1605,14 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
         </div>
       )}
 
-      {/* 版本控制面板 */}
+      {/* 分镜批注面板 */}
       {selectedSceneData && currentProjectId && (
-        <VersionHistoryPanel
-          projectId={currentProjectId}
-          resourceType="storyboard"
-          resourceId={selectedSceneData.id}
-          isOpen={isVersionHistoryOpen}
-          onClose={() => setIsVersionHistoryOpen(false)}
-          onRestoreVersion={(version) => {
-            console.log('[StoryBoard] 版本已恢复:', version);
-            refreshScenes();
-          }}
-        />
-      )}
-
-      {/* 团队协作面板 */}
-      {currentProjectId && (
-        <TeamCollaborationPanel
-          projectId={currentProjectId}
-          isOpen={isTeamCollaborationOpen}
-          onClose={() => setIsTeamCollaborationOpen(false)}
-        />
-      )}
-
-      {/* 帧批注面板 */}
-      {selectedSceneData && currentProjectId && (
-        <FrameAnnotationPanel
+        <StoryboardCommentPanel
           storyboardId={selectedSceneData.id}
+          sceneData={selectedSceneData}
           projectId={currentProjectId}
-          frameType="first"
-          isOpen={isFrameAnnotationOpen}
-          onClose={() => setIsFrameAnnotationOpen(false)}
+          isOpen={isCommentPanelOpen}
+          onClose={() => setIsCommentPanelOpen(false)}
         />
       )}
 

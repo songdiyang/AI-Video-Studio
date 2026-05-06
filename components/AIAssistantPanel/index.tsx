@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { Sparkles, X, Send, Paperclip, ImagePlus, Trash2, Wand2, FileText, Settings, Image as ImageIcon, Loader2, History, Plus, Edit3, Check, MessageSquare } from 'lucide-react';
+import { Sparkles, X, Send, Paperclip, ImagePlus, Trash2, Wand2, FileText, Settings, Image as ImageIcon, Loader2, History, Plus, Edit3, Check, MessageSquare, Video, Star, MessageCircle, ClipboardList } from 'lucide-react';
 import { getAuthToken } from '../../services/auth';
 import { useToast } from '../../contexts/ToastContext';
 import ChatMessageComponent, { ChatMessageData } from './ChatMessage';
@@ -29,6 +29,10 @@ export interface AIAssistantPanelProps {
     last_frame_url?: string;
     video_url?: string;
     scene_description?: string;
+    /** 提示词信息 */
+    first_frame_prompt?: string;
+    last_frame_prompt?: string;
+    video_prompt?: string;
   } | null;
   /** 项目中所有分镜清单（AI 用来识别"第几个分镜"、质检降级、上下文推理） */
   scenes?: {
@@ -269,6 +273,10 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
         setIsLoading(loadingSessionsRef.current.has(sessionId));
         setStreamingId(streamingSessionsRef.current.get(sessionId) || null);
         setShowHistory(false);
+        // 如果抽屉已关闭，通过 onAction 重新打开
+        if (onAction) {
+          onAction('re-open-drawer', {});
+        }
       } else {
         showToast(data.error || '加载会话失败', 'error');
       }
@@ -276,7 +284,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
       console.error('[AIAssistant] switch session failed:', err);
       showToast(err.message || '加载会话失败', 'error');
     }
-  }, [activeSessionKey, showToast, messages]);
+  }, [activeSessionKey, showToast, messages, onAction]);
 
   const createNewSession = useCallback(async () => {
     // 保存当前会话的消息到缓存
@@ -325,6 +333,32 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
       console.error('[AIAssistant] delete session failed:', err);
     }
   }, [activeSessionKey, showToast]);
+
+  // 关闭单个会话（仅从标签栏隐藏，不删除，保留在历史记录中）
+  const closeSession = useCallback(async (sessionId: number) => {
+    if (sessions.length <= 1) {
+      showToast('至少保留一个会话', 'warning');
+      return;
+    }
+    
+    // 如果关闭的是当前会话，先切换到另一个会话
+    if (currentSessionId === sessionId) {
+      const otherSession = sessions.find(s => s.id !== sessionId);
+      if (otherSession) {
+        await switchSession(otherSession.id);
+      }
+    }
+    
+    // 只从标签栏移除，不删除会话（保留在历史记录中）
+    setSessions((prev) => prev.filter((s) => s.id !== sessionId));
+    
+    // 清理该会话的缓存和加载状态
+    messagesCacheRef.current.delete(sessionId);
+    loadingSessionsRef.current.delete(sessionId);
+    streamingSessionsRef.current.delete(sessionId);
+    
+    showToast('会话已从标签栏关闭', 'info');
+  }, [sessions, currentSessionId, switchSession, showToast]);
 
   const renameSessionFn = useCallback(async (sessionId: number, title: string) => {
     const trimmed = title.trim();
@@ -444,6 +478,130 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
         name: `帧#${currentFrame.id}`,
       },
     ]);
+  }, [currentFrame, attachments, showToast]);
+
+  // ── Attach current video ─────────────────────────────────────────
+  const attachCurrentVideo = useCallback(() => {
+    if (!currentFrame?.video_url) {
+      showToast('当前分镜没有视频', 'warning');
+      return;
+    }
+    // Avoid duplicate
+    if (attachments.some((a) => a.url === currentFrame.video_url)) {
+      showToast('当前视频已添加', 'info');
+      return;
+    }
+    setAttachments((prev) => [
+      ...prev,
+      {
+        type: 'video' as const,
+        url: currentFrame.video_url!,
+        name: `视频#分镜${currentFrame.index ?? currentFrame.id}`,
+      },
+    ]);
+    showToast('当前分镜视频已添加', 'success');
+  }, [currentFrame, attachments, showToast]);
+
+  // ── Load annotations for current storyboard ─────────────────────────
+  const [isLoadingAnnotations, setIsLoadingAnnotations] = useState(false);
+  const loadAnnotations = useCallback(async () => {
+    if (!currentFrame?.id) {
+      showToast('请先选择一个分镜', 'warning');
+      return;
+    }
+    setIsLoadingAnnotations(true);
+    try {
+      const token = getAuthToken();
+      const res = await fetch(`/api/collaboration/annotations/${currentFrame.id}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      const data = await res.json();
+      if (data.annotations && data.annotations.length > 0) {
+        // 将批注内容转换为上下文文本
+        const annotationsText = data.annotations.map((a: any) => {
+          const typeLabel = a.annotation_type === 'comment' ? '评论' : a.annotation_type === 'suggestion' ? '建议' : '问题';
+          const repliesArr = a.replies?.map((r: any) => `  ↳ ${r.created_by_name || '用户'}: ${r.content}`) || [];
+          const repliesStr = repliesArr.join(String.fromCharCode(10));
+          const contentStr = `【${typeLabel}】${a.created_by_name || '用户'}: ${a.content}`;
+          return repliesStr ? contentStr + String.fromCharCode(10) + repliesStr : contentStr;
+        }).join(String.fromCharCode(10, 10));
+        // 添加到输入框作为上下文
+        const frameLabel = currentFrame.index ?? currentFrame.id;
+        const contextPrefix = `📋 当前分镜#${frameLabel} 的批注（共${data.annotations.length}条）：` + String.fromCharCode(10, 10);
+        const newText = contextPrefix + annotationsText;
+        setInputText((prev) => prev ? prev + String.fromCharCode(10, 10) + newText : newText);
+        showToast(`已加载 ${data.annotations.length} 条批注`, 'success');
+      } else {
+        showToast('当前分镜暂无批注', 'info');
+      }
+    } catch (err: any) {
+      console.error('[AIAssistant] Load annotations failed:', err);
+      showToast(err.message || '加载批注失败', 'error');
+    } finally {
+      setIsLoadingAnnotations(false);
+    }
+  }, [currentFrame, showToast]);
+
+  // ── Prompt quality analysis ─────────────────────────────────────────
+  const [isAnalyzingPrompt, setIsAnalyzingPrompt] = useState(false);
+  const analyzePromptQuality = useCallback(async () => {
+    if (!currentFrame?.id) {
+      showToast('请先选择一个分镜', 'warning');
+      return;
+    }
+    setIsAnalyzingPrompt(true);
+    try {
+      const token = getAuthToken();
+      // 获取分镜详细信息
+      const res = await fetch(`/api/storyboards/${currentFrame.id}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      const storyboardData = await res.json();
+      
+      // 构建分析请求
+      const promptsInfo = [];
+      if (storyboardData.first_frame_prompt) promptsInfo.push(`首帧提示词: ${storyboardData.first_frame_prompt}`);
+      if (storyboardData.last_frame_prompt) promptsInfo.push(`尾帧提示词: ${storyboardData.last_frame_prompt}`);
+      if (storyboardData.video_prompt) promptsInfo.push(`视频提示词: ${storyboardData.video_prompt}`);
+      
+      if (promptsInfo.length === 0) {
+        showToast('当前分镜暂无提示词', 'warning');
+        setIsAnalyzingPrompt(false);
+        return;
+      }
+      
+      // 自动添加当前帧图片作为附件
+      if (currentFrame.first_frame_url && !attachments.some((a) => a.url === currentFrame.first_frame_url)) {
+        setAttachments((prev) => [...prev, {
+          type: 'image' as const,
+          url: currentFrame.first_frame_url,
+          name: `帧#${currentFrame.id}`,
+        }]);
+      }
+      
+      // 设置分析问题
+      const NL = String.fromCharCode(10);
+      const promptText = promptsInfo.join(NL + NL);
+      const descText = storyboardData.spatial_description || storyboardData.description || '无';
+      const analysisPrompt = '请分析以下分镜的提示词质量并给出评分（满分10分）：' + NL + NL +
+        promptText + NL + NL +
+        '分镜描述: ' + descText + NL + NL +
+        '请从以下维度评估：' + NL +
+        '1. 清晰度：提示词是否清晰明确，无歧义' + NL +
+        '2. 完整性：是否包含必要的元素描述' + NL +
+        '3. 创意性：是否有独特的创意表达' + NL +
+        '4. 执行性：是否易于AI理解和执行' + NL +
+        '5. 与画面一致性：是否与参考画面匹配' + NL + NL +
+        '请给出总分和每个维度的具体评分，以及改进建议。';
+      
+      setInputText(analysisPrompt);
+      showToast('提示词分析请求已准备，请发送', 'success');
+    } catch (err: any) {
+      console.error('[AIAssistant] Analyze prompt failed:', err);
+      showToast(err.message || '获取分镜信息失败', 'error');
+    } finally {
+      setIsAnalyzingPrompt(false);
+    }
   }, [currentFrame, attachments, showToast]);
 
   // ── File picker ──────────────────────────────────────────────────
@@ -1091,10 +1249,9 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
               const isActive = s.id === currentSessionId;
               const isBgLoading = !isActive && loadingSessionIds.has(s.id);
               return (
-                <button
+                <div
                   key={s.id}
-                  onClick={() => switchSession(s.id)}
-                  className={`flex-shrink-0 px-2 py-1 rounded-md text-[11px] transition-colors truncate max-w-[90px] flex items-center gap-1 ${
+                  className={`flex-shrink-0 px-1.5 py-1 rounded-md text-[11px] transition-colors truncate max-w-[110px] flex items-center gap-1 group ${
                     isActive
                       ? 'bg-[var(--accent)]/15 text-[var(--accent)] font-medium'
                       : isBgLoading
@@ -1103,16 +1260,38 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                   }`}
                   title={isBgLoading ? `${s.title}（后台处理中…）` : s.title}
                 >
-                  {isBgLoading && (
-                    <span className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-[var(--accent)] animate-pulse" />
-                  )}
-                  <span className="truncate">{s.title}</span>
-                </button>
+                  <button
+                    onClick={() => switchSession(s.id)}
+                    className="flex items-center gap-1 flex-1 min-w-0 truncate"
+                  >
+                    {isBgLoading && (
+                      <span className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-[var(--accent)] animate-pulse" />
+                    )}
+                    <span className="truncate">{s.title}</span>
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      closeSession(s.id);
+                    }}
+                    className="flex-shrink-0 p-0.5 rounded hover:bg-red-500/20 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"
+                    title="关闭此对话"
+                  >
+                    <X size={10} />
+                  </button>
+                </div>
               );
             })
           )}
         </div>
         <div className="flex items-center gap-0.5 flex-shrink-0">
+          <button
+            onClick={onClose}
+            className="p-1 rounded hover:bg-red-500/10 text-[var(--text-muted)] hover:text-red-500 transition-colors"
+            title="关闭助手"
+          >
+            <X size={13} />
+          </button>
           <button
             onClick={() => setShowHistory(true)}
             className="p-1 rounded hover:bg-[var(--bg-input)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
@@ -1262,6 +1441,38 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
               >
                 <ImagePlus size={11} />
                 <span>当前帧</span>
+              </button>
+            )}
+            {currentFrame?.video_url && (
+              <button
+                onClick={attachCurrentVideo}
+                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-purple-400 hover:bg-[var(--bg-app)] transition-colors"
+                title="附加当前分镜视频"
+              >
+                <Video size={11} />
+                <span>视频</span>
+              </button>
+            )}
+            {currentFrame?.id && (
+              <button
+                onClick={loadAnnotations}
+                disabled={isLoadingAnnotations}
+                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-orange-400 hover:bg-[var(--bg-app)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                title="读取当前分镜的批注作为上下文"
+              >
+                {isLoadingAnnotations ? <Loader2 size={11} className="animate-spin" /> : <ClipboardList size={11} />}
+                <span>批注</span>
+              </button>
+            )}
+            {currentFrame?.id && (
+              <button
+                onClick={analyzePromptQuality}
+                disabled={isAnalyzingPrompt}
+                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-yellow-400 hover:bg-[var(--bg-app)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                title="AI分析当前分镜提示词质量并评分"
+              >
+                {isAnalyzingPrompt ? <Loader2 size={11} className="animate-spin" /> : <Star size={11} />}
+                <span>评分</span>
               </button>
             )}
             <div className="relative">

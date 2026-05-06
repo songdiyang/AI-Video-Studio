@@ -66,6 +66,7 @@ const teamsRoutes = require('./teams');
 const taskAssignmentRoutes = require('./taskAssignment');
 const novelRoutes = require('./novelRoutes');
 const statsRoutes = require('./statsRoutes');
+const extensionRoutes = require('./extensions');
 const { setupWebSocket } = require('./websocket');
 const { errorHandlerMiddleware, initGlobalErrorHandlers } = require('./globalErrorHandler');
 const callbackHandler = require('./nosyntask/callbackHandler');
@@ -192,6 +193,7 @@ const approvalsRouter = express.Router();
 approvalsRoutes(approvalsRouter);
 app.use('/api', approvalsRouter);
 app.use('/api/system-configs', systemConfigRoutes);
+app.use('/api', extensionRoutes);
 // AI 任务回调接口（不需要认证，AI 服务直接回调）
 app.use('/api/callbacks', callbackHandler.router);
 
@@ -323,6 +325,24 @@ async function start() {
     }
   } catch (err) {
     console.warn('[Startup] 清理中断任务失败（非致命）:', err.message);
+  }
+
+  // 恢复被中断的工作流（数据库已初始化后安全调用）
+  try {
+    const engine = require('./nosyntask/engine');
+    if (engine && typeof engine.recoverInterruptedJobs === 'function') {
+      // 添加超时保护，避免阻塞启动
+      const RECOVERY_TIMEOUT = 60000; // 1分钟
+      await Promise.race([
+        engine.recoverInterruptedJobs(),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('工作流恢复超时')), RECOVERY_TIMEOUT)
+        )
+      ]);
+      console.log('  \x1b[32m✔\x1b[0m 工作流恢复检查完成');
+    }
+  } catch (err) {
+    console.warn('[Startup] 工作流恢复检查失败（非致命）:', err.message);
   }
 
   // 注册优雅关闭：引擎保存快照 + 刷新日志

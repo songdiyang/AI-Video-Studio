@@ -4,7 +4,6 @@
  *   POST   /api/environment-variants               创建
  *   PATCH  /api/environment-variants/:id           更新
  *   DELETE /api/environment-variants/:id           删除
- *   POST   /api/environment-variants/:id/generate-panorama  生成全景图
  */
 import { getAuthToken } from './auth';
 
@@ -16,7 +15,6 @@ export interface EnvironmentVariant {
   lighting: string | null;
   mood: string | null;
   image_url: string | null;
-  panorama_image_url: string | null;
   faces: Record<string, string> | null;
   generation_prompt: string | null;
   generation_status: 'pending' | 'generating' | 'completed' | 'failed';
@@ -72,7 +70,6 @@ export async function updateEnvironmentVariant(id: number, payload: {
   lighting?: string | null;
   mood?: string | null;
   imageUrl?: string | null;
-  panoramaImageUrl?: string | null;
   generationStatus?: EnvironmentVariant['generation_status'];
 }): Promise<EnvironmentVariant> {
   const resp = await fetch(`/api/environment-variants/${id}`, {
@@ -90,18 +87,6 @@ export async function deleteEnvironmentVariant(id: number): Promise<void> {
     headers: { ...authHeaders() }
   });
   await handle<{ message: string }>(resp);
-}
-
-export async function generateVariantPanorama(id: number, payload: {
-  imageModel: string;
-  textModel?: string;
-}): Promise<{ jobId: string; variantId: number; environmentId: number; status: string }> {
-  const resp = await fetch(`/api/environment-variants/${id}/generate-panorama`, {
-    method: 'POST',
-    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  });
-  return handle<{ jobId: string; variantId: number; environmentId: number; status: string }>(resp);
 }
 
 export async function generateVariantFaces(id: number, payload: {

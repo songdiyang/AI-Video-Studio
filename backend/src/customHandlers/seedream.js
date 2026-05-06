@@ -2,7 +2,7 @@
  * 豆包 Seedream 文生图/图生图 自定义 Handler
  *
  * 适用模型：Seedream 3.0 / 4.0 / 5.0 系列
- * API 端点：POST https://ark.cn-beijing.volces.com/api/v3/images/generations
+ * API 端点：从数据库配置动态获取（OpenAI 兼容 /images/generations）
  *
  * 特殊处理：
  * 1. 文生图：仅需 prompt，可选 size/seed/watermark 等参数
@@ -12,6 +12,14 @@
  */
 
 const fetch = require('node-fetch');
+
+/**
+ * 从模型配置中获取模型ID
+ * 优先使用 model_id 字段，其次从 default_params 或 body 解析
+ */
+function getModelId(model, params, renderedBody) {
+  return renderedBody?.model || params.model || model.model_id || model.default_model_id || '';
+}
 
 /**
  * 将 API 原始错误消息映射为用户友好的中文提示
@@ -297,8 +305,11 @@ module.exports = {
     }
     rendered.headers['Authorization'] = 'Bearer ' + apiKey;
 
-    // 1. 获取 model ID
-    const modelId = rendered.body?.model || params.model || model.default_model_id || 'doubao-seedream-4-5-251128';
+    // 1. 获取 model ID（从数据库配置动态读取）
+    const modelId = getModelId(model, params, rendered.body);
+    if (!modelId) {
+      throw new Error('Seedream 模型ID未配置：请在模型配置中设置 model_id');
+    }
 
     // 2. 构建请求体
     const requestBody = {

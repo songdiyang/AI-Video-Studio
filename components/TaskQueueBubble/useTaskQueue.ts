@@ -14,7 +14,6 @@ const REFRESH_ON_COMPLETE_TYPES = [
   'batch_frame_generation',      // 批量分镜帧生成（兼容旧任务）
   'scene_video',                 // 分镜视频生成
   'scene_image_generation',      // 场景图片生成
-  'scene_panorama_generation',   // 场景全景图生成
   'scene_elements_extraction',   // 场景元素抽取
   'scene_element_generation',    // 场景元素图片生成
   'character_views_generation',  // 角色三视图生成
@@ -24,6 +23,12 @@ const REFRESH_ON_COMPLETE_TYPES = [
   'single_image_prompt_optimization',  // 单条图片提示词优化
   'batch_video_prompt_optimization',   // 批量视频提示词优化
   'single_video_prompt_optimization',  // 单条视频提示词优化
+  // 资产管理类（建筑/环境/影棚/道具）
+  'building_image_generation',   // 建筑外景四方位 / 内景九宫格生成
+  'environment_image_generation',// 环境图生成
+  'studio_nine_grid_generation', // 影棚九宫组装图生成
+  'variant_faces_generation',    // 环境变体8方位场景图生成
+  'prop_image_generation',       // 道具图片生成
 ];
 
 export interface UseTaskQueueOptions {
@@ -100,11 +105,12 @@ export function useTaskQueue(options?: UseTaskQueueOptions): UseTaskQueueReturn 
         });
 
         if (refreshJobIds.length > 0) {
-          console.log('[TaskQueue] 检测到图片生成任务完成，触发分镜数据刷新', refreshJobIds);
-          // 派发自定义事件，通知分镜页面刷新数据
-          window.dispatchEvent(new CustomEvent('storyboard:taskCompleted', {
-            detail: { completedJobIds: refreshJobIds }
-          }));
+          console.log('[TaskQueue] 检测到生成类任务完成，派发刷新事件', refreshJobIds);
+          const detail = { completedJobIds: refreshJobIds };
+          // 历史事件名（StoryBoard 监听）
+          window.dispatchEvent(new CustomEvent('storyboard:taskCompleted', { detail }));
+          // 通用事件名（资产管理/其他页面监听）
+          window.dispatchEvent(new CustomEvent('asset:taskCompleted', { detail }));
         }
       }
 

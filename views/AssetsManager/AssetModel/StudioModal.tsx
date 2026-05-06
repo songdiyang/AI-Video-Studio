@@ -3,17 +3,19 @@ import {
   Modal, ModalContent, ModalHeader, ModalBody, ModalFooter,
   Button, Input, Textarea, Tabs, Tab, Chip, Image, Spinner,
 } from '@heroui/react';
-import { Box, Plus, X, Film, Hammer, Mountain, Cloud, Building2 } from 'lucide-react';
+import { Box, Plus, X, Film, Hammer, Mountain, Cloud, Building2, LayoutGrid, Wand2 } from 'lucide-react';
 import {
   StudioDetail,
   getStudio, createStudio, updateStudio,
   attachEnvironmentToStudio, detachEnvironmentFromStudio,
   attachBuildingToStudio, detachBuildingFromStudio,
   attachElementToStudio, detachElementFromStudio,
+  setStudioEnvironmentView, setStudioBuildingView,
+  generateStudioNineGrid,
 } from '../../../services/studios';
 import {
   listEnvironments, Environment,
-  generateEnvironmentPanorama, deleteEnvironmentPanorama,
+  generateEnvironmentImage,
 } from '../../../services/environments';
 import {
   listBuildings, Building,
@@ -22,7 +24,6 @@ import {
 import { listSceneElements, SceneElement } from '../../../services/sceneElements';
 import { useToast } from '../../../contexts/ToastContext';
 import { useAIModels } from '../../../hooks/useAIModels';
-import PanoramaViewer from '../../../components/PanoramaViewer';
 
 interface StudioModalProps {
   isOpen: boolean;
@@ -42,8 +43,9 @@ const StudioModal: React.FC<StudioModalProps> = ({
   const [saving, setSaving] = useState(false);
 
   // 生成状态
-  const [generatingEnvPano, setGeneratingEnvPano] = useState(false);
   const [generatingBuildingView, setGeneratingBuildingView] = useState<Record<number, { interior?: boolean; exterior?: boolean }>>({});
+  const [generatingNineGrid, setGeneratingNineGrid] = useState(false);
+  const [generatingEnvView, setGeneratingEnvView] = useState<{ front?: boolean; back?: boolean }>({});
 
   // 基础信息
   const [name, setName] = useState('');
@@ -62,12 +64,18 @@ const StudioModal: React.FC<StudioModalProps> = ({
     if (!isOpen) return;
     setLoading(true);
     try {
+      let resolvedProjectId = projectId;
+
       if (editMode && studioId) {
         const d = await getStudio(studioId);
         setDetail(d);
         setName(d.studio.name);
         setDescription(d.studio.description || '');
         setCoverImageUrl(d.studio.cover_image_url || '');
+        // 编辑模式：以影棚自身的 project_id 为准（父级可能传 null）
+        if (!resolvedProjectId && d.studio.project_id) {
+          resolvedProjectId = d.studio.project_id;
+        }
       } else {
         setDetail(null);
         setName('');
@@ -75,11 +83,11 @@ const StudioModal: React.FC<StudioModalProps> = ({
         setCoverImageUrl('');
       }
 
-      if (projectId) {
+      if (resolvedProjectId) {
         const [envs, builds, elements] = await Promise.all([
-          listEnvironments(projectId),
-          listBuildings(projectId),
-          listSceneElements({ projectId }),
+          listEnvironments(resolvedProjectId),
+          listBuildings(resolvedProjectId),
+          listSceneElements({ projectId: resolvedProjectId }),
         ]);
         setProjectEnvironments(envs);
         setProjectBuildings(builds);
@@ -186,6 +194,56 @@ const StudioModal: React.FC<StudioModalProps> = ({
     }
   };
 
+  // ===== 视图偏好切换（组装图选面） =====
+  const handleSetEnvView = async (view: 'front' | 'back') => {
+    if (!studioId || !detail?.environment) return;
+    try {
+      await setStudioEnvironmentView(studioId, view);
+      showToast(`已切换为环境${view === 'back' ? '背面' : '正面'}`, 'success');
+      loadAll();
+    } catch (err: any) {
+      showToast(err?.message || '切换环境面失败', 'error');
+    }
+  };
+  const handleSetBuildingView = async (buildingId: number, view: 'exterior' | 'interior') => {
+    if (!studioId) return;
+    try {
+      await setStudioBuildingView(studioId, buildingId, view);
+      showToast(`已切换为建筑${view === 'interior' ? '内景' : '外景'}`, 'success');
+      loadAll();
+    } catch (err: any) {
+      showToast(err?.message || '切换建筑视图失败', 'error');
+    }
+  };
+
+  // ===== 九宫组装图生成 =====
+  const handleGenerateNineGrid = async () => {
+    if (!studioId) return;
+    const imageModel = aiSelected?.image;
+    if (!imageModel) {
+      showToast('请先在 AI 模型配置中选择图像模型', 'error');
+      return;
+    }
+    if (!detail?.environment && !detail?.buildings?.length) {
+      showToast('影棚至少需要绑定环境或关联建筑其一，才能生成九宫组装图', 'warning');
+      return;
+    }
+    setGeneratingNineGrid(true);
+    try {
+      await generateStudioNineGrid(studioId, {
+        imageModel,
+        textModel: aiSelected?.text || undefined,
+      });
+      showToast('九宫组装图生成已启动', 'success');
+      loadAll();
+      onSaved();
+    } catch (err: any) {
+      showToast(err?.message || '启动生成失败', 'error');
+    } finally {
+      setGeneratingNineGrid(false);
+    }
+  };
+
   // ===== 元素 M:N =====
   const handleAttachElement = async (elementId: number) => {
     if (!studioId) return;
@@ -210,37 +268,28 @@ const StudioModal: React.FC<StudioModalProps> = ({
     }
   };
 
-  // ===== 影棚图生成（全景图+参考图） =====
-  const handleGenerateEnvPanorama = async (environmentId: number) => {
+  // ===== 环境图生成 =====
+  const handleGenerateEnvImage = async (mode: 'front' | 'back') => {
+    if (!currentEnv) return;
     const imageModel = aiSelected?.image;
     if (!imageModel) {
       showToast('请先在 AI 模型配置中选择图像模型', 'error');
       return;
     }
-    setGeneratingEnvPano(true);
+    setGeneratingEnvView(prev => ({ ...prev, [mode]: true }));
     try {
-      await generateEnvironmentPanorama(environmentId, {
+      await generateEnvironmentImage(currentEnv.id, {
         imageModel,
         textModel: aiSelected?.text || undefined,
+        mode,
       });
-      showToast('影棚图生成已启动', 'success');
+      showToast(`环境${mode === 'back' ? '背面' : '正面'}图生成已启动`, 'success');
       loadAll();
       onSaved();
     } catch (err: any) {
-      showToast(err?.message || '启动影棚图生成失败', 'error');
+      showToast(err?.message || '生成失败', 'error');
     } finally {
-      setGeneratingEnvPano(false);
-    }
-  };
-
-  const handleDeleteEnvPanorama = async (environmentId: number) => {
-    try {
-      await deleteEnvironmentPanorama(environmentId);
-      showToast('影棚图已删除', 'success');
-      loadAll();
-      onSaved();
-    } catch (err: any) {
-      showToast(err?.message || '删除全景图失败', 'error');
+      setGeneratingEnvView(prev => ({ ...prev, [mode]: false }));
     }
   };
 
@@ -347,95 +396,175 @@ const StudioModal: React.FC<StudioModalProps> = ({
                           <div>
                             <div className="text-xs text-(--text-muted) mb-2">当前环境（1:1）</div>
                             {currentEnv ? (
-                              <div className="flex items-center gap-3 p-2 rounded-md bg-(--bg-app) border border-(--border-color)">
-                                {currentEnv.image_url ? (
-                                  <Image
-                                    src={currentEnv.image_url}
-                                    alt={currentEnv.name}
-                                    removeWrapper
-                                    className="w-12 h-12 object-cover rounded shrink-0"
-                                  />
-                                ) : (
-                                  <div className="w-12 h-12 rounded bg-(--bg-input) flex items-center justify-center text-(--text-muted) shrink-0">
-                                    <Cloud className="w-5 h-5" />
+                              <>
+                                <div className="flex items-center gap-3 p-2 rounded-md bg-(--bg-app) border border-(--border-color)">
+                                  {currentEnv.image_url ? (
+                                    <Image
+                                      src={currentEnv.image_url}
+                                      alt={currentEnv.name}
+                                      removeWrapper
+                                      className="w-12 h-12 object-cover rounded shrink-0"
+                                    />
+                                  ) : (
+                                    <div className="w-12 h-12 rounded bg-(--bg-input) flex items-center justify-center text-(--text-muted) shrink-0">
+                                      <Cloud className="w-5 h-5" />
+                                    </div>
+                                  )}
+                                  <div className="flex-1 min-w-0">
+                                    <div className="text-sm text-(--text-primary) truncate">{currentEnv.name}</div>
+                                    <div className="text-[11px] text-(--text-muted) truncate">
+                                      {currentEnv.description || '无描述'}
+                                    </div>
                                   </div>
-                                )}
-                                <div className="flex-1 min-w-0">
-                                  <div className="text-sm text-(--text-primary) truncate">{currentEnv.name}</div>
-                                  <div className="text-[11px] text-(--text-muted) truncate">
-                                    {currentEnv.description || '无描述'}
-                                  </div>
+                                  <Button
+                                    size="sm"
+                                    isIconOnly
+                                    variant="light"
+                                    onPress={handleDetachEnvironment}
+                                    className="hover:bg-red-500/10"
+                                    title="移除环境"
+                                  >
+                                    <X className="w-4 h-4 text-red-500" />
+                                  </Button>
                                 </div>
-                                <Button
-                                  size="sm"
-                                  isIconOnly
-                                  variant="light"
-                                  onPress={handleDetachEnvironment}
-                                  className="hover:bg-red-500/10"
-                                  title="移除环境"
-                                >
-                                  <X className="w-4 h-4 text-red-500" />
-                                </Button>
-                              </div>
+
+                                {/* 组装图采用哪一面 + 生成按钮 */}
+                                {(() => {
+                                  const envView = detail?.studio?.environment_view === 'back' ? 'back' : 'front';
+                                  const hasFront = !!currentEnv.image_url;
+                                  const hasBack = !!currentEnv.image_back_url;
+                                  const isGenFront = !!generatingEnvView.front;
+                                  const isGenBack = !!generatingEnvView.back;
+                                  return (
+                                    <div className="mt-2 p-2 rounded-md bg-(--bg-app) border border-(--border-color)">
+                                      <div className="text-[11px] text-(--text-muted) mb-2 flex items-center gap-1">
+                                        <LayoutGrid className="w-3 h-3" />
+                                        组装图采用此环境的哪一面
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        {/* 正面 */}
+                                        <div className="flex-1 flex flex-col gap-1">
+                                          <button
+                                            type="button"
+                                            disabled={!hasFront}
+                                            onClick={() => handleSetEnvView('front')}
+                                            className={`w-full flex items-center gap-2 p-1.5 rounded border transition ${
+                                              envView === 'front'
+                                                ? 'border-(--accent) bg-(--accent)/10 ring-1 ring-(--accent)'
+                                                : 'border-(--border-color) hover:bg-(--bg-input)'
+                                            } ${!hasFront ? 'opacity-40 cursor-not-allowed' : ''}`}
+                                          >
+                                            {hasFront ? (
+                                              <img src={currentEnv.image_url || ''} alt="正面" className="w-10 h-10 object-cover rounded" />
+                                            ) : (
+                                              <div className="w-10 h-10 rounded bg-(--bg-input) flex items-center justify-center text-[10px] text-(--text-muted)">
+                                                无
+                                              </div>
+                                            )}
+                                            <div className="flex flex-col items-start">
+                                              <span className="text-xs text-(--text-primary)">正面</span>
+                                              {envView === 'front' && <span className="text-[10px] text-(--accent)">✓ 已选</span>}
+                                            </div>
+                                          </button>
+                                          <Button
+                                            size="sm"
+                                            variant="flat"
+                                            color={hasFront ? 'default' : 'primary'}
+                                            isLoading={isGenFront}
+                                            isDisabled={isGenFront || isGenBack}
+                                            onPress={() => handleGenerateEnvImage('front')}
+                                            startContent={!isGenFront ? <Wand2 className="w-3 h-3" /> : undefined}
+                                            className="w-full text-[11px] h-7"
+                                          >
+                                            {hasFront ? '重新生成正面' : '生成正面'}
+                                          </Button>
+                                        </div>
+                                        {/* 背面 */}
+                                        <div className="flex-1 flex flex-col gap-1">
+                                          <button
+                                            type="button"
+                                            disabled={!hasBack}
+                                            onClick={() => handleSetEnvView('back')}
+                                            className={`w-full flex items-center gap-2 p-1.5 rounded border transition ${
+                                              envView === 'back'
+                                                ? 'border-(--accent) bg-(--accent)/10 ring-1 ring-(--accent)'
+                                                : 'border-(--border-color) hover:bg-(--bg-input)'
+                                            } ${!hasBack ? 'opacity-40 cursor-not-allowed' : ''}`}
+                                          >
+                                            {hasBack ? (
+                                              <img src={currentEnv.image_back_url || ''} alt="背面" className="w-10 h-10 object-cover rounded" />
+                                            ) : (
+                                              <div className="w-10 h-10 rounded bg-(--bg-input) flex items-center justify-center text-[10px] text-(--text-muted)">
+                                                无
+                                              </div>
+                                            )}
+                                            <div className="flex flex-col items-start">
+                                              <span className="text-xs text-(--text-primary)">背面</span>
+                                              {envView === 'back' && <span className="text-[10px] text-(--accent)">✓ 已选</span>}
+                                            </div>
+                                          </button>
+                                          <Button
+                                            size="sm"
+                                            variant="flat"
+                                            color={hasBack ? 'default' : 'primary'}
+                                            isLoading={isGenBack}
+                                            isDisabled={isGenFront || isGenBack}
+                                            onPress={() => handleGenerateEnvImage('back')}
+                                            startContent={!isGenBack ? <Wand2 className="w-3 h-3" /> : undefined}
+                                            className="w-full text-[11px] h-7"
+                                          >
+                                            {hasBack ? '重新生成背面' : '生成背面'}
+                                          </Button>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })()}
+                              </>
                             ) : (
                               <div className="text-xs text-(--text-muted)">尚未设置环境</div>
                             )}
                           </div>
 
-                          {/* 影棚全景图 */}
-                          {currentEnv && (
-                            <div>
-                              <div className="text-xs text-(--text-muted) mb-2 flex items-center justify-between">
-                                <span>影棚全景图</span>
-                                <div className="flex items-center gap-1">
-                                  {currentEnv.panorama_image_url ? (
-                                    <>
-                                      <Button
-                                        size="sm"
-                                        variant="light"
-                                        color="danger"
-                                        className="h-6 text-[11px]"
-                                        onPress={() => handleDeleteEnvPanorama(currentEnv.id)}
-                                      >
-                                        删除
-                                      </Button>
-                                      <Button
-                                        size="sm"
-                                        variant="flat"
-                                        color="primary"
-                                        className="h-6 text-[11px]"
-                                        isLoading={generatingEnvPano}
-                                        onPress={() => handleGenerateEnvPanorama(currentEnv.id)}
-                                      >
-                                        重新生成
-                                      </Button>
-                                    </>
-                                  ) : (
-                                    <Button
-                                      size="sm"
-                                      variant="flat"
-                                      color="primary"
-                                      className="h-6 text-[11px]"
-                                      isLoading={generatingEnvPano}
-                                      onPress={() => handleGenerateEnvPanorama(currentEnv.id)}
-                                    >
-                                      生成影棚图
-                                    </Button>
-                                  )}
-                                </div>
-                              </div>
-                              {currentEnv.panorama_image_url ? (
-                                <div className="rounded-md overflow-hidden border border-(--border-color)" style={{ height: 200 }}>
-                                  <PanoramaViewer
-                                    src={currentEnv.panorama_image_url}
-                                    autoRotateSpeed={0.02}
-                                  />
-                                </div>
-                              ) : (
-                                <div className="text-xs text-(--text-muted)">尚未生成影棚图</div>
-                              )}
+                          {/* 九宫组装图（独立区块，不依赖环境绑定） */}
+                          <div className="p-2 rounded-md bg-(--bg-app) border border-(--border-color)">
+                            <div className="text-xs text-(--text-muted) mb-2 flex items-center justify-between">
+                              <span className="flex items-center gap-1">
+                                <LayoutGrid className="w-3 h-3" />
+                                九宫组装图（3×3 九机位视角）
+                              </span>
+                              <Button
+                                size="sm"
+                                variant="flat"
+                                color="primary"
+                                className="h-6 text-[11px]"
+                                isLoading={generatingNineGrid || detail?.studio?.nine_grid_generation_status === 'generating'}
+                                onPress={handleGenerateNineGrid}
+                                isDisabled={!detail?.environment && !detail?.buildings?.length}
+                              >
+                                {detail?.studio?.nine_grid_image_url ? '重新生成' : '生成九宫图'}
+                              </Button>
                             </div>
-                          )}
+                            {detail?.studio?.nine_grid_image_url ? (
+                              <img
+                                src={detail.studio.nine_grid_image_url}
+                                alt="九宫组装图"
+                                className="w-full rounded border border-(--border-color) object-contain"
+                              />
+                            ) : detail?.studio?.nine_grid_generation_status === 'generating' ? (
+                              <div className="text-xs text-(--text-muted)">生成中…</div>
+                            ) : detail?.studio?.nine_grid_generation_status === 'failed' ? (
+                              <div className="text-xs text-red-400">上次生成失败，可重试</div>
+                            ) : (
+                              <div className="text-xs text-(--text-muted)">
+                                {(detail?.environment || detail?.buildings?.length)
+                                  ? '尚未生成，点击右上角按钮启动'
+                                  : '需先绑定环境或关联至少 1 座建筑'}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* 影棚全景图入口已移除 —— 统一由"九宫组装图"承担影棚可视化 */}
 
                           <div>
                             <div className="text-xs text-(--text-muted) mb-2">项目内可选环境</div>
@@ -504,6 +633,9 @@ const StudioModal: React.FC<StudioModalProps> = ({
                                   const canInterior = true;
                                   const canExterior = true;
                                   const genState = generatingBuildingView[b.id] || {};
+                                  const bView = (b as any).building_view === 'interior' ? 'interior' : 'exterior';
+                                  const bHasExterior = !!b.exterior_image_url;
+                                  const bHasInterior = !!b.interior_image_url;
                                   return (
                                     <div
                                       key={b.id}
@@ -538,6 +670,32 @@ const StudioModal: React.FC<StudioModalProps> = ({
                                         >
                                           <X className="w-4 h-4 text-red-500" />
                                         </Button>
+                                      </div>
+
+                                      {/* 组装视图（外/内）选择 —— 决定九宫图用哪张参考 */}
+                                      <div className="flex items-center gap-2 pl-1">
+                                        <div className="text-[10px] text-(--text-muted) flex items-center gap-1 shrink-0">
+                                          <LayoutGrid className="w-3 h-3" />
+                                          组装用：
+                                        </div>
+                                        <Chip
+                                          size="sm"
+                                          variant={bView === 'exterior' ? 'solid' : 'flat'}
+                                          color={bView === 'exterior' ? 'primary' : 'default'}
+                                          className={`cursor-pointer text-[10px] ${!bHasExterior ? 'opacity-40' : ''}`}
+                                          onClick={() => bHasExterior && handleSetBuildingView(b.id, 'exterior')}
+                                        >
+                                          外景{bView === 'exterior' ? ' ✓' : ''}
+                                        </Chip>
+                                        <Chip
+                                          size="sm"
+                                          variant={bView === 'interior' ? 'solid' : 'flat'}
+                                          color={bView === 'interior' ? 'primary' : 'default'}
+                                          className={`cursor-pointer text-[10px] ${!bHasInterior ? 'opacity-40' : ''}`}
+                                          onClick={() => bHasInterior && handleSetBuildingView(b.id, 'interior')}
+                                        >
+                                          内景{bView === 'interior' ? ' ✓' : ''}
+                                        </Chip>
                                       </div>
 
                                       {/* 室内/室外视图 */}
@@ -605,46 +763,50 @@ const StudioModal: React.FC<StudioModalProps> = ({
                           </div>
 
                           <div>
-                            <div className="text-xs text-(--text-muted) mb-2">项目内可关联建筑</div>
-                            {availableBuildings.length ? (
+                            <div className="text-xs text-(--text-muted) mb-2">项目内所有建筑</div>
+                            {projectBuildings.length ? (
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                                {availableBuildings.map(b => (
-                                  <div
-                                    key={b.id}
-                                    className="flex items-center gap-3 p-2 rounded-md bg-(--bg-app) border border-(--border-color)"
-                                  >
-                                    {b.image_url ? (
-                                      <Image
-                                        src={b.image_url}
-                                        alt={b.name}
-                                        removeWrapper
-                                        className="w-12 h-12 object-cover rounded shrink-0"
-                                      />
-                                    ) : (
-                                      <div className="w-12 h-12 rounded bg-(--bg-input) flex items-center justify-center text-(--text-muted) shrink-0">
-                                        <Building2 className="w-5 h-5" />
-                                      </div>
-                                    )}
-                                    <div className="flex-1 min-w-0">
-                                      <div className="text-sm text-(--text-primary) truncate">{b.name}</div>
-                                      <div className="text-[11px] text-(--text-muted) truncate">
-                                        {b.description || '无描述'}
-                                      </div>
-                                    </div>
-                                    <Button
-                                      size="sm"
-                                      variant="flat"
-                                      color="primary"
-                                      startContent={<Plus className="w-3 h-3" />}
-                                      onPress={() => handleAttachBuilding(b.id)}
+                                {projectBuildings.map(b => {
+                                  const isLinked = studioBuildingIds.has(b.id);
+                                  return (
+                                    <div
+                                      key={b.id}
+                                      className={`flex items-center gap-3 p-2 rounded-md bg-(--bg-app) border border-(--border-color) ${isLinked ? 'opacity-60' : ''}`}
                                     >
-                                      关联
-                                    </Button>
-                                  </div>
-                                ))}
+                                      {b.image_url ? (
+                                        <Image
+                                          src={b.image_url}
+                                          alt={b.name}
+                                          removeWrapper
+                                          className="w-12 h-12 object-cover rounded shrink-0"
+                                        />
+                                      ) : (
+                                        <div className="w-12 h-12 rounded bg-(--bg-input) flex items-center justify-center text-(--text-muted) shrink-0">
+                                          <Building2 className="w-5 h-5" />
+                                        </div>
+                                      )}
+                                      <div className="flex-1 min-w-0">
+                                        <div className="text-sm text-(--text-primary) truncate">{b.name}</div>
+                                        <div className="text-[11px] text-(--text-muted) truncate">
+                                          {b.description || '无描述'}
+                                        </div>
+                                      </div>
+                                      <Button
+                                        size="sm"
+                                        variant="flat"
+                                        color={isLinked ? 'default' : 'primary'}
+                                        startContent={!isLinked ? <Plus className="w-3 h-3" /> : undefined}
+                                        onPress={() => handleAttachBuilding(b.id)}
+                                        isDisabled={isLinked}
+                                      >
+                                        {isLinked ? '已关联' : '关联'}
+                                      </Button>
+                                    </div>
+                                  );
+                                })}
                               </div>
                             ) : (
-                              <div className="text-xs text-(--text-muted)">项目内没有可关联建筑</div>
+                              <div className="text-xs text-(--text-muted)">项目内没有建筑，请先到资产页新建</div>
                             )}
                           </div>
                         </div>

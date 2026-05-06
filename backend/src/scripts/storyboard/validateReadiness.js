@@ -146,32 +146,31 @@ async function validateForFrame(res, storyboard, variables) {
     }
   }
 
-  // 2. 通过关联表检查场景
+  // 2. 通过关联表检查影棚
   if (location) {
-    const linkedScenes = await queryAll(
-      `SELECT s.name, s.description, s.environment, s.lighting, s.mood, s.image_url
-       FROM storyboard_scenes ss
-       JOIN scenes s ON ss.scene_id = s.id
-       WHERE ss.storyboard_id = ?`,
-      [storyboardId]
+    const linkedStudio = await queryOne(
+      `SELECT st.name, st.description, st.nine_grid_image_url,
+              e.image_url AS env_front_url, e.image_back_url AS env_back_url, e.description AS env_description
+       FROM storyboard_scenes ssc
+       JOIN studios st ON ssc.studio_id = st.id
+       LEFT JOIN environments e ON st.environment_id = e.id
+       WHERE ssc.storyboard_id = ? AND st.name = ?`,
+      [storyboardId, location]
     );
-    const linkedScene = linkedScenes.find(s => s.name === location);
 
-    if (!linkedScene) {
+    if (!linkedStudio) {
       issues.push({
         type: 'scene_not_linked',
-        message: `场景「${location}」未与该分镜建立关联，请先运行智能分镜生成`,
+        message: `影棚「${location}」未与该分镜建立关联，请先运行智能分镜生成`,
         details: [location]
       });
     } else {
-      if (!linkedScene.image_url) {
-        issues.push({ type: 'scene_no_image', message: `场景「${location}」缺少图片`, details: [location] });
+      const hasImage = !!linkedStudio.nine_grid_image_url;
+      if (!hasImage) {
+        issues.push({ type: 'scene_no_image', message: `影棚「${location}」缺少九宫组装图，请先到影棚中生成`, details: [location] });
       }
-      if (!linkedScene.description || !linkedScene.description.trim()) {
-        issues.push({ type: 'scene_field_missing', message: `场景「${location}」缺少描述`, details: [location] });
-      }
-      if (!linkedScene.environment || !linkedScene.environment.trim()) {
-        issues.push({ type: 'scene_field_missing', message: `场景「${location}」缺少环境描述`, details: [location] });
+      if ((!linkedStudio.description || !linkedStudio.description.trim()) && (!linkedStudio.env_description || !linkedStudio.env_description.trim())) {
+        issues.push({ type: 'scene_field_missing', message: `影棚「${location}」缺少描述`, details: [location] });
       }
     }
   }

@@ -60,6 +60,8 @@ const WORKFLOW_TYPE_NAMES: Record<string, string> = {
   'single_frame_generation': '单帧生成',
   'scene_video': '视频生成',
   'character_views_generation': '角色三视图生成',
+  'character_state_views_generation': '角色状态设定图生成',
+  'batch_character_views_generation': '批量角色设定图生成',
   'scene_image_generation': '场景图生成',
   'batch_frame_generation': '批量帧生成',
   'batch_scene_video_generation': '批量视频生成',

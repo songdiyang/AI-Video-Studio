@@ -92,6 +92,15 @@ class WorkflowEngine {
   }
 
   /**
+   * 恢复被中断的工作流（应在数据库初始化完成后调用）
+   */
+  async recoverInterruptedJobs() {
+    if (this.executor && typeof this.executor.recoverIfNeeded === 'function') {
+      await this.executor.recoverIfNeeded();
+    }
+  }
+
+  /**
    * 关闭引擎（优雅退出）
    */
   async shutdown() {

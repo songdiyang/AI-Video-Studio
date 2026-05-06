@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { ChevronDown, ChevronRight, LogOut, Settings, Users, Cpu, LayoutDashboard, Server, BarChart3, Gauge, CreditCard, Globe, MessageSquare, AlertTriangle, Megaphone, Calculator, Sun, Moon, Contrast, ClipboardList } from 'lucide-react';
+import { ChevronDown, ChevronRight, LogOut, Settings, Users, Cpu, LayoutDashboard, Server, BarChart3, Gauge, CreditCard, Globe, MessageSquare, AlertTriangle, Megaphone, Calculator, Sun, Moon, Contrast, ClipboardList, Database } from 'lucide-react';
 import { getAuthUser, logout, getUserRole } from '../../services/auth';
 import { getAdminEmployeeId } from '../../services/admin';
 
@@ -105,6 +105,12 @@ const AdminLayout: React.FC = () => {
           label: 'AI 模型配置',
           icon: <Cpu className="w-4 h-4" />,
           path: '/admin/ai-models'
+        },
+        {
+          id: 'model-providers',
+          label: '模型平台管理',
+          icon: <Database className="w-4 h-4" />,
+          path: '/admin/model-providers'
         },
         {
           id: 'model-stats',

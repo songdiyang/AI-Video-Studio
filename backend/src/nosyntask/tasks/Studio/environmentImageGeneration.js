@@ -157,7 +157,7 @@ async function handleEnvironmentImageGeneration(inputParams, onProgress) {
         result.image_url,
         `images/environments/${environmentId}`,
         { fallbackExt: '.png' }
-      );
+      ).then(url => `${url}?t=${Date.now()}`);  // 破缓存
     };
 
     // —— front：生成正面图 ——

@@ -18,6 +18,9 @@ export interface AIModel {
   description?: string;
   is_active: number;
   api_key?: string;
+  provider_id?: number;
+  model_id?: string;
+  capabilities?: string[];
   price_config: PriceConfig | string | null;
   priceSummary?: string;
   request_method: string;
@@ -60,6 +63,9 @@ export interface ModelFormData {
   description: string;
   is_active: number;
   api_key: string;
+  provider_id: string;
+  model_id: string;
+  capabilities: string;
   price_config: string;
   request_method: string;
   url_template: string;
@@ -129,68 +135,139 @@ export interface TemplatePreset {
   config: Partial<ModelFormData>;
 }
 
-export const TEMPLATE_PRESETS: TemplatePreset[] = [
+// OpenAI 适配层预设（推荐）
+export interface OpenAIPreset {
+  name: string;
+  description: string;
+  category: 'TEXT' | 'IMAGE' | 'VIDEO' | 'AUDIO' | 'MULTIMODAL';
+  provider_id: number;
+  provider_name: string;
+  model_id: string;
+  capabilities: string[];
+  config: Partial<ModelFormData>;
+}
+
+export const OPENAI_PRESETS: OpenAIPreset[] = [
   {
-    name: 'OpenAI 文本模型 (GPT)',
-    description: '兼容 OpenAI Chat Completions API 格式',
+    name: 'DeepSeek Chat',
+    description: 'DeepSeek-V3.2 高性价比文本生成，支持128K上下文',
     category: 'TEXT',
+    provider_id: 1,
+    provider_name: 'deepseek',
+    model_id: 'deepseek-chat',
+    capabilities: ['llm'],
     config: {
-      request_method: 'POST',
-      url_template: 'https://api.openai.com/v1/chat/completions',
-      headers_template: JSON.stringify({
-        "Content-Type": "application/json",
-        "Authorization": "Bearer {{apiKey}}"
-      }, null, 2),
-      body_template: JSON.stringify({
-        "model": "{{model}}",
-        "messages": "{{messages}}",
-        "temperature": "{{temperature}}",
-        "max_tokens": "{{maxTokens}}"
-      }, null, 2),
-      default_params: JSON.stringify({ temperature: 0.7, maxTokens: 4096 }, null, 2),
-      response_mapping: JSON.stringify({
-        "content": "choices.0.message.content",
-        "tokens": "usage.total_tokens"
-      }, null, 2),
+      provider: 'deepseek',
       price_config: JSON.stringify({
         currency: 'CNY',
         charge_on_failure: false,
         components: [
-          { type: 'input_tokens', unit: 'per_million_tokens', price: 15 },
-          { type: 'output_tokens', unit: 'per_million_tokens', price: 60 }
+          { type: 'input_tokens', unit: 'per_million_tokens', price: 2 },
+          { type: 'output_tokens', unit: 'per_million_tokens', price: 8 }
         ]
       }, null, 2),
     }
   },
   {
-    name: 'OpenAI 图像模型 (DALL-E)',
-    description: '兼容 OpenAI Images API 格式',
-    category: 'IMAGE',
+    name: 'DeepSeek Reasoner',
+    description: 'DeepSeek 深度思考模式，支持推理链输出',
+    category: 'TEXT',
+    provider_id: 1,
+    provider_name: 'deepseek',
+    model_id: 'deepseek-reasoner',
+    capabilities: ['llm'],
     config: {
-      request_method: 'POST',
-      url_template: 'https://api.openai.com/v1/images/generations',
-      headers_template: JSON.stringify({
-        "Content-Type": "application/json",
-        "Authorization": "Bearer {{apiKey}}"
-      }, null, 2),
-      body_template: JSON.stringify({
-        "model": "dall-e-3",
-        "prompt": "{{prompt}}",
-        "size": "{{size}}",
-        "quality": "standard",
-        "n": 1
-      }, null, 2),
-      default_params: JSON.stringify({ size: '1024x1024' }, null, 2),
-      response_mapping: JSON.stringify({
-        "image_url": "data.0.url"
-      }, null, 2),
+      provider: 'deepseek',
       price_config: JSON.stringify({
         currency: 'CNY',
         charge_on_failure: false,
-        components: [{ type: 'item_count', unit: 'per_item', price: 0.3 }]
+        components: [
+          { type: 'input_tokens', unit: 'per_million_tokens', price: 4 },
+          { type: 'output_tokens', unit: 'per_million_tokens', price: 16 }
+        ]
       }, null, 2),
     }
   },
+  {
+    name: '通义千问 (Qwen)',
+    description: '阿里云百炼 Qwen 系列文本模型',
+    category: 'TEXT',
+    provider_id: 2,
+    provider_name: 'aliyun',
+    model_id: 'qwen-plus',
+    capabilities: ['llm'],
+    config: {
+      provider: 'aliyun',
+      price_config: JSON.stringify({
+        currency: 'CNY',
+        charge_on_failure: false,
+        components: [
+          { type: 'input_tokens', unit: 'per_million_tokens', price: 2 },
+          { type: 'output_tokens', unit: 'per_million_tokens', price: 6 }
+        ]
+      }, null, 2),
+    }
+  },
+  {
+    name: '豆包多模态 (Seed)',
+    description: '火山引擎豆包多模态理解模型',
+    category: 'MULTIMODAL',
+    provider_id: 6,
+    provider_name: 'volcengine',
+    model_id: 'doubao-seed-2-0-pro-260215',
+    capabilities: ['mllm', 'vision'],
+    config: {
+      provider: 'volcengine',
+      price_config: JSON.stringify({
+        currency: 'CNY',
+        charge_on_failure: false,
+        components: [
+          { type: 'total_tokens', unit: 'per_million_tokens', price: 18 }
+        ]
+      }, null, 2),
+    }
+  },
+  {
+    name: '豆包文生图 (Seedream)',
+    description: '火山引擎 Seedream 文生图模型',
+    category: 'IMAGE',
+    provider_id: 6,
+    provider_name: 'volcengine',
+    model_id: 'doubao-seedream-3-0-250115',
+    capabilities: ['image_gen'],
+    config: {
+      provider: 'volcengine',
+      price_config: JSON.stringify({
+        currency: 'CNY',
+        charge_on_failure: false,
+        components: [{ type: 'item_count', unit: 'per_item', price: 0.02 }]
+      }, null, 2),
+      supported_aspect_ratios: JSON.stringify(["16:9", "9:16", "1:1", "4:3", "3:4"], null, 2),
+    }
+  },
+  {
+    name: '豆包视频 (Seedance)',
+    description: '火山引擎 Seedance 视频生成模型',
+    category: 'VIDEO',
+    provider_id: 6,
+    provider_name: 'volcengine',
+    model_id: 'doubao-seedance-1-0-250115',
+    capabilities: ['video_gen'],
+    config: {
+      provider: 'volcengine',
+      price_config: JSON.stringify({
+        currency: 'CNY',
+        charge_on_failure: false,
+        components: [{ type: 'duration_seconds', unit: 'per_second', price: 0.5 }]
+      }, null, 2),
+      supported_aspect_ratios: JSON.stringify(["16:9", "9:16", "1:1"], null, 2),
+      supported_durations: JSON.stringify([5, 10], null, 2),
+    }
+  },
+];
+
+// 传统模板预设（保留用于非 OpenAI 兼容接口）
+export const TEMPLATE_PRESETS: TemplatePreset[] = [
   {
     name: '异步视频生成 (通用)',
     description: '通用异步视频生成模板，支持任务提交和轮询查询',
@@ -261,73 +338,6 @@ export const TEMPLATE_PRESETS: TemplatePreset[] = [
       supported_resolutions: JSON.stringify(["1080p", "2k", "4k"], null, 2),
     }
   },
-  {
-    name: 'OpenAI 兼容文本 (第三方)',
-    description: '兼容 OpenAI 格式的第三方文本模型 (如 DeepSeek, 通义千问等)',
-    category: 'TEXT',
-    config: {
-      request_method: 'POST',
-      headers_template: JSON.stringify({
-        "Content-Type": "application/json",
-        "Authorization": "Bearer {{apiKey}}"
-      }, null, 2),
-      body_template: JSON.stringify({
-        "model": "{{model}}",
-        "messages": "{{messages}}",
-        "temperature": "{{temperature}}",
-        "max_tokens": "{{maxTokens}}",
-        "stream": false
-      }, null, 2),
-      default_params: JSON.stringify({ temperature: 0.7, maxTokens: 4096 }, null, 2),
-      response_mapping: JSON.stringify({
-        "content": "choices.0.message.content",
-        "tokens": "usage.total_tokens"
-      }, null, 2),
-      price_config: JSON.stringify({
-        currency: 'CNY',
-        charge_on_failure: false,
-        components: [
-          { type: 'input_tokens', unit: 'per_million_tokens', price: 2 },
-          { type: 'output_tokens', unit: 'per_million_tokens', price: 8 }
-        ]
-      }, null, 2),
-    }
-  },
-  {
-    name: '多模态理解 (Volcengine)',
-    description: '火山引擎多模态理解模型，支持图像/视频/文档理解',
-    category: 'MULTIMODAL',
-    config: {
-      provider: 'volcengine',
-      request_method: 'POST',
-      url_template: 'https://ark.cn-beijing.volces.com/api/v3/responses',
-      headers_template: JSON.stringify({
-        "Content-Type": "application/json",
-        "Authorization": "Bearer {{apiKey}}"
-      }, null, 2),
-      body_template: JSON.stringify({
-        "model": "{{modelId}}",
-        "input": "{{input}}"
-      }, null, 2),
-      default_params: JSON.stringify({
-        modelId: 'doubao-seed-2-0-pro-260215',
-        temperature: 0.7,
-        max_tokens: 4096
-      }, null, 2),
-      response_mapping: JSON.stringify({
-        "content": "output[0].content[0].text",
-        "usage": "usage"
-      }, null, 2),
-      custom_handler: 'doubao_multimodal',
-      price_config: JSON.stringify({
-        currency: 'CNY',
-        charge_on_failure: false,
-        components: [
-          { type: 'total_tokens', unit: 'per_million_tokens', price: 18 }
-        ]
-      }, null, 2),
-    }
-  },
 ];
 
 export const DEFAULT_FORM_DATA: ModelFormData = {
@@ -337,6 +347,9 @@ export const DEFAULT_FORM_DATA: ModelFormData = {
   description: '',
   is_active: 1,
   api_key: '',
+  provider_id: '',
+  model_id: '',
+  capabilities: '[]',
   price_config: JSON.stringify({
     currency: 'CNY',
     charge_on_failure: false,

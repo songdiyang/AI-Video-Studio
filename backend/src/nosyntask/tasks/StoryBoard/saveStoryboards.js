@@ -482,28 +482,29 @@ async function handleSaveStoryboards(inputParams, onProgress) {
         );
         for (const row of oldScenesRows) locToOldSceneId.set(row.name, row.id);
 
-        const updatePairs = []; // [storyboard_id, scene_id, studio_state_id]
+        const updatePairs = []; // [storyboard_id, scene_id, studio_id, studio_state_id]
         for (let i = 0; i < scenes.length; i++) {
           const sc = scenes[i];
           const loc = (sc.location || '').trim();
           const oldSceneId = locToOldSceneId.get(loc);
           const sbId = idxToSbId2.get(idxOffset + i);
           const stateId = sceneToStateId.get(i);
-          if (oldSceneId && sbId && stateId) {
-            updatePairs.push([sbId, oldSceneId, stateId]);
+          const studioId = locationToStudioId.get(loc) || null;
+          if (oldSceneId && sbId) {
+            updatePairs.push([sbId, oldSceneId, studioId, stateId || null]);
           }
         }
         if (updatePairs.length > 0) {
           // 先确保 storyboard_scenes 有记录（可能之前已由 linkAllForScript 建好），再 UPDATE
-          for (const [sbId, sceneId, stateId] of updatePairs) {
+          for (const [sbId, sceneId, studioId, stateId] of updatePairs) {
             await execute(
-              `INSERT INTO storyboard_scenes (storyboard_id, scene_id, studio_state_id)
-               VALUES (?, ?, ?)
-               ON DUPLICATE KEY UPDATE studio_state_id = VALUES(studio_state_id)`,
-              [sbId, sceneId, stateId]
+              `INSERT INTO storyboard_scenes (storyboard_id, scene_id, studio_id, studio_state_id)
+               VALUES (?, ?, ?, ?)
+               ON DUPLICATE KEY UPDATE studio_id = VALUES(studio_id), studio_state_id = VALUES(studio_state_id)`,
+              [sbId, sceneId, studioId, stateId]
             );
           }
-          console.log(`[SaveStoryboards] storyboard_scenes.studio_state_id 回写 ${updatePairs.length} 条`);
+          console.log(`[SaveStoryboards] storyboard_scenes.studio_id + studio_state_id 回写 ${updatePairs.length} 条`);
         }
       }
     } catch (aggErr) {

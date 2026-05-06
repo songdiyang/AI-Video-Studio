@@ -555,7 +555,7 @@ export const MONTAGE_TYPE_OPTIONS: ShotLanguageOption[] = [
 // ============ 辅助函数 ============
 
 /** 获取景别的中文名称 */
-export function getShotSizeLabel(size?: ShotSize): string {
+export function getShotSizeLabel(size?: ShotSize | string): string {
   const labels: Record<ShotSize, string> = {
     extreme_close_up: '大特写',
     close_up: '特写',
@@ -565,11 +565,17 @@ export function getShotSizeLabel(size?: ShotSize): string {
     long_shot: '全景',
     extreme_long_shot: '大远景',
   };
-  return size ? labels[size] : '';
+  // 如果传入的是中文标签，直接返回（兼容旧数据）
+  if (!size) return '';
+  // 检查是否是中文标签
+  if (['大特写', '特写', '中近景', '中景', '中全景', '全景', '大远景', '远景'].includes(size)) {
+    return size === '远景' ? '全景' : size; // "远景"映射到"全景"
+  }
+  return labels[size as ShotSize] || size;
 }
 
 /** 获取景别的视觉表示（用于缩略图） */
-export function getShotSizeVisual(size?: ShotSize): string {
+export function getShotSizeVisual(size?: ShotSize | string): string {
   const visuals: Record<ShotSize, string> = {
     extreme_close_up: '👁️',
     close_up: '😊',
@@ -579,7 +585,21 @@ export function getShotSizeVisual(size?: ShotSize): string {
     long_shot: '🏞️',
     extreme_long_shot: '🌄',
   };
-  return size ? visuals[size] : '';
+  // 中文标签到英文值的映射
+  const labelToValue: Record<string, ShotSize> = {
+    '大特写': 'extreme_close_up',
+    '特写': 'close_up',
+    '中近景': 'medium_close_up',
+    '中景': 'medium_shot',
+    '中全景': 'medium_long_shot',
+    '全景': 'long_shot',
+    '大远景': 'extreme_long_shot',
+    '远景': 'long_shot', // 兼容旧数据
+  };
+  if (!size) return '';
+  // 如果是中文标签，转换为英文值
+  const normalizedSize = labelToValue[size] || (size as ShotSize);
+  return visuals[normalizedSize] || '';
 }
 
 /** 检查两个分镜是否越轴 */

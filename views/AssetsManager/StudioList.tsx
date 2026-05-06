@@ -1,9 +1,7 @@
 import React, { useState } from 'react';
 import { Card, CardBody, Button, Chip, Image, Modal, ModalContent, ModalHeader, ModalBody } from '@heroui/react';
-import { Trash2, Edit2, Film, MapPin, Box, Wand2, Globe } from 'lucide-react';
-import { Studio } from '../../services/studios';
-import { generateEnvironmentPanorama } from '../../services/environments';
-import PanoramaViewer from '../../components/PanoramaViewer';
+import { Trash2, Edit2, Film, MapPin, Box, LayoutGrid } from 'lucide-react';
+import { Studio, generateStudioNineGrid } from '../../services/studios';
 
 interface StudioListProps {
   studios: Studio[];
@@ -14,32 +12,22 @@ interface StudioListProps {
 }
 
 const StudioList: React.FC<StudioListProps> = ({ studios, onEdit, onDelete, selectedImageModel, selectedTextModel }) => {
-  const [generatingIds, setGeneratingIds] = useState<Set<number>>(new Set());
-  const [previewStudio, setPreviewStudio] = useState<Studio | null>(null);
-  const [previewReady, setPreviewReady] = useState(false);
+  const [generatingNineGridIds, setGeneratingNineGridIds] = useState<Set<number>>(new Set());
+  const [previewNineGrid, setPreviewNineGrid] = useState<Studio | null>(null);
 
-  // Modal 延迟渲染
-  React.useEffect(() => {
-    if (previewStudio) {
-      setPreviewReady(false);
-      const timer = setTimeout(() => setPreviewReady(true), 400);
-      return () => clearTimeout(timer);
-    } else {
-      setPreviewReady(false);
-    }
-  }, [previewStudio]);
-
-  const handleGenerateStudioImage = async (studio: Studio) => {
-    if (!studio.environment_id) return;
+  const handleGenerateNineGrid = async (studio: Studio) => {
     if (!selectedImageModel) return;
-    setGeneratingIds((prev) => new Set(prev).add(studio.id));
+    const buildingCount = ((studio as any).buildings as any[] | undefined)?.length || 0;
+    // 允许仅绑定环境、仅关联建筑，或两者并存，任一为空也放行
+    if (!studio.environment_id && buildingCount === 0) return;
+    setGeneratingNineGridIds((prev) => new Set(prev).add(studio.id));
     try {
-      await generateEnvironmentPanorama(studio.environment_id, {
+      await generateStudioNineGrid(studio.id, {
         imageModel: selectedImageModel,
         textModel: selectedTextModel || undefined,
       });
     } finally {
-      setGeneratingIds((prev) => {
+      setGeneratingNineGridIds((prev) => {
         const next = new Set(prev);
         next.delete(studio.id);
         return next;
@@ -59,10 +47,12 @@ const StudioList: React.FC<StudioListProps> = ({ studios, onEdit, onDelete, sele
     <>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-6 items-stretch">
         {studios.map((s) => {
-          const isGenerating = generatingIds.has(s.id);
-          const envData = (s as any).environment as { id: number; name: string; image_url: string | null; panorama_image_url: string | null } | null;
-          const hasPanorama = !!envData?.panorama_image_url;
-          const coverUrl = envData?.panorama_image_url || envData?.image_url || s.cover_image_url;
+          const isGeneratingNineGrid = generatingNineGridIds.has(s.id);
+          const envData = (s as any).environment as { id: number; name: string; image_url: string | null } | null;
+          const hasNineGrid = !!s.nine_grid_image_url;
+          // 封面仅显示九宫组装图
+          const coverUrl = s.nine_grid_image_url;
+          const nineGridStatus = s.nine_grid_generation_status;
 
           return (
             <Card
@@ -81,53 +71,39 @@ const StudioList: React.FC<StudioListProps> = ({ studios, onEdit, onDelete, sele
                       className="w-full h-full object-cover"
                     />
                   ) : (
-                    <div className="w-full h-full flex items-center justify-center text-(--text-muted)">
-                      <Film className="w-12 h-12 opacity-40" />
+                    <div className="w-full h-full flex flex-col items-center justify-center text-(--text-muted) gap-1">
+                      <LayoutGrid className="w-8 h-8 opacity-30" />
+                      <span className="text-xs opacity-50">九宫图未生成</span>
                     </div>
                   )}
 
-                  {/* 全景图预览入口 */}
-                  {hasPanorama && (
+                  {/* 角标：九宫图预览入口 */}
+                  <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-20">
+                    {hasNineGrid && (
+                      <div
+                        className="cursor-pointer"
+                        onClick={() => setPreviewNineGrid(s)}
+                        title="查看九宫组装图"
+                      >
+                        <div className="bg-black/60 rounded-full p-1.5 hover:bg-black/80">
+                          <LayoutGrid className="w-3.5 h-3.5 text-white" />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Hover 操作层 —— 有九宫图则预览，无则提示到编辑中生成 */}
+                  {hasNineGrid && (
                     <div
-                      className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-20 cursor-pointer"
-                      onClick={() => setPreviewStudio(s)}
+                      className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center z-10 cursor-pointer"
+                      onClick={() => setPreviewNineGrid(s)}
                     >
-                      <div className="bg-black/60 rounded-full p-1.5 hover:bg-black/80">
-                        <Globe className="w-3.5 h-3.5 text-white" />
+                      <div className="bg-black/60 rounded-lg px-4 py-2 flex items-center gap-2">
+                        <LayoutGrid className="w-4 h-4 text-white" />
+                        <span className="text-white text-sm font-medium">预览九宫图</span>
                       </div>
                     </div>
                   )}
-
-                  {/* Hover 操作层 */}
-                  <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 z-10">
-                    {s.environment_id && (
-                      hasPanorama ? (
-                        <Button
-                          size="sm"
-                          variant="solid"
-                          color="primary"
-                          className="text-xs"
-                          isLoading={isGenerating}
-                          onPress={() => handleGenerateStudioImage(s)}
-                          startContent={!isGenerating ? <Wand2 className="w-3 h-3" /> : undefined}
-                        >
-                          {isGenerating ? '生成中' : '重新生成'}
-                        </Button>
-                      ) : (
-                        <Button
-                          size="sm"
-                          variant="solid"
-                          color="primary"
-                          className="text-xs"
-                          isLoading={isGenerating}
-                          onPress={() => handleGenerateStudioImage(s)}
-                          startContent={!isGenerating ? <Wand2 className="w-3 h-3" /> : undefined}
-                        >
-                          {isGenerating ? '生成中' : '生成影棚图'}
-                        </Button>
-                      )
-                    )}
-                  </div>
                 </div>
 
                 {/* 内容 */}
@@ -164,9 +140,19 @@ const StudioList: React.FC<StudioListProps> = ({ studios, onEdit, onDelete, sele
                   </p>
 
                   <div className="flex flex-wrap items-center gap-2 mt-auto">
-                    {hasPanorama && (
-                      <Chip size="sm" variant="flat" className="bg-green-500/10 text-green-500 font-medium">
-                        影棚图✓
+                    {hasNineGrid && (
+                      <Chip size="sm" variant="flat" className="bg-purple-500/10 text-purple-500 font-medium" startContent={<LayoutGrid className="w-3 h-3" />}>
+                        九宫图✓
+                      </Chip>
+                    )}
+                    {!hasNineGrid && nineGridStatus === 'generating' && (
+                      <Chip size="sm" variant="flat" className="bg-purple-500/10 text-purple-500 font-medium">
+                        九宫图生成中…
+                      </Chip>
+                    )}
+                    {!hasNineGrid && nineGridStatus === 'failed' && (
+                      <Chip size="sm" variant="flat" className="bg-red-500/10 text-red-500 font-medium">
+                        九宫图失败
                       </Chip>
                     )}
                     <Chip
@@ -193,11 +179,11 @@ const StudioList: React.FC<StudioListProps> = ({ studios, onEdit, onDelete, sele
         })}
       </div>
 
-      {/* 影棚全景图预览 Modal */}
+      {/* 影棚九宫组装图预览 Modal */}
       <Modal
-        isOpen={!!previewStudio}
-        onClose={() => setPreviewStudio(null)}
-        size="5xl"
+        isOpen={!!previewNineGrid}
+        onClose={() => setPreviewNineGrid(null)}
+        size="4xl"
         classNames={{ base: 'bg-black border-none', wrapper: 'items-center' }}
         hideCloseButton
       >
@@ -205,26 +191,24 @@ const StudioList: React.FC<StudioListProps> = ({ studios, onEdit, onDelete, sele
           {() => (
             <>
               <ModalHeader className="flex items-center justify-between bg-black/80 text-white border-b border-white/10 shrink-0">
-                <span>{previewStudio?.name || ''} — 影棚全景预览</span>
+                <span>{previewNineGrid?.name || ''} — 九宫组装图</span>
                 <Button
                   size="sm"
                   variant="light"
                   className="text-white"
-                  onPress={() => setPreviewStudio(null)}
+                  onPress={() => setPreviewNineGrid(null)}
                 >
                   关闭
                 </Button>
               </ModalHeader>
-              <ModalBody className="p-0 overflow-hidden flex-none" style={{ height: 500, width: '100%' }}>
-                {previewReady && previewStudio && (() => {
-                  const envData = (previewStudio as any).environment as { panorama_image_url: string } | null;
-                  return envData?.panorama_image_url ? (
-                    <PanoramaViewer
-                      src={envData.panorama_image_url}
-                      autoRotateSpeed={0.02}
-                    />
-                  ) : null;
-                })()}
+              <ModalBody className="p-2 flex items-center justify-center bg-black">
+                {previewNineGrid?.nine_grid_image_url && (
+                  <img
+                    src={previewNineGrid.nine_grid_image_url}
+                    alt={`${previewNineGrid.name} 九宫组装图`}
+                    className="max-w-full max-h-[80vh] object-contain"
+                  />
+                )}
               </ModalBody>
             </>
           )}

@@ -196,12 +196,7 @@ router.post('/login', async (req, res) => {
   }
 
   try {
-    const row = await queryOne('SELECT id, password_hash, role, is_active FROM users WHERE email = ?', [username]);
-
-    // 检查账号是否被禁用（管理员和运维豁免）
-    if (row && row.is_active === 0 && row.role !== 'admin' && row.role !== 'ops') {
-      return res.status(403).json({ message: '账号已被禁用，请联系管理员' });
-    }
+    const row = await queryOne('SELECT id, password_hash, role FROM users WHERE email = ?', [username]);
 
     // 非管理员/运维用户检查登录开关
     if (row && row.role !== 'admin' && row.role !== 'ops') {
@@ -274,7 +269,7 @@ router.post('/admin-login', async (req, res) => {
   }
 
   try {
-    const row = await queryOne('SELECT id, password_hash, role, is_active FROM users WHERE email = ?', [username]);
+    const row = await queryOne('SELECT id, password_hash, role FROM users WHERE email = ?', [username]);
 
     if (!row) {
       return res.status(401).json({ message: '用户名或密码错误' });

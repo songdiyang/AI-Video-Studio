@@ -98,9 +98,7 @@ const CharacterCard: React.FC<CharacterCardProps> = ({
 
   return (
     <Card
-      className="w-full bg-slate-800/60 shadow-sm hover:shadow-md hover:shadow-blue-500/5 transition-shadow border border-slate-700/50 cursor-pointer"
-      isPressable
-      onPress={handleDoubleClick}
+      className="w-full bg-slate-800/60 shadow-sm hover:shadow-md hover:shadow-blue-500/5 transition-shadow border border-slate-700/50"
     >
       <CardBody className="p-3">
         <div className="flex items-start gap-3 mb-3">
@@ -235,26 +233,7 @@ const CharacterCard: React.FC<CharacterCardProps> = ({
             )}
           </div>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            size="sm"
-            variant="flat"
-            className="flex-1 min-w-[5rem] bg-purple-500/10 text-purple-400 text-xs font-medium"
-            startContent={isGenerating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Layers className="w-3 h-3" />}
-            onPress={() => onGenerateViews(character.name, character.id)}
-            isDisabled={isGenerating}
-          >
-            {isGenerating ? '生成中...' : '三视图'}
-          </Button>
-          <Button
-            size="sm"
-            variant="flat"
-            className="flex-1 min-w-[5rem] bg-blue-500/10 text-blue-400 text-xs font-medium"
-            startContent={<Eye className="w-3 h-3" />}
-            onPress={() => onShowDetail(character)}
-          >
-            详情
-          </Button>
+        <div className="flex flex-wrap gap-2 justify-end">
           {onDelete && (
             <Tooltip content="删除角色">
               <Button

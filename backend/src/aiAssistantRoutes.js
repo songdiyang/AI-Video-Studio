@@ -318,9 +318,12 @@ router.post('/chat/stream', authMiddleware, async (req, res) => {
   console.log(`[AI Assistant Stream] 用户 ${userId} 发起流式对话, 模型: ${modelName}`);
 
   try {
-    // 获取模型配置
+    // 获取模型配置（含平台信息）
     const model = await queryOne(
-      'SELECT * FROM ai_model_configs WHERE name = ? AND is_active = 1',
+      `SELECT c.*, p.base_url, p.api_key as provider_api_key, p.headers_template as provider_headers
+       FROM ai_model_configs c
+       LEFT JOIN model_providers p ON c.provider_id = p.id
+       WHERE c.name = ? AND c.is_active = 1`,
       [modelName]
     );
     if (!model) {
@@ -332,18 +335,26 @@ router.post('/chat/stream', authMiddleware, async (req, res) => {
       return res.status(400).json({ success: false, error: '该模型不支持流式输出' });
     }
 
-    // 获取 API Key
-    const rawApiKey = model.api_key || process.env.ARK_API_KEY;
+    // 获取 API Key（优先级：模型配置 > 平台配置 > 环境变量）
+    const rawApiKey = model.api_key || model.provider_api_key || process.env.ARK_API_KEY;
     const apiKey = rawApiKey ? String(rawApiKey).replace(/[\r\n\0]/g, '').trim() : null;
     if (!apiKey) {
       return res.status(500).json({ success: false, error: 'API Key 未配置' });
     }
 
-    // 获取模型ID
-    const defaultParams = model.default_params
-      ? (typeof model.default_params === 'string' ? JSON.parse(model.default_params) : model.default_params)
-      : {};
-    const modelId = defaultParams.modelId || 'doubao-seed-2-0-pro-260215';
+    // 获取模型ID（优先使用 model_id 字段，其次从 default_params 解析）
+    const modelId = model.model_id || (model.default_params
+      ? (typeof model.default_params === 'string' ? JSON.parse(model.default_params) : model.default_params).modelId
+      : null) || '';
+    if (!modelId) {
+      return res.status(500).json({ success: false, error: '模型ID未配置' });
+    }
+
+    // 获取 Base URL（优先使用平台配置的 base_url）
+    const baseUrl = model.base_url || '';
+    if (!baseUrl) {
+      return res.status(500).json({ success: false, error: '模型平台 Base URL 未配置' });
+    }
 
     // 转换 messages
     const transformedMessages = messages.map(msg => ({
@@ -363,24 +374,44 @@ router.post('/chat/stream', authMiddleware, async (req, res) => {
 
     // 系统提示词
     const systemPrompt = buildSystemPrompt(context);
-    if (systemPrompt) {
-      input.unshift({ role: 'system', content: [{ type: 'input_text', text: systemPrompt }] });
-    }
-
-    // 构建请求体
-    const requestBody = {
-      model: modelId,
-      input,
-      stream: true
-    };
 
     // 设置 SSE 响应头
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
 
-    // 发送流式请求
-    const response = await fetch('https://ark.cn-beijing.volces.com/api/v3/responses', {
+    // 判断使用哪种 API 格式：OpenAI 适配层模式用 /chat/completions，传统模式用 /responses
+    const isOpenAIAdapter = model.provider_id && model.model_id;
+    const apiUrl = isOpenAIAdapter
+      ? `${baseUrl.replace(/\/$/, '')}/chat/completions`
+      : `${baseUrl.replace(/\/$/, '')}/responses`;
+
+    // 构建请求体：OpenAI 适配层用标准 messages 格式，传统模式用 input 数组格式
+    let requestBody;
+    if (isOpenAIAdapter) {
+      const messages = [
+        ...(systemPrompt ? [{ role: 'system', content: systemPrompt }] : []),
+        ...transformedMessages.map(m => ({
+          role: m.role,
+          content: typeof m.content === 'string'
+            ? m.content
+            : m.content.map(c => {
+                if (c.type === 'input_image') return { type: 'image_url', image_url: { url: c.image_url } };
+                if (c.type === 'input_text') return { type: 'text', text: c.text };
+                return c;
+              })
+        }))
+      ];
+      requestBody = { model: modelId, messages, stream: true };
+    } else {
+      // 传统模式：input 数组格式
+      if (systemPrompt) {
+        input.unshift({ role: 'system', content: [{ type: 'input_text', text: systemPrompt }] });
+      }
+      requestBody = { model: modelId, input, stream: true };
+    }
+
+    const response = await fetch(apiUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

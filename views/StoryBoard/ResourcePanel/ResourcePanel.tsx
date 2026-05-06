@@ -434,18 +434,6 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
             ) : (
               <LocationsTab
                 scenes={dbScenes}
-                activeSceneIds={sceneImageMonitor.activeTargetIds}
-                onPreview={(resource) => {
-                  handleShowSceneDetail(resource.name);
-                }}
-                onGenerateImage={(scene) => {
-                  handleShowSceneImageModal(scene);
-                }}
-                onCreate={() => handleOpenCreate('scene')}
-                onExtractComponents={scriptId ? handleExtractStudioComponents : undefined}
-                onComposeFromScript={scriptId ? handleComposeStudiosFromScript : undefined}
-                isExtracting={isExtractingComponents}
-                isComposing={isComposingStudios}
               />
             )}
           </>

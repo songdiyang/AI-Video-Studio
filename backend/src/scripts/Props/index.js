@@ -21,7 +21,19 @@ router.get('/', authMiddleware, async (req, res) => {
       'SELECT * FROM props WHERE user_id = ? ORDER BY created_at DESC',
       [userId]
     );
-    res.json({ props });
+
+    // 同时查询角色状态中引用的手持道具文本描述
+    const heldPropsRefs = await queryAll(
+      `SELECT cs.held_props, cs.name AS state_name, cs.id AS state_id,
+              ch.name AS character_name, ch.id AS character_id, ch.project_id
+       FROM character_states cs
+       JOIN characters ch ON cs.character_id = ch.id
+       WHERE ch.user_id = ? AND cs.held_props IS NOT NULL AND cs.held_props != ''
+       ORDER BY ch.name ASC, cs.sort_order ASC`,
+      [userId]
+    );
+
+    res.json({ props, heldPropsRefs });
   } catch (error) {
     console.error('[Get Props]', error);
     res.status(500).json({ message: '获取道具列表失败' });

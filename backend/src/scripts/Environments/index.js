@@ -6,8 +6,6 @@
  *   PATCH  /:id               更新环境
  *   DELETE /:id               删除（FK ON DELETE SET NULL 自动清理 studios.environment_id）
  *   POST   /:id/generate-image      启动氛围参考图生成
- *   POST   /:id/generate-panorama   启动影棚图生成（全景图+参考图）
- *   DELETE /:id/panorama            清空影棚图 URL（全景图+参考图）
  *   POST   /:id/recognize-terrain   AI识别地貌类型
  *   POST   /recognize-all-terrains 批量识别项目下所有环境的的地貌类型
  */
@@ -41,7 +39,7 @@ router.get('/', authMiddleware, async (req, res) => {
     }
     const rows = await queryAll(
       `SELECT id, user_id, project_id, name, description, time_of_day, weather,
-              lighting, mood, image_url, image_back_url, panorama_image_url, generation_prompt, generation_status,
+              lighting, mood, image_url, image_back_url, generation_prompt, generation_status,
               terrain_type, sort_order, created_at, updated_at
        FROM environments
        WHERE ${clauses.join(' AND ')}
@@ -55,7 +53,7 @@ router.get('/', authMiddleware, async (req, res) => {
     if (envIds.length) {
       const variants = await queryAll(
         `SELECT id, environment_id, time_of_day, weather, lighting, mood,
-                image_url, panorama_image_url, faces, generation_prompt, generation_status,
+                image_url, faces, generation_prompt, generation_status,
                 sort_order, created_at, updated_at
          FROM environment_variants
          WHERE environment_id IN (?)
@@ -157,7 +155,6 @@ router.patch('/:id', authMiddleware, async (req, res) => {
       lighting: 'lighting',
       mood: 'mood',
       imageUrl: 'image_url',
-      panoramaImageUrl: 'panorama_image_url',
       generationPrompt: 'generation_prompt',
       sortOrder: 'sort_order',
       terrainType: 'terrain_type'
@@ -224,50 +221,6 @@ router.post('/:id/generate-image', authMiddleware, async (req, res) => {
     });
   } catch (err) {
     sendGenerationError(res, err, '启动环境图生成失败', '[GenerateEnvironment]');
-  }
-});
-
-// POST /:id/generate-panorama  body: { imageModel, textModel? }
-router.post('/:id/generate-panorama', authMiddleware, async (req, res) => {
-  const userId = req.user.id;
-  const id = Number(req.params.id);
-  try {
-    const result = await generationStartService.start({
-      operationKey: 'environment_panorama_generate',
-      rawInput: {
-        environmentId: id,
-        ...req.body
-      },
-      actor: { userId }
-    });
-    res.json(result.response || {
-      message: '影棚图生成已启动',
-      jobId: result.jobId,
-      environmentId: id,
-      status: 'generating'
-    });
-  } catch (err) {
-    sendGenerationError(res, err, '启动影棚图生成失败', '[GenerateEnvironmentPanorama]');
-  }
-});
-
-// DELETE /:id/panorama
-router.delete('/:id/panorama', authMiddleware, async (req, res) => {
-  const userId = req.user.id;
-  const id = Number(req.params.id);
-  try {
-    const env = await ensureOwned(id, userId);
-    if (!env) {
-      return res.status(404).json({ message: '环境不存在或无权访问' });
-    }
-    await execute(
-      'UPDATE environments SET panorama_image_url = NULL, image_url = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-      [id]
-    );
-    res.json({ message: '环境影棚图已清除' });
-  } catch (err) {
-    console.error('[Delete Environment Panorama]', err);
-    res.status(500).json({ message: '清除环境影棚图失败' });
   }
 });
 

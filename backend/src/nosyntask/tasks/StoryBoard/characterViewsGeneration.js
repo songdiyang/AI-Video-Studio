@@ -40,7 +40,7 @@ const composeCharacterSheet = require('../../../utils/composeCharacterSheet');
  * 否则保持原行为（完整复刻参考图）。
  */
 function buildReferenceGuidedPrompt(view, style, characterName, options = {}) {
-  const { outfit = '', hairstyle = '', accessories = '', ageStage = '', heldProps = '' } = options;
+  const { outfit = '', hairstyle = '', accessories = '', ageStage = '', heldProps = '', hasCostumeRef = false } = options;
   const viewConfig = {
     front: 'front view, eye-level shot, facing directly at the camera, standing upright with relaxed natural posture, arms at sides, feet shoulder-width apart, looking straight ahead',
     side: 'side view, profile shot, turned 90 degrees to the right, full body, standing upright, showing full side profile silhouette, arms naturally at sides',
@@ -59,7 +59,20 @@ function buildReferenceGuidedPrompt(view, style, characterName, options = {}) {
   const hasStateAttrs = stateAttrs.length > 0;
 
   if (hasStateAttrs) {
-    // ★ 状态生成：参考图用于锁定身份（脸/发/体型），服装等按状态描述覆盖重绘
+    if (hasCostumeRef) {
+      // ★ 有服装设定图参考：以服装图纸为主导，文字描述仅作为补充
+      // 第一张参考图=白膜（身份锚），第二张参考图=服装设定图（服装锚）
+      const supplementaryAttrs = [];
+      if (hairstyle) supplementaryAttrs.push(`hairstyle: ${hairstyle}`);
+      if (accessories) supplementaryAttrs.push(`accessories: ${accessories}`);
+      if (ageStage) supplementaryAttrs.push(`age stage: ${ageStage}`);
+      if (heldProps) supplementaryAttrs.push(`holding/carrying: ${heldProps}`);
+      const supplementary = supplementaryAttrs.length > 0
+        ? `, additional details: ${supplementaryAttrs.join(', ')}`
+        : '';
+      return `match the character face and body identity from the base model reference image exactly, preserve all facial features face shape eye shape eye color skin tone body proportions from base model reference, keep the same character identity, IMPORTANT: match the costume and outfit design from the costume reference image exactly, replicate the clothing style silhouette color fabric pattern decoration details from the costume design sheet, the costume reference image is the primary guide for what the character should be wearing${supplementary}, character design reference sheet style, ${styleKeywords}, single character, solo, one person, full body, ${viewAngle}, simple clean background, even soft lighting, neutral natural expression`;
+    }
+    // ★ 无服装设定图参考：参考图仅用于锁定身份，服装按文字描述生成
     const outfitEmphasis = outfit
       ? `, the character MUST clearly be wearing: ${outfit} (this overrides any clothing in the reference image)`
       : '';
@@ -486,6 +499,7 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
 
   // === 参考图查询（简化架构：白膜用角色参考图，非白膜只用白膜三视图）===
   let userReferenceUrls = [];
+  let hasCostumeRefImage = false;  // 是否有服装设定图作为参考
 
   if (isBaseModel && characterId) {
     // ★ 白膜生成：直接查询角色级参考图（来自"参考图"Tab）
@@ -563,6 +577,7 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
           const costumeMain = resolveToInternalUrl(costumeRow.image_url);
           if (costumeMain) {
             refUrls.push(costumeMain);
+            hasCostumeRefImage = true;
             console.log('[CharacterViews] ✅ 非白膜状态生成：已加服装设定图作参考:', costumeMain);
           }
         } else {
@@ -592,6 +607,28 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
           if (propUrl) {
             refUrls.push(propUrl);
             console.log(`[CharacterViews] ✅ 非白膜状态生成：已加道具「${propRow.name}」设定图作参考 (${propRow.hand_position}/${propRow.usage_mode})`);
+          }
+        }
+      }
+
+      // 4) held_props 文本描述对应的道具设定图（按名称匹配同项目道具）
+      if (heldProps && heldProps.trim() && projectId) {
+        const heldPropsText = heldProps.trim();
+        // 排除已通过 character_state_props 关联的同名道具（避免重复）
+        const alreadyIncluded = propRows.some(r => r.name === heldPropsText);
+        if (!alreadyIncluded) {
+          const heldPropMatch = await queryOne(
+            `SELECT image_url, name FROM props
+             WHERE project_id = ? AND name = ? AND image_url IS NOT NULL AND image_url != ''
+             LIMIT 1`,
+            [projectId, heldPropsText]
+          );
+          if (heldPropMatch) {
+            const heldPropUrl = resolveToInternalUrl(heldPropMatch.image_url);
+            if (heldPropUrl) {
+              refUrls.push(heldPropUrl);
+              console.log(`[CharacterViews] ✅ 非白膜状态生成：已加手持道具「${heldPropMatch.name}」设定图作参考`);
+            }
           }
         }
       }
@@ -733,8 +770,8 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
           if (isBaseModel) {
             return { view, prompt: buildBaseModelReferencePrompt(view, style, characterName, { gender, bodyElements }) };
           }
-          // 非白膜状态：参考图通常是白膜设定图，必须把状态服装/发型/配饰传入以覆盖参考图占位装
-          return { view, prompt: buildReferenceGuidedPrompt(view, style, characterName, { isBaseModel, gender, outfit, hairstyle, accessories, ageStage, heldProps: effectiveHeldProps }) };
+          // 非白膜状态：参考图通常是白膜设定图+服装设定图，以服装图纸为主导指导服装生成
+          return { view, prompt: buildReferenceGuidedPrompt(view, style, characterName, { isBaseModel, gender, outfit, hairstyle, accessories, ageStage, heldProps: effectiveHeldProps, hasCostumeRef: hasCostumeRefImage }) };
         }
         const prompt = await generateViewPrompt(view, characterName, appearance, description, style, textModel, { isBaseModel, gender, outfit, hairstyle, accessories, ageStage, bodyProportionInstruction, bodyElements, heldProps: effectiveHeldProps });
         return { view, prompt };

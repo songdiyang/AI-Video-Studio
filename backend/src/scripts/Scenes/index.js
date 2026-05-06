@@ -7,8 +7,6 @@ const router = express.Router();
 
 // 注册场景图片生成路由
 require('./generateImage')(router);
-require('./generatePanorama')(router);
-require('./cutFromPanorama')(router);
 require('./elementLinks')(router);
 
 // 注册场景图片提示词生成/优化路由

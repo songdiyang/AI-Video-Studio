@@ -3,7 +3,7 @@
  * 支持嵌套 JSON 结构和路径访问
  */
 
-const { deriveImageParams } = require('./deriveImageParams');
+const { deriveImageParams, deriveSeedreamParams, deriveSeedanceParams } = require('./deriveImageParams');
 const { deriveTextParams } = require('./deriveTextParams');
 
 /**
@@ -249,9 +249,45 @@ function renderWithFallback(type, template, runtimeParams, fallbackParams, label
   if (!mergedData.resolution && mergedData.size && mergedData.size !== '_REMOVE_') {
     mergedData.resolution = mergedData.size;
   }
-  // 注意：不再自动设置默认 size，因为 aspectRatio 参数会被 customHandlers/seedream.js
-  // 自动转换为正确的尺寸。自动设置 '2k' 会覆盖 aspectRatio 的计算结果。
-  // 如果模板确实需要 size 且没有 aspectRatio，custom handler 会提供默认值。
+
+  // Seedream 参数派生：aspectRatio -> size
+  const seedreamDerived = deriveSeedreamParams({
+    aspectRatio: mergedData.aspectRatio,
+    size: mergedData.size,
+    modelId: mergedData.modelId || mergedData.model_id
+  });
+  if (seedreamDerived.size && !mergedData.size) {
+    mergedData.size = seedreamDerived.size;
+  }
+  if (seedreamDerived.ratio && !mergedData.ratio) {
+    mergedData.ratio = seedreamDerived.ratio;
+  }
+
+  // Seedance 参数派生：构建 content 数组和参数校验
+  const seedanceDerived = deriveSeedanceParams({
+    prompt: mergedData.prompt,
+    imageUrls: mergedData.imageUrls,
+    startFrame: mergedData.startFrame,
+    endFrame: mergedData.endFrame,
+    ratio: mergedData.ratio,
+    resolution: mergedData.resolution,
+    duration: mergedData.duration,
+    seed: mergedData.seed,
+    camera_fixed: mergedData.camera_fixed,
+    watermark: mergedData.watermark,
+    generate_audio: mergedData.generate_audio,
+    draft: mergedData.draft,
+    return_last_frame: mergedData.return_last_frame
+  });
+  if (seedanceDerived.content && seedanceDerived.content.length > 0 && !mergedData.content) {
+    mergedData.content = seedanceDerived.content;
+  }
+  // 将校验后的 Seedance 参数合并到 mergedData
+  for (const [key, value] of Object.entries(seedanceDerived.seedanceParams)) {
+    if (mergedData[key] === undefined) {
+      mergedData[key] = value;
+    }
+  }
 
   // 渲染前校验：扫描原始模板中的 {{key}}，检查 mergedData 是否全部覆盖
   const required = findUnrenderedPlaceholders(template);

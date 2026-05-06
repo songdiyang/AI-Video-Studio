@@ -9,13 +9,17 @@ const { washForJSON } = require('../../../utils/washBody');
 
 async function handleSmartParse(inputParams, onProgress) {
   const { apiDoc, textModel, customPrompt } = inputParams;
-  const selectedModel = textModel || 'DeepSeek Chat';
+  const selectedModel = textModel || '';  // 不硬编码默认模型，由调用方传入
 
   const systemInstruction = `你是 AI 模型配置工程师。你的唯一任务是：将用户提供的 API 文档转换为一个标准 JSON 配置对象。
 
 ## 背景
 
-我们有一个统一 AI 网关系统，通过数据库表 ai_model_configs 存储各厂商 API 的调用配置。系统在运行时读取配置，将 {{占位符}} 替换为实际值后发起 HTTP 请求。对于异步接口（如图片/视频生成），系统会用查询配置轮询任务状态，通过条件表达式判断成功/失败，再用映射提取结果。
+我们有一个统一 AI 网关系统，通过数据库表 ai_model_configs 存储各厂商 API 的调用配置。系统支持两种模式：
+1. OpenAI 兼容适配层模式（推荐）：配置 provider_id + model_id，系统自动使用 OpenAI 格式调用
+2. 传统模板模式：手动配置 url_template、headers_template、body_template、response_mapping 等
+
+对于异步接口（如图片/视频生成），系统会用查询配置轮询任务状态，通过条件表达式判断成功/失败，再用映射提取结果。
 
 ## 输出规则
 
@@ -23,6 +27,7 @@ async function handleSmartParse(inputParams, onProgress) {
 2. 严格使用下方字段名，不要自创字段。
 3. 所有密钥/Token 必须用 {{apiKey}} 占位符，绝不硬编码。
 4. URL 中的占位符不加引号：?key={{apiKey}} 而非 ?key="{{apiKey}}"。
+5. 如果 API 是 OpenAI 兼容格式，优先输出 provider_id + model_id 的适配层配置，而非传统模板。
 
 ## 全部字段说明
 
@@ -30,31 +35,20 @@ async function handleSmartParse(inputParams, onProgress) {
 | 字段 | 必填 | 类型 | 说明 |
 |------|------|------|------|
 | name | 是 | string | 模型显示名称，如 "GPT-4o"、"可灵图片生成" |
-| category | 是 | string | 必须是 TEXT / IMAGE / VIDEO / AUDIO 之一 |
+| category | 是 | string | 必须是 TEXT / IMAGE / VIDEO / AUDIO / MULTIMODAL 之一 |
 | provider | 是 | string | 厂商标识（英文小写），如 openai、kling、minimax |
 | description | 否 | string | 模型简短描述 |
 
-### 计费配置
+### OpenAI 适配层配置（推荐，适用于 OpenAI 兼容接口）
 | 字段 | 必填 | 类型 | 说明 |
 |------|------|------|------|
-| price_config | 是 | object/null | 统一计费 JSON。格式：{"currency":"CNY","charge_on_failure":false,"components":[{"type":"input_tokens","unit":"per_million_tokens","price":2},{"type":"output_tokens","unit":"per_million_tokens","price":8}]} |
+| provider_id | 条件 | number | 平台ID（从已配置的平台中选择） |
+| model_id | 条件 | string | 平台官方的模型ID，如 "deepseek-chat", "qwen-plus" |
+| capabilities | 否 | string[] | 能力标签：llm, mllm, video_mllm, image_gen, video_gen |
 
-price_config 允许的 components.type：
-- input_tokens
-- output_tokens
-- total_tokens
-- duration_seconds
-- request_count
-- item_count
+当配置了 provider_id + model_id 时，系统会自动使用 OpenAI 兼容格式调用，无需配置 url_template、headers_template、body_template、response_mapping 等字段。
 
-price_config 允许的 unit：
-- per_million_tokens
-- per_token
-- per_second
-- per_request
-- per_item
-
-### 提交请求配置（调用 API 创建任务）
+### 传统模板配置（非 OpenAI 兼容接口使用）
 | 字段 | 必填 | 类型 | 说明 |
 |------|------|------|------|
 | url_template | 是 | string | API 地址，支持 {{占位符}}。如 https://api.kling.com/v1/images/generations |
@@ -81,6 +75,26 @@ price_config 允许的 unit：
 
 （是* = 异步模型必填，同步模型不需要）
 
+### 计费配置
+| 字段 | 必填 | 类型 | 说明 |
+|------|------|------|------|
+| price_config | 是 | object/null | 统一计费 JSON。格式：{"currency":"CNY","charge_on_failure":false,"components":[{"type":"input_tokens","unit":"per_million_tokens","price":2},{"type":"output_tokens","unit":"per_million_tokens","price":8}]} |
+
+price_config 允许的 components.type：
+- input_tokens
+- output_tokens
+- total_tokens
+- duration_seconds
+- request_count
+- item_count
+
+price_config 允许的 unit：
+- per_million_tokens
+- per_token
+- per_second
+- per_request
+- per_item
+
 ### 计费 Handler（可选）
 | 字段 | 必填 | 类型 | 说明 |
 |------|------|------|------|
@@ -92,13 +106,16 @@ price_config 允许的 unit：
 
 ## 完整示例
 
-### 示例 1：同步文本模型（TEXT）
-特点：直接返回结果，无需查询配置。response_mapping 直接映射最终内容。
+### 示例 1：OpenAI 兼容文本模型（TEXT）- 适配层模式（推荐）
+特点：只需配置 provider_id + model_id，系统自动使用 OpenAI 兼容格式调用。
 {
   "name": "DeepSeek Chat",
   "category": "TEXT",
   "provider": "deepseek",
   "description": "DeepSeek-V3.2 高性价比文本生成，支持128K上下文",
+  "provider_id": 1,
+  "model_id": "deepseek-chat",
+  "capabilities": ["llm"],
   "price_config": {
     "currency": "CNY",
     "charge_on_failure": false,
@@ -114,32 +131,7 @@ price_config 允许的 unit：
         "price": 3
       }
     ]
-  },
-  "request_method": "POST",
-  "url_template": "https://api.deepseek.com/v1/chat/completions",
-  "headers_template": {
-    "Content-Type": "application/json",
-    "Authorization": "Bearer {{apiKey}}"
-  },
-  "body_template": {
-    "model": "deepseek-chat",
-    "messages": "{{messages}}",
-    "max_tokens": "{{maxTokens}}",
-    "temperature": "{{temperature}}"
-  },
-  "default_params": {
-    "maxTokens": 8000,
-    "temperature": 0.7
-  },
-  "response_mapping": {
-    "content": "choices.0.message.content",
-    "reasoningContent": "choices.0.message.reasoning_content",
-    "tokens": "usage.total_tokens",
-    "inputTokens": "usage.prompt_tokens",
-    "outputTokens": "usage.completion_tokens",
-    "finishReason": "choices.0.finish_reason"
-  },
-  "custom_handler": "deepseek"
+  }
 }
 
 ### 示例 2：异步图片模型（IMAGE）

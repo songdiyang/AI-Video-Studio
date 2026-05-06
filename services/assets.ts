@@ -30,7 +30,7 @@ function normalizeCharacterUrls<T extends Record<string, any>>(char: T): T {
 /** 规范化场景数据中的所有 MinIO URL */
 function normalizeSceneUrls<T extends Record<string, any>>(scene: T): T {
   if (!scene) return scene;
-  const urlFields = ['image_url', 'reverse_image_url', 'reference_image_url', 'panorama_image_url'];
+  const urlFields = ['image_url', 'reverse_image_url', 'reference_image_url'];
   const result: Record<string, any> = { ...scene };
   for (const field of urlFields) {
     if (result[field]) {
@@ -135,7 +135,6 @@ export interface Scene {
   reverse_image_url?: string;
   sketch_url?: string | null;
   reference_image_url?: string | null;
-  panorama_image_url?: string | null;
   tags: string;
   project_name?: string;
   studio_id?: number | null;
@@ -160,7 +159,7 @@ export interface Prop {
   generation_prompt?: string;
   style_config?: PropStyleConfig | null;
   // 道具系统扩展字段
-  prop_type?: 'permanent' | 'interactive';
+  prop_type?: 'permanent' | 'interactive' | 'held';
   is_equipped?: boolean;
   front_view_url?: string;
   side_view_url?: string;
@@ -169,12 +168,21 @@ export interface Prop {
   updated_at: string;
 }
 
+export interface HeldPropsRef {
+  held_props: string;
+  state_name: string;
+  state_id: number;
+  character_name: string;
+  character_id: number;
+  project_id: number;
+}
+
 // 角色状态关联的道具信息
 export interface EquippedProp {
   prop_id: number;
   name: string;
   image_url: string;
-  prop_type: 'permanent' | 'interactive';
+  prop_type: 'permanent' | 'interactive' | 'held';
   hand_position: string;
   usage_mode: string;
 }
@@ -272,6 +280,7 @@ export interface CharacterState {
   costume_name?: string | null;
   costume_image_url?: string | null;
   costume_generation_status?: 'pending' | 'generating' | 'completed' | 'failed' | null;
+  costume_outfit_prompt?: string | null;
   // 关联道具信息（LEFT JOIN character_state_props + props）
   equipped_props?: EquippedProp[];
 }
@@ -647,7 +656,7 @@ export async function generateCharacterImagePrompt(
 }
 
 // 道具API
-export async function fetchProps(): Promise<Prop[]> {
+export async function fetchProps(): Promise<{ props: Prop[]; heldPropsRefs: HeldPropsRef[] }> {
   const token = getAuthToken();
   const response = await fetch('/api/props', {
     headers: {
@@ -658,7 +667,7 @@ export async function fetchProps(): Promise<Prop[]> {
     throw new Error('获取道具列表失败');
   }
   const data = await response.json();
-  return data.props || [];
+  return { props: data.props || [], heldPropsRefs: data.heldPropsRefs || [] };
 }
 
 export async function createProp(prop: Partial<Prop>): Promise<Prop> {
@@ -1246,7 +1255,9 @@ export async function generateCharacterStateViews(
   });
   if (!response.ok) {
     const result = await response.json();
-    throw new Error(result.message || '启动生成失败');
+    const err: any = new Error(result.message || '启动生成失败');
+    if (result.code) err.code = result.code;
+    throw err;
   }
   return await response.json();
 }
@@ -1726,86 +1737,6 @@ export async function deleteSceneReferenceImage(sceneId: number): Promise<void> 
     const result = await response.json();
     throw new Error(result.message || '删除场景参考图失败');
   }
-}
-
-/**
- * 启动场景全景图生成（360°×180°等距柱状，球体内壁贴图用）
- * @param sceneId 场景ID
- * @param imageModel 图像模型名称
- * @param options textModel / style 可选
- */
-export async function generateScenePanorama(
-  sceneId: number,
-  imageModel: string,
-  options: { textModel?: string; style?: string } = {}
-): Promise<{ jobId: string; sceneId: number; status: string; message?: string }> {
-  const token = getAuthToken();
-  const response = await fetch(`/api/scenes/${sceneId}/generate-panorama`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
-    },
-    body: JSON.stringify({
-      imageModel,
-      textModel: options.textModel,
-      style: options.style
-    })
-  });
-
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const err: any = new Error(data.message || '启动全景图生成失败');
-    err.status = response.status;
-    err.jobId = data.jobId;
-    throw err;
-  }
-  return data;
-}
-
-/**
- * 删除场景全景图
- * @param sceneId 场景ID
- */
-export async function deleteScenePanorama(sceneId: number): Promise<void> {
-  const token = getAuthToken();
-  const response = await fetch(`/api/scenes/${sceneId}/panorama`, {
-    method: 'DELETE',
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
-    }
-  });
-
-  if (!response.ok) {
-    const result = await response.json();
-    throw new Error(result.message || '删除场景全景图失败');
-  }
-}
-
-/**
- * 从全景图裁切透视视图（漫剧正反打 A/B 面工具）
- * @param sceneId 场景ID
- * @param params yaw / pitch / fov / outW / outH / label
- */
-export async function cutSceneFromPanorama(
-  sceneId: number,
-  params: { yaw: number; pitch?: number; fov?: number; outW?: number; outH?: number; label?: string }
-): Promise<{ cutUrl: string; yaw: number; pitch: number; fov: number; outW: number; outH: number; durationMs: number }> {
-  const token = getAuthToken();
-  const response = await fetch(`/api/scenes/${sceneId}/cut-from-panorama`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
-    },
-    body: JSON.stringify(params)
-  });
-
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(data.message || '裁切全景图失败');
-  }
-  return data;
 }
 
 // ============================================================

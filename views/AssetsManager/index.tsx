@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useLanguage } from '../../contexts/LanguageContext';
 import { Button, Input, Tabs, Tab, useDisclosure, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Popover, PopoverTrigger, PopoverContent, Textarea } from '@heroui/react';
 import { Users, MapPin, FileText, Plus, Search, Tag, Settings, Edit2, X, ChevronDown, ChevronRight, BookOpen, Sparkles, Cloud, Building2, Wand2 } from 'lucide-react';
 import { getAuthToken } from '../../services/auth';
 import { useSceneImageGeneration } from '../StoryBoard/hooks/useSceneImageGeneration';
 import SceneDetailModal from '../StoryBoard/ResourcePanel/SceneDetailModal';
 import { 
-  Character, Scene, Prop, TagGroup, CharacterTagGroupEntry,
+  Character, Scene, Prop, TagGroup, CharacterTagGroupEntry, HeldPropsRef,
   fetchCharacters, fetchCharactersByProject, fetchScenes, fetchScenesByProject, fetchProps,
   createCharacter, createScene, createProp,
   updateCharacter, updateScene, updateProp,
@@ -20,7 +21,7 @@ import {
 } from '../../services/assets';
 import { Project, fetchProjects } from '../../services/projects';
 
-import { fetchCostumes, deleteCostume as deleteCostumeApi, generateCostumeViews } from '../../services/costumes';
+import { fetchCostumes, deleteCostume as deleteCostumeApi, generateCostumeViews, updateCostume, generatePropViews } from '../../services/costumes';
 import type { Costume } from '../../services/costumes';
 import {
   ScriptLibraryItem,
@@ -336,12 +337,16 @@ const TagGroupManager: React.FC<TagGroupManagerProps> = ({ isOpen, onOpenChange,
 };
 
 const AssetsManager: React.FC = () => {
+  const { t } = useLanguage();
   const [activeTab, setActiveTab] = useState<TabType>('characters');
   const [characters, setCharacters] = useState<Character[]>([]);
   const [scenes, setScenes] = useState<Scene[]>([]);
   const [props, setProps] = useState<Prop[]>([]);
+  const [heldPropsRefs, setHeldPropsRefs] = useState<HeldPropsRef[]>([]);
+  const [creatingPropFromRef, setCreatingPropFromRef] = useState<number | null>(null); // state_id being processed
   const [studios, setStudios] = useState<import('../../services/studios').Studio[]>([]);
   const [costumes, setCostumes] = useState<Costume[]>([]);
+  const [editingCostumeDesc, setEditingCostumeDesc] = useState<{ id: number; value: string } | null>(null);
   const [scripts, setScripts] = useState<ScriptLibraryItem[]>([]);
   const [environments, setEnvironments] = useState<Environment[]>([]);
   const [buildings, setBuildings] = useState<Building[]>([]);
@@ -414,6 +419,8 @@ const AssetsManager: React.FC = () => {
     structureType: '',
     project_id: undefined as number | undefined,
   });
+  // 编辑 Modal 中图像区 Tab 当前视图（外景/内景叠加卡片）
+  const [editBldView, setEditBldView] = useState<'exterior' | 'interior'>('exterior');
 
   // 剧本创建模态框
   const {
@@ -442,6 +449,39 @@ const AssetsManager: React.FC = () => {
 
   // 白膜 workflow 轮询：完成后自动触发默认服装画风版
   const [pendingCharGen, setPendingCharGen] = useState<{ characterId: number; jobId: string } | null>(null);
+
+  // 监听 TaskQueue 派发的"生成类任务完成"事件，自动刷新当前资产 Tab 数据
+  // 事件由 components/TaskQueueBubble/useTaskQueue.ts 在检测到白名单 workflow_type 完成时派发
+  useEffect(() => {
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const handleAssetTaskCompleted = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        console.log('[AssetsManager] 检测到资产类任务完成，刷新数据');
+        loadData();
+      }, 500);
+    };
+    window.addEventListener('asset:taskCompleted', handleAssetTaskCompleted);
+    return () => {
+      window.removeEventListener('asset:taskCompleted', handleAssetTaskCompleted);
+      if (debounceTimer) clearTimeout(debounceTimer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, projectFilter]);
+
+  // 服装 Tab 生成状态轮询：有 generating 状态的服装时，每 5 秒刷新一次
+  useEffect(() => {
+    if (activeTab !== 'costumes') return;
+    const hasGenerating = costumes.some(c => c.generation_status === 'generating');
+    if (!hasGenerating) return;
+    const interval = setInterval(() => {
+      console.log('[AssetsManager] 服装生成中，轮询刷新');
+      loadData();
+    }, 5000);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, costumes]);
+
   useWorkflow(pendingCharGen?.jobId || null, {
     onCompleted: async (completedJob) => {
       const ctx = pendingCharGen;
@@ -704,8 +744,9 @@ const AssetsManager: React.FC = () => {
         const data = await listBuildings(filterProjectId || undefined);
         setBuildings(data);
       } else {
-        const data = await fetchProps();
-        setProps(data);
+        const { props: propsData, heldPropsRefs: refsData } = await fetchProps();
+        setProps(propsData);
+        setHeldPropsRefs(refsData);
       }
     } catch (error) {
       console.error('加载数据失败:', error);
@@ -747,7 +788,11 @@ const AssetsManager: React.FC = () => {
       if (results[3].status === 'fulfilled') setCostumes(results[3].value as Costume[]);
       if (results[4].status === 'fulfilled') setEnvironments(results[4].value as Environment[]);
       if (results[5].status === 'fulfilled') setBuildings(results[5].value as Building[]);
-      if (results[6].status === 'fulfilled') setProps(results[6].value as Prop[]);
+      if (results[6].status === 'fulfilled') {
+        const propsResult = results[6].value as { props: Prop[]; heldPropsRefs: HeldPropsRef[] };
+        setProps(propsResult.props);
+        setHeldPropsRefs(propsResult.heldPropsRefs);
+      }
       results.forEach((r, idx) => {
         if (r.status === 'rejected') {
           console.error(`[AssetsManager] 资源加载失败 idx=${idx}:`, r.reason);
@@ -760,13 +805,13 @@ const AssetsManager: React.FC = () => {
 
   const getTabLabel = () => {
     switch (activeTab) {
-      case 'characters': return '角色';
-      case 'studios': return '影棚';
-      case 'props': return '道具';
-      case 'costumes': return '服装';
-      case 'scripts': return '剧本';
-      case 'environments': return '环境';
-      case 'buildings': return '建筑';
+      case 'characters': return t.assetsManager.tabs.characters;
+      case 'studios': return t.assetsManager.tabs.studios;
+      case 'props': return t.assetsManager.tabs.props;
+      case 'costumes': return t.assetsManager.tabs.costumes;
+      case 'scripts': return t.assetsManager.tabs.scripts;
+      case 'environments': return t.assetsManager.tabs.environments;
+      case 'buildings': return t.assetsManager.tabs.buildings;
     }
   };
 
@@ -944,25 +989,19 @@ const AssetsManager: React.FC = () => {
       showToast('请先在 AI 模型配置中选择图像模型', 'error');
       return;
     }
-    // 依据 interior_exterior 把 'both' 收敛为实际可用范围
-    let effectiveViewType: 'interior' | 'exterior' | 'both' = viewType;
-    if (viewType === 'both') {
-      if (b.interior_exterior === 'interior') effectiveViewType = 'interior';
-      else if (b.interior_exterior === 'exterior') effectiveViewType = 'exterior';
-      else effectiveViewType = 'both';
-    }
+    // 建筑天然都有室内室外两面，不再基于 b.interior_exterior 收敛 viewType —— 用户显式点哪个就生成哪个
     try {
       await generateBuildingImage(b.id, {
         imageModel: selectedImageModel,
         textModel: selectedTextModel || undefined,
-        viewType: effectiveViewType,
+        viewType,
       });
       const label =
-        effectiveViewType === 'interior'
-          ? '室内设计草图'
-          : effectiveViewType === 'exterior'
+        viewType === 'interior'
+          ? '内景九宫格图（6视角+3特写）'
+          : viewType === 'exterior'
             ? '外景四方位图'
-            : '建筑图（室外+室内）';
+            : '建筑图（外景四方位+内景九宫格）';
       showToast(`${label}生成已启动`, 'success');
       loadData();
     } catch (err: any) {
@@ -1499,7 +1538,7 @@ const AssetsManager: React.FC = () => {
         <div className="max-w-7xl mx-auto space-y-6">
         {/* 头部 */}
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold pro-title">资产管理</h1>
+          <h1 className="text-2xl font-bold pro-title">{t.assetsManager.title}</h1>
           <div className="flex gap-2">
             {activeTab === 'characters' && (
               <>
@@ -1510,13 +1549,13 @@ const AssetsManager: React.FC = () => {
                   onPress={() => {
                     const pid = projectFilter !== 'all' && projectFilter !== 'unused' ? Number(projectFilter) : null;
                     if (!pid) {
-                      showToast('请先在左侧选择目标项目，AI 生成的角色将绑定到项目的画风', 'warning');
+                      showToast(t.assetsManager.toasts.selectProjectForAI, 'warning');
                       return;
                     }
                     onCharGenOpen();
                   }}
                 >
-                  AI 生成角色
+                  {t.assetsManager.aiGenerateCharacter}
                 </Button>
               </>
             )}
@@ -1527,7 +1566,7 @@ const AssetsManager: React.FC = () => {
                 startContent={<Sparkles className="w-4 h-4" />}
                 onPress={onScriptGenerateOpen}
               >
-                AI 生成剧本
+                {t.assetsManager.aiGenerateScript}
               </Button>
             )}
             <Button
@@ -1535,14 +1574,14 @@ const AssetsManager: React.FC = () => {
               startContent={<Plus className="w-4 h-4" />}
               onPress={handleAdd}
             >
-              新建{getTabLabel()}
+              {t.assetsManager[`new${activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}` as keyof typeof t.assetsManager] || `${t.common?.create || 'New'}${getTabLabel()}`}
             </Button>
           </div>
         </div>
 
         {/* 搜索栏 */}
         <Input
-          placeholder="搜索资产..."
+          placeholder={t.assetsManager.searchPlaceholder}
           value={searchQuery}
           onValueChange={setSearchQuery}
           startContent={<Search className="w-4 h-4 text-(--text-muted)" />}
@@ -1558,13 +1597,13 @@ const AssetsManager: React.FC = () => {
           <div className="space-y-2">
             <div className="flex items-center gap-2">
               <Tag className="w-3.5 h-3.5 text-(--text-muted)" />
-              <span className="text-xs text-(--text-muted)">分组标签筛选</span>
+              <span className="text-xs text-(--text-muted)">{t.assetsManager.groupFilter.title}</span>
               {activeGroupFilter && (
                 <button
                   onClick={() => setActiveGroupFilter(null)}
                   className="px-2 py-0.5 rounded-full text-xs font-medium bg-(--danger)/15 text-(--danger) border border-(--danger)/30 hover:bg-(--danger)/25 transition-all"
                 >
-                  清除分组筛选
+                  {t.assetsManager.groupFilter.clear}
                 </button>
               )}
             </div>
@@ -1669,14 +1708,14 @@ const AssetsManager: React.FC = () => {
             title={
               <div className="flex items-center gap-2">
                 <Users className="w-4 h-4" />
-                <span>角色 ({characters.length})</span>
+                <span>{t.assetsManager.tabs.characters} ({characters.length})</span>
               </div>
             }
           >
             {/* 角色数量统计 */}
             <div className="flex items-center justify-between mt-4 mb-2">
               <span className="text-sm text-(--text-muted)">
-                共 {filteredCharacters.length} 个角色
+                {t.assetsManager.counts.characters.replace('{count}', String(filteredCharacters.length))}
               </span>
             </div>
 
@@ -1694,7 +1733,7 @@ const AssetsManager: React.FC = () => {
             title={
               <div className="flex items-center gap-2">
                 <FileText className="w-4 h-4" />
-                <span>道具 ({props.length})</span>
+                <span>{t.assetsManager.tabs.props} ({props.length + heldPropsRefs.length})</span>
               </div>
             }
           >
@@ -1703,6 +1742,81 @@ const AssetsManager: React.FC = () => {
               onEdit={handleEdit} 
               onDelete={handleDelete} 
             />
+            {/* 来自角色状态的道具引用 */}
+            {heldPropsRefs.length > 0 && (
+              <div className="mt-6">
+                <h3 className="text-xs font-medium mb-2 flex items-center gap-1.5" style={{ color: 'var(--text-muted)' }}>
+                  <Sparkles className="w-3.5 h-3.5 text-teal-500" />
+                  {t.assetsManager.heldProps.title}
+                  <span className="text-[10px] px-1 py-0.5 rounded bg-teal-500/10 text-teal-600 dark:text-teal-400">
+                    {heldPropsRefs.length}
+                  </span>
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">
+                  {heldPropsRefs.map((ref, idx) => {
+                    const isCreating = creatingPropFromRef === ref.state_id;
+                    return (
+                      <div
+                        key={`${ref.state_id}-${idx}`}
+                        className="group rounded-md px-3 py-2 border border-teal-500/15 bg-teal-500/5 hover:border-teal-500/30 transition-all flex items-center gap-2"
+                      >
+                        {/* 左侧道具图标占位 */}
+                        <div className="shrink-0 w-9 h-9 rounded-md bg-teal-500/10 border border-teal-500/20 flex items-center justify-center text-teal-500">
+                          <Sparkles className="w-4 h-4" />
+                        </div>
+                        {/* 中间文字 */}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-medium truncate" style={{ color: 'var(--text-primary)' }}>
+                            {ref.held_props}
+                          </p>
+                          <p className="text-[10px] truncate mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                            {ref.character_name} · {ref.state_name}
+                          </p>
+                        </div>
+                        {/* 右侧生成按钮 */}
+                        <Button
+                          isIconOnly
+                          size="sm"
+                          variant="flat"
+                          className="shrink-0 w-7 h-7 min-w-7 bg-teal-500/15 text-teal-600 dark:text-teal-400 hover:bg-teal-500/30 opacity-70 group-hover:opacity-100 transition-opacity"
+                          isLoading={isCreating}
+                          isDisabled={!selectedImageModel}
+                          title={selectedImageModel ? t.assetsManager.heldProps.createAndGenerate : t.assetsManager.heldProps.selectImageModelFirst}
+                          onPress={async () => {
+                            if (!selectedImageModel) {
+                              showToast(t.assetsManager.heldProps.selectImageModelFirst, 'error');
+                              return;
+                            }
+                            setCreatingPropFromRef(ref.state_id);
+                            try {
+                              const newProp = await createProp({
+                                name: ref.held_props,
+                                description: ref.held_props,
+                                project_id: ref.project_id,
+                                prop_type: 'permanent',
+                              });
+                              showToast(t.assetsManager.heldProps.propCreated.replace('{name}', ref.held_props), 'success');
+                              await generatePropViews(newProp.id, {
+                                imageModel: selectedImageModel,
+                                textModel: selectedTextModel || undefined,
+                              });
+                              showToast(t.assetsManager.heldProps.propImageGenStarted, 'success');
+                              loadData();
+                            } catch (e: any) {
+                              showToast(e.message || '创建道具失败', 'error');
+                            } finally {
+                              setCreatingPropFromRef(null);
+                            }
+                          }}
+                        >
+                          {!isCreating && <Wand2 className="w-3.5 h-3.5" />}
+                        </Button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </Tab>
 
           <Tab
@@ -1710,14 +1824,14 @@ const AssetsManager: React.FC = () => {
             title={
               <div className="flex items-center gap-2">
                 <Tag className="w-4 h-4" />
-                <span>服装 ({costumes.length})</span>
+                <span>{t.assetsManager.tabs.costumes} ({costumes.length})</span>
               </div>
             }
           >
             <div className="space-y-3 mt-4">
               <div className="flex items-center justify-between">
                 <span className="text-sm text-(--text-muted)">
-                  共 {filteredCostumes.length} 件服装
+                  {t.assetsManager.counts.costumes.replace('{count}', String(filteredCostumes.length))}
                 </span>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
@@ -1726,12 +1840,12 @@ const AssetsManager: React.FC = () => {
                   const isGenerating = c.generation_status === 'generating';
                   const handleGenCostumeViews = async () => {
                     if (!selectedImageModel) {
-                      showToast('请先配置图像模型', 'warning');
+                      showToast(t.assetsManager.toasts.selectImageModelFirst || '请先配置图像模型', 'warning');
                       return;
                     }
                     try {
                       await generateCostumeViews(c.id, { imageModel: selectedImageModel });
-                      showToast('服装设定图生成已启动', 'success');
+                      showToast(t.assetsManager.costume.generateDesign, 'success');
                       setTimeout(() => loadData(), 500);
                     } catch (e: any) {
                       showToast(e.message || '生成失败', 'error');
@@ -1751,14 +1865,14 @@ const AssetsManager: React.FC = () => {
                         />
                       ) : (
                         <div className="w-full aspect-video bg-(--bg-muted) rounded-lg mb-2 flex items-center justify-center text-(--text-muted) text-xs">
-                          无图片
+                          {t.assetsManager.costume.noImage}
                         </div>
                       )}
                       <h3 className="font-semibold text-(--text-primary) truncate">{c.name}</h3>
                       {c.character_name && (
                         <div className="text-xs text-(--text-muted) mt-0.5 flex items-center gap-1">
                           <span className="w-1.5 h-1.5 rounded-full bg-(--accent)" />
-                          所属角色: {c.character_name}
+                          {t.assetsManager.costume.belongsTo}: {c.character_name}
                         </div>
                       )}
                       <div className="flex flex-wrap gap-1 mt-1">
@@ -1769,8 +1883,52 @@ const AssetsManager: React.FC = () => {
                           <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-300">{c.gender}</span>
                         )}
                       </div>
-                      {c.description && (
-                        <p className="text-xs text-(--text-muted) mt-2 line-clamp-2">{c.description}</p>
+                      {editingCostumeDesc?.id === c.id ? (
+                        <textarea
+                          autoFocus
+                          className="w-full text-xs text-(--text-primary) mt-2 p-1.5 rounded-md border border-(--accent)/40 bg-(--bg-muted) resize-none focus:outline-none focus:border-(--accent)"
+                          rows={3}
+                          value={editingCostumeDesc.value}
+                          onChange={(e) => setEditingCostumeDesc({ id: c.id, value: e.target.value })}
+                          onBlur={async () => {
+                            const newDesc = editingCostumeDesc.value.trim();
+                            if (newDesc !== (c.description || '').trim()) {
+                              try {
+                                await updateCostume(c.id, {
+                                  name: c.name,
+                                  description: newDesc,
+                                  category: c.category,
+                                  gender: c.gender,
+                                  outfit_prompt: newDesc,
+                                  image_url: c.image_url,
+                                  front_view_url: c.front_view_url,
+                                  side_view_url: c.side_view_url,
+                                  back_view_url: c.back_view_url,
+                                  tags: c.tags,
+                                });
+                                showToast(t.assetsManager.costume.descUpdated, 'success');
+                                loadData();
+                              } catch (e: any) {
+                                showToast(e.message || '更新失败', 'error');
+                              }
+                            }
+                            setEditingCostumeDesc(null);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Escape') {
+                              setEditingCostumeDesc(null);
+                            }
+                          }}
+                        />
+                      ) : (
+                        <p
+                          className="text-xs text-(--text-muted) mt-2 line-clamp-2 cursor-pointer hover:text-(--text-primary) transition-colors group/desc"
+                          onClick={() => setEditingCostumeDesc({ id: c.id, value: c.description || '' })}
+                          title={t.common?.edit || '点击编辑描述'}
+                        >
+                          {c.description || <span className="italic text-(--text-muted)/50">{t.assetsManager.costume.descPlaceholder}</span>}
+                          <Edit2 className="w-2.5 h-2.5 inline-block ml-1 opacity-0 group-hover/desc:opacity-60 transition-opacity" />
+                        </p>
                       )}
                       {c.generation_status && c.generation_status !== 'pending' && (
                         <span className={`text-[10px] px-2 py-0.5 rounded-full mt-2 inline-block ${
@@ -1788,7 +1946,7 @@ const AssetsManager: React.FC = () => {
                           isDisabled={isGenerating}
                           onPress={handleGenCostumeViews}
                         >
-                          {isGenerating ? '生成中…' : hasImage ? '重新生成' : '生成设定图'}
+                          {isGenerating ? t.assetsManager.costume.generating : hasImage ? t.assetsManager.costume.regenerate : t.assetsManager.costume.generateDesign}
                         </Button>
                         <Button size="sm" variant="flat" className="text-xs" onPress={() => handleDelete(c.id)}>删除</Button>
                       </div>
@@ -1797,7 +1955,7 @@ const AssetsManager: React.FC = () => {
                 })}
                 {filteredCostumes.length === 0 && (
                   <div className="col-span-full text-center text-(--text-muted) py-12">
-                    暂无服装，通过角色 AI 生成或手动创建
+                    {t.assetsManager.empty.costumes}
                   </div>
                 )}
               </div>
@@ -1809,13 +1967,13 @@ const AssetsManager: React.FC = () => {
             title={
               <div className="flex items-center gap-2">
                 <Cloud className="w-4 h-4" />
-                <span>环境 ({cleanEnvironments.length})</span>
+                <span>{t.assetsManager.tabs.environments} ({cleanEnvironments.length})</span>
               </div>
             }
           >
             <div className="flex items-center justify-between mt-4 mb-2">
               <span className="text-sm text-(--text-muted)">
-                共 {filteredEnvironments.length} 个环境
+                {t.assetsManager.counts.environments.replace('{count}', String(filteredEnvironments.length))}
               </span>
               {filteredEnvironments.length > 0 && projectFilter !== 'all' && projectFilter !== 'unused' && (
                 <Button
@@ -1847,13 +2005,13 @@ const AssetsManager: React.FC = () => {
             title={
               <div className="flex items-center gap-2">
                 <Building2 className="w-4 h-4" />
-                <span>建筑 ({buildings.length})</span>
+                <span>{t.assetsManager.tabs.buildings} ({buildings.length})</span>
               </div>
             }
           >
             <div className="flex items-center justify-between mt-4 mb-2">
               <span className="text-sm text-(--text-muted)">
-                共 {filteredBuildings.length} 个建筑
+                {t.assetsManager.counts.buildings.replace('{count}', String(filteredBuildings.length))}
               </span>
             </div>
             <BuildingList
@@ -1870,7 +2028,7 @@ const AssetsManager: React.FC = () => {
             title={
               <div className="flex items-center gap-2">
                 <MapPin className="w-4 h-4" />
-                <span>影棚 ({studios.length})</span>
+                <span>{t.assetsManager.tabs.studios} ({studios.length})</span>
               </div>
             }
           >
@@ -1888,7 +2046,7 @@ const AssetsManager: React.FC = () => {
             title={
               <div className="flex items-center gap-2">
                 <BookOpen className="w-4 h-4" />
-                <span>剧本 ({scripts.length})</span>
+                <span>{t.assetsManager.tabs.scripts} ({scripts.length})</span>
               </div>
             }
           >
@@ -2131,132 +2289,144 @@ const AssetsManager: React.FC = () => {
         </Modal>
 
         {/* 建筑编辑模态框 */}
-        <Modal isOpen={isBldOpen} onOpenChange={onBldOpenChange} size="lg">
+        <Modal isOpen={isBldOpen} onOpenChange={onBldOpenChange} size={bldEditMode && editingBldId ? '3xl' : 'lg'}>
           <ModalContent>
             {(onClose) => (
               <>
                 <ModalHeader>{bldEditMode ? '编辑建筑' : '新建建筑'}</ModalHeader>
-                <ModalBody className="space-y-4">
-                  <Input
-                    label="名称"
-                    placeholder="如：蜜糖小屋、石桥..."
-                    value={bldForm.name}
-                    onValueChange={(v) => setBldForm((p) => ({ ...p, name: v }))}
-                    isRequired
-                  />
-                  <Textarea
-                    label="描述"
-                    placeholder="建筑结构描述..."
-                    value={bldForm.description}
-                    onValueChange={(v) => setBldForm((p) => ({ ...p, description: v }))}
-                  />
-                  <div>
-                    <label className="text-xs text-(--text-muted) mb-1.5 block">室内外类型</label>
-                    <div className="flex flex-wrap gap-1.5">
-                      {[
-                        { key: 'interior', label: '室内' },
-                        { key: 'exterior', label: '室外' },
-                        { key: 'both', label: '室内+室外' },
-                      ].map((opt) => (
-                        <button
-                          key={opt.key}
-                          type="button"
-                          onClick={() => setBldForm((p) => ({ ...p, interiorExterior: opt.key as any }))}
-                          className={`px-2.5 py-1 rounded-full text-xs font-medium transition-all border ${
-                            bldForm.interiorExterior === opt.key
-                              ? 'bg-(--accent)/20 text-(--accent-light) border-(--accent)/40'
-                              : 'bg-white/5 text-(--text-muted) border-white/10 hover:bg-white/10'
-                          }`}
-                        >
-                          {opt.label}
-                        </button>
-                      ))}
+                <ModalBody className="pb-2">
+                  <div className={bldEditMode && editingBldId ? 'flex gap-6' : ''}>
+                    {/* ===== 左栏：表单 ===== */}
+                    <div className={`space-y-4 ${bldEditMode && editingBldId ? 'w-2/5 shrink-0' : 'w-full'}`}>
+                      <Input
+                        label="名称"
+                        placeholder="如：蜜糖小屋、石桥..."
+                        value={bldForm.name}
+                        onValueChange={(v) => setBldForm((p) => ({ ...p, name: v }))}
+                        isRequired
+                      />
+                      <Textarea
+                        label="描述"
+                        placeholder="建筑结构描述..."
+                        value={bldForm.description}
+                        onValueChange={(v) => setBldForm((p) => ({ ...p, description: v }))}
+                        minRows={3}
+                      />
+                      {/* 室内外类型字段已移除：建筑天然都有内外两面，interiorExterior 统一为 'both' */}
+                      <Input
+                        label="结构类型"
+                        placeholder="如：residential、commercial"
+                        value={bldForm.structureType}
+                        onValueChange={(v) => setBldForm((p) => ({ ...p, structureType: v }))}
+                      />
+                      <div>
+                        <label className="text-xs text-(--text-muted) mb-1.5 block">归属项目</label>
+                        <div className="flex flex-wrap gap-1.5">
+                          {userProjects.map((p) => (
+                            <button
+                              key={p.id}
+                              type="button"
+                              onClick={() => setBldForm((prev) => ({ ...prev, project_id: p.id }))}
+                              className={`px-2.5 py-1 rounded-full text-xs font-medium transition-all border ${
+                                bldForm.project_id === p.id
+                                  ? 'bg-(--accent)/20 text-(--accent-light) border-(--accent)/40'
+                                  : 'bg-white/5 text-(--text-muted) border-white/10 hover:bg-white/10'
+                              }`}
+                            >
+                              {p.name}
+                            </button>
+                          ))}
+                          {userProjects.length === 0 && (
+                            <span className="text-xs text-(--text-muted)">暂无项目</span>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                  <Input
-                    label="结构类型"
-                    placeholder="如：residential、commercial"
-                    value={bldForm.structureType}
-                    onValueChange={(v) => setBldForm((p) => ({ ...p, structureType: v }))}
-                  />
-                  <div>
-                    <label className="text-xs text-(--text-muted) mb-1.5 block">归属项目</label>
-                    <div className="flex flex-wrap gap-1.5">
-                      {userProjects.map((p) => (
-                        <button
-                          key={p.id}
-                          type="button"
-                          onClick={() => setBldForm((prev) => ({ ...prev, project_id: p.id }))}
-                          className={`px-2.5 py-1 rounded-full text-xs font-medium transition-all border ${
-                            bldForm.project_id === p.id
-                              ? 'bg-(--accent)/20 text-(--accent-light) border-(--accent)/40'
-                              : 'bg-white/5 text-(--text-muted) border-white/10 hover:bg-white/10'
-                          }`}
-                        >
-                          {p.name}
-                        </button>
-                      ))}
-                      {userProjects.length === 0 && (
-                        <span className="text-xs text-(--text-muted)">暂无项目</span>
-                      )}
-                    </div>
-                  </div>
 
-                  {/* 建筑图生成区（仅编辑模式可见）*/}
-                  {bldEditMode && editingBldId && (() => {
-                    const editingBld = buildings.find((b) => b.id === editingBldId);
-                    if (!editingBld) return null;
-                    const bldIsGenerating = editingBld.generation_status === 'generating';
-                    const ie = editingBld.interior_exterior || 'both';
-                    const canGenExterior = ie === 'exterior' || ie === 'both';
-                    const canGenInterior = ie === 'interior' || ie === 'both';
-                    return (
-                      <div className="border-t border-(--border-color) pt-3">
-                        <div className="flex items-center justify-between mb-2">
-                          <label className="text-xs text-(--text-muted) font-medium">建筑图</label>
-                          {bldIsGenerating && (
-                            <span className="text-[10px] text-blue-500 flex items-center gap-1">
-                              <span className="inline-block w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
-                              生成中…
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex gap-2 mb-2">
-                          {canGenExterior && (
-                            <div className="flex-1 relative">
-                              {editingBld.exterior_image_url ? (
+                    {/* ===== 右栏：建筑设定图（仅编辑模式） ===== */}
+                    {bldEditMode && editingBldId && (() => {
+                      const editingBld = buildings.find((b) => b.id === editingBldId);
+                      if (!editingBld) return null;
+                      const bldIsGenerating = editingBld.generation_status === 'generating';
+                      const hasExt = !!editingBld.exterior_image_url;
+                      const hasInt = !!editingBld.interior_image_url;
+                      const view = editBldView;
+                      return (
+                        <div className="flex-1 min-w-0 flex flex-col">
+                          <div className="flex items-center justify-between mb-2">
+                            <label className="text-xs text-(--text-muted) font-medium">建筑设定图</label>
+                            {bldIsGenerating && (
+                              <span className="text-[10px] text-blue-500 flex items-center gap-1">
+                                <span className="inline-block w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
+                                生成中…
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Tab 切换 */}
+                          <div className="flex gap-1 bg-(--bg-input) p-0.5 rounded-md mb-3">
+                            <button
+                              type="button"
+                              onClick={() => setEditBldView('exterior')}
+                              className={`flex-1 text-xs py-1.5 rounded transition-all flex items-center justify-center gap-1.5 ${
+                                view === 'exterior'
+                                  ? 'bg-(--bg-card) text-(--accent-light) font-medium shadow-sm'
+                                  : 'text-(--text-muted) hover:text-(--text-secondary)'
+                              }`}
+                            >
+                              外景·四方位
+                              {hasExt && <span className="w-1.5 h-1.5 rounded-full bg-green-500" />}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditBldView('interior')}
+                              className={`flex-1 text-xs py-1.5 rounded transition-all flex items-center justify-center gap-1.5 ${
+                                view === 'interior'
+                                  ? 'bg-(--bg-card) text-(--accent-light) font-medium shadow-sm'
+                                  : 'text-(--text-muted) hover:text-(--text-secondary)'
+                              }`}
+                            >
+                              内景·九宫格
+                              {hasInt && <span className="w-1.5 h-1.5 rounded-full bg-green-500" />}
+                            </button>
+                          </div>
+
+                          {/* 图片预览区 */}
+                          <div className="flex-1 mb-3">
+                            <div className={view === 'exterior' ? 'block' : 'hidden'}>
+                              {hasExt ? (
                                 <img
-                                  src={editingBld.exterior_image_url}
+                                  src={editingBld.exterior_image_url!}
                                   alt={`${editingBld.name} · 外景四方位`}
-                                  className="w-full aspect-video object-cover rounded border border-(--border-color)"
+                                  loading="eager" decoding="async"
+                                  className="w-full aspect-video object-cover rounded-lg border border-(--border-color)"
                                 />
                               ) : (
-                                <div className="w-full aspect-video rounded bg-(--bg-input) border border-dashed border-(--border-color) flex items-center justify-center text-[11px] text-(--text-muted)">
-                                  外景未生成
+                                <div className="w-full aspect-video rounded-lg bg-(--bg-input) border border-dashed border-(--border-color) flex flex-col items-center justify-center text-[11px] text-(--text-muted) gap-1">
+                                  <span>外景四方位未生成</span>
+                                  <span className="text-[10px] opacity-70">Front / Back / Left / Right 2×2 正交参考</span>
                                 </div>
                               )}
-                              <span className="absolute bottom-1 left-1 bg-black/60 text-white text-[10px] px-1 rounded">外景·四方位</span>
                             </div>
-                          )}
-                          {canGenInterior && (
-                            <div className="flex-1 relative">
-                              {editingBld.interior_image_url ? (
+                            <div className={view === 'interior' ? 'block' : 'hidden'}>
+                              {hasInt ? (
                                 <img
-                                  src={editingBld.interior_image_url}
-                                  alt={`${editingBld.name} · 内景草图`}
-                                  className="w-full aspect-video object-cover rounded border border-(--border-color)"
+                                  src={editingBld.interior_image_url!}
+                                  alt={`${editingBld.name} · 内景九宫格`}
+                                  loading="eager" decoding="async"
+                                  className="w-full aspect-square object-cover rounded-lg border border-(--border-color)"
                                 />
                               ) : (
-                                <div className="w-full aspect-video rounded bg-(--bg-input) border border-dashed border-(--border-color) flex items-center justify-center text-[11px] text-(--text-muted)">
-                                  内景草图未生成
+                                <div className="w-full aspect-square rounded-lg bg-(--bg-input) border border-dashed border-(--border-color) flex flex-col items-center justify-center text-[11px] text-(--text-muted) gap-1">
+                                  <span>内景九宫格未生成</span>
+                                  <span className="text-[10px] opacity-70 text-center px-4">6 视角 + 3 细节特写<br/>（入口/后墙/左墙/右墙 + 俯视 + 轴测 + 家具/材质/陈设）</span>
                                 </div>
                               )}
-                              <span className="absolute bottom-1 left-1 bg-black/60 text-white text-[10px] px-1 rounded">内景·设计草图</span>
                             </div>
-                          )}
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          {ie === 'both' && (
+                          </div>
+
+                          {/* 生成按钮 */}
+                          <div className="flex flex-wrap gap-2">
                             <Button
                               size="sm"
                               color="primary"
@@ -2266,42 +2436,39 @@ const AssetsManager: React.FC = () => {
                               onPress={() => handleGenerateBuildingImage(editingBld, 'both')}
                               startContent={!bldIsGenerating ? <Wand2 className="w-3.5 h-3.5" /> : undefined}
                             >
-                              {editingBld.exterior_image_url || editingBld.interior_image_url ? '一键重新生成（外+内）' : '一键生成（外景+内景）'}
+                              {hasExt || hasInt ? '重新生成（外+内）' : '一键生成（外+内）'}
                             </Button>
-                          )}
-                          {canGenExterior && (
-                            <Button
-                              size="sm"
-                              variant={ie === 'both' ? 'flat' : 'solid'}
-                              color="primary"
-                              isLoading={bldIsGenerating}
-                              isDisabled={bldIsGenerating}
-                              onPress={() => handleGenerateBuildingImage(editingBld, 'exterior')}
-                              startContent={!bldIsGenerating && ie !== 'both' ? <Wand2 className="w-3.5 h-3.5" /> : undefined}
-                            >
-                              {editingBld.exterior_image_url ? '重新生成外景四方位' : '生成外景四方位'}
-                            </Button>
-                          )}
-                          {canGenInterior && (
-                            <Button
-                              size="sm"
-                              variant={ie === 'both' ? 'flat' : 'solid'}
-                              color="primary"
-                              isLoading={bldIsGenerating}
-                              isDisabled={bldIsGenerating}
-                              onPress={() => handleGenerateBuildingImage(editingBld, 'interior')}
-                              startContent={!bldIsGenerating && ie !== 'both' ? <Wand2 className="w-3.5 h-3.5" /> : undefined}
-                            >
-                              {editingBld.interior_image_url ? '重新生成内景草图' : '生成内景设计草图'}
-                            </Button>
-                          )}
+                            {view === 'exterior' ? (
+                              <Button
+                                size="sm"
+                                variant="flat"
+                                color="primary"
+                                isLoading={bldIsGenerating}
+                                isDisabled={bldIsGenerating}
+                                onPress={() => handleGenerateBuildingImage(editingBld, 'exterior')}
+                              >
+                                {hasExt ? '重新生成外景' : '仅生成外景'}
+                              </Button>
+                            ) : (
+                              <Button
+                                size="sm"
+                                variant="flat"
+                                color="primary"
+                                isLoading={bldIsGenerating}
+                                isDisabled={bldIsGenerating}
+                                onPress={() => handleGenerateBuildingImage(editingBld, 'interior')}
+                              >
+                                {hasInt ? '重新生成内景' : '仅生成内景'}
+                              </Button>
+                            )}
+                          </div>
+                          <p className="text-[10px] text-(--text-muted) mt-1.5">
+                            外景 = 2×2 四方位正交参考；内景 = 3×3 九宫格（6 视角 + 3 细节特写）
+                          </p>
                         </div>
-                        <p className="text-[10px] text-(--text-muted) mt-1.5">
-                          外景 = 一张图四方位正交参考（前/后/左/右）；内景 = 手绘设计草图（布局/陈设/动线）。
-                        </p>
-                      </div>
-                    );
-                  })()}
+                      );
+                    })()}
+                  </div>
                 </ModalBody>
                 <ModalFooter>
                   <Button variant="light" onPress={onClose}>取消</Button>

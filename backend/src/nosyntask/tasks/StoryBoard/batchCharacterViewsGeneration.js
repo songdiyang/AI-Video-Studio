@@ -1,35 +1,39 @@
 /**
- * 批量角色三视图生成处理器
- * 
- * 在批量分镜工作流的角色提取步骤完成后执行。
- * 遍历所有提取到的角色，为每个角色生成正面、侧面、背面三视图参考图。
- * 
+ * 批量角色状态设定图生成处理器（工作流引擎管理版）
+ *
+ * 在智能拆分工作流的角色提取步骤完成后执行。
+ * 为每个角色的白膜状态、默认服装状态和时间状态生成设定图。
+ *
+ * 与旧版区别：
+ *   - 旧版：角色级别生成（写入 characters 表），由 setImmediate 异步触发
+ *   - 新版：状态级别生成（写入 character_states 表），由工作流引擎正式调度
+ *
  * input: {
- *   characters: Array<{ id, name, appearance, personality, description }>,
+ *   charactersNeedingViews: Array<{ id, name, appearance, baseAppearance, outfitAppearance, personality, description }>,
  *   projectId: number,
  *   imageModel: string,
  *   textModel: string,
  *   aspectRatio: string
  * }
- * 
+ *
  * output: {
  *   count: number,
  *   completed: number,
  *   failed: number,
  *   skipped: number,
- *   results: Array<{ characterId, name, success, ... }>
+ *   results: Array<{ characterId, name, stateType, success, ... }>
  * }
  */
 
 const handleCharacterViewsGeneration = require('./characterViewsGeneration');
-const { queryAll } = require('../../../dbHelper');
+const { queryOne, queryAll } = require('../../../dbHelper');
 
 /**
- * 批量角色三视图生成主处理函数
+ * 批量角色状态设定图生成主处理函数
  */
 async function handleBatchCharacterViewsGeneration(inputParams, onProgress) {
   const {
-    characters,
+    charactersNeedingViews,
     projectId,
     imageModel,
     textModel,
@@ -37,99 +41,108 @@ async function handleBatchCharacterViewsGeneration(inputParams, onProgress) {
   } = inputParams;
 
   // 1. 验证参数
-  if (!Array.isArray(characters) || characters.length === 0) {
-    console.log('[BatchCharacterViews] 无角色需要生成三视图');
+  if (!Array.isArray(charactersNeedingViews) || charactersNeedingViews.length === 0) {
+    console.log('[BatchCharacterViews] 无角色需要生成设定图');
     return { count: 0, completed: 0, failed: 0, skipped: 0, results: [] };
   }
   if (!imageModel) {
-    throw new Error('imageModel 参数是必需的');
+    console.log('[BatchCharacterViews] 未提供 imageModel，跳过设定图生成');
+    return { count: 0, completed: 0, failed: 0, skipped: 0, results: [], reason: 'no_imageModel' };
   }
   if (!textModel) {
     throw new Error('textModel 参数是必需的');
   }
 
-  console.log(`[BatchCharacterViews] 开始批量生成 ${characters.length} 个角色的三视图`);
+  console.log(`[BatchCharacterViews] 开始批量生成 ${charactersNeedingViews.length} 个角色的状态设定图`);
 
-  // 2. 查询数据库，找出已有完整三视图的角色（跳过）
-  const charIds = characters.filter(c => c.id).map(c => c.id);
-  const existingViewsMap = new Map();
-
-  if (charIds.length > 0) {
-    const existingViews = await queryAll(
-      `SELECT id, front_view_url, side_view_url, back_view_url FROM characters WHERE id IN (?)`,
-      [charIds]
+  // 2. 先收集所有角色需要处理的状态
+  const stateTasks = [];
+  for (const char of charactersNeedingViews) {
+    if (!char.id) continue;
+    const states = await queryAll(
+      `SELECT id, name, is_base_model, gender, image_url, outfit, held_props, age_stage, appearance, state_category
+       FROM character_states WHERE character_id = ? ORDER BY is_base_model DESC, id ASC`,
+      [char.id]
     );
-    for (const row of existingViews) {
-      existingViewsMap.set(row.id, row);
+    for (const state of states) {
+      stateTasks.push({ char, state });
     }
   }
 
-  // 3. 串行处理每个角色
+  // 3. 串行处理每个状态
   const results = [];
   let completed = 0;
   let failed = 0;
   let skipped = 0;
+  const totalTasks = stateTasks.length;
 
-  for (let i = 0; i < characters.length; i++) {
-    const char = characters[i];
+  for (let i = 0; i < stateTasks.length; i++) {
+    const { char, state } = stateTasks[i];
+    const hasSheet = state.image_url && state.image_url.trim() !== '';
 
-    // 跳过没有 id 的角色
-    if (!char.id) {
-      console.log(`[BatchCharacterViews] 跳过无ID角色: ${char.name}`);
+    if (hasSheet) {
+      console.log(`[BatchCharacterViews] 角色 ${char.name} 的「${state.name}」设定图已存在，跳过`);
       skipped++;
+      if (onProgress) onProgress(Math.round(((i + 1) / totalTasks) * 100));
       continue;
     }
 
-    // 跳过已有完整三视图的角色
-    const existing = existingViewsMap.get(char.id);
-    if (existing && existing.front_view_url && existing.side_view_url && existing.back_view_url) {
-      console.log(`[BatchCharacterViews] 跳过已有完整三视图的角色: ${char.name} (id=${char.id})`);
-      skipped++;
-      results.push({ characterId: char.id, name: char.name, success: true, skipped: true });
-      continue;
-    }
+    // 确定状态类型和生成参数
+    const isBaseModel = state.is_base_model === 1;
+    const isTimeState = state.state_category === 'time';
+    const stateType = isBaseModel ? 'base_model' : (isTimeState ? 'time' : 'costume');
+
+    console.log(`[BatchCharacterViews] [${i + 1}/${totalTasks}] 生成角色 ${char.name} 的「${state.name}」设定图...`);
 
     try {
-      console.log(`[BatchCharacterViews] 开始生成角色 ${i + 1}/${characters.length}: ${char.name}`);
-
-      // 调用现有的单角色三视图生成处理器
-      const result = await handleCharacterViewsGeneration({
+      const genParams = {
         characterId: char.id,
         characterName: char.name,
-        appearance: char.appearance || '',
-        personality: char.personality || '',
-        description: char.description || '',
         projectId,
         imageModel,
         textModel,
-        aspectRatio: aspectRatio || '9:16'  // 使用传入的 aspectRatio，默认 9:16
-        // 不再硬编码 width/height，让 handleImageGeneration 根据 aspectRatio 自动计算
-      }, (stepProgress) => {
-        // 映射单角色进度到整体进度
-        const overallProgress = Math.round(((i + stepProgress / 100) / characters.length) * 100);
-        if (onProgress) onProgress(overallProgress);
-      });
+        isBaseModel,
+        gender: state.gender || 'unknown',
+        stateId: state.id
+      };
 
-      results.push({ characterId: char.id, name: char.name, success: true, ...result });
+      if (isBaseModel) {
+        // 白膜状态：使用 baseAppearance，不叠加服装
+        genParams.appearance = char.baseAppearance || char.appearance || '';
+        genParams.description = char.description || '';
+        genParams.personality = char.personality || '';
+      } else if (isTimeState) {
+        // 时间状态：使用状态自身的 appearance（已包含年龄/体型变化）
+        genParams.appearance = state.appearance || char.baseAppearance || char.appearance || '';
+        genParams.description = `角色在${state.age_stage || '不同阶段'}时的体貌状态`;
+        genParams.personality = char.personality || '';
+        genParams.ageStage = state.age_stage || '';
+      } else {
+        // 服装状态：使用完整 appearance + outfit
+        genParams.appearance = char.appearance || '';
+        genParams.description = char.description || '';
+        genParams.personality = char.personality || '';
+        genParams.outfit = state.outfit || char.outfitAppearance || '';
+        genParams.heldProps = state.held_props || '';
+      }
+
+      const result = await handleCharacterViewsGeneration(genParams, null);
+      results.push({ characterId: char.id, name: char.name, stateType, stateName: state.name, success: true, ...result });
       completed++;
-      console.log(`[BatchCharacterViews] 角色 ${char.name} 三视图生成完成`);
+      console.log(`[BatchCharacterViews] ✅ 角色 ${char.name} 的「${state.name}」设定图生成完成`);
     } catch (err) {
-      console.error(`[BatchCharacterViews] 角色 ${char.name} 三视图生成失败:`, err.message);
-      results.push({ characterId: char.id, name: char.name, success: false, error: err.message });
+      console.error(`[BatchCharacterViews] ❌ 角色 ${char.name} 的「${state.name}」设定图生成失败:`, err.message);
+      results.push({ characterId: char.id, name: char.name, stateType, stateName: state.name, success: false, error: err.message });
       failed++;
-      // 继续处理下一个角色，不中断
     }
 
-    // 更新整体进度
-    if (onProgress) {
-      onProgress(Math.round(((i + 1) / characters.length) * 100));
-    }
+    if (onProgress) onProgress(Math.round(((i + 1) / totalTasks) * 100));
   }
 
-  console.log(`[BatchCharacterViews] 批量完成: 总${characters.length}, 成功${completed}, 失败${failed}, 跳过${skipped}`);
+  console.log(`[BatchCharacterViews] 批量完成: 总任务${totalTasks}, 成功${completed}, 失败${failed}, 跳过${skipped}`);
 
   return {
-    count: characters.length,
+    count: totalTasks,
     completed,
     failed,
     skipped,

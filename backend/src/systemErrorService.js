@@ -3,7 +3,7 @@
  * 用于记录和查询非任务相关的系统错误
  */
 
-const { execute, queryOne } = require('./db');
+const { execute, queryOne } = require('./dbHelper');
 
 // 敏感字段列表，需要脱敏
 const SENSITIVE_FIELDS = ['password', 'token', 'apiKey', 'api_key', 'secret', 'authorization'];

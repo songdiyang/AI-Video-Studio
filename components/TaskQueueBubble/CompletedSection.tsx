@@ -14,7 +14,6 @@ const WORKFLOW_TYPE_NAMES: Record<string, string> = {
   'scene_video': '视频生成',
   'character_views_generation': '角色三视图生成',
   'scene_image_generation': '场景图生成',
-  'scene_panorama_generation': '场景全景图生成',
   'scene_elements_extraction': '场景元素抽取',
   'scene_element_generation': '元素图片生成',
   'batch_frame_generation': '批量帧生成',
@@ -25,6 +24,12 @@ const WORKFLOW_TYPE_NAMES: Record<string, string> = {
   'single_video_prompt_optimization': 'AI优化提示词(视频)',
   'batch_image_prompt_optimization': '批量提示词优化(图片)',
   'batch_video_prompt_optimization': '批量提示词优化(视频)',
+  // 资产管理类
+  'building_image_generation': '建筑设定图生成',
+  'environment_image_generation': '环境图生成',
+  'studio_nine_grid_generation': '影棚九宫组装图生成',
+  'variant_faces_generation': '环境变体8方位场景图生成',
+  'prop_image_generation': '道具图片生成',
 };
 
 const getTaskName = (job: WorkflowJob): string => {

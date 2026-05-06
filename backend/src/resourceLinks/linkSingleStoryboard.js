@@ -133,12 +133,19 @@ async function linkScenesForStoryboard(storyboardId, projectId, options = {}) {
     await execute('DELETE FROM storyboard_scenes WHERE storyboard_id = ?', [storyboardId]);
   }
 
-  // 优先模式：直接使用 sceneId 创建关联
+  // 优先模式：直接使用 sceneId 创建关联（同时查 studio）
   if (sceneId && typeof sceneId === 'number') {
+    // 通过场景名反查同名影棚
+    const sceneRow = await queryOne('SELECT name FROM scenes WHERE id = ?', [sceneId]);
+    let studioId = null;
+    if (sceneRow && sceneRow.name) {
+      const studioRow = await queryOne('SELECT id FROM studios WHERE project_id = ? AND name = ?', [projectId, sceneRow.name]);
+      if (studioRow) studioId = studioRow.id;
+    }
     try {
       await execute(
-        'INSERT IGNORE INTO storyboard_scenes (storyboard_id, scene_id) VALUES (?, ?)',
-        [storyboardId, sceneId]
+        'INSERT IGNORE INTO storyboard_scenes (storyboard_id, scene_id, studio_id) VALUES (?, ?, ?)',
+        [storyboardId, sceneId, studioId]
       );
       console.log(`[linkScenesForStoryboard] storyboardId=${storyboardId}: 通过ID直接关联场景(sceneId=${sceneId})`);
       return { linked: true, notFound: false };
@@ -173,16 +180,22 @@ async function linkScenesForStoryboard(storyboardId, projectId, options = {}) {
     return { linked: false, notFound: false };
   }
 
-  const scene = await queryOne(
-    'SELECT id, name FROM scenes WHERE project_id = ? AND name = ?',
-    [projectId, location.trim()]
-  );
+  const [scene, studio] = await Promise.all([
+    queryOne(
+      'SELECT id, name FROM scenes WHERE project_id = ? AND name = ?',
+      [projectId, location.trim()]
+    ),
+    queryOne(
+      'SELECT id FROM studios WHERE project_id = ? AND name = ?',
+      [projectId, location.trim()]
+    )
+  ]);
 
   if (scene) {
     try {
       await execute(
-        'INSERT IGNORE INTO storyboard_scenes (storyboard_id, scene_id) VALUES (?, ?)',
-        [storyboardId, scene.id]
+        'INSERT IGNORE INTO storyboard_scenes (storyboard_id, scene_id, studio_id) VALUES (?, ?, ?)',
+        [storyboardId, scene.id, studio ? studio.id : null]
       );
       console.log(`[linkScenesForStoryboard] storyboardId=${storyboardId}: 通过名称关联场景「${scene.name}」`);
       return { linked: true, notFound: false };

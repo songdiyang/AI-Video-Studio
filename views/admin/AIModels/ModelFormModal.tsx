@@ -1,7 +1,15 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
-import { Button, Input, Textarea, Select, SelectItem, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Switch, Chip, Checkbox, Tooltip } from '@heroui/react';
-import { Code2, Sparkles, AlertCircle, CheckCircle, ChevronDown, ChevronUp, Film, Clock, Monitor, Plus, Trash2, Settings2, DollarSign, Sliders } from 'lucide-react';
-import { AIModel, ModelFormData, TEMPLATE_PRESETS, ASPECT_RATIO_PRESETS, DURATION_PRESETS, VIDEO_RESOLUTION_PRESETS, IMAGE_RESOLUTION_PRESETS, TemplatePreset } from './types';
+import { Button, Input, Textarea, Select, SelectItem, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Chip, Checkbox, Tooltip } from '@heroui/react';
+import { Code2, AlertCircle, CheckCircle, ChevronDown, ChevronUp, Film, Clock, Monitor, Plus, Trash2, Settings2, DollarSign, Sliders, Zap, ExternalLink } from 'lucide-react';
+import { AIModel, ModelFormData, OPENAI_PRESETS, ASPECT_RATIO_PRESETS, DURATION_PRESETS, VIDEO_RESOLUTION_PRESETS, IMAGE_RESOLUTION_PRESETS, OpenAIPreset } from './types';
+import { getAdminAuthHeaders } from '../../../services/auth';
+
+interface ModelProvider {
+  id: number;
+  name: string;
+  display_name: string;
+  base_url: string;
+}
 
 interface ModelFormModalProps {
   isOpen: boolean;
@@ -489,23 +497,23 @@ const VisualResolutionSelector: React.FC<{
 };
 
 // ============================================================
-// 模板预设选择器（保持不变）
+// OpenAI 适配层预设选择器
 // ============================================================
-const TemplatePresetSelector: React.FC<{
-  onApply: (preset: TemplatePreset) => void;
+const OpenAIPresetSelector: React.FC<{
+  onApply: (preset: OpenAIPreset) => void;
   category: string;
 }> = ({ onApply, category }) => {
   const [expanded, setExpanded] = useState(false);
-  const filteredPresets = TEMPLATE_PRESETS.filter(p => !category || p.category === category || category === 'TEXT');
-  const allPresets = category ? TEMPLATE_PRESETS : TEMPLATE_PRESETS;
+  const filteredPresets = OPENAI_PRESETS.filter(p => !category || p.category === category || category === 'TEXT');
+  const allPresets = OPENAI_PRESETS;
 
   return (
-    <div className="bg-gradient-to-r from-purple-500/5 to-blue-500/5 border border-purple-500/20 rounded-lg p-4">
+    <div className="bg-gradient-to-r from-blue-500/5 to-cyan-500/5 border border-blue-500/20 rounded-lg p-4">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          <Sparkles className="w-4 h-4 text-purple-400" />
-          <span className="text-sm font-semibold text-slate-200">快速模板</span>
-          <span className="text-xs text-slate-500">选择预设模板快速填充配置</span>
+          <Zap className="w-4 h-4 text-blue-400" />
+          <span className="text-sm font-semibold text-slate-200">OpenAI 适配层预设</span>
+          <span className="text-xs text-slate-500">一键配置国内主流平台模型</span>
         </div>
         <Button
           size="sm"
@@ -521,7 +529,7 @@ const TemplatePresetSelector: React.FC<{
         {(expanded ? allPresets : filteredPresets.slice(0, 4)).map((preset, idx) => (
           <div
             key={idx}
-            className="flex items-center justify-between bg-slate-800/40 border border-slate-700/50 rounded-lg p-3 hover:border-purple-500/30 hover:bg-slate-800/60 transition-all cursor-pointer group"
+            className="flex items-center justify-between bg-slate-800/40 border border-slate-700/50 rounded-lg p-3 hover:border-blue-500/30 hover:bg-slate-800/60 transition-all cursor-pointer group"
             onClick={() => onApply(preset)}
           >
             <div className="flex-1 min-w-0">
@@ -538,11 +546,12 @@ const TemplatePresetSelector: React.FC<{
                 </Chip>
               </div>
               <p className="text-xs text-slate-500 mt-0.5 truncate">{preset.description}</p>
+              <p className="text-xs text-blue-400 mt-0.5 truncate">{preset.provider_name} / {preset.model_id}</p>
             </div>
             <Button
               size="sm"
               variant="flat"
-              className="bg-purple-500/10 text-purple-400 opacity-0 group-hover:opacity-100 transition-opacity ml-2 shrink-0"
+              className="bg-blue-500/10 text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity ml-2 shrink-0"
             >
               应用
             </Button>
@@ -552,6 +561,8 @@ const TemplatePresetSelector: React.FC<{
     </div>
   );
 };
+
+
 
 // ============================================================
 // 可折叠区域
@@ -587,6 +598,8 @@ const CollapsibleSection: React.FC<{
 // ============================================================
 // 主组件
 // ============================================================
+
+
 const ModelFormModal: React.FC<ModelFormModalProps> = ({
   isOpen,
   onClose,
@@ -596,6 +609,27 @@ const ModelFormModal: React.FC<ModelFormModalProps> = ({
   onSave
 }) => {
   const [jsonErrors, setJsonErrors] = useState<string[]>([]);
+  const [providers, setProviders] = useState<ModelProvider[]>([]);
+
+  // 加载平台列表
+  useEffect(() => {
+    if (isOpen) {
+      fetch('/api/admin/model-providers', { headers: getAdminAuthHeaders() })
+        .then(r => r.ok ? r.json() : { providers: [] })
+        .then(data => setProviders(data.providers || []))
+        .catch(() => setProviders([]));
+    }
+  }, [isOpen]);
+
+  // 根据 provider_id 自动同步 provider 字段
+  useEffect(() => {
+    if (formData.provider_id) {
+      const p = providers.find(pr => String(pr.id) === formData.provider_id);
+      if (p && formData.provider !== p.name) {
+        setFormData({ ...formData, provider: p.name });
+      }
+    }
+  }, [formData.provider_id, providers]);
 
   // 验证所有 JSON 字段
   const validateAllJson = useCallback(() => {
@@ -614,6 +648,7 @@ const ModelFormModal: React.FC<ModelFormModalProps> = ({
       { key: 'query_response_mapping', label: '查询响应映射' },
       { key: 'query_success_mapping', label: '成功结果映射' },
       { key: 'query_fail_mapping', label: '失败错误映射' },
+      { key: 'capabilities', label: '能力标签' },
     ];
 
     for (const field of jsonFields) {
@@ -635,11 +670,15 @@ const ModelFormModal: React.FC<ModelFormModalProps> = ({
     }
   };
 
-  // 应用模板预设
-  const handleApplyPreset = (preset: TemplatePreset) => {
+  // 应用 OpenAI 适配层预设
+  const handleApplyOpenAIPreset = (preset: OpenAIPreset) => {
     const newData = { ...formData };
-    if (preset.config.category) newData.category = preset.config.category;
-    
+    newData.category = preset.category;
+    newData.provider = preset.provider_name;
+    newData.provider_id = String(preset.provider_id);
+    newData.model_id = preset.model_id;
+    newData.capabilities = JSON.stringify(preset.capabilities);
+
     const fields = Object.keys(preset.config) as (keyof ModelFormData)[];
     for (const key of fields) {
       if (preset.config[key] !== undefined) {
@@ -675,13 +714,31 @@ const ModelFormModal: React.FC<ModelFormModalProps> = ({
             </div>
           )}
 
-          {/* 模板预设区域 */}
+          {/* OpenAI 适配层预设区域 */}
           {!editingModel && (
-            <TemplatePresetSelector
-              onApply={handleApplyPreset}
+            <OpenAIPresetSelector
+              onApply={handleApplyOpenAIPreset}
               category={formData.category}
             />
           )}
+
+          {/* OpenAI 适配层模式切换（始终开启，不可关闭） */}
+          <div className="bg-gradient-to-r from-blue-500/5 to-violet-500/5 border border-blue-500/20 rounded-lg p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Zap className="w-4 h-4 text-blue-400" />
+                <span className="text-sm font-semibold text-slate-200">OpenAI 兼容适配层模式</span>
+                <span className="text-xs text-slate-500">自动适配国内主流平台接口</span>
+              </div>
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-500/10 border border-blue-500/20">
+                <CheckCircle className="w-3.5 h-3.5 text-blue-400" />
+                <span className="text-xs text-blue-400 font-medium">已启用</span>
+              </div>
+            </div>
+            <p className="text-xs text-blue-400 mt-2">
+              当前仅支持 OpenAI 兼容格式调用，系统自动适配，无需手动配置模板字段
+            </p>
+          </div>
 
           {/* 基础信息 */}
           <div className="grid grid-cols-2 gap-4">
@@ -724,16 +781,7 @@ const ModelFormModal: React.FC<ModelFormModalProps> = ({
               <SelectItem key="0">禁用</SelectItem>
             </Select>
 
-            <Select
-              label="请求方法"
-              selectedKeys={[formData.request_method]}
-              onChange={(e) => setFormData({ ...formData, request_method: e.target.value })}
-            >
-              <SelectItem key="GET">GET</SelectItem>
-              <SelectItem key="POST">POST</SelectItem>
-              <SelectItem key="PUT">PUT</SelectItem>
-              <SelectItem key="DELETE">DELETE</SelectItem>
-            </Select>
+
           </div>
 
           <Textarea
@@ -744,23 +792,70 @@ const ModelFormModal: React.FC<ModelFormModalProps> = ({
             minRows={2}
           />
 
-          <Input
-            label="API Key"
-            type="password"
-            placeholder="留空则从环境变量获取"
-            value={formData.api_key}
-            onChange={(e) => setFormData({ ...formData, api_key: e.target.value })}
-            description="优先使用此处配置的 API Key，留空则使用环境变量"
-          />
+          {/* OpenAI 适配层配置 */}
+          <div className="bg-slate-800/30 border border-slate-700/50 rounded-lg p-4 space-y-4">
+            <h4 className="text-sm font-semibold text-slate-200 flex items-center gap-2">
+              <Zap className="w-4 h-4 text-blue-400" />
+              OpenAI 适配层配置
+            </h4>
 
-          {/* URL 模板 */}
-          <Input
-            label="URL 模板"
-            placeholder="https://api.example.com/v1/{{action}}"
-            value={formData.url_template}
-            onChange={(e) => setFormData({ ...formData, url_template: e.target.value })}
-            isRequired
-          />
+            <div className="grid grid-cols-2 gap-4">
+              <div className="relative">
+                <Select
+                  label="选择平台"
+                  placeholder="选择模型平台"
+                  selectedKeys={formData.provider_id ? [String(formData.provider_id)] : []}
+                  onChange={(e) => setFormData({ ...formData, provider_id: e.target.value })}
+                  isRequired
+                >
+                  {providers.map(p => (
+                    <SelectItem key={String(p.id)}>{p.display_name}</SelectItem>
+                  ))}
+                </Select>
+                {providers.length === 0 && (
+                  <p className="text-xs text-amber-400 mt-1">
+                    暂无平台配置，请先添加平台
+                  </p>
+                )}
+              </div>
+
+              <Input
+                label="平台模型ID"
+                placeholder="如: deepseek-v4-pro, qwen-plus"
+                value={formData.model_id}
+                onChange={(e) => setFormData({ ...formData, model_id: e.target.value })}
+                isRequired
+                description="填写平台官方的模型ID"
+              />
+            </div>
+
+            {/* 平台管理入口 */}
+            <div className="flex items-center justify-between bg-slate-800/50 rounded-lg p-3">
+              <div className="flex items-center gap-2">
+                <Settings2 className="w-4 h-4 text-slate-400" />
+                <span className="text-sm text-slate-300">需要添加新平台？</span>
+              </div>
+              <Button
+                size="sm"
+                variant="flat"
+                className="bg-blue-500/10 text-blue-400 hover:bg-blue-500/20"
+                startContent={<ExternalLink className="w-3.5 h-3.5" />}
+                onPress={() => {
+                  window.open('/admin/model-providers', '_blank');
+                }}
+              >
+                管理平台
+              </Button>
+            </div>
+
+            {/* API Key 和 能力标签 已从平台管理继承，此处不再重复配置 */}
+            <div className="bg-slate-800/50 rounded-lg p-3">
+              <p className="text-xs text-slate-500">
+                API Key 与平台认证信息已从「平台管理」继承，无需在此重复配置。
+                如需修改，请前往 <a href="/admin/model-providers" target="_blank" className="text-blue-400 hover:underline">平台管理</a>。
+              </p>
+            </div>
+          </div>
 
           {/* 计费配置 - 可视化编辑器 */}
           <VisualPriceConfigEditor
@@ -802,39 +897,21 @@ const ModelFormModal: React.FC<ModelFormModalProps> = ({
           )}
 
           {/* ============================================================ */}
+          {/* ============================================================ */}
           {/*  高级设置 (折叠区)                                           */}
           {/* ============================================================ */}
           <CollapsibleSection
             title="高级设置"
-            subtitle="Headers / Body 模板、响应映射、查询配置、自定义 Handler 等"
+            subtitle="响应映射、查询配置、自定义 Handler 等（可选）"
             defaultOpen={hasAdvancedContent}
             icon={<Settings2 className="w-4 h-4 text-amber-400" />}
           >
-            {/* API 请求模板 */}
-            <JsonField
-              label="Headers 模板 (JSON)"
-              placeholder='{"Authorization": "Bearer {{apiKey}}"}'
-              value={formData.headers_template}
-              onChange={(val) => setFormData({ ...formData, headers_template: val })}
-              minRows={3}
-              isRequired
-            />
-
-            <JsonField
-              label="Body 模板 (JSON)"
-              placeholder='{"prompt": "{{prompt}}"}'
-              value={formData.body_template}
-              onChange={(val) => setFormData({ ...formData, body_template: val })}
-              minRows={3}
-            />
-
             <JsonField
               label="响应映射 (JSON)"
               placeholder='{"taskId": "data.id"}'
               value={formData.response_mapping}
               onChange={(val) => setFormData({ ...formData, response_mapping: val })}
               minRows={3}
-              isRequired
               description='统一不同厂商的返回格式。如: {"content": "choices.0.message.content", "tokens": "usage.total_tokens"}'
             />
 

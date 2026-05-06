@@ -4,6 +4,7 @@ import { Edit, Trash2 } from 'lucide-react';
 import { Prop } from '../../services/assets';
 import { useVirtualList } from '../../hooks/useVirtualList';
 import { usePreview } from '../../components/PreviewProvider';
+import { useLanguage } from '../../contexts/LanguageContext';
 
 // 虚拟列表启用阈值
 const VIRTUAL_LIST_THRESHOLD = 20;
@@ -17,6 +18,7 @@ interface PropListProps {
 }
 
 const PropList: React.FC<PropListProps> = ({ props, onEdit, onDelete }) => {
+  const { t } = useLanguage();
   const { openPreview } = usePreview();
 
   // 虚拟列表容器 ref 和高度状态
@@ -76,7 +78,7 @@ const PropList: React.FC<PropListProps> = ({ props, onEdit, onDelete }) => {
           />
         ) : (
           <div className="w-full aspect-video bg-(--bg-muted) rounded-lg flex items-center justify-center text-(--text-muted) text-xs">
-            无图片
+            {t.assetsManager.costume.noImage}
           </div>
         )}
 
@@ -107,8 +109,12 @@ const PropList: React.FC<PropListProps> = ({ props, onEdit, onDelete }) => {
         <div className="flex flex-wrap gap-2 mt-auto">
           {/* 道具类型标签 */}
           {prop.prop_type && (
-            <Chip size="sm" variant="flat" className={prop.prop_type === 'permanent' ? 'bg-blue-500/10 text-blue-400 font-medium' : 'bg-cyan-500/10 text-cyan-400 font-medium'}>
-              {prop.prop_type === 'permanent' ? '永久道具' : '交互道具'}
+            <Chip size="sm" variant="flat" className={
+              prop.prop_type === 'permanent' ? 'bg-blue-500/10 text-blue-400 font-medium' :
+              prop.prop_type === 'held' ? 'bg-amber-500/10 text-amber-400 font-medium' :
+              'bg-cyan-500/10 text-cyan-400 font-medium'
+            }>
+              {prop.prop_type === 'permanent' ? t.assetsManager.prop.permanent : prop.prop_type === 'held' ? t.assetsManager.prop.held : t.assetsManager.prop.interactive}
             </Chip>
           )}
           {/* 生成状态标签 */}
@@ -118,9 +124,9 @@ const PropList: React.FC<PropListProps> = ({ props, onEdit, onDelete }) => {
               prop.generation_status === 'generating' ? 'bg-amber-500/10 text-amber-400 font-medium' :
               'bg-red-500/10 text-red-400 font-medium'
             }>
-              {prop.generation_status === 'completed' ? '已生成' :
-               prop.generation_status === 'generating' ? '生成中' :
-               prop.generation_status === 'idle' ? '待生成' : '生成失败'}
+              {prop.generation_status === 'completed' ? t.assetsManager.prop.statusCompleted || '已生成' :
+               prop.generation_status === 'generating' ? t.assetsManager.prop.statusGenerating || '生成中' :
+               prop.generation_status === 'idle' ? t.assetsManager.prop.statusIdle || '待生成' : t.assetsManager.prop.statusFailed || '生成失败'}
             </Chip>
           )}
           {prop.category && (

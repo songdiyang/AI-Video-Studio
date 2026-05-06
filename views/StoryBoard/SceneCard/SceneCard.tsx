@@ -18,7 +18,10 @@ import { SpatialDescription } from '../useSceneManager';
 import type { StoryboardValidationIssue } from '../utils/validateStoryboardContent';
 import { getWorstSeverity } from '../utils/validateStoryboardContent';
 import StoryboardLockButton from '../components/StoryboardLockButton';
-import { ShotSizeSelector } from '../components/ShotSizeSelector';
+import { ShotSizeSelector, ShotSizeBadge } from '../components/ShotSizeSelector';
+import { CameraMovementSelector } from '../components/CameraMovementSelector';
+import { CAMERA_MOVEMENT_LABELS } from '../components/CameraMovementSelector';
+import { FrameTypeSelector } from '../components/FrameTypeSelector';
 
 export interface SceneCardProps {
   scene: StoryboardScene;
@@ -291,7 +294,7 @@ const SceneCard: React.FC<SceneCardProps> = ({
   return (
     <>
       <Card
-        className={`transition-all cursor-pointer rounded-lg ${
+        className={`transition-all cursor-pointer rounded-lg group/scene ${
           isSelected
             ? 'border-l-2 border-l-[var(--accent)] border-y border-r border-[var(--border-color)] bg-[var(--bg-card-hover)]'
             : `border border-[var(--border-color)] hover:border-[var(--accent)]/30 bg-[var(--bg-card)]${scene.isLocked ? ' opacity-75' : ''}`
@@ -299,14 +302,37 @@ const SceneCard: React.FC<SceneCardProps> = ({
         isPressable={false}
         onPress={() => onSelect(scene.id)}
       >
-        <CardBody className="p-1.5">
+        <CardBody className="p-1.5 relative">
+          {/* 操作按钮 - 悬浮显示在右上角 */}
+          <div className="absolute top-1 right-1 z-10 flex items-center gap-0.5 opacity-0 group-hover/scene:opacity-100 transition-opacity">
+            {/* 锁定按钮 */}
+            <div onClick={(e) => e.stopPropagation()}>
+              <StoryboardLockButton
+                storyboardId={scene.id}
+                isLocked={scene.isLocked || false}
+                size="sm"
+                onLockChange={(locked) => {
+                  if (onUpdateScene) {
+                    onUpdateScene(scene.id, { isLocked: locked });
+                  }
+                }}
+              />
+            </div>
+            <button
+              onClick={(e) => { e.stopPropagation(); handleDeleteClick(scene.id); }}
+              className="p-1 rounded hover:bg-red-500/20 text-[var(--text-muted)] hover:text-red-400 transition-colors"
+            >
+              <Trash2 className="w-3 h-3" />
+            </button>
+          </div>
+
           <div 
-            className="flex gap-1.5"
+            className="flex gap-1.5 min-w-0"
             onClick={() => onSelect(scene.id)}
           >
             {/* 紧凑的序号 */}
-            <div className="flex flex-col items-center justify-center w-6 flex-shrink-0 relative">
-              <span className={`text-xs font-bold ${
+            <div className="flex flex-col items-center justify-center w-5 flex-shrink-0 relative">
+              <span className={`text-[11px] font-bold ${
                 isSelected ? 'text-[var(--accent)]' : 'text-[var(--text-muted)]'
               }`}>
                 {index + 1}
@@ -314,7 +340,7 @@ const SceneCard: React.FC<SceneCardProps> = ({
               {/* 检验标记 */}
               {validationSeverity && (
                 <span
-                  className={`absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full ${
+                  className={`absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full ${
                     validationSeverity === 'error' ? 'bg-rose-500' :
                     validationSeverity === 'warning' ? 'bg-amber-500' : 'bg-sky-500'
                   }`}
@@ -326,7 +352,7 @@ const SceneCard: React.FC<SceneCardProps> = ({
             {/* 缩略图 - 支持拖拽到积木编辑器 */}
             {(scene.startFrame || scene.videoUrl) ? (
               <div 
-                className="relative w-16 h-10 flex-shrink-0 rounded overflow-hidden bg-[var(--bg-app)] cursor-grab active:cursor-grabbing hover:ring-2 hover:ring-[var(--accent)]/50 transition-all"
+                className="relative w-14 h-9 flex-shrink-0 rounded overflow-hidden bg-[var(--bg-app)] cursor-grab active:cursor-grabbing hover:ring-2 hover:ring-[var(--accent)]/50 transition-all"
                 draggable={!!scene.startFrame}
                 onDragStart={(e) => {
                   if (scene.startFrame) {
@@ -367,24 +393,24 @@ const SceneCard: React.FC<SceneCardProps> = ({
                 {/* 草图指示图标 */}
                 {scene.sketchUrl && (
                   <Tooltip content="已有草图">
-                    <div className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-purple-500/80 flex items-center justify-center">
-                      <Pencil className="w-2.5 h-2.5 text-white" />
+                    <div className="absolute top-0.5 right-0.5 w-3.5 h-3.5 rounded-full bg-purple-500/80 flex items-center justify-center">
+                      <Pencil className="w-2 h-2 text-white" />
                     </div>
                   </Tooltip>
                 )}
               </div>
             ) : (
-              <div className="relative w-16 h-10 flex-shrink-0 rounded border border-dashed border-[var(--border-color)] flex items-center justify-center bg-[var(--bg-app)]">
+              <div className="relative w-14 h-9 flex-shrink-0 rounded border border-dashed border-[var(--border-color)] flex items-center justify-center bg-[var(--bg-app)]">
                 {isGeneratingImage ? (
                   <div className="w-3 h-3 border-2 border-[var(--text-muted)] border-t-transparent rounded-full animate-spin" />
                 ) : (
-                  <ImageIcon className="w-4 h-4 text-[var(--text-muted)]" />
+                  <ImageIcon className="w-3.5 h-3.5 text-[var(--text-muted)]" />
                 )}
                 {/* 无图时的草图指示 */}
                 {scene.sketchUrl && (
                   <Tooltip content="已有草图">
-                    <div className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-purple-500/80 flex items-center justify-center">
-                      <Pencil className="w-2.5 h-2.5 text-white" />
+                    <div className="absolute top-0.5 right-0.5 w-3.5 h-3.5 rounded-full bg-purple-500/80 flex items-center justify-center">
+                      <Pencil className="w-2 h-2 text-white" />
                     </div>
                   </Tooltip>
                 )}
@@ -392,93 +418,84 @@ const SceneCard: React.FC<SceneCardProps> = ({
             )}
 
             {/* 内容 */}
-            <div className="flex-1 min-w-0">
-              <p className="text-xs text-[var(--text-secondary)] line-clamp-2 leading-tight">
+            <div className="flex-1 min-w-0 overflow-hidden pr-6">
+              {/* 描述文字 */}
+              <p className="text-[11px] text-[var(--text-secondary)] leading-snug overflow-hidden text-ellipsis" style={{
+                display: '-webkit-box',
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: 'vertical'
+              }}>
                 {scene.baseDescription || '暂无描述'}
               </p>
-              {/* 元数据标签 */}
-              <div className="flex items-center gap-1 mt-1 flex-wrap">
-                {/* 可编辑的景别选择器 */}
+              {/* 元数据工具栏 - 紧凑单行 */}
+              <div className="flex items-center gap-1 mt-0.5">
+                {/* 景别 */}
                 {onUpdateScene && (
                   <div onClick={(e) => e.stopPropagation()} className="flex-shrink-0">
                     <ShotSizeSelector
                       value={scene.shotType}
                       onChange={async (newValue) => {
-                        // 先本地更新
                         onUpdateScene(scene.id, { shotType: newValue });
-                        // 然后保存到后端（通过父组件传递的回调或直接调用API）
-                        // 这里我们依赖父组件来处理持久化
                       }}
                       compact={true}
                     />
                   </div>
                 )}
-                {/* 只读模式：显示普通标签 */}
                 {!onUpdateScene && scene.shotType && (
-                  <span className="text-[10px] px-1 py-0.5 rounded bg-cyan-500/20 text-cyan-400">
-                    {scene.shotType}
+                  <ShotSizeBadge value={scene.shotType} />
+                )}
+                {/* 运镜 */}
+                {onUpdateScene && (
+                  <div onClick={(e) => e.stopPropagation()} className="flex-shrink-0">
+                    <CameraMovementSelector
+                      value={scene.cameraMovement}
+                      onChange={async (newValue) => {
+                        onUpdateScene(scene.id, { cameraMovement: newValue });
+                      }}
+                      compact={true}
+                    />
+                  </div>
+                )}
+                {!onUpdateScene && scene.cameraMovement && (
+                  <span className="text-[10px] px-1 py-0.5 rounded bg-slate-500/15 text-slate-400 whitespace-nowrap">
+                    {CAMERA_MOVEMENT_LABELS[scene.cameraMovement] || scene.cameraMovement}
                   </span>
                 )}
-                {scene.hasAction && (
-                  <span className="text-[10px] px-1 py-0.5 rounded bg-amber-500/20 text-amber-400">
-                    动作
+                {/* 画面类型 */}
+                {onUpdateScene && (
+                  <div onClick={(e) => e.stopPropagation()} className="flex-shrink-0">
+                    <FrameTypeSelector
+                      hasAction={scene.hasAction}
+                      onChange={(newHasAction) => {
+                        onUpdateScene(scene.id, { hasAction: newHasAction });
+                      }}
+                      compact={true}
+                    />
+                  </div>
+                )}
+                {!onUpdateScene && scene.hasAction && (
+                  <span className="text-[10px] px-1 py-0.5 rounded bg-slate-500/15 text-slate-400 whitespace-nowrap">
+                    运动
                   </span>
                 )}
+                {/* 状态标签 */}
                 {scene.videoUrl && (
-                  <span className="text-[10px] px-1 py-0.5 rounded bg-rose-500/20 text-rose-400">
+                  <span className="text-[10px] px-1 py-0.5 rounded bg-emerald-500/15 text-emerald-400 whitespace-nowrap">
                     视频
                   </span>
                 )}
                 {isGeneratingVideo && !scene.videoUrl && (
-                  <span className="text-[10px] px-1 py-0.5 rounded bg-rose-500/20 text-rose-400 flex items-center gap-0.5">
-                    <div className="w-2 h-2 border border-rose-400 border-t-transparent rounded-full animate-spin" />
-                    视频
+                  <span className="text-[10px] px-1 py-0.5 rounded bg-emerald-500/15 text-emerald-400 flex items-center gap-0.5 whitespace-nowrap">
+                    <div className="w-1.5 h-1.5 border border-emerald-400 border-t-transparent rounded-full animate-spin" />
+                    生成中
                   </span>
                 )}
                 {scene.isLocked && (
-                  <span className="text-[10px] px-1 py-0.5 rounded bg-amber-500/20 text-amber-400">
+                  <span className="text-[10px] px-1 py-0.5 rounded bg-amber-500/15 text-amber-400 whitespace-nowrap">
                     已锁定
                   </span>
                 )}
               </div>
-            </div>
-
-            {/* 操作按钮 */}
-            <div className="flex items-center gap-1">
-              {/* 锁定按钮 */}
-              <div onClick={(e) => e.stopPropagation()}>
-                <StoryboardLockButton
-                  storyboardId={scene.id}
-                  isLocked={scene.isLocked || false}
-                  size="sm"
-                  onLockChange={(locked) => {
-                    if (onUpdateScene) {
-                      onUpdateScene(scene.id, { isLocked: locked });
-                    }
-                  }}
-                />
-              </div>
-              {/* 草图按钮 - 已隐藏 */}
-              {/*
-              <Tooltip content={scene.sketchUrl ? "编辑草图" : "添加草图"}>
-                <button
-                  onClick={(e) => { e.stopPropagation(); onOpenSketchEditor?.(scene.id); }}
-                  className={`p-1 rounded transition-colors ${
-                    scene.sketchUrl 
-                      ? 'bg-purple-500/20 text-purple-400 hover:bg-purple-500/30' 
-                      : 'hover:bg-purple-500/20 text-[var(--text-muted)] hover:text-purple-400'
-                  }`}
-                >
-                  {scene.sketchUrl ? <Edit3 className="w-3.5 h-3.5" /> : <><Plus className="w-2 h-2" /><Pencil className="w-3 h-3" /></>}
-                </button>
-              </Tooltip>
-              */}
-              <button
-                onClick={(e) => { e.stopPropagation(); handleDeleteClick(scene.id); }}
-                className="p-1 rounded hover:bg-red-500/20 text-[var(--text-muted)] hover:text-red-400 transition-colors"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-              </button>
             </div>
           </div>
         </CardBody>

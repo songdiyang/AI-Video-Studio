@@ -30,14 +30,43 @@ const { downloadAndStore } = require('../../../utils/fileStorage');
 async function generateUpdatedSceneImage({ storyboardId, location, environmentChange, imageModel, textModel, aspectRatio }) {
   console.log(`[SceneRefUtils] 🎨 生成更新版场景图：场景「${location}」，变化: ${environmentChange}`);
 
-  // 1. 查询原始场景信息
-  const sceneRow = await queryOne(
-    `SELECT s.name, s.description, s.environment, s.lighting, s.mood, s.image_url
-     FROM storyboard_scenes ss
-     JOIN scenes s ON ss.scene_id = s.id
-     WHERE ss.storyboard_id = ? AND s.name = ?`,
+  // 1. 查询影棚关联的环境信息（优先从影棚获取场景参考图）
+  let sceneRow = null;
+  const studioRow = await queryOne(
+    `SELECT st.name, st.description AS studio_description, st.nine_grid_image_url,
+            st.environment_view,
+            e.name AS env_name, e.description AS env_description,
+            e.image_url AS env_front_url, e.image_back_url AS env_back_url
+     FROM storyboard_scenes ssc
+     JOIN studios st ON ssc.studio_id = st.id
+     LEFT JOIN environments e ON st.environment_id = e.id
+     WHERE ssc.storyboard_id = ? AND st.name = ?`,
     [storyboardId, location]
   );
+
+  if (studioRow) {
+    // 选择影棚偏好视角的环境图作为参考
+    const envUrl = studioRow.environment_view === 'back'
+      ? (studioRow.env_back_url || studioRow.env_front_url)
+      : (studioRow.env_front_url || studioRow.env_back_url);
+    sceneRow = {
+      name: studioRow.name,
+      description: studioRow.env_description || studioRow.studio_description || `${location}场景`,
+      environment: studioRow.env_description || `${location}场景`,
+      lighting: '自然光',
+      mood: '中性',
+      image_url: studioRow.nine_grid_image_url || envUrl
+    };
+  } else {
+    // 兜底：尝试旧 scenes 表（兼容老数据）
+    sceneRow = await queryOne(
+      `SELECT s.name, s.description, s.environment, s.lighting, s.mood, s.image_url
+       FROM storyboard_scenes ss
+       JOIN scenes s ON ss.scene_id = s.id
+       WHERE ss.storyboard_id = ? AND s.name = ?`,
+      [storyboardId, location]
+    );
+  }
 
   if (!sceneRow || !sceneRow.image_url) {
     console.warn(`[SceneRefUtils] 场景「${location}」未找到原始场景图，跳过空镜生成`);

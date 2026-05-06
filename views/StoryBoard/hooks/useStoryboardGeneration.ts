@@ -19,6 +19,7 @@ const STEP_NAMES: Record<string, string> = {
   character_extraction: '提取角色信息',
   scene_state_analysis: '分析场景状态',
   studio_components_compose: '组装影棚组件',
+  batch_character_views_generation: '生成角色设定图',
   frame_generation: '生成首尾帧',
   single_frame_generation: '生成单帧'
 };

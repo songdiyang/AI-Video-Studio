@@ -225,10 +225,8 @@ class WorkflowExecutor {
       this.snapshotTimer.unref();
     }
 
-    // 新增：启动时恢复被中断的工作流
-    this._recoverInterruptedJobs().catch(err => {
-      console.error('[WorkflowExecutor] 启动恢复失败:', err);
-    });
+    // 启动时恢复被中断的工作流 - 延迟执行，确保数据库已初始化
+    this._recoveryDeferred = true;
   }
 
   /**
@@ -324,7 +322,7 @@ class WorkflowExecutor {
           }
 
           // 恢复 runningTasks（将当时正在执行的任务重置为 pending）
-          if (snapshot.runningTaskIds && snapshot.runningTaskIds.length > 0) {
+          if (Array.isArray(snapshot.runningTaskIds) && snapshot.runningTaskIds.length > 0) {
             await execute(
               `UPDATE generation_tasks SET status = 'pending', error_message = NULL, progress = 0
                WHERE id IN (${snapshot.runningTaskIds.map(() => '?').join(',')}) AND status = 'processing'`,
@@ -850,6 +848,22 @@ class WorkflowExecutor {
   }
 
   /**
+   * 延迟恢复被中断的工作流（应在数据库初始化完成后调用）
+   */
+  async recoverIfNeeded() {
+    if (!this._recoveryDeferred || this._recoveryRunning) return;
+    this._recoveryRunning = true;
+    this._recoveryDeferred = false;
+    try {
+      await this._recoverInterruptedJobs();
+    } catch (err) {
+      console.error('[WorkflowExecutor] 恢复工作流失败:', err);
+    } finally {
+      this._recoveryRunning = false;
+    }
+  }
+
+  /**
    * 获取执行器运行时统计
    */
   getStats() {
@@ -891,6 +905,8 @@ class WorkflowExecutor {
     await this.logger.flush();
     this.stepCounters.clear();
     this.runningTasks.clear();
+    // 重置恢复标记，确保下次初始化可正常恢复
+    this._recoveryDeferred = true;
   }
 }
 

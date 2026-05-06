@@ -13,6 +13,8 @@ export interface Studio {
   user_id: number;
   project_id: number;
   environment_id: number | null;
+  /** 影棚采用绑定环境的哪一面作为组装参考（front=正面，back=背面） */
+  environment_view?: 'front' | 'back' | null;
   name: string;
   description: string | null;
   cover_image_url: string | null;
@@ -21,7 +23,17 @@ export interface Studio {
   updated_at: string;
   scene_count?: number;
   element_count?: number;
+  /** 影棚九宫组装图 URL（3×3 九机位视角合成图） */
+  nine_grid_image_url?: string | null;
+  /** 九宫组装图生成状态 */
+  nine_grid_generation_status?: 'pending' | 'generating' | 'completed' | 'failed';
 }
+
+/** 影棚内建筑关联项：在 Building 基础上附带影棚侧的视图偏好 */
+export type StudioBuildingItem = Building & {
+  /** 影棚采用此建筑的哪种视图（exterior=外景，interior=内景） */
+  building_view?: 'exterior' | 'interior' | null;
+};
 
 export interface StudioElementSummary {
   id: number;
@@ -36,7 +48,7 @@ export interface StudioElementSummary {
 export interface StudioDetail {
   studio: Studio;
   environment: Environment | null;
-  buildings: Building[];
+  buildings: StudioBuildingItem[];
   elements: StudioElementSummary[];
 }
 
@@ -114,11 +126,15 @@ export async function deleteStudio(id: number): Promise<void> {
 
 // ========== 环境关联 ==========
 
-export async function attachEnvironmentToStudio(studioId: number, environmentId: number): Promise<void> {
+export async function attachEnvironmentToStudio(
+  studioId: number,
+  environmentId: number,
+  view?: 'front' | 'back'
+): Promise<void> {
   const resp = await fetch(`/api/studios/${studioId}/environment`, {
     method: 'POST',
     headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ environmentId })
+    body: JSON.stringify(view ? { environmentId, view } : { environmentId })
   });
   await handle<{ message: string }>(resp);
 }
@@ -131,13 +147,33 @@ export async function detachEnvironmentFromStudio(studioId: number): Promise<voi
   await handle<{ message: string }>(resp);
 }
 
+/** 切换影棚所用的环境面（正/背） */
+export async function setStudioEnvironmentView(
+  studioId: number,
+  view: 'front' | 'back'
+): Promise<void> {
+  const resp = await fetch(`/api/studios/${studioId}/environment-view`, {
+    method: 'PATCH',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ view })
+  });
+  await handle<{ message: string }>(resp);
+}
+
 // ========== 建筑关联 ==========
 
-export async function attachBuildingToStudio(studioId: number, buildingId: number, sortOrder?: number): Promise<void> {
+export async function attachBuildingToStudio(
+  studioId: number,
+  buildingId: number,
+  sortOrder?: number,
+  view?: 'exterior' | 'interior'
+): Promise<void> {
+  const body: Record<string, unknown> = { sortOrder: sortOrder ?? 0 };
+  if (view) body.view = view;
   const resp = await fetch(`/api/studios/${studioId}/buildings/${buildingId}`, {
     method: 'POST',
     headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sortOrder: sortOrder ?? 0 })
+    body: JSON.stringify(body)
   });
   await handle<{ message: string }>(resp);
 }
@@ -146,6 +182,20 @@ export async function detachBuildingFromStudio(studioId: number, buildingId: num
   const resp = await fetch(`/api/studios/${studioId}/buildings/${buildingId}`, {
     method: 'DELETE',
     headers: { ...authHeaders() }
+  });
+  await handle<{ message: string }>(resp);
+}
+
+/** 切换影棚下某座建筑采用的视图（外景/内景） */
+export async function setStudioBuildingView(
+  studioId: number,
+  buildingId: number,
+  view: 'exterior' | 'interior'
+): Promise<void> {
+  const resp = await fetch(`/api/studios/${studioId}/buildings/${buildingId}/view`, {
+    method: 'PATCH',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ view })
   });
   await handle<{ message: string }>(resp);
 }
@@ -204,4 +254,30 @@ export async function composeStudiosFromScript(payload: {
     body: JSON.stringify(payload)
   });
   return handle<StudioWorkflowStartResponse>(resp);
+}
+
+// ========== 九宫组装图生成 ==========
+
+export interface StudioNineGridGenerateResponse {
+  message: string;
+  jobId?: string | number;
+  studioId: number;
+  status?: string;
+}
+
+/**
+ * 影棚九宫组装图生成
+ * 基于影棚绑定的环境（1:1）+ 建筑（1:N），
+ * 生成一张 3×3 九机位视角的影棚组装图。
+ */
+export async function generateStudioNineGrid(
+  studioId: number,
+  payload: { imageModel: string; textModel?: string }
+): Promise<StudioNineGridGenerateResponse> {
+  const resp = await fetch(`/api/studios/${studioId}/generate-nine-grid`, {
+    method: 'POST',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  return handle<StudioNineGridGenerateResponse>(resp);
 }

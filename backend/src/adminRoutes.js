@@ -38,6 +38,7 @@ function serializeModel(model) {
     query_response_mapping: parseJsonField(model.query_response_mapping, null),
     query_success_mapping: parseJsonField(model.query_success_mapping, null),
     query_fail_mapping: parseJsonField(model.query_fail_mapping, null),
+    capabilities: parseJsonField(model.capabilities, []),
     priceSummary: getPriceSummary(model.price_config, { modelName: model.name })
   };
 }
@@ -960,6 +961,7 @@ router.get('/ai-models', authMiddleware, requireAdmin, async (req, res) => {
   try {
     const models = await queryAll(
       `SELECT id, name, category, provider, description, is_active, api_key,
+              provider_id, model_id, capabilities,
               price_config, request_method, url_template, headers_template, 
               body_template, default_params, response_mapping,
               supported_aspect_ratios, supported_durations, supported_resolutions,
@@ -981,17 +983,17 @@ router.get('/ai-models', authMiddleware, requireAdmin, async (req, res) => {
 
 router.get('/ai-models/:id', authMiddleware, requireAdmin, async (req, res) => {
   const { id } = req.params;
-  
+
   try {
     const model = await queryOne(
       `SELECT * FROM ai_model_configs WHERE id = ?`,
       [id]
     );
-    
+
     if (!model) {
       return res.status(404).json({ message: '模型不存在' });
     }
-    
+
     res.json({ model: serializeModel(model) });
   } catch (error) {
     console.error('[Admin] Get AI model error:', error);
@@ -1002,6 +1004,7 @@ router.get('/ai-models/:id', authMiddleware, requireAdmin, async (req, res) => {
 router.post('/ai-models', authMiddleware, requireAdmin, async (req, res) => {
   const {
     name, category, provider, description, is_active, api_key,
+    provider_id, model_id, capabilities,
     price_config, request_method, url_template, headers_template,
     body_template, default_params, response_mapping,
     supported_aspect_ratios, supported_durations, supported_resolutions,
@@ -1012,15 +1015,18 @@ router.post('/ai-models', authMiddleware, requireAdmin, async (req, res) => {
     custom_handler, custom_query_handler,
     billing_handler, billing_query_handler
   } = req.body;
-  
-  if (!name || !category || !provider || !url_template || !headers_template || !response_mapping) {
-    return res.status(400).json({ message: '必填字段不能为空' });
+
+  // OpenAI 适配层模式：只要有 provider_id + model_id 即可
+  const isOpenAIMode = provider_id && model_id;
+  if (!name || !category || !provider || (!isOpenAIMode && (!url_template || !headers_template || !response_mapping))) {
+    return res.status(400).json({ message: '必填字段不能为空（OpenAI 适配层模式需填写 provider_id 和 model_id）' });
   }
-  
+
   try {
     await execute(
       `INSERT INTO ai_model_configs (
         name, category, provider, description, is_active, api_key,
+        provider_id, model_id, capabilities,
         price_config, request_method, url_template, headers_template,
         body_template, default_params, response_mapping,
         supported_aspect_ratios, supported_durations, supported_resolutions,
@@ -1030,10 +1036,11 @@ router.post('/ai-models', authMiddleware, requireAdmin, async (req, res) => {
         query_success_mapping, query_fail_mapping,
         custom_handler, custom_query_handler,
         billing_handler, billing_query_handler
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         name, category, provider, description, is_active ?? 1, api_key,
-        stringifyJsonValue(price_config, { preserveNull: true }), request_method || 'POST', url_template,
+        provider_id || null, model_id || null, stringifyJsonValue(capabilities || []),
+        stringifyJsonValue(price_config, { preserveNull: true }), request_method || 'POST', url_template || null,
         stringifyJsonValue(headers_template), stringifyJsonValue(body_template),
         stringifyJsonValue(default_params), stringifyJsonValue(response_mapping),
         stringifyJsonValue(supported_aspect_ratios || []),
@@ -1058,7 +1065,7 @@ router.post('/ai-models', authMiddleware, requireAdmin, async (req, res) => {
       action: 'create',
       targetType: 'ai_model',
       targetName: name,
-      details: { category, provider },
+      details: { category, provider, provider_id, model_id, capabilities },
       ipAddress: req.ip || req.connection?.remoteAddress || '',
       userAgent: req.headers?.['user-agent'] || ''
     });
@@ -1074,6 +1081,7 @@ router.put('/ai-models/:id', authMiddleware, requireAdmin, async (req, res) => {
   const { id } = req.params;
   const {
     name, category, provider, description, is_active, api_key,
+    provider_id, model_id, capabilities,
     price_config, request_method, url_template, headers_template,
     body_template, default_params, response_mapping,
     supported_aspect_ratios, supported_durations, supported_resolutions,
@@ -1084,16 +1092,17 @@ router.put('/ai-models/:id', authMiddleware, requireAdmin, async (req, res) => {
     custom_handler, custom_query_handler,
     billing_handler, billing_query_handler
   } = req.body;
-  
+
   try {
     const model = await queryOne('SELECT id FROM ai_model_configs WHERE id = ?', [id]);
     if (!model) {
       return res.status(404).json({ message: '模型不存在' });
     }
-    
+
     await execute(
       `UPDATE ai_model_configs SET
         name = ?, category = ?, provider = ?, description = ?, is_active = ?, api_key = ?,
+        provider_id = ?, model_id = ?, capabilities = ?,
         price_config = ?, request_method = ?, url_template = ?, headers_template = ?,
         body_template = ?, default_params = ?, response_mapping = ?,
         supported_aspect_ratios = ?, supported_durations = ?, supported_resolutions = ?,
@@ -1106,6 +1115,7 @@ router.put('/ai-models/:id', authMiddleware, requireAdmin, async (req, res) => {
       WHERE id = ?`,
       [
         name, category, provider, description, is_active, api_key,
+        provider_id || null, model_id || null, stringifyJsonValue(capabilities || []),
         stringifyJsonValue(price_config, { preserveNull: true }), request_method, url_template,
         stringifyJsonValue(headers_template), stringifyJsonValue(body_template),
         stringifyJsonValue(default_params), stringifyJsonValue(response_mapping),
@@ -1133,7 +1143,7 @@ router.put('/ai-models/:id', authMiddleware, requireAdmin, async (req, res) => {
       targetType: 'ai_model',
       targetId: id,
       targetName: name,
-      details: { category, provider, is_active },
+      details: { category, provider, is_active, provider_id, model_id, capabilities },
       ipAddress: req.ip || req.connection?.remoteAddress || '',
       userAgent: req.headers?.['user-agent'] || ''
     });
@@ -1198,6 +1208,186 @@ router.post('/ai-models/smart-parse', authMiddleware, requireAdmin, async (req, 
     });
   } catch (error) {
     sendGenerationError(res, error, '智能解析失败', '[Admin] Smart parse error:');
+  }
+});
+
+// ====== 模型平台管理 API ======
+
+/**
+ * 获取所有模型平台
+ * GET /api/admin/model-providers
+ */
+router.get('/model-providers', authMiddleware, requireAdmin, async (req, res) => {
+  try {
+    const providers = await queryAll(
+      'SELECT id, name, display_name, base_url, api_key, headers_template, is_active, created_at, updated_at FROM model_providers ORDER BY id ASC'
+    );
+    res.json({
+      providers: providers.map(p => ({
+        ...p,
+        headers_template: parseJsonField(p.headers_template, {})
+      }))
+    });
+  } catch (error) {
+    console.error('[Admin] Get model providers error:', error);
+    res.status(500).json({ message: '获取模型平台列表失败' });
+  }
+});
+
+/**
+ * 获取单个模型平台
+ * GET /api/admin/model-providers/:id
+ */
+router.get('/model-providers/:id', authMiddleware, requireAdmin, async (req, res) => {
+  try {
+    const provider = await queryOne(
+      'SELECT * FROM model_providers WHERE id = ?',
+      [req.params.id]
+    );
+    if (!provider) {
+      return res.status(404).json({ message: '平台不存在' });
+    }
+    res.json({
+      provider: {
+        ...provider,
+        headers_template: parseJsonField(provider.headers_template, {})
+      }
+    });
+  } catch (error) {
+    console.error('[Admin] Get model provider error:', error);
+    res.status(500).json({ message: '获取平台信息失败' });
+  }
+});
+
+/**
+ * 创建模型平台
+ * POST /api/admin/model-providers
+ */
+router.post('/model-providers', authMiddleware, requireAdmin, async (req, res) => {
+  const { name, display_name, base_url, api_key, headers_template, is_active } = req.body;
+
+  if (!name || !display_name || !base_url) {
+    return res.status(400).json({ message: '名称、显示名称和 Base URL 不能为空' });
+  }
+
+  try {
+    const existing = await queryOne('SELECT id FROM model_providers WHERE name = ?', [name]);
+    if (existing) {
+      return res.status(409).json({ message: '平台标识已存在' });
+    }
+
+    await execute(
+      'INSERT INTO model_providers (name, display_name, base_url, api_key, headers_template, is_active) VALUES (?, ?, ?, ?, ?, ?)',
+      [name, display_name, base_url, api_key || null, stringifyJsonValue(headers_template), is_active ?? 1]
+    );
+
+    const adminId = req.user.userId || req.user.id;
+    await logAdminAction({
+      adminId,
+      action: 'create',
+      targetType: 'model_provider',
+      targetName: name,
+      details: { display_name, base_url },
+      ipAddress: req.ip || req.connection?.remoteAddress || '',
+      userAgent: req.headers?.['user-agent'] || ''
+    });
+
+    res.json({ message: '平台创建成功' });
+  } catch (error) {
+    console.error('[Admin] Create model provider error:', error);
+    res.status(500).json({ message: '创建平台失败' });
+  }
+});
+
+/**
+ * 更新模型平台
+ * PUT /api/admin/model-providers/:id
+ */
+router.put('/model-providers/:id', authMiddleware, requireAdmin, async (req, res) => {
+  const { id } = req.params;
+  const { name, display_name, base_url, api_key, headers_template, is_active } = req.body;
+
+  try {
+    const provider = await queryOne('SELECT id FROM model_providers WHERE id = ?', [id]);
+    if (!provider) {
+      return res.status(404).json({ message: '平台不存在' });
+    }
+
+    const updates = [];
+    const values = [];
+
+    if (name !== undefined) { updates.push('name = ?'); values.push(name); }
+    if (display_name !== undefined) { updates.push('display_name = ?'); values.push(display_name); }
+    if (base_url !== undefined) { updates.push('base_url = ?'); values.push(base_url); }
+    if (api_key !== undefined) { updates.push('api_key = ?'); values.push(api_key); }
+    if (headers_template !== undefined) { updates.push('headers_template = ?'); values.push(stringifyJsonValue(headers_template)); }
+    if (is_active !== undefined) { updates.push('is_active = ?'); values.push(is_active); }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ message: '没有需要更新的字段' });
+    }
+
+    values.push(id);
+    await execute(
+      `UPDATE model_providers SET ${updates.join(', ')} WHERE id = ?`,
+      values
+    );
+
+    const adminId = req.user.userId || req.user.id;
+    await logAdminAction({
+      adminId,
+      action: 'update',
+      targetType: 'model_provider',
+      targetId: id,
+      targetName: name,
+      details: { display_name, base_url, is_active },
+      ipAddress: req.ip || req.connection?.remoteAddress || '',
+      userAgent: req.headers?.['user-agent'] || ''
+    });
+
+    res.json({ message: '平台更新成功' });
+  } catch (error) {
+    console.error('[Admin] Update model provider error:', error);
+    res.status(500).json({ message: '更新平台失败' });
+  }
+});
+
+/**
+ * 删除模型平台
+ * DELETE /api/admin/model-providers/:id
+ */
+router.delete('/model-providers/:id', authMiddleware, requireAdmin, async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const provider = await queryOne('SELECT id, name FROM model_providers WHERE id = ?', [id]);
+    if (!provider) {
+      return res.status(404).json({ message: '平台不存在' });
+    }
+
+    // 检查是否有模型使用此平台
+    const usedBy = await queryOne('SELECT COUNT(*) as count FROM ai_model_configs WHERE provider_id = ?', [id]);
+    if (usedBy?.count > 0) {
+      return res.status(400).json({ message: `该平台已被 ${usedBy.count} 个模型使用，无法删除` });
+    }
+
+    await execute('DELETE FROM model_providers WHERE id = ?', [id]);
+
+    const adminId = req.user.userId || req.user.id;
+    await logAdminAction({
+      adminId,
+      action: 'delete',
+      targetType: 'model_provider',
+      targetId: id,
+      targetName: provider.name,
+      ipAddress: req.ip || req.connection?.remoteAddress || '',
+      userAgent: req.headers?.['user-agent'] || ''
+    });
+
+    res.json({ message: '平台已删除' });
+  } catch (error) {
+    console.error('[Admin] Delete model provider error:', error);
+    res.status(500).json({ message: '删除平台失败' });
   }
 });
 
@@ -1367,12 +1557,30 @@ router.post('/ai-models/:id/test-handler', authMiddleware, requireAdmin, async (
           });
         }
         case 'MULTIMODAL': {
-          const handler = require('./customHandlers/doubao_multimodal');
-          // 获取完整模型配置（含 api_key, default_params 等）
+          // 获取完整模型配置（含 provider_id, model_id 等）
           const fullModel = await queryOne('SELECT * FROM ai_model_configs WHERE id = ?', [id]);
           if (!fullModel) {
             throw new Error('模型配置不存在');
           }
+
+          // OpenAI 适配层模式：使用 callAIModel 统一调用
+          if (fullModel.provider_id && fullModel.model_id) {
+            const { callAIModel } = require('./aiModelService');
+            const callParams = {
+              prompt: params?.prompt || '请描述这张图片的内容',
+              temperature: params?.temperature ?? 0.7,
+              max_tokens: params?.max_output_tokens ?? params?.max_tokens ?? 4096
+            };
+            // 如果有图片URL，作为多模态输入
+            if (params?.imageUrl || params?.imageUrls) {
+              callParams.imageUrl = params?.imageUrl;
+              callParams.imageUrls = params?.imageUrls;
+            }
+            return await callAIModel(fullModel.name, callParams);
+          }
+
+          // 传统模式：使用 custom handler
+          const handler = require('./customHandlers/doubao_multimodal');
           const rawResult = await handler.call(fullModel, {
             text: params?.prompt || '请描述这张图片的内容',
             temperature: params?.temperature ?? 0.7,
@@ -1406,10 +1614,16 @@ router.post('/ai-models/:id/test-handler', authMiddleware, requireAdmin, async (
     });
   } catch (error) {
     console.error('[Admin] Test handler error:', error);
-    res.status(error.status || 500).json({
+    // 如果错误是 API Key 未配置，返回 400 而非 500，并给出友好提示
+    const isConfigError = error.message && (
+      error.message.includes('API Key 未配置') ||
+      error.message.includes('未配置')
+    );
+    res.status(isConfigError ? 400 : (error.status || 500)).json({
       success: false,
       message: error.message || '测试失败',
-      error: error.message
+      error: error.message,
+      code: isConfigError ? 'API_KEY_MISSING' : undefined
     });
   }
 });

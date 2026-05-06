@@ -28,16 +28,22 @@ async function linkStoryboardScenes(storyboardId, locationName, projectId, optio
     await execute('DELETE FROM storyboard_scenes WHERE storyboard_id = ?', [storyboardId]);
   }
 
-  const scene = await queryOne(
-    'SELECT id FROM scenes WHERE project_id = ? AND name = ?',
-    [projectId, locationName.trim()]
-  );
+  const [scene, studio] = await Promise.all([
+    queryOne(
+      'SELECT id FROM scenes WHERE project_id = ? AND name = ?',
+      [projectId, locationName.trim()]
+    ),
+    queryOne(
+      'SELECT id FROM studios WHERE project_id = ? AND name = ?',
+      [projectId, locationName.trim()]
+    )
+  ]);
 
   if (scene) {
     try {
       await execute(
-        'INSERT IGNORE INTO storyboard_scenes (storyboard_id, scene_id) VALUES (?, ?)',
-        [storyboardId, scene.id]
+        'INSERT IGNORE INTO storyboard_scenes (storyboard_id, scene_id, studio_id) VALUES (?, ?, ?)',
+        [storyboardId, scene.id, studio ? studio.id : null]
       );
       return { linked: true, notFound: false };
     } catch (err) {

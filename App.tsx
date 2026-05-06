@@ -12,6 +12,7 @@ import TaskQueueBubble from './components/TaskQueueBubble';
 import Skeleton from './components/Skeleton';
 import ErrorBoundary from './components/ErrorBoundary';
 import { PointsProvider } from './contexts/PointsContext';
+import { ExtensionProvider } from './contexts/ExtensionContext';
 
 // 懒加载主要视图组件
 const DynamicWorkbench = React.lazy(() => import('./components/DynamicWorkbench'));
@@ -52,6 +53,7 @@ const ErrorMonitor = React.lazy(() => import('./views/admin/ErrorMonitor'));
 const AnnouncementManagement = React.lazy(() => import('./views/admin/AnnouncementManagement'));
 const BillingConfig = React.lazy(() => import('./views/admin/BillingConfig'));
 const AdminLog = React.lazy(() => import('./views/admin/AdminLog'));
+const ModelProviders = React.lazy(() => import('./views/admin/ModelProviders'));
 
 // 加载中回退组件
 const LoadingFallback = () => (
@@ -233,6 +235,11 @@ const App: React.FC = () => {
                   <AIModels />
                 </Suspense>
               } />
+              <Route path="model-providers" element={
+                <Suspense fallback={<LoadingFallback />}>
+                  <ModelProviders />
+                </Suspense>
+              } />
               <Route path="users" element={
                 <Suspense fallback={<LoadingFallback />}>
                   <UserManagement />
@@ -292,9 +299,11 @@ const App: React.FC = () => {
                 <WorkbenchProvider>
                   <AIAssistantProvider>
                     <PointsProvider>
-                      <Layout>
-                        <AnimatedRoutes />
-                      </Layout>
+                      <ExtensionProvider>
+                        <Layout>
+                          <AnimatedRoutes />
+                        </Layout>
+                      </ExtensionProvider>
                     </PointsProvider>
                   </AIAssistantProvider>
                 </WorkbenchProvider>

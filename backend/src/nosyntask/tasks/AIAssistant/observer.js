@@ -23,11 +23,44 @@
  */
 
 const TOOL_DISPLAY_NAMES = {
+  // 角色
   generate_character_views: '生成角色三视图',
+  generate_character_state_views: '生成角色状态三视图',
+  generate_costume_views: '生成服装设定图',
+  generate_character_concept_breakdown: '生成角色概念分解图',
+  // 场景/影棚
   generate_scene_image: '生成场景图片',
+  extract_scene_elements: '抽取场景元素',
+  generate_scene_element: '生成场景元素图',
+  generate_environment_image: '生成环境氛围图',
+  generate_building_image: '生成建筑结构图',
+  generate_studio_nine_grid: '生成影棚九宫图',
+  generate_variant_faces: '生成环境变体8方位图',
+  extract_studio_components: '拆分影棚组件',
+  compose_studio_from_script: '组装影棚',
+  // 分镜
+  generate_storyboards: '智能拆分生成分镜',
   generate_storyboards_batch: '批量生成分镜',
   generate_frames_batch: '批量生成首尾帧',
-  optimize_storyboard_prompts: '优化分镜提示词'
+  generate_frames_parallel: '并发生成首尾帧',
+  generate_frame: '生成单分镜首尾帧',
+  generate_single_frame: '生成单分镜单帧',
+  generate_scene_video: '生成分镜视频',
+  generate_videos_batch: '批量生成分镜视频',
+  // 提示词优化
+  optimize_storyboard_prompts: '优化分镜提示词',
+  optimize_image_prompts: '优化图片提示词',
+  optimize_video_prompts: '优化视频提示词',
+  // 道具
+  generate_prop_views: '生成道具设定图',
+  extract_script_props: '提取剧本道具',
+  // 魔术空间
+  generate_camera_frame: '视角帧生成',
+  generate_magic_paint: '涂改帧生成',
+  generate_hd_repair: '高清修复帧',
+  // 剧本
+  generate_script: '生成剧本',
+  split_script: '剧本拆集'
 };
 
 function getToolDisplayName(toolName) {

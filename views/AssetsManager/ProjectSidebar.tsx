@@ -4,6 +4,7 @@
 
 import React, { useState, useCallback } from 'react';
 import { FolderOpen, Package, X, ChevronRight, ChevronDown, Users, FileText, Tag, MapPin, BookOpen } from 'lucide-react';
+import { useLanguage } from '../../contexts/LanguageContext';
 import type { Project } from '../../services/projects';
 import { fetchCharactersByProject, fetchProps } from '../../services/assets';
 import { fetchCostumes } from '../../services/costumes';
@@ -22,17 +23,9 @@ interface ProjectSidebarProps {
   onClose?: () => void;
 }
 
-const RESOURCE_TYPES: { key: string; label: string; icon: React.ReactNode }[] = [
-  { key: 'characters', label: '角色', icon: <Users className="w-3.5 h-3.5" /> },
-  { key: 'props', label: '道具', icon: <FileText className="w-3.5 h-3.5" /> },
-  { key: 'costumes', label: '服装', icon: <Tag className="w-3.5 h-3.5" /> },
-  { key: 'studios', label: '影棚', icon: <MapPin className="w-3.5 h-3.5" /> },
-  { key: 'scripts', label: '剧本', icon: <BookOpen className="w-3.5 h-3.5" /> },
-];
-
-function getAssetName(asset: any, typeKey: string): string {
-  if (typeKey === 'scripts') return asset.title || '未命名剧本';
-  return asset.name || '未命名';
+function getAssetName(asset: any, typeKey: string, t: any): string {
+  if (typeKey === 'scripts') return asset.title || t.assetsManager.script.unNamed;
+  return asset.name || t.assetsManager.script.unNamed;
 }
 
 const ProjectSidebar: React.FC<ProjectSidebarProps> = ({
@@ -46,6 +39,16 @@ const ProjectSidebar: React.FC<ProjectSidebarProps> = ({
   onEditAsset,
   onClose
 }) => {
+  const { t } = useLanguage();
+
+  const RESOURCE_TYPES: { key: string; label: string; icon: React.ReactNode }[] = [
+    { key: 'characters', label: t.assetsManager.tabs.characters, icon: <Users className="w-3.5 h-3.5" /> },
+    { key: 'props', label: t.assetsManager.tabs.props, icon: <FileText className="w-3.5 h-3.5" /> },
+    { key: 'costumes', label: t.assetsManager.tabs.costumes, icon: <Tag className="w-3.5 h-3.5" /> },
+    { key: 'studios', label: t.assetsManager.tabs.studios, icon: <MapPin className="w-3.5 h-3.5" /> },
+    { key: 'scripts', label: t.assetsManager.tabs.scripts, icon: <BookOpen className="w-3.5 h-3.5" /> },
+  ];
+
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
   const [expandedTypes, setExpandedTypes] = useState<Set<string>>(new Set());
   const [typeAssets, setTypeAssets] = useState<Record<string, any[]>>({});
@@ -76,7 +79,7 @@ const ProjectSidebar: React.FC<ProjectSidebarProps> = ({
           assets = await fetchCharactersByProject(pid);
           break;
         case 'props':
-          assets = (await fetchProps()).filter((p: any) => String(p.project_id) === projectId);
+          assets = (await fetchProps()).props.filter((p: any) => String(p.project_id) === projectId);
           break;
         case 'costumes':
           assets = await fetchCostumes(pid);
@@ -124,7 +127,7 @@ const ProjectSidebar: React.FC<ProjectSidebarProps> = ({
       <div className="flex items-center justify-between p-4 border-b border-(--border-color)">
         <div className="flex items-center gap-2">
           <FolderOpen className="w-5 h-5 text-(--accent)" />
-          <h3 className="font-semibold text-(--text-primary)">项目列表</h3>
+          <h3 className="font-semibold text-(--text-primary)">{t.assetsManager.sidebar.projectList}</h3>
         </div>
         {onClose && (
           <button
@@ -148,7 +151,7 @@ const ProjectSidebar: React.FC<ProjectSidebarProps> = ({
           }`}
         >
           <Package className="w-4 h-4" />
-          <span className="text-sm font-medium">全部项目</span>
+          <span className="text-sm font-medium">{t.assetsManager.sidebar.allProjects}</span>
         </button>
 
         {/* 未使用素材 */}
@@ -161,7 +164,7 @@ const ProjectSidebar: React.FC<ProjectSidebarProps> = ({
           }`}
         >
           <X className="w-4 h-4" />
-          <span className="text-sm font-medium">未使用素材</span>
+          <span className="text-sm font-medium">{t.assetsManager.sidebar.unusedAssets}</span>
         </button>
 
         {/* 分隔线 */}
@@ -179,7 +182,7 @@ const ProjectSidebar: React.FC<ProjectSidebarProps> = ({
                 <button
                   onClick={() => toggleProject(projectIdStr)}
                   className="p-1 rounded hover:bg-(--bg-hover) transition-colors text-(--text-muted) shrink-0"
-                  title={isProjectExpanded ? '折叠' : '展开'}
+                  title={isProjectExpanded ? t.assetsManager.sidebar.collapse : t.assetsManager.sidebar.expand}
                 >
                   {isProjectExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
                 </button>
@@ -191,7 +194,7 @@ const ProjectSidebar: React.FC<ProjectSidebarProps> = ({
                       ? 'bg-sky-500/15 text-sky-600 dark:text-sky-400 border border-sky-500/40'
                       : 'text-(--text-secondary) hover:bg-sky-500/10 hover:text-sky-600 dark:hover:text-sky-400 border border-transparent'
                   }`}
-                  title={`单击选中，双击打开：${project.name}`}
+                  title={`${t.assetsManager.sidebar.clickSelect}: ${project.name}`}
                 >
                   <FolderOpen className="w-4 h-4 shrink-0" />
                   <span className="text-sm font-medium truncate">{project.name}</span>
@@ -229,10 +232,10 @@ const ProjectSidebar: React.FC<ProjectSidebarProps> = ({
                         {isTypeExpanded && (
                           <div className="ml-5 mt-0.5 space-y-0.5">
                             {isLoading && (
-                              <div className="px-3 py-1 text-[10px] text-(--text-muted)">加载中...</div>
+                              <div className="px-3 py-1 text-[10px] text-(--text-muted)">{t.assetsManager.sidebar.loading}</div>
                             )}
                             {!isLoading && assets.length === 0 && (
-                              <div className="px-3 py-1 text-[10px] text-(--text-muted)">暂无资产</div>
+                              <div className="px-3 py-1 text-[10px] text-(--text-muted)">{t.assetsManager.sidebar.noAssets}</div>
                             )}
                             {assets.map(asset => {
                               const assetKey = `${projectIdStr}_${rt.key}_${asset.id}`;
@@ -250,9 +253,9 @@ const ProjectSidebar: React.FC<ProjectSidebarProps> = ({
                                     onSelectAsset?.(rt.key, asset);
                                   }}
                                   onDoubleClick={() => onEditAsset?.(rt.key, asset)}
-                                  title={`单击选中，双击编辑：${getAssetName(asset, rt.key)}`}
+                                  title={`${t.assetsManager.sidebar.clickSelect}: ${getAssetName(asset, rt.key, t)}`}
                                 >
-                                  {getAssetName(asset, rt.key)}
+                                  {getAssetName(asset, rt.key, t)}
                                 </div>
                               );
                             })}
@@ -271,14 +274,14 @@ const ProjectSidebar: React.FC<ProjectSidebarProps> = ({
         {projects.length === 0 && (
           <div className="text-center py-8 text-(--text-muted)">
             <Package className="w-8 h-8 mx-auto mb-2 opacity-50" />
-            <p className="text-xs">暂无项目</p>
+            <p className="text-xs">{t.assetsManager.sidebar.noProjects}</p>
           </div>
         )}
       </div>
 
       {/* 底部统计 */}
       <div className="p-3 border-t border-(--border-color) text-xs text-(--text-muted) text-center">
-        共 {projects.length} 个项目
+        {t.assetsManager.sidebar.projectCount.replace('{count}', String(projects.length))}
       </div>
     </div>
   );

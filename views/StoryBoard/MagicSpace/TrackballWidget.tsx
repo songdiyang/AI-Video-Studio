@@ -247,6 +247,8 @@ const TrackballWidget: React.FC<TrackballWidgetProps> = ({
   };
 
   return (
+    <div className="flex flex-col items-center gap-1">
+      <span className="text-[9px] text-white/40 uppercase tracking-wider">视角</span>
     <svg
       ref={svgRef}
       width={size}
@@ -315,6 +317,12 @@ const TrackballWidget: React.FC<TrackballWidgetProps> = ({
         });
       })()}
     </svg>
+      <div className="flex items-center gap-1 text-[9px] text-white/30">
+        <span style={{ color: '#ef4444' }}>{value.x}°</span>
+        <span style={{ color: '#22c55e' }}>{value.y}°</span>
+        <span style={{ color: '#3b82f6' }}>{value.z}°</span>
+      </div>
+    </div>
   );
 };
 

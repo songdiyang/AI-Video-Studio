@@ -53,7 +53,7 @@ async function handleScriptPropsExtract(inputParams, onProgress) {
 内容：
 ${content.substring(0, 8000)}
 
-任务：从剧本中识别出所有出现的道具（物品），包括但不限于武器、工具、饰品、容器、魔法物品、日常用品等。
+任务：从剧本中识别出所有出现的道具（物品），包括但不限于武器、工具、饰品、容器、魔法物品、日常用品、食物等。
 
 ## 输出要求（严格，必须输出 JSON 数组）
 
@@ -62,19 +62,24 @@ ${content.substring(0, 8000)}
   {
     "name": "道具名称（中文2~8字，如：魔杖、宝剑、水晶杯）",
     "description": "一句话描述该道具的外观/材质/特征（中文，30字以内）",
-    "propType": "permanent|interactive",
-    "category": "分类标签，如：武器、魔法道具、日常用品、饰品"
+    "propType": "held|permanent|interactive",
+    "category": "分类标签，如：武器、魔法道具、日常用品、饰品、食物"
   }
 ]
 
 ## 规则：
 1. 只提取「具体可见的物品」，不要提取抽象概念或情感
 2. 如果同一类道具在多个场景出现，只提取一次
-3. propType 判定：
-   - permanent：角色长期持有/佩戴的道具（如魔杖、宝剑、项链、眼镜）
-   - interactive：场景中临时出现、可交互的道具（如杯子、书本、钥匙、信件）
-4. name 必须中文，description 必须中文
-5. 直接输出 JSON 数组，不要任何解释或 markdown 包裹
+3. propType 判定（三种类型）：
+   - held：角色手持/抱着/背着/随身携带的道具，与角色动作强绑定（如角色拿着的胡萝卜、手中的花束、背上的书包）
+   - permanent：场景中长期存在的固定道具，不随角色移动（如花瓣床、窗帘、水池、桌椅、路灯）
+   - interactive：角色临时与之交互的道具，可拿起也可放下（如杯子、书本、钥匙、信件、食物）
+4. 判定技巧：
+   - 如果角色「一直拿着/背着」→ held
+   - 如果是「场景布景/家具/装饰」→ permanent
+   - 如果角色「拿起来用一下又放下/临时使用」→ interactive
+5. name 必须中文，description 必须中文
+6. 直接输出 JSON 数组，不要任何解释或 markdown 包裹
 
 直接输出 JSON：`;
 
@@ -121,7 +126,7 @@ ${content.substring(0, 8000)}
     }
 
     const desc = String(p.description || '').trim();
-    const propType = (p.propType === 'permanent' || p.propType === 'interactive')
+    const propType = (p.propType === 'permanent' || p.propType === 'interactive' || p.propType === 'held')
       ? p.propType : 'interactive';
     const category = String(p.category || '其他').trim();
 
@@ -141,6 +146,40 @@ ${content.substring(0, 8000)}
   }
 
   if (onProgress) onProgress(90);
+
+  // ---------- 将道具名称关联到对应分镜的 variables_json.props ----------
+  const allExtractedNames = props.map(p => String(p.name || '').trim()).filter(Boolean);
+  if (allExtractedNames.length > 0) {
+    try {
+      const storyboards = await queryAll(
+        'SELECT id, prompt_template, description, variables_json FROM storyboards WHERE script_id = ?',
+        [scriptId]
+      );
+      let linkedCount = 0;
+      for (const sb of storyboards) {
+        // 用分镜的描述文本匹配道具名称
+        const text = (sb.prompt_template || '') + ' ' + (sb.description || '');
+        let vars = {};
+        try { vars = JSON.parse(sb.variables_json || '{}'); } catch { /* ignore */ }
+        const existingProps = Array.isArray(vars.props) ? vars.props : [];
+        const existingSet = new Set(existingProps);
+
+        const matched = allExtractedNames.filter(name => text.includes(name) && !existingSet.has(name));
+        if (matched.length > 0) {
+          vars.props = [...existingProps, ...matched];
+          await execute(
+            'UPDATE storyboards SET variables_json = ? WHERE id = ?',
+            [JSON.stringify(vars), sb.id]
+          );
+          linkedCount += matched.length;
+          console.log('[ScriptPropsExtract] 分镜 #%s 关联道具: %s', sb.id, matched.join(', '));
+        }
+      }
+      console.log('[ScriptPropsExtract] 共关联 %d 条道具到分镜', linkedCount);
+    } catch (linkErr) {
+      console.warn('[ScriptPropsExtract] 关联道具到分镜失败（非致命）:', linkErr.message);
+    }
+  }
 
   // ---------- 自动启动设定图生成 ----------
   if (effectiveImageModel && insertedProps.length > 0) {

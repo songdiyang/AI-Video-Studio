@@ -27,9 +27,17 @@ export function useAutoSave(options: UseAutoSaveOptions) {
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const lastSaveTimeRef = useRef<number>(0);
   const lastDataRef = useRef<any>(null);
+  const savingRef = useRef<boolean>(false);
 
   const saveVersion = useCallback(async (data: any, isAutoSave = true) => {
+    // 防止并发保存
+    if (savingRef.current) {
+      console.log('[AutoSave] 已有保存进行中，跳过');
+      return;
+    }
+
     try {
+      savingRef.current = true;
       const token = getAuthToken();
       
       // 检测数据是否发生变化
@@ -73,6 +81,8 @@ export function useAutoSave(options: UseAutoSaveOptions) {
     } catch (error) {
       console.error('[AutoSave] 保存异常:', error);
       onError?.(error);
+    } finally {
+      savingRef.current = false;
     }
   }, [projectId, resourceId, resourceType, onAutoSave, onError]);
 

@@ -6,6 +6,7 @@ import SpatialDescriptionEditor from './SpatialDescriptionEditor';
 import { updateSpatialDescription } from '../../../services/storyboards';
 import { useToast } from '../../../contexts/ToastContext';
 import ShotLanguageBadge from '../components/ShotLanguageBadge';
+import { ShotSizeBadge } from '../components/ShotSizeSelector';
 
 interface SceneCardMetadataProps {
   scene: StoryboardScene;
@@ -48,11 +49,7 @@ const SceneCardMetadata: React.FC<SceneCardMetadataProps> = ({ scene, onUpdateSp
     <div className="space-y-3 mt-3">
       {/* 镜头类型和场景位置 */}
       <div className="flex items-center gap-2 flex-wrap">
-        {scene.shotType && (
-          <Chip size="sm" variant="flat" className="bg-blue-500/10 text-blue-400 text-xs font-medium">
-            {scene.shotType}
-          </Chip>
-        )}
+        <ShotSizeBadge value={scene.shotType} />
         {scene.location && (
           <Chip size="sm" variant="flat" className="bg-purple-500/10 text-purple-400 text-xs font-medium">
             {scene.location}

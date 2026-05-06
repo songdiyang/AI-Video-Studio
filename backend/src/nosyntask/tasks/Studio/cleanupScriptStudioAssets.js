@@ -19,7 +19,7 @@ const { INVALID_ENV_NAME_SET } = require('./environmentDescriptionSanitizer');
  * 黑名单环境强制清理：删除本项目下所有 name 命中 INVALID_ENV_NAME_SET 的 environments。
  * 这些名字是历史 bug 或 AI 越界产出的脏数据（如"内"、"自然景观"），
  * 不论它们是否被 studio 引用、是否已回写 storyboard_scenes，都要清掉。
- * 唯一保护条件：environment 已生成过图（image_url / panorama_image_url / 有图变体），保留给用户。
+ * 唯一保护条件：environment 已生成过图（image_url / 有图变体），保留给用户。
  * 步骤：
  *   1) 先把 studios.environment_id 指向这些 env 的置空，解除 FK 约束；
  *   2) 删除 environment_variants（FK CASCADE 也会删，但显式一致）；
@@ -33,14 +33,10 @@ async function cleanupBlacklistedEnvNames(projectId, userId) {
       `SELECT id FROM environments
        WHERE project_id = ? AND user_id = ? AND name IN (?)
              AND (image_url IS NULL OR image_url = '')
-             AND (panorama_image_url IS NULL OR panorama_image_url = '')
              AND NOT EXISTS (
                SELECT 1 FROM environment_variants ev
                WHERE ev.environment_id = environments.id
-                 AND (
-                   (ev.image_url IS NOT NULL AND ev.image_url != '')
-                   OR (ev.panorama_image_url IS NOT NULL AND ev.panorama_image_url != '')
-                 )
+                 AND (ev.image_url IS NOT NULL AND ev.image_url != '')
              )`,
       [projectId, userId, names]
     );
@@ -69,7 +65,7 @@ async function cleanupBlacklistedEnvNames(projectId, userId) {
  * 孤儿资产清理：删除本项目下"没有任何 storyboard_scenes 间接引用 且 没有图"的 studios，
  * 以及"没有任何 studio 引用 且 没有图"的 environments/buildings。
  * 这类资源是 studio_components_compose 历史 bug 留下的孤儿（如之前的"内"、"自然景观"对应 studio），
- * 保护策略：保留任何已经生成过图片（image_url / panorama_image_url）或有有图变体的资产。
+ * 保护策略：保留任何已经生成过图片（image_url）或有有图变体的资产。
  */
 async function cleanupOrphanAssets(projectId, userId) {
   let studioOrphans = 0;
@@ -104,14 +100,10 @@ async function cleanupOrphanAssets(projectId, userId) {
        LEFT JOIN studios s ON s.environment_id = e.id
        WHERE e.project_id = ? AND e.user_id = ? AND s.id IS NULL
              AND (e.image_url IS NULL OR e.image_url = '')
-             AND (e.panorama_image_url IS NULL OR e.panorama_image_url = '')
              AND NOT EXISTS (
                SELECT 1 FROM environment_variants ev
                WHERE ev.environment_id = e.id
-                 AND (
-                   (ev.image_url IS NOT NULL AND ev.image_url != '')
-                   OR (ev.panorama_image_url IS NOT NULL AND ev.panorama_image_url != '')
-                 )
+                 AND (ev.image_url IS NOT NULL AND ev.image_url != '')
              )`,
       [projectId, userId]
     );

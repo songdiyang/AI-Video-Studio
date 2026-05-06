@@ -90,6 +90,12 @@ module.exports = {
     description: '分镜 ID',
     category: 'id'
   },
+  studioId: {
+    from: 'studioId',
+    defaultValue: null,
+    description: '影棚 ID',
+    category: 'id'
+  },
   userId: {
     from: null,
     resolver: (ctx) => ctx.userId,
@@ -213,6 +219,30 @@ module.exports = {
     description: '环境描述',
     category: 'scene'
   },
+  studioName: {
+    from: 'studioName',
+    defaultValue: '',
+    description: '影棚名称',
+    category: 'scene'
+  },
+  studioDescription: {
+    from: 'studioDescription',
+    defaultValue: '',
+    description: '影棚描述',
+    category: 'scene'
+  },
+  environmentView: {
+    from: 'environmentView',
+    defaultValue: 'front',
+    description: '影棚九宫图所用的环境视图（front/back）',
+    category: 'scene'
+  },
+  buildings: {
+    from: 'buildings',
+    defaultValue: [],
+    description: '影棚关联的建筑列表（含视图偏好与图片 URL）',
+    category: 'scene'
+  },
   environmentId: {
     from: 'environmentId',
     defaultValue: null,
@@ -260,6 +290,12 @@ module.exports = {
     defaultValue: null,
     description: 'AI 生成的图片提示词（已有则跳过生成）',
     category: 'generation'
+  },
+  viewType: {
+    from: 'viewType',
+    defaultValue: null,
+    description: '建筑图视角：interior / exterior / both（仅建筑结构图生成使用）',
+    category: 'scene'
   },
   lighting: {
     from: 'lighting',
@@ -843,5 +879,125 @@ module.exports = {
     defaultValue: null,
     description: '当前执行中的 AI 助手主 workflow jobId（从 context.jobId 取）',
     category: 'ai_assistant'
+  },
+
+  // ================================================================
+  //  批量角色设定图生成
+  // ================================================================
+  charactersNeedingViews: {
+    from: 'charactersNeedingViews',
+    defaultValue: [],
+    description: '需要生成设定图的角色列表（由 character_extraction 步骤输出）',
+    category: 'character'
+  },
+  generateMode: {
+    from: 'generateMode',
+    defaultValue: null,
+    description: '生成模式（design_sheet=单张设定图 | three_views=独立三视图）',
+    category: 'control'
+  },
+
+  // ================================================================
+  //  AI 助手工具调用相关（toolRegistry 动态参数透传）
+  // ================================================================
+  toolName: {
+    from: 'toolName',
+    defaultValue: null,
+    description: 'AI 助手调用的工具名称（用于元数据追踪）',
+    category: 'ai_assistant'
+  },
+  toolArgs: {
+    from: 'toolArgs',
+    defaultValue: null,
+    description: 'AI 助手调用的工具参数（用于元数据追踪）',
+    category: 'ai_assistant'
+  },
+
+  // ================================================================
+  //  影棚/环境/建筑相关（AI助手工具透传）
+  // ================================================================
+  studioId: {
+    from: 'studioId',
+    defaultValue: null,
+    description: '影棚 ID',
+    category: 'scene'
+  },
+  environmentId: {
+    from: 'environmentId',
+    defaultValue: null,
+    description: '环境资产 ID',
+    category: 'scene'
+  },
+  buildingId: {
+    from: 'buildingId',
+    defaultValue: null,
+    description: '建筑资产 ID',
+    category: 'scene'
+  },
+  variantId: {
+    from: 'variantId',
+    defaultValue: null,
+    description: '环境时间变体 ID',
+    category: 'scene'
+  },
+
+  // ================================================================
+  //  道具相关（AI助手工具透传）
+  // ================================================================
+  propId: {
+    from: 'propId',
+    defaultValue: null,
+    description: '道具 ID',
+    category: 'prop'
+  },
+
+  // ================================================================
+  //  草图/魔术空间相关（AI助手工具透传）
+  // ================================================================
+  sketchUrl: {
+    from: 'sketchUrl',
+    defaultValue: null,
+    description: '草图文件 URL（用于草图转图片）',
+    category: 'sketch'
+  },
+  compositeImageUrl: {
+    from: 'compositeImageUrl',
+    defaultValue: null,
+    description: '画布合成图URL（魔术空间用）',
+    category: 'camera'
+  },
+  maskImageUrl: {
+    from: 'maskImageUrl',
+    defaultValue: null,
+    description: '黑白掩膜图URL（魔术涂改用）',
+    category: 'magic_paint'
+  },
+  colorInstructions: {
+    from: 'colorInstructions',
+    defaultValue: [],
+    description: '颜色指令数组（魔术涂改用）',
+    category: 'magic_paint'
+  },
+  targetFrame: {
+    from: 'targetFrame',
+    defaultValue: 'first',
+    description: '修复目标帧（first=首帧，last=尾帧）',
+    category: 'hd_repair'
+  },
+
+  // ================================================================
+  //  剧本相关（AI助手工具透传）
+  // ================================================================
+  rawText: {
+    from: 'rawText',
+    defaultValue: null,
+    description: '用户原始长文本（拆集时不可增删改）',
+    category: 'script_split'
+  },
+  minutesPerEpisode: {
+    from: 'minutesPerEpisode',
+    defaultValue: 3,
+    description: '每集目标分钟数（1/3/5/10）',
+    category: 'script_split'
   }
 };

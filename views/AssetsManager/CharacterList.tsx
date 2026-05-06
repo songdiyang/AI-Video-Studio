@@ -1,6 +1,6 @@
 import React from 'react';
 import { Button, Chip } from '@heroui/react';
-import { Edit, Trash2, Layers } from 'lucide-react';
+import { Edit, Trash2, Layers, User } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Character, TagGroup } from '../../services/assets';
 
@@ -54,8 +54,8 @@ const CharacterList: React.FC<CharacterListProps> = ({ characters, tagGroups, on
             className="bg-(--bg-card) border border-(--border-color) shadow-sm hover:shadow-lg hover:shadow-(--accent)/10 transition-all cursor-pointer rounded-xl overflow-hidden group"
             onClick={() => onEdit(character)}
           >
-            {/* 图片区域 - 直接展示第一个角色状态的正面图 */}
-            <div className="relative aspect-[3/4] bg-gradient-to-br from-(--bg-hover) to-(--bg-card) overflow-hidden">
+            {/* 封面区域 */}
+            <div className="relative h-44 bg-gradient-to-br from-(--bg-hover) to-(--bg-card) overflow-hidden">
               {previewUrl ? (
                 <img
                   src={previewUrl}
@@ -64,8 +64,11 @@ const CharacterList: React.FC<CharacterListProps> = ({ characters, tagGroups, on
                   loading="lazy"
                 />
               ) : (
-                <div className="w-full h-full flex items-center justify-center text-(--text-muted)">
-                  <span className="text-4xl font-bold opacity-20">{character.name.charAt(0)}</span>
+                <div className="w-full h-full flex flex-col items-center justify-center gap-2">
+                  <div className="w-16 h-16 rounded-full bg-(--accent)/10 flex items-center justify-center">
+                    <User className="w-8 h-8 text-(--accent)/40" />
+                  </div>
+                  <span className="text-sm font-medium text-(--text-muted)/50">{character.name}</span>
                 </div>
               )}
               
@@ -92,7 +95,7 @@ const CharacterList: React.FC<CharacterListProps> = ({ characters, tagGroups, on
               </div>
 
               {/* 状态数量徽章 */}
-              {character.states_count > 0 && (
+              {character.states_count != null && character.states_count > 0 && (
                 <div className="absolute top-2 left-2 z-10">
                   <Chip
                     size="sm"
@@ -104,19 +107,24 @@ const CharacterList: React.FC<CharacterListProps> = ({ characters, tagGroups, on
                   </Chip>
                 </div>
               )}
+
+              {/* 底部渐变遮罩 + 名称 */}
+              <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent px-3 pb-2 pt-6">
+                <h3 className="text-base font-bold text-white truncate drop-shadow-sm">
+                  {character.name}
+                </h3>
+              </div>
             </div>
 
-            {/* 信息区域 - 次要展示 */}
+            {/* 信息区域 */}
             <div className="p-3 space-y-2">
-              <h3 className="text-base font-semibold text-(--text-primary) truncate">
-                {character.name}
-              </h3>
-              
-              {/* 描述文字（可选显示） */}
-              {character.description && (
+              {/* 描述文字 */}
+              {character.description ? (
                 <p className="text-xs text-(--text-muted) line-clamp-2 leading-relaxed">
                   {character.description}
                 </p>
+              ) : (
+                <p className="text-xs text-(--text-muted)/50 italic">暂无描述</p>
               )}
 
               {/* 标签区域 */}
@@ -130,8 +138,6 @@ const CharacterList: React.FC<CharacterListProps> = ({ characters, tagGroups, on
                     {character.project_name}
                   </Chip>
                 )}
-                {/* 分组标签展示已移除：标签分组功能不再维护，统一使用基础信息 tags 字段 */}
-                {/* 显示用户自定义标签（基础信息 tags 字段） */}
                 {character.tags && character.tags.split(/[,，]/).map(t => t.trim()).filter(Boolean).slice(0, 3).map((tag, idx) => (
                   <Chip
                     key={`tag-${idx}`}

@@ -8,7 +8,7 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Button, Tabs, Tab, Card, CardBody, Input } from '@heroui/react';
+import { Button, Tabs, Tab, Card, CardBody, Input, Select, SelectItem } from '@heroui/react';
 import { Camera, Sun, Grid3X3, Wand2, Save, RotateCcw, Clock, Film, User } from 'lucide-react';
 import { useToast } from '../../../contexts/ToastContext';
 import {
@@ -161,46 +161,183 @@ const ShotLanguageEditor: React.FC<ShotLanguageEditorProps> = ({
     onChange?.({});
   };
 
-  // 紧凑模式 - 仅显示景别+视角+焦距
+  // 紧凑模式 - 仅显示景别+视角+焦距（使用 HeroUI Select 统一风格）
   if (compact) {
+    // 当前选中项的中文标签
+    const shotSizeLabel = COMPOSITION_OPTIONS.shotSize.find(o => o.value === values.shotSize)?.label;
+    const cameraHeightLabels: Record<string, string> = { eye_level: '平视', low_angle: '仰拍', high_angle: '俯拍', bird_eye: '鸟瞰' };
+    const cameraHeightLabel = values.cameraHeight ? cameraHeightLabels[values.cameraHeight] : undefined;
+    const focalLengthLabels: Record<string, string> = { ultra_wide: '超广角', wide: '广角', standard: '标准', portrait: '人像', telephoto: '长焦', macro: '微距' };
+    const focalLengthLabel = values.focalLength ? focalLengthLabels[values.focalLength] : undefined;
+
     return (
       <div className="flex items-center gap-2 flex-wrap">
-        <select
-          className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200"
-          value={values.shotSize || ''}
-          onChange={(e) => handleChange('shotSize', e.target.value)}
+        {/* 景别 */}
+        <Select
+          aria-label="画面大小"
+          selectedKeys={values.shotSize ? [values.shotSize] : []}
+          onSelectionChange={(keys) => {
+            const selected = Array.from(keys)[0] as string;
+            handleChange('shotSize', selected || undefined);
+          }}
+          className="min-w-[60px]"
+          size="sm"
+          variant="flat"
+          classNames={{
+            base: "!max-w-fit",
+            trigger: "h-5 min-h-5 px-1.5 bg-slate-700/30 overflow-visible",
+            value: "text-[11px] whitespace-nowrap font-medium",
+            innerWrapper: "gap-0.5",
+            listbox: "max-h-80 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]",
+          }}
+          renderValue={() => (
+            <span className="text-[var(--text-primary)] text-[11px] px-1 py-0.5 rounded whitespace-nowrap">
+              {shotSizeLabel || '画面大小'}
+            </span>
+          )}
+          popoverProps={{
+            placement: 'bottom-start',
+            shouldFlip: true,
+            classNames: {
+              content: 'bg-[var(--bg-card)] border border-[var(--border-default)] min-w-[200px] max-w-[240px]',
+            },
+          }}
         >
-          <option value="">画面大小</option>
           {COMPOSITION_OPTIONS.shotSize.map((opt) => (
-            <option key={opt.value} value={opt.value}>{opt.label}</option>
+            <SelectItem key={opt.value} textValue={opt.label} className="text-xs">
+              <div className="flex flex-col">
+                <span className="text-sm font-medium">{opt.label}</span>
+                <span className="text-xs text-[var(--text-muted)]">{opt.desc}</span>
+              </div>
+            </SelectItem>
           ))}
-        </select>
+        </Select>
 
-        <select
-          className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200"
-          value={values.cameraHeight || ''}
-          onChange={(e) => handleChange('cameraHeight', e.target.value)}
+        {/* 视角 */}
+        <Select
+          aria-label="视角"
+          selectedKeys={values.cameraHeight ? [values.cameraHeight] : []}
+          onSelectionChange={(keys) => {
+            const selected = Array.from(keys)[0] as string;
+            handleChange('cameraHeight', selected || undefined);
+          }}
+          className="min-w-[60px]"
+          size="sm"
+          variant="flat"
+          classNames={{
+            base: "!max-w-fit",
+            trigger: "h-5 min-h-5 px-1.5 bg-slate-700/30 overflow-visible",
+            value: "text-[11px] whitespace-nowrap font-medium",
+            innerWrapper: "gap-0.5",
+            listbox: "max-h-80 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]",
+          }}
+          renderValue={() => (
+            <span className="text-[var(--text-primary)] text-[11px] px-1 py-0.5 rounded whitespace-nowrap">
+              {cameraHeightLabel || '视角'}
+            </span>
+          )}
+          popoverProps={{
+            placement: 'bottom-start',
+            shouldFlip: true,
+            classNames: {
+              content: 'bg-[var(--bg-card)] border border-[var(--border-default)] min-w-[180px] max-w-[220px]',
+            },
+          }}
         >
-          <option value="">视角</option>
-          <option value="eye_level">平视</option>
-          <option value="low_angle">仰视</option>
-          <option value="high_angle">俯视</option>
-          <option value="bird_eye">鸟瞰</option>
-        </select>
+          <SelectItem key="eye_level" textValue="平视" className="text-xs">
+            <div className="flex flex-col">
+              <span className="text-sm font-medium">平视</span>
+              <span className="text-xs text-[var(--text-muted)]">客观、自然</span>
+            </div>
+          </SelectItem>
+          <SelectItem key="low_angle" textValue="仰拍" className="text-xs">
+            <div className="flex flex-col">
+              <span className="text-sm font-medium">仰拍</span>
+              <span className="text-xs text-[var(--text-muted)]">威严、压迫感</span>
+            </div>
+          </SelectItem>
+          <SelectItem key="high_angle" textValue="俯拍" className="text-xs">
+            <div className="flex flex-col">
+              <span className="text-sm font-medium">俯拍</span>
+              <span className="text-xs text-[var(--text-muted)]">弱势、审视</span>
+            </div>
+          </SelectItem>
+          <SelectItem key="bird_eye" textValue="鸟瞰" className="text-xs">
+            <div className="flex flex-col">
+              <span className="text-sm font-medium">鸟瞰</span>
+              <span className="text-xs text-[var(--text-muted)]">全局、上帝视角</span>
+            </div>
+          </SelectItem>
+        </Select>
 
-        <select
-          className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200"
-          value={values.focalLength || ''}
-          onChange={(e) => handleChange('focalLength', e.target.value)}
+        {/* 焦距 */}
+        <Select
+          aria-label="焦距"
+          selectedKeys={values.focalLength ? [values.focalLength] : []}
+          onSelectionChange={(keys) => {
+            const selected = Array.from(keys)[0] as string;
+            handleChange('focalLength', selected || undefined);
+          }}
+          className="min-w-[60px]"
+          size="sm"
+          variant="flat"
+          classNames={{
+            base: "!max-w-fit",
+            trigger: "h-5 min-h-5 px-1.5 bg-slate-700/30 overflow-visible",
+            value: "text-[11px] whitespace-nowrap font-medium",
+            innerWrapper: "gap-0.5",
+            listbox: "max-h-80 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]",
+          }}
+          renderValue={() => (
+            <span className="text-[var(--text-primary)] text-[11px] px-1 py-0.5 rounded whitespace-nowrap">
+              {focalLengthLabel || '焦距'}
+            </span>
+          )}
+          popoverProps={{
+            placement: 'bottom-start',
+            shouldFlip: true,
+            classNames: {
+              content: 'bg-[var(--bg-card)] border border-[var(--border-default)] min-w-[180px] max-w-[220px]',
+            },
+          }}
         >
-          <option value="">焦距</option>
-          <option value="ultra_wide">超广角</option>
-          <option value="wide">广角</option>
-          <option value="standard">标准</option>
-          <option value="portrait">人像</option>
-          <option value="telephoto">长焦</option>
-          <option value="macro">微距</option>
-        </select>
+          <SelectItem key="ultra_wide" textValue="超广角" className="text-xs">
+            <div className="flex flex-col">
+              <span className="text-sm font-medium">超广角</span>
+              <span className="text-xs text-[var(--text-muted)]">&lt;24mm，夸张透视</span>
+            </div>
+          </SelectItem>
+          <SelectItem key="wide" textValue="广角" className="text-xs">
+            <div className="flex flex-col">
+              <span className="text-sm font-medium">广角</span>
+              <span className="text-xs text-[var(--text-muted)]">24-35mm，环境感强</span>
+            </div>
+          </SelectItem>
+          <SelectItem key="standard" textValue="标准" className="text-xs">
+            <div className="flex flex-col">
+              <span className="text-sm font-medium">标准</span>
+              <span className="text-xs text-[var(--text-muted)]">35-50mm，自然视角</span>
+            </div>
+          </SelectItem>
+          <SelectItem key="portrait" textValue="人像" className="text-xs">
+            <div className="flex flex-col">
+              <span className="text-sm font-medium">人像</span>
+              <span className="text-xs text-[var(--text-muted)]">85mm，背景虚化</span>
+            </div>
+          </SelectItem>
+          <SelectItem key="telephoto" textValue="长焦" className="text-xs">
+            <div className="flex flex-col">
+              <span className="text-sm font-medium">长焦</span>
+              <span className="text-xs text-[var(--text-muted)]">135mm+，压缩空间</span>
+            </div>
+          </SelectItem>
+          <SelectItem key="macro" textValue="微距" className="text-xs">
+            <div className="flex flex-col">
+              <span className="text-sm font-medium">微距</span>
+              <span className="text-xs text-[var(--text-muted)]">近距离细节拍摄</span>
+            </div>
+          </SelectItem>
+        </Select>
 
         <Input
           type="number"

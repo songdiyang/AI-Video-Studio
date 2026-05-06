@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardBody, Button, Chip, Image, Modal, ModalContent, ModalHeader, ModalBody, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem, Tooltip } from '@heroui/react';
-import { Edit2, Trash2, Mountain, Wand2, X, Expand, Plus, Clock, Grid3X3, ChevronDown, ChevronUp, Globe, ScanSearch, ZoomIn } from 'lucide-react';
+import { Edit2, Trash2, Mountain, Wand2, Plus, Clock, Grid3X3, ChevronDown, ChevronUp, Globe, ScanSearch, ZoomIn } from 'lucide-react';
 import { Environment, parseTerrainTypes, recognizeEnvironmentTerrain } from '../../services/environments';
-import { EnvironmentVariant, createEnvironmentVariant, deleteEnvironmentVariant, generateVariantPanorama, generateVariantFaces, FACE_DEFS } from '../../services/environmentVariants';
-import PanoramaViewer from '../../components/PanoramaViewer';
+import { EnvironmentVariant, createEnvironmentVariant, deleteEnvironmentVariant, generateVariantFaces, FACE_DEFS } from '../../services/environmentVariants';
 import FaceSphereViewer from '../../components/FaceSphereViewer';
 
 interface EnvironmentListProps {
@@ -38,9 +37,6 @@ const EnvironmentList: React.FC<EnvironmentListProps> = ({
   const [generatingIds, setGeneratingIds] = useState<Set<number>>(new Set());
   const [generatingVariantIds, setGeneratingVariantIds] = useState<Set<number>>(new Set());
   const [recognizingIds, setRecognizingIds] = useState<Set<number>>(new Set());
-  const [previewEnv, setPreviewEnv] = useState<Environment | null>(null);
-  const [previewVariant, setPreviewVariant] = useState<EnvironmentVariant | null>(null);
-  const [previewReady, setPreviewReady] = useState(false);
         const [creatingVariantForEnv, setCreatingVariantForEnv] = useState<number | null>(null);
     const [expandedFaceVariantId, setExpandedFaceVariantId] = useState<number | null>(null);
     const [facePreviewUrl, setFacePreviewUrl] = useState<string | null>(null);
@@ -49,20 +45,6 @@ const EnvironmentList: React.FC<EnvironmentListProps> = ({
     const [spherePreviewEnv, setSpherePreviewEnv] = useState<Environment | null>(null);
     const [sphereReady, setSphereReady] = useState(false);
     const [imagePreview, setImagePreview] = useState<{ url: string; title: string } | null>(null);
-
-    // Modal 打开后延迟渲染 PanoramaViewer，确保容器尺寸正确
-  // HeroUI Modal 有展开动画，需要等动画结束再渲染
-  useEffect(() => {
-    if (previewEnv) {
-      setPreviewReady(false);
-      const timer = setTimeout(() => {
-        setPreviewReady(true);
-      }, 400);
-      return () => clearTimeout(timer);
-    } else {
-      setPreviewReady(false);
-    }
-  }, [previewEnv]);
 
   // 球体预览 Modal 延迟渲染
   useEffect(() => {
@@ -104,24 +86,6 @@ const EnvironmentList: React.FC<EnvironmentListProps> = ({
       onGenerateImage({ id: envId } as Environment).catch(() => {});
     } catch (err: any) {
       console.error('[EnvList] 创建时间变体失败:', err);
-    }
-  };
-
-  // 为变体生成全景图
-  const handleGenerateVariantPanorama = async (variant: EnvironmentVariant) => {
-    if (!selectedImageModel) return;
-    setGeneratingVariantIds((prev) => new Set(prev).add(variant.id));
-    try {
-      await generateVariantPanorama(variant.id, {
-        imageModel: selectedImageModel,
-        textModel: selectedTextModel || undefined,
-      });
-    } finally {
-      setGeneratingVariantIds((prev) => {
-        const next = new Set(prev);
-        next.delete(variant.id);
-        return next;
-      });
     }
   };
 
@@ -172,18 +136,6 @@ const EnvironmentList: React.FC<EnvironmentListProps> = ({
         return next;
       });
     }
-  };
-
-  // 获取当前预览的全景图 URL（优先变体，然后环境本身）
-  const getPreviewPanoramaUrl = () => {
-    if (previewVariant?.panorama_image_url) return previewVariant.panorama_image_url;
-    return previewEnv?.panorama_image_url || null;
-  };
-
-  const getPreviewTitle = () => {
-    const envName = previewEnv?.name || '';
-    if (previewVariant) return `${envName}（${previewVariant.time_of_day}）— 影棚全景预览`;
-    return `${envName} — 影棚全景预览`;
   };
 
   if (!environments.length) {
@@ -447,24 +399,6 @@ const EnvironmentList: React.FC<EnvironmentListProps> = ({
                             <div key={v.id} className="rounded-md bg-(--bg-app) border border-(--border-color) overflow-hidden">
                               {/* 变体主行 */}
                               <div className="flex items-center gap-1.5 p-1.5">
-                                {v.panorama_image_url ? (
-                                  <Image
-                                    src={v.panorama_image_url}
-                                    alt={v.time_of_day || '变体'}
-                                    removeWrapper
-                                    className="w-10 h-10 object-cover rounded cursor-pointer shrink-0"
-                                    onClick={() => { setPreviewEnv(env); setPreviewVariant(v); }}
-                                  />
-                                ) : (
-                                  <div
-                                    className="w-10 h-10 rounded bg-(--bg-input) flex items-center justify-center text-(--text-muted) shrink-0 cursor-pointer"
-                                    onClick={() => {
-                                      if (selectedImageModel) handleGenerateVariantPanorama(v);
-                                    }}
-                                  >
-                                    <Wand2 className="w-4 h-4" />
-                                  </div>
-                                )}
                                 <div className="flex-1 min-w-0">
                                   <div className="flex items-center gap-1">
                                     <Chip size="sm" variant="flat" className="bg-amber-500/10 text-amber-500 font-medium h-4 text-[10px] px-1">
@@ -482,34 +416,19 @@ const EnvironmentList: React.FC<EnvironmentListProps> = ({
                                     )}
                                   </div>
                                   <div className="flex items-center gap-1 mt-0.5">
-                                    {v.panorama_image_url && (
-                                      <span className="text-[9px] text-green-500 ml-0.5">全景图✓</span>
-                                    )}
                                     {v.generation_status === 'generating' && (
                                       <span className="text-[9px] text-blue-500 ml-0.5">生成中…</span>
                                     )}
                                   </div>
                                 </div>
                                                                 <div className="flex gap-0.5 shrink-0">
-                                  {/* 全景图生成 */}
-                                  <Tooltip content={v.panorama_image_url ? '重新生成全景图' : '生成全景图'} size="sm">
-                                    <Button
-                                      size="sm"
-                                      variant="light"
-                                      className="h-5 w-5 min-w-0 p-0"
-                                      isLoading={isGeneratingVariant && !faces}
-                                      onPress={() => handleGenerateVariantPanorama(v)}
-                                    >
-                                      {!isGeneratingVariant && <Wand2 className="w-3 h-3 text-(--accent)" />}
-                                    </Button>
-                                  </Tooltip>
                                   {/* 8方位场景图生成 */}
                                   <Tooltip content={facesCount > 0 ? '重新生成8方位场景图' : '生成8方位场景图'} size="sm">
                                     <Button
                                       size="sm"
                                       variant="light"
                                       className="h-5 w-5 min-w-0 p-0"
-                                      isLoading={isGeneratingVariant && !!faces}
+                                      isLoading={isGeneratingVariant}
                                       onPress={() => handleGenerateVariantFaces(v)}
                                     >
                                       {!isGeneratingVariant && <Grid3X3 className="w-3 h-3 text-violet-500" />}
@@ -616,42 +535,7 @@ const EnvironmentList: React.FC<EnvironmentListProps> = ({
         })}
       </div>
 
-      {/* 全景图预览 Modal */}
-      <Modal
-        isOpen={!!previewEnv || !!previewVariant}
-        onClose={() => { setPreviewEnv(null); setPreviewVariant(null); }}
-        size="5xl"
-        classNames={{ base: 'bg-black border-none', wrapper: 'items-center' }}
-        hideCloseButton
-      >
-        <ModalContent>
-          {() => (
-            <>
-              <ModalHeader className="flex items-center justify-between bg-black/80 text-white border-b border-white/10 shrink-0">
-                <span>{getPreviewTitle()}</span>
-                <Button
-                  size="sm"
-                  variant="light"
-                  className="text-white"
-                  onPress={() => { setPreviewEnv(null); setPreviewVariant(null); }}
-                >
-                  关闭
-                </Button>
-              </ModalHeader>
-              <ModalBody className="p-0 overflow-hidden flex-none" style={{ height: 500, width: '100%' }}>
-                {previewReady && getPreviewPanoramaUrl() && (
-                  <PanoramaViewer
-                    src={getPreviewPanoramaUrl()!}
-                    autoRotateSpeed={0.02}
-                  />
-                )}
-              </ModalBody>
-            </>
-          )}
-        </ModalContent>
-            </Modal>
-
-            {/* 8方位场景图预览 Modal */}
+      {/* 8方位场景图预览 Modal */}
       <Modal
         isOpen={!!facePreviewUrl}
         onClose={() => { setFacePreviewUrl(null); setFacePreviewLabel(''); }}

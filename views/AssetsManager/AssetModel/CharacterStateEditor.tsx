@@ -664,6 +664,8 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
       // 服装未就绪时给出引导提示
       if (error?.code === 'COSTUME_NOT_READY') {
         showToast(error.message || '服装设定图尚未生成', 'warning');
+      } else if (error?.code === 'PROPS_NOT_READY') {
+        showToast(error.message || '道具设定图尚未生成', 'warning');
       } else {
         showToast(error.message || '生成失败', 'error');
       }
@@ -699,6 +701,8 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
     } catch (error: any) {
       if (error?.code === 'COSTUME_NOT_READY') {
         showToast(error.message || '服装设定图尚未生成', 'warning');
+      } else if (error?.code === 'PROPS_NOT_READY') {
+        showToast(error.message || '道具设定图尚未生成', 'warning');
       } else {
         showToast(error.message || '生成失败', 'error');
       }
@@ -741,9 +745,9 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
       });
       if (res.ok) {
         const data = await res.json();
-        // 过滤出永久道具且未叠加的
+        // 过滤出永久道具和手持道具且未叠加的
         const equippedIds = new Set(state.equipped_props?.map(ep => ep.prop_id) || []);
-        setProjectProps((data.props || []).filter((p: any) => p.prop_type === 'permanent' && !equippedIds.has(p.id)));
+        setProjectProps((data.props || []).filter((p: any) => (p.prop_type === 'permanent' || p.prop_type === 'held') && !equippedIds.has(p.id)));
       }
     } catch (err) {
       console.error('加载项目道具失败:', err);
@@ -1345,7 +1349,7 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
           {filteredStates.filter(s => !s.is_base_model).map((state) => {
             const isExpanded = expandedStates.has(state.id);
             const hasViews = !!(state.front_view_url || state.side_view_url || state.back_view_url);
-            const isActive = state.is_active;
+            const isActive = !!state.is_active;
             const hasOutfitInfo = !!(state.outfit || state.age_stage || state.hairstyle);
             const stateTags = parseTags(state.tags);
             const categories = parseStateCategories(state.state_category);
@@ -1418,9 +1422,10 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                         )}
                       </div>
                       <div className="flex items-center gap-2 text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                        {state.age_stage && <span>{state.age_stage}</span>}
-                        {state.outfit && <span className="truncate max-w-25">{state.outfit}</span>}
-                        {!state.age_stage && !state.outfit && state.description && (
+                        {!!state.age_stage && <span>{state.age_stage}</span>}
+                        {!!(state.costume_outfit_prompt || state.outfit) && <span className="truncate max-w-25">{state.costume_outfit_prompt || state.outfit}</span>}
+                        {!!state.held_props && <span className="truncate max-w-25">🎒 {state.held_props}</span>}
+                        {!state.age_stage && !state.outfit && !state.costume_outfit_prompt && !state.held_props && state.description && (
                           <span className="truncate">{state.description}</span>
                         )}
                       </div>
@@ -1509,9 +1514,9 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                   {isExpanded && (
                     <div className="px-4 pb-4 pt-2 border-t border-default-200 dark:border-slate-700/30 space-y-4">
                       {/* 外观属性展示 */}
-                      {(state.outfit || state.age_stage || state.hairstyle || state.accessories || (state.equipped_props && state.equipped_props.length > 0)) && (
+                      {!!(state.outfit || state.age_stage || state.hairstyle || state.accessories || state.held_props || (state.equipped_props && state.equipped_props.length > 0)) && (
                         <div className="grid grid-cols-2 gap-2">
-                          {state.age_stage && (
+                          {!!state.age_stage && (
                             <div className="bg-purple-500/10 rounded-lg p-2 border border-purple-500/20">
                               <div className="flex items-center gap-1.5 text-xs text-purple-700 dark:text-purple-400 mb-0.5">
                                 <Calendar className="w-3 h-3" />
@@ -1520,7 +1525,7 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                               <p className="text-sm text-default-700 dark:text-slate-200">{state.age_stage}</p>
                             </div>
                           )}
-                          {state.outfit && (
+                          {!!(state.costume_id || state.outfit) && (
                             <div className="bg-pink-500/10 rounded-lg p-2 border border-pink-500/20">
                               <div className="flex items-center gap-1.5 text-xs text-pink-700 dark:text-pink-400 mb-0.5">
                                 <Shirt className="w-3 h-3" />
@@ -1570,10 +1575,12 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                                   </button>
                                 )}
                               </div>
-                              <p className="text-sm text-default-700 dark:text-slate-200 truncate">{state.outfit}</p>
+                              <p className="text-sm text-default-700 dark:text-slate-200 truncate">
+                                {state.costume_outfit_prompt || state.outfit || '未设置服装描述'}
+                              </p>
                             </div>
                           )}
-                          {state.hairstyle && (
+                          {!!state.hairstyle && (
                             <div className="bg-cyan-500/10 rounded-lg p-2 border border-cyan-500/20">
                               <div className="flex items-center gap-1.5 text-xs text-cyan-700 dark:text-cyan-400 mb-0.5">
                                 <Scissors className="w-3 h-3" />
@@ -1582,13 +1589,22 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                               <p className="text-sm text-default-700 dark:text-slate-200 truncate">{state.hairstyle}</p>
                             </div>
                           )}
-                          {state.accessories && (
+                          {!!state.accessories && (
                             <div className="bg-amber-500/10 rounded-lg p-2 border border-amber-500/20">
                               <div className="flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-400 mb-0.5">
                                 <Star className="w-3 h-3" />
                                 配饰
                               </div>
                               <p className="text-sm text-default-700 dark:text-slate-200 truncate">{state.accessories}</p>
+                            </div>
+                          )}
+                          {!!state.held_props && (
+                            <div className="bg-teal-500/10 rounded-lg p-2 border border-teal-500/20">
+                              <div className="flex items-center gap-1.5 text-xs text-teal-700 dark:text-teal-400 mb-0.5">
+                                <Sparkles className="w-3 h-3" />
+                                手持道具
+                              </div>
+                              <p className="text-sm text-default-700 dark:text-slate-200 truncate">{state.held_props}</p>
                             </div>
                           )}
                           {/* 已叠加道具 */}
@@ -2479,7 +2495,7 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
               <ModalHeader>叠加道具到状态「{equippingState?.name}」</ModalHeader>
               <ModalBody className="space-y-4">
                 {projectProps.length === 0 ? (
-                  <p className="text-sm text-slate-400">当前项目没有可用的永久道具，请先到资产管理中创建永久道具。</p>
+                  <p className="text-sm text-slate-400">当前项目没有可用的手持/永久道具，请先到资产管理中创建道具。</p>
                 ) : (
                   <>
                     <Select

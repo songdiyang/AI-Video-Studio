@@ -40,9 +40,11 @@ router.get('/', authMiddleware, async (req, res) => {
     }
     const rows = await queryAll(
       `SELECT s.id, s.user_id, s.project_id, s.name, s.description, s.cover_image_url,
-              s.sort_order, s.environment_id, s.created_at, s.updated_at,
+              s.sort_order, s.environment_id, s.environment_view,
+              s.nine_grid_image_url, s.nine_grid_generation_status,
+              s.created_at, s.updated_at,
               e.name AS environment_name, e.image_url AS environment_image_url,
-              e.panorama_image_url AS environment_panorama_image_url,
+              e.image_back_url AS environment_image_back_url,
               (SELECT COUNT(*) FROM scenes sc WHERE sc.studio_id = s.id) AS scene_count,
               (SELECT COUNT(*) FROM studio_element_links l WHERE l.studio_id = s.id) AS element_count
        FROM studios s
@@ -58,7 +60,8 @@ router.get('/', authMiddleware, async (req, res) => {
     if (studioIds.length > 0) {
       const placeholders = studioIds.map(() => '?').join(',');
       const links = await queryAll(
-        `SELECT l.studio_id, b.id, b.name, b.image_url
+        `SELECT l.studio_id, l.building_view, b.id, b.name, b.image_url,
+                b.exterior_image_url, b.interior_image_url
          FROM studio_building_links l
          JOIN buildings b ON b.id = l.building_id
          WHERE l.studio_id IN (${placeholders})
@@ -67,13 +70,25 @@ router.get('/', authMiddleware, async (req, res) => {
       );
       for (const link of links) {
         if (!buildingsByStudio.has(link.studio_id)) buildingsByStudio.set(link.studio_id, []);
-        buildingsByStudio.get(link.studio_id).push({ id: link.id, name: link.name, image_url: link.image_url });
+        buildingsByStudio.get(link.studio_id).push({
+          id: link.id,
+          name: link.name,
+          image_url: link.image_url,
+          exterior_image_url: link.exterior_image_url,
+          interior_image_url: link.interior_image_url,
+          building_view: link.building_view
+        });
       }
     }
     const studios = rows.map((r) => ({
       ...r,
       environment: r.environment_id
-        ? { id: r.environment_id, name: r.environment_name, image_url: r.environment_image_url, panorama_image_url: r.environment_panorama_image_url }
+        ? {
+            id: r.environment_id,
+            name: r.environment_name,
+            image_url: r.environment_image_url,
+            image_back_url: r.environment_image_back_url
+          }
         : null,
       buildings: buildingsByStudio.get(r.id) || [],
     }));
@@ -95,7 +110,7 @@ router.get('/:id', authMiddleware, async (req, res) => {
     const environment = studio.environment_id
       ? await queryOne(
           `SELECT id, name, description, time_of_day, weather, lighting, mood,
-                  image_url, generation_status
+                  image_url, image_back_url, generation_status
            FROM environments
            WHERE id = ? AND user_id = ?`,
           [studio.environment_id, userId]
@@ -103,7 +118,8 @@ router.get('/:id', authMiddleware, async (req, res) => {
       : null;
     const buildings = await queryAll(
       `SELECT b.id, b.name, b.description, b.interior_exterior, b.structure_type,
-              b.image_url, b.generation_status, l.sort_order
+              b.image_url, b.exterior_image_url, b.interior_image_url,
+              b.generation_status, l.sort_order, l.building_view
        FROM studio_building_links l
        JOIN buildings b ON b.id = l.building_id
        WHERE l.studio_id = ?
@@ -216,12 +232,16 @@ router.delete('/:id', authMiddleware, async (req, res) => {
   }
 });
 
-// POST /:id/environment  设置场景环境
+// POST /:id/environment  设置场景环境  body: { environmentId, view? }
 router.post('/:id/environment', authMiddleware, async (req, res) => {
   const userId = req.user.id;
   const id = Number(req.params.id);
   const environmentId = Number(req.body?.environmentId);
+  const view = req.body?.view;
   if (!environmentId) return res.status(400).json({ message: 'environmentId 必填' });
+  if (view !== undefined && view !== 'front' && view !== 'back') {
+    return res.status(400).json({ message: 'view 必须为 front/back' });
+  }
   try {
     const studio = await ensureOwned(id, userId);
     if (!studio) return res.status(404).json({ message: '场景不存在或无权访问' });
@@ -235,11 +255,40 @@ router.post('/:id/environment', authMiddleware, async (req, res) => {
       return res.status(400).json({ message: '环境与场景不属于同一项目' });
     }
 
-    await execute('UPDATE studios SET environment_id = ? WHERE id = ?', [environmentId, id]);
+    if (view) {
+      await execute(
+        'UPDATE studios SET environment_id = ?, environment_view = ? WHERE id = ?',
+        [environmentId, view, id]
+      );
+    } else {
+      await execute('UPDATE studios SET environment_id = ? WHERE id = ?', [environmentId, id]);
+    }
     res.json({ message: '已绑定环境' });
   } catch (err) {
     console.error('[Studios][setEnvironment]', err);
     res.status(500).json({ message: '绑定环境失败' });
+  }
+});
+
+// PATCH /:id/environment-view  切换环境采用的视图面  body: { view: 'front' | 'back' }
+router.patch('/:id/environment-view', authMiddleware, async (req, res) => {
+  const userId = req.user.id;
+  const id = Number(req.params.id);
+  const view = req.body?.view;
+  if (view !== 'front' && view !== 'back') {
+    return res.status(400).json({ message: 'view 必须为 front/back' });
+  }
+  try {
+    const studio = await ensureOwned(id, userId);
+    if (!studio) return res.status(404).json({ message: '场景不存在或无权访问' });
+    if (!studio.environment_id) {
+      return res.status(400).json({ message: '影棚尚未绑定环境，无法切换视图' });
+    }
+    await execute('UPDATE studios SET environment_view = ? WHERE id = ?', [view, id]);
+    res.json({ message: '已切换环境视图', view });
+  } catch (err) {
+    console.error('[Studios][setEnvironmentView]', err);
+    res.status(500).json({ message: '切换环境视图失败' });
   }
 });
 
@@ -258,11 +307,15 @@ router.delete('/:id/environment', authMiddleware, async (req, res) => {
   }
 });
 
-// POST /:id/buildings/:buildingId  关联建筑
+// POST /:id/buildings/:buildingId  关联建筑  body: { sortOrder?, view? }
 router.post('/:id/buildings/:buildingId', authMiddleware, async (req, res) => {
   const userId = req.user.id;
   const id = Number(req.params.id);
   const buildingId = Number(req.params.buildingId);
+  const view = req.body?.view;
+  if (view !== undefined && view !== 'exterior' && view !== 'interior') {
+    return res.status(400).json({ message: 'view 必须为 exterior/interior' });
+  }
   try {
     const studio = await ensureOwned(id, userId);
     if (!studio) return res.status(404).json({ message: '场景不存在或无权访问' });
@@ -276,16 +329,51 @@ router.post('/:id/buildings/:buildingId', authMiddleware, async (req, res) => {
       return res.status(400).json({ message: '建筑与场景不属于同一项目' });
     }
 
-    await execute(
-      `INSERT INTO studio_building_links (studio_id, building_id, sort_order)
-       VALUES (?, ?, ?)
-       ON DUPLICATE KEY UPDATE sort_order = VALUES(sort_order)`,
-      [id, buildingId, Number(req.body?.sortOrder) || 0]
-    );
+    if (view) {
+      await execute(
+        `INSERT INTO studio_building_links (studio_id, building_id, sort_order, building_view)
+         VALUES (?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE sort_order = VALUES(sort_order), building_view = VALUES(building_view)`,
+        [id, buildingId, Number(req.body?.sortOrder) || 0, view]
+      );
+    } else {
+      await execute(
+        `INSERT INTO studio_building_links (studio_id, building_id, sort_order)
+         VALUES (?, ?, ?)
+         ON DUPLICATE KEY UPDATE sort_order = VALUES(sort_order)`,
+        [id, buildingId, Number(req.body?.sortOrder) || 0]
+      );
+    }
     res.json({ message: '已关联建筑' });
   } catch (err) {
     console.error('[Studios][attachBuilding]', err);
     res.status(500).json({ message: '建筑关联失败' });
+  }
+});
+
+// PATCH /:id/buildings/:buildingId/view  切换建筑视图  body: { view: 'exterior' | 'interior' }
+router.patch('/:id/buildings/:buildingId/view', authMiddleware, async (req, res) => {
+  const userId = req.user.id;
+  const id = Number(req.params.id);
+  const buildingId = Number(req.params.buildingId);
+  const view = req.body?.view;
+  if (view !== 'exterior' && view !== 'interior') {
+    return res.status(400).json({ message: 'view 必须为 exterior/interior' });
+  }
+  try {
+    const studio = await ensureOwned(id, userId);
+    if (!studio) return res.status(404).json({ message: '场景不存在或无权访问' });
+    const result = await execute(
+      'UPDATE studio_building_links SET building_view = ? WHERE studio_id = ? AND building_id = ?',
+      [view, id, buildingId]
+    );
+    if (!result.affectedRows) {
+      return res.status(404).json({ message: '该建筑未关联到影棚' });
+    }
+    res.json({ message: '已切换建筑视图', view });
+  } catch (err) {
+    console.error('[Studios][setBuildingView]', err);
+    res.status(500).json({ message: '切换建筑视图失败' });
   }
 });
 
@@ -445,6 +533,32 @@ router.post('/compose-from-script', authMiddleware, async (req, res) => {
     });
   } catch (err) {
     sendGenerationError(res, err, '启动拼接场景失败', '[Studios][ComposeFromScript]');
+  }
+});
+
+// POST /:id/generate-nine-grid  body: { imageModel, textModel? }
+// 影棚九宫组装图生成（基于绑定环境 + 建筑群）
+router.post('/:id/generate-nine-grid', authMiddleware, async (req, res) => {
+  const userId = req.user.id;
+  const studioId = Number(req.params.id);
+  try {
+    const result = await generationStartService.start({
+      operationKey: 'studio_nine_grid_generate',
+      rawInput: {
+        studioId,
+        imageModel: req.body?.imageModel,
+        textModel: req.body?.textModel
+      },
+      actor: { userId }
+    });
+    res.json(result.response || {
+      message: '已启动影棚九宫组装图生成',
+      jobId: result.jobId,
+      studioId,
+      status: 'generating'
+    });
+  } catch (err) {
+    sendGenerationError(res, err, '启动影棚九宫组装图生成失败', '[Studios][GenerateNineGrid]');
   }
 });
 

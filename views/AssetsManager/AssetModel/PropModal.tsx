@@ -284,6 +284,7 @@ const PropModal: React.FC<PropModalProps> = ({
                           popoverContent: 'bg-content1',
                         }}
                       >
+                        <SelectItem key="held" textValue="手持道具">手持道具</SelectItem>
                         <SelectItem key="permanent" textValue="永久道具">永久道具</SelectItem>
                         <SelectItem key="interactive" textValue="交互道具">交互道具</SelectItem>
                       </Select>

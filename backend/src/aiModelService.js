@@ -1,4 +1,4 @@
-const { queryOne } = require('./dbHelper');
+const { queryOne, queryAll } = require('./dbHelper');
 const fetch = require('node-fetch');
 const {
   renderTemplate,
@@ -8,7 +8,6 @@ const {
   mergeParams,
   renderWithFallback
 } = require('./utils/templateRenderer');
-const { getHandler } = require('./customHandlers');
 const { sanitizeHeaders } = require('./utils/logSanitizer');
 const { parseJsonField } = require('./utils/parseJsonField');
 const { getAIBillingContext } = require('./aiBillingContext');
@@ -20,6 +19,10 @@ const {
   createPendingAsyncBilling,
   finalizeAsyncBillingFromQuery
 } = require('./aiBillingService');
+const {
+  callOpenAICompatible,
+  callOpenAICompatibleBatch
+} = require('./openaiAdapter');
 
 // ============ 辅助函数 ============
 function toNumberSafe(val, fallback) {
@@ -30,6 +33,7 @@ function toNumberSafe(val, fallback) {
 // ============ 模型配置缓存 ============
 const MODEL_CACHE_TTL = 300000; // 5分钟缓存（批量生成时减少DB查询）
 const modelConfigCache = new Map(); // key: modelName, value: { config, expireAt }
+const providerCache = new Map(); // key: providerId, value: { provider, expireAt }
 
 async function getCachedModelConfig(modelName) {
   const cached = modelConfigCache.get(modelName);
@@ -41,9 +45,30 @@ async function getCachedModelConfig(modelName) {
     [modelName]
   );
   if (config) {
+    // 如果配置了 provider_id，加载平台信息
+    if (config.provider_id) {
+      config._provider = await getCachedProvider(config.provider_id);
+    }
+    // 解析 capabilities 能力标签，供 OpenAI 适配层路由端点使用
+    config.capabilities = parseJsonField(config.capabilities, []);
     modelConfigCache.set(modelName, { config, expireAt: Date.now() + MODEL_CACHE_TTL });
   }
   return config;
+}
+
+async function getCachedProvider(providerId) {
+  const cached = providerCache.get(providerId);
+  if (cached && Date.now() < cached.expireAt) {
+    return cached.provider;
+  }
+  const provider = await queryOne(
+    'SELECT * FROM model_providers WHERE id = ? AND is_active = 1',
+    [providerId]
+  );
+  if (provider) {
+    providerCache.set(providerId, { provider, expireAt: Date.now() + MODEL_CACHE_TTL });
+  }
+  return provider;
 }
 
 function invalidateModelCache(modelName) {
@@ -51,6 +76,7 @@ function invalidateModelCache(modelName) {
     modelConfigCache.delete(modelName);
   } else {
     modelConfigCache.clear();
+    providerCache.clear();
   }
 }
 
@@ -269,18 +295,73 @@ async function callAIModel(modelName, params = {}, apiKey = null) {
   try {
     // 从数据库获取模型配置（带缓存）
     model = await getCachedModelConfig(modelName);
-    
+
     if (!model) {
       throw new Error(`模型 "${modelName}" 不存在或未启用`);
     }
-    
+
+    // ============ OpenAI 适配层优先 ============
+    // 如果配置了 provider_id 和 model_id，使用 OpenAI 兼容适配层
+    if (model.provider_id && model.model_id) {
+      console.log(`[AI Model] 使用 OpenAI 适配层调用 ${modelName}`);
+
+      // API Key 优先级：1. 函数参数 2. 数据库配置 3. 环境变量
+      if (!apiKey) {
+        apiKey = model.api_key || (model._provider?.api_key);
+        if (!apiKey) {
+          const envKey = `${model.provider.toUpperCase()}_API_KEY`;
+          apiKey = process.env[envKey];
+          if (!apiKey) {
+            throw new Error(`API Key 未配置：请在模型配置中设置 API Key 或配置环境变量 ${envKey}`);
+          }
+        }
+      }
+
+      const modelPricing = buildModelPricingPayload(model);
+      mergedParams = { ...params, apiKey };
+
+      billingState = await prepareModelBilling(model, mergedParams);
+      requestStarted = true;
+
+      const result = await callOpenAICompatible(model, mergedParams);
+
+      // 计费处理
+      const taskId = result.taskId || result.task_id || result.task_Id;
+      if (taskId) {
+        result._billing = await createPendingAsyncBilling(model, billingState);
+      } else {
+        await finalizeImmediateBilling({
+          model,
+          params: mergedParams,
+          billingState,
+          submitResult: result,
+          requestStatus: 'success'
+        });
+      }
+
+      // 补充模型信息
+      result._model = {
+        name: model.name,
+        provider: model.provider,
+        category: model.category,
+        priceConfig: modelPricing.priceConfig,
+        priceSummary: modelPricing.priceSummary
+      };
+      attachInternalField(result, '_submitParams', mergedParams);
+
+      return result;
+    }
+
+    // ============ 回退到原有模板逻辑 ============
+    console.log(`[AI Model] 回退到模板模式调用 ${modelName}`);
+
     // 解析 JSON 字段
     const modelPricing = buildModelPricingPayload(model);
     const headersTemplate = parseJsonField(model.headers_template);
     const bodyTemplate = parseJsonField(model.body_template);
     const defaultParams = parseJsonField(model.default_params, {});
     const responseMapping = parseJsonField(model.response_mapping);
-    
+
     // API Key 优先级：1. 数据库配置 2. 函数参数 3. 环境变量
     if (!apiKey) {
       if (model.api_key) {
@@ -288,16 +369,15 @@ async function callAIModel(modelName, params = {}, apiKey = null) {
       } else {
         const envKey = `${model.provider.toUpperCase()}_API_KEY`;
         apiKey = process.env[envKey];
-        
+
         if (!apiKey) {
           throw new Error(`API Key 未配置：请在模型配置中设置 API Key 或配置环境变量 ${envKey}`);
         }
       }
     }
-    
+
     // 运行时参数（用户传入 + apiKey，优先级高）
     const runtimeParams = { ...params, apiKey };
-    // 兼容旧逻辑：合并参数供 custom_handler 使用
     mergedParams = { ...defaultParams, ...runtimeParams };
 
     const billingContext = getAIBillingContext();
@@ -319,26 +399,26 @@ async function callAIModel(modelName, params = {}, apiKey = null) {
     });
 
     billingState = await prepareModelBilling(model, mergedParams);
-    
+
     // 两轮渲染 URL（第一轮 runtimeParams，第二轮 defaultParams 兜底）
     const url = renderWithFallback('string', model.url_template, runtimeParams, defaultParams, 'url');
-    
+
     // 两轮渲染 Headers
     const headers = renderWithFallback('json', headersTemplate, runtimeParams, defaultParams, 'headers');
-    
+
     // 构建请求选项
     const requestOptions = {
       method: model.request_method,
       headers
     };
-    
+
     // 两轮渲染 Body
     if (bodyTemplate && (model.request_method === 'POST' || model.request_method === 'PUT')) {
       const renderedBody = renderWithFallback('json', bodyTemplate, runtimeParams, defaultParams, 'body');
-      
+
       // 根据 Content-Type 决定序列化方式
       const contentType = headers['Content-Type'] || headers['content-type'] || '';
-      
+
       if (contentType.includes('application/x-www-form-urlencoded')) {
         // URL 编码格式
         const params = new URLSearchParams();
@@ -351,63 +431,9 @@ async function callAIModel(modelName, params = {}, apiKey = null) {
         requestOptions.body = JSON.stringify(renderedBody);
       }
     }
-    
+
     await assertSafeOutboundUrl(url, { context: `AI 模型 ${modelName} 提交请求` });
 
-    // === 自定义 Handler 拦截 ===
-    // 模板渲染完成后，如果配置了 custom_handler，则交给 handler 处理请求
-    if (model.custom_handler) {
-      const handler = getHandler(model.custom_handler);
-      if (handler && typeof handler.call === 'function') {
-        console.log(`[AI Model] 使用自定义 handler "${model.custom_handler}" 处理提交请求`);
-        
-        // 解析渲染后的 body 为对象（handler 拿到的是对象，不是字符串）
-        let bodyObj = null;
-        if (requestOptions.body) {
-          try { bodyObj = JSON.parse(requestOptions.body); } catch { bodyObj = requestOptions.body; }
-        }
-        
-        const rendered = {
-          url,
-          method: requestOptions.method,
-          headers: { ...headers },
-          body: bodyObj
-        };
-        
-        // handler 返回原始 API 响应 data
-        requestStarted = true;
-        const data = await handler.call(model, mergedParams, rendered);
-        
-        // 外层统一做 response_mapping
-        const result = mapResponse(data, responseMapping);
-        result._raw = data;
-        attachInternalField(result, '_submitParams', mergedParams);
-        result._model = {
-          name: model.name,
-          provider: model.provider,
-          category: model.category,
-          priceConfig: modelPricing.priceConfig,
-          priceSummary: modelPricing.priceSummary
-        };
-
-        const taskId = result.taskId || result.task_id || result.task_Id;
-        if (taskId) {
-          result._billing = await createPendingAsyncBilling(model, billingState);
-        } else {
-          await finalizeImmediateBilling({
-            model,
-            params: mergedParams,
-            billingState,
-            submitResult: result,
-            requestStatus: 'success'
-          });
-        }
-        return result;
-      } else {
-        console.warn(`[AI Model] custom_handler "${model.custom_handler}" 未找到或缺少 call 方法，回退到模板流程`);
-      }
-    }
-    
     // === 默认模板 fetch 流程 ===
     // 发送请求
     console.log(`[AI Model] Calling ${modelName}:`, url);
@@ -446,12 +472,12 @@ async function callAIModel(modelName, params = {}, apiKey = null) {
         }
       }
     }
-    
+
     // 添加超时控制（从 default_params.timeout 读取，默认300秒）
     const controller = new AbortController();
     const timeoutMs = toNumberSafe(defaultParams.timeout, 300) * 1000;
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
-    
+
     let data;
     let response;
     try {
@@ -461,16 +487,16 @@ async function callAIModel(modelName, params = {}, apiKey = null) {
         signal: controller.signal
       }, `AI 模型 ${modelName} 提交请求`);
       clearTimeout(timeout);
-      
+
       console.log('[AI Model] Response Status:', response.status, response.statusText);
       console.log('[AI Model] Response Headers:', JSON.stringify(sanitizeHeaders(Object.fromEntries(response.headers.entries())), null, 2));
-    
+
       // 获取响应文本
       const responseText = await response.text();
       if (isDebug) {
         console.log('[AI Model] Response Text (first 500 chars):', responseText.substring(0, 500));
       }
-    
+
       // 尝试解析 JSON
       try {
         data = JSON.parse(responseText);
@@ -483,7 +509,7 @@ async function callAIModel(modelName, params = {}, apiKey = null) {
         console.error('[AI Model] Raw Response:', responseText);
         throw new Error(`API 返回的不是有效的 JSON 格式。响应内容: ${responseText.substring(0, 200)}...`);
       }
-      
+
       if (!response.ok) {
         throw new Error(data.error?.message || `API 调用失败: ${response.status}`);
       }
@@ -496,10 +522,10 @@ async function callAIModel(modelName, params = {}, apiKey = null) {
       console.error('[AI Model] Network error:', fetchError.message);
       throw new Error(`网络请求失败: ${fetchError.message}。请检查网络连接或稍后重试`);
     }
-    
+
     // 使用 mapResponse 提取字段（更简洁）
     const result = mapResponse(data, responseMapping);
-    
+
     // 添加原始响应和模型信息
     // 根据 Content-Type 决定如何保存请求体
     let requestBody = null;
@@ -517,7 +543,7 @@ async function callAIModel(modelName, params = {}, apiKey = null) {
         }
       }
     }
-    
+
     result._raw = {
       ...data,
       request: {
@@ -549,7 +575,7 @@ async function callAIModel(modelName, params = {}, apiKey = null) {
         requestStatus: 'success'
       });
     }
-    
+
     return result;
   } catch (error) {
     if (model && billingState && requestStarted) {
@@ -796,7 +822,7 @@ async function getImageModels() {
 async function callAIModelBatch(calls, { concurrency = 3 } = {}) {
   const results = new Array(calls.length).fill(null);
   const errors = new Array(calls.length).fill(null);
-  
+
   // 手写并发控制（不引入外部依赖）
   let index = 0;
   const execute = async () => {
@@ -810,11 +836,11 @@ async function callAIModelBatch(calls, { concurrency = 3 } = {}) {
       }
     }
   };
-  
+
   // 启动 concurrency 个并发 worker
   const workers = Array.from({ length: Math.min(concurrency, calls.length) }, () => execute());
   await Promise.all(workers);
-  
+
   return { results, errors: errors.filter(Boolean) };
 }
 
@@ -824,5 +850,8 @@ module.exports = {
   callAIModelBatch,
   getTextModels,
   getImageModels,
-  invalidateModelCache
+  invalidateModelCache,
+  getCachedModelConfig,
+  getCachedProvider,
+  parseJsonField
 };

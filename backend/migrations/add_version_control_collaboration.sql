@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS frame_annotations (
   id INT AUTO_INCREMENT PRIMARY KEY,
   project_id INT NOT NULL COMMENT '所属项目 ID',
   storyboard_id INT NOT NULL COMMENT '分镜 ID',
-  frame_type ENUM('first', 'last', 'video_frame') NOT NULL COMMENT '帧类型',
+  frame_type ENUM('first', 'last', 'video_frame') NOT NULL DEFAULT 'first' COMMENT '帧类型',
   frame_timestamp DECIMAL(10,3) DEFAULT NULL COMMENT '视频时间戳（秒）',
   annotation_type ENUM('comment', 'suggestion', 'issue', 'approval') NOT NULL DEFAULT 'comment' COMMENT '批注类型',
   position_x DECIMAL(5,2) DEFAULT NULL COMMENT '标注位置 X 坐标（百分比 0-100）',

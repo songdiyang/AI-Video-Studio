@@ -82,22 +82,24 @@ module.exports = async (req, res) => {
       charsByStoryboard[c.storyboard_id].push(c);
     });
 
-    // 3. 批量获取所有关联的场景数据
-    const linkedScenes = await queryAll(
-      `SELECT ss.storyboard_id, s.name, s.description, s.environment, s.lighting, s.mood, s.image_url
-       FROM storyboard_scenes ss
-       JOIN scenes s ON ss.scene_id = s.id
-       WHERE ss.storyboard_id IN (${placeholders})`,
+    // 3. 批量获取所有关联的影棚数据（替代旧的 scenes 查询）
+    const linkedStudios = await queryAll(
+      `SELECT ssc.storyboard_id, st.name, st.description, st.nine_grid_image_url,
+              e.image_url AS env_front_url, e.image_back_url AS env_back_url, e.description AS env_description
+       FROM storyboard_scenes ssc
+       JOIN studios st ON ssc.studio_id = st.id
+       LEFT JOIN environments e ON st.environment_id = e.id
+       WHERE ssc.storyboard_id IN (${placeholders})`,
       sceneIds
     );
 
-    // 建立 storyboard_id -> [scenes] 映射
-    const scenesByStoryboard = {};
-    linkedScenes.forEach(s => {
-      if (!scenesByStoryboard[s.storyboard_id]) {
-        scenesByStoryboard[s.storyboard_id] = [];
+    // 建立 storyboard_id -> [studios] 映射
+    const studiosByStoryboard = {};
+    linkedStudios.forEach(s => {
+      if (!studiosByStoryboard[s.storyboard_id]) {
+        studiosByStoryboard[s.storyboard_id] = [];
       }
-      scenesByStoryboard[s.storyboard_id].push(s);
+      studiosByStoryboard[s.storyboard_id].push(s);
     });
 
     // 4. 统计同一剧本/项目中每个角色在所有分镜中的出现次数
@@ -144,10 +146,10 @@ module.exports = async (req, res) => {
       }
 
       const chars = charsByStoryboard[sceneId] || [];
-      const scenes = scenesByStoryboard[sceneId] || [];
+      const studios = studiosByStoryboard[sceneId] || [];
 
       if (type === 'frame') {
-        return validateForFrame(sceneId, storyboard, variables, chars, scenes, charAppearanceMap);
+        return validateForFrame(sceneId, storyboard, variables, chars, studios, charAppearanceMap);
       } else {
         return validateForVideo(sceneId, storyboard, variables);
       }
@@ -163,7 +165,7 @@ module.exports = async (req, res) => {
 /**
  * 校验生成首尾帧的前置条件
  */
-function validateForFrame(sceneId, storyboard, variables, linkedChars, linkedScenes, charAppearanceMap) {
+function validateForFrame(sceneId, storyboard, variables, linkedChars, linkedStudios, charAppearanceMap) {
   const blockingIssues = [];
   const warningIssues = [];
   
@@ -200,21 +202,19 @@ function validateForFrame(sceneId, storyboard, variables, linkedChars, linkedSce
     }
   }
 
-  // 2. 检查场景
+  // 2. 检查影棚
   if (location) {
-    const linkedScene = linkedScenes.find(s => s.name === location);
+    const linkedStudio = linkedStudios.find(s => s.name === location);
     
-    if (!linkedScene) {
-      blockingIssues.push(`场景「${location}」未与该分镜建立关联，请先运行智能分镜生成`);
+    if (!linkedStudio) {
+      blockingIssues.push(`影棚「${location}」未与该分镜建立关联，请先运行智能分镜生成`);
     } else {
-      if (!linkedScene.image_url) {
-        blockingIssues.push(`场景「${location}」缺少图片`);
+      const hasImage = !!linkedStudio.nine_grid_image_url;
+      if (!hasImage) {
+        blockingIssues.push(`影棚「${location}」缺少九宫组装图，请先到影棚中生成`);
       }
-      if (!linkedScene.description || !linkedScene.description.trim()) {
-        blockingIssues.push(`场景「${location}」缺少描述`);
-      }
-      if (!linkedScene.environment || !linkedScene.environment.trim()) {
-        blockingIssues.push(`场景「${location}」缺少环境描述`);
+      if ((!linkedStudio.description || !linkedStudio.description.trim()) && (!linkedStudio.env_description || !linkedStudio.env_description.trim())) {
+        blockingIssues.push(`影棚「${location}」缺少描述`);
       }
     }
   }

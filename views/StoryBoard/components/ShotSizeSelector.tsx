@@ -30,6 +30,17 @@ const SHOT_SIZE_LABELS: Record<string, string> = {
   long_shot: '全景',
   extreme_long_shot: '大远景',
 };
+// 中文标签到英文值的反向映射（用于兼容旧数据）
+const LABEL_TO_VALUE: Record<string, string> = {
+  '大特写': 'extreme_close_up',
+  '特写': 'close_up',
+  '中近景': 'medium_close_up',
+  '中景': 'medium_shot',
+  '中全景': 'medium_long_shot',
+  '全景': 'long_shot',
+  '大远景': 'extreme_long_shot',
+  '远景': 'long_shot', // 兼容旧数据中的"远景"（对应long_shot）
+};
 
 // 景别颜色配置
 const SHOT_SIZE_COLORS: Record<string, string> = {
@@ -65,41 +76,52 @@ export const ShotSizeSelector: React.FC<ShotSizeSelectorProps> = ({
   disabled = false,
   onClick,
 }) => {
+  // 将中文标签转换为英文值（兼容旧数据）
+  const normalizedValue = value ? (LABEL_TO_VALUE[value] || value) : undefined;
   // 紧凑模式：只显示可点击的 Chip
   if (compact) {
-    const currentLabel = value ? SHOT_SIZE_LABELS[value] || value : '未设置';
-    const colorClass = value ? SHOT_SIZE_COLORS[value] : 'bg-gray-500/20 text-gray-400';
+    const currentLabel = normalizedValue ? SHOT_SIZE_LABELS[normalizedValue] || normalizedValue : '未设置';
+    const colorClass = normalizedValue ? SHOT_SIZE_COLORS[normalizedValue] : 'bg-gray-500/20 text-gray-400';
 
     return (
       <Select
         aria-label="景别选择"
-        selectedKeys={value ? [value] : []}
+        selectedKeys={normalizedValue ? [normalizedValue] : []}
         onSelectionChange={(keys) => {
           const selected = Array.from(keys)[0] as string;
-          onChange?.(selected);
+          // 返回中文标签，保持数据存储格式一致
+          const labelToReturn = SHOT_SIZE_LABELS[selected] || selected;
+          onChange?.(labelToReturn);
         }}
         disabled={disabled}
         onClick={onClick}
+        className="min-w-fit"
+        size="sm"
+        variant="flat"
         classNames={{
-          trigger: 'bg-transparent min-w-0 h-auto px-0 py-0 max-w-[120px]',
-          value: 'text-[10px] px-1 py-0.5 rounded',
-          listbox: 'max-h-60',
+          base: "!max-w-fit",
+          trigger: "h-[18px] min-h-[18px] px-0.5 bg-transparent border-0 shadow-none overflow-visible hover:bg-[var(--bg-card-hover)] rounded",
+          value: "text-[10px] whitespace-nowrap overflow-visible",
+          innerWrapper: "gap-0 overflow-visible",
+          listbox: "max-h-80 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]",
+          selectorIcon: "relative static ml-0.5 w-3 h-3",
         }}
-        renderValue={(items) => (
-          <span className={`${colorClass} text-[10px] px-1 py-0.5 rounded inline-block`}>
+        renderValue={() => (
+          <span className={`${colorClass} text-[10px] px-1 py-0 rounded-sm whitespace-nowrap leading-none`}>
             {currentLabel}
           </span>
         )}
         popoverProps={{
           placement: 'bottom-start',
           shouldFlip: true,
+          offset: 2,
           classNames: {
-            content: 'bg-[var(--bg-card)] border border-[var(--border-default)] max-w-[200px]',
+            content: 'bg-[var(--bg-card)] border border-[var(--border-default)] min-w-[240px] max-w-[280px]',
           },
         }}
       >
         {SHOT_SIZE_OPTIONS.map((option) => (
-          <SelectItem key={option.value} textValue={option.label}>
+          <SelectItem key={option.value} textValue={option.label} className="text-xs">
             <div className="flex flex-col">
               <span className="text-sm font-medium">{option.label}</span>
               <span className="text-xs text-[var(--text-muted)]">{option.desc}</span>
@@ -119,10 +141,12 @@ export const ShotSizeSelector: React.FC<ShotSizeSelectorProps> = ({
       <Select
         aria-label="景别选择"
         placeholder="选择景别"
-        selectedKeys={value ? [value] : []}
+        selectedKeys={normalizedValue ? [normalizedValue] : []}
         onSelectionChange={(keys) => {
           const selected = Array.from(keys)[0] as string;
-          onChange?.(selected);
+          // 返回中文标签，保持数据存储格式一致
+          const labelToReturn = SHOT_SIZE_LABELS[selected] || selected;
+          onChange?.(labelToReturn);
         }}
         disabled={disabled}
         startContent={<Camera className="w-4 h-4 text-[var(--text-muted)]" />}
@@ -149,8 +173,10 @@ export const ShotSizeSelector: React.FC<ShotSizeSelectorProps> = ({
 export const ShotSizeBadge: React.FC<{ value?: string }> = ({ value }) => {
   if (!value) return null;
 
-  const label = SHOT_SIZE_LABELS[value] || value;
-  const colorClass = SHOT_SIZE_COLORS[value] || 'bg-gray-500/20 text-gray-400';
+  // 将中文标签转换为英文值
+  const normalizedValue = LABEL_TO_VALUE[value] || value;
+  const label = SHOT_SIZE_LABELS[normalizedValue] || value;
+  const colorClass = SHOT_SIZE_COLORS[normalizedValue] || 'bg-gray-500/20 text-gray-400';
 
   return (
     <Chip size="sm" variant="flat" className={`${colorClass} text-xs font-medium`}>

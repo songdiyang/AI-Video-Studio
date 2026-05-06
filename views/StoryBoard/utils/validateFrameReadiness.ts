@@ -1,10 +1,10 @@
 /**
  * 前端首尾帧生成预检校验
  * 
- * 与后端 frameGeneration.js 的 collectReferenceImages 保持一致：
+ * 与后端 frameGeneration.js 的 collectCandidateImages 保持一致：
  * - 支持多角色镜头，逐个校验角色资源完整性
  * - 角色字段完整性：name, description, appearance, personality, image_url
- * - 场景必须存在且字段完整：name, description, environment, lighting, mood, image_url
+ * - 影棚必须存在且有图片（九宫组装图或环境图）
  */
 
 import { getAuthToken } from '../../../services/auth';
@@ -32,14 +32,13 @@ interface CharacterRecord {
   image_url?: string;
 }
 
-interface SceneRecord {
+interface StudioRecord {
   id: number;
   name: string;
   description?: string;
-  environment?: string;
-  lighting?: string;
-  mood?: string;
-  image_url?: string;
+  nine_grid_image_url?: string;
+  environment_id?: number;
+  cover_image_url?: string;
 }
 
 /**
@@ -145,27 +144,24 @@ function validateCharacterFields(character: CharacterRecord): ValidationIssue[] 
 }
 
 /**
- * 校验场景字段完整性
+ * 校验影棚字段完整性
  */
-function validateSceneFields(scene: SceneRecord, locationName: string): ValidationIssue[] {
+function validateStudioFields(studio: StudioRecord, locationName: string): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
-  const requiredFields: { key: keyof SceneRecord; label: string }[] = [
-    { key: 'name', label: '名称' },
-    { key: 'description', label: '描述' },
-    { key: 'environment', label: '环境' },
-    { key: 'lighting', label: '光照' },
-    { key: 'mood', label: '氛围' },
-    { key: 'image_url', label: '图片' },
-  ];
 
-  for (const { key, label } of requiredFields) {
-    if (isEmptyField(scene[key])) {
-      issues.push({
-        type: 'scene_field_missing',
-        message: `场景「${locationName}」缺少${label}`,
-        blocking: true,
-      });
-    }
+  if (!studio.nine_grid_image_url) {
+    issues.push({
+      type: 'scene_field_missing',
+      message: `影棚「${locationName}」缺少九宫组装图，请先到影棚中生成`,
+      blocking: true,
+    });
+  }
+  if (isEmptyField(studio.description)) {
+    issues.push({
+      type: 'scene_field_missing',
+      message: `影棚「${locationName}」缺少描述`,
+      blocking: true,
+    });
   }
 
   return issues;
@@ -185,19 +181,16 @@ async function fetchProjectCharacters(projectId: number): Promise<CharacterRecor
 }
 
 /**
- * 从后端获取指定项目的场景列表
+ * 从后端获取指定项目的影棚列表
  */
-async function fetchProjectScenes(projectId: number, scriptId?: number): Promise<SceneRecord[]> {
+async function fetchProjectStudios(projectId: number): Promise<StudioRecord[]> {
   const token = getAuthToken();
-  const url = scriptId
-    ? `/api/scenes/project/${projectId}?scriptId=${scriptId}`
-    : `/api/scenes/project/${projectId}`;
-  const res = await fetch(url, {
+  const res = await fetch(`/api/studios?projectId=${projectId}`, {
     headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
   });
   if (!res.ok) return [];
   const data = await res.json();
-  return data.scenes || [];
+  return data.studios || [];
 }
 
 /**
@@ -274,9 +267,9 @@ export async function validateFrameReadiness(
   }
 
   // 4. 降级：无 storyboardId 或后端校验失败时，使用本地名称匹配
-  const [allCharacters, allScenes] = await Promise.all([
+  const [allCharacters, allStudios] = await Promise.all([
     fetchProjectCharacters(projectId),
-    fetchProjectScenes(projectId, scriptId),
+    fetchProjectStudios(projectId),
   ]);
 
   for (const charName of characters) {
@@ -299,11 +292,11 @@ export async function validateFrameReadiness(
   }
 
   if (location && location.trim() !== '') {
-    const sceneRecord = allScenes.find(s => s.name === location);
-    if (!sceneRecord) {
-      issues.push({ type: 'scene_not_found', message: `场景不存在：${location}`, blocking: true });
+    const studioRecord = allStudios.find(s => s.name === location);
+    if (!studioRecord) {
+      issues.push({ type: 'scene_not_found', message: `影棚不存在：${location}`, blocking: true });
     } else {
-      issues.push(...validateSceneFields(sceneRecord, location));
+      issues.push(...validateStudioFields(studioRecord, location));
     }
   }
 

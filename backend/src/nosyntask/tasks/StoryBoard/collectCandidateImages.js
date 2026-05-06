@@ -72,18 +72,22 @@ const collectCandidateImages = traced('收集候选参考图', async function _c
     queryPromises.push(linkedCharsPromise);
   }
   
-  // 2. 场景查询（始终需要）
-  const linkedScenePromise = queryOne(
-    `SELECT s.name, s.description, s.environment, s.lighting, s.mood,
-            s.image_url, s.reverse_image_url,
-            s.generation_prompt, s.reverse_generation_prompt,
-            s.spatial_layout, s.camera_defaults
-     FROM storyboard_scenes ss
-     JOIN scenes s ON ss.scene_id = s.id
-     WHERE ss.storyboard_id = ? AND s.name = ?`,
+  // 2. 影棚查询（始终需要 —— 从影棚获取九宫组装图作为场景参考）
+  const linkedStudioPromise = queryOne(
+    `SELECT st.id AS studio_id, st.name, st.description AS studio_description,
+            st.nine_grid_image_url, st.environment_id, st.environment_view,
+            e.name AS env_name, e.description AS env_description,
+            ss_st.image_url AS state_image_url, ss_st.name AS state_name,
+            ss_st.lighting AS state_lighting, ss_st.mood AS state_mood,
+            ss_st.weather AS state_weather, ss_st.time_of_day AS state_time_of_day
+     FROM storyboard_scenes ssc
+     JOIN studios st ON ssc.studio_id = st.id
+     LEFT JOIN environments e ON st.environment_id = e.id
+     LEFT JOIN studio_states ss_st ON ssc.studio_state_id = ss_st.id
+     WHERE ssc.storyboard_id = ? AND st.name = ?`,
     [storyboardId, location]
   );
-  queryPromises.push(linkedScenePromise);
+  queryPromises.push(linkedStudioPromise);
 
   // === 并行执行所有查询 ===
   const queryStartTime = Date.now();
@@ -92,12 +96,12 @@ const collectCandidateImages = traced('收集候选参考图', async function _c
 
   // 解析结果
   let linkedChars = [];
-  let linkedScene;
+  let linkedStudio;
   if (validCharNames.length > 0) {
     linkedChars = queryResults[0];
-    linkedScene = queryResults[1];
+    linkedStudio = queryResults[1];
   } else {
-    linkedScene = queryResults[0];
+    linkedStudio = queryResults[0];
   }
 
   // === 处理角色数据 ===
@@ -234,57 +238,32 @@ const collectCandidateImages = traced('收集候选参考图', async function _c
     }
   }
 
-  // === 处理场景数据 ===
-  if (!linkedScene) {
-    throw new Error(`场景「${location}」未与该分镜建立关联。请先运行智能分镜生成以建立资源关联。`);
-  }
-  assertNonEmptyString(linkedScene.description, 'description', `场景「${location}」`);
-  // 对于老数据缺失的字段，自动填充默认值而不是报错
-  if (!linkedScene.environment || linkedScene.environment.trim() === '') {
-    linkedScene.environment = `${location}场景`;
-    console.log(`[CandidateImages] 场景「${location}」缺少 environment 字段，已自动填充默认值`);
-  }
-  if (!linkedScene.lighting || linkedScene.lighting.trim() === '') {
-    linkedScene.lighting = '自然光';
-    console.log(`[CandidateImages] 场景「${location}」缺少 lighting 字段，已自动填充默认值`);
-  }
-  if (!linkedScene.mood || linkedScene.mood.trim() === '') {
-    linkedScene.mood = '中性';
-    console.log(`[CandidateImages] 场景「${location}」缺少 mood 字段，已自动填充默认值`);
-  }
-  assertNonEmptyString(linkedScene.image_url, 'image_url', `场景「${location}」`);
-
-  // A 面候选图（附带生成提示词摘要，帮助 AI 推断拍摄方向）
-  const aPromptHint = linkedScene.generation_prompt
-    ? `。图片内容：${linkedScene.generation_prompt.substring(0, 120)}`
-    : '';
-  candidateImages.push({ id: 'scene_original', label: `场景「${location}」A面（正打）`, url: linkedScene.image_url, description: `场景 A 面空镜参考图（主视角/正打方向），提供环境色调、光照、氛围参考${aPromptHint}` });
-
-  // B 面候选图
-  if (linkedScene.reverse_image_url) {
-    const bPromptHint = linkedScene.reverse_generation_prompt
-      ? `。图片内容：${linkedScene.reverse_generation_prompt.substring(0, 120)}`
-      : '';
-    candidateImages.push({ id: 'scene_reverse', label: `场景「${location}」B面（反打）`, url: linkedScene.reverse_image_url, description: `场景 B 面空镜参考图（180°反打方向），与 A 面视角相反。当摄像机从 A 面的反方向拍摄时应选此图${bPromptHint}` });
+  // === 处理影棚数据 ===
+  if (!linkedStudio) {
+    throw new Error(`影棚「${location}」未与该分镜建立关联。请先运行智能分镜生成以建立资源关联。`);
   }
 
+  if (!linkedStudio.nine_grid_image_url) {
+    throw new Error(`影棚「${location}」缺少九宫组装图，请先到影棚中生成九宫组装图`);
+  }
+
+  // 九宫组装图作为唯一场景参考（全方位多机位）
+  candidateImages.push({
+    id: 'scene_nine_grid',
+    label: `影棚「${location}」九宫组装图`,
+    url: linkedStudio.nine_grid_image_url,
+    description: `影棚「${location}」的3×3九宫组装图，展示场景多个机位视角（主视/左视/右视/俯视/仰视/远景/中景/建筑细节/环境细节），提供全方位场景空间参考`
+  });
+
+  // 构建 sceneInfo（从影棚 + 环境 + 状态派生）
   const sceneInfo = {
-    name: linkedScene.name,
-    description: linkedScene.description,
-    environment: linkedScene.environment,
-    lighting: linkedScene.lighting,
-    mood: linkedScene.mood,
-    // 新增：空间布局和摄像机默认参数
-    spatialLayout: linkedScene.spatial_layout ? (
-      typeof linkedScene.spatial_layout === 'string' 
-        ? JSON.parse(linkedScene.spatial_layout) 
-        : linkedScene.spatial_layout
-    ) : null,
-    cameraDefaults: linkedScene.camera_defaults ? (
-      typeof linkedScene.camera_defaults === 'string' 
-        ? JSON.parse(linkedScene.camera_defaults) 
-        : linkedScene.camera_defaults
-    ) : null
+    name: linkedStudio.name,
+    description: linkedStudio.env_description || linkedStudio.studio_description || `${location}场景`,
+    environment: linkedStudio.env_description || `${location}场景`,
+    lighting: linkedStudio.state_lighting || '自然光',
+    mood: linkedStudio.state_mood || '中性',
+    spatialLayout: null,
+    cameraDefaults: null
   };
 
   return { candidateImages, characterName, characterInfo, location, sceneInfo };

@@ -1,10 +1,10 @@
 /**
- * 文件存储工具模块（MinIO）
+ * 文件存储工具模块
  * 
  * 职责：
- * 1. 初始化 MinIO 客户端 + 自动创建桶
- * 2. downloadAndStore(tempUrl, objectPath) — 下载临时 URL 并上传到 MinIO，返回持久 URL
- * 3. 优雅降级：MinIO 未配置时直接返回原始 URL，不阻断业务流程
+ * 1. 通过统一接口初始化存储客户端
+ * 2. downloadAndStore(tempUrl, objectPath) — 下载临时 URL 并持久化，返回 URL
+ * 3. 优雅降级：存储未配置时直接返回原始 URL，不阻断业务流程
  * 
  * 存储路径约定：
  *   images/characters/{characterId}/{view}.png
@@ -14,9 +14,9 @@
  *   videos/{storyboardId}/video.mp4
  */
 
-const Minio = require('minio');
 const path = require('path');
 const { safeFetch } = require('./outboundRequestGuard');
+const { StorageFactory } = require('../storage');
 
 // ========== undici 连接池（按域名懒初始化）==========
 
@@ -89,30 +89,25 @@ function shouldUsePool(hostname) {
 // ========== 配置 ==========
 
 const CONFIG = {
-  endPoint:  process.env.MINIO_ENDPOINT   || 'localhost',
-  port:      parseInt(process.env.MINIO_PORT || '9000', 10),
-  useSSL:    process.env.MINIO_USE_SSL === 'true',
-  accessKey: process.env.MINIO_ACCESS_KEY  || '',
-  secretKey: process.env.MINIO_SECRET_KEY  || '',
-  bucket:    process.env.MINIO_BUCKET      || 'nanostory',
   publicUrl: process.env.MINIO_PUBLIC_URL  || '',
 };
 
-// ========== 客户端单例 ==========
+// ========== 存储客户端单例 ==========
 
-let minioClient = null;
+let storageClient = null;
 let bucketReady = false;
 let initPromise = null;
 
 /**
- * 检查 MinIO 是否已配置（accessKey 非空即视为已配置）
+ * 检查存储是否已配置
  */
 function isConfigured() {
-  return !!(CONFIG.accessKey && CONFIG.secretKey);
+  const config = StorageFactory.getConfig();
+  return !!(config.accessKey && config.secretKey);
 }
 
 /**
- * 初始化 MinIO 客户端并确保桶存在（只执行一次）
+ * 初始化存储客户端并确保桶存在（只执行一次）
  */
 async function ensureReady() {
   if (bucketReady) return true;
@@ -121,40 +116,21 @@ async function ensureReady() {
   if (!initPromise) {
     initPromise = (async () => {
       try {
-        minioClient = new Minio.Client({
-          endPoint:  CONFIG.endPoint,
-          port:      CONFIG.port,
-          useSSL:    CONFIG.useSSL,
-          accessKey: CONFIG.accessKey,
-          secretKey: CONFIG.secretKey,
-        });
+        storageClient = StorageFactory.create();
+        if (!storageClient) {
+          throw new Error('无法创建存储客户端');
+        }
 
-        // 确保桶存在
-        const exists = await minioClient.bucketExists(CONFIG.bucket);
-        if (!exists) {
-          await minioClient.makeBucket(CONFIG.bucket);
-          console.log(`[FileStorage] 已创建存储桶: ${CONFIG.bucket}`);
-
-          // 设置桶策略为公开只读（前端可直接访问图片/视频）
-          const policy = {
-            Version: '2012-10-17',
-            Statement: [{
-              Effect: 'Allow',
-              Principal: { AWS: ['*'] },
-              Action: ['s3:GetObject'],
-              Resource: [`arn:aws:s3:::${CONFIG.bucket}/*`]
-            }]
-          };
-          await minioClient.setBucketPolicy(CONFIG.bucket, JSON.stringify(policy));
-          console.log(`[FileStorage] 已设置桶公开只读策略`);
+        const ready = await storageClient.init();
+        if (!ready) {
+          throw new Error('存储客户端初始化失败');
         }
 
         bucketReady = true;
-        console.log(`[FileStorage] MinIO 就绪 (${CONFIG.endPoint}:${CONFIG.port}/${CONFIG.bucket})`);
         return true;
       } catch (err) {
-        console.error('[FileStorage] MinIO 初始化失败:', err.message);
-        minioClient = null;
+        console.error('[FileStorage] 存储初始化失败:', err.message);
+        storageClient = null;
         initPromise = null;
         return false;
       }
@@ -638,16 +614,11 @@ function getPublicUrl(objectName) {
 async function uploadBuffer(buffer, objectPath, options = {}) {
   const ready = await ensureReady();
   if (!ready) {
-    throw new Error('MinIO 存储服务不可用');
+    throw new Error('存储服务不可用');
   }
 
   try {
-    const metaData = {};
-    if (options.contentType) {
-      metaData['Content-Type'] = options.contentType;
-    }
-
-    await minioClient.putObject(CONFIG.bucket, objectPath, buffer, buffer.length, metaData);
+    await storageClient.upload(buffer, objectPath, options);
 
     const persistentUrl = getPublicUrl(objectPath);
     console.log(`[FileStorage] 已上传: ${objectPath} (${(buffer.length / 1024).toFixed(1)}KB)`);
@@ -708,10 +679,10 @@ async function downloadAndStore(tempUrl, objectPath, options = {}) {
     const metaData = {};
     if (contentType) metaData['Content-Type'] = contentType;
 
-    // 4. 上传到 MinIO
-    console.log(`[FileStorage] 开始上传到 MinIO: ${fullObjectName}`);
+    // 4. 上传到存储
+    console.log(`[FileStorage] 开始上传: ${fullObjectName}`);
     const uploadStart = Date.now();
-    await minioClient.putObject(CONFIG.bucket, fullObjectName, buffer, buffer.length, metaData);
+    await storageClient.upload(buffer, fullObjectName, { contentType });
     console.log(`[FileStorage] 上传完成, 耗时: ${Date.now() - uploadStart}ms`);
 
     // 5. 返回持久化 URL
@@ -836,7 +807,7 @@ async function deleteObject(persistentUrl) {
       return false;
     }
 
-    await minioClient.removeObject(CONFIG.bucket, objectName);
+    await storageClient.delete(objectName);
     console.log(`[FileStorage] 已删除: ${objectName}`);
     return true;
   } catch (err) {
@@ -846,7 +817,7 @@ async function deleteObject(persistentUrl) {
 }
 
 /**
- * 检查 MinIO 是否就绪
+ * 检查存储是否就绪
  * @returns {Promise<boolean>}
  */
 async function isMinIOReady() {
@@ -864,6 +835,11 @@ async function isMinIOReady() {
 function resolveToInternalUrl(url) {
   if (!url) return url;
   
+  // 如果已经是绝对 URL（以 http:// 或 https:// 开头），直接返回
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    return url;
+  }
+  
   const publicBase = (CONFIG.publicUrl || '').replace(/\/$/, '');
   const siteUrl = (process.env.SITE_PUBLIC_URL || '').replace(/\/$/, '');
   
@@ -875,10 +851,11 @@ function resolveToInternalUrl(url) {
       console.log(`[FileStorage] 解析相对 URL: ${url} → ${fullUrl}`);
       return fullUrl;
     }
-    // 如果没有 SITE_PUBLIC_URL，回退到 MinIO 内网地址
+    // 如果没有 SITE_PUBLIC_URL，回退到存储内网地址
     const objectName = url.slice(publicBase.length + 1);
-    const protocol = CONFIG.useSSL ? 'https' : 'http';
-    const internalUrl = `${protocol}://127.0.0.1:${CONFIG.port}/${CONFIG.bucket}/${objectName}`;
+    const storage = StorageFactory.getConfig();
+    const protocol = storage.useSSL ? 'https' : 'http';
+    const internalUrl = `${protocol}://127.0.0.1:${storage.port}/${storage.bucket}/${objectName}`;
     console.log(`[FileStorage] 解析相对 URL (无SITE_PUBLIC_URL): ${url} → ${internalUrl}`);
     return internalUrl;
   }
@@ -886,8 +863,9 @@ function resolveToInternalUrl(url) {
   // 如果 publicUrl 是绝对路径且 URL 以它开头，也可能需要转换为内网地址
   if (publicBase && publicBase.startsWith('http') && url.startsWith(publicBase + '/')) {
     const objectName = url.slice(publicBase.length + 1);
-    const protocol = CONFIG.useSSL ? 'https' : 'http';
-    const internalUrl = `${protocol}://127.0.0.1:${CONFIG.port}/${CONFIG.bucket}/${objectName}`;
+    const storage = StorageFactory.getConfig();
+    const protocol = storage.useSSL ? 'https' : 'http';
+    const internalUrl = `${protocol}://127.0.0.1:${storage.port}/${storage.bucket}/${objectName}`;
     return internalUrl;
   }
   

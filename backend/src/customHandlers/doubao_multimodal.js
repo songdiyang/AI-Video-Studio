@@ -22,9 +22,38 @@
 
 const fetch = require('node-fetch');
 
-const DEFAULT_MODEL_ID = 'doubao-seed-2-0-pro-260215';
-const API_URL = 'https://ark.cn-beijing.volces.com/api/v3/responses';
 const TIMEOUT_MS = 120000; // 120秒
+
+/**
+ * 从模型配置中获取 Base URL
+ * 优先使用平台配置的 base_url，支持通过数据库动态配置
+ */
+function getBaseUrl(model) {
+  // 优先从关联的平台配置获取 base_url
+  if (model._provider?.base_url) {
+    return model._provider.base_url.replace(/\/$/, '');
+  }
+  // 兼容：从 url_template 解析（旧配置兼容）
+  if (model.url_template) {
+    try {
+      const url = new URL(model.url_template);
+      return `${url.protocol}//${url.host}`;
+    } catch {
+      // 忽略解析错误
+    }
+  }
+  return '';
+}
+
+/**
+ * 从模型配置中获取模型ID
+ * 优先使用 model_id 字段，其次从 default_params 解析
+ */
+function getModelId(model, params) {
+  return params.modelId || model.model_id || (model.default_params
+    ? (typeof model.default_params === 'string' ? JSON.parse(model.default_params) : model.default_params).modelId
+    : null) || '';
+}
 
 /**
  * 将 API 原始错误消息映射为用户友好的中文提示
@@ -160,7 +189,8 @@ module.exports = {
     console.log('[Doubao Multimodal] 开始处理请求');
 
     // 1. 获取API密钥（去除所有非法 HTTP header 字符：\r \n \0 等）
-    const rawApiKey = model.api_key || params.apiKey || process.env.ARK_API_KEY;
+    // 优先级：模型配置 > 平台配置 > 环境变量
+    const rawApiKey = model.api_key || params.apiKey || model._provider?.api_key || process.env.ARK_API_KEY;
     const apiKey = rawApiKey
       ? String(rawApiKey)
           .replace(/[\r\n\0]/g, '')   // 移除换行、回车、空字符
@@ -171,10 +201,17 @@ module.exports = {
     }
     console.log('[Doubao Multimodal] API Key 已获取, 长度:', apiKey.length);
 
-    // 2. 获取模型ID
-    const defaultParams = model.default_params ? (typeof model.default_params === 'string' ? JSON.parse(model.default_params) : model.default_params) : {};
-    const modelId = params.modelId || defaultParams.modelId || DEFAULT_MODEL_ID;
+    // 2. 获取模型ID和Base URL（从数据库配置动态读取）
+    const modelId = getModelId(model, params);
+    if (!modelId) {
+      throw new Error('豆包多模态模型ID未配置：请在模型配置中设置 model_id');
+    }
+    const baseUrl = getBaseUrl(model);
+    if (!baseUrl) {
+      throw new Error('豆包多模态 Base URL 未配置：请在平台配置中设置 base_url');
+    }
     console.log('[Doubao Multimodal] 模型ID:', modelId);
+    console.log('[Doubao Multimodal] Base URL:', baseUrl);
 
     // 3. 图像精细度
     const detail = params.detail || 'high';
@@ -232,7 +269,7 @@ module.exports = {
     };
 
     // 8. 发送请求（超时120秒）
-    const url = API_URL;
+    const url = `${baseUrl}/responses`;
     console.log(`[Doubao Multimodal] 调用 ${url}`);
 
     const controller = new AbortController();

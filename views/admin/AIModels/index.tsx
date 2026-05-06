@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
-import { Card, CardBody, Button, Input, useDisclosure } from '@heroui/react';
-import { Plus, Search, Sparkles } from 'lucide-react';
+import React, { useEffect, useState, useMemo } from 'react';
+import { Card, CardBody, Button, Input, useDisclosure, Tabs, Tab } from '@heroui/react';
+import { Plus, Search, Sparkles, Layers, Building2 } from 'lucide-react';
 import { getAdminAuthHeaders } from '../../../services/auth';
 import { useWorkflow } from '../../../hooks/useWorkflow';
 import { useToast } from '../../../contexts/ToastContext';
@@ -77,6 +77,9 @@ const buildFormDataFromConfig = (config: any): ModelFormData => ({
   description: config?.description || '',
   is_active: config?.is_active ?? 1,
   api_key: config?.api_key || '',
+  provider_id: config?.provider_id ? String(config.provider_id) : '',
+  model_id: config?.model_id || '',
+  capabilities: stringifyJson(config?.capabilities, '[]'),
   price_config: stringifyJson(resolvePriceConfig(config), 'null'),
   request_method: config?.request_method || 'POST',
   url_template: config?.url_template || '',
@@ -204,6 +207,9 @@ const AIModels: React.FC = () => {
         description: formData.description,
         is_active: formData.is_active,
         api_key: formData.api_key || null,
+        provider_id: formData.provider_id ? parseInt(formData.provider_id) : null,
+        model_id: formData.model_id || null,
+        capabilities: formData.capabilities ? JSON.parse(formData.capabilities) : [],
         price_config: formData.price_config.trim() ? JSON.parse(formData.price_config) : null,
         request_method: formData.request_method,
         url_template: formData.url_template,
@@ -364,9 +370,69 @@ const AIModels: React.FC = () => {
     setFormData({ ...DEFAULT_FORM_DATA });
   };
 
+  const [groupBy, setGroupBy] = useState<'category' | 'provider'>('category');
+
   const filteredModels = models.filter(model =>
     model.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     model.provider.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  // 按种类分组
+  const categoryGroups = useMemo(() => {
+    const groups: Record<string, AIModel[]> = {};
+    const order = ['TEXT', 'MULTIMODAL', 'IMAGE', 'VIDEO', 'AUDIO'];
+    filteredModels.forEach(model => {
+      const key = model.category;
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(model);
+    });
+    // 按固定顺序返回
+    const ordered: Record<string, AIModel[]> = {};
+    order.forEach(cat => {
+      if (groups[cat]) ordered[cat] = groups[cat];
+    });
+    return ordered;
+  }, [filteredModels]);
+
+  // 按厂家分组
+  const providerGroups = useMemo(() => {
+    const groups: Record<string, AIModel[]> = {};
+    filteredModels.forEach(model => {
+      const key = model.provider;
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(model);
+    });
+    return groups;
+  }, [filteredModels]);
+
+  const categoryLabels: Record<string, string> = {
+    TEXT: '文本模型',
+    IMAGE: '图像生成',
+    VIDEO: '视频生成',
+    AUDIO: '音频模型',
+    MULTIMODAL: '多模态'
+  };
+
+  const categoryColors: Record<string, string> = {
+    TEXT: 'text-blue-400 border-blue-500/30',
+    IMAGE: 'text-purple-400 border-purple-500/30',
+    VIDEO: 'text-pink-400 border-pink-500/30',
+    AUDIO: 'text-emerald-400 border-emerald-500/30',
+    MULTIMODAL: 'text-teal-400 border-teal-500/30'
+  };
+
+  const renderModelGrid = (modelList: AIModel[]) => (
+    <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+      {modelList.map((model) => (
+        <ModelCard
+          key={model.id}
+          model={model}
+          onEdit={handleEdit}
+          onDelete={handleDelete}
+          onTest={(m) => { setTestingModel(m); onTestOpen(); }}
+        />
+      ))}
+    </div>
   );
 
   return (
@@ -404,35 +470,80 @@ const AIModels: React.FC = () => {
 
       <Card className="bg-slate-900/80 border border-slate-700/50 shadow-sm mb-6">
         <CardBody className="p-6">
-          <Input
-            placeholder="搜索模型名称或厂商..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            startContent={<Search className="w-4 h-4 text-slate-400" />}
-            classNames={{
-              inputWrapper: "bg-slate-800/60 border border-slate-600/50"
-            }}
-          />
+          <div className="flex items-center gap-4">
+            <Input
+              placeholder="搜索模型名称或厂商..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              startContent={<Search className="w-4 h-4 text-slate-400" />}
+              classNames={{
+                inputWrapper: "bg-slate-800/60 border border-slate-600/50 flex-1"
+              }}
+              className="flex-1"
+            />
+            <div className="flex items-center gap-2 bg-slate-800/60 border border-slate-600/50 rounded-lg p-1">
+              <button
+                onClick={() => setGroupBy('category')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                  groupBy === 'category'
+                    ? 'bg-blue-500/20 text-blue-400'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Layers className="w-4 h-4" />
+                按种类
+              </button>
+              <button
+                onClick={() => setGroupBy('provider')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                  groupBy === 'provider'
+                    ? 'bg-blue-500/20 text-blue-400'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Building2 className="w-4 h-4" />
+                按厂家
+              </button>
+            </div>
+          </div>
         </CardBody>
       </Card>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-        {loading ? (
-          <div className="col-span-full text-center py-12 text-slate-500">加载中...</div>
-        ) : filteredModels.length === 0 ? (
-          <div className="col-span-full text-center py-12 text-slate-500">暂无模型配置</div>
-        ) : (
-          filteredModels.map((model) => (
-            <ModelCard
-              key={model.id}
-              model={model}
-              onEdit={handleEdit}
-              onDelete={handleDelete}
-              onTest={(m) => { setTestingModel(m); onTestOpen(); }}
-            />
-          ))
-        )}
-      </div>
+      {loading ? (
+        <div className="text-center py-12 text-slate-500">加载中...</div>
+      ) : filteredModels.length === 0 ? (
+        <div className="text-center py-12 text-slate-500">暂无模型配置</div>
+      ) : groupBy === 'category' ? (
+        <div className="space-y-8">
+          {Object.entries(categoryGroups).map(([category, categoryModels]) => (
+            <div key={category}>
+              <div className="flex items-center gap-3 mb-4">
+                <div className={`px-3 py-1 rounded-full border text-sm font-semibold ${categoryColors[category] || 'text-slate-400 border-slate-600'}`}>
+                  {categoryLabels[category] || category}
+                </div>
+                <span className="text-slate-500 text-sm">{categoryModels.length} 个模型</span>
+                <div className="flex-1 h-px bg-slate-700/50" />
+              </div>
+              {renderModelGrid(categoryModels)}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="space-y-8">
+          {Object.entries(providerGroups).map(([provider, providerModels]) => (
+            <div key={provider}>
+              <div className="flex items-center gap-3 mb-4">
+                <div className="px-3 py-1 rounded-full border text-sm font-semibold text-slate-300 border-slate-600/50 bg-slate-800/50">
+                  {provider}
+                </div>
+                <span className="text-slate-500 text-sm">{providerModels.length} 个模型</span>
+                <div className="flex-1 h-px bg-slate-700/50" />
+              </div>
+              {renderModelGrid(providerModels)}
+            </div>
+          ))}
+        </div>
+      )}
 
       <SmartImportModal
         isOpen={isSmartOpen}

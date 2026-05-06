@@ -62,10 +62,11 @@ async function linkAllForScript(scriptId, projectId) {
     return { total: 0, charLinked: 0, sceneLinked: 0, charNotFound: [], sceneNotFound: [] };
   }
 
-  // 2. 预加载：查询该项目的所有角色和场景（各1次查询）
-  const [allCharacters, allScenes] = await Promise.all([
+  // 2. 预加载：查询该项目的所有角色、场景和影棚（各1次查询）
+  const [allCharacters, allScenes, allStudios] = await Promise.all([
     queryAll('SELECT id, name FROM characters WHERE project_id = ?', [projectId]),
-    queryAll('SELECT id, name FROM scenes WHERE project_id = ?', [projectId])
+    queryAll('SELECT id, name FROM scenes WHERE project_id = ?', [projectId]),
+    queryAll('SELECT id, name FROM studios WHERE project_id = ?', [projectId])
   ]);
 
   // 构建精确匹配 Map
@@ -76,6 +77,10 @@ async function linkAllForScript(scriptId, projectId) {
   const sceneExactMap = new Map();
   for (const s of allScenes) {
     sceneExactMap.set(s.name, s.id);
+  }
+  const studioExactMap = new Map();
+  for (const st of allStudios) {
+    studioExactMap.set(st.name, st.id);
   }
 
   // 3. 收集所有分镜 ID，批量清除已有关联（2次 DELETE）
@@ -120,12 +125,13 @@ async function linkAllForScript(scriptId, projectId) {
       }
     }
 
-    // 场景关联 - 内存匹配
+    // 场景关联 - 内存匹配（同时关联 scene + studio）
     const location = vars.location || '';
     if (location) {
       const sceneId = sceneExactMap.get(location.trim());
+      const studioId = studioExactMap.get(location.trim()) || null;
       if (sceneId) {
-        sceneLinkValues.push([sb.id, sceneId]);
+        sceneLinkValues.push([sb.id, sceneId, studioId]);
         sceneLinked++;
       } else {
         sceneNotFound.add(location);
@@ -143,7 +149,7 @@ async function linkAllForScript(scriptId, projectId) {
 
   if (sceneLinkValues.length > 0) {
     await execute(
-      'INSERT IGNORE INTO storyboard_scenes (storyboard_id, scene_id) VALUES ?',
+      'INSERT IGNORE INTO storyboard_scenes (storyboard_id, scene_id, studio_id) VALUES ?',
       [sceneLinkValues]
     );
   }

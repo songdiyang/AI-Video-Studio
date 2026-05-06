@@ -26,7 +26,6 @@ const {
   handleCharacterViewsGeneration,
   handleCostumeViewsGeneration,
   handleSceneImageGeneration,
-  handleScenePanoramaGeneration,
   handleSceneElementsExtraction,
   handleSceneElementGeneration,
   handleBatchFrameGeneration,
@@ -51,6 +50,7 @@ const {
   handleHdRepairGeneration
 } = require('./tasks');
 
+const handleBatchCharacterViewsGeneration = require('./tasks/StoryBoard/batchCharacterViewsGeneration');
 const handleBatchPromptOptimization = require('./tasks/StoryBoard/batchPromptOptimization');
 const handleSinglePromptOptimization = require('./tasks/StoryBoard/singlePromptOptimization');
 const handleBatchImagePromptOptimization = require('./tasks/StoryBoard/batchImagePromptOptimization');
@@ -64,8 +64,7 @@ const handleStudioComposeFromScript = require('./tasks/Studio/studioComposeFromS
 const handleStudioComponentsCompose = require('./tasks/Studio/studioComponentsCompose');
 const handleEnvironmentImageGeneration = require('./tasks/Studio/environmentImageGeneration');
 const handleBuildingImageGeneration = require('./tasks/Studio/buildingImageGeneration');
-const handleEnvironmentPanoramaGeneration = require('./tasks/Studio/environmentPanoramaGeneration');
-const handleEnvironmentVariantPanoramaGeneration = require('./tasks/Studio/environmentVariantPanoramaGeneration');
+const handleStudioNineGridGeneration = require('./tasks/Studio/studioNineGridGeneration');
 const handleVariantFacesGeneration = require('./tasks/Studio/variantFacesGeneration');
 const handleScriptPropsExtract = require('./tasks/StoryBoard/scriptPropsExtract');
 
@@ -128,24 +127,27 @@ const WORKFLOW_DEFINITIONS = {
   },
 
   /**
-   * 智能拆分（T8 聚合版）- 5 步骤
-   * 
+   * 智能拆分（T8 聚合版）- 6 步骤
+   *
    * 流程：
-   *   0. storyboard_generation  - AI 生成分镜内容（含 environment/buildings/timeOfDay/weather）
-   *   1. save_storyboards       - 保存分镜 + 从分镜 variables 聚合：
-   *                                scenes（旧）/ studios / studio_states
-   *                                / props / storyboard_props / studio_prop_links
-   *                                / storyboard_scenes.studio_state_id 回写
-   *   2. character_extraction   - AI 提取角色详情（写 characters + costumes）
-   *   3. scene_state_analysis   - AI 分析环境连续性（写分镜 variables_json）
-   *   4. studio_components_compose - 从分镜提取环境与建筑并组装影棚
-   * 
+   *   0. storyboard_generation          - AI 生成分镜内容（含 environment/buildings/timeOfDay/weather）
+   *   1. save_storyboards               - 保存分镜 + 从分镜 variables 聚合：
+   *                                        scenes（旧）/ studios / studio_states
+   *                                        / props / storyboard_props / studio_prop_links
+   *                                        / storyboard_scenes.studio_state_id 回写
+   *   2. character_extraction           - AI 提取角色详情（写 characters + costumes + character_states）
+   *   3. scene_state_analysis           - AI 分析环境连续性（写分镜 variables_json）
+   *   4. studio_components_compose      - 从分镜提取环境与建筑并组装影棚
+   *   5. batch_character_views_generation - 为角色白膜+默认服装状态生成设定图（工作流引擎管理）
+   *
    * 注：
    *   - 步骤 2 和 3 依赖步骤 1，可并行执行
    *   - 步骤 4 依赖步骤 1（需要 studios 已创建）
+   *   - 步骤 5 依赖步骤 2（需要角色和状态已创建）
    */
   storyboard_generation: {
     name: '智能拆分',
+    failPolicy: 'continue_independent',
     steps: [
       {
         type: 'storyboard_generation',
@@ -197,6 +199,18 @@ const WORKFLOW_DEFINITIONS = {
         buildInput: createBuildInput([
           { key: 'scenes', from: ctx => ctx.previousResults[0]?.scenes || [] },
           'projectId', 'scriptId', 'userId', 'textModel'
+        ])
+      },
+      {
+        type: 'batch_character_views_generation',
+        targetType: 'characters',
+        handler: handleBatchCharacterViewsGeneration,
+        displayName: '生成角色设定图',
+        dependencies: [2], // 依赖步骤2（character_extraction，需要角色和状态已创建）
+        buildInput: createBuildInput([
+          { key: 'charactersNeedingViews', from: ctx => ctx.previousResults[2]?.charactersNeedingViews || [] },
+          'projectId', 'imageModel', 'textModel',
+          { key: 'aspectRatio', defaultValue: '9:16' }
         ])
       }
     ]
@@ -278,6 +292,18 @@ const WORKFLOW_DEFINITIONS = {
               { key: 'scenes', from: ctx => ctx.previousResults[0]?.scenes || [] },
               'scriptContent', 'projectId', 'scriptId', 'userId', 'textModel',
               'referenceScriptContent', 'conflictStrategy'
+            ])
+          },
+          {
+            type: 'batch_character_views_generation',
+            targetType: 'characters',
+            displayName: '生成角色设定图',
+            handler: handleBatchCharacterViewsGeneration,
+            dependencies: [1],
+            buildInput: createBuildInput([
+              { key: 'charactersNeedingViews', from: ctx => ctx.previousResults[1]?.charactersNeedingViews || [] },
+              'projectId', 'imageModel', 'textModel',
+              { key: 'aspectRatio', defaultValue: '9:16' }
             ])
           }
         ];
@@ -361,6 +387,7 @@ const WORKFLOW_DEFINITIONS = {
       });
 
       // 影棚组装步骤：依赖保存步骤
+      const composeStepIndex = saveStepIndex + 1;
       steps.push({
         type: 'studio_components_compose',
         targetType: 'studio',
@@ -382,6 +409,21 @@ const WORKFLOW_DEFINITIONS = {
             }
           },
           'projectId', 'scriptId', 'userId', 'textModel'
+        ])
+      });
+
+      // 角色设定图生成步骤：依赖角色提取步骤（工作流引擎管理，替代旧版 setImmediate 异步触发）
+      const extractionStepIndex = composeStepIndex + 1;
+      steps.push({
+        type: 'batch_character_views_generation',
+        targetType: 'characters',
+        displayName: '生成角色设定图',
+        handler: handleBatchCharacterViewsGeneration,
+        dependencies: [extractionStepIndex],
+        buildInput: createBuildInput([
+          { key: 'charactersNeedingViews', from: ctx => ctx.previousResults[extractionStepIndex]?.charactersNeedingViews || [] },
+          'projectId', 'imageModel', 'textModel',
+          { key: 'aspectRatio', defaultValue: '9:16' }
         ])
       });
 
@@ -545,26 +587,6 @@ const WORKFLOW_DEFINITIONS = {
           { key: 'styleDescription', from: ctx => ctx.previousResults[0]?.styleDescription || null },
           { key: 'customPromptA', defaultValue: null },
           { key: 'customPromptB', defaultValue: null }
-        ])
-      }
-    ]
-  },
-
-  /**
-   * 场景全景图生成（equirectangular 360°×180° 等距柱状投影）
-   */
-  scene_panorama_generation: {
-    name: '场景全景图生成',
-    steps: [
-      {
-        type: 'scene_panorama_generation',
-        targetType: 'scene',
-        handler: handleScenePanoramaGeneration,
-        buildInput: createBuildInput([
-          'sceneId', 'sceneName', 'description', 'environment',
-          'lighting', 'mood', 'style',
-          'imageModel', 'textModel',
-          'elementImageUrls', 'elementPositions'
         ])
       }
     ]
@@ -1219,26 +1241,6 @@ WORKFLOW_DEFINITIONS['environment_image_generation'] = {
 };
 
 /**
- * 环境全景图生成
- */
-WORKFLOW_DEFINITIONS['environment_panorama_generation'] = {
-  name: '环境全景图生成',
-  steps: [
-    {
-      type: 'environment_panorama_generation',
-      targetType: 'environment',
-      displayName: '环境全景图生成',
-      handler: handleEnvironmentPanoramaGeneration,
-      buildInput: createBuildInput([
-        'environmentId', 'environmentName', 'description',
-        'timeOfDay', 'weather', 'lighting', 'mood',
-        'imageModel', 'textModel'
-      ])
-    }
-  ]
-};
-
-/**
  * 建筑结构图生成
  */
 WORKFLOW_DEFINITIONS['building_image_generation'] = {
@@ -1253,28 +1255,27 @@ WORKFLOW_DEFINITIONS['building_image_generation'] = {
         'buildingId', 'buildingName', 'description',
         'interiorExterior', 'structureType',
         'imageModel', 'textModel',
-        { key: 'viewType', from: ctx => ctx.viewType || null },
-        { key: 'generationPrompt', from: ctx => ctx.generationPrompt || null }
+        'viewType', 'generationPrompt'
       ])
     }
   ]
 };
 
 /**
- * 环境变体全景图生成
+ * 影棚九宫组装图生成（基于绑定环境 + 建筑群组合成 3×3 九机位视角图）
  */
-WORKFLOW_DEFINITIONS['environment_variant_panorama_generation'] = {
-  name: '环境变体全景图生成',
+WORKFLOW_DEFINITIONS['studio_nine_grid_generation'] = {
+  name: '影棚九宫组装图生成',
   steps: [
     {
-      type: 'environment_variant_panorama_generation',
-      targetType: 'environment_variant',
-      displayName: '环境变体全景图生成',
-      handler: handleEnvironmentVariantPanoramaGeneration,
+      type: 'studio_nine_grid_generation',
+      targetType: 'studio',
+      displayName: '影棚九宫组装图生成',
+      handler: handleStudioNineGridGeneration,
       buildInput: createBuildInput([
-        'environmentId', 'variantId', 'environmentName', 'description',
-        'timeOfDay', 'weather', 'lighting', 'mood',
-        'imageModel', 'textModel'
+        'imageModel', 'textModel',
+        'studioId', 'studioName', 'studioDescription',
+        'environmentView', 'environment', 'buildings'
       ])
     }
   ]

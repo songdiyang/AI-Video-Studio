@@ -4,7 +4,6 @@
  *   POST   /                         新建变体 { environmentId, timeOfDay, weather?, lighting?, mood? }
  *   PATCH  /:id                      更新变体
  *   DELETE /:id                      删除变体
- *   POST   /:id/generate-panorama    启动全景图生成
  */
 const express = require('express');
 const { generationStartService, sendGenerationError } = require('../../modules/generation');
@@ -44,7 +43,7 @@ router.get('/', authMiddleware, async (req, res) => {
 
     const rows = await queryAll(
       `SELECT id, environment_id, time_of_day, weather, lighting, mood,
-              image_url, panorama_image_url, faces, generation_prompt, generation_status,
+              image_url, faces, generation_prompt, generation_status,
               sort_order, created_at, updated_at
        FROM environment_variants
        WHERE environment_id = ?
@@ -109,7 +108,6 @@ router.patch('/:id', authMiddleware, async (req, res) => {
       lighting: 'lighting',
       mood: 'mood',
       imageUrl: 'image_url',
-      panoramaImageUrl: 'panorama_image_url',
       faces: 'faces',
       generationPrompt: 'generation_prompt',
       sortOrder: 'sort_order'
@@ -152,43 +150,6 @@ router.delete('/:id', authMiddleware, async (req, res) => {
   } catch (err) {
     console.error('[EnvVariants][delete]', err);
     res.status(500).json({ message: '删除环境变体失败' });
-  }
-});
-
-// POST /:id/generate-panorama  为变体启动全景图生成
-router.post('/:id/generate-panorama', authMiddleware, async (req, res) => {
-  const userId = req.user.id;
-  const id = Number(req.params.id);
-  try {
-    const variant = await ensureVariantOwned(id, userId);
-    if (!variant) return res.status(404).json({ message: '变体不存在或无权访问' });
-
-    // 获取环境基本信息
-    const env = await queryOne(
-      'SELECT id, name, description, time_of_day, weather, lighting, mood FROM environments WHERE id = ?',
-      [variant.environment_id]
-    );
-    if (!env) return res.status(404).json({ message: '关联环境不存在' });
-
-    const result = await generationStartService.start({
-      operationKey: 'environment_variant_panorama_generate',
-      rawInput: {
-        environmentId: env.id,
-        variantId: id,
-        imageModel: req.body.imageModel,
-        textModel: req.body.textModel
-      },
-      actor: { userId }
-    });
-    res.json(result.response || {
-      message: '环境变体全景图生成已启动',
-      jobId: result.jobId,
-      variantId: id,
-      environmentId: env.id,
-      status: 'generating'
-    });
-  } catch (err) {
-    sendGenerationError(res, err, '启动环境变体全景图生成失败', '[GenerateEnvVariantPanorama]');
   }
 });
 

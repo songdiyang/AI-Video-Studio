@@ -191,7 +191,7 @@ module.exports = (router) => {
     const {
       projectId,
       storyboardId,
-      frameType,
+      frameType = 'first',
       frameTimestamp,
       annotationType = 'comment',
       positionX,
@@ -218,8 +218,8 @@ module.exports = (router) => {
 
       // 记录操作日志
       await execute(
-        `INSERT INTO audit_logs (project_id, user_id, action_type, storyboard_id, action_description)
-         VALUES (?, ?, 'collaboration.create_annotation', ?, ?)`,
+        `INSERT INTO audit_logs (project_id, user_id, action_type, resource_type, resource_id, action_description)
+         VALUES (?, ?, 'collaboration.create_annotation', 'storyboard', ?, ?)`,
         [projectId, userId, storyboardId, '创建了批注']
       );
 

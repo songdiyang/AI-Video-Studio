@@ -50,6 +50,11 @@ const AIModelSelector: React.FC<AIModelSelectorProps> = ({
 
   // 根据类型过滤模型 - 使用 category 字段（后端返回的字段名）
   const filteredModels = React.useMemo(() => {
+    // 如果 models 为空，返回空数组
+    if (!models || models.length === 0) {
+      return [];
+    }
+    
     const filtered = filterType
       ? models.filter(m => {
           const modelType = (m.type || m.category)?.toUpperCase();
@@ -69,7 +74,16 @@ const AIModelSelector: React.FC<AIModelSelectorProps> = ({
   }, [models, filterType]);
 
   // 获取选中模型的详细信息
-  const selectedModelInfo = filteredModels.find(m => m.name === selectedModel);
+  // 确保 selectedModel 在 filteredModels 中存在，否则清空
+  const selectedModelInfo = filteredModels.length > 0 && filteredModels.find(m => m.name === selectedModel);
+  
+  // 如果 selectedModel 不在列表中，触发 onChange 清空它
+  React.useEffect(() => {
+    if (selectedModel && filteredModels.length > 0 && !selectedModelInfo) {
+      // selectedModel 不在选项中，清空它
+      onModelChange('');
+    }
+  }, [selectedModel, filteredModels, selectedModelInfo, onModelChange]);
 
   // 动态生成描述（已简化：不再显示冗长的模型信息）
   const dynamicDescription = description || placeholder;

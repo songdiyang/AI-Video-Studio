@@ -18,6 +18,8 @@ export interface Scene {
   tags?: string;
   studio_id?: number | null;
   studio_name?: string | null;
+  nine_grid_image_url?: string | null;
+  nine_grid_generation_status?: string | null;
   // 新场景概念：environment + buildings 聚合
   _environment?: Environment | null;
   _buildings?: Building[];
@@ -52,6 +54,8 @@ export const useSceneData = (projectId?: number | null, scriptId?: number | null
           name: s.name,
           description: s.description || '',
           image_url: s.cover_image_url || null,
+          nine_grid_image_url: s.nine_grid_image_url || null,
+          nine_grid_generation_status: s.nine_grid_generation_status || null,
           studio_id: s.id,
           studio_name: s.name,
           generation_status: 'pending',

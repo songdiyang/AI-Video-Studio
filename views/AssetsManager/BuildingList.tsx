@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Card, CardBody, Button, Chip, Image, Modal, ModalContent, ModalHeader, ModalBody } from '@heroui/react';
+import { Card, CardBody, Button, Chip, Modal, ModalContent, ModalHeader, ModalBody } from '@heroui/react';
 import { Edit2, Trash2, Building2, ZoomIn } from 'lucide-react';
 import { Building } from '../../services/buildings';
 
@@ -12,8 +12,13 @@ interface BuildingListProps {
   onDeleteImage?: (id: number) => Promise<void>;
 }
 
-const BuildingList: React.FC<BuildingListProps> = ({ buildings, onEdit, onDelete, onDeleteImage }) => {
+const BuildingList: React.FC<BuildingListProps> = ({ buildings, onEdit, onDelete, onGenerateImage, onDeleteImage }) => {
   const [imagePreview, setImagePreview] = useState<{ url: string; title: string } | null>(null);
+  // 每个卡片各自记住当前选中的 Tab（外景/内景），默认外景优先
+  const [cardView, setCardView] = useState<Record<number, 'exterior' | 'interior'>>({});
+  const getView = (id: number): 'exterior' | 'interior' => cardView[id] ?? 'exterior';
+  const setView = (id: number, v: 'exterior' | 'interior') =>
+    setCardView((prev) => ({ ...prev, [id]: v }));
 
   if (!buildings.length) {
     return (
@@ -23,15 +28,6 @@ const BuildingList: React.FC<BuildingListProps> = ({ buildings, onEdit, onDelete
     );
   }
 
-  const typeLabel = (type?: string | null) => {
-    switch (type) {
-      case 'interior': return '室内';
-      case 'exterior': return '室外';
-      case 'both': return '室内+室外';
-      default: return type || '未指定';
-    }
-  };
-
   const hasAnyImage = (b: Building) => !!(b.image_url || b.exterior_image_url || b.interior_image_url);
 
   return (
@@ -39,184 +35,206 @@ const BuildingList: React.FC<BuildingListProps> = ({ buildings, onEdit, onDelete
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-6 items-stretch">
         {buildings.map((b) => {
           const isGenerating = b.generation_status === 'generating';
-          const ie = b.interior_exterior || 'both';
-          const showExterior = ie === 'exterior' || ie === 'both';
-          const showInterior = ie === 'interior' || ie === 'both';
-          // 封面用外景优先；外景缺失退回内景再退回旧 image_url
-          const coverUrl = b.exterior_image_url || b.image_url || b.interior_image_url || null;
+          const hasExt = !!b.exterior_image_url;
+          const hasInt = !!b.interior_image_url;
+          const view = getView(b.id);
 
           return (
             <Card
               key={b.id}
-              className={`bg-(--bg-card) border border-(--border-color) shadow-sm hover:shadow-md hover:shadow-(--accent)/5 transition-shadow ${isGenerating ? 'pointer-events-none select-none' : ''}`}
+              className={`bg-(--bg-card) border border-(--border-color) hover:border-(--accent)/50 shadow-sm hover:shadow-lg hover:shadow-(--accent)/10 hover:-translate-y-0.5 transition-all duration-200 ${isGenerating ? 'pointer-events-none select-none' : ''}`}
               classNames={{ base: 'h-full', body: 'h-full' }}
               isPressable
               onPress={() => onEdit(b)}
             >
               <CardBody className="p-0 flex flex-col h-full relative">
-                {/* 生成中遮罩层 */}
+                {/* 生成中遮罩层（覆盖整卡） */}
                 {isGenerating && (
-                  <div className="absolute inset-0 z-30 bg-black/20 flex items-center justify-center rounded-lg">
-                    <div className="bg-black/60 rounded-lg px-4 py-2 flex items-center gap-2">
-                      <span className="inline-block w-2 h-2 rounded-full bg-white/80 animate-pulse" />
+                  <div className="absolute inset-0 z-30 bg-black/30 backdrop-blur-[1px] flex items-center justify-center rounded-lg">
+                    <div className="bg-black/70 rounded-full px-4 py-2 flex items-center gap-2 shadow-lg">
+                      <span className="inline-block w-2 h-2 rounded-full bg-white animate-pulse" />
                       <span className="text-white text-sm font-medium">生成中…</span>
                     </div>
                   </div>
                 )}
-                {/* 封面/图片（16:9） */}
-                <div className="relative w-full aspect-video bg-linear-to-br from-(--accent)/10 to-(--accent)/5 overflow-hidden group">
-                  {coverUrl ? (
-                    <Image
-                      src={coverUrl}
-                      alt={b.name}
-                      removeWrapper
-                      className={`w-full h-full object-cover transition-opacity ${isGenerating ? 'opacity-50' : ''}`}
-                    />
-                  ) : (
-                    <div className={`w-full h-full flex items-center justify-center text-(--text-muted) ${isGenerating ? 'opacity-50' : ''}`}>
-                      <Building2 className="w-12 h-12 opacity-40" />
-                    </div>
-                  )}
 
-                  {/* Hover 预览层 */}
-                  {coverUrl && !isGenerating && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setImagePreview({ url: coverUrl, title: `${b.name} · 外景四方位` });
-                      }}
-                      className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
-                    >
-                      <div className="flex items-center gap-1.5 text-white text-xs">
-                        <ZoomIn className="w-4 h-4" />查看大图
-                      </div>
-                    </button>
-                  )}
-                </div>
-
-                {/* 内容 */}
                 <div className="p-4 flex flex-col gap-3 flex-1">
+                  {/* 标题行：名称 + 结构类型 chip + 操作 */}
                   <div className="flex items-start justify-between gap-2">
-                    <h3 className="text-base font-semibold text-(--text-primary) truncate">
-                      {b.name}
-                    </h3>
-                    <div className="flex gap-1 shrink-0">
+                    <div className="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
+                      <h3 className="text-base font-semibold text-(--text-primary) truncate">
+                        {b.name}
+                      </h3>
+                      {b.structure_type && (
+                        <Chip
+                          size="sm"
+                          variant="flat"
+                          className="bg-indigo-500/10 text-indigo-500 font-medium h-5 text-[10px]"
+                        >
+                          {b.structure_type}
+                        </Chip>
+                      )}
+                    </div>
+                    <div className="flex gap-0.5 shrink-0">
                       <Button
                         size="sm"
                         isIconOnly
                         variant="light"
                         onPress={() => onEdit(b)}
-                        className="hover:bg-(--accent)/10"
+                        className="hover:bg-(--accent)/10 min-w-8 w-8 h-8"
                         title="编辑建筑 / 生成设定图"
                       >
-                        <Edit2 className="w-4 h-4 text-(--text-secondary)" />
+                        <Edit2 className="w-3.5 h-3.5 text-(--text-secondary)" />
                       </Button>
                       <Button
                         size="sm"
                         isIconOnly
                         variant="light"
                         onPress={() => onDelete(b.id)}
-                        className="hover:bg-red-500/10"
+                        className="hover:bg-red-500/10 min-w-8 w-8 h-8"
                         title="删除建筑"
                       >
-                        <Trash2 className="w-4 h-4 text-red-500" />
+                        <Trash2 className="w-3.5 h-3.5 text-red-500" />
                       </Button>
                     </div>
                   </div>
-                  <p className="text-xs text-(--text-secondary) line-clamp-2">
-                    {b.description || '未填写描述'}
+
+                  {/* 描述 */}
+                  <p className="text-xs text-(--text-secondary) line-clamp-2 min-h-[2rem]">
+                    {b.description || <span className="text-(--text-muted) italic">未填写描述</span>}
                   </p>
 
-                  {/* 外景 / 内景 双缩略图（按 interior_exterior 过滤） */}
-                  <div className="flex gap-2">
-                    {showExterior && (
+                  {/* 叠加卡片：Tab 切换外景/内景 —— 每个建筑天然都有两面，生不生成看用户 */}
+                  <div className="flex flex-col gap-2">
+                    {/* Tab 切换条 */}
+                    <div
+                      className="flex gap-1 bg-(--bg-input) p-0.5 rounded-md"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => setView(b.id, 'exterior')}
+                        className={`flex-1 text-[11px] py-1.5 rounded transition-all flex items-center justify-center gap-1 ${
+                          view === 'exterior'
+                            ? 'bg-(--bg-card) text-(--accent-light) font-medium shadow-sm'
+                            : 'text-(--text-muted) hover:text-(--text-secondary)'
+                        }`}
+                      >
+                        外景·四方位
+                        {hasExt && <span className="w-1 h-1 rounded-full bg-green-500" />}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setView(b.id, 'interior')}
+                        className={`flex-1 text-[11px] py-1.5 rounded transition-all flex items-center justify-center gap-1 ${
+                          view === 'interior'
+                            ? 'bg-(--bg-card) text-(--accent-light) font-medium shadow-sm'
+                            : 'text-(--text-muted) hover:text-(--text-secondary)'
+                        }`}
+                      >
+                        内景·九宫格
+                        {hasInt && <span className="w-1 h-1 rounded-full bg-green-500" />}
+                      </button>
+                    </div>
+
+                    {/* 叠加展示区：同时挂载两种视图 DOM，切换用 CSS 控制显隐，避免重新下载/解码带来的闪烁 */}
+                    <div className={view === 'exterior' ? 'block' : 'hidden'}>
                       <button
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          if (b.exterior_image_url) {
-                            setImagePreview({ url: b.exterior_image_url, title: `${b.name} · 外景四方位` });
+                          if (hasExt) {
+                            setImagePreview({ url: b.exterior_image_url!, title: `${b.name} · 外景四方位` });
+                          } else if (onGenerateImage) {
+                            onGenerateImage(b, 'exterior');
                           } else {
                             onEdit(b);
                           }
                         }}
-                        className="flex-1 relative group/thumb"
-                        title={b.exterior_image_url ? '点击查看大图' : '去编辑弹窗生成外景'}
+                        className="w-full relative group/thumb rounded-lg overflow-hidden"
+                        title={hasExt ? '点击查看大图' : '点击生成外景四方位'}
                       >
-                        {b.exterior_image_url ? (
+                        {hasExt ? (
                           <img
-                            src={b.exterior_image_url}
+                            src={b.exterior_image_url!}
                             alt={`${b.name} · 外景`}
-                            className="w-full aspect-video object-cover rounded border border-(--border-color)"
+                            loading="eager"
+                            decoding="async"
+                            className="w-full aspect-video object-cover border border-(--border-color) group-hover/thumb:border-(--accent)/40 transition-colors"
                           />
                         ) : (
-                          <div className="w-full aspect-video rounded bg-(--bg-input) border border-dashed border-(--border-color) flex items-center justify-center text-[10px] text-(--text-muted)">
-                            外景未生成
+                          <div className="w-full aspect-video bg-linear-to-br from-(--accent)/5 to-transparent border-2 border-dashed border-(--border-color) hover:border-(--accent)/40 flex flex-col items-center justify-center text-[11px] text-(--text-muted) gap-1 transition-colors">
+                            <Building2 className="w-8 h-8 opacity-40" />
+                            <span className="font-medium">外景四方位未生成</span>
+                            <span className="text-[10px] opacity-70">Front / Back / Left / Right</span>
+                            <span className="text-[10px] text-(--accent-light) mt-1">点击生成 →</span>
                           </div>
                         )}
-                        <span className="absolute bottom-0.5 left-0.5 bg-black/60 text-white text-[9px] px-1 rounded">外景·四方位</span>
-                        {b.exterior_image_url && (
-                          <span className="absolute inset-0 bg-black/40 opacity-0 group-hover/thumb:opacity-100 transition-opacity flex items-center justify-center rounded">
-                            <ZoomIn className="w-4 h-4 text-white" />
+                        {hasExt && (
+                          <span className="absolute inset-0 bg-black/40 opacity-0 group-hover/thumb:opacity-100 transition-opacity flex items-center justify-center">
+                            <span className="flex items-center gap-1 text-white text-xs font-medium">
+                              <ZoomIn className="w-4 h-4" />查看大图
+                            </span>
                           </span>
                         )}
                       </button>
-                    )}
-                    {showInterior && (
+                    </div>
+                    <div className={view === 'interior' ? 'block' : 'hidden'}>
                       <button
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          if (b.interior_image_url) {
-                            setImagePreview({ url: b.interior_image_url, title: `${b.name} · 内景草图` });
+                          if (hasInt) {
+                            setImagePreview({ url: b.interior_image_url!, title: `${b.name} · 内景九宫格（6视角+3特写）` });
+                          } else if (onGenerateImage) {
+                            onGenerateImage(b, 'interior');
                           } else {
                             onEdit(b);
                           }
                         }}
-                        className="flex-1 relative group/thumb"
-                        title={b.interior_image_url ? '点击查看大图' : '去编辑弹窗生成内景草图'}
+                        className="w-full relative group/thumb rounded-lg overflow-hidden"
+                        title={hasInt ? '点击查看大图（6 视角 + 3 特写）' : '点击生成内景九宫格'}
                       >
-                        {b.interior_image_url ? (
+                        {hasInt ? (
                           <img
-                            src={b.interior_image_url}
-                            alt={`${b.name} · 内景`}
-                            className="w-full aspect-video object-cover rounded border border-(--border-color)"
+                            src={b.interior_image_url!}
+                            alt={`${b.name} · 内景九宫格`}
+                            loading="eager"
+                            decoding="async"
+                            className="w-full aspect-square object-cover border border-(--border-color) group-hover/thumb:border-(--accent)/40 transition-colors"
                           />
                         ) : (
-                          <div className="w-full aspect-video rounded bg-(--bg-input) border border-dashed border-(--border-color) flex items-center justify-center text-[10px] text-(--text-muted)">
-                            内景草图未生成
+                          <div className="w-full aspect-square bg-linear-to-br from-(--accent)/5 to-transparent border-2 border-dashed border-(--border-color) hover:border-(--accent)/40 flex flex-col items-center justify-center text-[11px] text-(--text-muted) gap-1 transition-colors">
+                            <Building2 className="w-8 h-8 opacity-40" />
+                            <span className="font-medium">内景九宫格未生成</span>
+                            <span className="text-[10px] opacity-70">6 视角 + 3 细节特写</span>
+                            <span className="text-[10px] text-(--accent-light) mt-1">点击生成 →</span>
                           </div>
                         )}
-                        <span className="absolute bottom-0.5 left-0.5 bg-black/60 text-white text-[9px] px-1 rounded">内景·设计草图</span>
-                        {b.interior_image_url && (
-                          <span className="absolute inset-0 bg-black/40 opacity-0 group-hover/thumb:opacity-100 transition-opacity flex items-center justify-center rounded">
-                            <ZoomIn className="w-4 h-4 text-white" />
+                        {hasInt && (
+                          <span className="absolute inset-0 bg-black/40 opacity-0 group-hover/thumb:opacity-100 transition-opacity flex items-center justify-center">
+                            <span className="flex items-center gap-1 text-white text-xs font-medium">
+                              <ZoomIn className="w-4 h-4" />查看大图
+                            </span>
                           </span>
                         )}
                       </button>
-                    )}
+                    </div>
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-2 mt-auto">
-                    <Chip size="sm" variant="flat" className="bg-purple-500/10 text-purple-500 font-medium">
-                      {typeLabel(b.interior_exterior)}
-                    </Chip>
-                    {b.structure_type && (
-                      <Chip size="sm" variant="flat" className="bg-indigo-500/10 text-indigo-500 font-medium">
-                        {b.structure_type}
-                      </Chip>
-                    )}
-                    {hasAnyImage(b) ? (
-                      <Chip size="sm" variant="flat" className="bg-green-500/10 text-green-500 font-medium">
-                        已有设定图
-                      </Chip>
-                    ) : (
-                      <Chip size="sm" variant="flat" className="bg-(--bg-input) text-(--text-muted)">
-                        未生成
-                      </Chip>
-                    )}
-                    {hasAnyImage(b) && onDeleteImage && (
+                  {/* 底部：状态条 */}
+                  {hasAnyImage(b) && onDeleteImage && (
+                    <div className="flex items-center justify-between gap-2 mt-auto pt-1">
+                      <span className="text-[10px] text-(--text-muted) flex items-center gap-1.5">
+                        <span className="inline-flex items-center gap-0.5">
+                          <span className={`inline-block w-1.5 h-1.5 rounded-full ${hasExt ? 'bg-green-500' : 'bg-(--border-color)'}`} />
+                          外
+                        </span>
+                        <span className="inline-flex items-center gap-0.5">
+                          <span className={`inline-block w-1.5 h-1.5 rounded-full ${hasInt ? 'bg-green-500' : 'bg-(--border-color)'}`} />
+                          内
+                        </span>
+                      </span>
                       <Button
                         size="sm"
                         variant="light"
@@ -226,8 +244,8 @@ const BuildingList: React.FC<BuildingListProps> = ({ buildings, onEdit, onDelete
                       >
                         清除
                       </Button>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
               </CardBody>
             </Card>

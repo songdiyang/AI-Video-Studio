@@ -59,7 +59,7 @@ async function checkCostumeReady(stateId) {
     return { ready: true };
   }
   const costume = await queryOne(
-    `SELECT id, name, front_view_url, side_view_url, back_view_url, generation_status FROM costumes WHERE id = ?`,
+    `SELECT id, name, image_url, front_view_url, side_view_url, back_view_url, generation_status FROM costumes WHERE id = ?`,
     [state.costume_id]
   );
   if (!costume) {
@@ -73,6 +73,66 @@ async function checkCostumeReady(stateId) {
     };
   }
   return { ready: true, costume };
+}
+
+/**
+ * 道具就绪守卫：校验角色状态关联的已叠加道具 + held_props 文本道具是否已生成设定图
+ * 1) 通过 character_state_props 关联的正式道具必须有 image_url
+ * 2) held_props 文本描述在同项目中必须有同名道具且已生成设定图
+ * 返回 { ready: boolean, reason?: string, props?: object[] }
+ */
+async function checkPropsReady(stateId) {
+  const state = await queryOne(
+    `SELECT cs.id, cs.is_base_model, cs.held_props, cs.character_id, ch.project_id
+     FROM character_states cs
+     JOIN characters ch ON cs.character_id = ch.id
+     WHERE cs.id = ?`,
+    [stateId]
+  );
+  // 白膜状态无需检查
+  if (!state || state.is_base_model) {
+    return { ready: true };
+  }
+  // 1) 查询 character_state_props 关联的正式道具
+  const equippedProps = await queryAll(
+    `SELECT p.id, p.name, p.image_url, p.generation_status
+     FROM character_state_props csp
+     JOIN props p ON csp.prop_id = p.id
+     WHERE csp.character_state_id = ?`,
+    [stateId]
+  );
+  if (equippedProps && equippedProps.length > 0) {
+    const notReady = equippedProps.filter(p => !p.image_url);
+    if (notReady.length > 0) {
+      const names = notReady.map(p => `「${p.name}」`).join('、');
+      return {
+        ready: false,
+        reason: `已叠加的道具 ${names} 的设定图尚未生成，请先到资产管理页的道具 Tab 中生成道具设定图，再生成角色状态图`,
+        props: notReady,
+      };
+    }
+  }
+  // 2) 检查 held_props 文本描述对应的道具是否已有设定图
+  if (state.held_props && state.held_props.trim()) {
+    const heldPropsText = state.held_props.trim();
+    // 如果已关联道具中已包含同名道具则跳过
+    const alreadyCovered = equippedProps && equippedProps.some(p => p.name === heldPropsText);
+    if (!alreadyCovered) {
+      const matchingProp = await queryOne(
+        `SELECT id, name, image_url, generation_status
+         FROM props WHERE project_id = ? AND name = ? LIMIT 1`,
+        [state.project_id, heldPropsText]
+      );
+      if (!matchingProp || !matchingProp.image_url) {
+        return {
+          ready: false,
+          reason: `手持道具「${heldPropsText}」的设定图尚未生成，请先到资产管理页的道具 Tab 中创建并生成道具设定图，再生成角色状态图`,
+          props: matchingProp ? [matchingProp] : [],
+        };
+      }
+    }
+  }
+  return { ready: true, props: equippedProps };
 }
 
 /**
@@ -266,7 +326,7 @@ module.exports = (router) => {
       const states = await queryAll(
         `SELECT s.*,
                 c.id AS costume_id_ref, c.name AS costume_name, c.image_url AS costume_image_url,
-                c.generation_status AS costume_generation_status
+                c.generation_status AS costume_generation_status, c.outfit_prompt AS costume_outfit_prompt
          FROM character_states s
          LEFT JOIN costumes c ON s.costume_id = c.id
          WHERE s.character_id = ?
@@ -308,6 +368,7 @@ module.exports = (router) => {
         costume_name: row.costume_name || null,
         costume_image_url: row.costume_image_url || null,
         costume_generation_status: row.costume_generation_status || null,
+        costume_outfit_prompt: row.costume_outfit_prompt || null,
         equipped_props: equippedPropsMap[row.id] || [],
       }));
 
@@ -1034,6 +1095,15 @@ module.exports = (router) => {
             message: costumeCheck.reason,
             code: 'COSTUME_NOT_READY',
             costume: costumeCheck.costume || null,
+          });
+        }
+        // 检查关联道具是否已生成设定图
+        const propsCheck = await checkPropsReady(stateId);
+        if (!propsCheck.ready) {
+          return res.status(409).json({
+            message: propsCheck.reason,
+            code: 'PROPS_NOT_READY',
+            props: propsCheck.props || null,
           });
         }
       }

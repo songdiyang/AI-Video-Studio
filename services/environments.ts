@@ -22,7 +22,6 @@ export interface Environment {
   mood: string | null;
   image_url: string | null;
   image_back_url: string | null;
-  panorama_image_url: string | null;
   generation_prompt: string | null;
   generation_status: 'pending' | 'generating' | 'completed' | 'failed';
   terrain_type: string | null;
@@ -128,26 +127,6 @@ export async function generateEnvironmentImage(id: number, payload: {
     body: JSON.stringify(payload)
   });
   return handle<{ jobId: string; environmentId: number; status: string }>(resp);
-}
-
-export async function generateEnvironmentPanorama(id: number, payload: {
-  imageModel: string;
-  textModel?: string;
-}): Promise<{ jobId: string; environmentId: number; status: string; message?: string }> {
-  const resp = await fetch(`/api/environments/${id}/generate-panorama`, {
-    method: 'POST',
-    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  });
-  return handle<{ jobId: string; environmentId: number; status: string; message?: string }>(resp);
-}
-
-export async function deleteEnvironmentPanorama(id: number): Promise<{ message: string }> {
-  const resp = await fetch(`/api/environments/${id}/panorama`, {
-    method: 'DELETE',
-    headers: { ...authHeaders() }
-  });
-  return handle<{ message: string }>(resp);
 }
 
 export interface SanitizeDescriptionResult {

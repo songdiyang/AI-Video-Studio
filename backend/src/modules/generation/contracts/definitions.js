@@ -533,152 +533,6 @@ const operationContracts = [
     })
   },
   {
-    // 软弃用提示：scene_panorama_generate 已改为基于 studioId；旧 sceneId 版本仍生效但只聚合场景自身的元素（无环境/建筑）
-    operationKey: 'scene_panorama_generate',
-    workflowType: 'scene_panorama_generation',
-    requestSchema: {
-      type: 'object',
-      required: ['imageModel'],
-      properties: {
-        studioId: { type: 'integer', minimum: 1 },
-        sceneId: { type: 'integer', minimum: 1 },
-        imageModel: { type: 'string', minLength: 1 },
-        textModel: { type: 'string' },
-        style: { type: 'string' }
-      }
-    },
-    scopeResolver: async ({ actor, input }) => {
-      // 优先 studioId，兼容旧 sceneId
-      if (input.studioId) {
-        const studio = await requireStudioForUser(input.studioId, actor.userId);
-        return {
-          scope: {
-            projectId: studio.project_id,
-            studioId: studio.id,
-            sceneId: null
-          },
-          resources: { studio }
-        };
-      }
-      const scene = await requireSceneForUser(input.sceneId, actor.userId);
-      return {
-        scope: {
-          projectId: scene.project_id,
-          sceneId: scene.id,
-          studioId: null
-        },
-        resources: { scene }
-      };
-    },
-    defaultsResolver: async ({ input, resources, scope }) => {
-      // 新路径：基于 studio（环境+建筑+元素）
-      if (scope.studioId) {
-        const studio = resources.studio;
-        const environment = await getStudioEnvironment(scope.studioId);
-        const buildings = await listStudioBuildings(scope.studioId);
-        const elementLinks = await listStudioElementLinks(scope.studioId);
-        const completedElements = elementLinks.filter(l => l.generation_status === 'completed' && l.image_url);
-
-        return {
-          models: {
-            imageModel: input.imageModel,
-            textModel: input.textModel || null
-          },
-          inputs: {
-            studioName: studio.name,
-            description: studio.description || '',
-            environment: environment ? {
-              name: environment.name,
-              description: environment.description || '',
-              timeOfDay: environment.time_of_day || '',
-              weather: environment.weather || '',
-              lighting: environment.lighting || '',
-              mood: environment.mood || ''
-            } : null,
-            buildings: buildings.filter(b => b.generation_status === 'completed' && b.image_url).map(b => ({
-              name: b.name,
-              description: b.description || '',
-              interiorExterior: b.interior_exterior || 'exterior',
-              structureType: b.structure_type || '',
-              imageUrl: b.image_url
-            })),
-            elementImageUrls: completedElements.map(l => l.image_url),
-            elementPositions: completedElements.map(l => ({
-              name: l.name,
-              category: l.category,
-              description: l.description || '',
-              sortOrder: l.sort_order || 0
-            })),
-            style: input.style || null
-          },
-          options: {}
-        };
-      }
-
-      // 旧路径兼容：基于 scene
-      const scene = resources.scene;
-      if (!scene.name && !scene.description && !scene.environment) {
-        throw new HttpError(400, '场景信息不足，至少需要提供场景名称、描述或环境描述之一');
-      }
-
-      let links = await listEnabledSceneElementLinks(scene.id);
-      if ((!links || links.length === 0) && scene.studio_id) {
-        const studioLinks = await listStudioElementLinks(scene.studio_id);
-        links = studioLinks.map(l => ({
-          ...l,
-          position_hint: ''
-        }));
-      }
-      const completedLinks = links.filter(l => l.generation_status === 'completed' && l.image_url);
-      const elementImageUrls = completedLinks.map(l => l.image_url);
-      const elementPositions = completedLinks.map(l => ({
-        name: l.name,
-        category: l.category,
-        description: l.description || '',
-        positionHint: l.position_hint || ''
-      }));
-
-      return {
-        models: {
-          imageModel: input.imageModel,
-          textModel: input.textModel || null
-        },
-        inputs: {
-          sceneName: scene.name,
-          description: scene.description,
-          environment: scene.environment,
-          lighting: scene.lighting,
-          mood: scene.mood,
-          style: input.style || null,
-          elementImageUrls,
-          elementPositions
-        },
-        options: {}
-      };
-    },
-    conflictKeyResolver: ({ scope }) => ({
-      key: scope.studioId ? 'studioId' : 'sceneId',
-      value: scope.studioId || scope.sceneId
-    }),
-    toJobParams: ({ contract, actor, scope, resolved }) =>
-      createCommand({
-        operationKey: contract.operationKey,
-        workflowType: contract.workflowType,
-        actor,
-        scope,
-        models: resolved.models,
-        inputs: resolved.inputs,
-        options: resolved.options
-      }),
-    responseMapper: ({ result, command }) => ({
-      message: command.scope.studioId ? '场景全景图生成已启动（基于场景）' : '场景全景图生成已启动',
-      jobId: encodeId(result.jobId),
-      studioId: command.scope.studioId || null,
-      sceneId: command.scope.sceneId || null,
-      status: 'generating'
-    })
-  },
-  {
     operationKey: 'scene_elements_extract',
     workflowType: 'scene_elements_extraction',
     requestSchema: {
@@ -1994,69 +1848,6 @@ const operationContracts = [
     })
   },
   {
-    // 环境全景图生成
-    operationKey: 'environment_panorama_generate',
-    workflowType: 'environment_panorama_generation',
-    requestSchema: {
-      type: 'object',
-      required: ['environmentId', 'imageModel'],
-      properties: {
-        environmentId: { type: 'integer', minimum: 1 },
-        imageModel: { type: 'string', minLength: 1 },
-        textModel: { type: 'string' }
-      }
-    },
-    scopeResolver: async ({ actor, input }) => {
-      const env = await requireEnvironmentForUser(input.environmentId, actor.userId);
-      return {
-        scope: {
-          projectId: env.project_id,
-          environmentId: env.id
-        },
-        resources: { env }
-      };
-    },
-    defaultsResolver: async ({ input, resources }) => {
-      const env = resources.env;
-      return {
-        models: {
-          imageModel: input.imageModel,
-          textModel: input.textModel || null
-        },
-        inputs: {
-          environmentId: env.id,
-          environmentName: env.name,
-          description: env.description || '',
-          timeOfDay: env.time_of_day || '',
-          weather: env.weather || '',
-          lighting: env.lighting || '',
-          mood: env.mood || ''
-        },
-        options: {}
-      };
-    },
-    conflictKeyResolver: ({ scope }) => ({
-      key: 'environmentId',
-      value: scope.environmentId
-    }),
-    toJobParams: ({ contract, actor, scope, resolved }) =>
-      createCommand({
-        operationKey: contract.operationKey,
-        workflowType: contract.workflowType,
-        actor,
-        scope,
-        models: resolved.models,
-        inputs: resolved.inputs,
-        options: resolved.options
-      }),
-    responseMapper: ({ result, command }) => ({
-      message: '环境全景图生成已启动',
-      jobId: encodeId(result.jobId),
-      environmentId: command.scope.environmentId,
-      status: 'generating'
-    })
-  },
-  {
     // 建筑结构图生成
     operationKey: 'building_image_generate',
     workflowType: 'building_image_generation',
@@ -2121,69 +1912,102 @@ const operationContracts = [
     })
   },
   {
-    // 环境变体全景图生成
-    operationKey: 'environment_variant_panorama_generate',
-    workflowType: 'environment_variant_panorama_generation',
+    // 影棚九宫组装图生成（基于环境 + 建筑群）
+    operationKey: 'studio_nine_grid_generate',
+    workflowType: 'studio_nine_grid_generation',
     requestSchema: {
       type: 'object',
-      required: ['environmentId', 'variantId', 'imageModel'],
+      required: ['studioId', 'imageModel'],
       properties: {
-        environmentId: { type: 'integer', minimum: 1 },
-        variantId: { type: 'integer', minimum: 1 },
+        studioId: { type: 'integer', minimum: 1 },
         imageModel: { type: 'string', minLength: 1 },
         textModel: { type: 'string' }
       }
     },
     scopeResolver: async ({ actor, input }) => {
-      const variant = await requireEnvironmentVariantForUser(input.variantId, actor.userId);
+      const studio = await requireStudioForUser(input.studioId, actor.userId);
       return {
         scope: {
-          projectId: variant.project_id,
-          environmentId: variant.environment_id,
-          variantId: variant.id
+          projectId: studio.project_id,
+          studioId: studio.id
         },
-        resources: { variant }
+        resources: { studio }
       };
     },
-    defaultsResolver: async ({ input, resources }) => {
-      const variant = resources.variant;
+    defaultsResolver: async ({ input, resources, scope, actor }) => {
+      const studio = resources.studio;
+      const environmentView = studio.environment_view === 'back' ? 'back' : 'front';
+
+      // 环境信息（含背面图）- 可选
+      const environment = studio.environment_id
+        ? await queryOne(
+            `SELECT id, name, description, time_of_day, weather, lighting, mood,
+                    image_url, image_back_url, generation_status
+             FROM environments WHERE id = ? AND user_id = ?`,
+            [studio.environment_id, actor.userId]
+          )
+        : null;
+
+      // 建筑列表（含内外景图 + 每条链接的视图偏好）- 可选
+      const buildings = await queryAll(
+        `SELECT b.id, b.name, b.description, b.interior_exterior, b.structure_type,
+                b.image_url, b.exterior_image_url, b.interior_image_url,
+                b.generation_status, l.sort_order, l.building_view
+         FROM studio_building_links l
+         JOIN buildings b ON b.id = l.building_id
+         WHERE l.studio_id = ?
+         ORDER BY l.sort_order ASC, l.id ASC`,
+        [scope.studioId]
+      );
+
+      // 环境与建筑至少其一（允许仅环境 / 仅建筑 / 两者并存）
+      if (!environment && !buildings.length) {
+        throw new HttpError(400, '影棚既未绑定环境也未关联建筑，无法生成九宫组装图');
+      }
+
+      // 归一化建筑视图偏好
+      const buildingsWithView = buildings.map((b) => ({
+        ...b,
+        building_view: b.building_view === 'interior' ? 'interior' : 'exterior'
+      }));
+
       return {
         models: {
           imageModel: input.imageModel,
           textModel: input.textModel || null
         },
         inputs: {
-          environmentId: variant.environment_id,
-          variantId: variant.id,
-          environmentName: variant.env_name || '',
-          description: variant.env_description || '',
-          timeOfDay: variant.time_of_day || '',
-          weather: variant.weather || '',
-          lighting: variant.lighting || '',
-          mood: variant.mood || ''
+          studioId: studio.id,
+          studioName: studio.name || '',
+          studioDescription: studio.description || '',
+          environmentView,
+          environment,
+          buildings: buildingsWithView
         },
         options: {}
       };
     },
     conflictKeyResolver: ({ scope }) => ({
-      key: 'variantId',
-      value: scope.variantId
+      key: 'studioId',
+      value: scope.studioId
     }),
-    toJobParams: ({ contract, actor, scope, resolved }) =>
+    toJobParams: ({ contract, actor, scope, resolved, input }) =>
       createCommand({
         operationKey: contract.operationKey,
         workflowType: contract.workflowType,
         actor,
         scope,
-        models: resolved.models,
+        models: {
+          imageModel: input.imageModel,
+          textModel: input.textModel || null
+        },
         inputs: resolved.inputs,
         options: resolved.options
       }),
     responseMapper: ({ result, command }) => ({
-      message: '环境变体全景图生成已启动',
+      message: '影棚九宫组装图生成已启动',
       jobId: encodeId(result.jobId),
-      variantId: command.scope.variantId,
-      environmentId: command.scope.environmentId,
+      studioId: command.scope.studioId,
       status: 'generating'
     })
   },

@@ -277,6 +277,7 @@ Requirements:
     let coverPrompt = (textResult.content || textResult.text || textResult.message || '').trim();
     // 去除可能的 markdown 包裹
     coverPrompt = coverPrompt.replace(/^```[\s\S]*?\n/, '').replace(/```$/, '').trim();
+    console.log('[Generate Cover] 文本模型生成的封面提示词:', coverPrompt);
 
     // 2. 调用图片模型生成封面
     const imageModel = await queryOne(

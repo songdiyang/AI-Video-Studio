@@ -63,7 +63,7 @@ module.exports = function(router) {
           propCategory: prop.category || '',
           propStyleConfig: styleConfig || prop.style_config || {},
           imageModel,
-          textModel: textModel || 'deepseek-chat',  // 默认文本模型
+          textModel: textModel || '',  // 文本模型由前端传入，不硬编码默认值
           aspectRatio: '1:1'  // 道具图默认正方形
         }
       });

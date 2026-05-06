@@ -150,7 +150,7 @@ const FaceSphereViewer: React.FC<FaceSphereViewerProps> = ({
 
     loadAndPlace();
 
-    // 相机朝向（与 PanoramaViewer 一致）
+    // 相机朝向
     viewStateRef.current.yaw = 0;
     viewStateRef.current.pitch = 0;
     viewStateRef.current.fovDeg = fov;
@@ -167,7 +167,7 @@ const FaceSphereViewer: React.FC<FaceSphereViewerProps> = ({
     };
     updateCamera();
 
-    // 交互控制（与 PanoramaViewer 一致）
+    // 交互控制
     let isDragging = false;
     let lastX = 0;
     let lastY = 0;
