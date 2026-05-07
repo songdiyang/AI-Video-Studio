@@ -19,3 +19,8 @@ CREATE TABLE IF NOT EXISTS system_configs (
 INSERT INTO system_configs (config_key, config_name, config_type, config_value, description, is_active)
 VALUES ('enable_registration', '开放用户注册', 'boolean', 'true', '控制是否允许新用户注册。关闭后注册页面将不可用。', 1)
 ON DUPLICATE KEY UPDATE config_name = VALUES(config_name);
+
+-- 插入默认配置：套餐数量锁定（默认锁定，防止误操作新增/删除套餐）
+INSERT INTO system_configs (config_key, config_name, config_type, config_value, description, is_active)
+VALUES ('subscription_plans_locked', '套餐数量锁定', 'boolean', 'true', '锁定后禁止新增、删除套餐，编辑套餐不受影响。需要管理员二次验证解锁。', 1)
+ON DUPLICATE KEY UPDATE config_name = VALUES(config_name);

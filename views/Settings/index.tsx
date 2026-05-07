@@ -374,11 +374,20 @@ const Settings: React.FC = () => {
     return t.settings.sections[`${id}Desc` as keyof typeof t.settings.sections] || '';
   };
 
-  // 语言选项
-  const languageOptions = [
-    { id: 'zh-CN' as LanguageType, name: t.settings.language.zhCN, desc: t.settings.language.zhCNDesc, icon: '中' },
-    { id: 'en-US' as LanguageType, name: t.settings.language.enUS, desc: t.settings.language.enUSDesc, icon: 'En' },
-  ];
+  // 语言选项（动态：基础语言 + 扩展注册的语言）
+  const { availableLanguages } = useLanguage();
+  const languageOptions = availableLanguages.map(lang => {
+    const isBase = lang.code === 'zh-CN' || lang.code === 'en-US';
+    const desc = isBase
+      ? (lang.code === 'zh-CN' ? t.settings.language.zhCNDesc : t.settings.language.enUSDesc)
+      : '';
+    return {
+      id: lang.code as LanguageType,
+      name: lang.name,
+      desc,
+      icon: lang.code === 'zh-CN' ? '中' : lang.code === 'en-US' ? 'En' : lang.name.slice(0, 2),
+    };
+  });
 
   const handleSubmit = async () => {
     if (!content.trim()) return;

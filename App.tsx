@@ -22,7 +22,7 @@ const StoryBoardPage = React.lazy(() => import('./views/StoryBoardPage'));
 const Projects = React.lazy(() => import('./views/Projects'));
 const Settings = React.lazy(() => import('./views/Settings'));
 const UserCenter = React.lazy(() => import('./views/UserCenter'));
-const SketchStudio = React.lazy(() => import('./views/SketchStudio'));
+// SketchStudio removed - 草图功能已集成到魔术空间
 const Landing = React.lazy(() => import('./views/Landing'));
 const Pricing = React.lazy(() => import('./views/Pricing'));
 const TemplateGallery = React.lazy(() => import('./views/TemplateGallery'));
@@ -117,11 +117,13 @@ const AnimatedRoutes: React.FC = () => {
             <PageTransition><UserCenter /></PageTransition>
           </Suspense>
         } />
+        {/* 草图绘制已集成到魔术空间，不再作为独立页面
         <Route path="/sketch" element={
           <Suspense fallback={<LoadingFallback />}>
             <PageTransition><SketchStudio /></PageTransition>
           </Suspense>
         } />
+        */}
         <Route path="/templates" element={
           <Suspense fallback={<LoadingFallback />}>
             <PageTransition><TemplateGallery /></PageTransition>

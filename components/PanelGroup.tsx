@@ -110,7 +110,7 @@ const Divider: React.FC<DividerProps> = ({ index, direction, onDragStart, onDoub
     <div
       className={`
         relative flex-shrink-0 group
-        ${isHorizontal ? 'w-[5px] h-full cursor-col-resize' : 'h-[5px] w-full cursor-row-resize'}
+        ${isHorizontal ? 'w-[11px] h-full cursor-col-resize' : 'h-[11px] w-full cursor-row-resize'}
         ${isDragging || isHovered ? 'z-10' : ''}
       `}
       onMouseDown={handleMouseDown}
@@ -121,17 +121,18 @@ const Divider: React.FC<DividerProps> = ({ index, direction, onDragStart, onDoub
       {/* 背景条 */}
       <div
         className={`
-          absolute transition-all duration-150
+          absolute transition-colors duration-75
           ${isHorizontal 
-            ? 'inset-y-0 left-1/2 -translate-x-1/2 w-[1px]' 
-            : 'inset-x-0 top-1/2 -translate-y-1/2 h-[1px]'
+            ? 'inset-y-0 left-1/2 -translate-x-1/2' 
+            : 'inset-x-0 top-1/2 -translate-y-1/2'
           }
           ${isDragging || isHovered
             ? 'bg-[var(--accent)] shadow-[0_0_8px_var(--accent-glow)]'
             : 'bg-[var(--border-color)]'
           }
+          ${isHorizontal ? 'w-[1px]' : 'h-[1px]'}
           ${isDragging 
-            ? isHorizontal ? 'w-[3px]' : 'h-[3px]'
+            ? isHorizontal ? '!w-[3px]' : '!h-[3px]'
             : ''
           }
         `}
@@ -157,13 +158,13 @@ const Divider: React.FC<DividerProps> = ({ index, direction, onDragStart, onDoub
         ))}
       </div>
       
-      {/* 扩大点击区域 */}
+      {/* 扩大点击/拖拽热区：从 5px 扩展到 11px */}
       <div
         className={`
           absolute
           ${isHorizontal 
-            ? 'inset-y-0 -left-1 -right-1' 
-            : 'inset-x-0 -top-1 -bottom-1'
+            ? 'inset-y-0 -left-[3px] -right-[3px]' 
+            : 'inset-x-0 -top-[3px] -bottom-[3px]'
           }
         `}
       />
@@ -205,6 +206,10 @@ const PanelGroup: React.FC<PanelGroupProps> = ({
     startPos: number;
     startSizes: number[];
     rafId: number | null;
+    _pendingLeftSize?: number;
+    _pendingRightSize?: number;
+    _pendingLeftIndex?: number;
+    _pendingRightIndex?: number;
   }>({
     isDragging: false,
     dividerIndex: -1,
@@ -440,7 +445,7 @@ const PanelGroup: React.FC<PanelGroupProps> = ({
     document.body.style.cursor = isHorizontal ? 'col-resize' : 'row-resize';
     
     // 计算容器的可用空间（减去分割条）
-    const dividerSize = 5;
+    const dividerSize = 11;
     const panelCount = panelStates.size;
     const totalDividerSize = (panelCount - 1) * dividerSize;
     const containerSize = isHorizontal 
@@ -515,12 +520,17 @@ const PanelGroup: React.FC<PanelGroupProps> = ({
           newLeftSize = startSizes[leftIndex] + startSizes[rightIndex] - newRightSize;
         }
         
-        setPanelStates(prev => {
-          const newStates = new Map(prev);
-          newStates.set(leftIndex, { ...leftState, size: newLeftSize });
-          newStates.set(rightIndex, { ...rightState, size: newRightSize });
-          return newStates;
-        });
+        // 直接操作 DOM 实现零延迟拖拽，松开后再同步 React state
+        const leftPanel = containerRef.current?.querySelector(`[data-panel-index="${leftIndex}"]`) as HTMLElement | null;
+        const rightPanel = containerRef.current?.querySelector(`[data-panel-index="${rightIndex}"]`) as HTMLElement | null;
+        if (leftPanel) leftPanel.style.flexBasis = `${newLeftSize}%`;
+        if (rightPanel) rightPanel.style.flexBasis = `${newRightSize}%`;
+        
+        // 保存到 ref 供 mouseup 时读取
+        dragStateRef.current._pendingLeftSize = newLeftSize;
+        dragStateRef.current._pendingRightSize = newRightSize;
+        dragStateRef.current._pendingLeftIndex = leftIndex;
+        dragStateRef.current._pendingRightIndex = rightIndex;
       });
     };
     
@@ -533,26 +543,46 @@ const PanelGroup: React.FC<PanelGroupProps> = ({
       document.body.style.userSelect = '';
       document.body.style.cursor = '';
 
-      // 读取最新的面板尺寸（不用闭包里的 stale panelStates）
-      const latestStates = panelStatesRef.current;
+      // 读取拖拽过程中保存的 pending 尺寸
+      const pendingLeftSize = dragStateRef.current._pendingLeftSize;
+      const pendingRightSize = dragStateRef.current._pendingRightSize;
+      const pendingLeftIndex = dragStateRef.current._pendingLeftIndex ?? dividerIndex;
+      const pendingRightIndex = dragStateRef.current._pendingRightIndex ?? dividerIndex + 1;
 
-      // 保存到 localStorage
-      saveToStorage(latestStates);
-
-      // 自动关闭：检查相邻面板是否小于阈值
-      const CLOSE_THRESHOLD = 10; // 10% —— 拖到此值以下松开将自动折叠
-      const leftIdx = dividerIndex;
-      const rightIdx = dividerIndex + 1;
-      const leftSt = latestStates.get(leftIdx);
-      const rightSt = latestStates.get(rightIdx);
-      const leftInf = panelInfosRef.current.get(leftIdx);
-      const rightInf = panelInfosRef.current.get(rightIdx);
-
-      if (leftSt && !leftSt.collapsed && leftInf?.collapsible && leftSt.size < CLOSE_THRESHOLD) {
-        setPanelCollapsed(leftIdx, true);
-      } else if (rightSt && !rightSt.collapsed && rightInf?.collapsible && rightSt.size < CLOSE_THRESHOLD) {
-        setPanelCollapsed(rightIdx, true);
+      // 同步 React state（从 DOM 读取的实际值）
+      if (pendingLeftSize !== undefined && pendingRightSize !== undefined) {
+        setPanelStates(prev => {
+          const newStates = new Map(prev);
+          const leftSt = newStates.get(pendingLeftIndex);
+          const rightSt = newStates.get(pendingRightIndex);
+          if (leftSt) newStates.set(pendingLeftIndex, { ...leftSt, size: pendingLeftSize });
+          if (rightSt) newStates.set(pendingRightIndex, { ...rightSt, size: pendingRightSize });
+          return newStates;
+        });
       }
+
+      // 延一帧读取最新 state 做后续处理
+      setTimeout(() => {
+        const latestStates = panelStatesRef.current;
+
+        // 保存到 localStorage
+        saveToStorage(latestStates);
+
+        // 自动关闭：检查相邻面板是否小于阈值
+        const CLOSE_THRESHOLD = 10; // 10% —— 拖到此值以下松开将自动折叠
+        const leftIdx = pendingLeftIndex;
+        const rightIdx = pendingRightIndex;
+        const leftSt = latestStates.get(leftIdx);
+        const rightSt = latestStates.get(rightIdx);
+        const leftInf = panelInfosRef.current.get(leftIdx);
+        const rightInf = panelInfosRef.current.get(rightIdx);
+
+        if (leftSt && !leftSt.collapsed && leftInf?.collapsible && leftSt.size < CLOSE_THRESHOLD) {
+          setPanelCollapsed(leftIdx, true);
+        } else if (rightSt && !rightSt.collapsed && rightInf?.collapsible && rightSt.size < CLOSE_THRESHOLD) {
+          setPanelCollapsed(rightIdx, true);
+        }
+      }, 0);
 
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);

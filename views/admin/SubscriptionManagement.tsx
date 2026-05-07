@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardBody, Button, Input, Chip, Table, TableHeader, TableColumn, TableBody, TableRow, TableCell, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Switch, Textarea, Pagination } from '@heroui/react';
-import { CreditCard, Plus, Edit, Trash2, Save, RefreshCw, Users, Crown } from 'lucide-react';
+import { CreditCard, Plus, Edit, Trash2, Save, RefreshCw, Users, Crown, Lock, Unlock, AlertTriangle } from 'lucide-react';
 import { getAdminAuthHeaders } from '../../services/auth';
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
@@ -12,9 +12,13 @@ import {
   adminFetchSubscriptions,
   adminUpdateSubscription,
   adminCreateSubscription,
+  adminGetPlanLockStatus,
+  adminUnlockPlans,
+  adminLockPlans,
   type SubscriptionPlan,
   type AdminSubscription
 } from '../../services/subscriptions';
+import { getAuthUser, getAdminAccessKey } from '../../services/auth';
 
 const SubscriptionManagement: React.FC = () => {
   // 套餐管理状态
@@ -56,6 +60,17 @@ const SubscriptionManagement: React.FC = () => {
     api_calls_used: 0
   });
   const [subSaving, setSubSaving] = useState(false);
+
+  // 锁定状态
+  const [isLocked, setIsLocked] = useState(true);
+  const [lockLoading, setLockLoading] = useState(false);
+  const [showUnlockModal, setShowUnlockModal] = useState(false);
+  const [unlockForm, setUnlockForm] = useState({
+    email: '',
+    password: '',
+    adminAccessKey: ''
+  });
+  const [unlocking, setUnlocking] = useState(false);
 
   const { showToast } = useToast();
   const { confirm } = useConfirm();
@@ -99,6 +114,20 @@ const SubscriptionManagement: React.FC = () => {
   useEffect(() => {
     fetchSubscriptions();
   }, [fetchSubscriptions]);
+
+  // 获取锁定状态
+  const fetchLockStatus = useCallback(async () => {
+    try {
+      const data = await adminGetPlanLockStatus();
+      setIsLocked(data.locked);
+    } catch (error) {
+      console.error('获取锁定状态失败:', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchLockStatus();
+  }, [fetchLockStatus]);
 
   // 打开套餐编辑模态框
   const handleOpenPlanModal = (plan?: SubscriptionPlan) => {
@@ -169,8 +198,12 @@ const SubscriptionManagement: React.FC = () => {
 
       await fetchPlans();
       setShowPlanModal(false);
-    } catch (error) {
-      showToast(error instanceof Error ? error.message : '操作失败', 'error');
+    } catch (error: any) {
+      if (error?.locked) {
+        showToast('套餐数量已锁定，禁止新增套餐。如需修改请先解锁。', 'error');
+      } else {
+        showToast(error instanceof Error ? error.message : '操作失败', 'error');
+      }
     }
   };
 
@@ -189,8 +222,12 @@ const SubscriptionManagement: React.FC = () => {
       await adminDeletePlan(plan.id);
       showToast('套餐已删除', 'success');
       await fetchPlans();
-    } catch (error) {
-      showToast(error instanceof Error ? error.message : '删除失败', 'error');
+    } catch (error: any) {
+      if (error?.locked) {
+        showToast('套餐数量已锁定，禁止删除套餐。如需修改请先解锁。', 'error');
+      } else {
+        showToast(error instanceof Error ? error.message : '删除失败', 'error');
+      }
     }
   };
 
@@ -320,6 +357,51 @@ const SubscriptionManagement: React.FC = () => {
 
   const totalPages = Math.ceil(subscriptionsTotal / 20);
 
+  // 打开解锁弹窗时预填邮箱
+  const handleOpenUnlockModal = () => {
+    const user = getAuthUser();
+    setUnlockForm({
+      email: user?.email || '',
+      password: '',
+      adminAccessKey: getAdminAccessKey() || ''
+    });
+    setShowUnlockModal(true);
+  };
+
+  // 执行解锁
+  const handleUnlock = async () => {
+    if (!unlockForm.email || !unlockForm.password || !unlockForm.adminAccessKey) {
+      showToast('请填写完整信息', 'error');
+      return;
+    }
+
+    setUnlocking(true);
+    try {
+      await adminUnlockPlans(unlockForm);
+      showToast('套餐数量锁定已解除', 'success');
+      setIsLocked(false);
+      setShowUnlockModal(false);
+    } catch (error: any) {
+      showToast(error.message || '解锁失败', 'error');
+    } finally {
+      setUnlocking(false);
+    }
+  };
+
+  // 重新锁定
+  const handleLock = async () => {
+    setLockLoading(true);
+    try {
+      await adminLockPlans();
+      showToast('套餐数量已锁定', 'success');
+      setIsLocked(true);
+    } catch (error: any) {
+      showToast(error.message || '锁定失败', 'error');
+    } finally {
+      setLockLoading(false);
+    }
+  };
+
   return (
     <div className="h-full overflow-auto p-6">
       <div className="max-w-7xl mx-auto space-y-6">
@@ -334,15 +416,54 @@ const SubscriptionManagement: React.FC = () => {
               <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>管理订阅套餐和用户订阅</p>
             </div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center">
+            {isLocked ? (
+              <Chip
+                size="sm"
+                variant="flat"
+                className="bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30"
+                startContent={<Lock className="w-3 h-3" />}
+              >
+                已锁定
+              </Chip>
+            ) : (
+              <Chip
+                size="sm"
+                variant="flat"
+                className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30"
+                startContent={<Unlock className="w-3 h-3" />}
+              >
+                已解锁
+              </Chip>
+            )}
             <Button
               variant="flat"
               className="text-default-600 border" style={{ background: 'var(--bg-card)', borderColor: 'var(--border-color)' }}
               startContent={<RefreshCw className="w-4 h-4" />}
-              onPress={() => { fetchPlans(); fetchSubscriptions(); }}
+              onPress={() => { fetchPlans(); fetchSubscriptions(); fetchLockStatus(); }}
             >
               刷新
             </Button>
+            {isLocked ? (
+              <Button
+                variant="flat"
+                className="bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30 font-semibold"
+                startContent={<Unlock className="w-4 h-4" />}
+                onPress={handleOpenUnlockModal}
+              >
+                解锁修改
+              </Button>
+            ) : (
+              <Button
+                variant="flat"
+                className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30 font-semibold"
+                startContent={<Lock className="w-4 h-4" />}
+                onPress={handleLock}
+                isLoading={lockLoading}
+              >
+                重新锁定
+              </Button>
+            )}
             <Button
               className="bg-gradient-to-r from-purple-500 to-pink-600 text-white font-semibold"
               startContent={<Plus className="w-4 h-4" />}
@@ -794,6 +915,68 @@ const SubscriptionManagement: React.FC = () => {
                   onPress={handleSavePlan}
                 >
                   保存
+                </Button>
+              </ModalFooter>
+            </>
+          )}
+        </ModalContent>
+      </Modal>
+
+      {/* 解锁验证 Modal */}
+      <Modal isOpen={showUnlockModal} onOpenChange={setShowUnlockModal} size="md">
+        <ModalContent>
+          {(onClose) => (
+            <>
+              <ModalHeader className="flex flex-col gap-1">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-5 h-5 text-amber-500" />
+                  <span>解锁套餐数量限制</span>
+                </div>
+                <span className="text-sm font-normal" style={{ color: 'var(--text-secondary)' }}>
+                  此操作需要二次验证，防止误操作修改套餐数量
+                </span>
+              </ModalHeader>
+              <ModalBody>
+                <div className="space-y-4">
+                  <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
+                    <p className="text-sm text-amber-700 dark:text-amber-400">
+                      解锁后您可以新增或删除套餐。操作完成后建议重新锁定以保障安全。
+                    </p>
+                  </div>
+                  <Input
+                    label="管理员账号"
+                    placeholder="请输入您的邮箱"
+                    value={unlockForm.email}
+                    onValueChange={(value) => setUnlockForm({ ...unlockForm, email: value })}
+                  />
+                  <Input
+                    type="password"
+                    label="管理员密码"
+                    placeholder="请输入您的密码"
+                    value={unlockForm.password}
+                    onValueChange={(value) => setUnlockForm({ ...unlockForm, password: value })}
+                  />
+                  <Input
+                    type="password"
+                    label="后台密钥"
+                    placeholder="请输入后台访问密钥"
+                    description="不同角色类型的后台密钥不同"
+                    value={unlockForm.adminAccessKey}
+                    onValueChange={(value) => setUnlockForm({ ...unlockForm, adminAccessKey: value })}
+                  />
+                </div>
+              </ModalBody>
+              <ModalFooter>
+                <Button variant="flat" onPress={onClose}>
+                  取消
+                </Button>
+                <Button
+                  className="bg-gradient-to-r from-amber-500 to-orange-600 text-white"
+                  startContent={<Unlock className="w-4 h-4" />}
+                  onPress={handleUnlock}
+                  isLoading={unlocking}
+                >
+                  确认解锁
                 </Button>
               </ModalFooter>
             </>

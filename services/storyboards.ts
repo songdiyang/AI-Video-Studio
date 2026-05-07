@@ -1,5 +1,12 @@
 import { getAuthToken } from './auth';
-import type { SketchHistoryEntry } from '../views/SketchStudio/SketchModule/types/sketch';
+// import type { SketchHistoryEntry } from '../views/SketchStudio/SketchModule/types/sketch'; // 草图功能已集成到魔术空间
+interface SketchHistoryEntry {
+  version: number;
+  sketchUrl: string;
+  sketchType: string;
+  createdAt: string;
+  prompt?: string;
+}
 
 // 分镜空间描述接口
 export interface CharacterPosition {

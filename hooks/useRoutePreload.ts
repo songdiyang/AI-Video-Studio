@@ -12,7 +12,6 @@ const routeModules: Record<string, () => Promise<any>> = {
   '/settings': () => import('../views/Settings/index'),
   '/user-center': () => import('../views/UserCenter'),
   '/script-studio': () => import('../views/ScriptStudio/index'),
-  '/sketch-studio': () => import('../views/SketchStudio/index'),
 };
 
 // 缓存已预加载的路由，避免重复加载

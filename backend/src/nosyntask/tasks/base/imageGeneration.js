@@ -1,8 +1,12 @@
 /**
  * 图片生成处理器（角色/场景通用）
  * 使用公共轮询组件 submitAndPoll 处理同步/异步模型
- * 
- * input:  { prompt, imageModel, aspectRatio?, width?, height?, imageUrl?, imageUrls?, negative_prompt?, textModel? }
+ *
+ * 智能路由支持：
+ *   - 传入具体模型名称 → 直接调用
+ *   - 传入 '@auto' 或 '@router' → 由 ModelRouter 根据任务类型自动选择
+ *
+ * input:  { prompt, imageModel, aspectRatio?, width?, height?, imageUrl?, imageUrls?, negative_prompt?, textModel?, stepType? }
  * output: { image_url, taskId?, tokens?, provider }
  */
 
@@ -10,12 +14,44 @@ const { submitAndPoll } = require('../pollUtils');
 const { resolveMediaUrl } = require('./mediaResultResolver');
 const { mergeNegativeIntoPositive } = require('../../utils/negativeToPositive');
 
-async function handleImageGeneration(inputParams, onProgress) {
-  const { prompt, imageModel: modelName, width, height, aspectRatio, resolution, size, imageUrl, imageUrls, startFrame, endFrame, strength, mask_image, negative_prompt, textModel } = inputParams;
+// 懒加载 ModelRouter
+let modelRouter = null;
+function getModelRouter() {
+  if (!modelRouter) {
+    const { modelRouter: router } = require('../../../services/ModelRouter');
+    modelRouter = router;
+  }
+  return modelRouter;
+}
 
-  if (!modelName) {
+/**
+ * 解析图像模型名称，支持智能路由
+ */
+async function resolveImageModelName(modelName, stepType, projectConfig = {}) {
+  if (!modelName || modelName === '@auto' || modelName === '@router') {
+    if (!stepType) {
+      throw new Error('使用 @auto/@router 时必须提供 stepType');
+    }
+    const router = getModelRouter();
+    const selected = await router.selectModelForWorkflowStep(stepType, projectConfig);
+    if (!selected) {
+      throw new Error(`ModelRouter 未找到适合步骤 "${stepType}" 的图像模型`);
+    }
+    console.log(`[ImageGen] 智能路由选择: ${selected.name} (步骤: ${stepType})`);
+    return selected.name;
+  }
+  return modelName;
+}
+
+async function handleImageGeneration(inputParams, onProgress) {
+  const { prompt, imageModel: rawModelName, width, height, aspectRatio, resolution, size, imageUrl, imageUrls, startFrame, endFrame, strength, mask_image, negative_prompt, textModel, stepType, projectConfig } = inputParams;
+
+  if (!rawModelName) {
     throw new Error('imageModel 参数是必需的');
   }
+
+  // 解析模型名称（支持 @auto/@router）
+  const modelName = await resolveImageModelName(rawModelName, stepType, projectConfig);
 
   if (onProgress) onProgress(10);
 
@@ -85,7 +121,12 @@ async function handleImageGeneration(inputParams, onProgress) {
     image_url: mediaResolution.mediaUrl,
     taskId: result._submitResult?.taskId || null,
     tokens: result._submitResult?.tokens || 0,
-    provider: result._submitResult?._model?.provider || 'unknown'
+    provider: result._submitResult?._model?.provider || 'unknown',
+    _routing: {
+      originalModel: rawModelName,
+      resolvedModel: modelName,
+      stepType: stepType || null
+    }
   };
 }
 

@@ -169,7 +169,7 @@ export async function adminFetchPlans(): Promise<SubscriptionPlan[]> {
 export async function adminCreatePlan(data: Partial<SubscriptionPlan>): Promise<SubscriptionPlan> {
   const { features_json, ...rest } = data as any;
   const payload = { ...rest, features: features_json };
-  
+
   const res = await fetch('/api/admin/subscription-plans', {
     method: 'POST',
     headers: getAdminAuthHeaders({
@@ -180,7 +180,11 @@ export async function adminCreatePlan(data: Partial<SubscriptionPlan>): Promise<
 
   if (!res.ok) {
     const errorData = await res.json().catch(() => null);
-    throw new Error(errorData?.message || 'Failed to create plan');
+    const err = new Error(errorData?.message || 'Failed to create plan') as Error & { locked?: boolean };
+    if (errorData?.locked) {
+      (err as any).locked = true;
+    }
+    throw err;
   }
 
   return (await res.json()) as SubscriptionPlan;
@@ -212,8 +216,64 @@ export async function adminDeletePlan(id: number): Promise<void> {
 
   if (!res.ok) {
     const errorData = await res.json().catch(() => null);
-    throw new Error(errorData?.message || 'Failed to delete plan');
+    const err = new Error(errorData?.message || 'Failed to delete plan') as Error & { locked?: boolean };
+    if (errorData?.locked) {
+      (err as any).locked = true;
+    }
+    throw err;
   }
+}
+
+// 获取套餐锁定状态
+export async function adminGetPlanLockStatus(): Promise<{ locked: boolean }> {
+  const res = await fetch('/api/admin/subscription-plans/lock-status', {
+    headers: getAdminAuthHeaders(),
+  });
+
+  if (!res.ok) {
+    const data = await res.json().catch(() => null);
+    throw new Error(data?.message || '获取锁定状态失败');
+  }
+
+  return res.json();
+}
+
+// 解锁套餐数量限制
+export async function adminUnlockPlans(data: {
+  email: string;
+  password: string;
+  adminAccessKey: string;
+}): Promise<{ message: string; unlocked: boolean }> {
+  const res = await fetch('/api/admin/subscription-plans/unlock', {
+    method: 'POST',
+    headers: {
+      ...getAdminAuthHeaders(),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(data),
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => null);
+    throw new Error(errorData?.message || '解锁失败');
+  }
+
+  return res.json();
+}
+
+// 重新锁定套餐数量
+export async function adminLockPlans(): Promise<{ message: string; locked: boolean }> {
+  const res = await fetch('/api/admin/subscription-plans/lock', {
+    method: 'POST',
+    headers: getAdminAuthHeaders(),
+  });
+
+  if (!res.ok) {
+    const data = await res.json().catch(() => null);
+    throw new Error(data?.message || '锁定失败');
+  }
+
+  return res.json();
 }
 
 export async function adminFetchSubscriptions(params: {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Film, User, Package, LogOut, FolderOpen, Settings, Sparkles, Wifi, WifiOff, Pencil, Moon, Sun, Monitor, Contrast, BarChart3, LayoutTemplate, Users, Maximize, Minimize, BookOpen, Video, Image, UsersRound, Puzzle, Coins, ChevronDown, Check, ShoppingBag } from 'lucide-react';
+import { Film, User, Package, LogOut, FolderOpen, Settings, Sparkles, Wifi, WifiOff, Pencil, Moon, Sun, Monitor, Contrast, LayoutTemplate, Users, Maximize, Minimize, BookOpen, Video, Image, UsersRound, Puzzle, Coins, ChevronDown, Check, ShoppingBag } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from "@heroui/react";
 import { motion } from 'framer-motion';
@@ -14,7 +14,6 @@ import { useWorkbench } from '../contexts/WorkbenchContext';
 import { useAIAssistantUI } from '../contexts/AIAssistantContext';
 import AIAssistantDrawer from './AIAssistantDrawer';
 import OnboardingOverlay from './Onboarding/OnboardingOverlay';
-import DashboardPanel from './WorkflowDashboard/DashboardPanel';
 import { useOnboarding, OnboardingStep } from '../hooks/useOnboarding';
 import NetworkStatusBar from './NetworkStatusBar';
 import InternalMailbox from './InternalMailbox';
@@ -61,7 +60,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const [isConnected, setIsConnected] = useState(true);
   const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
-  const [isDashboardOpen, setIsDashboardOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [userAvatar, setUserAvatar] = useState<string | null>(null);
   const [userNickname, setUserNickname] = useState<string | null>(null);
@@ -118,7 +116,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     { path: '/assets', icon: Package, label: t.nav.assets },
     { path: '/projects', icon: FolderOpen, label: t.nav.projects },
     { path: '/teams', icon: UsersRound, label: '团队' },
-    { path: '/sketch', icon: Pencil, label: t.nav.sketch },
+    // 草图绘制已集成到魔术空间，不再作为独立入口
+    // { path: '/sketch', icon: Pencil, label: t.nav.sketch },
     { path: '/marketplace', icon: ShoppingBag, label: t.marketplace?.title || '模板市场' },
     { path: '/extensions', icon: Puzzle, label: '扩展' },
     { path: '/settings', icon: Settings, label: t.nav.settings },
@@ -131,7 +130,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     '/assets': t.nav.assets,
     '/projects': t.nav.projects,
     '/teams': '我的团队',
-    '/sketch': t.nav.sketch,
+    // '/sketch': t.nav.sketch, // 草图绘制已集成到魔术空间
     '/marketplace': t.marketplace?.title || '模板市场',
     '/marketplace/seller': '卖家管理',
     '/marketplace/create': '发布配方',
@@ -147,9 +146,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     
     const workbenchTitles: Record<string, string> = {
       'comic_drama': '漫剧工作台',
-      'manga': '漫画工作台',
-      'short_video': '短视频工作台',
-      'novel': '小说工作台',
     };
     
     return workbenchTitles[projectType] || t.nav.workspace;
@@ -163,9 +159,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     
     const icons: Record<string, React.ReactNode> = {
       'comic_drama': <Film className="w-4 h-4 text-(--accent)" />,
-      'manga': <Image className="w-4 h-4 text-purple-400" />,
-      'short_video': <Video className="w-4 h-4 text-pink-400" />,
-      'novel': <BookOpen className="w-4 h-4 text-emerald-400" />,
     };
     
     return icons[projectType] || null;
@@ -276,7 +269,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     { id: 'nav-workspace', title: t.nav.workspace, category: 'navigation', icon: <Film className="w-4 h-4" />, shortcut: 'Ctrl+1', action: () => navigate('/'), keywords: ['studio', '工作台', '创作'] },
     { id: 'nav-assets', title: t.nav.assets, category: 'navigation', icon: <Package className="w-4 h-4" />, shortcut: 'Ctrl+2', action: () => navigate('/assets'), keywords: ['asset', '素材', '角色'] },
     { id: 'nav-projects', title: t.nav.projects, category: 'navigation', icon: <FolderOpen className="w-4 h-4" />, shortcut: 'Ctrl+3', action: () => navigate('/projects'), keywords: ['project', '工程'] },
-    { id: 'nav-sketch', title: t.nav.sketch, category: 'navigation', icon: <Pencil className="w-4 h-4" />, shortcut: 'Ctrl+4', action: () => navigate('/sketch'), keywords: ['draw', '绘制', '草图'] },
+    // { id: 'nav-sketch', title: t.nav.sketch, category: 'navigation', icon: <Pencil className="w-4 h-4" />, shortcut: 'Ctrl+4', action: () => navigate('/sketch'), keywords: ['draw', '绘制', '草图'] },
     { id: 'nav-settings', title: t.nav.settings, category: 'navigation', icon: <Settings className="w-4 h-4" />, shortcut: 'Ctrl+5', action: () => navigate('/settings'), keywords: ['setting', '设置', '偏好'] },
     // 操作类
     { id: 'action-shortcuts', title: t.commandPalette.commands.showShortcuts, category: 'action', action: () => setShowShortcutsHelp(true), keywords: ['keyboard', '快捷键', 'shortcut'] },
@@ -303,10 +296,10 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       ...GLOBAL_SHORTCUTS_CONFIG.NAVIGATE_PROJECTS,
       action: () => navigate('/projects'),
     },
-    {
-      ...GLOBAL_SHORTCUTS_CONFIG.NAVIGATE_SKETCH,
-      action: () => navigate('/sketch'),
-    },
+    // {
+    //   ...GLOBAL_SHORTCUTS_CONFIG.NAVIGATE_SKETCH,
+    //   action: () => navigate('/sketch'),
+    // },
     {
       ...GLOBAL_SHORTCUTS_CONFIG.NAVIGATE_SETTINGS,
       action: () => navigate('/settings'),
@@ -598,14 +591,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 <Sparkles className="w-4 h-4" />
               </button>
             )}
-            <button
-              onClick={() => setIsDashboardOpen(true)}
-              className="p-1.5 rounded-lg text-(--text-muted) hover:text-(--text-primary) hover:bg-white/5 transition-colors"
-              aria-label={(t as Record<string, unknown>).dashboard ? ((t as Record<string, unknown>).dashboard as Record<string, string>).title : '工作流概览'}
-              title={(t as Record<string, unknown>).dashboard ? ((t as Record<string, unknown>).dashboard as Record<string, string>).title : '工作流概览'}
-            >
-              <BarChart3 className="w-4 h-4" />
-            </button>
             {/* 积分余额显示 */}
             {isLoggedIn && (
               <button
@@ -750,12 +735,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         isOpen={isCommandPaletteOpen}
         onClose={() => setIsCommandPaletteOpen(false)}
         commands={commands}
-      />
-
-      {/* 工作流概览面板 */}
-      <DashboardPanel
-        isOpen={isDashboardOpen}
-        onClose={() => setIsDashboardOpen(false)}
       />
 
       {/* 新手引导系统 */}

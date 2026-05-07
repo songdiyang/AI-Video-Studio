@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 export interface SceneCamera {
   x: number; // pitch (-180~180)
@@ -16,17 +17,21 @@ type SelectedObject = 'none' | 'camera' | 'light' | 'character';
 type TransformMode = 'translate' | 'rotate';
 type SelectedAxis = 'x' | 'y' | 'z' | 'none';
 
+type CharacterModelType = 'male' | 'female' | 'child' | 'custom';
+
 interface CharacterPose {
   id: string;
   x: number;
   y: number;
   z: number;
   rotationY: number;
-  color: string;
+  scale: number;
   height: number;
   name: string;
   description: string;
   boundCharacterId?: number | null;
+  modelType: CharacterModelType;
+  modelUrl?: string;
 }
 
 const DEFAULT_CHARACTERS: CharacterPose[] = [];
@@ -98,6 +103,253 @@ const Scene3DViewer: React.FC<Scene3DViewerProps> = ({
   const [characters, setCharacters] = useState<CharacterPose[]>(DEFAULT_CHARACTERS);
   const characterRefs = useRef<Map<string, THREE.Group>>(new Map());
   const characterGizmoRefs = useRef<Map<string, THREE.Group>>(new Map());
+
+  // Load preset GLB model
+  const loadPresetModel = useCallback((modelType: CharacterModelType, defaultName: string, defaultHeight: number) => {
+    if (!sceneRef.current) return;
+    const newId = `char_${Date.now()}`;
+    const modelUrl = `/models/human-${modelType}.glb`;
+    const loader = new GLTFLoader();
+    loader.load(modelUrl, (gltf) => {
+      const model = gltf.scene;
+      model.position.set(0, 0, 0);
+      model.userData = { type: 'character', id: newId };
+      // Auto-scale to standard height
+      const box = new THREE.Box3().setFromObject(model);
+      const size = box.getSize(new THREE.Vector3());
+      const targetScale = defaultHeight / size.y;
+      model.scale.setScalar(targetScale);
+      // Selection ring
+      const ringGeo = new THREE.RingGeometry(0.35, 0.4, 32);
+      const ringMat = new THREE.MeshBasicMaterial({ color: 0x00ff88, transparent: true, opacity: 0, side: THREE.DoubleSide });
+      const ring = new THREE.Mesh(ringGeo, ringMat);
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.y = 0.02;
+      model.add(ring);
+      // Gizmo
+      const gizmo = new THREE.Group();
+      const axisLength = 0.6;
+      const axisThickness = 0.015;
+      ['#ff3333', '#33ff33', '#3333ff'].forEach((col, i) => {
+        const axisGeo = new THREE.CylinderGeometry(axisThickness, axisThickness, axisLength, 8);
+        const axisMat = new THREE.MeshBasicMaterial({ color: col });
+        const axis = new THREE.Mesh(axisGeo, axisMat);
+        if (i === 0) { axis.rotation.z = -Math.PI / 2; axis.position.x = axisLength / 2; }
+        else if (i === 1) { axis.position.y = axisLength / 2; }
+        else { axis.rotation.x = Math.PI / 2; axis.position.z = axisLength / 2; }
+        gizmo.add(axis);
+        const arrow = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.08, 8), new THREE.MeshBasicMaterial({ color: col }));
+        if (i === 0) { arrow.rotation.z = -Math.PI / 2; arrow.position.x = axisLength; }
+        else if (i === 1) { arrow.position.y = axisLength; }
+        else { arrow.rotation.x = Math.PI / 2; arrow.position.z = axisLength; }
+        gizmo.add(arrow);
+      });
+      gizmo.visible = false;
+      gizmo.position.y = defaultHeight / 2;
+      model.add(gizmo);
+      characterGizmoRefs.current.set(newId, gizmo);
+      sceneRef.current!.add(model);
+      characterRefs.current.set(newId, model);
+      const newChar: CharacterPose = {
+        id: newId,
+        x: 0, y: 0, z: 0,
+        rotationY: 0,
+        scale: targetScale,
+        height: defaultHeight,
+        name: defaultName,
+        description: '',
+        modelType,
+        modelUrl,
+      };
+      setCharacters(prev => [...prev, newChar]);
+    }, undefined, (err) => {
+      console.error('[Preset Load Error]', err);
+      // Fallback to procedural model
+      const fallbackChar: CharacterPose = {
+        id: newId,
+        x: 0, y: 0, z: 0,
+        rotationY: 0,
+        scale: 1,
+        height: defaultHeight,
+        name: defaultName,
+        description: '',
+        modelType,
+      };
+      setCharacters(prev => [...prev, fallbackChar]);
+      if (sceneRef.current) buildCharacterModel(fallbackChar, sceneRef.current);
+    });
+  }, []);
+
+  // Shared character model builder (fallback)
+  const buildCharacterModel = useCallback((char: CharacterPose, targetScene: THREE.Scene) => {
+    const group = new THREE.Group();
+    group.position.set(char.x, char.y, char.z);
+    group.rotation.y = (char.rotationY * Math.PI) / 180;
+    group.scale.setScalar(char.scale);
+    group.userData = { type: 'character', id: char.id };
+
+    const h = char.height;
+    const skinColor = new THREE.Color(0xffdbac);
+    const shirtColor = new THREE.Color(char.modelType === 'female' ? 0xe85d75 : char.modelType === 'child' ? 0x5dade2 : 0x3b82f6);
+    const pantsColor = new THREE.Color(0x2d3748);
+
+    // Head
+    const headGeo = new THREE.SphereGeometry(0.11, 20, 20);
+    const headMat = new THREE.MeshStandardMaterial({ color: skinColor, roughness: 0.5, metalness: 0.1 });
+    const head = new THREE.Mesh(headGeo, headMat);
+    head.position.y = h - 0.11;
+    head.castShadow = true;
+    group.add(head);
+
+    // Neck
+    const neckGeo = new THREE.CylinderGeometry(0.05, 0.06, 0.08, 12);
+    const neckMat = new THREE.MeshStandardMaterial({ color: skinColor, roughness: 0.5 });
+    const neck = new THREE.Mesh(neckGeo, neckMat);
+    neck.position.y = h - 0.11 - 0.11 - 0.04;
+    neck.castShadow = true;
+    group.add(neck);
+
+    // Torso
+    const upperTorsoGeo = new THREE.CylinderGeometry(0.2, 0.16, h * 0.2, 16);
+    const torsoMat = new THREE.MeshStandardMaterial({ color: shirtColor, roughness: 0.6 });
+    const upperTorso = new THREE.Mesh(upperTorsoGeo, torsoMat);
+    upperTorso.position.y = h - 0.11 - 0.11 - 0.08 - h * 0.1;
+    upperTorso.castShadow = true;
+    group.add(upperTorso);
+
+    const lowerTorsoGeo = new THREE.CylinderGeometry(0.16, 0.14, h * 0.15, 16);
+    const lowerTorso = new THREE.Mesh(lowerTorsoGeo, torsoMat);
+    lowerTorso.position.y = h - 0.11 - 0.11 - 0.08 - h * 0.2 - h * 0.075;
+    lowerTorso.castShadow = true;
+    group.add(lowerTorso);
+
+    // Arms
+    const armRadius = char.modelType === 'female' ? 0.032 : 0.038;
+    const armMat = new THREE.MeshStandardMaterial({ color: skinColor, roughness: 0.5 });
+    const sleeveMat = new THREE.MeshStandardMaterial({ color: shirtColor, roughness: 0.6 });
+
+    const lUpperArmGeo = new THREE.CapsuleGeometry(armRadius, h * 0.14, 8, 16);
+    const lUpperArm = new THREE.Mesh(lUpperArmGeo, sleeveMat);
+    lUpperArm.position.set(-0.24, h - 0.11 - 0.11 - 0.08 - h * 0.05, 0);
+    lUpperArm.rotation.z = 0.12;
+    lUpperArm.castShadow = true;
+    group.add(lUpperArm);
+
+    const lLowerArmGeo = new THREE.CapsuleGeometry(armRadius * 0.85, h * 0.12, 8, 16);
+    const lLowerArm = new THREE.Mesh(lLowerArmGeo, armMat);
+    lLowerArm.position.set(-0.28, h - 0.11 - 0.11 - 0.08 - h * 0.18, 0);
+    lLowerArm.rotation.z = 0.08;
+    lLowerArm.castShadow = true;
+    group.add(lLowerArm);
+
+    const rUpperArmGeo = new THREE.CapsuleGeometry(armRadius, h * 0.14, 8, 16);
+    const rUpperArm = new THREE.Mesh(rUpperArmGeo, sleeveMat);
+    rUpperArm.position.set(0.24, h - 0.11 - 0.11 - 0.08 - h * 0.05, 0);
+    rUpperArm.rotation.z = -0.12;
+    rUpperArm.castShadow = true;
+    group.add(rUpperArm);
+
+    const rLowerArmGeo = new THREE.CapsuleGeometry(armRadius * 0.85, h * 0.12, 8, 16);
+    const rLowerArm = new THREE.Mesh(rLowerArmGeo, armMat);
+    rLowerArm.position.set(0.28, h - 0.11 - 0.11 - 0.08 - h * 0.18, 0);
+    rLowerArm.rotation.z = -0.08;
+    rLowerArm.castShadow = true;
+    group.add(rLowerArm);
+
+    // Hands
+    const handGeo = new THREE.SphereGeometry(armRadius * 1.2, 10, 10);
+    const lHand = new THREE.Mesh(handGeo, armMat);
+    lHand.position.set(-0.3, h - 0.11 - 0.11 - 0.08 - h * 0.28, 0);
+    lHand.castShadow = true;
+    group.add(lHand);
+
+    const rHand = new THREE.Mesh(handGeo, armMat);
+    rHand.position.set(0.3, h - 0.11 - 0.11 - 0.08 - h * 0.28, 0);
+    rHand.castShadow = true;
+    group.add(rHand);
+
+    // Legs
+    const legRadius = char.modelType === 'female' ? 0.055 : 0.065;
+    const legMat = new THREE.MeshStandardMaterial({ color: pantsColor, roughness: 0.7 });
+    const skinLegMat = new THREE.MeshStandardMaterial({ color: skinColor, roughness: 0.5 });
+
+    const lUpperLegGeo = new THREE.CapsuleGeometry(legRadius, h * 0.18, 8, 16);
+    const lUpperLeg = new THREE.Mesh(lUpperLegGeo, legMat);
+    lUpperLeg.position.set(-0.1, h * 0.32, 0);
+    lUpperLeg.castShadow = true;
+    group.add(lUpperLeg);
+
+    const lLowerLegGeo = new THREE.CapsuleGeometry(legRadius * 0.8, h * 0.18, 8, 16);
+    const lLowerLeg = new THREE.Mesh(lLowerLegGeo, skinLegMat);
+    lLowerLeg.position.set(-0.1, h * 0.12, 0);
+    lLowerLeg.castShadow = true;
+    group.add(lLowerLeg);
+
+    const rUpperLegGeo = new THREE.CapsuleGeometry(legRadius, h * 0.18, 8, 16);
+    const rUpperLeg = new THREE.Mesh(rUpperLegGeo, legMat);
+    rUpperLeg.position.set(0.1, h * 0.32, 0);
+    rUpperLeg.castShadow = true;
+    group.add(rUpperLeg);
+
+    const rLowerLegGeo = new THREE.CapsuleGeometry(legRadius * 0.8, h * 0.18, 8, 16);
+    const rLowerLeg = new THREE.Mesh(rLowerLegGeo, skinLegMat);
+    rLowerLeg.position.set(0.1, h * 0.12, 0);
+    rLowerLeg.castShadow = true;
+    group.add(rLowerLeg);
+
+    // Feet
+    const footGeo = new THREE.BoxGeometry(0.08, 0.05, 0.14);
+    const footMat = new THREE.MeshStandardMaterial({ color: 0x1a202c, roughness: 0.8 });
+    const lFoot = new THREE.Mesh(footGeo, footMat);
+    lFoot.position.set(-0.1, 0.025, 0.03);
+    lFoot.castShadow = true;
+    group.add(lFoot);
+
+    const rFoot = new THREE.Mesh(footGeo, footMat);
+    rFoot.position.set(0.1, 0.025, 0.03);
+    rFoot.castShadow = true;
+    group.add(rFoot);
+
+    // Selection ring
+    const ringGeo = new THREE.RingGeometry(0.35, 0.4, 32);
+    const ringMat = new THREE.MeshBasicMaterial({ color: 0x00ff88, transparent: true, opacity: 0, side: THREE.DoubleSide });
+    const ring = new THREE.Mesh(ringGeo, ringMat);
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = 0.02;
+    group.add(ring);
+
+    // Transform gizmo
+    const gizmo = new THREE.Group();
+    const axisLength = 0.6;
+    const axisThickness = 0.015;
+
+    ['#ff3333', '#33ff33', '#3333ff'].forEach((col, i) => {
+      const axisGeo = new THREE.CylinderGeometry(axisThickness, axisThickness, axisLength, 8);
+      const axisMat = new THREE.MeshBasicMaterial({ color: col });
+      const axis = new THREE.Mesh(axisGeo, axisMat);
+      if (i === 0) { axis.rotation.z = -Math.PI / 2; axis.position.x = axisLength / 2; }
+      else if (i === 1) { axis.position.y = axisLength / 2; }
+      else { axis.rotation.x = Math.PI / 2; axis.position.z = axisLength / 2; }
+      gizmo.add(axis);
+
+      const arrow = new THREE.Mesh(
+        new THREE.ConeGeometry(0.04, 0.08, 8),
+        new THREE.MeshBasicMaterial({ color: col })
+      );
+      if (i === 0) { arrow.rotation.z = -Math.PI / 2; arrow.position.x = axisLength; }
+      else if (i === 1) { arrow.position.y = axisLength; }
+      else { arrow.rotation.x = Math.PI / 2; arrow.position.z = axisLength; }
+      gizmo.add(arrow);
+    });
+
+    gizmo.visible = false;
+    gizmo.position.y = h / 2;
+    group.add(gizmo);
+    characterGizmoRefs.current.set(char.id, gizmo);
+
+    targetScene.add(group);
+    characterRefs.current.set(char.id, group);
+  }, []);
 
   // Blender-style orbit controls
   const orbitStateRef = useRef({
@@ -428,106 +680,7 @@ const Scene3DViewer: React.FC<Scene3DViewerProps> = ({
     lightGroup.add(spotLight);
     lightGroup.userData.spotLight = spotLight;
 
-    // Create default character models
-    const createCharacterModel = (char: CharacterPose) => {
-      const group = new THREE.Group();
-      group.position.set(char.x, char.y, char.z);
-      group.rotation.y = (char.rotationY * Math.PI) / 180;
-      group.userData = { type: 'character', id: char.id };
-
-      const color = new THREE.Color(char.color);
-      const skinColor = new THREE.Color(0xffdbac);
-      const h = char.height;
-
-      // Head
-      const headGeo = new THREE.SphereGeometry(0.12, 16, 16);
-      const headMat = new THREE.MeshStandardMaterial({ color: skinColor, roughness: 0.6 });
-      const head = new THREE.Mesh(headGeo, headMat);
-      head.position.y = h - 0.12;
-      head.castShadow = true;
-      group.add(head);
-
-      // Body (torso)
-      const torsoGeo = new THREE.CylinderGeometry(0.18, 0.15, h * 0.35, 12);
-      const torsoMat = new THREE.MeshStandardMaterial({ color: color, roughness: 0.7 });
-      const torso = new THREE.Mesh(torsoGeo, torsoMat);
-      torso.position.y = h - 0.12 - 0.12 - h * 0.175;
-      torso.castShadow = true;
-      torso.userData = { isTorso: true };
-      group.add(torso);
-
-      // Arms
-      const armGeo = new THREE.CylinderGeometry(0.04, 0.035, h * 0.3, 8);
-      const armMat = new THREE.MeshStandardMaterial({ color: skinColor, roughness: 0.6 });
-
-      const leftArm = new THREE.Mesh(armGeo, armMat);
-      leftArm.position.set(-0.22, h - 0.12 - 0.12 - h * 0.1, 0);
-      leftArm.rotation.z = 0.15;
-      leftArm.castShadow = true;
-      group.add(leftArm);
-
-      const rightArm = new THREE.Mesh(armGeo, armMat);
-      rightArm.position.set(0.22, h - 0.12 - 0.12 - h * 0.1, 0);
-      rightArm.rotation.z = -0.15;
-      rightArm.castShadow = true;
-      group.add(rightArm);
-
-      // Legs
-      const legGeo = new THREE.CylinderGeometry(0.05, 0.04, h * 0.45, 8);
-      const legMat = new THREE.MeshStandardMaterial({ color: 0x333344, roughness: 0.8 });
-
-      const leftLeg = new THREE.Mesh(legGeo, legMat);
-      leftLeg.position.set(-0.1, h * 0.225, 0);
-      leftLeg.castShadow = true;
-      group.add(leftLeg);
-
-      const rightLeg = new THREE.Mesh(legGeo, legMat);
-      rightLeg.position.set(0.1, h * 0.225, 0);
-      rightLeg.castShadow = true;
-      group.add(rightLeg);
-
-      // Selection ring
-      const ringGeo = new THREE.RingGeometry(0.3, 0.35, 32);
-      const ringMat = new THREE.MeshBasicMaterial({ color: 0x00ff88, transparent: true, opacity: 0, side: THREE.DoubleSide });
-      const ring = new THREE.Mesh(ringGeo, ringMat);
-      ring.rotation.x = -Math.PI / 2;
-      ring.position.y = 0.02;
-      group.add(ring);
-
-      // Transform gizmo
-      const gizmo = new THREE.Group();
-      const axisLength = 0.5;
-      const axisThickness = 0.015;
-
-      ['#ff3333', '#33ff33', '#3333ff'].forEach((col, i) => {
-        const axisGeo = new THREE.CylinderGeometry(axisThickness, axisThickness, axisLength, 8);
-        const axisMat = new THREE.MeshBasicMaterial({ color: col });
-        const axis = new THREE.Mesh(axisGeo, axisMat);
-        if (i === 0) { axis.rotation.z = -Math.PI / 2; axis.position.x = axisLength / 2; }
-        else if (i === 1) { axis.position.y = axisLength / 2; }
-        else { axis.rotation.x = Math.PI / 2; axis.position.z = axisLength / 2; }
-        gizmo.add(axis);
-
-        const arrow = new THREE.Mesh(
-          new THREE.ConeGeometry(0.04, 0.08, 8),
-          new THREE.MeshBasicMaterial({ color: col })
-        );
-        if (i === 0) { arrow.rotation.z = -Math.PI / 2; arrow.position.x = axisLength; }
-        else if (i === 1) { arrow.position.y = axisLength; }
-        else { arrow.rotation.x = Math.PI / 2; arrow.position.z = axisLength; }
-        gizmo.add(arrow);
-      });
-
-      gizmo.visible = false;
-      gizmo.position.y = h / 2;
-      group.add(gizmo);
-      characterGizmoRefs.current.set(char.id, gizmo);
-
-      scene.add(group);
-      characterRefs.current.set(char.id, group);
-    };
-
-    DEFAULT_CHARACTERS.forEach(createCharacterModel);
+    DEFAULT_CHARACTERS.forEach(char => buildCharacterModel(char, scene));
 
     // Update camera from orbit state
     const updateOrbitCamera = () => {
@@ -1128,7 +1281,7 @@ const Scene3DViewer: React.FC<Scene3DViewerProps> = ({
             }`}
           >
             <div className="text-[10px] text-white/40 uppercase tracking-wider mb-1 flex items-center gap-1">
-              <span style={{ color: char.color }}>●</span>
+              <span style={{ color: char.modelType === 'female' ? '#e85d75' : char.modelType === 'child' ? '#5dade2' : '#3b82f6' }}>●</span>
               {char.name || `人物 ${idx + 1}`}
               {selectedObject === 'character' && selectedCharacterId === char.id && (
                 <span className="text-[9px] px-1 py-0.5 rounded bg-pink-500/30 text-pink-300">
@@ -1175,122 +1328,106 @@ const Scene3DViewer: React.FC<Scene3DViewerProps> = ({
           </div>
         ))}
 
-        {/* Add character button */}
-        <button
-          onClick={() => {
-            const newId = `char_${Date.now()}`;
-            const newChar: CharacterPose = {
-              id: newId,
-              x: 0,
-              y: 0,
-              z: 0,
-              rotationY: 0,
-              color: '#ff6b6b',
-              height: 1.7,
-              name: `人物${characters.length + 1}`,
-              description: '',
-            };
-            setCharacters(prev => [...prev, newChar]);
-            // Create 3D model
-            if (sceneRef.current) {
-              const createCharacterModel = (char: CharacterPose) => {
-                const group = new THREE.Group();
-                group.position.set(char.x, char.y, char.z);
-                group.rotation.y = (char.rotationY * Math.PI) / 180;
-                group.userData = { type: 'character', id: char.id };
-
-                const color = new THREE.Color(char.color);
-                const skinColor = new THREE.Color(0xffdbac);
-                const h = char.height;
-
-                const headGeo = new THREE.SphereGeometry(0.12, 16, 16);
-                const headMat = new THREE.MeshStandardMaterial({ color: skinColor, roughness: 0.6 });
-                const head = new THREE.Mesh(headGeo, headMat);
-                head.position.y = h - 0.12;
-                head.castShadow = true;
-                group.add(head);
-
-                const torsoGeo = new THREE.CylinderGeometry(0.18, 0.15, h * 0.35, 12);
-                const torsoMat = new THREE.MeshStandardMaterial({ color: color, roughness: 0.7 });
-                const torso = new THREE.Mesh(torsoGeo, torsoMat);
-                torso.position.y = h - 0.12 - 0.12 - h * 0.175;
-                torso.castShadow = true;
-                torso.userData = { isTorso: true };
-                group.add(torso);
-
-                const armGeo = new THREE.CylinderGeometry(0.04, 0.035, h * 0.3, 8);
-                const armMat = new THREE.MeshStandardMaterial({ color: skinColor, roughness: 0.6 });
-
-                const leftArm = new THREE.Mesh(armGeo, armMat);
-                leftArm.position.set(-0.22, h - 0.12 - 0.12 - h * 0.1, 0);
-                leftArm.rotation.z = 0.15;
-                leftArm.castShadow = true;
-                group.add(leftArm);
-
-                const rightArm = new THREE.Mesh(armGeo, armMat);
-                rightArm.position.set(0.22, h - 0.12 - 0.12 - h * 0.1, 0);
-                rightArm.rotation.z = -0.15;
-                rightArm.castShadow = true;
-                group.add(rightArm);
-
-                const legGeo = new THREE.CylinderGeometry(0.05, 0.04, h * 0.45, 8);
-                const legMat = new THREE.MeshStandardMaterial({ color: 0x333344, roughness: 0.8 });
-
-                const leftLeg = new THREE.Mesh(legGeo, legMat);
-                leftLeg.position.set(-0.1, h * 0.225, 0);
-                leftLeg.castShadow = true;
-                group.add(leftLeg);
-
-                const rightLeg = new THREE.Mesh(legGeo, legMat);
-                rightLeg.position.set(0.1, h * 0.225, 0);
-                rightLeg.castShadow = true;
-                group.add(rightLeg);
-
-                const ringGeo = new THREE.RingGeometry(0.3, 0.35, 32);
-                const ringMat = new THREE.MeshBasicMaterial({ color: 0x00ff88, transparent: true, opacity: 0, side: THREE.DoubleSide });
-                const ring = new THREE.Mesh(ringGeo, ringMat);
-                ring.rotation.x = -Math.PI / 2;
-                ring.position.y = 0.02;
-                group.add(ring);
-
-                const gizmo = new THREE.Group();
-                const axisLength = 0.5;
-                const axisThickness = 0.015;
-
-                ['#ff3333', '#33ff33', '#3333ff'].forEach((col, i) => {
-                  const axisGeo = new THREE.CylinderGeometry(axisThickness, axisThickness, axisLength, 8);
-                  const axisMat = new THREE.MeshBasicMaterial({ color: col });
-                  const axis = new THREE.Mesh(axisGeo, axisMat);
-                  if (i === 0) { axis.rotation.z = -Math.PI / 2; axis.position.x = axisLength / 2; }
-                  else if (i === 1) { axis.position.y = axisLength / 2; }
-                  else { axis.rotation.x = Math.PI / 2; axis.position.z = axisLength / 2; }
-                  gizmo.add(axis);
-
-                  const arrow = new THREE.Mesh(
-                    new THREE.ConeGeometry(0.04, 0.08, 8),
-                    new THREE.MeshBasicMaterial({ color: col })
-                  );
-                  if (i === 0) { arrow.rotation.z = -Math.PI / 2; arrow.position.x = axisLength; }
-                  else if (i === 1) { arrow.position.y = axisLength; }
-                  else { arrow.rotation.x = Math.PI / 2; arrow.position.z = axisLength; }
-                  gizmo.add(arrow);
+        {/* Add character buttons */}
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => loadPresetModel('male', `男性${characters.length + 1}`, 1.7)}
+            className="bg-black/60 backdrop-blur-sm rounded-lg px-2 py-1.5 border border-dashed border-white/20 text-white/40 hover:text-white/70 hover:border-white/40 transition-colors text-[11px] flex items-center gap-1"
+            title="添加男性模型"
+          >
+            <span>+</span> 男
+          </button>
+          <button
+            onClick={() => loadPresetModel('female', `女性${characters.length + 1}`, 1.6)}
+            className="bg-black/60 backdrop-blur-sm rounded-lg px-2 py-1.5 border border-dashed border-white/20 text-white/40 hover:text-white/70 hover:border-white/40 transition-colors text-[11px] flex items-center gap-1"
+            title="添加女性模型"
+          >
+            <span>+</span> 女
+          </button>
+          <button
+            onClick={() => loadPresetModel('child', `儿童${characters.length + 1}`, 1.3)}
+            className="bg-black/60 backdrop-blur-sm rounded-lg px-2 py-1.5 border border-dashed border-white/20 text-white/40 hover:text-white/70 hover:border-white/40 transition-colors text-[11px] flex items-center gap-1"
+            title="添加儿童模型"
+          >
+            <span>+</span> 童
+          </button>
+          <button
+            onClick={() => {
+              const input = document.createElement('input');
+              input.type = 'file';
+              input.accept = '.glb,.gltf';
+              input.onchange = (e) => {
+                const file = (e.target as HTMLInputElement).files?.[0];
+                if (!file || !sceneRef.current) return;
+                const url = URL.createObjectURL(file);
+                const loader = new GLTFLoader();
+                loader.load(url, (gltf) => {
+                  const newId = `char_${Date.now()}`;
+                  const model = gltf.scene;
+                  model.position.set(0, 0, 0);
+                  model.userData = { type: 'character', id: newId };
+                  // Auto-scale to standard height
+                  const box = new THREE.Box3().setFromObject(model);
+                  const size = box.getSize(new THREE.Vector3());
+                  const targetHeight = 1.7;
+                  const scale = targetHeight / size.y;
+                  model.scale.setScalar(scale);
+                  // Selection ring
+                  const ringGeo = new THREE.RingGeometry(0.35, 0.4, 32);
+                  const ringMat = new THREE.MeshBasicMaterial({ color: 0x00ff88, transparent: true, opacity: 0, side: THREE.DoubleSide });
+                  const ring = new THREE.Mesh(ringGeo, ringMat);
+                  ring.rotation.x = -Math.PI / 2;
+                  ring.position.y = 0.02;
+                  model.add(ring);
+                  // Gizmo
+                  const gizmo = new THREE.Group();
+                  const axisLength = 0.6;
+                  const axisThickness = 0.015;
+                  ['#ff3333', '#33ff33', '#3333ff'].forEach((col, i) => {
+                    const axisGeo = new THREE.CylinderGeometry(axisThickness, axisThickness, axisLength, 8);
+                    const axisMat = new THREE.MeshBasicMaterial({ color: col });
+                    const axis = new THREE.Mesh(axisGeo, axisMat);
+                    if (i === 0) { axis.rotation.z = -Math.PI / 2; axis.position.x = axisLength / 2; }
+                    else if (i === 1) { axis.position.y = axisLength / 2; }
+                    else { axis.rotation.x = Math.PI / 2; axis.position.z = axisLength / 2; }
+                    gizmo.add(axis);
+                    const arrow = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.08, 8), new THREE.MeshBasicMaterial({ color: col }));
+                    if (i === 0) { arrow.rotation.z = -Math.PI / 2; arrow.position.x = axisLength; }
+                    else if (i === 1) { arrow.position.y = axisLength; }
+                    else { arrow.rotation.x = Math.PI / 2; arrow.position.z = axisLength; }
+                    gizmo.add(arrow);
+                  });
+                  gizmo.visible = false;
+                  gizmo.position.y = targetHeight / 2;
+                  model.add(gizmo);
+                  characterGizmoRefs.current.set(newId, gizmo);
+                  sceneRef.current!.add(model);
+                  characterRefs.current.set(newId, model);
+                  const newChar: CharacterPose = {
+                    id: newId,
+                    x: 0, y: 0, z: 0,
+                    rotationY: 0,
+                    scale,
+                    height: targetHeight,
+                    name: file.name.replace(/\.[^/.]+$/, ''),
+                    description: '',
+                    modelType: 'custom',
+                    modelUrl: url,
+                  };
+                  setCharacters(prev => [...prev, newChar]);
+                }, undefined, (err) => {
+                  console.error('[GLB Load Error]', err);
+                  alert('模型加载失败，请检查文件格式');
                 });
-
-                gizmo.visible = false;
-                gizmo.position.y = h / 2;
-                group.add(gizmo);
-                characterGizmoRefs.current.set(char.id, gizmo);
-
-                sceneRef.current!.add(group);
-                characterRefs.current.set(char.id, group);
               };
-              createCharacterModel(newChar);
-            }
-          }}
-          className="bg-black/60 backdrop-blur-sm rounded-lg px-3 py-2 border border-dashed border-white/20 text-white/40 hover:text-white/70 hover:border-white/40 transition-colors text-[11px] flex items-center gap-1"
-        >
-          <span>+</span> 添加人物
-        </button>
+              input.click();
+            }}
+            className="bg-black/60 backdrop-blur-sm rounded-lg px-2 py-1.5 border border-dashed border-white/20 text-white/40 hover:text-white/70 hover:border-white/40 transition-colors text-[11px] flex items-center gap-1"
+            title="导入GLB/GLTF模型"
+          >
+            <span>+</span> 导入
+          </button>
+        </div>
 
         {/* Transform mode indicator */}
         {selectedObject !== 'none' && (
@@ -1394,7 +1531,7 @@ const Scene3DViewer: React.FC<Scene3DViewerProps> = ({
                             description: boundChar
                               ? `${boundChar.base_appearance || boundChar.appearance || ''}${boundChar.active_state_outfit || boundChar.outfit_appearance ? '，' + (boundChar.active_state_outfit || boundChar.outfit_appearance) : ''}`
                               : c.description,
-                            color: boundChar?.active_state_image_url ? c.color : (boundChar?.color || c.color),
+                            modelType: c.modelType,
                           } : c
                         ));
                       }}
@@ -1427,48 +1564,57 @@ const Scene3DViewer: React.FC<Scene3DViewerProps> = ({
                   />
                 </div>
 
-                {/* Color */}
+                {/* Model Type */}
                 <div>
-                  <label className="text-[10px] text-white/40 block mb-0.5">衣服颜色</label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="color"
-                      value={char.color}
-                      onChange={(e) => {
-                        const newColor = e.target.value;
-                        setCharacters(prev => prev.map(c =>
-                          c.id === selectedCharacterId ? { ...c, color: newColor } : c
-                        ));
-                        // Update 3D model color
-                        const group = characterRefs.current.get(selectedCharacterId);
-                        if (group) {
-                          group.children.forEach((child) => {
-                            if (child instanceof THREE.Mesh && child.userData.isTorso) {
-                              (child.material as THREE.MeshStandardMaterial).color.set(newColor);
-                            }
-                          });
-                        }
-                      }}
-                      className="w-6 h-6 rounded cursor-pointer border-0"
-                    />
-                    <span className="text-[10px] text-white/60">{char.color}</span>
-                  </div>
+                  <label className="text-[10px] text-white/40 block mb-0.5">模型类型</label>
+                  <select
+                    value={char.modelType}
+                    onChange={(e) => {
+                      const newType = e.target.value as CharacterModelType;
+                      setCharacters(prev => prev.map(c =>
+                        c.id === selectedCharacterId ? { ...c, modelType: newType } : c
+                      ));
+                      // Rebuild model with new type
+                      const group = characterRefs.current.get(selectedCharacterId);
+                      if (group && sceneRef.current) {
+                        sceneRef.current.remove(group);
+                        group.traverse(child => {
+                          if (child instanceof THREE.Mesh) {
+                            child.geometry.dispose();
+                            if (Array.isArray(child.material)) child.material.forEach(m => m.dispose());
+                            else child.material.dispose();
+                          }
+                        });
+                        characterRefs.current.delete(selectedCharacterId);
+                        characterGizmoRefs.current.delete(selectedCharacterId);
+                        buildCharacterModel({ ...char, modelType: newType }, sceneRef.current);
+                      }
+                    }}
+                    className="w-full bg-white/10 border border-white/20 rounded px-2 py-1 text-[11px] text-white outline-none focus:border-pink-400"
+                  >
+                    <option value="male">男性</option>
+                    <option value="female">女性</option>
+                    <option value="child">儿童</option>
+                    {char.modelType === 'custom' && <option value="custom">自定义模型</option>}
+                  </select>
                 </div>
 
-                {/* Height */}
+                {/* Scale */}
                 <div>
-                  <label className="text-[10px] text-white/40 block mb-0.5">身高: {char.height.toFixed(2)}m</label>
+                  <label className="text-[10px] text-white/40 block mb-0.5">缩放: {char.scale.toFixed(2)}x</label>
                   <input
                     type="range"
-                    min="1.2"
+                    min="0.5"
                     max="2.0"
                     step="0.05"
-                    value={char.height}
+                    value={char.scale}
                     onChange={(e) => {
-                      const newHeight = parseFloat(e.target.value);
+                      const newScale = parseFloat(e.target.value);
                       setCharacters(prev => prev.map(c =>
-                        c.id === selectedCharacterId ? { ...c, height: newHeight } : c
+                        c.id === selectedCharacterId ? { ...c, scale: newScale } : c
                       ));
+                      const group = characterRefs.current.get(selectedCharacterId);
+                      if (group) group.scale.setScalar(newScale);
                     }}
                     className="w-full accent-pink-400"
                   />

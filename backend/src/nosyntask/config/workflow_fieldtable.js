@@ -24,7 +24,7 @@ module.exports = {
   textModel: {
     from: 'textModel',
     defaultValue: null,
-    description: '文本生成模型名称（剧本、分镜、提示词生成等）',
+    description: '文本生成模型名称（剧本、分镜、提示词生成等）。支持 @auto/@router 由 ModelRouter 自动选择',
     category: 'model'
   },
   think: {
@@ -36,13 +36,13 @@ module.exports = {
   imageModel: {
     from: 'imageModel',
     defaultValue: null,
-    description: '图片生成模型名称（角色图、场景图、帧图等）',
+    description: '图片生成模型名称（角色图、场景图、帧图等）。支持 @auto/@router 由 ModelRouter 自动选择',
     category: 'model'
   },
   videoModel: {
     from: 'videoModel',
     defaultValue: null,
-    description: '视频生成模型名称（分镜视频等）',
+    description: '视频生成模型名称（分镜视频等）。支持 @auto/@router 由 ModelRouter 自动选择',
     category: 'model'
   },
   audioModel: {
@@ -50,6 +50,22 @@ module.exports = {
     defaultValue: null,
     description: '音频生成模型名称（配音、音效等，预留）',
     category: 'model'
+  },
+
+  // ================================================================
+  //  智能路由配置
+  // ================================================================
+  stepType: {
+    from: 'stepType',
+    defaultValue: null,
+    description: '工作流步骤类型标识，用于 ModelRouter 智能选择模型（如 storyboard_generation）',
+    category: 'router'
+  },
+  projectConfig: {
+    from: 'projectConfig',
+    defaultValue: null,
+    description: '项目级配置对象，传递给 ModelRouter 作为路由参考（如 preferredProvider）',
+    category: 'router'
   },
 
   // ================================================================
@@ -844,6 +860,28 @@ module.exports = {
     defaultValue: '',
     description: '已有章节内容（续写模式使用）',
     category: 'novel'
+  },
+
+  // ================================================================
+  //  项目管理
+  // ================================================================
+  name: {
+    from: 'name',
+    defaultValue: null,
+    description: '项目名称（创建项目时使用）',
+    category: 'project'
+  },
+  coverUrl: {
+    from: 'coverUrl',
+    defaultValue: '',
+    description: '项目封面 URL',
+    category: 'project'
+  },
+  projectType: {
+    from: 'type',
+    defaultValue: 'comic',
+    description: '项目类型（comic/short_drama/animation/live_action/game）',
+    category: 'project'
   },
 
   // ================================================================

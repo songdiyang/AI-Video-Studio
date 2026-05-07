@@ -1,6 +1,7 @@
 const express = require('express');
 const { queryOne, queryAll, execute } = require('./dbHelper');
-const { authMiddleware, requireAdmin } = require('./middleware');
+const { authMiddleware, requireAdmin, validateAdminAccessRequest, getConfiguredAdminAccessKey } = require('./middleware');
+const bcrypt = require('bcryptjs');
 const { parseJsonField } = require('./utils/parseJsonField');
 const { withAIBillingContext } = require('./aiBillingContext');
 const { createResourcePack, deductFromResourcePacks, syncUserBalance } = require('./resourcePackService');
@@ -957,8 +958,38 @@ router.post('/users', authMiddleware, requireAdmin, async (req, res) => {
   }
 });
 
+// ============================================================
+// 新架构 API：ai_models_v2 模型目录
+// ============================================================
+
 router.get('/ai-models', authMiddleware, requireAdmin, async (req, res) => {
   try {
+    // 优先从新表获取，如果不存在则回退到旧表
+    const newModels = await queryAll(
+      `SELECT m.id, m.name, m.provider_id, m.model_id, m.capabilities,
+              m.metadata, m.pricing, m.quality_score, m.is_recommended,
+              m.is_active, m.is_discovered, m.adapter_name, m.created_at, m.updated_at,
+              p.name as provider, p.display_name as provider_display_name
+       FROM ai_models_v2 m
+       JOIN model_providers p ON m.provider_id = p.id
+       ORDER BY m.is_recommended DESC, m.quality_score DESC, m.id DESC`
+    );
+
+    if (newModels && newModels.length > 0) {
+      res.json({
+        models: newModels.map(m => ({
+          ...m,
+          capabilities: parseJsonField(m.capabilities, []),
+          metadata: parseJsonField(m.metadata, {}),
+          pricing: parseJsonField(m.pricing, {}),
+          _source: 'v2'
+        })),
+        version: 'v2'
+      });
+      return;
+    }
+
+    // 回退到旧表
     const models = await queryAll(
       `SELECT id, name, category, provider, description, is_active, api_key,
               provider_id, model_id, capabilities,
@@ -974,7 +1005,7 @@ router.get('/ai-models', authMiddleware, requireAdmin, async (req, res) => {
               created_at, updated_at 
        FROM ai_model_configs ORDER BY id DESC`
     );
-    res.json({ models: models.map(serializeModel) });
+    res.json({ models: models.map(serializeModel), version: 'v1' });
   } catch (error) {
     console.error('[Admin] Get AI models error:', error);
     res.status(500).json({ message: '获取模型列表失败' });
@@ -998,6 +1029,37 @@ router.get('/ai-models/:id', authMiddleware, requireAdmin, async (req, res) => {
   } catch (error) {
     console.error('[Admin] Get AI model error:', error);
     res.status(500).json({ message: '获取模型信息失败' });
+  }
+});
+
+// 新架构 API：创建模型（v2）
+router.post('/ai-models-v2', authMiddleware, requireAdmin, async (req, res) => {
+  const {
+    name, provider_id, model_id, capabilities,
+    metadata, pricing, quality_score, is_recommended, is_active, adapter_name
+  } = req.body;
+
+  if (!name || !provider_id || !model_id) {
+    return res.status(400).json({ message: '必填字段：name, provider_id, model_id' });
+  }
+
+  try {
+    const result = await execute(
+      `INSERT INTO ai_models_v2 (
+        name, provider_id, model_id, capabilities,
+        metadata, pricing, quality_score, is_recommended, is_active, adapter_name
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        name, provider_id, model_id, stringifyJsonValue(capabilities || []),
+        stringifyJsonValue(metadata || {}), stringifyJsonValue(pricing || {}),
+        quality_score || 0, is_recommended ?? 0, is_active ?? 1, adapter_name || 'openai_compatible'
+      ]
+    );
+
+    res.json({ message: '模型创建成功', id: result.insertId });
+  } catch (error) {
+    console.error('[Admin] Create AI model v2 error:', error);
+    res.status(500).json({ message: '创建模型失败' });
   }
 });
 
@@ -1074,6 +1136,52 @@ router.post('/ai-models', authMiddleware, requireAdmin, async (req, res) => {
   } catch (error) {
     console.error('[Admin] Create AI model error:', error);
     res.status(500).json({ message: '创建模型失败' });
+  }
+});
+
+// 新架构 API：更新模型（v2）
+router.put('/ai-models-v2/:id', authMiddleware, requireAdmin, async (req, res) => {
+  const { id } = req.params;
+  const {
+    name, provider_id, model_id, capabilities,
+    metadata, pricing, quality_score, is_recommended, is_active, adapter_name
+  } = req.body;
+
+  try {
+    const model = await queryOne('SELECT id FROM ai_models_v2 WHERE id = ?', [id]);
+    if (!model) {
+      return res.status(404).json({ message: '模型不存在' });
+    }
+
+    await execute(
+      `UPDATE ai_models_v2 SET
+        name = ?, provider_id = ?, model_id = ?, capabilities = ?,
+        metadata = ?, pricing = ?, quality_score = ?, is_recommended = ?,
+        is_active = ?, adapter_name = ?
+      WHERE id = ?`,
+      [
+        name, provider_id, model_id, stringifyJsonValue(capabilities || []),
+        stringifyJsonValue(metadata || {}), stringifyJsonValue(pricing || {}),
+        quality_score, is_recommended, is_active, adapter_name, id
+      ]
+    );
+
+    res.json({ message: '模型更新成功' });
+  } catch (error) {
+    console.error('[Admin] Update AI model v2 error:', error);
+    res.status(500).json({ message: '更新模型失败' });
+  }
+});
+
+router.delete('/ai-models-v2/:id', authMiddleware, requireAdmin, async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    await execute('DELETE FROM ai_models_v2 WHERE id = ?', [id]);
+    res.json({ message: '模型删除成功' });
+  } catch (error) {
+    console.error('[Admin] Delete AI model v2 error:', error);
+    res.status(500).json({ message: '删除模型失败' });
   }
 });
 
@@ -1187,11 +1295,11 @@ router.delete('/ai-models/:id', authMiddleware, requireAdmin, async (req, res) =
 
 router.post('/ai-models/smart-parse', authMiddleware, requireAdmin, async (req, res) => {
   const { apiDoc, textModel, customPrompt } = req.body;
-  
+
   if (!apiDoc || !textModel) {
     return res.status(400).json({ message: 'API文档和模型名称不能为空' });
   }
-  
+
   try {
     const userId = req.user.id;
 
@@ -1209,6 +1317,420 @@ router.post('/ai-models/smart-parse', authMiddleware, requireAdmin, async (req, 
   } catch (error) {
     sendGenerationError(res, error, '智能解析失败', '[Admin] Smart parse error:');
   }
+});
+
+/**
+ * 火山引擎模型分类映射
+ * 根据模型ID前缀判断模型类型
+ */
+function classifyVolcengineModel(modelId) {
+  const id = modelId.toLowerCase();
+  // 图像生成模型
+  if (id.includes('seedream') || id.includes('seed')) {
+    return 'IMAGE';
+  }
+  // 视频生成模型
+  if (id.includes('seedance')) {
+    return 'VIDEO';
+  }
+  // 多模态模型
+  if (id.includes('vision') || id.includes('vl') || id.includes('multimodal')) {
+    return 'MULTIMODAL';
+  }
+  // 文本模型（默认）
+  return 'TEXT';
+}
+
+/**
+ * 通用 OpenAI 兼容模型列表获取
+ * 支持 /v1/models 标准接口的平台
+ */
+async function discoverOpenAIModels(provider, category, classifyFn) {
+  const baseUrl = (provider.base_url || '').replace(/\/$/, '');
+  const apiKey = provider.api_key;
+
+  if (!apiKey) {
+    throw new Error(`${provider.display_name || provider.name} 平台未配置 API Key`);
+  }
+
+  const url = `${baseUrl}/v1/models`;
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json'
+    }
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => '');
+    throw new Error(`${provider.name} API 请求失败: ${response.status} ${errorText.substring(0, 200)}`);
+  }
+
+  const data = await response.json();
+  const models = data.data || [];
+
+  // 过滤并分类模型
+  const result = models.map(m => {
+    const modelId = m.id || '';
+    const modelCategory = classifyFn ? classifyFn(modelId) : 'TEXT';
+    return {
+      name: m.id || '未知模型',
+      model_id: m.id || '',
+      description: `${m.id} ${provider.display_name || provider.name}模型`,
+      category: modelCategory,
+      input_price_per_million: 0,
+      output_price_per_million: 0
+    };
+  }).filter(m => m.category === category);
+
+  return result;
+}
+
+/**
+ * 火山引擎模型分类映射
+ */
+function classifyVolcengineModel(modelId) {
+  const id = modelId.toLowerCase();
+  if (id.includes('seedream') || id.includes('seed')) return 'IMAGE';
+  if (id.includes('seedance')) return 'VIDEO';
+  if (id.includes('vision') || id.includes('vl')) return 'MULTIMODAL';
+  if (id.includes('3d')) return '3D';
+  return 'TEXT';
+}
+
+/**
+ * 百度千帆模型分类映射
+ */
+function classifyBaiduModel(modelId) {
+  const id = modelId.toLowerCase();
+  if (id.includes('image') || id.includes('绘图') || id.includes('绘画')) return 'IMAGE';
+  if (id.includes('video')) return 'VIDEO';
+  if (id.includes('audio') || id.includes('语音') || id.includes('tts')) return 'AUDIO';
+  if (id.includes('vision') || id.includes('vl') || id.includes('多模态')) return 'MULTIMODAL';
+  // 百度文心系列默认文本
+  if (id.startsWith('ernie')) return 'TEXT';
+  return 'TEXT';
+}
+
+/**
+ * 通用模型分类（OpenAI / DeepSeek / 智谱等）
+ */
+function classifyGenericModel(modelId) {
+  const id = modelId.toLowerCase();
+  if (id.includes('dall') || id.includes('image') || id.includes('gpt-4o-image')) return 'IMAGE';
+  if (id.includes('sora') || id.includes('video') || id.includes('seedance')) return 'VIDEO';
+  if (id.includes('whisper') || id.includes('audio') || id.includes('tts')) return 'AUDIO';
+  if (id.includes('vision') || id.includes('vl') || id.includes(' multimodal')) return 'MULTIMODAL';
+  return 'TEXT';
+}
+
+/**
+ * 从火山引擎方舟获取模型列表
+ */
+async function discoverVolcengineModels(provider, category) {
+  return discoverOpenAIModels(provider, category, classifyVolcengineModel);
+}
+
+/**
+ * 从百度千帆获取模型列表
+ */
+async function discoverBaiduModels(provider, category) {
+  // 百度千帆使用 /v2/models 接口，但格式与 OpenAI 兼容
+  const baseUrl = (provider.base_url || 'https://qianfan.baidubce.com').replace(/\/$/, '');
+  const apiKey = provider.api_key;
+
+  if (!apiKey) {
+    throw new Error('百度千帆平台未配置 API Key');
+  }
+
+  const url = `${baseUrl}/v2/models`;
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json'
+    }
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => '');
+    throw new Error(`百度千帆 API 请求失败: ${response.status} ${errorText.substring(0, 200)}`);
+  }
+
+  const data = await response.json();
+  const models = data.data || [];
+
+  const result = models.map(m => {
+    const modelId = m.id || '';
+    const modelCategory = classifyBaiduModel(modelId);
+    return {
+      name: m.id || '未知模型',
+      model_id: m.id || '',
+      description: `${m.id} 百度千帆模型`,
+      category: modelCategory,
+      input_price_per_million: 0,
+      output_price_per_million: 0
+    };
+  }).filter(m => m.category === category);
+
+  return result;
+}
+
+/**
+ * 通过 DeepSeek AI 发现模型（通用 fallback）
+ * 对阿里云启用联网搜索获取最新模型信息
+ */
+async function discoverModelsByAI(provider, category) {
+  const categoryMap = {
+    TEXT: '文本生成/对话',
+    IMAGE: '图像生成',
+    VIDEO: '视频生成',
+    AUDIO: '音频模型',
+    MULTIMODAL: '多模态理解',
+    '3D': '3D 生成',
+  };
+
+  const providerName = (provider.display_name || provider.name).toLowerCase();
+  const isAliyun = providerName.includes('aliyun') || providerName.includes('阿里云') || providerName.includes('dashscope') || providerName.includes('百炼');
+
+  // 阿里云启用联网搜索，获取最新模型列表
+  const searchHint = isAliyun
+    ? `\n\n重要：请使用联网搜索功能查询阿里云百炼平台官方文档获取最新、最准确的模型信息。确保 model_id 是官方当前可用的准确值。`
+    : '';
+
+  const prompt = `请查询 ${provider.display_name || provider.name} 平台当前所有可用的 ${categoryMap[category] || category} 类型模型。
+
+要求：
+1. 返回严格合法的 JSON 数组格式，不要包含任何 markdown 代码块标记
+2. 每个模型对象包含以下字段：
+   - name: 模型显示名称（中文或英文）
+   - model_id: 平台官方模型ID（用于API调用）
+   - description: 模型能力描述（50字以内）
+   - category: 必须是 "${category}"
+   - input_price_per_million: 输入价格，单位元/百万tokens（数字，不知道填0）
+   - output_price_per_million: 输出价格，单位元/百万tokens（数字，不知道填0）
+3. 尽量返回完整的模型列表，不要遗漏主流模型
+4. model_id 必须是平台官方实际使用的值，不能编造${searchHint}
+
+示例输出格式：
+[
+  {
+    "name": "DeepSeek-V3",
+    "model_id": "deepseek-chat",
+    "description": "128K上下文，高性价比文本生成",
+    "category": "TEXT",
+    "input_price_per_million": 2,
+    "output_price_per_million": 8
+  }
+]
+
+如果该平台没有此类模型，返回空数组 []。`;
+
+  const response = await callAIModel('Doubao-pro-256k', {
+    prompt,
+    max_tokens: 4096,
+    temperature: 0.3
+  });
+
+  const content = response?.content || '';
+
+  let models = [];
+  const jsonMatch = content.match(/\[\s*\{[\s\S]*\}\s*\]/);
+  if (jsonMatch) {
+    models = JSON.parse(jsonMatch[0]);
+  } else {
+    models = JSON.parse(content);
+  }
+
+  return models.filter(m => m.category === category);
+}
+
+/**
+ * 智能发现模型
+ * POST /api/admin/ai-models/discover
+ * Body: { providerId: number, category: string }
+ */
+router.post('/ai-models/discover', authMiddleware, requireAdmin, async (req, res) => {
+  const { providerId, category } = req.body;
+
+  if (!providerId || !category) {
+    return res.status(400).json({ message: '平台ID和模型分类不能为空' });
+  }
+
+  try {
+    // 查询平台信息
+    const provider = await queryOne(
+      'SELECT id, name, display_name, base_url, api_key FROM model_providers WHERE id = ? AND is_active = 1',
+      [providerId]
+    );
+
+    if (!provider) {
+      return res.status(404).json({ message: '平台不存在或未启用' });
+    }
+
+    let models = [];
+    const providerName = (provider.name || '').toLowerCase();
+
+    // 平台适配器映射
+    const officialAdapters = {
+      'volcengine': discoverVolcengineModels,
+      '火山引擎': discoverVolcengineModels,
+      'openai': (p, c) => discoverOpenAIModels(p, c, classifyGenericModel),
+      'azure': (p, c) => discoverOpenAIModels(p, c, classifyGenericModel),
+      'azure_openai': (p, c) => discoverOpenAIModels(p, c, classifyGenericModel),
+      'deepseek': (p, c) => discoverOpenAIModels(p, c, classifyGenericModel),
+      'zhipu': (p, c) => discoverOpenAIModels(p, c, classifyGenericModel),
+      '智谱': (p, c) => discoverOpenAIModels(p, c, classifyGenericModel),
+      'glm': (p, c) => discoverOpenAIModels(p, c, classifyGenericModel),
+      'baidu': discoverBaiduModels,
+      '百度': discoverBaiduModels,
+      'qianfan': discoverBaiduModels,
+    };
+
+    const adapter = officialAdapters[providerName];
+
+    if (adapter) {
+      // 使用官方 API 获取模型列表
+      try {
+        models = await adapter(provider, category);
+        console.log(`[Admin] ${provider.name} 官方 API 发现 ${models.length} 个 ${category} 模型`);
+      } catch (apiErr) {
+        console.warn(`[Admin] ${provider.name} 官方 API 发现失败，降级到 AI 发现:`, apiErr.message);
+        // fallback 到 AI 发现
+        models = await runAsAdminTool(req, 'model_discover', null, async () => {
+          return await discoverModelsByAI(provider, category);
+        });
+      }
+    } else {
+      // 其他平台使用 DeepSeek AI 发现
+      models = await runAsAdminTool(req, 'model_discover', null, async () => {
+        return await discoverModelsByAI(provider, category);
+      });
+    }
+
+    // 补充平台信息
+    models = models.map(m => ({
+      ...m,
+      provider_id: provider.id,
+      provider_name: provider.name
+    }));
+
+    res.json({
+      success: true,
+      provider: { id: provider.id, name: provider.name, display_name: provider.display_name },
+      models
+    });
+  } catch (error) {
+    console.error('[Admin] Discover models error:', error);
+    res.status(500).json({ message: '发现模型失败: ' + (error.message || '未知错误') });
+  }
+});
+
+/**
+ * 批量创建模型
+ * POST /api/admin/ai-models/batch
+ * Body: { models: [{ name, category, provider, provider_id, model_id, description, price_config? }] }
+ */
+router.post('/ai-models/batch', authMiddleware, requireAdmin, async (req, res) => {
+  const { models } = req.body;
+
+  if (!Array.isArray(models) || models.length === 0) {
+    return res.status(400).json({ message: '模型列表不能为空' });
+  }
+
+  const results = [];
+  const errors = [];
+  const adminId = req.user.userId || req.user.id;
+
+  for (const model of models) {
+    const {
+      name, category, provider, description,
+      provider_id, model_id,
+      input_price_per_million, output_price_per_million
+    } = model;
+
+    if (!name || !category || !provider || !provider_id || !model_id) {
+      errors.push({ name: name || '(未命名)', error: '缺少必填字段' });
+      continue;
+    }
+
+    try {
+      // 构建默认价格配置
+      let priceConfig = null;
+      if (typeof input_price_per_million === 'number' || typeof output_price_per_million === 'number') {
+        const components = [];
+        if (typeof input_price_per_million === 'number' && input_price_per_million > 0) {
+          components.push({ type: 'input_tokens', unit: 'per_million_tokens', price: input_price_per_million });
+        }
+        if (typeof output_price_per_million === 'number' && output_price_per_million > 0) {
+          components.push({ type: 'output_tokens', unit: 'per_million_tokens', price: output_price_per_million });
+        }
+        if (components.length === 0) {
+          components.push({ type: 'total_tokens', unit: 'per_million_tokens', price: 2 });
+        }
+        priceConfig = JSON.stringify({
+          currency: 'CNY',
+          charge_on_failure: false,
+          components
+        });
+      }
+
+      await execute(
+        `INSERT INTO ai_model_configs (
+          name, category, provider, description, is_active,
+          provider_id, model_id, capabilities,
+          price_config, request_method, url_template, headers_template,
+          body_template, default_params, response_mapping,
+          supported_aspect_ratios, supported_durations, supported_resolutions,
+          query_url_template, query_method, query_headers_template,
+          query_body_template, query_response_mapping,
+          query_success_condition, query_fail_condition,
+          query_success_mapping, query_fail_mapping,
+          custom_handler, custom_query_handler,
+          billing_handler, billing_query_handler
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          name, category, provider, description || '', 1,
+          provider_id, model_id, '[]',
+          priceConfig, 'POST', null,
+          '{}', '{}', '{}', '{}',
+          '[]', '[]', '[]',
+          null, 'GET',
+          '{}',
+          '{}',
+          '{}', null, null,
+          '{}',
+          '{}',
+          null, null,
+          null, null
+        ]
+      );
+
+      results.push(name);
+
+      // 记录操作日志
+      await logAdminAction({
+        adminId,
+        action: 'create',
+        targetType: 'ai_model',
+        targetName: name,
+        details: { category, provider, provider_id, model_id, source: 'batch_discover' },
+        ipAddress: req.ip || req.connection?.remoteAddress || '',
+        userAgent: req.headers?.['user-agent'] || ''
+      });
+    } catch (error) {
+      console.error(`[Admin] Batch create model "${name}" error:`, error);
+      errors.push({ name: name || '(未命名)', error: error.message || '创建失败' });
+    }
+  }
+
+  res.json({
+    success: true,
+    created: results.length,
+    createdModels: results,
+    errors
+  });
 });
 
 // ====== 模型平台管理 API ======
@@ -1822,6 +2344,116 @@ router.delete('/rate-limit-configs/:id', authMiddleware, requireAdmin, async (re
 // ========================================
 
 /**
+ * 获取套餐锁定状态
+ * GET /api/admin/subscription-plans/lock-status
+ */
+router.get('/subscription-plans/lock-status', authMiddleware, requireAdmin, async (_req, res) => {
+  try {
+    const config = await queryOne(
+      "SELECT config_value FROM system_configs WHERE config_key = 'subscription_plans_locked' AND is_active = 1"
+    );
+    const isLocked = config ? JSON.parse(config.config_value) === true : true;
+    res.json({ locked: isLocked });
+  } catch (error) {
+    console.error('[Admin] Get lock status error:', error);
+    res.status(500).json({ message: '获取锁定状态失败' });
+  }
+});
+
+/**
+ * 解锁套餐数量限制（需要二次验证：账号密码 + 后台密钥）
+ * POST /api/admin/subscription-plans/unlock
+ */
+router.post('/subscription-plans/unlock', authMiddleware, requireAdmin, async (req, res) => {
+  const { email, password, adminAccessKey } = req.body;
+  const adminId = req.user.userId;
+
+  if (!email || !password || !adminAccessKey) {
+    return res.status(400).json({ message: '请提供账号、密码和后台密钥' });
+  }
+
+  try {
+    // 1. 验证当前管理员身份（重新验证账号密码）
+    const admin = await queryOne('SELECT id, password_hash, role, email FROM users WHERE email = ?', [email]);
+    if (!admin || admin.id !== adminId) {
+      return res.status(401).json({ message: '账号验证失败' });
+    }
+
+    const isValidPassword = bcrypt.compareSync(password, admin.password_hash);
+    if (!isValidPassword) {
+      return res.status(401).json({ message: '密码错误' });
+    }
+
+    // 2. 验证后台密钥（根据角色类型）
+    const role = admin.role || 'admin';
+    const configuredKey = getConfiguredAdminAccessKey(role);
+    if (!configuredKey) {
+      return res.status(503).json({ message: `后台访问策略未配置，请设置 ${role === 'ops' ? 'OPS_ACCESS_KEY' : 'ADMIN_ACCESS_KEY'}` });
+    }
+
+    const providedKey = String(adminAccessKey).trim();
+    const crypto = require('crypto');
+    const leftBuffer = Buffer.from(providedKey);
+    const rightBuffer = Buffer.from(configuredKey);
+    if (leftBuffer.length !== rightBuffer.length || !crypto.timingSafeEqual(leftBuffer, rightBuffer)) {
+      return res.status(401).json({ message: '后台密钥错误' });
+    }
+
+    // 3. 解除锁定
+    await execute(
+      `INSERT INTO system_configs (config_key, config_name, config_type, config_value, description, is_active)
+       VALUES ('subscription_plans_locked', '套餐数量锁定', 'boolean', 'false', '锁定后禁止新增、删除套餐，编辑套餐不受影响。需要管理员二次验证解锁。', 1)
+       ON DUPLICATE KEY UPDATE config_value = 'false', updated_at = NOW()`
+    );
+
+    // 4. 记录操作日志
+    await logAdminAction({
+      adminId,
+      action: 'unlock_subscription_plans',
+      targetType: 'system_config',
+      targetName: '套餐数量锁定',
+      details: { action: '解除套餐数量锁定', email: admin.email },
+      ipAddress: req.ip || req.connection?.remoteAddress || '',
+      userAgent: req.headers?.['user-agent'] || ''
+    });
+
+    res.json({ message: '套餐数量锁定已解除', unlocked: true });
+  } catch (error) {
+    console.error('[Admin] Unlock subscription plans error:', error);
+    res.status(500).json({ message: '解锁失败' });
+  }
+});
+
+/**
+ * 重新锁定套餐数量
+ * POST /api/admin/subscription-plans/lock
+ */
+router.post('/subscription-plans/lock', authMiddleware, requireAdmin, async (req, res) => {
+  try {
+    await execute(
+      `INSERT INTO system_configs (config_key, config_name, config_type, config_value, description, is_active)
+       VALUES ('subscription_plans_locked', '套餐数量锁定', 'boolean', 'true', '锁定后禁止新增、删除套餐，编辑套餐不受影响。需要管理员二次验证解锁。', 1)
+       ON DUPLICATE KEY UPDATE config_value = 'true', updated_at = NOW()`
+    );
+
+    await logAdminAction({
+      adminId: req.user.userId,
+      action: 'lock_subscription_plans',
+      targetType: 'system_config',
+      targetName: '套餐数量锁定',
+      details: { action: '启用套餐数量锁定' },
+      ipAddress: req.ip || req.connection?.remoteAddress || '',
+      userAgent: req.headers?.['user-agent'] || ''
+    });
+
+    res.json({ message: '套餐数量已锁定', locked: true });
+  } catch (error) {
+    console.error('[Admin] Lock subscription plans error:', error);
+    res.status(500).json({ message: '锁定失败' });
+  }
+});
+
+/**
  * 获取所有订阅计划（包括未激活的）
  * GET /api/admin/subscription-plans
  */
@@ -1866,6 +2498,14 @@ router.post('/subscription-plans', authMiddleware, requireAdmin, async (req, res
   }
 
   try {
+    // 检查套餐数量是否被锁定
+    const lockConfig = await queryOne(
+      "SELECT config_value FROM system_configs WHERE config_key = 'subscription_plans_locked' AND is_active = 1"
+    );
+    if (lockConfig && JSON.parse(lockConfig.config_value) === true) {
+      return res.status(403).json({ message: '套餐数量已锁定，禁止新增套餐。如需修改请先解锁。', locked: true });
+    }
+
     // 检查名称是否已存在
     const existing = await queryOne(
       'SELECT id FROM subscription_plans WHERE name = ?',
@@ -1898,7 +2538,19 @@ router.post('/subscription-plans', authMiddleware, requireAdmin, async (req, res
       ]
     );
 
-    res.json({ 
+    // 记录操作日志
+    await logAdminAction({
+      adminId: req.user.userId,
+      action: 'create',
+      targetType: 'subscription_plan',
+      targetId: result.insertId,
+      targetName: display_name,
+      details: { name, display_name, price_monthly, price_yearly },
+      ipAddress: req.ip || req.connection?.remoteAddress || '',
+      userAgent: req.headers?.['user-agent'] || ''
+    });
+
+    res.json({
       message: '订阅计划创建成功',
       planId: result.insertId
     });
@@ -1997,6 +2649,18 @@ router.put('/subscription-plans/:id', authMiddleware, requireAdmin, async (req, 
       values
     );
 
+    // 记录操作日志
+    await logAdminAction({
+      adminId: req.user.userId,
+      action: 'update',
+      targetType: 'subscription_plan',
+      targetId: id,
+      targetName: display_name || name,
+      details: req.body,
+      ipAddress: req.ip || req.connection?.remoteAddress || '',
+      userAgent: req.headers?.['user-agent'] || ''
+    });
+
     res.json({ message: '订阅计划更新成功' });
   } catch (error) {
     console.error('[Admin] Update subscription plan error:', error);
@@ -2012,7 +2676,15 @@ router.delete('/subscription-plans/:id', authMiddleware, requireAdmin, async (re
   const { id } = req.params;
 
   try {
-    const plan = await queryOne('SELECT id FROM subscription_plans WHERE id = ?', [id]);
+    // 检查套餐数量是否被锁定
+    const lockConfig = await queryOne(
+      "SELECT config_value FROM system_configs WHERE config_key = 'subscription_plans_locked' AND is_active = 1"
+    );
+    if (lockConfig && JSON.parse(lockConfig.config_value) === true) {
+      return res.status(403).json({ message: '套餐数量已锁定，禁止删除套餐。如需修改请先解锁。', locked: true });
+    }
+
+    const plan = await queryOne('SELECT id, display_name, name FROM subscription_plans WHERE id = ?', [id]);
     if (!plan) {
       return res.status(404).json({ message: '订阅计划不存在' });
     }
@@ -2024,13 +2696,26 @@ router.delete('/subscription-plans/:id', authMiddleware, requireAdmin, async (re
       [id]
     );
     if (activeSubscriptions?.count > 0) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         message: '无法删除：有用户正在使用此套餐',
         activeCount: activeSubscriptions.count
       });
     }
 
     await execute('DELETE FROM subscription_plans WHERE id = ?', [id]);
+
+    // 记录操作日志
+    await logAdminAction({
+      adminId: req.user.userId,
+      action: 'delete',
+      targetType: 'subscription_plan',
+      targetId: id,
+      targetName: plan.display_name || plan.name,
+      details: { deletedPlan: plan },
+      ipAddress: req.ip || req.connection?.remoteAddress || '',
+      userAgent: req.headers?.['user-agent'] || ''
+    });
+
     res.json({ message: '订阅计划已删除' });
   } catch (error) {
     console.error('[Admin] Delete subscription plan error:', error);

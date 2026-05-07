@@ -81,6 +81,9 @@ const BASE_SYSTEM_PROMPT = `你是一个 AI 创作助手，可以调用工具帮
 - generate_script: 生成新剧本
 - split_script: 剧本拆集
 
+【项目】
+- create_project: 创建新项目。当用户说"帮我创建一个项目"、"我想做一部新动画"、"开始一个新故事"等意图时调用。参数：name(项目名称), description(项目描述), type(项目类型: comic/short_drama/animation/live_action/game)。创建成功后，后续操作可以基于返回的新 projectId 继续执行。
+
 ## 歧义消解规则（核心）
 用户说的同一句话在不同项目阶段含义完全不同，你必须根据【项目阶段】和【资产统计】来理解用户意图：
 

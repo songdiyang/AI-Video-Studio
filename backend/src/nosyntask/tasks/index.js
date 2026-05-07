@@ -50,6 +50,9 @@ const handleAIAssistantPlanner = require('./AIAssistant/planner');
 const handleAIAssistantExecutor = require('./AIAssistant/executor');
 const handleAIAssistantObserver = require('./AIAssistant/observer');
 
+// 项目管理
+const handleCreateProject = require('./Project/createProject');
+
 module.exports = {
   handleScriptGeneration,
   handleScriptSplit,
@@ -96,5 +99,6 @@ module.exports = {
   handleBuildingImageGeneration,
   handleAIAssistantPlanner,
   handleAIAssistantExecutor,
-  handleAIAssistantObserver
+  handleAIAssistantObserver,
+  handleCreateProject
 };

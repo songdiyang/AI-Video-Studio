@@ -208,12 +208,18 @@ const RateLimitManagement: React.FC = () => {
     switch (role) {
       case 'admin':
         return 'bg-purple-500/10 text-purple-400';
-      case 'vip':
+      case 'studio':
+        return 'bg-rose-500/10 text-rose-400';
+      case 'creator':
+        return 'bg-emerald-500/10 text-emerald-400';
+      case 'starter':
         return 'bg-amber-500/10 text-amber-400';
+      case 'free':
+        return 'bg-blue-500/10 text-blue-400';
       case 'default':
         return 'bg-slate-500/10 text-slate-400';
       default:
-        return 'bg-blue-500/10 text-blue-400';
+        return 'bg-gray-500/10 text-gray-400';
     }
   };
 
@@ -221,10 +227,14 @@ const RateLimitManagement: React.FC = () => {
     switch (role) {
       case 'admin':
         return '管理员';
-      case 'vip':
-        return 'VIP用户';
-      case 'user':
-        return '普通用户';
+      case 'studio':
+        return '工作室版';
+      case 'creator':
+        return '创作者';
+      case 'starter':
+        return '入门版';
+      case 'free':
+        return '免费版';
       case 'default':
         return '默认配置';
       default:
@@ -453,14 +463,41 @@ const RateLimitManagement: React.FC = () => {
               </ModalHeader>
               <ModalBody>
                 <div className="space-y-4">
-                  <Input
-                    label="角色标识"
-                    placeholder="例如: user, admin, vip, premium"
-                    value={formData.role}
-                    onValueChange={(value) => setFormData({ ...formData, role: value })}
-                    isDisabled={!!editingConfig}
-                    description="角色标识应与用户表中的 role 字段匹配"
-                  />
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-slate-200">角色标识</label>
+                    <div className="flex flex-wrap gap-2">
+                      {[
+                        { key: 'admin', label: '管理员', color: 'bg-purple-500/10 text-purple-400 border-purple-500/30' },
+                        { key: 'studio', label: '工作室版', color: 'bg-rose-500/10 text-rose-400 border-rose-500/30' },
+                        { key: 'creator', label: '创作者', color: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' },
+                        { key: 'starter', label: '入门版', color: 'bg-amber-500/10 text-amber-400 border-amber-500/30' },
+                        { key: 'free', label: '免费版', color: 'bg-blue-500/10 text-blue-400 border-blue-500/30' },
+                      ].map(opt => {
+                        const isSelected = formData.role === opt.key;
+                        return (
+                          <button
+                            key={opt.key}
+                            type="button"
+                            disabled={!!editingConfig}
+                            onClick={() => setFormData({ ...formData, role: opt.key })}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${
+                              isSelected
+                                ? opt.color
+                                : 'bg-slate-800/50 text-slate-400 border-slate-700/50 hover:border-slate-600'
+                            } ${editingConfig ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                          >
+                            {opt.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {formData.role && (
+                      <p className="text-xs text-slate-500">
+                        已选择: <span className="text-slate-300 font-medium">{formData.role}</span>
+                        {editingConfig && ' (编辑模式下不可修改)'}
+                      </p>
+                    )}
+                  </div>
                   
                   <div className="grid grid-cols-3 gap-4">
                     <Input

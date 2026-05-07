@@ -1,8 +1,10 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
-import { Button, Input, Textarea, Select, SelectItem, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Chip, Checkbox, Tooltip } from '@heroui/react';
-import { Code2, AlertCircle, CheckCircle, ChevronDown, ChevronUp, Film, Clock, Monitor, Plus, Trash2, Settings2, DollarSign, Sliders, Zap, ExternalLink } from 'lucide-react';
-import { AIModel, ModelFormData, OPENAI_PRESETS, ASPECT_RATIO_PRESETS, DURATION_PRESETS, VIDEO_RESOLUTION_PRESETS, IMAGE_RESOLUTION_PRESETS, OpenAIPreset } from './types';
+import { Button, Input, Textarea, Select, SelectItem, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Chip, Checkbox, Tooltip, Tabs, Tab } from '@heroui/react';
+import { Code2, AlertCircle, CheckCircle, ChevronDown, ChevronUp, Film, Clock, Monitor, Plus, Trash2, Settings2, DollarSign, Sliders, ExternalLink, Sparkles, Info, Zap } from 'lucide-react';
+import { AIModel, ModelFormData, ASPECT_RATIO_PRESETS, DURATION_PRESETS, VIDEO_RESOLUTION_PRESETS, IMAGE_RESOLUTION_PRESETS } from './types';
 import { getAdminAuthHeaders } from '../../../services/auth';
+import ModelDiscoveryPanel from './ModelDiscoveryPanel';
+import BillingPolicyEditor from './BillingPolicyEditor';
 
 interface ModelProvider {
   id: number;
@@ -497,74 +499,6 @@ const VisualResolutionSelector: React.FC<{
 };
 
 // ============================================================
-// OpenAI 适配层预设选择器
-// ============================================================
-const OpenAIPresetSelector: React.FC<{
-  onApply: (preset: OpenAIPreset) => void;
-  category: string;
-}> = ({ onApply, category }) => {
-  const [expanded, setExpanded] = useState(false);
-  const filteredPresets = OPENAI_PRESETS.filter(p => !category || p.category === category || category === 'TEXT');
-  const allPresets = OPENAI_PRESETS;
-
-  return (
-    <div className="bg-gradient-to-r from-blue-500/5 to-cyan-500/5 border border-blue-500/20 rounded-lg p-4">
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2">
-          <Zap className="w-4 h-4 text-blue-400" />
-          <span className="text-sm font-semibold text-slate-200">OpenAI 适配层预设</span>
-          <span className="text-xs text-slate-500">一键配置国内主流平台模型</span>
-        </div>
-        <Button
-          size="sm"
-          variant="light"
-          className="text-slate-400 text-xs"
-          onPress={() => setExpanded(!expanded)}
-          endContent={expanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-        >
-          {expanded ? '收起' : `查看全部 (${allPresets.length})`}
-        </Button>
-      </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-        {(expanded ? allPresets : filteredPresets.slice(0, 4)).map((preset, idx) => (
-          <div
-            key={idx}
-            className="flex items-center justify-between bg-slate-800/40 border border-slate-700/50 rounded-lg p-3 hover:border-blue-500/30 hover:bg-slate-800/60 transition-all cursor-pointer group"
-            onClick={() => onApply(preset)}
-          >
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium text-slate-200 truncate">{preset.name}</span>
-                <Chip size="sm" className={`text-xs ${
-                  preset.category === 'TEXT' ? 'bg-blue-500/10 text-blue-400' :
-                  preset.category === 'IMAGE' ? 'bg-purple-500/10 text-purple-400' :
-                  preset.category === 'VIDEO' ? 'bg-pink-500/10 text-pink-400' :
-                  preset.category === 'MULTIMODAL' ? 'bg-emerald-500/10 text-emerald-400' :
-                  'bg-amber-500/10 text-amber-400'
-                }`}>
-                  {preset.category}
-                </Chip>
-              </div>
-              <p className="text-xs text-slate-500 mt-0.5 truncate">{preset.description}</p>
-              <p className="text-xs text-blue-400 mt-0.5 truncate">{preset.provider_name} / {preset.model_id}</p>
-            </div>
-            <Button
-              size="sm"
-              variant="flat"
-              className="bg-blue-500/10 text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity ml-2 shrink-0"
-            >
-              应用
-            </Button>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-};
-
-
-
-// ============================================================
 // 可折叠区域
 // ============================================================
 const CollapsibleSection: React.FC<{
@@ -670,24 +604,6 @@ const ModelFormModal: React.FC<ModelFormModalProps> = ({
     }
   };
 
-  // 应用 OpenAI 适配层预设
-  const handleApplyOpenAIPreset = (preset: OpenAIPreset) => {
-    const newData = { ...formData };
-    newData.category = preset.category;
-    newData.provider = preset.provider_name;
-    newData.provider_id = String(preset.provider_id);
-    newData.model_id = preset.model_id;
-    newData.capabilities = JSON.stringify(preset.capabilities);
-
-    const fields = Object.keys(preset.config) as (keyof ModelFormData)[];
-    for (const key of fields) {
-      if (preset.config[key] !== undefined) {
-        (newData as any)[key] = preset.config[key];
-      }
-    }
-    setFormData(newData);
-  };
-
   const isVideoOrImage = formData.category === 'VIDEO' || formData.category === 'IMAGE';
   const isVideo = formData.category === 'VIDEO';
 
@@ -701,358 +617,431 @@ const ModelFormModal: React.FC<ModelFormModalProps> = ({
           <span>{editingModel ? '编辑模型' : '添加模型'}</span>
         </ModalHeader>
         <ModalBody className="space-y-4">
-          {/* JSON 验证错误提示 */}
-          {jsonErrors.length > 0 && (
-            <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3">
-              <div className="flex items-center gap-2 mb-1">
-                <AlertCircle className="w-4 h-4 text-red-400" />
-                <span className="text-sm font-medium text-red-400">JSON 格式错误</span>
-              </div>
-              {jsonErrors.map((err, idx) => (
-                <p key={idx} className="text-xs text-red-300 ml-6">{err}</p>
-              ))}
+        {/* JSON 验证错误提示 */}
+        {jsonErrors.length > 0 && (
+          <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3">
+            <div className="flex items-center gap-2 mb-1">
+              <AlertCircle className="w-4 h-4 text-red-400" />
+              <span className="text-sm font-medium text-red-400">JSON 格式错误</span>
             </div>
-          )}
-
-          {/* OpenAI 适配层预设区域 */}
-          {!editingModel && (
-            <OpenAIPresetSelector
-              onApply={handleApplyOpenAIPreset}
-              category={formData.category}
-            />
-          )}
-
-          {/* OpenAI 适配层模式切换（始终开启，不可关闭） */}
-          <div className="bg-gradient-to-r from-blue-500/5 to-violet-500/5 border border-blue-500/20 rounded-lg p-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Zap className="w-4 h-4 text-blue-400" />
-                <span className="text-sm font-semibold text-slate-200">OpenAI 兼容适配层模式</span>
-                <span className="text-xs text-slate-500">自动适配国内主流平台接口</span>
-              </div>
-              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-500/10 border border-blue-500/20">
-                <CheckCircle className="w-3.5 h-3.5 text-blue-400" />
-                <span className="text-xs text-blue-400 font-medium">已启用</span>
-              </div>
-            </div>
-            <p className="text-xs text-blue-400 mt-2">
-              当前仅支持 OpenAI 兼容格式调用，系统自动适配，无需手动配置模板字段
-            </p>
+            {jsonErrors.map((err, idx) => (
+              <p key={idx} className="text-xs text-red-300 ml-6">{err}</p>
+            ))}
           </div>
+        )}
 
-          {/* 基础信息 */}
-          <div className="grid grid-cols-2 gap-4">
-            <Input
-              label="模型名称"
-              placeholder="如: GPT-4o"
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              isRequired
-            />
-            <Input
-              label="厂商标识"
-              placeholder="如: openai"
-              value={formData.provider}
-              onChange={(e) => setFormData({ ...formData, provider: e.target.value })}
-              isRequired
-            />
-          </div>
-
-          <div className="grid grid-cols-3 gap-4">
-            <Select
-              label="分类"
-              selectedKeys={[formData.category]}
-              onChange={(e) => setFormData({ ...formData, category: e.target.value as any })}
-              isRequired
-            >
-              <SelectItem key="TEXT">TEXT (文本)</SelectItem>
-              <SelectItem key="IMAGE">IMAGE (图像)</SelectItem>
-              <SelectItem key="VIDEO">VIDEO (视频)</SelectItem>
-              <SelectItem key="AUDIO">AUDIO (音频)</SelectItem>
-              <SelectItem key="MULTIMODAL">MULTIMODAL (多模态)</SelectItem>
-            </Select>
-
-            <Select
-              label="状态"
-              selectedKeys={[String(formData.is_active)]}
-              onChange={(e) => setFormData({ ...formData, is_active: parseInt(e.target.value) })}
-            >
-              <SelectItem key="1">启用</SelectItem>
-              <SelectItem key="0">禁用</SelectItem>
-            </Select>
-
-
-          </div>
-
-          <Textarea
-            label="描述"
-            placeholder="模型描述信息"
-            value={formData.description}
-            onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-            minRows={2}
-          />
-
-          {/* OpenAI 适配层配置 */}
-          <div className="bg-slate-800/30 border border-slate-700/50 rounded-lg p-4 space-y-4">
-            <h4 className="text-sm font-semibold text-slate-200 flex items-center gap-2">
-              <Zap className="w-4 h-4 text-blue-400" />
-              OpenAI 适配层配置
-            </h4>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="relative">
-                <Select
-                  label="选择平台"
-                  placeholder="选择模型平台"
-                  selectedKeys={formData.provider_id ? [String(formData.provider_id)] : []}
-                  onChange={(e) => setFormData({ ...formData, provider_id: e.target.value })}
-                  isRequired
-                >
-                  {providers.map(p => (
-                    <SelectItem key={String(p.id)}>{p.display_name}</SelectItem>
-                  ))}
-                </Select>
-                {providers.length === 0 && (
-                  <p className="text-xs text-amber-400 mt-1">
-                    暂无平台配置，请先添加平台
-                  </p>
-                )}
-              </div>
-
-              <Input
-                label="平台模型ID"
-                placeholder="如: deepseek-v4-pro, qwen-plus"
-                value={formData.model_id}
-                onChange={(e) => setFormData({ ...formData, model_id: e.target.value })}
-                isRequired
-                description="填写平台官方的模型ID"
-              />
-            </div>
-
-            {/* 平台管理入口 */}
-            <div className="flex items-center justify-between bg-slate-800/50 rounded-lg p-3">
-              <div className="flex items-center gap-2">
-                <Settings2 className="w-4 h-4 text-slate-400" />
-                <span className="text-sm text-slate-300">需要添加新平台？</span>
-              </div>
-              <Button
-                size="sm"
-                variant="flat"
-                className="bg-blue-500/10 text-blue-400 hover:bg-blue-500/20"
-                startContent={<ExternalLink className="w-3.5 h-3.5" />}
-                onPress={() => {
-                  window.open('/admin/model-providers', '_blank');
-                }}
-              >
-                管理平台
-              </Button>
-            </div>
-
-            {/* API Key 和 能力标签 已从平台管理继承，此处不再重复配置 */}
-            <div className="bg-slate-800/50 rounded-lg p-3">
-              <p className="text-xs text-slate-500">
-                API Key 与平台认证信息已从「平台管理」继承，无需在此重复配置。
-                如需修改，请前往 <a href="/admin/model-providers" target="_blank" className="text-blue-400 hover:underline">平台管理</a>。
-              </p>
-            </div>
-          </div>
-
-          {/* 计费配置 - 可视化编辑器 */}
-          <VisualPriceConfigEditor
-            value={formData.price_config}
-            onChange={(val) => setFormData({ ...formData, price_config: val })}
-          />
-
-          {/* 默认参数 - 可视化编辑器 */}
-          <VisualKeyValueEditor
-            value={formData.default_params}
-            onChange={(val) => setFormData({ ...formData, default_params: val })}
-          />
-
-          {/* 视频/图像专用参数 - 始终可视化 */}
-          {isVideoOrImage && (
-            <div className="bg-slate-800/30 border border-slate-700/50 rounded-lg p-4 space-y-4">
-              <h4 className="text-sm font-semibold text-slate-200 flex items-center gap-2">
-                <Film className="w-4 h-4 text-pink-400" />
-                {isVideo ? '视频生成参数配置' : '图像生成参数配置'}
-              </h4>
-              
-              <VisualAspectRatioSelector
-                value={formData.supported_aspect_ratios}
-                onChange={(val) => setFormData({ ...formData, supported_aspect_ratios: val })}
-              />
-
-              {isVideo && (
-                <VisualDurationSelector
-                  value={formData.supported_durations}
-                  onChange={(val) => setFormData({ ...formData, supported_durations: val })}
-                />
-              )}
-              <VisualResolutionSelector
-                value={formData.supported_resolutions}
-                onChange={(val) => setFormData({ ...formData, supported_resolutions: val })}
-                category={formData.category}
-              />
-            </div>
-          )}
-
-          {/* ============================================================ */}
-          {/* ============================================================ */}
-          {/*  高级设置 (折叠区)                                           */}
-          {/* ============================================================ */}
-          <CollapsibleSection
-            title="高级设置"
-            subtitle="响应映射、查询配置、自定义 Handler 等（可选）"
-            defaultOpen={hasAdvancedContent}
-            icon={<Settings2 className="w-4 h-4 text-amber-400" />}
+        <Tabs
+          aria-label="模型配置"
+          color="primary"
+          variant="underlined"
+          classNames={{
+            base: "w-full",
+            tabList: "gap-6 w-full border-b border-[var(--border-color)]",
+            cursor: "w-full bg-[var(--accent)]",
+            tab: "max-w-fit px-2 h-10 text-[var(--text-muted)] data-[selected=true]:text-[var(--text-primary)]",
+            tabContent: "flex items-center gap-1.5 text-sm font-medium",
+            panel: "pt-4 pb-2"
+          }}
+        >
+          {/* ============ Tab 1: 基础信息 ============ */}
+          <Tab
+            key="basic"
+            title={
+              <span className="flex items-center gap-1.5">
+                <Info className="w-4 h-4" />
+                基础信息
+              </span>
+            }
           >
-            <JsonField
-              label="响应映射 (JSON)"
-              placeholder='{"taskId": "data.id"}'
-              value={formData.response_mapping}
-              onChange={(val) => setFormData({ ...formData, response_mapping: val })}
-              minRows={3}
-              description='统一不同厂商的返回格式。如: {"content": "choices.0.message.content", "tokens": "usage.total_tokens"}'
-            />
+            <div className="space-y-4">
+              {/* 智能发现模型 */}
+              {!editingModel && (
+                <div className="bg-gradient-to-r from-[var(--accent)]/5 to-violet-500/5 border border-[var(--accent)]/20 rounded-lg p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Sparkles className="w-4 h-4 text-[var(--accent)]" />
+                    <span className="text-sm font-semibold text-[var(--text-primary)]">智能发现模型</span>
+                    <span className="text-xs text-[var(--text-muted)]">选择平台，自动获取可用模型并一键接入</span>
+                  </div>
+                  <ModelDiscoveryPanel
+                    category={formData.category}
+                    providers={providers}
+                    onCategoryChange={(newCat) => {
+                      setFormData({ ...formData, category: newCat as any });
+                    }}
+                    onSuccess={() => {
+                      onClose();
+                      if (typeof (window as any).__refreshModelList === 'function') {
+                        (window as any).__refreshModelList();
+                      }
+                    }}
+                  />
+                </div>
+              )}
 
-            {/* 查询配置 (子折叠) */}
-            <CollapsibleSection
-              title="查询配置（可选）"
-              subtitle="异步模型的任务轮询配置，同步模型无需配置"
-              defaultOpen={!!formData.query_url_template}
-            >
+              {/* OpenAI 适配层模式切换 */}
+              <div className="bg-gradient-to-r from-blue-500/5 to-violet-500/5 border border-blue-500/20 rounded-lg p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Zap className="w-4 h-4 text-blue-400" />
+                    <span className="text-sm font-semibold text-slate-200">OpenAI 兼容适配层模式</span>
+                    <span className="text-xs text-slate-500">自动适配国内主流平台接口</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-500/10 border border-blue-500/20">
+                    <CheckCircle className="w-3.5 h-3.5 text-blue-400" />
+                    <span className="text-xs text-blue-400 font-medium">已启用</span>
+                  </div>
+                </div>
+                <p className="text-xs text-blue-400 mt-2">
+                  当前仅支持 OpenAI 兼容格式调用，系统自动适配，无需手动配置模板字段
+                </p>
+              </div>
+
+              {/* 基础信息表单 */}
               <div className="grid grid-cols-2 gap-4">
                 <Input
-                  label="查询 URL 模板"
-                  placeholder="https://api.example.com/v1/tasks/{{taskId}}"
-                  value={formData.query_url_template}
-                  onChange={(e) => setFormData({ ...formData, query_url_template: e.target.value })}
+                  label="模型名称"
+                  placeholder="如: GPT-4o"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  isRequired
                 />
+                <Input
+                  label="厂商标识"
+                  placeholder="如: openai"
+                  value={formData.provider}
+                  onChange={(e) => setFormData({ ...formData, provider: e.target.value })}
+                  isRequired
+                />
+              </div>
+
+              <div className="grid grid-cols-3 gap-4">
+                <Input
+                  label="分类"
+                  placeholder="如: TEXT, IMAGE, VIDEO, AUDIO, MULTIMODAL, 3D..."
+                  value={formData.category}
+                  onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                  isRequired
+                  description="支持任意自定义分类，如 3D、CODE、EMBEDDING 等"
+                />
+
                 <Select
-                  label="查询方法"
-                  selectedKeys={[formData.query_method]}
-                  onChange={(e) => setFormData({ ...formData, query_method: e.target.value })}
+                  label="状态"
+                  selectedKeys={[String(formData.is_active)]}
+                  onChange={(e) => setFormData({ ...formData, is_active: parseInt(e.target.value) })}
                 >
-                  <SelectItem key="GET">GET</SelectItem>
-                  <SelectItem key="POST">POST</SelectItem>
+                  <SelectItem key="1">启用</SelectItem>
+                  <SelectItem key="0">禁用</SelectItem>
                 </Select>
               </div>
 
-              <JsonField
-                label="查询 Headers (JSON)"
-                value={formData.query_headers_template}
-                onChange={(val) => setFormData({ ...formData, query_headers_template: val })}
+              <Textarea
+                label="描述"
+                placeholder="模型描述信息"
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                 minRows={2}
               />
 
-              <JsonField
-                label="查询 Body 模板 (JSON)"
-                placeholder='{"task_id": "{{taskId}}"}'
-                value={formData.query_body_template}
-                onChange={(val) => setFormData({ ...formData, query_body_template: val })}
-                minRows={2}
-                description="查询方法为 POST 时使用"
-              />
-
-              <JsonField
-                label="查询响应映射 (JSON)"
-                value={formData.query_response_mapping}
-                onChange={(val) => setFormData({ ...formData, query_response_mapping: val })}
-                minRows={2}
-                description='基础字段映射，提取 status 等原始值。如: {"status": "data.task_status"}'
-              />
-
-              {/* 异步状态判断 */}
-              <div className="border-t border-slate-700/50 pt-4 mt-2">
-                <h4 className="font-semibold text-slate-300 mb-1">异步状态判断</h4>
-                <p className="text-xs text-slate-400 mb-3">配置异步模型的成功/失败判断条件和结果映射。</p>
+              {/* OpenAI 适配层配置 */}
+              <div className="bg-slate-800/30 border border-slate-700/50 rounded-lg p-4 space-y-4">
+                <h4 className="text-sm font-semibold text-slate-200 flex items-center gap-2">
+                  <Zap className="w-4 h-4 text-blue-400" />
+                  OpenAI 适配层配置
+                </h4>
 
                 <div className="grid grid-cols-2 gap-4">
+                  <div className="relative">
+                    <Select
+                      label="选择平台"
+                      placeholder="选择模型平台"
+                      selectedKeys={formData.provider_id ? [String(formData.provider_id)] : []}
+                      onChange={(e) => setFormData({ ...formData, provider_id: e.target.value })}
+                      isRequired
+                    >
+                      {providers.map(p => (
+                        <SelectItem key={String(p.id)}>{p.display_name}</SelectItem>
+                      ))}
+                    </Select>
+                    {providers.length === 0 && (
+                      <p className="text-xs text-amber-400 mt-1">
+                        暂无平台配置，请先添加平台
+                      </p>
+                    )}
+                  </div>
+
                   <Input
-                    label="成功条件表达式"
-                    placeholder='status == "succeed" || status == "completed"'
-                    value={formData.query_success_condition}
-                    onChange={(e) => setFormData({ ...formData, query_success_condition: e.target.value })}
-                    description="JS 表达式，变量来自查询响应映射的字段"
-                  />
-                  <Input
-                    label="失败条件表达式"
-                    placeholder='status == "failed" || status == "error"'
-                    value={formData.query_fail_condition}
-                    onChange={(e) => setFormData({ ...formData, query_fail_condition: e.target.value })}
-                    description="JS 表达式，变量来自查询响应映射的字段"
+                    label="平台模型ID"
+                    placeholder="如: deepseek-v4-pro, qwen-plus"
+                    value={formData.model_id}
+                    onChange={(e) => setFormData({ ...formData, model_id: e.target.value })}
+                    isRequired
+                    description="填写平台官方的模型ID"
                   />
                 </div>
 
-                <JsonField
-                  label="成功结果映射 (JSON)"
-                  placeholder='{"image_url": "data.task_result.images.0.url", "video_url": "data.remote_url"}'
-                  value={formData.query_success_mapping}
-                  onChange={(val) => setFormData({ ...formData, query_success_mapping: val })}
-                  minRows={2}
-                  description="成功时从原始响应提取结果字段"
+                <div className="flex items-center justify-between bg-slate-800/50 rounded-lg p-3">
+                  <div className="flex items-center gap-2">
+                    <Settings2 className="w-4 h-4 text-slate-400" />
+                    <span className="text-sm text-slate-300">需要添加新平台？</span>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="flat"
+                    className="bg-blue-500/10 text-blue-400 hover:bg-blue-500/20"
+                    startContent={<ExternalLink className="w-3.5 h-3.5" />}
+                    onPress={() => {
+                      window.open('/admin/model-providers', '_blank');
+                    }}
+                  >
+                    管理平台
+                  </Button>
+                </div>
+
+                <div className="bg-slate-800/50 rounded-lg p-3">
+                  <p className="text-xs text-slate-500">
+                    API Key 与平台认证信息已从「平台管理」继承，无需在此重复配置。
+                    如需修改，请前往 <a href="/admin/model-providers" target="_blank" className="text-blue-400 hover:underline">平台管理</a>。
+                  </p>
+                </div>
+              </div>
+
+              {/* 默认参数 - 可视化编辑器 */}
+              <VisualKeyValueEditor
+                value={formData.default_params}
+                onChange={(val) => setFormData({ ...formData, default_params: val })}
+              />
+
+              {/* 视频/图像专用参数 */}
+              {isVideoOrImage && (
+                <div className="bg-slate-800/30 border border-slate-700/50 rounded-lg p-4 space-y-4">
+                  <h4 className="text-sm font-semibold text-slate-200 flex items-center gap-2">
+                    <Film className="w-4 h-4 text-pink-400" />
+                    {isVideo ? '视频生成参数配置' : '图像生成参数配置'}
+                  </h4>
+                  
+                  <VisualAspectRatioSelector
+                    value={formData.supported_aspect_ratios}
+                    onChange={(val) => setFormData({ ...formData, supported_aspect_ratios: val })}
+                  />
+
+                  {isVideo && (
+                    <VisualDurationSelector
+                      value={formData.supported_durations}
+                      onChange={(val) => setFormData({ ...formData, supported_durations: val })}
+                    />
+                  )}
+                  <VisualResolutionSelector
+                    value={formData.supported_resolutions}
+                    onChange={(val) => setFormData({ ...formData, supported_resolutions: val })}
+                    category={formData.category}
+                  />
+                </div>
+              )}
+            </div>
+          </Tab>
+
+          {/* ============ Tab 2: 计费策略 ============ */}
+          <Tab
+            key="billing"
+            title={
+              <span className="flex items-center gap-1.5">
+                <DollarSign className="w-4 h-4" />
+                计费策略
+              </span>
+            }
+          >
+            <div className="space-y-4">
+              {/* 公式说明 */}
+              <div className="bg-gradient-to-r from-amber-500/5 to-orange-500/5 border border-amber-500/20 rounded-lg p-3">
+                <div className="flex items-center gap-2 mb-1">
+                  <DollarSign className="w-4 h-4 text-amber-400" />
+                  <span className="text-sm font-semibold text-slate-200">计费公式</span>
+                </div>
+                <p className="text-xs text-slate-400">
+                  总费用 = 基础费用 + 用量费用 + 阶梯/分级费用 + 附加服务费用 - 优惠/折扣 + 风险/超额附加费
+                </p>
+              </div>
+
+              {/* 高级计费策略编辑器 */}
+              <BillingPolicyEditor
+                value={formData.price_config}
+                onChange={(val) => setFormData({ ...formData, price_config: val })}
+              />
+
+              {/* 兼容层：旧版可视化计费编辑器 */}
+              <CollapsibleSection
+                title="旧版计费配置（兼容）"
+                subtitle="如需使用旧版简单计费方式，请展开此区域"
+                defaultOpen={false}
+                icon={<DollarSign className="w-4 h-4 text-slate-400" />}
+              >
+                <VisualPriceConfigEditor
+                  value={formData.price_config}
+                  onChange={(val) => setFormData({ ...formData, price_config: val })}
                 />
+              </CollapsibleSection>
+            </div>
+          </Tab>
+
+          {/* ============ Tab 3: 高级设置 ============ */}
+          <Tab
+            key="advanced"
+            title={
+              <span className="flex items-center gap-1.5">
+                <Settings2 className="w-4 h-4" />
+                高级设置
+              </span>
+            }
+          >
+            <div className="space-y-4">
+              <JsonField
+                label="响应映射 (JSON)"
+                placeholder='{"taskId": "data.id"}'
+                value={formData.response_mapping}
+                onChange={(val) => setFormData({ ...formData, response_mapping: val })}
+                minRows={3}
+                description='统一不同厂商的返回格式。如: {"content": "choices.0.message.content", "tokens": "usage.total_tokens"}'
+              />
+
+              {/* 查询配置 */}
+              <CollapsibleSection
+                title="查询配置（可选）"
+                subtitle="异步模型的任务轮询配置，同步模型无需配置"
+                defaultOpen={!!formData.query_url_template}
+              >
+                <div className="grid grid-cols-2 gap-4">
+                  <Input
+                    label="查询 URL 模板"
+                    placeholder="https://api.example.com/v1/tasks/{{taskId}}"
+                    value={formData.query_url_template}
+                    onChange={(e) => setFormData({ ...formData, query_url_template: e.target.value })}
+                  />
+                  <Select
+                    label="查询方法"
+                    selectedKeys={[formData.query_method]}
+                    onChange={(e) => setFormData({ ...formData, query_method: e.target.value })}
+                  >
+                    <SelectItem key="GET">GET</SelectItem>
+                    <SelectItem key="POST">POST</SelectItem>
+                  </Select>
+                </div>
 
                 <JsonField
-                  label="失败错误映射 (JSON)"
-                  placeholder='{"error": "data.fail_reason", "message": "data.error.message"}'
-                  value={formData.query_fail_mapping}
-                  onChange={(val) => setFormData({ ...formData, query_fail_mapping: val })}
+                  label="查询 Headers (JSON)"
+                  value={formData.query_headers_template}
+                  onChange={(val) => setFormData({ ...formData, query_headers_template: val })}
                   minRows={2}
-                  description="失败时从原始响应提取错误信息"
                 />
-              </div>
-            </CollapsibleSection>
 
-            {/* 自定义 Handler */}
-            <CollapsibleSection
-              title="自定义 Handler（可选）"
-              subtitle="用于无法通过模板配置覆盖的特殊 API（如特殊认证方式、特殊参数格式等）"
-              defaultOpen={!!formData.custom_handler}
-            >
-              <div className="grid grid-cols-2 gap-4">
-                <Input
-                  label="提交 Handler"
-                  placeholder='如: kling_video'
-                  value={formData.custom_handler}
-                  onChange={(e) => setFormData({ ...formData, custom_handler: e.target.value })}
-                  description="对应 customHandlers/ 目录下的文件名（不含 .js）"
+                <JsonField
+                  label="查询 Body 模板 (JSON)"
+                  placeholder='{"task_id": "{{taskId}}"}'
+                  value={formData.query_body_template}
+                  onChange={(val) => setFormData({ ...formData, query_body_template: val })}
+                  minRows={2}
+                  description="查询方法为 POST 时使用"
                 />
-                <Input
-                  label="查询 Handler"
-                  placeholder='如: kling_video'
-                  value={formData.custom_query_handler}
-                  onChange={(e) => setFormData({ ...formData, custom_query_handler: e.target.value })}
-                  description="留空则查询走模板流程"
-                />
-              </div>
-            </CollapsibleSection>
 
-            {/* 计费 Handler */}
-            <CollapsibleSection
-              title="计费 Handler（可选）"
-              subtitle="仅复杂计费模型需要。用于覆盖预估或从提交/查询结果解析真实 usage"
-              defaultOpen={!!formData.billing_handler}
-            >
-              <div className="grid grid-cols-2 gap-4">
-                <Input
-                  label="提交计费 Handler"
-                  placeholder='如: minimax_video_usage'
-                  value={formData.billing_handler}
-                  onChange={(e) => setFormData({ ...formData, billing_handler: e.target.value })}
-                  description="对应 billingHandlers/ 目录下的文件名（不含 .js）"
+                <JsonField
+                  label="查询响应映射 (JSON)"
+                  value={formData.query_response_mapping}
+                  onChange={(val) => setFormData({ ...formData, query_response_mapping: val })}
+                  minRows={2}
+                  description='基础字段映射，提取 status 等原始值。如: {"status": "data.task_status"}'
                 />
-                <Input
-                  label="查询计费 Handler"
-                  placeholder='如: minimax_video_usage'
-                  value={formData.billing_query_handler}
-                  onChange={(e) => setFormData({ ...formData, billing_query_handler: e.target.value })}
-                  description="异步模型完成结算时使用"
-                />
-              </div>
-            </CollapsibleSection>
-          </CollapsibleSection>
-        </ModalBody>
+
+                <div className="border-t border-slate-700/50 pt-4 mt-2">
+                  <h4 className="font-semibold text-slate-300 mb-1">异步状态判断</h4>
+                  <p className="text-xs text-slate-400 mb-3">配置异步模型的成功/失败判断条件和结果映射。</p>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <Input
+                      label="成功条件表达式"
+                      placeholder='status == "succeed" || status == "completed"'
+                      value={formData.query_success_condition}
+                      onChange={(e) => setFormData({ ...formData, query_success_condition: e.target.value })}
+                      description="JS 表达式，变量来自查询响应映射的字段"
+                    />
+                    <Input
+                      label="失败条件表达式"
+                      placeholder='status == "failed" || status == "error"'
+                      value={formData.query_fail_condition}
+                      onChange={(e) => setFormData({ ...formData, query_fail_condition: e.target.value })}
+                      description="JS 表达式，变量来自查询响应映射的字段"
+                    />
+                  </div>
+
+                  <JsonField
+                    label="成功结果映射 (JSON)"
+                    placeholder='{"image_url": "data.task_result.images.0.url", "video_url": "data.remote_url"}'
+                    value={formData.query_success_mapping}
+                    onChange={(val) => setFormData({ ...formData, query_success_mapping: val })}
+                    minRows={2}
+                    description="成功时从原始响应提取结果字段"
+                  />
+
+                  <JsonField
+                    label="失败错误映射 (JSON)"
+                    placeholder='{"error": "data.fail_reason", "message": "data.error.message"}'
+                    value={formData.query_fail_mapping}
+                    onChange={(val) => setFormData({ ...formData, query_fail_mapping: val })}
+                    minRows={2}
+                    description="失败时从原始响应提取错误信息"
+                  />
+                </div>
+              </CollapsibleSection>
+
+              {/* 自定义 Handler */}
+              <CollapsibleSection
+                title="自定义 Handler（可选）"
+                subtitle="用于无法通过模板配置覆盖的特殊 API（如特殊认证方式、特殊参数格式等）"
+                defaultOpen={!!formData.custom_handler}
+              >
+                <div className="grid grid-cols-2 gap-4">
+                  <Input
+                    label="提交 Handler"
+                    placeholder='如: kling_video'
+                    value={formData.custom_handler}
+                    onChange={(e) => setFormData({ ...formData, custom_handler: e.target.value })}
+                    description="对应 customHandlers/ 目录下的文件名（不含 .js）"
+                  />
+                  <Input
+                    label="查询 Handler"
+                    placeholder='如: kling_video'
+                    value={formData.custom_query_handler}
+                    onChange={(e) => setFormData({ ...formData, custom_query_handler: e.target.value })}
+                    description="留空则查询走模板流程"
+                  />
+                </div>
+              </CollapsibleSection>
+
+              {/* 计费 Handler */}
+              <CollapsibleSection
+                title="计费 Handler（可选）"
+                subtitle="仅复杂计费模型需要。用于覆盖预估或从提交/查询结果解析真实 usage"
+                defaultOpen={!!formData.billing_handler}
+              >
+                <div className="grid grid-cols-2 gap-4">
+                  <Input
+                    label="提交计费 Handler"
+                    placeholder='如: minimax_video_usage'
+                    value={formData.billing_handler}
+                    onChange={(e) => setFormData({ ...formData, billing_handler: e.target.value })}
+                    description="对应 billingHandlers/ 目录下的文件名（不含 .js）"
+                  />
+                  <Input
+                    label="查询计费 Handler"
+                    placeholder='如: minimax_video_usage'
+                    value={formData.billing_query_handler}
+                    onChange={(e) => setFormData({ ...formData, billing_query_handler: e.target.value })}
+                    description="异步模型完成结算时使用"
+                  />
+                </div>
+              </CollapsibleSection>
+            </div>
+          </Tab>
+        </Tabs>
+      </ModalBody>
         <ModalFooter className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-xs text-slate-500">
             可视化配置基础参数，高级 JSON 配置请展开底部"高级设置"

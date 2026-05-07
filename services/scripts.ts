@@ -165,6 +165,25 @@ export async function deleteScript(scriptId: number): Promise<void> {
   }
 }
 
+/**
+ * 更新剧本标题（仅标题，不修改内容）
+ */
+export async function updateScriptTitle(scriptId: number, title: string): Promise<{ success: boolean; message: string }> {
+  const res = await fetch(`/api/scripts/${scriptId}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders(),
+    },
+    body: JSON.stringify({ title, content: '' }),
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw new Error(data?.message || '更新标题失败');
+  }
+  return data;
+}
+
 export async function generateScript(params: GenerateScriptParams): Promise<GenerateScriptResponse> {
   const res = await fetch('/api/scripts/generate', {
     method: 'POST',

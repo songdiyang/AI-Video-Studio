@@ -102,6 +102,8 @@ export interface UserExtension {
   category: string;
   icon_url: string;
   manifest: Record<string, any> | null;
+  download_count?: number;
+  rating?: number;
 }
 
 export function getUserExtensions(): Promise<{ extensions: UserExtension[] }> {

@@ -102,11 +102,13 @@ export const NARRATIVE_PERSPECTIVES: Record<NarrativePerspective, {
 
 /**
  * 项目类型枚举
+ * 专注漫剧功能,已移除短视频、漫画、小说类型
  */
-export type ProjectType = 'comic_drama' | 'manga' | 'short_video' | 'novel';
+export type ProjectType = 'comic_drama';
 
 /**
  * 项目类型元数据
+ * 专注漫剧功能,已移除其他类型
  */
 export const PROJECT_TYPES: Record<ProjectType, {
   code: ProjectType;
@@ -120,33 +122,9 @@ export const PROJECT_TYPES: Record<ProjectType, {
     code: 'comic_drama',
     name: '漫剧',
     nameEn: 'Comic Drama',
-    description: '基于剧本创作分镜动画的项目类型，适合制作动态漫画、有声漫画等',
+    description: '基于剧本创作分镜动画的项目类型,适合制作动态漫画、有声漫画等',
     icon: 'Film',
     color: 'from-violet-500 to-purple-600',
-  },
-  manga: {
-    code: 'manga',
-    name: '漫画',
-    nameEn: 'Manga',
-    description: '传统漫画/条漫创作项目类型，支持分页布局和绘图工具',
-    icon: 'BookImage',
-    color: 'from-orange-500 to-red-600',
-  },
-  short_video: {
-    code: 'short_video',
-    name: '短视频',
-    nameEn: 'Short Video',
-    description: '短视频创作项目类型，专注于视频剪辑和特效制作',
-    icon: 'Video',
-    color: 'from-cyan-500 to-blue-600',
-  },
-  novel: {
-    code: 'novel',
-    name: '小说',
-    nameEn: 'Novel',
-    description: '小说/网文创作项目类型，提供大纲规划和章节管理功能',
-    icon: 'BookOpen',
-    color: 'from-emerald-500 to-teal-600',
   },
 };
 
@@ -200,108 +178,6 @@ export const WORKBENCH_CONFIGS: Record<ProjectType, WorkbenchConfig> = {
         labelEn: 'Composition',
         icon: 'Clapperboard',
         component: 'VideoComposition',
-      },
-    ],
-  },
-  manga: {
-    projectType: 'manga',
-    defaultTab: 'script',
-    tabs: [
-      {
-        key: 'script',
-        label: '剧本/脚本',
-        labelEn: 'Script',
-        icon: 'FileText',
-        component: 'MangaScriptPanel',
-      },
-      {
-        key: 'layout',
-        label: '页面布局',
-        labelEn: 'Page Layout',
-        icon: 'LayoutGrid',
-        component: 'PageLayout',
-      },
-      {
-        key: 'drawing',
-        label: '绘图工具',
-        labelEn: 'Drawing Tools',
-        icon: 'Paintbrush',
-        component: 'DrawingTools',
-      },
-    ],
-  },
-  short_video: {
-    projectType: 'short_video',
-    defaultTab: 'script',
-    tabs: [
-      {
-        key: 'script',
-        label: '视频脚本',
-        labelEn: 'Script',
-        icon: 'FileText',
-        component: 'VideoScriptPanel',
-      },
-      {
-        key: 'timeline',
-        label: '时间轴编辑',
-        labelEn: 'Timeline',
-        icon: 'Clock',
-        component: 'TimelineEditor',
-      },
-      {
-        key: 'effects',
-        label: '特效添加',
-        labelEn: 'Effects',
-        icon: 'Sparkles',
-        component: 'EffectsEditor',
-      },
-    ],
-  },
-  novel: {
-    projectType: 'novel',
-    defaultTab: 'worldview',
-    tabs: [
-      {
-        key: 'worldview',
-        label: '世界观',
-        labelEn: 'Worldview',
-        icon: 'BookOpen',
-        component: 'WorldViewEditor',
-      },
-      {
-        key: 'outline',
-        label: '大纲规划',
-        labelEn: 'Outline',
-        icon: 'Network',
-        component: 'OutlinePlanner',
-      },
-      {
-        key: 'characters',
-        label: '人物设定',
-        labelEn: 'Characters',
-        icon: 'Film',
-        component: 'CharacterManager',
-      },
-      {
-        key: 'scenes',
-        label: '场景设定',
-        labelEn: 'Scenes',
-        icon: 'LayoutGrid',
-        component: 'SceneManager',
-      },
-      {
-        key: 'chapters',
-        label: '章节管理',
-        labelEn: 'Chapters',
-        icon: 'List',
-        component: 'ChapterManager',
-      },
-      {
-        key: 'editor',
-        label: '文本编辑',
-        labelEn: 'Editor',
-        icon: 'PenTool',
-        component: 'TextEditor',
       },
     ],
   },

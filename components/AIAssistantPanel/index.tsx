@@ -57,13 +57,14 @@ export interface AIAssistantPanelProps {
 }
 
 // ─── Welcome message ────────────────────────────────────────────────
-const WELCOME_MESSAGE: ChatMessageData = {
+const getWelcomeMessage = (hasProject: boolean): ChatMessageData => ({
   id: 'welcome',
   role: 'assistant',
-  content:
-    '你好！我是AI助手，可以帮你分析图片、视频和文档内容。你可以发送当前分镜帧让我进行分析，或者直接提问。',
+  content: hasProject
+    ? '你好！我是AI助手，可以帮你分析图片、视频和文档内容。你可以发送当前分镜帧让我进行分析，或者直接提问。'
+    : '你好！我是AI助手，可以帮你从零开始创作。试试说"帮我创建一个关于仙侠爱情的项目"，我会为你创建项目并规划后续创作步骤。',
   timestamp: Date.now(),
-};
+});
 
 // ─── Component ──────────────────────────────────────────────────────
 const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
@@ -78,7 +79,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
   onClose,
   onAction,
 }) => {
-  const [messages, setMessages] = useState<ChatMessageData[]>([WELCOME_MESSAGE]);
+  const [messages, setMessages] = useState<ChatMessageData[]>([getWelcomeMessage(!!projectId)]);
   const [inputText, setInputText] = useState('');
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -142,8 +143,8 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
     } catch {
       // ignore parse error
     }
-    setMessages([WELCOME_MESSAGE]);
-  }, [storageKey]);
+    setMessages([getWelcomeMessage(!!projectId)]);
+  }, [storageKey, projectId]);
 
   const saveMessages = useCallback((msgs: ChatMessageData[]) => {
     try {
@@ -155,9 +156,9 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
 
   const clearMessages = useCallback(() => {
     localStorage.removeItem(storageKey);
-    setMessages([WELCOME_MESSAGE]);
+    setMessages([getWelcomeMessage(!!projectId)]);
     showToast('对话记录已清空', 'info');
-  }, [storageKey, showToast]);
+  }, [storageKey, showToast, projectId]);
 
   // ── Sessions 管理（一个项目一个历史记录） ─────────────────────────
   interface SessionLite {
@@ -265,7 +266,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
       const data = await res.json();
       if (data.success) {
         const loaded = (data.messages || []) as ChatMessageData[];
-        const msgs = loaded.length > 0 ? loaded : [WELCOME_MESSAGE];
+        const msgs = loaded.length > 0 ? loaded : [getWelcomeMessage(!!projectId)];
         messagesCacheRef.current.set(sessionId, msgs);
         setCurrentSessionId(sessionId);
         try { localStorage.setItem(activeSessionKey, String(sessionId)); } catch { /* ignore */ }
@@ -296,7 +297,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
     if (id) {
       setCurrentSessionId(id);
       try { localStorage.setItem(activeSessionKey, String(id)); } catch { /* ignore */ }
-      setMessages([WELCOME_MESSAGE]);
+      setMessages([getWelcomeMessage(!!projectId)]);
       setIsLoading(false);
       setStreamingId(null);
       setShowHistory(false);
@@ -323,7 +324,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
         if (currentSessionIdRef.current === sessionId) {
           setCurrentSessionId(null);
           try { localStorage.removeItem(activeSessionKey); } catch { /* ignore */ }
-          setMessages([WELCOME_MESSAGE]);
+          setMessages([getWelcomeMessage(!!projectId)]);
           setIsLoading(false);
           setStreamingId(null);
         }
@@ -747,7 +748,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
         content: `📜 已压缩前 ${realMsgs.length} 条对话为摘要：\n\n${data.summary}`,
         timestamp: Date.now(),
       };
-      setMessages([WELCOME_MESSAGE, summaryMsg]);
+      setMessages([getWelcomeMessage(!!projectId), summaryMsg]);
       showToast(`对话已压缩：${realMsgs.length} 条 → 1 段摘要`, 'success');
       setShowSettings(false);
     } catch (err: any) {

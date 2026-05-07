@@ -89,14 +89,8 @@ const WorkbenchContent: React.FC<WorkbenchContentProps> = ({ projectType, projec
     switch (projectType) {
       case 'comic_drama':
         return null; // 漫剧类型使用独立的 ScriptStudio
-      case 'manga':
-        return MangaWorkbench;
-      case 'short_video':
-        return ShortVideoWorkbench;
-      case 'novel':
-        return NovelWorkbench;
       default:
-        return MangaWorkbench;
+        return null; // 仅支持漫剧类型
     }
   }, [projectType]);
 

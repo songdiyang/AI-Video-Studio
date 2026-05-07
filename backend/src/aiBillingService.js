@@ -1,7 +1,7 @@
 const { queryOne, queryAll, execute } = require('./dbHelper');
 const { parseJsonField } = require('./utils/parseJsonField');
 const { getAIBillingContext } = require('./aiBillingContext');
-const { getBillingHandler } = require('./billingHandlers');
+const { getBillingHandler, getProviderHandler } = require('./billingHandlers');
 const pointsService = require('./pointsService');
 const { pushToUser } = require('./websocket');
 
@@ -148,10 +148,50 @@ function normalizePriceConfig(rawPriceConfig, options = {}) {
     };
   });
 
+  // 规范化高级计费字段
+  const baseFee = toNumber(normalized.base_fee ?? normalized.baseFee, 0);
+
+  const tiers = Array.isArray(normalized.tiers)
+    ? normalized.tiers.map((t, i) => ({
+        threshold: toNumber(t.threshold, 0),
+        discountRate: toNumber(t.discount_rate ?? t.discountRate, 1),
+        name: t.name || ` tier ${i + 1}`
+      })).filter(t => t.threshold >= 0)
+    : [];
+
+  const addons = Array.isArray(normalized.addons)
+    ? normalized.addons.map(a => ({
+        name: a.name || '附加服务',
+        price: toNumber(a.price, 0),
+        unit: a.unit || 'fixed',
+        quantity: toNumber(a.quantity, 1)
+      })).filter(a => a.price > 0)
+    : [];
+
+  const discounts = Array.isArray(normalized.discounts)
+    ? normalized.discounts.map(d => ({
+        name: d.name || '优惠',
+        type: d.type === 'fixed' ? 'fixed' : 'percentage',
+        rate: toNumber(d.rate ?? d.value, 0)
+      })).filter(d => d.rate > 0)
+    : [];
+
+  const overage = normalized.overage
+    ? {
+        threshold: toNumber(normalized.overage.threshold, 0),
+        rate: toNumber(normalized.overage.rate, 1)
+      }
+    : null;
+
   return {
     currency: String(normalized.currency || 'CNY').toUpperCase(),
     chargeOnFailure: Boolean(normalized.charge_on_failure),
-    components
+    baseFee,
+    components,
+    tiers,
+    addons,
+    discounts,
+    overage
   };
 }
 
@@ -265,7 +305,17 @@ async function estimateUsage(params, model, normalizedPriceConfig) {
     baseUsage.durationSeconds = durationSeconds;
   }
 
-  const billingHandler = getBillingHandler(model.billing_handler);
+  // 优先使用显式配置的 billing_handler
+  let billingHandler = getBillingHandler(model.billing_handler);
+
+  // 如果未配置或加载失败，根据厂商自动推断
+  if (!billingHandler && model.provider) {
+    billingHandler = getProviderHandler(model);
+    if (billingHandler) {
+      console.log(`[AI Billing] estimateUsage - 根据厂商 "${model.provider}" 自动匹配处理器`);
+    }
+  }
+
   if (billingHandler?.estimate) {
     const overrideUsage = await billingHandler.estimate(params, model, normalizedPriceConfig);
     return mergeUsage(baseUsage, overrideUsage || {});
@@ -357,9 +407,19 @@ async function resolveUsage(params) {
     useQueryHandler = false
   } = params;
 
+  // 优先使用显式配置的 billing_handler / billing_query_handler
   const handlerName = useQueryHandler ? model.billing_query_handler : model.billing_handler;
-  console.log(`[AI Billing] resolveUsage - useQueryHandler: ${useQueryHandler}, handlerName: "${handlerName}"`);
-  const billingHandler = getBillingHandler(handlerName);
+  let billingHandler = getBillingHandler(handlerName);
+
+  // 如果显式配置的 handler 未找到，尝试根据厂商自动推断
+  if (!billingHandler && model.provider) {
+    billingHandler = getProviderHandler(model);
+    if (billingHandler) {
+      console.log(`[AI Billing] resolveUsage - 根据厂商 "${model.provider}" 自动匹配处理器`);
+    }
+  }
+
+  console.log(`[AI Billing] resolveUsage - useQueryHandler: ${useQueryHandler}, handlerName: "${handlerName || '(auto)'}", provider: "${model.provider || ''}"`);
 
   if (useQueryHandler && handlerName && !billingHandler) {
     console.error(`[AI Billing] 无法加载 billing_query_handler "${handlerName}" - 模型配置:`, {
@@ -439,7 +499,25 @@ async function resolveUsage(params) {
 }
 
 function calculatePrice(normalizedPriceConfig, usage) {
-  const breakdown = normalizedPriceConfig.components.map((component) => {
+  const breakdown = [];
+  let subtotal = 0;
+
+  // 1. 基础费用
+  const baseFee = toNumber(normalizedPriceConfig.baseFee, 0) || 0;
+  if (baseFee > 0) {
+    breakdown.push({
+      type: 'base_fee',
+      name: '基础费用',
+      quantity: 1,
+      unit: 'fixed',
+      unitPrice: baseFee,
+      amount: roundMoney(baseFee)
+    });
+    subtotal += baseFee;
+  }
+
+  // 2. 用量费用（按单位计价）
+  const usageBreakdown = normalizedPriceConfig.components.map((component) => {
     const metricValue = component.type === 'input_tokens'
       ? usage.inputTokens
       : component.type === 'output_tokens'
@@ -459,16 +537,104 @@ function calculatePrice(normalizedPriceConfig, usage) {
 
     return {
       type: component.type,
+      name: getComponentDisplay(component),
       quantity,
       unit: component.unit,
       unitPrice: component.price,
-      amount: roundMoney(amount),
-      label: getComponentDisplay(component)
+      amount: roundMoney(amount)
     };
   });
 
+  let usageTotal = usageBreakdown.reduce((sum, item) => sum + item.amount, 0);
+  subtotal += usageTotal;
+  breakdown.push(...usageBreakdown);
+
+  // 3. 阶梯/分级费用折扣
+  const tiers = normalizedPriceConfig.tiers || [];
+  let tierDiscount = 0;
+  if (tiers.length > 0 && usageTotal > 0) {
+    const totalQuantity = usage.totalTokens || (usage.inputTokens + usage.outputTokens) || usage.itemCount || usage.durationSeconds || 0;
+    const sortedTiers = [...tiers].sort((a, b) => (b.threshold || 0) - (a.threshold || 0));
+    const matchedTier = sortedTiers.find(t => totalQuantity >= (t.threshold || 0));
+    if (matchedTier && matchedTier.discountRate !== undefined && matchedTier.discountRate < 1) {
+      tierDiscount = usageTotal * (1 - matchedTier.discountRate);
+      breakdown.push({
+        type: 'tier_discount',
+        name: `阶梯折扣 (${matchedTier.name || `≥${matchedTier.threshold}`})`,
+        quantity: totalQuantity,
+        unit: 'rate',
+        unitPrice: matchedTier.discountRate,
+        amount: roundMoney(-tierDiscount)
+      });
+      subtotal -= tierDiscount;
+    }
+  }
+
+  // 4. 附加服务费用
+  const addons = normalizedPriceConfig.addons || [];
+  for (const addon of addons) {
+    const addonAmount = toNumber(addon.price, 0) * toNumber(addon.quantity || 1, 1);
+    if (addonAmount > 0) {
+      breakdown.push({
+        type: 'addon',
+        name: addon.name || '附加服务',
+        quantity: addon.quantity || 1,
+        unit: addon.unit || 'fixed',
+        unitPrice: addon.price,
+        amount: roundMoney(addonAmount)
+      });
+      subtotal += addonAmount;
+    }
+  }
+
+  // 5. 优惠/折扣
+  const discounts = normalizedPriceConfig.discounts || [];
+  for (const discount of discounts) {
+    let discountAmount = 0;
+    if (discount.type === 'percentage' || !discount.type) {
+      discountAmount = subtotal * (discount.rate || 0);
+    } else if (discount.type === 'fixed') {
+      discountAmount = discount.rate || 0;
+    }
+    if (discountAmount > 0) {
+      breakdown.push({
+        type: 'discount',
+        name: discount.name || '优惠',
+        quantity: 1,
+        unit: discount.type === 'fixed' ? 'fixed' : 'rate',
+        unitPrice: discount.rate,
+        amount: roundMoney(-discountAmount)
+      });
+      subtotal -= discountAmount;
+    }
+  }
+
+  // 6. 风险/超额附加费
+  const overage = normalizedPriceConfig.overage;
+  let overageAmount = 0;
+  if (overage && overage.threshold && overage.rate) {
+    const totalQuantity = usage.totalTokens || (usage.inputTokens + usage.outputTokens) || usage.itemCount || usage.durationSeconds || 0;
+    if (totalQuantity > overage.threshold) {
+      const excess = totalQuantity - overage.threshold;
+      // 超额部分按倍率计价（基于用量费用）
+      const excessRatio = excess / totalQuantity;
+      overageAmount = usageTotal * excessRatio * (overage.rate - 1);
+      if (overageAmount > 0) {
+        breakdown.push({
+          type: 'overage',
+          name: '超额附加费',
+          quantity: excess,
+          unit: 'excess',
+          unitPrice: overage.rate,
+          amount: roundMoney(overageAmount)
+        });
+        subtotal += overageAmount;
+      }
+    }
+  }
+
   return {
-    amount: roundMoney(breakdown.reduce((sum, item) => sum + item.amount, 0)),
+    amount: roundMoney(Math.max(0, subtotal)),
     breakdown
   };
 }

@@ -8,7 +8,7 @@ import { getAuthToken } from '../../services/auth';
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import { validateFrameReadiness, formatValidationMessage } from './utils/validateFrameReadiness';
-import SketchPanel from './SceneCard/SketchPanel';
+// import SketchPanel from './SceneCard/SketchPanel'; // 草图功能已集成到魔术空间
 import BlockEditor from './BlockEditor';
 import FrameHistoryPanel from './FrameHistoryPanel';
 import { BlockEditorState } from './BlockEditor/types/blockTypes';
@@ -899,6 +899,7 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
   const [showHistory, setShowHistory] = useState(false);
   const [showVideoHistory, setShowVideoHistory] = useState(false);
   const [showMagicSpace, setShowMagicSpace] = useState(false);
+  const [magicSpaceInitialMode, setMagicSpaceInitialMode] = useState<'camera' | 'paint' | 'expand' | 'sketch'>('paint');
   // 历史版本预览状态：临时存储预览的帧 URL，不永久修改场景数据
   const [previewFrameUrl, setPreviewFrameUrl] = useState<string | null>(null);
   const [previewFrameType, setPreviewFrameType] = useState<'first' | 'last' | null>(null);
@@ -1279,6 +1280,7 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
         <MagicSpacePanel
           sourceImageUrl={bustCache(currentFrame) || currentFrame}
           aspectRatio={scene.hasAction ? '16:9' : '16:9'}
+          initialMode={magicSpaceInitialMode}
           onGenerateWithCamera={async (params) => {
             const result = await onGenerateWithCamera(scene.id, params);
             if (result.success) {
@@ -1441,18 +1443,38 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                   <History className="w-4 h-4" />
                   <span className="text-xs">历史版本</span>
                 </button>
-                {/* 视角调整按钮 */}
+                {/* 魔术空间按钮 */}
                 {onGenerateWithCamera && (
                   <button
-                    onClick={() => setShowMagicSpace(true)}
+                    onClick={() => {
+                      setMagicSpaceInitialMode('paint');
+                      setShowMagicSpace(true);
+                    }}
                     disabled={isGenerating}
                     className={`absolute top-2 left-28 p-2 rounded-lg bg-black/50 text-white/80 transition-colors flex items-center gap-1.5 ${
                       isGenerating ? 'opacity-40 cursor-not-allowed' : 'hover:bg-purple-500/70 hover:text-white'
                     }`}
-                    title="魔术空间 - 涂改/视角调整"
+                    title="魔术空间 - 涂改/扩图/视角调整"
                   >
                     <Sparkles className="w-4 h-4" />
                     <span className="text-xs">魔术空间</span>
+                  </button>
+                )}
+                {/* 草图绘制按钮 */}
+                {onGenerateWithSketch && (
+                  <button
+                    onClick={() => {
+                      setMagicSpaceInitialMode('sketch');
+                      setShowMagicSpace(true);
+                    }}
+                    disabled={isGenerating}
+                    className={`absolute top-2 left-52 p-2 rounded-lg bg-black/50 text-white/80 transition-colors flex items-center gap-1.5 ${
+                      isGenerating ? 'opacity-40 cursor-not-allowed' : 'hover:bg-amber-500/70 hover:text-white'
+                    }`}
+                    title="草图绘制 - 手绘场景草图，AI根据草图生成图片"
+                  >
+                    <Pencil className="w-4 h-4" />
+                    <span className="text-xs">草图</span>
                   </button>
                 )}
                 {/* 高清修复按钮 */}

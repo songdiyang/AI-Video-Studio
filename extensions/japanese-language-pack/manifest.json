@@ -1,0 +1,13 @@
+{
+  "name": "japanese-language-pack",
+  "display_name": "日语语言包",
+  "display_name_ja": "日本語言語パック",
+  "version": "1.0.0",
+  "description": "为应用添加日语界面支持",
+  "description_ja": "アプリケーションに日本語インターフェースサポートを追加",
+  "author": "Nanostory Team",
+  "category": "language",
+  "main": "index.js",
+  "files": ["index.js"],
+  "language_code": "ja-JP"
+}

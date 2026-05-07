@@ -630,6 +630,32 @@ const TOOLS = [
   },
 
   // ================================================================
+  //  项目相关
+  // ================================================================
+  {
+    name: 'create_project',
+    description: '创建一个新项目。适用于用户想要开始一个全新的创作，但还没有项目时。创建成功后会返回新项目的信息，后续操作可以基于这个新项目的 ID 进行。',
+    parameters: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: '项目名称（必填）' },
+        description: { type: 'string', description: '项目描述' },
+        type: { type: 'string', enum: ['comic', 'short_drama', 'animation', 'live_action', 'game'], description: '项目类型：comic=漫画, short_drama=短剧, animation=动画, live_action=真人影视, game=游戏' },
+        coverUrl: { type: 'string', description: '封面图片 URL（可选）' }
+      },
+      required: ['name']
+    },
+    workflowType: 'create_project',
+    buildJobParams: (args, ctx) => ({
+      name: args.name,
+      description: args.description || '',
+      type: args.type || 'comic',
+      coverUrl: args.coverUrl || '',
+      userId: ctx.userId
+    })
+  },
+
+  // ================================================================
   //  剧本相关
   // ================================================================
   {

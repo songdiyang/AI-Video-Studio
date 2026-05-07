@@ -371,6 +371,15 @@ const UserCenter: React.FC = () => {
     return `${m}m${remainder > 0 ? ` ${remainder.toFixed(0)}s` : ''}`;
   };
 
+  // 格式化资源包有效期
+  const formatPackPeriod = (start: string, end: string) => {
+    const ps = new Date(start);
+    const pe = new Date(end);
+    const sm = `${ps.getFullYear()}年${ps.getMonth() + 1}月`;
+    const em = `${pe.getFullYear()}年${pe.getMonth() + 1}月`;
+    return sm === em ? sm : `${sm} ~ ${em}`;
+  };
+
   // 格式化注册日期
   const memberSince = useMemo(() => {
     if (!profile?.created_at) return '';
@@ -489,645 +498,559 @@ const UserCenter: React.FC = () => {
 
   return (
     <div className="h-full overflow-auto bg-(--bg-app)">
-      <div className="max-w-6xl mx-auto p-6 space-y-6">
-        
-        {/* 用户信息头部 */}
-        <div className="relative overflow-hidden rounded-2xl bg-linear-to-br from-(--accent)/20 via-purple-500/10 to-blue-500/10 border border-(--border-color)">
-          <div className="absolute inset-0 bg-[url('data:image/svg+xml,%3Csvg%20width%3D%2260%22%20height%3D%2260%22%20viewBox%3D%220%200%2060%2060%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cg%20fill%3D%22none%22%20fill-rule%3D%22evenodd%22%3E%3Cg%20fill%3D%22%23ffffff%22%20fill-opacity%3D%220.03%22%3E%3Cpath%20d%3D%22M36%2034v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6%2034v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6%204V0H4v4H0v2h4v4h2V6h4V4H6z%22%2F%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E')] opacity-50" />
-          
-          <div className="relative p-6">
-            <div className="flex flex-col md:flex-row md:items-center gap-6">
-              {/* 头像 - 可点击上传 */}
-              <div className="relative group">
-                <input
-                  ref={avatarInputRef}
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp"
-                  className="hidden"
-                  onChange={handleAvatarUpload}
-                />
-                <div
-                  className="w-20 h-20 rounded-2xl overflow-hidden shadow-lg shadow-(--accent)/20 cursor-pointer"
-                  onClick={() => avatarInputRef.current?.click()}
-                >
-                  {profile?.avatar_url ? (
-                    <img src={profile.avatar_url} alt="头像" className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full bg-linear-to-br from-(--accent) to-purple-500 flex items-center justify-center text-3xl font-bold text-white">
-                      {avatarInitial}
-                    </div>
-                  )}
+      <div className="max-w-7xl mx-auto p-4 lg:p-6">
+        {/* 顶部精简用户信息 */}
+        <div className="flex items-center gap-4 mb-5 pb-5 border-b border-(--border-color)">
+          {/* 头像 */}
+          <div className="relative group shrink-0">
+            <input
+              ref={avatarInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              className="hidden"
+              onChange={handleAvatarUpload}
+            />
+            <div
+              className="w-12 h-12 rounded-xl overflow-hidden cursor-pointer"
+              onClick={() => avatarInputRef.current?.click()}
+            >
+              {profile?.avatar_url ? (
+                <img src={profile.avatar_url} alt="头像" className="w-full h-full object-cover" />
+              ) : (
+                <div className="w-full h-full bg-linear-to-br from-(--accent) to-purple-500 flex items-center justify-center text-lg font-bold text-white">
+                  {avatarInitial}
                 </div>
-                {/* 悬停覆盖层 */}
-                <div
-                  className="absolute inset-0 rounded-2xl bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
-                  onClick={() => avatarInputRef.current?.click()}
-                >
-                  {uploadingAvatar ? (
-                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  ) : (
-                    <Camera className="w-5 h-5 text-white" />
-                  )}
-                </div>
-                <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-emerald-500 rounded-full flex items-center justify-center border-2 border-(--bg-card)">
-                  <Sparkles className="w-3 h-3 text-white" />
-                </div>
-              </div>
-              
-              {/* 用户信息 */}
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-1">
-                  <h1 className="text-2xl font-bold text-(--text-primary)">
-                    {displayName}
-                  </h1>
-                  <Button
-                    isIconOnly
-                    size="sm"
-                    variant="light"
-                    className="min-w-6 w-6 h-6"
-                    onPress={openProfileModal}
-                  >
-                    <Pencil className="w-3.5 h-3.5 text-(--text-muted)" />
-                  </Button>
-                </div>
-                {profile?.nickname && (
-                  <p className="text-xs text-(--text-muted) mb-1">
-                    {profile.email}
-                  </p>
-                )}
-                {profile?.signature && (
-                  <p className="text-sm text-(--text-secondary) italic mb-2">
-                    「{profile.signature}」
-                  </p>
-                )}
-                <div className="flex items-center gap-4 text-sm text-(--text-muted)">
-                  <span className="flex items-center gap-1.5">
-                    <Calendar className="w-4 h-4" />
-                    {memberSince} {t.userCenter.joinedAt}
-                  </span>
-                  <span className="flex items-center gap-1.5">
-                    <Activity className="w-4 h-4" />
-                    {formatInteger(stats?.totalRecords)} {t.userCenter.apiCalls}
-                  </span>
-                </div>
-              </div>
-              
-              {/* 积分卡片 */}
-              <div className="bg-(--bg-card)/80 backdrop-blur-sm rounded-xl p-4 border border-(--border-color) min-w-50">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2 text-sm text-(--text-secondary)">
-                    <Wallet className="w-4 h-4 text-emerald-400" />
-                    积分余额
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="light"
-                    className="text-(--accent) min-w-0 px-2 h-7"
-                    onPress={() => window.open('https://example.com/recharge', '_blank')}
-                  >
-                    充值
-                    <ExternalLink className="w-3 h-3 ml-1" />
-                  </Button>
-                </div>
-                <div className="text-3xl font-bold text-emerald-400">{formatInteger(profile?.balance)} <span className="text-base font-normal text-(--text-muted)">积分</span></div>
-                <div className="text-xs text-(--text-muted) mt-1">≈ ¥{((profile?.balance || 0) * POINT_PURCHASE_PRICE).toFixed(2)}</div>
-              </div>
+              )}
+            </div>
+            <div
+              className="absolute inset-0 rounded-xl bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+              onClick={() => avatarInputRef.current?.click()}
+            >
+              {uploadingAvatar ? (
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <Camera className="w-4 h-4 text-white" />
+              )}
+            </div>
+          </div>
+
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <h1 className="text-lg font-semibold text-(--text-primary) truncate">
+                {displayName}
+              </h1>
+              <Button
+                isIconOnly
+                size="sm"
+                variant="light"
+                className="min-w-5 w-5 h-5 shrink-0"
+                onPress={openProfileModal}
+              >
+                <Pencil className="w-3 h-3 text-(--text-muted)" />
+              </Button>
+            </div>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-(--text-muted)">
+              <span>{memberSince} 加入</span>
+              <span className="text-(--border-color)">·</span>
+              <span>{formatInteger(stats?.totalRecords)} 次 API 调用</span>
             </div>
           </div>
         </div>
 
-        {/* 统计卡片 */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* 本月消耗 */}
-          <Card className="bg-(--bg-card) border border-(--border-color) shadow-sm hover:shadow-md transition-shadow">
-            <CardBody className="p-5">
-              <div className="flex items-center justify-between mb-3">
-                <div className="p-2.5 bg-orange-500/10 rounded-xl">
-                  <TrendingUp className="w-5 h-5 text-orange-400" />
-                </div>
-                <Tooltip content={t.userCenter.monthlyPointsTooltip}>
-                  <div className="text-xs text-(--text-muted) cursor-help">{t.userCenter.thisMonth}</div>
-                </Tooltip>
-              </div>
-              <div className="flex items-baseline gap-1.5 mb-1">
-                <span className="text-2xl font-bold text-(--text-primary)">{formatInteger(stats?.monthlyPointsUsed)}</span>
-                <span className="text-sm text-(--text-muted)">{t.userCenter.points}</span>
-              </div>
-              <div className="text-xs text-(--text-muted)">{t.userCenter.monthlyPoints}</div>
-            </CardBody>
-          </Card>
-
-          {/* 生成作品 */}
-          <Card className="bg-(--bg-card) border border-(--border-color) shadow-sm hover:shadow-md transition-shadow">
-            <CardBody className="p-5">
-              <div className="flex items-center justify-between mb-3">
-                <div className="p-2.5 bg-blue-500/10 rounded-xl">
-                  <Sparkles className="w-5 h-5 text-blue-400" />
-                </div>
-              </div>
-              <div className="flex items-baseline gap-1.5 mb-1">
-                <span className="text-2xl font-bold text-(--text-primary)">{formatInteger((stats?.imageCount || 0) + (stats?.videoCount || 0))}</span>
-                <span className="text-sm text-(--text-muted)">{t.userCenter.works}</span>
-              </div>
-              <div className="flex items-center gap-3 text-xs text-(--text-muted)">
-                <span className="flex items-center gap-1">
-                  <Image className="w-3.5 h-3.5" />
-                  {formatInteger(stats?.imageCount)} {t.userCenter.images}
-                </span>
-                <span className="flex items-center gap-1">
-                  <Video className="w-3.5 h-3.5" />
-                  {formatInteger(stats?.videoCount)} {t.userCenter.videos}
-                </span>
-              </div>
-            </CardBody>
-          </Card>
-
-          {/* 项目/剧本 */}
-          <Card className="bg-(--bg-card) border border-(--border-color) shadow-sm hover:shadow-md transition-shadow">
-            <CardBody className="p-5">
-              <div className="flex items-center justify-between mb-3">
-                <div className="p-2.5 bg-purple-500/10 rounded-xl">
-                  <FolderOpen className="w-5 h-5 text-purple-400" />
-                </div>
-              </div>
-              <div className="flex items-baseline gap-2 mb-1">
-                <span className="text-2xl font-bold text-(--text-primary)">{formatInteger(stats?.projectCount)}</span>
-                <span className="text-sm text-(--text-muted)">{t.userCenter.projectCount}</span>
-              </div>
-              <div className="flex items-center gap-2 text-xs text-(--text-muted)">
-                <FileText className="w-3.5 h-3.5" />
-                {formatInteger(stats?.scriptCount)} {t.userCenter.scriptCount}
-              </div>
-            </CardBody>
-          </Card>
-
-          {/* 创作角色 */}
-          <Card className="bg-(--bg-card) border border-(--border-color) shadow-sm hover:shadow-md transition-shadow">
-            <CardBody className="p-5">
-              <div className="flex items-center justify-between mb-3">
-                <div className="p-2.5 bg-emerald-500/10 rounded-xl">
-                  <Users className="w-5 h-5 text-emerald-400" />
-                </div>
-              </div>
-              <div className="flex items-baseline gap-1.5 mb-1">
-                <span className="text-2xl font-bold text-(--text-primary)">{formatInteger(stats?.characterCount)}</span>
-                <span className="text-sm text-(--text-muted)">{t.userCenter.characters}</span>
-              </div>
-              <div className="text-xs text-(--text-muted)">{t.userCenter.charactersCreated}</div>
-            </CardBody>
-          </Card>
-        </div>
-
-        {/* 我的订阅 */}
-        <Card className="bg-(--bg-card) border border-(--border-color) shadow-sm">
-          <CardBody className="p-6">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="p-2.5 bg-(--accent)/10 rounded-xl">
-                <CreditCard className="w-5 h-5 text-(--accent)" />
-              </div>
-              <div>
-                <h3 className="text-lg font-semibold text-(--text-primary)">{t.subscription.title}</h3>
-              </div>
-            </div>
-
-            {subscriptionLoading ? (
-              <div className="flex items-center justify-center py-8">
-                <div className="w-6 h-6 border-2 border-(--accent) border-t-transparent rounded-full animate-spin" />
-              </div>
-            ) : subscription ? (
-              <div className="space-y-6">
-                {/* 订阅信息头部 */}
-                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 p-4 bg-(--bg-secondary) rounded-xl">
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-xl bg-linear-to-br from-(--accent) to-purple-600 flex items-center justify-center">
-                      <Sparkles className="w-6 h-6 text-white" />
+        {/* 左右分栏布局 */}
+        <div className="flex flex-col lg:flex-row gap-5">
+          {/* 左侧栏 */}
+          <div className="w-full lg:w-72 xl:w-80 shrink-0 space-y-4">
+            {/* 用户简介 + 积分 */}
+            <div className="bg-(--bg-card) border border-(--border-color) rounded-xl p-5">
+              <div className="text-center mb-4">
+                <div className="w-16 h-16 mx-auto rounded-2xl overflow-hidden mb-3">
+                  {profile?.avatar_url ? (
+                    <img src={profile.avatar_url} alt="头像" className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full bg-linear-to-br from-(--accent) to-purple-500 flex items-center justify-center text-2xl font-bold text-white">
+                      {avatarInitial}
                     </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-lg font-semibold text-(--text-primary)">
-                          {subscription.plan?.display_name || '免费版'}
-                        </span>
-                        <Chip size="sm" className={getStatusColor(subscription.subscription?.status || subscription.status)}>
-                          {t.subscription.status[(subscription.subscription?.status || subscription.status) as keyof typeof t.subscription.status] || subscription.status}
-                        </Chip>
-                      </div>
-                      <div className="text-sm text-(--text-muted) mt-1">
-                        {(subscription.subscription?.status || subscription.status) === 'trial' ? t.subscription.trialEnds : t.subscription.renewsOn}: {subscription.subscription?.current_period_end ? formatExpiryDate(subscription.subscription.current_period_end) : '-'}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      className="bg-(--accent)/10 text-(--accent)"
-                      startContent={<ArrowUpRight className="w-4 h-4" />}
-                      onPress={() => navigate('/pricing')}
-                    >
-                      {t.subscription.upgrade}
-                    </Button>
-                    {(subscription.subscription?.status || subscription.status) === 'active' && (
-                      <Button
-                        variant="flat"
-                        className="bg-rose-500/10 text-rose-400"
-                        startContent={<XCircle className="w-4 h-4" />}
-                        isLoading={cancellingSubscription}
-                        onPress={handleCancelSubscription}
-                      >
-                        {t.subscription.cancel}
-                      </Button>
-                    )}
-                  </div>
+                  )}
                 </div>
-
-                {/* 用量统计 */}
-                {subscription.usage && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {/* API 用量 */}
-                    <div className="p-4 bg-(--bg-secondary) rounded-xl">
-                      <div className="flex items-center justify-between mb-3">
-                        <span className="text-sm text-(--text-secondary)">{t.subscription.apiUsage}</span>
-                        <span className="text-sm font-medium text-(--text-primary)">
-                          {formatInteger(subscription.usage.api_calls_used)} / {subscription.usage.api_calls_limit === -1 ? '∞' : formatInteger(subscription.usage.api_calls_limit)}
-                        </span>
-                      </div>
-                      <Progress
-                        value={subscription.usage.api_calls_limit === -1 ? 0 : (subscription.usage.api_calls_used / subscription.usage.api_calls_limit) * 100}
-                        size="sm"
-                        color={subscription.usage.api_calls_limit !== -1 && subscription.usage.api_calls_used / subscription.usage.api_calls_limit > 0.8 ? 'warning' : 'primary'}
-                        className="h-2"
-                        classNames={{
-                          indicator: 'bg-(--accent)',
-                          track: 'bg-(--accent)/10'
-                        }}
-                      />
-                    </div>
-
-                    {/* 项目用量 */}
-                    <div className="p-4 bg-(--bg-secondary) rounded-xl">
-                      <div className="flex items-center justify-between mb-3">
-                        <span className="text-sm text-(--text-secondary)">{t.subscription.projectUsage}</span>
-                        <span className="text-sm font-medium text-(--text-primary)">
-                          {formatInteger(subscription.usage.projects_used)} / {subscription.usage.projects_limit === -1 ? '∞' : formatInteger(subscription.usage.projects_limit)}
-                        </span>
-                      </div>
-                      <Progress
-                        value={subscription.usage.projects_limit === -1 ? 0 : (subscription.usage.projects_used / subscription.usage.projects_limit) * 100}
-                        size="sm"
-                        color={subscription.usage.projects_limit !== -1 && subscription.usage.projects_used / subscription.usage.projects_limit > 0.8 ? 'warning' : 'secondary'}
-                        className="h-2"
-                        classNames={{
-                          indicator: 'bg-purple-500',
-                          track: 'bg-purple-500/10'
-                        }}
-                      />
-                    </div>
-                  </div>
+                <h2 className="text-base font-semibold text-(--text-primary)">{displayName}</h2>
+                {profile?.nickname && (
+                  <p className="text-xs text-(--text-muted) mt-0.5">{profile.email}</p>
+                )}
+                {profile?.signature && (
+                  <p className="text-xs text-(--text-secondary) italic mt-1 truncate px-2">「{profile.signature}」</p>
                 )}
               </div>
-            ) : (
-              <div className="text-center py-8">
-                <div className="w-16 h-16 mx-auto mb-4 bg-(--bg-secondary) rounded-full flex items-center justify-center">
-                  <CreditCard className="w-8 h-8 text-(--text-muted)" />
-                </div>
-                <p className="text-(--text-muted) mb-4">{t.subscription.noPlan}</p>
-                <Button
-                  className="bg-linear-to-r from-(--accent) to-purple-600 text-white font-semibold"
-                  startContent={<ArrowUpRight className="w-4 h-4" />}
-                  onPress={() => navigate('/pricing')}
-                >
-                  {t.pricing.basic.cta}
-                </Button>
-              </div>
-            )}
-          </CardBody>
-        </Card>
 
-        {/* 我的资源包 */}
-        <Card className="bg-(--bg-card) border border-(--border-color) shadow-sm">
-          <CardBody className="p-6">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="p-2.5 bg-amber-500/10 rounded-xl">
-                <Package className="w-5 h-5 text-amber-500" />
-              </div>
-              <div>
-                <h3 className="text-lg font-semibold text-(--text-primary)">我的资源包</h3>
-                <p className="text-xs text-(--text-muted)">积分每月清零，每个资源包有效期1个自然月</p>
-              </div>
-              <Chip size="sm" variant="flat" className="bg-amber-500/10 text-amber-600 ml-auto">
-                {resourcePacks.filter(p => p.isActive).length} 个有效
-              </Chip>
-            </div>
-
-            {resourcePacks.length === 0 ? (
-              <div className="text-center py-8">
-                <div className="w-16 h-16 mx-auto mb-4 bg-(--bg-secondary) rounded-full flex items-center justify-center">
-                  <Package className="w-8 h-8 text-(--text-muted)" />
-                </div>
-                <p className="text-(--text-muted) mb-4">暂无资源包</p>
-                <Button
-                  className="bg-linear-to-r from-amber-500 to-orange-500 text-white font-semibold"
-                  startContent={<Zap className="w-4 h-4" />}
-                  onPress={() => navigate('/pricing')}
-                >
-                  获取资源包
-                </Button>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {resourcePacks.map(pack => {
-                  const usedPercent = pack.totalPoints > 0
-                    ? Math.round(((pack.totalPoints - pack.remainingPoints) / pack.totalPoints) * 100)
-                    : 0;
-                  const periodEnd = new Date(pack.periodEnd);
-                  const now = new Date();
-                  const daysLeft = Math.ceil((periodEnd.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-                  const isExpiringSoon = pack.isActive && daysLeft > 0 && daysLeft <= 7;
-
-                  return (
-                    <div
-                      key={pack.id}
-                      className={`p-4 rounded-xl border transition-colors ${
-                        pack.isActive
-                          ? 'bg-(--bg-secondary) border-(--border-color)'
-                          : 'bg-(--bg-secondary)/50 border-(--border-color)/50 opacity-50'
-                      }`}
-                    >
-                      <div className="flex items-start justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-semibold text-(--text-primary)">
-                            {pack.name}
-                          </span>
-                          {pack.isGift && (
-                            <Chip
-                              size="sm"
-                              variant="flat"
-                              className="bg-rose-500/10 text-rose-500 text-[10px] h-5"
-                              startContent={<Gift className="w-3 h-3" />}
-                            >
-                              赠送
-                            </Chip>
-                          )}
-                          {!pack.isActive && (
-                            <Chip
-                              size="sm"
-                              variant="flat"
-                              className="bg-gray-500/10 text-gray-500 text-[10px] h-5"
-                            >
-                              {pack.status === 'expired' ? '已过期' : '已用完'}
-                            </Chip>
-                          )}
-                        </div>
-                        <div className="text-right">
-                          <span className="text-sm font-mono font-semibold text-emerald-500">
-                            {pack.remainingPoints.toLocaleString()}
-                          </span>
-                          <span className="text-xs text-(--text-muted)"> / {pack.totalPoints.toLocaleString()} 积分</span>
-                        </div>
-                      </div>
-
-                      {/* 进度条 */}
-                      <Progress
-                        value={usedPercent}
-                        className="mb-2"
-                        size="sm"
-                        color={pack.isActive ? (isExpiringSoon ? 'warning' : 'primary') : 'default'}
-                      />
-
-                      {/* 有效期 - 显示月份区间 */}
-                      <div className="flex items-center justify-between text-xs text-(--text-muted)">
-                        <span className="flex items-center gap-1">
-                          <Calendar className="w-3 h-3" />
-                          {pack.periodMonth || (() => {
-                            const ps = new Date(pack.periodStart);
-                            const pe = new Date(pack.periodEnd);
-                            const sm = `${ps.getFullYear()}年${ps.getMonth() + 1}月`;
-                            const em = `${pe.getFullYear()}年${pe.getMonth() + 1}月`;
-                            return sm === em ? sm : `${sm} ~ ${em}`;
-                          })()}
-                        </span>
-                        {pack.isActive && (
-                          <span className={isExpiringSoon ? 'text-amber-500 font-medium' : ''}>
-                            {daysLeft > 0 ? `${daysLeft}天后到期` : '今日到期'}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </CardBody>
-        </Card>
-
-        {/* 详细账单 */}
-        <Card className="bg-(--bg-card) border border-(--border-color) shadow-sm">
-          <CardBody className="p-0">
-            {/* 账单头部 */}
-            <div className="p-5 border-b border-(--border-color)">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="p-2.5 bg-(--accent)/10 rounded-xl">
-                    <Receipt className="w-5 h-5 text-(--accent)" />
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-semibold text-(--text-primary)">{t.userCenter.billingTitle}</h3>
-                    <div className="text-sm text-(--text-muted)">
-                      {t.userCenter.billingDesc}
-                    </div>
-                  </div>
+              <div className="border-t border-(--border-color) pt-4">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs text-(--text-secondary)">积分余额</span>
                   <Button
                     size="sm"
                     variant="light"
-                    className="text-(--text-secondary) min-w-0 px-2 h-8 ml-auto"
-                    isLoading={recordsLoading}
-                    onPress={() => fetchBillingData()}
+                    className="text-(--accent) min-w-0 px-2 h-6 text-xs"
+                    onPress={() => navigate('/pricing')}
                   >
-                    <RefreshCw className="w-4 h-4" />
+                    充值
                   </Button>
                 </div>
+                <div className="text-2xl font-bold text-emerald-400 tabular-nums">{formatInteger(profile?.balance)}</div>
+                <div className="text-[11px] text-(--text-muted)">≈ ¥{((profile?.balance || 0) * POINT_PURCHASE_PRICE).toFixed(2)}</div>
+              </div>
+            </div>
 
-                {/* 筛选器 */}
-                <div className="flex flex-wrap gap-2">
-                  <select
-                    value={chargeStatus}
-                    onChange={(e) => {
-                      setChargeStatus(e.target.value);
-                      setPage(1);
-                    }}
-                    className="bg-(--bg-secondary) border border-(--border-color) text-(--text-primary) rounded-lg px-3 py-2 text-sm min-w-30 focus:outline-none focus:ring-2 focus:ring-(--accent)/50"
-                  >
-                    <option value="">{t.userCenter.filterAllStatus}</option>
-                    <option value="charged">{t.userCenter.filterCharged}</option>
-                    <option value="skipped">{t.userCenter.filterSkipped}</option>
-                    <option value="pending">{t.userCenter.filterPending}</option>
-                  </select>
+            {/* 我的订阅 */}
+            <div className="bg-(--bg-card) border border-(--border-color) rounded-xl p-5">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-semibold text-(--text-primary)">{t.subscription.title}</h3>
+                {subscription && (
+                  <Chip size="sm" className={getStatusColor(subscription.subscription?.status || subscription.status)}>
+                    {t.subscription.status[(subscription.subscription?.status || subscription.status) as keyof typeof t.subscription.status] || subscription.status}
+                  </Chip>
+                )}
+              </div>
 
-                  <select
-                    value={modelCategory}
-                    onChange={(e) => {
-                      setModelCategory(e.target.value);
-                      setPage(1);
-                    }}
-                    className="bg-(--bg-secondary) border border-(--border-color) text-(--text-primary) rounded-lg px-3 py-2 text-sm min-w-30 focus:outline-none focus:ring-2 focus:ring-(--accent)/50"
-                  >
-                    <option value="">{t.userCenter.filterAllModels}</option>
-                    <option value="TEXT">{t.userCenter.filterTextModel}</option>
-                    <option value="IMAGE">{t.userCenter.filterImageModel}</option>
-                    <option value="VIDEO">{t.userCenter.filterVideoModel}</option>
-                    <option value="AUDIO">{t.userCenter.filterAudioModel}</option>
-                  </select>
+              {subscriptionLoading ? (
+                <div className="flex items-center justify-center py-4">
+                  <div className="w-5 h-5 border-2 border-(--accent) border-t-transparent rounded-full animate-spin" />
+                </div>
+              ) : subscription ? (
+                <div className="space-y-4">
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-sm font-medium text-(--text-primary)">{subscription.plan?.display_name || '免费版'}</span>
+                      <span className="text-xs text-(--text-muted)">
+                        {subscription.subscription?.current_period_end ? formatExpiryDate(subscription.subscription.current_period_end) : '-'}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 mt-2">
+                      <Button
+                        size="sm"
+                        className="bg-(--accent)/10 text-(--accent) h-7 text-xs"
+                        startContent={<ArrowUpRight className="w-3 h-3" />}
+                        onPress={() => navigate('/pricing')}
+                      >
+                        {t.subscription.upgrade}
+                      </Button>
+                      {(subscription.subscription?.status || subscription.status) === 'active' && (
+                        <Button
+                          size="sm"
+                          variant="flat"
+                          className="bg-rose-500/10 text-rose-400 h-7 text-xs"
+                          isLoading={cancellingSubscription}
+                          onPress={handleCancelSubscription}
+                        >
+                          {t.subscription.cancel}
+                        </Button>
+                      )}
+                    </div>
+                  </div>
 
-                  <select
-                    value={sourceType}
-                    onChange={(e) => {
-                      setSourceType(e.target.value);
-                      setPage(1);
-                    }}
-                    className="bg-(--bg-secondary) border border-(--border-color) text-(--text-primary) rounded-lg px-3 py-2 text-sm min-w-30 focus:outline-none focus:ring-2 focus:ring-(--accent)/50"
+                  {subscription.usage && (
+                    <div className="space-y-3 pt-3 border-t border-(--border-color)">
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-xs text-(--text-secondary)">{t.subscription.apiUsage}</span>
+                          <span className="text-xs font-medium text-(--text-primary) tabular-nums">
+                            {formatInteger(subscription.usage.api_calls_used)} / {subscription.usage.api_calls_limit === -1 ? '∞' : formatInteger(subscription.usage.api_calls_limit)}
+                          </span>
+                        </div>
+                        <Progress
+                          value={subscription.usage.api_calls_limit === -1 ? 0 : (subscription.usage.api_calls_used / subscription.usage.api_calls_limit) * 100}
+                          size="sm"
+                          color={subscription.usage.api_calls_limit !== -1 && subscription.usage.api_calls_used / subscription.usage.api_calls_limit > 0.8 ? 'warning' : 'primary'}
+                          className="h-1.5"
+                          classNames={{
+                            indicator: 'bg-(--accent)',
+                            track: 'bg-(--accent)/10'
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-xs text-(--text-secondary)">{t.subscription.projectUsage}</span>
+                          <span className="text-xs font-medium text-(--text-primary) tabular-nums">
+                            {formatInteger(subscription.usage.projects_used)} / {subscription.usage.projects_limit === -1 ? '∞' : formatInteger(subscription.usage.projects_limit)}
+                          </span>
+                        </div>
+                        <Progress
+                          value={subscription.usage.projects_limit === -1 ? 0 : (subscription.usage.projects_used / subscription.usage.projects_limit) * 100}
+                          size="sm"
+                          color={subscription.usage.projects_limit !== -1 && subscription.usage.projects_used / subscription.usage.projects_limit > 0.8 ? 'warning' : 'secondary'}
+                          className="h-1.5"
+                          classNames={{
+                            indicator: 'bg-purple-500',
+                            track: 'bg-purple-500/10'
+                          }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-center py-4">
+                  <p className="text-xs text-(--text-muted) mb-3">{t.subscription.noPlan}</p>
+                  <Button
+                    size="sm"
+                    className="bg-(--accent) text-white text-xs"
+                    onPress={() => navigate('/pricing')}
                   >
-                    <option value="">{t.userCenter.filterAllSources}</option>
-                    <option value="workflow">{t.userCenter.sourceWorkflow}</option>
-                    <option value="route">{t.userCenter.sourceRoute}</option>
-                    <option value="admin_tool">{t.userCenter.sourceAdminTool}</option>
-                  </select>
+                    {t.pricing.basic.cta}
+                  </Button>
+                </div>
+              )}
+            </div>
+
+            {/* 我的资源包 */}
+            <div className="bg-(--bg-card) border border-(--border-color) rounded-xl p-5">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold text-(--text-primary)">我的资源包</h3>
+                <span className="text-xs text-(--text-muted)">{resourcePacks.filter(p => p.isActive).length} 个有效</span>
+              </div>
+
+              {resourcePacks.length === 0 ? (
+                <div className="text-center py-4">
+                  <p className="text-xs text-(--text-muted) mb-2">暂无资源包</p>
+                  <Button
+                    size="sm"
+                    className="bg-amber-500 text-white text-xs h-7"
+                    onPress={() => navigate('/pricing')}
+                  >
+                    获取资源包
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {resourcePacks.map(pack => {
+                    const usedPercent = pack.totalPoints > 0
+                      ? Math.round(((pack.totalPoints - pack.remainingPoints) / pack.totalPoints) * 100)
+                      : 0;
+                    const periodEnd = new Date(pack.periodEnd);
+                    const now = new Date();
+                    const daysLeft = Math.ceil((periodEnd.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+                    const isExpiringSoon = pack.isActive && daysLeft > 0 && daysLeft <= 7;
+
+                    return (
+                      <div
+                        key={pack.id}
+                        className={`p-3 rounded-lg border ${
+                          pack.isActive
+                            ? 'bg-(--bg-secondary) border-(--border-color)'
+                            : 'bg-(--bg-secondary)/50 border-(--border-color)/50 opacity-50'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-1.5">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="text-xs font-medium text-(--text-primary) truncate">{pack.name}</span>
+                            {pack.isGift && (
+                              <Chip size="sm" variant="flat" className="bg-rose-500/10 text-rose-500 text-[10px] h-4 px-1">
+                                赠送
+                              </Chip>
+                            )}
+                          </div>
+                          <span className="text-xs font-mono text-emerald-500 shrink-0">
+                            {pack.remainingPoints.toLocaleString()}
+                            <span className="text-(--text-muted)">/{pack.totalPoints.toLocaleString()}</span>
+                          </span>
+                        </div>
+                        <Progress
+                          value={usedPercent}
+                          size="sm"
+                          className="h-1 mb-1.5"
+                          color={pack.isActive ? (isExpiringSoon ? 'warning' : 'primary') : 'default'}
+                        />
+                        <div className="flex items-center justify-between text-[11px] text-(--text-muted)">
+                          <span>{pack.periodMonth || formatPackPeriod(pack.periodStart, pack.periodEnd)}</span>
+                          {pack.isActive && (
+                            <span className={isExpiringSoon ? 'text-amber-500' : ''}>
+                              {daysLeft > 0 ? `${daysLeft}天后到期` : '今日到期'}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* 右侧主内容区 */}
+          <div className="flex-1 min-w-0 space-y-4">
+            {/* 统计卡片 */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {/* 本月消耗 */}
+              <div className="bg-(--bg-card) border border-(--border-color) rounded-xl p-4 hover:bg-(--bg-secondary)/30 transition-colors">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="p-1.5 bg-orange-500/10 rounded-lg">
+                    <TrendingUp className="w-4 h-4 text-orange-400" />
+                  </div>
+                  <span className="text-xs text-(--text-muted)">{t.userCenter.thisMonth}</span>
+                </div>
+                <div className="flex items-baseline gap-1 mb-0.5">
+                  <span className="text-xl font-bold text-(--text-primary) tabular-nums">{formatInteger(stats?.monthlyPointsUsed)}</span>
+                  <span className="text-xs text-(--text-muted)">{t.userCenter.points}</span>
+                </div>
+                <div className="text-[11px] text-(--text-muted)">{t.userCenter.monthlyPoints}</div>
+              </div>
+
+              {/* 生成作品 */}
+              <div className="bg-(--bg-card) border border-(--border-color) rounded-xl p-4 hover:bg-(--bg-secondary)/30 transition-colors">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="p-1.5 bg-blue-500/10 rounded-lg">
+                    <Sparkles className="w-4 h-4 text-blue-400" />
+                  </div>
+                  <span className="text-xs text-(--text-muted)">作品</span>
+                </div>
+                <div className="flex items-baseline gap-1 mb-0.5">
+                  <span className="text-xl font-bold text-(--text-primary) tabular-nums">{formatInteger((stats?.imageCount || 0) + (stats?.videoCount || 0))}</span>
+                  <span className="text-xs text-(--text-muted)">{t.userCenter.works}</span>
+                </div>
+                <div className="flex items-center gap-2 text-[11px] text-(--text-muted)">
+                  <span>{formatInteger(stats?.imageCount)} 图</span>
+                  <span>{formatInteger(stats?.videoCount)} 视频</span>
+                </div>
+              </div>
+
+              {/* 项目/剧本 */}
+              <div className="bg-(--bg-card) border border-(--border-color) rounded-xl p-4 hover:bg-(--bg-secondary)/30 transition-colors">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="p-1.5 bg-purple-500/10 rounded-lg">
+                    <FolderOpen className="w-4 h-4 text-purple-400" />
+                  </div>
+                  <span className="text-xs text-(--text-muted)">项目</span>
+                </div>
+                <div className="flex items-baseline gap-1 mb-0.5">
+                  <span className="text-xl font-bold text-(--text-primary) tabular-nums">{formatInteger(stats?.projectCount)}</span>
+                  <span className="text-xs text-(--text-muted)">{t.userCenter.projectCount}</span>
+                </div>
+                <div className="text-[11px] text-(--text-muted)">{formatInteger(stats?.scriptCount)} {t.userCenter.scriptCount}</div>
+              </div>
+
+              {/* 创作角色 */}
+              <div className="bg-(--bg-card) border border-(--border-color) rounded-xl p-4 hover:bg-(--bg-secondary)/30 transition-colors">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="p-1.5 bg-emerald-500/10 rounded-lg">
+                    <Users className="w-4 h-4 text-emerald-400" />
+                  </div>
+                  <span className="text-xs text-(--text-muted)">角色</span>
+                </div>
+                <div className="flex items-baseline gap-1 mb-0.5">
+                  <span className="text-xl font-bold text-(--text-primary) tabular-nums">{formatInteger(stats?.characterCount)}</span>
+                  <span className="text-xs text-(--text-muted)">{t.userCenter.characters}</span>
+                </div>
+                <div className="text-[11px] text-(--text-muted)">{t.userCenter.charactersCreated}</div>
+              </div>
+            </div>
+
+            {/* 详细账单 */}
+            <div className="bg-(--bg-card) border border-(--border-color) rounded-xl overflow-hidden">
+              {/* 账单头部 */}
+              <div className="p-4 border-b border-(--border-color)">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-semibold text-(--text-primary)">{t.userCenter.billingTitle}</h3>
+                    <span className="text-xs text-(--text-muted)">· {formatInteger(total)} 条记录</span>
+                    <Button
+                      size="sm"
+                      variant="light"
+                      className="text-(--text-secondary) min-w-0 px-1.5 h-6"
+                      isLoading={recordsLoading}
+                      onPress={() => fetchBillingData()}
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
+
+                  {/* 筛选器 */}
+                  <div className="flex flex-wrap gap-2">
+                    <select
+                      value={chargeStatus}
+                      onChange={(e) => {
+                        setChargeStatus(e.target.value);
+                        setPage(1);
+                      }}
+                      className="bg-(--bg-secondary) border border-(--border-color) text-(--text-primary) rounded-lg px-2.5 py-1.5 text-xs min-w-24 focus:outline-none focus:ring-2 focus:ring-(--accent)/50"
+                    >
+                      <option value="">{t.userCenter.filterAllStatus}</option>
+                      <option value="charged">{t.userCenter.filterCharged}</option>
+                      <option value="skipped">{t.userCenter.filterSkipped}</option>
+                      <option value="pending">{t.userCenter.filterPending}</option>
+                    </select>
+
+                    <select
+                      value={modelCategory}
+                      onChange={(e) => {
+                        setModelCategory(e.target.value);
+                        setPage(1);
+                      }}
+                      className="bg-(--bg-secondary) border border-(--border-color) text-(--text-primary) rounded-lg px-2.5 py-1.5 text-xs min-w-24 focus:outline-none focus:ring-2 focus:ring-(--accent)/50"
+                    >
+                      <option value="">{t.userCenter.filterAllModels}</option>
+                      <option value="TEXT">{t.userCenter.filterTextModel}</option>
+                      <option value="IMAGE">{t.userCenter.filterImageModel}</option>
+                      <option value="VIDEO">{t.userCenter.filterVideoModel}</option>
+                      <option value="AUDIO">{t.userCenter.filterAudioModel}</option>
+                      <option value="MULTIMODAL">多模态</option>
+                      <option value="3D">3D</option>
+                    </select>
+
+                    <select
+                      value={sourceType}
+                      onChange={(e) => {
+                        setSourceType(e.target.value);
+                        setPage(1);
+                      }}
+                      className="bg-(--bg-secondary) border border-(--border-color) text-(--text-primary) rounded-lg px-2.5 py-1.5 text-xs min-w-24 focus:outline-none focus:ring-2 focus:ring-(--accent)/50"
+                    >
+                      <option value="">{t.userCenter.filterAllSources}</option>
+                      <option value="workflow">{t.userCenter.sourceWorkflow}</option>
+                      <option value="route">{t.userCenter.sourceRoute}</option>
+                      <option value="admin_tool">{t.userCenter.sourceAdminTool}</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* 账单表格 */}
+              <div className="overflow-x-auto">
+                <Table
+                  aria-label={t.userCenter.billingTitle}
+                  className="min-w-full"
+                  classNames={{
+                    wrapper: 'bg-transparent shadow-none rounded-none',
+                    th: 'bg-(--bg-secondary) text-(--text-secondary) font-medium text-[11px] uppercase tracking-wider py-2.5',
+                    td: 'text-(--text-primary) py-2.5 text-xs'
+                  }}
+                >
+                  <TableHeader>
+                    <TableColumn className="w-16">编号</TableColumn>
+                    <TableColumn>所属工程</TableColumn>
+                    <TableColumn>任务类型</TableColumn>
+                    <TableColumn>使用模型</TableColumn>
+                    <TableColumn className="text-center w-16">状态</TableColumn>
+                    <TableColumn>执行时间</TableColumn>
+                    <TableColumn className="text-right w-16">耗时</TableColumn>
+                    <TableColumn className="text-right w-20">消费积分</TableColumn>
+                  </TableHeader>
+                  <TableBody emptyContent={
+                    recordsLoading ? (
+                      <div className="flex items-center justify-center py-6">
+                        <div className="w-5 h-5 border-2 border-(--accent) border-t-transparent rounded-full animate-spin" />
+                      </div>
+                    ) : (
+                      <div className="text-center py-10">
+                        <Receipt className="w-10 h-10 mx-auto mb-2 text-(--text-muted) opacity-20" />
+                        <p className="text-xs text-(--text-muted)">{t.userCenter.billingEmpty}</p>
+                      </div>
+                    )
+                  }>
+                    {records.map((record) => (
+                      <TableRow key={record.id} className="hover:bg-(--bg-secondary)/50 transition-colors">
+                        {/* 编号 */}
+                        <TableCell className="text-[11px] font-mono text-(--text-muted)">
+                          #{record.id}
+                        </TableCell>
+
+                        {/* 所属工程 */}
+                        <TableCell>
+                          {record.project_name ? (
+                            <Tooltip content={record.project_name} placement="top">
+                              <span className="text-(--text-primary) truncate max-w-32 inline-block">{record.project_name}</span>
+                            </Tooltip>
+                          ) : (
+                            <span className="text-(--text-muted)">-</span>
+                          )}
+                        </TableCell>
+
+                        {/* 任务类型 */}
+                        <TableCell>
+                          <Chip size="sm" variant="flat" className="bg-(--accent)/10 text-(--accent) text-[10px] h-5">
+                            {getOperationLabel(record)}
+                          </Chip>
+                        </TableCell>
+
+                        {/* 使用模型 */}
+                        <TableCell>
+                          <div className="flex flex-col min-w-0">
+                            <Tooltip content={record.model_name || record.model_provider || '-'} placement="top">
+                              <span className="text-(--text-primary) truncate max-w-36 inline-block">
+                                {record.model_name || record.model_provider || '-'}
+                              </span>
+                            </Tooltip>
+                            <span className="text-[10px] text-(--text-muted)">
+                              {record.model_category || ''}
+                            </span>
+                          </div>
+                        </TableCell>
+
+                        {/* 状态 */}
+                        <TableCell className="text-center">
+                          {record.request_status === 'success' ? (
+                            <Chip size="sm" className="bg-emerald-500/10 text-emerald-400 text-[10px] h-5">成功</Chip>
+                          ) : record.request_status === 'failed' ? (
+                            <Tooltip content={record.error_message || '未知错误'} placement="top" className="max-w-xs">
+                              <Chip size="sm" className="bg-rose-500/10 text-rose-400 text-[10px] h-5 cursor-help">失败</Chip>
+                            </Tooltip>
+                          ) : (
+                            <Chip size="sm" className="bg-sky-500/10 text-sky-400 text-[10px] h-5">进行中</Chip>
+                          )}
+                        </TableCell>
+
+                        {/* 执行时间 */}
+                        <TableCell className="text-(--text-muted) whitespace-nowrap">
+                          {formatDate(record.created_at)}
+                        </TableCell>
+
+                        {/* 耗时 */}
+                        <TableCell className="text-right text-(--text-muted) font-mono">
+                          {formatDuration(record.duration_seconds)}
+                        </TableCell>
+
+                        {/* 消费积分 */}
+                        <TableCell className="text-right">
+                          <span className={`font-mono font-semibold text-xs ${record.points_cost ? 'text-emerald-400' : 'text-(--text-muted)'}`}>
+                            {record.points_cost ? formatInteger(record.points_cost) : '0'}
+                          </span>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+
+              {/* 分页 */}
+              <div className="p-3 border-t border-(--border-color) flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                <div className="text-xs text-(--text-muted)">
+                  {t.userCenter.pageInfo.replace('{page}', String(page)).replace('{total}', String(totalPages))}
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <Button
+                    size="sm"
+                    variant="flat"
+                    className="bg-(--bg-secondary) text-(--text-primary) gap-1 h-7 text-xs"
+                    isDisabled={page <= 1 || recordsLoading}
+                    onPress={() => setPage((prev) => Math.max(1, prev - 1))}
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" />
+                    {t.userCenter.prevPage}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="flat"
+                    className="bg-(--bg-secondary) text-(--text-primary) gap-1 h-7 text-xs"
+                    isDisabled={page >= totalPages || recordsLoading}
+                    onPress={() => setPage((prev) => Math.min(totalPages, prev + 1))}
+                  >
+                    {t.userCenter.nextPage}
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </Button>
                 </div>
               </div>
             </div>
-
-            {/* 账单表格 */}
-            <div className="overflow-x-auto">
-              <Table
-                aria-label={t.userCenter.billingTitle}
-                className="min-w-full"
-                classNames={{
-                  wrapper: 'bg-transparent shadow-none rounded-none',
-                  th: 'bg-(--bg-secondary) text-(--text-secondary) font-medium text-xs uppercase tracking-wider',
-                  td: 'text-(--text-primary) py-3'
-                }}
-              >
-                <TableHeader>
-                  <TableColumn className="w-20">编号</TableColumn>
-                  <TableColumn>所属工程</TableColumn>
-                  <TableColumn>任务类型</TableColumn>
-                  <TableColumn>使用模型</TableColumn>
-                  <TableColumn className="text-center w-20">状态</TableColumn>
-                  <TableColumn>执行时间</TableColumn>
-                  <TableColumn className="text-right w-20">耗时</TableColumn>
-                  <TableColumn className="text-right w-24">消费积分</TableColumn>
-                </TableHeader>
-              <TableBody emptyContent={
-                recordsLoading ? (
-                  <div className="flex items-center justify-center py-8">
-                    <div className="w-6 h-6 border-2 border-(--accent) border-t-transparent rounded-full animate-spin" />
-                  </div>
-                ) : (
-                  <div className="text-center py-12">
-                    <Receipt className="w-12 h-12 mx-auto mb-3 text-(--text-muted) opacity-30" />
-                    <p className="text-(--text-muted)">{t.userCenter.billingEmpty}</p>
-                  </div>
-                )
-              }>
-                {records.map((record) => (
-                  <TableRow key={record.id} className="hover:bg-(--bg-secondary)/50 transition-colors">
-                    {/* 编号 */}
-                    <TableCell className="text-xs font-mono text-(--text-muted)">
-                      #{record.id}
-                    </TableCell>
-
-                    {/* 所属工程 */}
-                    <TableCell className="text-sm">
-                      {record.project_name ? (
-                        <span className="text-(--text-primary) truncate max-w-36 inline-block">{record.project_name}</span>
-                      ) : (
-                        <span className="text-(--text-muted)">-</span>
-                      )}
-                    </TableCell>
-
-                    {/* 任务类型 */}
-                    <TableCell>
-                      <Chip size="sm" variant="flat" className="bg-(--accent)/10 text-(--accent)">
-                        {getOperationLabel(record)}
-                      </Chip>
-                    </TableCell>
-
-                    {/* 使用模型 */}
-                    <TableCell className="text-sm">
-                      <div className="flex flex-col">
-                        <span className="text-(--text-primary) truncate max-w-40">
-                          {record.model_name || record.model_provider || '-'}
-                        </span>
-                        <span className="text-[10px] text-(--text-muted)">
-                          {record.model_category || ''}
-                        </span>
-                      </div>
-                    </TableCell>
-
-                    {/* 状态 */}
-                    <TableCell className="text-center">
-                      {record.request_status === 'success' ? (
-                        <Chip size="sm" className="bg-emerald-500/10 text-emerald-400">成功</Chip>
-                      ) : record.request_status === 'failed' ? (
-                        <Tooltip content={record.error_message || '未知错误'} placement="top" className="max-w-xs">
-                          <Chip size="sm" className="bg-rose-500/10 text-rose-400 cursor-help">失败</Chip>
-                        </Tooltip>
-                      ) : (
-                        <Chip size="sm" className="bg-sky-500/10 text-sky-400">进行中</Chip>
-                      )}
-                    </TableCell>
-
-                    {/* 执行时间 */}
-                    <TableCell className="text-sm text-(--text-muted) whitespace-nowrap">
-                      {formatDate(record.created_at)}
-                    </TableCell>
-
-                    {/* 耗时 */}
-                    <TableCell className="text-right text-sm text-(--text-muted) font-mono">
-                      {formatDuration(record.duration_seconds)}
-                    </TableCell>
-
-                    {/* 消费积分 */}
-                    <TableCell className="text-right">
-                      <span className={`font-mono font-bold ${record.points_cost ? 'text-emerald-400' : 'text-(--text-muted)'}`}>
-                        {record.points_cost ? formatInteger(record.points_cost) : '0'}
-                      </span>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-            </div>
-
-            {/* 分页 */}
-            <div className="p-4 border-t border-(--border-color) flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-              <div className="text-sm text-(--text-muted)">
-                {t.userCenter.totalRecords} <span className="font-medium text-(--text-primary)">{formatInteger(total)}</span> {t.userCenter.recordsUnit}
-                {t.userCenter.pageInfo.replace('{page}', String(page)).replace('{total}', String(totalPages))}
-              </div>
-
-              <div className="flex items-center gap-2">
-                <Button
-                  size="sm"
-                  variant="flat"
-                  className="bg-(--bg-secondary) text-(--text-primary) gap-1"
-                  isDisabled={page <= 1 || recordsLoading}
-                  onPress={() => setPage((prev) => Math.max(1, prev - 1))}
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                  {t.userCenter.prevPage}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="flat"
-                  className="bg-(--bg-secondary) text-(--text-primary) gap-1"
-                  isDisabled={page >= totalPages || recordsLoading}
-                  onPress={() => setPage((prev) => Math.min(totalPages, prev + 1))}
-                >
-                  {t.userCenter.nextPage}
-                  <ChevronRight className="w-4 h-4" />
-                </Button>
-              </div>
-            </div>
-          </CardBody>
-        </Card>
+          </div>
+        </div>
       </div>
 
       {/* 资料编辑模态框 */}

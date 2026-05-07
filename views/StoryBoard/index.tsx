@@ -20,7 +20,7 @@ import { PanelGroup } from '../../components/PanelGroup';
 import ResizablePanel, { ResizablePanelRef } from '../../components/ResizablePanel';
 import { getAuthToken } from '../../services/auth';
 import { fetchCharactersByProject, fetchScenesByProject, createCharacter, updateCharacter, deleteCharacter, generateCharacterViews, generateCharacterStateViews, fetchCharacterStates, createScene as createSceneAsset, updateScene as updateSceneAsset, deleteScene as deleteSceneAsset } from '../../services/assets';
-import { createScript as createScriptApi, deleteScript as deleteScriptApi } from '../../services/scripts';
+import { createScript as createScriptApi, deleteScript as deleteScriptApi, updateScriptTitle, fetchScripts } from '../../services/scripts';
 import { addProjectCollaborator } from '../../services/collaboration';
 import { useToast } from '../../contexts/ToastContext';
 import { AIModel } from '../../components/AIModelSelector';
@@ -1054,10 +1054,26 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
               scripts={scripts}
               currentEpisode={currentEpisode}
               currentScriptId={currentScriptId}
+              projectName={currentProject?.name}
               onSelect={handleEpisodeSelect}
               onStandaloneEpisodeChange={handleStandaloneEpisodeChange}
               standaloneMaxEpisode={standaloneMaxEpisode}
               onCreateNextEpisode={onCreateNextEpisode || handleCreateNextEpisode}
+              onUpdateEpisodeTitle={async (scriptId, title) => {
+                try {
+                  await updateScriptTitle(scriptId, title);
+                  showToast('标题已更新', 'success');
+                  // 刷新 scripts 列表
+                  const refreshed = await fetchScripts();
+                  // 通知父组件刷新
+                  const updated = refreshed.find((s: any) => s.id === scriptId);
+                  if (updated) {
+                    onEpisodeChange?.(updated.episode_number, updated.id);
+                  }
+                } catch (err: any) {
+                  showToast(err?.message || '更新标题失败', 'error');
+                }
+              }}
             />
             {scenes.length > 0 && (
               <span className="text-xs text-(--text-muted) px-2 py-0.5 rounded bg-(--bg-app)">
@@ -1488,7 +1504,7 @@ const StoryBoard: React.FC<StoryBoardProps> = ({
                               });
                             }
                             // 无白膜状态 → 降级为旧接口
-                            return generateCharacterViews(id, { imageModel: params?.imageModel, textModel: params?.textModel, aspectRatio: params?.aspectRatio } as any);
+                            return generateCharacterViews(id, { imageModel: params?.imageModel, textModel: params?.textModel, aspectRatio: params?.aspectRatio } as any) as Promise<any>;
                           })
                           .then(() => toastOk('白膜生成任务已启动'))
                           .catch(toastErr('生成失败'));

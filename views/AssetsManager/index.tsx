@@ -1574,7 +1574,7 @@ const AssetsManager: React.FC = () => {
               startContent={<Plus className="w-4 h-4" />}
               onPress={handleAdd}
             >
-              {t.assetsManager[`new${activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}` as keyof typeof t.assetsManager] || `${t.common?.create || 'New'}${getTabLabel()}`}
+              {(t.assetsManager as any)[`new${activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}`] || `New ${getTabLabel()}`}
             </Button>
           </div>
         </div>
@@ -1840,7 +1840,7 @@ const AssetsManager: React.FC = () => {
                   const isGenerating = c.generation_status === 'generating';
                   const handleGenCostumeViews = async () => {
                     if (!selectedImageModel) {
-                      showToast(t.assetsManager.toasts.selectImageModelFirst || '请先配置图像模型', 'warning');
+                      showToast('请先配置图像模型', 'warning');
                       return;
                     }
                     try {
@@ -1924,7 +1924,7 @@ const AssetsManager: React.FC = () => {
                         <p
                           className="text-xs text-(--text-muted) mt-2 line-clamp-2 cursor-pointer hover:text-(--text-primary) transition-colors group/desc"
                           onClick={() => setEditingCostumeDesc({ id: c.id, value: c.description || '' })}
-                          title={t.common?.edit || '点击编辑描述'}
+                          title={'点击编辑描述'}
                         >
                           {c.description || <span className="italic text-(--text-muted)/50">{t.assetsManager.costume.descPlaceholder}</span>}
                           <Edit2 className="w-2.5 h-2.5 inline-block ml-1 opacity-0 group-hover/desc:opacity-60 transition-opacity" />

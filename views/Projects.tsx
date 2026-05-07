@@ -59,23 +59,11 @@ const Projects: React.FC = () => {
     storyConstraints: '',
     // 拍摄视角
     narrativePerspective: '' as '' | 'first_person' | 'third_person',
-    // 漫画专属
-    mangaLayout: '' as '' | 'page' | 'strip' | 'free',
-    mangaPanelStyle: '',
     // 漫剧专属 - 画面参数
     imageAspectRatio: '',
     imageResolution: '',
     videoAspectRatio: '',
     videoResolution: '',
-    // 短视频专属
-    videoDuration: '' as '' | '15' | '30' | '60' | '180',
-    videoAspect: '' as '' | '9:16' | '16:9' | '1:1',
-    videoStyle: '',
-    // 小说专属
-    novelGenre: '',
-    novelWritingStyle: '',
-    novelChapterLength: '',
-    novelTarget: '',
     // AI 输出语言
     outputLanguage: 'zh' as string
   });
@@ -268,19 +256,10 @@ const Projects: React.FC = () => {
       storyStyle: settings.storyStyle || '',
       storyConstraints: settings.storyConstraints || '',
       narrativePerspective: settings.narrativePerspective || '',
-      mangaLayout: settings.mangaLayout || '',
-      mangaPanelStyle: settings.mangaPanelStyle || '',
       imageAspectRatio: settings.imageAspectRatio || '',
       imageResolution: settings.imageResolution || '',
       videoAspectRatio: settings.videoAspectRatio || '',
       videoResolution: settings.videoResolution || '',
-      videoDuration: settings.videoDuration || '',
-      videoAspect: settings.videoAspect || '',
-      videoStyle: settings.videoStyle || '',
-      novelGenre: settings.novelGenre || '',
-      novelWritingStyle: settings.novelWritingStyle || '',
-      novelChapterLength: settings.novelChapterLength || '',
-      novelTarget: settings.novelTarget || '',
       outputLanguage: settings.outputLanguage || 'zh'
     });
     onOpen();
@@ -290,10 +269,8 @@ const Projects: React.FC = () => {
     // 前置验证必填字段
     const missing: string[] = [];
     if (!formData.name?.trim()) missing.push('项目名称');
-    if (editProjectType !== 'novel') {
-      if (!formData.styleCategory) missing.push('内容类型（真人/动漫）');
-      if (!formData.visualStyle) missing.push('视觉风格');
-    }
+    if (!formData.styleCategory) missing.push('内容类型（真人/动漫）');
+    if (!formData.visualStyle) missing.push('视觉风格');
     if (missing.length > 0) {
       showToast(`您还没有选择：${missing.join('、')}`, 'error');
       return;
@@ -301,9 +278,9 @@ const Projects: React.FC = () => {
     try {
       const { visualStyle, visualStylePrompt, storyStyle, storyConstraints, narrativePerspective,
         styleCategory, bodyProportionRatio,
-        mangaLayout, mangaPanelStyle, imageAspectRatio, imageResolution,
-        videoAspectRatio, videoResolution, videoDuration, videoAspect, videoStyle,
-        novelGenre, novelWritingStyle, novelChapterLength, novelTarget, outputLanguage, _coverFile, ...rest } = formData;
+        imageAspectRatio, imageResolution,
+        videoAspectRatio, videoResolution,
+        outputLanguage, _coverFile, ...rest } = formData;
       const settingsObj: any = {};
       if (styleCategory) settingsObj.styleCategory = styleCategory;
       if (bodyProportionRatio) settingsObj.bodyProportionRatio = bodyProportionRatio;
@@ -312,23 +289,11 @@ const Projects: React.FC = () => {
       if (storyStyle) settingsObj.storyStyle = storyStyle;
       if (storyConstraints) settingsObj.storyConstraints = storyConstraints;
       if (narrativePerspective) settingsObj.narrativePerspective = narrativePerspective;
-      // 漫画专属
-      if (mangaLayout) settingsObj.mangaLayout = mangaLayout;
-      if (mangaPanelStyle) settingsObj.mangaPanelStyle = mangaPanelStyle;
-      // 漫剧专属 - 画面参数
+      // 画面参数
       if (imageAspectRatio) settingsObj.imageAspectRatio = imageAspectRatio;
       if (imageResolution) settingsObj.imageResolution = imageResolution;
       if (videoAspectRatio) settingsObj.videoAspectRatio = videoAspectRatio;
       if (videoResolution) settingsObj.videoResolution = videoResolution;
-      // 短视频专属
-      if (videoDuration) settingsObj.videoDuration = videoDuration;
-      if (videoAspect) settingsObj.videoAspect = videoAspect;
-      if (videoStyle) settingsObj.videoStyle = videoStyle;
-      // 小说专属
-      if (novelGenre) settingsObj.novelGenre = novelGenre;
-      if (novelWritingStyle) settingsObj.novelWritingStyle = novelWritingStyle;
-      if (novelChapterLength) settingsObj.novelChapterLength = novelChapterLength;
-      if (novelTarget) settingsObj.novelTarget = novelTarget;
       // AI 输出语言
       if (outputLanguage) settingsObj.outputLanguage = outputLanguage;
       const saveData: any = { ...rest, type: editProjectType, settings_json: JSON.stringify(settingsObj) };
@@ -690,9 +655,6 @@ const Projects: React.FC = () => {
   const getProjectTypeLabel = (type: string) => {
     switch (type) {
       case 'comic_drama': return '漫剧';
-      case 'manga': return '漫画';
-      case 'short_video': return '短视频';
-      case 'novel': return '小说';
       default: return type;
     }
   };
@@ -701,9 +663,6 @@ const Projects: React.FC = () => {
   const getProjectTypeColor = (type: string) => {
     switch (type) {
       case 'comic_drama': return 'bg-violet-500/20 text-violet-600 dark:text-violet-300 border border-violet-400/30';
-      case 'manga': return 'bg-orange-500/20 text-orange-600 dark:text-orange-300 border border-orange-400/30';
-      case 'short_video': return 'bg-cyan-500/20 text-cyan-600 dark:text-cyan-300 border border-cyan-400/30';
-      case 'novel': return 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 border border-emerald-400/30';
       default: return 'bg-slate-500/20 text-slate-600 dark:text-slate-300 border border-slate-400/30';
     }
   };
@@ -1049,8 +1008,7 @@ const Projects: React.FC = () => {
                         </div>
                       </div>
 
-                      {/* 视觉风格选择 - 小说类型不需要 */}
-                      {editProjectType !== 'novel' && (
+                      {/* 视觉风格选择 */}
                       <div>
                         <label className="text-sm text-(--text-secondary) font-medium mb-2 flex items-center gap-1.5">
                           <Palette className="w-4 h-4 text-(--accent)" />
@@ -1239,7 +1197,6 @@ const Projects: React.FC = () => {
                           </div>
                         )}
                       </div>
-                      )}
                     </div>
 
                     {/* 右栏 - 项目设置 */}
@@ -1472,174 +1429,6 @@ const Projects: React.FC = () => {
                           </div>
                         </div>
                       </div>
-                      </>
-                      )}
-
-                      {/* ====== 漫画专属字段 ====== */}
-                      {(editProjectType === 'manga') && (
-                      <>
-                        <div>
-                          <label className="text-sm text-(--text-secondary) font-medium mb-2 block">{t.projects.mangaLayoutLabel}</label>
-                          <div className="flex gap-2">
-                            {([['page', t.projects.mangaLayoutPage], ['strip', t.projects.mangaLayoutStrip], ['free', t.projects.mangaLayoutFree]] as const).map(([key, label]) => (
-                              <button
-                                key={key}
-                                onClick={() => setFormData({ ...formData, mangaLayout: formData.mangaLayout === key ? '' : key as any })}
-                                className={`px-4 py-2 rounded-lg border transition-all cursor-pointer ${
-                                  formData.mangaLayout === key
-                                    ? 'bg-(--accent)/15 border-(--accent)/40 text-(--accent) shadow-[0_0_10px_var(--accent-glow)]'
-                                    : 'border-(--border-color) bg-(--bg-input) text-(--text-muted) hover:border-(--accent)/30'
-                                }`}
-                              >
-                                {label}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                        <div className="grid grid-cols-2 gap-3">
-                          <Input
-                            label={t.projects.mangaPanelStyleLabel}
-                            placeholder={t.projects.mangaPanelStylePlaceholder}
-                            value={formData.mangaPanelStyle}
-                            onValueChange={(val) => setFormData({ ...formData, mangaPanelStyle: val })}
-                            classNames={{
-                              input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted)",
-                              label: "text-(--text-secondary) font-medium",
-                              inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 focus-within:border-(--accent)/40"
-                            }}
-                          />
-                          <Input
-                            label={t.projects.storyStyleLabel}
-                            placeholder={t.projects.storyStylePlaceholder}
-                            value={formData.storyStyle}
-                            onValueChange={(val) => setFormData({ ...formData, storyStyle: val })}
-                            classNames={{
-                              input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted)",
-                              label: "text-(--text-secondary) font-medium",
-                              inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 focus-within:border-(--accent)/40"
-                            }}
-                          />
-                        </div>
-                      </>
-                      )}
-
-                      {/* ====== 短视频专属字段 ====== */}
-                      {(editProjectType === 'short_video') && (
-                      <>
-                        <div>
-                          <label className="text-sm text-(--text-secondary) font-medium mb-2 block">{t.projects.videoDurationLabel}</label>
-                          <div className="flex gap-2">
-                            {([['15', t.projects.videoDuration15], ['30', t.projects.videoDuration30], ['60', t.projects.videoDuration60], ['180', t.projects.videoDuration180]] as const).map(([key, label]) => (
-                              <button
-                                key={key}
-                                onClick={() => setFormData({ ...formData, videoDuration: formData.videoDuration === key ? '' : key as any })}
-                                className={`px-4 py-2 rounded-lg border transition-all cursor-pointer ${
-                                  formData.videoDuration === key
-                                    ? 'bg-(--accent)/15 border-(--accent)/40 text-(--accent) shadow-[0_0_10px_var(--accent-glow)]'
-                                    : 'border-(--border-color) bg-(--bg-input) text-(--text-muted) hover:border-(--accent)/30'
-                                }`}
-                              >
-                                {label}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                        <div>
-                          <label className="text-sm text-(--text-secondary) font-medium mb-2 block">{t.projects.videoAspectLabel}</label>
-                          <div className="flex gap-2">
-                            {([['9:16', t.projects.videoAspect916], ['16:9', t.projects.videoAspect169], ['1:1', t.projects.videoAspect11]] as const).map(([key, label]) => (
-                              <button
-                                key={key}
-                                onClick={() => setFormData({ ...formData, videoAspect: formData.videoAspect === key ? '' : key as any })}
-                                className={`px-4 py-2 rounded-lg border transition-all cursor-pointer ${
-                                  formData.videoAspect === key
-                                    ? 'bg-(--accent)/15 border-(--accent)/40 text-(--accent) shadow-[0_0_10px_var(--accent-glow)]'
-                                    : 'border-(--border-color) bg-(--bg-input) text-(--text-muted) hover:border-(--accent)/30'
-                                }`}
-                              >
-                                {label}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                        <div className="grid grid-cols-2 gap-3">
-                          <Input
-                            label={t.projects.videoStyleLabel}
-                            placeholder={t.projects.videoStylePlaceholder}
-                            value={formData.videoStyle}
-                            onValueChange={(val) => setFormData({ ...formData, videoStyle: val })}
-                            classNames={{
-                              input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted)",
-                              label: "text-(--text-secondary) font-medium",
-                              inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 focus-within:border-(--accent)/40"
-                            }}
-                          />
-                          <Input
-                            label={t.projects.storyStyleLabel}
-                            placeholder={t.projects.storyStylePlaceholder}
-                            value={formData.storyStyle}
-                            onValueChange={(val) => setFormData({ ...formData, storyStyle: val })}
-                            classNames={{
-                              input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted)",
-                              label: "text-(--text-secondary) font-medium",
-                              inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 focus-within:border-(--accent)/40"
-                            }}
-                          />
-                        </div>
-                      </>
-                      )}
-
-                      {/* ====== 小说专属字段 ====== */}
-                      {(editProjectType === 'novel') && (
-                      <>
-                        <div className="grid grid-cols-2 gap-3">
-                          <Input
-                            label={t.projects.novelGenreLabel}
-                            placeholder={t.projects.novelGenrePlaceholder}
-                            value={formData.novelGenre}
-                            onValueChange={(val) => setFormData({ ...formData, novelGenre: val })}
-                            classNames={{
-                              input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted)",
-                              label: "text-(--text-secondary) font-medium",
-                              inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 focus-within:border-(--accent)/40"
-                            }}
-                          />
-                          <Input
-                            label={t.projects.novelWritingStyleLabel}
-                            placeholder={t.projects.novelWritingStylePlaceholder}
-                            value={formData.novelWritingStyle}
-                            onValueChange={(val) => setFormData({ ...formData, novelWritingStyle: val })}
-                            classNames={{
-                              input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted)",
-                              label: "text-(--text-secondary) font-medium",
-                              inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 focus-within:border-(--accent)/40"
-                            }}
-                          />
-                        </div>
-                        <div className="grid grid-cols-2 gap-3">
-                          <Input
-                            label={t.projects.novelChapterLengthLabel}
-                            placeholder={t.projects.novelChapterLengthPlaceholder}
-                            value={formData.novelChapterLength}
-                            onValueChange={(val) => setFormData({ ...formData, novelChapterLength: val })}
-                            classNames={{
-                              input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted)",
-                              label: "text-(--text-secondary) font-medium",
-                              inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 focus-within:border-(--accent)/40"
-                            }}
-                          />
-                          <Input
-                            label={t.projects.novelTargetLabel}
-                            placeholder={t.projects.novelTargetPlaceholder}
-                            value={formData.novelTarget}
-                            onValueChange={(val) => setFormData({ ...formData, novelTarget: val })}
-                            classNames={{
-                              input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted)",
-                              label: "text-(--text-secondary) font-medium",
-                              inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/30 focus-within:border-(--accent)/40"
-                            }}
-                          />
-                        </div>
                       </>
                       )}
                     </div>

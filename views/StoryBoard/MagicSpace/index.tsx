@@ -46,6 +46,7 @@ interface MagicSpacePanelProps {
   onGenerateWithSketch?: (params: SketchGenerateParams) => void;
   onCancel: () => void;
   isGenerating: boolean;
+  initialMode?: MagicSpaceMode;
 }
 
 const MagicSpacePanel: React.FC<MagicSpacePanelProps> = ({
@@ -56,9 +57,10 @@ const MagicSpacePanel: React.FC<MagicSpacePanelProps> = ({
   onGenerateWithSketch,
   onCancel,
   isGenerating,
+  initialMode = 'paint',
 }) => {
   const { currentProject } = useWorkbench();
-  const [activeMode, setActiveMode] = useState<MagicSpaceMode>('paint');
+  const [activeMode, setActiveMode] = useState<MagicSpaceMode>(initialMode);
 
   // Project characters for 3D scene binding
   const [projectCharacters, setProjectCharacters] = useState<any[]>([]);

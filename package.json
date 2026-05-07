@@ -17,7 +17,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "npm run type-check && vite build",
+    "build:extensions": "node scripts/build-extensions.cjs",
+    "build": "npm run build:extensions && npm run type-check && vite build",
     "preview": "vite preview",
     "type-check": "tsc --noEmit",
     "docker:dev": "node scripts/docker-compose.mjs dev",
@@ -48,6 +49,9 @@
     "yet-another-react-lightbox": "^3.28.0"
   },
   "devDependencies": {
+    "@gltf-transform/core": "^4.3.0",
+    "@gltf-transform/extensions": "^4.3.0",
+    "@gltf-transform/functions": "^4.3.0",
     "@tailwindcss/postcss": "^4.1.18",
     "@types/node": "^22.14.0",
     "@types/react": "^19.2.13",

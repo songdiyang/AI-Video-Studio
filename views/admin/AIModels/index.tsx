@@ -1,15 +1,16 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { Card, CardBody, Button, Input, useDisclosure, Tabs, Tab } from '@heroui/react';
-import { Plus, Search, Sparkles, Layers, Building2 } from 'lucide-react';
+import { Button, useDisclosure, Tabs, Tab } from '@heroui/react';
+import { Plus, Search, Layers, Building2, LayoutGrid } from 'lucide-react';
 import { getAdminAuthHeaders } from '../../../services/auth';
-import { useWorkflow } from '../../../hooks/useWorkflow';
 import { useToast } from '../../../contexts/ToastContext';
 import { useConfirm } from '../../../contexts/ConfirmContext';
-import { AIModel, TextModel, ModelFormData, DEFAULT_FORM_DATA } from './types';
+import { AIModel, ModelFormData, DEFAULT_FORM_DATA } from './types';
 import ModelCard from './ModelCard';
-import SmartImportModal from './SmartImportModal';
 import ModelFormModal from './ModelFormModal';
+import ModelFormModalV2 from './ModelFormModalV2';
 import ModelTestModal from './ModelTest';
+import ModelCatalog from './ModelCatalog';
+import type { V2Model } from './ModelCatalog';
 
 const stringifyJson = (value: any, fallback: string) => {
   if (value === undefined || value === null || value === '') {
@@ -107,73 +108,31 @@ const buildFormDataFromConfig = (config: any): ModelFormData => ({
 
 const AIModels: React.FC = () => {
   const [models, setModels] = useState<AIModel[]>([]);
+  const [v2Models, setV2Models] = useState<V2Model[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [editingModel, setEditingModel] = useState<AIModel | null>(null);
+  const [editingV2Model, setEditingV2Model] = useState<V2Model | null>(null);
   const [testingModel, setTestingModel] = useState<AIModel | null>(null);
+  const [testingV2Model, setTestingV2Model] = useState<V2Model | null>(null);
+  const [viewMode, setViewMode] = useState<'legacy' | 'catalog'>('catalog');
+  const [apiVersion, setApiVersion] = useState<'v1' | 'v2'>('v1');
   const { isOpen, onOpen, onClose } = useDisclosure();
-  const { isOpen: isSmartOpen, onOpen: onSmartOpen, onClose: onSmartClose } = useDisclosure();
+  const { isOpen: isV2Open, onOpen: onV2Open, onClose: onV2Close } = useDisclosure();
   const { isOpen: isTestOpen, onOpen: onTestOpen, onClose: onTestClose } = useDisclosure();
   const { showToast } = useToast();
   const { confirm } = useConfirm();
-  
-  const [textModels, setTextModels] = useState<TextModel[]>([]);
-  const [smartMode, setSmartMode] = useState(false);
-  const [importMode, setImportMode] = useState<'ai' | 'manual'>('ai');
-  const [selectedTextModel, setSelectedTextModel] = useState<string>('');
-  const [apiDoc, setApiDoc] = useState('');
-  const [jsonConfig, setJsonConfig] = useState('');
-  const [parsing, setParsing] = useState(false);
-  const [parseJobId, setParseJobId] = useState<string | null>(null);
-
-  // 工作流轮询：智能解析完成后自动填充表单
-  const { job: parseJob, isRunning: isParseRunning, overallProgress: parseProgress } = useWorkflow(parseJobId, {
-    onCompleted: (completedJob) => {
-      setParseJobId(null);
-      setParsing(false);
-      const task = completedJob.tasks?.[0];
-      const config = task?.result_data?.config || task?.result_data;
-      if (config && typeof config === 'object' && config.name) {
-        setFormData(buildFormDataFromConfig(config));
-        onSmartClose();
-        setSmartMode(false);
-        // 延迟打开表单，确保 smart modal 先关闭
-        setTimeout(() => onOpen(), 300);
-      } else {
-        console.error('[SmartParse] 解析结果:', task?.result_data);
-        showToast('解析完成但未返回有效配置', 'error');
-      }
-    },
-    onFailed: (failedJob) => {
-      setParseJobId(null);
-      setParsing(false);
-    }
-  });
 
   const [formData, setFormData] = useState<ModelFormData>({ ...DEFAULT_FORM_DATA });
 
   useEffect(() => {
     fetchModels();
-    fetchTextModels();
+    // 暴露刷新方法给弹窗内的发现面板
+    (window as any).__refreshModelList = fetchModels;
+    return () => {
+      delete (window as any).__refreshModelList;
+    };
   }, []);
-
-  const fetchTextModels = async () => {
-    try {
-      const response = await fetch('/api/admin/text-models', {
-        headers: getAdminAuthHeaders()
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setTextModels(data.models || []);
-        if (data.models.length > 0) {
-          setSelectedTextModel(data.models[0].name);
-        }
-      }
-    } catch (error) {
-      console.error('获取文本模型列表失败:', error);
-    }
-  };
 
   const fetchModels = async () => {
     try {
@@ -183,7 +142,14 @@ const AIModels: React.FC = () => {
 
       if (response.ok) {
         const data = await response.json();
-        setModels(data.models || []);
+        setApiVersion(data.version || 'v1');
+        if (data.version === 'v2') {
+          setV2Models(data.models || []);
+          setViewMode('catalog');
+        } else {
+          setModels(data.models || []);
+          setViewMode('legacy');
+        }
       }
     } catch (error) {
       console.error('获取模型列表失败:', error);
@@ -196,6 +162,16 @@ const AIModels: React.FC = () => {
     setEditingModel(model);
     setFormData(buildFormDataFromConfig(model));
     onOpen();
+  };
+
+  const handleEditV2 = (model: V2Model) => {
+    setEditingV2Model(model);
+    onV2Open();
+  };
+
+  const handleTestV2 = (model: V2Model) => {
+    setTestingV2Model(model);
+    onTestOpen();
   };
 
   const handleSave = async () => {
@@ -284,89 +260,8 @@ const AIModels: React.FC = () => {
     }
   };
 
-  const handleManualImport = () => {
-    if (!jsonConfig.trim()) {
-      showToast('请输入 JSON 配置', 'warning');
-      return;
-    }
-
-    try {
-      let content = jsonConfig.trim();
-      
-      // 1. 移除 <think> 标签
-      content = content.replace(/<think>[\s\S]*?<\/think>/g, '');
-      
-      // 2. 清洗 markdown 代码块
-      if (content.includes('```')) {
-        content = content.replace(/^```json\s*/m, '').replace(/^```\s*/m, '').replace(/```$/m, '');
-      }
-      
-      // 3. 提取 JSON 对象
-      const firstOpen = content.indexOf('{');
-      const lastClose = content.lastIndexOf('}');
-      if (firstOpen === -1 || lastClose === -1) {
-         throw new Error('未找到有效的 JSON 对象');
-      }
-      let jsonStr = content.substring(firstOpen, lastClose + 1);
-
-      let config;
-      try {
-        config = JSON.parse(jsonStr);
-      } catch (e) {
-        const cleanStr = jsonStr.replace(/[\n\r\t]/g, '');
-        config = JSON.parse(cleanStr);
-      }
-      
-      // 填充表单
-      setFormData(buildFormDataFromConfig(config));
-      
-      setSmartMode(false);
-      onSmartClose();
-      // 延迟打开表单，确保 smart modal 先关闭
-      setTimeout(() => onOpen(), 300);
-    } catch (error) {
-      console.error('JSON 解析失败:', error);
-      showToast(`JSON 解析失败: ${error instanceof Error ? error.message : '未知错误'}`, 'error');
-    }
-  };
-
-  const handleSmartParse = async () => {
-    if (!apiDoc.trim()) {
-      showToast('请输入API文档', 'warning');
-      return;
-    }
-
-    setParsing(true);
-    try {
-      const response = await fetch('/api/admin/ai-models/smart-parse', {
-        method: 'POST',
-        headers: getAdminAuthHeaders({
-          'Content-Type': 'application/json'
-        }),
-        body: JSON.stringify({
-          apiDoc,
-          textModel: selectedTextModel
-        })
-      });
-
-      const data = await response.json();
-
-      if (response.ok && data.jobId) {
-        setParseJobId(String(data.jobId));
-      } else {
-        setParsing(false);
-        showToast('启动解析任务失败，请稍后重试', 'error');
-      }
-    } catch (error) {
-      console.error('智能解析失败:', error);
-      setParsing(false);
-      showToast('解析失败，请检查网络连接', 'error');
-    }
-  };
-
   const resetForm = () => {
     setEditingModel(null);
-    setApiDoc('');
     setFormData({ ...DEFAULT_FORM_DATA });
   };
 
@@ -437,57 +332,63 @@ const AIModels: React.FC = () => {
 
   return (
     <div className="p-8">
-      <div className="flex items-center justify-between mb-8">
+      {/* 页面标题 */}
+      <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-3xl font-bold text-slate-100">AI 模型配置</h1>
-          <p className="text-slate-400 mt-1">管理所有第三方 AI 模型接口配置</p>
+          <h1 className="text-2xl font-bold text-[var(--text-primary)]">AI 模型配置</h1>
+          <p className="text-[var(--text-muted)] mt-1 text-sm">
+            {apiVersion === 'v2' ? '模型目录 · 智能管理' : '管理所有第三方 AI 模型接口配置'}
+          </p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex items-center gap-2">
+
           <Button
-            className="bg-gradient-to-r from-purple-500 to-blue-500 text-white font-semibold shadow-lg hover:shadow-xl"
-            startContent={<Sparkles className="w-4 h-4" />}
-            onPress={() => {
-              resetForm();
-              setSmartMode(true);
-              onSmartOpen();
-            }}
-          >
-            智能添加
-          </Button>
-          <Button
-            className="bg-gradient-to-r from-blue-500 to-violet-600 text-white font-semibold shadow-lg"
+            className="bg-[var(--accent)] text-white font-semibold shadow-md hover:brightness-110"
             startContent={<Plus className="w-4 h-4" />}
             onPress={() => {
-              resetForm();
-              setSmartMode(false);
-              onOpen();
+              if (apiVersion === 'v2' && viewMode === 'catalog') {
+                setEditingV2Model(null);
+                onV2Open();
+              } else {
+                resetForm();
+                onOpen();
+              }
             }}
           >
-            手动添加
+            {apiVersion === 'v2' ? '添加模型' : '添加模型'}
           </Button>
         </div>
       </div>
 
-      <Card className="bg-slate-900/80 border border-slate-700/50 shadow-sm mb-6">
-        <CardBody className="p-6">
-          <div className="flex items-center gap-4">
-            <Input
-              placeholder="搜索模型名称或厂商..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              startContent={<Search className="w-4 h-4 text-slate-400" />}
-              classNames={{
-                inputWrapper: "bg-slate-800/60 border border-slate-600/50 flex-1"
-              }}
-              className="flex-1"
-            />
-            <div className="flex items-center gap-2 bg-slate-800/60 border border-slate-600/50 rounded-lg p-1">
+      {/* v2 目录视图 */}
+      {apiVersion === 'v2' && viewMode === 'catalog' ? (
+        <ModelCatalog
+          models={v2Models}
+          onRefresh={fetchModels}
+          onEdit={handleEditV2}
+          onTest={handleTestV2}
+        />
+      ) : (
+        <>
+          {/* 搜索与分组 */}
+          <div className="flex items-center gap-3 mb-6">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
+              <input
+                type="text"
+                placeholder="搜索模型名称或厂商..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full h-9 pl-9 pr-4 rounded-lg bg-white border border-[var(--border-color)] text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20 transition-colors"
+              />
+            </div>
+            <div className="flex items-center gap-1 bg-white border border-[var(--border-color)] rounded-lg p-1 shadow-sm">
               <button
                 onClick={() => setGroupBy('category')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-semibold transition-colors ${
                   groupBy === 'category'
-                    ? 'bg-blue-500/20 text-blue-400'
-                    : 'text-slate-400 hover:text-slate-200'
+                    ? 'bg-[var(--accent)] text-white shadow-sm'
+                    : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
                 }`}
               >
                 <Layers className="w-4 h-4" />
@@ -495,10 +396,10 @@ const AIModels: React.FC = () => {
               </button>
               <button
                 onClick={() => setGroupBy('provider')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-semibold transition-colors ${
                   groupBy === 'provider'
-                    ? 'bg-blue-500/20 text-blue-400'
-                    : 'text-slate-400 hover:text-slate-200'
+                    ? 'bg-[var(--accent)] text-white shadow-sm'
+                    : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
                 }`}
               >
                 <Building2 className="w-4 h-4" />
@@ -506,64 +407,44 @@ const AIModels: React.FC = () => {
               </button>
             </div>
           </div>
-        </CardBody>
-      </Card>
 
-      {loading ? (
-        <div className="text-center py-12 text-slate-500">加载中...</div>
-      ) : filteredModels.length === 0 ? (
-        <div className="text-center py-12 text-slate-500">暂无模型配置</div>
-      ) : groupBy === 'category' ? (
-        <div className="space-y-8">
-          {Object.entries(categoryGroups).map(([category, categoryModels]) => (
-            <div key={category}>
-              <div className="flex items-center gap-3 mb-4">
-                <div className={`px-3 py-1 rounded-full border text-sm font-semibold ${categoryColors[category] || 'text-slate-400 border-slate-600'}`}>
-                  {categoryLabels[category] || category}
+          {loading ? (
+            <div className="text-center py-12 text-[var(--text-muted)]">加载中...</div>
+          ) : filteredModels.length === 0 ? (
+            <div className="text-center py-12 text-[var(--text-muted)]">暂无模型配置</div>
+          ) : groupBy === 'category' ? (
+            <div className="space-y-6">
+              {Object.entries(categoryGroups).map(([category, categoryModels]) => (
+                <div key={category}>
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className={`px-3 py-1 rounded-full border text-sm font-semibold ${categoryColors[category] || 'text-[var(--text-muted)] border-[var(--border-color)]'}`}>
+                      {categoryLabels[category] || category}
+                    </div>
+                    <span className="text-[var(--text-muted)] text-sm">{categoryModels.length} 个模型</span>
+                    <div className="flex-1 h-px bg-[var(--border-color)]" />
+                  </div>
+                  {renderModelGrid(categoryModels)}
                 </div>
-                <span className="text-slate-500 text-sm">{categoryModels.length} 个模型</span>
-                <div className="flex-1 h-px bg-slate-700/50" />
-              </div>
-              {renderModelGrid(categoryModels)}
+              ))}
             </div>
-          ))}
-        </div>
-      ) : (
-        <div className="space-y-8">
-          {Object.entries(providerGroups).map(([provider, providerModels]) => (
-            <div key={provider}>
-              <div className="flex items-center gap-3 mb-4">
-                <div className="px-3 py-1 rounded-full border text-sm font-semibold text-slate-300 border-slate-600/50 bg-slate-800/50">
-                  {provider}
+          ) : (
+            <div className="space-y-6">
+              {Object.entries(providerGroups).map(([provider, providerModels]) => (
+                <div key={provider}>
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="px-3 py-1 rounded-full border text-sm font-semibold text-[var(--text-primary)] border-[var(--border-color)] bg-[var(--bg-hover)]">
+                      {provider}
+                    </div>
+                    <span className="text-[var(--text-muted)] text-sm">{providerModels.length} 个模型</span>
+                    <div className="flex-1 h-px bg-[var(--border-color)]" />
+                  </div>
+                  {renderModelGrid(providerModels)}
                 </div>
-                <span className="text-slate-500 text-sm">{providerModels.length} 个模型</span>
-                <div className="flex-1 h-px bg-slate-700/50" />
-              </div>
-              {renderModelGrid(providerModels)}
+              ))}
             </div>
-          ))}
-        </div>
+          )}
+        </>
       )}
-
-      <SmartImportModal
-        isOpen={isSmartOpen}
-        onClose={onSmartClose}
-        importMode={importMode}
-        setImportMode={setImportMode}
-        textModels={textModels}
-        selectedTextModel={selectedTextModel}
-        onModelChange={setSelectedTextModel}
-        apiDoc={apiDoc}
-        onApiDocChange={setApiDoc}
-        jsonConfig={jsonConfig}
-        onJsonConfigChange={setJsonConfig}
-        parsing={parsing}
-        isParseRunning={isParseRunning}
-        parseProgress={parseProgress}
-        parseJob={parseJob}
-        onSmartParse={handleSmartParse}
-        onManualImport={handleManualImport}
-      />
 
       <ModelFormModal
         isOpen={isOpen}
@@ -574,10 +455,33 @@ const AIModels: React.FC = () => {
         onSave={handleSave}
       />
 
+      <ModelFormModalV2
+        isOpen={isV2Open}
+        onClose={onV2Close}
+        model={editingV2Model}
+        onSaved={fetchModels}
+      />
+
       <ModelTestModal
         isOpen={isTestOpen}
         onClose={onTestClose}
-        model={testingModel}
+        model={testingModel || (testingV2Model ? {
+          id: testingV2Model.id,
+          name: testingV2Model.name,
+          provider: testingV2Model.provider,
+          category: 'TEXT',
+          is_active: testingV2Model.is_active,
+          provider_id: testingV2Model.provider_id,
+          model_id: testingV2Model.model_id,
+          capabilities: testingV2Model.capabilities,
+          price_config: null,
+          request_method: 'POST',
+          url_template: '',
+          headers_template: {},
+          response_mapping: {},
+          created_at: testingV2Model.created_at,
+          updated_at: testingV2Model.updated_at,
+        } as AIModel : null)}
       />
     </div>
   );

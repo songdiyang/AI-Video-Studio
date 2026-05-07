@@ -16,9 +16,12 @@ if (!JWT_SECRET || JWT_SECRET === 'dev-secret-change-me') {
 const ACTUAL_SECRET = JWT_SECRET || require('crypto').randomBytes(64).toString('hex');
 const ADMIN_ACCESS_KEY_HEADER = 'x-admin-access-key';
 
-function getConfiguredAdminAccessKey() {
-  return typeof process.env.ADMIN_ACCESS_KEY === 'string'
-    ? process.env.ADMIN_ACCESS_KEY.trim()
+function getConfiguredAdminAccessKey(role = 'admin') {
+  const envKey = role === 'ops'
+    ? process.env.OPS_ACCESS_KEY
+    : process.env.ADMIN_ACCESS_KEY;
+  return typeof envKey === 'string'
+    ? envKey.trim()
     : '';
 }
 
@@ -46,14 +49,14 @@ function timingSafeStringEqual(left, right) {
   return crypto.timingSafeEqual(leftBuffer, rightBuffer);
 }
 
-function validateAdminAccessRequest(req) {
-  const configuredKey = getConfiguredAdminAccessKey();
+function validateAdminAccessRequest(req, role = 'admin') {
+  const configuredKey = getConfiguredAdminAccessKey(role);
   if (!configuredKey) {
     return {
       ok: false,
       reason: 'unconfigured',
       status: 503,
-      message: '管理员访问策略未配置，请设置 ADMIN_ACCESS_KEY'
+      message: `管理员访问策略未配置，请设置 ${role === 'ops' ? 'OPS_ACCESS_KEY' : 'ADMIN_ACCESS_KEY'}`
     };
   }
 
@@ -170,7 +173,7 @@ function requireAdmin(req, res, next) {
     return res.status(403).json({ message: '权限不足，仅管理员可访问' });
   }
 
-  const accessCheck = validateAdminAccessRequest(req);
+  const accessCheck = validateAdminAccessRequest(req, 'admin');
   if (!accessCheck.ok) {
     return res.status(accessCheck.status).json({ message: accessCheck.message });
   }
@@ -187,7 +190,8 @@ function requireAdminOrOps(req, res, next) {
     return res.status(403).json({ message: '权限不足，仅管理员或运维可访问' });
   }
 
-  const accessCheck = validateAdminAccessRequest(req);
+  const role = req.user.role;
+  const accessCheck = validateAdminAccessRequest(req, role);
   if (!accessCheck.ok) {
     return res.status(accessCheck.status).json({ message: accessCheck.message });
   }
@@ -208,6 +212,7 @@ module.exports = {
   requireAdminOrOps,
   isOpsRole,
   validateAdminAccessRequest,
+  getConfiguredAdminAccessKey,
   clearTokenInvalidationCache,
   ADMIN_ACCESS_KEY_HEADER,
   JWT_SECRET: ACTUAL_SECRET

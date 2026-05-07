@@ -3,6 +3,41 @@ const fs = require('fs');
 
 const handlerCache = {};
 
+/**
+ * 厂商 -> 处理器映射表
+ * 支持多别名匹配，方便不同写法统一识别
+ */
+const PROVIDER_HANDLER_MAP = {
+  // OpenAI 系
+  'openai': 'openai',
+  'azure': 'openai',
+  'azure_openai': 'openai',
+  // DeepSeek
+  'deepseek': 'deepseek',
+  // 字节/火山/豆包
+  'volcengine': 'doubao',
+  '火山引擎': 'doubao',
+  'doubao': 'doubao',
+  '豆包': 'doubao',
+  'bytedance': 'doubao',
+  // 智谱
+  'zhipu': 'zhipu',
+  '智谱': 'zhipu',
+  'glm': 'zhipu',
+  // 阿里/通义
+  'aliyun': 'qwen',
+  '阿里云': 'qwen',
+  'qwen': 'qwen',
+  '通义': 'qwen',
+  'dashscope': 'qwen',
+  // 百度
+  'baidu': 'baidu',
+  '百度': 'baidu',
+  'wenxin': 'baidu',
+  '文心': 'baidu',
+  'ernie': 'baidu'
+};
+
 function getBillingHandler(handlerName) {
   if (!handlerName) return null;
 
@@ -46,9 +81,57 @@ function getBillingHandler(handlerName) {
   }
 }
 
+/**
+ * 根据厂商名称自动推断计费处理器
+ * @param {string} provider - 厂商名称（如 'openai', 'deepseek', '火山引擎'）
+ * @returns {string|null} 处理器名称
+ */
+function inferHandlerFromProvider(provider) {
+  if (!provider) return null;
+  const normalized = String(provider).toLowerCase().trim();
+  return PROVIDER_HANDLER_MAP[normalized] || null;
+}
+
+/**
+ * 获取厂商计费处理器（优先使用显式配置的 billing_handler，未配置时自动推断）
+ * @param {object} modelConfig - 模型配置对象
+ * @param {string} modelConfig.billing_handler - 显式配置的处理器名称
+ * @param {string} modelConfig.provider - 厂商名称
+ * @returns {object|null} 处理器模块
+ */
+function getProviderHandler(modelConfig) {
+  if (!modelConfig) return null;
+
+  // 1. 优先使用显式配置的 billing_handler
+  if (modelConfig.billing_handler) {
+    const handler = getBillingHandler(modelConfig.billing_handler);
+    if (handler) {
+      return handler;
+    }
+    console.warn(`[BillingHandler] 显式配置的 handler "${modelConfig.billing_handler}" 加载失败，尝试自动推断`);
+  }
+
+  // 2. 根据 provider 自动推断
+  const inferredName = inferHandlerFromProvider(modelConfig.provider);
+  if (inferredName) {
+    const handler = getBillingHandler(inferredName);
+    if (handler) {
+      console.log(`[BillingHandler] 根据厂商 "${modelConfig.provider}" 自动匹配处理器: ${inferredName}`);
+      return handler;
+    }
+  }
+
+  // 3. 兜底：返回 null，让默认逻辑处理
+  console.log(`[BillingHandler] 无法为厂商 "${modelConfig.provider}" 匹配处理器，使用默认逻辑`);
+  return null;
+}
+
 // 预加载常用的 billing handlers
 function preloadHandlers() {
-  const commonHandlers = ['volcengine', 'seedance1.5']; // 添加其他常用 handler
+  const commonHandlers = [
+    'volcengine', 'seedance1.5',
+    'openai', 'deepseek', 'doubao', 'zhipu', 'qwen', 'baidu'
+  ];
   
   for (const name of commonHandlers) {
     const handlerPath = path.join(__dirname, `${name}.js`);
@@ -68,5 +151,8 @@ function preloadHandlers() {
 preloadHandlers();
 
 module.exports = {
-  getBillingHandler
+  getBillingHandler,
+  getProviderHandler,
+  inferHandlerFromProvider,
+  PROVIDER_HANDLER_MAP
 };

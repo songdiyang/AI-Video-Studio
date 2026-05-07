@@ -13,7 +13,7 @@ export interface PriceConfig {
 export interface AIModel {
   id: number;
   name: string;
-  category: 'TEXT' | 'IMAGE' | 'VIDEO' | 'AUDIO' | 'MULTIMODAL';
+  category: string;
   provider: string;
   description?: string;
   is_active: number;
@@ -58,7 +58,7 @@ export interface TextModel {
 
 export interface ModelFormData {
   name: string;
-  category: 'TEXT' | 'IMAGE' | 'VIDEO' | 'AUDIO' | 'MULTIMODAL';
+  category: string;
   provider: string;
   description: string;
   is_active: number;
@@ -131,7 +131,7 @@ export const DURATION_PRESETS = [
 export interface TemplatePreset {
   name: string;
   description: string;
-  category: 'TEXT' | 'IMAGE' | 'VIDEO' | 'AUDIO' | 'MULTIMODAL';
+  category: string;
   config: Partial<ModelFormData>;
 }
 
@@ -139,7 +139,7 @@ export interface TemplatePreset {
 export interface OpenAIPreset {
   name: string;
   description: string;
-  category: 'TEXT' | 'IMAGE' | 'VIDEO' | 'AUDIO' | 'MULTIMODAL';
+  category: string;
   provider_id: number;
   provider_name: string;
   model_id: string;

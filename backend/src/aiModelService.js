@@ -24,6 +24,10 @@ const {
   callOpenAICompatibleBatch
 } = require('./openaiAdapter');
 
+// ============ 新架构：Adapter 层 ============
+const { createAdapter } = require('./adapters');
+const { modelRouter } = require('./services/ModelRouter');
+
 // ============ 辅助函数 ============
 function toNumberSafe(val, fallback) {
   const n = Number(val);
@@ -300,12 +304,76 @@ async function callAIModel(modelName, params = {}, apiKey = null) {
       throw new Error(`模型 "${modelName}" 不存在或未启用`);
     }
 
-    // ============ OpenAI 适配层优先 ============
-    // 如果配置了 provider_id 和 model_id，使用 OpenAI 兼容适配层
-    if (model.provider_id && model.model_id) {
-      console.log(`[AI Model] 使用 OpenAI 适配层调用 ${modelName}`);
+    // ============ 新架构：Adapter 模式优先 ============
+    // 检查是否使用新架构（ai_models_v2 表）
+    const newModel = await queryOne(
+      'SELECT m.*, p.name as provider_name, p.display_name as provider_display_name, p.base_url, p.api_key as provider_api_key ' +
+      'FROM ai_models_v2 m JOIN model_providers p ON m.provider_id = p.id ' +
+      'WHERE m.name = ? AND m.is_active = 1',
+      [modelName]
+    );
 
-      // API Key 优先级：1. 函数参数 2. 数据库配置 3. 环境变量
+    if (newModel) {
+      console.log(`[AI Model] 使用新架构 Adapter 调用 ${modelName}`);
+
+      // 构建模型配置
+      const modelConfig = {
+        ...newModel,
+        capabilities: parseJsonField(newModel.capabilities, []),
+        metadata: parseJsonField(newModel.metadata, {}),
+        pricing: parseJsonField(newModel.pricing, {})
+      };
+
+      const providerConfig = {
+        id: newModel.provider_id,
+        name: newModel.provider_name,
+        display_name: newModel.provider_display_name,
+        base_url: newModel.base_url,
+        api_key: newModel.provider_api_key
+      };
+
+      // 创建 Adapter 实例
+      const adapter = createAdapter(newModel.adapter_name, providerConfig, modelConfig);
+
+      // 计费预检
+      const modelPricing = buildModelPricingPayload(modelConfig);
+      billingState = await prepareModelBilling(modelConfig, params);
+      requestStarted = true;
+
+      // 调用 Adapter
+      const result = await adapter.submit(params);
+
+      // 计费处理
+      const taskId = result.taskId || result.task_id || result.task_Id;
+      if (taskId) {
+        result._billing = await createPendingAsyncBilling(modelConfig, billingState);
+      } else {
+        await finalizeImmediateBilling({
+          model: modelConfig,
+          params,
+          billingState,
+          submitResult: result,
+          requestStatus: 'success'
+        });
+      }
+
+      // 补充模型信息
+      result._model = {
+        name: modelConfig.name,
+        provider: modelConfig.provider_name,
+        capabilities: modelConfig.capabilities,
+        priceConfig: modelPricing.priceConfig,
+        priceSummary: modelPricing.priceSummary
+      };
+      attachInternalField(result, '_submitParams', params);
+
+      return result;
+    }
+
+    // ============ 兼容层：OpenAI 适配层（旧架构） ============
+    if (model.provider_id && model.model_id) {
+      console.log(`[AI Model] 使用兼容层 OpenAI 适配层调用 ${modelName}`);
+
       if (!apiKey) {
         apiKey = model.api_key || (model._provider?.api_key);
         if (!apiKey) {
@@ -325,7 +393,6 @@ async function callAIModel(modelName, params = {}, apiKey = null) {
 
       const result = await callOpenAICompatible(model, mergedParams);
 
-      // 计费处理
       const taskId = result.taskId || result.task_id || result.task_Id;
       if (taskId) {
         result._billing = await createPendingAsyncBilling(model, billingState);
@@ -339,7 +406,6 @@ async function callAIModel(modelName, params = {}, apiKey = null) {
         });
       }
 
-      // 补充模型信息
       result._model = {
         name: model.name,
         provider: model.provider,
@@ -352,7 +418,7 @@ async function callAIModel(modelName, params = {}, apiKey = null) {
       return result;
     }
 
-    // ============ 回退到原有模板逻辑 ============
+    // ============ 回退到原有模板逻辑（最旧架构） ============
     console.log(`[AI Model] 回退到模板模式调用 ${modelName}`);
 
     // 解析 JSON 字段
@@ -844,12 +910,69 @@ async function callAIModelBatch(calls, { concurrency = 3 } = {}) {
   return { results, errors: errors.filter(Boolean) };
 }
 
+// ============================================================
+// 新架构：智能路由调用
+// ============================================================
+
+/**
+ * 通过智能路由调用 AI 模型
+ * 不需要指定模型名称，由系统根据任务自动选择
+ * @param {object} requirements - 任务需求
+ * @param {string[]} requirements.capabilities - 必需能力
+ * @param {string} [requirements.taskType] - 任务类型（用于路由规则）
+ * @param {object} params - 调用参数
+ * @returns {Promise<object>}
+ */
+async function callAIModelByRouter(requirements, params = {}) {
+  const { taskType, ...routerRequirements } = requirements;
+
+  let modelConfig;
+  if (taskType) {
+    modelConfig = await modelRouter.selectModelForWorkflowStep(taskType);
+  } else {
+    modelConfig = await modelRouter.selectModel(routerRequirements);
+  }
+
+  if (!modelConfig) {
+    throw new Error('未找到满足条件的可用模型');
+  }
+
+  return await callAIModel(modelConfig.name, params);
+}
+
+/**
+ * 获取新架构的模型列表（按能力筛选）
+ */
+async function getModelsByCapability(capability) {
+  const models = await queryAll(
+    `SELECT m.id, m.name, m.model_id, m.capabilities, m.quality_score,
+            p.name as provider_name, p.display_name as provider_display_name
+     FROM ai_models_v2 m
+     JOIN model_providers p ON m.provider_id = p.id
+     WHERE m.is_active = 1
+       AND JSON_CONTAINS(m.capabilities, JSON_QUOTE(?))
+     ORDER BY m.is_recommended DESC, m.quality_score DESC`,
+    [capability]
+  );
+
+  return models.map(m => ({
+    id: m.id,
+    name: m.name,
+    modelId: m.model_id,
+    provider: m.provider_display_name || m.provider_name,
+    qualityScore: m.quality_score,
+    capabilities: parseJsonField(m.capabilities, [])
+  }));
+}
+
 module.exports = {
   callAIModel,
   queryAIModel,
   callAIModelBatch,
+  callAIModelByRouter,
   getTextModels,
   getImageModels,
+  getModelsByCapability,
   invalidateModelCache,
   getCachedModelConfig,
   getCachedProvider,

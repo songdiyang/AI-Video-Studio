@@ -117,18 +117,12 @@ const Teams: React.FC = () => {
   const getProjectTypeLabel = (type: string) => {
     switch (type) {
       case 'comic_drama': return '漫剧';
-      case 'manga': return '漫画';
-      case 'short_video': return '短视频';
-      case 'novel': return '小说';
       default: return type;
     }
   };
   const getProjectTypeColor = (type: string) => {
     switch (type) {
       case 'comic_drama': return 'bg-violet-500/20 text-violet-600 dark:text-violet-300 border border-violet-400/30';
-      case 'manga': return 'bg-orange-500/20 text-orange-600 dark:text-orange-300 border border-orange-400/30';
-      case 'short_video': return 'bg-cyan-500/20 text-cyan-600 dark:text-cyan-300 border border-cyan-400/30';
-      case 'novel': return 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 border border-emerald-400/30';
       default: return 'bg-slate-500/20 text-slate-600 dark:text-slate-300 border border-slate-400/30';
     }
   };

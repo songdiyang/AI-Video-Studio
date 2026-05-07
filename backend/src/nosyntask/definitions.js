@@ -47,7 +47,8 @@ const {
   handleConceptBreakdownGeneration,
   handleCameraFrameGeneration,
   handleMagicPaintGeneration,
-  handleHdRepairGeneration
+  handleHdRepairGeneration,
+  handleCreateProject
 } = require('./tasks');
 
 const handleBatchCharacterViewsGeneration = require('./tasks/StoryBoard/batchCharacterViewsGeneration');
@@ -157,7 +158,10 @@ const WORKFLOW_DEFINITIONS = {
         buildInput: createBuildInput([
           'scriptContent', 'scriptTitle', 'textModel', 'projectId',
           'referenceScriptContent', 'referenceScriptTitle',
-          { key: 'think', defaultValue: false }
+          { key: 'think', defaultValue: false },
+          // 智能路由：传递步骤类型和项目配置
+          { key: 'stepType', defaultValue: 'storyboard_generation' },
+          { key: 'projectConfig', from: ctx => ({ projectId: ctx.jobParams.projectId }) }
         ])
       },
       {
@@ -178,7 +182,10 @@ const WORKFLOW_DEFINITIONS = {
         buildInput: createBuildInput([
           { key: 'scenes', from: ctx => ctx.previousResults[0]?.scenes || [] },
           'scriptContent', 'projectId', 'scriptId', 'userId', 'textModel', 'appendMode',
-          'referenceScriptContent', 'conflictStrategy'
+          'referenceScriptContent', 'conflictStrategy',
+          // 智能路由
+          { key: 'stepType', defaultValue: 'character_extraction' },
+          { key: 'projectConfig', from: ctx => ({ projectId: ctx.jobParams.projectId }) }
         ])
       },
       {
@@ -187,7 +194,10 @@ const WORKFLOW_DEFINITIONS = {
         handler: handleSceneStateAnalysis,
         dependencies: [1], // 也依赖步骤1，与步骤2并行执行
         buildInput: createBuildInput([
-          'scriptId', 'textModel', { key: 'think', defaultValue: false }
+          'scriptId', 'textModel', { key: 'think', defaultValue: false },
+          // 智能路由
+          { key: 'stepType', defaultValue: 'scene_state_analysis' },
+          { key: 'projectConfig', from: ctx => ({ projectId: ctx.jobParams.projectId }) }
         ])
       },
       {
@@ -198,7 +208,10 @@ const WORKFLOW_DEFINITIONS = {
         dependencies: [1], // 依赖步骤1（save_storyboards，需要studios已创建）
         buildInput: createBuildInput([
           { key: 'scenes', from: ctx => ctx.previousResults[0]?.scenes || [] },
-          'projectId', 'scriptId', 'userId', 'textModel'
+          'projectId', 'scriptId', 'userId', 'textModel',
+          // 智能路由
+          { key: 'stepType', defaultValue: 'studio_components_compose' },
+          { key: 'projectConfig', from: ctx => ({ projectId: ctx.jobParams.projectId }) }
         ])
       },
       {
@@ -210,7 +223,10 @@ const WORKFLOW_DEFINITIONS = {
         buildInput: createBuildInput([
           { key: 'charactersNeedingViews', from: ctx => ctx.previousResults[2]?.charactersNeedingViews || [] },
           'projectId', 'imageModel', 'textModel',
-          { key: 'aspectRatio', defaultValue: '9:16' }
+          { key: 'aspectRatio', defaultValue: '9:16' },
+          // 智能路由
+          { key: 'stepType', defaultValue: 'character_views_generation' },
+          { key: 'projectConfig', from: ctx => ({ projectId: ctx.jobParams.projectId }) }
         ])
       }
     ]
@@ -1071,6 +1087,24 @@ const WORKFLOW_DEFINITIONS = {
         buildInput: createBuildInput([
           'scriptId', 'textModel',
           { key: 'maxConcurrency', defaultValue: 3 }
+        ])
+      }
+    ]
+  },
+
+  /**
+   * 创建项目
+   */
+  create_project: {
+    name: '创建项目',
+    steps: [
+      {
+        type: 'create_project',
+        targetType: 'project',
+        displayName: '创建项目',
+        handler: handleCreateProject,
+        buildInput: createBuildInput([
+          'name', 'description', 'projectType', 'coverUrl', 'userId'
         ])
       }
     ]

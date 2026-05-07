@@ -45,43 +45,63 @@ async function runMigration() {
     // 2. 插入默认配置
     console.log('\n2. 插入默认限流配置...');
 
-    // 默认配置 - 普通用户
+    // 管理员配置 - 最高限额
     await connection.execute(`
-      INSERT IGNORE INTO rate_limit_configs 
-        (role, max_concurrent_text, max_concurrent_image, max_concurrent_video, 
+      INSERT IGNORE INTO rate_limit_configs
+        (role, max_concurrent_text, max_concurrent_image, max_concurrent_video,
          timeout_seconds, retry_delay_ms, max_retries, description, is_active)
-      VALUES 
-        ('user', 5, 3, 1, 300, 60000, 3, '普通用户默认限流配置', 1)
-    `);
-    console.log('    ✓ 普通用户(user)配置已添加');
-
-    // 管理员配置 - 更高限额
-    await connection.execute(`
-      INSERT IGNORE INTO rate_limit_configs 
-        (role, max_concurrent_text, max_concurrent_image, max_concurrent_video, 
-         timeout_seconds, retry_delay_ms, max_retries, description, is_active)
-      VALUES 
-        ('admin', 20, 10, 5, 600, 30000, 5, '管理员高限额配置', 1)
+      VALUES
+        ('admin', 30, 15, 8, 600, 30000, 5, '管理员最高限额配置', 1)
     `);
     console.log('    ✓ 管理员(admin)配置已添加');
 
-    // VIP 配置
+    // 工作室版配置
     await connection.execute(`
-      INSERT IGNORE INTO rate_limit_configs 
-        (role, max_concurrent_text, max_concurrent_image, max_concurrent_video, 
+      INSERT IGNORE INTO rate_limit_configs
+        (role, max_concurrent_text, max_concurrent_image, max_concurrent_video,
          timeout_seconds, retry_delay_ms, max_retries, description, is_active)
-      VALUES 
-        ('vip', 10, 6, 3, 450, 45000, 4, 'VIP用户限流配置', 1)
+      VALUES
+        ('studio', 20, 12, 6, 600, 30000, 5, '工作室版高限额配置', 1)
     `);
-    console.log('    ✓ VIP用户(vip)配置已添加');
+    console.log('    ✓ 工作室版(studio)配置已添加');
+
+    // 创作者配置
+    await connection.execute(`
+      INSERT IGNORE INTO rate_limit_configs
+        (role, max_concurrent_text, max_concurrent_image, max_concurrent_video,
+         timeout_seconds, retry_delay_ms, max_retries, description, is_active)
+      VALUES
+        ('creator', 15, 8, 4, 450, 45000, 4, '创作者中限额配置', 1)
+    `);
+    console.log('    ✓ 创作者(creator)配置已添加');
+
+    // 入门版配置
+    await connection.execute(`
+      INSERT IGNORE INTO rate_limit_configs
+        (role, max_concurrent_text, max_concurrent_image, max_concurrent_video,
+         timeout_seconds, retry_delay_ms, max_retries, description, is_active)
+      VALUES
+        ('starter', 10, 5, 2, 300, 60000, 3, '入门版基础限额配置', 1)
+    `);
+    console.log('    ✓ 入门版(starter)配置已添加');
+
+    // 免费版配置
+    await connection.execute(`
+      INSERT IGNORE INTO rate_limit_configs
+        (role, max_concurrent_text, max_concurrent_image, max_concurrent_video,
+         timeout_seconds, retry_delay_ms, max_retries, description, is_active)
+      VALUES
+        ('free', 5, 2, 1, 300, 60000, 3, '免费版低限额配置', 1)
+    `);
+    console.log('    ✓ 免费版(free)配置已添加');
 
     // 全局默认配置 (fallback)
     await connection.execute(`
-      INSERT IGNORE INTO rate_limit_configs 
-        (role, max_concurrent_text, max_concurrent_image, max_concurrent_video, 
+      INSERT IGNORE INTO rate_limit_configs
+        (role, max_concurrent_text, max_concurrent_image, max_concurrent_video,
          timeout_seconds, retry_delay_ms, max_retries, description, is_active)
-      VALUES 
-        ('default', 10, 5, 3, 300, 60000, 3, '全局默认配置（当角色无匹配时使用）', 1)
+      VALUES
+        ('default', 5, 2, 1, 300, 60000, 3, '全局默认配置（当角色无匹配时使用）', 1)
     `);
     console.log('    ✓ 全局默认(default)配置已添加');
 

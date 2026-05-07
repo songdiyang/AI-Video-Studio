@@ -60,7 +60,9 @@ const TOOL_DISPLAY_NAMES = {
   generate_hd_repair: '高清修复帧',
   // 剧本
   generate_script: '生成剧本',
-  split_script: '剧本拆集'
+  split_script: '剧本拆集',
+  // 项目
+  create_project: '创建项目'
 };
 
 function getToolDisplayName(toolName) {

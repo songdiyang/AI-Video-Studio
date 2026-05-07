@@ -146,10 +146,10 @@ async function handleExecutor(params, onProgress) {
   console.log(`[AIAssistant.Executor] 启动 ${toolCalls.length} 个子 workflow, parent=${parentJobId}`);
 
   const invocations = [];
-  const actor = { userId, projectId };
+  let actor = { userId, projectId };
   const defaults = { defaultTextModel, defaultImageModel };
 
-  // 并发启动全部子 workflow
+  // 串行执行工具调用（create_project 等工具会改变上下文，如产生新的 projectId）
   for (const call of toolCalls) {
     try {
       const inv = await invokeTool({
@@ -166,6 +166,44 @@ async function handleExecutor(params, onProgress) {
         workflowType: inv.workflowType,
         status: 'running'
       });
+
+      // 如果是 create_project，等待其完成并提取新 projectId 供后续工具使用
+      if (call.name === 'create_project' && inv.jobId) {
+        const childResults = await waitForChildJobs([inv.jobId]);
+        if (childResults.length > 0 && childResults[0].status === 'completed') {
+          // 从 workflow_job 的 result_data 中提取新项目的 ID
+          const { queryOne: qOne } = require('../../../dbHelper');
+          const jobRow = await qOne(
+            'SELECT result_data FROM workflow_jobs WHERE id = ?',
+            [inv.jobId]
+          );
+          if (jobRow && jobRow.result_data) {
+            try {
+              const resultData = typeof jobRow.result_data === 'string'
+                ? JSON.parse(jobRow.result_data)
+                : jobRow.result_data;
+              if (resultData && resultData.project && resultData.project.id) {
+                const newProjectId = resultData.project.id;
+                actor = { ...actor, projectId: newProjectId };
+                console.log(`[AIAssistant.Executor] create_project 成功，新 projectId=${newProjectId}，后续工具将使用此项目`);
+              }
+            } catch (e) {
+              console.warn('[AIAssistant.Executor] 解析 create_project 结果失败:', e.message);
+            }
+          }
+          // 更新 invocation 状态
+          const idx = invocations.findIndex(i => i.childJobId === inv.jobId);
+          if (idx >= 0) {
+            invocations[idx].status = 'completed';
+          }
+        } else {
+          const idx = invocations.findIndex(i => i.childJobId === inv.jobId);
+          if (idx >= 0) {
+            invocations[idx].status = childResults[0]?.status || 'failed';
+            invocations[idx].error = childResults[0]?.error || '项目创建失败';
+          }
+        }
+      }
     } catch (e) {
       console.error(`[AIAssistant.Executor] 启动工具失败: ${call.name}`, e.message);
       invocations.push({
@@ -180,9 +218,12 @@ async function handleExecutor(params, onProgress) {
 
   if (onProgress) onProgress(30);
 
-  // 等待所有已成功启动的子 workflow 完成
-  const runningIds = invocations.filter(x => x.childJobId).map(x => x.childJobId);
-  const results = await waitForChildJobs(runningIds);
+  // 等待所有已成功启动且尚未完成的子 workflow 完成
+  // create_project 已在上面同步等待过，需要排除
+  const runningIds = invocations
+    .filter(x => x.childJobId && x.toolName !== 'create_project')
+    .map(x => x.childJobId);
+  const results = runningIds.length > 0 ? await waitForChildJobs(runningIds) : [];
 
   // 合并结果到 invocations
   const resultMap = new Map(results.map(r => [r.jobId, r]));

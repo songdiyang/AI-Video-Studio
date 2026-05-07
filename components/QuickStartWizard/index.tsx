@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { Input, Textarea, Spinner, Button } from '@heroui/react';
 import {
   X, Check,
-  Film, Video, BookImage, BookOpen, Sparkles,
+  Film, Sparkles,
   Palette, Globe, ImagePlus, Upload
 } from 'lucide-react';
 import { ProjectType, PROJECT_TYPES, VISUAL_STYLE_BY_CATEGORY, StyleCategory, BodyProportionRatio, BODY_PROPORTION_PRESETS, inferStyleCategory } from '../../types/projectTypes';
@@ -23,11 +23,9 @@ interface QuickStartWizardProps {
 
 type CreationType = ProjectType;
 
+// 专注漫剧功能,只保留漫剧类型
 const CREATION_TYPES: { type: CreationType; icon: React.ElementType; color: string; desc: string }[] = [
   { type: 'comic_drama', icon: Film, color: PROJECT_TYPES.comic_drama.color, desc: '制作精彩的漫剧短片' },
-  { type: 'short_video', icon: Video, color: PROJECT_TYPES.short_video.color, desc: '创作吸睛的短视频内容' },
-  { type: 'manga', icon: BookImage, color: PROJECT_TYPES.manga.color, desc: '绘制独特的漫画作品' },
-  { type: 'novel', icon: BookOpen, color: PROJECT_TYPES.novel.color, desc: '书写精彩的小说故事' },
 ];
 
 const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ isOpen, onClose, onComplete }) => {
@@ -52,19 +50,12 @@ const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ isOpen, onClose, on
     storyStyle: '',
     storyConstraints: '',
     narrativePerspective: '' as '' | 'first_person' | 'third_person',
-    mangaLayout: '' as '' | 'page' | 'strip' | 'free',
-    mangaPanelStyle: '',
+    // 漫剧专属 - 画面参数
     imageAspectRatio: '16:9',
     imageResolution: '1080p',
     videoAspectRatio: '16:9',
     videoResolution: '1080p',
-    videoDuration: '' as '' | '15' | '30' | '60' | '180',
-    videoAspect: '' as '' | '9:16' | '16:9' | '1:1',
-    videoStyle: '',
-    novelGenre: '',
-    novelWritingStyle: '',
-    novelChapterLength: '',
-    novelTarget: '',
+    // AI 输出语言
     outputLanguage: 'zh' as string
   });
 
@@ -125,10 +116,7 @@ const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ isOpen, onClose, on
         visualStyle: '', visualStylePrompt: '', styleCategory: '' as '' | StyleCategory, bodyProportionRatio: '' as '' | BodyProportionRatio,
         storyStyle: '', storyConstraints: '',
         narrativePerspective: '' as '' | 'first_person' | 'third_person',
-        mangaLayout: '', mangaPanelStyle: '',
         imageAspectRatio: '16:9', imageResolution: '1080p', videoAspectRatio: '16:9', videoResolution: '1080p',
-        videoDuration: '', videoAspect: '', videoStyle: '',
-        novelGenre: '', novelWritingStyle: '', novelChapterLength: '', novelTarget: '',
         outputLanguage: 'zh'
       });
       setSelectedTeamId('');
@@ -248,11 +236,8 @@ const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ isOpen, onClose, on
     const missing: string[] = [];
     if (!projectName.trim()) missing.push('项目名称');
     if (!selectedType) missing.push('创作类型');
-    // 非小说类型必须选择视觉风格
-    if (selectedType !== 'novel') {
-      if (!formData.styleCategory) missing.push('内容类型（真人/动漫）');
-      if (!formData.visualStyle) missing.push('视觉风格');
-    }
+    if (!formData.styleCategory) missing.push('内容类型（真人/动漫）');
+    if (!formData.visualStyle) missing.push('视觉风格');
     return missing;
   };
 
@@ -270,9 +255,9 @@ const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ isOpen, onClose, on
       const token = getAuthToken();
       const settingsObj: any = {};
       const { visualStyle, visualStylePrompt, styleCategory, bodyProportionRatio, storyStyle, storyConstraints, narrativePerspective,
-        mangaLayout, mangaPanelStyle, imageAspectRatio, imageResolution,
-        videoAspectRatio, videoResolution, videoDuration, videoAspect, videoStyle,
-        novelGenre, novelWritingStyle, novelChapterLength, novelTarget, outputLanguage } = formData;
+        imageAspectRatio, imageResolution,
+        videoAspectRatio, videoResolution,
+        outputLanguage } = formData;
       if (visualStyle) settingsObj.visualStyle = visualStyle;
       if (visualStylePrompt) settingsObj.visualStylePrompt = visualStylePrompt;
       if (styleCategory) settingsObj.styleCategory = styleCategory;
@@ -280,19 +265,10 @@ const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ isOpen, onClose, on
       if (storyStyle) settingsObj.storyStyle = storyStyle;
       if (storyConstraints) settingsObj.storyConstraints = storyConstraints;
       if (narrativePerspective) settingsObj.narrativePerspective = narrativePerspective;
-      if (mangaLayout) settingsObj.mangaLayout = mangaLayout;
-      if (mangaPanelStyle) settingsObj.mangaPanelStyle = mangaPanelStyle;
       if (imageAspectRatio) settingsObj.imageAspectRatio = imageAspectRatio;
       if (imageResolution) settingsObj.imageResolution = imageResolution;
       if (videoAspectRatio) settingsObj.videoAspectRatio = videoAspectRatio;
       if (videoResolution) settingsObj.videoResolution = videoResolution;
-      if (videoDuration) settingsObj.videoDuration = videoDuration;
-      if (videoAspect) settingsObj.videoAspect = videoAspect;
-      if (videoStyle) settingsObj.videoStyle = videoStyle;
-      if (novelGenre) settingsObj.novelGenre = novelGenre;
-      if (novelWritingStyle) settingsObj.novelWritingStyle = novelWritingStyle;
-      if (novelChapterLength) settingsObj.novelChapterLength = novelChapterLength;
-      if (novelTarget) settingsObj.novelTarget = novelTarget;
       if (outputLanguage) settingsObj.outputLanguage = outputLanguage;
 
       const saveData = {
@@ -404,18 +380,15 @@ const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ isOpen, onClose, on
 
   return (
     <>
-    <AnimatePresence>
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
         className="fixed inset-0 z-[500] flex items-center justify-center"
       >
         {/* 背景遮罩 */}
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
           className="absolute inset-0 bg-black/70 backdrop-blur-sm"
           onClick={onClose}
         />
@@ -424,7 +397,6 @@ const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ isOpen, onClose, on
         <motion.div
           initial={{ opacity: 0, scale: 0.96, y: 16 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.96, y: 16 }}
           transition={{ duration: 0.2, ease: [0.25, 0.46, 0.45, 0.94] }}
           className="relative mx-4 w-full max-w-[920px] rounded-xl overflow-hidden shadow-2xl flex flex-col"
           style={{
@@ -567,136 +539,118 @@ const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ isOpen, onClose, on
                     </div>
                   </div>
 
-                  {/* 视觉风格 / 小说类型设置 */}
+                  {/* 视觉风格设置 */}
                   <div className="flex-1 min-w-0">
-                    {selectedType !== 'novel' ? (
-                      <div>
-                        <label className="text-xs font-semibold uppercase tracking-wider mb-2 flex items-center gap-1.5" style={{ color: 'var(--text-muted)' }}>
-                          <Palette className="w-3.5 h-3.5 text-[var(--accent)]" />
-                          {t.projects.visualStyleLabel}
-                        </label>
-                        {/* 内容类型切换：真人 / 动漫 */}
-                        <div className="flex gap-1.5 mb-2">
-                          {(['live_action', 'anime'] as StyleCategory[]).map((cat) => (
-                            <button key={cat}
-                              onClick={() => {
-                                const stylesInCategory = VISUAL_STYLE_BY_CATEGORY[cat];
-                                const shouldResetStyle = formData.visualStyle && !stylesInCategory.includes(formData.visualStyle);
-                                setFormData(prev => ({
-                                  ...prev,
-                                  styleCategory: cat,
-                                  ...(shouldResetStyle ? { visualStyle: '', visualStylePrompt: '' } : {}),
-                                  ...(cat === 'live_action' ? { bodyProportionRatio: '' as '' } : {}),
-                                }));
-                              }}
-                              className={`flex-1 px-2 py-1.5 rounded-md border text-xs font-semibold transition-all cursor-pointer ${
-                                formData.styleCategory === cat ? pillActive : pillInactive
-                              }`}>
-                              {cat === 'live_action' ? t.projects.categoryLiveAction : t.projects.categoryAnime}
-                            </button>
-                          ))}
-                        </div>
-                        {/* 按分类过滤的画风子选项 */}
-                        <div className="grid grid-cols-3 gap-1">
-                          {Object.entries(VISUAL_STYLE_PRESETS)
-                            .filter(([styleKey]) => {
-                              if (styleKey === 'custom') return false;
-                              if (!formData.styleCategory) return true;
-                              return VISUAL_STYLE_BY_CATEGORY[formData.styleCategory as StyleCategory]?.includes(styleKey);
-                            })
-                            .map(([styleKey, { labelKey }]) => (
-                            <button key={styleKey} onClick={() => handleSelectVisualStyle(styleKey)}
-                              className={`px-2 py-1 rounded-md border text-[11px] font-medium transition-all cursor-pointer truncate ${
-                                formData.visualStyle === styleKey ? pillActive : pillInactive
-                              }`}>
-                              {t.projects.presets[labelKey]}
-                            </button>
-                          ))}
-                        </div>
-                        {/* 我的风格 - 快捷显示 */}
-                        {(() => {
-                          const filteredMyStyles = myStyles.filter(s => {
+                    <div>
+                      <label className="text-xs font-semibold uppercase tracking-wider mb-2 flex items-center gap-1.5" style={{ color: 'var(--text-muted)' }}>
+                        <Palette className="w-3.5 h-3.5 text-[var(--accent)]" />
+                        {t.projects.visualStyleLabel}
+                      </label>
+                      {/* 内容类型切换：真人 / 动漫 */}
+                      <div className="flex gap-1.5 mb-2">
+                        {(['live_action', 'anime'] as StyleCategory[]).map((cat) => (
+                          <button key={cat}
+                            onClick={() => {
+                              const stylesInCategory = VISUAL_STYLE_BY_CATEGORY[cat];
+                              const shouldResetStyle = formData.visualStyle && !stylesInCategory.includes(formData.visualStyle);
+                              setFormData(prev => ({
+                                ...prev,
+                                styleCategory: cat,
+                                ...(shouldResetStyle ? { visualStyle: '', visualStylePrompt: '' } : {}),
+                                ...(cat === 'live_action' ? { bodyProportionRatio: '' as '' } : {}),
+                              }));
+                            }}
+                            className={`flex-1 px-2 py-1.5 rounded-md border text-xs font-semibold transition-all cursor-pointer ${
+                              formData.styleCategory === cat ? pillActive : pillInactive
+                            }`}>
+                            {cat === 'live_action' ? t.projects.categoryLiveAction : t.projects.categoryAnime}
+                          </button>
+                        ))}
+                      </div>
+                      {/* 按分类过滤的画风子选项 */}
+                      <div className="grid grid-cols-3 gap-1">
+                        {Object.entries(VISUAL_STYLE_PRESETS)
+                          .filter(([styleKey]) => {
+                            if (styleKey === 'custom') return false;
                             if (!formData.styleCategory) return true;
-                            return s.style_category === formData.styleCategory;
-                          });
-                          if (filteredMyStyles.length === 0) return null;
-                          return (
-                            <>
-                              <div className="flex items-center gap-1.5 mt-2 mb-1">
-                                <div className="flex-1 h-px bg-[var(--border-color)] opacity-50" />
-                                <span className="text-[10px] font-medium" style={{ color: 'var(--text-muted)' }}>{t.projects.myStyles}</span>
-                                <div className="flex-1 h-px bg-[var(--border-color)] opacity-50" />
-                              </div>
-                              <div className="grid grid-cols-3 gap-1">
-                                {filteredMyStyles.slice(0, 6).map((style) => (
-                                  <button key={style.id} onClick={() => handleSelectVisualStyle(`myStyle_${style.id}`)}
-                                    className={`px-2 py-1 rounded-md border text-[11px] font-medium transition-all cursor-pointer truncate ${
-                                      formData.visualStyle === `myStyle_${style.id}` ? pillActive : pillInactive
-                                    }`}>
-                                    {style.name}
-                                  </button>
-                                ))}
-                              </div>
-                            </>
-                          );
-                        })()}
-                        {/* 自定义按钮 */}
-                        <button
-                          onClick={() => handleSelectVisualStyle('custom')}
-                          className={`mt-1 w-full px-2 py-1.5 rounded-md border text-[11px] font-medium transition-all cursor-pointer ${
-                            formData.visualStyle === 'custom' ? pillActive : pillInactive
-                          }`}>
-                          {t.projects.presets.custom}
-                        </button>
-                        <Input size="sm"
-                          placeholder={t.projects.visualStylePromptPlaceholder}
-                          value={formData.visualStylePrompt}
-                          onValueChange={(val) => setFormData(prev => ({ ...prev, visualStylePrompt: val }))}
-                          className="mt-2"
-                          classNames={{ input: "bg-transparent text-[var(--text-primary)] placeholder:text-[var(--text-muted)] text-xs", inputWrapper: "bg-[var(--bg-input)] border border-[var(--border-color)] hover:border-[var(--accent)]/30 h-7 min-h-7" }}
-                        />
-                        {/* 头身比例选择器 - 仅动漫类 */}
-                        {formData.styleCategory === 'anime' && (
-                          <div className="mt-2">
-                            <label className="text-[11px] font-medium mb-1 flex items-center gap-1" style={{ color: 'var(--text-secondary)' }}>
-                              {t.projects.bodyProportionLabel}
-                              <span className="text-[10px] font-normal" style={{ color: 'var(--text-muted)' }}>{t.projects.bodyProportionHint}</span>
-                            </label>
-                            <div className="grid grid-cols-4 gap-1">
-                              {(Object.keys(BODY_PROPORTION_PRESETS) as BodyProportionRatio[]).map((key) => {
-                                const preset = BODY_PROPORTION_PRESETS[key];
-                                return (
-                                  <button key={key}
-                                    onClick={() => setFormData(prev => ({ ...prev, bodyProportionRatio: key }))}
-                                    className={`px-2 py-1.5 rounded-md border text-center transition-all cursor-pointer ${
-                                      formData.bodyProportionRatio === key ? pillActive : pillInactive
-                                    }`}>
-                                    <div className="text-[11px] font-semibold">{preset.name}</div>
-                                    <div className="text-[9px] opacity-70">{preset.description}</div>
-                                  </button>
-                                );
-                              })}
+                            return VISUAL_STYLE_BY_CATEGORY[formData.styleCategory as StyleCategory]?.includes(styleKey);
+                          })
+                          .map(([styleKey, { labelKey }]) => (
+                          <button key={styleKey} onClick={() => handleSelectVisualStyle(styleKey)}
+                            className={`px-2 py-1 rounded-md border text-[11px] font-medium transition-all cursor-pointer truncate ${
+                              formData.visualStyle === styleKey ? pillActive : pillInactive
+                            }`}>
+                            {t.projects.presets[labelKey]}
+                          </button>
+                        ))}
+                      </div>
+                      {/* 我的风格 - 快捷显示 */}
+                      {(() => {
+                        const filteredMyStyles = myStyles.filter(s => {
+                          if (!formData.styleCategory) return true;
+                          return s.style_category === formData.styleCategory;
+                        });
+                        if (filteredMyStyles.length === 0) return null;
+                        return (
+                          <>
+                            <div className="flex items-center gap-1.5 mt-2 mb-1">
+                              <div className="flex-1 h-px bg-[var(--border-color)] opacity-50" />
+                              <span className="text-[10px] font-medium" style={{ color: 'var(--text-muted)' }}>{t.projects.myStyles}</span>
+                              <div className="flex-1 h-px bg-[var(--border-color)] opacity-50" />
                             </div>
+                            <div className="grid grid-cols-3 gap-1">
+                              {filteredMyStyles.slice(0, 6).map((style) => (
+                                <button key={style.id} onClick={() => handleSelectVisualStyle(`myStyle_${style.id}`)}
+                                  className={`px-2 py-1 rounded-md border text-[11px] font-medium transition-all cursor-pointer truncate ${
+                                    formData.visualStyle === `myStyle_${style.id}` ? pillActive : pillInactive
+                                  }`}>
+                                  {style.name}
+                                </button>
+                              ))}
+                            </div>
+                          </>
+                        );
+                      })()}
+                      {/* 自定义按钮 */}
+                      <button
+                        onClick={() => handleSelectVisualStyle('custom')}
+                        className={`mt-1 w-full px-2 py-1.5 rounded-md border text-[11px] font-medium transition-all cursor-pointer ${
+                          formData.visualStyle === 'custom' ? pillActive : pillInactive
+                        }`}>
+                        {t.projects.presets.custom}
+                      </button>
+                      <Input size="sm"
+                        placeholder={t.projects.visualStylePromptPlaceholder}
+                        value={formData.visualStylePrompt}
+                        onValueChange={(val) => setFormData(prev => ({ ...prev, visualStylePrompt: val }))}
+                        className="mt-2"
+                        classNames={{ input: "bg-transparent text-[var(--text-primary)] placeholder:text-[var(--text-muted)] text-xs", inputWrapper: "bg-[var(--bg-input)] border border-[var(--border-color)] hover:border-[var(--accent)]/30 h-7 min-h-7" }}
+                      />
+                      {/* 头身比例选择器 - 仅动漫类 */}
+                      {formData.styleCategory === 'anime' && (
+                        <div className="mt-2">
+                          <label className="text-[11px] font-medium mb-1 flex items-center gap-1" style={{ color: 'var(--text-secondary)' }}>
+                            {t.projects.bodyProportionLabel}
+                            <span className="text-[10px] font-normal" style={{ color: 'var(--text-muted)' }}>{t.projects.bodyProportionHint}</span>
+                          </label>
+                          <div className="grid grid-cols-4 gap-1">
+                            {(Object.keys(BODY_PROPORTION_PRESETS) as BodyProportionRatio[]).map((key) => {
+                              const preset = BODY_PROPORTION_PRESETS[key];
+                              return (
+                                <button key={key}
+                                  onClick={() => setFormData(prev => ({ ...prev, bodyProportionRatio: key }))}
+                                  className={`px-2 py-1.5 rounded-md border text-center transition-all cursor-pointer ${
+                                    formData.bodyProportionRatio === key ? pillActive : pillInactive
+                                  }`}>
+                                  <div className="text-[11px] font-semibold">{preset.name}</div>
+                                  <div className="text-[9px] opacity-70">{preset.description}</div>
+                                </button>
+                              );
+                            })}
                           </div>
-                        )}
-                      </div>
-                    ) : (
-                      /* 小说: 类型与写作风格 */
-                      <div className="space-y-3">
-                        <div className="grid grid-cols-2 gap-3">
-                          <Input size="sm" label={t.projects.novelGenreLabel} placeholder={t.projects.novelGenrePlaceholder}
-                            value={formData.novelGenre} onValueChange={(val) => setFormData(prev => ({ ...prev, novelGenre: val }))} classNames={inputCls} />
-                          <Input size="sm" label={t.projects.novelWritingStyleLabel} placeholder={t.projects.novelWritingStylePlaceholder}
-                            value={formData.novelWritingStyle} onValueChange={(val) => setFormData(prev => ({ ...prev, novelWritingStyle: val }))} classNames={inputCls} />
                         </div>
-                        <div className="grid grid-cols-2 gap-3">
-                          <Input size="sm" label={t.projects.novelChapterLengthLabel} placeholder={t.projects.novelChapterLengthPlaceholder}
-                            value={formData.novelChapterLength} onValueChange={(val) => setFormData(prev => ({ ...prev, novelChapterLength: val }))} classNames={inputCls} />
-                          <Input size="sm" label={t.projects.novelTargetLabel} placeholder={t.projects.novelTargetPlaceholder}
-                            value={formData.novelTarget} onValueChange={(val) => setFormData(prev => ({ ...prev, novelTarget: val }))} classNames={inputCls} />
-                        </div>
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -775,63 +729,6 @@ const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ isOpen, onClose, on
                   </div>
                 )}
 
-                {selectedType === 'manga' && (
-                  <div className="space-y-3">
-                    <div>
-                      <label className="text-xs font-semibold mb-1.5 block" style={{ color: 'var(--text-secondary)' }}>{t.projects.mangaLayoutLabel}</label>
-                      <div className="flex gap-1.5">
-                        {([['page', t.projects.mangaLayoutPage], ['strip', t.projects.mangaLayoutStrip], ['free', t.projects.mangaLayoutFree]] as const).map(([key, label]) => (
-                          <button key={key} onClick={() => setFormData(prev => ({ ...prev, mangaLayout: prev.mangaLayout === key ? '' : key as any }))}
-                            className={`px-3 py-1.5 rounded-md border text-xs font-medium transition-all cursor-pointer ${formData.mangaLayout === key ? pillActive : pillInactive}`}>
-                            {label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <Input size="sm" label={t.projects.mangaPanelStyleLabel} placeholder={t.projects.mangaPanelStylePlaceholder}
-                        value={formData.mangaPanelStyle} onValueChange={(val) => setFormData(prev => ({ ...prev, mangaPanelStyle: val }))} classNames={inputCls} />
-                      <Input size="sm" label={t.projects.storyStyleLabel} placeholder={t.projects.storyStylePlaceholder}
-                        value={formData.storyStyle} onValueChange={(val) => setFormData(prev => ({ ...prev, storyStyle: val }))} classNames={inputCls} />
-                    </div>
-                  </div>
-                )}
-
-                {selectedType === 'short_video' && (
-                  <div className="space-y-3">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="text-xs font-semibold mb-1.5 block" style={{ color: 'var(--text-secondary)' }}>{t.projects.videoDurationLabel}</label>
-                        <div className="flex flex-wrap gap-1.5">
-                          {([['15', t.projects.videoDuration15], ['30', t.projects.videoDuration30], ['60', t.projects.videoDuration60], ['180', t.projects.videoDuration180]] as const).map(([key, label]) => (
-                            <button key={key} onClick={() => setFormData(prev => ({ ...prev, videoDuration: prev.videoDuration === key ? '' : key as any }))}
-                              className={`px-3 py-1.5 rounded-md border text-xs font-medium transition-all cursor-pointer ${formData.videoDuration === key ? pillActive : pillInactive}`}>
-                              {label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                      <div>
-                        <label className="text-xs font-semibold mb-1.5 block" style={{ color: 'var(--text-secondary)' }}>{t.projects.videoAspectLabel}</label>
-                        <div className="flex gap-1.5">
-                          {([['9:16', t.projects.videoAspect916], ['16:9', t.projects.videoAspect169], ['1:1', t.projects.videoAspect11]] as const).map(([key, label]) => (
-                            <button key={key} onClick={() => setFormData(prev => ({ ...prev, videoAspect: prev.videoAspect === key ? '' : key as any }))}
-                              className={`px-3 py-1.5 rounded-md border text-xs font-medium transition-all cursor-pointer ${formData.videoAspect === key ? pillActive : pillInactive}`}>
-                              {label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <Input size="sm" label={t.projects.videoStyleLabel} placeholder={t.projects.videoStylePlaceholder}
-                        value={formData.videoStyle} onValueChange={(val) => setFormData(prev => ({ ...prev, videoStyle: val }))} classNames={inputCls} />
-                      <Input size="sm" label={t.projects.storyStyleLabel} placeholder={t.projects.storyStylePlaceholder}
-                        value={formData.storyStyle} onValueChange={(val) => setFormData(prev => ({ ...prev, storyStyle: val }))} classNames={inputCls} />
-                    </div>
-                  </div>
-                )}
-
                 {/* 通用高级设置：状态 & 语言 */}
                 <div className="grid grid-cols-2 gap-5">
                   <div>
@@ -900,13 +797,6 @@ const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ isOpen, onClose, on
           </div>
         </motion.div>
       </motion.div>
-    </AnimatePresence>
-
-    {/* 升级提示弹窗 */}
-    {upgradeData && (
-      <UpgradePrompt isOpen={showUpgrade} onClose={() => setShowUpgrade(false)} limitType="project"
-        currentPlan={upgradeData.currentPlan} currentUsage={upgradeData.currentUsage} nextPlan={upgradeData.nextPlan} />
-    )}
     </>
   );
 };

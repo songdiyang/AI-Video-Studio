@@ -194,7 +194,7 @@ const ProjectSidebar: React.FC<ProjectSidebarProps> = ({
                       ? 'bg-sky-500/15 text-sky-600 dark:text-sky-400 border border-sky-500/40'
                       : 'text-(--text-secondary) hover:bg-sky-500/10 hover:text-sky-600 dark:hover:text-sky-400 border border-transparent'
                   }`}
-                  title={`${t.assetsManager.sidebar.clickSelect}: ${project.name}`}
+                  title={`${project.name}`}
                 >
                   <FolderOpen className="w-4 h-4 shrink-0" />
                   <span className="text-sm font-medium truncate">{project.name}</span>
@@ -253,7 +253,7 @@ const ProjectSidebar: React.FC<ProjectSidebarProps> = ({
                                     onSelectAsset?.(rt.key, asset);
                                   }}
                                   onDoubleClick={() => onEditAsset?.(rt.key, asset)}
-                                  title={`${t.assetsManager.sidebar.clickSelect}: ${getAssetName(asset, rt.key, t)}`}
+                                  title={`${getAssetName(asset, rt.key, t)}`}
                                 >
                                   {getAssetName(asset, rt.key, t)}
                                 </div>
