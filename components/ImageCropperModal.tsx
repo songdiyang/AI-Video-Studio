@@ -9,7 +9,7 @@
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Button } from '@heroui/react';
-import { Crop, Check, X } from 'lucide-react';
+import { Crop, Check, X, ImageOff, Loader2 } from 'lucide-react';
 
 export type CropAspect = 'free' | '16:9' | '1:1' | '4:3';
 
@@ -20,6 +20,28 @@ const ASPECT_MAP: Record<CropAspect, number | null> = {
   '4:3': 4 / 3,
 };
 
+/**
+ * 通过后端代理获取图片为 Blob URL（解决跨域问题）
+ */
+async function fetchImageViaProxy(imageUrl: string): Promise<string> {
+  const token = localStorage.getItem('auth_token');
+  const response = await fetch('/api/proxy/image', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({ url: imageUrl }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`代理加载失败: ${response.status}`);
+  }
+
+  const blob = await response.blob();
+  return URL.createObjectURL(blob);
+}
+
 interface CropRect {
   x: number; // 相对图片显示区域的像素
   y: number;
@@ -27,12 +49,19 @@ interface CropRect {
   h: number;
 }
 
+export interface CropSelection {
+  x: number;      // 相对于原图自然尺寸的像素坐标
+  y: number;
+  width: number;
+  height: number;
+}
+
 interface ImageCropperModalProps {
   isOpen: boolean;
   imageUrl: string;
   defaultAspect?: CropAspect;
   onClose: () => void;
-  onCropped: (blob: Blob) => void;
+  onCropped: (selection: CropSelection) => void;
 }
 
 type DragMode = 'none' | 'move' | 'nw' | 'ne' | 'sw' | 'se';
@@ -51,9 +80,13 @@ const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
   const [imgDisplaySize, setImgDisplaySize] = useState<{ w: number; h: number } | null>(null);
   const [crop, setCrop] = useState<CropRect | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [imgLoadError, setImgLoadError] = useState(false);
+  const [imgLoading, setImgLoading] = useState(true);
+  const [proxyUrl, setProxyUrl] = useState<string>('');
 
   const containerRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
+  const blobUrlRef = useRef<string>('');
   const dragRef = useRef<{
     mode: DragMode;
     startX: number;
@@ -72,6 +105,8 @@ const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
   const handleImageLoad = useCallback(() => {
     const img = imgRef.current;
     if (!img) return;
+    setImgLoading(false);
+    setImgLoadError(false);
     const nW = img.naturalWidth;
     const nH = img.naturalHeight;
     const dW = img.clientWidth;
@@ -118,8 +153,27 @@ const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
       setImgNaturalSize(null);
       setImgDisplaySize(null);
       setCrop(null);
+      setImgLoadError(false);
+      setImgLoading(true);
+      setProxyUrl('');
+      // 清理 blob URL
+      if (blobUrlRef.current) {
+        URL.revokeObjectURL(blobUrlRef.current);
+        blobUrlRef.current = '';
+      }
     }
   }, [isOpen]);
+
+  // 图片 URL 变化时重置加载状态
+  useEffect(() => {
+    setImgLoadError(false);
+    setImgLoading(true);
+    setProxyUrl('');
+    if (blobUrlRef.current) {
+      URL.revokeObjectURL(blobUrlRef.current);
+      blobUrlRef.current = '';
+    }
+  }, [imageUrl]);
 
   // 指针按下：根据位置判定拖动模式
   const getPointer = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -184,35 +238,27 @@ const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
     dragRef.current.mode = 'none';
   };
 
-  // 导出裁剪结果
-  const handleConfirm = useCallback(async () => {
-    if (!crop || !imgNaturalSize || !imgDisplaySize || !imgRef.current) return;
-    setExporting(true);
-    try {
-      const scaleX = imgNaturalSize.w / imgDisplaySize.w;
-      const scaleY = imgNaturalSize.h / imgDisplaySize.h;
-      const sx = Math.round(crop.x * scaleX);
-      const sy = Math.round(crop.y * scaleY);
-      const sw = Math.round(crop.w * scaleX);
-      const sh = Math.round(crop.h * scaleY);
+  // 确认选取区域：返回相对于原图自然尺寸的坐标
+  const handleConfirm = useCallback(() => {
+    if (!crop || !imgNaturalSize || !imgDisplaySize) return;
+    const scaleX = imgNaturalSize.w / imgDisplaySize.w;
+    const scaleY = imgNaturalSize.h / imgDisplaySize.h;
 
-      const canvas = document.createElement('canvas');
-      canvas.width = sw;
-      canvas.height = sh;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) throw new Error('Canvas context unavailable');
-      ctx.drawImage(imgRef.current, sx, sy, sw, sh, 0, 0, sw, sh);
-      const blob: Blob | null = await new Promise((resolve) =>
-        canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.92),
-      );
-      if (!blob) throw new Error('Canvas export failed');
-      onCropped(blob);
-      onClose();
-    } catch (err) {
-      console.error('[ImageCropperModal] export failed:', err);
-    } finally {
-      setExporting(false);
-    }
+    const selection: CropSelection = {
+      x: Math.round(crop.x * scaleX),
+      y: Math.round(crop.y * scaleY),
+      width: Math.round(crop.w * scaleX),
+      height: Math.round(crop.h * scaleY),
+    };
+
+    // 边界修正：确保不超出原图范围
+    selection.x = Math.max(0, Math.min(selection.x, imgNaturalSize.w - 1));
+    selection.y = Math.max(0, Math.min(selection.y, imgNaturalSize.h - 1));
+    selection.width = Math.min(selection.width, imgNaturalSize.w - selection.x);
+    selection.height = Math.min(selection.height, imgNaturalSize.h - selection.y);
+
+    onCropped(selection);
+    onClose();
   }, [crop, imgNaturalSize, imgDisplaySize, onCropped, onClose]);
 
   const aspectOptions: { value: CropAspect; label: string }[] = useMemo(
@@ -272,15 +318,50 @@ const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
               onPointerCancel={handlePointerUp}
               style={{ touchAction: 'none' }}
             >
-              <img
-                ref={imgRef}
-                src={imageUrl}
-                alt="crop source"
-                crossOrigin="anonymous"
-                onLoad={handleImageLoad}
-                className="block max-w-full max-h-[60vh] pointer-events-none"
-                draggable={false}
-              />
+              {imgLoading && !imgLoadError && (
+                <div className="flex items-center justify-center min-h-[200px]">
+                  <Loader2 className="w-8 h-8 text-(--accent) animate-spin" />
+                </div>
+              )}
+              {imgLoadError ? (
+                <div className="flex flex-col items-center justify-center min-h-[200px] gap-3 px-6">
+                  <ImageOff className="w-10 h-10 text-(--text-muted) opacity-50" />
+                  <p className="text-sm text-(--text-muted) text-center">
+                    图片加载失败，可能是跨域限制或链接已失效
+                  </p>
+                  <p className="text-xs text-(--text-muted) opacity-60 text-center">
+                    建议重新上传封面后再尝试裁剪
+                  </p>
+                </div>
+              ) : (
+                <img
+                  ref={imgRef}
+                  src={proxyUrl || imageUrl}
+                  alt="crop source"
+                  crossOrigin={proxyUrl ? undefined : 'anonymous'}
+                  onLoad={handleImageLoad}
+                  onError={async () => {
+                    // 第一次失败（带 crossOrigin）→ 尝试通过后端代理加载
+                    if (!proxyUrl && imageUrl) {
+                      console.log('[ImageCropperModal] 直接加载失败，尝试代理:', imageUrl);
+                      try {
+                        const blobUrl = await fetchImageViaProxy(imageUrl);
+                        blobUrlRef.current = blobUrl;
+                        setProxyUrl(blobUrl);
+                        // 图片会重新加载，onLoad/onError 会再次触发
+                        return;
+                      } catch (err) {
+                        console.error('[ImageCropperModal] 代理加载也失败:', err);
+                      }
+                    }
+                    setImgLoading(false);
+                    setImgLoadError(true);
+                    console.error('[ImageCropperModal] 图片加载失败:', imageUrl);
+                  }}
+                  className={`block max-w-full max-h-[60vh] pointer-events-none ${imgLoading ? 'hidden' : ''}`}
+                  draggable={false}
+                />
+              )}
               {/* 遮罩 + 裁剪框 */}
               {crop && imgDisplaySize && (
                 <>
@@ -342,7 +423,7 @@ const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
           <Button
             color="primary"
             onPress={handleConfirm}
-            isDisabled={!crop || exporting}
+            isDisabled={!crop || exporting || imgLoadError}
             startContent={<Check className="w-4 h-4" />}
           >
             {exporting ? '处理中...' : '应用裁剪'}

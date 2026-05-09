@@ -102,13 +102,12 @@ export const NARRATIVE_PERSPECTIVES: Record<NarrativePerspective, {
 
 /**
  * 项目类型枚举
- * 专注漫剧功能,已移除短视频、漫画、小说类型
+ * 支持漫剧、漫画、短视频、小说
  */
-export type ProjectType = 'comic_drama';
+export type ProjectType = 'comic_drama' | 'manga' | 'short_video' | 'novel';
 
 /**
  * 项目类型元数据
- * 专注漫剧功能,已移除其他类型
  */
 export const PROJECT_TYPES: Record<ProjectType, {
   code: ProjectType;
@@ -125,6 +124,30 @@ export const PROJECT_TYPES: Record<ProjectType, {
     description: '基于剧本创作分镜动画的项目类型,适合制作动态漫画、有声漫画等',
     icon: 'Film',
     color: 'from-violet-500 to-purple-600',
+  },
+  manga: {
+    code: 'manga',
+    name: '漫画',
+    nameEn: 'Manga',
+    description: '创作漫画作品,支持分镜、线稿、上色等完整流程',
+    icon: 'BookOpen',
+    color: 'from-blue-500 to-cyan-500',
+  },
+  short_video: {
+    code: 'short_video',
+    name: '短视频',
+    nameEn: 'Short Video',
+    description: '制作短视频内容,支持脚本、拍摄、剪辑等',
+    icon: 'Video',
+    color: 'from-rose-500 to-pink-500',
+  },
+  novel: {
+    code: 'novel',
+    name: '小说',
+    nameEn: 'Novel',
+    description: '创作小说作品,支持大纲、章节管理、AI 辅助写作',
+    icon: 'PenTool',
+    color: 'from-emerald-500 to-teal-500',
   },
 };
 
@@ -153,7 +176,7 @@ export interface WorkbenchConfig {
 /**
  * 各项目类型的工作台配置
  */
-export const WORKBENCH_CONFIGS: Record<ProjectType, WorkbenchConfig> = {
+export const WORKBENCH_CONFIGS: Partial<Record<ProjectType, WorkbenchConfig>> = {
   comic_drama: {
     projectType: 'comic_drama',
     defaultTab: 'script',
@@ -215,12 +238,15 @@ export function getAllProjectTypes(): ProjectType[] {
 
 /**
  * 旧类型到新类型的映射（用于数据迁移兼容）
+ * 注意：项目现在仅支持漫剧类型，所有旧类型都映射到 comic_drama
  */
 export function mapLegacyProjectType(legacyType: string): ProjectType {
   const mapping: Record<string, ProjectType> = {
-    video: 'short_video',
+    video: 'comic_drama',
+    short_video: 'comic_drama',
     comic: 'comic_drama',
-    script: 'comic_drama', // 脚本类型映射为漫剧
+    script: 'comic_drama',
+    novel: 'comic_drama',
   };
   return mapping[legacyType] || (legacyType as ProjectType) || 'comic_drama';
 }

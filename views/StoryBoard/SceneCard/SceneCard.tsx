@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect, memo } from 'react';
 import { Card, CardBody, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Button, Checkbox, Tooltip } from '@heroui/react';
-import { Trash2, ImageIcon, Pencil, Plus, Edit3 } from 'lucide-react';
+import { Trash2, ImageIcon, Pencil, Plus, Edit3, Download, Film, Image } from 'lucide-react';
 import SceneImageGenerator from '../SceneImageGenerator';
 import { StoryboardScene } from '../useSceneManager';
 import { TaskState } from '../../../hooks/useTaskRunner';
@@ -18,7 +18,7 @@ import { SpatialDescription } from '../useSceneManager';
 import type { StoryboardValidationIssue } from '../utils/validateStoryboardContent';
 import { getWorstSeverity } from '../utils/validateStoryboardContent';
 import StoryboardLockButton from '../components/StoryboardLockButton';
-import { ShotSizeSelector, ShotSizeBadge } from '../components/ShotSizeSelector';
+import { ShotSizeBadge, ShotSizeSelector } from '../components/ShotSizeSelector';
 import { CameraMovementSelector } from '../components/CameraMovementSelector';
 import { CAMERA_MOVEMENT_LABELS } from '../components/CameraMovementSelector';
 import { FrameTypeSelector } from '../components/FrameTypeSelector';
@@ -43,6 +43,7 @@ export interface SceneCardProps {
   imageTask?: TaskState;
   videoTask?: TaskState;
   validationIssues?: StoryboardValidationIssue[];
+  onContextMenu?: (e: React.MouseEvent) => void;
 }
 
 const SceneCard: React.FC<SceneCardProps> = ({
@@ -64,7 +65,8 @@ const SceneCard: React.FC<SceneCardProps> = ({
   onOpenSketchEditor,
   imageTask,
   videoTask,
-  validationIssues
+  validationIssues,
+  onContextMenu
 }) => {
   const [isEditingDescription, setIsEditingDescription] = useState(false);
   const [editedDescription, setEditedDescription] = useState(scene.baseDescription);
@@ -209,6 +211,15 @@ const SceneCard: React.FC<SceneCardProps> = ({
     onDelete(scene.id);
   };
 
+  // 右键菜单处理
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (onContextMenu) {
+      onContextMenu(e);
+    }
+  };
+
   // 预检：生成首尾帧前校验角色+场景字段完整性（前端本地校验）
   const validateForFrame = async (): Promise<{ ready: boolean; blocking: boolean; message?: string }> => {
     if (!projectId) return { ready: true, blocking: false };
@@ -301,6 +312,7 @@ const SceneCard: React.FC<SceneCardProps> = ({
         }`}
         isPressable={false}
         onPress={() => onSelect(scene.id)}
+        onContextMenu={handleContextMenu}
       >
         <CardBody className="p-1.5 relative">
           {/* 操作按钮 - 悬浮显示在右上角 */}
@@ -318,17 +330,12 @@ const SceneCard: React.FC<SceneCardProps> = ({
                 }}
               />
             </div>
-            <button
-              onClick={(e) => { e.stopPropagation(); handleDeleteClick(scene.id); }}
-              className="p-1 rounded hover:bg-red-500/20 text-[var(--text-muted)] hover:text-red-400 transition-colors"
-            >
-              <Trash2 className="w-3 h-3" />
-            </button>
           </div>
 
           <div 
             className="flex gap-1.5 min-w-0"
             onClick={() => onSelect(scene.id)}
+            onContextMenu={handleContextMenu}
           >
             {/* 紧凑的序号 */}
             <div className="flex flex-col items-center justify-center w-5 flex-shrink-0 relative">
@@ -367,6 +374,7 @@ const SceneCard: React.FC<SceneCardProps> = ({
                   }
                 }}
                 onClick={(e) => e.stopPropagation()}
+                onContextMenu={handleContextMenu}
               >
                 {scene.videoUrl ? (
                   <div 

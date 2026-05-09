@@ -8,6 +8,7 @@ import { useBatchResourceGeneration } from '../StoryBoard/hooks/useBatchResource
 import { useWorkflowTargetMonitor } from '../StoryBoard/hooks/useWorkflowTargetMonitor';
 import { useCharacterData } from '../StoryBoard/ResourcePanel/useCharacterData';
 import { useSceneData } from '../StoryBoard/ResourcePanel/useSceneData';
+import { PropItem } from '../StoryBoard/ResourcePanel/types';
 import DarkEpisodeSelector from './DarkEpisodeSelector';
 import AutoStoryboardModal from '../StoryBoard/AutoStoryboardModal';
 import StoryboardTable from './StoryboardTable';
@@ -166,6 +167,22 @@ const SimpleStoryBoard: React.FC<SimpleStoryBoardProps> = ({
   const { dbScenes, isLoadingScenes, loadScenes } = useSceneData(currentProjectId, currentScriptId);
   const { showToast } = useToast();
 
+  // 项目道具数据（从数据库加载）
+  const [dbProps, setDbProps] = useState<PropItem[]>([]);
+  useEffect(() => {
+    if (!currentProjectId) {
+      setDbProps([]);
+      return;
+    }
+    const token = getAuthToken();
+    fetch(`/api/props/project/${currentProjectId}`, {
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) }
+    })
+      .then(res => res.ok ? res.json() : null)
+      .then(data => setDbProps(data?.props || []))
+      .catch(() => setDbProps([]));
+  }, [currentProjectId]);
+
   useWorkflowTargetMonitor({
     projectId: currentProjectId ?? null,
     workflowTypes: ['character_views_generation'],
@@ -194,8 +211,15 @@ const SimpleStoryBoard: React.FC<SimpleStoryBoardProps> = ({
     }
   });
 
-  // 收集道具
-  const allProps = [...new Set(scenes.flatMap(s => s.props || []))];
+  // 收集道具名称（用于显示分镜中使用的道具）
+  const allPropNames = [...new Set(scenes.flatMap(s => s.props || []))];
+  // 合并数据库道具 + 分镜中提到的道具（以数据库为准，补充分镜中未入库的名称）
+  const allProps = useMemo(() => {
+    const dbNames = new Set(dbProps.map(p => p.name));
+    const extraNames = allPropNames.filter(n => !dbNames.has(n));
+    const extraProps: PropItem[] = extraNames.map(name => ({ id: 0, name }));
+    return [...dbProps, ...extraProps];
+  }, [dbProps, allPropNames]);
 
   // 集数切换
   const handleEpisodeSelect = (script: Script) => {

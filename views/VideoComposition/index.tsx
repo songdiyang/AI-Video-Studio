@@ -180,8 +180,8 @@ const VideoComposition: React.FC<VideoCompositionProps> = ({ projectId, projectN
   useKeyboardShortcuts(compositionShortcuts, true);
 
   return (
-    <div className="h-full flex flex-col bg-[#0c0e1a] overflow-hidden">
-      <div className="flex-1 flex overflow-hidden">
+    <div className="h-full flex flex-col bg-[var(--bg-app)] overflow-hidden">
+      <div className="flex-1 flex overflow-hidden relative">
         {/* 左侧：集列表 + 分镜视频 */}
         <EpisodeSidebar
           episodes={compositionData.episodes}
@@ -296,7 +296,7 @@ const VideoComposition: React.FC<VideoCompositionProps> = ({ projectId, projectN
           isIconOnly
           size="sm"
           variant="light"
-          className="absolute right-2 top-2 z-10 text-[var(--text-muted)] hover:text-[var(--accent)]"
+          className="absolute right-2 top-2 z-float text-[var(--text-muted)] hover:text-[var(--accent)]"
           onPress={() => setShowPanel(prev => !prev)}
           title={showPanel ? '收起面板' : '展开面板'}
         >

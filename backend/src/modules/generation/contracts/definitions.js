@@ -1405,7 +1405,7 @@ const operationContracts = [
       properties: {
         storyboardId: { type: 'integer', minimum: 1 },
         prompt: { type: 'string', minLength: 1 },
-        textModel: { type: 'string' }
+        multimodalModel: { type: 'string' }
       }
     },
     scopeResolver: async ({ actor, input }) => {
@@ -1421,7 +1421,7 @@ const operationContracts = [
     },
     defaultsResolver: async ({ input }) => ({
       models: {
-        textModel: input.textModel || null
+        multimodalModel: input.multimodalModel || null
       },
       inputs: {
         prompt: input.prompt

@@ -14,6 +14,7 @@ interface AnimaticPreviewProps {
   onClose: () => void;
   storyboards: StoryboardScene[];
   initialIndex?: number;
+  inlineMode?: boolean; // 内嵌标签页模式（非弹窗全屏）
 }
 
 // 播放速度选项
@@ -37,7 +38,8 @@ const AnimaticPreview: React.FC<AnimaticPreviewProps> = ({
   isOpen,
   onClose,
   storyboards,
-  initialIndex = 0
+  initialIndex = 0,
+  inlineMode = false,
 }) => {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
@@ -80,9 +82,9 @@ const AnimaticPreview: React.FC<AnimaticPreviewProps> = ({
     }
   }, [isOpen, initialIndex, storyboards.length, goToIndex]);
   
-  // 阻止背景滚动
+  // 阻止背景滚动（仅弹窗模式）
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && !inlineMode) {
       document.body.style.overflow = 'hidden';
     } else {
       document.body.style.overflow = '';
@@ -90,7 +92,7 @@ const AnimaticPreview: React.FC<AnimaticPreviewProps> = ({
     return () => {
       document.body.style.overflow = '';
     };
-  }, [isOpen]);
+  }, [isOpen, inlineMode]);
   
   // 全屏状态监听
   useEffect(() => {
@@ -176,27 +178,32 @@ const AnimaticPreview: React.FC<AnimaticPreviewProps> = ({
     }
   }, [isDragging, handleProgressDrag]);
   
-  // 快捷键配置
-  const shortcuts: ShortcutConfig[] = useMemo(() => [
-    { key: ' ', action: togglePlay, description: '播放/暂停', scope: 'animatic' },
-    { key: 'Escape', action: onClose, description: '关闭预览', scope: 'animatic' },
-    { key: 'ArrowLeft', action: goToPrev, description: '上一个分镜', scope: 'animatic' },
-    { key: 'ArrowRight', action: goToNext, description: '下一个分镜', scope: 'animatic' },
-    { key: 'f', action: toggleFullscreen, description: '全屏', scope: 'animatic' },
-    { key: 'm', action: toggleMute, description: '静音', scope: 'animatic' },
-    {
-      key: '[',
-      action: () => setPlaybackSpeed(Math.max(0.5, playbackSpeed - 0.25)),
-      description: '减慢速度',
-      scope: 'animatic',
-    },
-    {
-      key: ']',
-      action: () => setPlaybackSpeed(Math.min(2, playbackSpeed + 0.25)),
-      description: '加快速度',
-      scope: 'animatic',
-    },
-  ], [togglePlay, onClose, goToPrev, goToNext, toggleFullscreen, toggleMute, playbackSpeed, setPlaybackSpeed]);
+  // 快捷键配置（仅弹窗模式启用 Escape 关闭）
+  const shortcuts: ShortcutConfig[] = useMemo(() => {
+    const list: ShortcutConfig[] = [
+      { key: ' ', action: togglePlay, description: '播放/暂停', scope: 'animatic' },
+      { key: 'ArrowLeft', action: goToPrev, description: '上一个分镜', scope: 'animatic' },
+      { key: 'ArrowRight', action: goToNext, description: '下一个分镜', scope: 'animatic' },
+      { key: 'f', action: toggleFullscreen, description: '全屏', scope: 'animatic' },
+      { key: 'm', action: toggleMute, description: '静音', scope: 'animatic' },
+      {
+        key: '[',
+        action: () => setPlaybackSpeed(Math.max(0.5, playbackSpeed - 0.25)),
+        description: '减慢速度',
+        scope: 'animatic',
+      },
+      {
+        key: ']',
+        action: () => setPlaybackSpeed(Math.min(2, playbackSpeed + 0.25)),
+        description: '加快速度',
+        scope: 'animatic',
+      },
+    ];
+    if (!inlineMode) {
+      list.push({ key: 'Escape', action: onClose, description: '关闭预览', scope: 'animatic' });
+    }
+    return list;
+  }, [togglePlay, onClose, goToPrev, goToNext, toggleFullscreen, toggleMute, playbackSpeed, setPlaybackSpeed, inlineMode]);
   
   useKeyboardShortcuts(shortcuts, isOpen);
   
@@ -251,11 +258,330 @@ const AnimaticPreview: React.FC<AnimaticPreviewProps> = ({
   }, [isMuted, videoRef]);
   
   if (!isOpen) return null;
-  
+
   const transitionConfig = getTransitionConfig();
   const imageUrl = getCurrentImageUrl();
   const hasVideo = !!currentStoryboard?.videoUrl;
-  
+
+  // 内嵌模式：不渲染 fixed 遮罩层，直接渲染内容
+  if (inlineMode) {
+    return (
+      <div
+        ref={containerRef}
+        className="w-full h-full bg-black/95 flex flex-col rounded-lg overflow-hidden"
+      >
+        {/* 顶栏（内嵌模式：隐藏关闭按钮，保留标题和全屏按钮） */}
+        <div className="flex items-center justify-between px-3 py-2 bg-black/50 flex-shrink-0">
+          <div className="flex items-center gap-2">
+            <span className="text-white/90 font-medium text-sm">Animatic 预览</span>
+            <Chip size="sm" variant="flat" className="bg-white/10 text-white/70">
+              {storyboards.length > 0
+                ? `${currentIndex + 1} / ${storyboards.length}`
+                : '暂无分镜'}
+            </Chip>
+          </div>
+          <Button
+            isIconOnly
+            size="sm"
+            variant="light"
+            className="text-white/70 hover:text-white"
+            onPress={toggleFullscreen}
+            aria-label="全屏"
+          >
+            <Maximize2 className="w-4 h-4" />
+          </Button>
+        </div>
+        {/* 主显示区 */}
+        <div
+          className="flex-1 relative flex items-center justify-center min-h-0 overflow-hidden"
+          onClick={togglePlay}
+        >
+          <AnimatePresence mode="wait">
+            {hasVideo ? (
+              <motion.video
+                key={`video-${currentStoryboard?.id}`}
+                ref={videoRef}
+                src={currentStoryboard?.videoUrl}
+                className="max-w-full max-h-full object-contain"
+                autoPlay={isPlaying}
+                onEnded={onVideoEnded}
+                onTimeUpdate={handleVideoTimeUpdate}
+                playsInline
+                muted={isMuted}
+                onClick={(e) => e.stopPropagation()}
+                {...transitionConfig}
+              />
+            ) : imageUrl ? (
+              <motion.img
+                key={`img-${currentStoryboard?.id}`}
+                src={imageUrl}
+                alt={currentStoryboard?.description || '分镜画面'}
+                className="max-w-full max-h-full object-contain"
+                draggable={false}
+                {...transitionConfig}
+              />
+            ) : (
+              <motion.div
+                key="placeholder"
+                className="flex flex-col items-center justify-center text-white/40"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+              >
+                <div className="w-24 h-24 rounded-lg bg-slate-800 flex items-center justify-center mb-4">
+                  <Play className="w-10 h-10 opacity-30" />
+                </div>
+                <p className="text-sm">暂无画面</p>
+              </motion.div>
+            )}
+          </AnimatePresence>
+          {/* 播放/暂停覆盖指示 */}
+          <AnimatePresence>
+            {!isPlaying && imageUrl && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.8 }}
+                className="absolute inset-0 flex items-center justify-center pointer-events-none"
+              >
+                <div className="w-20 h-20 rounded-full bg-black/50 flex items-center justify-center">
+                  <Play className="w-10 h-10 text-white ml-1" />
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+        {/* 进度条 */}
+        <div className="px-4 py-2 bg-black/50 flex-shrink-0">
+          <div
+            ref={progressBarRef}
+            className="w-full h-2 bg-slate-700 rounded-full cursor-pointer group relative"
+            onClick={handleProgressClick}
+            onMouseDown={() => setIsDragging(true)}
+          >
+            {segmentPositions.map((pos, i) => (
+              <div
+                key={i}
+                className="absolute top-0 bottom-0 w-0.5 bg-slate-500/60 z-10"
+                style={{ left: `${pos}%` }}
+              />
+            ))}
+            <div
+              className="h-full bg-purple-500 rounded-full relative transition-all group-hover:bg-purple-400"
+              style={{ width: `${progress}%` }}
+            >
+              <div className="absolute right-0 top-1/2 -translate-y-1/2 w-4 h-4 bg-white rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity -mr-2" />
+            </div>
+          </div>
+          <div className="flex mt-1 text-[10px] text-white/40 h-4 overflow-hidden">
+            {storyboards.map((sb, i) => {
+              const duration = getClipDuration(sb);
+              const widthPercent = totalDuration > 0 ? (duration / totalDuration) * 100 : 0;
+              return (
+                <div
+                  key={sb.id}
+                  className={`flex-shrink-0 text-center truncate cursor-pointer hover:text-white/60 transition-colors ${
+                    i === currentIndex ? 'text-purple-400' : ''
+                  }`}
+                  style={{ width: `${widthPercent}%` }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    goToIndex(i);
+                  }}
+                  title={`#${i + 1}`}
+                >
+                  {widthPercent > 3 ? i + 1 : ''}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+        {/* 控制栏 */}
+        <div className="flex items-center justify-between px-4 py-2 bg-black/50 flex-shrink-0">
+          <div className="flex items-center gap-1">
+            <Button
+              isIconOnly
+              size="sm"
+              variant="light"
+              className="text-white/70 hover:text-white"
+              onPress={goToPrev}
+              isDisabled={currentIndex === 0}
+              aria-label="上一个分镜"
+            >
+              <SkipBack className="w-4 h-4" />
+            </Button>
+            <Button
+              isIconOnly
+              size="sm"
+              variant="light"
+              className="text-white hover:text-purple-400"
+              onPress={togglePlay}
+              aria-label={isPlaying ? '暂停' : '播放'}
+            >
+              {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
+            </Button>
+            <Button
+              isIconOnly
+              size="sm"
+              variant="light"
+              className="text-white/70 hover:text-white"
+              onPress={goToNext}
+              isDisabled={currentIndex >= storyboards.length - 1}
+              aria-label="下一个分镜"
+            >
+              <SkipForward className="w-4 h-4" />
+            </Button>
+          </div>
+          <span className="text-xs text-white/60 font-mono">
+            {formatTime(globalTime)} / {formatTime(totalDuration)}
+          </span>
+          <div className="flex items-center gap-1">
+            <Dropdown>
+              <DropdownTrigger>
+                <Button
+                  size="sm"
+                  variant="light"
+                  className="text-white/70 hover:text-white min-w-[60px]"
+                >
+                  {playbackSpeed}x
+                </Button>
+              </DropdownTrigger>
+              <DropdownMenu
+                aria-label="播放速度"
+                selectedKeys={[String(playbackSpeed)]}
+                onAction={(key) => setPlaybackSpeed(Number(key))}
+              >
+                {SPEED_OPTIONS.map(opt => (
+                  <DropdownItem key={String(opt.value)}>
+                    {opt.label}
+                  </DropdownItem>
+                ))}
+              </DropdownMenu>
+            </Dropdown>
+            <Button
+              isIconOnly
+              size="sm"
+              variant="light"
+              className="text-white/70 hover:text-white"
+              onPress={toggleMute}
+              aria-label={isMuted ? '取消静音' : '静音'}
+            >
+              {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+            </Button>
+            <Button
+              isIconOnly
+              size="sm"
+              variant="light"
+              className="text-white/70 hover:text-white"
+              onPress={() => setShowInfo(!showInfo)}
+              aria-label={showInfo ? '隐藏信息' : '显示信息'}
+            >
+              {showInfo ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
+            </Button>
+          </div>
+        </div>
+        {/* 信息栏 */}
+        <AnimatePresence>
+          {showInfo && currentStoryboard && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="bg-black/50 border-t border-white/10 overflow-hidden flex-shrink-0"
+            >
+              <div className="px-4 py-3 space-y-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Chip size="sm" variant="flat" className="bg-purple-500/20 text-purple-300">
+                    #{currentIndex + 1}
+                  </Chip>
+                  {currentStoryboard.shotType && (
+                    <Chip size="sm" variant="flat" className="bg-blue-500/20 text-blue-300">
+                      {currentStoryboard.shotType}
+                    </Chip>
+                  )}
+                  {currentStoryboard.shotLanguage && (
+                    <>
+                      {currentStoryboard.shotLanguage.shotSize && (
+                        <Chip size="sm" variant="flat" className="bg-slate-500/20 text-slate-300">
+                          {currentStoryboard.shotLanguage.shotSize}
+                        </Chip>
+                      )}
+                      {currentStoryboard.shotLanguage.cameraHeight && (
+                        <Chip size="sm" variant="flat" className="bg-slate-500/20 text-slate-300">
+                          {currentStoryboard.shotLanguage.cameraHeight}
+                        </Chip>
+                      )}
+                      {currentStoryboard.shotLanguage.cameraMovement && (
+                        <Chip size="sm" variant="flat" className="bg-slate-500/20 text-slate-300">
+                          {currentStoryboard.shotLanguage.cameraMovement}
+                        </Chip>
+                      )}
+                    </>
+                  )}
+                  {currentStoryboard.linkedCharacters && currentStoryboard.linkedCharacters.length > 0 && (
+                    <span className="text-white/50 text-xs">
+                      角色：
+                      {currentStoryboard.linkedCharacters.map((char, i) => {
+                        const hasBase = char.has_base_model;
+                        const stateLabel = char.active_state_name;
+                        const chipImage = char.active_state_image_url || char.base_front_view_url || char.image_url;
+                        return (
+                          <Chip
+                            key={char.character_id}
+                            size="sm"
+                            variant="flat"
+                            className="bg-green-500/20 text-green-300 ml-1"
+                            startContent={
+                              chipImage ? (
+                                <img src={chipImage} alt={char.name} className="w-4 h-4 rounded-full object-cover" />
+                              ) : undefined
+                            }
+                          >
+                            <span className="flex items-center gap-1">
+                              {char.name}
+                              {hasBase && <Star className="w-2.5 h-2.5 text-amber-400" />}
+                              {stateLabel && (
+                                <span className="inline-flex items-center gap-0.5 text-[9px] text-pink-400/80">
+                                  <Shirt className="w-2 h-2" />
+                                  {stateLabel}
+                                </span>
+                              )}
+                            </span>
+                          </Chip>
+                        );
+                      })}
+                    </span>
+                  )}
+                  {currentStoryboard.linkedScenes && currentStoryboard.linkedScenes.length > 0 && (
+                    <span className="text-white/50 text-xs">
+                      场景：
+                      {currentStoryboard.linkedScenes.map((scene) => (
+                        <Chip key={scene.scene_id} size="sm" variant="flat" className="bg-orange-500/20 text-orange-300 ml-1">
+                          {scene.name}
+                        </Chip>
+                      ))}
+                    </span>
+                  )}
+                </div>
+                {currentStoryboard.description && (
+                  <p className="text-sm text-white/70 line-clamp-2">
+                    {currentStoryboard.description}
+                  </p>
+                )}
+                {currentStoryboard.dialogue && (
+                  <p className="text-sm text-white/50 italic line-clamp-1">
+                    "{currentStoryboard.dialogue}"
+                  </p>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    );
+  }
+
+  // 弹窗全屏模式
   return (
     <div
       ref={containerRef}

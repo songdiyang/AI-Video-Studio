@@ -374,8 +374,17 @@ const PanelGroup: React.FC<PanelGroupProps> = ({
     if (panelCount === 0) return;
 
     // 尝试从存储加载
-    const storedStates = loadFromStorage();
-    
+    let storedStates = loadFromStorage();
+
+    // 面板数量变化时丢弃过期存储，防止状态错乱（如 AI 面板切换导致索引错位）
+    if (storedStates && storedStates.size !== panelCount) {
+      const key = getStorageKey();
+      if (key) {
+        try { localStorage.removeItem(key); } catch {}
+      }
+      storedStates = null;
+    }
+
     const initialStates = new Map<number, PanelState>();
     let totalDefaultSize = 0;
     
@@ -444,13 +453,20 @@ const PanelGroup: React.FC<PanelGroupProps> = ({
     document.body.style.userSelect = 'none';
     document.body.style.cursor = isHorizontal ? 'col-resize' : 'row-resize';
     
-    // 计算容器的可用空间（减去分割条）
+    // 计算容器的可用空间（减去分割条和折叠面板的像素宽度）
     const dividerSize = 11;
     const panelCount = panelStates.size;
     const totalDividerSize = (panelCount - 1) * dividerSize;
+    let collapsedPanelsWidth = 0;
+    panelStates.forEach((state, idx) => {
+      if (state.collapsed) {
+        const info = panelInfosRef.current.get(idx);
+        collapsedPanelsWidth += info?.collapsedSize ?? 32;
+      }
+    });
     const containerSize = isHorizontal 
-      ? containerRect.width - totalDividerSize
-      : containerRect.height - totalDividerSize;
+      ? containerRect.width - totalDividerSize - collapsedPanelsWidth
+      : containerRect.height - totalDividerSize - collapsedPanelsWidth;
     
     const handleMouseMove = (e: MouseEvent) => {
       if (!dragStateRef.current.isDragging) return;
@@ -691,8 +707,9 @@ const PanelGroup: React.FC<PanelGroupProps> = ({
       document.body.style.userSelect = '';
       document.body.style.cursor = '';
 
-      // 纯点击（未拖动）：什么都不做，保持折叠
+      // 纯点击（未拖动）：直接展开面板，符合用户直觉
       if (!hasMoved) {
+        setPanelCollapsed(index, false);
         document.removeEventListener('mousemove', handleMove);
         document.removeEventListener('mouseup', handleUp);
         return;
@@ -860,10 +877,14 @@ const PanelGroup: React.FC<PanelGroupProps> = ({
       return result;
     }
     
-    // 标准模式：三栏布局
+    // 标准模式
+    // 面板数量切换时（如 AI 面板开关），存储尺寸与新面板数不匹配，
+    // 需忽略存储尺寸全部回退到默认值，避免尺寸溢出导致左侧边栏被挤压
+    const storedStatesMatch = panelStates.size === childrenArray.length;
+
     childrenArray.forEach((child, index) => {
       if (isValidElement(child)) {
-        const state = panelStates.get(index);
+        const state = storedStatesMatch ? panelStates.get(index) : undefined;
         const info = panelInfosRef.current.get(index);
         
         // 克隆面板并注入内部属性
@@ -912,7 +933,7 @@ const PanelGroup: React.FC<PanelGroupProps> = ({
       <div
         ref={containerRef}
         className={`
-          flex w-full h-full
+          flex w-full h-full min-w-0 min-h-0
           ${isMobile ? 'flex-col' : isHorizontal ? 'flex-row' : 'flex-col'}
           ${className}
         `}
@@ -929,3 +950,10 @@ const PanelGroup: React.FC<PanelGroupProps> = ({
 
 export { PanelGroup, PanelGroupContext };
 export type { PanelGroupContextType };
+
+// Hook for consuming panel group context
+export function usePanelGroup() {
+  const ctx = useContext(PanelGroupContext);
+  if (!ctx) throw new Error('usePanelGroup must be used within a PanelGroup');
+  return ctx;
+}

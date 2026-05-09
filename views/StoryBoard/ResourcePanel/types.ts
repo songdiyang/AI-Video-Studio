@@ -88,7 +88,7 @@ export interface ResourcePanelProps {
   models?: { name: string; type: string; supportedAspectRatios?: unknown }[];
 }
 
-export type TabType = 'characters' | 'locations' | 'props';
+export type TabType = 'characters' | 'locations' | 'props' | 'environments' | 'buildings' | 'costumes';
 
 // 角色树形节点类型（用于树形视图组件）
 export interface CharacterTreeNode {

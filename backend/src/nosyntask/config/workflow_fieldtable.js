@@ -51,6 +51,12 @@ module.exports = {
     description: '音频生成模型名称（配音、音效等，预留）',
     category: 'model'
   },
+  multimodalModel: {
+    from: 'multimodalModel',
+    defaultValue: null,
+    description: '多模态模型名称（支持图片识别的视觉模型，用于图片提示词优化等）',
+    category: 'model'
+  },
 
   // ================================================================
   //  智能路由配置

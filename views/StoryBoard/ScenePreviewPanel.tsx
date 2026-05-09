@@ -16,7 +16,7 @@ import { bustCache } from '../../services/mediaCache';
 import { startWorkflow, getWorkflowStatus } from '../../hooks/useWorkflow';
 import StoryboardLockButton from './components/StoryboardLockButton';
 import VideoHistorySidebar from './components/VideoHistorySidebar';
-import { ShotSizeSelector, ShotSizeBadge } from './components/ShotSizeSelector';
+
 
 /** 角色选择器：Chip 标签 + 添加下拉 + 点击预览角色长相（增强：显示白膜/服装状态） */
 const CharacterTagSelector: React.FC<{
@@ -852,6 +852,8 @@ interface ScenePreviewPanelProps {
   onImageModelChange?: (model: string) => void;
   /** 视频模型切换回调 */
   onVideoModelChange?: (model: string) => void;
+  /** 隐藏导演空间（用于在BottomPanel中独立显示） */
+  hideDirectorSpace?: boolean;
 }
 
 const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
@@ -887,15 +889,13 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
   imageModel: propImageModel,
   videoModel: propVideoModel,
   onImageModelChange,
-  onVideoModelChange
+  onVideoModelChange,
+  hideDirectorSpace = false
 }) => {
   const [showStartFrame, setShowStartFrame] = useState(true);
-  const [internalDirectorSpaceExpanded, setInternalDirectorSpaceExpanded] = useState(false);
   const [promptMode, setPromptMode] = useState<'description' | 'image' | 'video'>('description');
   // 图片提示词模式下的首/尾帧子标签（两个独立编辑区）
   const [imageFrameTab, setImageFrameTab] = useState<'first' | 'last'>('first');
-  // 优先使用外部控制，否则使用内部状态
-  const isDirectorSpaceExpanded = directorSpaceOpen !== undefined ? directorSpaceOpen : internalDirectorSpaceExpanded;
   const [showHistory, setShowHistory] = useState(false);
   const [showVideoHistory, setShowVideoHistory] = useState(false);
   const [showMagicSpace, setShowMagicSpace] = useState(false);
@@ -1663,7 +1663,7 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
       )}
 
       {/* 信息和操作区域 */}
-      <div className="flex-shrink-0 border-t border-[var(--border-color)] bg-[var(--bg-card)]">
+      <div className="flex-shrink-0 bg-[var(--bg-card)]">
         {/* 元数据 */}
         <div className="px-4 py-3 border-b border-[var(--border-color)]">
           <div className="flex items-center justify-between mb-2">
@@ -1681,20 +1681,6 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                   }
                 }}
               />
-              {/* 可编辑的景别选择器 */}
-              {onUpdateScene && (
-                <ShotSizeSelector
-                  value={scene.shotType}
-                  onChange={(newValue) => {
-                    onUpdateScene({ shotType: newValue });
-                  }}
-                  compact={false}
-                />
-              )}
-              {/* 只读模式：显示中文景别标签 */}
-              {!onUpdateScene && (
-                <ShotSizeBadge value={scene.shotType} />
-              )}
               {scene.hasAction && (
                 <Chip size="sm" variant="flat" className="bg-amber-500/20 text-amber-400 text-xs">
                   <Zap className="w-3 h-3 mr-1" />
@@ -1745,12 +1731,12 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
           </div>
         </div>
 
-        {/* 导演空间 - 可折叠 */}
-        <div className="border-t border-[var(--border-color)]">
-          {/* 标题栏 - 无外部控制时可点击折叠 */}
+        {/* 导演空间 - 当 hideDirectorSpace=true 时完全隐藏（由 BottomPanel 独立显示） */}
+        {!hideDirectorSpace && (
+        <div className="border-t border-[var(--border-color)] flex flex-col flex-1 min-h-0">
+          {/* 标题栏 */}
           <div
-            onClick={() => directorSpaceOpen === undefined && setInternalDirectorSpaceExpanded(!internalDirectorSpaceExpanded)}
-            className={`w-full px-4 py-3 flex items-center justify-between transition-colors ${directorSpaceOpen === undefined ? 'hover:bg-[var(--bg-card-hover)] cursor-pointer' : ''}`}
+            className="w-full px-4 py-3 flex items-center justify-between transition-colors"
           >
             <div className="flex items-center gap-2">
               <Blocks className="w-4 h-4 text-[var(--accent)]" />
@@ -1767,207 +1753,162 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                   图片阶段
                 </span>
               )}
-              {/* 提示词模式切换（展开时显示） */}
-              {isDirectorSpaceExpanded && (
-                <div className="flex items-center gap-1 ml-2">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setPromptMode('description');
-                    }}
-                    className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${
-                      promptMode === 'description'
-                        ? 'bg-emerald-500/20 text-emerald-400'
-                        : 'bg-[var(--bg-input)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
-                    }`}
-                  >
-                    分镜描述
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setPromptMode('image');
-                    }}
-                    className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${
-                      promptMode === 'image'
-                        ? 'bg-blue-500/20 text-blue-400'
-                        : 'bg-[var(--bg-input)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
-                    }`}
-                  >
-                    图片提示词
-                  </button>
-                  {promptMode === 'image' && (
-                    <div className="flex items-center gap-0.5 ml-1 p-0.5 bg-[var(--bg-input)] rounded">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setImageFrameTab('first');
-                        }}
-                        className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${
-                          imageFrameTab === 'first'
-                            ? 'bg-blue-500/30 text-blue-300'
-                            : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
-                        }`}
-                      >
-                        首帧
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setImageFrameTab('last');
-                        }}
-                        className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${
-                          imageFrameTab === 'last'
-                            ? 'bg-blue-500/30 text-blue-300'
-                            : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
-                        }`}
-                      >
-                        尾帧
-                      </button>
-                    </div>
-                  )}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setPromptMode('video');
-                    }}
-                    className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${
-                      promptMode === 'video'
-                        ? 'bg-rose-500/20 text-rose-400'
-                        : 'bg-[var(--bg-input)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
-                    }`}
-                  >
-                    视频提示词
-                  </button>
-                </div>
-              )}
-            </div>
-            <div className="flex items-center gap-2">
-              {!isDirectorSpaceExpanded && (
-                <span className="text-xs text-[var(--text-muted)] truncate max-w-[200px]">
-                  {promptMode === 'video'
-                    ? (scene.videoPrompt ? scene.videoPrompt.slice(0, 30) + (scene.videoPrompt.length > 30 ? '...' : '') : '无视频提示词')
-                    : promptMode === 'image'
-                    ? (() => {
-                        const framePrompt = imageFrameTab === 'first'
-                          ? (scene.firstFramePrompt || scene.description || '')
-                          : (scene.lastFramePrompt || scene.description || '');
-                        const label = imageFrameTab === 'first' ? '首帧' : '尾帧';
-                        return framePrompt
-                          ? `[${label}] ${framePrompt.slice(0, 26)}${framePrompt.length > 26 ? '...' : ''}`
-                          : `无${label}提示词`;
-                      })()
-                    : (scene.baseDescription ? scene.baseDescription.slice(0, 30) + (scene.baseDescription.length > 30 ? '...' : '') : '无分镜描述')
-                  }
-                </span>
-              )}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (onDirectorSpaceToggle) {
-                    onDirectorSpaceToggle();
-                  } else {
-                    setInternalDirectorSpaceExpanded(!internalDirectorSpaceExpanded);
-                  }
-                }}
-                className="p-0.5 rounded hover:bg-[var(--bg-card-hover)] transition-colors"
-                title={isDirectorSpaceExpanded ? '关闭导演空间' : '打开导演空间'}
-              >
-                {isDirectorSpaceExpanded ? (
-                  <ChevronDown className="w-4 h-4 text-[var(--text-muted)]" />
-                ) : (
-                  <ChevronUp className="w-4 h-4 text-[var(--text-muted)]" />
+              {/* 提示词模式切换 */}
+              <div className="flex items-center gap-1 ml-2">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setPromptMode('description');
+                  }}
+                  className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${
+                    promptMode === 'description'
+                      ? 'bg-emerald-500/20 text-emerald-400'
+                      : 'bg-[var(--bg-input)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+                  }`}
+                >
+                  分镜描述
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setPromptMode('image');
+                  }}
+                  className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${
+                    promptMode === 'image'
+                      ? 'bg-blue-500/20 text-blue-400'
+                      : 'bg-[var(--bg-input)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+                  }`}
+                >
+                  图片提示词
+                </button>
+                {promptMode === 'image' && (
+                  <div className="flex items-center gap-0.5 ml-1 p-0.5 bg-[var(--bg-input)] rounded">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setImageFrameTab('first');
+                      }}
+                      className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${
+                        imageFrameTab === 'first'
+                          ? 'bg-blue-500/30 text-blue-300'
+                          : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+                      }`}
+                    >
+                      首帧
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setImageFrameTab('last');
+                      }}
+                      className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${
+                        imageFrameTab === 'last'
+                          ? 'bg-blue-500/30 text-blue-300'
+                          : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+                      }`}
+                    >
+                      尾帧
+                    </button>
+                  </div>
                 )}
-              </button>
-            </div>
-          </div>
-
-          {/* 可折叠内容区 */}
-          <div
-            className={`overflow-hidden transition-all duration-300 ease-in-out ${
-              isDirectorSpaceExpanded ? 'max-h-[660px] opacity-100' : 'max-h-0 opacity-0'
-            }`}
-          >
-            <div className="px-4 pb-3">
-              <div className="h-[580px]">
-                {promptMode === 'description' ? (
-                  <DescriptionEditor
-                    scene={scene}
-                    projectId={projectId}
-                    onUpdateBaseDescription={onUpdateBaseDescription}
-                  />
-                ) : (
-                  <BlockEditor
-                    key={`${scene.id}-${promptMode}-${promptMode === 'image' ? imageFrameTab : ''}`}
-                    storyboardId={scene.id}
-                    projectId={projectId || undefined}
-                    scriptId={scriptId || undefined}
-                    promptMode={promptMode}
-                    basePrompt={scene.baseDescription || ''}
-                    initialBlocks={(() => {
-                      const text = promptMode === 'video'
-                        ? scene.videoPrompt
-                        : promptMode === 'image'
-                          ? (imageFrameTab === 'first'
-                              ? (scene.firstFramePrompt || scene.description)
-                              : (scene.lastFramePrompt || scene.description))
-                          : scene.description;
-                      return text
-                        ? [{ id: 'init-text', type: 'text' as const, category: 'text' as const, data: { text }, position: { x: 0, y: 0 } }]
-                        : [];
-                    })()}
-                    availableFrames={{
-                      startFrame: scene.startFrame,
-                      endFrame: scene.endFrame
-                    }}
-                    dialogue={scene.dialogue}
-                    dialogues={scene.dialogues}
-                    characters={scene.characters}
-                    onUpdateDialogues={onUpdateDialogues}
-                    voiceover={scene.voiceover}
-                    onUpdateVoiceover={onUpdateVoiceover}
-                    negativePrompt={scene.negativePrompt}
-                    onUpdateNegativePrompt={async (negativePrompt: string) => {
-                      const token = getAuthToken();
-                      const res = await fetch(`/api/storyboards/${scene.id}/content`, {
-                        method: 'PATCH',
-                        headers: {
-                          'Content-Type': 'application/json',
-                          ...(token ? { Authorization: `Bearer ${token}` } : {})
-                        },
-                        body: JSON.stringify({ negative_prompt: negativePrompt })
-                      });
-                      if (!res.ok) throw new Error('保存反向提示词失败');
-                      return true;
-                    }}
-                    onChange={(state: BlockEditorState) => {
-                      // 同步编辑器当前文本到组件状态
-                      if (state.generatedPrompt !== undefined) {
-                        setCurrentEditorText(state.generatedPrompt);
-                      }
-                    }}
-                    onSave={async (state: BlockEditorState) => {
-                      if (promptMode === 'video' && onUpdateVideoPrompt) {
-                        const success = await onUpdateVideoPrompt(state.generatedPrompt);
-                        return success;
-                      }
-                      if (promptMode === 'image') {
-                        if (imageFrameTab === 'first' && onUpdateFirstFramePrompt) {
-                          return await onUpdateFirstFramePrompt(state.generatedPrompt);
-                        }
-                        if (imageFrameTab === 'last' && onUpdateLastFramePrompt) {
-                          return await onUpdateLastFramePrompt(state.generatedPrompt);
-                        }
-                      }
-                      const success = await onUpdateDescription(state.generatedPrompt);
-                      return success;
-                    }}
-                  />
-                )}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setPromptMode('video');
+                  }}
+                  className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${
+                    promptMode === 'video'
+                      ? 'bg-rose-500/20 text-rose-400'
+                      : 'bg-[var(--bg-input)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+                  }`}
+                >
+                  视频提示词
+                </button>
               </div>
             </div>
           </div>
+
+          {/* 内容区 - 始终展开 */}
+          <div className="overflow-hidden px-4 pb-3 flex-1 min-h-0">
+            <div className="h-full">
+              {promptMode === 'description' ? (
+                <DescriptionEditor
+                  scene={scene}
+                  projectId={projectId}
+                  onUpdateBaseDescription={onUpdateBaseDescription}
+                />
+              ) : (
+                <BlockEditor
+                  key={`${scene.id}-${promptMode}-${promptMode === 'image' ? imageFrameTab : ''}`}
+                  storyboardId={scene.id}
+                  projectId={projectId || undefined}
+                  scriptId={scriptId || undefined}
+                  promptMode={promptMode}
+                  basePrompt={scene.baseDescription || ''}
+                  initialBlocks={(() => {
+                    const text = promptMode === 'video'
+                      ? scene.videoPrompt
+                      : promptMode === 'image'
+                        ? (imageFrameTab === 'first'
+                            ? (scene.firstFramePrompt || scene.description)
+                            : (scene.lastFramePrompt || scene.description))
+                        : scene.description;
+                    return text
+                      ? [{ id: 'init-text', type: 'text' as const, category: 'text' as const, data: { text }, position: { x: 0, y: 0 } }]
+                      : [];
+                  })()}
+                  availableFrames={{
+                    startFrame: scene.startFrame,
+                    endFrame: scene.endFrame
+                  }}
+                  dialogue={scene.dialogue}
+                  dialogues={scene.dialogues}
+                  characters={scene.characters}
+                  onUpdateDialogues={onUpdateDialogues}
+                  voiceover={scene.voiceover}
+                  onUpdateVoiceover={onUpdateVoiceover}
+                  negativePrompt={scene.negativePrompt}
+                  onUpdateNegativePrompt={async (negativePrompt: string) => {
+                    const token = getAuthToken();
+                    const res = await fetch(`/api/storyboards/${scene.id}/content`, {
+                      method: 'PATCH',
+                      headers: {
+                        'Content-Type': 'application/json',
+                        ...(token ? { Authorization: `Bearer ${token}` } : {})
+                      },
+                      body: JSON.stringify({ negative_prompt: negativePrompt })
+                    });
+                    if (!res.ok) throw new Error('保存反向提示词失败');
+                    return true;
+                  }}
+                  onChange={(state: BlockEditorState) => {
+                    // 同步编辑器当前文本到组件状态
+                    if (state.generatedPrompt !== undefined) {
+                      setCurrentEditorText(state.generatedPrompt);
+                    }
+                  }}
+                  onSave={async (state: BlockEditorState) => {
+                    if (promptMode === 'video' && onUpdateVideoPrompt) {
+                      const success = await onUpdateVideoPrompt(state.generatedPrompt);
+                      return success;
+                    }
+                    if (promptMode === 'image') {
+                      if (imageFrameTab === 'first' && onUpdateFirstFramePrompt) {
+                        return await onUpdateFirstFramePrompt(state.generatedPrompt);
+                      }
+                      if (imageFrameTab === 'last' && onUpdateLastFramePrompt) {
+                        return await onUpdateLastFramePrompt(state.generatedPrompt);
+                      }
+                    }
+                    const success = await onUpdateDescription(state.generatedPrompt);
+                    return success;
+                  }}
+                />
+              )}
+            </div>
+          </div>
         </div>
+        )}
 
         {/* 草图面板 - 已隐藏 */}
         {/*
@@ -1989,48 +1930,9 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
         */}
 
         {/* 生成操作 */}
-        <div className="px-4 py-3 border-t border-[var(--border-color)] flex items-center gap-2 flex-wrap">
-          {/* 图片生成 + 模型选择 */}
-          <div className="flex items-center gap-1.5">
-            <Button
-              size="sm"
-              className={hasFrames 
-                ? "bg-[var(--bg-app)] text-[var(--text-secondary)] border border-[var(--border-color)]"
-                : "pro-btn-primary"
-              }
-              startContent={<ImageIcon className="w-4 h-4" />}
-              onPress={handleGenerateImage}
-              isLoading={isGeneratingImage}
-              isDisabled={isGeneratingImage || isGeneratingVideo}
-            >
-              {hasFrames ? '重新生成帧' : '生成首尾帧'}
-            </Button>
-            {imageModels.length > 0 && onImageModelChange && (
-              <Select
-                size="sm"
-                selectedKeys={propImageModel ? [propImageModel] : []}
-                onChange={(e) => onImageModelChange(e.target.value)}
-                classNames={{
-                  trigger: "h-8 min-w-[140px] bg-[var(--bg-input)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:border-[var(--accent)]/50",
-                  value: "text-xs",
-                  selectorIcon: "text-[var(--text-muted)]"
-                }}
-                popoverProps={{
-                  classNames: { content: "bg-[var(--bg-elevated)] border border-[var(--border-color)]" }
-                }}
-                aria-label="图片模型"
-              >
-                {imageModels.map((m) => (
-                  <SelectItem key={m.name} textValue={m.name}>
-                    <span className="text-xs">{m.name}</span>
-                  </SelectItem>
-                ))}
-              </Select>
-            )}
-          </div>
-          
-          {/* 视频生成 + 模型选择 */}
-          {hasFrames && (
+        {hasFrames && (
+          <div className="px-4 py-3 border-t border-[var(--border-color)] flex items-center gap-2 flex-wrap">
+            {/* 视频生成 + 模型选择 */}
             <div className="flex items-center gap-1.5">
               <Button
                 size="sm"
@@ -2068,15 +1970,15 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                 </Select>
               )}
             </div>
-          )}
 
-          {/* 状态提示 */}
-          {(isGeneratingImage || isGeneratingVideo) && (
-            <span className="text-xs text-[var(--text-muted)] ml-auto">
-              {isGeneratingImage ? '正在生成图片...' : '正在生成视频...'}
-            </span>
-          )}
-        </div>
+            {/* 状态提示 */}
+            {(isGeneratingImage || isGeneratingVideo) && (
+              <span className="text-xs text-[var(--text-muted)] ml-auto">
+                {isGeneratingImage ? '正在生成图片...' : '正在生成视频...'}
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* 历史版本面板 */}

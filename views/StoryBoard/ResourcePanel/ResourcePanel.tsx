@@ -8,17 +8,22 @@ import TabButtons from './TabButtons';
 import CharactersTab from './CharactersTab';
 import LocationsTab from './LocationsTab';
 import PropsTab from './PropsTab';
+import EnvironmentsTab from './EnvironmentsTab';
+import BuildingsTab from './BuildingsTab';
+import CostumesTab from './CostumesTab';
 import CharacterViewsModal from './CharacterViewsModal';
-import CharacterDetailModal from './CharacterDetailModal';
-import CharacterLifecyclePanel from './CharacterLifecyclePanel';
-import SceneDetailModal from './SceneDetailModal';
-import SceneImageModal from './SceneImageModal';
 import CreateAssetModal, { CreateAssetType } from './CreateAssetModal';
 import { useResourceModals } from './useResourceModals';
 import { Character } from './types';
 import { getAuthToken } from '../../../services/auth';
 import { deleteCharacter, uploadCharacterImage, extractPropsFromScript } from '../../../services/assets';
 import { extractStudioComponentsFromScript, composeStudiosFromScript } from '../../../services/studios';
+import { listEnvironments } from '../../../services/environments';
+import { listBuildings } from '../../../services/buildings';
+import { fetchCostumes } from '../../../services/costumes';
+import type { Environment } from '../../../services/environments';
+import type { Building } from '../../../services/buildings';
+import type { Costume } from '../../../services/costumes';
 import { useToast } from '../../../contexts/ToastContext';
 import { useConfirm } from '../../../contexts/ConfirmContext';
 import { useWorkflowTargetMonitor } from '../hooks/useWorkflowTargetMonitor';
@@ -72,18 +77,16 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
   
   const { dbCharacters, isLoadingCharacters, loadCharacters } = useCharacterData(projectId, scriptId);
   const { dbScenes, isLoadingScenes, loadScenes } = useSceneData(projectId, scriptId);
+
+  // 环境、建筑和服装数据
+  const [dbEnvironments, setDbEnvironments] = useState<Environment[]>([]);
+  const [dbBuildings, setDbBuildings] = useState<Building[]>([]);
+  const [dbCostumes, setDbCostumes] = useState<Costume[]>([]);
+  const [isLoadingEnvironments, setIsLoadingEnvironments] = useState(false);
+  const [isLoadingBuildings, setIsLoadingBuildings] = useState(false);
+  const [isLoadingCostumes, setIsLoadingCostumes] = useState(false);
   
-  const [selectedCharacter, setSelectedCharacter] = useState<Character | null>(null);
-  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [viewsCharacterId, setViewsCharacterId] = useState<number | undefined>(undefined);
-  
-  // 生命周期管理面板状态
-  const [isLifecycleOpen, setIsLifecycleOpen] = useState(false);
-  const [lifecycleCharacter, setLifecycleCharacter] = useState<Character | null>(null);
-  
-  const [selectedScene, setSelectedScene] = useState<Scene | null>(null);
-  const [isSceneDetailModalOpen, setIsSceneDetailModalOpen] = useState(false);
-  const [isSceneImageModalOpen, setIsSceneImageModalOpen] = useState(false);
 
   // 两阶段 AI 工作流 loading 状态
   const [isExtractingComponents, setIsExtractingComponents] = useState(false);
@@ -112,25 +115,14 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
     }
   };
 
+  // 项目切换时加载环境、建筑和服装
   useEffect(() => {
-    setSelectedCharacter((prev) => {
-      if (!prev || !prev.id) {
-        return prev;
-      }
-
-      return dbCharacters.find((character) => character.id === prev.id) || prev;
-    });
-  }, [dbCharacters]);
-
-  useEffect(() => {
-    setSelectedScene((prev) => {
-      if (!prev || !prev.id) {
-        return prev;
-      }
-
-      return dbScenes.find((scene) => scene.id === prev.id) || prev;
-    });
-  }, [dbScenes]);
+    if (projectId) {
+      loadEnvironments();
+      loadBuildings();
+      loadCostumes();
+    }
+  }, [projectId]);
 
   const characterViewMonitor = useWorkflowTargetMonitor({
     projectId: projectId ?? null,
@@ -176,30 +168,62 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
   });
 
   const handleShowDetail = (character: Character) => {
-    setSelectedCharacter(character);
-    setIsDetailModalOpen(true);
+    // 在工作台打开角色编辑标签页
+    window.dispatchEvent(new CustomEvent('openAssetEditTab', {
+      detail: {
+        assetType: 'character',
+        assetId: character.id,
+        assetName: character.name,
+        initialData: character,
+      }
+    }));
   };
 
-  const closeDetailModal = () => {
-    setIsDetailModalOpen(false);
-    setSelectedCharacter(null);
-  };
 
-  // 打开生命周期管理面板
-  const handleOpenLifecycle = (character: Character) => {
-    setLifecycleCharacter(character);
-    setIsLifecycleOpen(true);
-  };
-
-  const closeLifecyclePanel = () => {
-    setIsLifecycleOpen(false);
-    // 不清除lifecycleCharacter，保持状态以支持动画过渡
-  };
 
   const handleGenerateViewsWrapper = (charName: string, characterId: number) => {
     setViewsCharacterId(characterId);
     // 传空字符串表示仅打开弹窗查看，不立即生成
     handleGenerateViews(charName, '', '', '', characterId);
+  };
+
+  const loadEnvironments = async () => {
+    if (!projectId) return;
+    setIsLoadingEnvironments(true);
+    try {
+      const data = await listEnvironments(projectId);
+      setDbEnvironments(data);
+    } catch (error) {
+      console.error('[ResourcePanel] 加载环境失败:', error);
+    } finally {
+      setIsLoadingEnvironments(false);
+    }
+  };
+
+  const loadBuildings = async () => {
+    if (!projectId) return;
+    setIsLoadingBuildings(true);
+    try {
+      const data = await listBuildings(projectId);
+      setDbBuildings(data);
+    } catch (error) {
+      console.error('[ResourcePanel] 加载建筑失败:', error);
+    } finally {
+      setIsLoadingBuildings(false);
+    }
+  };
+
+  const loadCostumes = async () => {
+    if (!projectId) return;
+    setIsLoadingCostumes(true);
+    try {
+      const data = await fetchCostumes(projectId);
+      setDbCostumes(data);
+    } catch (error) {
+      console.error('[ResourcePanel] 加载服装失败:', error);
+    } finally {
+      setIsLoadingCostumes(false);
+    }
   };
 
   const handleRefreshResources = async () => {
@@ -209,6 +233,9 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
     }
     await loadCharacters();
     await loadScenes();
+    await loadEnvironments();
+    await loadBuildings();
+    await loadCostumes();
   };
 
   // === 角色详情回调 ===
@@ -216,80 +243,58 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
     try {
       await deleteCharacter(characterId);
       showToast('角色已删除', 'success');
-      closeDetailModal();
       await loadCharacters();
     } catch (error: any) {
       showToast('删除失败: ' + error.message, 'error');
     }
   };
 
-  // 资源卡片上的快捷删除（带二次确认）
+  // 资源卡片上的右键删除（带二次确认）
+  // 删除角色时，同步从所有分镜中移除该角色的绑定
   const handleDeleteCharacterFromCard = async (character: Character) => {
     const ok = await confirm({
       title: '删除角色',
-      message: `确定要删除角色「${character.name}」吗？该操作将同步移除其白膜、服装、状态等衍生资源，且不可撤销。`,
+      message: `确定要删除角色「${character.name}」吗？该操作将同步移除其白膜、服装、状态等衍生资源，且不可撤销。已生成的图片/视频不受影响，但从所有分镜中移除该角色绑定。`,
       confirmText: '删除',
       cancelText: '取消',
       type: 'danger',
     });
     if (!ok) return;
     try {
+      // 1. 先找到所有绑定了该角色的分镜，移除绑定
+      const boundScenes = scenes?.filter(s => s.characters?.includes(character.name)) || [];
+      for (const scene of boundScenes) {
+        const newCharacters = scene.characters.filter(c => c !== character.name);
+        // 同时从 linkedCharacters 中移除
+        const newLinkedCharacters = scene.linkedCharacters?.filter(lc => lc.name !== character.name) || [];
+        // 更新分镜内容（保留 location 不变）
+        try {
+          const token = getAuthToken();
+          await fetch(`/api/storyboards/${scene.id}/content`, {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token ? { Authorization: `Bearer ${token}` } : {})
+            },
+            body: JSON.stringify({ characters: newCharacters })
+          });
+        } catch (err) {
+          console.error(`[ResourcePanel] 从分镜 ${scene.id} 移除角色绑定失败:`, err);
+        }
+      }
+
+      // 2. 触发事件通知节点画布移除该角色节点
+      window.dispatchEvent(new CustomEvent('resource:characterDeleted', {
+        detail: { characterId: character.id, characterName: character.name }
+      }));
+
+      // 3. 删除角色本身
       await deleteCharacter(character.id);
       showToast('角色已删除', 'success');
       await loadCharacters();
     } catch (error: any) {
       showToast('删除失败: ' + (error?.message || '未知错误'), 'error');
     }
-  };
-
-  const handleUploadCharacterImage = async (characterId: number, file: File) => {
-    try {
-      await uploadCharacterImage(characterId, file);
-      showToast('图片上传成功', 'success');
-      await loadCharacters();
-    } catch (error: any) {
-      showToast('上传失败: ' + error.message, 'error');
-      throw error;
-    }
-  };
-
-  const handleGenerateViewsFromDetail = (characterId: number) => {
-    const char = dbCharacters.find(c => c.id === characterId);
-    if (char) {
-      closeDetailModal();
-      handleGenerateViewsWrapper(char.name, characterId);
-    }
-  };
-
-  const handleShowSceneDetail = (sceneName: string) => {
-    const scene = dbScenes.find(s => s.name === sceneName);
-    if (scene) {
-      setSelectedScene(scene);
-      setIsSceneDetailModalOpen(true);
-    } else {
-      console.warn('[ResourcePanel] 未找到场景:', sceneName);
-    }
-  };
-
-  const closeSceneDetailModal = () => {
-    setIsSceneDetailModalOpen(false);
-    setSelectedScene(null);
-  };
-
-  const handleShowSceneImageModal = (sceneNameOrScene: string | Scene) => {
-    const scene = typeof sceneNameOrScene === 'string'
-      ? dbScenes.find(s => s.name === sceneNameOrScene)
-      : sceneNameOrScene;
-    if (scene) {
-      setSelectedScene(scene);
-      setIsSceneImageModalOpen(true);
-    } else {
-      console.warn('[ResourcePanel] 未找到场景:', sceneNameOrScene);
-    }
-  };
-
-  const closeSceneImageModal = () => {
-    setIsSceneImageModalOpen(false);
   };
 
   const handleGenerateSceneImage = async (sceneId: number, imageModelName: string, options?: { customPromptA?: string; customPromptB?: string }) => {
@@ -418,7 +423,6 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
             storyboardStates={storyboardStates}
             onGenerateViews={handleGenerateViewsWrapper}
             onShowDetail={handleShowDetail}
-            onOpenLifecycle={handleOpenLifecycle}
             onCreate={() => handleOpenCreate('character')}
             onDelete={handleDeleteCharacterFromCard}
             onStoryboardStateChange={onStoryboardStateChange}
@@ -446,6 +450,27 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
             onExtractFromScript={scriptId ? handleExtractPropsFromScript : undefined}
           />
         )}
+
+        {activeTab === 'environments' && (
+          <EnvironmentsTab
+            environments={dbEnvironments}
+            isLoading={isLoadingEnvironments}
+          />
+        )}
+
+        {activeTab === 'buildings' && (
+          <BuildingsTab
+            buildings={dbBuildings}
+            isLoading={isLoadingBuildings}
+          />
+        )}
+
+        {activeTab === 'costumes' && (
+          <CostumesTab
+            costumes={dbCostumes}
+            isLoading={isLoadingCostumes}
+          />
+        )}
       </div>
 
       {/* 弹窗 */}
@@ -464,46 +489,7 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
         referenceImageCount={referenceImageCount}
       />
 
-      <CharacterDetailModal
-        isOpen={isDetailModalOpen}
-        onClose={closeDetailModal}
-        character={selectedCharacter}
-        scenes={scenes}
-        onDelete={handleDeleteCharacter}
-        onUploadImage={handleUploadCharacterImage}
-        onGenerateViews={handleGenerateViewsFromDetail}
-        onCharacterUpdate={(updated) => {
-          setSelectedCharacter(updated);
-          loadCharacters();
-        }}
-      />
 
-      <SceneDetailModal
-        isOpen={isSceneDetailModalOpen}
-        onClose={closeSceneDetailModal}
-        scene={selectedScene}
-        onGenerateImage={handleGenerateSceneImage}
-        isGenerating={sceneImageMonitor.isTargetActive(selectedScene?.id)}
-        imageModel={effectiveImageModel}
-        textModel={textModel}
-      />
-
-      <SceneImageModal
-        isOpen={isSceneImageModalOpen}
-        onClose={closeSceneImageModal}
-        scene={selectedScene}
-        isGenerating={sceneImageMonitor.isTargetActive(selectedScene?.id)}
-        onGenerate={handleGenerateSceneImage}
-        imageModel={effectiveImageModel}
-      />
-
-      {/* 角色生命周期管理面板 */}
-      <CharacterLifecyclePanel
-        isOpen={isLifecycleOpen}
-        onClose={closeLifecyclePanel}
-        character={lifecycleCharacter}
-        onRefresh={loadCharacters}
-      />
 
       {/* 自由添加角色 / 场景 */}
       <CreateAssetModal

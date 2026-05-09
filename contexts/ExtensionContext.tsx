@@ -11,6 +11,7 @@ import {
   getExtensionPackage,
   ExtensionRegistryEntry,
   uninstallExtension as uninstallLocalExtension,
+  toggleExtensionEnabled,
 } from '../utils/extensionStorage';
 
 // ========== 扩展 API 接口 ==========
@@ -208,6 +209,22 @@ export const ExtensionProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const enabled = await getEnabledExtensions();
     const loaded: LocalLoadedExtension[] = [];
 
+    // 1. 先停用旧本地扩展（避免新扩展activate后被旧扩展deactivate覆盖）
+    for (const oldExt of localExtensionsRef.current) {
+      if (oldExt.deactivate) {
+        try {
+          const api = buildExtensionAPI(oldExt.name);
+          await oldExt.deactivate(api);
+        } catch (e) { console.error(`[Extension] Local deactivation error:`, e); }
+      }
+      // 清理 CSS
+      document.querySelectorAll(`style[data-extension="${oldExt.name}"]`).forEach(el => el.remove());
+      // 释放 Blob URL
+      if (oldExt.blobUrls) {
+        oldExt.blobUrls.forEach(url => URL.revokeObjectURL(url));
+      }
+    }
+
     for (const entry of enabled) {
       const pkg = await getExtensionPackage(entry.name);
       if (!pkg) continue;
@@ -261,24 +278,24 @@ export const ExtensionProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       loaded.push(ext);
     }
 
-    // 停用旧本地扩展
-    for (const oldExt of localExtensionsRef.current) {
-      if (oldExt.deactivate) {
-        try {
-          const api = buildExtensionAPI(oldExt.name);
-          await oldExt.deactivate(api);
-        } catch (e) { console.error(`[Extension] Local deactivation error:`, e); }
-      }
-      // 清理 CSS
-      document.querySelectorAll(`style[data-extension="${oldExt.name}"]`).forEach(el => el.remove());
-      // 释放 Blob URL
-      if (oldExt.blobUrls) {
-        oldExt.blobUrls.forEach(url => URL.revokeObjectURL(url));
-      }
-    }
-
     setLocalExtensions(loaded);
   }, [buildExtensionAPI]);
+
+  // 同步后端扩展启用状态到本地 IndexedDB
+  const syncBackendStateToLocal = useCallback(async (userExts: UserExtension[]) => {
+    const backendEnabledMap = new Map(userExts.map(ue => [ue.name, ue.is_enabled === 1]));
+    // 获取所有本地注册表条目
+    const { listRegistryEntries } = await import('../utils/extensionStorage');
+    const registryEntries = await listRegistryEntries();
+
+    for (const entry of registryEntries) {
+      const backendEnabled = backendEnabledMap.get(entry.name);
+      if (backendEnabled !== undefined && entry.enabled !== backendEnabled) {
+        console.log(`[Extension] Syncing ${entry.name}: local=${entry.enabled} -> backend=${backendEnabled}`);
+        await toggleExtensionEnabled(entry.name, backendEnabled);
+      }
+    }
+  }, []);
 
   // 加载并激活扩展（后端 + 本地）
   const loadExtensions = useCallback(async () => {
@@ -289,7 +306,26 @@ export const ExtensionProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const { extensions: userExts } = await getActiveExtensions();
       const loaded: LoadedExtension[] = [];
 
+      // 1.1 同步后端状态到本地 IndexedDB（以后端为准）
+      await syncBackendStateToLocal(userExts);
+
+      // 先停用旧扩展
+      for (const oldExt of extensionsRef.current) {
+        if (oldExt.deactivate) {
+          try {
+            const api = buildExtensionAPI(oldExt.name);
+            await oldExt.deactivate(api);
+          } catch (e) { console.error(`[Extension] Deactivation error:`, e); }
+        }
+      }
+
       for (const ue of userExts) {
+        // 如果有 package_url，说明应该走本地 ZIP 加载流程，跳过直接 import
+        if (ue.package_url) {
+          console.log(`[Extension] Skipping backend load for ${ue.name}, will load via local ZIP flow`);
+          continue;
+        }
+
         const ext: LoadedExtension = {
           id: ue.extension_id,
           name: ue.name,
@@ -321,19 +357,9 @@ export const ExtensionProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         loaded.push(ext);
       }
 
-      // 先停用旧扩展
-      for (const oldExt of extensionsRef.current) {
-        if (oldExt.deactivate) {
-          try {
-            const api = buildExtensionAPI(oldExt.name);
-            await oldExt.deactivate(api);
-          } catch (e) { console.error(`[Extension] Deactivation error:`, e); }
-        }
-      }
-
       setExtensions(loaded);
 
-      // 2. 加载本地 IndexedDB 扩展
+      // 2. 加载本地 IndexedDB 扩展（已同步状态）
       await loadLocalExtensions();
     } catch (err: any) {
       setError(err.message || '加载扩展失败');
@@ -341,7 +367,7 @@ export const ExtensionProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     } finally {
       setIsLoading(false);
     }
-  }, [buildExtensionAPI, loadLocalExtensions]);
+  }, [buildExtensionAPI, loadLocalExtensions, syncBackendStateToLocal]);
 
   // 内置扩展不再自动安装，用户需手动通过扩展市场上传安装
   const installBuiltinExtensions = useCallback(async () => {
@@ -414,7 +440,13 @@ export const ExtensionProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     // 先尝试安装内置扩展，然后加载所有扩展
     installBuiltinExtensions().then(() => loadExtensions());
     const interval = setInterval(loadExtensions, 60000);
-    return () => clearInterval(interval);
+    // 监听扩展刷新事件（如本地扩展启用/禁用后触发）
+    const handleRefresh = () => loadExtensions();
+    window.addEventListener('extensions:refresh', handleRefresh);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('extensions:refresh', handleRefresh);
+    };
   }, [loadExtensions, installBuiltinExtensions]);
 
   return (

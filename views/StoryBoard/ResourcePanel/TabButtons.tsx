@@ -10,7 +10,10 @@ const TabButtons: React.FC<TabButtonsProps> = ({ activeTab, onTabChange }) => {
   const tabs: { key: TabType; label: string }[] = [
     { key: 'characters', label: '角色' },
     { key: 'locations', label: '影棚' },
-    { key: 'props', label: '道具' }
+    { key: 'props', label: '道具' },
+    { key: 'environments', label: '环境' },
+    { key: 'buildings', label: '建筑' },
+    { key: 'costumes', label: '服装' }
   ];
 
   return (

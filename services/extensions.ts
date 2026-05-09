@@ -41,6 +41,7 @@ export interface Extension {
   rating: number;
   created_at: string;
   updated_at: string;
+  package_url?: string;
 }
 
 export interface ExtensionDetail extends Extension {
@@ -102,6 +103,7 @@ export interface UserExtension {
   category: string;
   icon_url: string;
   manifest: Record<string, any> | null;
+  package_url?: string;
   download_count?: number;
   rating?: number;
 }

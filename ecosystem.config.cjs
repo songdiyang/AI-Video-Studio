@@ -7,9 +7,7 @@ module.exports = {
       env: {
         NODE_ENV: 'production',
         PORT: 4000,
-        // 覆盖 .env 中的 Docker 内网地址，改为宿主机 localhost
-        MINIO_ENDPOINT: 'localhost',
-        MINIO_PORT: '9000',
+        // 服务地址配置（存储配置从 .env 读取，不再硬编码覆盖）
         CORE_SERVICE_URL: 'http://localhost:4102',
         NOTIFICATION_SERVICE_URL: 'http://localhost:4101',
         UPLOADS_BASE_DIR: '/var/www/nanostory/runtime/backend-data/uploads',

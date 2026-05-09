@@ -240,7 +240,13 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
           const loadedScenes = mapStoryboardItems(data);
           setScenes(loadedScenes);
           if (loadedScenes.length > 0) {
-            setSelectedScene(loadedScenes[0].id);
+            // 保持当前选中的分镜（若仍存在），否则回退到第一个
+            setSelectedScene((prev) => {
+              if (prev !== null && loadedScenes.some(s => s.id === prev)) {
+                return prev;
+              }
+              return loadedScenes[0].id;
+            });
           }
         } else {
           setScenes([]);
@@ -296,7 +302,13 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
           const loadedScenes = mapStoryboardItems(data);
           setScenes(loadedScenes);
           if (loadedScenes.length > 0) {
-            setSelectedScene(loadedScenes[0].id);
+            // 保持当前选中的分镜（若仍存在），否则回退到第一个
+            setSelectedScene((prev) => {
+              if (prev !== null && loadedScenes.some(s => s.id === prev)) {
+                return prev;
+              }
+              return loadedScenes[0].id;
+            });
           }
         } else {
           setScenes([]);

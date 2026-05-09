@@ -1,23 +1,23 @@
 /**
- * 单条分镜图片提示词优化处理器
- * 优化指定分镜的描述文字，专门针对静态图像生成模型（Stable Diffusion、DALL-E、Seedream等）
+ * 单条分镜图片提示词优化处理器（多模态视觉版）
+ * 基于角色图片和影棚图片，使用多模态大模型生成精准图片提示词
  *
  * 逻辑：
  * 1. 查询分镜及所属项目、剧本信息
- * 2. 获取上下文分镜、角色、场景信息
- * 3. 调用文本模型优化提示词（含反向提示词），针对静态图像特性
+ * 2. 获取角色白膜/服装视图 + 影棚九宫图作为视觉参考
+ * 3. 调用多模态模型识别图片内容，生成精准提示词（含反向提示词）
  * 4. 返回优化结果（不写回数据库，由前端保存）
  *
- * input:  { storyboardId, prompt, textModel }
+ * input:  { storyboardId, prompt, multimodalModel }
  * output: { optimized, negativePrompt, model, originalLength, optimizedLength }
  */
 
 const { queryOne, queryAll } = require('../../../dbHelper');
-const { callAIModel, getTextModels } = require('../../../aiModelService');
+const { callAIModel, getMultimodalModels } = require('../../../aiModelService');
 const { withAIBillingContext } = require('../../../aiBillingContext');
 
 async function handleSingleImagePromptOptimization(inputParams, onProgress) {
-  const { storyboardId, prompt, textModel: requestedModel } = inputParams;
+  const { storyboardId, prompt, multimodalModel: requestedModel } = inputParams;
 
   if (!storyboardId) throw new Error('缺少必要参数: storyboardId');
   if (!prompt || !prompt.trim()) throw new Error('输入内容不能为空');
@@ -86,12 +86,12 @@ async function handleSingleImagePromptOptimization(inputParams, onProgress) {
     storyboardContext += `  分镜 #${sb.idx + 1}: ${truncated}${marker}\n`;
   }
 
-  // 4. 确定使用的文本模型
+  // 4. 确定使用的多模态模型
   let modelName = requestedModel;
   if (!modelName) {
-    const textModels = await getTextModels();
-    if (textModels.length === 0) throw new Error('没有可用的文本模型');
-    modelName = textModels[0].name;
+    const multimodalModels = await getMultimodalModels();
+    if (multimodalModels.length === 0) throw new Error('没有可用的多模态模型');
+    modelName = multimodalModels[0].name;
   }
 
   if (onProgress) onProgress(25);
@@ -125,15 +125,19 @@ async function handleSingleImagePromptOptimization(inputParams, onProgress) {
                       visualStyle.toLowerCase().includes('cinematic') ||
                       visualStyle.toLowerCase().includes('photography');
 
-  // 7. 构建角色和场景上下文（使用白膜+服装分层 + 激活状态）
+  // 7. 构建角色和场景上下文 + 收集视觉参考图
   let characterContext = '';
+  const imageUrls = []; // 多模态视觉参考图URL列表
+
   if (currentCharacters.length > 0) {
     characterContext = `\n【当前分镜角色】${currentCharacters.join('、')}`;
     try {
       const charNames = currentCharacters.map(n => `'${n.replace(/'/g, "''")}'`).join(',');
       const charDetails = await queryAll(
         `SELECT c.name, c.appearance, c.base_appearance, c.outfit_appearance,
-                cs.name AS active_state_name, cs.outfit AS active_outfit, cs.hairstyle AS active_hairstyle, cs.accessories AS active_accessories, cs.age_stage AS active_age_stage
+                c.image_url, c.front_view_url,
+                cs.name AS active_state_name, cs.outfit AS active_outfit, cs.hairstyle AS active_hairstyle, cs.accessories AS active_accessories, cs.age_stage AS active_age_stage,
+                cs.front_view_url AS costume_front_view_url
          FROM characters c
          LEFT JOIN character_states cs ON cs.character_id = c.id AND cs.is_active = 1 AND cs.is_base_model = 0
          WHERE c.project_id = ? AND c.name IN (${charNames})`,
@@ -151,12 +155,42 @@ async function handleSingleImagePromptOptimization(inputParams, onProgress) {
           if (cd.active_age_stage) parts.push(`年龄: ${cd.active_age_stage}`);
           const fullAppearance = parts.length > 0 ? parts.join('；') : cd.appearance;
           characterContext += `\n  - ${cd.name}：${(fullAppearance || '未设置').slice(0, 300)}${cd.active_state_name ? `（状态: ${cd.active_state_name}）` : ''}`;
+
+          // 收集角色视觉参考图：优先服装状态正面图，其次角色正面图，最后角色image_url
+          const charImageUrl = cd.costume_front_view_url || cd.front_view_url || cd.image_url;
+          if (charImageUrl) {
+            imageUrls.push(charImageUrl);
+            characterContext += `\n    [角色参考图已提供：${cd.name}]`;
+          }
         }
       }
     } catch (e) { /* 忽略 */ }
   }
+
+  // 查询影棚九宫图作为场景视觉参考
   if (currentLocation) {
     characterContext += `\n【当前分镜场景】${currentLocation}`;
+    try {
+      const studioRow = await queryOne(
+        `SELECT st.nine_grid_image_url, st.environment_view,
+                e.image_url AS env_front_url, e.image_back_url AS env_back_url
+         FROM storyboard_scenes ssc
+         JOIN studios st ON ssc.studio_id = st.id
+         LEFT JOIN environments e ON st.environment_id = e.id
+         WHERE ssc.storyboard_id = ? AND st.name = ?`,
+        [storyboardId, currentLocation]
+      );
+      if (studioRow) {
+        const envUrl = studioRow.environment_view === 'back'
+          ? (studioRow.env_back_url || studioRow.env_front_url)
+          : (studioRow.env_front_url || studioRow.env_back_url);
+        const sceneImageUrl = studioRow.nine_grid_image_url || envUrl;
+        if (sceneImageUrl) {
+          imageUrls.push(sceneImageUrl);
+          characterContext += `\n    [场景参考图已提供：${currentLocation}]`;
+        }
+      }
+    } catch (e) { /* 忽略 */ }
   }
 
   if (onProgress) onProgress(35);
@@ -249,12 +283,19 @@ ${storyboardContext}${characterContext}${visualStyle ? `\n【视觉风格】${vi
 
 ${optimizationPrinciples}
 
+【视觉参考图说明】
+我已经为你提供了以下参考图片，请仔细查看每张图片的内容：
+• 角色参考图：展示了角色的真实外貌（体型、五官、发型、服装、配饰等），请基于图片中角色的实际形象来撰写提示词
+• 场景参考图：展示了影棚/场景的真实样貌（空间布局、建筑风格、环境氛围等），请基于图片中场景的实际样貌来撰写提示词
+• 你必须准确描述图片中看到的视觉元素，不能凭想象编造图片中没有的内容
+
 【输出要求 - 正向提示词】
+• 基于你看到的参考图片，准确描述角色的外貌特征和场景的视觉效果
 • 描述越详细画面效果越好，请充分发挥专业能力，用丰富的细节描述画面
 • 重点描述静态视觉元素：构图、光影、色彩、景深、材质质感、细节层次
 • 不要包含任何与运动、时间变化、帧率、运镜相关的描述（这些是视频专属）
-• 如果当前分镜指定了角色，确保角色名称和外貌特征准确融入描述中，不能遗漏任何角色
-• 如果当前分镜指定了场景，确保场景环境描述自然融入画面描述中
+• 如果当前分镜指定了角色，确保角色名称和外貌特征准确融入描述中，不能遗漏任何角色，且必须与参考图中的角色形象一致
+• 如果当前分镜指定了场景，确保场景环境描述自然融入画面描述中，且必须与参考图中的场景样貌一致
 • 描述要有画面感和电影感，让读者能清晰想象出画面
 
 【输出要求 - 反向提示词（Negative Prompt）】
@@ -274,19 +315,27 @@ ${optimizationPrinciples}
 
   if (onProgress) onProgress(50);
 
-  // 9. 调用 AI 模型
+  // 9. 调用多模态 AI 模型（带视觉参考图）
   // 注意：WorkflowExecutor 已经在外层设置了完整的 billing context（含 userId、projectId 等），
   // 此处只覆盖 resourceRefs 以追踪具体分镜，其余字段自动从外层继承。
+  const callParams = {
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: prompt }
+    ],
+    maxTokens: 4096,
+    temperature: 0.7
+  };
+
+  // 如果有视觉参考图，通过 imageUrls 传入多模态模型
+  if (imageUrls.length > 0) {
+    callParams.imageUrls = imageUrls;
+    console.log(`[SingleImagePromptOptimize] 多模态识图：传入 ${imageUrls.length} 张参考图`);
+  }
+
   const response = await withAIBillingContext(
     { resourceRefs: { storyboardId } },
-    () => callAIModel(modelName, {
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: prompt }
-      ],
-      maxTokens: 4096,
-      temperature: 0.7
-    })
+    () => callAIModel(modelName, callParams)
   );
 
   if (onProgress) onProgress(85);
@@ -324,7 +373,7 @@ ${optimizationPrinciples}
 
   if (onProgress) onProgress(100);
 
-  console.log(`[SingleImagePromptOptimize] storyboardId=${storyboardId}, model=${modelName}, context=${totalCount}scenes, input=${prompt.length}chars -> output=${optimized.length}chars, negative=${negativePrompt.length}chars`);
+  console.log(`[SingleImagePromptOptimize] storyboardId=${storyboardId}, model=${modelName}, images=${imageUrls.length}, context=${totalCount}scenes, input=${prompt.length}chars -> output=${optimized.length}chars, negative=${negativePrompt.length}chars`);
 
   return {
     optimized,

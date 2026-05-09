@@ -578,21 +578,45 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
     }
   };
 
-  // 确认生成图片
+  // 白膜直接生成（不弹窗）
+  const handleGenerateBaseModelDirectly = async () => {
+    if (!baseModelState || !selected.image) {
+      showToast('请选择图像生成模型', 'error');
+      return;
+    }
+
+    setGeneratingId(baseModelState.id);
+
+    try {
+      // 调用状态级别三视图生成API
+      const generateParams: any = {
+        imageModel: selected.image,
+        textModel: selected.text || undefined
+      };
+      await generateCharacterStateViews(characterId!, baseModelState.id, generateParams);
+
+      showToast('角色设定图生成任务已启动', 'success');
+      await loadStates();
+      pollGenerationStatus(baseModelState.id);
+    } catch (error: any) {
+      showToast(error.message || '生成失败', 'error');
+      setGeneratingId(null);
+    }
+  };
+
+  // 确认生成图片（非白膜状态仍使用弹窗）
   const confirmGenerate = async () => {
     if (!generatingState || !selected.image) {
       showToast('请选择图像生成模型', 'error');
       return;
     }
 
-    // 白膜生成无前置条件限制，有参考图就用、没有就纯描述生成
-
     setGeneratingId(generatingState.id);
     setIsGenerateModalOpen(false);
-    
+
     try {
-      // 白膜直接生成，非白膜先保存AI分析出的外貌属性
-      if (!generatingState.is_base_model && generatedTags) {
+      // 非白膜先保存AI分析出的外貌属性
+      if (generatedTags) {
         await updateCharacterState(characterId!, generatingState.id, {
           name: generatedTags.name || generatingState.name,
           age_stage: generatedTags.age_stage,
@@ -604,23 +628,12 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
         });
       }
 
-      // 调用状态级别三视图生成API（后端会自动组装外貌属性）
-      const generateParams: any = {
+      await generateCharacterStateViews(characterId!, generatingState.id, {
         imageModel: selected.image,
         textModel: selected.text || undefined
-      };
-      // 白膜状态：根据模式传递 generateMode
-      if (generatingState.is_base_model && baseModelGenerateMode === 'three_views') {
-        generateParams.generateMode = 'three_views';
-      }
-      await generateCharacterStateViews(characterId!, generatingState.id, generateParams);
-      
-      showToast(
-        generatingState.is_base_model && baseModelGenerateMode !== 'three_views'
-          ? '角色设定图生成任务已启动' 
-          : '三视图生成任务已启动',
-        'success'
-      );
+      });
+
+      showToast('三视图生成任务已启动', 'success');
       await loadStates();
       pollGenerationStatus(generatingState.id);
     } catch (error: any) {
@@ -1261,9 +1274,9 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
 
 
                 
-                {/* AI生成三视图按钮 */}
+                {/* AI生成角色设定图 - 内联模型选择+直接生成 */}
                 {!disabled && baseModelState.generation_status !== 'generating' && (
-                  <div className="space-y-2">
+                  <div className="space-y-3">
                     {/* 白膜无图时显示提示 */}
                     {!baseModelState.image_url && (
                       <div className="p-2.5 rounded-lg bg-amber-500/5 border border-amber-500/20">
@@ -1273,18 +1286,51 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                         </p>
                       </div>
                     )}
+
+                    {/* 模型选择 */}
+                    <div className="grid grid-cols-2 gap-2">
+                      <AIModelSelector
+                        label="文本分析模型"
+                        placeholder="选择文本模型"
+                        models={models}
+                        selectedModel={selected.text}
+                        onModelChange={(model) => setSelected('text', model)}
+                        filterType="TEXT"
+                        size="sm"
+                      />
+                      <AIModelSelector
+                        label="图像生成模型"
+                        placeholder="选择图像模型"
+                        models={models}
+                        selectedModel={selected.image}
+                        onModelChange={(model) => setSelected('image', model)}
+                        filterType="IMAGE"
+                        size="sm"
+                        isRequired
+                      />
+                    </div>
+
                     <Button
                       size="sm"
                       color="primary"
                       variant="flat"
                       className="w-full bg-linear-to-r from-amber-500/20 to-purple-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/30"
                       startContent={<RefreshCw className="w-4 h-4" />}
-                      onPress={() => { setBaseModelGenerateMode('design_sheet'); openGenerateModal(baseModelState); }}
+                      onPress={() => {
+                        if (!selected.image) {
+                          showToast('请先选择图像生成模型', 'error');
+                          return;
+                        }
+                        setBaseModelGenerateMode('design_sheet');
+                        setGeneratingState(baseModelState);
+                        // 直接调用生成，不弹窗
+                        handleGenerateBaseModelDirectly();
+                      }}
                       isLoading={generatingId === baseModelState.id}
+                      isDisabled={!selected.image}
                     >
                       {baseModelState.image_url ? '重新生成角色设定图' : 'AI生成角色设定图'}
                     </Button>
-
                   </div>
                 )}
                 
@@ -2302,7 +2348,7 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
         </ModalContent>
       </Modal>
 
-      {/* AI生成对话框 */}
+      {/* AI生成对话框（仅非白膜状态使用） */}
       <Modal
         isOpen={isGenerateModalOpen}
         onOpenChange={() => setIsGenerateModalOpen(false)}
@@ -2320,9 +2366,7 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
               <ModalHeader className="text-slate-100">
                 <div className="flex items-center gap-2">
                   <RefreshCw className="w-5 h-5 text-purple-400" />
-                  {generatingState?.is_base_model 
-                    ? (baseModelGenerateMode === 'three_views' ? 'AI生成白膜三视图' : 'AI生成角色设定图')
-                    : 'AI生成角色状态图片'}
+                  AI生成角色状态图片
                 </div>
               </ModalHeader>
               <ModalBody className="space-y-4">
@@ -2337,48 +2381,31 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                     <div>
                       <p className="text-sm font-medium text-slate-200">参考角色：{character.name}</p>
                       <p className="text-xs text-slate-500">
-                        {generatingState?.is_base_model 
-                          ? (baseModelGenerateMode === 'three_views' 
-                              ? '将基于角色设定图生成独立三视图（用于分镜管线）' 
-                              : '将基于角色基础外貌生成角色设定图（含正/侧/背三视角）')
-                          : '将基于此角色生成新的状态图片'}
+                        将基于此角色生成新的状态图片
                       </p>
                     </div>
                   </div>
                 )}
 
-                {/* 白膜模式：直接说明，无需状态描述 */}
-                {generatingState?.is_base_model && (
-                  <div className="p-3 bg-amber-500/10 rounded-lg border border-amber-500/30">
-                    <p className="text-sm text-amber-300 leading-relaxed">
-                      {baseModelGenerateMode === 'three_views' 
-                        ? '将基于已有角色设定图生成正面、侧面、背面独立三视图，用于分镜生成管线中按镜头角度选取参考图。'
-                        : '白膜是角色的基础形态参考。将生成包含正面、侧面、背面三视角的角色设定图，用于后续各状态图片生成的参考基准。'}
-                    </p>
-                  </div>
-                )}
-
                 {/* 非白膜：自然语言输入 */}
-                {!generatingState?.is_base_model && (
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium text-slate-300">
-                      描述这个角色状态
-                    </label>
-                    <Textarea
-                      placeholder="例如：这是角色童年时期的样子，穿着蓝色的学生制服，头发扎成双马尾，戴着一副圆框眼镜..."
-                      value={naturalLanguageInput}
-                      onValueChange={setNaturalLanguageInput}
-                      minRows={4}
-                      classNames={{
-                        input: "bg-transparent text-slate-100",
-                        inputWrapper: "bg-slate-800/60 border border-slate-600/50"
-                      }}
-                    />
-                    <p className="text-xs text-slate-500">
-                      用自然语言描述角色的状态、服装、发型等特征，AI会自动分析并生成图片
-                    </p>
-                  </div>
-                )}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-300">
+                    描述这个角色状态
+                  </label>
+                  <Textarea
+                    placeholder="例如：这是角色童年时期的样子，穿着蓝色的学生制服，头发扎成双马尾，戴着一副圆框眼镜..."
+                    value={naturalLanguageInput}
+                    onValueChange={setNaturalLanguageInput}
+                    minRows={4}
+                    classNames={{
+                      input: "bg-transparent text-slate-100",
+                      inputWrapper: "bg-slate-800/60 border border-slate-600/50"
+                    }}
+                  />
+                  <p className="text-xs text-slate-500">
+                    用自然语言描述角色的状态、服装、发型等特征，AI会自动分析并生成图片
+                  </p>
+                </div>
 
                 {/* 模型选择 */}
                 <div className="grid grid-cols-2 gap-3">
@@ -2404,20 +2431,18 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                   />
                 </div>
 
-                {/* 分析按钮（仅非白膜显示） */}
-                {!generatingState?.is_base_model && (
-                  <Button
-                    color="secondary"
-                    variant="flat"
-                    className="w-full bg-linear-to-r from-blue-500/20 to-cyan-500/20 text-blue-300 border border-blue-500/30"
-                    startContent={analyzing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                    onPress={analyzeDescription}
-                    isLoading={analyzing}
-                    isDisabled={!naturalLanguageInput.trim() || !selected.text}
-                  >
-                    {analyzing ? 'AI分析中...' : 'AI分析描述'}
-                  </Button>
-                )}
+                {/* 分析按钮 */}
+                <Button
+                  color="secondary"
+                  variant="flat"
+                  className="w-full bg-linear-to-r from-blue-500/20 to-cyan-500/20 text-blue-300 border border-blue-500/30"
+                  startContent={analyzing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                  onPress={analyzeDescription}
+                  isLoading={analyzing}
+                  isDisabled={!naturalLanguageInput.trim() || !selected.text}
+                >
+                  {analyzing ? 'AI分析中...' : 'AI分析描述'}
+                </Button>
 
                 {/* 分析结果展示 */}
                 {generatedTags && (
@@ -2474,12 +2499,10 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                 <Button
                   className="bg-linear-to-r from-purple-500 to-pink-600 text-white font-semibold"
                   onPress={confirmGenerate}
-                  isDisabled={!selected.image || (!generatingState?.is_base_model && !generatedTags)}
+                  isDisabled={!selected.image || !generatedTags}
                   startContent={<RefreshCw className="w-4 h-4" />}
                 >
-                  {generatingState?.is_base_model 
-                    ? (baseModelGenerateMode === 'three_views' ? '生成三视图' : '生成角色设定图')
-                    : '生成图片'}
+                  生成图片
                 </Button>
               </ModalFooter>
             </>

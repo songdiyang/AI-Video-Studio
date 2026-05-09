@@ -74,6 +74,19 @@ export interface AIAssistantUIContextValue {
   close: () => void;
   toggle: () => void;
   projectId: number | null;
+  // 面板布局状态
+  leftPanelOpen: boolean;
+  rightPanelOpen: boolean;
+  bottomPanelOpen: boolean;
+  toggleLeftPanel: () => void;
+  toggleRightPanel: () => void;
+  toggleBottomPanel: () => void;
+  openLeftPanel: () => void;
+  openRightPanel: () => void;
+  openBottomPanel: () => void;
+  closeLeftPanel: () => void;
+  closeRightPanel: () => void;
+  closeBottomPanel: () => void;
 }
 
 export interface AIAssistantDataContextValue {
@@ -118,11 +131,39 @@ export const AIAssistantProvider: React.FC<AIAssistantProviderProps> = ({ childr
   const [isOpen, setIsOpen] = useState(false);
   const open = useCallback(() => setIsOpen(true), []);
   const close = useCallback(() => setIsOpen(false), []);
-  const toggle = useCallback(() => setIsOpen((prev) => !prev), []);
+  // ⚠️ 注意：不能使用 setIsOpen(prev => !prev) 的函数式更新！
+  // React 18 StrictMode 会双重调用 updater 函数（prev 两次取反回到原值），
+  // 导致 toggle 实际操作被撤销，表现为「打开又立即关闭」。
+  // 改用 ref 缓存最新 isOpen 值，以直接设值方式 toggle。
+  const isOpenRef = useRef(isOpen);
+  isOpenRef.current = isOpen;
+  const toggle = useCallback(() => setIsOpen(!isOpenRef.current), []);
+
+  // —— 面板布局状态 —— 左/右/下面板独立控制
+  const [leftPanelOpen, setLeftPanelOpen] = useState(true);
+  const [rightPanelOpen, setRightPanelOpen] = useState(false);
+  const [bottomPanelOpen, setBottomPanelOpen] = useState(true);
+
+  const leftPanelRef = useRef(leftPanelOpen);
+  const rightPanelRef = useRef(rightPanelOpen);
+  const bottomPanelRef = useRef(bottomPanelOpen);
+  leftPanelRef.current = leftPanelOpen;
+  rightPanelRef.current = rightPanelOpen;
+  bottomPanelRef.current = bottomPanelOpen;
+
+  const toggleLeftPanel = useCallback(() => setLeftPanelOpen(!leftPanelRef.current), []);
+  const toggleRightPanel = useCallback(() => setRightPanelOpen(!rightPanelRef.current), []);
+  const toggleBottomPanel = useCallback(() => setBottomPanelOpen(!bottomPanelRef.current), []);
+  const openLeftPanel = useCallback(() => setLeftPanelOpen(true), []);
+  const openRightPanel = useCallback(() => setRightPanelOpen(true), []);
+  const openBottomPanel = useCallback(() => setBottomPanelOpen(true), []);
+  const closeLeftPanel = useCallback(() => setLeftPanelOpen(false), []);
+  const closeRightPanel = useCallback(() => setRightPanelOpen(false), []);
+  const closeBottomPanel = useCallback(() => setBottomPanelOpen(false), []);
 
   const uiValue = useMemo<AIAssistantUIContextValue>(
-    () => ({ isOpen, open, close, toggle, projectId }),
-    [isOpen, open, close, toggle, projectId],
+    () => ({ isOpen, open, close, toggle, projectId, leftPanelOpen, rightPanelOpen, bottomPanelOpen, toggleLeftPanel, toggleRightPanel, toggleBottomPanel, openLeftPanel, openRightPanel, openBottomPanel, closeLeftPanel, closeRightPanel, closeBottomPanel }),
+    [isOpen, open, close, toggle, projectId, leftPanelOpen, rightPanelOpen, bottomPanelOpen, toggleLeftPanel, toggleRightPanel, toggleBottomPanel, openLeftPanel, openRightPanel, openBottomPanel, closeLeftPanel, closeRightPanel, closeBottomPanel],
   );
 
   // —— Data 状态 —— 仅影响 AIAssistantPanel

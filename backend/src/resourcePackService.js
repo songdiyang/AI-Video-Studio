@@ -182,6 +182,57 @@ async function deductFromResourcePacks(userId, points) {
 }
 
 /**
+ * 检查积分余额是否低于用户设置的预警阈值，如果是则发送站内信
+ * @param {number} userId - 用户ID
+ * @param {number} newBalance - 新的余额
+ */
+async function checkPointsWarningThreshold(userId, newBalance) {
+  try {
+    var user = await queryOne(
+      'SELECT points_warning_threshold FROM users WHERE id = ?',
+      [userId]
+    );
+    var threshold = user && user.points_warning_threshold;
+    // 阈值未设置或为null时不检查
+    if (threshold === null || threshold === undefined) return;
+    threshold = parseInt(threshold);
+    if (isNaN(threshold) || threshold <= 0) return;
+
+    // 余额低于阈值时发送站内信
+    if (newBalance < threshold) {
+      // 检查最近24小时内是否已经发送过警告，避免重复发送
+      var recentMail = await queryOne(
+        "SELECT id FROM internal_mail WHERE receiver_id = ? AND title = '积分余额预警' AND created_at > DATE_SUB(NOW(), INTERVAL 24 HOUR) LIMIT 1",
+        [userId]
+      );
+      if (recentMail) return; // 24小时内已发送过，跳过
+
+      var mailTitle = '积分余额预警';
+      var mailContent = [
+        '**积分余额预警**',
+        '',
+        '您的积分余额已低于设定的预警阈值。',
+        '',
+        '| 项目 | 详情 |',
+        '| --- | --- |',
+        '| 当前余额 | ' + newBalance + ' 积分 |',
+        '| 预警阈值 | ' + threshold + ' 积分 |',
+        '',
+        '请及时充值积分，以免影响后续 AI 创作任务的执行。'
+      ].join('\n');
+
+      await execute(
+        "INSERT INTO internal_mail (sender_type, sender_id, receiver_id, title, content, mail_type) VALUES ('system', 0, ?, ?, ?, 'system')",
+        [userId, mailTitle, mailContent]
+      );
+      console.log('[PointsWarning] 用户 ' + userId + ' 积分余额 ' + newBalance + ' 低于阈值 ' + threshold + '，已发送站内信警告');
+    }
+  } catch (err) {
+    console.warn('[PointsWarning] 检查积分阈值失败:', err.message);
+  }
+}
+
+/**
  * 同步 users.balance = 所有活跃资源包的 remaining_points 之和
  */
 async function syncUserBalance(userId) {
@@ -191,6 +242,8 @@ async function syncUserBalance(userId) {
   );
   var newBalance = parseInt(result && result.total) || 0;
   await execute('UPDATE users SET balance = ? WHERE id = ?', [newBalance, userId]);
+  // 检查积分预警阈值
+  await checkPointsWarningThreshold(userId, newBalance);
   return newBalance;
 }
 

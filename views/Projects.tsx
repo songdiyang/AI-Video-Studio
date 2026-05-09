@@ -15,7 +15,7 @@ import { useVirtualList } from '../hooks/useVirtualList';
 import { usePreview } from '../components/PreviewProvider';
 import QuickStartWizard from '../components/QuickStartWizard';
 import UpgradePrompt from '../components/UpgradePrompt';
-import ImageCropperModal from '../components/ImageCropperModal';
+import ImageCropperModal, { CropSelection } from '../components/ImageCropperModal';
 
 // 虚拟列表启用阈值
 const VIRTUAL_LIST_THRESHOLD = 20;
@@ -544,40 +544,44 @@ const Projects: React.FC = () => {
     setCropperOpen(true);
   };
 
-  // 应用裁剪结果：Blob → 走现有封面上传/预览逻辑
-  const handleCropped = async (blob: Blob) => {
-    const file = new File([blob], `cover-cropped-${Date.now()}.jpg`, { type: 'image/jpeg' });
-    // 编辑模式已有项目 ID：直接上传到服务端
+  // 应用裁剪结果：将选取坐标传给后端，由后端从原图截取
+  const handleCropped = async (selection: CropSelection) => {
     if (editMode && currentId) {
       setCoverUploading(true);
       try {
         const token = getAuthToken();
-        const fd = new FormData();
-        fd.append('cover', file);
-        const res = await fetch(`/api/projects/${currentId}/cover`, {
+        const res = await fetch(`/api/projects/${currentId}/cover/crop`, {
           method: 'POST',
-          headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-          body: fd,
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({
+            sourceUrl: formData.cover_url,
+            crop: selection,
+          }),
         });
         if (!res.ok) {
           const data = await res.json().catch(() => ({}));
-          throw new Error(data.message || '裁剪封面上传失败');
+          throw new Error(data.message || '裁剪封面失败');
         }
         const data = await res.json();
         setFormData(prev => ({ ...prev, cover_url: data.coverUrl }));
         await loadProjects();
         showToast('裁剪完成，封面已更新', 'success');
       } catch (error: any) {
-        console.error('裁剪封面上传失败:', error);
-        showToast(error.message || '裁剪封面上传失败', 'error');
+        console.error('裁剪封面失败:', error);
+        showToast(error.message || '裁剪封面失败', 'error');
       } finally {
         setCoverUploading(false);
       }
     } else {
-      // 新建模式：本地预览 + 待上传
-      const previewUrl = URL.createObjectURL(blob);
-      setFormData(prev => ({ ...prev, cover_url: previewUrl, _coverFile: file as any }));
-      showToast('裁剪完成，保存项目时将自动上传', 'success');
+      // 新建模式：暂存裁剪坐标，保存项目时一并处理
+      setFormData(prev => ({
+        ...prev,
+        _coverCrop: selection as any,
+      }));
+      showToast('已记录裁剪区域，保存项目时将自动应用', 'success');
     }
   };
 

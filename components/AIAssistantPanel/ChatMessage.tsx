@@ -175,6 +175,8 @@ const ChatMessageComponent: React.FC<ChatMessageProps> = ({ message, onAction })
   }
 
   // ── AI 消息：全宽无气泡无头像（Qoder 风格） ──────────────────
+  const isWelcome = message.id === 'welcome';
+  if (isWelcome) return null;
   return (
     <div className="w-full flex flex-col gap-1">
       {message.attachments && message.attachments.length > 0 && (

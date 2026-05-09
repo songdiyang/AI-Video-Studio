@@ -49,6 +49,26 @@ const StoryBoardPage: React.FC = () => {
     onOpenChange: onModelConfigChange,
   } = useDisclosure();
 
+  // 处理从资源管理页面跳转过来的待编辑资产
+  useEffect(() => {
+    const pending = sessionStorage.getItem('pendingAssetEdit');
+    if (pending) {
+      try {
+        const { assetType, assetId, assetName, initialData } = JSON.parse(pending);
+        // 延迟派发事件，确保 PreviewEditor 已挂载
+        const timer = setTimeout(() => {
+          window.dispatchEvent(new CustomEvent('openAssetEditTab', {
+            detail: { assetType, assetId, assetName, initialData }
+          }));
+          sessionStorage.removeItem('pendingAssetEdit');
+        }, 500);
+        return () => clearTimeout(timer);
+      } catch {
+        sessionStorage.removeItem('pendingAssetEdit');
+      }
+    }
+  }, []);
+
   // 初始化：根据 scriptId 加载目标剧本 → 定位项目 → 加载项目所有剧本
   useEffect(() => {
     let cancelled = false;

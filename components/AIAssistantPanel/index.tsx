@@ -274,10 +274,6 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
         setIsLoading(loadingSessionsRef.current.has(sessionId));
         setStreamingId(streamingSessionsRef.current.get(sessionId) || null);
         setShowHistory(false);
-        // 如果抽屉已关闭，通过 onAction 重新打开
-        if (onAction) {
-          onAction('re-open-drawer', {});
-        }
       } else {
         showToast(data.error || '加载会话失败', 'error');
       }
@@ -1287,13 +1283,6 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
         </div>
         <div className="flex items-center gap-0.5 flex-shrink-0">
           <button
-            onClick={onClose}
-            className="p-1 rounded hover:bg-red-500/10 text-[var(--text-muted)] hover:text-red-500 transition-colors"
-            title="关闭助手"
-          >
-            <X size={13} />
-          </button>
-          <button
             onClick={() => setShowHistory(true)}
             className="p-1 rounded hover:bg-[var(--bg-input)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
             title="全部历史对话"
@@ -1313,22 +1302,35 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
       {/* Model selector moved to bottom input area */}
       {/* ─ Model selector ──────────────────────────────────── */}
       {/* ─ Messages list ───────────────────────────────────── */}
-      <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
-        {messages.map((msg) => (
-          <ChatMessageComponent key={msg.id} message={msg} onAction={handleAction} />
-        ))}
-        {isLoading && (
-          <ChatMessageComponent
-            message={{
-              id: 'loading',
-              role: 'assistant',
-              content: '',
-              timestamp: Date.now(),
-              isLoading: true,
-            }}
-          />
+      <div className="flex-1 overflow-y-auto relative">
+        {/* AM logo watermark — only in empty state */}
+        {messages.filter((m) => m.id !== 'welcome' && m.id !== 'loading').length === 0 && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <img
+              src="/icon.png"
+              alt=""
+              className="w-16 h-16 opacity-[0.06] select-none"
+              draggable={false}
+            />
+          </div>
         )}
-        <div ref={messagesEndRef} />
+        <div className="px-3 py-3 space-y-3 relative z-[1]">
+          {messages.map((msg) => (
+            <ChatMessageComponent key={msg.id} message={msg} onAction={handleAction} />
+          ))}
+          {isLoading && (
+            <ChatMessageComponent
+              message={{
+                id: 'loading',
+                role: 'assistant',
+                content: '',
+                timestamp: Date.now(),
+                isLoading: true,
+              }}
+            />
+          )}
+          <div ref={messagesEndRef} />
+        </div>
       </div>
 
       {/* ─ Attachments preview ─────────────────────────────── */}

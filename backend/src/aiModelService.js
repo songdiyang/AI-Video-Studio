@@ -321,7 +321,9 @@ async function callAIModel(modelName, params = {}, apiKey = null) {
         ...newModel,
         capabilities: parseJsonField(newModel.capabilities, []),
         metadata: parseJsonField(newModel.metadata, {}),
-        pricing: parseJsonField(newModel.pricing, {})
+        pricing: parseJsonField(newModel.pricing, {}),
+        // 兼容旧架构 billing 函数对 price_config 的依赖
+        price_config: parseJsonField(newModel.pricing, null)
       };
 
       const providerConfig = {
@@ -879,6 +881,17 @@ async function getImageModels() {
 }
 
 /**
+ * 获取所有启用的多模态模型列表
+ */
+async function getMultimodalModels() {
+  const { queryAll } = require('./dbHelper');
+  const models = await queryAll(
+    "SELECT id, name, provider, category, description FROM ai_model_configs WHERE category = 'MULTIMODAL' AND is_active = 1 ORDER BY id ASC"
+  );
+  return models;
+}
+
+/**
  * 批量调用 AI 模型（并发控制）
  * @param {Array<{modelName: string, params: object, apiKey?: string}>} calls - 调用列表
  * @param {object} options - 选项
@@ -972,6 +985,7 @@ module.exports = {
   callAIModelByRouter,
   getTextModels,
   getImageModels,
+  getMultimodalModels,
   getModelsByCapability,
   invalidateModelCache,
   getCachedModelConfig,

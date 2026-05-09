@@ -211,6 +211,9 @@ html.theme-transitioning .excalidraw *::after {
 }
 
 @layer base {
+  html, body, #root {
+    @apply h-full overflow-hidden;
+  }
   body {
     @apply transition-colors duration-300;
     background: var(--bg-body);
@@ -1512,4 +1515,38 @@ html.theme-transitioning .excalidraw *::after {
 
 .interactive-press:active {
   transform: scale(0.97);
+}
+
+/* =========== VSCode 标签页样式 =========== */
+/* 隐藏标签栏滚动条 */
+.tab-bar-scroll::-webkit-scrollbar {
+  height: 0;
+  width: 0;
+}
+
+.tab-bar-scroll {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+/* 标签页关闭按钮悬停效果 */
+.tab-close-btn {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.tab-close-btn:hover {
+  opacity: 1;
+  background-color: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+.group:hover .tab-close-btn {
+  opacity: 0.6;
+}
+
+/* 底部面板拖拽条高亮 */
+.bottom-panel-resizer:hover {
+  background-color: var(--accent);
+  opacity: 0.3;
 }

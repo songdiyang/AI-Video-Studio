@@ -8,12 +8,13 @@ interface ResourceCardProps {
   imageUrl?: string;
   isActive?: boolean;
   onClick: () => void;
+  onDoubleClick?: () => void;
   onDelete?: () => void;
 }
 
 const iconMap = { character: User, scene: MapPin, prop: Package };
 
-const ResourceCard: React.FC<ResourceCardProps> = ({ type, name, imageUrl, isActive, onClick, onDelete }) => {
+const ResourceCard: React.FC<ResourceCardProps> = ({ type, name, imageUrl, isActive, onClick, onDoubleClick, onDelete }) => {
   const Icon = iconMap[type];
 
   return (
@@ -26,6 +27,7 @@ const ResourceCard: React.FC<ResourceCardProps> = ({ type, name, imageUrl, isAct
         boxShadow: isActive ? '0 0 0 1px rgba(6, 182, 212, 0.3)' : 'none',
       }}
       onClick={onClick}
+      onDoubleClick={onDoubleClick}
     >
       {/* 图片区域 */}
       <div className="aspect-square flex items-center justify-center" style={{ backgroundColor: 'var(--bg-input)' }}>

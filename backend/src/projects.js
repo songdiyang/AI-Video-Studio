@@ -1,5 +1,6 @@
 const express = require('express');
 const multer = require('multer');
+const sharp = require('sharp');
 const { queryOne, queryAll, execute } = require('./dbHelper');
 const { authMiddleware } = require('./middleware');
 const { VISUAL_STYLE_PRESETS, BODY_PROPORTION_PRESETS } = require('./utils/getProjectStyle');
@@ -524,6 +525,72 @@ router.post('/:id/cover', authMiddleware, coverUpload.single('cover'), async (re
   } catch (error) {
     console.error('[Project Cover Upload]', error);
     res.status(500).json({ message: '封面上传失败：' + error.message });
+  }
+});
+
+/**
+ * 从已有封面图片中截取指定区域作为新封面
+ * POST /api/projects/:id/cover/crop
+ * Body: { sourceUrl: string, crop: { x, y, width, height } }
+ */
+router.post('/:id/cover/crop', authMiddleware, async (req, res) => {
+  const userId = req.user.id;
+  const projectId = req.params.id;
+  const { sourceUrl, crop } = req.body;
+
+  if (!sourceUrl || !crop || typeof crop.x !== 'number' || typeof crop.y !== 'number' ||
+      typeof crop.width !== 'number' || typeof crop.height !== 'number') {
+    return res.status(400).json({ message: '缺少 sourceUrl 或 crop 坐标参数' });
+  }
+
+  try {
+    // 检查项目权限
+    const userRole = await getEffectiveProjectRole(userId, projectId);
+    if (!userRole || PERMISSION_LEVELS[userRole] < PERMISSION_LEVELS['editor']) {
+      return res.status(403).json({ message: '您没有编辑该项目的权限' });
+    }
+
+    if (!isConfigured()) {
+      return res.status(500).json({ message: '文件存储服务未配置，请联系管理员' });
+    }
+
+    // 1. 下载原图
+    console.log(`[CoverCrop] 开始下载原图: ${sourceUrl}`);
+    const response = await fetch(sourceUrl, { timeout: 30000 });
+    if (!response.ok) {
+      throw new Error(`下载原图失败: HTTP ${response.status}`);
+    }
+    const sourceBuffer = Buffer.from(await response.arrayBuffer());
+    console.log(`[CoverCrop] 原图下载完成: ${(sourceBuffer.length / 1024).toFixed(1)}KB`);
+
+    // 2. 使用 sharp 截取指定区域（保持原图画质，仅截取不重新编码）
+    const { x, y, width, height } = crop;
+    console.log(`[CoverCrop] 截取区域: x=${x}, y=${y}, w=${width}, h=${height}`);
+
+    const croppedBuffer = await sharp(sourceBuffer)
+      .extract({ left: Math.max(0, x), top: Math.max(0, y), width: Math.max(1, width), height: Math.max(1, height) })
+      .toBuffer();
+
+    console.log(`[CoverCrop] 截取完成: ${(croppedBuffer.length / 1024).toFixed(1)}KB`);
+
+    // 3. 上传到存储桶
+    const ext = '.png'; // 截取后统一用 PNG 保持无损
+    const objectPath = `covers/project_${projectId}_${Date.now()}_crop${ext}`;
+    const coverUrl = await uploadBuffer(croppedBuffer, objectPath, {
+      contentType: 'image/png'
+    });
+
+    // 4. 更新数据库
+    await execute(
+      'UPDATE projects SET cover_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      [coverUrl, projectId]
+    );
+
+    const project = await queryOne('SELECT * FROM projects WHERE id = ?', [projectId]);
+    res.json({ message: '封面裁剪成功', coverUrl, project });
+  } catch (error) {
+    console.error('[Project Cover Crop]', error);
+    res.status(500).json({ message: '封面裁剪失败：' + (error.message || '未知错误') });
   }
 });
 

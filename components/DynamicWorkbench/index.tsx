@@ -127,7 +127,7 @@ const WorkbenchTabBar: React.FC<WorkbenchTabBarProps> = ({ tabs, activeTab, onTa
   const { t } = useLanguage();
   
   return (
-    <div className="flex items-center gap-4 px-6 py-3 border-b border-[var(--border-color)] bg-[var(--bg-nav)]">
+    <div className="flex items-center gap-4 px-6 py-3 border-b border-[var(--border-color)] bg-[var(--bg-nav)] flex-shrink-0 overflow-x-auto">
       {/* 项目类型标识 */}
       <div className="flex items-center gap-2 pr-4 border-r border-[var(--border-color)]">
         <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${PROJECT_TYPES[projectType].color} flex items-center justify-center`}>

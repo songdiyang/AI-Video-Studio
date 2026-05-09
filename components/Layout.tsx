@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Film, User, Package, LogOut, FolderOpen, Settings, Sparkles, Wifi, WifiOff, Pencil, Moon, Sun, Monitor, Contrast, LayoutTemplate, Users, Maximize, Minimize, BookOpen, Video, Image, UsersRound, Puzzle, Coins, ChevronDown, Check, ShoppingBag } from 'lucide-react';
+import { Film, User, LogOut, FolderOpen, Settings, Sparkles, Moon, Sun, Monitor, Contrast, Maximize, Minimize, UsersRound, Puzzle, Coins, ChevronDown, Check, HelpCircle, PanelLeft, PanelRight, PanelBottom } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from "@heroui/react";
-import { motion } from 'framer-motion';
 import { getAuthToken, logout } from '../services/auth';
 import { useKeyboardShortcuts, ShortcutConfig, GLOBAL_SHORTCUTS_CONFIG } from '../hooks/useKeyboardShortcuts';
 import KeyboardShortcutsHelp from './KeyboardShortcutsHelp';
@@ -17,7 +16,7 @@ import OnboardingOverlay from './Onboarding/OnboardingOverlay';
 import { useOnboarding, OnboardingStep } from '../hooks/useOnboarding';
 import NetworkStatusBar from './NetworkStatusBar';
 import InternalMailbox from './InternalMailbox';
-import LowBalanceBanner from './LowBalanceBanner';
+// import LowBalanceBanner from './LowBalanceBanner';
 import PointsRechargeModal from './PointsRechargeModal';
 import InsufficientPointsModal from './InsufficientPointsModal';
 import { usePoints } from '../contexts/PointsContext';
@@ -53,7 +52,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const { t, language, setLanguage } = useLanguage();
   const { theme, setTheme } = useTheme();
   const { projectType, currentProject, switchProject } = useWorkbench();
-  const { isOpen: isAIAssistantOpen, toggle: toggleAIAssistant, projectId: aiProjectId } = useAIAssistantUI();
+  const { isOpen: isAIAssistantOpen, toggle: toggleAIAssistant, projectId: aiProjectId, leftPanelOpen, rightPanelOpen, bottomPanelOpen, toggleLeftPanel, toggleRightPanel, toggleBottomPanel } = useAIAssistantUI();
   const { balance, isLowBalance, loading: pointsLoading, balanceAsCNY, openRechargeModal, isRechargeModalOpen, closeRechargeModal } = usePoints();
   const isAuth = location.pathname === '/auth';
   const isLoggedIn = !!getAuthToken();
@@ -113,56 +112,18 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   // 导航项配置（使用 useMemo 优化，依赖 t 对象）
   const navItems = useMemo(() => [
     { path: '/', icon: Film, label: t.nav.workspace },
-    { path: '/assets', icon: Package, label: t.nav.assets },
+    // 资产管理已集成到工作台标签页，不再作为独立入口
+    // { path: '/assets', icon: Package, label: t.nav.assets },
     { path: '/projects', icon: FolderOpen, label: t.nav.projects },
     { path: '/teams', icon: UsersRound, label: '团队' },
     // 草图绘制已集成到魔术空间，不再作为独立入口
     // { path: '/sketch', icon: Pencil, label: t.nav.sketch },
-    { path: '/marketplace', icon: ShoppingBag, label: t.marketplace?.title || '模板市场' },
+    // 模板市场已移除
+    // { path: '/marketplace', icon: ShoppingBag, label: t.marketplace?.title || '模板市场' },
     { path: '/extensions', icon: Puzzle, label: '扩展' },
-    { path: '/settings', icon: Settings, label: t.nav.settings },
   ], [t]);
 
-  // 页面标题映射（使用 useMemo 优化，依赖 t 对象）
-  const pageTitles = useMemo<Record<string, string>>(() => ({
-    '/': t.nav.workspace,
-    '/studio': t.nav.workspace,
-    '/assets': t.nav.assets,
-    '/projects': t.nav.projects,
-    '/teams': '我的团队',
-    // '/sketch': t.nav.sketch, // 草图绘制已集成到魔术空间
-    '/marketplace': t.marketplace?.title || '模板市场',
-    '/marketplace/seller': '卖家管理',
-    '/marketplace/create': '发布配方',
-    '/settings': t.nav.settings,
-    '/user-center': t.nav.userCenter,
-  }), [t]);
 
-  // 获取工作台标题（根据项目类型）
-  const getWorkbenchTitle = useCallback(() => {
-    if (location.pathname !== '/' || !projectType) {
-      return pageTitles[location.pathname] || t.nav.studioName;
-    }
-    
-    const workbenchTitles: Record<string, string> = {
-      'comic_drama': '漫剧工作台',
-    };
-    
-    return workbenchTitles[projectType] || t.nav.workspace;
-  }, [location.pathname, projectType, pageTitles, t]);
-
-  // 获取工作台图标
-  const getWorkbenchIcon = useCallback(() => {
-    if (location.pathname !== '/' || !projectType) {
-      return null;
-    }
-    
-    const icons: Record<string, React.ReactNode> = {
-      'comic_drama': <Film className="w-4 h-4 text-(--accent)" />,
-    };
-    
-    return icons[projectType] || null;
-  }, [location.pathname, projectType]);
 
   // 真实后端连接状态检测（每30秒 ping 一次 /api/health）
   useEffect(() => {
@@ -267,10 +228,11 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const commands: Command[] = useMemo(() => [
     // 导航类
     { id: 'nav-workspace', title: t.nav.workspace, category: 'navigation', icon: <Film className="w-4 h-4" />, shortcut: 'Ctrl+1', action: () => navigate('/'), keywords: ['studio', '工作台', '创作'] },
-    { id: 'nav-assets', title: t.nav.assets, category: 'navigation', icon: <Package className="w-4 h-4" />, shortcut: 'Ctrl+2', action: () => navigate('/assets'), keywords: ['asset', '素材', '角色'] },
-    { id: 'nav-projects', title: t.nav.projects, category: 'navigation', icon: <FolderOpen className="w-4 h-4" />, shortcut: 'Ctrl+3', action: () => navigate('/projects'), keywords: ['project', '工程'] },
+    // 资产管理已集成到工作台标签页，不再作为独立入口
+    // { id: 'nav-assets', title: t.nav.assets, category: 'navigation', icon: <Package className="w-4 h-4" />, shortcut: 'Ctrl+2', action: () => navigate('/assets'), keywords: ['asset', '素材', '角色'] },
+    { id: 'nav-projects', title: t.nav.projects, category: 'navigation', icon: <FolderOpen className="w-4 h-4" />, shortcut: 'Ctrl+2', action: () => navigate('/projects'), keywords: ['project', '工程'] },
     // { id: 'nav-sketch', title: t.nav.sketch, category: 'navigation', icon: <Pencil className="w-4 h-4" />, shortcut: 'Ctrl+4', action: () => navigate('/sketch'), keywords: ['draw', '绘制', '草图'] },
-    { id: 'nav-settings', title: t.nav.settings, category: 'navigation', icon: <Settings className="w-4 h-4" />, shortcut: 'Ctrl+5', action: () => navigate('/settings'), keywords: ['setting', '设置', '偏好'] },
+    { id: 'nav-settings', title: t.nav.settings, category: 'navigation', icon: <Settings className="w-4 h-4" />, shortcut: 'Ctrl+5', action: () => { navigate('/'); setTimeout(() => window.dispatchEvent(new CustomEvent('openSettingsTab')), 100); }, keywords: ['setting', '设置', '偏好'] },
     // 操作类
     { id: 'action-shortcuts', title: t.commandPalette.commands.showShortcuts, category: 'action', action: () => setShowShortcutsHelp(true), keywords: ['keyboard', '快捷键', 'shortcut'] },
     // 设置类
@@ -288,10 +250,11 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       ...GLOBAL_SHORTCUTS_CONFIG.NAVIGATE_WORKSPACE,
       action: () => navigate('/'),
     },
-    {
-      ...GLOBAL_SHORTCUTS_CONFIG.NAVIGATE_ASSETS,
-      action: () => navigate('/assets'),
-    },
+    // 资产管理已集成到工作台标签页，快捷键已移除
+    // {
+    //   ...GLOBAL_SHORTCUTS_CONFIG.NAVIGATE_ASSETS,
+    //   action: () => navigate('/assets'),
+    // },
     {
       ...GLOBAL_SHORTCUTS_CONFIG.NAVIGATE_PROJECTS,
       action: () => navigate('/projects'),
@@ -302,7 +265,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     // },
     {
       ...GLOBAL_SHORTCUTS_CONFIG.NAVIGATE_SETTINGS,
-      action: () => navigate('/settings'),
+      action: () => { navigate('/'); setTimeout(() => window.dispatchEvent(new CustomEvent('openSettingsTab')), 100); },
     },
     {
       ...GLOBAL_SHORTCUTS_CONFIG.SHOW_HELP,
@@ -321,7 +284,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const onboardingSteps: OnboardingStep[] = useMemo(() => [
     { target: '[data-onboarding="sidebar"]', title: t.onboarding?.steps?.sidebar?.title || '导航侧边栏', description: t.onboarding?.steps?.sidebar?.description || '这是您的主导航区域，可以快速切换不同的功能模块。', placement: 'right' },
     { target: '[data-onboarding="nav-workspace"]', title: t.onboarding?.steps?.workspace?.title || '创作工作台', description: t.onboarding?.steps?.workspace?.description || '在这里开始您的创作之旅，编写剧本、生成分镜。', placement: 'right' },
-    { target: '[data-onboarding="nav-assets"]', title: t.onboarding?.steps?.assets?.title || '资产管理', description: t.onboarding?.steps?.assets?.description || '管理您的角色、场景、道具等创作素材。', placement: 'right' },
+    // 资产管理已集成到工作台标签页，引导步骤已移除
+    // { target: '[data-onboarding="nav-assets"]', title: t.onboarding?.steps?.assets?.title || '资产管理', description: t.onboarding?.steps?.assets?.description || '管理您的角色、场景、道具等创作素材。', placement: 'right' },
     { target: '[data-onboarding="shortcuts-hint"]', title: t.onboarding?.steps?.shortcuts?.title || '快捷键系统', description: t.onboarding?.steps?.shortcuts?.description || '按 ? 查看所有快捷键，按 Ctrl+K 打开命令面板快速执行操作。', placement: 'top' },
     { target: '[data-onboarding="nav-settings"]', title: t.onboarding?.steps?.settings?.title || '个性化设置', description: t.onboarding?.steps?.settings?.description || '自定义界面主题、语言偏好，让工作环境更舒适。', placement: 'right' },
   ], [t]);
@@ -349,9 +313,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     window.location.reload();
   };
 
-  const currentPageTitle = getWorkbenchTitle();
-  const workbenchIcon = getWorkbenchIcon();
-
   // Auth 页面不显示导航
   if (isAuth) {
     return (
@@ -366,27 +327,18 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-(--bg-app)">
       {/* 左侧侧边栏 - 小屏隐藏 */}
-      <aside data-onboarding="sidebar" className={`pro-sidebar flex flex-col bg-(--bg-nav) border-r border-(--border-color) hide-on-mobile ${isTablet ? 'w-12' : 'w-14'}`}>
-        {/* Logo */}
-        <div className={`${isTablet ? 'h-12' : 'h-14'} flex items-center justify-center border-b border-(--border-color)`}>
-          <Link to="/" className="group relative" tabIndex={0}>
-            <div className={`relative ${isTablet ? 'p-1.5' : 'p-2'} bg-linear-to-br from-blue-500 to-blue-600 rounded-lg shadow-lg transition-all duration-200 group-hover:shadow-blue-500/30 group-hover:scale-105`}>
-              <Sparkles className={`${isTablet ? 'w-4 h-4' : 'w-5 h-5'} text-white`} />
-            </div>
-          </Link>
-        </div>
-
+      <aside data-onboarding="sidebar" className={`pro-sidebar flex flex-col bg-(--bg-nav) border-r border-(--border-color) hide-on-mobile ${isTablet ? 'w-12' : 'w-14'} pt-10`}>
         {/* 导航图标列表 */}
-        <nav className="flex-1 py-2 flex flex-col gap-1" role="navigation" aria-label={t.nav.mainNav}>
+        <nav className="flex-1 flex flex-col" role="navigation" aria-label={t.nav.mainNav}>
           {navItems.map((item, index) => {
             const isActive = location.pathname === item.path;
             const Icon = item.icon;
             
-            // 根据路径确定 data-onboarding 属性
             const getOnboardingAttr = () => {
               switch (item.path) {
                 case '/': return 'nav-workspace';
-                case '/assets': return 'nav-assets';
+                // 资产管理已集成到工作台标签页
+                // case '/assets': return 'nav-assets';
                 case '/settings': return 'nav-settings';
                 default: return undefined;
               }
@@ -402,7 +354,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 aria-current={isActive ? 'page' : undefined}
                 data-onboarding={onboardingAttr}
                 onMouseEnter={() => preload(item.path)}
-                className={`pro-nav-item group relative mx-2 ${isTablet ? 'p-2.5' : 'p-3'} rounded-lg flex items-center justify-center transition-all duration-200
+                className={`pro-nav-item group relative mx-auto ${isTablet ? 'p-2.5' : 'p-3'} flex items-center justify-center transition-all duration-200
                   ${isActive 
                     ? 'bg-(--accent)/15 text-(--accent)' 
                     : 'text-(--text-muted) hover:text-(--text-primary) hover:bg-white/5'
@@ -470,6 +422,27 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                   {t.nav.userCenter}
                 </DropdownItem>
                 <DropdownItem
+                  key="settings"
+                  className="text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg py-2.5"
+                  startContent={<Settings className="w-4 h-4 text-slate-500" />}
+                  onPress={() => {
+                    navigate('/');
+                    setTimeout(() => {
+                      window.dispatchEvent(new CustomEvent('openSettingsTab'));
+                    }, 100);
+                  }}
+                >
+                  {t.nav.settings}
+                </DropdownItem>
+                <DropdownItem
+                  key="helpDocs"
+                  className="text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg py-2.5"
+                  startContent={<HelpCircle className="w-4 h-4 text-blue-500" />}
+                  onPress={() => window.open('https://doubao.com', '_blank')}
+                >
+                  {t.nav.helpDocs}
+                </DropdownItem>
+                <DropdownItem
                   key="logout"
                   className="text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg py-2.5"
                   color="danger"
@@ -498,100 +471,123 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         </div>
       </aside>
 
-      {/* 右侧主区域 - 打开 AI 助手时让出右侧空间，避免遮挡画面
-          注：不做 margin 过渡动画（大页面 transition-[margin] 会持续触发 layout），
-          Drawer 自身的滑入动画已提供视觉连续感 */}
-      <div
-        className={`flex-1 flex flex-col min-w-0 ${
-          isAIAssistantOpen && !isMobile ? 'mr-[440px]' : ''
-        }`}
-      >
+      {/* 右侧主区域 */}
+      <div className="flex-1 flex flex-col min-w-0">
         {/* 网络状态提示条 */}
         <NetworkStatusBar />
         
-        {/* 顶部工具栏 - 小屏简化 */}
-        <header className="pro-toolbar h-10 items-center justify-between px-4 bg-(--bg-nav)/50 border-b border-(--border-color) hide-on-mobile flex">
-          {/* 左侧：当前页面标题 */}
-          <div className="flex items-center gap-3">
-            {workbenchIcon && (
-              <div className="flex items-center gap-2">
-                {workbenchIcon}
+        {/* 顶部横条 - 一整条（预留给其他功能模块） */}
+        <header className="pro-toolbar h-11 items-center justify-between pl-4 pr-3 bg-(--bg-nav) border-b border-(--border-color) hide-on-mobile flex">
+          {/* 左侧：Logo + 项目切换 */}
+          <div className="flex items-center gap-2">
+            <Link to="/" className="flex items-center gap-1.5 px-1.5 py-1 rounded-md hover:bg-white/5 transition-colors">
+              <div className="w-7 h-7 flex items-center justify-center bg-linear-to-br from-blue-500 to-blue-600 rounded-lg text-white text-sm font-bold tracking-tight">
+                AM
               </div>
-            )}
-            <h1 className="text-sm font-semibold text-(--text-primary)">
-              {currentPageTitle}
-            </h1>
+            </Link>
+            
+            {/* 项目快速切换 */}
             {currentProject && location.pathname === '/' && (
-              <div className="relative" ref={projectSwitcherRef}>
-                <button
-                  onClick={handleOpenProjectSwitcher}
-                  className="flex items-center gap-1 text-xs text-(--text-muted) px-2 py-0.5 bg-(--bg-card) hover:bg-(--bg-card-hover) rounded transition-colors cursor-pointer"
-                  title="切换项目"
-                >
-                  <span className="max-w-[120px] truncate">{currentProject.name}</span>
-                  <ChevronDown className={`w-3 h-3 transition-transform ${projectSwitcherOpen ? 'rotate-180' : ''}`} />
-                </button>
-                {/* 项目快速切换下拉面板 */}
-                {projectSwitcherOpen && (
-                  <div className="absolute top-full left-0 mt-1 w-64 max-h-80 overflow-y-auto rounded-lg border border-(--border-color) bg-(--bg-card) shadow-xl z-50">
-                    <div className="px-3 py-2 border-b border-(--border-color)">
-                      <span className="text-xs font-medium text-(--text-secondary)">切换项目</span>
-                    </div>
-                    {projectListLoading ? (
-                      <div className="px-3 py-4 text-center text-xs text-(--text-muted)">加载中...</div>
-                    ) : projectList.length === 0 ? (
-                      <div className="px-3 py-4 text-center text-xs text-(--text-muted)">暂无项目</div>
-                    ) : (
-                      <div className="py-1">
-                        {projectList.map((project) => (
-                          <button
-                            key={project.id}
-                            onClick={() => handleQuickSwitchProject(project)}
-                            className={`w-full flex items-center gap-2 px-3 py-2 text-left text-xs transition-colors hover:bg-(--bg-card-hover) ${
-                              currentProject.id === project.id ? 'text-(--accent)' : 'text-(--text-primary)'
-                            }`}
-                          >
-                            <FolderOpen className="w-3.5 h-3.5 shrink-0 opacity-60" />
-                            <span className="truncate flex-1">{project.name}</span>
-                            {currentProject.id === project.id && (
-                              <Check className="w-3.5 h-3.5 shrink-0 text-(--accent)" />
-                            )}
-                          </button>
-                        ))}
+              <>
+                <div className="w-px h-5 bg-(--border-color)" />
+                <div className="relative" ref={projectSwitcherRef}>
+                  <button
+                    onClick={handleOpenProjectSwitcher}
+                    className="flex items-center gap-1 text-xs text-(--text-muted) px-2 py-1.5 bg-(--bg-card) hover:bg-(--bg-card-hover) rounded-md transition-colors cursor-pointer"
+                    title="切换项目"
+                  >
+                    <FolderOpen className="w-3 h-3" />
+                    <span className="max-w-[120px] truncate">{currentProject.name}</span>
+                    <ChevronDown className={`w-3 h-3 transition-transform ${projectSwitcherOpen ? 'rotate-180' : ''}`} />
+                  </button>
+                  {/* 项目快速切换下拉面板 */}
+                  {projectSwitcherOpen && (
+                    <div className="absolute top-full left-0 mt-1 w-64 max-h-80 overflow-y-auto rounded-lg border border-(--border-color) bg-(--bg-card) shadow-xl z-50">
+                      <div className="px-3 py-2 border-b border-(--border-color)">
+                        <span className="text-xs font-medium text-(--text-secondary)">切换项目</span>
                       </div>
-                    )}
-                    <div className="border-t border-(--border-color) px-3 py-2">
-                      <button
-                        onClick={() => { setProjectSwitcherOpen(false); navigate('/projects'); }}
-                        className="w-full text-xs text-(--text-muted) hover:text-(--accent) text-center transition-colors"
-                      >
-                        管理全部项目
-                      </button>
+                      {projectListLoading ? (
+                        <div className="px-3 py-4 text-center text-xs text-(--text-muted)">加载中...</div>
+                      ) : projectList.length === 0 ? (
+                        <div className="px-3 py-4 text-center text-xs text-(--text-muted)">暂无项目</div>
+                      ) : (
+                        <div className="py-1">
+                          {projectList.map((project) => (
+                            <button
+                              key={project.id}
+                              onClick={() => handleQuickSwitchProject(project)}
+                              className={`w-full flex items-center gap-2 px-3 py-2 text-left text-xs transition-colors hover:bg-(--bg-card-hover) ${
+                                currentProject.id === project.id ? 'text-(--accent)' : 'text-(--text-primary)'
+                              }`}
+                            >
+                              <FolderOpen className="w-3.5 h-3.5 shrink-0 opacity-60" />
+                              <span className="truncate flex-1">{project.name}</span>
+                              {currentProject.id === project.id && (
+                                <Check className="w-3.5 h-3.5 shrink-0 text-(--accent)" />
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      <div className="border-t border-(--border-color) px-3 py-2">
+                        <button
+                          onClick={() => { setProjectSwitcherOpen(false); navigate('/projects'); }}
+                          className="w-full text-xs text-(--text-muted) hover:text-(--accent) text-center transition-colors"
+                        >
+                          管理全部项目
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                )}
-              </div>
+                  )}
+                </div>
+              </>
             )}
           </div>
           
-          {/* 右侧：辅助信息 */}
-          <div className="flex items-center gap-4">
-            {/* AI 助手 - 全局常驻入口（无项目时使用全局会话） */}
+          {/* 右侧：辅助控件 */}
+          <div className="flex items-center gap-3">
+            {/* 布局切换按钮组 */}
             {isLoggedIn && (
-              <button
-                onClick={toggleAIAssistant}
-                className={`p-1.5 rounded-lg transition-colors ${
-                  isAIAssistantOpen
-                    ? 'bg-[var(--accent)]/15 text-[var(--accent)]'
-                    : 'text-(--text-muted) hover:text-(--text-primary) hover:bg-white/5'
-                }`}
-                aria-label="AI 助手"
-                title={aiProjectId ? 'AI 助手' : 'AI 助手（全局会话）'}
-              >
-                <Sparkles className="w-4 h-4" />
-              </button>
+              <div className="flex items-center gap-0.5 bg-white/5 rounded-lg p-0.5">
+                <button
+                  onClick={toggleLeftPanel}
+                  className={`p-1 rounded transition-colors ${
+                    leftPanelOpen
+                      ? 'bg-[var(--accent)]/15 text-[var(--accent)]'
+                      : 'text-(--text-muted) hover:text-(--text-primary) hover:bg-white/5'
+                  }`}
+                  aria-label="左侧边栏"
+                  title="左侧边栏"
+                >
+                  <PanelLeft className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={toggleRightPanel}
+                  className={`p-1 rounded transition-colors ${
+                    rightPanelOpen
+                      ? 'bg-[var(--accent)]/15 text-[var(--accent)]'
+                      : 'text-(--text-muted) hover:text-(--text-primary) hover:bg-white/5'
+                  }`}
+                  aria-label="右侧边栏"
+                  title="右侧边栏"
+                >
+                  <PanelRight className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={toggleBottomPanel}
+                  className={`p-1 rounded transition-colors ${
+                    bottomPanelOpen
+                      ? 'bg-[var(--accent)]/15 text-[var(--accent)]'
+                      : 'text-(--text-muted) hover:text-(--text-primary) hover:bg-white/5'
+                  }`}
+                  aria-label="下方面板"
+                  title="下方面板"
+                >
+                  <PanelBottom className="w-4 h-4" />
+                </button>
+              </div>
             )}
-            {/* 积分余额显示 */}
+            {/* 积分余额 */}
             {isLoggedIn && (
               <button
                 onClick={openRechargeModal}
@@ -609,10 +605,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
               </button>
             )}
             <InternalMailbox />
-            <span className="text-xs text-(--text-muted)">
-              {t.nav.studioTitle}
-            </span>
-            {/* 全屏切换按钮 */}
+            
+            {/* 全屏切换 */}
             <button
               onClick={toggleFullscreen}
               className="p-1.5 rounded-lg text-(--text-muted) hover:text-(--text-primary) hover:bg-white/5 transition-colors"
@@ -628,8 +622,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         {isMobile && (
           <header className="pro-toolbar h-12 flex items-center justify-center px-4 bg-(--bg-nav) border-b border-(--border-color)">
             <Link to="/" className="flex items-center gap-2">
-              <div className="p-1.5 bg-linear-to-br from-blue-500 to-blue-600 rounded-lg">
-                <Sparkles className="w-4 h-4 text-white" />
+              <div className="w-7 h-7 flex items-center justify-center bg-linear-to-br from-blue-500 to-blue-600 rounded-lg text-white text-sm font-bold tracking-tight">
+                AM
               </div>
               <span className="text-sm font-semibold text-(--text-primary)">
                 {t.nav.studioName}
@@ -639,44 +633,46 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         )}
 
         {/* 主内容区 */}
-        <main className={`flex-1 overflow-hidden bg-(--bg-app) ${isMobile ? 'main-content-mobile' : ''}`}>
-          {children}
-        </main>
+        <div className="flex-1 flex flex-col min-w-0 min-h-0">
+          <main className={`flex-1 overflow-hidden min-h-0 bg-(--bg-app) ${isMobile ? 'main-content-mobile' : ''}`}>
+            {children}
+          </main>
 
-        {/* 底部状态栏 - 小屏隐藏 */}
-        <footer className="pro-statusbar h-7 items-center justify-between px-4 bg-(--bg-nav) border-t border-(--border-color) hide-on-mobile flex">
-          {/* 左侧：连接状态 */}
-          <div className="flex items-center gap-2">
-            {isConnected ? (
-              <>
-                <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                <span className="text-xs text-(--text-muted)">{t.nav.connected}</span>
-              </>
-            ) : (
-              <>
-                <span className="w-2 h-2 rounded-full bg-red-500" />
-                <span className="text-xs text-red-400">{t.nav.disconnected}</span>
-              </>
-            )}
-          </div>
-          
-          {/* 中间：快捷键提示 */}
-          <div className="flex items-center">
-            <button 
-              onClick={() => setShowShortcutsHelp(true)}
-              className="text-xs text-(--text-muted) hover:text-(--text-secondary) transition-colors"
-              aria-label={t.nav.showShortcuts}
-              data-onboarding="shortcuts-hint"
-            >
-              {t.nav.pressForShortcuts}
-            </button>
-          </div>
-          
-          {/* 右侧：版本信息 */}
-          <div className="flex items-center gap-4">
-            <span className="text-xs text-(--text-muted)">v1.0.0</span>
-          </div>
-        </footer>
+          {/* 底部状态栏 - 小屏隐藏 */}
+          <footer className="pro-statusbar h-7 items-center justify-between px-4 bg-(--bg-nav) border-t border-(--border-color) hide-on-mobile flex">
+            {/* 左侧：连接状态 */}
+            <div className="flex items-center gap-2">
+              {isConnected ? (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                  <span className="text-xs text-(--text-muted)">{t.nav.connected}</span>
+                </>
+              ) : (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-red-500" />
+                  <span className="text-xs text-red-400">{t.nav.disconnected}</span>
+                </>
+              )}
+            </div>
+            
+            {/* 中间：快捷键提示 */}
+            <div className="flex items-center">
+              <button 
+                onClick={() => setShowShortcutsHelp(true)}
+                className="text-xs text-(--text-muted) hover:text-(--text-secondary) transition-colors"
+                aria-label={t.nav.showShortcuts}
+                data-onboarding="shortcuts-hint"
+              >
+                {t.nav.pressForShortcuts}
+              </button>
+            </div>
+            
+            {/* 右侧：版本信息 */}
+            <div className="flex items-center gap-4">
+              <span className="text-xs text-(--text-muted)">v1.0.0</span>
+            </div>
+          </footer>
+        </div>
       </div>
 
       {/* 小屏底部导航栏 */}
@@ -725,9 +721,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       )}
 
       {/* 快捷键帮助面板 */}
-      <KeyboardShortcutsHelp 
-        isOpen={showShortcutsHelp} 
-        onClose={() => setShowShortcutsHelp(false)} 
+      <KeyboardShortcutsHelp
+        isOpen={showShortcutsHelp}
+        onClose={() => setShowShortcutsHelp(false)}
       />
 
       {/* 命令面板 */}
@@ -748,8 +744,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         onSkip={onboarding.skip}
       />
 
-      {/* 低余额警告横幅 */}
-      {isLoggedIn && <LowBalanceBanner />}
+      {/* 低余额警告横幅 - 已移除，改为仅在任务执行时检测 */}
+      {/* {isLoggedIn && <LowBalanceBanner />} */}
 
       {/* 积分充值弹窗 */}
       <PointsRechargeModal isOpen={isRechargeModalOpen} onClose={closeRechargeModal} />
@@ -757,8 +753,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       {/* 积分不足拦截弹窗 */}
       <InsufficientPointsModal />
 
-      {/* AI 助手全局浮层 - 独立组件，避免 Context Data 变化时重渲染 Layout */}
-      <AIAssistantDrawer />
+
+      {/* AI 助手全局浮层 - 仅非工作台/分镜页面显示（工作台使用内联面板，避免双重渲染） */}
+      {location.pathname !== '/' && location.pathname !== '/storyboard' && location.pathname !== '/studio' && <AIAssistantDrawer />}
     </div>
   );
 };

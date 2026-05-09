@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Card, CardBody, Chip, Modal, ModalContent, ModalHeader, ModalBody, Button } from '@heroui/react';
-import { Cloud, Building2, LayoutGrid, X } from 'lucide-react';
+import { Cloud, Building2, LayoutGrid } from 'lucide-react';
 import { Scene } from './useSceneData';
 
 interface LocationsTabProps {
@@ -10,6 +10,17 @@ interface LocationsTabProps {
   /** 点击卡片回调 */
   onSelect?: (scene: Scene) => void;
 }
+
+const openAssetEditTab = (scene: Scene) => {
+  window.dispatchEvent(new CustomEvent('openAssetEditTab', {
+    detail: {
+      assetType: 'scene',
+      assetId: scene.id,
+      assetName: scene.name,
+      initialData: scene,
+    }
+  }));
+};
 
 const LocationsTab: React.FC<LocationsTabProps> = ({
   scenes,
@@ -45,6 +56,7 @@ const LocationsTab: React.FC<LocationsTabProps> = ({
             key={scene.id}
             isPressable
             onPress={() => onSelect?.(scene)}
+            onDoubleClick={() => openAssetEditTab(scene)}
             className={`border transition-all cursor-pointer ${
               isSelected
                 ? 'ring-2 ring-(--accent) border-(--accent)'

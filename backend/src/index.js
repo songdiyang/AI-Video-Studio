@@ -170,6 +170,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/feedback', feedbackRoutes);
 app.use('/api/mail', internalMailRoutes);
 app.use('/api/files', fileProxyRoutes);
+app.use('/api/proxy', fileProxyRoutes);
 app.use('/api/sketch-projects', sketchProjectRoutes);
 app.use('/api/templates', templateRoutes);
 app.use('/api/community', communityRoutes);
@@ -199,7 +200,21 @@ app.use('/api/callbacks', callbackHandler.router);
 
 // Serve static files for production if needed
 const clientBuildPath = path.join(__dirname, '..', '..', 'dist');
-app.use(express.static(clientBuildPath));
+
+// 静态资源缓存策略：带 hash 的文件长期缓存，index.html 不缓存
+const staticOptions = {
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('index.html')) {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+    } else if (/\-[a-zA-Z0-9_-]{8,}\.(js|css|woff2?|png|jpg|jpeg|gif|svg|ico)$/.test(filePath)) {
+      // 带 hash 的资源文件可长期缓存
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    }
+  }
+};
+app.use(express.static(clientBuildPath, staticOptions));
 
 // Serve uploads directory for sketch files
 const uploadsPath = getUploadsBase();
@@ -209,6 +224,9 @@ app.get('*', (req, res, next) => {
   if (req.path.startsWith('/api/')) {
     return next();
   }
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
   res.sendFile(path.join(clientBuildPath, 'index.html'), (err) => {
     if (err) {
       next();

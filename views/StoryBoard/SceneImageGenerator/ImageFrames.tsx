@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Spinner } from '@heroui/react';
 import { Plus, RefreshCw, ZoomIn, X, ImageOff } from 'lucide-react';
 import { useConfirm } from '../../../contexts/ConfirmContext';
@@ -10,6 +10,7 @@ import { useLazyImage } from '../../../components/LazyImage';
  * - blur-up 效果：加载时显示模糊背景，加载完成后渐变为清晰
  * - 骨架屏动画显示加载状态
  * - 优雅的错误状态显示
+ * - 兼容 Edge lazy-load 干预：通过 img.complete 兜底检测
  */
 interface LoadableImageProps {
   src: string;
@@ -20,6 +21,38 @@ interface LoadableImageProps {
 
 const LoadableImage: React.FC<LoadableImageProps> = ({ src, alt, onClick, className }) => {
   const { containerRef, isVisible, isLoaded, hasError, handleLoad, handleError } = useLazyImage(src);
+  const imgRef = useRef<HTMLImageElement>(null);
+
+  // Edge 浏览器干预兜底：检测 img.complete 状态防止 onLoad 被阻断后图片永远不显示
+  useEffect(() => {
+    if (isLoaded || hasError || !isVisible || !src) return;
+    const img = imgRef.current;
+    if (!img) return;
+
+    if (img.complete && img.naturalWidth > 0) {
+      handleLoad();
+      return;
+    }
+
+    let attempts = 0;
+    const maxAttempts = 34;
+    const timer = setInterval(() => {
+      attempts++;
+      if (img.complete) {
+        clearInterval(timer);
+        if (img.naturalWidth > 0) {
+          handleLoad();
+        } else {
+          handleError();
+        }
+      } else if (attempts >= maxAttempts) {
+        clearInterval(timer);
+        if (!img.complete) handleError();
+      }
+    }, 300);
+
+    return () => clearInterval(timer);
+  }, [isVisible, src]);
 
   return (
     <div ref={containerRef} className="relative w-full h-full overflow-hidden">
@@ -53,10 +86,12 @@ const LoadableImage: React.FC<LoadableImageProps> = ({ src, alt, onClick, classN
       {/* 实际图片 - 只有进入视口后才加载 */}
       {isVisible && !hasError && (
         <img
+          ref={imgRef}
           src={src}
           alt={alt}
           loading="lazy"
           decoding="async"
+          fetchPriority="low"
           onLoad={handleLoad}
           onError={handleError}
           onClick={onClick}

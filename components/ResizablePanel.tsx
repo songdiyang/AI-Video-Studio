@@ -12,6 +12,8 @@ export interface ResizablePanelProps {
   collapsible?: boolean;
   /** 折叠后的大小（px） */
   collapsedSize?: number;
+  /** 是否处于折叠状态 */
+  collapsed?: boolean;
   /** 折叠状态变化回调 */
   onCollapse?: (collapsed: boolean) => void;
   /** 面板标题（可选，显示在面板顶部） */
@@ -177,7 +179,6 @@ const ResizablePanel = forwardRef<ResizablePanelRef, ResizablePanelProps>((props
         relative flex flex-col
         bg-[var(--bg-app)] 
         overflow-hidden
-        transition-[flex-basis] duration-200 ease-out
         ${__isMobile ? 'h-full' : ''}
         ${className}
       `}
@@ -234,7 +235,7 @@ const ResizablePanel = forwardRef<ResizablePanelRef, ResizablePanelProps>((props
             className="flex flex-col h-full"
           >
             {/* 面板头部 - 移动端隐藏 */}
-            {(title || headerActions || collapsible) && !__isMobile && (
+            {(title || headerActions) && !__isMobile && (
               <div 
                 className={`
                   flex-shrink-0 h-8 px-3 flex items-center justify-between gap-2
@@ -242,18 +243,6 @@ const ResizablePanel = forwardRef<ResizablePanelRef, ResizablePanelProps>((props
                 `}
               >
                 <div className="flex items-center gap-2 min-w-0">
-                  {collapsible && (
-                    <button
-                      onClick={collapse}
-                      className="
-                        p-0.5 rounded hover:bg-[var(--bg-card-hover)]
-                        transition-colors duration-150
-                      "
-                      title="折叠面板"
-                    >
-                      <CollapseIcon />
-                    </button>
-                  )}
                   {title && (
                     <span className="text-xs font-medium uppercase tracking-wider text-[var(--text-muted)] truncate">
                       {title}

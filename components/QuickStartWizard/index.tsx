@@ -4,7 +4,8 @@ import { Input, Textarea, Spinner, Button } from '@heroui/react';
 import {
   X, Check,
   Film, Sparkles,
-  Palette, Globe, ImagePlus, Upload
+  Palette, Globe, ImagePlus, Upload,
+  BookOpen, Video, PenTool
 } from 'lucide-react';
 import { ProjectType, PROJECT_TYPES, VISUAL_STYLE_BY_CATEGORY, StyleCategory, BodyProportionRatio, BODY_PROPORTION_PRESETS, inferStyleCategory } from '../../types/projectTypes';
 import { useLanguage } from '../../contexts/LanguageContext';
@@ -23,9 +24,12 @@ interface QuickStartWizardProps {
 
 type CreationType = ProjectType;
 
-// 专注漫剧功能,只保留漫剧类型
+// 创作类型列表
 const CREATION_TYPES: { type: CreationType; icon: React.ElementType; color: string; desc: string }[] = [
   { type: 'comic_drama', icon: Film, color: PROJECT_TYPES.comic_drama.color, desc: '制作精彩的漫剧短片' },
+  { type: 'manga', icon: BookOpen, color: PROJECT_TYPES.manga.color, desc: '创作漫画作品' },
+  { type: 'short_video', icon: Video, color: PROJECT_TYPES.short_video.color, desc: '制作短视频内容' },
+  { type: 'novel', icon: PenTool, color: PROJECT_TYPES.novel.color, desc: '创作小说作品' },
 ];
 
 const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ isOpen, onClose, onComplete }) => {
@@ -415,57 +419,9 @@ const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ isOpen, onClose, on
             </button>
           </div>
 
-          {/* ===== 主体: 左侧边栏 + 右侧内容 ===== */}
-          <div className="flex flex-1 min-h-0">
-            {/* 左侧边栏 - 项目类型 */}
-            <div className="w-[200px] shrink-0 border-r py-2 flex flex-col" style={{ borderColor: 'var(--border-color)', backgroundColor: 'color-mix(in srgb, var(--bg-card) 60%, var(--bg-base))' }}>
-              <div className="px-3 py-2">
-                <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
-                  {t.quickStart?.step1Title || '创作类型'}
-                </span>
-              </div>
-              <div className="flex-1 px-2 space-y-0.5">
-                {CREATION_TYPES.map(({ type, icon: Icon, color }) => {
-                  const isSelected = selectedType === type;
-                  return (
-                    <button
-                      key={type}
-                      onClick={() => setSelectedType(type)}
-                      className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-left transition-all cursor-pointer group ${
-                        isSelected
-                          ? 'bg-[var(--accent)]/12 text-[var(--accent)]'
-                          : 'text-[var(--text-secondary)] hover:bg-[var(--bg-input)]'
-                      }`}
-                    >
-                      <div className={`w-7 h-7 rounded-md bg-gradient-to-br ${color} flex items-center justify-center shrink-0 transition-transform ${isSelected ? 'scale-105' : 'group-hover:scale-105'}`}>
-                        <Icon className="w-3.5 h-3.5 text-white" />
-                      </div>
-                      <span className={`text-sm ${isSelected ? 'font-semibold' : 'font-medium'}`}>
-                        {t.quickStart?.types?.[type] || type}
-                      </span>
-                      {isSelected && (
-                        <div className="ml-auto w-1.5 h-1.5 rounded-full bg-[var(--accent)]" />
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* 左侧底部: 团队选择 */}
-              {userTeams.length > 0 && (
-                <div className="px-3 pt-2 mt-auto border-t" style={{ borderColor: 'var(--border-color)' }}>
-                  <label className="text-[11px] font-semibold uppercase tracking-wider mb-1.5 block" style={{ color: 'var(--text-muted)' }}>所属团队</label>
-                  <select value={selectedTeamId} onChange={(e) => setSelectedTeamId(e.target.value ? Number(e.target.value) : '')}
-                    className="w-full px-2 py-1.5 rounded-md bg-[var(--bg-input)] border border-[var(--border-color)] text-[var(--text-primary)] text-xs focus:outline-none focus:border-[var(--accent)]/40">
-                    <option value="">个人项目</option>
-                    {userTeams.map(team => (<option key={team.id} value={team.id}>{team.name}</option>))}
-                  </select>
-                </div>
-              )}
-            </div>
-
-            {/* 右侧内容 - 可滚动 */}
-            <div className="flex-1 overflow-y-auto min-h-0">
+          {/* ===== 主体: 右侧内容 ===== */}
+          <div className="flex flex-1 min-h-0 overflow-y-auto">
+            <div className="flex-1 min-h-0">
               <div className="p-5 space-y-5">
                 {/* 基本信息区 */}
                 <div className="space-y-3">
@@ -765,6 +721,18 @@ const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ isOpen, onClose, on
                 {/* 错误提示 */}
                 {createError && (
                   <div className="p-2.5 rounded-lg bg-red-500/10 border border-red-500/30 text-red-500 text-xs">{createError}</div>
+                )}
+
+                {/* 所属团队 */}
+                {userTeams.length > 0 && (
+                  <div>
+                    <label className="text-xs font-semibold mb-1.5 block" style={{ color: 'var(--text-secondary)' }}>所属团队</label>
+                    <select value={selectedTeamId} onChange={(e) => setSelectedTeamId(e.target.value ? Number(e.target.value) : '')}
+                      className="w-full px-3 py-2 rounded-md bg-[var(--bg-input)] border border-[var(--border-color)] text-[var(--text-primary)] text-sm focus:outline-none focus:border-[var(--accent)]/40">
+                      <option value="">个人项目</option>
+                      {userTeams.map(team => (<option key={team.id} value={team.id}>{team.name}</option>))}
+                    </select>
+                  </div>
                 )}
               </div>
             </div>

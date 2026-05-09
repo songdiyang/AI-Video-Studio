@@ -7,7 +7,9 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   Search, Puzzle, Star, DownloadIcon, Plus, ToggleLeft, ToggleRight,
-  Trash2, Package, User, Calendar, Tag, Loader2, FileText, Upload, X
+  Trash2, Package, User, Calendar, Tag, Loader2, FileText, Upload, X,
+  RefreshCw, MoreHorizontal, LayoutList, LayoutGrid, ChevronDown, ChevronRight,
+  Filter, Check
 } from 'lucide-react';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { useExtensions } from '../../contexts/ExtensionContext';
@@ -16,10 +18,11 @@ import {
   getExtensions, getExtensionCategories, getExtensionDetail,
   getUserExtensions, installExtension, uninstallExtension, toggleExtension
 } from '../../services/extensions';
-import { installFromZip } from '../../utils/extensionInstaller';
+import { installFromZip, installFromUrl } from '../../utils/extensionInstaller';
 import {
   getAllLocalExtensions,
   toggleExtensionEnabled,
+  getRegistryEntry,
 } from '../../utils/extensionStorage';
 
 // ============ 简易 Markdown 渲染器 ============
@@ -83,10 +86,119 @@ function getCategoryColor(category: string): string {
   return CATEGORY_COLORS[category] || CATEGORY_COLORS.other;
 }
 
+// ============ 扩展图标组件 ============
+
+const ExtensionIcon: React.FC<{ iconUrl?: string | null; category: string; size?: 'sm' | 'md' | 'lg' }> = ({ iconUrl, category, size = 'sm' }) => {
+  const sizeClasses = {
+    sm: 'w-9 h-9',
+    md: 'w-10 h-10',
+    lg: 'w-16 h-16',
+  };
+  const iconSizes = {
+    sm: 'w-4 h-4',
+    md: 'w-5 h-5',
+    lg: 'w-8 h-8',
+  };
+
+  if (iconUrl) {
+    return (
+      <img
+        src={iconUrl}
+        alt=""
+        className={`${sizeClasses[size]} rounded-lg flex-shrink-0 object-cover`}
+        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+      />
+    );
+  }
+
+  return (
+    <div
+      className={`${sizeClasses[size]} rounded-lg flex items-center justify-center flex-shrink-0`}
+      style={{ backgroundColor: `${getCategoryColor(category)}15` }}
+    >
+      <Puzzle className={iconSizes[size]} style={{ color: getCategoryColor(category) }} />
+    </div>
+  );
+};
+
+// ============ 下拉菜单组件 ============
+
+interface DropdownMenuProps {
+  trigger: React.ReactNode;
+  children: React.ReactNode;
+  align?: 'left' | 'right';
+}
+
+const DropdownMenu: React.FC<DropdownMenuProps> = ({ trigger, children, align = 'right' }) => {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  return (
+    <div ref={ref} className="relative">
+      <div onClick={() => setOpen(!open)}>{trigger}</div>
+      {open && (
+        <>
+          <div
+            className={`absolute z-50 mt-1 min-w-[200px] rounded-lg border shadow-lg py-1 ${align === 'right' ? 'right-0' : 'left-0'}`}
+            style={{
+              backgroundColor: 'var(--bg-card)',
+              borderColor: 'var(--border-color)',
+            }}
+          >
+            {children}
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
+
+const DropdownItem: React.FC<{
+  children: React.ReactNode;
+  onClick?: () => void;
+  active?: boolean;
+  disabled?: boolean;
+  hasSubmenu?: boolean;
+}> = ({ children, onClick, active, disabled, hasSubmenu }) => (
+  <button
+    onClick={onClick}
+    disabled={disabled}
+    className={`w-full text-left px-3 py-1.5 text-xs flex items-center justify-between transition-colors ${
+      disabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-[var(--bg-hover)]'
+    } ${active ? 'text-blue-500' : ''}`}
+    style={{ color: active ? undefined : 'var(--text-secondary)' }}
+  >
+    <span>{children}</span>
+    {active && <Check className="w-3 h-3" />}
+    {hasSubmenu && <ChevronRight className="w-3 h-3" style={{ color: 'var(--text-muted)' }} />}
+  </button>
+);
+
+const DropdownDivider = () => (
+  <div className="my-1 border-t" style={{ borderColor: 'var(--border-color)' }} />
+);
+
+const DropdownLabel: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <div className="px-3 py-1 text-[10px] font-medium uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+    {children}
+  </div>
+);
+
 // ============ 主组件 ============
 
 type TabType = 'marketplace' | 'installed';
 type SortType = 'download' | 'newest' | 'rating' | 'name';
+type FilterType = 'all' | 'featured' | 'mcp' | 'recommended' | 'recent' | 'popular' | 'installed' | 'updates' | 'builtin' | 'enabled' | 'disabled' | 'unsupported';
 
 const Extensions: React.FC = () => {
   const { t } = useLanguage();
@@ -105,6 +217,12 @@ const Extensions: React.FC = () => {
   const [sortBy, setSortBy] = useState<SortType>('download');
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
+
+  // 筛选状态
+  const [activeFilter, setActiveFilter] = useState<FilterType>('all');
+  const [filterMenuOpen, setFilterMenuOpen] = useState(false);
+  const [categoryMenuOpen, setCategoryMenuOpen] = useState(false);
+  const [sortMenuOpen, setSortMenuOpen] = useState(false);
 
   // 已安装扩展状态
   const [userExtensions, setUserExtensions] = useState<UserExtension[]>([]);
@@ -133,6 +251,10 @@ const Extensions: React.FC = () => {
   const [zipInstallMsg, setZipInstallMsg] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
+
+  // 折叠状态
+  const [localExpanded, setLocalExpanded] = useState(true);
+  const [marketplaceExpanded, setMarketplaceExpanded] = useState(true);
 
   // 加载市场数据
   const loadMarketplace = async (p = 1) => {
@@ -232,7 +354,19 @@ const Extensions: React.FC = () => {
     try {
       await installExtension(ext.id);
       await loadUserExtensions();
-      // 如果当前在详情页，刷新一下
+
+      if (ext.package_url) {
+        setZipInstallMsg('下载扩展文件中...');
+        const result = await installFromUrl(ext.package_url);
+        if (result.success) {
+          setZipInstallMsg(result.message);
+          await loadLocalExtensions();
+          window.dispatchEvent(new Event('extensions:refresh'));
+        } else {
+          setActionError(result.message);
+        }
+      }
+
       if (selectedExtension?.id === ext.id) {
         const detail = await getExtensionDetail(ext.id);
         setSelectedExtension(detail);
@@ -241,6 +375,7 @@ const Extensions: React.FC = () => {
       setActionError(err.message || '安装失败');
     } finally {
       setInstallingId(null);
+      setTimeout(() => setZipInstallMsg(null), 3000);
     }
   };
 
@@ -249,21 +384,50 @@ const Extensions: React.FC = () => {
     e?.stopPropagation();
     setActionError(null);
     try {
+      const ue = userExtensions.find(u => u.extension_id === extId);
+      const extName = ue?.name;
+
       await uninstallExtension(extId);
       await loadUserExtensions();
+
+      if (extName) {
+        const localEntry = localExtensions.find(le => le.name === extName);
+        if (localEntry) {
+          try {
+            await uninstallLocalExtension(extName);
+            await loadLocalExtensions();
+            window.dispatchEvent(new Event('extensions:refresh'));
+          } catch (localErr: any) {
+            console.warn('[Extensions] 本地扩展清理失败:', localErr.message);
+          }
+        }
+      }
+
       if (selectedExtension?.id === extId) setSelectedExtension(null);
     } catch (err: any) {
       setActionError(err.message || '卸载失败');
     }
   };
 
-  // 启用/禁用扩展（后端）
+  // 启用/禁用扩展
   const handleToggle = async (ext: UserExtension, e?: React.MouseEvent) => {
     e?.stopPropagation();
     setActionError(null);
     try {
-      await toggleExtension(ext.extension_id, !ext.is_enabled);
+      const newEnabled = !ext.is_enabled;
+      await toggleExtension(ext.extension_id, newEnabled);
       await loadUserExtensions();
+
+      try {
+        const localEntry = await getRegistryEntry(ext.name);
+        if (localEntry && localEntry.enabled !== newEnabled) {
+          await toggleExtensionEnabled(ext.name, newEnabled);
+          await loadLocalExtensions();
+          window.dispatchEvent(new Event('extensions:refresh'));
+        }
+      } catch (localErr: any) {
+        console.warn('[Extensions] 本地扩展状态同步失败:', localErr.message);
+      }
     } catch (err: any) {
       setActionError(err.message || '操作失败');
     }
@@ -277,12 +441,13 @@ const Extensions: React.FC = () => {
     try {
       await toggleExtensionEnabled(name, !ext.enabled);
       await loadLocalExtensions();
+      window.dispatchEvent(new Event('extensions:refresh'));
     } catch (err: any) {
       setActionError(err.message || '操作失败');
     }
   };
 
-  // 卸载本地扩展（通过 ExtensionContext 走完整清理流程）
+  // 卸载本地扩展
   const handleUninstallLocal = async (name: string, e?: React.MouseEvent) => {
     e?.stopPropagation();
     try {
@@ -294,7 +459,7 @@ const Extensions: React.FC = () => {
     }
   };
 
-  // ZIP 上传安装
+  // ZIP 上传安装（AOM 文件）
   const handleZipInstall = async (file: File) => {
     setZipInstalling(true);
     setZipInstallMsg(null);
@@ -304,6 +469,19 @@ const Extensions: React.FC = () => {
       if (result.success) {
         setZipInstallMsg(result.message);
         await loadLocalExtensions();
+        // 自动同步到后端：按扩展名匹配市场中的扩展，调用后端注册安装记录
+        const extName = result.name;
+        const matchedExt = extensions.find(e => e.name === extName);
+        if (matchedExt && !userExtensions.some(ue => ue.extension_id === matchedExt.id)) {
+          try {
+            await installExtension(matchedExt.id);
+            await loadUserExtensions();
+          } catch {
+            // 后端注册失败不阻塞，本地 IndexedDB 已有记录
+            console.warn('[Extensions] 后端注册扩展失败:', extName);
+          }
+        }
+        window.dispatchEvent(new Event('extensions:refresh'));
       } else {
         setActionError(result.message);
       }
@@ -325,13 +503,20 @@ const Extensions: React.FC = () => {
     e.preventDefault();
     setDragOver(false);
     const file = e.dataTransfer.files?.[0];
-    if (file && file.name.endsWith('.zip')) {
+    if (file && file.name.endsWith('.aom')) {
       handleZipInstall(file);
     }
   }, []);
 
-  // 检查扩展是否已安装
-  const isInstalled = (extId: number) => userExtensions.some(ue => ue.extension_id === extId);
+  // 检查扩展是否已安装（同时检查后端记录和本地 IndexedDB）
+  const isInstalled = (extId: number) => {
+    // 先查后端
+    if (userExtensions.some(ue => ue.extension_id === extId)) return true;
+    // 再查本地 IndexedDB，通过 name 匹配
+    const ext = extensions.find(e => e.id === extId);
+    if (ext && localExtensions.some(le => le.name === ext.name)) return true;
+    return false;
+  };
   const getUserExt = (extId: number) => userExtensions.find(ue => ue.extension_id === extId);
 
   // 翻译辅助
@@ -365,131 +550,289 @@ const Extensions: React.FC = () => {
     updated_at: ue.installed_at,
   } as Extension));
 
+  // 过滤后的市场数据
+  const filteredExtensions = useMemo(() => {
+    let result = [...extensions];
+    switch (activeFilter) {
+      case 'featured':
+      case 'recommended':
+        result = result.filter(e => e.rating >= 4.5 || e.download_count > 100);
+        break;
+      case 'recent':
+        result = [...result].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+        break;
+      case 'popular':
+        result = [...result].sort((a, b) => b.download_count - a.download_count);
+        break;
+      case 'installed':
+        result = result.filter(e => isInstalled(e.id));
+        break;
+      default:
+        break;
+    }
+    return result;
+  }, [extensions, activeFilter]);
+
   // 当前选中的扩展是否在列表中
   const selectedInList = listData.find(e => e.id === selectedExtension?.id);
 
+  // 渲染扩展列表项
+  const renderExtensionItem = (ext: Extension, isLocal = false) => {
+    const installed = isLocal ? true : isInstalled(ext.id);
+    const isSelected = selectedExtension?.id === ext.id;
+    const localExt = isLocal ? localExtensions.find(le => le.name === ext.name) : null;
+
+    return (
+      <div
+        key={isLocal ? ext.name : ext.id}
+        onClick={() => !isLocal && handleSelectExtension(ext)}
+        className={`p-2.5 cursor-pointer transition-colors ${
+          isSelected ? 'bg-blue-500/5' : 'hover:bg-[var(--bg-hover)]'
+        }`}
+      >
+        <div className="flex items-start gap-2.5">
+          <ExtensionIcon iconUrl={ext.icon_url} category={ext.category} size="sm" />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-1.5">
+              <h4 className="text-xs font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
+                {ext.display_name}
+              </h4>
+              {!isLocal && installed && activeTab === 'marketplace' && (
+                <span className="text-[9px] px-1 py-0.5 rounded-full bg-green-500/10 text-green-500 flex-shrink-0">
+                  {tx.installedBadge}
+                </span>
+              )}
+              {isLocal && localExt && (
+                <>
+                  <span className="text-[9px] px-1 py-0.5 rounded-full bg-purple-500/10 text-purple-500 flex-shrink-0">
+                    本地
+                  </span>
+                  <span className={`text-[9px] px-1 py-0.5 rounded-full flex-shrink-0 ${localExt.enabled ? 'bg-green-500/10 text-green-500' : 'bg-gray-500/10 text-gray-500'}`}>
+                    {localExt.enabled ? tx.enabled : tx.disabled}
+                  </span>
+                </>
+              )}
+            </div>
+            <p className="text-[10px] mt-0.5 truncate" style={{ color: 'var(--text-muted)' }}>
+              {ext.description || tx.noDescription}
+            </p>
+            <div className="flex items-center gap-2 mt-0.5">
+              {!isLocal && (
+                <>
+                  <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                    {ext.author || tx.unknownAuthor}
+                  </span>
+                  <span className="flex items-center gap-0.5 text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                    <DownloadIcon className="w-2.5 h-2.5" />
+                    {ext.download_count}
+                  </span>
+                </>
+              )}
+              {isLocal && localExt && (
+                <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                  {localExt.author || tx.unknownAuthor}
+                </span>
+              )}
+            </div>
+          </div>
+          {isLocal && localExt && (
+            <div className="flex items-center gap-0.5 flex-shrink-0">
+              <button
+                onClick={(e) => handleToggleLocal(localExt.name, e)}
+                className="p-1 rounded transition-colors hover:bg-[var(--bg-hover)]"
+                title={localExt.enabled ? tx.disable : tx.enable}
+              >
+                {localExt.enabled ? (
+                  <ToggleRight className="w-3.5 h-3.5 text-green-500" />
+                ) : (
+                  <ToggleLeft className="w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
+                )}
+              </button>
+              <button
+                onClick={(e) => handleUninstallLocal(localExt.name, e)}
+                className="p-1 rounded transition-colors hover:bg-red-500/10 text-red-500"
+                title={tx.uninstall}
+              >
+                <Trash2 className="w-3 h-3" />
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="flex h-full overflow-hidden" style={{ backgroundColor: 'var(--bg-body)' }}>
-      {/* ====== 左侧边栏：筛选 + 扩展列表 ====== */}
+      {/* ====== 左侧边栏：VS Code 风格 ====== */}
       <div className="w-80 flex-shrink-0 border-r flex flex-col" style={{ borderColor: 'var(--border-color)', backgroundColor: 'var(--bg-card)' }}>
-        {/* 头部 */}
-        <div className="p-4 border-b" style={{ borderColor: 'var(--border-color)' }}>
-          <h2 className="text-lg font-bold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
-            <Puzzle className="w-5 h-5 text-blue-500" />
+        {/* 顶部标题栏 */}
+        <div className="flex items-center justify-between px-3 py-2 border-b" style={{ borderColor: 'var(--border-color)' }}>
+          <span className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>
             {tx.title}
-          </h2>
-          <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-            {tx.subtitle}
-          </p>
+          </span>
+          <div className="flex items-center gap-0.5">
+            <button
+              onClick={() => { loadMarketplace(1); loadUserExtensions(); loadLocalExtensions(); }}
+              className="p-1 rounded transition-colors hover:bg-[var(--bg-hover)]"
+              title={tx.refresh}
+            >
+              <RefreshCw className="w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
+            </button>
+            <DropdownMenu
+              trigger={
+                <button className="p-1 rounded transition-colors hover:bg-[var(--bg-hover)]" title={tx.moreActions}>
+                  <MoreHorizontal className="w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
+                </button>
+              }
+            >
+              <DropdownItem onClick={() => { setActiveTab('marketplace'); setActiveFilter('featured'); }} active={activeFilter === 'featured'}>
+                {tx.filterFeatured}
+              </DropdownItem>
+              <DropdownItem onClick={() => { setActiveTab('marketplace'); setActiveFilter('mcp'); }} active={activeFilter === 'mcp'}>
+                {tx.filterMcpServers}
+              </DropdownItem>
+              <DropdownItem onClick={() => { setActiveTab('marketplace'); setActiveFilter('recommended'); }} active={activeFilter === 'recommended'}>
+                {tx.filterRecommended}
+              </DropdownItem>
+              <DropdownItem onClick={() => { setActiveTab('marketplace'); setActiveFilter('recent'); }} active={activeFilter === 'recent'}>
+                {tx.filterRecent}
+              </DropdownItem>
+              <DropdownItem onClick={() => { setActiveTab('marketplace'); setActiveFilter('popular'); }} active={activeFilter === 'popular'}>
+                {tx.filterPopular}
+              </DropdownItem>
+              <DropdownDivider />
+              <div className="relative">
+                <DropdownMenu
+                  trigger={
+                    <div className="w-full">
+                      <DropdownItem hasSubmenu>{tx.filterCategories}</DropdownItem>
+                    </div>
+                  }
+                  align="left"
+                >
+                  <DropdownItem onClick={() => setSelectedCategory('')} active={selectedCategory === ''}>
+                    {tx.all}
+                  </DropdownItem>
+                  {categories.map(cat => (
+                    <DropdownItem
+                      key={cat.category}
+                      onClick={() => setSelectedCategory(cat.category === selectedCategory ? '' : cat.category)}
+                      active={selectedCategory === cat.category}
+                    >
+                      {getCategoryLabel(cat.category)} ({cat.count})
+                    </DropdownItem>
+                  ))}
+                </DropdownMenu>
+              </div>
+              <DropdownDivider />
+              <DropdownItem onClick={() => { setActiveTab('installed'); setActiveFilter('installed'); }} active={activeTab === 'installed' && activeFilter === 'installed'}>
+                {tx.filterInstalled}
+              </DropdownItem>
+              <DropdownItem onClick={() => setActiveFilter('updates')} active={activeFilter === 'updates'} disabled>
+                {tx.filterUpdates}
+              </DropdownItem>
+              <DropdownItem onClick={() => setActiveFilter('builtin')} active={activeFilter === 'builtin'} disabled>
+                {tx.filterBuiltIn}
+              </DropdownItem>
+              <DropdownDivider />
+              <DropdownItem onClick={() => setActiveFilter('enabled')} active={activeFilter === 'enabled'} disabled>
+                {tx.filterEnabled}
+              </DropdownItem>
+              <DropdownItem onClick={() => setActiveFilter('disabled')} active={activeFilter === 'disabled'} disabled>
+                {tx.filterDisabled}
+              </DropdownItem>
+              <DropdownItem onClick={() => setActiveFilter('unsupported')} active={activeFilter === 'unsupported'} disabled>
+                {tx.filterUnsupported}
+              </DropdownItem>
+              <DropdownDivider />
+              <div className="relative">
+                <DropdownMenu
+                  trigger={
+                    <div className="w-full">
+                      <DropdownItem hasSubmenu>{tx.sortBy}</DropdownItem>
+                    </div>
+                  }
+                  align="left"
+                >
+                  {(['download', 'newest', 'rating', 'name'] as SortType[]).map(sort => (
+                    <DropdownItem
+                      key={sort}
+                      onClick={() => setSortBy(sort)}
+                      active={sortBy === sort}
+                    >
+                      {getSortLabel(sort)}
+                    </DropdownItem>
+                  ))}
+                </DropdownMenu>
+              </div>
+            </DropdownMenu>
+          </div>
         </div>
 
-        {/* Tab 切换 */}
-        <div className="flex border-b" style={{ borderColor: 'var(--border-color)' }}>
-          <button
-            onClick={() => { setActiveTab('marketplace'); setSelectedExtension(null); }}
-            className={`flex-1 py-2.5 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors ${
-              activeTab === 'marketplace' ? 'border-b-2 border-blue-500 text-blue-500' : ''
-            }`}
-            style={{ color: activeTab === 'marketplace' ? undefined : 'var(--text-muted)' }}
-          >
-            <Search className="w-3.5 h-3.5" />
-            {tx.marketplace}
-          </button>
-          <button
-            onClick={() => { setActiveTab('installed'); loadUserExtensions(); setSelectedExtension(null); }}
-            className={`flex-1 py-2.5 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors ${
-              activeTab === 'installed' ? 'border-b-2 border-blue-500 text-blue-500' : ''
-            }`}
-            style={{ color: activeTab === 'installed' ? undefined : 'var(--text-muted)' }}
-          >
-            <Package className="w-3.5 h-3.5" />
-            {tx.installed}
-            {userExtensions.length > 0 && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-500/10 text-blue-500">
-                {userExtensions.length}
-              </span>
-            )}
-          </button>
-        </div>
-
-        {/* 搜索 */}
-        <div className="p-3">
-          <div className="relative">
+        {/* 搜索框 */}
+        <div className="px-3 py-2">
+          <div className="relative flex items-center">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
             <input
               type="text"
-              placeholder={tx.searchPlaceholder}
+              placeholder={activeTab === 'marketplace' ? tx.searchPlaceholder : tx.searchInMarketplace}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg border outline-none focus:ring-1 focus:ring-blue-500"
+              className="w-full pl-8 pr-16 py-1.5 text-xs rounded border outline-none focus:ring-1 focus:ring-blue-500"
               style={{
                 backgroundColor: 'var(--bg-input, var(--bg-body))',
                 borderColor: 'var(--border-color)',
                 color: 'var(--text-primary)',
               }}
             />
+            <div className="absolute right-1 flex items-center gap-0.5">
+              <button
+                className="p-1 rounded transition-colors hover:bg-[var(--bg-hover)]"
+                title={tx.viewList}
+              >
+                <LayoutList className="w-3 h-3" style={{ color: 'var(--text-muted)' }} />
+              </button>
+              <button
+                className="p-1 rounded transition-colors hover:bg-[var(--bg-hover)]"
+                title={tx.moreActions}
+                onClick={() => setFilterMenuOpen(!filterMenuOpen)}
+              >
+                <Filter className="w-3 h-3" style={{ color: 'var(--text-muted)' }} />
+              </button>
+            </div>
           </div>
         </div>
 
-        {activeTab === 'marketplace' && (
-          <>
-            {/* 分类 */}
-            <div className="px-3 pb-2">
-              <div className="text-[10px] font-medium uppercase tracking-wider mb-2" style={{ color: 'var(--text-muted)' }}>
-                {tx.category}
-              </div>
-              <div className="space-y-0.5">
-                <button
-                  onClick={() => setSelectedCategory('')}
-                  className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition-colors flex items-center justify-between ${
-                    selectedCategory === '' ? 'bg-blue-500/10 text-blue-500' : 'hover:bg-[var(--bg-hover)]'
-                  }`}
-                  style={{ color: selectedCategory === '' ? undefined : 'var(--text-secondary)' }}
-                >
-                  <span>{tx.all}</span>
-                  <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{total}</span>
-                </button>
-                {categories.map(cat => (
-                  <button
-                    key={cat.category}
-                    onClick={() => setSelectedCategory(cat.category === selectedCategory ? '' : cat.category)}
-                    className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition-colors flex items-center justify-between ${
-                      selectedCategory === cat.category ? 'bg-blue-500/10 text-blue-500' : 'hover:bg-[var(--bg-hover)]'
-                    }`}
-                    style={{ color: selectedCategory === cat.category ? undefined : 'var(--text-secondary)' }}
-                  >
-                    <span>{getCategoryLabel(cat.category)}</span>
-                    <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{cat.count}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* 排序 */}
-            <div className="px-3 pb-2">
-              <div className="text-[10px] font-medium uppercase tracking-wider mb-2" style={{ color: 'var(--text-muted)' }}>
-                {tx.sort}
-              </div>
-              <div className="flex flex-wrap gap-1">
-                {(['download', 'newest', 'rating', 'name'] as SortType[]).map(sort => (
-                  <button
-                    key={sort}
-                    onClick={() => setSortBy(sort)}
-                    className={`px-2 py-1 rounded-md text-[10px] transition-colors ${
-                      sortBy === sort ? 'bg-blue-500/10 text-blue-500' : 'bg-[var(--bg-body)]'
-                    }`}
-                    style={{ color: sortBy === sort ? undefined : 'var(--text-muted)' }}
-                  >
-                    {getSortLabel(sort)}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </>
-        )}
+        {/* Tab 切换 - 紧凑样式 */}
+        <div className="flex border-b" style={{ borderColor: 'var(--border-color)' }}>
+          <button
+            onClick={() => { setActiveTab('marketplace'); setSelectedExtension(null); }}
+            className={`flex-1 py-1.5 text-[10px] font-medium flex items-center justify-center gap-1 transition-colors ${
+              activeTab === 'marketplace' ? 'border-b-2 border-blue-500 text-blue-500' : ''
+            }`}
+            style={{ color: activeTab === 'marketplace' ? undefined : 'var(--text-muted)' }}
+          >
+            {tx.marketplace}
+          </button>
+          <button
+            onClick={() => { setActiveTab('installed'); loadUserExtensions(); setSelectedExtension(null); }}
+            className={`flex-1 py-1.5 text-[10px] font-medium flex items-center justify-center gap-1 transition-colors ${
+              activeTab === 'installed' ? 'border-b-2 border-blue-500 text-blue-500' : ''
+            }`}
+            style={{ color: activeTab === 'installed' ? undefined : 'var(--text-muted)' }}
+          >
+            {tx.installed}
+            {userExtensions.length > 0 && (
+              <span className="text-[9px] px-1 py-0 rounded-full bg-blue-500/10 text-blue-500">
+                {userExtensions.length}
+              </span>
+            )}
+          </button>
+        </div>
 
         {/* 扩展列表 */}
-        <div className="flex-1 overflow-y-auto border-t" style={{ borderColor: 'var(--border-color)' }}>
+        <div className="flex-1 overflow-y-auto">
           {activeTab === 'marketplace' && loading && extensions.length === 0 ? (
             <div className="flex items-center justify-center py-8">
               <Loader2 className="w-5 h-5 animate-spin" style={{ color: 'var(--text-muted)' }} />
@@ -498,124 +841,88 @@ const Extensions: React.FC = () => {
             <div className="flex items-center justify-center py-8">
               <Loader2 className="w-5 h-5 animate-spin" style={{ color: 'var(--text-muted)' }} />
             </div>
-          ) : listData.length === 0 && activeTab === 'marketplace' ? (
-            <div className="text-center py-8 px-4" style={{ color: 'var(--text-muted)' }}>
-              <Package className="w-8 h-8 mx-auto mb-2 opacity-30" />
-              <p className="text-xs">{tx.noExtensions}</p>
-            </div>
           ) : (
-            <div className="divide-y" style={{ borderColor: 'var(--border-color)' }}>
-              {listData.map(ext => {
-                const installed = activeTab === 'marketplace' ? isInstalled(ext.id) : true;
-                const isSelected = selectedExtension?.id === ext.id;
-                return (
-                  <div
-                    key={ext.id}
-                    onClick={() => handleSelectExtension(ext)}
-                    className={`p-3 cursor-pointer transition-colors ${
-                      isSelected ? 'bg-blue-500/5' : 'hover:bg-[var(--bg-hover)]'
-                    }`}
+            <div>
+              {/* 市场扩展 - 可折叠 */}
+              {activeTab === 'marketplace' && filteredExtensions.length > 0 && (
+                <>
+                  <button
+                    onClick={() => setMarketplaceExpanded(!marketplaceExpanded)}
+                    className="w-full flex items-center gap-1 px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider transition-colors hover:bg-[var(--bg-hover)]"
+                    style={{ color: 'var(--text-muted)' }}
                   >
-                    <div className="flex items-start gap-2.5">
-                      <div
-                        className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
-                        style={{ backgroundColor: `${getCategoryColor(ext.category)}15` }}
-                      >
-                        <Puzzle className="w-4 h-4" style={{ color: getCategoryColor(ext.category) }} />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <h4 className="text-xs font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
-                            {ext.display_name}
-                          </h4>
-                          {installed && activeTab === 'marketplace' && (
-                            <span className="text-[9px] px-1 py-0.5 rounded-full bg-green-500/10 text-green-500 flex-shrink-0">
-                              {tx.installedBadge}
-                            </span>
-                          )}
+                    {marketplaceExpanded ? (
+                      <ChevronDown className="w-3 h-3" />
+                    ) : (
+                      <ChevronRight className="w-3 h-3" />
+                    )}
+                    {tx.marketplace}
+                    <span className="ml-auto">{filteredExtensions.length}</span>
+                  </button>
+                  {marketplaceExpanded && (
+                    <div className="divide-y" style={{ borderColor: 'var(--border-color)' }}>
+                      {filteredExtensions.map(ext => renderExtensionItem(ext))}
+                      {extensions.length < total && (
+                        <div className="p-2 text-center">
+                          <button
+                            onClick={() => loadMarketplace(page + 1)}
+                            disabled={loading}
+                            className="text-xs text-blue-500 hover:underline disabled:opacity-50"
+                          >
+                            {loading ? <Loader2 className="w-3 h-3 animate-spin inline" /> : tx.loadMore}
+                          </button>
                         </div>
-                        <p className="text-[10px] mt-0.5 truncate" style={{ color: 'var(--text-muted)' }}>
-                          {ext.description || tx.noDescription}
-                        </p>
-                        <div className="flex items-center gap-2 mt-1">
-                          <span className="flex items-center gap-0.5 text-[10px]" style={{ color: 'var(--text-muted)' }}>
-                            <DownloadIcon className="w-2.5 h-2.5" />
-                            {ext.download_count}
-                          </span>
-                          <span className="flex items-center gap-0.5 text-[10px]" style={{ color: 'var(--text-muted)' }}>
-                            <Star className="w-2.5 h-2.5" />
-                            {ext.rating}
-                          </span>
-                          <span className="text-[10px] truncate" style={{ color: 'var(--text-muted)' }}>
-                            {ext.author || tx.unknownAuthor}
-                          </span>
-                        </div>
-                      </div>
+                      )}
                     </div>
-                  </div>
-                );
-              })}
-              {/* 本地扩展列表（在已安装 Tab 中显示） */}
-              {activeTab === 'installed' && localExtensions.map(le => (
-                <div
-                  key={le.name}
-                  className="p-3 cursor-pointer transition-colors hover:bg-[var(--bg-hover)]"
-                >
-                  <div className="flex items-start gap-2.5">
-                    <div
-                      className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
-                      style={{ backgroundColor: `${getCategoryColor(le.category)}15` }}
-                    >
-                      <Puzzle className="w-4 h-4" style={{ color: getCategoryColor(le.category) }} />
+                  )}
+                </>
+              )}
+
+              {/* 已安装扩展 - 可折叠 */}
+              {activeTab === 'installed' && listData.length > 0 && (
+                <>
+                  <button
+                    onClick={() => setLocalExpanded(!localExpanded)}
+                    className="w-full flex items-center gap-1 px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider transition-colors hover:bg-[var(--bg-hover)]"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    {localExpanded ? (
+                      <ChevronDown className="w-3 h-3" />
+                    ) : (
+                      <ChevronRight className="w-3 h-3" />
+                    )}
+                    {tx.localInstalled}
+                    <span className="ml-auto">{listData.length + localExtensions.length}</span>
+                  </button>
+                  {localExpanded && (
+                    <div className="divide-y" style={{ borderColor: 'var(--border-color)' }}>
+                      {listData.map(ext => renderExtensionItem(ext))}
+                      {localExtensions.map(le => renderExtensionItem({
+                        id: 0,
+                        name: le.name,
+                        display_name: le.displayName,
+                        description: le.description,
+                        version: le.version,
+                        author: le.author,
+                        category: le.category,
+                        icon_url: null,
+                        download_count: 0,
+                        rating: 0,
+                        created_at: '',
+                        updated_at: '',
+                      }, true))}
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <h4 className="text-xs font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
-                          {le.displayName}
-                        </h4>
-                        <span className="text-[9px] px-1 py-0.5 rounded-full bg-purple-500/10 text-purple-500 flex-shrink-0">
-                          本地
-                        </span>
-                        <span className={`text-[9px] px-1 py-0.5 rounded-full flex-shrink-0 ${le.enabled ? 'bg-green-500/10 text-green-500' : 'bg-gray-500/10 text-gray-500'}`}>
-                          {le.enabled ? tx.enabled : tx.disabled}
-                        </span>
-                      </div>
-                      <p className="text-[10px] mt-0.5 truncate" style={{ color: 'var(--text-muted)' }}>
-                        {le.description || tx.noDescription}
-                      </p>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className="text-[10px] truncate" style={{ color: 'var(--text-muted)' }}>
-                          {le.author || tx.unknownAuthor}
-                        </span>
-                        <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
-                          v{le.version}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1 flex-shrink-0">
-                      <button
-                        onClick={(e) => handleToggleLocal(le.name, e)}
-                        className="p-1.5 rounded transition-colors hover:bg-[var(--bg-hover)]"
-                        title={le.enabled ? tx.disable : tx.enable}
-                      >
-                        {le.enabled ? (
-                          <ToggleRight className="w-4 h-4 text-green-500" />
-                        ) : (
-                          <ToggleLeft className="w-4 h-4" style={{ color: 'var(--text-muted)' }} />
-                        )}
-                      </button>
-                      <button
-                        onClick={(e) => handleUninstallLocal(le.name, e)}
-                        className="p-1.5 rounded transition-colors hover:bg-red-500/10 text-red-500"
-                        title={tx.uninstall}
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
+                  )}
+                </>
+              )}
+
+              {/* 空状态 */}
+              {activeTab === 'marketplace' && filteredExtensions.length === 0 && !loading && (
+                <div className="text-center py-8 px-4" style={{ color: 'var(--text-muted)' }}>
+                  <Package className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                  <p className="text-xs">{tx.noExtensions}</p>
                 </div>
-              ))}
-              {/* 已安装 Tab 为空提示 */}
+              )}
               {activeTab === 'installed' && listData.length === 0 && localExtensions.length === 0 && (
                 <div className="text-center py-8 px-4" style={{ color: 'var(--text-muted)' }}>
                   <Package className="w-8 h-8 mx-auto mb-2 opacity-30" />
@@ -628,18 +935,6 @@ const Extensions: React.FC = () => {
                   </button>
                 </div>
               )}
-              {/* 加载更多 */}
-              {activeTab === 'marketplace' && extensions.length < total && (
-                <div className="p-3 text-center">
-                  <button
-                    onClick={() => loadMarketplace(page + 1)}
-                    disabled={loading}
-                    className="text-xs text-blue-500 hover:underline disabled:opacity-50"
-                  >
-                    {loading ? <Loader2 className="w-3 h-3 animate-spin inline" /> : tx.loadMore}
-                  </button>
-                </div>
-              )}
             </div>
           )}
         </div>
@@ -649,7 +944,7 @@ const Extensions: React.FC = () => {
           <input
             ref={fileInputRef}
             type="file"
-            accept=".zip"
+            accept=".aom"
             onChange={onFileChange}
             className="hidden"
           />
@@ -658,7 +953,7 @@ const Extensions: React.FC = () => {
             onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
             onDragLeave={() => setDragOver(false)}
             onDrop={onDrop}
-            className={`w-full py-2.5 px-3 rounded-lg border border-dashed text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-colors ${
+            className={`w-full py-2 px-3 rounded border border-dashed text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-colors ${
               dragOver ? 'border-blue-500 bg-blue-500/5 text-blue-500' : ''
             }`}
             style={{
@@ -671,7 +966,7 @@ const Extensions: React.FC = () => {
             ) : (
               <Upload className="w-3.5 h-3.5" />
             )}
-            {zipInstalling ? '安装中...' : zipInstallMsg || '从 ZIP 安装扩展'}
+            {zipInstalling ? '安装中...' : zipInstallMsg || '从 AOM 安装扩展'}
           </div>
           {actionError && (
             <div className="flex items-center gap-1 mt-1.5 text-[10px] text-red-500">
@@ -692,12 +987,7 @@ const Extensions: React.FC = () => {
           <div className="max-w-4xl mx-auto p-6 pb-20">
             {/* 详情头部 */}
             <div className="flex items-start gap-4 mb-6 pb-4 border-b" style={{ borderColor: 'var(--border-color)' }}>
-              <div
-                className="w-16 h-16 rounded-2xl flex items-center justify-center flex-shrink-0"
-                style={{ backgroundColor: `${getCategoryColor(selectedExtension.category)}15` }}
-              >
-                <Puzzle className="w-8 h-8" style={{ color: getCategoryColor(selectedExtension.category) }} />
-              </div>
+              <ExtensionIcon iconUrl={selectedExtension.icon_url} category={selectedExtension.category} size="lg" />
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>

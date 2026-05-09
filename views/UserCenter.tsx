@@ -844,7 +844,7 @@ const UserCenter: React.FC = () => {
             </div>
 
             {/* 详细账单 */}
-            <div className="bg-(--bg-card) border border-(--border-color) rounded-xl overflow-hidden">
+            <div className="bg-(--bg-card) border border-(--border-color) rounded-xl overflow-hidden flex flex-col" style={{ maxHeight: 'calc(100vh - 340px)', minHeight: 300 }}>
               {/* 账单头部 */}
               <div className="p-4 border-b border-(--border-color)">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -913,7 +913,7 @@ const UserCenter: React.FC = () => {
               </div>
 
               {/* 账单表格 */}
-              <div className="overflow-x-auto">
+              <div className="overflow-auto flex-1">
                 <Table
                   aria-label={t.userCenter.billingTitle}
                   className="min-w-full"

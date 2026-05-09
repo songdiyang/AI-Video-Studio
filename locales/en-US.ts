@@ -37,6 +37,7 @@ const enUS: Translations = {
     marketplace: 'Marketplace',
     community: 'Community',
     pricing: 'Pricing',
+    helpDocs: 'Help Docs',
   },
   // Settings Page
   settings: {
@@ -118,6 +119,8 @@ const enUS: Translations = {
       feedbackDesc: 'Help us improve',
       about: 'About',
       aboutDesc: 'Version and info',
+      points: 'Points Alert',
+      pointsDesc: 'Auto-notify when balance falls below threshold',
     },
     storage: {
       title: 'Local Cache',
@@ -152,6 +155,19 @@ const enUS: Translations = {
       passwordMismatch: 'New passwords do not match',
       passwordTooShort: 'New password must be at least 6 characters',
       networkError: 'Network error, please try again later',
+    },
+    points: {
+      title: 'Points Balance Alert',
+      description: 'When your points balance falls below the set threshold, the system will automatically send an internal mail to remind you to recharge.',
+      thresholdLabel: 'Alert Threshold',
+      thresholdPlaceholder: 'Enter points amount, e.g., 100',
+      thresholdHint: 'Set to 0 or leave empty to disable this feature',
+      save: 'Save',
+      saving: 'Saving...',
+      saved: 'Alert settings saved',
+      saveFailed: 'Failed to save',
+      currentThreshold: 'Current Threshold',
+      disabled: 'Disabled',
     },
   },
   // Command Palette
@@ -205,6 +221,14 @@ const enUS: Translations = {
         description: 'Customize your theme, language preferences, and workspace environment.',
       },
     },
+  },
+  // Help Docs
+  helpDocs: {
+    loading: 'Loading documentation...',
+    notFound: 'Help documentation extension not found',
+    loadError: 'Failed to load help documentation',
+    empty: 'No documentation content',
+    goExtensions: 'Help documentation is currently unavailable. Please contact the administrator.',
   },
   // Workflow Dashboard
   dashboard: {
@@ -319,7 +343,6 @@ const enUS: Translations = {
     outputLanguages: {
       en: 'English',
       zh: '中文',
-      ja: '日本語',
       ko: '한국어',
       fr: 'Français',
       es: 'Español',
@@ -1130,11 +1153,12 @@ const enUS: Translations = {
   },
   // Extensions
   extensions: {
-    title: 'Extension Marketplace',
+    title: 'Extensions',
     subtitle: 'Browse and manage extensions',
     marketplace: 'Marketplace',
     installed: 'Installed',
-    searchPlaceholder: 'Search extensions...',
+    searchPlaceholder: 'Search extensions in marketplace',
+    searchInMarketplace: 'Search in Marketplace',
     category: 'Category',
     all: 'All',
     sort: 'Sort',
@@ -1164,6 +1188,24 @@ const enUS: Translations = {
     downloads: 'downloads',
     updateAvailable: 'Update available',
     updateTo: 'Update to',
+    refresh: 'Refresh',
+    moreActions: 'More Actions',
+    filterFeatured: 'Featured',
+    filterMcpServers: 'MCP Servers',
+    filterRecommended: 'Recommended',
+    filterRecent: 'Recently Published',
+    filterPopular: 'Most Popular',
+    filterCategories: 'Categories',
+    filterInstalled: 'Installed',
+    filterUpdates: 'Updates',
+    filterBuiltIn: 'Built-in',
+    filterEnabled: 'Enabled',
+    filterDisabled: 'Disabled',
+    filterUnsupported: 'Workspace Unsupported',
+    sortBy: 'Sort By',
+    viewList: 'List View',
+    viewGrid: 'Grid View',
+    localInstalled: 'Local - Installed',
     categories: {
       productivity: 'Productivity',
       theme: 'Theme',

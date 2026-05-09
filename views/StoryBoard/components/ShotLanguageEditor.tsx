@@ -163,8 +163,6 @@ const ShotLanguageEditor: React.FC<ShotLanguageEditorProps> = ({
 
   // 紧凑模式 - 仅显示景别+视角+焦距（使用 HeroUI Select 统一风格）
   if (compact) {
-    // 当前选中项的中文标签
-    const shotSizeLabel = COMPOSITION_OPTIONS.shotSize.find(o => o.value === values.shotSize)?.label;
     const cameraHeightLabels: Record<string, string> = { eye_level: '平视', low_angle: '仰拍', high_angle: '俯拍', bird_eye: '鸟瞰' };
     const cameraHeightLabel = values.cameraHeight ? cameraHeightLabels[values.cameraHeight] : undefined;
     const focalLengthLabels: Record<string, string> = { ultra_wide: '超广角', wide: '广角', standard: '标准', portrait: '人像', telephoto: '长焦', macro: '微距' };
@@ -172,47 +170,6 @@ const ShotLanguageEditor: React.FC<ShotLanguageEditorProps> = ({
 
     return (
       <div className="flex items-center gap-2 flex-wrap">
-        {/* 景别 */}
-        <Select
-          aria-label="画面大小"
-          selectedKeys={values.shotSize ? [values.shotSize] : []}
-          onSelectionChange={(keys) => {
-            const selected = Array.from(keys)[0] as string;
-            handleChange('shotSize', selected || undefined);
-          }}
-          className="min-w-[60px]"
-          size="sm"
-          variant="flat"
-          classNames={{
-            base: "!max-w-fit",
-            trigger: "h-5 min-h-5 px-1.5 bg-slate-700/30 overflow-visible",
-            value: "text-[11px] whitespace-nowrap font-medium",
-            innerWrapper: "gap-0.5",
-            listbox: "max-h-80 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]",
-          }}
-          renderValue={() => (
-            <span className="text-[var(--text-primary)] text-[11px] px-1 py-0.5 rounded whitespace-nowrap">
-              {shotSizeLabel || '画面大小'}
-            </span>
-          )}
-          popoverProps={{
-            placement: 'bottom-start',
-            shouldFlip: true,
-            classNames: {
-              content: 'bg-[var(--bg-card)] border border-[var(--border-default)] min-w-[200px] max-w-[240px]',
-            },
-          }}
-        >
-          {COMPOSITION_OPTIONS.shotSize.map((opt) => (
-            <SelectItem key={opt.value} textValue={opt.label} className="text-xs">
-              <div className="flex flex-col">
-                <span className="text-sm font-medium">{opt.label}</span>
-                <span className="text-xs text-[var(--text-muted)]">{opt.desc}</span>
-              </div>
-            </SelectItem>
-          ))}
-        </Select>
-
         {/* 视角 */}
         <Select
           aria-label="视角"
@@ -462,17 +419,6 @@ const ShotLanguageEditor: React.FC<ShotLanguageEditorProps> = ({
           }
         >
           <div className="pt-4 space-y-5">
-            {/* 景别 */}
-            <div className="space-y-2">
-              <label className="text-xs text-[var(--text-secondary)] font-medium">景别（画面大小）</label>
-              <OptionGrid
-                options={COMPOSITION_OPTIONS.shotSize}
-                selected={values.shotSize}
-                onSelect={(v) => handleChange('shotSize', v)}
-                columns={4}
-              />
-            </div>
-
             {/* 轴线位置 */}
             <div className="space-y-2">
               <label className="text-xs text-[var(--text-secondary)] font-medium">轴线位置</label>

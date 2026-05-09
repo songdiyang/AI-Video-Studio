@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Character } from '../../StoryBoard/ResourcePanel/types';
+import { Character, PropItem } from '../../StoryBoard/ResourcePanel/types';
 import { Scene } from '../../StoryBoard/ResourcePanel/useSceneData';
 import ResourceListView from './ResourceListView';
 import CharacterDetailView from './CharacterDetailView';
@@ -9,14 +9,14 @@ type SidebarView =
   | { mode: 'list' }
   | { mode: 'character-detail'; character: Character }
   | { mode: 'scene-detail'; scene: Scene }
-  | { mode: 'prop-detail'; propName: string };
+  | { mode: 'prop-detail'; prop: PropItem };
 
 type TabType = 'character' | 'scene' | 'prop';
 
 interface ResourceSidebarProps {
   dbCharacters: Character[];
   dbScenes: Scene[];
-  props: string[];
+  props: PropItem[];
   /** 分镜中实际使用的角色名 */
   usedCharacterNames: string[];
   /** 分镜中实际使用的场景名 */
@@ -126,8 +126,31 @@ const ResourceSidebar: React.FC<ResourceSidebarProps> = ({
           activeTab={activeTab}
           onTabChange={setActiveTab}
           onCharacterClick={(c) => setView({ mode: 'character-detail', character: c })}
+          onCharacterDoubleClick={(c) => {
+            if (c.id) {
+              window.dispatchEvent(new CustomEvent('openAssetEditTab', {
+                detail: {
+                  assetType: 'character',
+                  assetId: c.id,
+                  assetName: c.name,
+                  initialData: c,
+                }
+              }));
+            }
+          }}
           onSceneClick={(s) => setView({ mode: 'scene-detail', scene: s })}
-          onPropClick={() => {}}
+          onPropClick={(p) => {
+            if (p.id) {
+              window.dispatchEvent(new CustomEvent('openAssetEditTab', {
+                detail: {
+                  assetType: 'prop',
+                  assetId: p.id,
+                  assetName: p.name,
+                  initialData: p,
+                }
+              }));
+            }
+          }}
           onBatchGenerate={onBatchGenerate}
         />
       )}

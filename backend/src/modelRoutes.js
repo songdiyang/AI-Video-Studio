@@ -12,7 +12,7 @@ const { getPriceSummary, normalizePriceConfig } = require('./aiBillingService');
 /**
  * GET /api/ai-models
  * 获取可用的 AI 模型列表（普通用户可访问）
- * 可选参数：type (TEXT/IMAGE/VIDEO/AUDIO)
+ * 可选参数：type (TEXT/IMAGE/VIDEO/AUDIO/MULTIMODAL)
  */
 router.get('/', authMiddleware, async (req, res) => {
   try {

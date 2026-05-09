@@ -6,15 +6,16 @@ import SpatialDescriptionEditor from './SpatialDescriptionEditor';
 import { updateSpatialDescription } from '../../../services/storyboards';
 import { useToast } from '../../../contexts/ToastContext';
 import ShotLanguageBadge from '../components/ShotLanguageBadge';
-import { ShotSizeBadge } from '../components/ShotSizeSelector';
+import { ShotSizeBadge, ShotSizeSelector } from '../components/ShotSizeSelector';
 
 interface SceneCardMetadataProps {
   scene: StoryboardScene;
   onUpdateSpatialDescription?: (spatialDescription: SpatialDescription | undefined) => void;
   onOpenShotLanguageEditor?: () => void;
+  onUpdateScene?: (id: number, updates: Partial<StoryboardScene>) => void;
 }
 
-const SceneCardMetadata: React.FC<SceneCardMetadataProps> = ({ scene, onUpdateSpatialDescription, onOpenShotLanguageEditor }) => {
+const SceneCardMetadata: React.FC<SceneCardMetadataProps> = ({ scene, onUpdateSpatialDescription, onOpenShotLanguageEditor, onUpdateScene }) => {
   const [showSpatialEditor, setShowSpatialEditor] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const { showToast } = useToast();
@@ -49,7 +50,17 @@ const SceneCardMetadata: React.FC<SceneCardMetadataProps> = ({ scene, onUpdateSp
     <div className="space-y-3 mt-3">
       {/* 镜头类型和场景位置 */}
       <div className="flex items-center gap-2 flex-wrap">
-        <ShotSizeBadge value={scene.shotType} />
+        {onUpdateScene ? (
+          <ShotSizeSelector
+            value={scene.shotType}
+            onChange={(newValue) => {
+              onUpdateScene(scene.id, { shotType: newValue });
+            }}
+            compact={true}
+          />
+        ) : (
+          <ShotSizeBadge value={scene.shotType} />
+        )}
         {scene.location && (
           <Chip size="sm" variant="flat" className="bg-purple-500/10 text-purple-400 text-xs font-medium">
             {scene.location}

@@ -893,33 +893,62 @@ const AssetsManager: React.FC = () => {
     onOpen();
   };
 
-  const handleEdit = (item: Character | Scene | Prop) => {
-    setEditMode(true);
-    setCurrentId(item.id);
-    setFormData(item);
-    onOpen();
+  const handleEdit = (item: Character | Scene | Prop, type?: string) => {
+    // 根据当前活跃标签页推断类型（如果未显式传入）
+    let assetType = type;
+    if (!assetType) {
+      if (activeTab === 'characters') assetType = 'character';
+      else if (activeTab === 'studios') assetType = 'scene';
+      else if (activeTab === 'props') assetType = 'prop';
+    }
+    if (!assetType) return;
+
+    // 将资产信息存入 sessionStorage，导航到工作台后自动打开编辑标签页
+    sessionStorage.setItem('pendingAssetEdit', JSON.stringify({
+      assetType,
+      assetId: item.id,
+      assetName: item.name,
+      initialData: item,
+    }));
+
+    // 导航到工作台页面（优先使用当前项目对应的 storyboard）
+    const projectId = (item as any).project_id || currentProject?.id;
+    if (projectId) {
+      navigate(`/storyboard?projectId=${projectId}`);
+    } else {
+      navigate('/storyboard');
+    }
   };
 
   const handleEditStudio = (studio: import('../../services/studios').Studio) => {
-    setStudioEditMode(true);
-    setEditingStudioId(studio.id);
-    onStudioOpen();
+    window.dispatchEvent(new CustomEvent('openAssetEditTab', {
+      detail: {
+        assetType: 'studio',
+        assetId: studio.id,
+        assetName: studio.name,
+        initialData: studio,
+      }
+    }));
   };
 
   const handleEditEnvironment = (env: Environment) => {
-    setEnvEditMode(true);
-    setEditingEnvId(env.id);
-    setEnvForm({
-      name: env.name,
-      description: env.description || '',
-      timeOfDay: env.time_of_day || '',
-      weather: env.weather || '',
-      lighting: env.lighting || '',
-      mood: env.mood || '',
-      terrainType: env.terrain_type || '',
-      project_id: env.project_id,
-    });
-    onEnvOpen();
+    window.dispatchEvent(new CustomEvent('openAssetEditTab', {
+      detail: {
+        assetType: 'environment',
+        assetId: env.id,
+        assetName: env.name,
+        initialData: {
+          name: env.name,
+          description: env.description || '',
+          timeOfDay: env.time_of_day || '',
+          weather: env.weather || '',
+          lighting: env.lighting || '',
+          mood: env.mood || '',
+          terrainType: env.terrain_type || '',
+          project_id: env.project_id,
+        },
+      }
+    }));
   };
 
   const handleGenerateEnvImage = async (env: Environment, mode: 'front' | 'back' | 'both' = 'both') => {
@@ -972,16 +1001,20 @@ const AssetsManager: React.FC = () => {
   };
 
   const handleEditBuilding = (b: Building) => {
-    setBldEditMode(true);
-    setEditingBldId(b.id);
-    setBldForm({
-      name: b.name,
-      description: b.description || '',
-      interiorExterior: b.interior_exterior || 'both',
-      structureType: b.structure_type || '',
-      project_id: b.project_id,
-    });
-    onBldOpen();
+    window.dispatchEvent(new CustomEvent('openAssetEditTab', {
+      detail: {
+        assetType: 'building',
+        assetId: b.id,
+        assetName: b.name,
+        initialData: {
+          name: b.name,
+          description: b.description || '',
+          interiorExterior: b.interior_exterior || 'both',
+          structureType: b.structure_type || '',
+          project_id: b.project_id,
+        },
+      }
+    }));
   };
 
   const handleGenerateBuildingImage = async (b: Building, viewType: 'interior' | 'exterior' | 'both' = 'both') => {
@@ -1948,6 +1981,23 @@ const AssetsManager: React.FC = () => {
                         >
                           {isGenerating ? t.assetsManager.costume.generating : hasImage ? t.assetsManager.costume.regenerate : t.assetsManager.costume.generateDesign}
                         </Button>
+                        <Button
+                          size="sm"
+                          variant="flat"
+                          className="text-xs"
+                          onPress={() => {
+                            window.dispatchEvent(new CustomEvent('openAssetEditTab', {
+                              detail: {
+                                assetType: 'costume',
+                                assetId: c.id,
+                                assetName: c.name,
+                                initialData: c,
+                              }
+                            }));
+                          }}
+                        >
+                          编辑
+                        </Button>
                         <Button size="sm" variant="flat" className="text-xs" onPress={() => handleDelete(c.id)}>删除</Button>
                       </div>
                     </div>
@@ -2059,6 +2109,16 @@ const AssetsManager: React.FC = () => {
               onCreateEpisode={handleScriptCreateEpisode}
               onGenerateStoryboard={(script) => {
                 navigate(`/storyboard?scriptId=${script.id}`);
+              }}
+              onEditScript={(script) => {
+                window.dispatchEvent(new CustomEvent('openAssetEditTab', {
+                  detail: {
+                    assetType: 'script',
+                    assetId: script.id,
+                    assetName: script.title || `剧本 #${script.id}`,
+                    initialData: script,
+                  }
+                }));
               }}
             />
           </Tab>

@@ -18,6 +18,12 @@ const path = require('path');
 const { safeFetch } = require('./outboundRequestGuard');
 const { StorageFactory } = require('../storage');
 
+// ========== 配置（统一从 StorageFactory 获取，确保与存储客户端一致）==========
+
+function getConfig() {
+  return StorageFactory.getConfig();
+}
+
 // ========== undici 连接池（按域名懒初始化）==========
 
 let Pool = null;          // undici.Pool 构造函数，懒加载
@@ -86,11 +92,8 @@ function shouldUsePool(hostname) {
   return AI_IMAGE_DOMAINS.some(domain => hostname.endsWith(domain));
 }
 
-// ========== 配置 ==========
-
-const CONFIG = {
-  publicUrl: process.env.MINIO_PUBLIC_URL  || '',
-};
+// 保留 publicUrl 的本地缓存用于 resolveToInternalUrl 等函数的快速访问
+// 实际配置统一通过 getConfig() 获取
 
 // ========== 存储客户端单例 ==========
 
@@ -100,10 +103,15 @@ let initPromise = null;
 
 /**
  * 检查存储是否已配置
+ * 注意：必须在 dotenv 加载后调用，否则环境变量为空
  */
 function isConfigured() {
   const config = StorageFactory.getConfig();
-  return !!(config.accessKey && config.secretKey);
+  const configured = !!(config.accessKey && config.secretKey);
+  if (!configured) {
+    console.warn('[FileStorage] 存储未配置 — accessKey/secretKey 为空，请检查 .env 是否已加载');
+  }
+  return configured;
 }
 
 /**
@@ -589,14 +597,15 @@ function guessExtension(url, contentType) {
  * 生成持久化访问 URL
  */
 function getPublicUrl(objectName) {
-  if (CONFIG.publicUrl) {
+  const config = getConfig();
+  if (config.publicUrl) {
     // 使用配置的公开 URL 前缀
-    const base = CONFIG.publicUrl.replace(/\/$/, '');
+    const base = config.publicUrl.replace(/\/$/, '');
     return `${base}/${objectName}`;
   }
-  // 回退：拼接 MinIO 地址
-  const protocol = CONFIG.useSSL ? 'https' : 'http';
-  return `${protocol}://${CONFIG.endPoint}:${CONFIG.port}/${CONFIG.bucket}/${objectName}`;
+  // 回退：拼接存储地址
+  const protocol = config.useSSL ? 'https' : 'http';
+  return `${protocol}://${config.endPoint}:${config.port}/${config.bucket}/${objectName}`;
 }
 
 // ========== 核心 API ==========
@@ -782,10 +791,12 @@ async function deleteObject(persistentUrl) {
   }
 
   try {
+    const config = getConfig();
+
     // 从 URL 中提取 objectName
     let objectName = '';
-    if (CONFIG.publicUrl) {
-      const base = CONFIG.publicUrl.replace(/\/$/, '');
+    if (config.publicUrl) {
+      const base = config.publicUrl.replace(/\/$/, '');
       if (persistentUrl.startsWith(base)) {
         objectName = persistentUrl.slice(base.length + 1);
       }
@@ -795,7 +806,7 @@ async function deleteObject(persistentUrl) {
       const url = new URL(persistentUrl);
       const parts = url.pathname.split('/');
       // 路径格式: /{bucket}/{objectName...}
-      if (parts.length > 2 && parts[1] === CONFIG.bucket) {
+      if (parts.length > 2 && parts[1] === config.bucket) {
         objectName = parts.slice(2).join('/');
       } else {
         objectName = parts.slice(1).join('/');
@@ -840,7 +851,8 @@ function resolveToInternalUrl(url) {
     return url;
   }
   
-  const publicBase = (CONFIG.publicUrl || '').replace(/\/$/, '');
+  const config = getConfig();
+  const publicBase = (config.publicUrl || '').replace(/\/$/, '');
   const siteUrl = (process.env.SITE_PUBLIC_URL || '').replace(/\/$/, '');
   
   // 如果 publicUrl 是相对路径（如 /storage），则需要转换
@@ -853,9 +865,8 @@ function resolveToInternalUrl(url) {
     }
     // 如果没有 SITE_PUBLIC_URL，回退到存储内网地址
     const objectName = url.slice(publicBase.length + 1);
-    const storage = StorageFactory.getConfig();
-    const protocol = storage.useSSL ? 'https' : 'http';
-    const internalUrl = `${protocol}://127.0.0.1:${storage.port}/${storage.bucket}/${objectName}`;
+    const protocol = config.useSSL ? 'https' : 'http';
+    const internalUrl = `${protocol}://127.0.0.1:${config.port}/${config.bucket}/${objectName}`;
     console.log(`[FileStorage] 解析相对 URL (无SITE_PUBLIC_URL): ${url} → ${internalUrl}`);
     return internalUrl;
   }
@@ -863,9 +874,8 @@ function resolveToInternalUrl(url) {
   // 如果 publicUrl 是绝对路径且 URL 以它开头，也可能需要转换为内网地址
   if (publicBase && publicBase.startsWith('http') && url.startsWith(publicBase + '/')) {
     const objectName = url.slice(publicBase.length + 1);
-    const storage = StorageFactory.getConfig();
-    const protocol = storage.useSSL ? 'https' : 'http';
-    const internalUrl = `${protocol}://127.0.0.1:${storage.port}/${storage.bucket}/${objectName}`;
+    const protocol = config.useSSL ? 'https' : 'http';
+    const internalUrl = `${protocol}://127.0.0.1:${config.port}/${config.bucket}/${objectName}`;
     return internalUrl;
   }
   

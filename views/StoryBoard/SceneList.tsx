@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Button, Tooltip } from '@heroui/react';
-import { Plus, Video } from 'lucide-react';
+import { Plus, Video, Download, Film, Image, Trash2, Play } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import SceneCard from './SceneCard';
 import { StoryboardScene } from './useSceneManager';
@@ -32,6 +32,8 @@ interface SceneListProps {
   isBatchGeneratingVideo?: boolean;
   batchVideoProgress?: number;
   sceneValidationMap?: Map<number, StoryboardValidationIssue[]>;
+  onBatchDownload?: () => void;
+  onPlayAnimatic?: () => void;
 }
 
 // 列表容器动画配置
@@ -96,7 +98,9 @@ const SceneList: React.FC<SceneListProps> = ({
   onUpdateScene,
   tasks,
   onReorderScenes,
-  sceneValidationMap
+  sceneValidationMap,
+  onBatchDownload,
+  onPlayAnimatic
 }) => {
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
@@ -181,6 +185,64 @@ const SceneList: React.FC<SceneListProps> = ({
     setDraggedIndex(null);
     setDragOverIndex(null);
   };
+
+  // 右键菜单状态
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; sceneId: number; sceneIndex: number } | null>(null);
+  const contextMenuRef = useRef<HTMLDivElement>(null);
+
+  // 点击其他地方关闭右键菜单
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (contextMenuRef.current && !contextMenuRef.current.contains(e.target as Node)) {
+        setContextMenu(null);
+      }
+    };
+    if (contextMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [contextMenu]);
+
+  // 下载文件辅助函数
+  const downloadFile = (url: string, filename: string) => {
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.target = '_blank';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleContextMenu = (e: React.MouseEvent, sceneId: number, sceneIndex: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ x: e.clientX, y: e.clientY, sceneId, sceneIndex });
+  };
+
+  const handleDownloadVideo = () => {
+    if (!contextMenu) return;
+    const scene = scenes.find(s => s.id === contextMenu.sceneId);
+    if (scene?.videoUrl) {
+      downloadFile(scene.videoUrl, `分镜${contextMenu.sceneIndex + 1}_视频.mp4`);
+    }
+    setContextMenu(null);
+  };
+
+  const handleDownloadImage = () => {
+    if (!contextMenu) return;
+    const scene = scenes.find(s => s.id === contextMenu.sceneId);
+    if (scene?.startFrame) {
+      downloadFile(scene.startFrame, `分镜${contextMenu.sceneIndex + 1}_首帧.png`);
+    }
+    setContextMenu(null);
+  };
+
+  const handleDeleteSceneFromMenu = () => {
+    if (!contextMenu) return;
+    onDeleteScene(contextMenu.sceneId);
+    setContextMenu(null);
+  };
   return (
     <div className="h-full flex flex-col bg-[var(--bg-app)]">
       {/* 紧凑的头部操作栏 */}
@@ -194,6 +256,32 @@ const SceneList: React.FC<SceneListProps> = ({
           添加
         </Button>
         <div className="flex items-center gap-1">
+          {/* 批量下载 */}
+          {scenes.length > 0 && onBatchDownload && (
+            <Tooltip content="批量下载打包" placement="bottom">
+              <Button
+                size="sm"
+                className="pro-btn h-7 px-2 text-xs bg-[var(--bg-card)] text-[var(--text-secondary)] border border-[var(--border-color)] hover:bg-emerald-500/15 hover:text-emerald-400 hover:border-emerald-500/30"
+                startContent={<Download className="w-3.5 h-3.5" />}
+                onPress={onBatchDownload}
+              >
+                打包
+              </Button>
+            </Tooltip>
+          )}
+          {/* 播放分镜 */}
+          {scenes.length > 0 && onPlayAnimatic && (
+            <Tooltip content="播放分镜预览" placement="bottom">
+              <Button
+                size="sm"
+                className="pro-btn h-7 px-2 text-xs bg-[var(--bg-card)] text-[var(--text-secondary)] border border-[var(--border-color)] hover:bg-purple-500/15 hover:text-purple-400 hover:border-purple-500/30"
+                startContent={<Play className="w-3.5 h-3.5" />}
+                onPress={onPlayAnimatic}
+              >
+                播放
+              </Button>
+            </Tooltip>
+          )}
           {scenes.length > 0 && (
             <Tooltip content={scenesWithVideos === totalScenes ? '所有视频已完成' : '点击定位缺少视频的分镜'} placement="bottom">
               <button
@@ -268,6 +356,7 @@ const SceneList: React.FC<SceneListProps> = ({
                     imageTask={tasks[`img_${scene.id}`]}
                     videoTask={tasks[`vid_${scene.id}`]}
                     validationIssues={sceneValidationMap?.get(scene.id)}
+                    onContextMenu={(e) => handleContextMenu(e, scene.id, index)}
                   />
                 </motion.div>
                 {/* 分镜间插入区域 - 停疙0.3s展开动画 */}
@@ -305,6 +394,42 @@ const SceneList: React.FC<SceneListProps> = ({
           </motion.div>
         )}
       </div>
+
+      {/* 右键菜单 */}
+      {contextMenu && (
+        <div
+          ref={contextMenuRef}
+          className="fixed z-50 bg-[var(--bg-nav)] border border-[var(--border-color)] rounded-lg shadow-lg py-1 min-w-[160px]"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+        >
+          {/* 下载视频 */}
+          <button
+            className="w-full px-3 py-2 text-xs text-left flex items-center gap-2 text-[var(--text-secondary)] hover:bg-[var(--bg-card)] hover:text-[var(--text-primary)] transition-colors"
+            onClick={handleDownloadVideo}
+          >
+            <Film className="w-3.5 h-3.5" />
+            下载视频
+          </button>
+          {/* 下载图片 */}
+          <button
+            className="w-full px-3 py-2 text-xs text-left flex items-center gap-2 text-[var(--text-secondary)] hover:bg-[var(--bg-card)] hover:text-[var(--text-primary)] transition-colors"
+            onClick={handleDownloadImage}
+          >
+            <Image className="w-3.5 h-3.5" />
+            下载首帧图片
+          </button>
+          {/* 分隔线 */}
+          <div className="my-1 border-t border-[var(--border-color)]" />
+          {/* 删除 */}
+          <button
+            className="w-full px-3 py-2 text-xs text-left flex items-center gap-2 text-red-400 hover:bg-red-500/10 transition-colors"
+            onClick={handleDeleteSceneFromMenu}
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            删除分镜
+          </button>
+        </div>
+      )}
     </div>
   );
 };

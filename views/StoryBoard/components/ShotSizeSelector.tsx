@@ -34,6 +34,7 @@ const SHOT_SIZE_LABELS: Record<string, string> = {
 const LABEL_TO_VALUE: Record<string, string> = {
   '大特写': 'extreme_close_up',
   '特写': 'close_up',
+  '近景': 'medium_close_up', // 兼容AI生成的"近景"（对应medium_close_up）
   '中近景': 'medium_close_up',
   '中景': 'medium_shot',
   '中全景': 'medium_long_shot',

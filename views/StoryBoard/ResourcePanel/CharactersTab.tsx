@@ -16,7 +16,6 @@ interface CharactersTabProps {
   onGenerateViews: (charName: string, characterId: number) => void;
   onShowDetail: (character: Character) => void;
   onPreview?: (character: Character) => void;
-  onOpenLifecycle?: (character: Character) => void;
   onCreate?: () => void;
   onDelete?: (character: Character) => void;
   onStoryboardStateChange?: (characterId: number, state: { stateId: number; stateName: string; stateImage?: string; stateOutfit?: string } | null) => void;
@@ -32,7 +31,6 @@ const CharactersTab: React.FC<CharactersTabProps> = ({
   onGenerateViews,
   onShowDetail,
   onPreview,
-  onOpenLifecycle,
   onCreate,
   onDelete,
   onStoryboardStateChange,
@@ -71,7 +69,7 @@ const CharactersTab: React.FC<CharactersTabProps> = ({
             storyboardState={storyboardStates[char.id] || null}
             onGenerateViews={onGenerateViews}
             onShowDetail={onShowDetail}
-            onOpenLifecycle={onOpenLifecycle}
+
             onDelete={onDelete}
             onStoryboardStateChange={onStoryboardStateChange}
           />

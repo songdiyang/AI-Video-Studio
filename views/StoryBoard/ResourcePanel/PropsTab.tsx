@@ -3,6 +3,17 @@ import { Card, CardBody, Button, Chip } from '@heroui/react';
 import { Sparkles, Loader2 } from 'lucide-react';
 import { PropItem } from './types';
 
+const openAssetEditTab = (prop: PropItem) => {
+  window.dispatchEvent(new CustomEvent('openAssetEditTab', {
+    detail: {
+      assetType: 'prop',
+      assetId: prop.id,
+      assetName: prop.name,
+      initialData: prop,
+    }
+  }));
+};
+
 interface PropsTabProps {
   props: PropItem[];
   isExtracting?: boolean;
@@ -28,7 +39,7 @@ const PropsTab: React.FC<PropsTabProps> = ({ props, isExtracting, onExtractFromS
         )}
       </div>
       {props.map((prop) => (
-        <Card key={prop.id} className="bg-slate-800/60 border border-slate-700/50 hover:border-emerald-500/30 transition-colors cursor-pointer">
+        <Card key={`${prop.id}-${prop.name}`} className="bg-slate-800/60 border border-slate-700/50 hover:border-emerald-500/30 transition-colors cursor-pointer" onDoubleClick={() => openAssetEditTab(prop)}>
           <CardBody className="p-3">
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 rounded bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20 overflow-hidden">
@@ -60,7 +71,7 @@ const PropsTab: React.FC<PropsTabProps> = ({ props, isExtracting, onExtractFromS
       {props.length === 0 && (
         <div className="text-center py-8 text-slate-500">
           <p className="text-sm">暂无道具</p>
-          <p className="text-xs mt-1">请到资产管理中创建道具</p>
+          <p className="text-xs mt-1">分镜中添加道具或点击「从剧本提取」</p>
         </div>
       )}
     </div>

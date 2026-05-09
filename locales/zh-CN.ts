@@ -35,6 +35,7 @@ const zhCN = {
     marketplace: '模板市场',
     community: '社区',
     pricing: '定价',
+    helpDocs: '帮助文档',
   },
   // 设置页面
   settings: {
@@ -116,6 +117,8 @@ const zhCN = {
       feedbackDesc: '帮助我们改进',
       about: '关于',
       aboutDesc: '版本与信息',
+      points: '积分预警',
+      pointsDesc: '积分余额低于阈值时自动通知',
     },
     storage: {
       title: '本地缓存',
@@ -150,6 +153,19 @@ const zhCN = {
       passwordMismatch: '两次输入的新密码不一致',
       passwordTooShort: '新密码至少需要 6 个字符',
       networkError: '网络错误，请稍后重试',
+    },
+    points: {
+      title: '积分余额预警',
+      description: '当您的积分余额低于设定阈值时，系统会自动发送站内信提醒您及时充值。',
+      thresholdLabel: '预警阈值',
+      thresholdPlaceholder: '输入积分数量，例如：100',
+      thresholdHint: '设置为 0 或留空表示关闭此功能',
+      save: '保存',
+      saving: '保存中...',
+      saved: '预警设置已保存',
+      saveFailed: '保存失败',
+      currentThreshold: '当前阈值',
+      disabled: '已关闭',
     },
   },
   // 命令面板
@@ -203,6 +219,14 @@ const zhCN = {
         description: '自定义界面主题、语言偏好，让工作环境更舒适。',
       },
     },
+  },
+  // 帮助文档
+  helpDocs: {
+    loading: '加载文档中...',
+    notFound: '未找到帮助文档扩展',
+    loadError: '加载帮助文档失败',
+    empty: '暂无文档内容',
+    goExtensions: '帮助文档暂不可用，请联系管理员',
   },
   // 工作流概览
   dashboard: {
@@ -317,7 +341,6 @@ const zhCN = {
     outputLanguages: {
       en: 'English',
       zh: '中文',
-      ja: '日本語',
       ko: '한국어',
       fr: 'Français',
       es: 'Español',
@@ -1128,11 +1151,12 @@ const zhCN = {
   },
   // 扩展市场
   extensions: {
-    title: '扩展市场',
+    title: '扩展',
     subtitle: '浏览和管理扩展',
     marketplace: '市场',
     installed: '已安装',
-    searchPlaceholder: '搜索扩展...',
+    searchPlaceholder: '在应用商店中搜索扩展',
+    searchInMarketplace: '在市场搜索',
     category: '分类',
     all: '全部',
     sort: '排序',
@@ -1162,6 +1186,24 @@ const zhCN = {
     downloads: '次下载',
     updateAvailable: '有更新',
     updateTo: '可更新至',
+    refresh: '刷新',
+    moreActions: '更多操作',
+    filterFeatured: '特色',
+    filterMcpServers: 'MCP 服务器',
+    filterRecommended: '推荐',
+    filterRecent: '最近发布',
+    filterPopular: '最热门',
+    filterCategories: '类别',
+    filterInstalled: '已安装',
+    filterUpdates: '更新',
+    filterBuiltIn: '内置',
+    filterEnabled: '已启用',
+    filterDisabled: '已禁用',
+    filterUnsupported: '工作区不受支持',
+    sortBy: '排序依据',
+    viewList: '列表视图',
+    viewGrid: '网格视图',
+    localInstalled: '本地 - 已安装',
     categories: {
       productivity: '效率工具',
       theme: '主题外观',

@@ -16,6 +16,8 @@ CREATE TABLE IF NOT EXISTS extensions (
   icon_url TEXT DEFAULT NULL COMMENT '图标URL',
   readme TEXT DEFAULT NULL COMMENT 'README 文档',
   manifest_json TEXT DEFAULT NULL COMMENT 'manifest.json 内容',
+  min_app_version VARCHAR(50) DEFAULT NULL COMMENT '最低应用版本要求',
+  permissions_json TEXT DEFAULT NULL COMMENT '权限声明 JSON',
   source_url TEXT DEFAULT NULL COMMENT '源码地址',
   download_count INT DEFAULT 0 COMMENT '下载次数',
   rating DECIMAL(3,2) DEFAULT 5.00 COMMENT '评分 0-5',

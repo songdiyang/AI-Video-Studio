@@ -4,6 +4,12 @@ import { Layers, Eye, Loader2, User, Star, Shirt, Trash2, ChevronDown, Check } f
 import { Character, CharacterState } from './types';
 import { fetchCharacterStates } from '../../../services/assets';
 
+interface ContextMenuState {
+  x: number;
+  y: number;
+  character: Character;
+}
+
 interface CharacterCardProps {
   character: Character;
   scenes?: any[];
@@ -12,7 +18,6 @@ interface CharacterCardProps {
   storyboardState?: { stateId: number; stateName: string; stateImage?: string; stateOutfit?: string } | null;
   onGenerateViews: (charName: string, characterId: number) => void;
   onShowDetail: (character: Character) => void;
-  onOpenLifecycle?: (character: Character) => void;
   onDelete?: (character: Character) => void;
   /** 用户在资源面板选择了某个状态用于分镜 */
   onStoryboardStateChange?: (characterId: number, state: { stateId: number; stateName: string; stateImage?: string; stateOutfit?: string } | null) => void;
@@ -25,13 +30,19 @@ const CharacterCard: React.FC<CharacterCardProps> = ({
   storyboardState,
   onGenerateViews,
   onShowDetail,
-  onOpenLifecycle,
   onDelete,
   onStoryboardStateChange,
 }) => {
-  // 双击打开生命周期管理界面
+  // 双击打开角色编辑标签页
   const handleDoubleClick = () => {
-    onOpenLifecycle?.(character);
+    window.dispatchEvent(new CustomEvent('openAssetEditTab', {
+      detail: {
+        assetType: 'character',
+        assetId: character.id,
+        assetName: character.name,
+        initialData: character,
+      }
+    }));
   };
 
   const hasBaseModelViews = character.has_base_model_views === true || character.has_base_model_views === 1;
@@ -96,9 +107,39 @@ const CharacterCard: React.FC<CharacterCardProps> = ({
     setIsStateDropdownOpen(false);
   };
 
+  // 右键菜单状态
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const contextMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    const handler = (e: MouseEvent) => {
+      if (contextMenuRef.current && !contextMenuRef.current.contains(e.target as Node)) {
+        setContextMenu(null);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [contextMenu]);
+
+  const handleContextMenu = (e: React.MouseEvent) => {
+    if (!onDelete) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ x: e.clientX, y: e.clientY, character });
+  };
+
+  const handleDeleteFromMenu = () => {
+    if (!contextMenu || !onDelete) return;
+    onDelete(contextMenu.character);
+    setContextMenu(null);
+  };
+
   return (
     <Card
       className="w-full bg-slate-800/60 shadow-sm hover:shadow-md hover:shadow-blue-500/5 transition-shadow border border-slate-700/50"
+      onDoubleClick={handleDoubleClick}
+      onContextMenu={handleContextMenu}
     >
       <CardBody className="p-3">
         <div className="flex items-start gap-3 mb-3">
@@ -233,23 +274,24 @@ const CharacterCard: React.FC<CharacterCardProps> = ({
             )}
           </div>
         </div>
-        <div className="flex flex-wrap gap-2 justify-end">
-          {onDelete && (
-            <Tooltip content="删除角色">
-              <Button
-                size="sm"
-                variant="flat"
-                isIconOnly
-                className="shrink-0 min-w-8 w-8 h-8 bg-red-500/10 text-red-400 hover:bg-red-500/20"
-                onPress={() => onDelete(character)}
-                aria-label="删除角色"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-              </Button>
-            </Tooltip>
-          )}
-        </div>
       </CardBody>
+
+      {/* 右键菜单 */}
+      {contextMenu && (
+        <div
+          ref={contextMenuRef}
+          className="fixed z-50 bg-[var(--bg-nav)] border border-[var(--border-color)] rounded-lg shadow-lg py-1 min-w-[140px]"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+        >
+          <button
+            className="w-full px-3 py-2 text-xs text-left flex items-center gap-2 text-red-400 hover:bg-red-500/10 transition-colors"
+            onClick={handleDeleteFromMenu}
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            删除角色
+          </button>
+        </div>
+      )}
     </Card>
   );
 };

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Settings as SettingsIcon, Moon, Sun, Eye, Check, Send, 
-  Palette, MessageSquare, Info, ChevronRight, Sparkles, Monitor, Globe, RotateCcw, Maximize, Minimize, HardDrive, Trash2, Shield, EyeOff, Eye as EyeIcon, Bot
+  Palette, MessageSquare, Info, ChevronRight, Sparkles, Monitor, Globe, RotateCcw, Maximize, Minimize, HardDrive, Trash2, Shield, EyeOff, Eye as EyeIcon, Bot, Coins
 } from 'lucide-react';
 import { useTheme, ThemeType } from '../../contexts/ThemeContext';
 import { useLanguage, LanguageType } from '../../contexts/LanguageContext';
@@ -223,6 +223,7 @@ const SETTING_SECTIONS: SettingSection[] = [
   { id: 'appearance', icon: <Palette className="w-4 h-4" /> },
   { id: 'language', icon: <Globe className="w-4 h-4" /> },
   { id: 'ai_assistant', icon: <Bot className="w-4 h-4" /> },
+  { id: 'points', icon: <Coins className="w-4 h-4" /> },
   { id: 'storage', icon: <HardDrive className="w-4 h-4" /> },
   { id: 'security', icon: <Shield className="w-4 h-4" /> },
   { id: 'feedback', icon: <MessageSquare className="w-4 h-4" /> },
@@ -283,6 +284,11 @@ const Settings: React.FC = () => {
   const [hintLoading, setHintLoading] = useState(false);
   const [passwordLoading, setPasswordLoading] = useState(false);
 
+  // 积分预警设置状态
+  const [pointsThreshold, setPointsThreshold] = useState<string>('');
+  const [pointsThresholdLoading, setPointsThresholdLoading] = useState(false);
+  const [pointsThresholdSaving, setPointsThresholdSaving] = useState(false);
+
   // 加载缓存统计
   const loadCacheStats = useCallback(async () => {
     if (!isCacheSupported()) return;
@@ -321,6 +327,30 @@ const Settings: React.FC = () => {
         } catch { /* ignore */ }
       };
       fetchHint();
+    }
+  }, [activeSection]);
+
+  // 进入 points 区域时加载积分预警阈值
+  useEffect(() => {
+    if (activeSection === 'points') {
+      const fetchThreshold = async () => {
+        setPointsThresholdLoading(true);
+        try {
+          const token = getAuthToken();
+          if (!token) return;
+          const res = await fetch('/api/users/points-warning-threshold', {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          if (res.ok) {
+            const data = await res.json();
+            setPointsThreshold(data.threshold !== null && data.threshold !== undefined ? String(data.threshold) : '');
+          }
+        } catch { /* ignore */ }
+        finally {
+          setPointsThresholdLoading(false);
+        }
+      };
+      fetchThreshold();
     }
   }, [activeSection]);
 
@@ -1120,12 +1150,119 @@ const Settings: React.FC = () => {
     );
   };
 
+  // 渲染积分预警设置区域
+  const renderPointsSection = () => {
+    const pt = (t.settings as any).points || {};
+
+    const handleSaveThreshold = async () => {
+      setPointsThresholdSaving(true);
+      try {
+        const token = getAuthToken();
+        const trimmed = pointsThreshold.trim();
+        const thresholdValue = trimmed === '' ? null : parseInt(trimmed, 10);
+
+        if (thresholdValue !== null && (isNaN(thresholdValue) || thresholdValue < 0)) {
+          showToast(pt.thresholdHint || '阈值必须是大于等于0的整数', 'error');
+          return;
+        }
+
+        const res = await fetch('/api/users/points-warning-threshold', {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {})
+          },
+          body: JSON.stringify({ threshold: thresholdValue })
+        });
+
+        if (res.ok) {
+          showToast(pt.saved || '预警设置已保存', 'success');
+        } else {
+          const data = await res.json().catch(() => ({}));
+          showToast(data.message || pt.saveFailed || '保存失败', 'error');
+        }
+      } catch {
+        showToast(pt.saveFailed || '保存失败', 'error');
+      } finally {
+        setPointsThresholdSaving(false);
+      }
+    };
+
+    const inputStyle = {
+      backgroundColor: 'var(--bg-input)',
+      border: '1px solid var(--border-color)',
+      color: 'var(--text-primary)',
+    };
+
+    return (
+      <div className="space-y-6">
+        <div>
+          <h3 className="text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>
+            {pt.title || '积分余额预警'}
+          </h3>
+          <p className="text-xs mb-6" style={{ color: 'var(--text-muted)' }}>
+            {pt.description || '当您的积分余额低于设定阈值时，系统会自动发送站内信提醒您及时充值。'}
+          </p>
+
+          {pointsThresholdLoading ? (
+            <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-muted)' }}>
+              <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+              加载中...
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {/* 阈值输入 */}
+              <div
+                className="p-4 rounded-xl"
+                style={{ backgroundColor: 'var(--bg-body)', border: '1px solid var(--border-color)' }}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                    {pt.thresholdLabel || '预警阈值'}
+                  </span>
+                  <span className="text-xs font-mono" style={{ color: 'var(--accent-primary)' }}>
+                    {pointsThreshold.trim() === '' || parseInt(pointsThreshold) <= 0
+                      ? (pt.disabled || '已关闭')
+                      : `${parseInt(pointsThreshold)} 积分`}
+                  </span>
+                </div>
+                <p className="text-xs leading-relaxed mb-3" style={{ color: 'var(--text-muted)' }}>
+                  {pt.thresholdHint || '设置为 0 或留空表示关闭此功能'}
+                </p>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="number"
+                    min={0}
+                    value={pointsThreshold}
+                    onChange={e => setPointsThreshold(e.target.value)}
+                    placeholder={pt.thresholdPlaceholder || '输入积分数量，例如：100'}
+                    className="flex-1 rounded-xl px-4 py-3 text-sm transition-all"
+                    style={inputStyle}
+                  />
+                  <button
+                    onClick={handleSaveThreshold}
+                    disabled={pointsThresholdSaving}
+                    className="px-6 py-3 rounded-xl font-medium text-sm transition-all shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                    style={{ backgroundColor: 'var(--accent-primary)', color: 'white' }}
+                  >
+                    {pointsThresholdSaving ? (pt.saving || '保存中...') : (pt.save || '保存')}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   // 渲染当前激活的区域
   const renderActiveSection = () => {
     switch (activeSection) {
       case 'appearance': return renderAppearanceSection();
       case 'language': return renderLanguageSection();
       case 'ai_assistant': return renderAiAssistantSection();
+      case 'points': return renderPointsSection();
       case 'storage': return renderStorageSection();
       case 'security': return renderSecuritySection();
       case 'feedback': return renderFeedbackSection();

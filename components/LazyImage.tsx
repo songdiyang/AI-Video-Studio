@@ -63,6 +63,7 @@ interface LazyImageProps {
  * - 支持加载失败显示占位符
  * - 支持 blur-up 效果：图片加载期间显示低分辨率模糊占位
  * - 支持 priority 属性：跳过懒加载直接加载首屏关键图片
+ * - 兼容 Edge 浏览器的 lazy-load 干预：通过 ref + img.complete 兜底检测
  */
 const LazyImage: React.FC<LazyImageProps> = ({
   src,
@@ -77,11 +78,59 @@ const LazyImage: React.FC<LazyImageProps> = ({
 }) => {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
+  const imgRef = useRef<HTMLImageElement>(null);
 
   // 重置状态当 src 变化时
   React.useEffect(() => {
     setLoaded(false);
     setError(false);
+  }, [src]);
+
+  // Edge 浏览器可能干预 lazy-load 图片，阻断 onLoad 事件。
+  // 使用 img.complete 作为兜底：如果图片资源已完成加载但 onLoad 未触发，
+  // 通过轮询检测 complete 状态来正确显示图片。
+  React.useEffect(() => {
+    if (loaded || error || !src) return;
+
+    const img = imgRef.current;
+    if (!img) return;
+
+    // 立即检查一次 —— 图片可能在 React 挂载前就已经加载完成了
+    if (img.complete && img.naturalWidth > 0) {
+      setLoaded(true);
+      setError(false);
+      if (src) cacheMedia(src).catch(() => {});
+      return;
+    }
+
+    // 轮询兜底：Edge 干预可能导致 onLoad 被跳过，
+    // 每隔 300ms 检查 complete 状态，最多持续 10 秒
+    let attempts = 0;
+    const maxAttempts = 34; // ~10s
+    const timer = setInterval(() => {
+      attempts++;
+      if (img.complete) {
+        clearInterval(timer);
+        if (img.naturalWidth > 0) {
+          setLoaded(true);
+          setError(false);
+          if (src) cacheMedia(src).catch(() => {});
+        } else {
+          // complete 但 naturalWidth 为 0 表示加载失败
+          setError(true);
+          setLoaded(false);
+        }
+      } else if (attempts >= maxAttempts) {
+        clearInterval(timer);
+        // 超时：如果图片仍未 complete，标记为错误
+        if (!img.complete) {
+          setError(true);
+          setLoaded(false);
+        }
+      }
+    }, 300);
+
+    return () => clearInterval(timer);
   }, [src]);
 
   const handleLoad = () => {
@@ -96,8 +145,9 @@ const LazyImage: React.FC<LazyImageProps> = ({
     setLoaded(false);
   };
 
-  // 确定加载策略：priority 为 true 或 loading 为 'eager' 时立即加载
-  const loadingStrategy = priority || loading === 'eager' ? 'eager' : 'lazy';
+  // 确定加载策略：priority 优先，其次看 loading 显式值
+  const isEager = priority || loading === 'eager';
+  const loadingStrategy: 'eager' | 'lazy' = isEager ? 'eager' : 'lazy';
 
   return (
     <div className={`relative overflow-hidden ${className}`} style={style} onClick={onClick}>
@@ -137,9 +187,12 @@ const LazyImage: React.FC<LazyImageProps> = ({
       
       {/* 实际图片 - 根据 priority/loading 决定加载策略 */}
       <img
+        ref={imgRef}
         src={src}
         alt={alt}
         loading={loadingStrategy}
+        fetchPriority={isEager ? 'high' : 'low'}
+        decoding={isEager ? 'sync' : 'async'}
         onLoad={handleLoad}
         onError={handleError}
         className="w-full h-full object-cover"

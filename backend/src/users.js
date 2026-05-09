@@ -142,6 +142,55 @@ router.post('/avatar', authMiddleware, avatarUpload.single('avatar'), async (req
   }
 });
 
+// 获取用户积分预警阈值设置
+router.get('/points-warning-threshold', authMiddleware, async (req, res) => {
+  const userId = req.user.id;
+  try {
+    const user = await queryOne(
+      'SELECT points_warning_threshold FROM users WHERE id = ?',
+      [userId]
+    );
+    res.json({
+      threshold: user && user.points_warning_threshold !== null ? parseInt(user.points_warning_threshold) : null
+    });
+  } catch (error) {
+    console.error('[Points Warning Threshold]', error);
+    res.status(500).json({ message: '获取积分预警阈值失败' });
+  }
+});
+
+// 更新用户积分预警阈值设置
+router.put('/points-warning-threshold', authMiddleware, async (req, res) => {
+  const userId = req.user.id;
+  const { threshold } = req.body;
+
+  try {
+    // threshold 为 null 或 undefined 表示清除设置
+    if (threshold === null || threshold === undefined) {
+      await execute(
+        'UPDATE users SET points_warning_threshold = NULL WHERE id = ?',
+        [userId]
+      );
+      return res.json({ message: '已关闭积分预警', threshold: null });
+    }
+
+    const thresholdInt = parseInt(threshold);
+    if (isNaN(thresholdInt) || thresholdInt < 0) {
+      return res.status(400).json({ message: '阈值必须是大于等于0的整数' });
+    }
+
+    await execute(
+      'UPDATE users SET points_warning_threshold = ? WHERE id = ?',
+      [thresholdInt, userId]
+    );
+
+    res.json({ message: '积分预警阈值已更新', threshold: thresholdInt });
+  } catch (error) {
+    console.error('[Points Warning Threshold Update]', error);
+    res.status(500).json({ message: '更新积分预警阈值失败' });
+  }
+});
+
 // 获取积分余额和月度配额信息（轻量接口，供全局积分栏使用）
 router.get('/balance', authMiddleware, async (req, res) => {
   const userId = req.user.id;

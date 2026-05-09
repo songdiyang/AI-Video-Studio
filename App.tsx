@@ -17,7 +17,8 @@ import { ExtensionProvider } from './contexts/ExtensionContext';
 // 懒加载主要视图组件
 const DynamicWorkbench = React.lazy(() => import('./components/DynamicWorkbench'));
 const ScriptStudio = React.lazy(() => import('./views/ScriptStudio/index'));
-const AssetsManager = React.lazy(() => import('./views/AssetsManager'));
+// 资产管理页面已移除，功能已集成到工作台标签页
+// const AssetsManager = React.lazy(() => import('./views/AssetsManager'));
 const StoryBoardPage = React.lazy(() => import('./views/StoryBoardPage'));
 const Projects = React.lazy(() => import('./views/Projects'));
 const Settings = React.lazy(() => import('./views/Settings'));
@@ -28,11 +29,12 @@ const Pricing = React.lazy(() => import('./views/Pricing'));
 const TemplateGallery = React.lazy(() => import('./views/TemplateGallery'));
 const Community = React.lazy(() => import('./views/Community'));
 const CreatorProfile = React.lazy(() => import('./views/Community/CreatorProfile'));
-const Marketplace = React.lazy(() => import('./views/Marketplace'));
-const TemplateDetail = React.lazy(() => import('./views/Marketplace/TemplateDetail'));
-const Shop = React.lazy(() => import('./views/Marketplace/Shop'));
-const SellerManagement = React.lazy(() => import('./views/Marketplace/SellerManagement'));
-const CreateRecipe = React.lazy(() => import('./views/Marketplace/CreateRecipe'));
+// 模板市场已移除
+// const Marketplace = React.lazy(() => import('./views/Marketplace'));
+// const TemplateDetail = React.lazy(() => import('./views/Marketplace/TemplateDetail'));
+// const Shop = React.lazy(() => import('./views/Marketplace/Shop'));
+// const SellerManagement = React.lazy(() => import('./views/Marketplace/SellerManagement'));
+// const CreateRecipe = React.lazy(() => import('./views/Marketplace/CreateRecipe'));
 const Teams = React.lazy(() => import('./views/Teams'));
 const AcceptInvite = React.lazy(() => import('./views/AcceptInvite'));
 const Extensions = React.lazy(() => import('./views/Extensions'));
@@ -92,11 +94,8 @@ const AnimatedRoutes: React.FC = () => {
             <PageTransition><ScriptStudio /></PageTransition>
           </Suspense>
         } />
-        <Route path="/assets" element={
-          <Suspense fallback={<LoadingFallback />}>
-            <PageTransition><AssetsManager /></PageTransition>
-          </Suspense>
-        } />
+        {/* 资产管理页面已移除，功能已集成到工作台标签页 */}
+        <Route path="/assets" element={<Navigate to="/storyboard" replace />} />
         <Route path="/storyboard" element={
           <Suspense fallback={<LoadingFallback />}>
             <PageTransition><StoryBoardPage /></PageTransition>
@@ -107,11 +106,8 @@ const AnimatedRoutes: React.FC = () => {
             <PageTransition><Projects /></PageTransition>
           </Suspense>
         } />
-        <Route path="/settings" element={
-          <Suspense fallback={<LoadingFallback />}>
-            <PageTransition><Settings /></PageTransition>
-          </Suspense>
-        } />
+        {/* 设置已集成到工作台标签页，不再作为独立页面 */}
+        <Route path="/settings" element={<Navigate to="/" replace />} />
         <Route path="/user-center" element={
           <Suspense fallback={<LoadingFallback />}>
             <PageTransition><UserCenter /></PageTransition>
@@ -139,31 +135,8 @@ const AnimatedRoutes: React.FC = () => {
             <PageTransition><CreatorProfile /></PageTransition>
           </Suspense>
         } />
-        <Route path="/marketplace" element={
-          <Suspense fallback={<LoadingFallback />}>
-            <PageTransition><Marketplace /></PageTransition>
-          </Suspense>
-        } />
-        <Route path="/marketplace/template/:id" element={
-          <Suspense fallback={<LoadingFallback />}>
-            <PageTransition><TemplateDetail /></PageTransition>
-          </Suspense>
-        } />
-        <Route path="/marketplace/shop/:userId" element={
-          <Suspense fallback={<LoadingFallback />}>
-            <PageTransition><Shop /></PageTransition>
-          </Suspense>
-        } />
-        <Route path="/marketplace/seller" element={
-          <Suspense fallback={<LoadingFallback />}>
-            <PageTransition><SellerManagement /></PageTransition>
-          </Suspense>
-        } />
-        <Route path="/marketplace/create" element={
-          <Suspense fallback={<LoadingFallback />}>
-            <PageTransition><CreateRecipe /></PageTransition>
-          </Suspense>
-        } />
+        {/* 模板市场已移除，路由重定向到首页 */}
+        <Route path="/marketplace/*" element={<Navigate to="/" replace />} />
         <Route path="/teams" element={
           <Suspense fallback={<LoadingFallback />}>
             <PageTransition><ProtectedRoute><Teams /></ProtectedRoute></PageTransition>

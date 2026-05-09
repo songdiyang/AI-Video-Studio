@@ -94,7 +94,13 @@ const TaskQueueBubble: React.FC = () => {
       hasViewedFailures.current = false;
       const name = getTaskName(job);
       const reason = job.error_message || '未知错误';
-      showToast(`「${name}」执行失败：${reason}`, 'error');
+      // 积分不足错误显示特殊提示
+      const isInsufficientPoints = reason.includes('积分不足') || reason.includes('INSUFFICIENT_POINTS');
+      if (isInsufficientPoints) {
+        showToast(`「${name}」积分不足，无法完成当前任务`, 'error');
+      } else {
+        showToast(`「${name}」执行失败：${reason}`, 'error');
+      }
     }
   });
 

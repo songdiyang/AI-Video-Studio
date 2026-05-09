@@ -1023,7 +1023,7 @@ const WORKFLOW_DEFINITIONS = {
   },
 
   /**
-   * 单条分镜图片提示词优化（针对静态图像生成）
+   * 单条分镜图片提示词优化（多模态视觉版）
    */
   single_image_prompt_optimization: {
     name: 'AI 优化提示词(图片)',
@@ -1033,7 +1033,7 @@ const WORKFLOW_DEFINITIONS = {
         targetType: 'storyboard',
         handler: handleSingleImagePromptOptimization,
         buildInput: createBuildInput([
-          'storyboardId', 'prompt', 'textModel'
+          'storyboardId', 'prompt', 'multimodalModel'
         ])
       }
     ]

@@ -20,7 +20,7 @@ const AIAssistantDrawer: React.FC = () => {
       {isOpen && (
         <motion.div
           key="ai-assistant-drawer"
-          className="fixed top-0 right-0 h-full w-[440px] max-w-[95vw] z-[150] shadow-2xl"
+          className="fixed top-10 right-0 h-[calc(100%-2.5rem)] w-[440px] max-w-[95vw] z-[150] shadow-2xl"
           initial={{ x: '100%' }}
           animate={{ x: 0 }}
           exit={{ x: '100%' }}

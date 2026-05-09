@@ -34,17 +34,20 @@ Thumbs.db
 
 # Docker persistent data
 docker-data/
-runtime/frontend/current
-runtime/frontend/releases/*
+runtime/frontend/*
 !runtime/frontend/releases/.gitkeep
-runtime/backend/current
-runtime/backend/releases/*
+runtime/backend/*
 !runtime/backend/releases/.gitkeep
 runtime/backend-data/*
 !runtime/backend-data/.gitkeep
 runtime/hot-update/*
 !runtime/hot-update/.gitkeep
 
+# Logs
+nohup.out
+
+# Binary extensions
+*.aom
 
 # Temporary files
 review_diff.txt

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Plus, Search, Sparkles } from 'lucide-react';
-import { Character } from '../../StoryBoard/ResourcePanel/types';
+import { Character, PropItem } from '../../StoryBoard/ResourcePanel/types';
 import { Scene } from '../../StoryBoard/ResourcePanel/useSceneData';
 import ResourceCard from './ResourceCard';
 
@@ -9,7 +9,7 @@ type TabType = 'character' | 'scene' | 'prop';
 interface ResourceListViewProps {
   dbCharacters: Character[];
   dbScenes: Scene[];
-  props: string[];
+  props: PropItem[];
   /** 分镜中实际使用的角色名列表 */
   usedCharacterNames: string[];
   /** 分镜中实际使用的场景名列表 */
@@ -17,8 +17,9 @@ interface ResourceListViewProps {
   activeTab: TabType;
   onTabChange: (tab: TabType) => void;
   onCharacterClick: (character: Character) => void;
+  onCharacterDoubleClick?: (character: Character) => void;
   onSceneClick: (scene: Scene) => void;
-  onPropClick: (propName: string) => void;
+  onPropClick: (prop: PropItem) => void;
   onBatchGenerate?: () => void;
 }
 
@@ -37,6 +38,7 @@ const ResourceListView: React.FC<ResourceListViewProps> = ({
   activeTab,
   onTabChange,
   onCharacterClick,
+  onCharacterDoubleClick,
   onSceneClick,
   onPropClick,
   onBatchGenerate,
@@ -45,7 +47,7 @@ const ResourceListView: React.FC<ResourceListViewProps> = ({
 
   const filteredChars = dbCharacters.filter(c => !search || c.name.includes(search));
   const filteredScenes = dbScenes.filter(s => !search || s.name.includes(search));
-  const filteredProps = props.filter(p => !search || p.includes(search));
+  const filteredProps = props.filter(p => !search || p.name.includes(search));
 
   return (
     <div className="flex flex-col h-full">
@@ -127,6 +129,7 @@ const ResourceListView: React.FC<ResourceListViewProps> = ({
                             imageUrl={c.imageUrl || c.frontViewUrl}
                             isActive
                             onClick={() => onCharacterClick(c)}
+                            onDoubleClick={() => onCharacterDoubleClick?.(c)}
                           />
                         ))}
                         {unlinkedNames.map(name => (
@@ -163,6 +166,7 @@ const ResourceListView: React.FC<ResourceListViewProps> = ({
                           name={c.name}
                           imageUrl={c.imageUrl || c.frontViewUrl}
                           onClick={() => onCharacterClick(c)}
+                          onDoubleClick={() => onCharacterDoubleClick?.(c)}
                         />
                       ))}
                     </div>
@@ -225,8 +229,8 @@ const ResourceListView: React.FC<ResourceListViewProps> = ({
                 <Plus className="w-6 h-6" />
                 <span className="text-[10px]">创建</span>
               </div>
-              {filteredProps.map((p, i) => (
-                <ResourceCard key={i} type="prop" name={p} onClick={() => onPropClick(p)} />
+              {filteredProps.map((p) => (
+                <ResourceCard key={p.id || p.name} type="prop" name={p.name} imageUrl={p.image_url} onClick={() => onPropClick(p)} />
               ))}
             </div>
           </div>

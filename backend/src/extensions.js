@@ -71,8 +71,9 @@ router.get('/extensions/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const ext = await queryOne(
-      `SELECT id, name, display_name, description, version, author, author_id, category, icon_url, readme, manifest_json, source_url, download_count, rating, status, created_at, updated_at
-       FROM extensions WHERE id = ? AND status = 'approved' AND is_active = 1`,
+      `SELECT e.id, e.name, e.display_name, e.description, e.version, e.author, e.author_id, e.category, e.icon_url, e.readme, e.manifest_json, e.source_url, e.download_count, e.rating, e.status, e.created_at, e.updated_at,
+              (SELECT package_url FROM extension_versions WHERE extension_id = e.id ORDER BY created_at DESC LIMIT 1) as package_url
+       FROM extensions e WHERE e.id = ? AND e.status = 'approved' AND e.is_active = 1`,
       [id]
     );
     if (!ext) {
@@ -113,7 +114,8 @@ router.get('/user/extensions', authMiddleware, async (req, res) => {
     const userId = req.user.userId;
     const rows = await queryAll(
       `SELECT ue.id, ue.extension_id, ue.installed_version, ue.is_enabled, ue.settings_json, ue.installed_at, ue.updated_at,
-              e.name, e.display_name, e.description, e.version as latest_version, e.author, e.category, e.icon_url, e.manifest_json
+              e.name, e.display_name, e.description, e.version as latest_version, e.author, e.category, e.icon_url, e.manifest_json,
+              (SELECT package_url FROM extension_versions WHERE extension_id = e.id ORDER BY created_at DESC LIMIT 1) as package_url
        FROM user_extensions ue
        JOIN extensions e ON ue.extension_id = e.id
        WHERE ue.user_id = ? AND e.is_active = 1
@@ -143,7 +145,8 @@ router.get('/user/extensions/active', authMiddleware, async (req, res) => {
   try {
     const userId = req.user.userId;
     const rows = await queryAll(
-      `SELECT e.id, e.name, e.display_name, e.version, e.manifest_json, ue.settings_json, ue.installed_version
+      `SELECT ue.id, ue.extension_id, ue.is_enabled, e.name, e.display_name, e.version, e.manifest_json, ue.settings_json, ue.installed_version,
+              (SELECT package_url FROM extension_versions WHERE extension_id = e.id ORDER BY created_at DESC LIMIT 1) as package_url
        FROM user_extensions ue
        JOIN extensions e ON ue.extension_id = e.id
        WHERE ue.user_id = ? AND ue.is_enabled = 1 AND e.status = 'approved' AND e.is_active = 1`,

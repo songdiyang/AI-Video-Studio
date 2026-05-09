@@ -1546,6 +1546,8 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
             )}
           </div>
 
+
+
           {/* 反向提示词区域 */}
           <div className="mt-3 border-t border-[var(--border-color)] pt-3">
             <div className="flex items-center justify-between mb-1.5">

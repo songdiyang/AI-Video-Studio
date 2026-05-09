@@ -136,10 +136,7 @@ export const PointsProvider: React.FC<PointsProviderProps> = ({ children }) => {
       setPlanDisplayName(data.planDisplayName);
       setPeriodEnd(data.periodEnd);
 
-      // 检查低余额（从正常变为低余额时提醒一次）
-      if (prevBalanceRef.current !== null && prevBalanceRef.current >= LOW_BALANCE_THRESHOLD && data.balance < LOW_BALANCE_THRESHOLD) {
-        showToast(`积分余额不足！当前仅剩 ${data.balance} 积分，建议及时充值`, 'warn');
-      }
+      // 低余额横幅和toast已移除，改为仅在任务执行时检测积分不足
       prevBalanceRef.current = data.balance;
 
       // 到期提醒（每次会话只提醒一次）
@@ -193,10 +190,7 @@ export const PointsProvider: React.FC<PointsProviderProps> = ({ children }) => {
       showToast(`-${deducted} 积分，余额 ${newBalance.toLocaleString()}`, 'info');
     }
 
-    // 检查低余额
-    if (newBalance < LOW_BALANCE_THRESHOLD && newBalance >= 0) {
-      showToast(`积分余额不足！当前仅剩 ${newBalance} 积分`, 'warn');
-    }
+    // 低余额toast已移除，改为仅在任务执行时检测积分不足
   }, [showToast]);
 
   // 充值弹窗控制
