@@ -13,20 +13,23 @@
  * - 中间内容：固定为 PreviewEditor（核心编辑区）
  */
 
-import React, { useState, useMemo, Component, ReactNode, lazy, Suspense } from 'react';
-import { Wand2 } from 'lucide-react';
+import React, { useState, useMemo, Component, ReactNode, lazy, Suspense, useCallback, useRef, useEffect } from 'react';
+import { Wand2, FolderOpen, ChevronDown, Check } from 'lucide-react';
 import { useStoryboardCore, StoryboardProvider } from './core';
 import type { StoryboardSkeletonProps, StoryboardPlugin } from './core/types';
 import { PanelGroup } from '../../components/PanelGroup';
 import ResizablePanel, { ResizablePanelRef } from '../../components/ResizablePanel';
 import { useAIAssistantUI } from '../../contexts/AIAssistantContext';
 import { useToast } from '../../contexts/ToastContext';
+import { useWorkbench } from '../../contexts/WorkbenchContext';
+import { fetchProjects, Project } from '../../services/projects';
 import EpisodeSelector from './EpisodeSelector';
 
 // ===== 默认插件 =====
 import SceneListPlugin from './plugins/scene-list';
 import ResourcePanelPlugin from './plugins/resource-panel';
 import ScriptOutlinePlugin from './plugins/script-outline';
+import ExtensionsPanelPlugin from './plugins/extensions-panel';
 import PreviewEditorPlugin from './plugins/preview-editor';
 
 // 懒加载 AI 助手
@@ -76,6 +79,7 @@ const DEFAULT_LEFT_TABS = [
   { id: 'scenes', label: '分镜列表', component: SceneListPlugin },
   { id: 'resources', label: '资源', component: ResourcePanelPlugin },
   { id: 'outline', label: '大纲', component: ScriptOutlinePlugin },
+  { id: 'extensions', label: '扩展', component: ExtensionsPanelPlugin },
 ];
 
 // ===== 骨架组件 =====
@@ -131,7 +135,74 @@ const StoryboardSkeleton: React.FC<StoryboardSkeletonProps> = ({
   } = core;
 
   // 左侧面板标签状态
-  const [leftPanelTab, setLeftPanelTab] = useState(leftPanelTabs[0]?.id || 'scenes');
+  const [leftPanelTab, setLeftPanelTab] = useState(() => {
+    const stored = localStorage.getItem('nanostory_left_panel_tab');
+    return stored && leftPanelTabs.some(t => t.id === stored) ? stored : (leftPanelTabs[0]?.id || 'scenes');
+  });
+
+  // 监听外部切换左侧面板标签事件
+  useEffect(() => {
+    const handleSwitchLeftPanelTab = (e: CustomEvent<{ tabId: string }>) => {
+      const { tabId } = e.detail;
+      if (leftPanelTabs.some(t => t.id === tabId)) {
+        setLeftPanelTab(tabId);
+        // 同步到 localStorage，让导航栏能读取激活状态
+        localStorage.setItem('nanostory_left_panel_tab', tabId);
+      }
+    };
+    window.addEventListener('switchLeftPanelTab', handleSwitchLeftPanelTab as EventListener);
+    return () => {
+      window.removeEventListener('switchLeftPanelTab', handleSwitchLeftPanelTab as EventListener);
+    };
+  }, [leftPanelTabs]);
+
+  // ===== 项目快速切换 =====
+  const { currentProject, switchProject } = useWorkbench();
+  const [projectSwitcherOpen, setProjectSwitcherOpen] = useState(false);
+  const [projectList, setProjectList] = useState<Project[]>([]);
+  const [projectListLoading, setProjectListLoading] = useState(false);
+  const projectSwitcherRef = useRef<HTMLDivElement>(null);
+
+  // 点击外部关闭下拉面板
+  React.useEffect(() => {
+    if (!projectSwitcherOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (projectSwitcherRef.current && !projectSwitcherRef.current.contains(e.target as Node)) {
+        setProjectSwitcherOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [projectSwitcherOpen]);
+
+  // 打开面板时加载项目列表
+  const handleOpenProjectSwitcher = useCallback(async () => {
+    const willOpen = !projectSwitcherOpen;
+    setProjectSwitcherOpen(willOpen);
+    if (willOpen) {
+      setProjectListLoading(true);
+      try {
+        const projects = await fetchProjects();
+        setProjectList(projects);
+        // 如果项目列表为空，清除当前项目状态
+        if (projects.length === 0 && currentProject) {
+          switchProject(null as any);
+          localStorage.removeItem('nanostory_last_project_id');
+        }
+      } catch (err) {
+        console.error('Failed to fetch projects:', err);
+      } finally {
+        setProjectListLoading(false);
+      }
+    }
+  }, [projectSwitcherOpen, currentProject, switchProject]);
+
+  // 快速切换项目
+  const handleQuickSwitchProject = useCallback((project: Project) => {
+    switchProject(project);
+    localStorage.setItem('nanostory_last_project_id', String(project.id));
+    setProjectSwitcherOpen(false);
+  }, [switchProject]);
 
   // refs
   const resourcePanelRef = React.useRef<ResizablePanelRef>(null);
@@ -178,6 +249,60 @@ const StoryboardSkeleton: React.FC<StoryboardSkeletonProps> = ({
         <div className="shrink-0 border-b border-(--border-color) bg-(--bg-card)">
           <div className="h-11 px-4 flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
+              {/* 项目快速切换 */}
+              {currentProject && (
+                <div className="relative" ref={projectSwitcherRef}>
+                  <button
+                    onClick={handleOpenProjectSwitcher}
+                    className="flex items-center gap-1 text-xs text-(--text-muted) px-2 py-1.5 bg-(--bg-card) hover:bg-(--bg-card-hover) rounded-md transition-colors cursor-pointer border border-(--border-color)"
+                    title="切换项目"
+                  >
+                    <FolderOpen className="w-3 h-3" />
+                    <span className="max-w-[120px] truncate">{currentProject.name}</span>
+                    <ChevronDown className={`w-3 h-3 transition-transform ${projectSwitcherOpen ? 'rotate-180' : ''}`} />
+                  </button>
+                  {/* 项目快速切换下拉面板 */}
+                  {projectSwitcherOpen && (
+                    <div className="absolute top-full left-0 mt-1 w-64 max-h-80 overflow-y-auto rounded-lg border border-(--border-color) bg-(--bg-card) shadow-xl z-50">
+                      <div className="px-3 py-2 border-b border-(--border-color)">
+                        <span className="text-xs font-medium text-(--text-secondary)">切换项目</span>
+                      </div>
+                      {projectListLoading ? (
+                        <div className="px-3 py-4 text-center text-xs text-(--text-muted)">加载中...</div>
+                      ) : projectList.length === 0 ? (
+                        <div className="px-3 py-4 text-center text-xs text-(--text-muted)">暂无项目</div>
+                      ) : (
+                        <div className="py-1">
+                          {projectList.map((project) => (
+                            <button
+                              key={project.id}
+                              onClick={() => handleQuickSwitchProject(project)}
+                              className={`w-full flex items-center gap-2 px-3 py-2 text-left text-xs transition-colors hover:bg-(--bg-card-hover) ${
+                                currentProject.id === project.id ? 'text-(--accent)' : 'text-(--text-primary)'
+                              }`}
+                            >
+                              <FolderOpen className="w-3.5 h-3.5 shrink-0 opacity-60" />
+                              <span className="truncate flex-1">{project.name}</span>
+                              {currentProject.id === project.id && (
+                                <Check className="w-3.5 h-3.5 shrink-0 text-(--accent)" />
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      <div className="border-t border-(--border-color) px-3 py-2">
+                        <button
+                          onClick={() => { setProjectSwitcherOpen(false); window.location.href = '/#/projects'; }}
+                          className="w-full text-xs text-(--text-muted) hover:text-(--accent) text-center transition-colors"
+                        >
+                          管理全部项目
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <EpisodeSelector
                 scripts={scripts}
                 currentEpisode={state.currentEpisode}
@@ -249,7 +374,10 @@ const StoryboardSkeleton: React.FC<StoryboardSkeletonProps> = ({
                       {leftPanelTabs.map(tab => (
                         <button
                           key={tab.id}
-                          onClick={() => setLeftPanelTab(tab.id)}
+                          onClick={() => {
+                            setLeftPanelTab(tab.id);
+                            localStorage.setItem('nanostory_left_panel_tab', tab.id);
+                          }}
                           className={`flex-1 px-3 py-1 text-xs font-medium rounded-md transition-all ${
                             leftPanelTab === tab.id
                               ? 'text-[var(--accent)]'

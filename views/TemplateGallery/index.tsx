@@ -28,6 +28,16 @@ const sortMapping: Record<SortKey, string> = {
 // 每页数量
 const PAGE_SIZE = 12;
 
+// 分类标签名称获取函数
+const getCategoryLabel = (cat: CategoryKey, t: any) => {
+  return t.templates.categories[cat] || cat;
+};
+
+// 排序标签名称获取函数
+const getSortLabel = (s: SortKey, t: any) => {
+  return t.templates.sortBy[s] || s;
+};
+
 const TemplateGallery: React.FC = () => {
   const navigate = useNavigate();
   const { t } = useLanguage();
@@ -91,16 +101,6 @@ const TemplateGallery: React.FC = () => {
     } finally {
       setUsingTemplateId(null);
     }
-  };
-
-  // 分类标签名称
-  const getCategoryLabel = (cat: CategoryKey) => {
-    return t.templates.categories[cat] || cat;
-  };
-
-  // 排序标签名称
-  const getSortLabel = (s: SortKey) => {
-    return t.templates.sortBy[s] || s;
   };
 
   // 总页数
@@ -168,7 +168,7 @@ const TemplateGallery: React.FC = () => {
                   : 'bg-(--bg-card) text-(--text-muted) border border-(--border-color) hover:bg-(--bg-input) hover:text-(--text-secondary)'
               }`}
             >
-              {getCategoryLabel(cat)}
+              {getCategoryLabel(cat, t)}
             </button>
           ))}
         </div>
@@ -192,7 +192,7 @@ const TemplateGallery: React.FC = () => {
               {s === 'popular' && <TrendingUp className="w-3.5 h-3.5" />}
               {s === 'newest' && <Clock className="w-3.5 h-3.5" />}
               {s === 'mostUsed' && <Users className="w-3.5 h-3.5" />}
-              {getSortLabel(s)}
+              {getSortLabel(s, t)}
             </button>
           ))}
         </div>

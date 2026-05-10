@@ -200,3 +200,141 @@ export async function generateScript(params: GenerateScriptParams): Promise<Gene
   }
   return data as GenerateScriptResponse;
 }
+
+// ==================== 上传与分析优化 ====================
+
+export interface UploadScriptParams {
+  file: File;
+  projectId?: number | null;
+  episodeNumber?: number | null;
+  title?: string;
+  mode?: 'save' | 'analyze';
+}
+
+export interface UploadScriptResponse {
+  success: boolean;
+  scriptId: number;
+  projectId: number | null;
+  episodeNumber: number;
+  title: string;
+  content: string;
+  mode: 'save' | 'analyze';
+  analysis?: ScriptAnalysisResult;
+  message: string;
+}
+
+export interface ScriptAnalysisResult {
+  sceneCount: number;
+  scenes?: Array<{ index: number; title: string; description: string }>;
+  characters?: Array<{ name: string; importance: string; trait: string }>;
+  structure: string;
+  style: string[];
+  pacing?: string;
+  suggestions: string[];
+  summary: string;
+  error?: string;
+}
+
+export interface AnalyzeScriptParams {
+  scriptId?: number;
+  content?: string;
+}
+
+export interface AnalyzeScriptResponse {
+  success: boolean;
+  scriptId?: number;
+  analysis: ScriptAnalysisResult;
+  contentLength: number;
+  message: string;
+}
+
+export interface OptimizeScriptParams {
+  scriptId?: number;
+  content?: string;
+  instruction: string;
+  textModel?: string;
+  saveMode?: 'new' | 'overwrite';
+}
+
+export interface OptimizeScriptResponse {
+  success: boolean;
+  originalScriptId?: number;
+  savedScriptId?: number;
+  projectId?: number | null;
+  episodeNumber?: number;
+  title: string;
+  originalContent: string;
+  optimizedContent: string;
+  changes: string[];
+  tokensUsed: number;
+  model: string;
+  instruction: string;
+  saveMode: string;
+  message: string;
+}
+
+/**
+ * 上传剧本文件（.txt / .md）
+ */
+export async function uploadScriptFile(params: UploadScriptParams): Promise<UploadScriptResponse> {
+  const formData = new FormData();
+  formData.append('file', params.file);
+  if (params.projectId !== undefined) formData.append('projectId', String(params.projectId));
+  if (params.episodeNumber !== undefined) formData.append('episodeNumber', String(params.episodeNumber));
+  if (params.title) formData.append('title', params.title);
+  formData.append('mode', params.mode || 'save');
+
+  const res = await fetch('/api/scripts/upload', {
+    method: 'POST',
+    headers: {
+      ...authHeaders(),
+    },
+    body: formData,
+  });
+
+  const data = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw new Error(data?.message || '上传剧本失败');
+  }
+  return data as UploadScriptResponse;
+}
+
+/**
+ * AI分析剧本
+ */
+export async function analyzeScript(params: AnalyzeScriptParams): Promise<AnalyzeScriptResponse> {
+  const res = await fetch('/api/scripts/analyze', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders(),
+    },
+    body: JSON.stringify(params),
+  });
+
+  const data = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw new Error(data?.message || '分析剧本失败');
+  }
+  return data as AnalyzeScriptResponse;
+}
+
+/**
+ * AI优化剧本
+ */
+export async function optimizeScript(params: OptimizeScriptParams): Promise<OptimizeScriptResponse> {
+  const res = await fetch('/api/scripts/optimize', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders(),
+    },
+    body: JSON.stringify(params),
+  });
+
+  const data = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw new Error(data?.message || '优化剧本失败');
+  }
+  return data as OptimizeScriptResponse;
+}

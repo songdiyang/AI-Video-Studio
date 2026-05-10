@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Button, Input, Textarea, Select, SelectItem, Tabs, Tab, Chip } from '@heroui/react';
 import {
-  Save, X, User, MapPin, FileText, Tag as TagIcon, Plus,
+  User, MapPin, FileText, Tag as TagIcon, Plus,
   Layers, Image as ImageIcon, FolderOpen, Shirt, Cloud, Building2, BookOpen,
-  Wand2, Settings, Palette
+  Wand2, Settings, Palette, Camera
 } from 'lucide-react';
 import { Project } from '../../services/projects';
 import {
@@ -21,12 +21,17 @@ import ReferenceImageManager from '../../views/AssetsManager/AssetModel/Referenc
 import PropStyleConfigPanel, { PropStyleConfig } from '../../views/AssetsManager/AssetModel/PropStyleConfig';
 import { useAIModels } from '../../hooks/useAIModels';
 import { getAuthToken } from '../../services/auth';
+import { StoryboardScene } from '../../views/StoryBoard/useSceneManager';
 
 interface AssetEditorProps {
   tabId: string;
   assetType: string;
   initialData?: any;
   onClose: () => void;
+  /** 当前所有分镜数据（用于关联分镜展示） */
+  scenes?: StoryboardScene[];
+  /** 点击关联分镜时的回调 */
+  onSelectScene?: (sceneId: number) => void;
 }
 
 // 资产类型配置
@@ -41,11 +46,14 @@ const ASSET_TYPE_CONFIG: Record<string, { label: string; icon: React.ReactNode; 
   script: { label: '剧本', icon: <BookOpen size={14} />, color: 'rose' },
 };
 
-const AssetEditor: React.FC<AssetEditorProps> = ({ tabId, assetType, initialData, onClose }) => {
+const AssetEditor: React.FC<AssetEditorProps> = ({ tabId, assetType, initialData, onClose, scenes = [], onSelectScene }) => {
   const { showToast } = useToast();
   const [formData, setFormData] = useState<any>(initialData || {});
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState<string>('basic');
+  const [isDirty, setIsDirty] = useState(false);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastSavedRef = useRef<string>('');
 
   // 标签输入缓冲
   const [tagInput, setTagInput] = useState('');
@@ -54,8 +62,47 @@ const AssetEditor: React.FC<AssetEditorProps> = ({ tabId, assetType, initialData
   useEffect(() => {
     if (initialData) {
       setFormData(initialData);
+      lastSavedRef.current = JSON.stringify(initialData);
+      setIsDirty(false);
     }
   }, [initialData]);
+
+  // 自动保存：监听 formData 变化，防抖 2 秒后自动保存
+  useEffect(() => {
+    const currentJson = JSON.stringify(formData);
+    if (currentJson === lastSavedRef.current) {
+      setIsDirty(false);
+      return;
+    }
+    setIsDirty(true);
+
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+    }
+    saveTimerRef.current = setTimeout(() => {
+      handleSave();
+    }, 2000);
+
+    return () => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData]);
+
+  // 组件卸载时如果还有未保存的更改，立即保存
+  useEffect(() => {
+    return () => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+      }
+      if (isDirty) {
+        handleSave();
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // 资产类型配置
   const config = ASSET_TYPE_CONFIG[assetType] || { label: '资产', icon: <FileText size={14} />, color: 'blue' };
@@ -194,6 +241,8 @@ const AssetEditor: React.FC<AssetEditorProps> = ({ tabId, assetType, initialData
       if (savedData) {
         setFormData((prev: any) => ({ ...prev, ...savedData }));
       }
+      lastSavedRef.current = JSON.stringify({ ...formData, ...savedData });
+      setIsDirty(false);
       showToast('保存成功', 'success');
     } catch (error: any) {
       showToast(error?.message || '保存失败', 'error');
@@ -264,6 +313,110 @@ const AssetEditor: React.FC<AssetEditorProps> = ({ tabId, assetType, initialData
       )}
     </div>
   );
+
+  // 渲染关联分镜列表（内嵌到角色编辑面板）
+  const renderRelatedScenes = () => {
+    const assetName = formData.name || '';
+    if (!assetName || scenes.length === 0) {
+      return (
+        <div className="h-full flex flex-col items-center justify-center text-slate-500 py-8">
+          <Camera size={24} className="opacity-30 mb-2" />
+          <span className="text-xs">暂无关联分镜</span>
+          <span className="text-[10px] opacity-60 mt-1">
+            该角色尚未在任何分镜中使用
+          </span>
+        </div>
+      );
+    }
+
+    const normalizedAssetName = assetName.trim();
+    const relatedScenes = scenes.filter((scene) => {
+      return scene.characters?.some(
+        (char: string) => char.trim() === normalizedAssetName ||
+                  char.trim().includes(normalizedAssetName) ||
+                  normalizedAssetName.includes(char.trim())
+      );
+    });
+
+    if (relatedScenes.length === 0) {
+      return (
+        <div className="h-full flex flex-col items-center justify-center text-slate-500 py-8">
+          <Camera size={24} className="opacity-30 mb-2" />
+          <span className="text-xs">暂无关联分镜</span>
+          <span className="text-[10px] opacity-60 mt-1">
+            该角色尚未在任何分镜中使用
+          </span>
+        </div>
+      );
+    }
+
+    return (
+      <div className="h-full flex flex-col">
+        {/* 标题栏 */}
+        <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700/50">
+          <div className="flex items-center gap-2">
+            <div className="flex items-center justify-center w-5 h-5 rounded bg-blue-500/10 text-blue-400">
+              <Camera size={12} />
+            </div>
+            <span className="text-xs font-medium text-slate-400">
+              关联分镜
+            </span>
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-800 text-slate-500">
+              {relatedScenes.length}
+            </span>
+          </div>
+          <span className="text-[10px] text-slate-500 truncate max-w-[120px]">
+            {assetName}
+          </span>
+        </div>
+
+        {/* 分镜列表 */}
+        <div className="flex-1 overflow-y-auto">
+          <div className="divide-y divide-slate-700/30">
+            {relatedScenes.map((scene) => (
+              <button
+                key={scene.id}
+                onClick={() => {
+                  // 派发事件让 PreviewEditor 打开对应分镜标签页
+                  window.dispatchEvent(new CustomEvent('openSceneTab', {
+                    detail: { sceneId: scene.id }
+                  }));
+                  onSelectScene?.(scene.id);
+                }}
+                className="w-full text-left px-3 py-2 hover:bg-slate-800/50 transition-colors group"
+              >
+                <div className="flex items-start gap-2">
+                  {/* 分镜序号 */}
+                  <div className="flex items-center justify-center w-6 h-6 rounded bg-slate-800 text-[10px] font-medium text-slate-500 shrink-0 mt-0.5">
+                    {scene.order}
+                  </div>
+
+                  {/* 分镜内容 */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <span className="text-xs font-medium text-slate-200 truncate">
+                        {scene.baseDescription || scene.description || `分镜 #${scene.order}`}
+                      </span>
+                    </div>
+
+                    {/* 分镜元信息 */}
+                    <div className="flex items-center gap-2 text-[10px] text-slate-500">
+                      {scene.location && (
+                        <span>{scene.location}</span>
+                      )}
+                      {scene.duration && (
+                        <span>{scene.duration}s</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   // 渲染角色编辑表单
   const renderCharacterForm = () => {
@@ -368,6 +521,9 @@ const AssetEditor: React.FC<AssetEditorProps> = ({ tabId, assetType, initialData
               <p className="text-sm">请先保存角色后管理参考图</p>
             </div>
           )}
+        </Tab>
+        <Tab key="scenes" title={<div className="flex items-center gap-1.5"><Camera className="w-4 h-4" /><span>关联分镜</span></div>}>
+          {renderRelatedScenes()}
         </Tab>
       </Tabs>
     );
@@ -894,25 +1050,11 @@ const AssetEditor: React.FC<AssetEditorProps> = ({ tabId, assetType, initialData
           </span>
         </div>
         <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            variant="light"
-            onPress={onClose}
-            className="text-[var(--text-muted)]"
-            startContent={<X size={14} />}
-          >
-            关闭
-          </Button>
-          <Button
-            size="sm"
-            color="primary"
-            isLoading={saving}
-            onPress={handleSave}
-            className="bg-gradient-to-r from-blue-500 to-violet-600 text-white font-semibold"
-            startContent={<Save size={14} />}
-          >
-            保存
-          </Button>
+          {isDirty && (
+            <span className="text-[10px] text-amber-400 animate-pulse">
+              未保存
+            </span>
+          )}
         </div>
       </div>
 

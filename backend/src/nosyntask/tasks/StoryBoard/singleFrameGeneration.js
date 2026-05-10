@@ -67,7 +67,8 @@ async function handleSingleFrameGeneration(inputParams, onProgress) {
     variables = {};
   }
 
-  const desc = description || storyboard.prompt_template || '';
+  // 静止模式：优先使用 first_frame_prompt（用户编辑的图片提示词），fallback 到 prompt_template
+  const desc = description || storyboard.first_frame_prompt || storyboard.prompt_template || '';
   
   // 解析分镜空间描述
   let spatialDescription = null;

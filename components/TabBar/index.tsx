@@ -1,13 +1,14 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Camera, Users, Mountain, X, ChevronDown, Play, Box, Settings } from 'lucide-react';
+import { Camera, Users, Mountain, X, ChevronDown, Play, Box, Settings, Puzzle, Sparkles } from 'lucide-react';
 
 export interface TabItem {
   id: string;
-  type: 'scene' | 'character' | 'location' | 'animatic' | 'asset' | 'settings';
+  type: 'scene' | 'character' | 'location' | 'animatic' | 'asset' | 'settings' | 'extension' | 'extension-detail' | 'script-generate';
   title: string;
   sceneIndex?: number; // 分镜序号
   scriptId?: number;   // 所属集数ID（用于跨集标签页显示）
   assetType?: string; // 资产类型（用于 asset 标签页）
+  extId?: number; // 扩展ID（用于 extension-detail 标签页）
 }
 
 interface TabBarProps {
@@ -59,6 +60,12 @@ const TabBar: React.FC<TabBarProps> = ({
         return <Box size={12} />;
       case 'settings':
         return <Settings size={12} />;
+      case 'extension':
+        return <Puzzle size={12} />;
+      case 'extension-detail':
+        return <Puzzle size={12} />;
+      case 'script-generate':
+        return <Sparkles size={12} />;
       default:
         return null;
     }

@@ -1206,6 +1206,7 @@ const enUS: Translations = {
     viewList: 'List View',
     viewGrid: 'Grid View',
     localInstalled: 'Local - Installed',
+    retry: 'Retry',
     categories: {
       productivity: 'Productivity',
       theme: 'Theme',

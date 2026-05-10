@@ -110,28 +110,9 @@ const SketchCanvas = forwardRef<SketchCanvasHandle, SketchCanvasProps>(({
   }));
 
   return (
-    <div className="flex h-full">
-      {/* 左侧工具栏 */}
-      <div className="flex flex-col items-center gap-2 px-2 py-3 bg-black/40 border-r border-white/10 w-12 shrink-0">
-        {/* 清除全部 */}
-        <button
-          onClick={resetCanvas}
-          className="p-1.5 rounded-lg text-white/50 hover:text-white hover:bg-white/10 transition-all"
-          title="清除全部"
-        >
-          <RotateCcw className="w-4 h-4" />
-        </button>
-
-        <div className="w-6 h-px bg-white/20 my-1" />
-
-        {/* 元素计数 */}
-        <div className="text-[9px] text-white/40 text-center">
-          {elementCount}
-        </div>
-      </div>
-
-      {/* Excalidraw 画布区域 */}
-      <div className="flex-1 relative min-w-0 bg-white">
+    <div className="h-full w-full relative">
+      {/* Excalidraw 画布区域 - 使用原生工具栏 */}
+      <div className="excalidraw-container absolute inset-0 bg-white">
         <React.Suspense
           fallback={
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-[var(--bg-app)]">
@@ -152,7 +133,7 @@ const SketchCanvas = forwardRef<SketchCanvasHandle, SketchCanvasProps>(({
               setIsReady(true);
             }}
             onChange={handleChange}
-            theme="dark"
+            theme="light"
             UIOptions={{
               canvasActions: {
                 saveToActiveFile: false,
@@ -167,7 +148,7 @@ const SketchCanvas = forwardRef<SketchCanvasHandle, SketchCanvasProps>(({
             }}
             initialData={{
               appState: {
-                viewBackgroundColor: '#ffffff',
+                viewBackgroundColor: '#f5f5f5',
                 exportBackground: true,
                 gridSize: null,
               },
@@ -177,7 +158,7 @@ const SketchCanvas = forwardRef<SketchCanvasHandle, SketchCanvasProps>(({
 
         {/* 提示 */}
         {elementCount === 0 && isReady && (
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
             <span className="text-black/20 text-sm">手绘场景草图，AI将根据草图生成图片</span>
           </div>
         )}

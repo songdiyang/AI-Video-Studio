@@ -140,30 +140,45 @@ const AssetModal: React.FC<AssetModalProps> = ({
               )}
 
               {activeTab === 'props' && (
+                <>
+                  <Input
+                    label="道具分类"
+                    placeholder="如：武器、工具、装饰品等"
+                    value={formData.category}
+                    onValueChange={(val) => setFormData({ ...formData, category: val })}
+                    classNames={{
+                      input: "bg-transparent text-slate-100 placeholder:text-slate-500",
+                      label: "text-slate-400 font-medium",
+                      inputWrapper: "bg-slate-800/60 border border-slate-600/50 hover:border-blue-500/50 shadow-sm"
+                    }}
+                  />
+                  <Input
+                    label="图片URL"
+                    placeholder="图片地址（选填）"
+                    value={formData.image_url}
+                    onValueChange={(val) => setFormData({ ...formData, image_url: val })}
+                    classNames={{
+                      input: "bg-transparent text-[var(--text-primary)] placeholder:text-[var(--text-muted)]",
+                      label: "text-[var(--text-secondary)] font-medium",
+                      inputWrapper: "bg-[var(--bg-input)] border border-[var(--border-color)] hover:border-[var(--accent)]/50 shadow-sm"
+                    }}
+                  />
+                </>
+              )}
+
+              {activeTab !== 'props' && (
                 <Input
-                  label="道具分类"
-                  placeholder="如：武器、工具、装饰品等"
-                  value={formData.category}
-                  onValueChange={(val) => setFormData({ ...formData, category: val })}
+                  label="图片URL"
+                  placeholder="图片地址（选填）"
+                  value={formData.image_url}
+                  onValueChange={(val) => setFormData({ ...formData, image_url: val })}
                   classNames={{
-                    input: "bg-transparent text-slate-100 placeholder:text-slate-500",
-                    label: "text-slate-400 font-medium",
-                    inputWrapper: "bg-slate-800/60 border border-slate-600/50 hover:border-blue-500/50 shadow-sm"
+                    input: "bg-transparent text-[var(--text-primary)] placeholder:text-[var(--text-muted)]",
+                    label: "text-[var(--text-secondary)] font-medium",
+                    inputWrapper: "bg-[var(--bg-input)] border border-[var(--border-color)] hover:border-[var(--accent)]/50 shadow-sm"
                   }}
                 />
               )}
-
-              <Input
-                label="图片URL"
-                placeholder="图片地址（选填）"
-                value={formData.image_url}
-                onValueChange={(val) => setFormData({ ...formData, image_url: val })}
-                classNames={{
-                  input: "bg-transparent text-[var(--text-primary)] placeholder:text-[var(--text-muted)]",
-                  label: "text-[var(--text-secondary)] font-medium",
-                  inputWrapper: "bg-[var(--bg-input)] border border-[var(--border-color)] hover:border-[var(--accent)]/50 shadow-sm"
-                }}
-              />
 
               <Input
                 label="标签"

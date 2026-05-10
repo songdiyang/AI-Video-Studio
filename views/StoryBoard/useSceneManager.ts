@@ -75,10 +75,17 @@ export interface StoryboardScene {
   directorParams?: DirectorParams;  // 导演参数
   spatialDescription?: SpatialDescription;  // 空间描述
   // 草图相关字段
-  sketchUrl?: string;           // 草图图片 URL
+  sketchUrl?: string;           // 草图图片 URL（兼容旧数据）
   sketchType?: string;          // 草图类型 (stick_figure / storyboard_sketch / detailed_lineart)
   sketchData?: unknown;         // Excalidraw 矢量数据，用于回显编辑
   controlStrength?: number;     // 控制强度 (0.0 ~ 1.0)
+  // 首帧/尾帧独立草图
+  startSketchUrl?: string;      // 首帧草图 URL
+  startSketchType?: string;     // 首帧草图类型
+  startSketchData?: unknown;    // 首帧草图 Excalidraw 数据
+  endSketchUrl?: string;        // 尾帧草图 URL
+  endSketchType?: string;       // 尾帧草图类型
+  endSketchData?: unknown;      // 尾帧草图 Excalidraw 数据
   // 镜头语言参数
   shotLanguage?: ShotLanguage;  // 专业镜头参数
   isLocked?: boolean;           // 是否锁定
@@ -195,6 +202,12 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
         sketchType: item.sketch_type || undefined,
         sketchData: item.sketch_data || undefined,
         controlStrength: item.control_strength ?? undefined,
+        startSketchUrl: item.start_sketch_url || undefined,
+        startSketchType: item.start_sketch_type || undefined,
+        startSketchData: item.start_sketch_data || undefined,
+        endSketchUrl: item.end_sketch_url || undefined,
+        endSketchType: item.end_sketch_type || undefined,
+        endSketchData: item.end_sketch_data || undefined,
         negativePrompt: item.negative_prompt || undefined,
         videoPrompt: item.video_prompt || undefined,
         firstFramePrompt: item.first_frame_prompt || undefined,

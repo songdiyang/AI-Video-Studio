@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { Button } from '@heroui/react';
-import { Wand2, X, RotateCcw, Sparkles, Compass, Maximize2, Camera, Pencil } from 'lucide-react';
+import { Wand2, X, RotateCcw, Sparkles, Compass, Maximize2, Camera, Pencil, Check } from 'lucide-react';
 import TrackballWidget, { Rotation } from './TrackballWidget';
 import LightingWidget, { LightingDirection } from './LightingWidget';
 import Scene3DViewer, { SceneCamera, SceneLighting } from './Scene3DViewer';
@@ -474,7 +474,7 @@ const MagicSpacePanel: React.FC<MagicSpacePanelProps> = ({
           <Button
             size="sm"
             className="pro-btn-primary flex-1"
-            startContent={<Wand2 className="w-4 h-4" />}
+            startContent={activeMode === 'sketch' ? <Check className="w-4 h-4" /> : <Wand2 className="w-4 h-4" />}
             onPress={handleGenerate}
             isLoading={isGenerating}
             isDisabled={isGenerating || !canGenerate}
@@ -484,7 +484,7 @@ const MagicSpacePanel: React.FC<MagicSpacePanelProps> = ({
               : activeMode === 'expand'
                 ? (expandMode === 'expand' ? '扩图生成' : '聚焦生成')
                 : activeMode === 'sketch'
-                  ? '草图生成'
+                  ? '保存草图'
                   : '魔术生成'}
           </Button>
           <span className="text-[10px] text-white/30">
@@ -493,7 +493,7 @@ const MagicSpacePanel: React.FC<MagicSpacePanelProps> = ({
               : activeMode === 'expand'
                 ? (expandMode === 'expand' ? 'AI将填充空白区域' : 'AI将放大局部细节')
                 : activeMode === 'sketch'
-                  ? (sketchElementCount > 0 ? `已绘制 ${sketchElementCount} 个元素` : '请先手绘场景草图')
+                  ? (sketchElementCount > 0 ? `已绘制 ${sketchElementCount} 个元素，保存后用于首尾帧生成参考` : '请先手绘场景草图')
                   : (strokeCount > 0 ? `已涂抹 ${strokeCount} 笔` : '请先涂抹需要修改的区域')}
           </span>
         </div>

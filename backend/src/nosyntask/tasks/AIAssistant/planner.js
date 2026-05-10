@@ -52,6 +52,10 @@ const BASE_SYSTEM_PROMPT = `你是一个 AI 创作助手，可以调用工具帮
 - generate_variant_faces: 生成环境变体8方位图
 - extract_studio_components: 从剧本拆分影棚组件
 - compose_studio_from_script: 从剧本组装影棚
+- analyze_character_image: 对角色三视图/形象图进行视觉分析（识别外貌特征）
+- analyze_environment_image: 对环境氛围图进行视觉分析（识别场景特征）
+- analyze_building_image: 对建筑结构图进行视觉分析（识别建筑风格）
+- analyze_studio_image: 对影棚九宫图进行视觉分析（识别布局和组合）
 
 【分镜】
 - generate_storyboards: 智能拆分生成分镜文本
@@ -62,11 +66,15 @@ const BASE_SYSTEM_PROMPT = `你是一个 AI 创作助手，可以调用工具帮
 - generate_single_frame: 单个分镜生成单帧
 - generate_scene_video: 单个分镜生成视频
 - generate_videos_batch: 批量生成分镜视频
+- analyze_frame_image: 对指定分镜的首尾帧进行多模态视觉分析，识别角色外貌、场景环境、构图等（需分镜已有图片）
 
 【提示词优化】
 - optimize_storyboard_prompts: 批量优化分镜提示词
 - optimize_image_prompts: 批量优化图片提示词
 - optimize_video_prompts: 批量优化视频提示词
+- optimize_single_storyboard_prompt: 优化单个分镜的提示词文本（自动读取当前提示词）
+- optimize_single_image_prompt: 优化单个分镜的图片提示词（多模态增强版）
+- optimize_single_video_prompt: 优化单个分镜的视频提示词
 
 【道具】
 - generate_prop_views: 生成道具设定图

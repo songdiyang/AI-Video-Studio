@@ -7,7 +7,7 @@ import { BlockEditorState } from '../../views/StoryBoard/BlockEditor/types/block
 import { getAuthToken } from '../../services/auth';
 import { startWorkflow, getWorkflowStatus } from '../../hooks/useWorkflow';
 import { useToast } from '../../contexts/ToastContext';
-import { NodeModeFeature, NodeCanvasState } from '../../features/NodeMode';
+// import { NodeModeFeature, NodeCanvasState } from '../../features/NodeMode';
 import { fetchCharactersByProject, fetchScenesByProject } from '../../services/assets';
 import { listEnvironments } from '../../services/environments';
 import { listBuildings } from '../../services/buildings';
@@ -213,7 +213,7 @@ const DirectorSpace: React.FC<DirectorSpaceProps> = ({
   projectCostumes: externalProjectCostumes,
 }) => {
   const [promptMode, setPromptMode] = useState<'description' | 'image' | 'video'>('description');
-  const [directorMode, setDirectorMode] = useState<'editor' | 'node'>('editor');
+  // const [directorMode, setDirectorMode] = useState<'editor' | 'node'>('editor');
   const [imageFrameTab, setImageFrameTab] = useState<'first' | 'last'>('first');
 
   // 从 localStorage 恢复导演空间状态（按场景隔离）
@@ -222,9 +222,9 @@ const DirectorSpace: React.FC<DirectorSpaceProps> = ({
     if (saved) {
       try {
         const state = JSON.parse(saved);
-        if (state.directorMode === 'editor' || state.directorMode === 'node') {
-          setDirectorMode(state.directorMode);
-        }
+        // if (state.directorMode === 'editor' || state.directorMode === 'node') {
+        //   setDirectorMode(state.directorMode);
+        // }
         if (state.promptMode === 'description' || state.promptMode === 'image' || state.promptMode === 'video') {
           setPromptMode(state.promptMode);
         }
@@ -241,14 +241,14 @@ const DirectorSpace: React.FC<DirectorSpaceProps> = ({
   useEffect(() => {
     try {
       localStorage.setItem(`director_space_state_${scene.id}`, JSON.stringify({
-        directorMode,
+        // directorMode,
         promptMode,
         imageFrameTab,
       }));
     } catch {
       // ignore
     }
-  }, [scene.id, directorMode, promptMode, imageFrameTab]);
+  }, [scene.id, /* directorMode, */ promptMode, imageFrameTab]);
   const [currentEditorText, setCurrentEditorText] = useState('');
 
   // 项目资源数据（优先使用外部传入的，避免重复加载）
@@ -431,7 +431,8 @@ const DirectorSpace: React.FC<DirectorSpaceProps> = ({
         className="flex items-center justify-between px-3 py-2 hover:bg-[var(--bg-card-hover)] transition-colors"
       >
         <div className="flex items-center gap-2">
-          {/* 导演模式 / 节点模式 一级切换 */}
+          {/* 导演模式 / 节点模式 一级切换 - 已注释掉节点模式 */}
+          {/*
           <div className="flex items-center gap-0.5 p-0.5 bg-[var(--bg-input)] rounded-lg">
             <button
               onClick={(e) => { e.stopPropagation(); setDirectorMode('editor'); }}
@@ -454,8 +455,8 @@ const DirectorSpace: React.FC<DirectorSpaceProps> = ({
               节点模式
             </button>
           </div>
-          {/* 导演模式下的二级切换 */}
-          {directorMode === 'editor' && (
+          */}
+          {/* 导演模式下的二级切换 - 节点模式已注释掉，直接显示 */}
             <div className="flex items-center gap-1 ml-2">
               <button
                 onClick={(e) => { e.stopPropagation(); setPromptMode('description'); }}
@@ -477,7 +478,8 @@ const DirectorSpace: React.FC<DirectorSpaceProps> = ({
               >
                 图片提示词
               </button>
-              {promptMode === 'image' && (
+              {/* 运动模式才显示首帧/尾帧子标签 */}
+              {scene.hasAction && promptMode === 'image' && (
                 <div className="flex items-center gap-0.5 ml-1 p-0.5 bg-[var(--bg-input)] rounded">
                   <button
                     onClick={(e) => { e.stopPropagation(); setImageFrameTab('first'); }}
@@ -497,6 +499,12 @@ const DirectorSpace: React.FC<DirectorSpaceProps> = ({
                   </button>
                 </div>
               )}
+              {/* 静止模式：图片提示词直接保存到 first_frame_prompt */}
+              {!scene.hasAction && promptMode === 'image' && (
+                <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-blue-500/10 text-blue-400/60 ml-1">
+                  单图
+                </span>
+              )}
               <button
                 onClick={(e) => { e.stopPropagation(); setPromptMode('video'); }}
                 className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${
@@ -508,7 +516,6 @@ const DirectorSpace: React.FC<DirectorSpaceProps> = ({
                 视频提示词
               </button>
             </div>
-          )}
         </div>
         {/* 右侧：阶段状态标签 */}
         <div>
@@ -527,59 +534,60 @@ const DirectorSpace: React.FC<DirectorSpaceProps> = ({
       {/* 内容区 - 始终展开 */}
       <div className="flex-1 overflow-auto px-3 pb-3 flex flex-col">
         <div className="flex-1 min-h-0">
-          {directorMode === 'node' ? (
-            <NodeModeFeature
-              sceneId={scene.id}
-              projectId={projectId || undefined}
-              scriptId={scriptId || undefined}
-              availableFrames={{
-                startFrame: scene.startFrame,
-                endFrame: scene.endFrame
-              }}
-              sceneCharacters={scene.linkedCharacters || []}
-              sceneLocation={scene.location}
-              characterStates={scene.characterStates}
-              projectCharacters={projectCharacters}
-              projectScenes={projectScenes}
-              projectProps={projectProps}
-              projectEnvironments={projectEnvironments}
-              projectBuildings={projectBuildings}
-              projectCostumes={projectCostumes}
-              onSetMainFrame={(frameType, imageUrl) => {
-                // 更新分镜的主帧图片
-                const token = getAuthToken();
-                const body = frameType === 'first'
-                  ? { start_frame: imageUrl }
-                  : { end_frame: imageUrl };
-                fetch(`/api/storyboards/${scene.id}/content`, {
-                  method: 'PATCH',
-                  headers: {
-                    'Content-Type': 'application/json',
-                    ...(token ? { Authorization: `Bearer ${token}` } : {})
-                  },
-                  body: JSON.stringify(body)
-                }).catch(() => { /* ignore */ });
-              }}
-              onSave={async (state: NodeCanvasState) => {
-                try {
-                  const token = getAuthToken();
-                  const res = await fetch(`/api/storyboards/${scene.id}/content`, {
-                    method: 'PATCH',
-                    headers: {
-                      'Content-Type': 'application/json',
-                      ...(token ? { Authorization: `Bearer ${token}` } : {})
-                    },
-                    body: JSON.stringify({ node_canvas: state })
-                  });
-                  return res.ok;
-                } catch {
-                  return false;
-                }
-              }}
-            />
-          ) : (
-            <BlockEditor
-              key={`${scene.id}-${promptMode}-${promptMode === 'image' ? imageFrameTab : ''}`}
+          {/* 节点模式已注释掉 - 如需恢复，取消注释以下代码 */}
+          {/* {directorMode === 'node' ? ( */}
+          {/*   <NodeModeFeature */}
+          {/*     sceneId={scene.id} */}
+          {/*     projectId={projectId || undefined} */}
+          {/*     scriptId={scriptId || undefined} */}
+          {/*     availableFrames={{ */}
+          {/*       startFrame: scene.startFrame, */}
+          {/*       endFrame: scene.endFrame */}
+          {/*     }} */}
+          {/*     sceneCharacters={scene.linkedCharacters || []} */}
+          {/*     sceneLocation={scene.location} */}
+          {/*     characterStates={scene.characterStates} */}
+          {/*     projectCharacters={projectCharacters} */}
+          {/*     projectScenes={projectScenes} */}
+          {/*     projectProps={projectProps} */}
+          {/*     projectEnvironments={projectEnvironments} */}
+          {/*     projectBuildings={projectBuildings} */}
+          {/*     projectCostumes={projectCostumes} */}
+          {/*     onSetMainFrame={(frameType, imageUrl) => { */}
+          {/*       const token = getAuthToken(); */}
+          {/*       const body = frameType === 'first' */}
+          {/*         ? { start_frame: imageUrl } */}
+          {/*         : { end_frame: imageUrl }; */}
+          {/*       fetch(`/api/storyboards/${scene.id}/content`, { */}
+          {/*         method: 'PATCH', */}
+          {/*         headers: { */}
+          {/*           'Content-Type': 'application/json', */}
+          {/*           ...(token ? { Authorization: `Bearer ${token}` } : {}) */}
+          {/*         }, */}
+          {/*         body: JSON.stringify(body) */}
+          {/*       }).catch(() => {}); */}
+          {/*     }} */}
+          {/*     onSave={async (state: NodeCanvasState) => { */}
+          {/*       try { */}
+          {/*         const token = getAuthToken(); */}
+          {/*         const res = await fetch(`/api/storyboards/${scene.id}/content`, { */}
+          {/*           method: 'PATCH', */}
+          {/*           headers: { */}
+          {/*             'Content-Type': 'application/json', */}
+          {/*             ...(token ? { Authorization: `Bearer ${token}` } : {}) */}
+          {/*           }, */}
+          {/*           body: JSON.stringify({ node_canvas: state }) */}
+          {/*         }); */}
+          {/*         return res.ok; */}
+          {/*       } catch { */}
+          {/*         return false; */}
+          {/*       } */}
+          {/*     }} */}
+          {/*   /> */}
+          {/* ) : ( */}
+          {/* 节点模式已注释掉，直接显示 BlockEditor */}
+          <BlockEditor
+              key={`${scene.id}-${promptMode}-${promptMode === 'image' ? (scene.hasAction ? imageFrameTab : 'single') : ''}`}
               storyboardId={scene.id}
               projectId={projectId || undefined}
               scriptId={scriptId || undefined}
@@ -589,9 +597,11 @@ const DirectorSpace: React.FC<DirectorSpaceProps> = ({
                 const text = promptMode === 'video'
                   ? scene.videoPrompt
                   : promptMode === 'image'
-                    ? (imageFrameTab === 'first'
-                        ? (scene.firstFramePrompt || scene.description)
-                        : (scene.lastFramePrompt || scene.description))
+                    ? (scene.hasAction
+                        ? (imageFrameTab === 'first'
+                            ? (scene.firstFramePrompt || scene.description)
+                            : (scene.lastFramePrompt || scene.description))
+                        : (scene.firstFramePrompt || scene.description))
                     : scene.description;
                 return text
                   ? [{ id: 'init-text', type: 'text' as const, category: 'text' as const, data: { text }, position: { x: 0, y: 0 } }]
@@ -631,18 +641,25 @@ const DirectorSpace: React.FC<DirectorSpaceProps> = ({
                   return await onUpdateVideoPrompt(state.generatedPrompt);
                 }
                 if (promptMode === 'image') {
-                  if (imageFrameTab === 'first' && onUpdateFirstFramePrompt) {
-                    return await onUpdateFirstFramePrompt(state.generatedPrompt);
-                  }
-                  if (imageFrameTab === 'last' && onUpdateLastFramePrompt) {
-                    return await onUpdateLastFramePrompt(state.generatedPrompt);
+                  if (scene.hasAction) {
+                    // 运动模式：首帧/尾帧分开保存
+                    if (imageFrameTab === 'first' && onUpdateFirstFramePrompt) {
+                      return await onUpdateFirstFramePrompt(state.generatedPrompt);
+                    }
+                    if (imageFrameTab === 'last' && onUpdateLastFramePrompt) {
+                      return await onUpdateLastFramePrompt(state.generatedPrompt);
+                    }
+                  } else {
+                    // 静止模式：图片提示词统一保存到 first_frame_prompt
+                    if (onUpdateFirstFramePrompt) {
+                      return await onUpdateFirstFramePrompt(state.generatedPrompt);
+                    }
                   }
                 }
                 const success = await onUpdateDescription?.(state.generatedPrompt);
                 return success || false;
               }}
             />
-          )}
         </div>
 
       </div>

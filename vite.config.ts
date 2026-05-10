@@ -138,43 +138,28 @@ export default defineConfig(({ mode }) => {
           output: {
             // 手动分块策略，优化加载性能
             manualChunks(id) {
-              // 核心 React 库
-              if (id.includes('node_modules/react-dom') || 
-                  id.includes('node_modules/react-router-dom') ||
-                  (id.includes('node_modules/react/') && !id.includes('react-'))) {
-                return 'vendor';
-              }
               // Excalidraw - 最大依赖，单独拆包（约 1-2 MB）
-              if (id.includes('@excalidraw')) {
+              if (id.includes('@excalidraw') || id.includes('roughjs') || 
+                  id.includes('perfect-freehand') || id.includes('points-on-curve')) {
                 return 'excalidraw';
               }
-              // 动画库单独拆包（约 300-500 KB）
-              if (id.includes('framer-motion')) {
-                return 'animation';
-              }
-              // UI 组件库
-              if (id.includes('@heroui/react') || id.includes('@heroui/')) {
-                return 'ui';
-              }
-              // 拖拽库
-              if (id.includes('@dnd-kit/core') || id.includes('@dnd-kit/sortable')) {
-                return 'dnd';
-              }
-              // 图片灯箱组件
-              if (id.includes('yet-another-react-lightbox')) {
-                return 'lightbox';
+              // 将所有 React 相关和核心路由库打包到 vendor
+              if (id.includes('node_modules/react') ||
+                  id.includes('node_modules/react-dom') ||
+                  id.includes('node_modules/react-router') ||
+                  id.includes('node_modules/scheduler') ||
+                  id.includes('node_modules/@heroui/react') ||
+                  id.includes('node_modules/@heroui/') ||
+                  id.includes('node_modules/framer-motion') ||
+                  id.includes('node_modules/@dnd-kit/') ||
+                  id.includes('node_modules/lucide-react') ||
+                  id.includes('node_modules/yet-another-react-lightbox') ||
+                  id.includes('node_modules/jszip')) {
+                return 'vendor';
               }
               // FFmpeg 视频处理
               if (id.includes('@ffmpeg/ffmpeg') || id.includes('@ffmpeg/util')) {
                 return 'ffmpeg';
-              }
-              // 图标库
-              if (id.includes('lucide-react')) {
-                return 'icons';
-              }
-              // 工具库
-              if (id.includes('jszip')) {
-                return 'utils';
               }
             },
           },

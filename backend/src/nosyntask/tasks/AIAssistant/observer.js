@@ -38,6 +38,10 @@ const TOOL_DISPLAY_NAMES = {
   generate_variant_faces: '生成环境变体8方位图',
   extract_studio_components: '拆分影棚组件',
   compose_studio_from_script: '组装影棚',
+  analyze_character_image: '角色图片视觉分析',
+  analyze_environment_image: '环境图片视觉分析',
+  analyze_building_image: '建筑图片视觉分析',
+  analyze_studio_image: '影棚图片视觉分析',
   // 分镜
   generate_storyboards: '智能拆分生成分镜',
   generate_storyboards_batch: '批量生成分镜',
@@ -47,10 +51,14 @@ const TOOL_DISPLAY_NAMES = {
   generate_single_frame: '生成单分镜单帧',
   generate_scene_video: '生成分镜视频',
   generate_videos_batch: '批量生成分镜视频',
+  analyze_frame_image: '分镜图片视觉分析',
   // 提示词优化
   optimize_storyboard_prompts: '优化分镜提示词',
   optimize_image_prompts: '优化图片提示词',
   optimize_video_prompts: '优化视频提示词',
+  optimize_single_storyboard_prompt: '优化单个分镜提示词',
+  optimize_single_image_prompt: '优化单个分镜图片提示词',
+  optimize_single_video_prompt: '优化单个分镜视频提示词',
   // 道具
   generate_prop_views: '生成道具设定图',
   extract_script_props: '提取剧本道具',

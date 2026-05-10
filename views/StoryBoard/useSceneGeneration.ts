@@ -260,6 +260,14 @@ export function useSceneGeneration({
           textModel,
           regenerateTarget,
           forceRegenerate,
+          // 首帧/尾帧草图参考
+          startSketchUrl: scene.startSketchUrl,
+          startSketchType: scene.startSketchType,
+          endSketchUrl: scene.endSketchUrl,
+          endSketchType: scene.endSketchType,
+          // 首帧/尾帧专用提示词
+          firstFramePrompt: scene.firstFramePrompt,
+          lastFramePrompt: scene.lastFramePrompt,
           ...extraParams
         });
       } else {
@@ -270,6 +278,9 @@ export function useSceneGeneration({
           description: prompt,
           imageModel,
           textModel,
+          // 单帧使用首帧草图作为参考
+          sketchUrl: scene.startSketchUrl || scene.sketchUrl,
+          sketchType: scene.startSketchType || scene.sketchType,
           ...extraParams
         });
       }

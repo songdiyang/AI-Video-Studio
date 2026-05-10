@@ -27,6 +27,11 @@ import {
 
 // ============ 简易 Markdown 渲染器 ============
 
+// 翻译辅助函数（提取到组件外部供复用）
+const getCategoryLabel = (cat: string, tx: any) => {
+  return tx?.categories?.[cat] || cat;
+};
+
 const MarkdownRenderer: React.FC<{ content: string }> = ({ content }) => {
   const html = useMemo(() => renderMarkdown(content), [content]);
   return (
@@ -193,6 +198,219 @@ const DropdownLabel: React.FC<{ children: React.ReactNode }> = ({ children }) =>
     {children}
   </div>
 );
+
+// ============ 扩展详情视图组件（用于标签页内嵌） ============
+
+interface ExtensionDetailViewProps {
+  extId: number;
+}
+
+export const ExtensionDetailView: React.FC<ExtensionDetailViewProps> = ({ extId }) => {
+  const { t } = useLanguage();
+  const { uninstallLocalExtension } = useExtensions();
+  const tx = t.extensions;
+
+  const [detail, setDetail] = useState<ExtensionDetail | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [installing, setInstalling] = useState(false);
+  const [userExts, setUserExts] = useState<UserExtension[]>([]);
+
+  const loadDetail = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const d = await getExtensionDetail(extId);
+      setDetail(d);
+    } catch (e: any) {
+      setError(e.message || '加载详情失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadUserExts = async () => {
+    try {
+      const res = await getUserExtensions();
+      setUserExts(res.extensions);
+    } catch { /* ignore */ }
+  };
+
+  useEffect(() => {
+    loadDetail();
+    loadUserExts();
+  }, [extId]);
+
+  const isInstalled = userExts.some(ue => ue.extension_id === extId);
+  const userExt = userExts.find(ue => ue.extension_id === extId);
+
+  const handleInstall = async () => {
+    if (!detail) return;
+    setInstalling(true);
+    setError(null);
+    try {
+      await installExtension(extId);
+      await loadUserExts();
+      if (detail.package_url) {
+        const result = await installFromUrl(detail.package_url);
+        if (result.success) {
+          window.dispatchEvent(new Event('extensions:refresh'));
+        } else {
+          setError(result.message);
+        }
+      }
+      await loadDetail();
+    } catch (err: any) {
+      setError(err.message || '安装失败');
+    } finally {
+      setInstalling(false);
+    }
+  };
+
+  const handleUninstall = async () => {
+    if (!detail) return;
+    setError(null);
+    try {
+      await uninstallExtension(extId);
+      await loadUserExts();
+      if (detail.name) {
+        try {
+          await uninstallLocalExtension(detail.name);
+          window.dispatchEvent(new Event('extensions:refresh'));
+        } catch (localErr: any) {
+          console.warn('[Extensions] 本地扩展清理失败:', localErr.message);
+        }
+      }
+      await loadDetail();
+    } catch (err: any) {
+      setError(err.message || '卸载失败');
+    }
+  };
+
+  const handleToggle = async () => {
+    if (!userExt) return;
+    try {
+      await toggleExtension(extId, !userExt.is_enabled);
+      await loadUserExts();
+      try {
+        const localEntry = await getRegistryEntry(userExt.name);
+        if (localEntry && localEntry.enabled !== !userExt.is_enabled) {
+          await toggleExtensionEnabled(userExt.name, !userExt.is_enabled);
+          window.dispatchEvent(new Event('extensions:refresh'));
+        }
+      } catch (localErr: any) {
+        console.warn('[Extensions] 本地扩展状态同步失败:', localErr.message);
+      }
+    } catch (err: any) {
+      setError(err.message || '操作失败');
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <Loader2 className="w-6 h-6 animate-spin" style={{ color: 'var(--text-muted)' }} />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-center">
+          <X className="w-8 h-8 mx-auto mb-2 text-red-500" />
+          <p className="text-sm text-red-500">{error}</p>
+          <button onClick={loadDetail} className="text-sm text-blue-500 mt-2 hover:underline">
+            {tx.retry}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!detail) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>扩展不存在</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-full overflow-y-auto p-6">
+      {/* 头部信息 */}
+      <div className="flex items-start gap-4 mb-6">
+        <ExtensionIcon iconUrl={detail.icon_url} category={detail.category} size="lg" />
+        <div className="flex-1 min-w-0">
+          <h2 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
+            {detail.display_name}
+          </h2>
+          <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
+            {detail.description}
+          </p>
+          <div className="flex items-center gap-3 mt-2 text-xs" style={{ color: 'var(--text-muted)' }}>
+            <span className="flex items-center gap-1">
+              <User className="w-3 h-3" />
+              {detail.author || tx.unknownAuthor}
+            </span>
+            <span className="flex items-center gap-1">
+              <DownloadIcon className="w-3 h-3" />
+              {detail.download_count}
+            </span>
+            <span className="flex items-center gap-1">
+              <Star className="w-3 h-3" />
+              {detail.rating || 0}
+            </span>
+            <span className="flex items-center gap-1">
+              <Tag className="w-3 h-3" />
+              {getCategoryLabel(detail.category, tx)}
+            </span>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {!isInstalled ? (
+            <button
+              onClick={handleInstall}
+              disabled={installing}
+              className="px-4 py-2 rounded text-sm font-medium bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-50 flex items-center gap-1.5"
+            >
+              {installing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+              {tx.install}
+            </button>
+          ) : (
+            <>
+              <button
+                onClick={handleToggle}
+                className={`px-4 py-2 rounded text-sm font-medium flex items-center gap-1.5 ${
+                  userExt?.is_enabled
+                    ? 'bg-green-500/10 text-green-500 hover:bg-green-500/20'
+                    : 'bg-gray-500/10 text-gray-500 hover:bg-gray-500/20'
+                }`}
+              >
+                {userExt?.is_enabled ? <ToggleRight className="w-4 h-4" /> : <ToggleLeft className="w-4 h-4" />}
+                {userExt?.is_enabled ? tx.enabled : tx.disabled}
+              </button>
+              <button
+                onClick={handleUninstall}
+                className="px-4 py-2 rounded text-sm font-medium bg-red-500/10 text-red-500 hover:bg-red-500/20 flex items-center gap-1.5"
+              >
+                <Trash2 className="w-4 h-4" />
+                {tx.uninstall}
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* README */}
+      {detail.readme && (
+        <div className="mt-4">
+          <MarkdownRenderer content={detail.readme} />
+        </div>
+      )}
+    </div>
+  );
+};
 
 // ============ 主组件 ============
 
@@ -519,11 +737,6 @@ const Extensions: React.FC = () => {
   };
   const getUserExt = (extId: number) => userExtensions.find(ue => ue.extension_id === extId);
 
-  // 翻译辅助
-  const getCategoryLabel = (cat: string) => {
-    return tx.categories[cat as keyof typeof tx.categories] || cat;
-  };
-
   const getSortLabel = (sort: SortType) => {
     const map: Record<SortType, string> = {
       download: tx.sortDownload,
@@ -582,70 +795,78 @@ const Extensions: React.FC = () => {
     const isSelected = selectedExtension?.id === ext.id;
     const localExt = isLocal ? localExtensions.find(le => le.name === ext.name) : null;
 
+    const handleItemClick = () => {
+      if (isLocal) return;
+      // 在右侧标签页打开扩展详情
+      window.dispatchEvent(new CustomEvent('openExtensionDetailTab', {
+        detail: { extId: ext.id, extName: ext.display_name }
+      }));
+    };
+
     return (
       <div
         key={isLocal ? ext.name : ext.id}
-        onClick={() => !isLocal && handleSelectExtension(ext)}
-        className={`p-2.5 cursor-pointer transition-colors ${
+        onClick={handleItemClick}
+        className={`p-3 cursor-pointer transition-colors ${
           isSelected ? 'bg-blue-500/5' : 'hover:bg-[var(--bg-hover)]'
         }`}
       >
-        <div className="flex items-start gap-2.5">
+        <div className="flex items-start gap-3">
           <ExtensionIcon iconUrl={ext.icon_url} category={ext.category} size="sm" />
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1.5">
-              <h4 className="text-xs font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
+              <h4 className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
                 {ext.display_name}
               </h4>
               {!isLocal && installed && activeTab === 'marketplace' && (
-                <span className="text-[9px] px-1 py-0.5 rounded-full bg-green-500/10 text-green-500 flex-shrink-0">
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-500/10 text-green-500 flex-shrink-0">
                   {tx.installedBadge}
                 </span>
               )}
               {isLocal && localExt && (
                 <>
-                  <span className="text-[9px] px-1 py-0.5 rounded-full bg-purple-500/10 text-purple-500 flex-shrink-0">
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-500/10 text-purple-500 flex-shrink-0">
                     本地
                   </span>
-                  <span className={`text-[9px] px-1 py-0.5 rounded-full flex-shrink-0 ${localExt.enabled ? 'bg-green-500/10 text-green-500' : 'bg-gray-500/10 text-gray-500'}`}>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full flex-shrink-0 ${localExt.enabled ? 'bg-green-500/10 text-green-500' : 'bg-gray-500/10 text-gray-500'}`}>
                     {localExt.enabled ? tx.enabled : tx.disabled}
                   </span>
                 </>
               )}
             </div>
-            <p className="text-[10px] mt-0.5 truncate" style={{ color: 'var(--text-muted)' }}>
+            <p className="text-xs mt-1 truncate" style={{ color: 'var(--text-muted)' }}>
               {ext.description || tx.noDescription}
             </p>
-            <div className="flex items-center gap-2 mt-0.5">
+            <div className="flex items-center gap-2 mt-1">
               {!isLocal && (
                 <>
-                  <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                  <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
                     {ext.author || tx.unknownAuthor}
                   </span>
-                  <span className="flex items-center gap-0.5 text-[10px]" style={{ color: 'var(--text-muted)' }}>
-                    <DownloadIcon className="w-2.5 h-2.5" />
+                  <span className="flex items-center gap-0.5 text-xs" style={{ color: 'var(--text-muted)' }}>
+                    <DownloadIcon className="w-3 h-3" />
                     {ext.download_count}
                   </span>
                 </>
               )}
               {isLocal && localExt && (
-                <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
                   {localExt.author || tx.unknownAuthor}
                 </span>
               )}
             </div>
           </div>
           {isLocal && localExt && (
-            <div className="flex items-center gap-0.5 flex-shrink-0">
+            <div className="flex items-center gap-1 flex-shrink-0">
               <button
                 onClick={(e) => handleToggleLocal(localExt.name, e)}
                 className="p-1 rounded transition-colors hover:bg-[var(--bg-hover)]"
                 title={localExt.enabled ? tx.disable : tx.enable}
               >
                 {localExt.enabled ? (
-                  <ToggleRight className="w-3.5 h-3.5 text-green-500" />
+                  <ToggleRight className="w-4 h-4 text-green-500" />
                 ) : (
-                  <ToggleLeft className="w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
+                  <ToggleLeft className="w-4 h-4" style={{ color: 'var(--text-muted)' }} />
                 )}
               </button>
               <button
@@ -653,7 +874,7 @@ const Extensions: React.FC = () => {
                 className="p-1 rounded transition-colors hover:bg-red-500/10 text-red-500"
                 title={tx.uninstall}
               >
-                <Trash2 className="w-3 h-3" />
+                <Trash2 className="w-4 h-4" />
               </button>
             </div>
           )}
@@ -663,25 +884,23 @@ const Extensions: React.FC = () => {
   };
 
   return (
-    <div className="flex h-full overflow-hidden" style={{ backgroundColor: 'var(--bg-body)' }}>
-      {/* ====== 左侧边栏：VS Code 风格 ====== */}
-      <div className="w-80 flex-shrink-0 border-r flex flex-col" style={{ borderColor: 'var(--border-color)', backgroundColor: 'var(--bg-card)' }}>
-        {/* 顶部标题栏 */}
-        <div className="flex items-center justify-between px-3 py-2 border-b" style={{ borderColor: 'var(--border-color)' }}>
-          <span className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>
+    <div className="flex flex-col h-screen overflow-hidden" style={{ backgroundColor: 'var(--bg-app)' }}>
+      {/* 顶部标题栏 */}
+      <div className="flex items-center justify-between px-4 py-3 border-b shrink-0" style={{ borderColor: 'var(--border-color)' }}>
+          <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
             {tx.title}
           </span>
-          <div className="flex items-center gap-0.5">
+          <div className="flex items-center gap-1">
             <button
               onClick={() => { loadMarketplace(1); loadUserExtensions(); loadLocalExtensions(); }}
-              className="p-1 rounded transition-colors hover:bg-[var(--bg-hover)]"
+              className="p-1.5 rounded transition-colors hover:bg-[var(--bg-hover)]"
               title={tx.refresh}
             >
-              <RefreshCw className="w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
+              <RefreshCw className="w-4 h-4" style={{ color: 'var(--text-muted)' }} />
             </button>
             <DropdownMenu
               trigger={
-                <button className="p-1 rounded transition-colors hover:bg-[var(--bg-hover)]" title={tx.moreActions}>
+                <button className="p-1.5 rounded transition-colors hover:bg-[var(--bg-hover)]" title={tx.moreActions}>
                   <MoreHorizontal className="w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
                 </button>
               }
@@ -720,7 +939,7 @@ const Extensions: React.FC = () => {
                       onClick={() => setSelectedCategory(cat.category === selectedCategory ? '' : cat.category)}
                       active={selectedCategory === cat.category}
                     >
-                      {getCategoryLabel(cat.category)} ({cat.count})
+                      {getCategoryLabel(cat.category, tx)} ({cat.count})
                     </DropdownItem>
                   ))}
                 </DropdownMenu>
@@ -771,15 +990,15 @@ const Extensions: React.FC = () => {
         </div>
 
         {/* 搜索框 */}
-        <div className="px-3 py-2">
+        <div className="px-4 py-3">
           <div className="relative flex items-center">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
             <input
               type="text"
               placeholder={activeTab === 'marketplace' ? tx.searchPlaceholder : tx.searchInMarketplace}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-8 pr-16 py-1.5 text-xs rounded border outline-none focus:ring-1 focus:ring-blue-500"
+              className="w-full pl-9 pr-20 py-2 text-sm rounded border outline-none focus:ring-1 focus:ring-blue-500"
               style={{
                 backgroundColor: 'var(--bg-input, var(--bg-body))',
                 borderColor: 'var(--border-color)',
@@ -788,27 +1007,27 @@ const Extensions: React.FC = () => {
             />
             <div className="absolute right-1 flex items-center gap-0.5">
               <button
-                className="p-1 rounded transition-colors hover:bg-[var(--bg-hover)]"
+                className="p-1.5 rounded transition-colors hover:bg-[var(--bg-hover)]"
                 title={tx.viewList}
               >
-                <LayoutList className="w-3 h-3" style={{ color: 'var(--text-muted)' }} />
+                <LayoutList className="w-4 h-4" style={{ color: 'var(--text-muted)' }} />
               </button>
               <button
-                className="p-1 rounded transition-colors hover:bg-[var(--bg-hover)]"
+                className="p-1.5 rounded transition-colors hover:bg-[var(--bg-hover)]"
                 title={tx.moreActions}
                 onClick={() => setFilterMenuOpen(!filterMenuOpen)}
               >
-                <Filter className="w-3 h-3" style={{ color: 'var(--text-muted)' }} />
+                <Filter className="w-4 h-4" style={{ color: 'var(--text-muted)' }} />
               </button>
             </div>
           </div>
         </div>
 
-        {/* Tab 切换 - 紧凑样式 */}
-        <div className="flex border-b" style={{ borderColor: 'var(--border-color)' }}>
+        {/* Tab 切换 */}
+        <div className="flex border-b px-4" style={{ borderColor: 'var(--border-color)' }}>
           <button
             onClick={() => { setActiveTab('marketplace'); setSelectedExtension(null); }}
-            className={`flex-1 py-1.5 text-[10px] font-medium flex items-center justify-center gap-1 transition-colors ${
+            className={`flex-1 py-2 text-xs font-medium flex items-center justify-center gap-1 transition-colors ${
               activeTab === 'marketplace' ? 'border-b-2 border-blue-500 text-blue-500' : ''
             }`}
             style={{ color: activeTab === 'marketplace' ? undefined : 'var(--text-muted)' }}
@@ -817,14 +1036,14 @@ const Extensions: React.FC = () => {
           </button>
           <button
             onClick={() => { setActiveTab('installed'); loadUserExtensions(); setSelectedExtension(null); }}
-            className={`flex-1 py-1.5 text-[10px] font-medium flex items-center justify-center gap-1 transition-colors ${
+            className={`flex-1 py-2 text-xs font-medium flex items-center justify-center gap-1 transition-colors ${
               activeTab === 'installed' ? 'border-b-2 border-blue-500 text-blue-500' : ''
             }`}
             style={{ color: activeTab === 'installed' ? undefined : 'var(--text-muted)' }}
           >
             {tx.installed}
             {userExtensions.length > 0 && (
-              <span className="text-[9px] px-1 py-0 rounded-full bg-blue-500/10 text-blue-500">
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-500/10 text-blue-500">
                 {userExtensions.length}
               </span>
             )}
@@ -848,13 +1067,13 @@ const Extensions: React.FC = () => {
                 <>
                   <button
                     onClick={() => setMarketplaceExpanded(!marketplaceExpanded)}
-                    className="w-full flex items-center gap-1 px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider transition-colors hover:bg-[var(--bg-hover)]"
+                    className="w-full flex items-center gap-1.5 px-4 py-2 text-xs font-medium uppercase tracking-wider transition-colors hover:bg-[var(--bg-hover)]"
                     style={{ color: 'var(--text-muted)' }}
                   >
                     {marketplaceExpanded ? (
-                      <ChevronDown className="w-3 h-3" />
+                      <ChevronDown className="w-3.5 h-3.5" />
                     ) : (
-                      <ChevronRight className="w-3 h-3" />
+                      <ChevronRight className="w-3.5 h-3.5" />
                     )}
                     {tx.marketplace}
                     <span className="ml-auto">{filteredExtensions.length}</span>
@@ -863,13 +1082,13 @@ const Extensions: React.FC = () => {
                     <div className="divide-y" style={{ borderColor: 'var(--border-color)' }}>
                       {filteredExtensions.map(ext => renderExtensionItem(ext))}
                       {extensions.length < total && (
-                        <div className="p-2 text-center">
+                        <div className="p-3 text-center">
                           <button
                             onClick={() => loadMarketplace(page + 1)}
                             disabled={loading}
-                            className="text-xs text-blue-500 hover:underline disabled:opacity-50"
+                            className="text-sm text-blue-500 hover:underline disabled:opacity-50"
                           >
-                            {loading ? <Loader2 className="w-3 h-3 animate-spin inline" /> : tx.loadMore}
+                            {loading ? <Loader2 className="w-4 h-4 animate-spin inline" /> : tx.loadMore}
                           </button>
                         </div>
                       )}
@@ -883,13 +1102,13 @@ const Extensions: React.FC = () => {
                 <>
                   <button
                     onClick={() => setLocalExpanded(!localExpanded)}
-                    className="w-full flex items-center gap-1 px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider transition-colors hover:bg-[var(--bg-hover)]"
+                    className="w-full flex items-center gap-1.5 px-4 py-2 text-xs font-medium uppercase tracking-wider transition-colors hover:bg-[var(--bg-hover)]"
                     style={{ color: 'var(--text-muted)' }}
                   >
                     {localExpanded ? (
-                      <ChevronDown className="w-3 h-3" />
+                      <ChevronDown className="w-3.5 h-3.5" />
                     ) : (
-                      <ChevronRight className="w-3 h-3" />
+                      <ChevronRight className="w-3.5 h-3.5" />
                     )}
                     {tx.localInstalled}
                     <span className="ml-auto">{listData.length + localExtensions.length}</span>
@@ -918,18 +1137,18 @@ const Extensions: React.FC = () => {
 
               {/* 空状态 */}
               {activeTab === 'marketplace' && filteredExtensions.length === 0 && !loading && (
-                <div className="text-center py-8 px-4" style={{ color: 'var(--text-muted)' }}>
-                  <Package className="w-8 h-8 mx-auto mb-2 opacity-30" />
-                  <p className="text-xs">{tx.noExtensions}</p>
+                <div className="text-center py-12 px-4" style={{ color: 'var(--text-muted)' }}>
+                  <Package className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                  <p className="text-sm">{tx.noExtensions}</p>
                 </div>
               )}
               {activeTab === 'installed' && listData.length === 0 && localExtensions.length === 0 && (
-                <div className="text-center py-8 px-4" style={{ color: 'var(--text-muted)' }}>
-                  <Package className="w-8 h-8 mx-auto mb-2 opacity-30" />
-                  <p className="text-xs">{tx.noInstalled}</p>
+                <div className="text-center py-12 px-4" style={{ color: 'var(--text-muted)' }}>
+                  <Package className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                  <p className="text-sm">{tx.noInstalled}</p>
                   <button
                     onClick={() => setActiveTab('marketplace')}
-                    className="text-xs text-blue-500 mt-2 hover:underline"
+                    className="text-sm text-blue-500 mt-3 hover:underline"
                   >
                     {tx.browseMarketplace}
                   </button>
@@ -940,7 +1159,7 @@ const Extensions: React.FC = () => {
         </div>
 
         {/* ZIP 上传安装区域 */}
-        <div className="p-3 border-t" style={{ borderColor: 'var(--border-color)' }}>
+        <div className="p-4 border-t" style={{ borderColor: 'var(--border-color)' }}>
           <input
             ref={fileInputRef}
             type="file"
@@ -953,7 +1172,7 @@ const Extensions: React.FC = () => {
             onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
             onDragLeave={() => setDragOver(false)}
             onDrop={onDrop}
-            className={`w-full py-2 px-3 rounded border border-dashed text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-colors ${
+            className={`w-full py-3 px-4 rounded border border-dashed text-sm flex items-center justify-center gap-2 cursor-pointer transition-colors ${
               dragOver ? 'border-blue-500 bg-blue-500/5 text-blue-500' : ''
             }`}
             style={{
@@ -962,216 +1181,19 @@ const Extensions: React.FC = () => {
             }}
           >
             {zipInstalling ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              <Loader2 className="w-4 h-4 animate-spin" />
             ) : (
-              <Upload className="w-3.5 h-3.5" />
+              <Upload className="w-4 h-4" />
             )}
             {zipInstalling ? '安装中...' : zipInstallMsg || '从 AOM 安装扩展'}
           </div>
           {actionError && (
-            <div className="flex items-center gap-1 mt-1.5 text-[10px] text-red-500">
-              <X className="w-3 h-3" />
+            <div className="flex items-center gap-1 mt-2 text-xs text-red-500">
+              <X className="w-3.5 h-3.5" />
               {actionError}
             </div>
           )}
         </div>
-      </div>
-
-      {/* ====== 右侧内容区域：扩展详情 ====== */}
-      <div className="flex-1 overflow-y-auto">
-        {detailLoading ? (
-          <div className="flex items-center justify-center h-full">
-            <Loader2 className="w-6 h-6 animate-spin" style={{ color: 'var(--text-muted)' }} />
-          </div>
-        ) : selectedExtension ? (
-          <div className="max-w-4xl mx-auto p-6 pb-20">
-            {/* 详情头部 */}
-            <div className="flex items-start gap-4 mb-6 pb-4 border-b" style={{ borderColor: 'var(--border-color)' }}>
-              <ExtensionIcon iconUrl={selectedExtension.icon_url} category={selectedExtension.category} size="lg" />
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
-                    {selectedExtension.display_name}
-                  </h1>
-                  <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: 'var(--bg-body)', color: 'var(--text-muted)' }}>
-                    v{selectedExtension.version}
-                  </span>
-                </div>
-                <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
-                  {selectedExtension.description || tx.noDescription}
-                </p>
-                <div className="flex items-center gap-4 mt-2 flex-wrap">
-                  <span className="flex items-center gap-1 text-xs" style={{ color: 'var(--text-muted)' }}>
-                    <User className="w-3.5 h-3.5" />
-                    {selectedExtension.author || tx.unknownAuthor}
-                  </span>
-                  <span className="flex items-center gap-1 text-xs" style={{ color: 'var(--text-muted)' }}>
-                    <DownloadIcon className="w-3.5 h-3.5" />
-                    {selectedExtension.download_count} {tx.downloads}
-                  </span>
-                  <span className="flex items-center gap-1 text-xs" style={{ color: 'var(--text-muted)' }}>
-                    <Star className="w-3.5 h-3.5" />
-                    {selectedExtension.rating}
-                  </span>
-                  <span
-                    className="text-xs px-2 py-0.5 rounded-full"
-                    style={{
-                      backgroundColor: `${getCategoryColor(selectedExtension.category)}15`,
-                      color: getCategoryColor(selectedExtension.category),
-                    }}
-                  >
-                    {getCategoryLabel(selectedExtension.category)}
-                  </span>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 flex-shrink-0">
-                {isInstalled(selectedExtension.id) ? (
-                  <>
-                    <button
-                      onClick={() => handleToggle(getUserExt(selectedExtension.id)!)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border"
-                      style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}
-                    >
-                      {getUserExt(selectedExtension.id)?.is_enabled ? (
-                        <ToggleRight className="w-4 h-4 text-green-500" />
-                      ) : (
-                        <ToggleLeft className="w-4 h-4" />
-                      )}
-                      {getUserExt(selectedExtension.id)?.is_enabled ? tx.enabled : tx.disabled}
-                    </button>
-                    <button
-                      onClick={() => handleUninstall(selectedExtension.id)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border hover:bg-red-500/10 hover:border-red-500/30 hover:text-red-500"
-                      style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                      {tx.uninstall}
-                    </button>
-                  </>
-                ) : (
-                  <button
-                    onClick={() => handleInstall(selectedExtension)}
-                    disabled={installingId === selectedExtension.id}
-                    className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium transition-colors bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-50"
-                  >
-                    {installingId === selectedExtension.id ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Plus className="w-4 h-4" />
-                    )}
-                    {installingId === selectedExtension.id ? tx.installing : tx.install}
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* README */}
-            {selectedExtension.readme ? (
-              <MarkdownRenderer content={selectedExtension.readme} />
-            ) : (
-              <div className="text-center py-12" style={{ color: 'var(--text-muted)' }}>
-                <FileText className="w-10 h-10 mx-auto mb-3 opacity-20" />
-                <p className="text-sm">{tx.noDocs}</p>
-              </div>
-            )}
-          </div>
-        ) : activeTab === 'installed' ? (
-          /* 已安装扩展管理页（未选中时） */
-          <div className="p-6">
-            <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>
-              {tx.installedManage}
-            </h3>
-            {userExtensions.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-20" style={{ color: 'var(--text-muted)' }}>
-                <Package className="w-12 h-12 mb-4 opacity-20" />
-                <p className="text-sm">{tx.noInstalledAny}</p>
-                <button
-                  onClick={() => setActiveTab('marketplace')}
-                  className="mt-3 px-4 py-2 rounded-lg bg-blue-500 text-white text-xs hover:bg-blue-600 transition-colors"
-                >
-                  {tx.goBrowse}
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {userExtensions.map(ue => (
-                  <div
-                    key={ue.extension_id}
-                    className="p-4 rounded-xl border flex items-start gap-4"
-                    style={{ borderColor: 'var(--border-color)', backgroundColor: 'var(--bg-card)' }}
-                  >
-                    <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: 'rgba(59,130,246,0.1)' }}>
-                      <Puzzle className="w-6 h-6 text-blue-500" />
-                    </div>
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h4 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
-                          {ue.display_name}
-                        </h4>
-                        <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ backgroundColor: 'var(--bg-body)', color: 'var(--text-muted)' }}>
-                          v{ue.installed_version}
-                        </span>
-                        {ue.latest_version !== ue.installed_version && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-500/10 text-orange-500">
-                            {tx.updateTo} v{ue.latest_version}
-                          </span>
-                        )}
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${ue.is_enabled ? 'bg-green-500/10 text-green-500' : 'bg-gray-500/10 text-gray-500'}`}>
-                          {ue.is_enabled ? tx.enabled : tx.disabled}
-                        </span>
-                      </div>
-                      <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-                        {ue.description || tx.noDescription}
-                      </p>
-                      <div className="flex items-center gap-4 mt-2 text-[10px]" style={{ color: 'var(--text-muted)' }}>
-                        <span className="flex items-center gap-1">
-                          <User className="w-3 h-3" />
-                          {ue.author || tx.unknownAuthor}
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <Tag className="w-3 h-3" />
-                          {getCategoryLabel(ue.category)}
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <Calendar className="w-3 h-3" />
-                          {new Date(ue.installed_at).toLocaleDateString()}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1 flex-shrink-0">
-                      <button
-                        onClick={() => handleToggle(ue)}
-                        className="p-2 rounded-lg transition-colors hover:bg-[var(--bg-hover)]"
-                        title={ue.is_enabled ? tx.disable : tx.enable}
-                      >
-                        {ue.is_enabled ? (
-                          <ToggleRight className="w-5 h-5 text-green-500" />
-                        ) : (
-                          <ToggleLeft className="w-5 h-5" style={{ color: 'var(--text-muted)' }} />
-                        )}
-                      </button>
-                      <button
-                        onClick={() => handleUninstall(ue.extension_id)}
-                        className="p-2 rounded-lg transition-colors hover:bg-red-500/10 text-red-500"
-                        title={tx.uninstall}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        ) : (
-          /* 市场页未选中时 */
-          <div className="flex flex-col items-center justify-center h-full" style={{ color: 'var(--text-muted)' }}>
-            <Puzzle className="w-16 h-16 mb-4 opacity-10" />
-            <p className="text-sm">{tx.noExtensions}</p>
-            <p className="text-xs mt-1">{tx.tryOtherSearch}</p>
-          </div>
-        )}
-      </div>
 
       {/* Markdown 样式 */}
       <style>{`

@@ -37,7 +37,8 @@ const CreatorProfile = React.lazy(() => import('./views/Community/CreatorProfile
 // const CreateRecipe = React.lazy(() => import('./views/Marketplace/CreateRecipe'));
 const Teams = React.lazy(() => import('./views/Teams'));
 const AcceptInvite = React.lazy(() => import('./views/AcceptInvite'));
-const Extensions = React.lazy(() => import('./views/Extensions'));
+// 扩展页面已集成到工作台标签页
+// const Extensions = React.lazy(() => import('./views/Extensions'));
 
 // 懒加载管理员模块
 const AdminLogin = React.lazy(() => import('./views/AdminLogin'));
@@ -142,11 +143,8 @@ const AnimatedRoutes: React.FC = () => {
             <PageTransition><ProtectedRoute><Teams /></ProtectedRoute></PageTransition>
           </Suspense>
         } />
-<Route path="/extensions" element={
-          <Suspense fallback={<LoadingFallback />}>
-            <PageTransition><ProtectedRoute><Extensions /></ProtectedRoute></PageTransition>
-          </Suspense>
-        } />
+        {/* 扩展页面已集成到工作台标签页，不再作为独立路由 */}
+        <Route path="/extensions" element={<Navigate to="/" replace />} />
         <Route path="/teams/:id" element={
           <Suspense fallback={<LoadingFallback />}>
             <PageTransition><ProtectedRoute><Teams /></ProtectedRoute></PageTransition>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Film, User, LogOut, FolderOpen, Settings, Sparkles, Moon, Sun, Monitor, Contrast, Maximize, Minimize, UsersRound, Puzzle, Coins, ChevronDown, Check, HelpCircle, PanelLeft, PanelRight, PanelBottom } from 'lucide-react';
+import { Film, User, LogOut, Settings, Sparkles, Moon, Sun, Monitor, Contrast, Maximize, Minimize, UsersRound, Puzzle, Coins, HelpCircle, PanelLeft, PanelRight, PanelBottom, FolderOpen, GripVertical } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from "@heroui/react";
 import { getAuthToken, logout } from '../services/auth';
@@ -21,7 +21,7 @@ import PointsRechargeModal from './PointsRechargeModal';
 import InsufficientPointsModal from './InsufficientPointsModal';
 import { usePoints } from '../contexts/PointsContext';
 import { useRoutePreload } from '../hooks/useRoutePreload';
-import { fetchProjects, Project } from '../services/projects';
+import { Project } from '../services/projects';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -56,12 +56,28 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const { balance, isLowBalance, loading: pointsLoading, balanceAsCNY, openRechargeModal, isRechargeModalOpen, closeRechargeModal } = usePoints();
   const isAuth = location.pathname === '/auth';
   const isLoggedIn = !!getAuthToken();
+  // 扩展按钮激活态：在工作台页面且左侧面板选中扩展标签
+  const isExtensionsActive = location.pathname === '/' && localStorage.getItem('nanostory_left_panel_tab') === 'extensions';
   const [isConnected, setIsConnected] = useState(true);
   const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [userAvatar, setUserAvatar] = useState<string | null>(null);
   const [userNickname, setUserNickname] = useState<string | null>(null);
+  
+  // 侧边栏导航项排序状态（支持长按拖拽排序）
+  const [navOrder, setNavOrder] = useState<string[]>(() => {
+    try {
+      const stored = localStorage.getItem('nanostory_nav_order');
+      return stored ? JSON.parse(stored) : ['/', '/projects', '/teams'];
+    } catch {
+      return ['/', '/projects', '/teams'];
+    }
+  });
+  const [draggingNav, setDraggingNav] = useState<string | null>(null);
+  const [dragOverNav, setDragOverNav] = useState<string | null>(null);
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isLongPressRef = useRef(false);
   
   // 响应式断点
   const isMobile = useMediaQuery('(max-width: 767px)');
@@ -110,18 +126,141 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   }, [isLoggedIn]);
 
   // 导航项配置（使用 useMemo 优化，依赖 t 对象）
-  const navItems = useMemo(() => [
-    { path: '/', icon: Film, label: t.nav.workspace },
-    // 资产管理已集成到工作台标签页，不再作为独立入口
-    // { path: '/assets', icon: Package, label: t.nav.assets },
-    { path: '/projects', icon: FolderOpen, label: t.nav.projects },
-    { path: '/teams', icon: UsersRound, label: '团队' },
-    // 草图绘制已集成到魔术空间，不再作为独立入口
-    // { path: '/sketch', icon: Pencil, label: t.nav.sketch },
-    // 模板市场已移除
-    // { path: '/marketplace', icon: ShoppingBag, label: t.marketplace?.title || '模板市场' },
-    { path: '/extensions', icon: Puzzle, label: '扩展' },
-  ], [t]);
+  const navItems = useMemo(() => {
+    const allItems = [
+      { path: '/', icon: Film, label: t.nav.workspace },
+      { path: '/projects', icon: FolderOpen, label: t.nav.projects },
+      { path: '/teams', icon: UsersRound, label: '团队' },
+    ];
+    // 按 navOrder 排序
+    const orderMap = new Map(navOrder.map((p, i) => [p, i]));
+    return allItems.sort((a, b) => {
+      const ai = orderMap.get(a.path) ?? 999;
+      const bi = orderMap.get(b.path) ?? 999;
+      return ai - bi;
+    });
+  }, [t, navOrder]);
+
+  // 扩展按钮点击：导航到工作台并切换到扩展标签页
+  const handleOpenExtensions = useCallback(() => {
+    if (location.pathname !== '/') {
+      navigate('/?tab=extensions');
+    } else {
+      window.dispatchEvent(new CustomEvent('switchLeftPanelTab', { detail: { tabId: 'extensions' } }));
+    }
+  }, [navigate, location.pathname]);
+
+  // 扩展按钮长按拖拽排序事件（与导航项一致）
+  const handleExtPointerDown = useCallback((e: React.PointerEvent) => {
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    isLongPressRef.current = false;
+    longPressTimerRef.current = setTimeout(() => {
+      isLongPressRef.current = true;
+      setDraggingNav('extensions');
+      document.body.style.cursor = 'grabbing';
+    }, 500);
+  }, []);
+
+  const handleExtPointerMove = useCallback((e: React.PointerEvent) => {
+    if (draggingNav !== 'extensions') return;
+    e.preventDefault();
+    const element = document.elementFromPoint(e.clientX, e.clientY);
+    const navItem = element?.closest('[data-nav-path]');
+    if (navItem) {
+      const path = navItem.getAttribute('data-nav-path');
+      if (path && path !== 'extensions') {
+        setDragOverNav(path);
+      }
+    }
+  }, [draggingNav]);
+
+  const handleExtPointerUp = useCallback((e: React.PointerEvent) => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    if (draggingNav && dragOverNav && draggingNav !== dragOverNav) {
+      // 扩展不参与排序，直接取消拖拽
+      setDraggingNav(null);
+      setDragOverNav(null);
+      document.body.style.cursor = '';
+      isLongPressRef.current = false;
+      return;
+    }
+    if (!isLongPressRef.current) {
+      // 短按：打开扩展面板
+      handleOpenExtensions();
+    }
+    setDraggingNav(null);
+    setDragOverNav(null);
+    document.body.style.cursor = '';
+    isLongPressRef.current = false;
+  }, [draggingNav, dragOverNav, handleOpenExtensions]);
+
+  // 长按拖拽排序逻辑
+  const handleNavPointerDown = useCallback((path: string) => (e: React.PointerEvent) => {
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    isLongPressRef.current = false;
+    longPressTimerRef.current = setTimeout(() => {
+      isLongPressRef.current = true;
+      setDraggingNav(path);
+      // 添加拖拽时的视觉反馈
+      document.body.style.cursor = 'grabbing';
+    }, 500); // 500ms 长按触发
+  }, []);
+
+  const handleNavPointerMove = useCallback((e: React.PointerEvent) => {
+    if (!draggingNav) return;
+    e.preventDefault();
+    // 获取鼠标下方的元素
+    const element = document.elementFromPoint(e.clientX, e.clientY);
+    const navItem = element?.closest('[data-nav-path]');
+    if (navItem) {
+      const path = navItem.getAttribute('data-nav-path');
+      if (path && path !== draggingNav) {
+        setDragOverNav(path);
+      }
+    }
+  }, [draggingNav]);
+
+  const handleNavPointerUp = useCallback((e: React.PointerEvent) => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    
+    if (draggingNav && dragOverNav && draggingNav !== dragOverNav) {
+      // 执行排序交换
+      setNavOrder(prev => {
+        const newOrder = [...prev];
+        const fromIdx = newOrder.indexOf(draggingNav);
+        const toIdx = newOrder.indexOf(dragOverNav);
+        if (fromIdx !== -1 && toIdx !== -1) {
+          const [removed] = newOrder.splice(fromIdx, 1);
+          newOrder.splice(toIdx, 0, removed);
+        }
+        // 持久化到 localStorage
+        try {
+          localStorage.setItem('nanostory_nav_order', JSON.stringify(newOrder));
+        } catch {}
+        return newOrder;
+      });
+    }
+    
+    setDraggingNav(null);
+    setDragOverNav(null);
+    document.body.style.cursor = '';
+    isLongPressRef.current = false;
+  }, [draggingNav, dragOverNav]);
+
+  // 清理长按定时器
+  useEffect(() => {
+    return () => {
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+      }
+    };
+  }, []);
 
 
 
@@ -182,47 +321,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     }
   };
 
-  // ==================== 项目快速切换 ====================
-  const [projectSwitcherOpen, setProjectSwitcherOpen] = useState(false);
-  const [projectList, setProjectList] = useState<Project[]>([]);
-  const [projectListLoading, setProjectListLoading] = useState(false);
-  const projectSwitcherRef = useRef<HTMLDivElement>(null);
 
-  // 点击外部关闭下拉面板
-  useEffect(() => {
-    if (!projectSwitcherOpen) return;
-    const handleClickOutside = (e: MouseEvent) => {
-      if (projectSwitcherRef.current && !projectSwitcherRef.current.contains(e.target as Node)) {
-        setProjectSwitcherOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [projectSwitcherOpen]);
-
-  // 打开面板时加载项目列表
-  const handleOpenProjectSwitcher = useCallback(async () => {
-    const willOpen = !projectSwitcherOpen;
-    setProjectSwitcherOpen(willOpen);
-    if (willOpen) {
-      setProjectListLoading(true);
-      try {
-        const projects = await fetchProjects();
-        setProjectList(projects);
-      } catch (err) {
-        console.error('Failed to fetch projects:', err);
-      } finally {
-        setProjectListLoading(false);
-      }
-    }
-  }, [projectSwitcherOpen]);
-
-  // 快速切换项目
-  const handleQuickSwitchProject = useCallback((project: Project) => {
-    switchProject(project);
-    localStorage.setItem('nanostory_last_project_id', String(project.id));
-    setProjectSwitcherOpen(false);
-  }, [switchProject]);
 
   // 命令面板命令列表
   const commands: Command[] = useMemo(() => [
@@ -341,18 +440,18 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           {navItems.map((item, index) => {
             const isActive = location.pathname === item.path;
             const Icon = item.icon;
-            
+            const isDragging = draggingNav === item.path;
+            const isDragOver = dragOverNav === item.path;
+
             const getOnboardingAttr = () => {
               switch (item.path) {
                 case '/': return 'nav-workspace';
-                // 资产管理已集成到工作台标签页
-                // case '/assets': return 'nav-assets';
                 case '/settings': return 'nav-settings';
                 default: return undefined;
               }
             };
             const onboardingAttr = getOnboardingAttr();
-            
+
             return (
               <Link
                 key={item.path}
@@ -361,22 +460,37 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 aria-label={item.label}
                 aria-current={isActive ? 'page' : undefined}
                 data-onboarding={onboardingAttr}
+                data-nav-path={item.path}
                 onMouseEnter={() => preload(item.path)}
-                className={`pro-nav-item group relative mx-auto ${isTablet ? 'p-2.5' : 'p-3'} flex items-center justify-center transition-all duration-200
-                  ${isActive 
-                    ? 'bg-(--accent)/15 text-(--accent)' 
+                onPointerDown={handleNavPointerDown(item.path)}
+                onPointerMove={handleNavPointerMove}
+                onPointerUp={handleNavPointerUp}
+                onPointerCancel={handleNavPointerUp}
+                draggable={false}
+                className={`pro-nav-item group relative mx-auto ${isTablet ? 'p-2.5' : 'p-3'} flex items-center justify-center transition-all duration-200 select-none touch-none
+                  ${isActive
+                    ? 'bg-(--accent)/15 text-(--accent)'
                     : 'text-(--text-muted) hover:text-(--text-primary) hover:bg-white/5'
-                  }`}
+                  }
+                  ${isDragging ? 'opacity-50 scale-95 cursor-grabbing z-50' : ''}
+                  ${isDragOver && !isDragging ? 'bg-(--accent)/10 scale-105' : ''}
+                  ${draggingNav ? 'cursor-grab' : ''}
+                `}
               >
                 {/* 激活态左侧指示条 */}
                 {isActive && (
                   <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-(--accent) rounded-r" />
                 )}
-                
+
+                {/* 拖拽指示器 */}
+                {isDragging && (
+                  <div className="absolute inset-0 border-2 border-dashed border-(--accent) rounded-lg opacity-50" />
+                )}
+
                 <div className={`transition-transform duration-150 ${isActive ? 'scale-110' : 'hover:scale-110 active:scale-95'}`}>
                   <Icon className={`${isTablet ? 'w-4 h-4' : 'w-5 h-5'}`} />
                 </div>
-                
+
                 {/* Tooltip */}
                 <div className="absolute left-full ml-2 px-2.5 py-1.5 bg-(--bg-card) border border-(--border-color) rounded-md text-xs font-medium text-(--text-primary) whitespace-nowrap opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 shadow-lg">
                   {item.label}
@@ -389,6 +503,43 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
               </Link>
             );
           })}
+          {/* 扩展按钮 - 在工作台打开标签页 */}
+          <button
+            onPointerDown={handleExtPointerDown}
+            onPointerMove={handleExtPointerMove}
+            onPointerUp={handleExtPointerUp}
+            onPointerCancel={handleExtPointerUp}
+            tabIndex={0}
+            aria-label="扩展"
+            data-nav-path="extensions"
+            draggable={false}
+            className={`pro-nav-item group relative mx-auto ${isTablet ? 'p-2.5' : 'p-3'} flex items-center justify-center transition-all duration-200 select-none touch-none
+              ${isExtensionsActive
+                ? 'bg-(--accent)/15 text-(--accent)'
+                : 'text-(--text-muted) hover:text-(--text-primary) hover:bg-white/5'
+              }
+              ${draggingNav === 'extensions' ? 'opacity-50 scale-95 cursor-grabbing z-50' : ''}
+              ${dragOverNav === 'extensions' ? 'bg-(--accent)/10 scale-105' : ''}
+              ${draggingNav ? 'cursor-grab' : ''}
+            `}
+          >
+            {/* 激活态左侧指示条 */}
+            {isExtensionsActive && (
+              <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-(--accent) rounded-r" />
+            )}
+            {/* 拖拽指示器 */}
+            {draggingNav === 'extensions' && (
+              <div className="absolute inset-0 border-2 border-dashed border-(--accent) rounded-lg opacity-50" />
+            )}
+            <div className={`transition-transform duration-150 ${isExtensionsActive ? 'scale-110' : 'hover:scale-110 active:scale-95'}`}>
+              <Puzzle className={`${isTablet ? 'w-4 h-4' : 'w-5 h-5'}`} />
+            </div>
+            {/* Tooltip */}
+            <div className="absolute left-full ml-2 px-2.5 py-1.5 bg-(--bg-card) border border-(--border-color) rounded-md text-xs font-medium text-(--text-primary) whitespace-nowrap opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 shadow-lg">
+              扩展
+              <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1 w-2 h-2 bg-(--bg-card) border-l border-b border-(--border-color) rotate-45" />
+            </div>
+          </button>
         </nav>
 
         {/* 底部用户菜单 */}
@@ -486,72 +637,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         
         {/* 顶部横条 - 一整条（预留给其他功能模块） */}
         <header className="pro-toolbar h-11 items-center justify-between pl-4 pr-3 bg-(--bg-nav) border-b border-(--border-color) hide-on-mobile flex">
-          {/* 左侧：Logo + 项目切换 */}
-          <div className="flex items-center gap-2">
-            <Link to="/" className="flex items-center gap-1.5 px-1.5 py-1 rounded-md hover:bg-white/5 transition-colors">
-              <div className="w-7 h-7 flex items-center justify-center bg-linear-to-br from-blue-500 to-blue-600 rounded-lg text-white text-sm font-bold tracking-tight">
-                N
-              </div>
-            </Link>
-            
-            {/* 项目快速切换 */}
-            {currentProject && location.pathname === '/' && (
-              <>
-                <div className="w-px h-5 bg-(--border-color)" />
-                <div className="relative" ref={projectSwitcherRef}>
-                  <button
-                    onClick={handleOpenProjectSwitcher}
-                    className="flex items-center gap-1 text-xs text-(--text-muted) px-2 py-1.5 bg-(--bg-card) hover:bg-(--bg-card-hover) rounded-md transition-colors cursor-pointer"
-                    title="切换项目"
-                  >
-                    <FolderOpen className="w-3 h-3" />
-                    <span className="max-w-[120px] truncate">{currentProject.name}</span>
-                    <ChevronDown className={`w-3 h-3 transition-transform ${projectSwitcherOpen ? 'rotate-180' : ''}`} />
-                  </button>
-                  {/* 项目快速切换下拉面板 */}
-                  {projectSwitcherOpen && (
-                    <div className="absolute top-full left-0 mt-1 w-64 max-h-80 overflow-y-auto rounded-lg border border-(--border-color) bg-(--bg-card) shadow-xl z-50">
-                      <div className="px-3 py-2 border-b border-(--border-color)">
-                        <span className="text-xs font-medium text-(--text-secondary)">切换项目</span>
-                      </div>
-                      {projectListLoading ? (
-                        <div className="px-3 py-4 text-center text-xs text-(--text-muted)">加载中...</div>
-                      ) : projectList.length === 0 ? (
-                        <div className="px-3 py-4 text-center text-xs text-(--text-muted)">暂无项目</div>
-                      ) : (
-                        <div className="py-1">
-                          {projectList.map((project) => (
-                            <button
-                              key={project.id}
-                              onClick={() => handleQuickSwitchProject(project)}
-                              className={`w-full flex items-center gap-2 px-3 py-2 text-left text-xs transition-colors hover:bg-(--bg-card-hover) ${
-                                currentProject.id === project.id ? 'text-(--accent)' : 'text-(--text-primary)'
-                              }`}
-                            >
-                              <FolderOpen className="w-3.5 h-3.5 shrink-0 opacity-60" />
-                              <span className="truncate flex-1">{project.name}</span>
-                              {currentProject.id === project.id && (
-                                <Check className="w-3.5 h-3.5 shrink-0 text-(--accent)" />
-                              )}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                      <div className="border-t border-(--border-color) px-3 py-2">
-                        <button
-                          onClick={() => { setProjectSwitcherOpen(false); navigate('/projects'); }}
-                          className="w-full text-xs text-(--text-muted) hover:text-(--accent) text-center transition-colors"
-                        >
-                          管理全部项目
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
-          
+          {/* 左侧：占位（项目切换已移至 StoryBoard 内） */}
+          <div />
+
           {/* 右侧：辅助控件 */}
           <div className="flex items-center gap-3">
             {/* 布局切换按钮组 */}

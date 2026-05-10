@@ -45,6 +45,10 @@ export function useProjectInit() {
         )[0];
         setSelectedProject(recentProject);
         localStorage.setItem(LAST_PROJECT_KEY, recentProject.id.toString());
+      } else {
+        // 没有任何项目，清除当前项目状态
+        setSelectedProject(null);
+        localStorage.removeItem(LAST_PROJECT_KEY);
       }
     } catch (error) {
       console.error('加载工程失败:', error);

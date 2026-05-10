@@ -9,6 +9,7 @@ import { getActiveExtensions, UserExtension } from '../services/extensions';
 import {
   getEnabledExtensions,
   getExtensionPackage,
+  listRegistryEntries,
   ExtensionRegistryEntry,
   uninstallExtension as uninstallLocalExtension,
   toggleExtensionEnabled,
@@ -285,7 +286,6 @@ export const ExtensionProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const syncBackendStateToLocal = useCallback(async (userExts: UserExtension[]) => {
     const backendEnabledMap = new Map(userExts.map(ue => [ue.name, ue.is_enabled === 1]));
     // 获取所有本地注册表条目
-    const { listRegistryEntries } = await import('../utils/extensionStorage');
     const registryEntries = await listRegistryEntries();
 
     for (const entry of registryEntries) {

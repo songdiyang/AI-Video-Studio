@@ -73,6 +73,14 @@ const handleScriptPropsExtract = require('./tasks/StoryBoard/scriptPropsExtract'
 const handleAIAssistantPlanner = require('./tasks/AIAssistant/planner');
 const handleAIAssistantExecutor = require('./tasks/AIAssistant/executor');
 const handleAIAssistantObserver = require('./tasks/AIAssistant/observer');
+const handleVisionAnalysisWrapper = require('./tasks/AIAssistant/visionAnalysisWrapper');
+const handleAISinglePromptOptimization = require('./tasks/AIAssistant/aiSinglePromptOptimization');
+const handleAISingleImagePromptOptimization = require('./tasks/AIAssistant/aiSingleImagePromptOptimization');
+const handleAISingleVideoPromptOptimization = require('./tasks/AIAssistant/aiSingleVideoPromptOptimization');
+const handleCharacterVisionAnalysis = require('./tasks/AIAssistant/characterVisionAnalysis');
+const handleEnvironmentVisionAnalysis = require('./tasks/AIAssistant/environmentVisionAnalysis');
+const handleBuildingVisionAnalysis = require('./tasks/AIAssistant/buildingVisionAnalysis');
+const handleStudioVisionAnalysis = require('./tasks/AIAssistant/studioVisionAnalysis');
 
 // 独立帧生成模块（支持并发）
 const { handleParallelFrameGeneration } = require('./tasks/StoryBoard/independentFrameGeneration');
@@ -1105,6 +1113,151 @@ const WORKFLOW_DEFINITIONS = {
         handler: handleCreateProject,
         buildInput: createBuildInput([
           'name', 'description', 'projectType', 'coverUrl', 'userId'
+        ])
+      }
+    ]
+  },
+
+  /**
+   * 分镜图片视觉分析（AI 助手可调用）
+   * 对指定分镜的首尾帧图片进行多模态视觉分析
+   */
+  vision_frame_analysis: {
+    name: '分镜图片视觉分析',
+    steps: [
+      {
+        type: 'vision_frame_analysis',
+        targetType: 'storyboard',
+        displayName: '视觉分析',
+        handler: handleVisionAnalysisWrapper,
+        buildInput: createBuildInput([
+          'storyboardId', 'textModel'
+        ])
+      }
+    ]
+  },
+
+  /**
+   * 角色图片视觉分析（AI 助手可调用）
+   */
+  character_vision_analysis: {
+    name: '角色图片视觉分析',
+    steps: [
+      {
+        type: 'character_vision_analysis',
+        targetType: 'character',
+        displayName: '角色视觉分析',
+        handler: handleCharacterVisionAnalysis,
+        buildInput: createBuildInput([
+          'characterId', 'textModel'
+        ])
+      }
+    ]
+  },
+
+  /**
+   * 环境图片视觉分析（AI 助手可调用）
+   */
+  environment_vision_analysis: {
+    name: '环境图片视觉分析',
+    steps: [
+      {
+        type: 'environment_vision_analysis',
+        targetType: 'environment',
+        displayName: '环境视觉分析',
+        handler: handleEnvironmentVisionAnalysis,
+        buildInput: createBuildInput([
+          'environmentId', 'textModel'
+        ])
+      }
+    ]
+  },
+
+  /**
+   * 建筑图片视觉分析（AI 助手可调用）
+   */
+  building_vision_analysis: {
+    name: '建筑图片视觉分析',
+    steps: [
+      {
+        type: 'building_vision_analysis',
+        targetType: 'building',
+        displayName: '建筑视觉分析',
+        handler: handleBuildingVisionAnalysis,
+        buildInput: createBuildInput([
+          'buildingId', 'textModel'
+        ])
+      }
+    ]
+  },
+
+  /**
+   * 影棚图片视觉分析（AI 助手可调用）
+   */
+  studio_vision_analysis: {
+    name: '影棚图片视觉分析',
+    steps: [
+      {
+        type: 'studio_vision_analysis',
+        targetType: 'studio',
+        displayName: '影棚视觉分析',
+        handler: handleStudioVisionAnalysis,
+        buildInput: createBuildInput([
+          'studioId', 'textModel'
+        ])
+      }
+    ]
+  },
+
+  /**
+   * AI 助手-单分镜提示词优化（自动解析 prompt）
+   */
+  ai_single_prompt_optimization: {
+    name: 'AI 助手-单分镜提示词优化',
+    steps: [
+      {
+        type: 'ai_single_prompt_optimize',
+        targetType: 'storyboard',
+        displayName: '优化分镜提示词',
+        handler: handleAISinglePromptOptimization,
+        buildInput: createBuildInput([
+          'storyboardId', 'textModel'
+        ])
+      }
+    ]
+  },
+
+  /**
+   * AI 助手-单分镜图片提示词优化（多模态视觉版）
+   */
+  ai_single_image_prompt_optimization: {
+    name: 'AI 助手-单分镜图片提示词优化',
+    steps: [
+      {
+        type: 'ai_single_image_prompt_optimize',
+        targetType: 'storyboard',
+        displayName: '优化图片提示词',
+        handler: handleAISingleImagePromptOptimization,
+        buildInput: createBuildInput([
+          'storyboardId', 'multimodalModel'
+        ])
+      }
+    ]
+  },
+
+  /**
+   * AI 助手-单分镜视频提示词优化
+   */
+  ai_single_video_prompt_optimization: {
+    name: 'AI 助手-单分镜视频提示词优化',
+    steps: [
+      {
+        type: 'ai_single_video_prompt_optimize',
+        targetType: 'storyboard',
+        displayName: '优化视频提示词',
+        handler: handleAISingleVideoPromptOptimization,
+        buildInput: createBuildInput([
+          'storyboardId', 'textModel'
         ])
       }
     ]

@@ -28,14 +28,26 @@ const AssetSceneRelations: React.FC<AssetSceneRelationsProps> = ({
 }) => {
   // 根据资产类型和名称，筛选出关联的分镜
   const relatedScenes = useMemo(() => {
-    if (!assetName || scenes.length === 0) return [];
+    console.log('[AssetSceneRelations] assetType:', assetType, 'assetName:', assetName, 'scenes count:', scenes.length);
+    if (!assetName || scenes.length === 0) {
+      console.log('[AssetSceneRelations] early return - no assetName or scenes');
+      return [];
+    }
 
-    return scenes.filter((scene) => {
+    const normalizedAssetName = assetName.trim();
+
+    const filtered = scenes.filter((scene) => {
       switch (assetType) {
         case 'character':
-          return scene.characters?.some(
-            (char) => char.trim() === assetName.trim()
+          const hasChar = scene.characters?.some(
+            (char) => char.trim() === normalizedAssetName ||
+                      char.trim().includes(normalizedAssetName) ||
+                      normalizedAssetName.includes(char.trim())
           );
+          if (hasChar) {
+            console.log('[AssetSceneRelations] matched scene:', scene.order, 'chars:', scene.characters);
+          }
+          return hasChar;
         case 'scene':
         case 'studio':
           return (
@@ -67,9 +79,6 @@ const AssetSceneRelations: React.FC<AssetSceneRelationsProps> = ({
             scene.location?.includes(assetName) ||
             scene.description?.includes(assetName)
           );
-        case 'script':
-          // 剧本关联所有分镜
-          return true;
         default:
           return (
             scene.characters?.includes(assetName) ||
@@ -78,6 +87,8 @@ const AssetSceneRelations: React.FC<AssetSceneRelationsProps> = ({
           );
       }
     });
+    console.log('[AssetSceneRelations] filtered count:', filtered.length);
+    return filtered;
   }, [scenes, assetType, assetName]);
 
   // 资产类型配置

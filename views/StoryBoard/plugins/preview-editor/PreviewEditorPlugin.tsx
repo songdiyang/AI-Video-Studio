@@ -18,6 +18,7 @@ const PreviewEditorPlugin: React.FC = () => {
     tasks,
     setState,
     handleEpisodeSelect,
+    showToast,
   } = useStoryboardContext();
 
   const selectedSceneData = scenes.find(s => s.id === selectedScene);
@@ -30,6 +31,15 @@ const PreviewEditorPlugin: React.FC = () => {
     }
   }, [state.scripts, handleEpisodeSelect]);
 
+  // 剧本生成成功回调
+  const handleScriptGenerated = useCallback((payload: any) => {
+    if (payload) {
+      showToast('剧本生成成功！', 'success');
+      // 刷新剧本列表
+      // 这里可以添加刷新逻辑
+    }
+  }, [showToast]);
+
   return (
     <PreviewEditor
       scenes={scenes}
@@ -38,6 +48,10 @@ const PreviewEditorPlugin: React.FC = () => {
       scriptId={state.currentScriptId}
       episodeNumber={state.currentEpisode}
       onEpisodeChange={handleEpisodeChangeFromTab}
+      projects={[]} // 当前项目已在上下文中，这里传空数组让 ScriptGenerateTab 使用 lockProjectId
+      textModel={state.textModel}
+      onTextModelChange={(model) => setState('textModel', model)}
+      onScriptGenerated={handleScriptGenerated}
       scenePreviewProps={{
         projectId: state.currentProjectId,
         scriptId: state.currentScriptId,

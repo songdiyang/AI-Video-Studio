@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Card, CardBody, Button, Tooltip } from '@heroui/react';
-import { Layers, Eye, Loader2, User, Star, Shirt, Trash2, ChevronDown, Check } from 'lucide-react';
+import { Layers, Eye, Loader2, Star, Shirt, Trash2, ChevronDown, Check } from 'lucide-react';
 import { Character, CharacterState } from './types';
 import { fetchCharacterStates } from '../../../services/assets';
 
@@ -143,21 +143,6 @@ const CharacterCard: React.FC<CharacterCardProps> = ({
     >
       <CardBody className="p-3">
         <div className="flex items-start gap-3 mb-3">
-          <div className="relative shrink-0">
-            <div className="w-12 h-12 rounded-full bg-blue-500/10 flex items-center justify-center border border-blue-500/20">
-              {displayStateImage || character.imageUrl ? (
-                <img src={displayStateImage || character.imageUrl} alt={character.name} className="w-full h-full rounded-full object-cover" />
-              ) : (
-                <User className="w-6 h-6 text-blue-400" />
-              )}
-            </div>
-            {/* 白膜状态指示器 */}
-            {hasBaseModelViews && (
-              <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-amber-500 rounded-full flex items-center justify-center border-2 border-slate-800">
-                <Star className="w-2.5 h-2.5 text-white fill-white" />
-              </div>
-            )}
-          </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center justify-between mb-1">
               <div className="flex items-center gap-1.5">

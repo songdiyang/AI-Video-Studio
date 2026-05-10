@@ -1204,6 +1204,7 @@ const zhCN = {
     viewList: '列表视图',
     viewGrid: '网格视图',
     localInstalled: '本地 - 已安装',
+    retry: '重试',
     categories: {
       productivity: '效率工具',
       theme: '主题外观',

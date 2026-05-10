@@ -23,6 +23,9 @@ const cleanOrphanResources = require('./ScriptStudio/cleanOrphanResources');
 const { createOrUpdateDraft, saveDraftContent, deleteDraft } = require('./ScriptStudio/draftScript');
 const getScriptLibrary = require('./ScriptStudio/getScriptLibrary');
 const bindScriptToProject = require('./ScriptStudio/bindScriptToProject');
+const uploadScript = require('./ScriptStudio/uploadScript');
+const analyzeScript = require('./ScriptStudio/analyzeScript');
+const optimizeScript = require('./ScriptStudio/optimizeScript');
 
 const router = express.Router();
 
@@ -80,5 +83,15 @@ router.delete('/:id/episode', authMiddleware, deleteEpisode);
 
 // 删除剧本（旧接口，仅删剧本记录）
 router.delete('/:id', authMiddleware, deleteScript);
+
+// ─── 剧本上传与分析优化 ───────────────────────────────────────────
+// 上传剧本文件（.txt / .md）
+router.post('/upload', authMiddleware, uploadScript.middleware, uploadScript);
+
+// AI分析剧本
+router.post('/analyze', authMiddleware, analyzeScript);
+
+// AI优化剧本
+router.post('/optimize', authMiddleware, optimizeScript);
 
 module.exports = router;

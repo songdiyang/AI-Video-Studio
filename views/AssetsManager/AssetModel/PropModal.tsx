@@ -299,15 +299,7 @@ const PropModal: React.FC<PropModalProps> = ({
                         }}
                       />
 
-                      <Input
-                        label="图片URL"
-                        placeholder="图片地址（选填，可通过AI生成）"
-                        value={formData.image_url}
-                        onValueChange={(val) => setFormData({ ...formData, image_url: val })}
-                        classNames={{
-                          inputWrapper: 'bg-content2 border-divider',
-                        }}
-                      />
+                      {/* 道具不显示图片URL输入框 */}
 
                       <Input
                         label="标签"

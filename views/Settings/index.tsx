@@ -455,7 +455,7 @@ const Settings: React.FC = () => {
         <h3 className="text-sm font-medium mb-4" style={{ color: 'var(--text-primary)' }}>
           {t.settings.appearance.title}
         </h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
           {THEME_PRESETS.map((preset) => {
             const isActive = theme === preset.key;
             const themeName = getThemeName(preset.nameKey);

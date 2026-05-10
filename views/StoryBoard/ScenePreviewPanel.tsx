@@ -897,12 +897,21 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
   // 图片提示词模式下的首/尾帧子标签（两个独立编辑区）
   const [imageFrameTab, setImageFrameTab] = useState<'first' | 'last'>('first');
   const [showHistory, setShowHistory] = useState(false);
+  const [historyVersions, setHistoryVersions] = useState<{ id: number | string; label: string; firstFrameUrl?: string; lastFrameUrl?: string; videoUrl?: string | null }[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  // 历史版本面板拖拽状态
+  const historyPanelRef = useRef<HTMLDivElement>(null);
+  const [historyPanelPos, setHistoryPanelPos] = useState({ x: 0, y: 0 });
+  const isDraggingHistory = useRef(false);
+  const dragStartHistory = useRef({ x: 0, y: 0, panelX: 0, panelY: 0 });
   const [showVideoHistory, setShowVideoHistory] = useState(false);
   const [showMagicSpace, setShowMagicSpace] = useState(false);
   const [magicSpaceInitialMode, setMagicSpaceInitialMode] = useState<'camera' | 'paint' | 'expand' | 'sketch'>('paint');
   // 历史版本预览状态：临时存储预览的帧 URL，不永久修改场景数据
   const [previewFrameUrl, setPreviewFrameUrl] = useState<string | null>(null);
   const [previewFrameType, setPreviewFrameType] = useState<'first' | 'last' | null>(null);
+  // 预览阶段切换：sketch | first | last | video
+  const [previewStage, setPreviewStage] = useState<'sketch' | 'first' | 'last' | 'video'>('first');
   const { showToast } = useToast();
   const { confirm } = useConfirm();
 
@@ -930,9 +939,13 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
       if (promptMode === 'video') {
         text = scene.videoPrompt || '';
       } else if (promptMode === 'image') {
-        text = imageFrameTab === 'first'
-          ? (scene.firstFramePrompt || scene.description || '')
-          : (scene.lastFramePrompt || scene.description || '');
+        if (scene.hasAction) {
+          text = imageFrameTab === 'first'
+            ? (scene.firstFramePrompt || scene.description || '')
+            : (scene.lastFramePrompt || scene.description || '');
+        } else {
+          text = scene.firstFramePrompt || scene.description || '';
+        }
       } else {
         text = scene.description || '';
       }
@@ -945,7 +958,77 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
     setPreviewFrameUrl(null);
     setPreviewFrameType(null);
     setShowHistory(false);
+    setHistoryVersions([]);
   }, [scene?.id]);
+
+  // 加载历史版本列表（用于右上角下拉选择）
+  const loadHistoryVersions = async () => {
+    if (!scene) return;
+    setHistoryLoading(true);
+    try {
+      const token = getAuthToken();
+      const res = await fetch(`/api/storyboards/${scene.id}/frame-history`, {
+        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const versions = (data.versions || []).map((v: any, idx: number) => ({
+          id: v.batchId || `v${v.versionNumber}-${idx}`,
+          label: `版本 ${v.versionNumber}${v.isCurrent ? ' (当前)' : ''}`,
+          firstFrameUrl: v.firstFrame?.frame_url,
+          lastFrameUrl: v.lastFrame?.frame_url,
+          videoUrl: v.videoUrl,
+        }));
+        setHistoryVersions(versions);
+      }
+    } catch (e) {
+      console.error('[ScenePreviewPanel] 加载历史版本失败:', e);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  // 恢复指定历史版本
+  const restoreHistoryVersion = async (version: typeof historyVersions[0]) => {
+    if (!scene || !version) return;
+    try {
+      const token = getAuthToken();
+      const body: Record<string, unknown> = {};
+      if (typeof version.id === 'string' && version.id.startsWith('v')) {
+        body.historyId = parseInt(version.id.split('-')[0].replace('v', ''));
+      } else {
+        body.batchId = version.id;
+      }
+      const res = await fetch(`/api/storyboards/${scene.id}/frame-history/restore`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify(body)
+      });
+      if (res.ok) {
+        const result = await res.json();
+        if (onUpdateScene) {
+          const updates: Partial<StoryboardScene> = {};
+          if (result.restoredFirstFrame || version.firstFrameUrl) {
+            updates.startFrame = result.restoredFirstFrame || version.firstFrameUrl;
+            updates.imageUrl = result.restoredFirstFrame || version.firstFrameUrl;
+          }
+          if (result.restoredLastFrame || version.lastFrameUrl) {
+            updates.endFrame = result.restoredLastFrame || version.lastFrameUrl;
+          }
+          updates.videoUrl = result.restoredVideoUrl !== undefined ? result.restoredVideoUrl : (version.videoUrl || undefined);
+          onUpdateScene(updates);
+        }
+        showToast('版本已恢复', 'success');
+        setHistoryVersions([]);
+      }
+    } catch (e) {
+      console.error('[ScenePreviewPanel] 恢复版本失败:', e);
+      showToast('恢复版本失败', 'error');
+    }
+  };
 
   const isGeneratingImage = imageTask?.status === 'pending' || imageTask?.status === 'running';
   const isGeneratingVideo = videoTask?.status === 'pending' || videoTask?.status === 'running';
@@ -1275,8 +1358,138 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
 
   return (
     <div className="h-full flex flex-col bg-[var(--bg-app)]">
-      {/* 魔术空间 - 全覆盖 */}
-      {showMagicSpace && currentFrame && onGenerateWithCamera ? (
+      {/* 草图绘制面板 - 直接嵌入（草图阶段） */}
+      {showMagicSpace && previewStage === 'sketch' && onGenerateWithSketch ? (
+        <div className="h-full flex flex-col bg-[var(--bg-app)]">
+          <MagicSpacePanel
+            sourceImageUrl={scene.startFrame || scene.imageUrl || ''}
+            aspectRatio={scene.hasAction ? '16:9' : '16:9'}
+            initialMode="sketch"
+            onGenerateWithCamera={async () => {}}
+            onGenerateWithPaint={async () => {}}
+            onGenerateWithSketch={async (params) => {
+              const result = await onGenerateWithSketch(scene.id, params);
+              if (result.success) {
+                setShowMagicSpace(false);
+              } else {
+                showToast(result.error || '草图生成失败', 'error');
+              }
+            }}
+            onCancel={() => setShowMagicSpace(false)}
+            isGenerating={isGeneratingImage}
+          />
+        </div>
+      ) : showMagicSpace && previewStage === 'first' && onGenerateWithSketch ? (
+        // 首帧草图绘制面板
+        <div className="h-full flex flex-col bg-[var(--bg-app)]">
+          <MagicSpacePanel
+            sourceImageUrl={scene.startFrame || scene.imageUrl || ''}
+            aspectRatio={scene.hasAction ? '16:9' : '16:9'}
+            initialMode="sketch"
+            onGenerateWithCamera={async () => {}}
+            onGenerateWithPaint={async () => {}}
+            onGenerateWithSketch={async (params) => {
+              // 上传草图并保存到 startSketchUrl
+              try {
+                const base64Data = params.sketchImageBase64;
+                const byteString = atob(base64Data.split(',')[1]);
+                const mimeString = base64Data.split(',')[0].split(':')[1].split(';')[0];
+                const ab = new ArrayBuffer(byteString.length);
+                const ia = new Uint8Array(ab);
+                for (let i = 0; i < byteString.length; i++) {
+                  ia[i] = byteString.charCodeAt(i);
+                }
+                const blob = new Blob([ab], { type: mimeString });
+                const token = getAuthToken();
+                const formData = new FormData();
+                formData.append('file', blob, `start_sketch_${scene.id}_${Date.now()}.png`);
+                formData.append('path_prefix', 'images/sketches');
+
+                const uploadRes = await fetch('/api/upload/general', {
+                  method: 'POST',
+                  headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+                  body: formData,
+                });
+
+                if (!uploadRes.ok) throw new Error(`上传草图失败: HTTP ${uploadRes.status}`);
+                const uploadData = await uploadRes.json();
+                const sketchUrl = uploadData.url || uploadData.fileUrl || uploadData.filePath || '';
+                if (!sketchUrl) throw new Error('上传草图返回无效URL');
+
+                // 保存到场景数据
+                if (onUpdateScene) {
+                  onUpdateScene({
+                    startSketchUrl: sketchUrl,
+                    startSketchType: 'storyboard_sketch',
+                    startSketchData: params.sketchImageBase64,
+                  });
+                }
+                setShowMagicSpace(false);
+                showToast('首帧草图已保存', 'success');
+              } catch (err: any) {
+                showToast(err.message || '保存草图失败', 'error');
+              }
+            }}
+            onCancel={() => setShowMagicSpace(false)}
+            isGenerating={isGeneratingImage}
+          />
+        </div>
+      ) : showMagicSpace && previewStage === 'last' && onGenerateWithSketch ? (
+        // 尾帧草图绘制面板
+        <div className="h-full flex flex-col bg-[var(--bg-app)]">
+          <MagicSpacePanel
+            sourceImageUrl={scene.endFrame || scene.startFrame || scene.imageUrl || ''}
+            aspectRatio={scene.hasAction ? '16:9' : '16:9'}
+            initialMode="sketch"
+            onGenerateWithCamera={async () => {}}
+            onGenerateWithPaint={async () => {}}
+            onGenerateWithSketch={async (params) => {
+              // 上传草图并保存到 endSketchUrl
+              try {
+                const base64Data = params.sketchImageBase64;
+                const byteString = atob(base64Data.split(',')[1]);
+                const mimeString = base64Data.split(',')[0].split(':')[1].split(';')[0];
+                const ab = new ArrayBuffer(byteString.length);
+                const ia = new Uint8Array(ab);
+                for (let i = 0; i < byteString.length; i++) {
+                  ia[i] = byteString.charCodeAt(i);
+                }
+                const blob = new Blob([ab], { type: mimeString });
+                const token = getAuthToken();
+                const formData = new FormData();
+                formData.append('file', blob, `end_sketch_${scene.id}_${Date.now()}.png`);
+                formData.append('path_prefix', 'images/sketches');
+
+                const uploadRes = await fetch('/api/upload/general', {
+                  method: 'POST',
+                  headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+                  body: formData,
+                });
+
+                if (!uploadRes.ok) throw new Error(`上传草图失败: HTTP ${uploadRes.status}`);
+                const uploadData = await uploadRes.json();
+                const sketchUrl = uploadData.url || uploadData.fileUrl || uploadData.filePath || '';
+                if (!sketchUrl) throw new Error('上传草图返回无效URL');
+
+                // 保存到场景数据
+                if (onUpdateScene) {
+                  onUpdateScene({
+                    endSketchUrl: sketchUrl,
+                    endSketchType: 'storyboard_sketch',
+                    endSketchData: params.sketchImageBase64,
+                  });
+                }
+                setShowMagicSpace(false);
+                showToast('尾帧草图已保存', 'success');
+              } catch (err: any) {
+                showToast(err.message || '保存草图失败', 'error');
+              }
+            }}
+            onCancel={() => setShowMagicSpace(false)}
+            isGenerating={isGeneratingImage}
+          />
+        </div>
+      ) : showMagicSpace && currentFrame && onGenerateWithCamera ? (
         <MagicSpacePanel
           sourceImageUrl={bustCache(currentFrame) || currentFrame}
           aspectRatio={scene.hasAction ? '16:9' : '16:9'}
@@ -1312,297 +1525,675 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
       ) : (
       <>
       {/* 预览区域 */}
-      <div className="flex-1 flex items-center justify-center p-4 min-h-0 relative">
-        {/* 生成中遮罩层 */}
-        {isGenerating && (
-          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/60 backdrop-blur-sm rounded-lg">
-            <Loader2 className="w-10 h-10 text-[var(--accent)] animate-spin mb-3" />
-            <p className="text-sm font-medium text-white mb-2">
-              {isGeneratingImage ? '正在生成首尾帧...' : '正在生成视频...'}
-            </p>
-            {generatingProgress > 0 && (
-              <div className="w-48 flex flex-col items-center gap-1.5">
-                <div className="w-full h-1.5 bg-white/20 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-[var(--accent)] rounded-full transition-all duration-500 ease-out"
-                    style={{ width: `${Math.min(100, generatingProgress)}%` }}
-                  />
-                </div>
-                <span className="text-xs text-white/70">{Math.round(generatingProgress)}%</span>
-              </div>
+      <div className="flex-1 flex flex-col min-h-0 relative">
+        {/* 阶段导航栏 - 左上角 */}
+        <div className="absolute top-3 left-3 z-10 flex items-center gap-0.5 bg-black/60 backdrop-blur-sm rounded-lg p-1 border border-white/10">
+          {/* 草图阶段 - 两种模式都显示 */}
+          <button
+            onClick={() => setPreviewStage('sketch')}
+            className={`flex items-center gap-1 px-2 py-1.5 rounded-md text-[11px] font-medium transition-all ${
+              previewStage === 'sketch'
+                ? 'bg-amber-500 text-white shadow-sm'
+                : scene.sketchUrl
+                  ? 'text-amber-300 hover:bg-white/15 hover:text-amber-200'
+                  : 'text-white/50 hover:text-white/80 hover:bg-white/10'
+            }`}
+          >
+            <Pencil className="w-3 h-3" />
+            <span>草图</span>
+            {scene.sketchUrl && (
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 ml-0.5" />
             )}
-            <p className="text-xs text-white/50 mt-2">请勿关闭页面</p>
-          </div>
-        )}
-        {hasVideo ? (
-          // 视频预览 + 侧边栏
-          <div className="relative w-full h-full flex">
-            {/* 视频历史侧边栏 */}
-            <VideoHistorySidebar
-              storyboardId={scene.id}
-              currentVideoUrl={scene.videoUrl}
-              firstFrameUrl={scene.startFrame}
-              lastFrameUrl={scene.endFrame}
-              isOpen={showVideoHistory}
-              onToggle={() => setShowVideoHistory(prev => !prev)}
-              onSwitchVersion={(data) => {
-                if (onUpdateScene) {
-                  const updates: Partial<StoryboardScene> = {};
-                  if (data.videoUrl !== undefined) updates.videoUrl = data.videoUrl || undefined;
-                  if (data.firstFrameUrl) {
-                    updates.startFrame = data.firstFrameUrl;
-                    updates.imageUrl = data.firstFrameUrl;
-                  }
-                  if (data.lastFrameUrl) updates.endFrame = data.lastFrameUrl;
-                  onUpdateScene(updates);
-                }
-              }}
-            />
-            {/* 视频播放区 */}
-            <div className="flex-1 relative flex items-center justify-center min-w-0">
-              <video
-                key={scene.videoUrl}
-                src={scene.videoUrl}
-                controls
-                className="max-w-full max-h-full rounded-lg shadow-2xl"
-                style={{ maxHeight: 'calc(100% - 2rem)' }}
-              />
-              {/* 左上角：历史版本按钮 */}
-              <button
-                onClick={() => setShowHistory(true)}
-                disabled={isGenerating}
-                className={`absolute top-2 left-2 p-2 rounded-lg bg-black/50 text-white/80 transition-colors flex items-center gap-1.5 ${
-                  isGenerating ? 'opacity-40 cursor-not-allowed' : 'hover:bg-black/70 hover:text-white'
-                }`}
-                title="查看历史版本"
-              >
-                <History className="w-4 h-4" />
-                <span className="text-xs">历史版本</span>
-              </button>
-              {/* 右上角：删除视频 + 视频历史切换 */}
-              <div className="absolute top-2 right-2 flex items-center gap-1">
-                <button
-                  onClick={() => setShowVideoHistory(prev => !prev)}
-                  disabled={isGenerating}
-                  className={`p-2 rounded-lg bg-black/50 text-white/80 transition-colors flex items-center gap-1 ${
-                    showVideoHistory
-                      ? 'bg-rose-500/40 text-rose-300'
-                      : 'hover:bg-rose-500/30 hover:text-rose-300'
-                  }`}
-                  title={showVideoHistory ? '收起视频历史' : '视频历史'}
-                >
-                  <Film className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={handleDeleteVideo}
-                  disabled={isGenerating}
-                  className={`p-2 rounded-lg bg-black/50 text-white transition-colors ${
-                    isGenerating ? 'opacity-40 cursor-not-allowed' : 'hover:bg-red-500/80'
-                  }`}
-                  title="删除视频"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
+          </button>
+
+          {/* 首帧/图片阶段 */}
+          <button
+            onClick={() => setPreviewStage('first')}
+            className={`flex items-center gap-1 px-2 py-1.5 rounded-md text-[11px] font-medium transition-all ${
+              previewStage === 'first'
+                ? 'bg-emerald-500 text-white shadow-sm'
+                : scene.startFrame
+                  ? 'text-emerald-300 hover:bg-white/15 hover:text-emerald-200'
+                  : 'text-white/50 hover:text-white/80 hover:bg-white/10'
+            }`}
+          >
+            <Camera className="w-3 h-3" />
+            <span>{scene.hasAction ? '首帧' : '图片'}</span>
+            {scene.startFrame && (
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 ml-0.5" />
+            )}
+          </button>
+
+          {/* 尾帧阶段 - 仅运动模式 */}
+          {scene.hasAction && (
+            <button
+              onClick={() => setPreviewStage('last')}
+              className={`flex items-center gap-1 px-2 py-1.5 rounded-md text-[11px] font-medium transition-all ${
+                previewStage === 'last'
+                  ? 'bg-emerald-500 text-white shadow-sm'
+                  : scene.endFrame
+                    ? 'text-emerald-300 hover:bg-white/15 hover:text-emerald-200'
+                    : 'text-white/50 hover:text-white/80 hover:bg-white/10'
+              }`}
+            >
+              <ImageIcon className="w-3 h-3" />
+              <span>尾帧</span>
+              {scene.endFrame && (
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 ml-0.5" />
+              )}
+            </button>
+          )}
+
+          {/* 视频阶段 - 两种模式都显示 */}
+          <button
+            onClick={() => setPreviewStage('video')}
+            className={`flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium transition-all ${
+              previewStage === 'video'
+                ? 'bg-rose-500/20 text-rose-300'
+                : scene.videoUrl
+                  ? 'text-rose-400/80 hover:text-rose-300 hover:bg-rose-500/10'
+                  : 'text-white/50 hover:text-white/70'
+            }`}
+          >
+            <Video className="w-3 h-3" />
+            <span>视频</span>
+            {scene.videoUrl && (
+              <span className="w-1 h-1 rounded-full bg-emerald-400 ml-0.5" />
+            )}
+          </button>
+        </div>
+
+        {/* 预览内容区 */}
+        <div className="flex-1 flex items-center justify-center min-h-0 relative">
+          {/* 生成中遮罩层 */}
+          {isGenerating && (
+            <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/60 backdrop-blur-sm rounded-lg">
+              <Loader2 className="w-10 h-10 text-[var(--accent)] animate-spin mb-3" />
+              <p className="text-sm font-medium text-white mb-2">
+                {isGeneratingImage
+                  ? (scene.hasAction ? '正在生成首尾帧...' : '正在生成图片...')
+                  : '正在生成视频...'}
+              </p>
+              {generatingProgress > 0 && (
+                <div className="w-48 flex flex-col items-center gap-1.5">
+                  <div className="w-full h-1.5 bg-white/20 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-[var(--accent)] rounded-full transition-all duration-500 ease-out"
+                      style={{ width: `${Math.min(100, generatingProgress)}%` }}
+                    />
+                  </div>
+                  <span className="text-xs text-white/70">{Math.round(generatingProgress)}%</span>
+                </div>
+              )}
+              <p className="text-xs text-white/50 mt-2">请勿关闭页面</p>
             </div>
-          </div>
-        ) : hasFrames ? (
-          // 帧图片预览
-          <div className="relative w-full h-full flex items-center justify-center">
-            {currentFrame ? (
-              <>
-                <img
-                  key={currentFrame}
-                  src={bustCache(currentFrame) || currentFrame}
-                  alt={`分镜 ${sceneIndex + 1} - ${showStartFrame ? '首帧' : '尾帧'}`}
-                  className="max-w-full max-h-full rounded-lg shadow-2xl object-contain cursor-zoom-in hover:ring-2 hover:ring-[var(--accent)]/50 transition-all"
-                  style={{ maxHeight: 'calc(100% - 2rem)' }}
-                  onClick={openLightbox}
-                  title="点击放大预览，拖拽到积木编辑器"
-                  draggable
-                  onDragStart={(e) => {
-                    e.dataTransfer.setData('application/json', JSON.stringify({
-                      type: 'reference-image',
-                      imageUrl: currentFrame,
-                      source: 'frame',
-                      frameType: showStartFrame ? 'start' : 'end',
-                      sceneId: scene.id
-                    }));
-                    e.dataTransfer.effectAllowed = 'copy';
-                  }}
-                />
-                {/* 左上角：历史版本按钮 */}
-                <button
-                  onClick={() => setShowHistory(true)}
-                  disabled={isGenerating}
-                  className={`absolute top-2 left-2 p-2 rounded-lg bg-black/50 text-white/80 transition-colors flex items-center gap-1.5 ${
-                    isGenerating ? 'opacity-40 cursor-not-allowed' : 'hover:bg-black/70 hover:text-white'
-                  }`}
-                  title="查看历史版本"
-                >
-                  <History className="w-4 h-4" />
-                  <span className="text-xs">历史版本</span>
-                </button>
-                {/* 魔术空间按钮 */}
-                {onGenerateWithCamera && (
+          )}
+
+          {/* 根据 previewStage 渲染对应内容 */}
+          {previewStage === 'sketch' && (
+            // 草图预览
+            <div className="relative w-full h-full flex items-center justify-center">
+              {scene.sketchUrl ? (
+                <>
+                  <img
+                    src={scene.sketchUrl}
+                    alt="分镜草图"
+                    className="max-w-full max-h-full rounded-lg shadow-2xl object-contain cursor-zoom-in hover:ring-2 hover:ring-[var(--accent)]/50 transition-all"
+                    style={{ maxHeight: 'calc(100% - 2rem)' }}
+                    onClick={() => {
+                      setLightboxZoom(1);
+                      setLightboxPos({ x: 0, y: 0 });
+                      setLightboxOpen(true);
+                    }}
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData('application/json', JSON.stringify({
+                        type: 'reference-image',
+                        imageUrl: scene.sketchUrl,
+                        source: 'sketch',
+                        sceneId: scene.id
+                      }));
+                      e.dataTransfer.effectAllowed = 'copy';
+                    }}
+                  />
+                  {/* 编辑/删除/历史版本按钮 */}
+                  <div className="absolute top-2 right-2 flex items-center gap-1">
+                    <button
+                      onClick={async () => {
+                        if (!showHistory && historyVersions.length === 0) {
+                          await loadHistoryVersions();
+                        }
+                        setShowHistory(!showHistory);
+                      }}
+                      disabled={isGenerating || historyLoading}
+                      className={`p-2 rounded-lg bg-black/50 text-white/80 transition-colors flex items-center gap-1.5 ${
+                        isGenerating || historyLoading ? 'opacity-40 cursor-not-allowed' : 'hover:bg-amber-500/70 hover:text-white'
+                      }`}
+                      title="历史版本"
+                    >
+                      <History className="w-4 h-4" />
+                      <span className="text-xs">历史</span>
+                    </button>
+                    {onGenerateWithSketch && (
+                      <button
+                        onClick={() => {
+                          setMagicSpaceInitialMode('sketch');
+                          setShowMagicSpace(true);
+                        }}
+                        disabled={isGenerating}
+                        className={`p-2 rounded-lg bg-black/50 text-white/80 transition-colors flex items-center gap-1.5 ${
+                          isGenerating ? 'opacity-40 cursor-not-allowed' : 'hover:bg-amber-500/70 hover:text-white'
+                        }`}
+                        title="编辑草图"
+                      >
+                        <Pencil className="w-4 h-4" />
+                        <span className="text-xs">编辑</span>
+                      </button>
+                    )}
+                    <button
+                      onClick={() => {
+                        if (onUpdateScene) {
+                          onUpdateScene({ sketchUrl: undefined, sketchType: undefined, sketchData: undefined });
+                        }
+                      }}
+                      disabled={isGenerating}
+                      className={`p-2 rounded-lg bg-black/50 text-white transition-colors ${
+                        isGenerating ? 'opacity-40 cursor-not-allowed' : 'hover:bg-red-500/80'
+                      }`}
+                      title="删除草图"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                  {/* 放大按钮 */}
                   <button
                     onClick={() => {
-                      setMagicSpaceInitialMode('paint');
-                      setShowMagicSpace(true);
+                      setLightboxZoom(1);
+                      setLightboxPos({ x: 0, y: 0 });
+                      setLightboxOpen(true);
                     }}
-                    disabled={isGenerating}
-                    className={`absolute top-2 left-28 p-2 rounded-lg bg-black/50 text-white/80 transition-colors flex items-center gap-1.5 ${
-                      isGenerating ? 'opacity-40 cursor-not-allowed' : 'hover:bg-purple-500/70 hover:text-white'
-                    }`}
-                    title="魔术空间 - 涂改/扩图/视角调整"
+                    className="absolute bottom-4 right-4 p-2 rounded-lg bg-black/50 hover:bg-black/70 text-white/80 hover:text-white transition-colors"
+                    title="放大预览"
                   >
-                    <Sparkles className="w-4 h-4" />
-                    <span className="text-xs">魔术空间</span>
+                    <Maximize2 className="w-4 h-4" />
                   </button>
-                )}
-                {/* 草图绘制按钮 */}
-                {onGenerateWithSketch && (
-                  <button
-                    onClick={() => {
-                      setMagicSpaceInitialMode('sketch');
-                      setShowMagicSpace(true);
+                </>
+              ) : (
+                <div className="flex flex-col items-center justify-center text-center">
+                  <div className="absolute top-2 right-2">
+                    <button
+                      onClick={async () => {
+                        if (!showHistory && historyVersions.length === 0) {
+                          await loadHistoryVersions();
+                        }
+                        setShowHistory(!showHistory);
+                      }}
+                      disabled={isGenerating || historyLoading}
+                      className={`p-2 rounded-lg bg-black/50 text-white/80 transition-colors flex items-center gap-1.5 ${
+                        isGenerating || historyLoading ? 'opacity-40 cursor-not-allowed' : 'hover:bg-amber-500/70 hover:text-white'
+                      }`}
+                      title="历史版本"
+                    >
+                      <History className="w-4 h-4" />
+                      <span className="text-xs">历史</span>
+                    </button>
+                  </div>
+                  <div className="w-32 h-20 rounded-lg border-2 border-dashed border-[var(--border-color)] flex items-center justify-center mb-4">
+                    <Pencil className="w-8 h-8 text-[var(--text-muted)]" />
+                  </div>
+                  <p className="text-sm text-[var(--text-muted)] mb-4">暂无草图</p>
+                  {onGenerateWithSketch && (
+                    <Button
+                      size="sm"
+                      variant="flat"
+                      className="bg-amber-500/10 text-amber-400 border border-amber-500/20"
+                      startContent={<Pencil className="w-4 h-4" />}
+                      onPress={() => {
+                        setMagicSpaceInitialMode('sketch');
+                        setShowMagicSpace(true);
+                      }}
+                    >
+                      绘制草图
+                    </Button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {previewStage === 'first' && (
+            // 首帧预览
+            <div className="relative w-full h-full flex items-center justify-center">
+              {scene.startFrame ? (
+                <>
+                  <img
+                    key={scene.startFrame}
+                    src={bustCache(scene.startFrame) || scene.startFrame}
+                    alt={`分镜 ${sceneIndex + 1} - 首帧`}
+                    className="max-w-full max-h-full rounded-lg shadow-2xl object-contain cursor-zoom-in hover:ring-2 hover:ring-[var(--accent)]/50 transition-all"
+                    style={{ maxHeight: 'calc(100% - 2rem)' }}
+                    onClick={openLightbox}
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData('application/json', JSON.stringify({
+                        type: 'reference-image',
+                        imageUrl: scene.startFrame,
+                        source: 'frame',
+                        frameType: 'start',
+                        sceneId: scene.id
+                      }));
+                      e.dataTransfer.effectAllowed = 'copy';
                     }}
-                    disabled={isGenerating}
-                    className={`absolute top-2 left-52 p-2 rounded-lg bg-black/50 text-white/80 transition-colors flex items-center gap-1.5 ${
-                      isGenerating ? 'opacity-40 cursor-not-allowed' : 'hover:bg-amber-500/70 hover:text-white'
-                    }`}
-                    title="草图绘制 - 手绘场景草图，AI根据草图生成图片"
-                  >
-                    <Pencil className="w-4 h-4" />
-                    <span className="text-xs">草图</span>
-                  </button>
-                )}
-                {/* 高清修复按钮 */}
-                {onGenerateHdRepair && (
+                  />
+                  {/* 魔术空间按钮 */}
+                  {onGenerateWithCamera && (
+                    <button
+                      onClick={() => {
+                        setMagicSpaceInitialMode('paint');
+                        setShowMagicSpace(true);
+                      }}
+                      disabled={isGenerating}
+                      className={`absolute top-2 left-2 p-2 rounded-lg bg-black/50 text-white/80 transition-colors flex items-center gap-1.5 ${
+                        isGenerating ? 'opacity-40 cursor-not-allowed' : 'hover:bg-purple-500/70 hover:text-white'
+                      }`}
+                      title="魔术空间"
+                    >
+                      <Sparkles className="w-4 h-4" />
+                      <span className="text-xs">魔术空间</span>
+                    </button>
+                  )}
+                  {/* 高清修复按钮 */}
+                  {onGenerateHdRepair && (
+                    <button
+                      onClick={async () => {
+                        const result = await onGenerateHdRepair(scene.id);
+                        if (!result.success) showToast(result.error || '高清修复失败', 'error');
+                      }}
+                      disabled={isGenerating}
+                      className={`absolute top-2 right-12 p-2 rounded-lg bg-black/50 text-white/80 transition-colors flex items-center gap-1.5 ${
+                        isGenerating ? 'opacity-40 cursor-not-allowed' : 'hover:bg-blue-500/70 hover:text-white'
+                      }`}
+                      title="高清修复"
+                    >
+                      <Wand2 className="w-4 h-4" />
+                      <span className="text-xs">高清修复</span>
+                    </button>
+                  )}
+                  {/* 历史版本/删除帧按钮 */}
+                  <div className="absolute top-2 right-2 flex items-center gap-1">
+                    <button
+                      onClick={async () => {
+                        if (!showHistory && historyVersions.length === 0) {
+                          await loadHistoryVersions();
+                        }
+                        setShowHistory(!showHistory);
+                      }}
+                      disabled={isGenerating || historyLoading}
+                      className={`p-2 rounded-lg bg-black/50 text-white/80 transition-colors flex items-center gap-1.5 ${
+                        isGenerating || historyLoading ? 'opacity-40 cursor-not-allowed' : 'hover:bg-emerald-500/70 hover:text-white'
+                      }`}
+                      title="历史版本"
+                    >
+                      <History className="w-4 h-4" />
+                      <span className="text-xs">历史</span>
+                    </button>
+                    <button
+                      onClick={handleDeleteFirstFrame}
+                      disabled={isGenerating}
+                      className={`p-2 rounded-lg bg-black/50 text-white transition-colors ${
+                        isGenerating ? 'opacity-40 cursor-not-allowed' : 'hover:bg-orange-500/80'
+                      }`}
+                      title="删除首帧"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                  {/* 放大按钮 */}
                   <button
-                    onClick={async () => {
-                      if (!scene) return;
-                      const result = await onGenerateHdRepair(scene.id);
-                      if (!result.success) {
-                        showToast(result.error || '高清修复失败', 'error');
+                    onClick={openLightbox}
+                    className="absolute bottom-4 right-4 p-2 rounded-lg bg-black/50 hover:bg-black/70 text-white/80 hover:text-white transition-colors"
+                    title="放大预览"
+                  >
+                    <Maximize2 className="w-4 h-4" />
+                  </button>
+                </>
+              ) : (
+                <div className="flex flex-col items-center justify-center text-center">
+                  <div className="absolute top-2 right-2">
+                    <button
+                      onClick={async () => {
+                        if (!showHistory && historyVersions.length === 0) {
+                          await loadHistoryVersions();
+                        }
+                        setShowHistory(!showHistory);
+                      }}
+                      disabled={isGenerating || historyLoading}
+                      className={`p-2 rounded-lg bg-black/50 text-white/80 transition-colors flex items-center gap-1.5 ${
+                        isGenerating || historyLoading ? 'opacity-40 cursor-not-allowed' : 'hover:bg-emerald-500/70 hover:text-white'
+                      }`}
+                      title="历史版本"
+                    >
+                      <History className="w-4 h-4" />
+                      <span className="text-xs">历史</span>
+                    </button>
+                  </div>
+                  <div className="w-32 h-20 rounded-lg border-2 border-dashed border-[var(--border-color)] flex items-center justify-center mb-4">
+                    <Camera className="w-8 h-8 text-[var(--text-muted)]" />
+                  </div>
+                  <p className="text-sm text-[var(--text-muted)] mb-2">
+                    {scene.hasAction ? '暂无首帧' : '暂无图片'}
+                  </p>
+                  {/* 首帧草图提示 - 运动模式才显示 */}
+                  {scene.hasAction && scene.startSketchUrl && (
+                    <p className="text-xs text-amber-400/70 mb-3">已设置首帧草图参考</p>
+                  )}
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      className="pro-btn-primary"
+                      startContent={<ImageIcon className="w-4 h-4" />}
+                      onPress={handleGenerateImage}
+                      isLoading={isGeneratingImage}
+                      isDisabled={isGeneratingImage}
+                    >
+                      {scene.hasAction ? '生成首尾帧' : '生成图片'}
+                    </Button>
+                    {/* 首帧草图按钮 - 运动模式才显示 */}
+                    {scene.hasAction && onGenerateWithSketch && (
+                      <Button
+                        size="sm"
+                        variant="flat"
+                        className="bg-amber-500/10 text-amber-400 border border-amber-500/20"
+                        startContent={<Pencil className="w-4 h-4" />}
+                        onPress={() => {
+                          setMagicSpaceInitialMode('sketch');
+                          setShowMagicSpace(true);
+                        }}
+                      >
+                        {scene.startSketchUrl ? '编辑草图' : '绘制草图'}
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 静止模式不显示尾帧阶段 */}
+          {scene.hasAction && previewStage === 'last' && (
+            // 尾帧预览
+            <div className="relative w-full h-full flex items-center justify-center">
+              {scene.endFrame ? (
+                <>
+                  <img
+                    key={scene.endFrame}
+                    src={bustCache(scene.endFrame) || scene.endFrame}
+                    alt={`分镜 ${sceneIndex + 1} - 尾帧`}
+                    className="max-w-full max-h-full rounded-lg shadow-2xl object-contain cursor-zoom-in hover:ring-2 hover:ring-[var(--accent)]/50 transition-all"
+                    style={{ maxHeight: 'calc(100% - 2rem)' }}
+                    onClick={openLightbox}
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData('application/json', JSON.stringify({
+                        type: 'reference-image',
+                        imageUrl: scene.endFrame,
+                        source: 'frame',
+                        frameType: 'end',
+                        sceneId: scene.id
+                      }));
+                      e.dataTransfer.effectAllowed = 'copy';
+                    }}
+                  />
+                  {/* 魔术空间按钮 */}
+                  {onGenerateWithCamera && (
+                    <button
+                      onClick={() => {
+                        setMagicSpaceInitialMode('paint');
+                        setShowMagicSpace(true);
+                      }}
+                      disabled={isGenerating}
+                      className={`absolute top-2 left-2 p-2 rounded-lg bg-black/50 text-white/80 transition-colors flex items-center gap-1.5 ${
+                        isGenerating ? 'opacity-40 cursor-not-allowed' : 'hover:bg-purple-500/70 hover:text-white'
+                      }`}
+                      title="魔术空间"
+                    >
+                      <Sparkles className="w-4 h-4" />
+                      <span className="text-xs">魔术空间</span>
+                    </button>
+                  )}
+                  {/* 高清修复按钮 */}
+                  {onGenerateHdRepair && (
+                    <button
+                      onClick={async () => {
+                        const result = await onGenerateHdRepair(scene.id);
+                        if (!result.success) showToast(result.error || '高清修复失败', 'error');
+                      }}
+                      disabled={isGenerating}
+                      className={`absolute top-2 right-12 p-2 rounded-lg bg-black/50 text-white/80 transition-colors flex items-center gap-1.5 ${
+                        isGenerating ? 'opacity-40 cursor-not-allowed' : 'hover:bg-blue-500/70 hover:text-white'
+                      }`}
+                      title="高清修复"
+                    >
+                      <Wand2 className="w-4 h-4" />
+                      <span className="text-xs">高清修复</span>
+                    </button>
+                  )}
+                  {/* 历史版本/删除帧按钮 */}
+                  <div className="absolute top-2 right-2 flex items-center gap-1">
+                    <button
+                      onClick={async () => {
+                        if (!showHistory && historyVersions.length === 0) {
+                          await loadHistoryVersions();
+                        }
+                        setShowHistory(!showHistory);
+                      }}
+                      disabled={isGenerating || historyLoading}
+                      className={`p-2 rounded-lg bg-black/50 text-white/80 transition-colors flex items-center gap-1.5 ${
+                        isGenerating || historyLoading ? 'opacity-40 cursor-not-allowed' : 'hover:bg-emerald-500/70 hover:text-white'
+                      }`}
+                      title="历史版本"
+                    >
+                      <History className="w-4 h-4" />
+                      <span className="text-xs">历史</span>
+                    </button>
+                    <button
+                      onClick={handleDeleteLastFrame}
+                      disabled={isGenerating}
+                      className={`p-2 rounded-lg bg-black/50 text-white transition-colors ${
+                        isGenerating ? 'opacity-40 cursor-not-allowed' : 'hover:bg-orange-500/80'
+                      }`}
+                      title="删除尾帧"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                  {/* 放大按钮 */}
+                  <button
+                    onClick={openLightbox}
+                    className="absolute bottom-4 right-4 p-2 rounded-lg bg-black/50 hover:bg-black/70 text-white/80 hover:text-white transition-colors"
+                    title="放大预览"
+                  >
+                    <Maximize2 className="w-4 h-4" />
+                  </button>
+                </>
+              ) : (
+                <div className="flex flex-col items-center justify-center text-center">
+                  <div className="absolute top-2 right-2">
+                    <button
+                      onClick={async () => {
+                        if (!showHistory && historyVersions.length === 0) {
+                          await loadHistoryVersions();
+                        }
+                        setShowHistory(!showHistory);
+                      }}
+                      disabled={isGenerating || historyLoading}
+                      className={`p-2 rounded-lg bg-black/50 text-white/80 transition-colors flex items-center gap-1.5 ${
+                        isGenerating || historyLoading ? 'opacity-40 cursor-not-allowed' : 'hover:bg-emerald-500/70 hover:text-white'
+                      }`}
+                      title="历史版本"
+                    >
+                      <History className="w-4 h-4" />
+                      <span className="text-xs">历史</span>
+                    </button>
+                  </div>
+                  <div className="w-32 h-20 rounded-lg border-2 border-dashed border-[var(--border-color)] flex items-center justify-center mb-4">
+                    <ImageIcon className="w-8 h-8 text-[var(--text-muted)]" />
+                  </div>
+                  <p className="text-sm text-[var(--text-muted)] mb-2">暂无尾帧</p>
+                  {/* 尾帧草图提示 */}
+                  {scene.endSketchUrl && (
+                    <p className="text-xs text-amber-400/70 mb-3">已设置尾帧草图参考</p>
+                  )}
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      className="pro-btn-primary"
+                      startContent={<ImageIcon className="w-4 h-4" />}
+                      onPress={handleGenerateImage}
+                      isLoading={isGeneratingImage}
+                      isDisabled={isGeneratingImage}
+                    >
+                      生成首尾帧
+                    </Button>
+                    {/* 尾帧草图按钮 */}
+                    {onGenerateWithSketch && (
+                      <Button
+                        size="sm"
+                        variant="flat"
+                        className="bg-amber-500/10 text-amber-400 border border-amber-500/20"
+                        startContent={<Pencil className="w-4 h-4" />}
+                        onPress={() => {
+                          setMagicSpaceInitialMode('sketch');
+                          setShowMagicSpace(true);
+                        }}
+                      >
+                        {scene.endSketchUrl ? '编辑草图' : '绘制草图'}
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 视频阶段 - 两种模式都显示 */}
+          {previewStage === 'video' && (
+            // 视频预览
+            <div className="relative w-full h-full flex">
+              {scene.videoUrl ? (
+                <>
+                  <VideoHistorySidebar
+                    storyboardId={scene.id}
+                    currentVideoUrl={scene.videoUrl}
+                    firstFrameUrl={scene.startFrame}
+                    lastFrameUrl={scene.endFrame}
+                    isOpen={showVideoHistory}
+                    onToggle={() => setShowVideoHistory(prev => !prev)}
+                    onSwitchVersion={(data) => {
+                      if (onUpdateScene) {
+                        const updates: Partial<StoryboardScene> = {};
+                        if (data.videoUrl !== undefined) updates.videoUrl = data.videoUrl || undefined;
+                        if (data.firstFrameUrl) {
+                          updates.startFrame = data.firstFrameUrl;
+                          updates.imageUrl = data.firstFrameUrl;
+                        }
+                        if (data.lastFrameUrl) updates.endFrame = data.lastFrameUrl;
+                        onUpdateScene(updates);
                       }
                     }}
-                    disabled={isGenerating || !currentFrame}
-                    className={`absolute top-2 right-12 p-2 rounded-lg bg-black/50 text-white/80 transition-colors flex items-center gap-1.5 ${
-                      (isGenerating || !currentFrame) ? 'opacity-40 cursor-not-allowed' : 'hover:bg-blue-500/70 hover:text-white'
-                    }`}
-                    title="高清修复 - 增强图片分辨率和细节"
-                  >
-                    <Wand2 className="w-4 h-4" />
-                    <span className="text-xs">高清修复</span>
-                  </button>
-                )}
-                {/* 放大按钮提示 */}
-                <button
-                  onClick={openLightbox}
-                  className="absolute bottom-4 right-4 p-2 rounded-lg bg-black/50 hover:bg-black/70 text-white/80 hover:text-white transition-colors"
-                  title="放大预览"
-                >
-                  <Maximize2 className="w-4 h-4" />
-                </button>
-              </>
-            ) : (
-              // 当前帧缺失，显示生成按钮
-              <div className="flex flex-col items-center justify-center text-center">
-                <div className="w-32 h-20 rounded-lg border-2 border-dashed border-[var(--border-color)] flex items-center justify-center mb-3">
-                  <ImageIcon className="w-8 h-8 text-[var(--text-muted)]" />
+                  />
+                  <div className="flex-1 relative flex items-center justify-center min-w-0">
+                    <video
+                      key={scene.videoUrl}
+                      src={scene.videoUrl}
+                      controls
+                      className="max-w-full max-h-full rounded-lg shadow-2xl"
+                      style={{ maxHeight: 'calc(100% - 2rem)' }}
+                    />
+                    {/* 历史版本/视频历史切换/删除 */}
+                    <div className="absolute top-2 right-2 flex items-center gap-1">
+                      <button
+                        onClick={async () => {
+                          if (!showHistory && historyVersions.length === 0) {
+                            await loadHistoryVersions();
+                          }
+                          setShowHistory(!showHistory);
+                        }}
+                        disabled={isGenerating || historyLoading}
+                        className={`p-2 rounded-lg bg-black/50 text-white/80 transition-colors flex items-center gap-1.5 ${
+                          isGenerating || historyLoading ? 'opacity-40 cursor-not-allowed' : 'hover:bg-rose-500/70 hover:text-white'
+                        }`}
+                        title="历史版本"
+                      >
+                        <History className="w-4 h-4" />
+                        <span className="text-xs">历史</span>
+                      </button>
+                      <button
+                        onClick={() => setShowVideoHistory(prev => !prev)}
+                        disabled={isGenerating}
+                        className={`p-2 rounded-lg bg-black/50 text-white/80 transition-colors flex items-center gap-1 ${
+                          showVideoHistory
+                            ? 'bg-rose-500/40 text-rose-300'
+                            : 'hover:bg-rose-500/30 hover:text-rose-300'
+                        }`}
+                        title={showVideoHistory ? '收起视频历史' : '视频历史'}
+                      >
+                        <Film className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={handleDeleteVideo}
+                        disabled={isGenerating}
+                        className={`p-2 rounded-lg bg-black/50 text-white transition-colors ${
+                          isGenerating ? 'opacity-40 cursor-not-allowed' : 'hover:bg-red-500/80'
+                        }`}
+                        title="删除视频"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="flex-1 flex flex-col items-center justify-center text-center relative">
+                  <div className="absolute top-2 right-2">
+                    <button
+                      onClick={async () => {
+                        if (!showHistory && historyVersions.length === 0) {
+                          await loadHistoryVersions();
+                        }
+                        setShowHistory(!showHistory);
+                      }}
+                      disabled={isGenerating || historyLoading}
+                      className={`p-2 rounded-lg bg-black/50 text-white/80 transition-colors flex items-center gap-1.5 ${
+                        isGenerating || historyLoading ? 'opacity-40 cursor-not-allowed' : 'hover:bg-rose-500/70 hover:text-white'
+                      }`}
+                      title="历史版本"
+                    >
+                      <History className="w-4 h-4" />
+                      <span className="text-xs">历史</span>
+                    </button>
+                  </div>
+                  <div className="w-32 h-20 rounded-lg border-2 border-dashed border-[var(--border-color)] flex items-center justify-center mb-4">
+                    <Video className="w-8 h-8 text-[var(--text-muted)]" />
+                  </div>
+                  <p className="text-sm text-[var(--text-muted)] mb-4">暂无视频</p>
+                  {hasFrames && (
+                    <Button
+                      size="sm"
+                      className="bg-rose-500/20 text-rose-400 border border-rose-500/30"
+                      startContent={<Film className="w-4 h-4" />}
+                      onPress={handleGenerateVideo}
+                      isLoading={isGeneratingVideo}
+                      isDisabled={isGeneratingImage || isGeneratingVideo}
+                    >
+                      生成视频
+                    </Button>
+                  )}
                 </div>
-                <p className="text-xs text-[var(--text-muted)] mb-3">
-                  {showStartFrame ? '首帧已删除，尾帧已保留' : '尾帧已删除，首帧已保留'}
-                </p>
-                <Button
-                  size="sm"
-                  className="pro-btn-primary"
-                  startContent={<ImageIcon className="w-4 h-4" />}
-                  onPress={handleGenerateImage}
-                  isLoading={isGeneratingImage}
-                  isDisabled={isGeneratingImage}
-                >
-                  生成{showStartFrame ? '首帧' : '尾帧'}（参考{showStartFrame ? '尾帧' : '首帧'}）
-                </Button>
-              </div>
-            )}
-            
-            {/* 帧切换控制 - 动作镜头始终显示切换器 */}
-            {scene.hasAction && (scene.startFrame || scene.endFrame) && (
-              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-black/60 backdrop-blur-sm rounded-full px-3 py-1.5">
-                <button
-                  onClick={() => setShowStartFrame(true)}
-                  className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                    showStartFrame
-                      ? (scene.startFrame ? 'bg-[var(--accent)] text-white' : 'bg-red-500/60 text-white')
-                      : (scene.startFrame ? 'text-white/70 hover:text-white' : 'text-red-400/70 hover:text-red-300')
-                  }`}
-                >
-                  首帧{!scene.startFrame ? '(已删)' : ''}
-                </button>
-                <button
-                  onClick={() => setShowStartFrame(false)}
-                  className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                    !showStartFrame
-                      ? (scene.endFrame ? 'bg-[var(--accent)] text-white' : 'bg-red-500/60 text-white')
-                      : (scene.endFrame ? 'text-white/70 hover:text-white' : 'text-red-400/70 hover:text-red-300')
-                  }`}
-                >
-                  尾帧{!scene.endFrame ? '(已删)' : ''}
-                </button>
-              </div>
-            )}
-
-            {/* 删除帧按钮组 */}
-            {currentFrame && (
-              <div className="absolute top-2 right-2 flex items-center gap-1">
-                {/* 独立删除当前帧 */}
-                {scene.hasAction && scene.startFrame && scene.endFrame && (
-                  <button
-                    onClick={showStartFrame ? handleDeleteFirstFrame : handleDeleteLastFrame}
-                    disabled={isGenerating}
-                    className={`p-2 rounded-lg bg-black/50 text-white transition-colors ${
-                      isGenerating ? 'opacity-40 cursor-not-allowed' : 'hover:bg-orange-500/80'
-                    }`}
-                    title={`删除${showStartFrame ? '首帧' : '尾帧'}（保留${showStartFrame ? '尾帧' : '首帧'}）`}
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                )}
-                {/* 删除全部帧 */}
-                <button
-                  onClick={handleDeleteFrames}
-                  disabled={isGenerating}
-                  className={`p-2 rounded-lg bg-black/50 text-white transition-colors ${
-                    isGenerating ? 'opacity-40 cursor-not-allowed' : 'hover:bg-red-500/80'
-                  }`}
-                  title="删除全部帧"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
-            )}
-          </div>
-        ) : (
-          // 无媒体时的占位
-          <div className="flex flex-col items-center justify-center text-center">
-            <div className="w-32 h-20 rounded-lg border-2 border-dashed border-[var(--border-color)] flex items-center justify-center mb-4">
-              <ImageIcon className="w-8 h-8 text-[var(--text-muted)]" />
+              )}
             </div>
-            <p className="text-sm text-[var(--text-muted)] mb-4">暂无预览图片</p>
-            <Button
-              size="sm"
-              className="pro-btn-primary"
-              startContent={<ImageIcon className="w-4 h-4" />}
-              onPress={handleGenerateImage}
-              isLoading={isGeneratingImage}
-              isDisabled={isGeneratingImage}
-            >
-              生成首尾帧
-            </Button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* Lightbox 放大预览 */}
@@ -1744,16 +2335,30 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                 导演空间
               </span>
               {/* 生成模式状态标签 */}
-              {scene.startFrame && scene.endFrame ? (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-rose-500/20 text-rose-400">
-                  视频生成
-                </span>
+              {!scene.hasAction ? (
+                // 静止模式
+                scene.startFrame ? (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/20 text-emerald-400">
+                    已生成
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-blue-500/20 text-blue-400">
+                    图片阶段
+                  </span>
+                )
               ) : (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-blue-500/20 text-blue-400">
-                  图片阶段
-                </span>
+                // 运动模式
+                scene.startFrame && scene.endFrame ? (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-rose-500/20 text-rose-400">
+                    视频生成
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-blue-500/20 text-blue-400">
+                    图片阶段
+                  </span>
+                )
               )}
-              {/* 提示词模式切换 */}
+              {/* 提示词模式切换 - 根据静止/运动显示不同标签 */}
               <div className="flex items-center gap-1 ml-2">
                 <button
                   onClick={(e) => {
@@ -1781,7 +2386,8 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                 >
                   图片提示词
                 </button>
-                {promptMode === 'image' && (
+                {/* 运动模式才显示首帧/尾帧子标签 */}
+                {scene.hasAction && promptMode === 'image' && (
                   <div className="flex items-center gap-0.5 ml-1 p-0.5 bg-[var(--bg-input)] rounded">
                     <button
                       onClick={(e) => {
@@ -1811,19 +2417,28 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                     </button>
                   </div>
                 )}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setPromptMode('video');
-                  }}
-                  className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${
-                    promptMode === 'video'
-                      ? 'bg-rose-500/20 text-rose-400'
-                      : 'bg-[var(--bg-input)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
-                  }`}
-                >
-                  视频提示词
-                </button>
+                {/* 静止模式：图片提示词直接保存到 first_frame_prompt */}
+                {!scene.hasAction && promptMode === 'image' && (
+                  <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-blue-500/10 text-blue-400/60 ml-1">
+                    单图
+                  </span>
+                )}
+                {/* 运动模式才显示视频提示词 */}
+                {scene.hasAction && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setPromptMode('video');
+                    }}
+                    className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${
+                      promptMode === 'video'
+                        ? 'bg-rose-500/20 text-rose-400'
+                        : 'bg-[var(--bg-input)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+                    }`}
+                  >
+                    视频提示词
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -1839,7 +2454,7 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                 />
               ) : (
                 <BlockEditor
-                  key={`${scene.id}-${promptMode}-${promptMode === 'image' ? imageFrameTab : ''}`}
+                  key={`${scene.id}-${promptMode}-${promptMode === 'image' ? (scene.hasAction ? imageFrameTab : 'single') : ''}`}
                   storyboardId={scene.id}
                   projectId={projectId || undefined}
                   scriptId={scriptId || undefined}
@@ -1849,9 +2464,11 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                     const text = promptMode === 'video'
                       ? scene.videoPrompt
                       : promptMode === 'image'
-                        ? (imageFrameTab === 'first'
-                            ? (scene.firstFramePrompt || scene.description)
-                            : (scene.lastFramePrompt || scene.description))
+                        ? (scene.hasAction
+                            ? (imageFrameTab === 'first'
+                                ? (scene.firstFramePrompt || scene.description)
+                                : (scene.lastFramePrompt || scene.description))
+                            : (scene.firstFramePrompt || scene.description))
                         : scene.description;
                     return text
                       ? [{ id: 'init-text', type: 'text' as const, category: 'text' as const, data: { text }, position: { x: 0, y: 0 } }]
@@ -1893,11 +2510,19 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                       return success;
                     }
                     if (promptMode === 'image') {
-                      if (imageFrameTab === 'first' && onUpdateFirstFramePrompt) {
-                        return await onUpdateFirstFramePrompt(state.generatedPrompt);
-                      }
-                      if (imageFrameTab === 'last' && onUpdateLastFramePrompt) {
-                        return await onUpdateLastFramePrompt(state.generatedPrompt);
+                      if (scene.hasAction) {
+                        // 运动模式：首帧/尾帧分开保存
+                        if (imageFrameTab === 'first' && onUpdateFirstFramePrompt) {
+                          return await onUpdateFirstFramePrompt(state.generatedPrompt);
+                        }
+                        if (imageFrameTab === 'last' && onUpdateLastFramePrompt) {
+                          return await onUpdateLastFramePrompt(state.generatedPrompt);
+                        }
+                      } else {
+                        // 静止模式：图片提示词统一保存到 first_frame_prompt
+                        if (onUpdateFirstFramePrompt) {
+                          return await onUpdateFirstFramePrompt(state.generatedPrompt);
+                        }
                       }
                     }
                     const success = await onUpdateDescription(state.generatedPrompt);
@@ -1929,8 +2554,8 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
         </div>
         */}
 
-        {/* 生成操作 */}
-        {hasFrames && (
+        {/* 生成操作 - 运动模式才显示视频生成 */}
+        {hasFrames && scene.hasAction && (
           <div className="px-4 py-3 border-t border-[var(--border-color)] flex items-center gap-2 flex-wrap">
             {/* 视频生成 + 模型选择 */}
             <div className="flex items-center gap-1.5">
@@ -1981,8 +2606,105 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
         )}
       </div>
 
-      {/* 历史版本面板 */}
-      {scene && showHistory && (
+      {/* 历史版本可拖拽浮动面板 */}
+      {showHistory && (
+        <div
+          ref={historyPanelRef}
+          className="fixed z-[100] bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-2xl w-80 max-w-[90vw] overflow-hidden"
+          style={{
+            left: historyPanelPos.x || '50%',
+            top: historyPanelPos.y || 'auto',
+            bottom: historyPanelPos.y ? 'auto' : '80px',
+            transform: historyPanelPos.x ? 'none' : 'translateX(-50%)',
+          }}
+        >
+          {/* 拖拽头部 */}
+          <div
+            className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-color)] cursor-move select-none"
+            onMouseDown={(e) => {
+              isDraggingHistory.current = true;
+              dragStartHistory.current = {
+                x: e.clientX,
+                y: e.clientY,
+                panelX: historyPanelPos.x,
+                panelY: historyPanelPos.y,
+              };
+              const handleMove = (ev: MouseEvent) => {
+                if (!isDraggingHistory.current) return;
+                const dx = ev.clientX - dragStartHistory.current.x;
+                const dy = ev.clientY - dragStartHistory.current.y;
+                setHistoryPanelPos({
+                  x: dragStartHistory.current.panelX + dx,
+                  y: dragStartHistory.current.panelY + dy,
+                });
+              };
+              const handleUp = () => {
+                isDraggingHistory.current = false;
+                document.removeEventListener('mousemove', handleMove);
+                document.removeEventListener('mouseup', handleUp);
+              };
+              document.addEventListener('mousemove', handleMove);
+              document.addEventListener('mouseup', handleUp);
+            }}
+          >
+            <div className="flex items-center gap-2">
+              <History className="w-4 h-4 text-amber-400" />
+              <h3 className="text-sm font-medium text-[var(--text-primary)]">历史版本</h3>
+            </div>
+            <button
+              onClick={() => setShowHistory(false)}
+              className="p-1 rounded-md hover:bg-[var(--bg-hover)] text-[var(--text-muted)] transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          {/* 面板内容 */}
+          <div className="max-h-72 overflow-y-auto">
+            {historyLoading ? (
+              <div className="flex items-center justify-center gap-2 px-4 py-8 text-sm text-[var(--text-muted)]">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                加载中...
+              </div>
+            ) : historyVersions.length === 0 ? (
+              <div className="flex flex-col items-center justify-center px-4 py-8 text-sm text-[var(--text-muted)]">
+                <Clock className="w-8 h-8 mb-2 opacity-30" />
+                暂无历史版本
+              </div>
+            ) : (
+              <div className="p-2 space-y-1">
+                {historyVersions.map((version) => (
+                  <button
+                    key={String(version.id)}
+                    onClick={() => {
+                      restoreHistoryVersion(version);
+                      setShowHistory(false);
+                    }}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition-colors group"
+                  >
+                    <div className="flex-shrink-0 w-8 h-8 rounded-md bg-[var(--bg-input)] flex items-center justify-center">
+                      <Clock className="w-4 h-4 text-[var(--text-muted)] group-hover:text-amber-400 transition-colors" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium truncate">{version.label}</div>
+                      <div className="text-xs text-[var(--text-muted)] mt-0.5 flex items-center gap-2">
+                        {version.firstFrameUrl && <span className="text-emerald-400/70">首帧</span>}
+                        {version.lastFrameUrl && <span className="text-emerald-400/70">尾帧</span>}
+                        {version.videoUrl && <span className="text-amber-400/70">视频</span>}
+                      </div>
+                    </div>
+                    <div className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <span className="text-xs text-amber-400 font-medium">恢复</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 旧版历史版本面板 - 已改为弹窗，此处保留组件以备恢复 */}
+      {/* {scene && showHistory && (
         <FrameHistoryPanel
           storyboardId={scene.id}
           isOpen={showHistory}
@@ -2001,7 +2723,6 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
               if (lastFrameUrl) {
                 updates.endFrame = lastFrameUrl;
               }
-              // videoUrl 可以是 null（该版本无视频），也要更新
               updates.videoUrl = videoUrl || undefined;
               onUpdateScene(updates);
             }
@@ -2011,7 +2732,7 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
             setShowHistory(false);
           }}
         />
-      )}
+      )} */}
       </>
       )}
     </div>

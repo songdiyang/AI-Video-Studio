@@ -41,28 +41,19 @@ const PropsTab: React.FC<PropsTabProps> = ({ props, isExtracting, onExtractFromS
       {props.map((prop) => (
         <Card key={`${prop.id}-${prop.name}`} className="bg-slate-800/60 border border-slate-700/50 hover:border-emerald-500/30 transition-colors cursor-pointer" onDoubleClick={() => openAssetEditTab(prop)}>
           <CardBody className="p-3">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20 overflow-hidden">
-                {prop.image_url ? (
-                  <img src={prop.image_url} alt={prop.name} className="w-full h-full object-cover" />
-                ) : (
-                  <span className="text-lg">🎬</span>
+            <div className="flex-1">
+              <p className="font-semibold text-slate-100">{prop.name}</p>
+              <div className="flex gap-1 mt-1">
+                {prop.prop_type && (
+                  <Chip size="sm" variant="flat" className={prop.prop_type === 'permanent' ? 'bg-blue-500/10 text-blue-400 text-[10px]' : 'bg-cyan-500/10 text-cyan-400 text-[10px]'}>
+                    {prop.prop_type === 'permanent' ? '永久' : '交互'}
+                  </Chip>
                 )}
-              </div>
-              <div className="flex-1">
-                <p className="font-semibold text-slate-100">{prop.name}</p>
-                <div className="flex gap-1 mt-1">
-                  {prop.prop_type && (
-                    <Chip size="sm" variant="flat" className={prop.prop_type === 'permanent' ? 'bg-blue-500/10 text-blue-400 text-[10px]' : 'bg-cyan-500/10 text-cyan-400 text-[10px]'}>
-                      {prop.prop_type === 'permanent' ? '永久' : '交互'}
-                    </Chip>
-                  )}
-                  {prop.generation_status && (
-                    <Chip size="sm" variant="flat" className={prop.generation_status === 'completed' ? 'bg-green-500/10 text-green-400 text-[10px]' : 'bg-amber-500/10 text-amber-400 text-[10px]'}>
-                      {prop.generation_status === 'completed' ? '已生成' : prop.generation_status === 'generating' ? '生成中' : '待生成'}
-                    </Chip>
-                  )}
-                </div>
+                {prop.generation_status && (
+                  <Chip size="sm" variant="flat" className={prop.generation_status === 'completed' ? 'bg-green-500/10 text-green-400 text-[10px]' : 'bg-amber-500/10 text-amber-400 text-[10px]'}>
+                    {prop.generation_status === 'completed' ? '已生成' : prop.generation_status === 'generating' ? '生成中' : '待生成'}
+                  </Chip>
+                )}
               </div>
             </div>
           </CardBody>

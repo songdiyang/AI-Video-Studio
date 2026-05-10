@@ -210,6 +210,14 @@ html.theme-transitioning .excalidraw *::after {
   display: inline-block;
 }
 
+/* 确保 Excalidraw 画布填满容器 */
+.excalidraw-container .excalidraw,
+.excalidraw-container .excalidraw .App,
+.excalidraw-container .excalidraw .excalidraw__canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+
 @layer base {
   html, body, #root {
     @apply h-full overflow-hidden;

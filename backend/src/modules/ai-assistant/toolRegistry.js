@@ -109,6 +109,82 @@ const TOOLS = [
   //  场景/影棚相关
   // ================================================================
   {
+    name: 'analyze_character_image',
+    description: '对指定角色的三视图/形象图进行多模态视觉分析，识别角色的外貌特征、服装风格、体型姿态等视觉元素。适用于用户说"分析这个角色的外观"、"这个角色长什么样"等场景。前置条件：角色需要有已生成的三视图或形象图。',
+    parameters: {
+      type: 'object',
+      properties: {
+        characterId: { type: 'number', description: '角色 ID（必填）' },
+        textModel: { type: 'string', description: '多模态视觉模型名称' }
+      },
+      required: ['characterId']
+    },
+    workflowType: 'character_vision_analysis',
+    buildJobParams: (args, ctx) => ({
+      characterId: args.characterId,
+      textModel: args.textModel || ctx.defaultTextModel,
+      userId: ctx.userId,
+      projectId: ctx.projectId
+    })
+  },
+  {
+    name: 'analyze_environment_image',
+    description: '对指定环境的氛围图进行多模态视觉分析，识别场景环境特征、光照条件、天气、氛围色调等。适用于用户说"分析这个环境的画面"、"这个场景是什么风格"等场景。前置条件：环境需要有已生成的氛围图。',
+    parameters: {
+      type: 'object',
+      properties: {
+        environmentId: { type: 'number', description: '环境 ID（必填）' },
+        textModel: { type: 'string', description: '多模态视觉模型名称' }
+      },
+      required: ['environmentId']
+    },
+    workflowType: 'environment_vision_analysis',
+    buildJobParams: (args, ctx) => ({
+      environmentId: args.environmentId,
+      textModel: args.textModel || ctx.defaultTextModel,
+      userId: ctx.userId,
+      projectId: ctx.projectId
+    })
+  },
+  {
+    name: 'analyze_building_image',
+    description: '对指定建筑的结构图进行多模态视觉分析，识别建筑风格、结构类型、外观特征等。适用于用户说"分析这个建筑的样式"、"这个建筑是什么结构"等场景。前置条件：建筑需要有已生成的外景或内景结构图。',
+    parameters: {
+      type: 'object',
+      properties: {
+        buildingId: { type: 'number', description: '建筑 ID（必填）' },
+        textModel: { type: 'string', description: '多模态视觉模型名称' }
+      },
+      required: ['buildingId']
+    },
+    workflowType: 'building_vision_analysis',
+    buildJobParams: (args, ctx) => ({
+      buildingId: args.buildingId,
+      textModel: args.textModel || ctx.defaultTextModel,
+      userId: ctx.userId,
+      projectId: ctx.projectId
+    })
+  },
+  {
+    name: 'analyze_studio_image',
+    description: '对指定影棚的九宫组装图进行多模态视觉分析，识别影棚整体布局、环境建筑组合、各机位视角特征等。适用于用户说"分析这个影棚的布局"、"这个影棚的画面如何"等场景。前置条件：影棚需要有已生成的九宫组装图。',
+    parameters: {
+      type: 'object',
+      properties: {
+        studioId: { type: 'number', description: '影棚 ID（必填）' },
+        textModel: { type: 'string', description: '多模态视觉模型名称' }
+      },
+      required: ['studioId']
+    },
+    workflowType: 'studio_vision_analysis',
+    buildJobParams: (args, ctx) => ({
+      studioId: args.studioId,
+      textModel: args.textModel || ctx.defaultTextModel,
+      userId: ctx.userId,
+      projectId: ctx.projectId
+    })
+  },
+  {
     name: 'generate_scene_image',
     description: '为指定场景生成场景图片。适用于需要为已有场景生成视觉表现的场景。',
     parameters: {
@@ -443,6 +519,25 @@ const TOOLS = [
       projectId: ctx.projectId
     })
   },
+  {
+    name: 'analyze_frame_image',
+    description: '对指定分镜的首尾帧图片进行多模态视觉分析，识别画面中的角色外貌、场景环境、光照氛围、构图方式、画面中的物体等视觉元素。适用于用户说"分析这个分镜的画面"、"识别图中的角色"、"帮我看看这个分镜"等场景。前置条件：分镜需要已生成首帧或尾帧图片。',
+    parameters: {
+      type: 'object',
+      properties: {
+        storyboardId: { type: 'number', description: '分镜 ID（必填）' },
+        textModel: { type: 'string', description: '多模态视觉模型名称，需支持 vision 能力' }
+      },
+      required: ['storyboardId']
+    },
+    workflowType: 'vision_frame_analysis',
+    buildJobParams: (args, ctx) => ({
+      storyboardId: args.storyboardId,
+      textModel: args.textModel || ctx.defaultTextModel,
+      userId: ctx.userId,
+      projectId: ctx.projectId
+    })
+  },
 
   // ================================================================
   //  提示词优化
@@ -499,6 +594,63 @@ const TOOLS = [
     workflowType: 'batch_video_prompt_optimization',
     buildJobParams: (args, ctx) => ({
       scriptId: args.scriptId,
+      textModel: args.textModel || ctx.defaultTextModel,
+      userId: ctx.userId,
+      projectId: ctx.projectId
+    })
+  },
+  {
+    name: 'optimize_single_storyboard_prompt',
+    description: '为单个分镜优化提示词文本，提升清晰度、完整性和创意性。适用于用户说"优化第3个分镜的提示词"、"帮我改一下这个分镜的描述"等场景。系统会自动读取分镜当前的提示词内容进行优化。',
+    parameters: {
+      type: 'object',
+      properties: {
+        storyboardId: { type: 'number', description: '分镜 ID（必填）' },
+        textModel: { type: 'string', description: '文本模型名称' }
+      },
+      required: ['storyboardId']
+    },
+    workflowType: 'ai_single_prompt_optimization',
+    buildJobParams: (args, ctx) => ({
+      storyboardId: args.storyboardId,
+      textModel: args.textModel || ctx.defaultTextModel,
+      userId: ctx.userId,
+      projectId: ctx.projectId
+    })
+  },
+  {
+    name: 'optimize_single_image_prompt',
+    description: '为单个分镜优化图片生成提示词（多模态视觉增强版），会参考角色和影棚图片进行精准优化。适用于用户说"帮我优化这个分镜的图片提示词"、"让图片提示词更精准"等场景。',
+    parameters: {
+      type: 'object',
+      properties: {
+        storyboardId: { type: 'number', description: '分镜 ID（必填）' },
+        multimodalModel: { type: 'string', description: '多模态模型名称（用于视觉参考分析）' }
+      },
+      required: ['storyboardId']
+    },
+    workflowType: 'ai_single_image_prompt_optimization',
+    buildJobParams: (args, ctx) => ({
+      storyboardId: args.storyboardId,
+      multimodalModel: args.multimodalModel || ctx.defaultTextModel,
+      userId: ctx.userId,
+      projectId: ctx.projectId
+    })
+  },
+  {
+    name: 'optimize_single_video_prompt',
+    description: '为单个分镜优化视频生成提示词，针对动态视频模型特性生成更精准的视频提示词（含动作节奏、运镜描述等）。适用于用户说"优化这个分镜的视频提示词"、"让视频提示词更合适"等场景。',
+    parameters: {
+      type: 'object',
+      properties: {
+        storyboardId: { type: 'number', description: '分镜 ID（必填）' },
+        textModel: { type: 'string', description: '文本模型名称' }
+      },
+      required: ['storyboardId']
+    },
+    workflowType: 'ai_single_video_prompt_optimization',
+    buildJobParams: (args, ctx) => ({
+      storyboardId: args.storyboardId,
       textModel: args.textModel || ctx.defaultTextModel,
       userId: ctx.userId,
       projectId: ctx.projectId

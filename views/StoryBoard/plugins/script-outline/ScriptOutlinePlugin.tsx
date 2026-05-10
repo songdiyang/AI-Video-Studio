@@ -25,7 +25,12 @@ const ScriptOutlinePlugin: React.FC = () => {
         setState('referenceScriptContent', item?.content || null);
         setState('referenceScriptTitle', item?.title || (item ? `剧本 #${item.id}` : ''));
       }}
-      onCreateNewScript={() => setState('isGenerateScriptOpen', true)}
+      onCreateNewScript={() => {
+        console.log('[ScriptOutlinePlugin] 调用 onCreateNewScript');
+        // 发送自定义事件打开剧本生成标签页
+        window.dispatchEvent(new CustomEvent('openScriptGenerateTab'));
+        console.log('[ScriptOutlinePlugin] 已发送 openScriptGenerateTab 事件');
+      }}
     />
   );
 };
