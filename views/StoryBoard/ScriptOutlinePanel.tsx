@@ -555,32 +555,17 @@ const ScriptOutlinePanel: React.FC<ScriptOutlinePanelProps> = ({
           <p className="text-xs text-[var(--text-muted)] mt-1 opacity-60">
             剧本是 AI 智能分镜的参考，可选
           </p>
-          <div className="flex items-center justify-center gap-2 mt-4">
-            {allowCreate && (
-              <button
-                onClick={() => {
-                  console.log('[ScriptOutlinePanel] 点击生成新剧本按钮，调用 onCreateNewScript');
-                  onCreateNewScript?.();
-                }}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-secondary)] text-xs font-medium hover:bg-[var(--bg-input)] hover:text-[var(--accent)] transition-colors"
-                title="AI 生成一份新剧本作为分镜参考。新剧本会保存为当前项目的下一集草稿，可随时在剧本库删除。"
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                生成新剧本
-              </button>
-            )}
-            <button
-              onClick={() => {
-                // 打开剧本创作中心标签页（上传模式）
-                window.dispatchEvent(new CustomEvent('openScriptGenerateTab'));
-              }}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[var(--accent)] text-white text-xs font-medium hover:opacity-90 transition-opacity"
-              title="上传已有剧本文件作为分镜参考"
-            >
-              <Upload className="w-3.5 h-3.5" />
-              上传剧本
-            </button>
-          </div>
+          <button
+            onClick={() => {
+              // 打开剧本创作中心标签页
+              window.dispatchEvent(new CustomEvent('openScriptGenerateTab'));
+            }}
+            className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 rounded-md bg-[var(--accent)] text-white text-xs font-medium hover:opacity-90 transition-opacity"
+            title="AI生成新剧本或上传已有剧本"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            添加剧本
+          </button>
           {!allowPick && !allowCreate && (
             <p className="text-[10px] text-[var(--text-muted)] mt-3 opacity-50">
               绑定剧本后可在此查看大纲
