@@ -6,6 +6,7 @@
 import { StoryboardScene, DialogueLine } from '../useSceneManager';
 import { StoryboardStateOverride } from '../ResourcePanel';
 import { AIModel } from '../../../components/AIModelSelector';
+import { CameraGenerateParams, PaintGenerateParams, SketchGenerateParams } from '../MagicSpace';
 
 // ========== 脚本类型 ==========
 export interface Script {
@@ -62,6 +63,7 @@ export interface StoryboardCoreState {
   currentImageModel: string;
   currentVideoModel: string;
   currentMultimodalModel: string;
+  textModel: string;
   models: AIModel[];
   
   // 生成设置
@@ -121,16 +123,16 @@ export interface SceneActions {
   
   // 数据
   refreshScenes: () => Promise<void>;
-  loadStoryboards: () => Promise<void>;
+  loadStoryboards: (targetScriptId: number) => Promise<void>;
 }
 
 // ========== 生成操作接口 ==========
 export interface GenerationActions {
   generateImage: (sceneId: number, prompt?: string) => Promise<{ success: boolean; error?: string }>;
   generateVideo: (sceneId: number) => Promise<{ success: boolean; error?: string }>;
-  generateWithCamera: (sceneId: number, cameraMovement: string) => Promise<{ success: boolean; error?: string }>;
-  generateWithPaint: (sceneId: number, paintDescription: string) => Promise<{ success: boolean; error?: string }>;
-  generateWithSketch: (sceneId: number, sketchData: string) => Promise<{ success: boolean; error?: string }>;
+  generateWithCamera: (sceneId: number, cameraParams: CameraGenerateParams) => Promise<{ success: boolean; error?: string }>;
+  generateWithPaint: (sceneId: number, paintParams: PaintGenerateParams) => Promise<{ success: boolean; error?: string }>;
+  generateWithSketch: (sceneId: number, sketchParams: SketchGenerateParams) => Promise<{ success: boolean; error?: string }>;
   generateHdRepair: (sceneId: number) => Promise<{ success: boolean; error?: string }>;
   handleBatchFrameGeneration: (overwrite?: boolean) => Promise<void>;
   handleBatchVideoGeneration: (overwrite?: boolean) => Promise<void>;
@@ -214,10 +216,11 @@ export interface StoryboardSkeletonProps {
   plugins?: StoryboardPlugin[];
   
   // 左侧面板扩展
+  // 组件通过 useStoryboardContext 获取数据，不需要接收 props
   leftPanelTabs?: {
     id: string;
     label: string;
     icon?: string;
-    component: React.ComponentType<PluginRenderProps>;
+    component: React.ComponentType<object>;
   }[];
 }

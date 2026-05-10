@@ -6,6 +6,7 @@ import ScenePreviewPanel from '../../views/StoryBoard/ScenePreviewPanel';
 import DirectorSpace from '../DirectorSpace';
 import { AnimaticPreview } from '../../views/StoryBoard/AnimaticPreview';
 import AssetEditor from '../AssetEditor';
+import AssetSceneRelations from '../AssetSceneRelations';
 import Settings from '../../views/Settings';
 import { StoryboardScene } from '../../views/StoryBoard/useSceneManager';
 import { useAIAssistantUI } from '../../contexts/AIAssistantContext';
@@ -31,6 +32,10 @@ interface PreviewEditorProps {
     onImageModelChange?: (model: string) => void;
     multimodalModel?: string;
     onMultimodalModelChange?: (model: string) => void;
+    // 项目资源数据，避免 DirectorSpace 重复加载
+    projectCharacters?: any[];
+    projectScenes?: any[];
+    projectProps?: any[];
   };
   scriptId?: number | null; // 当前集数ID，用于标签隔离
   episodeNumber?: number | null; // 当前集数编号（如第1集则传1），用于标签显示
@@ -156,19 +161,36 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 当 scriptId 变化时，快速跳转到对应集数的第一个分镜标签
+  // 当 scriptId 变化时，优先恢复上次在该集数下打开的标签
   useEffect(() => {
     if (scriptId === undefined || scriptId === currentScriptId) return;
-    
+
     setCurrentScriptId(scriptId);
-    
-    // 找到当前集数的第一个分镜标签并激活
-    const firstSceneTab = sceneTabs.find(t => t.type === 'scene');
-    if (firstSceneTab) {
-      setActiveTabId(firstSceneTab.id);
+
+    // 尝试从 localStorage 恢复该集数上次活跃的标签
+    const savedActiveTab = localStorage.getItem(ACTIVE_TAB_STORAGE_KEY);
+    // 检查保存的标签是否属于当前集数
+    const savedTabBelongsToCurrentScript = savedActiveTab && sceneTabs.some(
+      t => t.id === savedActiveTab && t.scriptId === scriptId
+    );
+
+    if (savedTabBelongsToCurrentScript) {
+      // 恢复上次打开的标签
+      setActiveTabId(savedActiveTab);
       setActiveAssetTabId(null);
-      const sceneId = parseInt(firstSceneTab.id.replace('scene-', ''), 10);
-      onSelectScene(sceneId);
+      if (savedActiveTab.startsWith('scene-')) {
+        const sceneId = parseInt(savedActiveTab.replace('scene-', ''), 10);
+        onSelectScene(sceneId);
+      }
+    } else {
+      // 找到当前集数的第一个分镜标签并激活
+      const firstSceneTab = sceneTabs.find(t => t.type === 'scene' && t.scriptId === scriptId);
+      if (firstSceneTab) {
+        setActiveTabId(firstSceneTab.id);
+        setActiveAssetTabId(null);
+        const sceneId = parseInt(firstSceneTab.id.replace('scene-', ''), 10);
+        onSelectScene(sceneId);
+      }
     }
   }, [scriptId, currentScriptId, sceneTabs, onSelectScene]);
 
@@ -552,7 +574,7 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
           )}
         </TabContent>
 
-        {/* 底部面板（导演空间） */}
+        {/* 底部面板（导演空间 / 资产关联分镜） */}
         <BottomPanel
           collapsed={!bottomPanelOpen}
           onCollapsedChange={(collapsed) => {
@@ -568,6 +590,24 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
                 key={`director-${sceneId}`}
                 scene={scene}
                 {...directorSpaceProps}
+              />
+            ) : null;
+          })()}
+          {activeTab?.type === 'asset' && (() => {
+            const assetData = assetTabData.get(activeTab.id);
+            const assetName = assetData?.name || activeTab.title || '';
+            const parts = activeTab.id.split('-');
+            const assetId = parseInt(parts[parts.length - 1], 10);
+            return assetName ? (
+              <AssetSceneRelations
+                key={`relations-${activeTab.id}`}
+                scenes={scenes}
+                assetType={activeTab.assetType || 'character'}
+                assetName={assetName}
+                assetId={!isNaN(assetId) ? assetId : undefined}
+                onSelectScene={(sceneId) => {
+                  onSelectScene(sceneId);
+                }}
               />
             ) : null;
           })()}

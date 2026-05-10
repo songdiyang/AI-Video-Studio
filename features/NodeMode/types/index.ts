@@ -89,6 +89,7 @@ export interface NodeCanvasProps {
       front_view_url?: string;
       outfit?: string;
       is_base_model?: boolean;
+      is_active?: boolean;
       costume_id?: number | null;
       costume_name?: string;
       appearance?: string;

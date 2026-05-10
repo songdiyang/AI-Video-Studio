@@ -327,9 +327,17 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-(--bg-app)">
       {/* 左侧侧边栏 - 小屏隐藏 */}
-      <aside data-onboarding="sidebar" className={`pro-sidebar flex flex-col bg-(--bg-nav) border-r border-(--border-color) hide-on-mobile ${isTablet ? 'w-12' : 'w-14'} pt-10`}>
+      <aside data-onboarding="sidebar" className={`pro-sidebar flex flex-col bg-(--bg-nav) border-r border-(--border-color) hide-on-mobile ${isTablet ? 'w-12' : 'w-14'}`}>
+        {/* Logo */}
+        <div className="flex items-center justify-center py-3 border-b border-(--border-color)">
+          <Link to="/" className="flex items-center justify-center">
+            <div className={`flex items-center justify-center bg-linear-to-br from-blue-500 to-blue-600 rounded-lg text-white font-bold tracking-tight ${isTablet ? 'w-7 h-7 text-xs' : 'w-8 h-8 text-sm'}`}>
+              N
+            </div>
+          </Link>
+        </div>
         {/* 导航图标列表 */}
-        <nav className="flex-1 flex flex-col" role="navigation" aria-label={t.nav.mainNav}>
+        <nav className="flex-1 flex flex-col pt-2" role="navigation" aria-label={t.nav.mainNav}>
           {navItems.map((item, index) => {
             const isActive = location.pathname === item.path;
             const Icon = item.icon;
@@ -482,7 +490,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           <div className="flex items-center gap-2">
             <Link to="/" className="flex items-center gap-1.5 px-1.5 py-1 rounded-md hover:bg-white/5 transition-colors">
               <div className="w-7 h-7 flex items-center justify-center bg-linear-to-br from-blue-500 to-blue-600 rounded-lg text-white text-sm font-bold tracking-tight">
-                AM
+                N
               </div>
             </Link>
             
@@ -623,7 +631,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           <header className="pro-toolbar h-12 flex items-center justify-center px-4 bg-(--bg-nav) border-b border-(--border-color)">
             <Link to="/" className="flex items-center gap-2">
               <div className="w-7 h-7 flex items-center justify-center bg-linear-to-br from-blue-500 to-blue-600 rounded-lg text-white text-sm font-bold tracking-tight">
-                AM
+                N
               </div>
               <span className="text-sm font-semibold text-(--text-primary)">
                 {t.nav.studioName}

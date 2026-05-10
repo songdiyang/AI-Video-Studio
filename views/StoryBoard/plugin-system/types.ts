@@ -160,7 +160,6 @@ export interface PluginAPI {
 
   // ---- 资源加载 ----
   refreshCharacters: () => Promise<void>;
-  refreshScenes: () => Promise<void>;
   refreshProps: () => Promise<void>;
 
   // ---- 工具 ----

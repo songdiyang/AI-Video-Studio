@@ -122,7 +122,6 @@ interface CreatePluginAPIOptions {
     switchEpisode: (episode: number, scriptId?: number) => void;
     createNextEpisode: () => Promise<void>;
     refreshCharacters: () => Promise<void>;
-    refreshScenes: () => Promise<void>;
     refreshProps: () => Promise<void>;
     showToast: (message: string, type?: 'success' | 'error' | 'warning' | 'info') => void;
     getAuthToken: () => string | null;
@@ -235,7 +234,6 @@ export function createPluginAPI(options: CreatePluginAPIOptions): PluginAPI {
 
     // ---- 资源加载 ----
     refreshCharacters: actions.refreshCharacters,
-    refreshScenes: actions.refreshScenes,
     refreshProps: actions.refreshProps,
 
     // ---- 工具 ----

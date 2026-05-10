@@ -24,7 +24,7 @@ export const LeftSidebarPanel: React.FC = () => {
         style={{ borderColor: 'var(--border-color)', backgroundColor: 'var(--bg-secondary)' }}
       >
         {leftPlugins.map(plugin => {
-          const IconComponent = (Icons as Record<string, React.ComponentType<{ size?: number; className?: string }>>)[plugin.icon] || Icons.Box;
+          const IconComponent = (Icons as unknown as Record<string, React.ComponentType<{ size?: number; className?: string }>>)[plugin.icon] || Icons.Box;
           const isActive = panelState.activeLeftPlugin === plugin.id;
           return (
             <button

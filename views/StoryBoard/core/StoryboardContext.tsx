@@ -13,6 +13,7 @@ import type {
   Script
 } from './types';
 import { StoryboardScene } from '../useSceneManager';
+import type { TaskState } from '../../../hooks/useTaskRunner';
 
 export interface StoryboardContextValue {
   // 核心状态
@@ -40,6 +41,10 @@ export interface StoryboardContextValue {
   
   // 工具
   showToast: (message: string, type?: 'success' | 'error' | 'warning' | 'info') => void;
+  
+  // 任务队列
+  tasks: Record<string, TaskState>;
+  isRunning: boolean;
   
   // 集数切换
   handleEpisodeSelect: (script: Script | null) => void;

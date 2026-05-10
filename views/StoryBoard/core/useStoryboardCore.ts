@@ -624,7 +624,7 @@ export function useStoryboardCore(options: UseStoryboardCoreOptions) {
   const state: StoryboardCoreState = {
     currentScriptId, currentProjectId, currentEpisode, standaloneMaxEpisode,
     currentProject, scripts,
-    currentImageModel, currentVideoModel, currentMultimodalModel, models,
+    currentImageModel, currentVideoModel, currentMultimodalModel, textModel, models,
     imageAspectRatio, videoAspectRatio, videoDuration, imageResolution, videoResolution,
     projectCharacters: effectiveProjectCharacters, projectScenes, projectProps,
     scriptContent, scriptTitle, isLoadingScript,

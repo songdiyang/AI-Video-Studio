@@ -3,7 +3,7 @@
  */
 
 import React from 'react';
-import { User, MapPin, Layers, Image as ImageIcon, Film, FileText } from 'lucide-react';
+import { User, MapPin, Layers, Image as ImageIcon, Film, FileText, Package, Trees, Building2, Shirt } from 'lucide-react';
 import { NodeType } from '../types';
 
 export interface NodeColorConfig {
@@ -56,6 +56,34 @@ export const NODE_COLORS: Record<NodeType, NodeColorConfig> = {
     header: 'bg-slate-200',
     accent: 'text-slate-600',
     icon: React.createElement(FileText, { size: 12 }),
+  },
+  environment: {
+    bg: 'bg-white',
+    border: 'border-teal-600',
+    header: 'bg-teal-900/40',
+    accent: 'text-teal-600',
+    icon: React.createElement(Trees, { size: 12 }),
+  },
+  costume: {
+    bg: 'bg-white',
+    border: 'border-pink-500',
+    header: 'bg-pink-900/40',
+    accent: 'text-pink-600',
+    icon: React.createElement(Shirt, { size: 12 }),
+  },
+  prop: {
+    bg: 'bg-white',
+    border: 'border-orange-500',
+    header: 'bg-orange-900/40',
+    accent: 'text-orange-600',
+    icon: React.createElement(Package, { size: 12 }),
+  },
+  building: {
+    bg: 'bg-white',
+    border: 'border-indigo-600',
+    header: 'bg-indigo-900/40',
+    accent: 'text-indigo-600',
+    icon: React.createElement(Building2, { size: 12 }),
   },
 };
 

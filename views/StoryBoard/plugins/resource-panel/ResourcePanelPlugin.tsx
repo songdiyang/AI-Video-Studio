@@ -11,6 +11,7 @@ const ResourcePanelPlugin: React.FC = () => {
   const {
     scenes,
     state,
+    selectedScene,
     sceneActions,
   } = useStoryboardContext();
 
@@ -29,18 +30,18 @@ const ResourcePanelPlugin: React.FC = () => {
   }, [state.projectProps, allPropNames]);
 
   // 分镜级角色状态覆写
-  const selectedSceneObj = scenes.find(s => s.id === state.selectedScene);
+  const selectedSceneObj = scenes.find(s => s.id === selectedScene);
   const storyboardStates = selectedSceneObj?.characterStates || {};
 
-  const handleStoryboardStateChange = async (characterId: number, state: any) => {
-    if (!state.selectedScene) return;
+  const handleStoryboardStateChange = async (characterId: number, newState: any) => {
+    if (!selectedScene) return;
     const currentStates = { ...(selectedSceneObj?.characterStates || {}) };
-    if (state) {
-      currentStates[characterId] = state;
+    if (newState) {
+      currentStates[characterId] = newState;
     } else {
       delete currentStates[characterId];
     }
-    await sceneActions.updateCharacterStates(state.selectedScene, currentStates);
+    await sceneActions.updateCharacterStates(selectedScene, currentStates);
   };
 
   return (

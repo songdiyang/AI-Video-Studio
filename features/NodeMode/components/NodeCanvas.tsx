@@ -264,14 +264,18 @@ const NodeCanvas: React.FC<NodeCanvasProps> = ({
 
   // 画布缩放/偏移
   const [canvasOffset, setCanvasOffset] = useState({ x: 0, y: 0 });
+  const [canvasZoom, setCanvasZoom] = useState(1);
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
 
-  // 连线拖拽状态
-  const [connectingFrom, setConnectingFrom] = useState<string | null>(null);
-  const [connectingToPos, setConnectingToPos] = useState<{ x: number; y: number } | null>(null);
-  const connectingFromRef = useRef<string | null>(null);
-  const connectingToPosRef = useRef<{ x: number; y: number } | null>(null);
+  // 连线拖拽状态（支持输入/输出两种模式）
+  const [connectionDrag, setConnectionDrag] = useState<{
+    nodeId: string;
+    direction: 'output' | 'input';
+    toPos: { x: number; y: number } | null;
+  } | null>(null);
+  const connectionDragRef = useRef(connectionDrag);
+  connectionDragRef.current = connectionDrag;
 
   // 框选创建节点状态（长按画布拖动）
   const [lassoState, setLassoState] = useState<{
@@ -281,6 +285,16 @@ const NodeCanvas: React.FC<NodeCanvasProps> = ({
     currentY: number;
     active: boolean;
     longPressTriggered: boolean;
+  } | null>(null);
+
+  // 框选后创建节点菜单状态
+  const [lassoCreateMenu, setLassoCreateMenu] = useState<{
+    x: number;
+    y: number;
+    minX: number;
+    minY: number;
+    width: number;
+    height: number;
   } | null>(null);
   const lassoStateRef = useRef(lassoState);
   lassoStateRef.current = lassoState;
@@ -295,6 +309,13 @@ const NodeCanvas: React.FC<NodeCanvasProps> = ({
     sourceNodeIds: string[];
   } | null>(null);
 
+  // 下一步操作菜单状态（选中节点后点击加号显示）
+  const [nextStepMenu, setNextStepMenu] = useState<{
+    x: number;
+    y: number;
+    nodeId: string;
+  } | null>(null);
+
   // Refs：稳定拖拽计算，避免每次 drag 帧重建 effect 和回调
   const nodesRef = useRef(nodes);
   nodesRef.current = nodes;
@@ -303,6 +324,8 @@ const NodeCanvas: React.FC<NodeCanvasProps> = ({
   const dragOffsetRef = useRef({ x: 0, y: 0 });
   const canvasOffsetRef = useRef(canvasOffset);
   canvasOffsetRef.current = canvasOffset;
+  const canvasZoomRef = useRef(canvasZoom);
+  canvasZoomRef.current = canvasZoom;
   const rAFRef = useRef<number>(0);
   const targetPosRef = useRef({ x: 0, y: 0 });
 
@@ -360,6 +383,13 @@ const NodeCanvas: React.FC<NodeCanvasProps> = ({
     return () => { if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current); };
   }, [isDirty, onSave, selectedNodeId]);
 
+  // 监听 connections 变化，触发自动保存（确保连线状态被持久化）
+  useEffect(() => {
+    if (connections.length > 0 || initialState?.connections) {
+      setIsDirty(true);
+    }
+  }, [connections]);
+
   // 选中节点时显示详情面板（使用 ref 避免拖拽过程中详情面板反复渲染）
   const selectedNodeIdRef = useRef(selectedNodeId);
   selectedNodeIdRef.current = selectedNodeId;
@@ -405,9 +435,10 @@ const NodeCanvas: React.FC<NodeCanvasProps> = ({
     if (!node) return;
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
+    const zoom = canvasZoomRef.current;
     dragOffsetRef.current = {
-      x: e.clientX - rect.left - node.x,
-      y: e.clientY - rect.top - node.y,
+      x: e.clientX - rect.left - node.x * zoom,
+      y: e.clientY - rect.top - node.y * zoom,
     };
     setDraggingNodeId(nodeId);
     setSelectedNodeId(nodeId);
@@ -415,12 +446,9 @@ const NodeCanvas: React.FC<NodeCanvasProps> = ({
 
   // 画布拖拽（平移）
   const handleCanvasMouseDown = useCallback((e: React.MouseEvent) => {
-    if (connectingFromRef.current) {
+    if (connectionDragRef.current) {
       // 正在连线时点击空白处取消连线
-      setConnectingFrom(null);
-      setConnectingToPos(null);
-      connectingFromRef.current = null;
-      connectingToPosRef.current = null;
+      setConnectionDrag(null);
       return;
     }
     if (e.button === 1 || (e.button === 0 && e.shiftKey)) {
@@ -432,8 +460,9 @@ const NodeCanvas: React.FC<NodeCanvasProps> = ({
       // 左键点击空白处：启动长按检测（框选创建节点）
       const rect = canvasRef.current?.getBoundingClientRect();
       if (!rect) return;
-      const canvasX = e.clientX - rect.left - canvasOffset.x;
-      const canvasY = e.clientY - rect.top - canvasOffset.y;
+      const zoom = canvasZoomRef.current;
+      const canvasX = (e.clientX - rect.left - canvasOffset.x) / zoom;
+      const canvasY = (e.clientY - rect.top - canvasOffset.y) / zoom;
       lassoStartPosRef.current = { x: canvasX, y: canvasY };
       // 设置长按定时器（400ms 后触发框选模式）
       if (lassoTimerRef.current) clearTimeout(lassoTimerRef.current);
@@ -452,6 +481,29 @@ const NodeCanvas: React.FC<NodeCanvasProps> = ({
     }
   }, [canvasOffset]);
 
+  // 滚轮缩放画布
+  const handleCanvasWheel = useCallback((e: React.WheelEvent) => {
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      const rect = canvasRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const zoom = canvasZoomRef.current;
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+      // 计算鼠标在画布上的世界坐标
+      const worldX = (mouseX - canvasOffset.x) / zoom;
+      const worldY = (mouseY - canvasOffset.y) / zoom;
+      // 计算新缩放比例
+      const delta = e.deltaY > 0 ? 0.9 : 1.1;
+      const newZoom = Math.min(Math.max(zoom * delta, 0.2), 3);
+      // 以鼠标位置为锚点调整 offset，使世界坐标保持不变
+      const newOffsetX = mouseX - worldX * newZoom;
+      const newOffsetY = mouseY - worldY * newZoom;
+      setCanvasZoom(newZoom);
+      setCanvasOffset({ x: newOffsetX, y: newOffsetY });
+    }
+  }, [canvasOffset]);
+
   // 画布右键菜单（空白处）
   const handleCanvasContextMenu = useCallback((e: React.MouseEvent) => {
     if (e.target === canvasRef.current || (e.target as HTMLElement).classList.contains('canvas-grid')) {
@@ -461,19 +513,31 @@ const NodeCanvas: React.FC<NodeCanvasProps> = ({
     }
   }, [canvasOffset]);
 
-  // 开始从节点连线
-  const startConnection = useCallback((e: React.MouseEvent, nodeId: string) => {
+  // 开始从节点连线（支持输入/输出两种方向）
+  const startConnectionDrag = useCallback((e: React.MouseEvent, nodeId: string, direction: 'output' | 'input') => {
     e.stopPropagation();
     e.preventDefault();
-    connectingFromRef.current = nodeId;
-    setConnectingFrom(nodeId);
     const rect = canvasRef.current?.getBoundingClientRect();
     if (rect) {
-      const pos = { x: e.clientX - rect.left - canvasOffset.x, y: e.clientY - rect.top - canvasOffset.y };
-      connectingToPosRef.current = pos;
-      setConnectingToPos(pos);
+      const zoom = canvasZoomRef.current;
+      const pos = { x: (e.clientX - rect.left - canvasOffset.x) / zoom, y: (e.clientY - rect.top - canvasOffset.y) / zoom };
+      setConnectionDrag({ nodeId, direction, toPos: pos });
     }
   }, [canvasOffset]);
+
+  // 检测是否会产生循环连接
+  const wouldCreateCycle = useCallback((fromId: string, toId: string): boolean => {
+    if (fromId === toId) return true;
+    const visited = new Set<string>();
+    const dfs = (current: string): boolean => {
+      if (current === fromId) return true;
+      if (visited.has(current)) return false;
+      visited.add(current);
+      const outgoing = connectionsRef.current.filter(c => c.fromNodeId === current);
+      return outgoing.some(c => dfs(c.toNodeId));
+    };
+    return dfs(toId);
+  }, []);
 
   // 分析连线组合，判断可以执行什么生成操作
   const analyzeConnectionCombo = useCallback((targetNodeId: string) => {
@@ -524,74 +588,87 @@ const NodeCanvas: React.FC<NodeCanvasProps> = ({
   }, [analyzeConnectionCombo]);
 
   // 完成连线到目标节点
-  const endConnection = useCallback((e: React.MouseEvent, toNodeId: string) => {
+  const endConnectionDrag = useCallback((e: React.MouseEvent, targetNodeId: string) => {
     e.stopPropagation();
     e.preventDefault();
-    const fromId = connectingFromRef.current;
-    if (!fromId || fromId === toNodeId) {
-      setConnectingFrom(null);
-      setConnectingToPos(null);
-      connectingFromRef.current = null;
-      connectingToPosRef.current = null;
+    const drag = connectionDragRef.current;
+    if (!drag) return;
+
+    const { nodeId: sourceNodeId, direction } = drag;
+
+    // 根据方向确定 fromId 和 toId
+    let fromId: string;
+    let toId: string;
+    if (direction === 'output') {
+      fromId = sourceNodeId;
+      toId = targetNodeId;
+    } else {
+      fromId = targetNodeId;
+      toId = sourceNodeId;
+    }
+
+    if (fromId === toId) {
+      showToast('不能连接到自己', 'warning');
+      setConnectionDrag(null);
       return;
     }
+
     // 检查是否已存在相同连线
     const exists = connectionsRef.current.some(
-      c => c.fromNodeId === fromId && c.toNodeId === toNodeId
+      c => c.fromNodeId === fromId && c.toNodeId === toId
     );
     if (exists) {
       showToast('连线已存在', 'warning');
-      setConnectingFrom(null);
-      setConnectingToPos(null);
-      connectingFromRef.current = null;
-      connectingToPosRef.current = null;
+      setConnectionDrag(null);
+      return;
+    }
+
+    // 检查循环连接
+    if (wouldCreateCycle(fromId, toId)) {
+      showToast('不能创建循环连接', 'warning');
+      setConnectionDrag(null);
       return;
     }
 
     const newConn: NodeConnection = {
       id: generateId(),
       fromNodeId: fromId,
-      toNodeId: toNodeId,
+      toNodeId: toId,
     };
     setConnections(prev => [...prev, newConn]);
     setIsDirty(true);
-    showToast('已建立连线', 'success');
 
     // 检查是否需要显示生成菜单
-    const targetNode = nodesRef.current.find(n => n.id === toNodeId);
+    const targetNode = nodesRef.current.find(n => n.id === toId);
     const fromNode = nodesRef.current.find(n => n.id === fromId);
     if (targetNode && fromNode) {
-      // 延迟检查，等 state 更新后
       setTimeout(() => {
-        const analysis = analyzeConnectionCombo(toNodeId);
+        const analysis = analyzeConnectionCombo(toId);
         if (analysis && analysis.sourceNodes.length >= 1) {
-          // 如果目标节点是图片节点且没有实际图片，或者是空节点，显示生成菜单
           const isEmptyImage = targetNode.type === 'image' && !targetNode.imageUrl;
           const isTextNode = targetNode.type === 'text';
           if (isEmptyImage || isTextNode || targetNode.type === 'composite') {
-            showGenerationMenu(toNodeId, 0, 0);
+            showGenerationMenu(toId, 0, 0);
           }
         }
       }, 100);
     }
 
-    setConnectingFrom(null);
-    setConnectingToPos(null);
-    connectingFromRef.current = null;
-    connectingToPosRef.current = null;
-  }, [showToast, analyzeConnectionCombo, showGenerationMenu]);
+    setConnectionDrag(null);
+  }, [showToast, analyzeConnectionCombo, showGenerationMenu, wouldCreateCycle]);
 
   // 鼠标移动（拖拽节点、平移画布、拖拽连线、或框选创建）—— rAF 节流 + ref 替代 state，避免每帧重建 effect
   useEffect(() => {
-    if (!draggingNodeId && !isPanning && !connectingFrom && !lassoState?.active) return;
+    if (!draggingNodeId && !isPanning && !connectionDrag && !lassoState?.active) return;
 
     const handleMouseMove = (e: MouseEvent) => {
       if (draggingNodeId) {
         const rect = canvasRef.current?.getBoundingClientRect();
         if (!rect) return;
-        const newX = e.clientX - rect.left - dragOffsetRef.current.x - canvasOffsetRef.current.x;
-        const newY = e.clientY - rect.top - dragOffsetRef.current.y - canvasOffsetRef.current.y;
-        targetPosRef.current = { x: Math.max(0, newX), y: Math.max(0, newY) };
+        const zoom = canvasZoomRef.current;
+        const newX = (e.clientX - rect.left - dragOffsetRef.current.x - canvasOffsetRef.current.x) / zoom;
+        const newY = (e.clientY - rect.top - dragOffsetRef.current.y - canvasOffsetRef.current.y) / zoom;
+        targetPosRef.current = { x: newX, y: newY };
         if (!rAFRef.current) {
           rAFRef.current = requestAnimationFrame(() => {
             rAFRef.current = 0;
@@ -610,19 +687,19 @@ const NodeCanvas: React.FC<NodeCanvasProps> = ({
             });
           });
         }
-      } else if (connectingFrom) {
+      } else if (connectionDrag) {
         // 拖拽连线时更新终点位置
         const rect = canvasRef.current?.getBoundingClientRect();
         if (rect) {
+          const zoom = canvasZoomRef.current;
           const pos = {
-            x: e.clientX - rect.left - canvasOffsetRef.current.x,
-            y: e.clientY - rect.top - canvasOffsetRef.current.y,
+            x: (e.clientX - rect.left - canvasOffsetRef.current.x) / zoom,
+            y: (e.clientY - rect.top - canvasOffsetRef.current.y) / zoom,
           };
-          connectingToPosRef.current = pos;
           if (!rAFRef.current) {
             rAFRef.current = requestAnimationFrame(() => {
               rAFRef.current = 0;
-              setConnectingToPos({ ...connectingToPosRef.current! });
+              setConnectionDrag(prev => prev ? { ...prev, toPos: pos } : null);
             });
           }
         }
@@ -630,9 +707,10 @@ const NodeCanvas: React.FC<NodeCanvasProps> = ({
         // 框选时更新框的大小
         const rect = canvasRef.current?.getBoundingClientRect();
         if (rect) {
+          const zoom = canvasZoomRef.current;
           const pos = {
-            x: e.clientX - rect.left - canvasOffsetRef.current.x,
-            y: e.clientY - rect.top - canvasOffsetRef.current.y,
+            x: (e.clientX - rect.left - canvasOffsetRef.current.x) / zoom,
+            y: (e.clientY - rect.top - canvasOffsetRef.current.y) / zoom,
           };
           if (!rAFRef.current) {
             rAFRef.current = requestAnimationFrame(() => {
@@ -644,7 +722,7 @@ const NodeCanvas: React.FC<NodeCanvasProps> = ({
       }
     };
 
-    const handleMouseUp = () => {
+    const handleMouseUp = (e: MouseEvent) => {
       if (rAFRef.current) {
         cancelAnimationFrame(rAFRef.current);
         rAFRef.current = 0;
@@ -654,6 +732,71 @@ const NodeCanvas: React.FC<NodeCanvasProps> = ({
       }
       setDraggingNodeId(null);
       setIsPanning(false);
+
+      // 处理连线拖拽：检测鼠标是否在某个节点上释放
+      const drag = connectionDragRef.current;
+      if (drag && drag.toPos) {
+        const rect = canvasRef.current?.getBoundingClientRect();
+        if (rect) {
+          const zoom = canvasZoomRef.current;
+          const mouseX = (e.clientX - rect.left - canvasOffsetRef.current.x) / zoom;
+          const mouseY = (e.clientY - rect.top - canvasOffsetRef.current.y) / zoom;
+          // 查找鼠标位置下的节点
+          const targetNode = nodesRef.current.find(n => {
+            if (n.id === drag.nodeId) return false;
+            return (
+              mouseX >= n.x && mouseX <= n.x + NODE_WIDTH &&
+              mouseY >= n.y && mouseY <= n.y + NODE_HEIGHT
+            );
+          });
+          if (targetNode) {
+            // 在当前节点上释放，建立连接
+            const { nodeId: sourceNodeId, direction } = drag;
+            let fromId: string;
+            let toId: string;
+            if (direction === 'output') {
+              fromId = sourceNodeId;
+              toId = targetNode.id;
+            } else {
+              fromId = targetNode.id;
+              toId = sourceNodeId;
+            }
+
+            if (fromId !== toId) {
+              const exists = connectionsRef.current.some(
+                c => c.fromNodeId === fromId && c.toNodeId === toId
+              );
+              if (!exists && !wouldCreateCycle(fromId, toId)) {
+                const newConn: NodeConnection = {
+                  id: generateId(),
+                  fromNodeId: fromId,
+                  toNodeId: toId,
+                };
+                setConnections(prev => [...prev, newConn]);
+                setIsDirty(true);
+
+                // 检查是否需要显示生成菜单
+                const targetNodeObj = nodesRef.current.find(n => n.id === toId);
+                const fromNodeObj = nodesRef.current.find(n => n.id === fromId);
+                if (targetNodeObj && fromNodeObj) {
+                  setTimeout(() => {
+                    const analysis = analyzeConnectionCombo(toId);
+                    if (analysis && analysis.sourceNodes.length >= 1) {
+                      const isEmptyImage = targetNodeObj.type === 'image' && !targetNodeObj.imageUrl;
+                      const isTextNode = targetNodeObj.type === 'text';
+                      if (isEmptyImage || isTextNode || targetNodeObj.type === 'composite') {
+                        showGenerationMenu(toId, 0, 0);
+                      }
+                    }
+                  }, 100);
+                }
+              }
+            }
+          }
+        }
+        setConnectionDrag(null);
+      }
+
       // 处理框选结束
       if (lassoStateRef.current?.active) {
         handleLassoEnd();
@@ -677,9 +820,9 @@ const NodeCanvas: React.FC<NodeCanvasProps> = ({
         rAFRef.current = 0;
       }
     };
-  }, [draggingNodeId, isPanning, panStart, connectingFrom, lassoState?.active]);
+  }, [draggingNodeId, isPanning, panStart, connectionDrag, lassoState?.active]);
 
-  // 框选结束处理：根据框选区域创建对应资源节点
+  // 框选结束处理：显示创建节点菜单让用户选择
   const handleLassoEnd = useCallback(() => {
     const lasso = lassoStateRef.current;
     if (!lasso || !lasso.active) return;
@@ -702,44 +845,16 @@ const NodeCanvas: React.FC<NodeCanvasProps> = ({
       return;
     }
 
-    // 计算框选中心点
-    const centerX = (minX + maxX) / 2;
-    const centerY = (minY + maxY) / 2;
-
-    // 根据框的大小和方向决定创建什么类型的节点
-    // 小框：创建文本节点；大框：创建图片节点
-    const isLargeBox = width > 120 && height > 120;
-
-    if (isLargeBox) {
-      // 大框：创建图片节点（带首帧/尾帧）
-      const newNode: CanvasNode = {
-        id: generateId(),
-        type: 'image',
-        x: minX,
-        y: minY,
-        title: '图片节点',
-        imageUrl: availableFrames?.startFrame || availableFrames?.endFrame,
-      };
-      setNodes(prev => [...prev, newNode]);
-      setSelectedNodeId(newNode.id);
-      setIsDirty(true);
-      showToast('已创建图片节点', 'success');
-    } else {
-      // 小框：创建文本节点
-      const newNode: CanvasNode = {
-        id: generateId(),
-        type: 'text',
-        x: minX,
-        y: minY,
-        title: '文本节点',
-        content: '',
-      };
-      setNodes(prev => [...prev, newNode]);
-      setSelectedNodeId(newNode.id);
-      setIsDirty(true);
-      showToast('已创建文本节点', 'success');
-    }
-  }, [availableFrames, showToast]);
+    // 显示创建节点菜单，让用户选择节点类型
+    setLassoCreateMenu({
+      x: maxX + 12,
+      y: minY,
+      minX,
+      minY,
+      width,
+      height,
+    });
+  }, []);
 
   // 右键菜单
   const handleContextMenu = useCallback((e: React.MouseEvent, nodeId?: string) => {
@@ -841,9 +956,10 @@ const NodeCanvas: React.FC<NodeCanvasProps> = ({
       const resource: ResourceItem = JSON.parse(data);
       const rect = canvasRef.current?.getBoundingClientRect();
       if (!rect) return;
-      const x = e.clientX - rect.left - canvasOffset.x - NODE_WIDTH / 2;
-      const y = e.clientY - rect.top - canvasOffset.y - 28;
-      addResourceNode(resource, Math.max(0, x), Math.max(0, y));
+      const zoom = canvasZoomRef.current;
+      const x = (e.clientX - rect.left - canvasOffset.x) / zoom - NODE_WIDTH / 2;
+      const y = (e.clientY - rect.top - canvasOffset.y) / zoom - 28;
+      addResourceNode(resource, x, y);
     } catch {
       // ignore
     }
@@ -1006,8 +1122,10 @@ const NodeCanvas: React.FC<NodeCanvasProps> = ({
     const isGenerating = node.status === 'generating';
     const isMainNode = node.isMain;
 
-    const isConnectingSource = connectingFrom === node.id;
-    const isConnectingTarget = connectingFrom !== null && connectingFrom !== node.id;
+    const isConnectingSource = connectionDrag?.nodeId === node.id;
+    const isConnectingTarget = connectionDrag !== null && connectionDrag.nodeId !== node.id;
+    const isInputActive = isConnectingSource && connectionDrag?.direction === 'input';
+    const isOutputActive = isConnectingSource && connectionDrag?.direction === 'output';
 
     return (
       <div
@@ -1018,20 +1136,68 @@ const NodeCanvas: React.FC<NodeCanvasProps> = ({
           top: node.y,
           width: NODE_WIDTH,
           minHeight: NODE_HEIGHT,
-          cursor: draggingNodeId === node.id ? 'grabbing' : connectingFrom ? (isConnectingTarget ? 'crosshair' : 'default') : 'grab',
+          cursor: draggingNodeId === node.id ? 'grabbing' : connectionDrag ? (isConnectingTarget ? 'crosshair' : 'default') : 'grab',
           zIndex: isSelected || isConnectingSource ? 10 : 1,
           transform: isSelected ? 'scale(1.02)' : undefined,
           transition: draggingNodeId ? 'none' : 'transform 0.15s ease-out',
         }}
         onMouseDown={(e) => {
-          if (connectingFrom && isConnectingTarget) {
-            endConnection(e, node.id);
+          if (connectionDrag && isConnectingTarget) {
+            endConnectionDrag(e, node.id);
           } else {
             handleMouseDown(e, node.id);
           }
         }}
         onContextMenu={(e) => handleContextMenu(e, node.id)}
       >
+        {/* 左侧输入加号按钮 */}
+        <div
+          className="absolute z-20 flex items-center justify-center"
+          style={{
+            left: 0,
+            top: NODE_HEIGHT / 2 - 10,
+            width: 20,
+            height: 20,
+            transform: 'translateX(-50%)',
+          }}
+        >
+          <button
+            className={`w-5 h-5 rounded-full flex items-center justify-center border shadow-sm transition-all duration-150 ${
+              isInputActive
+                ? 'bg-green-500 border-green-600 text-white scale-110 shadow-green-500/30'
+                : 'bg-white border-gray-300 text-gray-400 hover:border-blue-400 hover:text-blue-500 hover:scale-110 hover:shadow-md'
+            }`}
+            title="拖拽接收输入连接"
+            onMouseDown={(e) => startConnectionDrag(e, node.id, 'input')}
+          >
+            <Plus size={10} className={isInputActive ? 'rotate-45' : ''} />
+          </button>
+        </div>
+
+        {/* 右侧输出加号按钮 */}
+        <div
+          className="absolute z-20 flex items-center justify-center"
+          style={{
+            left: NODE_WIDTH,
+            top: NODE_HEIGHT / 2 - 10,
+            width: 20,
+            height: 20,
+            transform: 'translateX(-50%)',
+          }}
+        >
+          <button
+            className={`w-5 h-5 rounded-full flex items-center justify-center border shadow-sm transition-all duration-150 ${
+              isOutputActive
+                ? 'bg-green-500 border-green-600 text-white scale-110 shadow-green-500/30'
+                : 'bg-white border-gray-300 text-gray-400 hover:border-blue-400 hover:text-blue-500 hover:scale-110 hover:shadow-md'
+            }`}
+            title="拖拽发起输出连接"
+            onMouseDown={(e) => startConnectionDrag(e, node.id, 'output')}
+          >
+            <Plus size={10} className={isOutputActive ? 'rotate-45' : ''} />
+          </button>
+        </div>
+
         {/* 节点头部 */}
         <div className={`flex items-center justify-between px-2 py-1.5 ${colors.header} select-none`}>
           <div className="flex items-center gap-1.5 min-w-0">
@@ -1052,14 +1218,6 @@ const NodeCanvas: React.FC<NodeCanvasProps> = ({
               }}
             >
               <Trash2 size={10} />
-            </button>
-            {/* 连线按钮：点击开始拖拽连线 */}
-            <button
-              className={`p-0.5 rounded hover:bg-white/50 transition-colors ${isConnectingSource ? 'text-green-600' : 'text-gray-400 hover:text-blue-500'}`}
-              title="拖拽连线到其他节点"
-              onMouseDown={(e) => startConnection(e, node.id)}
-            >
-              <Plus size={10} className={isConnectingSource ? 'rotate-45' : ''} />
             </button>
             <GripVertical size={12} className="text-gray-400 shrink-0" />
           </div>
@@ -1406,7 +1564,7 @@ const NodeCanvas: React.FC<NodeCanvasProps> = ({
         </div>
       </div>
     );
-  }, [selectedNodeId, draggingNodeId, connectingFrom, handleMouseDown, handleContextMenu, startConnection, endConnection, deleteNode, duplicateNode, setMainNode, createVideoNode, nodes, connections, showToast, showGenerationMenu]);
+  }, [selectedNodeId, draggingNodeId, connectionDrag, handleMouseDown, handleContextMenu, startConnectionDrag, endConnectionDrag, deleteNode, duplicateNode, setMainNode, createVideoNode, nodes, connections, showToast, showGenerationMenu]);
 
   // 资源列表：角色显示为状态集合体 + 场景/道具/环境/建筑/服装
   const resources: ResourceItem[] = useMemo(() => {
@@ -1599,19 +1757,23 @@ const NodeCanvas: React.FC<NodeCanvasProps> = ({
           ref={canvasRef}
           className="absolute inset-0 overflow-hidden"
           style={{
-            transform: `translate(${canvasOffset.x}px, ${canvasOffset.y}px)`,
+            transform: `translate(${canvasOffset.x}px, ${canvasOffset.y}px) scale(${canvasZoom})`,
+            transformOrigin: '0 0',
           }}
           onMouseDown={handleCanvasMouseDown}
           onContextMenu={handleCanvasContextMenu}
           onDragOver={handleCanvasDragOver}
           onDrop={handleCanvasDrop}
+          onWheel={handleCanvasWheel}
         >
-          {/* 网格背景 - 相反颜色的小点点 */}
+          {/* 网格背景 - 无限延伸 */}
           <div
-            className="absolute inset-0 canvas-grid"
+            className="absolute canvas-grid"
             style={{
-              width: 4000,
-              height: 3000,
+              top: -50000,
+              left: -50000,
+              width: 100000,
+              height: 100000,
               backgroundImage: `radial-gradient(circle, rgba(0,0,0,0.15) 1px, transparent 1px)`,
               backgroundSize: '20px 20px',
             }}
@@ -1629,20 +1791,13 @@ const NodeCanvas: React.FC<NodeCanvasProps> = ({
               }}
             >
               <div className="absolute -top-5 left-0 text-[10px] text-blue-500 font-medium whitespace-nowrap bg-white/80 px-1 rounded">
-                {Math.abs(lassoState.currentX - lassoState.startX) > 120 && Math.abs(lassoState.currentY - lassoState.startY) > 120
-                  ? '释放创建图片节点'
-                  : '释放创建文本节点'}
+                释放选择节点类型
               </div>
             </div>
           )}
 
           {/* SVG 连线层 */}
-          <svg className="absolute top-0 left-0" style={{ width: 4000, height: 3000, pointerEvents: connectingFrom ? 'auto' : 'none' }}>
-            <defs>
-              <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
-                <polygon points="0 0, 8 3, 0 6" fill="#3b82f6" opacity="0.5" />
-              </marker>
-            </defs>
+          <svg className="absolute top-0 left-0" style={{ width: '100%', height: '100%', pointerEvents: connectionDrag ? 'auto' : 'none', overflow: 'visible' }}>
             {connections.map(conn => (
               <path
                 key={conn.id}
@@ -1651,17 +1806,19 @@ const NodeCanvas: React.FC<NodeCanvasProps> = ({
                 stroke="#3b82f6"
                 strokeWidth={2}
                 opacity={0.5}
-                markerEnd="url(#arrowhead)"
               />
             ))}
             {/* 正在拖拽的临时连线 */}
-            {connectingFrom && connectingToPos && (() => {
-              const fromNode = nodes.find(n => n.id === connectingFrom);
+            {connectionDrag && connectionDrag.toPos && (() => {
+              const fromNode = nodes.find(n => n.id === connectionDrag.nodeId);
               if (!fromNode) return null;
-              const fromX = fromNode.x + NODE_WIDTH;
+              // 根据方向确定起点位置
+              const fromX = connectionDrag.direction === 'output'
+                ? fromNode.x + NODE_WIDTH   // 输出模式：从右侧出发
+                : fromNode.x;                // 输入模式：从左侧出发
               const fromY = fromNode.y + NODE_HEIGHT / 2;
-              const toX = connectingToPos.x;
-              const toY = connectingToPos.y;
+              const toX = connectionDrag.toPos.x;
+              const toY = connectionDrag.toPos.y;
               const midX = (fromX + toX) / 2;
               return (
                 <path
@@ -1678,6 +1835,39 @@ const NodeCanvas: React.FC<NodeCanvasProps> = ({
 
           {/* 节点层 */}
           {nodes.map(renderNode)}
+
+          {/* 选中节点右侧的下一步操作框 */}
+          {selectedNodeId && (() => {
+            const node = nodes.find(n => n.id === selectedNodeId);
+            if (!node) return null;
+            return (
+              <div
+                className="absolute z-20 flex items-center"
+                style={{
+                  left: node.x + NODE_WIDTH + 12,
+                  top: node.y + NODE_HEIGHT / 2 - 16,
+                }}
+              >
+                {/* 连接线 */}
+                <div className="w-3 h-0.5 bg-blue-400/50" />
+                {/* 操作框 */}
+                <button
+                  className="flex items-center gap-1 px-2 py-1.5 rounded-lg bg-white border border-blue-300 shadow-md hover:border-blue-500 hover:shadow-lg transition-all"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setNextStepMenu({
+                      x: node.x + NODE_WIDTH + 20,
+                      y: node.y + NODE_HEIGHT / 2,
+                      nodeId: node.id,
+                    });
+                  }}
+                >
+                  <Plus size={14} className="text-blue-500" />
+                  <span className="text-[10px] text-blue-600 font-medium whitespace-nowrap">下一步</span>
+                </button>
+              </div>
+            );
+          })()}
         </div>
 
         {/* 画布工具栏 */}
@@ -1749,6 +1939,165 @@ const NodeCanvas: React.FC<NodeCanvasProps> = ({
           {nodes.length} 节点 · {connections.length} 连线
         </div>
 
+        {/* 下一步操作菜单（选中节点后点击加号显示） */}
+        {nextStepMenu && (() => {
+          const node = nodes.find(n => n.id === nextStepMenu.nodeId);
+          if (!node) return null;
+
+          // 根据节点类型决定可用的下一步操作
+          const options: { label: string; icon: React.ReactNode; action: () => void }[] = [];
+
+          // 所有节点都可以：添加文本提示词
+          options.push({
+            label: '添加文本提示词',
+            icon: <Type size={14} />,
+            action: () => {
+              const newNode: CanvasNode = {
+                id: generateId(),
+                type: 'text',
+                x: node.x + NODE_WIDTH + 80,
+                y: node.y - 40,
+                title: '文本提示词',
+                content: '',
+              };
+              setNodes(prev => [...prev, newNode]);
+              setConnections(prev => [...prev, {
+                id: generateId(),
+                fromNodeId: newNode.id,
+                toNodeId: node.id,
+              }]);
+              setSelectedNodeId(newNode.id);
+              setNextStepMenu(null);
+              setIsDirty(true);
+              showToast('已添加文本提示词节点', 'success');
+            },
+          });
+
+          // 图片/合成节点可以：生成视频
+          if (node.type === 'image' || node.type === 'composite') {
+            options.push({
+              label: '生成视频',
+              icon: <Film size={14} />,
+              action: () => {
+                createVideoNode(node.id);
+                setNextStepMenu(null);
+              },
+            });
+          }
+
+          // 图片节点可以：图生图
+          if (node.type === 'image') {
+            options.push({
+              label: '图生图',
+              icon: <Zap size={14} />,
+              action: () => {
+                const newNode: CanvasNode = {
+                  id: generateId(),
+                  type: 'image',
+                  x: node.x + NODE_WIDTH + 80,
+                  y: node.y,
+                  title: '图生图',
+                  status: 'pending',
+                };
+                setNodes(prev => [...prev, newNode]);
+                setConnections(prev => [...prev, {
+                  id: generateId(),
+                  fromNodeId: node.id,
+                  toNodeId: newNode.id,
+                }]);
+                setSelectedNodeId(newNode.id);
+                setNextStepMenu(null);
+                setIsDirty(true);
+                showToast('已创建图生图节点', 'success');
+              },
+            });
+          }
+
+          // 角色/场景节点可以：生成图片
+          if (node.type === 'character' || node.type === 'scene' || node.type === 'prop' || node.type === 'environment' || node.type === 'building' || node.type === 'costume') {
+            options.push({
+              label: '生成图片',
+              icon: <ImageIcon size={14} />,
+              action: () => {
+                const newNode: CanvasNode = {
+                  id: generateId(),
+                  type: 'image',
+                  x: node.x + NODE_WIDTH + 80,
+                  y: node.y,
+                  title: '生成图片',
+                  status: 'pending',
+                };
+                setNodes(prev => [...prev, newNode]);
+                setConnections(prev => [...prev, {
+                  id: generateId(),
+                  fromNodeId: node.id,
+                  toNodeId: newNode.id,
+                }]);
+                setSelectedNodeId(newNode.id);
+                setNextStepMenu(null);
+                setIsDirty(true);
+                showToast('已创建图片生成节点', 'success');
+              },
+            });
+          }
+
+          // 所有节点都可以：创建空白图片节点并连线
+          options.push({
+            label: '添加图片节点',
+            icon: <ImageIcon size={14} />,
+            action: () => {
+              const newNode: CanvasNode = {
+                id: generateId(),
+                type: 'image',
+                x: node.x + NODE_WIDTH + 80,
+                y: node.y + 60,
+                title: '图片节点',
+                imageUrl: availableFrames?.startFrame || availableFrames?.endFrame,
+              };
+              setNodes(prev => [...prev, newNode]);
+              setConnections(prev => [...prev, {
+                id: generateId(),
+                fromNodeId: node.id,
+                toNodeId: newNode.id,
+              }]);
+              setSelectedNodeId(newNode.id);
+              setNextStepMenu(null);
+              setIsDirty(true);
+              showToast('已添加图片节点', 'success');
+            },
+          });
+
+          return (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setNextStepMenu(null)} />
+              <div
+                className="absolute z-50 bg-white border border-gray-200 rounded-xl shadow-2xl py-2 min-w-[160px]"
+                style={{
+                  left: (nextStepMenu.x * canvasZoom + canvasOffset.x),
+                  top: (nextStepMenu.y * canvasZoom + canvasOffset.y),
+                }}
+              >
+                <div className="px-3 py-1.5 text-[10px] text-gray-400 border-b border-gray-100 mb-1">
+                  选择下一步操作
+                </div>
+                {options.map((opt, idx) => (
+                  <button
+                    key={idx}
+                    className="w-full px-3 py-2 text-left text-xs flex items-center gap-2.5 transition-colors text-gray-700 hover:bg-blue-50 hover:text-blue-600"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      opt.action();
+                    }}
+                  >
+                    <span className="text-gray-400">{opt.icon}</span>
+                    <span className="font-medium">{opt.label}</span>
+                  </button>
+                ))}
+              </div>
+            </>
+          );
+        })()}
+
         {/* 节点生成菜单（当多个节点连接到一个空节点时显示） */}
         {generationMenu && (() => {
           const targetNode = nodes.find(n => n.id === generationMenu.targetNodeId);
@@ -1794,8 +2143,8 @@ const NodeCanvas: React.FC<NodeCanvasProps> = ({
               <div
                 className="absolute z-50 bg-white border border-gray-200 rounded-xl shadow-2xl py-2 min-w-[180px]"
                 style={{
-                  left: generationMenu.x + canvasOffset.x,
-                  top: generationMenu.y + canvasOffset.y,
+                  left: (generationMenu.x * canvasZoom + canvasOffset.x),
+                  top: (generationMenu.y * canvasZoom + canvasOffset.y),
                 }}
               >
                 <div className="px-3 py-1.5 text-[10px] text-gray-400 border-b border-gray-100 mb-1">
@@ -1858,6 +2207,61 @@ const NodeCanvas: React.FC<NodeCanvasProps> = ({
           );
         })()}
       </div>
+
+        {/* 框选创建节点菜单 */}
+        {lassoCreateMenu && (
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setLassoCreateMenu(null)} />
+            <div
+              className="absolute z-50 bg-white border border-gray-200 rounded-xl shadow-2xl py-2 min-w-[160px]"
+              style={{
+                left: (lassoCreateMenu.x * canvasZoom + canvasOffset.x),
+                top: (lassoCreateMenu.y * canvasZoom + canvasOffset.y),
+              }}
+            >
+              <div className="px-3 py-1.5 text-[10px] text-gray-400 border-b border-gray-100 mb-1">
+                选择节点类型
+              </div>
+              {[
+                { label: '图片节点', icon: <ImageIcon size={14} />, type: 'image' as const },
+                { label: '文本节点', icon: <Type size={14} />, type: 'text' as const },
+                { label: '视频节点', icon: <Film size={14} />, type: 'video' as const },
+                { label: '合成节点', icon: <Layers size={14} />, type: 'composite' as const },
+              ].map((opt) => (
+                <button
+                  key={opt.type}
+                  className="w-full px-3 py-2 text-left text-xs flex items-center gap-2.5 transition-colors text-gray-700 hover:bg-blue-50 hover:text-blue-600"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const { minX, minY } = lassoCreateMenu;
+                    const newNode: CanvasNode = {
+                      id: generateId(),
+                      type: opt.type,
+                      x: minX,
+                      y: minY,
+                      title: opt.label,
+                      ...(opt.type === 'image'
+                        ? { imageUrl: availableFrames?.startFrame || availableFrames?.endFrame }
+                        : opt.type === 'text'
+                        ? { content: '' }
+                        : opt.type === 'video'
+                        ? { status: 'pending' }
+                        : {}),
+                    };
+                    setNodes(prev => [...prev, newNode]);
+                    setSelectedNodeId(newNode.id);
+                    setIsDirty(true);
+                    setLassoCreateMenu(null);
+                    showToast(`已创建${opt.label}`, 'success');
+                  }}
+                >
+                  <span className="text-gray-400">{opt.icon}</span>
+                  <span className="font-medium">{opt.label}</span>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
 
       {/* 右侧详情面板 */}
       <div

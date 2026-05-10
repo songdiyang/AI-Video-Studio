@@ -306,7 +306,7 @@ const StoryboardSkeleton: React.FC<StoryboardSkeletonProps> = ({
                         />
                       </div>
                       <div className="text-xs text-white/60 mt-1.5 flex items-center justify-between">
-                        <span className="text-white/40 italic">{autoStoryboard.progress.message || '处理中...'}</span>
+                        <span className="text-white/40 italic">{autoStoryboard.progress.stepName || '处理中...'}</span>
                         <span>{autoStoryboard.progress.overallProgress ? `${autoStoryboard.progress.overallProgress}%` : ''}</span>
                       </div>
                     </div>
