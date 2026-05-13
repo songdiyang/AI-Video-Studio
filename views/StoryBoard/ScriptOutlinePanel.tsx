@@ -7,7 +7,7 @@
  */
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { ChevronRight, ChevronDown, FileText, Clapperboard, MessageSquare, Globe, Link2, Link2Off, Plus, Search, CheckCircle2, X, Sparkles, Upload } from 'lucide-react';
+import { ChevronRight, ChevronDown, FileText, Clapperboard, MessageSquare, Globe, Link2, Link2Off, Plus, Search, CheckCircle2, X, Sparkles, Upload, Pencil } from 'lucide-react';
 import { fetchScriptLibrary, type ScriptLibraryItem } from '../../services/scripts';
 
 // ==================== 类型 ====================
@@ -27,6 +27,10 @@ interface ScriptOutlinePanelProps {
   isLoading?: boolean;
   /** 当前项目 ID，用于限定可选参考剧本的范围 */
   projectId?: number | null;
+  /** 当前集数，用于在打开标签页时显示 */
+  episodeNumber?: number;
+  /** 当前剧本 ID，用于打开编辑标签页 */
+  scriptId?: number | null;
   /** 是否允许在面板内选择参考剧本（弱绑定） */
   canPick?: boolean;
   /**
@@ -489,6 +493,8 @@ const ScriptOutlinePanel: React.FC<ScriptOutlinePanelProps> = ({
   scriptTitle,
   isLoading,
   projectId,
+  episodeNumber,
+  scriptId,
   canPick,
   isBoundViaEpisode,
   onPickScript,
@@ -558,7 +564,9 @@ const ScriptOutlinePanel: React.FC<ScriptOutlinePanelProps> = ({
           <button
             onClick={() => {
               // 打开剧本创作中心标签页
-              window.dispatchEvent(new CustomEvent('openScriptGenerateTab'));
+              window.dispatchEvent(new CustomEvent('openScriptGenerateTab', {
+                detail: { episodeNumber }
+              }));
             }}
             className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 rounded-md bg-[var(--accent)] text-white text-xs font-medium hover:opacity-90 transition-opacity"
             title="AI生成新剧本或上传已有剧本"
@@ -633,6 +641,28 @@ const ScriptOutlinePanel: React.FC<ScriptOutlinePanelProps> = ({
             >
               项目绑定
             </span>
+          )}
+          {scriptId && (
+            <button
+              onClick={() => {
+                window.dispatchEvent(new CustomEvent('openAssetEditTab', {
+                  detail: {
+                    assetType: 'script',
+                    assetId: scriptId,
+                    assetName: scriptTitle || `剧本 #${scriptId}`,
+                    initialData: {
+                      id: scriptId,
+                      name: scriptTitle || '',
+                      content: scriptContent || '',
+                    },
+                  }
+                }));
+              }}
+              className="p-1 rounded hover:bg-[var(--bg-input)] text-[var(--text-muted)] hover:text-[var(--accent)] transition-colors"
+              title="编辑剧本内容"
+            >
+              <Pencil className="w-3.5 h-3.5" />
+            </button>
           )}
         </div>
         {(stats.scenes > 0 || stats.dialogues > 0) && (

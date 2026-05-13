@@ -5,7 +5,7 @@ import {
 import {
   MessageSquare, Image, Video, Wrench, Brain, Star,
   Zap, Eye, ToggleLeft, ToggleRight, Trash2, Edit3,
-  Sparkles, Bot, Camera, Mic, Palette
+  Sparkles, Bot, Camera, Mic, Palette, Volume2
 } from 'lucide-react';
 import { useConfirm } from '../../../contexts/ConfirmContext';
 import { useToast } from '../../../contexts/ToastContext';
@@ -58,7 +58,7 @@ const CAPABILITY_CONFIG: Record<string, { icon: React.ReactNode; label: string; 
   vision: { icon: <Eye size={12} />, label: '视觉', color: 'secondary' },
   image_gen: { icon: <Image size={12} />, label: '生图', color: 'success' },
   video_gen: { icon: <Video size={12} />, label: '生视频', color: 'warning' },
-  audio_gen: { icon: <Mic size={12} />, label: '生音频', color: 'danger' },
+  audio_gen: { icon: <Mic size={12} />, label: '生声音', color: 'danger' },
   tool_calling: { icon: <Wrench size={12} />, label: '工具', color: 'default' },
   reasoning: { icon: <Brain size={12} />, label: '推理', color: 'primary' },
   code: { icon: <Sparkles size={12} />, label: '代码', color: 'secondary' },
@@ -70,6 +70,7 @@ const CATEGORY_TABS = [
   { key: 'vision', label: '视觉', icon: <Camera size={14} /> },
   { key: 'image_gen', label: '生图', icon: <Palette size={14} /> },
   { key: 'video_gen', label: '生视频', icon: <Video size={14} /> },
+  { key: 'audio_gen', label: '生声音', icon: <Volume2 size={14} /> },
 ];
 
 // ============================================================

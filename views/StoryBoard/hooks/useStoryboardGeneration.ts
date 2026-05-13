@@ -91,8 +91,9 @@ export function useStoryboardGeneration({
     appendMode: boolean = false,
     options: StartGenerationOptions = {}
   ) => {
-    if (!scriptId) {
-      showToast('请先选择或生成一个剧本', 'warning');
+    // 允许无剧本模式：scriptId 为 null 时，使用 projectId 作为关联
+    if (!scriptId && !projectId) {
+      showToast('请先选择项目或剧本', 'warning');
       return;
     }
     if (recovery.isGenerating) {
@@ -103,9 +104,10 @@ export function useStoryboardGeneration({
     try {
       const token = getAuthToken();
       // 根据 byScene 参数选择不同的 API
+      // 无剧本模式：使用 projectId 作为路径参数
       const apiUrl = byScene
-        ? `/api/storyboards/auto-generate-by-scene/${scriptId}`
-        : `/api/storyboards/auto-generate/${scriptId}`;
+        ? (scriptId ? `/api/storyboards/auto-generate-by-scene/${scriptId}` : `/api/storyboards/auto-generate-by-scene/project/${projectId}`)
+        : (scriptId ? `/api/storyboards/auto-generate/${scriptId}` : `/api/storyboards/auto-generate/project/${projectId}`);
 
       // 组装请求体：显式传 appendMode 与 conflictStrategy
       const body: Record<string, any> = {

@@ -225,6 +225,24 @@ export interface BlockEditorProps {
   onUpdateNegativePrompt?: (negativePrompt: string) => Promise<boolean>;
   promptMode?: 'image' | 'video';
   basePrompt?: string;
+  /** 模型列表 */
+  models?: { name: string; type?: string; category?: string; description?: string; priceSummary?: string }[];
+  /** 当前图片模型 */
+  imageModel?: string;
+  /** 当前视频模型 */
+  videoModel?: string;
+  /** 图片模型切换回调 */
+  onImageModelChange?: (model: string) => void;
+  /** 视频模型切换回调 */
+  onVideoModelChange?: (model: string) => void;
+  /** 生成图片回调 */
+  onGenerateImage?: (id: number, prompt: string, regenerateTarget?: 'first' | 'last' | 'both', forceRegenerate?: boolean) => Promise<{ success: boolean; error?: string }>;
+  /** 生成视频回调 */
+  onGenerateVideo?: (id: number) => Promise<{ success: boolean; error?: string }>;
+  /** 场景动作类型 */
+  hasAction?: boolean;
+  /** 图片帧标签（运动模式时 first/last） */
+  imageFrameTab?: 'first' | 'last';
 }
 
 export interface ProjectCharacter {

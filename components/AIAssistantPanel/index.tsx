@@ -1,11 +1,12 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { Sparkles, X, Send, Paperclip, ImagePlus, Trash2, Wand2, FileText, Settings, Image as ImageIcon, Loader2, History, Plus, Edit3, Check, MessageSquare, Video, Star, MessageCircle, ClipboardList } from 'lucide-react';
+import { Sparkles, X, Send, Paperclip, ImagePlus, Trash2, Wand2, FileText, Settings, Image as ImageIcon, Loader2, History, Plus, Edit3, Check, MessageSquare, Video, Star, MessageCircle, ClipboardList, Brain } from 'lucide-react';
 import { getAuthToken } from '../../services/auth';
 import { useToast } from '../../contexts/ToastContext';
 import ChatMessageComponent, { ChatMessageData } from './ChatMessage';
 import MediaAttachment from './MediaAttachment';
 import { runSession as runAssistantSession, cancelSession as cancelAssistantSession, isLongTaskCapable } from '../../services/aiAssistant';
 import { getWorkflowStatus, type WorkflowJob } from '../../hooks/useWorkflow';
+import { analyzeScript, optimizeScript, generateScript, type ScriptAnalysisResult } from '../../services/scripts';
 
 // ─── Types ──────────────────────────────────────────────────────────
 interface Attachment {
@@ -104,6 +105,12 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
   const [isEnhancing, setIsEnhancing] = useState(false);
   const [isCompressing, setIsCompressing] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+
+  // ── 剧本分析面板状态 ──────────────────────────────────────
+  const [showScriptAnalysis, setShowScriptAnalysis] = useState(false);
+  const [scriptContent, setScriptContent] = useState('');
+  const [isAnalyzingScript, setIsAnalyzingScript] = useState(false);
+  const lastScriptContentRef = useRef<string>('');
 
   // ── 设置项：上下文注入开关 / 历史消息上限 ───────────
   const SETTINGS_KEY = 'ai_assistant_settings_v1';
@@ -227,6 +234,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
         role: msg.role,
         content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
       };
+      if (msg.reasoning) body.reasoning = msg.reasoning;
       if (msg.attachments && msg.attachments.length > 0) body.attachments = msg.attachments;
       if (msg.suggestions && msg.suggestions.length > 0) body.suggestions = msg.suggestions;
       await fetch(`/api/ai-assistant/sessions/${sessionId}/messages`, {
@@ -297,7 +305,6 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
       setIsLoading(false);
       setStreamingId(null);
       setShowHistory(false);
-      showToast('已创建新对话', 'success');
     } else {
       showToast('创建会话失败', 'error');
     }
@@ -324,7 +331,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
           setIsLoading(false);
           setStreamingId(null);
         }
-        showToast('会话已删除', 'success');
+        // 会话已删除，不显示 toast
       }
     } catch (err) {
       console.error('[AIAssistant] delete session failed:', err);
@@ -334,7 +341,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
   // 关闭单个会话（仅从标签栏隐藏，不删除，保留在历史记录中）
   const closeSession = useCallback(async (sessionId: number) => {
     if (sessions.length <= 1) {
-      showToast('至少保留一个会话', 'warning');
+      // 至少保留一个会话，不显示 toast
       return;
     }
     
@@ -353,8 +360,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
     messagesCacheRef.current.delete(sessionId);
     loadingSessionsRef.current.delete(sessionId);
     streamingSessionsRef.current.delete(sessionId);
-    
-    showToast('会话已从标签栏关闭', 'info');
+    // 会话已从标签栏关闭，不显示 toast
   }, [sessions, currentSessionId, switchSession, showToast]);
 
   const renameSessionFn = useCallback(async (sessionId: number, title: string) => {
@@ -823,6 +829,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
       sendSid = await apiCreateSession(autoTitle);
       if (sendSid) {
         setCurrentSessionId(sendSid);
+        currentSessionIdRef.current = sendSid; // 同步更新 ref，确保后续 updateSessionMessages 能正确匹配
         try { localStorage.setItem(activeSessionKey, String(sendSid)); } catch { /* ignore */ }
       }
     }
@@ -977,6 +984,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
         const decoder = new TextDecoder('utf-8');
         let buffer = '';
         let fullContent = '';
+        let fullReasoning = '';
 
         while (true) {
           const { done, value } = await reader.read();
@@ -997,10 +1005,21 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
               }
               if (parsed.delta) {
                 fullContent += parsed.delta;
-                const snapshot = fullContent;
+                const snapshotContent = fullContent;
+                const snapshotReasoning = fullReasoning;
                 updateSessionMessages(sendSid, (prev) =>
                   prev.map((m) =>
-                    m.id === assistantId ? { ...m, content: snapshot } : m
+                    m.id === assistantId ? { ...m, content: snapshotContent, reasoning: snapshotReasoning || undefined } : m
+                  )
+                );
+              }
+              if (parsed.reasoningDelta) {
+                fullReasoning += parsed.reasoningDelta;
+                const snapshotContent = fullContent;
+                const snapshotReasoning = fullReasoning;
+                updateSessionMessages(sendSid, (prev) =>
+                  prev.map((m) =>
+                    m.id === assistantId ? { ...m, content: snapshotContent, reasoning: snapshotReasoning || undefined } : m
                   )
                 );
               }
@@ -1025,16 +1044,18 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
         updateSessionMessages(sendSid, (prev) =>
           prev.map((m) =>
             m.id === assistantId
-              ? { ...m, content: cleanContent || '(无回复)', suggestions }
+              ? { ...m, content: cleanContent || '(无回复)', reasoning: fullReasoning || undefined, suggestions }
               : m
           )
         );
         setSessionStreaming(sendSid, null);
+        setSessionLoading(sendSid, false);
         if (sendSid) {
           archiveMessage(sendSid, {
             id: assistantId,
             role: 'assistant',
             content: cleanContent || '(无回复)',
+            reasoning: fullReasoning || undefined,
             suggestions,
             timestamp: Date.now(),
           });
@@ -1055,12 +1076,11 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
           }),
         });
 
-        if (!res.ok) {
-          const errData = await res.json().catch(() => ({}));
-          throw new Error(errData.message || `请求失败 (${res.status})`);
-        }
+        const data = await res.json().catch(() => ({}));
 
-        const data = await res.json();
+        if (!res.ok || data.success === false) {
+          throw new Error(data.error || data.message || `请求失败 (${res.status})`);
+        }
 
         const assistantMessage: ChatMessageData = {
           id: `msg-${Date.now()}-ai`,
@@ -1155,7 +1175,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
     showToast('质检请求已填写，点击发送按钮让 AI 开始分析', 'info');
   }, [scenes, showToast]);
 
-  const handleAction = (action: string, params: any) => {
+  const handleAction = useCallback(async (action: string, params: any) => {
     // 质检：前端自包，不走 onAction 回调
     if (action === 'inspect_quality') {
       const sceneId = Number(params?.sceneId || currentFrame?.id);
@@ -1166,8 +1186,199 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
       triggerInspectQuality(sceneId);
       return;
     }
+
+    // 剧本优化：侧边栏内完成，不走 onAction 回调
+    if (action === 'optimize_script') {
+      const content = params?.content || lastScriptContentRef.current;
+      const weaknesses = params?.weaknesses || [];
+      if (!content) {
+        showToast('缺少剧本内容，无法优化', 'warning');
+        return;
+      }
+      setIsLoading(true);
+      try {
+        const result = await optimizeScript({
+          content,
+          instruction: `请针对以下不足之处进行优化：\n${weaknesses.map((w: string, i: number) => `${i + 1}. ${w}`).join('\n')}`,
+        });
+        const optimizeMsg: ChatMessageData = {
+          id: `script-optimize-${Date.now()}`,
+          role: 'assistant',
+          content: `**剧本优化完成**\n\n${result.message}\n\n---\n\n**优化后的剧本：**\n\n${result.optimizedContent}`,
+          timestamp: Date.now(),
+        };
+        const currentSid = currentSessionIdRef.current;
+        updateSessionMessages(currentSid, (prev) => [...prev, optimizeMsg]);
+        if (currentSid) archiveMessage(currentSid, optimizeMsg);
+        showToast('优化完成', 'success');
+      } catch (err: any) {
+        showToast(err?.message || '优化失败', 'error');
+      } finally {
+        setIsLoading(false);
+      }
+      return;
+    }
+
+    // 重新分析剧本：侧边栏内完成
+    if (action === 'reanalyze_script') {
+      const content = params?.content || lastScriptContentRef.current;
+      if (!content) {
+        showToast('缺少剧本内容，无法重新分析', 'warning');
+        return;
+      }
+      setIsAnalyzingScript(true);
+      try {
+        const result = await analyzeScript({ content });
+        const analysis = result.analysis;
+        const analysisMsg: ChatMessageData = {
+          id: `script-analysis-${Date.now()}`,
+          role: 'assistant',
+          content: JSON.stringify({
+            type: 'scriptAnalysis',
+            overallScore: analysis.overallScore,
+            dimensions: analysis.dimensions,
+            strengths: analysis.strengths,
+            weaknesses: analysis.weaknesses,
+            suggestions: analysis.suggestions,
+            summary: analysis.summary,
+          }),
+          timestamp: Date.now(),
+        };
+        const currentSid = currentSessionIdRef.current;
+        updateSessionMessages(currentSid, (prev) => [...prev, analysisMsg]);
+        if (currentSid) archiveMessage(currentSid, analysisMsg);
+        // 追加追问消息
+        setTimeout(() => {
+          const followUpMsg: ChatMessageData = {
+            id: `script-analysis-followup-${Date.now()}`,
+            role: 'assistant',
+            content: '需要我帮您从不足的地方做修改吗？',
+            timestamp: Date.now(),
+            suggestions: [
+              { label: '帮我优化剧本', action: 'optimize_script', params: { content, weaknesses: analysis.weaknesses } },
+              { label: '再分析一次', action: 'reanalyze_script', params: { content } },
+              { label: '不用了', action: 'dismiss' },
+            ],
+          };
+          updateSessionMessages(currentSid, (prev) => [...prev, followUpMsg]);
+          if (currentSid) archiveMessage(currentSid, followUpMsg);
+        }, 500);
+        showToast('重新分析完成', 'success');
+      } catch (err: any) {
+        showToast(err?.message || '重新分析失败', 'error');
+      } finally {
+        setIsAnalyzingScript(false);
+      }
+      return;
+    }
+
+    // AI生成剧本：侧边栏内启动工作流
+    if (action === 'generate_script') {
+      const targetProjectId = Number(params?.projectId || projectId);
+      const episodeNumber = params?.episodeNumber ? Number(params.episodeNumber) : undefined;
+      if (!targetProjectId) {
+        showToast('缺少项目ID，无法生成剧本', 'warning');
+        return;
+      }
+      setIsLoading(true);
+      const currentSid = currentSessionIdRef.current;
+      // 发送启动消息
+      const startMsg: ChatMessageData = {
+        id: `script-gen-start-${Date.now()}`,
+        role: 'assistant',
+        content: `正在生成剧本「${params?.title || `第${episodeNumber || '新'}集`}」...`,
+        timestamp: Date.now(),
+      };
+      updateSessionMessages(currentSid, (prev) => [...prev, startMsg]);
+      if (currentSid) archiveMessage(currentSid, startMsg);
+
+      try {
+        const result = await generateScript({
+          projectId: targetProjectId,
+          title: params?.title,
+          description: params?.description,
+          style: params?.style,
+          length: params?.length,
+          episodeNumber,
+          provider: params?.textModel || selectedModel,
+        });
+        const { jobId, scriptId, episodeNumber: resultEp, title: resultTitle } = result;
+        // 更新启动消息为进行中
+        const progressMsgId = `script-gen-progress-${Date.now()}`;
+        updateSessionMessages(currentSid, (prev) => [
+          ...prev,
+          {
+            id: progressMsgId,
+            role: 'assistant',
+            content: `剧本「${resultTitle}」生成中（工作流 #${jobId}）...`,
+            timestamp: Date.now(),
+          },
+        ]);
+
+        // 轮询工作流状态
+        const pollInterval = setInterval(async () => {
+          try {
+            const job = await getWorkflowStatus(jobId);
+            if (job.status === 'completed') {
+              clearInterval(pollInterval);
+              // 获取生成的剧本内容
+              const token = getAuthToken();
+              const scriptRes = await fetch(`/api/scripts/project/${targetProjectId}`, {
+                headers: token ? { Authorization: `Bearer ${token}` } : {},
+              });
+              let scriptContent = '';
+              if (scriptRes.ok) {
+                const scriptData = await scriptRes.json();
+                const foundScript = scriptData.scripts?.find((s: any) => s.id === scriptId);
+                scriptContent = foundScript?.content || '';
+              }
+              const completeMsg: ChatMessageData = {
+                id: `script-gen-complete-${Date.now()}`,
+                role: 'assistant',
+                content: `**剧本生成完成** 🎉\n\n- 标题：${resultTitle}\n- 集数：第${resultEp}集\n- 剧本ID：#${scriptId}\n\n${scriptContent ? `---\n\n${scriptContent.slice(0, 800)}${scriptContent.length > 800 ? '...' : ''}` : ''}`,
+                timestamp: Date.now(),
+              };
+              updateSessionMessages(currentSid, (prev) => [...prev, completeMsg]);
+              if (currentSid) archiveMessage(currentSid, completeMsg);
+              showToast('剧本生成完成', 'success');
+              setIsLoading(false);
+            } else if (job.status === 'failed') {
+              clearInterval(pollInterval);
+              const failMsg: ChatMessageData = {
+                id: `script-gen-fail-${Date.now()}`,
+                role: 'system',
+                content: `⚠️ 剧本生成失败：${job.error_message || '未知错误'}`,
+                timestamp: Date.now(),
+              };
+              updateSessionMessages(currentSid, (prev) => [...prev, failMsg]);
+              if (currentSid) archiveMessage(currentSid, failMsg);
+              showToast('剧本生成失败', 'error');
+              setIsLoading(false);
+            }
+            // running / pending 继续轮询
+          } catch (pollErr: any) {
+            console.error('[ScriptGen] 轮询失败:', pollErr);
+          }
+        }, 2000);
+
+        // 30秒超时保护
+        setTimeout(() => {
+          clearInterval(pollInterval);
+        }, 300000); // 5分钟超时
+      } catch (err: any) {
+        showToast(err?.message || '启动剧本生成失败', 'error');
+        setIsLoading(false);
+      }
+      return;
+    }
+
+    // dismiss 不需要任何操作
+    if (action === 'dismiss') {
+      return;
+    }
+
     onAction?.(action, params);
-  };
+  }, [currentFrame, triggerInspectQuality, onAction, showToast, archiveMessage, updateSessionMessages, projectId, selectedModel]);
 
   // ── 自动执行 AI 操作指令（始终开启，执行所有 action） ────
   const autoExecutedRef = useRef<Set<string>>(new Set());
@@ -1192,13 +1403,13 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
     if (!last.suggestions || last.suggestions.length === 0) return;
     if (autoExecutedRef.current.has(last.id)) return;
     autoExecutedRef.current.add(last.id);
-    // 执行所有非质检类 action
-    const targets = last.suggestions.filter((s) => s.action !== 'inspect_quality');
+    // 执行所有非质检类、非剧本分析类的 action（这些需要用户手动点击）
+    const MANUAL_ACTIONS = new Set(['inspect_quality', 'optimize_script', 'reanalyze_script', 'generate_script', 'dismiss']);
+    const targets = last.suggestions.filter((s) => !MANUAL_ACTIONS.has(s.action));
     if (targets.length === 0) return;
     const t = setTimeout(() => {
       targets.forEach((target, i) => {
         setTimeout(() => {
-          showToast(`执行：${target.label || target.action}`, 'info');
           handleAction(target.action, target.params);
         }, i * 300); // 每个 action 间隔 300ms 依次执行
       });
@@ -1301,6 +1512,97 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
 
       {/* Model selector moved to bottom input area */}
       {/* ─ Model selector ──────────────────────────────────── */}
+      {/* ─ 剧本分析输入面板 ────────────────────────────────── */}
+      {showScriptAnalysis && (
+        <div className="shrink-0 px-3 py-2 border-b border-[var(--border-color)] bg-[var(--bg-nav)]">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-1.5 text-xs font-medium text-[var(--text-primary)]">
+              <Brain size={13} className="text-emerald-400" />
+              <span>剧本分析</span>
+            </div>
+            <button
+              onClick={() => { setShowScriptAnalysis(false); setScriptContent(''); }}
+              className="p-0.5 rounded hover:bg-[var(--bg-input)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+            >
+              <X size={12} />
+            </button>
+          </div>
+          <textarea
+            value={scriptContent}
+            onChange={(e) => setScriptContent(e.target.value)}
+            placeholder="在此粘贴剧本内容，AI将从8个维度进行评分分析..."
+            rows={3}
+            className="w-full bg-[var(--bg-input)] border border-[var(--border-color)] rounded-lg px-2.5 py-2 text-[11px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)] resize-none overflow-y-auto"
+          />
+          <div className="flex justify-end mt-2">
+            <button
+              onClick={async () => {
+                if (!scriptContent.trim()) {
+                  showToast('请输入剧本内容', 'error');
+                  return;
+                }
+                lastScriptContentRef.current = scriptContent;
+                setIsAnalyzingScript(true);
+                try {
+                  const result = await analyzeScript({ content: scriptContent });
+                  const analysis = result.analysis;
+                  // 构建分析结果消息
+                  const analysisMsg: ChatMessageData = {
+                    id: `script-analysis-${Date.now()}`,
+                    role: 'assistant',
+                    content: JSON.stringify({
+                      type: 'scriptAnalysis',
+                      overallScore: analysis.overallScore,
+                      dimensions: analysis.dimensions,
+                      strengths: analysis.strengths,
+                      weaknesses: analysis.weaknesses,
+                      suggestions: analysis.suggestions,
+                      summary: analysis.summary,
+                    }),
+                    timestamp: Date.now(),
+                  };
+                  setMessages((prev) => [...prev, analysisMsg]);
+                  // 追加追问消息
+                  setTimeout(() => {
+                    setMessages((prev) => [...prev, {
+                      id: `script-analysis-followup-${Date.now()}`,
+                      role: 'assistant',
+                      content: '需要我帮您从不足的地方做修改吗？',
+                      timestamp: Date.now(),
+                      suggestions: [
+                        { label: '帮我优化剧本', action: 'optimize_script', params: { content: scriptContent, weaknesses: analysis.weaknesses } },
+                        { label: '再分析一次', action: 'reanalyze_script', params: { content: scriptContent } },
+                        { label: '不用了', action: 'dismiss' },
+                      ],
+                    }]);
+                  }, 500);
+                  setShowScriptAnalysis(false);
+                  setScriptContent('');
+                  showToast('分析完成', 'success');
+                } catch (err: any) {
+                  showToast(err?.message || '分析失败', 'error');
+                } finally {
+                  setIsAnalyzingScript(false);
+                }
+              }}
+              disabled={isAnalyzingScript || !scriptContent.trim()}
+              className="px-3 py-1.5 rounded-lg text-[11px] font-medium bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1"
+            >
+              {isAnalyzingScript ? (
+                <>
+                  <Loader2 size={12} className="animate-spin" />
+                  分析中...
+                </>
+              ) : (
+                <>
+                  <Brain size={12} />
+                  开始分析
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      )}
       {/* ─ Messages list ───────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto relative">
         {/* AM logo watermark — only in empty state */}
@@ -1454,28 +1756,6 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
               >
                 <Video size={11} />
                 <span>视频</span>
-              </button>
-            )}
-            {currentFrame?.id && (
-              <button
-                onClick={loadAnnotations}
-                disabled={isLoadingAnnotations}
-                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-orange-400 hover:bg-[var(--bg-app)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                title="读取当前分镜的批注作为上下文"
-              >
-                {isLoadingAnnotations ? <Loader2 size={11} className="animate-spin" /> : <ClipboardList size={11} />}
-                <span>批注</span>
-              </button>
-            )}
-            {currentFrame?.id && (
-              <button
-                onClick={analyzePromptQuality}
-                disabled={isAnalyzingPrompt}
-                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-yellow-400 hover:bg-[var(--bg-app)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                title="AI分析当前分镜提示词质量并评分"
-              >
-                {isAnalyzingPrompt ? <Loader2 size={11} className="animate-spin" /> : <Star size={11} />}
-                <span>评分</span>
               </button>
             )}
             <div className="relative">

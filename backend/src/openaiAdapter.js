@@ -87,16 +87,13 @@ function determineEndpoint(config, params) {
   }
 
   // 根据能力标签和参数推断
-  // 文生图：必须有 image_gen 能力
+  // 图像生成：支持文生图 + 图生图，参考图通过 image_url 字段传给 /images/generations
   if (capabilities.includes('image_gen')) {
-    // 有明确的文生图参数，或纯 prompt 调用（无 messages/text 字段）
+    // 有明确的图像生成参数，或纯 prompt 调用（无 messages/text 字段）
     const hasImageGenParams = params.response_format === 'url' || params.size || params.width || params.height;
     const isPurePrompt = params.prompt && !params.messages && !params.text;
     if (hasImageGenParams || isPurePrompt) {
-      // 纯文生图（无参考图）
-      if (!params.imageUrls && !params.imageUrl && !params.image) {
-        return '/images/generations';
-      }
+      return '/images/generations';
     }
   }
   // 视频生成：必须有 video_gen 能力，且传了视频相关参数

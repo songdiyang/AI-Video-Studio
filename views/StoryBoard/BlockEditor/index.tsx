@@ -26,6 +26,15 @@ const BlockEditor: React.FC<BlockEditorProps> = ({
   onUpdateNegativePrompt,
   promptMode = 'image',
   basePrompt,
+  models,
+  imageModel,
+  videoModel,
+  onImageModelChange,
+  onVideoModelChange,
+  onGenerateImage,
+  onGenerateVideo,
+  hasAction,
+  imageFrameTab,
 }) => {
   // 将积木块转换为提示词文本
   const initialPrompt = initialBlocks
@@ -83,6 +92,15 @@ const BlockEditor: React.FC<BlockEditorProps> = ({
       onUpdateNegativePrompt={onUpdateNegativePrompt}
       promptMode={promptMode}
       basePrompt={basePrompt}
+      models={models}
+      imageModel={imageModel}
+      videoModel={videoModel}
+      onImageModelChange={onImageModelChange}
+      onVideoModelChange={onVideoModelChange}
+      onGenerateImage={onGenerateImage}
+      onGenerateVideo={onGenerateVideo}
+      hasAction={hasAction}
+      imageFrameTab={imageFrameTab}
     />
   );
 };

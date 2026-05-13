@@ -6,7 +6,7 @@
  *   2. INSERT 新分镜（prompt_template + variables_json）
  *   3. linkAllForScript 建立资源关联
  *   4. 从 scenes.location 汇总场景信息，直接保存到 scenes 表（无需 AI）
- *   5. 从 scenes.props 汇总道具信息，保存到 props 表并建立关联
+ *   5. 从 scenes.props + scenes.characterStates[].heldProps 汇总道具信息，保存到 props 表并建立关联
  * 
  * 确保 scene_state_analysis 执行前分镜已在 DB 中
  * 
@@ -158,7 +158,8 @@ async function handleSaveStoryboards(inputParams, onProgress) {
 
   // ============================================
   // 从 scenes.props（场景级）+ scenes.characterStates[].heldProps（角色级手持道具）
-  // 两条源头汇总，只将复用度高的（≥ 2 分镜 或 ≥ 2 角色持有）沉淀为独立道具资产
+  // + character_states.held_props（数据库中角色状态的手持道具）
+  // 三条源头汇总，将所有候选道具沉淀为独立道具资产
   // ============================================
   let propsExtracted = 0;
   const propNameToId = new Map(); // normalizedName -> propId
@@ -194,7 +195,7 @@ async function handleSaveStoryboards(inputParams, onProgress) {
         }
       }
 
-      // 角色级手持道具
+      // 角色级手持道具（分镜数据中的 characterStates）
       if (Array.isArray(scene.characterStates)) {
         for (const cs of scene.characterStates) {
           if (!cs?.heldProps) continue;
@@ -213,15 +214,38 @@ async function handleSaveStoryboards(inputParams, onProgress) {
       }
     }
 
-    // 筛选“复用性高”的道具：出现在 ≥ 2 个分镜 或 被 ≥ 2 个不同角色持有
-    const reusableSet = new Set();
-    for (const [name, stat] of propStats.entries()) {
-      if (stat.scenes.size >= 2 || stat.characters.size >= 2) {
-        reusableSet.add(name);
+    // T8 新增：从 character_states 表中提取 held_props 道具
+    // 原因：分镜数据中可能没有 characterStates 字段，但角色状态的 held_props 已存储在 DB 中
+    // 注意：held_props 已改为 VARCHAR 类型，直接按逗号分隔处理
+    try {
+      const statePropsRows = await queryAll(
+        `SELECT cs.held_props, ch.name as character_name
+         FROM character_states cs
+         JOIN characters ch ON cs.character_id = ch.id
+         WHERE ch.project_id = ? AND cs.held_props IS NOT NULL AND cs.held_props != ''`,
+        [projectId]
+      );
+      for (const row of statePropsRows) {
+        const heldProps = row.held_props;
+        // held_props 是 VARCHAR，直接按逗号分隔（支持中英文逗号）
+        const propsList = String(heldProps).split(/[,，]/).map(s => s.trim()).filter(Boolean);
+        for (const pStr of propsList) {
+          for (const n of splitAndNormalize(pStr)) {
+            if (!propStats.has(n)) propStats.set(n, { scenes: new Set(), characters: new Set() });
+            if (row.character_name) propStats.get(n).characters.add(String(row.character_name).trim());
+          }
+        }
       }
+      console.log(`[SaveStoryboards] 从 character_states 提取到 ${statePropsRows.length} 条 held_props 记录`);
+    } catch (err) {
+      console.warn('[SaveStoryboards] 从 character_states 提取道具失败:', err.message);
     }
-    console.log(`[SaveStoryboards] 道具统计: 候选 ${propStats.size} 个，沉淀 ${reusableSet.size} 个（复用性高）`);
 
+    // 将所有候选道具都沉淀为独立道具资产（不再限制复用度门槛）
+    // 原因：角色手持道具即使只出现1次也需要生成设定图，用于角色状态三视图生成
+    const reusableSet = new Set(propStats.keys());
+    console.log(`[SaveStoryboards] 道具统计: 候选 ${propStats.size} 个，沉淀 ${reusableSet.size} 个`);
+    
     if (reusableSet.size > 0) {
       const propNameArr = Array.from(reusableSet);
       try {

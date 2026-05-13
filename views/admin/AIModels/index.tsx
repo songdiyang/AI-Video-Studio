@@ -304,7 +304,7 @@ const AIModels: React.FC = () => {
     TEXT: '文本模型',
     IMAGE: '图像生成',
     VIDEO: '视频生成',
-    AUDIO: '音频模型',
+    AUDIO: '声音模型',
     MULTIMODAL: '多模态'
   };
 

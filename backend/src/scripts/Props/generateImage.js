@@ -7,7 +7,7 @@
 
 const { authMiddleware } = require('../../middleware');
 const { queryOne, execute } = require('../../dbHelper');
-const { WorkflowStarter } = require('../../nosyntask/engine');
+const workflowEngine = require('../../nosyntask/engine');
 
 module.exports = function(router) {
 
@@ -37,9 +37,17 @@ module.exports = function(router) {
         return res.status(404).json({ message: '道具不存在或无权访问' });
       }
 
-      // 验证必需参数
-      if (!imageModel) {
-        return res.status(400).json({ message: 'imageModel 参数是必需的' });
+      // 如果未传入 imageModel，使用项目默认模型
+      let effectiveImageModel = imageModel;
+      if (!effectiveImageModel) {
+        const project = await queryOne(
+          'SELECT default_image_model FROM projects WHERE id = ?',
+          [prop.project_id]
+        );
+        effectiveImageModel = project?.default_image_model || '';
+      }
+      if (!effectiveImageModel) {
+        return res.status(400).json({ message: 'imageModel 参数是必需的，且项目未设置默认图片模型' });
       }
 
       // 更新状态为生成中
@@ -48,23 +56,19 @@ module.exports = function(router) {
         ['generating', propId]
       );
 
-      // 启动工作流
-      const workflowStarter = new WorkflowStarter();
-      const { jobId } = await workflowStarter.start({
+      // 启动工作流（使用 prop_views_generation 单步流程）
+      const { jobId } = await workflowEngine.startWorkflow('prop_views_generation', {
         userId,
-        workflowType: 'prop_image_generation',
         projectId: prop.project_id,
-        targetType: 'prop',
-        targetId: propId,
-        params: {
+        jobParams: {
           propId,
-          propName: prop.name,
-          propDescription: prop.description || '',
-          propCategory: prop.category || '',
-          propStyleConfig: styleConfig || prop.style_config || {},
-          imageModel,
-          textModel: textModel || '',  // 文本模型由前端传入，不硬编码默认值
+          projectId: prop.project_id,
+          imageModel: effectiveImageModel,
           aspectRatio: '1:1'  // 道具图默认正方形
+        },
+        metadata: {
+          targetType: 'prop',
+          targetId: propId
         }
       });
 

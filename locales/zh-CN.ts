@@ -37,6 +37,14 @@ const zhCN = {
     pricing: '定价',
     helpDocs: '帮助文档',
   },
+  // 文件菜单
+  fileMenu: {
+    title: '文件',
+    recentProjects: '打开最近的项目',
+    manageAll: '管理全部项目',
+    noProjects: '暂无项目',
+    loading: '加载中...',
+  },
   // 设置页面
   settings: {
     title: '设置',

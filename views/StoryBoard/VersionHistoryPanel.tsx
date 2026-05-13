@@ -296,7 +296,7 @@ const VersionHistoryPanel: React.FC<VersionHistoryPanelProps> = ({
               value={changeSummary}
               onChange={(e) => setChangeSummary(e.target.value)}
               rows={2}
-              className="w-full px-2 py-1.5 text-xs bg-(--bg-input) border border-(--border-color) rounded resize-none focus:outline-none focus:ring-1 focus:ring-(--accent)"
+              className="w-full px-2 py-1.5 text-xs bg-(--bg-input) border border-(--border-color) rounded resize-none focus:outline-none focus:ring-1 focus:ring-(--accent) overflow-y-auto"
             />
             <button
               onClick={handleCreateVersion}

@@ -54,14 +54,24 @@ async function updateContent(req, res) {
       return res.status(403).json({ message: '该分镜已锁定，请先解锁后再修改内容' });
     }
 
-    // 通过剧本关联的项目检查编辑权限
-    const script = await queryOne('SELECT project_id FROM scripts WHERE id = ?', [storyboard.script_id]);
-    if (!script) {
-      return res.status(404).json({ message: 'Associated script not found' });
+    // 通过剧本关联的项目检查编辑权限（支持无剧本的独立模式）
+    let projectId = null;
+    if (storyboard.script_id) {
+      const script = await queryOne('SELECT project_id FROM scripts WHERE id = ?', [storyboard.script_id]);
+      if (script) {
+        projectId = script.project_id;
+      }
     }
-    const role = await getEffectiveProjectRole(userId, script.project_id);
-    if (!role || role === 'viewer') {
-      return res.status(403).json({ message: 'Access denied' });
+    // 如果通过剧本找不到项目，尝试直接从分镜记录获取（独立模式）
+    if (!projectId) {
+      const storyboardProject = await queryOne('SELECT project_id FROM storyboards WHERE id = ?', [storyboardId]);
+      projectId = storyboardProject?.project_id || null;
+    }
+    if (projectId) {
+      const role = await getEffectiveProjectRole(userId, projectId);
+      if (!role || role === 'viewer') {
+        return res.status(403).json({ message: 'Access denied' });
+      }
     }
 
     // 构建动态更新语句
@@ -208,17 +218,17 @@ async function updateContent(req, res) {
     }
 
     // 当 characters 或 location 更新时，自动重新链接关联表
-    if (characters !== undefined || location !== undefined) {
+    if ((characters !== undefined || location !== undefined) && projectId) {
       try {
         if (characters !== undefined) {
           // 传递 characterIds 给链接函数，优先使用直接 ID 创建关联
           const validCharIds = Array.isArray(characterIds) ? characterIds.filter(id => typeof id === 'number' && id > 0) : [];
-          await linkCharactersForStoryboard(storyboardId, script.project_id, { characterIds: validCharIds });
+          await linkCharactersForStoryboard(storyboardId, projectId, { characterIds: validCharIds });
         }
         if (location !== undefined) {
           // 传递 sceneId 给链接函数，优先使用直接 ID 创建关联
           const validSceneId = (typeof sceneId === 'number' && sceneId > 0) ? sceneId : null;
-          await linkScenesForStoryboard(storyboardId, script.project_id, { sceneId: validSceneId });
+          await linkScenesForStoryboard(storyboardId, projectId, { sceneId: validSceneId });
         }
       } catch (linkErr) {
         console.warn('[Storyboard Content] 重新链接关联失败（非致命）:', linkErr.message);

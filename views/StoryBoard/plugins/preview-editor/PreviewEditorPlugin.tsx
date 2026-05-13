@@ -6,6 +6,8 @@
 import React, { useCallback } from 'react';
 import PreviewEditor from '../../../../components/PreviewEditor';
 import { useStoryboardContext } from '../../core/StoryboardContext';
+import { fetchScripts } from '../../../../services/scripts';
+import { getAuthToken } from '../../../../services/auth';
 
 const PreviewEditorPlugin: React.FC = () => {
   const {
@@ -32,13 +34,53 @@ const PreviewEditorPlugin: React.FC = () => {
   }, [state.scripts, handleEpisodeSelect]);
 
   // 剧本生成成功回调
-  const handleScriptGenerated = useCallback((payload: any) => {
-    if (payload) {
-      showToast('剧本生成成功！', 'success');
-      // 刷新剧本列表
-      // 这里可以添加刷新逻辑
+  const handleScriptGenerated = useCallback(async (payload: any) => {
+    if (!payload) return;
+    showToast('剧本生成成功！', 'success');
+
+    try {
+      // 1. 刷新剧本列表
+      const refreshedScripts = await fetchScripts();
+      const formattedScripts = refreshedScripts.map((s: any) => ({
+        id: s.id,
+        episode_number: s.episode_number || 1,
+        title: s.title || `第${s.episode_number || 1}集`,
+        status: s.status || 'completed',
+      }));
+      setState('scripts', formattedScripts);
+
+      // 2. 确定目标集数
+      const targetEpisode = payload.episodeNumber || payload.episode_number || 1;
+      const targetProjectId = payload.projectId || state.currentProjectId;
+
+      // 3. 如果生成的是当前项目+集数，刷新剧本内容（仅刷新大纲面板，不刷新整个工作台）
+      if (targetProjectId && state.currentProjectId === targetProjectId) {
+        const token = getAuthToken();
+        const res = await fetch(`/api/scripts/project/${targetProjectId}/episode/${targetEpisode}`, {
+          headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const script = data?.script;
+          if (script) {
+            // 直接更新剧本内容状态，触发大纲面板重新渲染
+            setState('scriptContent', script.content || null);
+            setState('scriptTitle', script.title || `第${targetEpisode}集`);
+          }
+        }
+
+        // 4. 如果当前不在目标集数，切换到目标集数
+        if (state.currentEpisode !== targetEpisode) {
+          const targetScript = formattedScripts.find((s: any) => s.episode_number === targetEpisode);
+          if (targetScript) {
+            handleEpisodeSelect(targetScript);
+          }
+        }
+      }
+    } catch (err) {
+      console.error('[PreviewEditorPlugin] 剧本生成后刷新失败:', err);
     }
-  }, [showToast]);
+  }, [showToast, setState, state.currentProjectId, state.currentEpisode, handleEpisodeSelect]);
 
   return (
     <PreviewEditor
@@ -52,6 +94,7 @@ const PreviewEditorPlugin: React.FC = () => {
       textModel={state.textModel}
       onTextModelChange={(model) => setState('textModel', model)}
       onScriptGenerated={handleScriptGenerated}
+      projectId={state.currentProjectId}
       scenePreviewProps={{
         projectId: state.currentProjectId,
         scriptId: state.currentScriptId,
@@ -99,7 +142,6 @@ const PreviewEditorPlugin: React.FC = () => {
         onGenerateWithCamera: generationActions.generateWithCamera,
         onGenerateWithPaint: generationActions.generateWithPaint,
         onGenerateWithSketch: generationActions.generateWithSketch,
-        onGenerateHdRepair: generationActions.generateHdRepair,
         onUpdateScene: async (updates) => {
           if (selectedScene) {
             await sceneActions.updateScene(selectedScene, updates);

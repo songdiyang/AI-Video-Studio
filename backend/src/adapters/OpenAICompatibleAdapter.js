@@ -48,8 +48,24 @@ class OpenAICompatibleAdapter extends BaseAdapter {
   }
 
   async query(taskId) {
+    const modelId = (this.modelId || '').toLowerCase();
+    const isSeedance = modelId.includes('seedance');
+
+    // Seedance 1.5 Pro 是异步模型，需要轮询查询
+    if (isSeedance && taskId) {
+      const url = this.buildUrl(`/tasks/${taskId}`);
+      const headers = this.buildHeaders();
+
+      const response = await this.safeRequest(url, {
+        method: 'GET',
+        headers
+      }, `query.task`);
+
+      const data = await this.parseResponse(response);
+      return this.parseVideoResponse(data);
+    }
+
     // OpenAI 兼容接口通常是同步的，不需要轮询
-    // 如果平台有特殊实现，子类可以覆盖此方法
     return null;
   }
 
@@ -100,14 +116,12 @@ class OpenAICompatibleAdapter extends BaseAdapter {
       return params.endpoint.startsWith('/') ? params.endpoint : `/${params.endpoint}`;
     }
 
-    // 图像生成
+    // 图像生成（支持文生图 + 图生图，参考图通过 image_url 字段传给 /images/generations）
     if (caps.includes('image_gen')) {
       const hasImageParams = params.response_format === 'url' || params.size || params.width || params.height;
       const isPurePrompt = params.prompt && !params.messages && !params.text;
       if (hasImageParams || isPurePrompt) {
-        if (!params.imageUrls && !params.imageUrl && !params.image) {
-          return '/images/generations';
-        }
+        return '/images/generations';
       }
     }
 
@@ -150,6 +164,9 @@ class OpenAICompatibleAdapter extends BaseAdapter {
     // 工具调用
     if (params.tools && this.supportsToolCalling()) {
       body.tools = params.tools;
+      if (params.tool_choice) {
+        body.tool_choice = params.tool_choice;
+      }
     }
 
     return body;
@@ -167,16 +184,127 @@ class OpenAICompatibleAdapter extends BaseAdapter {
     if (params.quality) body.quality = params.quality;
     if (params.style) body.style = params.style;
 
-    // 参考图（图生图）
+    // 参考图（图生图）- 支持多张参考图，用逗号分隔
     if (params.imageUrls || params.imageUrl) {
       const urls = params.imageUrls || [params.imageUrl];
-      body.image_url = urls[0];
+      if (urls.length > 1) {
+        // 多张参考图：用逗号分隔所有 URL
+        body.image_url = urls.join(',');
+      } else {
+        body.image_url = urls[0];
+      }
     }
 
     return body;
   }
 
   buildVideoGenBody(params) {
+    const modelId = (this.modelId || '').toLowerCase();
+    const isSeedance = modelId.includes('seedance');
+
+    // Seedance 1.5 Pro 使用特殊的 content 数组格式（非标准 OpenAI 视频格式）
+    if (isSeedance) {
+      const content = [];
+
+      // 1. 添加文本提示词
+      if (params.prompt) {
+        content.push({ type: 'text', text: params.prompt });
+      }
+
+      // 2. 添加首帧图片
+      const imageUrls = params.imageUrls || (params.imageUrl ? [params.imageUrl] : []);
+      const startFrame = params.startFrame;
+      const endFrame = params.endFrame;
+
+      const rawFirstFrame = startFrame && startFrame !== '_REMOVE_'
+        ? startFrame
+        : (imageUrls.length > 0 ? imageUrls[0] : null);
+      if (rawFirstFrame) {
+        content.push({
+          type: 'image_url',
+          image_url: { url: rawFirstFrame },
+          role: 'first_frame'
+        });
+      }
+
+      // 3. 添加尾帧图片（如果存在）
+      const rawLastFrame = endFrame && endFrame !== '_REMOVE_'
+        ? endFrame
+        : (imageUrls.length > 1 ? imageUrls[1] : null);
+      if (rawLastFrame) {
+        content.push({
+          type: 'image_url',
+          image_url: { url: rawLastFrame },
+          role: 'last_frame'
+        });
+      }
+
+      const body = {
+        model: this.modelId,
+        content
+      };
+
+      // Seedance 1.5 Pro 参数处理
+      if (params.duration !== undefined && params.duration !== '_REMOVE_') {
+        const duration = parseInt(params.duration);
+        if (duration === -1) {
+          body.duration = duration;
+        } else if (duration >= 4 && duration <= 12) {
+          body.duration = duration;
+        } else if (duration > 0 && duration < 4) {
+          body.duration = 4;
+        }
+      }
+
+      const ratio = params.aspectRatio || params.ratio;
+      if (ratio && ratio !== '_REMOVE_') {
+        const validRatios = ['16:9', '4:3', '1:1', '3:4', '9:16', '21:9', 'adaptive'];
+        body.ratio = validRatios.includes(ratio) ? ratio : 'adaptive';
+      }
+
+      if (params.resolution && params.resolution !== '_REMOVE_') {
+        const validResolutions = ['480p', '720p', '1080p'];
+        if (validResolutions.includes(params.resolution)) {
+          body.resolution = params.resolution;
+        }
+      }
+
+      if (params.seed !== undefined && params.seed !== '_REMOVE_') {
+        const seed = parseInt(params.seed);
+        if (seed === -1 || (seed >= 0 && seed <= 4294967295)) {
+          body.seed = seed;
+        }
+      }
+
+      if (params.camera_fixed !== undefined && params.camera_fixed !== '_REMOVE_') {
+        body.camera_fixed = Boolean(params.camera_fixed);
+      }
+      if (params.watermark !== undefined && params.watermark !== '_REMOVE_') {
+        body.watermark = Boolean(params.watermark);
+      }
+      if (params.generate_audio !== undefined && params.generate_audio !== '_REMOVE_') {
+        body.generate_audio = Boolean(params.generate_audio);
+      }
+      if (params.draft !== undefined && params.draft !== '_REMOVE_') {
+        body.draft = Boolean(params.draft);
+      }
+      if (params.return_last_frame !== undefined && params.return_last_frame !== '_REMOVE_') {
+        body.return_last_frame = Boolean(params.return_last_frame);
+      }
+      if (params.callback_url && params.callback_url !== '_REMOVE_') {
+        body.callback_url = params.callback_url;
+      }
+      if (params.service_tier && params.service_tier !== '_REMOVE_') {
+        const validTiers = ['default', 'flex'];
+        if (validTiers.includes(params.service_tier)) {
+          body.service_tier = params.service_tier;
+        }
+      }
+
+      return body;
+    }
+
+    // 标准 OpenAI 视频格式
     const body = {
       model: this.modelId,
       prompt: params.prompt || ''
@@ -260,6 +388,22 @@ class OpenAICompatibleAdapter extends BaseAdapter {
   }
 
   parseVideoResponse(data) {
+    const modelId = (this.modelId || '').toLowerCase();
+    const isSeedance = modelId.includes('seedance');
+
+    // Seedance 1.5 Pro 响应格式：{ id, status, output: { video_url, duration }, usage }
+    if (isSeedance) {
+      const output = data.output || data.data?.output || {};
+      return {
+        taskId: data.id || data.task_id || null,
+        status: data.status || 'pending',
+        videoUrl: output.video_url || output.videoUrl || data.video_url || null,
+        duration: output.duration || data.duration || null,
+        _raw: data
+      };
+    }
+
+    // 标准 OpenAI 视频格式
     return {
       taskId: data.id || data.task_id || null,
       status: data.status || 'pending',
@@ -312,8 +456,8 @@ class OpenAICompatibleAdapter extends BaseAdapter {
       caps.push('video_gen');
     }
 
-    // 音频
-    if (id.includes('whisper') || id.includes('audio') || id.includes('tts')) {
+    // 音频/声音生成
+    if (id.includes('whisper') || id.includes('audio') || id.includes('tts') || id.includes('seedtts') || id.includes('voice')) {
       caps.push('audio_gen');
     }
 

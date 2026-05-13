@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Button, Textarea, Chip, Select, SelectItem } from '@heroui/react';
-import { ImageIcon, Video, Film, Camera, Users, MapPin, Zap, X, Trash2, ZoomIn, ZoomOut, RotateCw, Maximize2, Blocks, ChevronDown, ChevronUp, History, Loader2, Pencil, Check, Plus, Search, Sparkles, Clock, Wand2, Star, Shirt, Settings2, Package } from 'lucide-react';
+import { ImageIcon, Video, Film, Camera, Users, MapPin, Zap, X, Trash2, ZoomIn, ZoomOut, RotateCw, Maximize2, Blocks, ChevronDown, ChevronUp, History, Loader2, Pencil, Check, Plus, Search, Sparkles, Clock, Star, Shirt, Settings2, Package } from 'lucide-react';
 import { StoryboardScene, DialogueLine } from './useSceneManager';
 import { TaskState } from '../../hooks/useTaskRunner';
 import MagicSpacePanel, { CameraGenerateParams, PaintGenerateParams, SketchGenerateParams } from './MagicSpace';
@@ -62,7 +62,7 @@ const CharacterTagSelector: React.FC<{
   );
 
   return (
-    <div ref={containerRef} className="relative flex items-center gap-1 flex-wrap">
+    <div ref={containerRef} className="relative inline-flex items-center gap-1 flex-wrap">
       <Users className="w-3 h-3 text-[var(--text-muted)] shrink-0" />
       {characters.map(name => {
         const charData = projectCharacters.find(c => c.name === name);
@@ -307,7 +307,7 @@ const PropsTagSelector: React.FC<{
   );
 
   return (
-    <div ref={containerRef} className="relative flex items-center gap-1 flex-wrap">
+    <div ref={containerRef} className="relative inline-flex items-center gap-1 flex-wrap">
       <Package className="w-3 h-3 text-[var(--text-muted)] shrink-0" />
       {selectedProps.length === 0 && (
         <span className="text-[var(--text-muted)] text-xs">道具</span>
@@ -418,7 +418,7 @@ const SceneDropdownSelector: React.FC<{
   );
 
   return (
-    <div ref={containerRef} className="relative flex items-center gap-1">
+    <div ref={containerRef} className="relative inline-flex items-center gap-1">
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="flex items-center gap-1 text-[var(--text-muted)] cursor-pointer hover:text-[var(--accent)] transition-colors text-xs group"
@@ -520,7 +520,7 @@ const DurationSelector: React.FC<{
   const isPresetValue = DURATION_OPTIONS.includes(duration);
 
   return (
-    <div ref={containerRef} className="relative flex items-center gap-1">
+    <div ref={containerRef} className="relative inline-flex items-center gap-1">
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="flex items-center gap-1 text-[var(--text-muted)] cursor-pointer hover:text-[var(--accent)] transition-colors text-xs group"
@@ -787,7 +787,7 @@ const DescriptionEditor: React.FC<{
         value={text}
         onChange={(e) => handleChange(e.target.value)}
         disabled={scene.isLocked}
-        className="flex-1 w-full bg-[var(--bg-input)] border border-[var(--border-color)] rounded-lg p-3 text-sm text-[var(--text-primary)] resize-none focus:outline-none focus:border-[var(--accent)]"
+        className="flex-1 w-full bg-[var(--bg-input)] border border-[var(--border-color)] rounded-lg p-3 text-sm text-[var(--text-primary)] resize-none focus:outline-none focus:border-[var(--accent)] overflow-y-auto"
         placeholder="描述这个分镜的画面内容：影棚、角色、动作、情绪、镜头等..."
       />
       <div className="flex items-center justify-between">
@@ -833,7 +833,7 @@ interface ScenePreviewPanelProps {
   onGenerateWithCamera?: (id: number, cameraParams: CameraGenerateParams) => Promise<{ success: boolean; error?: string }>;
   onGenerateWithPaint?: (id: number, paintParams: PaintGenerateParams) => Promise<{ success: boolean; error?: string }>;
   onGenerateWithSketch?: (id: number, sketchParams: SketchGenerateParams) => Promise<{ success: boolean; error?: string }>;
-  onGenerateHdRepair?: (id: number) => Promise<{ success: boolean; error?: string }>;
+
   onUpdateScene?: (updates: Partial<StoryboardScene>) => void;
   onUpdateDuration?: (duration: number) => Promise<boolean>;
   imageTask?: TaskState;
@@ -878,7 +878,7 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
   onGenerateWithCamera,
   onGenerateWithPaint,
   onGenerateWithSketch,
-  onGenerateHdRepair,
+
   onUpdateScene,
   onUpdateDuration,
   imageTask,
@@ -947,7 +947,7 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
           text = scene.firstFramePrompt || scene.description || '';
         }
       } else {
-        text = scene.description || '';
+        text = scene.baseDescription || scene.description || '';
       }
       setCurrentEditorText(text);
     }
@@ -1785,40 +1785,6 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                       e.dataTransfer.effectAllowed = 'copy';
                     }}
                   />
-                  {/* 魔术空间按钮 */}
-                  {onGenerateWithCamera && (
-                    <button
-                      onClick={() => {
-                        setMagicSpaceInitialMode('paint');
-                        setShowMagicSpace(true);
-                      }}
-                      disabled={isGenerating}
-                      className={`absolute top-2 left-2 p-2 rounded-lg bg-black/50 text-white/80 transition-colors flex items-center gap-1.5 ${
-                        isGenerating ? 'opacity-40 cursor-not-allowed' : 'hover:bg-purple-500/70 hover:text-white'
-                      }`}
-                      title="魔术空间"
-                    >
-                      <Sparkles className="w-4 h-4" />
-                      <span className="text-xs">魔术空间</span>
-                    </button>
-                  )}
-                  {/* 高清修复按钮 */}
-                  {onGenerateHdRepair && (
-                    <button
-                      onClick={async () => {
-                        const result = await onGenerateHdRepair(scene.id);
-                        if (!result.success) showToast(result.error || '高清修复失败', 'error');
-                      }}
-                      disabled={isGenerating}
-                      className={`absolute top-2 right-12 p-2 rounded-lg bg-black/50 text-white/80 transition-colors flex items-center gap-1.5 ${
-                        isGenerating ? 'opacity-40 cursor-not-allowed' : 'hover:bg-blue-500/70 hover:text-white'
-                      }`}
-                      title="高清修复"
-                    >
-                      <Wand2 className="w-4 h-4" />
-                      <span className="text-xs">高清修复</span>
-                    </button>
-                  )}
                   {/* 历史版本/删除帧按钮 */}
                   <div className="absolute top-2 right-2 flex items-center gap-1">
                     <button
@@ -1944,40 +1910,6 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                       e.dataTransfer.effectAllowed = 'copy';
                     }}
                   />
-                  {/* 魔术空间按钮 */}
-                  {onGenerateWithCamera && (
-                    <button
-                      onClick={() => {
-                        setMagicSpaceInitialMode('paint');
-                        setShowMagicSpace(true);
-                      }}
-                      disabled={isGenerating}
-                      className={`absolute top-2 left-2 p-2 rounded-lg bg-black/50 text-white/80 transition-colors flex items-center gap-1.5 ${
-                        isGenerating ? 'opacity-40 cursor-not-allowed' : 'hover:bg-purple-500/70 hover:text-white'
-                      }`}
-                      title="魔术空间"
-                    >
-                      <Sparkles className="w-4 h-4" />
-                      <span className="text-xs">魔术空间</span>
-                    </button>
-                  )}
-                  {/* 高清修复按钮 */}
-                  {onGenerateHdRepair && (
-                    <button
-                      onClick={async () => {
-                        const result = await onGenerateHdRepair(scene.id);
-                        if (!result.success) showToast(result.error || '高清修复失败', 'error');
-                      }}
-                      disabled={isGenerating}
-                      className={`absolute top-2 right-12 p-2 rounded-lg bg-black/50 text-white/80 transition-colors flex items-center gap-1.5 ${
-                        isGenerating ? 'opacity-40 cursor-not-allowed' : 'hover:bg-blue-500/70 hover:text-white'
-                      }`}
-                      title="高清修复"
-                    >
-                      <Wand2 className="w-4 h-4" />
-                      <span className="text-xs">高清修复</span>
-                    </button>
-                  )}
                   {/* 历史版本/删除帧按钮 */}
                   <div className="absolute top-2 right-2 flex items-center gap-1">
                     <button
@@ -2469,7 +2401,7 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                                 ? (scene.firstFramePrompt || scene.description)
                                 : (scene.lastFramePrompt || scene.description))
                             : (scene.firstFramePrompt || scene.description))
-                        : scene.description;
+                        : scene.baseDescription || scene.description;
                     return text
                       ? [{ id: 'init-text', type: 'text' as const, category: 'text' as const, data: { text }, position: { x: 0, y: 0 } }]
                       : [];
@@ -2528,6 +2460,15 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                     const success = await onUpdateDescription(state.generatedPrompt);
                     return success;
                   }}
+                  models={models}
+                  imageModel={propImageModel}
+                  videoModel={propVideoModel}
+                  onImageModelChange={onImageModelChange}
+                  onVideoModelChange={onVideoModelChange}
+                  onGenerateImage={onGenerateImage}
+                  onGenerateVideo={onGenerateVideo}
+                  hasAction={scene.hasAction}
+                  imageFrameTab={imageFrameTab}
                 />
               )}
             </div>

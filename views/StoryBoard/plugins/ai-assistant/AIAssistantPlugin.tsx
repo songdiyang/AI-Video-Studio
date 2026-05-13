@@ -5,6 +5,10 @@
 
 import React, { lazy, Suspense } from 'react';
 import { useStoryboardContext } from '../../core/StoryboardContext';
+import { createScript as createScriptApi, deleteScript as deleteScriptApi } from '../../../../services/scripts';
+import { generateCharacterViews } from '../../../../services/assets';
+import { updateProject as updateProjectApi } from '../../../../services/projects';
+import { getAuthToken } from '../../../../services/auth';
 
 const AIAssistantPanel = lazy(() => import('../../../../components/AIAssistantPanel'));
 
@@ -18,6 +22,7 @@ const AIAssistantPlugin: React.FC = () => {
     resourceActions,
     setState,
     showToast,
+    autoStoryboard,
   } = useStoryboardContext();
 
   const selectedSceneData = scenes.find(s => s.id === selectedScene);
@@ -49,7 +54,23 @@ const AIAssistantPlugin: React.FC = () => {
       if (!sceneId) { showToast('请先选择分镜', 'warning'); return; }
       generationActions.generateVideo(sceneId);
     } else if (action === 'auto_storyboard') {
-      // autoStoryboard.setShowConfirmModal(true);
+      // AI 自动触发时直接执行，不弹确认框
+      if (!state.currentScriptId) {
+        showToast('智能分镜需要绑定剧本作为参考', 'warning');
+        return;
+      }
+      // 使用 startGeneration 直接启动，避免 handleAutoGenerateClick 弹窗
+      const { startGeneration } = autoStoryboard as any;
+      if (startGeneration) {
+        startGeneration(state.textModel, true, false, {
+          conflictStrategy: 'skip',
+          referenceScriptContent: state.scriptContent || undefined,
+          referenceScriptTitle: state.currentProject?.name || undefined
+        });
+      } else {
+        // 回退：调用原来的方法（会弹窗）
+        autoStoryboard.handleAutoGenerateClick();
+      }
     } else if (action === 'optimize_prompt' || action === 'upload_material') {
       showToast(`请在分镜卡片上手动${action === 'optimize_prompt' ? '触发提示词优化' : '上传素材'}`, 'info');
     }
@@ -158,6 +179,38 @@ const AIAssistantPlugin: React.FC = () => {
         .catch(toastErr('删除影棚失败'));
     }
     // 剧本
+    else if (action === 'create_script') {
+      if (!ensureProject()) return;
+      const content = String(params?.content || '');
+      if (!content.trim()) { showToast('剧本内容不能为空', 'warning'); return; }
+      createScriptApi({
+        projectId: state.currentProjectId!,
+        title: params?.title || '新剧本',
+        content,
+        episodeNumber: params?.episodeNumber || 1,
+      })
+        .then((res) => {
+          toastOk(`已创建剧本「${params?.title || '新剧本'}」`);
+          // 刷新 scripts 列表
+          setState('currentScriptId' as any, res.scriptId);
+        })
+        .catch(toastErr('创建剧本失败'));
+    } else if (action === 'delete_script') {
+      const id = Number(params?.scriptId);
+      if (!id) { showToast('缺少 scriptId', 'warning'); return; }
+      deleteScriptApi(id)
+        .then(() => toastOk('剧本已删除'))
+        .catch(toastErr('删除剧本失败'));
+    } else if (action === 'generate_base_model') {
+      const cid = Number(params?.characterId);
+      if (!cid) { showToast('缺少 characterId', 'warning'); return; }
+      generateCharacterViews(cid, { imageModel: state.currentImageModel })
+        .then(() => toastOk('已启动角色三视图生成（可能需要几分钟）'))
+        .catch(toastErr('三视图生成失败'));
+    } else if (action === 'inspect_quality') {
+      showToast('请将当前分镜图片发送到 AI 助手，然后询问"检查这个分镜质量"', 'info');
+    }
+    // 已有剧本操作
     else if (action === 'bind_script') {
       const id = params?.scriptId == null ? null : Number(params.scriptId);
       setState('currentScriptId', id);
@@ -171,12 +224,28 @@ const AIAssistantPlugin: React.FC = () => {
     // 项目
     else if (action === 'update_project') {
       if (!ensureProject()) return;
-      // TODO: 实现项目更新
+      const fields = params?.fields || {};
+      updateProjectApi(state.currentProjectId!, fields)
+        .then(() => toastOk('项目已更新'))
+        .catch(toastErr('项目更新失败'));
     }
     // 协作
     else if (action === 'invite_member') {
       if (!ensureProject()) return;
-      // TODO: 实现成员邀请
+      const email = params?.username || params?.email;
+      if (!email) { showToast('缺少邀请邮箱', 'warning'); return; }
+      const token = getAuthToken();
+      fetch('/api/collaboration/invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ projectId: state.currentProjectId!, email, role: params?.role || 'viewer' }),
+      })
+        .then(async (res) => {
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.message || '邀请失败');
+          toastOk(`已邀请 ${email}`);
+        })
+        .catch(toastErr('邀请成员失败'));
     }
     else {
       console.log('[AI Assistant] 未处理的 action:', action, params);

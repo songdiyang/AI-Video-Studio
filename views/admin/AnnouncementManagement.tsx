@@ -330,7 +330,7 @@ const AnnouncementManagement: React.FC = () => {
                   onChange={(e) => setAnnounceContent(e.target.value)}
                   placeholder="输入公告内容..."
                   rows={6}
-                  className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 resize-none outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-200 transition-colors"
+                  className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 resize-none outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-200 transition-colors overflow-y-auto"
                 />
               </div>
               <div className="flex items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-xl">

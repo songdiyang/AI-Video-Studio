@@ -3,6 +3,7 @@ const { queryOne, queryAll, execute } = require('../../dbHelper');
 const { authMiddleware } = require('../../middleware');
 const { getEffectiveProjectRole } = require('../../middleware/collaborationAuth');
 const { generationStartService, sendGenerationError } = require('../../modules/generation');
+const workflowEngine = require('../../nosyntask/engine');
 const generateImage = require('./generateImage');
 const states = require('./states');
 
@@ -23,12 +24,13 @@ router.get('/', authMiddleware, async (req, res) => {
     );
 
     // 同时查询角色状态中引用的手持道具文本描述
+    // held_props 是 JSON 字段，使用 JSON_UNQUOTE 提取文本值进行比较
     const heldPropsRefs = await queryAll(
       `SELECT cs.held_props, cs.name AS state_name, cs.id AS state_id,
               ch.name AS character_name, ch.id AS character_id, ch.project_id
        FROM character_states cs
        JOIN characters ch ON cs.character_id = ch.id
-       WHERE ch.user_id = ? AND cs.held_props IS NOT NULL AND cs.held_props != ''
+       WHERE ch.user_id = ? AND cs.held_props IS NOT NULL AND JSON_UNQUOTE(cs.held_props) != ''
        ORDER BY ch.name ASC, cs.sort_order ASC`,
       [userId]
     );
@@ -210,6 +212,47 @@ router.post('/:id/generate-views', authMiddleware, async (req, res) => {
     });
   } catch (error) {
     sendGenerationError(res, error, '生成道具设定图失败', '[Generate Prop Views]');
+  }
+});
+
+// POST /api/props/:id/cancel-generation - 取消道具生成
+router.post('/:id/cancel-generation', authMiddleware, async (req, res) => {
+  const userId = req.user.id;
+  const propId = Number(req.params.id);
+
+  try {
+    // 验证道具所有权
+    const prop = await queryOne(
+      'SELECT * FROM props WHERE id = ? AND user_id = ?',
+      [propId, userId]
+    );
+    if (!prop) {
+      return res.status(404).json({ message: '道具不存在或无权访问' });
+    }
+
+    // 查找最新的活跃工作流任务
+    const latestJob = await queryOne(
+      `SELECT id FROM workflow_jobs 
+       WHERE user_id = ? AND workflow_type = 'prop_views_generation' 
+       AND status IN ('pending', 'running')
+       ORDER BY created_at DESC LIMIT 1`,
+      [userId]
+    );
+
+    if (latestJob) {
+      await workflowEngine.cancelWorkflow(latestJob.id, userId);
+    }
+
+    // 重置道具生成状态
+    await execute(
+      'UPDATE props SET generation_status = ? WHERE id = ?',
+      ['idle', propId]
+    );
+
+    res.json({ message: '已取消生成', propId });
+  } catch (error) {
+    console.error('[Cancel Prop Generation]', error);
+    res.status(500).json({ message: '取消生成失败: ' + error.message });
   }
 });
 

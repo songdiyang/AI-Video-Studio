@@ -1,11 +1,16 @@
 /**
  * 剧本生成处理器（支持连续剧集）
- * input:  { title, description, style, length, textModel, projectId, episodeNumber }
- * output: { content, tokens, provider, episodeNumber }
+ *
+ * 双路径兼容：
+ *   - 前端 POST /api/scripts/generate：预创建了 scripts 记录 → 本处理器识别并更新
+ *   - AI 助手 Executor 路径：无预创建 → 本处理器自行创建 scripts 记录
+ *
+ * input:  { title, description, style, length, textModel, projectId, episodeNumber, userId }
+ * output: { content, tokens, provider, episodeNumber, scriptId }
  */
 
 const handleBaseTextModelCall = require('../base/baseTextModelCall');
-const { queryAll } = require('../../../dbHelper');
+const { queryAll, queryOne, execute } = require('../../../dbHelper');
 const { getStoryStyle, getNarrativePerspective } = require('../../../utils/getProjectStyle');
 
 // 根据剧本长度获取场景数量配置
@@ -19,12 +24,64 @@ function getSceneConfig(length) {
 }
 
 async function handleScriptGeneration(inputParams, onProgress) {
-  const { title, description, style, length, textModel: modelName, projectId, episodeNumber } = inputParams;
+  const { title, description, style, length, textModel: modelName, projectId, episodeNumber, userId } = inputParams;
 
   if (!modelName) {
     throw new Error('textModel 参数是必需的');
   }
+  if (!projectId) {
+    throw new Error('projectId 参数是必需的');
+  }
   const targetEpisode = episodeNumber || 1;
+  const effectiveUserId = userId || 0;
+
+  // ── 预处理：确保 scripts 记录存在（双路径兼容）──
+  let scriptId = null;
+  const existingScript = await queryOne(
+    'SELECT id, status, updated_at FROM scripts WHERE project_id = ? AND episode_number = ?',
+    [projectId, targetEpisode]
+  );
+
+  if (existingScript) {
+    if (existingScript.status === 'generating') {
+      // 工作流本身就在执行生成 → 直接复用（前端路由层已做并发防护）
+      console.log(`[ScriptGeneration] 复用已有 generating 记录: id=${existingScript.id}`);
+      await execute(
+        'UPDATE scripts SET title = ?, updated_at = NOW() WHERE id = ?',
+        [title || existingScript.title || `第${targetEpisode}集`, existingScript.id]
+      );
+      scriptId = existingScript.id;
+    } else if (existingScript.status === 'draft' || existingScript.status === 'failed') {
+      await execute(
+        'UPDATE scripts SET status = ?, title = ?, updated_at = NOW() WHERE id = ?',
+        ['generating', title || `第${targetEpisode}集`, existingScript.id]
+      );
+      scriptId = existingScript.id;
+    } else if (existingScript.status === 'completed') {
+      // 已完成 → 创建新集数（递推）
+      const maxEp = await queryOne(
+        'SELECT MAX(episode_number) as max_ep FROM scripts WHERE project_id = ?',
+        [projectId]
+      );
+      const nextEp = (maxEp?.max_ep || targetEpisode) + 1;
+      console.log(`[ScriptGeneration] 第${targetEpisode}集已完成，自动递推到第${nextEp}集`);
+      const insResult = await execute(
+        'INSERT INTO scripts (user_id, project_id, episode_number, title, content, status) VALUES (?, ?, ?, ?, ?, ?)',
+        [effectiveUserId, projectId, nextEp, title || `第${nextEp}集`, '', 'generating']
+      );
+      scriptId = insResult.insertId;
+    } else {
+      throw new Error(`第${targetEpisode}集已存在（状态：${existingScript.status}），无法生成`);
+    }
+  } else {
+    // 不存在 → 新建记录
+    const insResult = await execute(
+      'INSERT INTO scripts (user_id, project_id, episode_number, title, content, status) VALUES (?, ?, ?, ?, ?, ?)',
+      [effectiveUserId, projectId, targetEpisode, title || `第${targetEpisode}集`, '', 'generating']
+    );
+    scriptId = insResult.insertId;
+    console.log(`[ScriptGeneration] 已创建 scripts 记录: id=${scriptId}, episode=${targetEpisode}`);
+  }
 
   if (onProgress) onProgress(10);
 
@@ -164,12 +221,20 @@ ${userPrompt}`;
 
   if (onProgress) onProgress(90);
 
+  // ── 后处理：保存内容到 scripts 表 ──
+  await execute(
+    'UPDATE scripts SET content = ?, model_provider = ?, token_used = ?, status = ?, updated_at = NOW() WHERE id = ?',
+    [result.content, result._model?.provider || 'unknown', result.tokens || 0, 'completed', scriptId]
+  );
+  console.log(`[ScriptGeneration] 已保存剧本: scriptId=${scriptId}, tokens=${result.tokens || 0}`);
+
   return {
     content: result.content,
     tokens: result.tokens || 0,
     provider: result._model?.provider || 'unknown',
     modelName,
-    episodeNumber: targetEpisode
+    episodeNumber: targetEpisode,
+    scriptId
   };
 }
 

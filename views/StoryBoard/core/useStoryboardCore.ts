@@ -101,6 +101,7 @@ export function useStoryboardCore(options: UseStoryboardCoreOptions) {
   // 项目数据
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
   const [scripts, setScripts] = useState<Script[]>(externalScripts);
+  const scriptsRef = useRef(externalScripts);
 
   // 项目资源
   const [projectCharacters, setProjectCharacters] = useState<any[]>([]);
@@ -122,7 +123,7 @@ export function useStoryboardCore(options: UseStoryboardCoreOptions) {
     if (projectId !== undefined && projectId !== currentProjectId) {
       setCurrentProjectId(projectId || null);
     }
-    if (scriptId && episodeNumber !== undefined && episodeNumber !== currentEpisode) {
+    if (episodeNumber !== undefined && episodeNumber !== currentEpisode) {
       setCurrentEpisode(episodeNumber);
     }
     if (imageModel !== undefined && imageModel !== currentImageModel) {
@@ -132,6 +133,26 @@ export function useStoryboardCore(options: UseStoryboardCoreOptions) {
       setCurrentVideoModel(videoModel);
     }
   }, [scriptId, projectId, episodeNumber, imageModel, videoModel]);
+
+  // 同步外部 scripts 数组（仅当外部数组有新增脚本时同步，避免覆盖本地新增）
+  useEffect(() => {
+    setScripts(prev => {
+      // 首次加载或外部有新增脚本时同步
+      const currentIds = new Set(prev.map(s => s.id));
+      const newFromExternal = externalScripts.filter(s => !currentIds.has(s.id));
+      if (newFromExternal.length > 0) {
+        // 外部有新增，合并到本地
+        return [...prev, ...newFromExternal];
+      }
+      // 如果本地为空但外部有数据，使用外部数据
+      if (prev.length === 0 && externalScripts.length > 0) {
+        return externalScripts;
+      }
+      // 否则保留本地数据（避免外部旧数据覆盖本地新增）
+      return prev;
+    });
+    scriptsRef.current = externalScripts;
+  }, [externalScripts]);
 
   // 模型选项
   const modelMap = useMemo(() => {
@@ -554,6 +575,15 @@ export function useStoryboardCore(options: UseStoryboardCoreOptions) {
       } as any);
       showToast(`已添加第${nextEp}集`, 'success');
       if (res?.scriptId) {
+        // 将新集添加到 scripts 数组
+        const newScript: Script = {
+          id: res.scriptId,
+          episode_number: nextEp,
+          title: title,
+          status: 'completed',
+        };
+        setScripts(prev => [...prev, newScript]);
+        setStandaloneMaxEpisode(nextEp);
         onEpisodeChange?.(nextEp, res.scriptId);
         setCurrentScriptId(res.scriptId);
         setCurrentEpisode(nextEp);

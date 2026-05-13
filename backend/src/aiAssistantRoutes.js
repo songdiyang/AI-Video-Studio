@@ -157,6 +157,7 @@ function buildSystemPrompt(context) {
     '\n- delete_location：删除场景。params:{locationId}（破坏性）' +
     '\n// 剧本' +
     '\n- create_script：新建剧本。params:{title?, episodeNumber?, content}' +
+    '\n- generate_script：AI生成剧本。params:{projectId, episodeNumber?, title?, description?, style?, length?, textModel?}。启动异步工作流生成剧本，生成中剧本状态为 generating，完成后自动保存。' +
     '\n- delete_script：删除剧本。params:{scriptId}（破坏性）' +
     '\n- bind_script：切换当前参考剧本（弱绑定）。params:{scriptId}——传 null 则解绑' +
     '\n- switch_episode：切换当前集数进度标签。params:{episodeNumber:数字}' +
@@ -164,8 +165,6 @@ function buildSystemPrompt(context) {
     '\n- update_project：更新项目信息。params:{fields:{name?, description?, art_style?}}' +
     '\n// 协作 & 版本' +
     '\n- invite_member：邀请协作者。params:{username, role?:"editor|viewer"}' +
-    '\n- assign_task：分配分镜任务。params:{sceneId, username}' +
-    '\n- restore_version：回滚到指定版本。params:{versionId, restoreType?:"single|create_new"}（破坏性）' +
     '\n\n重要：你拥有项目的完整操作权限。当用户明确要求执行某个操作时，直接在回复中说明你正在做什么，并附上对应的 action 指令。系统将自动执行，不需要用户再次确认。对于删除等不可逆操作，在回复正文中简要说明影响即可。';
 
   return systemPrompt;
@@ -470,12 +469,17 @@ router.post('/chat/stream', authMiddleware, async (req, res) => {
 
         try {
           const parsed = JSON.parse(dataLine);
-          // 提取文本增量
-          const delta = parsed?.response?.output_text?.delta ||
+          // 提取文本增量（支持多种格式：OpenAI /chat/completions、传统 /responses、通用 delta）
+          const contentDelta = parsed?.choices?.[0]?.delta?.content ||
+                        parsed?.response?.output_text?.delta ||
                         parsed?.output_text?.delta ||
                         parsed?.delta || '';
-          if (delta) {
-            res.write(`data: ${JSON.stringify({ delta })}\n\n`);
+          const reasoningDelta = parsed?.choices?.[0]?.delta?.reasoning_content || '';
+          if (contentDelta) {
+            res.write(`data: ${JSON.stringify({ delta: contentDelta })}\n\n`);
+          }
+          if (reasoningDelta) {
+            res.write(`data: ${JSON.stringify({ reasoningDelta })}\n\n`);
           }
         } catch {
           // ignore parse error
@@ -631,13 +635,14 @@ router.get('/sessions/:id/messages', authMiddleware, async (req, res) => {
     const session = await queryOne('SELECT id FROM ai_assistant_sessions WHERE id = ? AND user_id = ?', [sessionId, userId]);
     if (!session) return res.status(404).json({ success: false, error: '会话不存在' });
     const rows = await queryAll(
-      'SELECT id, role, content, attachments, suggestions, created_at FROM ai_assistant_messages WHERE session_id = ? ORDER BY id ASC',
+      'SELECT id, role, content, reasoning, attachments, suggestions, created_at FROM ai_assistant_messages WHERE session_id = ? ORDER BY id ASC',
       [sessionId]
     );
     const messages = rows.map((r) => ({
       id: String(r.id),
       role: r.role,
       content: safeJson(r.content) ?? r.content,
+      reasoning: r.reasoning || undefined,
       attachments: safeJsonArray(r.attachments),
       suggestions: safeJsonArray(r.suggestions),
       timestamp: new Date(r.created_at).getTime()
@@ -656,12 +661,12 @@ router.post('/sessions/:id/messages', authMiddleware, async (req, res) => {
     const sessionId = Number(req.params.id);
     const session = await queryOne('SELECT id FROM ai_assistant_sessions WHERE id = ? AND user_id = ?', [sessionId, userId]);
     if (!session) return res.status(404).json({ success: false, error: '会话不存在' });
-    const { role, content, attachments = null, suggestions = null } = req.body || {};
+    const { role, content, reasoning = null, attachments = null, suggestions = null } = req.body || {};
     if (!role || content == null) return res.status(400).json({ success: false, error: '缺少 role 或 content' });
     const contentStr = typeof content === 'string' ? content : JSON.stringify(content);
     const result = await execute(
-      'INSERT INTO ai_assistant_messages (session_id, role, content, attachments, suggestions) VALUES (?, ?, ?, ?, ?)',
-      [sessionId, String(role).slice(0, 16), contentStr, attachments ? JSON.stringify(attachments) : null, suggestions ? JSON.stringify(suggestions) : null]
+      'INSERT INTO ai_assistant_messages (session_id, role, content, reasoning, attachments, suggestions) VALUES (?, ?, ?, ?, ?, ?)',
+      [sessionId, String(role).slice(0, 16), contentStr, reasoning || null, attachments ? JSON.stringify(attachments) : null, suggestions ? JSON.stringify(suggestions) : null]
     );
     await execute(
       'UPDATE ai_assistant_sessions SET message_count = message_count + 1, last_message_at = CURRENT_TIMESTAMP WHERE id = ?',
@@ -778,11 +783,16 @@ router.post('/sessions/:id/run', authMiddleware, async (req, res) => {
 
     // 2) 校验模型支持 tool calling
     const model = await queryOne(
-      'SELECT name, supports_tool_calling FROM ai_model_configs WHERE name = ? AND is_active = 1',
+      'SELECT name, supports_tool_calling, category, provider FROM ai_model_configs WHERE name = ? AND is_active = 1',
       [modelName]
     );
     if (!model) return res.status(404).json({ success: false, error: '模型不存在或未启用' });
-    if (!model.supports_tool_calling) {
+    // 兼容处理：supports_tool_calling 可能为字符串或数字，同时按 category/provider 兜底
+    const supportsToolCalling = model.supports_tool_calling === 1 || model.supports_tool_calling === true ||
+      String(model.supports_tool_calling).toLowerCase() === 'true' || String(model.supports_tool_calling) === '1';
+    const isToolCapableCategory = ['TEXT', 'MULTIMODAL'].includes(model.category);
+    const isToolCapableProvider = /deepseek|doubao|ark|openai|volcengine/i.test(model.provider || '');
+    if (!supportsToolCalling && !(isToolCapableCategory && isToolCapableProvider)) {
       return res.status(400).json({
         success: false,
         error: `模型 ${modelName} 不支持 AI 助手长任务（function calling），请更换为支持 tool calling 的模型`

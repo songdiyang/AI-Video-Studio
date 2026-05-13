@@ -131,12 +131,22 @@ export function useSceneGeneration({
 }: UseSceneGenerationOptions) {
   const { tasks, runTask, recoverTasks, clearTask, isRunning, isTaskActive } = useTaskRunner({ projectId: projectId || 0 });
 
-  // 页面加载时恢复未完成的单帧/视频任务
+  // 页面加载时恢复未完成的单帧/视频/道具任务
   useEffect(() => {
     if (!projectId) return;
     recoverTasks(
-      ['frame_generation', 'single_frame_generation', 'scene_video', 'camera_frame_generation', 'sketch_frame_generation'],
-      jobToTaskKey
+      ['frame_generation', 'single_frame_generation', 'scene_video', 'camera_frame_generation', 'sketch_frame_generation', 'prop_views_generation'],
+      (job) => {
+        // 道具生成任务
+        if (job.workflow_type === 'prop_views_generation') {
+          const params = parseJobInputParams(job.input_params);
+          const propId = params?.propId;
+          if (propId) return `prop_${propId}`;
+          return null;
+        }
+        // 分镜生成任务
+        return jobToTaskKey(job);
+      }
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]); // recoverTasks 是稳定的函数，不需要添加到依赖
@@ -144,7 +154,7 @@ export function useSceneGeneration({
   // 监听任务完成/失败 → 更新 scene 状态 + 保存数据库
   useEffect(() => {
     for (const [key, task] of Object.entries(tasks) as [string, TaskState][]) {
-      if (!key.startsWith('img_') && !key.startsWith('vid_')) continue;
+      if (!key.startsWith('img_') && !key.startsWith('vid_') && !key.startsWith('prop_')) continue;
 
       // 失败/取消：清理任务 + localStorage 生成状态
       if (task.status === 'failed' || task.status === 'cancelled') {
@@ -158,6 +168,12 @@ export function useSceneGeneration({
       const sceneId = Number(key.split('_')[1]);
       if (!task.result) {
         console.warn(`[useSceneGeneration] 完成任务缺少结果数据: key=${key}`);
+        clearTask(key);
+        continue;
+      }
+
+      // 道具生成任务由 PropsTab 自行处理，这里只清理任务状态
+      if (key.startsWith('prop_')) {
         clearTask(key);
         continue;
       }

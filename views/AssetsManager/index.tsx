@@ -938,6 +938,7 @@ const AssetsManager: React.FC = () => {
         assetId: env.id,
         assetName: env.name,
         initialData: {
+          id: env.id,
           name: env.name,
           description: env.description || '',
           timeOfDay: env.time_of_day || '',
@@ -946,6 +947,9 @@ const AssetsManager: React.FC = () => {
           mood: env.mood || '',
           terrainType: env.terrain_type || '',
           project_id: env.project_id,
+          image_url: env.image_url,
+          image_back_url: env.image_back_url,
+          generation_status: env.generation_status,
         },
       }
     }));
@@ -1007,11 +1011,15 @@ const AssetsManager: React.FC = () => {
         assetId: b.id,
         assetName: b.name,
         initialData: {
+          id: b.id,
           name: b.name,
           description: b.description || '',
           interiorExterior: b.interior_exterior || 'both',
           structureType: b.structure_type || '',
           project_id: b.project_id,
+          exterior_image_url: b.exterior_image_url,
+          interior_image_url: b.interior_image_url,
+          generation_status: b.generation_status,
         },
       }
     }));
@@ -1919,7 +1927,7 @@ const AssetsManager: React.FC = () => {
                       {editingCostumeDesc?.id === c.id ? (
                         <textarea
                           autoFocus
-                          className="w-full text-xs text-(--text-primary) mt-2 p-1.5 rounded-md border border-(--accent)/40 bg-(--bg-muted) resize-none focus:outline-none focus:border-(--accent)"
+                          className="w-full text-xs text-(--text-primary) mt-2 p-1.5 rounded-md border border-(--accent)/40 bg-(--bg-muted) resize-none focus:outline-none focus:border-(--accent) overflow-y-auto"
                           rows={3}
                           value={editingCostumeDesc.value}
                           onChange={(e) => setEditingCostumeDesc({ id: c.id, value: e.target.value })}

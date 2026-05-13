@@ -19,6 +19,8 @@ const ScriptOutlinePlugin: React.FC = () => {
       scriptTitle={state.scriptContent ? state.scriptTitle : state.referenceScriptTitle}
       isLoading={state.isLoadingScript}
       projectId={state.currentProjectId}
+      episodeNumber={state.currentEpisode}
+      scriptId={state.currentScriptId}
       canPick={true}
       isBoundViaEpisode={!!state.scriptContent && !!state.currentScriptId}
       onPickScript={(_id, item) => {
@@ -28,7 +30,9 @@ const ScriptOutlinePlugin: React.FC = () => {
       onCreateNewScript={() => {
         console.log('[ScriptOutlinePlugin] 调用 onCreateNewScript');
         // 发送自定义事件打开剧本生成标签页
-        window.dispatchEvent(new CustomEvent('openScriptGenerateTab'));
+        window.dispatchEvent(new CustomEvent('openScriptGenerateTab', {
+          detail: { episodeNumber: state.currentEpisode }
+        }));
         console.log('[ScriptOutlinePlugin] 已发送 openScriptGenerateTab 事件');
       }}
     />

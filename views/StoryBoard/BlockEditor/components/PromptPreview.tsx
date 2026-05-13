@@ -75,7 +75,7 @@ const PromptPreview: React.FC<PromptPreviewProps> = ({
             w-full min-h-[80px] p-3 text-sm rounded-lg
             ${prompt ? 'bg-[var(--bg-app)] text-[var(--text-primary)]' : 'bg-[var(--bg-input)] text-[var(--text-muted)] italic'}
             border border-[var(--border-color)]
-            resize-none focus:outline-none
+            resize-none focus:outline-none overflow-y-auto
           `}
           rows={3}
         />

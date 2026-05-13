@@ -49,7 +49,7 @@ export async function fetchProjects(): Promise<Project[]> {
     throw new Error('获取工程列表失败');
   }
   const data = await response.json();
-  return data.projects || [];
+  return Array.isArray(data.projects) ? data.projects : [];
 }
 
 export async function fetchProject(id: number): Promise<Project> {
@@ -124,7 +124,7 @@ export async function fetchMyStyles(): Promise<UserStylePreset[]> {
     throw new Error('获取风格列表失败');
   }
   const data = await response.json();
-  return data.styles || [];
+  return Array.isArray(data.styles) ? data.styles : [];
 }
 
 export async function createMyStyle(data: Omit<UserStylePreset, 'id' | 'created_at' | 'updated_at'>): Promise<UserStylePreset> {

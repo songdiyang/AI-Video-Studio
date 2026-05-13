@@ -113,8 +113,13 @@ async function checkPropsReady(stateId) {
     }
   }
   // 2) 检查 held_props 文本描述对应的道具是否已有设定图
-  if (state.held_props && state.held_props.trim()) {
-    const heldPropsText = state.held_props.trim();
+  // held_props 是 VARCHAR 字段，直接作为文本处理
+  let heldPropsText = '';
+  if (state.held_props) {
+    heldPropsText = String(state.held_props);
+  }
+  if (heldPropsText.trim()) {
+    heldPropsText = heldPropsText.trim();
     // 如果已关联道具中已包含同名道具则跳过
     const alreadyCovered = equippedProps && equippedProps.some(p => p.name === heldPropsText);
     if (!alreadyCovered) {
@@ -542,15 +547,17 @@ module.exports = (router) => {
   router.post('/:id/states', authMiddleware, async (req, res) => {
     const userId = req.user.id;
     const { id } = req.params;
-    const { 
-      name, description, appearance, image_url, 
+    const {
+      name, description, appearance, image_url,
       front_view_url, side_view_url, back_view_url, sort_order,
       // 新增外观属性字段
       outfit, age_stage, hairstyle, accessories, body_elements, held_props, is_active, generation_prompt,
       // 状态分类和标签
       state_category, tags,
       // 音色配置
-      voice_config
+      voice_config,
+      // 自定义音色
+      speaker_voice_id
     } = req.body;
 
     if (!name || !name.trim()) {
@@ -620,18 +627,38 @@ module.exports = (router) => {
         ? (typeof voice_config === 'string' ? voice_config : JSON.stringify(voice_config))
         : null;
 
+      // 验证自定义音色（如果传了）
+      let validatedSpeakerVoiceId = null;
+      if (speaker_voice_id !== undefined && speaker_voice_id !== null) {
+        const speakerVoice = await queryOne(
+          'SELECT id, status FROM speaker_voices WHERE id = ? AND user_id = ?',
+          [speaker_voice_id, userId]
+        );
+        if (!speakerVoice) {
+          return res.status(404).json({ message: '自定义音色不存在或无权限' });
+        }
+        if (speakerVoice.status !== 'ready') {
+          return res.status(400).json({ message: '自定义音色尚未就绪' });
+        }
+        validatedSpeakerVoiceId = speaker_voice_id;
+      }
+
       const result = await execute(
         `INSERT INTO character_states (
-          character_id, name, description, appearance, image_url, 
+          character_id, name, description, appearance, image_url,
           front_view_url, side_view_url, back_view_url, sort_order,
           outfit, age_stage, hairstyle, accessories, body_elements, held_props, is_active, generation_prompt, generation_status,
-          state_category, tags, voice_config
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'idle', ?, ?, ?)`,
+          state_category, tags, voice_config, speaker_voice_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'idle', ?, ?, ?, ?)`,
         [
           id, name.trim(), description || '', appearance || '', image_url || '',
           front_view_url || '', side_view_url || '', back_view_url || '', newSortOrder,
-          outfit || '', age_stage || '', hairstyle || '', accessories || '', body_elements || '', held_props || '', is_active ? 1 : 0, generation_prompt || '',
-          normalizedCategory, parsedTags, serializedVoiceConfig
+          outfit || '', age_stage || '', hairstyle || '', accessories || '', body_elements || null,
+          // held_props 是 VARCHAR 字段，直接存储
+          held_props || null,
+          is_active ? 1 : 0, generation_prompt || '',
+          normalizedCategory, parsedTags || '[]', serializedVoiceConfig,
+          validatedSpeakerVoiceId
         ]
       );
 
@@ -657,15 +684,17 @@ module.exports = (router) => {
   router.put('/:id/states/:stateId', authMiddleware, async (req, res) => {
     const userId = req.user.id;
     const { id, stateId } = req.params;
-    const { 
-      name, description, appearance, image_url, 
+    const {
+      name, description, appearance, image_url,
       front_view_url, side_view_url, back_view_url, sort_order,
       // 新增外观属性字段
       outfit, age_stage, hairstyle, accessories, body_elements, held_props, is_active, generation_prompt, generation_status,
       // 状态分类和标签
       state_category, tags,
       // 音色配置
-      voice_config
+      voice_config,
+      // 自定义音色
+      speaker_voice_id
     } = req.body;
 
     try {
@@ -743,13 +772,87 @@ module.exports = (router) => {
         ? (typeof voice_config === 'string' ? voice_config : JSON.stringify(voice_config))
         : undefined;
 
+      // 验证自定义音色（如果传了）
+      let validatedSpeakerVoiceId = undefined;
+      if (speaker_voice_id !== undefined) {
+        if (speaker_voice_id === null) {
+          validatedSpeakerVoiceId = null;
+        } else {
+          const speakerVoice = await queryOne(
+            'SELECT id, status FROM speaker_voices WHERE id = ? AND user_id = ?',
+            [speaker_voice_id, userId]
+          );
+          if (!speakerVoice) {
+            return res.status(404).json({ message: '自定义音色不存在或无权限' });
+          }
+          if (speakerVoice.status !== 'ready') {
+            return res.status(400).json({ message: '自定义音色尚未就绪' });
+          }
+          validatedSpeakerVoiceId = speaker_voice_id;
+        }
+      }
+
+      // T8 新增：如果 held_props 被更新，自动同步到 props 表并建立关联
+      if (held_props !== undefined && held_props) {
+        try {
+          // held_props 是 VARCHAR，直接按逗号分隔
+          const propsList = String(held_props).split(/[,，]/).map(s => s.trim()).filter(Boolean);
+
+          // 获取角色信息
+          const character = await queryOne(
+            'SELECT id, name, project_id FROM characters WHERE id = ?',
+            [id]
+          );
+          const charProjectId = character?.project_id || projectId;
+
+          for (const propName of propsList) {
+            if (!propName || !String(propName).trim()) continue;
+            const pName = String(propName).trim();
+
+            // 检查是否已存在同名道具
+            let prop = await queryOne(
+              'SELECT id FROM props WHERE project_id = ? AND name = ?',
+              [charProjectId, pName]
+            );
+
+            if (!prop) {
+              // 创建新道具
+              const result = await execute(
+                `INSERT INTO props (user_id, project_id, name, description, category, prop_type, generation_status)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                [userId, charProjectId, pName, `角色「${character?.name || ''}」手持道具：${pName}`, '手持道具', 'interactive', 'idle']
+              );
+              prop = { id: result.insertId };
+              console.log(`[Update Character State] 自动创建道具: ${pName} (id=${prop.id})`);
+            }
+
+            // 建立 character_state_props 关联
+            const existingLink = await queryOne(
+              'SELECT id FROM character_state_props WHERE character_state_id = ? AND prop_id = ?',
+              [stateId, prop.id]
+            );
+            if (!existingLink) {
+              await execute(
+                `INSERT INTO character_state_props (character_state_id, prop_id, prop_type, is_equipped, hand_position, usage_mode)
+                 VALUES (?, ?, ?, 1, 'right_hand', 'held')`,
+                [stateId, prop.id, 'interactive']
+              );
+              console.log(`[Update Character State] 建立道具关联: state=${stateId} prop=${prop.id}`);
+            }
+          }
+        } catch (propErr) {
+          console.warn('[Update Character State] 同步 held_props 到 props 表失败:', propErr.message);
+          // 不影响主流程
+        }
+      }
+
       await execute(
-        `UPDATE character_states 
-         SET name = ?, description = ?, appearance = ?, image_url = ?, 
+        `UPDATE character_states
+         SET name = ?, description = ?, appearance = ?, image_url = ?,
              front_view_url = ?, side_view_url = ?, back_view_url = ?, sort_order = ?,
              outfit = ?, age_stage = ?, hairstyle = ?, accessories = ?, body_elements = ?, held_props = ?,
              is_active = ?, generation_prompt = ?, generation_status = ?,
-             state_category = ?, tags = ?, voice_config = ?,
+             state_category = ?, tags = ?, voice_config = ?, speaker_voice_id = ?,
              updated_at = CURRENT_TIMESTAMP
          WHERE id = ?`,
         [
@@ -765,14 +868,18 @@ module.exports = (router) => {
           age_stage !== undefined ? age_stage : (existingState.age_stage || ''),
           hairstyle !== undefined ? hairstyle : (existingState.hairstyle || ''),
           accessories !== undefined ? accessories : (existingState.accessories || ''),
-          body_elements !== undefined ? body_elements : (existingState.body_elements || ''),
-          held_props !== undefined ? held_props : (existingState.held_props || ''),
+          body_elements !== undefined ? (body_elements || null) : (existingState.body_elements || null),
+          // held_props 是 VARCHAR 字段，直接存储
+          held_props !== undefined
+            ? (held_props || null)
+            : existingState.held_props,
           is_active !== undefined ? (is_active ? 1 : 0) : existingState.is_active,
           finalGenerationPrompt,
           generation_status !== undefined ? generation_status : (existingState.generation_status || 'idle'),
           normalizedCategory !== undefined ? normalizedCategory : (existingState.state_category || '["daily"]'),
-          parsedTags !== null ? parsedTags : (existingState.tags || null),
+          parsedTags !== null ? parsedTags : (existingState.tags ? JSON.stringify(existingState.tags) : '[]'),
           serializedVoiceConfig !== undefined ? serializedVoiceConfig : existingState.voice_config,
+          validatedSpeakerVoiceId !== undefined ? validatedSpeakerVoiceId : existingState.speaker_voice_id,
           stateId
         ]
       );
@@ -1036,8 +1143,9 @@ module.exports = (router) => {
           sourceState.age_stage || '',
           sourceState.hairstyle || '',
           sourceState.accessories || '',
-          sourceState.body_elements || '',
-          sourceState.held_props || '',
+          sourceState.body_elements || null,
+          // held_props 是 VARCHAR 字段，直接传递
+          sourceState.held_props,
           sourceState.generation_prompt || '',
           sourceState.state_category || 'daily',
           sourceState.tags || null
@@ -1267,6 +1375,20 @@ module.exports = (router) => {
         'DELETE FROM character_state_props WHERE character_state_id = ? AND prop_id = ?',
         [stateId, propId]
       );
+
+      // 同步更新 held_props 字段：移除已解绑的道具名称
+      const stateHeldProps = await queryOne('SELECT held_props FROM character_states WHERE id = ?', [stateId]);
+      if (stateHeldProps && stateHeldProps.held_props && prop?.name) {
+        const propName = prop.name;
+        // held_props 是 VARCHAR，直接按逗号分隔
+        const heldPropsList = String(stateHeldProps.held_props).split(/[,，]/).map(s => s.trim()).filter(Boolean);
+        const newHeldProps = heldPropsList.filter(name => name !== propName);
+        const newHeldPropsValue = newHeldProps.length > 0 ? newHeldProps.join('，') : null;
+        await execute(
+          'UPDATE character_states SET held_props = ? WHERE id = ?',
+          [newHeldPropsValue, stateId]
+        );
+      }
 
       // 清除 generation_prompt
       await execute(

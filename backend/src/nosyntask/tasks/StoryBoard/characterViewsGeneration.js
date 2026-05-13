@@ -70,7 +70,7 @@ function buildReferenceGuidedPrompt(view, style, characterName, options = {}) {
       const supplementary = supplementaryAttrs.length > 0
         ? `, additional details: ${supplementaryAttrs.join(', ')}`
         : '';
-      return `match the character face and body identity from the base model reference image exactly, preserve all facial features face shape eye shape eye color skin tone body proportions from base model reference, keep the same character identity, IMPORTANT: match the costume and outfit design from the costume reference image exactly, replicate the clothing style silhouette color fabric pattern decoration details from the costume design sheet, the costume reference image is the primary guide for what the character should be wearing${supplementary}, character design reference sheet style, ${styleKeywords}, single character, solo, one person, full body, ${viewAngle}, simple clean background, even soft lighting, neutral natural expression`;
+      return `match the character face and body identity from the base model reference image exactly, preserve all facial features face shape eye shape eye color skin tone body proportions from base model reference, keep the same character identity, CRITICAL: the costume reference image shows the EXACT outfit this character must wear, copy the clothing design precisely including style silhouette color fabric texture pattern decoration details buttons collars sleeves pants shoes from the costume reference image, the costume reference is the PRIMARY authority for clothing${supplementary}, character design reference sheet style, ${styleKeywords}, single character, solo, one person, full body, ${viewAngle}, simple clean background, even soft lighting, neutral natural expression`;
     }
     // ★ 无服装设定图参考：参考图仅用于锁定身份，服装按文字描述生成
     const outfitEmphasis = outfit
@@ -506,7 +506,7 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
     const useRefImages = existingViews.use_reference_images !== 0 && existingViews.use_reference_images !== false;
     if (useRefImages) {
       const refImages = await queryAll(
-        `SELECT image_url, view_type FROM asset_reference_images
+        `SELECT image_url FROM asset_reference_images
          WHERE asset_type = 'character' AND asset_id = ? AND is_enabled = 1
          ORDER BY sort_order ASC`,
         [characterId]
@@ -548,18 +548,25 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
     // ★ 非白膜状态生成：白膜设定图（身份锚）+ 服装设定图（服装锚）
     const refUrls = [];
 
-    // 1) 白膜设定图
+    // 1) 白膜设定图（优先用 image_url 单张设定图，回退到 front_view_url）
     const baseModelRow = await queryOne(
-      `SELECT image_url FROM character_states
-       WHERE character_id = ? AND is_base_model = 1 AND image_url IS NOT NULL AND image_url != ''`,
+      `SELECT image_url, front_view_url FROM character_states
+       WHERE character_id = ? AND is_base_model = 1`,
       [characterId]
     );
-    if (baseModelRow?.image_url) {
-      const designSheetUrl = resolveToInternalUrl(baseModelRow.image_url);
-      if (designSheetUrl) {
-        refUrls.push(designSheetUrl);
-        console.log('[CharacterViews] ✅ 非白膜状态生成：已加白膜设定图:', designSheetUrl);
+    if (baseModelRow) {
+      const baseModelUrl = baseModelRow.image_url || baseModelRow.front_view_url;
+      if (baseModelUrl) {
+        const designSheetUrl = resolveToInternalUrl(baseModelUrl);
+        if (designSheetUrl) {
+          refUrls.push(designSheetUrl);
+          console.log('[CharacterViews] ✅ 非白膜状态生成：已加白膜设定图:', designSheetUrl);
+        }
+      } else {
+        console.log('[CharacterViews] 非白膜状态生成：白膜状态无 image_url 和 front_view_url');
       }
+    } else {
+      console.log('[CharacterViews] 非白膜状态生成：未找到白膜状态');
     }
 
     // 2) 状态关联的 costume 设定图（若有）
@@ -588,6 +595,7 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
             .filter(Boolean);
           if (costumeUrls.length > 0) {
             refUrls.push(...costumeUrls);
+            hasCostumeRefImage = true;
             console.log(`[CharacterViews] ✅ 非白膜状态生成：已加 ${costumeUrls.length} 张服装旧视图作参考`);
           }
         }
@@ -611,27 +619,8 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
         }
       }
 
-      // 4) held_props 文本描述对应的道具设定图（按名称匹配同项目道具）
-      if (heldProps && heldProps.trim() && projectId) {
-        const heldPropsText = heldProps.trim();
-        // 排除已通过 character_state_props 关联的同名道具（避免重复）
-        const alreadyIncluded = propRows.some(r => r.name === heldPropsText);
-        if (!alreadyIncluded) {
-          const heldPropMatch = await queryOne(
-            `SELECT image_url, name FROM props
-             WHERE project_id = ? AND name = ? AND image_url IS NOT NULL AND image_url != ''
-             LIMIT 1`,
-            [projectId, heldPropsText]
-          );
-          if (heldPropMatch) {
-            const heldPropUrl = resolveToInternalUrl(heldPropMatch.image_url);
-            if (heldPropUrl) {
-              refUrls.push(heldPropUrl);
-              console.log(`[CharacterViews] ✅ 非白膜状态生成：已加手持道具「${heldPropMatch.name}」设定图作参考`);
-            }
-          }
-        }
-      }
+      // 注：道具参考图仅来自 character_state_props 关联表（已叠加道具）
+      // 不再使用 held_props 文本字段匹配，避免引入未叠加的道具
     }
 
     userReferenceUrls = refUrls;
@@ -793,8 +782,19 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
         }
         if (hasUserRefs) {
           genParams.imageUrls = [...userReferenceUrls];
-          genParams.strength = 0.15;
-          console.log(`[CharacterViews] ${view}视图参考白膜设定图 (strength=0.15):`, userReferenceUrls);
+          // 根据参考图类型动态调整 strength：
+          // - 白膜+服装设定图：较高 strength 让 AI 看清服装细节 (0.45)
+          // - 仅有白膜图：需要较高 strength 保留角色身份特征 (0.55)
+          //   白膜图是角色身份锚点，strength 太低会导致生成完全不同的角色
+          // - 白膜模式：较低 strength 仅保留脸部特征 (0.20)
+          if (isBaseModel) {
+            genParams.strength = 0.20;
+          } else if (hasCostumeRefImage) {
+            genParams.strength = 0.45;
+          } else {
+            genParams.strength = 0.55;
+          }
+          console.log(`[CharacterViews] ${view}视图参考图 (strength=${genParams.strength}):`, userReferenceUrls);
         }
         const result = await handleImageGeneration(genParams);
         completedCount++;

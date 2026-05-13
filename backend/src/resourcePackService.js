@@ -41,6 +41,7 @@ async function createResourcePack(userId, options) {
   var isGift = options.isGift || false;
   var customStart = options.periodStart;
   var customEnd = options.periodEnd;
+  var packType = options.packType || 'points';
 
   var points = Math.max(1, Math.round(totalPoints));
   var period;
@@ -51,8 +52,8 @@ async function createResourcePack(userId, options) {
   }
 
   var result = await execute(
-    'INSERT INTO user_resource_packs (user_id, name, total_points, remaining_points, source_type, source_id, period_start, period_end, status, is_gift) VALUES (?, ?, ?, ?, ?, ?, ?, ?, \'active\', ?)',
-    [userId, name, points, points, sourceType, sourceId, period.periodStart, period.periodEnd, isGift ? 1 : 0]
+    'INSERT INTO user_resource_packs (user_id, name, total_points, remaining_points, source_type, source_id, period_start, period_end, status, is_gift, pack_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, \'active\', ?, ?)',
+    [userId, name, points, points, sourceType, sourceId, period.periodStart, period.periodEnd, isGift ? 1 : 0, packType]
   );
 
   await syncUserBalance(userId);

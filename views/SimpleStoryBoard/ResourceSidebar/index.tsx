@@ -139,7 +139,22 @@ const ResourceSidebar: React.FC<ResourceSidebarProps> = ({
             }
           }}
           onSceneClick={(s) => setView({ mode: 'scene-detail', scene: s })}
+          onSceneDoubleClick={(s) => {
+            if (s.id) {
+              window.dispatchEvent(new CustomEvent('openAssetEditTab', {
+                detail: {
+                  assetType: 'scene',
+                  assetId: s.id,
+                  assetName: s.name,
+                  initialData: s,
+                }
+              }));
+            }
+          }}
           onPropClick={(p) => {
+            // 单击选中道具（暂无道具详情页，预留接口）
+          }}
+          onPropDoubleClick={(p) => {
             if (p.id) {
               window.dispatchEvent(new CustomEvent('openAssetEditTab', {
                 detail: {

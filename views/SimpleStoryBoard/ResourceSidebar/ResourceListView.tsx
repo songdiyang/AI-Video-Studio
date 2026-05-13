@@ -19,7 +19,9 @@ interface ResourceListViewProps {
   onCharacterClick: (character: Character) => void;
   onCharacterDoubleClick?: (character: Character) => void;
   onSceneClick: (scene: Scene) => void;
+  onSceneDoubleClick?: (scene: Scene) => void;
   onPropClick: (prop: PropItem) => void;
+  onPropDoubleClick?: (prop: PropItem) => void;
   onBatchGenerate?: () => void;
 }
 
@@ -40,7 +42,9 @@ const ResourceListView: React.FC<ResourceListViewProps> = ({
   onCharacterClick,
   onCharacterDoubleClick,
   onSceneClick,
+  onSceneDoubleClick,
   onPropClick,
+  onPropDoubleClick,
   onBatchGenerate,
 }) => {
   const [search, setSearch] = useState('');
@@ -190,7 +194,7 @@ const ResourceListView: React.FC<ResourceListViewProps> = ({
                       <div className="text-xs font-semibold" style={{ color: '#10b981' }}>作品中场景 ({inUse.length})</div>
                       <div className="grid grid-cols-2 gap-2">
                         {inUse.map(s => (
-                          <ResourceCard key={s.id} type="scene" name={s.name} imageUrl={s.image_url} isActive onClick={() => onSceneClick(s)} />
+                          <ResourceCard key={s.id} type="scene" name={s.name} imageUrl={s.image_url} isActive onClick={() => onSceneClick(s)} onDoubleClick={() => onSceneDoubleClick?.(s)} />
                         ))}
                       </div>
                     </div>
@@ -207,7 +211,7 @@ const ResourceListView: React.FC<ResourceListViewProps> = ({
                         <span className="text-[10px]">创建</span>
                       </div>
                       {(inUse.length > 0 ? notInUse : filteredScenes).map(s => (
-                        <ResourceCard key={s.id} type="scene" name={s.name} imageUrl={s.image_url} onClick={() => onSceneClick(s)} />
+                        <ResourceCard key={s.id} type="scene" name={s.name} imageUrl={s.image_url} onClick={() => onSceneClick(s)} onDoubleClick={() => onSceneDoubleClick?.(s)} />
                       ))}
                     </div>
                   </div>
@@ -230,7 +234,7 @@ const ResourceListView: React.FC<ResourceListViewProps> = ({
                 <span className="text-[10px]">创建</span>
               </div>
               {filteredProps.map((p) => (
-                <ResourceCard key={p.id || p.name} type="prop" name={p.name} imageUrl={p.image_url} onClick={() => onPropClick(p)} />
+                <ResourceCard key={p.id || p.name} type="prop" name={p.name} imageUrl={p.image_url} onClick={() => onPropClick(p)} onDoubleClick={() => onPropDoubleClick?.(p)} />
               ))}
             </div>
           </div>

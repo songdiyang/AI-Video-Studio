@@ -1560,7 +1560,7 @@ const Scene3DViewer: React.FC<Scene3DViewerProps> = ({
                     }}
                     placeholder="例如：穿着红色连衣裙的少女，黑色长发..."
                     rows={3}
-                    className="w-full bg-white/10 border border-white/20 rounded px-2 py-1 text-[11px] text-white outline-none focus:border-pink-400 resize-none"
+                    className="w-full bg-white/10 border border-white/20 rounded px-2 py-1 text-[11px] text-white outline-none focus:border-pink-400 resize-none overflow-y-auto"
                   />
                 </div>
 

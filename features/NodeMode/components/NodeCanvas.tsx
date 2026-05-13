@@ -2399,7 +2399,7 @@ const NodeCanvas: React.FC<NodeCanvasProps> = ({
                 <div>
                   <label className="text-[10px] text-gray-400 uppercase">文本内容</label>
                   <textarea
-                    className="mt-1 w-full p-2 rounded bg-white text-[11px] text-gray-700 leading-relaxed border border-gray-200 focus:border-blue-400 focus:outline-none resize-none"
+                    className="mt-1 w-full p-2 rounded bg-white text-[11px] text-gray-700 leading-relaxed border border-gray-200 focus:border-blue-400 focus:outline-none resize-none overflow-y-auto"
                     rows={6}
                     placeholder="输入文本内容，如光影描述、外貌描述等..."
                     value={selectedNode.content || ''}

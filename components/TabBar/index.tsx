@@ -34,6 +34,24 @@ const TabBar: React.FC<TabBarProps> = ({
   const contextMenuRef = useRef<HTMLDivElement>(null);
   const [draggedTabId, setDraggedTabId] = useState<string | null>(null);
   const [dragOverTabId, setDragOverTabId] = useState<string | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // 鼠标滚轮横向滚动标签栏（React onWheel 方式，避免 ref 绑定时机问题）
+  const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    const el = scrollRef.current;
+    if (!el) return;
+
+    // 优先处理触控板横向滚动，否则处理滚轮纵向滚动
+    const delta = e.deltaX !== 0 ? e.deltaX : e.deltaY;
+    if (Math.abs(delta) < 1) return;
+
+    // 检查内容是否溢出
+    const isOverflow = el.scrollWidth > el.clientWidth;
+    if (!isOverflow) return;
+
+    e.preventDefault();
+    el.scrollLeft += delta * 2;
+  };
 
   // 点击其他地方关闭右键菜单
   useEffect(() => {
@@ -176,7 +194,7 @@ const TabBar: React.FC<TabBarProps> = ({
 
   return (
     <>
-      <div className="flex items-center h-9 bg-[var(--bg-nav)] border-b border-[var(--border-color)] overflow-x-auto scrollbar-hide tab-bar-scroll">
+      <div ref={scrollRef} onWheel={handleWheel} className="flex items-center h-9 bg-[var(--bg-nav)] border-b border-[var(--border-color)] overflow-x-auto scrollbar-hide tab-bar-scroll">
         {tabs.map((tab) => {
           const isActive = tab.id === activeTabId;
           const isDragged = tab.id === draggedTabId;

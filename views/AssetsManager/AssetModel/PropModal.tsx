@@ -1,11 +1,11 @@
 /**
- * 道具编辑弹窗 - 增强版
+ * 道具编辑弹窗 - 设定图驱动版
  * 
  * 功能：
- * 1. 基础信息编辑
- * 2. 样式配置（材质、颜色等）
- * 3. AI 图片生成
- * 4. 参考图管理
+ * 1. 基础信息编辑（名称、描述、分类等）
+ * 2. 样式配置（材质、颜色、尺寸等属性）
+ * 3. AI 生成多视角道具设定图（正面/侧面/背面）
+ * 4. 设定图预览（不支持手动输入URL）
  */
 import React, { useState, useEffect } from 'react';
 import { 
@@ -85,10 +85,10 @@ const PropModal: React.FC<PropModalProps> = ({
     onSave();
   };
 
-  // 生成道具图片
+  // 生成道具设定图（多视角）
   const handleGenerate = async () => {
     if (!formData.id) {
-      alert('请先保存道具后再生成图片');
+      alert('请先保存道具后再生成设定图');
       return;
     }
 
@@ -159,9 +159,10 @@ const PropModal: React.FC<PropModalProps> = ({
           }
         }
 
+        // 每3秒轮询一次
         attempts++;
-        if (attempts < maxAttempts && generationStatus === 'generating') {
-          setTimeout(poll, 3000); // 每3秒轮询一次
+        if (attempts < maxAttempts) {
+          setTimeout(poll, 3000);
         }
       } catch (error) {
         console.error('轮询状态失败:', error);
@@ -315,17 +316,35 @@ const PropModal: React.FC<PropModalProps> = ({
                     <div className="space-y-4">
                       <label className="text-sm font-medium flex items-center gap-1.5">
                         <ImageIcon className="w-4 h-4" />
-                        参考图
+                        道具设定图
                       </label>
                       {editMode && formData.id ? (
-                        <ReferenceImageManager
-                          assetType="prop"
-                          assetId={formData.id}
-                        />
+                        <div className="space-y-3">
+                          <div className="bg-content2 rounded-lg border border-divider overflow-hidden">
+                            {formData.image_url ? (
+                              <img
+                                src={formData.image_url}
+                                alt={formData.name}
+                                className="w-full h-auto object-contain max-h-48"
+                              />
+                            ) : (
+                              <div className="w-full h-32 flex items-center justify-center">
+                                <div className="text-center text-foreground-400">
+                                  <ImageIcon className="w-8 h-8 mx-auto mb-1" />
+                                  <p className="text-xs">暂无设定图</p>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                          <ReferenceImageManager
+                            assetType="prop"
+                            assetId={formData.id}
+                          />
+                        </div>
                       ) : (
                         <div className="text-center py-8 bg-content2 rounded-lg border border-divider">
                           <ImageIcon className="w-10 h-10 mx-auto mb-2 text-foreground-400" />
-                          <p className="text-sm text-foreground-400">保存道具后可管理参考图</p>
+                          <p className="text-sm text-foreground-400">保存道具后可查看设定图</p>
                         </div>
                       )}
                     </div>
@@ -343,119 +362,124 @@ const PropModal: React.FC<PropModalProps> = ({
                 {/* AI 生成 */}
                 {activeTab === 'generate' && editMode && (
                   <div className="space-y-6">
-                    {/* 当前图片预览 */}
-                    <div className="flex gap-6">
-                      <div className="flex-1">
-                        <label className="text-sm font-medium mb-2 block">当前道具图片</label>
-                        <div className="aspect-square bg-content2 rounded-lg border border-divider overflow-hidden">
-                          {formData.image_url ? (
-                            <img
-                              src={formData.image_url}
-                              alt={formData.name}
-                              className="w-full h-full object-contain"
-                            />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center">
-                              <div className="text-center text-foreground-400">
-                                <ImageIcon className="w-12 h-12 mx-auto mb-2" />
-                                <p className="text-sm">暂无图片</p>
-                              </div>
-                            </div>
+                    {/* 生成设置 */}
+                    <div className="space-y-4 max-w-md mx-auto">
+                      <label className="text-sm font-medium mb-2 block">生成设置</label>
+                      
+                      <Select
+                        label="图像生成模型"
+                        size="sm"
+                        selectedKeys={selectedImageModel ? [selectedImageModel] : []}
+                        onSelectionChange={(keys) => {
+                          const selected = Array.from(keys)[0] as string;
+                          if (selected) setSelectedImageModel(selected);
+                        }}
+                        isLoading={modelsLoading}
+                        classNames={{
+                          trigger: 'bg-content2 border-divider',
+                          popoverContent: 'bg-content1',
+                        }}
+                      >
+                        {imageModels.map((model) => (
+                          <SelectItem key={model.name} textValue={model.name}>
+                            {model.name}
+                          </SelectItem>
+                        ))}
+                      </Select>
+
+                      <Select
+                        label="文本生成模型（用于生成提示词）"
+                        size="sm"
+                        selectedKeys={selectedTextModel ? [selectedTextModel] : []}
+                        onSelectionChange={(keys) => {
+                          const selected = Array.from(keys)[0] as string;
+                          if (selected) setSelectedTextModel(selected);
+                        }}
+                        isLoading={modelsLoading}
+                        classNames={{
+                          trigger: 'bg-content2 border-divider',
+                          popoverContent: 'bg-content1',
+                        }}
+                      >
+                        {textModels.map((model) => (
+                          <SelectItem key={model.name} textValue={model.name}>
+                            {model.name}
+                          </SelectItem>
+                        ))}
+                      </Select>
+
+                      <Divider className="my-4" />
+
+                      <div className="bg-content2/50 rounded-lg p-3 border border-divider">
+                        <p className="text-xs text-foreground-500 mb-2">样式配置预览</p>
+                        <div className="flex flex-wrap gap-1">
+                          {styleConfig.material && (
+                            <Chip size="sm" variant="flat">材质: {styleConfig.material}</Chip>
+                          )}
+                          {styleConfig.primaryColor && (
+                            <Chip size="sm" variant="flat">颜色: {styleConfig.primaryColor}</Chip>
+                          )}
+                          {styleConfig.style && (
+                            <Chip size="sm" variant="flat">风格: {styleConfig.style}</Chip>
+                          )}
+                          {styleConfig.condition && (
+                            <Chip size="sm" variant="flat">状态: {styleConfig.condition}</Chip>
+                          )}
+                          {!styleConfig.material && !styleConfig.primaryColor && !styleConfig.style && (
+                            <span className="text-xs text-foreground-400">未配置样式，将使用默认设置</span>
                           )}
                         </div>
                       </div>
 
-                      <div className="flex-1 space-y-4">
-                        <label className="text-sm font-medium mb-2 block">生成设置</label>
-                        
-                        <Select
-                          label="图像生成模型"
-                          size="sm"
-                          selectedKeys={selectedImageModel ? [selectedImageModel] : []}
-                          onSelectionChange={(keys) => {
-                            const selected = Array.from(keys)[0] as string;
-                            if (selected) setSelectedImageModel(selected);
-                          }}
-                          isLoading={modelsLoading}
-                          classNames={{
-                            trigger: 'bg-content2 border-divider',
-                            popoverContent: 'bg-content1',
-                          }}
-                        >
-                          {imageModels.map((model) => (
-                            <SelectItem key={model.name} textValue={model.name}>
-                              {model.name}
-                            </SelectItem>
-                          ))}
-                        </Select>
+                      <Button
+                        color="primary"
+                        className="w-full"
+                        startContent={
+                          isGenerating || generationStatus === 'generating' ? (
+                            <Spinner size="sm" color="current" />
+                          ) : (
+                            <Wand2 className="w-4 h-4" />
+                          )
+                        }
+                        isDisabled={isGenerating || generationStatus === 'generating' || !selectedImageModel}
+                        onPress={handleGenerate}
+                      >
+                        {generationStatus === 'generating' ? '生成中...' : 
+                         formData.image_url ? '重新生成设定图' : '生成道具设定图'}
+                      </Button>
 
-                        <Select
-                          label="文本生成模型（用于生成提示词）"
-                          size="sm"
-                          selectedKeys={selectedTextModel ? [selectedTextModel] : []}
-                          onSelectionChange={(keys) => {
-                            const selected = Array.from(keys)[0] as string;
-                            if (selected) setSelectedTextModel(selected);
-                          }}
-                          isLoading={modelsLoading}
-                          classNames={{
-                            trigger: 'bg-content2 border-divider',
-                            popoverContent: 'bg-content1',
-                          }}
-                        >
-                          {textModels.map((model) => (
-                            <SelectItem key={model.name} textValue={model.name}>
-                              {model.name}
-                            </SelectItem>
-                          ))}
-                        </Select>
+                      {generationStatus === 'failed' && (
+                        <p className="text-xs text-danger text-center">
+                          生成失败，请重试
+                        </p>
+                      )}
+                    </div>
 
-                        <Divider className="my-4" />
-
-                        <div className="bg-content2/50 rounded-lg p-3 border border-divider">
-                          <p className="text-xs text-foreground-500 mb-2">样式配置预览</p>
-                          <div className="flex flex-wrap gap-1">
-                            {styleConfig.material && (
-                              <Chip size="sm" variant="flat">材质: {styleConfig.material}</Chip>
-                            )}
-                            {styleConfig.primaryColor && (
-                              <Chip size="sm" variant="flat">颜色: {styleConfig.primaryColor}</Chip>
-                            )}
-                            {styleConfig.style && (
-                              <Chip size="sm" variant="flat">风格: {styleConfig.style}</Chip>
-                            )}
-                            {styleConfig.condition && (
-                              <Chip size="sm" variant="flat">状态: {styleConfig.condition}</Chip>
-                            )}
-                            {!styleConfig.material && !styleConfig.primaryColor && !styleConfig.style && (
-                              <span className="text-xs text-foreground-400">未配置样式，将使用默认设置</span>
-                            )}
+                    {/* 当前设定图预览 */}
+                    <div>
+                      <label className="text-sm font-medium mb-2 block">当前道具设定图</label>
+                      <div className="bg-content2 rounded-lg border border-divider overflow-hidden">
+                        {formData.image_url ? (
+                          <img
+                            src={formData.image_url}
+                            alt={formData.name}
+                            className="w-full h-auto object-contain max-h-80"
+                          />
+                        ) : (
+                          <div className="w-full h-48 flex items-center justify-center">
+                            <div className="text-center text-foreground-400">
+                              <ImageIcon className="w-12 h-12 mx-auto mb-2" />
+                              <p className="text-sm">暂无设定图</p>
+                              <p className="text-xs mt-1">点击上方按钮生成多视角设定图</p>
+                            </div>
                           </div>
-                        </div>
-
-                        <Button
-                          color="primary"
-                          className="w-full"
-                          startContent={
-                            isGenerating || generationStatus === 'generating' ? (
-                              <Spinner size="sm" color="current" />
-                            ) : (
-                              <Wand2 className="w-4 h-4" />
-                            )
-                          }
-                          isDisabled={isGenerating || generationStatus === 'generating' || !selectedImageModel}
-                          onPress={handleGenerate}
-                        >
-                          {generationStatus === 'generating' ? '生成中...' : 
-                           formData.image_url ? '重新生成图片' : '生成道具图片'}
-                        </Button>
-
-                        {generationStatus === 'failed' && (
-                          <p className="text-xs text-danger text-center">
-                            生成失败，请重试
-                          </p>
                         )}
                       </div>
+                      {formData.image_url && (
+                        <p className="text-xs text-foreground-500 mt-2 text-center">
+                          包含正面、侧面、背面多视角的道具设定图
+                        </p>
+                      )}
                     </div>
                   </div>
                 )}

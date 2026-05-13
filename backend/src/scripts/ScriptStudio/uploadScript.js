@@ -50,12 +50,18 @@ function readFileContent(buffer, originalname) {
 }
 
 async function uploadScript(req, res) {
-  const { projectId, episodeNumber, title, mode = 'save' } = req.body || {};
+  const { projectId, episodeNumber, title, mode = 'save', content: directContent } = req.body || {};
   const userId = req.user.id;
   const file = req.file;
 
-  if (!file) {
-    return res.status(400).json({ message: '请上传剧本文件' });
+  // 支持文件上传或直接文本输入
+  let content = directContent;
+  if (!content && file) {
+    content = readFileContent(file.buffer, file.originalname);
+  }
+
+  if (!content) {
+    return res.status(400).json({ message: '请上传剧本文件或输入剧本内容' });
   }
 
   const targetProjectId = projectId ? Number(projectId) : null;
@@ -70,10 +76,9 @@ async function uploadScript(req, res) {
       }
     }
 
-    // 读取文件内容
-    const content = readFileContent(file.buffer, file.originalname);
-    if (!content || !content.trim()) {
-      return res.status(400).json({ message: '文件内容为空' });
+    content = content.trim();
+    if (!content) {
+      return res.status(400).json({ message: '剧本内容为空' });
     }
 
     // 内容长度限制（约10万字）
@@ -104,8 +109,8 @@ async function uploadScript(req, res) {
       }
     }
 
-    // 提取标题（从文件名或内容首行）
-    const fileTitle = title || file.originalname.replace(/\.[^.]+$/, '') || '未命名剧本';
+    // 提取标题（从文件名、传入标题或内容首行）
+    const fileTitle = title || (file && file.originalname.replace(/\.[^.]+$/, '')) || '未命名剧本';
 
     // 直接保存模式
     if (mode === 'save') {

@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Button, Chip, Switch } from '@heroui/react';
-import { User, Wand2, Layers, Volume2, Trash2, Upload, ImagePlus, ZoomIn, X, Star, Plus, Pencil, Copy, StarOff, Clock, Filter, ChevronDown, Loader2, ImageIcon, Eye, Power } from 'lucide-react';
+import { User, Wand2, Layers, Volume2, Trash2, Upload, ImagePlus, ZoomIn, X, Star, Plus, Pencil, Copy, StarOff, Clock, Filter, ChevronDown, Loader2, ImageIcon, Eye, Power, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Character, CharacterState } from './types';
 import { fetchCharacterStates, activateCharacterState, fetchCharacterStateHistory, updateCharacter, deleteCharacterViewApi, fetchReferenceImages, AssetReferenceImage, updateCharacterUseReferenceImages } from '../../../services/assets';
 import type { CharacterStateHistoryEntry } from '../../../services/assets';
 import { getAuthToken } from '../../../services/auth';
 import { usePreview } from '../../../components/PreviewProvider';
-import CharacterVoiceModal, { VoiceConfig } from './CharacterVoiceModal';
+import CharacterVoiceModal, { VoiceConfig, SpeakerVoice } from './CharacterVoiceModal';
 
 // 历史操作类型配置：图标、颜色、中文描述
 const ACTION_CONFIG: Record<string, { icon: React.ElementType; color: string; bgColor: string; label: string }> = {
@@ -65,6 +65,8 @@ const CharacterDetailModal: React.FC<CharacterDetailModalProps> = ({
   const [states, setStates] = useState<CharacterState[]>([]);
   const [selectedState, setSelectedState] = useState<CharacterState | null>(null);
   const [voiceConfig, setVoiceConfig] = useState<VoiceConfig | null>(null);
+  const [speakerVoiceId, setSpeakerVoiceId] = useState<number | null>(null);
+  const [speakerVoice, setSpeakerVoice] = useState<SpeakerVoice | null>(null);
   const [showVoiceModal, setShowVoiceModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -273,6 +275,8 @@ const CharacterDetailModal: React.FC<CharacterDetailModalProps> = ({
       if (res.ok) {
         const data = await res.json();
         setVoiceConfig(data.voiceConfig);
+        setSpeakerVoiceId(data.speakerVoiceId || null);
+        setSpeakerVoice(data.speakerVoice || null);
       }
     } catch (err) {
       console.error('加载声音配置失败:', err);
@@ -775,7 +779,17 @@ const CharacterDetailModal: React.FC<CharacterDetailModalProps> = ({
                       {voiceConfig ? '修改' : '设置'}
                     </Button>
                   </div>
-                  {voiceConfig ? (
+                  {speakerVoice ? (
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: 'rgba(168,85,247,0.15)' }}>
+                        <Sparkles className="w-4 h-4" style={{ color: 'rgb(168,85,247)' }} />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{speakerVoice.name}</p>
+                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>自定义音色 · {speakerVoice.gender === 'male' ? '男' : speakerVoice.gender === 'female' ? '女' : '中性'}</p>
+                      </div>
+                    </div>
+                  ) : voiceConfig ? (
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: 'rgba(168,85,247,0.15)' }}>
                         <Volume2 className="w-4 h-4" style={{ color: 'rgb(168,85,247)' }} />
@@ -1103,7 +1117,7 @@ const CharacterDetailModal: React.FC<CharacterDetailModalProps> = ({
                         ref={editTextareaRef}
                         value={editValue}
                         onChange={(e) => setEditValue(e.target.value)}
-                        className="w-full text-sm leading-relaxed rounded-md p-2 resize-none outline-none min-h-[80px]"
+                        className="w-full text-sm leading-relaxed rounded-md p-2 resize-none outline-none min-h-[80px] overflow-y-auto"
                         style={{ backgroundColor: 'var(--bg-input)', color: 'var(--text-primary)', border: '1px solid rgba(59,130,246,0.4)' }}
                         rows={4}
                       />
@@ -1142,7 +1156,7 @@ const CharacterDetailModal: React.FC<CharacterDetailModalProps> = ({
                         ref={editTextareaRef}
                         value={editValue}
                         onChange={(e) => setEditValue(e.target.value)}
-                        className="w-full text-sm leading-relaxed rounded-md p-2 resize-none outline-none min-h-[80px]"
+                        className="w-full text-sm leading-relaxed rounded-md p-2 resize-none outline-none min-h-[80px] overflow-y-auto"
                         style={{ backgroundColor: 'var(--bg-input)', color: 'var(--text-primary)', border: '1px solid rgba(168,85,247,0.4)' }}
                         rows={4}
                       />
@@ -1181,7 +1195,7 @@ const CharacterDetailModal: React.FC<CharacterDetailModalProps> = ({
                         ref={editTextareaRef}
                         value={editValue}
                         onChange={(e) => setEditValue(e.target.value)}
-                        className="w-full text-sm leading-relaxed rounded-md p-2 resize-none outline-none min-h-[80px]"
+                        className="w-full text-sm leading-relaxed rounded-md p-2 resize-none outline-none min-h-[80px] overflow-y-auto"
                         style={{ backgroundColor: 'var(--bg-input)', color: 'var(--text-primary)', border: '1px solid rgba(34,197,94,0.4)' }}
                         rows={4}
                       />
@@ -1222,7 +1236,17 @@ const CharacterDetailModal: React.FC<CharacterDetailModalProps> = ({
               characterName={character.name}
               characterImageUrl={character.imageUrl}
               initialVoiceConfig={voiceConfig}
-              onSave={(newConfig) => setVoiceConfig(newConfig)}
+              initialSpeakerVoiceId={speakerVoiceId}
+              initialSpeakerVoice={speakerVoice}
+              onSave={(newConfig, newSpeakerVoiceId) => {
+                setVoiceConfig(newConfig);
+                setSpeakerVoiceId(newSpeakerVoiceId);
+                if (newSpeakerVoiceId) {
+                  fetchVoiceConfig(character.id);
+                } else {
+                  setSpeakerVoice(null);
+                }
+              }}
             />
           </>
         )}

@@ -51,14 +51,19 @@ export interface CreateScriptResponse {
 }
 
 export interface GenerateScriptParams {
+  projectId?: number;
   title?: string;
   description?: string;
   style?: string;
   length?: string;
+  episodeNumber?: number;
   provider?: string;
 }
 
 export interface GenerateScriptResponse extends ScriptItem {
+  jobId?: string;
+  scriptId?: number;
+  episodeNumber?: number;
   billing?: {
     tokens: number;
     unit_price: number;
@@ -184,6 +189,25 @@ export async function updateScriptTitle(scriptId: number, title: string): Promis
   return data;
 }
 
+/**
+ * 更新剧本（标题 + 内容）
+ */
+export async function updateScript(scriptId: number, title: string, content: string): Promise<{ message: string }> {
+  const res = await fetch(`/api/scripts/${scriptId}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders(),
+    },
+    body: JSON.stringify({ title, content }),
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw new Error(data?.message || '保存剧本失败');
+  }
+  return data;
+}
+
 export async function generateScript(params: GenerateScriptParams): Promise<GenerateScriptResponse> {
   const res = await fetch('/api/scripts/generate', {
     method: 'POST',
@@ -204,7 +228,8 @@ export async function generateScript(params: GenerateScriptParams): Promise<Gene
 // ==================== 上传与分析优化 ====================
 
 export interface UploadScriptParams {
-  file: File;
+  file?: File;
+  content?: string;
   projectId?: number | null;
   episodeNumber?: number | null;
   title?: string;
@@ -223,13 +248,17 @@ export interface UploadScriptResponse {
   message: string;
 }
 
+export interface ScriptDimension {
+  name: string;
+  score: number;
+  comment: string;
+}
+
 export interface ScriptAnalysisResult {
-  sceneCount: number;
-  scenes?: Array<{ index: number; title: string; description: string }>;
-  characters?: Array<{ name: string; importance: string; trait: string }>;
-  structure: string;
-  style: string[];
-  pacing?: string;
+  overallScore: number;
+  dimensions: ScriptDimension[];
+  strengths: string[];
+  weaknesses: string[];
   suggestions: string[];
   summary: string;
   error?: string;
@@ -274,11 +303,16 @@ export interface OptimizeScriptResponse {
 }
 
 /**
- * 上传剧本文件（.txt / .md）
+ * 上传剧本文件（.txt / .md）或直接提交文本内容
  */
 export async function uploadScriptFile(params: UploadScriptParams): Promise<UploadScriptResponse> {
   const formData = new FormData();
-  formData.append('file', params.file);
+  if (params.file) {
+    formData.append('file', params.file);
+  }
+  if (params.content) {
+    formData.append('content', params.content);
+  }
   if (params.projectId !== undefined) formData.append('projectId', String(params.projectId));
   if (params.episodeNumber !== undefined) formData.append('episodeNumber', String(params.episodeNumber));
   if (params.title) formData.append('title', params.title);

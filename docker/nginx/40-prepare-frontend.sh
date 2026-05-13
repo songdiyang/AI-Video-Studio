@@ -41,10 +41,16 @@ if [ "${FRONTEND_MODE}" = "proxy" ]; then
   exit 0
 fi
 
-rm -rf "${SITE_ROOT}"
+# 如果 SITE_ROOT 是挂载的卷（目录），不能直接 rm -rf
+# 先尝试取消符号链接，然后清空目录内容
+if [ -L "${SITE_ROOT}" ]; then
+  rm -f "${SITE_ROOT}"
+elif [ -d "${SITE_ROOT}" ]; then
+  rm -rf "${SITE_ROOT:?}"/*
+fi
 
 if [ -f "${DIST_DIR}/index.html" ]; then
-  ln -s "${DIST_DIR}" "${SITE_ROOT}"
+  ln -sfn "${DIST_DIR}" "${SITE_ROOT}"
   write_static_snippet
   echo "[nginx] serving frontend runtime from ${DIST_DIR}"
   exit 0

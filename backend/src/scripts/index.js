@@ -85,7 +85,7 @@ router.delete('/:id/episode', authMiddleware, deleteEpisode);
 router.delete('/:id', authMiddleware, deleteScript);
 
 // ─── 剧本上传与分析优化 ───────────────────────────────────────────
-// 上传剧本文件（.txt / .md）
+// 上传剧本文件（.txt / .md）或直传文本内容
 router.post('/upload', authMiddleware, uploadScript.middleware, uploadScript);
 
 // AI分析剧本

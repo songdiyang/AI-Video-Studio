@@ -14,7 +14,7 @@
  */
 
 import React, { useState, useMemo, Component, ReactNode, lazy, Suspense, useCallback, useRef, useEffect } from 'react';
-import { Wand2, FolderOpen, ChevronDown, Check } from 'lucide-react';
+import { Wand2 } from 'lucide-react';
 import { useStoryboardCore, StoryboardProvider } from './core';
 import type { StoryboardSkeletonProps, StoryboardPlugin } from './core/types';
 import { PanelGroup } from '../../components/PanelGroup';
@@ -22,8 +22,7 @@ import ResizablePanel, { ResizablePanelRef } from '../../components/ResizablePan
 import { useAIAssistantUI } from '../../contexts/AIAssistantContext';
 import { useToast } from '../../contexts/ToastContext';
 import { useWorkbench } from '../../contexts/WorkbenchContext';
-import { fetchProjects, Project } from '../../services/projects';
-import EpisodeSelector from './EpisodeSelector';
+import { Project } from '../../services/projects';
 
 // ===== 默认插件 =====
 import SceneListPlugin from './plugins/scene-list';
@@ -156,53 +155,8 @@ const StoryboardSkeleton: React.FC<StoryboardSkeletonProps> = ({
     };
   }, [leftPanelTabs]);
 
-  // ===== 项目快速切换 =====
-  const { currentProject, switchProject } = useWorkbench();
-  const [projectSwitcherOpen, setProjectSwitcherOpen] = useState(false);
-  const [projectList, setProjectList] = useState<Project[]>([]);
-  const [projectListLoading, setProjectListLoading] = useState(false);
-  const projectSwitcherRef = useRef<HTMLDivElement>(null);
-
-  // 点击外部关闭下拉面板
-  React.useEffect(() => {
-    if (!projectSwitcherOpen) return;
-    const handleClickOutside = (e: MouseEvent) => {
-      if (projectSwitcherRef.current && !projectSwitcherRef.current.contains(e.target as Node)) {
-        setProjectSwitcherOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [projectSwitcherOpen]);
-
-  // 打开面板时加载项目列表
-  const handleOpenProjectSwitcher = useCallback(async () => {
-    const willOpen = !projectSwitcherOpen;
-    setProjectSwitcherOpen(willOpen);
-    if (willOpen) {
-      setProjectListLoading(true);
-      try {
-        const projects = await fetchProjects();
-        setProjectList(projects);
-        // 如果项目列表为空，清除当前项目状态
-        if (projects.length === 0 && currentProject) {
-          switchProject(null as any);
-          localStorage.removeItem('nanostory_last_project_id');
-        }
-      } catch (err) {
-        console.error('Failed to fetch projects:', err);
-      } finally {
-        setProjectListLoading(false);
-      }
-    }
-  }, [projectSwitcherOpen, currentProject, switchProject]);
-
-  // 快速切换项目
-  const handleQuickSwitchProject = useCallback((project: Project) => {
-    switchProject(project);
-    localStorage.setItem('nanostory_last_project_id', String(project.id));
-    setProjectSwitcherOpen(false);
-  }, [switchProject]);
+  // ===== 当前项目（从 Workbench 读取，用于集数选择器等） =====
+  const { currentProject } = useWorkbench();
 
   // refs
   const resourcePanelRef = React.useRef<ResizablePanelRef>(null);
@@ -238,103 +192,17 @@ const StoryboardSkeleton: React.FC<StoryboardSkeletonProps> = ({
     on,
     showToast,
     handleEpisodeSelect,
+    handleStandaloneEpisodeChange,
+    handleCreateNextEpisode,
     tasks,
     isRunning,
-  }), [state, scenes, selectedScene, selectedSceneData, isLoading, sceneActions, generationActions, resourceActions, setState, setSelectedScene, setScenes, emit, on, showToast, handleEpisodeSelect, tasks, isRunning]);
+    autoStoryboard,
+  }), [state, scenes, selectedScene, selectedSceneData, isLoading, sceneActions, generationActions, resourceActions, setState, setSelectedScene, setScenes, emit, on, showToast, handleEpisodeSelect, handleStandaloneEpisodeChange, handleCreateNextEpisode, tasks, isRunning, autoStoryboard]);
 
   return (
     <StoryboardProvider value={contextValue}>
       <div className="h-full flex flex-col bg-(--bg-app)">
-        {/* ===== 顶部工具栏 ===== */}
-        <div className="shrink-0 border-b border-(--border-color) bg-(--bg-card)">
-          <div className="h-11 px-4 flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              {/* 项目快速切换 */}
-              {currentProject && (
-                <div className="relative" ref={projectSwitcherRef}>
-                  <button
-                    onClick={handleOpenProjectSwitcher}
-                    className="flex items-center gap-1 text-xs text-(--text-muted) px-2 py-1.5 bg-(--bg-card) hover:bg-(--bg-card-hover) rounded-md transition-colors cursor-pointer border border-(--border-color)"
-                    title="切换项目"
-                  >
-                    <FolderOpen className="w-3 h-3" />
-                    <span className="max-w-[120px] truncate">{currentProject.name}</span>
-                    <ChevronDown className={`w-3 h-3 transition-transform ${projectSwitcherOpen ? 'rotate-180' : ''}`} />
-                  </button>
-                  {/* 项目快速切换下拉面板 */}
-                  {projectSwitcherOpen && (
-                    <div className="absolute top-full left-0 mt-1 w-64 max-h-80 overflow-y-auto rounded-lg border border-(--border-color) bg-(--bg-card) shadow-xl z-50">
-                      <div className="px-3 py-2 border-b border-(--border-color)">
-                        <span className="text-xs font-medium text-(--text-secondary)">切换项目</span>
-                      </div>
-                      {projectListLoading ? (
-                        <div className="px-3 py-4 text-center text-xs text-(--text-muted)">加载中...</div>
-                      ) : projectList.length === 0 ? (
-                        <div className="px-3 py-4 text-center text-xs text-(--text-muted)">暂无项目</div>
-                      ) : (
-                        <div className="py-1">
-                          {projectList.map((project) => (
-                            <button
-                              key={project.id}
-                              onClick={() => handleQuickSwitchProject(project)}
-                              className={`w-full flex items-center gap-2 px-3 py-2 text-left text-xs transition-colors hover:bg-(--bg-card-hover) ${
-                                currentProject.id === project.id ? 'text-(--accent)' : 'text-(--text-primary)'
-                              }`}
-                            >
-                              <FolderOpen className="w-3.5 h-3.5 shrink-0 opacity-60" />
-                              <span className="truncate flex-1">{project.name}</span>
-                              {currentProject.id === project.id && (
-                                <Check className="w-3.5 h-3.5 shrink-0 text-(--accent)" />
-                              )}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                      <div className="border-t border-(--border-color) px-3 py-2">
-                        <button
-                          onClick={() => { setProjectSwitcherOpen(false); window.location.href = '/#/projects'; }}
-                          className="w-full text-xs text-(--text-muted) hover:text-(--accent) text-center transition-colors"
-                        >
-                          管理全部项目
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
 
-              <EpisodeSelector
-                scripts={scripts}
-                currentEpisode={state.currentEpisode}
-                currentScriptId={state.currentScriptId}
-                projectName={state.currentProject?.name}
-                onSelect={handleEpisodeSelect}
-                onStandaloneEpisodeChange={handleStandaloneEpisodeChange}
-                standaloneMaxEpisode={state.standaloneMaxEpisode}
-                onCreateNextEpisode={onCreateNextEpisode || handleCreateNextEpisode}
-                onUpdateEpisodeTitle={async (scriptId, title) => {
-                  try {
-                    const { updateScriptTitle, fetchScripts } = await import('../../services/scripts');
-                    await updateScriptTitle(scriptId, title);
-                    showToast('标题已更新', 'success');
-                    const refreshed = await fetchScripts();
-                    const updated = refreshed.find((s: any) => s.id === scriptId);
-                    if (updated) {
-                      onEpisodeChange?.(updated.episode_number, updated.id);
-                    }
-                  } catch (err: any) {
-                    showToast(err?.message || '更新标题失败', 'error');
-                  }
-                }}
-              />
-              {scenes.length > 0 && (
-                <span className="text-xs text-(--text-muted) px-2 py-0.5 rounded bg-(--bg-app)">
-                  {scenes.length} 个分镜
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
 
         {/* ===== 无项目提示 ===== */}
         {!state.currentProjectId && (

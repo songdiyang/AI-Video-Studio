@@ -47,17 +47,42 @@ interface PreviewEditorProps {
   textModel?: string; // 当前文本模型
   onTextModelChange?: (model: string) => void; // 文本模型变更回调
   onScriptGenerated?: (payload: any) => void; // 剧本生成成功回调
+  projectId?: number | null; // 当前项目ID，用于标签页状态按项目隔离持久化
 }
 
-const TABS_STORAGE_KEY = 'preview_editor_tabs';
-const ACTIVE_TAB_STORAGE_KEY = 'preview_editor_active_tab';
-const TABS_VERSION_KEY = 'preview_editor_tabs_version';
-const CURRENT_TABS_VERSION = 3; // 版本3：标签页不再按scriptId隔离，全部平铺显示
+const CURRENT_TABS_VERSION = 4; // 版本4：标签页状态按projectId隔离持久化
+
+// localStorage key 生成函数（按 projectId 隔离）
+const getStorageKey = (base: string, projectId: number | null | undefined) =>
+  projectId ? `${base}_${projectId}` : base;
+
+// 分镜标签页
+const getTabsStorageKey = (projectId: number | null | undefined) => getStorageKey('preview_editor_tabs', projectId);
+const getActiveTabStorageKey = (projectId: number | null | undefined) => getStorageKey('preview_editor_active_tab', projectId);
+const getTabsVersionKey = (projectId: number | null | undefined) => getStorageKey('preview_editor_tabs_version', projectId);
 
 // 资产编辑标签页持久化
-const ASSET_TABS_STORAGE_KEY = 'preview_editor_asset_tabs';
-const ASSET_ACTIVE_TAB_STORAGE_KEY = 'preview_editor_asset_active_tab';
-const ASSET_TAB_DATA_STORAGE_KEY = 'preview_editor_asset_tab_data';
+const getAssetTabsStorageKey = (projectId: number | null | undefined) => getStorageKey('preview_editor_asset_tabs', projectId);
+const getAssetActiveTabStorageKey = (projectId: number | null | undefined) => getStorageKey('preview_editor_asset_active_tab', projectId);
+const getAssetTabDataStorageKey = (projectId: number | null | undefined) => getStorageKey('preview_editor_asset_tab_data', projectId);
+
+// 扩展详情标签页持久化
+const getExtensionTabsStorageKey = (projectId: number | null | undefined) => getStorageKey('preview_editor_extension_tabs', projectId);
+const getExtensionActiveTabStorageKey = (projectId: number | null | undefined) => getStorageKey('preview_editor_extension_active_tab', projectId);
+
+// 设置标签页持久化
+const getSettingsTabStorageKey = (projectId: number | null | undefined) => getStorageKey('preview_editor_settings_open', projectId);
+
+// 剧本生成标签页持久化
+const getScriptGenerateStorageKey = (projectId: number | null | undefined) => getStorageKey('preview_editor_script_generate', projectId);
+
+// 旧版本 key（用于迁移和清理）
+const LEGACY_TABS_STORAGE_KEY = 'preview_editor_tabs';
+const LEGACY_ACTIVE_TAB_STORAGE_KEY = 'preview_editor_active_tab';
+const LEGACY_TABS_VERSION_KEY = 'preview_editor_tabs_version';
+const LEGACY_ASSET_TABS_STORAGE_KEY = 'preview_editor_asset_tabs';
+const LEGACY_ASSET_ACTIVE_TAB_STORAGE_KEY = 'preview_editor_asset_active_tab';
+const LEGACY_ASSET_TAB_DATA_STORAGE_KEY = 'preview_editor_asset_tab_data';
 
 const PreviewEditor: React.FC<PreviewEditorProps> = ({
   scenes,
@@ -72,6 +97,7 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
   textModel,
   onTextModelChange,
   onScriptGenerated,
+  projectId,
 }) => {
   const { bottomPanelOpen, closeBottomPanel } = useAIAssistantUI();
   const [sceneTabs, setSceneTabs] = useState<TabItem[]>([]);
@@ -90,8 +116,9 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
   const [extensionDetailTabs, setExtensionDetailTabs] = useState<TabItem[]>([]);
   const [activeExtensionDetailTabId, setActiveExtensionDetailTabId] = useState<string | null>(null);
 
-  // 剧本生成标签页（单例，始终只有一个）
+  // 剧本生成标签页（单例，可关闭）
   const [scriptGenerateTabOpen, setScriptGenerateTabOpen] = useState(false);
+  const [scriptGenerateTabEpisode, setScriptGenerateTabEpisode] = useState<number | undefined>(undefined);
 
   // 获取当前显示的标签列表（合并所有分镜标签、资产标签、扩展详情标签、设置标签和剧本生成标签，全部平铺显示）
   const tabs = useMemo(() => {
@@ -100,62 +127,77 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
       result.push({ id: 'settings', type: 'settings', title: '设置' });
     }
     if (scriptGenerateTabOpen) {
-      result.push({ id: 'script-generate', type: 'script-generate', title: '生成剧本' });
+      const episodeTitle = scriptGenerateTabEpisode ? `第${scriptGenerateTabEpisode}集剧本` : '生成剧本';
+      result.push({ id: 'script-generate', type: 'script-generate', title: episodeTitle });
     }
     return result;
   }, [sceneTabs, assetTabs, extensionDetailTabs, settingsTabOpen, scriptGenerateTabOpen]);
 
-  // 从 localStorage 恢复所有标签状态（带版本控制）
+  // 从 localStorage 恢复所有标签状态（带版本控制，按 projectId 隔离）
   useEffect(() => {
+    if (!projectId) return;
     try {
-      // 检查版本号
-      const savedVersion = localStorage.getItem(TABS_VERSION_KEY);
+      const versionKey = getTabsVersionKey(projectId);
+      const savedVersion = localStorage.getItem(versionKey);
+
+      // 版本不匹配或首次使用新版本，尝试迁移旧数据
       if (savedVersion !== String(CURRENT_TABS_VERSION)) {
-        // 版本不匹配，清理所有旧数据
+        // 先尝试从旧版本全局 key 迁移数据
+        const legacyTabs = localStorage.getItem(LEGACY_TABS_STORAGE_KEY);
+        const legacyActiveTab = localStorage.getItem(LEGACY_ACTIVE_TAB_STORAGE_KEY);
+        const legacyAssetTabs = localStorage.getItem(LEGACY_ASSET_TABS_STORAGE_KEY);
+        const legacyAssetActive = localStorage.getItem(LEGACY_ASSET_ACTIVE_TAB_STORAGE_KEY);
+        const legacyAssetData = localStorage.getItem(LEGACY_ASSET_TAB_DATA_STORAGE_KEY);
+
+        if (legacyTabs) {
+          localStorage.setItem(getTabsStorageKey(projectId), legacyTabs);
+          localStorage.removeItem(LEGACY_TABS_STORAGE_KEY);
+        }
+        if (legacyActiveTab) {
+          localStorage.setItem(getActiveTabStorageKey(projectId), legacyActiveTab);
+          localStorage.removeItem(LEGACY_ACTIVE_TAB_STORAGE_KEY);
+        }
+        if (legacyAssetTabs) {
+          localStorage.setItem(getAssetTabsStorageKey(projectId), legacyAssetTabs);
+          localStorage.removeItem(LEGACY_ASSET_TABS_STORAGE_KEY);
+        }
+        if (legacyAssetActive) {
+          localStorage.setItem(getAssetActiveTabStorageKey(projectId), legacyAssetActive);
+          localStorage.removeItem(LEGACY_ASSET_ACTIVE_TAB_STORAGE_KEY);
+        }
+        if (legacyAssetData) {
+          localStorage.setItem(getAssetTabDataStorageKey(projectId), legacyAssetData);
+          localStorage.removeItem(LEGACY_ASSET_TAB_DATA_STORAGE_KEY);
+        }
+
+        // 清理旧版本按 scriptId 隔离的数据
         const keysToRemove: string[] = [];
         for (let i = 0; i < localStorage.length; i++) {
           const key = localStorage.key(i);
-          if (key && (key.startsWith(TABS_STORAGE_KEY) || key.startsWith(ACTIVE_TAB_STORAGE_KEY))) {
+          if (key && key.startsWith(LEGACY_TABS_STORAGE_KEY + '_script_')) {
             keysToRemove.push(key);
           }
         }
         keysToRemove.forEach(key => localStorage.removeItem(key));
-        // 同时清理资产标签旧数据
-        localStorage.removeItem(ASSET_TABS_STORAGE_KEY);
-        localStorage.removeItem(ASSET_ACTIVE_TAB_STORAGE_KEY);
-        localStorage.removeItem(ASSET_TAB_DATA_STORAGE_KEY);
-        localStorage.setItem(TABS_VERSION_KEY, String(CURRENT_TABS_VERSION));
-        return;
+        localStorage.removeItem(LEGACY_TABS_VERSION_KEY);
+
+        // 设置新版本号
+        localStorage.setItem(versionKey, String(CURRENT_TABS_VERSION));
       }
 
-      // 加载所有scriptId的标签（兼容旧版本数据）
-      const newAllTabs = new Map<number, TabItem[]>();
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && key.startsWith(TABS_STORAGE_KEY + '_script_')) {
-          const sid = parseInt(key.replace(TABS_STORAGE_KEY + '_script_', ''), 10);
-          const savedTabs = localStorage.getItem(key);
-          if (savedTabs) {
-            const parsedTabs = JSON.parse(savedTabs);
-            if (Array.isArray(parsedTabs) && parsedTabs.every(t => t.id && t.type && t.title)) {
-              newAllTabs.set(sid, parsedTabs);
-            }
-          }
+      // 加载分镜标签页（按 projectId 隔离）
+      const savedTabs = localStorage.getItem(getTabsStorageKey(projectId));
+      let loadedSceneTabs: TabItem[] = [];
+      if (savedTabs) {
+        const parsedTabs = JSON.parse(savedTabs);
+        if (Array.isArray(parsedTabs) && parsedTabs.every(t => t.id && t.type && t.title)) {
+          loadedSceneTabs = parsedTabs;
+          setSceneTabs(parsedTabs);
         }
       }
-      // 将旧版本按 scriptId 隔离的标签页全部合并为平铺列表
-      const mergedSceneTabs: TabItem[] = [];
-      newAllTabs.forEach((tabsForScript) => {
-        mergedSceneTabs.push(...tabsForScript);
-      });
-      // 去重（避免同一标签在不同scriptId中重复）
-      const uniqueSceneTabs = mergedSceneTabs.filter((tab, index, self) => 
-        index === self.findIndex(t => t.id === tab.id)
-      );
-      setSceneTabs(uniqueSceneTabs);
 
       // 加载资产编辑标签页
-      const savedAssetTabs = localStorage.getItem(ASSET_TABS_STORAGE_KEY);
+      const savedAssetTabs = localStorage.getItem(getAssetTabsStorageKey(projectId));
       let parsedAssetTabs: any[] | null = null;
       if (savedAssetTabs) {
         parsedAssetTabs = JSON.parse(savedAssetTabs);
@@ -165,7 +207,7 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
       }
 
       // 加载资产标签页数据
-      const savedAssetTabData = localStorage.getItem(ASSET_TAB_DATA_STORAGE_KEY);
+      const savedAssetTabData = localStorage.getItem(getAssetTabDataStorageKey(projectId));
       if (savedAssetTabData) {
         try {
           const parsed = JSON.parse(savedAssetTabData);
@@ -177,11 +219,39 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
         }
       }
 
-      // 加载全局活跃标签（不再按scriptId隔离）
-      const savedActiveTab = localStorage.getItem(ACTIVE_TAB_STORAGE_KEY);
-      const allSceneTabs = uniqueSceneTabs;
+      // 加载扩展详情标签页
+      const savedExtensionTabs = localStorage.getItem(getExtensionTabsStorageKey(projectId));
+      if (savedExtensionTabs) {
+        const parsed = JSON.parse(savedExtensionTabs);
+        if (Array.isArray(parsed) && parsed.every((t: any) => t.id && t.type && t.title)) {
+          setExtensionDetailTabs(parsed);
+        }
+      }
+
+      // 加载设置标签页状态
+      const savedSettingsOpen = localStorage.getItem(getSettingsTabStorageKey(projectId));
+      if (savedSettingsOpen === 'true') {
+        setSettingsTabOpen(true);
+      }
+
+      // 加载剧本生成标签页状态
+      const savedScriptGenerate = localStorage.getItem(getScriptGenerateStorageKey(projectId));
+      if (savedScriptGenerate) {
+        try {
+          const parsed = JSON.parse(savedScriptGenerate);
+          if (parsed.open) {
+            setScriptGenerateTabOpen(true);
+            setScriptGenerateTabEpisode(parsed.episode);
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      // 加载活跃标签（按 projectId 隔离）
+      const savedActiveTab = localStorage.getItem(getActiveTabStorageKey(projectId));
+      const allSceneTabs = loadedSceneTabs;
       if (savedActiveTab) {
-        // 优先恢复上次活跃的标签（包括资产标签、扩展详情标签、设置标签和剧本生成标签）
         if (savedActiveTab === 'settings') {
           setSettingsTabOpen(true);
           setActiveTabId(null);
@@ -198,12 +268,16 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
           setActiveTabId(null);
           setActiveExtensionDetailTabId(null);
           setSettingsTabOpen(false);
+        } else if (extensionDetailTabs.some((t: TabItem) => t.id === savedActiveTab)) {
+          setActiveExtensionDetailTabId(savedActiveTab);
+          setActiveTabId(null);
+          setActiveAssetTabId(null);
+          setSettingsTabOpen(false);
         } else if (allSceneTabs.some((t: TabItem) => t.id === savedActiveTab)) {
           setActiveTabId(savedActiveTab);
           setActiveAssetTabId(null);
           setActiveExtensionDetailTabId(null);
           setSettingsTabOpen(false);
-          // 恢复对应的选中分镜
           if (savedActiveTab.startsWith('scene-')) {
             const sceneId = parseInt(savedActiveTab.replace('scene-', ''), 10);
             onSelectScene(sceneId);
@@ -218,7 +292,7 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
       // ignore
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [projectId]);
 
   // 当 scriptId 变化时，优先恢复上次在该集数下打开的标签
   useEffect(() => {
@@ -226,8 +300,9 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
 
     setCurrentScriptId(scriptId);
 
-    // 尝试从 localStorage 恢复该集数上次活跃的标签
-    const savedActiveTab = localStorage.getItem(ACTIVE_TAB_STORAGE_KEY);
+    // 尝试从 localStorage 恢复该集数上次活跃的标签（按 projectId 隔离）
+    if (!projectId) return;
+    const savedActiveTab = localStorage.getItem(getActiveTabStorageKey(projectId));
     // 检查保存的标签是否属于当前集数
     const savedTabBelongsToCurrentScript = savedActiveTab && sceneTabs.some(
       t => t.id === savedActiveTab && t.scriptId === scriptId
@@ -251,51 +326,104 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
         onSelectScene(sceneId);
       }
     }
-  }, [scriptId, currentScriptId, sceneTabs, onSelectScene]);
+  }, [scriptId, currentScriptId, sceneTabs, onSelectScene, projectId]);
 
-  // 保存标签状态到 localStorage
+  // 保存标签状态到 localStorage（按 projectId 隔离）
   useEffect(() => {
+    if (!projectId) return;
     try {
       // 保存所有分镜标签（平铺存储）
       if (sceneTabs.length > 0) {
-        localStorage.setItem(TABS_STORAGE_KEY, JSON.stringify(sceneTabs));
+        localStorage.setItem(getTabsStorageKey(projectId), JSON.stringify(sceneTabs));
       } else {
-        localStorage.removeItem(TABS_STORAGE_KEY);
+        localStorage.removeItem(getTabsStorageKey(projectId));
       }
-      localStorage.setItem(TABS_VERSION_KEY, String(CURRENT_TABS_VERSION));
-      if (activeTabId && sceneTabs.length > 0) {
-        localStorage.setItem(ACTIVE_TAB_STORAGE_KEY, activeTabId);
+      localStorage.setItem(getTabsVersionKey(projectId), String(CURRENT_TABS_VERSION));
+
+      // 确定当前活跃标签ID（综合所有类型）
+      const currentActiveId = activeExtensionDetailTabId || activeAssetTabId || activeTabId
+        || (settingsTabOpen ? 'settings' : null)
+        || (scriptGenerateTabOpen ? 'script-generate' : null);
+      if (currentActiveId) {
+        localStorage.setItem(getActiveTabStorageKey(projectId), currentActiveId);
       } else {
-        localStorage.removeItem(ACTIVE_TAB_STORAGE_KEY);
+        localStorage.removeItem(getActiveTabStorageKey(projectId));
       }
     } catch {
       // ignore
     }
-  }, [sceneTabs, activeTabId]);
+  }, [sceneTabs, activeTabId, activeAssetTabId, activeExtensionDetailTabId, settingsTabOpen, scriptGenerateTabOpen, projectId]);
 
-  // 保存资产编辑标签状态到 localStorage
+  // 保存资产编辑标签状态到 localStorage（按 projectId 隔离）
   useEffect(() => {
+    if (!projectId) return;
     try {
       if (assetTabs.length > 0) {
-        localStorage.setItem(ASSET_TABS_STORAGE_KEY, JSON.stringify(assetTabs));
+        localStorage.setItem(getAssetTabsStorageKey(projectId), JSON.stringify(assetTabs));
       } else {
-        localStorage.removeItem(ASSET_TABS_STORAGE_KEY);
+        localStorage.removeItem(getAssetTabsStorageKey(projectId));
       }
       if (activeAssetTabId && assetTabs.length > 0) {
-        localStorage.setItem(ASSET_ACTIVE_TAB_STORAGE_KEY, activeAssetTabId);
+        localStorage.setItem(getAssetActiveTabStorageKey(projectId), activeAssetTabId);
       } else {
-        localStorage.removeItem(ASSET_ACTIVE_TAB_STORAGE_KEY);
+        localStorage.removeItem(getAssetActiveTabStorageKey(projectId));
       }
       // 保存资产标签页数据（将 Map 转为可序列化的数组）
       if (assetTabData.size > 0) {
-        localStorage.setItem(ASSET_TAB_DATA_STORAGE_KEY, JSON.stringify(Array.from(assetTabData.entries())));
+        localStorage.setItem(getAssetTabDataStorageKey(projectId), JSON.stringify(Array.from(assetTabData.entries())));
       } else {
-        localStorage.removeItem(ASSET_TAB_DATA_STORAGE_KEY);
+        localStorage.removeItem(getAssetTabDataStorageKey(projectId));
       }
     } catch {
       // ignore
     }
-  }, [assetTabs, activeAssetTabId, assetTabData]);
+  }, [assetTabs, activeAssetTabId, assetTabData, projectId]);
+
+  // 保存扩展详情标签状态到 localStorage（按 projectId 隔离）
+  useEffect(() => {
+    if (!projectId) return;
+    try {
+      if (extensionDetailTabs.length > 0) {
+        localStorage.setItem(getExtensionTabsStorageKey(projectId), JSON.stringify(extensionDetailTabs));
+      } else {
+        localStorage.removeItem(getExtensionTabsStorageKey(projectId));
+      }
+      if (activeExtensionDetailTabId && extensionDetailTabs.length > 0) {
+        localStorage.setItem(getExtensionActiveTabStorageKey(projectId), activeExtensionDetailTabId);
+      } else {
+        localStorage.removeItem(getExtensionActiveTabStorageKey(projectId));
+      }
+    } catch {
+      // ignore
+    }
+  }, [extensionDetailTabs, activeExtensionDetailTabId, projectId]);
+
+  // 保存设置标签页状态到 localStorage（按 projectId 隔离）
+  useEffect(() => {
+    if (!projectId) return;
+    try {
+      localStorage.setItem(getSettingsTabStorageKey(projectId), String(settingsTabOpen));
+    } catch {
+      // ignore
+    }
+  }, [settingsTabOpen, projectId]);
+
+  // 保存剧本生成标签页状态到 localStorage（按 projectId 隔离）
+  useEffect(() => {
+    if (!projectId) return;
+    try {
+      if (scriptGenerateTabOpen) {
+        localStorage.setItem(getScriptGenerateStorageKey(projectId), JSON.stringify({
+          open: true,
+          episode: scriptGenerateTabEpisode,
+        }));
+      } else {
+        localStorage.removeItem(getScriptGenerateStorageKey(projectId));
+      }
+    } catch {
+      // ignore
+    }
+  }, [scriptGenerateTabOpen, scriptGenerateTabEpisode, projectId]);
 
   // 更新当前scriptId的标签列表
   const updateCurrentTabs = useCallback((updater: (prev: TabItem[]) => TabItem[]) => {
@@ -472,11 +600,12 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
     };
   }, []);
 
-  // 监听打开剧本生成标签页事件
+  // 监听打开剧本生成标签页事件（支持传递集数信息）
   useEffect(() => {
-    const handleOpenScriptGenerateTab = () => {
-      console.log('[PreviewEditor] 收到 openScriptGenerateTab 事件');
+    const handleOpenScriptGenerateTab = (event: CustomEvent<{ episodeNumber?: number }>) => {
+      console.log('[PreviewEditor] 收到 openScriptGenerateTab 事件', event.detail);
       setScriptGenerateTabOpen(true);
+      setScriptGenerateTabEpisode(event.detail?.episodeNumber);
       setActiveAssetTabId(null);
       setActiveTabId(null);
       setActiveExtensionDetailTabId(null);
@@ -548,6 +677,7 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
       setScriptGenerateTabOpen(true);
       return;
     }
+
     // 判断是否为资产标签
     const isAssetTab = assetTabs.some(t => t.id === tabId);
     if (isAssetTab) {
@@ -583,13 +713,32 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
 
   // 关闭标签（暴露给外部）
   const handleCloseTab = useCallback((tabId: string) => {
+    // 检查是否为剧本生成标签
+    if (tabId === 'script-generate') {
+      setScriptGenerateTabOpen(false);
+      setScriptGenerateTabEpisode(undefined);
+      // 关闭剧本后，尝试激活其他标签
+      if (settingsTabOpen) {
+        setActiveTabId(null);
+        setActiveAssetTabId(null);
+        setActiveExtensionDetailTabId(null);
+      } else if (extensionDetailTabs.length > 0) {
+        setActiveExtensionDetailTabId(extensionDetailTabs[extensionDetailTabs.length - 1].id);
+      } else if (assetTabs.length > 0) {
+        setActiveAssetTabId(assetTabs[assetTabs.length - 1].id);
+      } else if (sceneTabs.length > 0) {
+        setActiveTabId(sceneTabs[sceneTabs.length - 1].id);
+      } else {
+        setActiveTabId(null);
+      }
+      return;
+    }
+    
     // 先检查是否为设置标签
     if (tabId === 'settings') {
       setSettingsTabOpen(false);
       // 关闭设置后，尝试激活其他标签
-      if (scriptGenerateTabOpen) {
-        setActiveTabId('script-generate');
-      } else if (extensionDetailTabs.length > 0) {
+      if (extensionDetailTabs.length > 0) {
         setActiveExtensionDetailTabId(extensionDetailTabs[extensionDetailTabs.length - 1].id);
       } else if (assetTabs.length > 0) {
         setActiveAssetTabId(assetTabs[assetTabs.length - 1].id);
@@ -600,23 +749,7 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
       }
       return;
     }
-    // 检查是否为剧本生成标签
-    if (tabId === 'script-generate') {
-      setScriptGenerateTabOpen(false);
-      // 关闭后，尝试激活其他标签
-      if (settingsTabOpen) {
-        setActiveTabId('settings');
-      } else if (extensionDetailTabs.length > 0) {
-        setActiveExtensionDetailTabId(extensionDetailTabs[extensionDetailTabs.length - 1].id);
-      } else if (assetTabs.length > 0) {
-        setActiveAssetTabId(assetTabs[assetTabs.length - 1].id);
-      } else if (sceneTabs.length > 0) {
-        setActiveTabId(sceneTabs[sceneTabs.length - 1].id);
-      } else {
-        setActiveTabId(null);
-      }
-      return;
-    }
+
     // 检查是否为扩展详情标签
     const isExtensionDetailTab = extensionDetailTabs.some(t => t.id === tabId);
     if (isExtensionDetailTab) {
@@ -645,9 +778,11 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
         } else if (newTabs.length === 0) {
           setActiveAssetTabId(null);
           // 用户关闭了所有资产标签页，清除 localStorage 中的持久化数据
-          localStorage.removeItem(ASSET_TABS_STORAGE_KEY);
-          localStorage.removeItem(ASSET_ACTIVE_TAB_STORAGE_KEY);
-          localStorage.removeItem(ASSET_TAB_DATA_STORAGE_KEY);
+          if (projectId) {
+            localStorage.removeItem(getAssetTabsStorageKey(projectId));
+            localStorage.removeItem(getAssetActiveTabStorageKey(projectId));
+            localStorage.removeItem(getAssetTabDataStorageKey(projectId));
+          }
         }
         return newTabs;
       });
@@ -669,15 +804,21 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
         setActiveAssetTabId(null);
         setActiveExtensionDetailTabId(null);
         // 用户关闭了所有标签页，清除 localStorage 中的持久化数据
-        localStorage.removeItem(TABS_STORAGE_KEY);
-        localStorage.removeItem(ACTIVE_TAB_STORAGE_KEY);
-        localStorage.removeItem(ASSET_TABS_STORAGE_KEY);
-        localStorage.removeItem(ASSET_ACTIVE_TAB_STORAGE_KEY);
-        localStorage.removeItem(ASSET_TAB_DATA_STORAGE_KEY);
+        if (projectId) {
+          localStorage.removeItem(getTabsStorageKey(projectId));
+          localStorage.removeItem(getActiveTabStorageKey(projectId));
+          localStorage.removeItem(getAssetTabsStorageKey(projectId));
+          localStorage.removeItem(getAssetActiveTabStorageKey(projectId));
+          localStorage.removeItem(getAssetTabDataStorageKey(projectId));
+          localStorage.removeItem(getExtensionTabsStorageKey(projectId));
+          localStorage.removeItem(getExtensionActiveTabStorageKey(projectId));
+          localStorage.removeItem(getSettingsTabStorageKey(projectId));
+          localStorage.removeItem(getScriptGenerateStorageKey(projectId));
+        }
       }
       return newTabs;
     });
-  }, [activeTabId, activeAssetTabId, activeExtensionDetailTabId, updateCurrentTabs, assetTabs, extensionDetailTabs, sceneTabs, scriptGenerateTabOpen, settingsTabOpen]);
+  }, [activeTabId, activeAssetTabId, activeExtensionDetailTabId, updateCurrentTabs, assetTabs, extensionDetailTabs, sceneTabs, settingsTabOpen]);
 
   // 关闭标签
   const handleTabClose = useCallback((tabId: string) => {
@@ -689,19 +830,9 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
     // 检查是否为设置标签
     if (tabId === 'settings') {
       setSettingsTabOpen(true);
-      setScriptGenerateTabOpen(false);
       setActiveAssetTabId(null);
       setActiveExtensionDetailTabId(null);
       setActiveTabId('settings');
-      return;
-    }
-    // 检查是否为剧本生成标签
-    if (tabId === 'script-generate') {
-      setScriptGenerateTabOpen(true);
-      setSettingsTabOpen(false);
-      setActiveAssetTabId(null);
-      setActiveExtensionDetailTabId(null);
-      setActiveTabId('script-generate');
       return;
     }
     updateCurrentTabs(prev => prev.filter(t => t.id === tabId));
@@ -710,7 +841,6 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
     setExtensionDetailTabs([]);
     setActiveExtensionDetailTabId(null);
     setSettingsTabOpen(false);
-    setScriptGenerateTabOpen(false);
     setActiveTabId(tabId);
   }, [updateCurrentTabs]);
 
@@ -719,19 +849,9 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
     // 检查是否为设置标签
     if (tabId === 'settings') {
       setSettingsTabOpen(true);
-      setScriptGenerateTabOpen(false);
       setActiveAssetTabId(null);
       setActiveExtensionDetailTabId(null);
       setActiveTabId('settings');
-      return;
-    }
-    // 检查是否为剧本生成标签
-    if (tabId === 'script-generate') {
-      setScriptGenerateTabOpen(true);
-      setSettingsTabOpen(false);
-      setActiveAssetTabId(null);
-      setActiveExtensionDetailTabId(null);
-      setActiveTabId('script-generate');
       return;
     }
     updateCurrentTabs(prev => {
@@ -751,7 +871,7 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
       if ((e.ctrlKey || e.metaKey) && e.key === 'w') {
         e.preventDefault();
         // 获取当前激活的标签ID
-        const currentActiveId = activeExtensionDetailTabId || activeAssetTabId || activeTabId || (settingsTabOpen ? 'settings' : null) || (scriptGenerateTabOpen ? 'script-generate' : null);
+        const currentActiveId = activeExtensionDetailTabId || activeAssetTabId || activeTabId || (settingsTabOpen ? 'settings' : null);
         if (currentActiveId) {
           handleTabClose(currentActiveId);
         }
@@ -759,7 +879,7 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
       // Ctrl+Tab / Cmd+Tab 切换到下一个标签
       if ((e.ctrlKey || e.metaKey) && e.key === 'Tab') {
         e.preventDefault();
-        const currentActiveId = activeExtensionDetailTabId || activeAssetTabId || activeTabId || (settingsTabOpen ? 'settings' : null) || (scriptGenerateTabOpen ? 'script-generate' : null);
+        const currentActiveId = activeExtensionDetailTabId || activeAssetTabId || activeTabId || (settingsTabOpen ? 'settings' : null);
         if (tabs.length > 1 && currentActiveId) {
           const currentIndex = tabs.findIndex(t => t.id === currentActiveId);
           const nextIndex = e.shiftKey
@@ -780,7 +900,7 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeTabId, activeAssetTabId, activeExtensionDetailTabId, settingsTabOpen, scriptGenerateTabOpen, tabs, handleTabClose, handleTabClick]);
+  }, [activeTabId, activeAssetTabId, activeExtensionDetailTabId, settingsTabOpen, tabs, handleTabClose, handleTabClick]);
 
   // 拖拽排序
   const handleTabReorder = useCallback((newTabs: TabItem[]) => {
@@ -869,16 +989,20 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
                 aiModels={directorSpaceProps.models || []}
                 defaultTextModel={textModel}
                 lockProjectId={directorSpaceProps.projectId || undefined}
-                lockEpisodeNumber={episodeNumber || undefined}
+                lockEpisodeNumber={scriptGenerateTabEpisode || episodeNumber || undefined}
                 onSuccess={(payload) => {
                   onScriptGenerated?.(payload);
                   // 生成成功后关闭标签页
-                  handleCloseTab('script-generate');
+                  setScriptGenerateTabOpen(false);
+                  setScriptGenerateTabEpisode(undefined);
                 }}
                 onError={(msg) => {
                   // 错误处理由 ScriptGenerateTab 内部处理
                 }}
-                onClose={() => handleCloseTab('script-generate')}
+                onClose={() => {
+                  setScriptGenerateTabOpen(false);
+                  setScriptGenerateTabEpisode(undefined);
+                }}
               />
             </div>
           )}
@@ -892,35 +1016,63 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
           }}
           allowFullExpand={true}
         >
-          {activeTab?.type === 'scene' && (() => {
-            const sceneId = parseInt(activeTab.id.replace('scene-', ''), 10);
-            const scene = scenes.find(s => s.id === sceneId);
-            return scene ? (
-              <DirectorSpace
-                key={`director-${sceneId}`}
-                scene={scene}
-                {...directorSpaceProps}
-              />
-            ) : null;
-          })()}
-          {activeTab?.type === 'asset' && activeTab.assetType !== 'script' && (() => {
-            const assetData = assetTabData.get(activeTab.id);
-            const assetName = assetData?.name || activeTab.title || '';
-            const parts = activeTab.id.split('-');
-            const assetId = parseInt(parts[parts.length - 1], 10);
-            return assetName ? (
-              <AssetSceneRelations
-                key={`relations-${activeTab.id}`}
-                scenes={scenes}
-                assetType={activeTab.assetType || 'character'}
-                assetName={assetName}
-                assetId={!isNaN(assetId) ? assetId : undefined}
-                onSelectScene={(sceneId) => {
-                  onSelectScene(sceneId);
-                }}
-              />
-            ) : null;
-          })()}
+          {activeTab?.type === 'scene' ? (
+            // 分镜标签页：显示导演空间
+            (() => {
+              const sceneId = parseInt(activeTab.id.replace('scene-', ''), 10);
+              const scene = scenes.find(s => s.id === sceneId);
+              return scene ? (
+                <DirectorSpace
+                  key={`director-${sceneId}`}
+                  scene={scene}
+                  {...directorSpaceProps}
+                />
+              ) : null;
+            })()
+          ) : activeTab?.type === 'asset' && activeTab.assetType !== 'script' ? (
+            // 资产标签页：显示资产关联分镜
+            (() => {
+              const assetData = assetTabData.get(activeTab.id);
+              const assetName = assetData?.name || activeTab.title || '';
+              const parts = activeTab.id.split('-');
+              const assetId = parseInt(parts[parts.length - 1], 10);
+              return assetName ? (
+                <AssetSceneRelations
+                  key={`relations-${activeTab.id}`}
+                  scenes={scenes}
+                  assetType={activeTab.assetType || 'character'}
+                  assetName={assetName}
+                  assetId={!isNaN(assetId) ? assetId : undefined}
+                  onSelectScene={(sceneId) => {
+                    onSelectScene(sceneId);
+                  }}
+                />
+              ) : null;
+            })()
+          ) : (
+            // 其他标签页（设置、扩展、剧本生成等）：显示提示信息
+            <div className="flex flex-col items-center justify-center h-full text-center py-8">
+              <svg
+                className="w-12 h-12 mb-3 text-[var(--text-muted)] opacity-30"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={1.5}
+                  d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+                />
+              </svg>
+              <p className="text-sm text-[var(--text-muted)] mb-1">
+                无可用的工作区域
+              </p>
+              <p className="text-xs text-[var(--text-muted)] opacity-60">
+                切换到分镜标签页可使用导演空间
+              </p>
+            </div>
+          )}
         </BottomPanel>
       </div>
     </div>

@@ -123,7 +123,13 @@ async function handleBatchCharacterViewsGeneration(inputParams, onProgress) {
         genParams.description = char.description || '';
         genParams.personality = char.personality || '';
         genParams.outfit = state.outfit || char.outfitAppearance || '';
-        genParams.heldProps = state.held_props || '';
+        // held_props 是 JSON 字段，从数据库读取后需要解析为字符串
+        try {
+          const parsed = state.held_props ? JSON.parse(state.held_props) : '';
+          genParams.heldProps = typeof parsed === 'string' ? parsed : JSON.stringify(parsed);
+        } catch (e) {
+          genParams.heldProps = state.held_props ? String(state.held_props) : '';
+        }
       }
 
       const result = await handleCharacterViewsGeneration(genParams, null);

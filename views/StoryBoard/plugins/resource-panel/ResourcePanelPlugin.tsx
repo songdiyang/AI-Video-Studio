@@ -13,6 +13,7 @@ const ResourcePanelPlugin: React.FC = () => {
     state,
     selectedScene,
     sceneActions,
+    resourceActions,
   } = useStoryboardContext();
 
   // 收集资源面板数据
@@ -58,6 +59,7 @@ const ResourcePanelPlugin: React.FC = () => {
       models={state.models}
       storyboardStates={storyboardStates}
       onStoryboardStateChange={handleStoryboardStateChange}
+      onRefreshProps={resourceActions.fetchProjectProps}
     />
   );
 };

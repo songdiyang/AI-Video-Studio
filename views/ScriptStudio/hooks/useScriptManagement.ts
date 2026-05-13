@@ -51,8 +51,8 @@ export function useScriptManagement(options: UseScriptManagementOptions = {}) {
         setScripts(data.scripts || []);
         setNextEpisode(data.nextEpisode || 1);
         
-        // 选择指定集或默认第一集
-        const targetEpisode = episode || (data.scripts.length > 0 ? data.scripts[0].episode_number : 1);
+        // 选择指定集，或保持当前集数，或默认第一集
+        const targetEpisode = episode || currentEpisode || (data.scripts.length > 0 ? data.scripts[0].episode_number : 1);
         setCurrentEpisode(targetEpisode);
         
         const currentScript = data.scripts.find((s: any) => s.episode_number === targetEpisode);

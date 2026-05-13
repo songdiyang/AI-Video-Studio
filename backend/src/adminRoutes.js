@@ -1326,12 +1326,16 @@ router.post('/ai-models/smart-parse', authMiddleware, requireAdmin, async (req, 
 function classifyVolcengineModel(modelId) {
   const id = modelId.toLowerCase();
   // 图像生成模型
-  if (id.includes('seedream') || id.includes('seed')) {
+  if (id.includes('seedream')) {
     return 'IMAGE';
   }
   // 视频生成模型
   if (id.includes('seedance')) {
     return 'VIDEO';
+  }
+  // 声音/语音生成模型
+  if (id.includes('seedtts') || id.includes('speech') || id.includes('voice')) {
+    return 'AUDIO';
   }
   // 多模态模型
   if (id.includes('vision') || id.includes('vl') || id.includes('multimodal')) {
@@ -1392,8 +1396,9 @@ async function discoverOpenAIModels(provider, category, classifyFn) {
  */
 function classifyVolcengineModel(modelId) {
   const id = modelId.toLowerCase();
-  if (id.includes('seedream') || id.includes('seed')) return 'IMAGE';
+  if (id.includes('seedream')) return 'IMAGE';
   if (id.includes('seedance')) return 'VIDEO';
+  if (id.includes('seedtts') || id.includes('speech') || id.includes('voice')) return 'AUDIO';
   if (id.includes('vision') || id.includes('vl')) return 'MULTIMODAL';
   if (id.includes('3d')) return '3D';
   return 'TEXT';

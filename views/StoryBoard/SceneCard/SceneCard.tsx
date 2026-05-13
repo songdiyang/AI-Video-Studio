@@ -313,6 +313,11 @@ const SceneCard: React.FC<SceneCardProps> = ({
         isPressable={false}
         onPress={() => onSelect(scene.id)}
         onContextMenu={handleContextMenu}
+        onDoubleClick={() => {
+          window.dispatchEvent(new CustomEvent('openSceneTab', {
+            detail: { sceneId: scene.id }
+          }));
+        }}
       >
         <CardBody className="p-1.5 relative">
           {/* 操作按钮 - 悬浮显示在右上角 */}

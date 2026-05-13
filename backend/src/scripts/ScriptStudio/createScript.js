@@ -10,9 +10,8 @@ async function createScript(req, res) {
   const userId = req.user.id;
 
   // projectId 可选：不传则创建"个人剧本"（project_id = NULL，存于资源库）
-  if (!content || !content.trim()) {
-    return res.status(400).json({ message: '剧本内容不能为空' });
-  }
+  // 剧本内容允许为空，用户可以不依赖剧本生成内容
+  const scriptContent = content || '';
 
   try {
     // 仅在指定 projectId 时验证项目归属
@@ -51,7 +50,7 @@ async function createScript(req, res) {
     // 插入剧本记录（projectId 为 undefined/null 时作为个人剧本存储）
     const result = await execute(
       'INSERT INTO scripts (user_id, project_id, episode_number, title, content, status, model_provider, token_used) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      [userId, projectId || null, targetEpisode, title || `第${targetEpisode}集`, content, 'completed', 'manual', 0]
+      [userId, projectId || null, targetEpisode, title || `第${targetEpisode}集`, scriptContent, 'completed', 'manual', 0]
     );
     const scriptId = result.insertId;
 

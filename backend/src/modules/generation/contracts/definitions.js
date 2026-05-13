@@ -241,6 +241,7 @@ const operationContracts = [
           accessories: state.accessories || null,
           ageStage: state.age_stage || null,
           bodyElements: state.body_elements || null,
+          // held_props 是 VARCHAR 字段，直接作为文本使用
           heldProps: state.held_props || null,
           isBaseModel: !!state.is_base_model,
           gender: resources.character.gender || 'unknown',

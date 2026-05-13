@@ -808,8 +808,9 @@ const Extensions: React.FC = () => {
         key={isLocal ? ext.name : ext.id}
         onClick={handleItemClick}
         className={`p-3 cursor-pointer transition-colors ${
-          isSelected ? 'bg-blue-500/5' : 'hover:bg-[var(--bg-hover)]'
+          isSelected ? 'bg-[var(--accent)]/8' : 'hover:bg-[var(--bg-hover)]'
         }`}
+        title={ext.display_name}
       >
         <div className="flex items-start gap-3">
           <ExtensionIcon iconUrl={ext.icon_url} category={ext.category} size="sm" />

@@ -18,6 +18,9 @@ const SceneListPlugin: React.FC = () => {
     state,
     setState,
     tasks,
+    handleEpisodeSelect,
+    handleStandaloneEpisodeChange,
+    handleCreateNextEpisode,
   } = useStoryboardContext();
 
   return (
@@ -26,8 +29,11 @@ const SceneListPlugin: React.FC = () => {
       selectedScene={selectedScene}
       projectId={state.currentProjectId}
       scriptId={state.currentScriptId}
+      scripts={state.scripts}
+      currentEpisode={state.currentEpisode}
+      currentScriptId={state.currentScriptId}
+      projectName={state.currentProject?.name}
       onSelectScene={setSelectedScene}
-      onAddScene={sceneActions.addScene}
       onInsertScene={sceneActions.insertScene}
       onDeleteScene={sceneActions.deleteScene}
       onMoveScene={sceneActions.moveScene}
@@ -52,6 +58,20 @@ const SceneListPlugin: React.FC = () => {
           detail: { scriptId: state.currentScriptId }
         });
         window.dispatchEvent(event);
+      }}
+      onEpisodeSelect={handleEpisodeSelect}
+      onStandaloneEpisodeChange={handleStandaloneEpisodeChange}
+      onCreateNextEpisode={handleCreateNextEpisode}
+      onUpdateEpisodeTitle={async (scriptId, title) => {
+        try {
+          const { updateScriptTitle, fetchScripts } = await import('../../../../services/scripts');
+          await updateScriptTitle(scriptId, title);
+          const refreshed = await fetchScripts();
+          // 触发重新渲染
+          window.dispatchEvent(new CustomEvent('scriptsRefreshed', { detail: refreshed }));
+        } catch (err: any) {
+          console.error('更新标题失败:', err);
+        }
       }}
     />
   );

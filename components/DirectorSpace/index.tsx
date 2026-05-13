@@ -146,7 +146,7 @@ const DescriptionEditor: React.FC<{
   return (
     <div className="h-full flex flex-col relative">
       <textarea
-        className="flex-1 w-full bg-[var(--bg-input)] border border-[var(--border-color)] rounded p-3 pb-10 text-xs text-[var(--text-secondary)] resize-none focus:outline-none focus:border-[var(--accent)]/50"
+        className="flex-1 w-full bg-[var(--bg-input)] border border-[var(--border-color)] rounded p-3 pb-10 text-xs text-[var(--text-secondary)] resize-none focus:outline-none focus:border-[var(--accent)]/50 overflow-y-auto"
         value={scene.baseDescription || ''}
         onChange={(e) => onUpdateBaseDescription?.(e.target.value)}
         placeholder="输入分镜描述..."

@@ -23,6 +23,10 @@ export interface Scene {
   // 新场景概念：environment + buildings 聚合
   _environment?: Environment | null;
   _buildings?: Building[];
+  /** 影棚采用环境的哪一面（front/back） */
+  environment_view?: 'front' | 'back';
+  /** 项目ID（用于加载组装候选池） */
+  project_id?: number;
 }
 
 export const useSceneData = (projectId?: number | null, scriptId?: number | null) => {
@@ -61,6 +65,8 @@ export const useSceneData = (projectId?: number | null, scriptId?: number | null
           generation_status: 'pending',
           _environment: s.environment || null,
           _buildings: Array.isArray(s.buildings) ? s.buildings : [],
+          environment_view: s.environment_view || 'front',
+          project_id: s.project_id,
         }));
         setDbScenes(studios);
         console.log('[ResourcePanel] 加载了', studios.length, '个场景（Studios）');

@@ -45,9 +45,24 @@ export interface StoryboardContextValue {
   // 任务队列
   tasks: Record<string, TaskState>;
   isRunning: boolean;
-  
+
+  // 自动分镜
+  autoStoryboard: {
+    isGenerating: boolean;
+    showConfirmModal: boolean;
+    setShowConfirmModal: (show: boolean) => void;
+    handleAutoGenerateClick: () => void;
+    handleConfirmGenerate: (mode: any) => void;
+    dontShowAgain: boolean;
+    setDontShowAgain: (v: boolean) => void;
+    progress: any;
+    job: any;
+  };
+
   // 集数切换
   handleEpisodeSelect: (script: Script | null) => void;
+  handleStandaloneEpisodeChange: (episode: number) => void;
+  handleCreateNextEpisode: () => void;
   
   // 已注册插件
   plugins: StoryboardPlugin[];

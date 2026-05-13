@@ -223,7 +223,7 @@ export const GenshinTextarea = forwardRef<HTMLTextAreaElement, GenshinTextareaPr
           focus:outline-none focus:border-[rgba(230,200,122,0.4)]
           focus:shadow-[0_0_0_3px_rgba(230,200,122,0.1)]
           hover:border-[rgba(255,255,255,0.15)]
-          resize-none
+          resize-none overflow-y-auto
           ${error ? 'border-red-500/50 focus:border-red-500/70' : ''}
           ${className}
         `}

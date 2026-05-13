@@ -296,9 +296,11 @@ ${contentForAnalysis}
                 [character.base_appearance || '', existingId]
               );
               // 更新默认服装状态的 outfit + held_props（手持道具叠加到该状态）
+              // held_props 是 JSON 字段，需要序列化
+              const heldPropsJson = character.held_props ? JSON.stringify(character.held_props) : null;
               await execute(
                 `UPDATE character_states SET outfit = ?, appearance = ?, held_props = ? WHERE character_id = ? AND is_base_model = 0 AND name = '默认服装'`,
-                [character.outfit_appearance || '', character.appearance || '', character.held_props || '', existingId]
+                [character.outfit_appearance || '', character.appearance || '', heldPropsJson, existingId]
               );
               // 查询默认服装状态的 ID，供后续 costume 关联使用
               const defaultState = await queryOne(
@@ -342,11 +344,13 @@ ${contentForAnalysis}
           );
 
           // 创建默认服装状态：outfit 使用 outfit_appearance，held_props 使用剧本拆出的手持道具
+          // held_props 是 JSON 字段，需要序列化
+          const heldPropsJson = character.held_props ? JSON.stringify(character.held_props) : null;
           const costumeStateResult = await execute(
             `INSERT INTO character_states (
               character_id, is_base_model, name, description, appearance, outfit, held_props, gender, is_active, generation_status, state_category
             ) VALUES (?, 0, '默认服装', '角色默认服装状态', ?, ?, ?, ?, 0, 'idle', 'costume')`,
-            [character.id, character.appearance || '', character.outfit_appearance || '', character.held_props || '', gender]
+            [character.id, character.appearance || '', character.outfit_appearance || '', heldPropsJson, gender]
           );
           character.defaultStateId = costumeStateResult.insertId;
 
@@ -596,12 +600,14 @@ ${missingContext}
                     [detail.base_appearance || detail.appearance || '', existingId]
                   );
                   // 智能覆盖：默认服装状态的 outfit/held_props 为空时才填充
+                  // held_props 是 JSON 字段，需要序列化
+                  const heldPropsJson = detail.held_props ? JSON.stringify(detail.held_props) : null;
                   await exHelper(
                     `UPDATE character_states SET
                         outfit = COALESCE(NULLIF(outfit, ''), ?),
                         held_props = COALESCE(NULLIF(held_props, ''), ?)
                      WHERE character_id = ? AND is_base_model = 0 AND name = '默认服装'`,
-                    [detail.outfit_appearance || '', detail.held_props || '', existingId]
+                    [detail.outfit_appearance || '', heldPropsJson, existingId]
                   );
                 } catch (e) { /* ignore */ }
               }
@@ -629,9 +635,11 @@ ${missingContext}
                     `UPDATE character_states SET appearance = ? WHERE character_id = ? AND is_base_model = 1`,
                     [detail.base_appearance || detail.appearance || '', existingId]
                   );
+                  // held_props 是 JSON 字段，需要序列化
+                  const heldPropsJson = detail.held_props ? JSON.stringify(detail.held_props) : null;
                   await exHelper(
                     `UPDATE character_states SET outfit = ?, appearance = ?, held_props = ? WHERE character_id = ? AND is_base_model = 0 AND name = '默认服装'`,
-                    [detail.outfit_appearance || '', detail.appearance || '', detail.held_props || '', existingId]
+                    [detail.outfit_appearance || '', detail.appearance || '', heldPropsJson, existingId]
                   );
                 } catch (e) { /* ignore */ }
               }
@@ -671,10 +679,12 @@ ${missingContext}
                 [newCharId, baseApp]
               );
               // 创建默认服装状态（含手持道具）
+              // held_props 是 JSON 字段，需要序列化
+              const heldPropsJson = detail.held_props ? JSON.stringify(detail.held_props) : null;
               await exHelper(
                 `INSERT INTO character_states (character_id, is_base_model, name, description, appearance, outfit, held_props, gender, is_active, generation_status, state_category)
                  VALUES (?, 0, '默认服装', '角色默认服装状态', ?, ?, ?, 'unknown', 0, 'idle', '"costume"')`,
-                [newCharId, fullApp, outfitApp, detail.held_props || '']
+                [newCharId, fullApp, outfitApp, heldPropsJson]
               );
             } catch (stateErr) {
               console.warn('[CharacterExtraction] 创建遗漏角色的白膜/服装状态失败:', name, stateErr.message);

@@ -16,7 +16,7 @@ const CAPABILITY_OPTIONS = [
   { key: 'vision', label: '视觉', description: '图像理解、多模态输入' },
   { key: 'image_gen', label: '生图', description: '文生图、图生图' },
   { key: 'video_gen', label: '生视频', description: '文生视频、图生视频' },
-  { key: 'audio_gen', label: '生音频', description: '文生语音、音乐生成' },
+  { key: 'audio_gen', label: '生声音', description: '文生语音、音乐生成' },
   { key: 'tool_calling', label: '工具调用', description: 'Function Calling' },
   { key: 'reasoning', label: '推理', description: '深度思考、逻辑推理' },
   { key: 'code', label: '代码', description: '代码生成、代码补全' },

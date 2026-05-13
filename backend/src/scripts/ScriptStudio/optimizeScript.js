@@ -52,8 +52,24 @@ async function optimizeScript(req, res) {
       originalScriptId = script.id;
     }
 
+    // 剧本内容允许为空，为空时返回友好提示
     if (!content || !content.trim()) {
-      return res.status(400).json({ message: '剧本内容不能为空' });
+      return res.json({
+        success: true,
+        originalScriptId,
+        savedScriptId: null,
+        projectId: targetProjectId,
+        episodeNumber: targetEpisode,
+        title: `${scriptTitle}（优化版）`,
+        originalContent: '',
+        optimizedContent: '',
+        changes: ['剧本内容为空，无需优化'],
+        tokensUsed: 0,
+        model: effectiveModel,
+        instruction,
+        saveMode,
+        message: '剧本内容为空，无需优化'
+      });
     }
 
     // 内容截断（避免prompt过长，保留前10000字）

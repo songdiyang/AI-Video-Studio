@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Button, Tooltip } from '@heroui/react';
-import { Plus, Video, Download, Film, Image, Trash2, Play } from 'lucide-react';
+import { Button, Tooltip, Select, SelectItem } from '@heroui/react';
+import { Plus, Video, Download, Film, Image, Trash2, Play, Settings2, BookOpen, Pencil } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import SceneCard from './SceneCard';
 import { StoryboardScene } from './useSceneManager';
@@ -8,16 +8,29 @@ import { TaskState } from '../../hooks/useTaskRunner';
 import type { StoryboardValidationIssue } from './utils/validateStoryboardContent';
 import { useImagePreloader, useScrollIndex } from './hooks/useImagePreloader';
 
+interface Script {
+  id: number;
+  episode_number: number;
+  title: string;
+  status: string;
+}
+
+const STANDALONE_SCRIPT_ID = 0;
+const CREATE_NEXT_EPISODE_ID = -1;
+
 interface SceneListProps {
   scenes: StoryboardScene[];
   selectedScene: number | null;
   projectId?: number | null;
   scriptId?: number | null;
+  scripts?: Script[];
+  currentEpisode?: number;
+  currentScriptId?: number | null;
+  projectName?: string;
   isLoading?: boolean;
   onSelectScene: (id: number) => void;
   onMoveScene: (id: number, direction: 'up' | 'down') => void;
   onDeleteScene: (id: number) => void;
-  onAddScene: () => void;
   onInsertScene?: (index: number) => void;
   onUpdateDescription: (id: number, description: string) => Promise<boolean>;
   onGenerateImage: (id: number, prompt: string, regenerateTarget?: 'first' | 'last' | 'both', forceRegenerate?: boolean) => Promise<{ success: boolean; error?: string }>;
@@ -34,6 +47,10 @@ interface SceneListProps {
   sceneValidationMap?: Map<number, StoryboardValidationIssue[]>;
   onBatchDownload?: () => void;
   onPlayAnimatic?: () => void;
+  onEpisodeSelect?: (script: Script | null) => void;
+  onStandaloneEpisodeChange?: (episode: number) => void;
+  onCreateNextEpisode?: () => void;
+  onUpdateEpisodeTitle?: (scriptId: number, title: string) => Promise<void>;
 }
 
 // 列表容器动画配置
@@ -86,11 +103,14 @@ const SceneList: React.FC<SceneListProps> = ({
   selectedScene,
   projectId,
   scriptId,
+  scripts = [],
+  currentEpisode = 1,
+  currentScriptId: propCurrentScriptId,
+  projectName,
   isLoading = false,
   onSelectScene,
   onMoveScene,
   onDeleteScene,
-  onAddScene,
   onInsertScene,
   onUpdateDescription,
   onGenerateImage,
@@ -100,7 +120,11 @@ const SceneList: React.FC<SceneListProps> = ({
   onReorderScenes,
   sceneValidationMap,
   onBatchDownload,
-  onPlayAnimatic
+  onPlayAnimatic,
+  onEpisodeSelect,
+  onStandaloneEpisodeChange,
+  onCreateNextEpisode,
+  onUpdateEpisodeTitle,
 }) => {
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
@@ -108,6 +132,18 @@ const SceneList: React.FC<SceneListProps> = ({
   const insertTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // 标记首次加载完成，用于控制 layout 动画
   const [hasLoaded, setHasLoaded] = useState(false);
+
+  // 集数标题编辑状态
+  const [editingEpisodeId, setEditingEpisodeId] = useState<number | null>(null);
+  const [editingEpisodeTitle, setEditingEpisodeTitle] = useState('');
+  const episodeEditInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editingEpisodeId !== null && episodeEditInputRef.current) {
+      episodeEditInputRef.current.focus();
+      episodeEditInputRef.current.select();
+    }
+  }, [editingEpisodeId]);
 
   // 滚动容器 ref，用于追踪滚动位置
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -243,43 +279,169 @@ const SceneList: React.FC<SceneListProps> = ({
     onDeleteScene(contextMenu.sceneId);
     setContextMenu(null);
   };
+  // 集数切换相关状态
+  const isStandalone = propCurrentScriptId == null || propCurrentScriptId === STANDALONE_SCRIPT_ID;
+  const currentScript = !isStandalone
+    ? scripts.find(s => s.id === propCurrentScriptId)
+    : null;
+
+  const handleEpisodeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const selectedId = parseInt(e.target.value, 10);
+    if (selectedId === CREATE_NEXT_EPISODE_ID) {
+      onCreateNextEpisode?.();
+      return;
+    }
+    const script = scripts.find(s => s.id === selectedId);
+    if (script && onEpisodeSelect) {
+      onEpisodeSelect(script);
+    }
+  };
+
   return (
     <div className="h-full flex flex-col bg-[var(--bg-app)]">
       {/* 紧凑的头部操作栏 */}
       <div className="flex-shrink-0 px-2 py-2 border-b border-[var(--border-color)] flex items-center justify-between gap-2">
-        <Button
-          size="sm"
-          className="pro-btn h-7 px-2 text-xs"
-          startContent={<Plus className="w-3.5 h-3.5" />}
-          onPress={onAddScene}
-        >
-          添加
-        </Button>
+        {/* 左侧：集数切换器 */}
+        <div className="flex items-center gap-2">
+          {/* 项目名 */}
+          <div
+            className="h-7 min-h-7 px-2 inline-flex items-center gap-1.5 rounded-lg bg-[var(--accent)]/8 border border-[var(--accent)]/20 text-xs font-semibold text-[var(--accent)] truncate"
+            title={projectName || '未命名项目'}
+          >
+            {isStandalone ? (
+              <Pencil className="w-3 h-3 text-amber-400 shrink-0" />
+            ) : (
+              <BookOpen className="w-3 h-3 text-violet-400 shrink-0" />
+            )}
+            <span className="truncate">{projectName || '未命名项目'}</span>
+          </div>
+
+          {/* 集数下拉（无论是否绑定剧本都显示） */}
+          {(() => {
+            const maxEp = Math.max((currentEpisode || 1), 1);
+            const options = Array.from({ length: maxEp }, (_, i) => i + 1);
+            return (
+              <>
+                <div className="w-px h-4 bg-[var(--border-color)]" />
+                <Select
+                  size="sm"
+                  aria-label="切换集数"
+                  selectedKeys={isStandalone ? [String(currentEpisode || 1)] : (currentScript ? [String(currentScript.id)] : [String(scripts[0]?.id)])}
+                  onChange={isStandalone ? ((e) => {
+                    const v = parseInt((e.target as HTMLSelectElement).value, 10);
+                    if (v === CREATE_NEXT_EPISODE_ID) {
+                      onStandaloneEpisodeChange?.(maxEp + 1);
+                      return;
+                    }
+                    if (!isNaN(v) && v >= 1) onStandaloneEpisodeChange?.(v);
+                  }) as any : handleEpisodeChange}
+                  className={isStandalone ? "w-24" : "w-40"}
+                  startContent={<Film className="w-3 h-3 text-[var(--accent)]" />}
+                  classNames={{
+                    trigger: "h-7 min-h-7 bg-white/5 border-[var(--border-color)] hover:border-[var(--accent)]/40 data-[open=true]:border-[var(--accent)]/40",
+                    value: "text-xs font-medium text-[var(--text-primary)]",
+                  }}
+                >
+                  {isStandalone ? [
+                    ...options.map((ep) => (
+                      <SelectItem key={String(ep)} textValue={`第${ep}集`}>
+                        <span>第{ep}集</span>
+                      </SelectItem>
+                    )),
+                    <SelectItem key={String(CREATE_NEXT_EPISODE_ID)} textValue="新建下一集">
+                      <div className="flex items-center gap-1.5 text-[var(--accent)]">
+                        <Plus className="w-3 h-3" />
+                        <span className="font-medium">新建第{maxEp + 1}集</span>
+                      </div>
+                    </SelectItem>,
+                  ] : [
+                    ...scripts.map((s) => (
+                      <SelectItem key={String(s.id)} textValue={`第${s.episode_number}集${s.title ? ' - ' + s.title : ''}`}>
+                        <div className="flex items-center gap-2">
+                          <span className="shrink-0 text-xs font-medium text-[var(--accent)]">第{s.episode_number}集</span>
+                          {editingEpisodeId === s.id ? (
+                            <input
+                              ref={episodeEditInputRef}
+                              value={editingEpisodeTitle}
+                              onChange={(e) => setEditingEpisodeTitle(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  onUpdateEpisodeTitle?.(s.id, editingEpisodeTitle).then(() => setEditingEpisodeId(null));
+                                } else if (e.key === 'Escape') {
+                                  setEditingEpisodeId(null);
+                                }
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                              className="flex-1 min-w-0 text-xs bg-transparent border border-[var(--accent)]/40 rounded px-1 py-0.5 outline-none text-[var(--text-primary)]"
+                              maxLength={30}
+                              placeholder="输入标题"
+                            />
+                          ) : (
+                            <span
+                              className="flex-1 min-w-0 text-xs text-[var(--text-primary)] truncate cursor-pointer hover:text-[var(--accent)]"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingEpisodeId(s.id);
+                                setEditingEpisodeTitle(s.title || '');
+                              }}
+                              title={s.title || '点击编辑标题'}
+                            >
+                              {s.title || (
+                                <span className="text-[var(--text-muted)]/50 italic">未命名</span>
+                              )}
+                            </span>
+                          )}
+                        </div>
+                      </SelectItem>
+                    )),
+                    ...(onCreateNextEpisode ? [(
+                      <SelectItem key={String(CREATE_NEXT_EPISODE_ID)} textValue="新建下一集">
+                        <div className="flex items-center gap-1.5 text-[var(--accent)]">
+                          <Plus className="w-3 h-3" />
+                          <span className="font-medium">新建下一集</span>
+                        </div>
+                      </SelectItem>
+                    )] : []),
+                  ]}
+                </Select>
+                {/* 未绑剧本时显示增加按钮 */}
+                {isStandalone && onStandaloneEpisodeChange && (
+                  <button
+                    type="button"
+                    onClick={() => onStandaloneEpisodeChange(maxEp + 1)}
+                    className="inline-flex items-center justify-center w-7 h-7 rounded-md border border-[var(--border-color)] hover:border-[var(--accent)]/50 hover:bg-[var(--accent)]/10 text-[var(--accent)] transition-colors"
+                    title={`新建第${maxEp + 1}集`}
+                    aria-label="新建下一集"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </>
+            );
+          })()}
+        </div>
+
         <div className="flex items-center gap-1">
           {/* 批量下载 */}
-          {scenes.length > 0 && onBatchDownload && (
+          {onBatchDownload && (
             <Tooltip content="批量下载打包" placement="bottom">
-              <Button
-                size="sm"
-                className="pro-btn h-7 px-2 text-xs bg-[var(--bg-card)] text-[var(--text-secondary)] border border-[var(--border-color)] hover:bg-emerald-500/15 hover:text-emerald-400 hover:border-emerald-500/30"
-                startContent={<Download className="w-3.5 h-3.5" />}
-                onPress={onBatchDownload}
+              <button
+                onClick={onBatchDownload}
+                className="h-7 w-7 flex items-center justify-center rounded-md text-xs bg-[var(--bg-card)] text-[var(--text-secondary)] border border-[var(--border-color)] hover:bg-emerald-500/15 hover:text-emerald-400 hover:border-emerald-500/30 transition-all cursor-pointer"
               >
-                打包
-              </Button>
+                <Download className="w-3.5 h-3.5" />
+              </button>
             </Tooltip>
           )}
           {/* 播放分镜 */}
-          {scenes.length > 0 && onPlayAnimatic && (
+          {onPlayAnimatic && (
             <Tooltip content="播放分镜预览" placement="bottom">
-              <Button
-                size="sm"
-                className="pro-btn h-7 px-2 text-xs bg-[var(--bg-card)] text-[var(--text-secondary)] border border-[var(--border-color)] hover:bg-purple-500/15 hover:text-purple-400 hover:border-purple-500/30"
-                startContent={<Play className="w-3.5 h-3.5" />}
-                onPress={onPlayAnimatic}
+              <button
+                onClick={onPlayAnimatic}
+                className="h-7 w-7 flex items-center justify-center rounded-md text-xs bg-[var(--bg-card)] text-[var(--text-secondary)] border border-[var(--border-color)] hover:bg-purple-500/15 hover:text-purple-400 hover:border-purple-500/30 transition-all cursor-pointer"
               >
-                播放
-              </Button>
+                <Play className="w-3.5 h-3.5" />
+              </button>
             </Tooltip>
           )}
           {scenes.length > 0 && (
@@ -304,9 +466,22 @@ const SceneList: React.FC<SceneListProps> = ({
       <div 
         ref={scrollContainerRef}
         className="flex-1 overflow-y-auto p-2 space-y-1 scroll-fade-top scroll-fade-bottom"
+        onContextMenu={(e) => {
+          // 空白区域右键菜单
+          if (onInsertScene && !(e.target as HTMLElement).closest('[data-scene-id]')) {
+            e.preventDefault();
+            setContextMenu({ x: e.clientX, y: e.clientY, sceneId: -1, sceneIndex: scenes.length });
+          }
+        }}
       >
         {isLoading ? (
           <SceneListSkeleton />
+        ) : scenes.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full text-[var(--text-muted)] py-12">
+            <Film className="w-10 h-10 mb-3 opacity-30" />
+            <div className="text-sm font-medium mb-1">暂无分镜</div>
+            <div className="text-xs opacity-60">点击上方"+"按钮或右键添加分镜</div>
+          </div>
         ) : (
           <motion.div
             variants={containerVariants}
@@ -402,32 +577,50 @@ const SceneList: React.FC<SceneListProps> = ({
           className="fixed z-50 bg-[var(--bg-nav)] border border-[var(--border-color)] rounded-lg shadow-lg py-1 min-w-[160px]"
           style={{ left: contextMenu.x, top: contextMenu.y }}
         >
-          {/* 下载视频 */}
-          <button
-            className="w-full px-3 py-2 text-xs text-left flex items-center gap-2 text-[var(--text-secondary)] hover:bg-[var(--bg-card)] hover:text-[var(--text-primary)] transition-colors"
-            onClick={handleDownloadVideo}
-          >
-            <Film className="w-3.5 h-3.5" />
-            下载视频
-          </button>
-          {/* 下载图片 */}
-          <button
-            className="w-full px-3 py-2 text-xs text-left flex items-center gap-2 text-[var(--text-secondary)] hover:bg-[var(--bg-card)] hover:text-[var(--text-primary)] transition-colors"
-            onClick={handleDownloadImage}
-          >
-            <Image className="w-3.5 h-3.5" />
-            下载首帧图片
-          </button>
-          {/* 分隔线 */}
-          <div className="my-1 border-t border-[var(--border-color)]" />
-          {/* 删除 */}
-          <button
-            className="w-full px-3 py-2 text-xs text-left flex items-center gap-2 text-red-400 hover:bg-red-500/10 transition-colors"
-            onClick={handleDeleteSceneFromMenu}
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-            删除分镜
-          </button>
+          {contextMenu.sceneId === -1 ? (
+            /* 空白区域右键菜单 */
+            <button
+              className="w-full px-3 py-2 text-xs text-left flex items-center gap-2 text-[var(--text-secondary)] hover:bg-[var(--bg-card)] hover:text-[var(--text-primary)] transition-colors"
+              onClick={() => {
+                if (onInsertScene) {
+                  onInsertScene(scenes.length);
+                }
+                setContextMenu(null);
+              }}
+            >
+              <Plus className="w-3.5 h-3.5" />
+              添加分镜
+            </button>
+          ) : (
+            <>
+              {/* 下载视频 */}
+              <button
+                className="w-full px-3 py-2 text-xs text-left flex items-center gap-2 text-[var(--text-secondary)] hover:bg-[var(--bg-card)] hover:text-[var(--text-primary)] transition-colors"
+                onClick={handleDownloadVideo}
+              >
+                <Film className="w-3.5 h-3.5" />
+                下载视频
+              </button>
+              {/* 下载图片 */}
+              <button
+                className="w-full px-3 py-2 text-xs text-left flex items-center gap-2 text-[var(--text-secondary)] hover:bg-[var(--bg-card)] hover:text-[var(--text-primary)] transition-colors"
+                onClick={handleDownloadImage}
+              >
+                <Image className="w-3.5 h-3.5" />
+                下载首帧图片
+              </button>
+              {/* 分隔线 */}
+              <div className="my-1 border-t border-[var(--border-color)]" />
+              {/* 删除 */}
+              <button
+                className="w-full px-3 py-2 text-xs text-left flex items-center gap-2 text-red-400 hover:bg-red-500/10 transition-colors"
+                onClick={handleDeleteSceneFromMenu}
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                删除分镜
+              </button>
+            </>
+          )}
         </div>
       )}
     </div>

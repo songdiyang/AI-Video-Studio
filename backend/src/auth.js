@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken');
 const { queryOne, execute } = require('./dbHelper');
 const { JWT_SECRET, validateAdminAccessRequest } = require('./middleware');
 const { logAdminLogin } = require('./adminLogService');
+const { createResourcePack } = require('./resourcePackService');
 
 const router = express.Router();
 
@@ -133,6 +134,19 @@ router.post('/register', async (req, res) => {
 
     const result = await execute('INSERT INTO users (email, password_hash, role) VALUES (?, ?, ?)', [username, passwordHash, 'user']);
     const userId = result.insertId;
+
+    // 为新用户赠送默认积分资源包（1000积分，有效期1个月）
+    try {
+      await createResourcePack(userId, {
+        name: '新用户赠送',
+        totalPoints: 1000,
+        sourceType: 'gift',
+        packType: 'points'
+      });
+    } catch (giftErr) {
+      console.warn('[Auth] 新用户赠送积分失败:', giftErr.message);
+      // 赠送失败不阻断注册流程
+    }
 
     const token = jwt.sign({ userId, email: username, role: 'user' }, JWT_SECRET, { expiresIn: '7d' });
     return res.json({

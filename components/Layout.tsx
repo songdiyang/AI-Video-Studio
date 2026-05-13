@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Film, User, LogOut, Settings, Sparkles, Moon, Sun, Monitor, Contrast, Maximize, Minimize, UsersRound, Puzzle, Coins, HelpCircle, PanelLeft, PanelRight, PanelBottom, FolderOpen, GripVertical } from 'lucide-react';
+import { Film, User, LogOut, Settings, Sparkles, Moon, Sun, Monitor, Contrast, Maximize, Minimize, UsersRound, Puzzle, Coins, HelpCircle, PanelLeft, PanelRight, PanelBottom, FolderOpen, GripVertical, ChevronDown, Check } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from "@heroui/react";
 import { getAuthToken, logout } from '../services/auth';
@@ -21,7 +21,7 @@ import PointsRechargeModal from './PointsRechargeModal';
 import InsufficientPointsModal from './InsufficientPointsModal';
 import { usePoints } from '../contexts/PointsContext';
 import { useRoutePreload } from '../hooks/useRoutePreload';
-import { Project } from '../services/projects';
+import { Project, fetchProjects } from '../services/projects';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -64,6 +64,57 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [userAvatar, setUserAvatar] = useState<string | null>(null);
   const [userNickname, setUserNickname] = useState<string | null>(null);
+
+  // 文件菜单 - 项目快速切换
+  const [fileMenuOpen, setFileMenuOpen] = useState(false);
+  const [projectList, setProjectList] = useState<Project[]>([]);
+  const [projectListLoading, setProjectListLoading] = useState(false);
+  const fileMenuRef = useRef<HTMLDivElement>(null);
+
+  // 点击外部关闭文件菜单
+  useEffect(() => {
+    if (!fileMenuOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (fileMenuRef.current && !fileMenuRef.current.contains(e.target as Node)) {
+        setFileMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [fileMenuOpen]);
+
+  // 打开文件菜单时加载项目列表
+  const handleOpenFileMenu = useCallback(async () => {
+    const willOpen = !fileMenuOpen;
+    setFileMenuOpen(willOpen);
+    if (willOpen) {
+      setProjectListLoading(true);
+      try {
+        const projects = await fetchProjects();
+        setProjectList(projects);
+        // 如果项目列表为空，清除当前项目状态
+        if (projects.length === 0 && currentProject) {
+          switchProject(null as any);
+          localStorage.removeItem('nanostory_last_project_id');
+        }
+      } catch (err) {
+        console.error('Failed to fetch projects:', err);
+      } finally {
+        setProjectListLoading(false);
+      }
+    }
+  }, [fileMenuOpen, currentProject, switchProject]);
+
+  // 快速切换项目
+  const handleSwitchProject = useCallback((project: Project) => {
+    switchProject(project);
+    localStorage.setItem('nanostory_last_project_id', String(project.id));
+    setFileMenuOpen(false);
+    // 如果当前不在工作台页面，导航到工作台
+    if (location.pathname !== '/') {
+      navigate('/');
+    }
+  }, [switchProject, navigate, location.pathname]);
   
   // 侧边栏导航项排序状态（支持长按拖拽排序）
   const [navOrder, setNavOrder] = useState<string[]>(() => {
@@ -637,8 +688,59 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         
         {/* 顶部横条 - 一整条（预留给其他功能模块） */}
         <header className="pro-toolbar h-11 items-center justify-between pl-4 pr-3 bg-(--bg-nav) border-b border-(--border-color) hide-on-mobile flex">
-          {/* 左侧：占位（项目切换已移至 StoryBoard 内） */}
-          <div />
+          {/* 左侧：文件菜单 - 项目快速切换 */}
+          {isLoggedIn && (
+            <div className="relative" ref={fileMenuRef}>
+              <button
+                onClick={handleOpenFileMenu}
+                className="flex items-center gap-1 text-xs text-(--text-muted) px-2 py-1.5 hover:bg-white/5 rounded-md transition-colors cursor-pointer"
+                title="文件"
+              >
+                <span>文件</span>
+                <ChevronDown className={`w-3 h-3 transition-transform ${fileMenuOpen ? 'rotate-180' : ''}`} />
+              </button>
+              {/* 文件菜单下拉面板 */}
+              {fileMenuOpen && (
+                <div className="absolute top-full left-0 mt-1 w-64 max-h-80 overflow-y-auto rounded-lg border border-(--border-color) bg-(--bg-card) shadow-xl z-50">
+                  <div className="px-3 py-2 border-b border-(--border-color)">
+                    <span className="text-xs font-medium text-(--text-secondary)">打开最近的项目</span>
+                  </div>
+                  {projectListLoading ? (
+                    <div className="px-3 py-4 text-center text-xs text-(--text-muted)">加载中...</div>
+                  ) : projectList.length === 0 ? (
+                    <div className="px-3 py-4 text-center text-xs text-(--text-muted)">暂无项目</div>
+                  ) : (
+                    <div className="py-1">
+                      {projectList.map((project) => (
+                        <button
+                          key={project.id}
+                          onClick={() => handleSwitchProject(project)}
+                          className={`w-full flex items-center gap-2 px-3 py-2 text-left text-xs transition-colors hover:bg-(--bg-card-hover) ${
+                            currentProject?.id === project.id ? 'text-(--accent)' : 'text-(--text-primary)'
+                          }`}
+                        >
+                          <FolderOpen className="w-3.5 h-3.5 shrink-0 opacity-60" />
+                          <span className="truncate flex-1">{project.name}</span>
+                          {currentProject?.id === project.id && (
+                            <Check className="w-3.5 h-3.5 shrink-0 text-(--accent)" />
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <div className="border-t border-(--border-color) px-3 py-2">
+                    <button
+                      onClick={() => { setFileMenuOpen(false); navigate('/projects'); }}
+                      className="w-full text-xs text-(--text-muted) hover:text-(--accent) text-center transition-colors"
+                    >
+                      管理全部项目
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+          {!isLoggedIn && <div />}
 
           {/* 右侧：辅助控件 */}
           <div className="flex items-center gap-3">

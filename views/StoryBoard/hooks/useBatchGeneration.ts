@@ -122,8 +122,9 @@ export function useBatchGeneration(
       onError?.(config.generatingMessage);
       return;
     }
-    if (!scriptId) {
-      onError?.('请先选择剧本');
+    // 允许无剧本模式：scriptId 为 null 时，使用 projectId 作为关联
+    if (!scriptId && !projectId) {
+      onError?.('请先选择项目或剧本');
       return;
     }
     if (!model) {
@@ -214,7 +215,9 @@ export function useBatchGeneration(
         body.duration = duration;
       }
 
-      const res = await fetch(`${config.endpoint}/${scriptId}`, {
+      // 无剧本模式：使用 projectId 作为路径参数
+      const endpointUrl = scriptId ? `${config.endpoint}/${scriptId}` : `${config.endpoint}/project/${projectId}`;
+      const res = await fetch(endpointUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

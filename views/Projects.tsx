@@ -621,7 +621,7 @@ const Projects: React.FC = () => {
     navigate('/');
   };
 
-  const filteredProjects = projects.filter(p => 
+  const filteredProjects = (projects || []).filter(p => 
     p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     p.description.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -1074,7 +1074,7 @@ const Projects: React.FC = () => {
 
                         {/* 我的风格 */}
                         {(() => {
-                          const filteredMyStyles = myStyles.filter(s => {
+                          const filteredMyStyles = (myStyles || []).filter(s => {
                             if (!formData.styleCategory) return true;
                             return s.style_category === formData.styleCategory;
                           });

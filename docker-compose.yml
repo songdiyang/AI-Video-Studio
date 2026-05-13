@@ -24,6 +24,7 @@ services:
     volumes:
       - ./dist:/srv/frontend-dist:ro
       - ./runtime/frontend:/srv/frontend-runtime:ro
+      - ./runtime/frontend/current:/usr/share/nginx/site
 
   notification-service:
     container_name: nanostory-notification-service

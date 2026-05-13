@@ -238,7 +238,7 @@ const TaskAssignmentModal: React.FC<TaskAssignmentModalProps> = ({
                   onChange={(e) => setDescription(e.target.value)}
                   placeholder="详细描述任务内容和要求..."
                   rows={3}
-                  className="w-full px-3 py-2 rounded-lg text-sm outline-none transition-colors resize-none"
+                  className="w-full px-3 py-2 rounded-lg text-sm outline-none transition-colors resize-none overflow-y-auto"
                   style={{ 
                     backgroundColor: 'var(--bg-input)', 
                     border: '1px solid var(--border-color)',

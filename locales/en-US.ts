@@ -39,6 +39,14 @@ const enUS: Translations = {
     pricing: 'Pricing',
     helpDocs: 'Help Docs',
   },
+  // File Menu
+  fileMenu: {
+    title: 'File',
+    recentProjects: 'Open Recent Projects',
+    manageAll: 'Manage All Projects',
+    noProjects: 'No projects',
+    loading: 'Loading...',
+  },
   // Settings Page
   settings: {
     title: 'Settings',

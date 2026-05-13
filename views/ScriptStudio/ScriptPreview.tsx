@@ -168,7 +168,7 @@ const ScriptPreview: React.FC<ScriptPreviewProps> = ({
             <textarea
               value={content}
               onChange={(e) => onContentChange(e.target.value)}
-              className="flex-1 min-h-0 w-full bg-[var(--bg-input)] text-[var(--text-primary)] font-medium leading-relaxed text-base border border-[var(--border-color)] rounded-lg p-4 resize-none overflow-auto outline-none focus:border-[var(--accent)]/70 transition-colors font-mono"
+              className="flex-1 min-h-0 w-full bg-[var(--bg-input)] text-[var(--text-primary)] font-medium leading-relaxed text-base border border-[var(--border-color)] rounded-lg p-4 resize-none overflow-y-auto outline-none focus:border-[var(--accent)]/70 transition-colors font-mono"
             />
           ) : (
             <div className="flex-1 overflow-y-auto overflow-x-hidden px-2 script-content break-words" style={{ overflowWrap: 'break-word', wordBreak: 'break-word' }}>

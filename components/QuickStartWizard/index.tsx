@@ -542,7 +542,7 @@ const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ isOpen, onClose, on
                       </div>
                       {/* 我的风格 - 快捷显示 */}
                       {(() => {
-                        const filteredMyStyles = myStyles.filter(s => {
+                        const filteredMyStyles = (myStyles || []).filter(s => {
                           if (!formData.styleCategory) return true;
                           return s.style_category === formData.styleCategory;
                         });

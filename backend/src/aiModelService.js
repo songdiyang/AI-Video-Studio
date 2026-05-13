@@ -27,6 +27,7 @@ const {
 // ============ 新架构：Adapter 层 ============
 const { createAdapter } = require('./adapters');
 const { modelRouter } = require('./services/ModelRouter');
+const { getHandler } = require('./customHandlers');
 
 // ============ 辅助函数 ============
 function toNumberSafe(val, fallback) {
@@ -418,6 +419,111 @@ async function callAIModel(modelName, params = {}, apiKey = null) {
       attachInternalField(result, '_submitParams', mergedParams);
 
       return result;
+    }
+
+    // ============ 自定义 Handler 拦截（提交阶段） ============
+    if (model.custom_handler) {
+      const handler = getHandler(model.custom_handler);
+      if (handler && typeof handler.call === 'function') {
+        console.log(`[AI Model] 使用自定义 handler "${model.custom_handler}" 调用 ${modelName}`);
+
+        // API Key 处理
+        if (!apiKey) {
+          if (model.api_key) {
+            apiKey = model.api_key;
+          } else {
+            const envKey = `${model.provider.toUpperCase()}_API_KEY`;
+            apiKey = process.env[envKey];
+            if (!apiKey) {
+              throw new Error(`API Key 未配置：请在模型配置中设置 API Key 或配置环境变量 ${envKey}`);
+            }
+          }
+        }
+
+        const modelPricing = buildModelPricingPayload(model);
+        mergedParams = { ...params, apiKey };
+
+        billingState = await prepareModelBilling(model, mergedParams);
+        requestStarted = true;
+
+        // 先渲染模板，生成 rendered 对象供 handler 使用
+        const defaultParams = parseJsonField(model.default_params, {});
+        const runtimeParams = { ...mergedParams };
+        const headersTemplate = parseJsonField(model.headers_template);
+        const bodyTemplate = parseJsonField(model.body_template);
+
+        const url = renderWithFallback('string', model.url_template, runtimeParams, defaultParams, 'url');
+        const headers = renderWithFallback('json', headersTemplate, runtimeParams, defaultParams, 'headers');
+
+        const requestOptions = { method: model.request_method, headers };
+        if (bodyTemplate && (model.request_method === 'POST' || model.request_method === 'PUT')) {
+          const renderedBody = renderWithFallback('json', bodyTemplate, runtimeParams, defaultParams, 'body');
+          const contentType = headers['Content-Type'] || headers['content-type'] || '';
+          if (contentType.includes('application/x-www-form-urlencoded')) {
+            const urlParams = new URLSearchParams();
+            for (const [key, value] of Object.entries(renderedBody)) {
+              urlParams.append(key, String(value));
+            }
+            requestOptions.body = urlParams.toString();
+          } else {
+            requestOptions.body = JSON.stringify(renderedBody);
+          }
+        }
+
+        let bodyObj = null;
+        if (requestOptions.body) {
+          try { bodyObj = JSON.parse(requestOptions.body); } catch { bodyObj = requestOptions.body; }
+        }
+
+        const rendered = {
+          url,
+          method: model.request_method,
+          headers: { ...headers },
+          body: bodyObj
+        };
+
+        // 调用自定义 handler
+        const data = await handler.call(model, mergedParams, rendered);
+
+        // 使用 response_mapping 提取字段
+        const responseMapping = parseJsonField(model.response_mapping);
+        const result = responseMapping ? mapResponse(data, responseMapping) : { ...data };
+
+        result._raw = {
+          ...data,
+          request: {
+            url,
+            method: requestOptions.method,
+            headers: requestOptions.headers,
+            body: bodyObj
+          }
+        };
+        attachInternalField(result, '_submitParams', mergedParams);
+        result._model = {
+          name: model.name,
+          provider: model.provider,
+          category: model.category,
+          priceConfig: modelPricing.priceConfig,
+          priceSummary: modelPricing.priceSummary
+        };
+
+        const taskId = result.taskId || result.task_id || result.task_Id;
+        if (taskId) {
+          result._billing = await createPendingAsyncBilling(model, billingState);
+        } else {
+          await finalizeImmediateBilling({
+            model,
+            params: mergedParams,
+            billingState,
+            submitResult: result,
+            requestStatus: 'success'
+          });
+        }
+
+        return result;
+      } else {
+        console.warn(`[AI Model] custom_handler "${model.custom_handler}" 未找到或缺少 call 方法，回退到模板流程`);
+      }
     }
 
     // ============ 回退到原有模板逻辑（最旧架构） ============

@@ -7,6 +7,10 @@
 .scrollbar-hide::-webkit-scrollbar {
   display: none;
 }
+.scrollbar-hide {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
 
 /* =========== 专业影视制作软件风格主题系统 =========== */
 /* 参考 Premiere Pro / DaVinci Resolve 的专业NLE软件风格 */

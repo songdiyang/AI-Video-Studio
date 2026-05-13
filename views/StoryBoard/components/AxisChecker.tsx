@@ -11,30 +11,34 @@ import { AxisCheckResult, AxisIssue } from '../../../types/shotLanguage';
 import { getAuthToken } from '../../../services/auth';
 
 interface AxisCheckerProps {
-  scriptId: number;
+  scriptId?: number | null;
+  projectId?: number | null;
 }
 
-const AxisChecker: React.FC<AxisCheckerProps> = ({ scriptId }) => {
+const AxisChecker: React.FC<AxisCheckerProps> = ({ scriptId, projectId }) => {
   const { showToast } = useToast();
   const [checking, setChecking] = useState(false);
   const [result, setResult] = useState<AxisCheckResult | null>(null);
 
   const checkAxis = useCallback(async () => {
-    if (!scriptId) {
-      showToast('请先选择剧本', 'warning');
+    if (!scriptId && !projectId) {
+      showToast('请先选择项目或剧本', 'warning');
       return;
     }
 
     setChecking(true);
     try {
       const token = getAuthToken();
+      const body: Record<string, any> = {};
+      if (scriptId) body.scriptId = scriptId;
+      if (projectId) body.projectId = projectId;
       const res = await fetch('/api/storyboards/check-axis', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ scriptId }),
+        body: JSON.stringify(body),
       });
 
       const data = await res.json();

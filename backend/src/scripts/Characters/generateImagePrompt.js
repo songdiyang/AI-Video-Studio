@@ -196,7 +196,17 @@ module.exports = (router) => {
         ageStage: stateData?.age_stage || '',
         bodyProportionInstruction,
         bodyElements: stateData?.body_elements || '',
-        heldProps: stateData?.held_props || ''
+        // held_props 是 JSON 字段，从数据库读取后需要解析为字符串
+        heldProps: (() => {
+          const raw = stateData?.held_props;
+          if (!raw) return '';
+          try {
+            const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+            return typeof parsed === 'string' ? parsed : JSON.stringify(parsed);
+          } catch (e) {
+            return String(raw);
+          }
+        })()
       };
 
       // 在计费上下文中执行所有 AI 模型调用

@@ -17,10 +17,13 @@ import { useResourceModals } from './useResourceModals';
 import { Character } from './types';
 import { getAuthToken } from '../../../services/auth';
 import { deleteCharacter, uploadCharacterImage, extractPropsFromScript } from '../../../services/assets';
-import { extractStudioComponentsFromScript, composeStudiosFromScript } from '../../../services/studios';
-import { listEnvironments } from '../../../services/environments';
-import { listBuildings } from '../../../services/buildings';
-import { fetchCostumes } from '../../../services/costumes';
+import {
+  extractStudioComponentsFromScript, composeStudiosFromScript,
+  generateStudioNineGrid,
+} from '../../../services/studios';
+import { listEnvironments, generateEnvironmentImage } from '../../../services/environments';
+import { listBuildings, generateBuildingImage } from '../../../services/buildings';
+import { fetchCostumes, generateCostumeViews } from '../../../services/costumes';
 import type { Environment } from '../../../services/environments';
 import type { Building } from '../../../services/buildings';
 import type { Costume } from '../../../services/costumes';
@@ -41,6 +44,8 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
   onStoryboardStateChange?: (characterId: number, state: StoryboardStateOverride | null) => void;
   /** 当前分镜状态覆写映射 */
   storyboardStates?: Record<number, StoryboardStateOverride>;
+  /** 刷新道具列表回调 */
+  onRefreshProps?: () => void;
 }> = ({ 
   characters, 
   props,
@@ -53,6 +58,7 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
   models = [],
   onStoryboardStateChange,
   storyboardStates = {},
+  onRefreshProps,
 }) => {
   const [activeTab, setActiveTab] = useState<TabType>('characters');
   const { showToast } = useToast();
@@ -124,6 +130,24 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
     }
   }, [projectId]);
 
+  // 监听环境删除事件，刷新环境列表
+  useEffect(() => {
+    const handleEnvDeleted = () => {
+      loadEnvironments();
+    };
+    window.addEventListener('environment:deleted', handleEnvDeleted);
+    return () => window.removeEventListener('environment:deleted', handleEnvDeleted);
+  }, []);
+
+  // 监听建筑删除事件
+  useEffect(() => {
+    const handleBldDeleted = () => {
+      loadBuildings();
+    };
+    window.addEventListener('building:deleted', handleBldDeleted);
+    return () => window.removeEventListener('building:deleted', handleBldDeleted);
+  }, []);
+
   const characterViewMonitor = useWorkflowTargetMonitor({
     projectId: projectId ?? null,
     workflowTypes: ['character_views_generation'],
@@ -149,6 +173,77 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
     },
     onFailed: async (job) => {
       showToast(`影棚图片生成失败：${job.input_params?.sceneName || '影棚'}`, 'error');
+    }
+  });
+
+  // 环境图片生成监控
+  const environmentImageMonitor = useWorkflowTargetMonitor({
+    projectId: projectId ?? null,
+    workflowTypes: ['environment_image_generation'],
+    targetParamKey: 'environmentId',
+    isActive: true,
+    onCompleted: async (job) => {
+      await loadEnvironments();
+      // 广播事件通知 AssetEditor 刷新数据
+      window.dispatchEvent(new CustomEvent('environment:updated', {
+        detail: { environmentId: job.input_params?.environmentId }
+      }));
+      showToast(`环境图片生成完成：${job.input_params?.environmentName || '环境'}`, 'success');
+    },
+    onFailed: async (job) => {
+      await loadEnvironments();
+      window.dispatchEvent(new CustomEvent('environment:updated', {
+        detail: { environmentId: job.input_params?.environmentId }
+      }));
+      showToast(`环境图片生成失败：${job.input_params?.environmentName || '环境'}`, 'error');
+    }
+  });
+
+  // 服装设定图生成监控
+  const costumeViewsMonitor = useWorkflowTargetMonitor({
+    projectId: projectId ?? null,
+    workflowTypes: ['costume_views_generation'],
+    targetParamKey: 'costumeId',
+    isActive: true,
+    onCompleted: async (job) => {
+      await loadCostumes();
+      showToast(`服装设定图生成完成：${job.input_params?.costumeName || '服装'}`, 'success');
+    },
+    onFailed: async (job) => {
+      showToast(`服装设定图生成失败：${job.input_params?.costumeName || '服装'}`, 'error');
+    }
+  });
+
+  // 建筑图片生成监控
+  const buildingImageMonitor = useWorkflowTargetMonitor({
+    projectId: projectId ?? null,
+    workflowTypes: ['building_image_generation'],
+    targetParamKey: 'buildingId',
+    isActive: true,
+    onCompleted: async (job) => {
+      await loadBuildings();
+      window.dispatchEvent(new CustomEvent('building:updated', {
+        detail: { buildingId: job.input_params?.buildingId }
+      }));
+      showToast(`建筑图片生成完成：${job.input_params?.buildingName || '建筑'}`, 'success');
+    },
+    onFailed: async (job) => {
+      showToast(`建筑图片生成失败：${job.input_params?.buildingName || '建筑'}`, 'error');
+    }
+  });
+
+  // 九宫组装图生成监控
+  const nineGridMonitor = useWorkflowTargetMonitor({
+    projectId: projectId ?? null,
+    workflowTypes: ['studio_nine_grid_generation'],
+    targetParamKey: 'studioId',
+    isActive: true,
+    onCompleted: async (job) => {
+      await loadScenes();
+      showToast(`九宫组装图生成完成：${job.input_params?.studioName || '影棚'}`, 'success');
+    },
+    onFailed: async (job) => {
+      showToast(`九宫组装图生成失败：${job.input_params?.studioName || '影棚'}`, 'error');
     }
   });
 
@@ -236,6 +331,7 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
     await loadEnvironments();
     await loadBuildings();
     await loadCostumes();
+    onRefreshProps?.();
   };
 
   // === 角色详情回调 ===
@@ -297,7 +393,8 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
     }
   };
 
-  const handleGenerateSceneImage = async (sceneId: number, imageModelName: string, options?: { customPromptA?: string; customPromptB?: string }) => {
+  const handleGenerateSceneImage = async (sceneId: number, imageModelName?: string, options?: { customPromptA?: string; customPromptB?: string }) => {
+    const modelName = imageModelName || effectiveImageModel;
     try {
       if (!effectiveImageAspectRatio) {
         throw new Error('当前图片模型未配置可用长宽比');
@@ -311,7 +408,7 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
           'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({ 
-          imageModel: imageModelName, 
+          imageModel: modelName, 
           textModel,
           aspectRatio: effectiveImageAspectRatio,
           customPromptA: options?.customPromptA,
@@ -343,7 +440,6 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
 
   const handleExtractStudioComponents = async () => {
     if (!projectId) { showToast('请先选择项目', 'warning'); return; }
-    if (!scriptId) { showToast('请先选择剧本', 'warning'); return; }
     if (!textModel) { showToast('请先选择文本模型', 'warning'); return; }
     setIsExtractingComponents(true);
     try {
@@ -359,7 +455,6 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
 
   const handleComposeStudiosFromScript = async () => {
     if (!projectId) { showToast('请先选择项目', 'warning'); return; }
-    if (!scriptId) { showToast('请先选择剧本', 'warning'); return; }
     if (!textModel) { showToast('请先选择文本模型', 'warning'); return; }
     setIsComposingStudios(true);
     try {
@@ -375,7 +470,6 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
 
   const handleExtractPropsFromScript = async () => {
     if (!projectId) { showToast('请先选择项目', 'warning'); return; }
-    if (!scriptId) { showToast('请先选择剧本', 'warning'); return; }
     if (!textModel) { showToast('请先选择文本模型', 'warning'); return; }
     setIsExtractingProps(true);
     try {
@@ -436,9 +530,7 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
                 <p className="text-sm">加载影棚中...</p>
               </div>
             ) : (
-              <LocationsTab
-                scenes={dbScenes}
-              />
+              <LocationsTab scenes={dbScenes} />
             )}
           </>
         )}
@@ -448,6 +540,7 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
             props={props}
             isExtracting={isExtractingProps}
             onExtractFromScript={scriptId ? handleExtractPropsFromScript : undefined}
+            imageModel={effectiveImageModel}
           />
         )}
 
@@ -469,6 +562,21 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
           <CostumesTab
             costumes={dbCostumes}
             isLoading={isLoadingCostumes}
+            imageModel={effectiveImageModel}
+            textModel={textModel}
+            onGenerateViews={async (costume) => {
+              if (!effectiveImageModel) {
+                showToast('请先选择图像模型', 'warning');
+                return;
+              }
+              try {
+                await generateCostumeViews(costume.id, { imageModel: effectiveImageModel, textModel });
+                await costumeViewsMonitor.refreshNow();
+                showToast('已启动服装设定图生成', 'success');
+              } catch (error: any) {
+                showToast('启动失败: ' + (error?.message || '未知错误'), 'error');
+              }
+            }}
           />
         )}
       </div>

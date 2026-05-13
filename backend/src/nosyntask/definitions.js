@@ -112,7 +112,7 @@ const WORKFLOW_DEFINITIONS = {
         handler: handleScriptGeneration,
         buildInput: createBuildInput([
           'title', 'description', 'style', 'length',
-          'textModel', 'projectId', 'episodeNumber'
+          'textModel', 'projectId', 'episodeNumber', 'userId'
         ])
       }
     ]

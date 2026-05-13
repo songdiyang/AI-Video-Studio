@@ -10,9 +10,8 @@ async function updateScript(req, res) {
   const { id } = req.params;
   const { title, content } = req.body;
 
-  if (!content) {
-    return res.status(400).json({ message: '剧本内容不能为空' });
-  }
+  // 剧本内容允许为空
+  const scriptContent = content || '';
 
   try {
     // 验证剧本归属
@@ -24,7 +23,7 @@ async function updateScript(req, res) {
     // 更新剧本
     await execute(
       'UPDATE scripts SET title = ?, content = ? WHERE id = ? AND user_id = ?',
-      [title || null, content, id, userId]
+      [title || null, scriptContent, id, userId]
     );
 
     return res.json({ message: '剧本保存成功' });

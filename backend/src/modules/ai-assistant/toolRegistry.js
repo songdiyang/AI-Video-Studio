@@ -821,10 +821,10 @@ const TOOLS = [
         description: { type: 'string', description: '剧本描述' },
         style: { type: 'string', description: '风格（如电影感、动漫）' },
         length: { type: 'string', description: '篇幅（短篇/中篇/长篇）' },
-        episodeNumber: { type: 'number', description: '集数编号' },
+        episodeNumber: { type: 'number', description: '集数编号，不传默认为 1' },
         textModel: { type: 'string', description: '文本模型名称' }
       },
-      required: ['projectId', 'episodeNumber']
+      required: ['projectId']
     },
     workflowType: 'script_only',
     buildJobParams: (args, ctx) => ({
@@ -833,7 +833,7 @@ const TOOLS = [
       description: args.description,
       style: args.style,
       length: args.length,
-      episodeNumber: args.episodeNumber,
+      episodeNumber: args.episodeNumber || 1,
       textModel: args.textModel || ctx.defaultTextModel,
       userId: ctx.userId
     })

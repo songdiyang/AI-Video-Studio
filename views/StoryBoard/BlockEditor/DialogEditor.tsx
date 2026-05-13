@@ -5,7 +5,7 @@
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Button, Tabs, Tab } from '@heroui/react';
-import { Save, Trash2, Wand2, Users, MapPin, MessageCircle, Mic, History, RotateCcw, GitCompare, Sparkles, Undo2, Loader2, Plus, X as XIcon, Star } from 'lucide-react';
+import { Save, Trash2, Wand2, MessageCircle, Mic, History, RotateCcw, GitCompare, Sparkles, Undo2, Loader2, Plus, X as XIcon, Star, ImageIcon, Film, ChevronDown } from 'lucide-react';
 import { useToast } from '../../../contexts/ToastContext';
 import { BLOCK_OPTIONS } from './utils/blockRegistry';
 import { getAuthToken } from '../../../services/auth';
@@ -45,6 +45,24 @@ interface DialogEditorProps {
   onUpdateNegativePrompt?: (negativePrompt: string) => Promise<boolean>;
   promptMode?: 'image' | 'video';
   basePrompt?: string;
+  /** 模型列表 */
+  models?: { name: string; type?: string; category?: string; description?: string; priceSummary?: string }[];
+  /** 当前图片模型 */
+  imageModel?: string;
+  /** 当前视频模型 */
+  videoModel?: string;
+  /** 图片模型切换回调 */
+  onImageModelChange?: (model: string) => void;
+  /** 视频模型切换回调 */
+  onVideoModelChange?: (model: string) => void;
+  /** 生成图片回调 */
+  onGenerateImage?: (id: number, prompt: string, regenerateTarget?: 'first' | 'last' | 'both', forceRegenerate?: boolean) => Promise<{ success: boolean; error?: string }>;
+  /** 生成视频回调 */
+  onGenerateVideo?: (id: number) => Promise<{ success: boolean; error?: string }>;
+  /** 场景动作类型 */
+  hasAction?: boolean;
+  /** 图片帧标签（运动模式时 first/last） */
+  imageFrameTab?: 'first' | 'last';
 }
 
 interface Character {
@@ -161,10 +179,8 @@ function getRangeFromPoint(x: number, y: number): Range | null {
 }
 
 const COMPONENT_CATEGORIES = [
-  { key: 'character', label: '角色', icon: Users },
   { key: 'dialogue', label: '台词', icon: MessageCircle },
   { key: 'voiceover', label: '画外音', icon: Mic },
-  { key: 'scene', label: '场景', icon: MapPin },
 ];
 
 const DialogEditor: React.FC<DialogEditorProps> = ({
@@ -185,13 +201,22 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
   onUpdateNegativePrompt,
   promptMode = 'image',
   basePrompt,
+  models = [],
+  imageModel: propImageModel,
+  videoModel: propVideoModel,
+  onImageModelChange,
+  onVideoModelChange,
+  onGenerateImage,
+  onGenerateVideo,
+  hasAction = false,
+  imageFrameTab = 'first',
 }) => {
   const { showToast } = useToast();
   const editorRef = useRef<HTMLDivElement>(null);
   const lastRenderedRef = useRef('');
   const [promptText, setPromptText] = useState(initialPrompt);
   const [isDirty, setIsDirty] = useState(false);
-  const [activeTab, setActiveTab] = useState('character');
+  const [activeTab, setActiveTab] = useState('dialogue');
   const [referenceImages, setReferenceImages] = useState<ReferenceImage[]>([]);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [characters, setCharacters] = useState<Character[]>([]);
@@ -233,6 +258,25 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
   const [editingNegativePrompt, setEditingNegativePrompt] = useState(initialNegativePrompt);
   const [isNegativePromptDirty, setIsNegativePromptDirty] = useState(false);
   const [isSavingNegativePrompt, setIsSavingNegativePrompt] = useState(false);
+
+  // 模型过滤
+  const imageModels = React.useMemo(() => {
+    const uniqueMap = new Map<string, typeof models[number]>();
+    models.filter(m => (m.type || m.category)?.toUpperCase() === 'IMAGE').forEach(m => {
+      if (!uniqueMap.has(m.name)) uniqueMap.set(m.name, m);
+    });
+    return Array.from(uniqueMap.values());
+  }, [models]);
+  const videoModels = React.useMemo(() => {
+    const uniqueMap = new Map<string, typeof models[number]>();
+    models.filter(m => (m.type || m.category)?.toUpperCase() === 'VIDEO').forEach(m => {
+      if (!uniqueMap.has(m.name)) uniqueMap.set(m.name, m);
+    });
+    return Array.from(uniqueMap.values());
+  }, [models]);
+
+  // 生成中状态
+  const [isGeneratingMedia, setIsGeneratingMedia] = useState(false);
 
   // 获取当前分镜的角色名列表
   const getCharacterNames = (): string[] => {
@@ -489,6 +533,54 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
     ]);
   };
 
+  // 生成图片
+  const handleGenerateImage = async () => {
+    if (!onGenerateImage || !storyboardId) return;
+    const text = promptText.trim();
+    if (!text) {
+      showToast('提示词为空，无法生成', 'warning');
+      return;
+    }
+    setIsGeneratingMedia(true);
+    try {
+      const isRegenerate = false;
+      const target = hasAction ? (imageFrameTab === 'first' ? 'first' : 'last') : 'both';
+      const result = await onGenerateImage(storyboardId, text, target, isRegenerate);
+      if (!result.success) {
+        showToast(result.error || '图片生成失败', 'error');
+      } else {
+        showToast('图片生成任务已提交', 'success');
+      }
+    } catch (err: any) {
+      showToast(err.message || '图片生成失败', 'error');
+    } finally {
+      setIsGeneratingMedia(false);
+    }
+  };
+
+  // 生成视频
+  const handleGenerateVideo = async () => {
+    if (!onGenerateVideo || !storyboardId) return;
+    const text = promptText.trim();
+    if (!text) {
+      showToast('提示词为空，无法生成', 'warning');
+      return;
+    }
+    setIsGeneratingMedia(true);
+    try {
+      const result = await onGenerateVideo(storyboardId);
+      if (!result.success) {
+        showToast(result.error || '视频生成失败', 'error');
+      } else {
+        showToast('视频生成任务已提交', 'success');
+      }
+    } catch (err: any) {
+      showToast(err.message || '视频生成失败', 'error');
+    } finally {
+      setIsGeneratingMedia(false);
+    }
+  };
+
   // 撤回优化
   const handleUndoOptimize = () => {
     if (preOptimizeText === null) return;
@@ -534,13 +626,7 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
     onChange?.(promptText);
   }, [promptText, onChange]);
 
-  // 加载项目角色
-  useEffect(() => {
-    if (projectId && activeTab === 'character') {
-      loadCharacters();
-    }
-  }, [projectId, activeTab]);
-
+  // 加载项目角色（已移除角色按钮，此逻辑保留供其他用途）
   const loadCharacters = async () => {
     if (!projectId) return;
     setIsLoadingCharacters(true);
@@ -576,13 +662,7 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
     }
   };
 
-  // 加载项目场景
-  useEffect(() => {
-    if (projectId && activeTab === 'scene') {
-      loadScenes();
-    }
-  }, [projectId, scriptId, activeTab]);
-
+  // 加载项目场景（已移除场景按钮，此逻辑保留供其他用途）
   const loadScenes = async () => {
     if (!projectId) return;
     setIsLoadingScenes(true);
@@ -999,147 +1079,6 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
             </div>
           </div>
         );
-      case 'character':
-        return (
-          <div className="space-y-3">
-            {/* 项目角色列表 */}
-            {projectId && (
-              <div>
-                <div className="text-xs text-[var(--text-muted)] mb-2">剧集角色（可拖拽）</div>
-                {isLoadingCharacters ? (
-                  <div className="text-xs text-[var(--text-muted)] py-2">加载中...</div>
-                ) : characters.length === 0 ? (
-                  <div className="text-xs text-[var(--text-muted)] py-2">暂无角色</div>
-                ) : (
-                  <div className="space-y-2">
-                    {characters.map(char => {
-                      const hasBaseViews = char.has_base_model_views === true || char.has_base_model_views === 1;
-                      const charImage = char.active_state_image_url || char.imageUrl;
-                      return (
-                        <div
-                          key={char.id}
-                          draggable
-                          onDragStart={(e) => {
-                            e.dataTransfer.setData('application/json', JSON.stringify({
-                              componentType: 'character',
-                              template: `${char.name}，`
-                            }));
-                          }}
-                          onClick={() => insertComponent(`${char.name}，`)}
-                          className="flex items-center gap-2 p-2 rounded bg-rose-500/10 hover:bg-rose-500/20 cursor-grab transition-colors"
-                        >
-                          <div className="relative shrink-0">
-                            {charImage ? (
-                              <img src={charImage} alt={char.name} className="w-8 h-8 rounded-full object-cover" />
-                            ) : (
-                              <div className="w-8 h-8 rounded-full bg-rose-500/20 flex items-center justify-center text-xs text-rose-600">
-                                {char.name.charAt(0)}
-                              </div>
-                            )}
-                            {/* 白膜指示点 */}
-                            {hasBaseViews && (
-                              <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-amber-500 rounded-full flex items-center justify-center border border-rose-900">
-                                <Star className="w-1.5 h-1.5 text-white fill-white" />
-                              </div>
-                            )}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-1">
-                              <span className="text-xs font-medium text-rose-700 truncate">{char.name}</span>
-                              {char.active_state_name && (
-                                <span className="text-[9px] px-1 py-0 rounded bg-pink-500/15 text-pink-500 truncate max-w-16">{char.active_state_name}</span>
-                              )}
-                            </div>
-                            {char.base_appearance ? (
-                              <div className="text-[10px] text-rose-500/70 truncate">
-                                <span className="text-cyan-500/60">体貌</span> + <span className="text-pink-500/60">服装</span>: {(char.base_appearance || '').slice(0, 15)}...
-                              </div>
-                            ) : char.appearance ? (
-                              <div className="text-[10px] text-rose-500/70 truncate">{char.appearance.slice(0, 20)}...</div>
-                            ) : null}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        );
-      case 'scene':
-        return (
-          <div className="space-y-3">
-            {/* 项目场景列表 */}
-            {projectId && (
-              <div>
-                <div className="text-xs text-[var(--text-muted)] mb-2">项目场景（可拖拽图片）</div>
-                {isLoadingScenes ? (
-                  <div className="text-xs text-[var(--text-muted)] py-2">加载中...</div>
-                ) : sceneItems.length === 0 ? (
-                  <div className="text-xs text-[var(--text-muted)] py-2">暂无场景</div>
-                ) : (
-                  <div className="space-y-2">
-                    {sceneItems.map(scene => (
-                      <div
-                        key={scene.id}
-                        className="flex items-center gap-2 p-2 rounded bg-emerald-500/10 hover:bg-emerald-500/20 transition-colors"
-                      >
-                        {scene.imageUrl ? (
-                          <div
-                            className="relative w-12 h-9 rounded overflow-hidden cursor-grab flex-shrink-0"
-                            draggable
-                            onDragStart={(e) => {
-                              e.dataTransfer.setData('application/json', JSON.stringify({
-                                type: 'reference-image',
-                                imageUrl: scene.imageUrl,
-                                source: 'scene',
-                                sceneName: scene.name
-                              }));
-                            }}
-                          >
-                            <img src={scene.imageUrl} alt={scene.name} className="w-full h-full object-cover" />
-                            <span className="absolute bottom-0 left-0 right-0 text-[7px] text-center text-white bg-black/50">A面</span>
-                          </div>
-                        ) : (
-                          <div className="w-12 h-9 rounded bg-emerald-500/20 flex items-center justify-center text-xs text-emerald-600 flex-shrink-0">
-                            <MapPin size={14} />
-                          </div>
-                        )}
-                        {scene.reverseImageUrl && (
-                          <div
-                            className="relative w-12 h-9 rounded overflow-hidden cursor-grab flex-shrink-0"
-                            draggable
-                            onDragStart={(e) => {
-                              e.dataTransfer.setData('application/json', JSON.stringify({
-                                type: 'reference-image',
-                                imageUrl: scene.reverseImageUrl,
-                                source: 'scene',
-                                sceneName: `${scene.name}(B面)`
-                              }));
-                            }}
-                          >
-                            <img src={scene.reverseImageUrl} alt={`${scene.name} B面`} className="w-full h-full object-cover" />
-                            <span className="absolute bottom-0 left-0 right-0 text-[7px] text-center text-white bg-black/50">B面</span>
-                          </div>
-                        )}
-                        <div
-                          className="flex-1 min-w-0 cursor-pointer"
-                          onClick={() => insertComponent(`${scene.name}场景，`)}
-                        >
-                          <div className="text-xs font-medium text-emerald-700 truncate">{scene.name}</div>
-                          {scene.description && (
-                            <div className="text-[10px] text-emerald-500/70 truncate">{scene.description.slice(0, 20)}...</div>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        );
       case 'action':
         return (
           <div className="space-y-3">
@@ -1226,7 +1165,7 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
                       onChange={(e) => handleUpdateDialogueLine(idx, 'line', e.target.value)}
                       placeholder="输入台词内容..."
                       rows={2}
-                      className="w-full text-xs px-2 py-1.5 rounded bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)] resize-none"
+                      className="w-full text-xs px-2 py-1.5 rounded bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)] resize-none overflow-y-auto"
                     />
                   </div>
                 ))}
@@ -1290,7 +1229,7 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
               }}
               placeholder="例如：“时光轮转，三年过去了……”或“画外音播报新闻，语气严肃”"
               rows={4}
-              className="w-full text-xs px-2 py-1.5 rounded-lg bg-[var(--bg-input)] border border-[var(--border-color)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)] resize-none leading-relaxed"
+              className="w-full text-xs px-2 py-1.5 rounded-lg bg-[var(--bg-input)] border border-[var(--border-color)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)] resize-none leading-relaxed overflow-y-auto"
             />
           </div>
         );
@@ -1367,7 +1306,7 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
       </div>
 
       {/* 主编辑区 */}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 overflow-hidden min-h-0">
         {/* 左侧组件面板 */}
         <div className="w-56 bg-[var(--bg-card)] border-r border-[var(--border-color)] flex flex-col">
           {/* 分类标签 */}
@@ -1450,10 +1389,10 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
         </div>
 
         {/* 右侧文本编辑区域 */}
-        <div className="flex-1 flex flex-col p-4">
+        <div className="flex-1 flex flex-col p-4 min-h-0 overflow-hidden">
           {/* 富文本编辑区（contentEditable） */}
           <div
-            className={`flex-1 relative ${isDraggingOver ? 'ring-2 ring-[var(--accent)]' : ''}`}
+            className={`flex-1 relative min-h-0 overflow-hidden ${isDraggingOver ? 'ring-2 ring-[var(--accent)]' : ''}`}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
@@ -1512,38 +1451,105 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
             )}
           </div>
 
-          {/* 提示 + AI优化按钮 */}
+          {/* 提示 + AI优化按钮 + 生成操作栏 */}
           <div className="mt-2 flex items-center justify-between">
             <div className="text-xs text-[var(--text-muted)]">
               提示：点击左侧组件直接插入，或拖拽组件到文本区域
             </div>
-            {/* AI 优化 / 撤回按钮 */}
-            {preOptimizeText !== null ? (
-              <button
-                onClick={handleUndoOptimize}
-                className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-500/10 text-amber-600 text-xs hover:bg-amber-500/20 transition-colors shrink-0"
-                title="撤回优化，恢复原文"
-              >
-                <Undo2 className="w-3.5 h-3.5" />
-                撤回
-              </button>
-            ) : (
-              <div className="flex items-center gap-1.5 shrink-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* AI 优化 / 撤回按钮 */}
+              {preOptimizeText !== null ? (
                 <button
-                  onClick={handleOptimize}
-                  disabled={isOptimizingImage || isOptimizingVideo || !promptText.trim()}
-                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-gradient-to-r from-purple-500/10 to-indigo-500/10 text-purple-600 text-xs hover:from-purple-500/20 hover:to-indigo-500/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                  title="基于分镜描述同时生成图片提示词和视频提示词"
+                  onClick={handleUndoOptimize}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-500/10 text-amber-600 text-xs hover:bg-amber-500/20 transition-colors shrink-0"
+                  title="撤回优化，恢复原文"
                 >
-                  {(isOptimizingImage || isOptimizingVideo) ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Sparkles className="w-3.5 h-3.5" />
-                  )}
-                  {(isOptimizingImage || isOptimizingVideo) ? '生成中...' : '提示词生成'}
+                  <Undo2 className="w-3.5 h-3.5" />
+                  撤回
                 </button>
-              </div>
-            )}
+              ) : (
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    onClick={handleOptimize}
+                    disabled={isOptimizingImage || isOptimizingVideo || !promptText.trim()}
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-gradient-to-r from-purple-500/10 to-indigo-500/10 text-purple-600 text-xs hover:from-purple-500/20 hover:to-indigo-500/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    title="基于分镜描述同时生成图片提示词和视频提示词"
+                  >
+                    {(isOptimizingImage || isOptimizingVideo) ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Sparkles className="w-3.5 h-3.5" />
+                    )}
+                    {(isOptimizingImage || isOptimizingVideo) ? '生成中...' : '提示词生成'}
+                  </button>
+                </div>
+              )}
+              {/* 生成操作栏：图片/视频生成 + 模型切换 */}
+              {promptMode === 'image' && onGenerateImage && (
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={handleGenerateImage}
+                    disabled={isGeneratingMedia || !promptText.trim()}
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-500/10 text-blue-600 text-xs hover:bg-blue-500/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+                    title="生成图片"
+                  >
+                    {isGeneratingMedia ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <ImageIcon className="w-3.5 h-3.5" />
+                    )}
+                    生成图片
+                  </button>
+                  {imageModels.length > 0 && onImageModelChange && (
+                    <div className="relative group">
+                      <select
+                        value={propImageModel || ''}
+                        onChange={(e) => onImageModelChange(e.target.value)}
+                        className="h-7 min-w-[120px] pl-2 pr-6 rounded-md bg-[var(--bg-input)] border border-[var(--border-color)] text-[var(--text-secondary)] text-xs focus:outline-none focus:border-[var(--accent)]/50 appearance-none cursor-pointer"
+                        aria-label="图片模型"
+                      >
+                        {imageModels.map((m) => (
+                          <option key={m.name} value={m.name}>{m.name}</option>
+                        ))}
+                      </select>
+                      <ChevronDown className="w-3 h-3 text-[var(--text-muted)] absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    </div>
+                  )}
+                </div>
+              )}
+              {promptMode === 'video' && onGenerateVideo && (
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={handleGenerateVideo}
+                    disabled={isGeneratingMedia || !promptText.trim()}
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-500/10 text-rose-600 text-xs hover:bg-rose-500/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+                    title="生成视频"
+                  >
+                    {isGeneratingMedia ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Film className="w-3.5 h-3.5" />
+                    )}
+                    生成视频
+                  </button>
+                  {videoModels.length > 0 && onVideoModelChange && (
+                    <div className="relative group">
+                      <select
+                        value={propVideoModel || ''}
+                        onChange={(e) => onVideoModelChange(e.target.value)}
+                        className="h-7 min-w-[120px] pl-2 pr-6 rounded-md bg-[var(--bg-input)] border border-[var(--border-color)] text-[var(--text-secondary)] text-xs focus:outline-none focus:border-[var(--accent)]/50 appearance-none cursor-pointer"
+                        aria-label="视频模型"
+                      >
+                        {videoModels.map((m) => (
+                          <option key={m.name} value={m.name}>{m.name}</option>
+                        ))}
+                      </select>
+                      <ChevronDown className="w-3 h-3 text-[var(--text-muted)] absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
 
 
@@ -1602,7 +1608,7 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
               }}
               placeholder="描述不希望出现在画面中的内容，如：low quality, blurry, extra limbs, watermark..."
               rows={2}
-              className="w-full text-xs px-2 py-1.5 rounded-lg bg-[var(--bg-input)] border border-[var(--border-color)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)] resize-none leading-relaxed"
+              className="w-full text-xs px-2 py-1.5 rounded-lg bg-[var(--bg-input)] border border-[var(--border-color)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)] resize-none leading-relaxed overflow-y-auto"
             />
           </div>
         </div>

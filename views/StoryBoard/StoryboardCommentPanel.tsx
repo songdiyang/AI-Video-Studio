@@ -637,7 +637,7 @@ const StoryboardCommentPanel: React.FC<StoryboardCommentPanelProps> = ({
                     onChange={(e) => setNewCommentContent(e.target.value)}
                     placeholder="输入你的评论或建议..."
                     rows={3}
-                    className="w-full px-3 py-2 text-sm bg-[var(--bg-input)] border border-[var(--border-color)] rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-transparent transition-all"
+                    className="w-full px-3 py-2 text-sm bg-[var(--bg-input)] border border-[var(--border-color)] rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-transparent transition-all overflow-y-auto"
                   />
                   <button
                     onClick={handleCreateComment}
@@ -929,7 +929,7 @@ const StoryboardCommentPanel: React.FC<StoryboardCommentPanelProps> = ({
                 }}
                 placeholder="输入评论或 @AI 提问..."
                 rows={2}
-                className="flex-1 px-3 py-2 text-sm bg-[var(--bg-input)] border border-[var(--border-color)] rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-transparent transition-all"
+                className="flex-1 px-3 py-2 text-sm bg-[var(--bg-input)] border border-[var(--border-color)] rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-transparent transition-all overflow-y-auto"
               />
               <button
                 onClick={handleSendMessage}
@@ -975,7 +975,7 @@ const StoryboardCommentPanel: React.FC<StoryboardCommentPanelProps> = ({
                   onChange={(e) => setReplyContent(e.target.value)}
                   placeholder="输入回复内容..."
                   rows={3}
-                  className="w-full px-3 py-2 text-sm bg-[var(--bg-input)] border border-[var(--border-color)] rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-transparent transition-all mb-3"
+                  className="w-full px-3 py-2 text-sm bg-[var(--bg-input)] border border-[var(--border-color)] rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:border-transparent transition-all mb-3 overflow-y-auto"
                 />
                 <button
                   onClick={() => handleReply(selectedComment.id)}

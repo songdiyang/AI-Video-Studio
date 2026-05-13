@@ -145,105 +145,78 @@ async function handleExecutor(params, onProgress) {
 
   console.log(`[AIAssistant.Executor] 启动 ${toolCalls.length} 个子 workflow, parent=${parentJobId}`);
 
-  const invocations = [];
+  const invocations = new Array(toolCalls.length).fill(null); // 保持原始顺序
   let actor = { userId, projectId };
   const defaults = { defaultTextModel, defaultImageModel };
+  const { queryOne: qOne } = require('../../../dbHelper');
 
-  // 串行执行工具调用（create_project 等工具会改变上下文，如产生新的 projectId）
-  for (const call of toolCalls) {
+  // ── Phase 1: create_project 串行处理（会改变 actor.projectId） ──
+  const createIdx = toolCalls.findIndex(c => c.name === 'create_project');
+  if (createIdx >= 0) {
+    const call = toolCalls[createIdx];
     try {
-      const inv = await invokeTool({
-        toolName: call.name,
-        args: call.args,
-        actor,
-        defaults,
-        parentJobId
-      });
-      invocations.push({
-        toolName: call.name,
-        args: call.args,
-        childJobId: inv.jobId,
-        workflowType: inv.workflowType,
-        status: 'running'
-      });
+      const inv = await invokeTool({ toolName: call.name, args: call.args, actor, defaults, parentJobId });
+      invocations[createIdx] = { toolName: call.name, args: call.args, childJobId: inv.jobId, workflowType: inv.workflowType, status: 'running' };
 
-      // 如果是 create_project，等待其完成并提取新 projectId 供后续工具使用
-      if (call.name === 'create_project' && inv.jobId) {
-        const childResults = await waitForChildJobs([inv.jobId]);
-        if (childResults.length > 0 && childResults[0].status === 'completed') {
-          // 从 workflow_job 的 result_data 中提取新项目的 ID
-          const { queryOne: qOne } = require('../../../dbHelper');
-          const jobRow = await qOne(
-            'SELECT result_data FROM workflow_jobs WHERE id = ?',
-            [inv.jobId]
-          );
-          if (jobRow && jobRow.result_data) {
-            try {
-              const resultData = typeof jobRow.result_data === 'string'
-                ? JSON.parse(jobRow.result_data)
-                : jobRow.result_data;
-              if (resultData && resultData.project && resultData.project.id) {
-                const newProjectId = resultData.project.id;
-                actor = { ...actor, projectId: newProjectId };
-                console.log(`[AIAssistant.Executor] create_project 成功，新 projectId=${newProjectId}，后续工具将使用此项目`);
-              }
-            } catch (e) {
-              console.warn('[AIAssistant.Executor] 解析 create_project 结果失败:', e.message);
+      const childResults = await waitForChildJobs([inv.jobId]);
+      if (childResults.length > 0 && childResults[0].status === 'completed') {
+        const jobRow = await qOne('SELECT result_data FROM workflow_jobs WHERE id = ?', [inv.jobId]);
+        if (jobRow && jobRow.result_data) {
+          try {
+            const resultData = typeof jobRow.result_data === 'string' ? JSON.parse(jobRow.result_data) : jobRow.result_data;
+            if (resultData && resultData.project && resultData.project.id) {
+              actor = { ...actor, projectId: resultData.project.id };
+              console.log(`[AIAssistant.Executor] create_project 成功，新 projectId=${resultData.project.id}，后续工具将使用此项目`);
             }
-          }
-          // 更新 invocation 状态
-          const idx = invocations.findIndex(i => i.childJobId === inv.jobId);
-          if (idx >= 0) {
-            invocations[idx].status = 'completed';
-          }
-        } else {
-          const idx = invocations.findIndex(i => i.childJobId === inv.jobId);
-          if (idx >= 0) {
-            invocations[idx].status = childResults[0]?.status || 'failed';
-            invocations[idx].error = childResults[0]?.error || '项目创建失败';
-          }
+          } catch (e) { console.warn('[AIAssistant.Executor] 解析 create_project 结果失败:', e.message); }
         }
+        invocations[createIdx].status = 'completed';
+      } else {
+        invocations[createIdx].status = childResults[0]?.status || 'failed';
+        invocations[createIdx].error = childResults[0]?.error || '项目创建失败';
       }
     } catch (e) {
-      console.error(`[AIAssistant.Executor] 启动工具失败: ${call.name}`, e.message);
-      invocations.push({
-        toolName: call.name,
-        args: call.args,
-        childJobId: null,
-        status: 'failed',
-        error: `启动失败: ${e.message}`
-      });
+      console.error('[AIAssistant.Executor] create_project 启动失败:', e.message);
+      invocations[createIdx] = { toolName: call.name, args: call.args, childJobId: null, status: 'failed', error: `启动失败: ${e.message}` };
     }
   }
 
-  if (onProgress) onProgress(30);
+  if (onProgress) onProgress(15);
 
-  // 等待所有已成功启动且尚未完成的子 workflow 完成
-  // create_project 已在上面同步等待过，需要排除
-  const runningIds = invocations
-    .filter(x => x.childJobId && x.toolName !== 'create_project')
-    .map(x => x.childJobId);
-  const results = runningIds.length > 0 ? await waitForChildJobs(runningIds) : [];
+  // ── Phase 2: 其余工具并发启动，各自独立等待完成 ──
+  const otherIndices = toolCalls
+    .map((c, i) => ({ call: c, index: i }))
+    .filter(({ call }) => call.name !== 'create_project');
 
-  // 合并结果到 invocations
-  const resultMap = new Map(results.map(r => [r.jobId, r]));
-  for (const inv of invocations) {
-    if (inv.childJobId && resultMap.has(inv.childJobId)) {
-      const r = resultMap.get(inv.childJobId);
-      inv.status = r.status;
-      if (r.error) inv.error = r.error;
-    } else if (inv.childJobId) {
-      // 超时或中断但未收到状态
-      inv.status = 'unknown';
-    }
+  if (otherIndices.length > 0) {
+    console.log(`[AIAssistant.Executor] 并发启动 ${otherIndices.length} 个子 workflow`);
+    await Promise.all(otherIndices.map(async ({ call, index }) => {
+      try {
+        const inv = await invokeTool({ toolName: call.name, args: call.args, actor, defaults, parentJobId });
+        const invObj = { toolName: call.name, args: call.args, childJobId: inv.jobId, workflowType: inv.workflowType, status: 'running' };
+        invocations[index] = invObj;
+
+        const childResults = await waitForChildJobs([inv.jobId]);
+        if (childResults.length > 0) {
+          invObj.status = childResults[0].status;
+          if (childResults[0].error) invObj.error = childResults[0].error;
+        } else {
+          invObj.status = 'unknown';
+        }
+      } catch (e) {
+        console.error(`[AIAssistant.Executor] 启动工具失败: ${call.name}`, e.message);
+        invocations[index] = { toolName: call.name, args: call.args, childJobId: null, status: 'failed', error: `启动失败: ${e.message}` };
+      }
+    }));
   }
 
   if (onProgress) onProgress(100);
 
-  const allSuccess = invocations.every(inv => inv.status === 'completed');
-  console.log(`[AIAssistant.Executor] 执行完成: 成功=${invocations.filter(i => i.status === 'completed').length}/${invocations.length}`);
+  const validInvocations = invocations.filter(Boolean);
+  const allSuccess = validInvocations.every(inv => inv.status === 'completed');
+  console.log(`[AIAssistant.Executor] 执行完成: 成功=${validInvocations.filter(i => i.status === 'completed').length}/${toolCalls.length}`);
 
-  return { invocations, allSuccess };
+  return { invocations: validInvocations, allSuccess };
 }
 
 module.exports = handleExecutor;

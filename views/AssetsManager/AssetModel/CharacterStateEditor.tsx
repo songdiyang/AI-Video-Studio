@@ -748,7 +748,7 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
     setHandPosition('right');
     setUsageMode('hold');
     setEquipPropModalOpen(true);
-    // 加载项目道具列表（永久道具）
+    // 加载项目道具列表
     try {
       const token = getAuthToken();
       const projectId = character?.project_id;
@@ -758,9 +758,9 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
       });
       if (res.ok) {
         const data = await res.json();
-        // 过滤出永久道具和手持道具且未叠加的
+        // 过滤出未叠加的道具（所有道具都可以叠加到角色状态，不区分类型）
         const equippedIds = new Set(state.equipped_props?.map(ep => ep.prop_id) || []);
-        setProjectProps((data.props || []).filter((p: any) => (p.prop_type === 'permanent' || p.prop_type === 'held') && !equippedIds.has(p.id)));
+        setProjectProps((data.props || []).filter((p: any) => !equippedIds.has(p.id)));
       }
     } catch (err) {
       console.error('加载项目道具失败:', err);
@@ -1644,22 +1644,24 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                               <p className="text-sm text-default-700 dark:text-slate-200 truncate">{state.accessories}</p>
                             </div>
                           )}
-                          {!!state.held_props && (
-                            <div className="bg-teal-500/10 rounded-lg p-2 border border-teal-500/20">
-                              <div className="flex items-center gap-1.5 text-xs text-teal-700 dark:text-teal-400 mb-0.5">
+                          {/* 已叠加道具 */}
+                          <div className="bg-emerald-500/10 rounded-lg p-2 border border-emerald-500/20">
+                            <div className="flex items-center justify-between mb-1">
+                              <div className="flex items-center gap-1.5 text-xs text-emerald-700 dark:text-emerald-400">
                                 <Sparkles className="w-3 h-3" />
                                 手持道具
                               </div>
-                              <p className="text-sm text-default-700 dark:text-slate-200 truncate">{state.held_props}</p>
+                              <Button
+                                size="sm"
+                                isIconOnly
+                                variant="light"
+                                className="w-5 h-5 min-w-0 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20"
+                                onPress={() => openEquipPropModal(state)}
+                              >
+                                <Plus className="w-3 h-3" />
+                              </Button>
                             </div>
-                          )}
-                          {/* 已叠加道具 */}
-                          {state.equipped_props && state.equipped_props.length > 0 && (
-                            <div className="bg-emerald-500/10 rounded-lg p-2 border border-emerald-500/20">
-                              <div className="flex items-center gap-1.5 text-xs text-emerald-700 dark:text-emerald-400 mb-1">
-                                <Sparkles className="w-3 h-3" />
-                                已叠加道具
-                              </div>
+                            {state.equipped_props && state.equipped_props.length > 0 ? (
                               <div className="flex flex-wrap gap-1.5">
                                 {state.equipped_props.map((ep) => (
                                   <Chip
@@ -1679,8 +1681,10 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                                   </Chip>
                                 ))}
                               </div>
-                            </div>
-                          )}
+                            ) : (
+                              <p className="text-xs text-emerald-600/60 dark:text-emerald-400/60">暂无手持道具，点击 + 添加</p>
+                            )}
+                          </div>
                         </div>
                       )}
                       
@@ -2518,7 +2522,7 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
               <ModalHeader>叠加道具到状态「{equippingState?.name}」</ModalHeader>
               <ModalBody className="space-y-4">
                 {projectProps.length === 0 ? (
-                  <p className="text-sm text-slate-400">当前项目没有可用的手持/永久道具，请先到资产管理中创建道具。</p>
+                  <p className="text-sm text-slate-400">当前项目没有可用的道具，请先到资产管理中创建道具。</p>
                 ) : (
                   <>
                     <Select
