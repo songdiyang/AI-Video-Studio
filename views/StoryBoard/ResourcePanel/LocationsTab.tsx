@@ -82,7 +82,7 @@ const LocationsTab: React.FC<LocationsTabProps> = ({
                   )}
                 </div>
 
-                <div className="flex-1 min-w-0">
+                <div className="flex-1 min-w-0 self-stretch flex flex-col">
                   <p className="font-semibold text-sm truncate" style={{ color: 'var(--text-primary)' }}>
                     {scene.name}
                   </p>
@@ -93,7 +93,7 @@ const LocationsTab: React.FC<LocationsTabProps> = ({
                   )}
 
                   {/* 环境 / 建筑标签 */}
-                  <div className="flex flex-wrap gap-1 mt-1.5">
+                  <div className="flex flex-wrap gap-1 mt-auto pt-1.5">
                     {env && (
                       <Chip size="sm" variant="flat" className="bg-sky-500/10 text-sky-300 h-5 text-[10px]">
                         <Cloud className="w-2.5 h-2.5 mr-0.5 inline" />

@@ -110,7 +110,7 @@ const PropsTab: React.FC<PropsTabProps> = ({ props, isExtracting, onExtractFromS
       {props.map((prop) => (
         <Card key={`${prop.id}-${prop.name}`} className="bg-slate-800/60 border border-slate-700/50 hover:border-emerald-500/30 transition-colors cursor-pointer" onDoubleClick={() => openAssetEditTab(prop)}>
           <CardBody className="p-3">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between h-[56px]">
               <div className="flex-1 min-w-0">
                 <p className="font-semibold text-slate-100 truncate">{prop.name}</p>
                 <div className="flex gap-1 mt-1">

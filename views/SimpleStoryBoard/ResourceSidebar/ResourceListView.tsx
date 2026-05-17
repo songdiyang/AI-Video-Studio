@@ -124,7 +124,7 @@ const ResourceListView: React.FC<ResourceListViewProps> = ({
                   {totalInUse > 0 && (
                     <div className="space-y-2">
                       <div className="text-xs font-semibold" style={{ color: 'var(--accent-primary)' }}>作品中角色 ({totalInUse})</div>
-                      <div className="grid grid-cols-3 gap-2">
+                      <div className="grid grid-cols-3 gap-2 auto-rows-fr">
                         {inUse.map(c => (
                           <ResourceCard
                             key={c.id}
@@ -155,7 +155,7 @@ const ResourceListView: React.FC<ResourceListViewProps> = ({
                   {/* 全部可用角色 */}
                   <div className="space-y-2">
                     <div className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>全部可用角色 ({filteredChars.length})</div>
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="grid grid-cols-3 gap-2 auto-rows-fr">
                       <div 
                         className="aspect-square rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-1 cursor-pointer transition-all"
                         style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}
@@ -192,7 +192,7 @@ const ResourceListView: React.FC<ResourceListViewProps> = ({
                   {inUse.length > 0 && (
                     <div className="space-y-2">
                       <div className="text-xs font-semibold" style={{ color: '#10b981' }}>作品中场景 ({inUse.length})</div>
-                      <div className="grid grid-cols-2 gap-2">
+                      <div className="grid grid-cols-2 gap-2 auto-rows-fr">
                         {inUse.map(s => (
                           <ResourceCard key={s.id} type="scene" name={s.name} imageUrl={s.image_url} isActive onClick={() => onSceneClick(s)} onDoubleClick={() => onSceneDoubleClick?.(s)} />
                         ))}
@@ -202,7 +202,7 @@ const ResourceListView: React.FC<ResourceListViewProps> = ({
                   {inUse.length > 0 && <div style={{ borderTop: '1px solid var(--border-color)' }} />}
                   <div className="space-y-2">
                     <div className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>全部场景 ({filteredScenes.length})</div>
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-2 gap-2 auto-rows-fr">
                       <div 
                         className="aspect-video rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-1 cursor-pointer transition-all"
                         style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}
@@ -225,7 +225,7 @@ const ResourceListView: React.FC<ResourceListViewProps> = ({
         {activeTab === 'prop' && (
           <div className="space-y-3">
             <div className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>全部道具 ({filteredProps.length})</div>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-3 gap-2 auto-rows-fr">
               <div 
                 className="aspect-square rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-1 cursor-pointer transition-all"
                 style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}

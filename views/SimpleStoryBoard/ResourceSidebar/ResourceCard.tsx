@@ -19,7 +19,7 @@ const ResourceCard: React.FC<ResourceCardProps> = ({ type, name, imageUrl, isAct
 
   return (
     <div
-      className="relative group cursor-pointer rounded-xl overflow-hidden transition-all"
+      className="relative group cursor-pointer rounded-xl overflow-hidden transition-all flex flex-col"
       style={{
         border: isActive 
           ? '1px solid var(--accent-primary)' 
@@ -30,7 +30,7 @@ const ResourceCard: React.FC<ResourceCardProps> = ({ type, name, imageUrl, isAct
       onDoubleClick={onDoubleClick}
     >
       {/* 图片区域 */}
-      <div className="aspect-square flex items-center justify-center" style={{ backgroundColor: 'var(--bg-input)' }}>
+      <div className="flex-1 min-h-0 flex items-center justify-center" style={{ backgroundColor: 'var(--bg-input)' }}>
         {imageUrl ? (
           <img src={imageUrl} alt={name} className="w-full h-full object-cover" />
         ) : (
@@ -42,7 +42,7 @@ const ResourceCard: React.FC<ResourceCardProps> = ({ type, name, imageUrl, isAct
       </div>
 
       {/* 名字 */}
-      <div className="px-2 py-1.5" style={{ backgroundColor: 'var(--bg-card)' }}>
+      <div className="shrink-0 px-2 py-1.5" style={{ backgroundColor: 'var(--bg-card)' }}>
         <p 
           className="text-xs font-medium text-center truncate"
           style={{ color: isActive ? 'var(--accent-primary)' : 'var(--text-primary)' }}

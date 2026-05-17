@@ -3,18 +3,17 @@
  * 根据项目类型动态渲染工作台标签页和内容
  */
 
-import React, { Suspense, lazy, useMemo, useCallback, useState, useEffect } from 'react';
+import React, { Suspense, lazy, useMemo, useCallback } from 'react';
 import { Tabs, Tab, Spinner } from '@heroui/react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useWorkbench, useWorkbenchTabs } from '../../contexts/WorkbenchContext';
-import { Project, fetchProjects } from '../../services/projects';
+import { Project } from '../../services/projects';
 import { ProjectType, PROJECT_TYPES, WorkbenchTab } from '../../types/projectTypes';
 import { getIcon } from './workbenchConfig';
 import { useLanguage } from '../../contexts/LanguageContext';
 import ProjectSelector from '../ProjectSelector';
 
-// 上次选择的项目ID存储键
-const LAST_PROJECT_KEY = 'nanostory_last_project_id';
+
 
 // ==================== 懒加载组件 ====================
 
@@ -185,54 +184,10 @@ const DynamicWorkbench: React.FC<DynamicWorkbenchProps> = ({
 }) => {
   const { currentProject, projectType, isLoading, setCurrentProject, setIsLoading } = useWorkbench();
   const { tabs, activeTab, setActiveTab } = useWorkbenchTabs();
-  const [isInitializing, setIsInitializing] = useState(false);
-  
   // 处理标签页切换
   const handleTabChange = useCallback((key: string) => {
     setActiveTab(key);
   }, [setActiveTab]);
-  
-  // 从 localStorage 加载上次选择的项目
-  useEffect(() => {
-    const loadLastProject = async () => {
-      // 如果已经有当前项目，不需要加载
-      if (currentProject) return;
-      
-      const lastProjectId = localStorage.getItem(LAST_PROJECT_KEY);
-      if (!lastProjectId) return;
-      
-      const projectId = parseInt(lastProjectId, 10);
-      if (isNaN(projectId)) return;
-      
-      setIsInitializing(true);
-      setIsLoading(true);
-      
-      try {
-        // 获取所有项目列表，找到对应的项目
-        const projects = await fetchProjects();
-        const project = projects.find(p => p.id === projectId);
-        
-        if (project) {
-          setCurrentProject(project);
-        } else {
-          // 如果找不到项目（可能已被删除），清除 localStorage
-          localStorage.removeItem(LAST_PROJECT_KEY);
-        }
-      } catch (error) {
-        console.error('加载上次选择的项目失败:', error);
-      } finally {
-        setIsInitializing(false);
-        setIsLoading(false);
-      }
-    };
-    
-    loadLastProject();
-  }, [currentProject, setCurrentProject, setIsLoading]);
-  
-  // 如果没有项目且正在初始化，显示加载状态
-  if (!currentProject && isInitializing) {
-    return <WorkbenchLoadingFallback />;
-  }
   
   // 如果没有项目，显示空状态
   if (!currentProject) {
@@ -275,7 +230,7 @@ const DynamicWorkbench: React.FC<DynamicWorkbenchProps> = ({
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            transition={{ duration: 0.2, ease: 'easeInOut' }}
+            transition={{ duration: 0.1, ease: 'easeInOut' }}
             className="h-full"
           >
             <WorkbenchContent

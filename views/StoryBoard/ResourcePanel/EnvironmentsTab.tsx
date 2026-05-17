@@ -87,7 +87,7 @@ const EnvironmentsTab: React.FC<EnvironmentsTabProps> = ({
               isPressable
             >
               <CardBody className="p-3">
-                <div className="flex items-start gap-3">
+                <div className="flex items-start gap-3 h-[88px]">
                   {/* 图片缩略图 */}
                   <div className="shrink-0 relative">
                     {env.image_url ? (

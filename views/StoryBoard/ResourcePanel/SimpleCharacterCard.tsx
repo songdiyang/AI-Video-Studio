@@ -21,7 +21,7 @@ const SimpleCharacterCard: React.FC<SimpleCharacterCardProps> = ({
   return (
     <Card className="w-full bg-slate-800/60 shadow-sm hover:shadow-md hover:shadow-blue-500/5 transition-shadow border border-slate-700/50">
       <CardBody className="p-3">
-        <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center justify-between mb-2 h-[56px]">
           <h4 className="font-bold text-slate-100">{name}</h4>
           <span className="text-xs text-slate-500">
             出现 {scenes?.filter(s => s.characters?.includes(name)).length || 0} 次

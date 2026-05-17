@@ -142,7 +142,7 @@ const CharacterCard: React.FC<CharacterCardProps> = ({
       onContextMenu={handleContextMenu}
     >
       <CardBody className="p-3">
-        <div className="flex items-start gap-3 mb-3">
+        <div className="flex items-start gap-3 mb-3 h-[88px]">
           <div className="flex-1 min-w-0">
             <div className="flex items-center justify-between mb-1">
               <div className="flex items-center gap-1.5">

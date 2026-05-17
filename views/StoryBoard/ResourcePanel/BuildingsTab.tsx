@@ -92,7 +92,7 @@ const BuildingsTab: React.FC<BuildingsTabProps> = ({
               isPressable
             >
               <CardBody className="p-3">
-                <div className="flex items-start gap-3">
+                <div className="flex items-start gap-3 h-[88px]">
                   {/* 图片缩略图 */}
                   <div className="shrink-0 relative">
                     {thumbUrl ? (

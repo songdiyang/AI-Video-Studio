@@ -154,84 +154,77 @@ export function useStoryboardCore(options: UseStoryboardCoreOptions) {
     scriptsRef.current = externalScripts;
   }, [externalScripts]);
 
-  // 模型选项
-  const modelMap = useMemo(() => {
+  // 模型配置（合并计算）
+  const {
+    imageModelConfig,
+    videoModelConfig,
+    imageAspectRatioOptions,
+    videoAspectRatioOptions,
+    videoDurationOptions,
+    imageResolutionOptions,
+    videoResolutionOptions,
+  } = useMemo(() => {
     const map = new Map<string, typeof models[number]>();
     for (const m of models) map.set(m.name, m);
-    return map;
-  }, [models]);
 
-  const imageModelConfig = useMemo(() => {
-    const model = modelMap.get(currentImageModel);
-    return model && (model.type || model.category)?.toUpperCase() === 'IMAGE' ? model : undefined;
-  }, [modelMap, currentImageModel]);
+    const imgModel = map.get(currentImageModel);
+    const vidModel = map.get(currentVideoModel);
+    const imgConfig = imgModel && (imgModel.type || imgModel.category)?.toUpperCase() === 'IMAGE' ? imgModel : undefined;
+    const vidConfig = vidModel && (vidModel.type || vidModel.category)?.toUpperCase() === 'VIDEO' ? vidModel : undefined;
 
-  const videoModelConfig = useMemo(() => {
-    const model = modelMap.get(currentVideoModel);
-    return model && (model.type || model.category)?.toUpperCase() === 'VIDEO' ? model : undefined;
-  }, [modelMap, currentVideoModel]);
+    return {
+      imageModelConfig: imgConfig,
+      videoModelConfig: vidConfig,
+      imageAspectRatioOptions: normalizeCapabilityOptions(imgConfig?.supportedAspectRatios, 'aspectRatio'),
+      videoAspectRatioOptions: normalizeCapabilityOptions(vidConfig?.supportedAspectRatios, 'aspectRatio'),
+      videoDurationOptions: normalizeCapabilityOptions(vidConfig?.supportedDurations, 'duration'),
+      imageResolutionOptions: normalizeCapabilityOptions(imgConfig?.supportedResolutions, 'resolution'),
+      videoResolutionOptions: [
+        { value: '480p', label: '480p' },
+        { value: '720p', label: '720p' },
+        { value: '1080p', label: '1080p' }
+      ],
+    };
+  }, [models, currentImageModel, currentVideoModel]);
 
-  const imageAspectRatioOptions = useMemo(
-    () => normalizeCapabilityOptions(imageModelConfig?.supportedAspectRatios, 'aspectRatio'),
-    [imageModelConfig]
-  );
-  const videoAspectRatioOptions = useMemo(
-    () => normalizeCapabilityOptions(videoModelConfig?.supportedAspectRatios, 'aspectRatio'),
-    [videoModelConfig]
-  );
-  const videoDurationOptions = useMemo(
-    () => normalizeCapabilityOptions(videoModelConfig?.supportedDurations, 'duration'),
-    [videoModelConfig]
-  );
-  const imageResolutionOptions = useMemo(
-    () => normalizeCapabilityOptions(imageModelConfig?.supportedResolutions, 'resolution'),
-    [imageModelConfig]
-  );
-  const videoResolutionOptions = useMemo(() => [
-    { value: '480p', label: '480p' },
-    { value: '720p', label: '720p' },
-    { value: '1080p', label: '1080p' }
-  ], []);
-
-  // 自动设置模型默认值
+  // 自动设置模型默认值（合并为一个 useEffect）
   useEffect(() => {
+    // 多模态模型默认值
     if (!currentMultimodalModel && models.length > 0) {
       const firstMultimodal = models.find(m => (m.type || m.category)?.toUpperCase() === 'MULTIMODAL');
       if (firstMultimodal) setCurrentMultimodalModel(firstMultimodal.name);
     }
-  }, [models, currentMultimodalModel]);
 
-  // 自动设置比例/分辨率默认值
-  useEffect(() => {
-    if (projectSettings?.imageAspectRatio) return;
-    if (imageAspectRatioOptions.length === 0) { setImageAspectRatio(''); return; }
-    setImageAspectRatio(current => imageAspectRatioOptions.some(o => o.value === current) ? current : imageAspectRatioOptions[0].value);
-  }, [imageAspectRatioOptions, projectSettings?.imageAspectRatio]);
+    // 图片比例/分辨率默认值
+    if (!projectSettings?.imageAspectRatio) {
+      if (imageAspectRatioOptions.length === 0) setImageAspectRatio('');
+      else setImageAspectRatio(current => imageAspectRatioOptions.some(o => o.value === current) ? current : imageAspectRatioOptions[0].value);
+    }
+    if (!projectSettings?.imageResolution) {
+      if (imageResolutionOptions.length === 0) setImageResolution('');
+      else setImageResolution(current => imageResolutionOptions.some(o => o.value === current) ? current : imageResolutionOptions[0].value);
+    }
 
-  useEffect(() => {
-    if (projectSettings?.imageResolution) return;
-    if (imageResolutionOptions.length === 0) { setImageResolution(''); return; }
-    setImageResolution(current => imageResolutionOptions.some(o => o.value === current) ? current : imageResolutionOptions[0].value);
-  }, [imageResolutionOptions, projectSettings?.imageResolution]);
-
-  useEffect(() => {
+    // 视频比例/时长默认值
     if (!projectSettings?.videoAspectRatio) {
       if (videoAspectRatioOptions.length === 0) setVideoAspectRatio('');
       else setVideoAspectRatio(current => videoAspectRatioOptions.some(o => o.value === current) ? current : videoAspectRatioOptions[0].value);
     }
-    if (videoDurationOptions.length === 0) { setVideoDuration(null); return; }
-    setVideoDuration(current => {
-      const currentValue = current === null ? '' : String(current);
-      const matched = videoDurationOptions.find(o => o.value === currentValue);
-      return matched ? Number(matched.value) : Number(videoDurationOptions[0].value);
-    });
-  }, [videoAspectRatioOptions, videoDurationOptions, projectSettings?.videoAspectRatio]);
+    if (videoDurationOptions.length === 0) { setVideoDuration(null); }
+    else {
+      setVideoDuration(current => {
+        const currentValue = current === null ? '' : String(current);
+        const matched = videoDurationOptions.find(o => o.value === currentValue);
+        return matched ? Number(matched.value) : Number(videoDurationOptions[0].value);
+      });
+    }
 
-  useEffect(() => {
-    if (projectSettings?.videoResolution) return;
-    if (videoResolutionOptions.length === 0) { setVideoResolution(''); return; }
-    setVideoResolution(current => videoResolutionOptions.some(o => o.value === current) ? current : videoResolutionOptions[0].value);
-  }, [videoResolutionOptions, projectSettings?.videoResolution]);
+    // 视频分辨率默认值
+    if (!projectSettings?.videoResolution) {
+      if (videoResolutionOptions.length === 0) setVideoResolution('');
+      else setVideoResolution(current => videoResolutionOptions.some(o => o.value === current) ? current : videoResolutionOptions[0].value);
+    }
+  }, [models, currentMultimodalModel, imageAspectRatioOptions, imageResolutionOptions, videoAspectRatioOptions, videoDurationOptions, videoResolutionOptions, projectSettings]);
 
   // ===== 分镜管理 =====
   const {
@@ -297,44 +290,51 @@ export function useStoryboardCore(options: UseStoryboardCoreOptions) {
   // ===== 加载项目资源 =====
   useEffect(() => {
     if (!currentProjectId) return;
-    fetchCharactersByProject(currentProjectId)
-      .then(chars => setProjectCharacters(chars.map((c: any) => ({
-        id: c.id, name: c.name,
-        image_url: c.image_url,
-        front_view_url: c.front_view_url || c.frontView_url,
-        base_appearance: c.base_appearance,
-        outfit_appearance: c.outfit_appearance,
-        has_base_model: c.has_base_model_views ? 1 : 0,
-        has_base_model_views: c.has_base_model_views ? 1 : 0,
-        states_count: c.states_count || 0,
-        active_state_name: c.active_state_name,
-        active_state_outfit: c.active_state_outfit,
-        active_state_image_url: c.active_state_image_url,
-        base_front_view_url: c.base_model_image_url
-      }))))
-      .catch(() => {});
-    fetchScenesByProject(currentProjectId)
-      .then(scenes => setProjectScenes(scenes.map((s: any) => ({ id: s.id, name: s.name, description: s.description }))))
-      .catch(() => {});
+
     const token = getAuthToken();
-    fetch(`/api/props/project/${currentProjectId}`, {
-      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) }
-    })
-      .then(res => res.ok ? res.json() : null)
-      .then(data => setProjectProps(data?.props || []))
-      .catch(() => setProjectProps([]));
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+
+    Promise.all([
+      fetchCharactersByProject(currentProjectId)
+        .then(chars => chars.map((c: any) => ({
+          id: c.id, name: c.name,
+          image_url: c.image_url,
+          front_view_url: c.front_view_url || c.frontView_url,
+          base_appearance: c.base_appearance,
+          outfit_appearance: c.outfit_appearance,
+          has_base_model: c.has_base_model_views ? 1 : 0,
+          has_base_model_views: c.has_base_model_views ? 1 : 0,
+          states_count: c.states_count || 0,
+          active_state_name: c.active_state_name,
+          active_state_outfit: c.active_state_outfit,
+          active_state_image_url: c.active_state_image_url,
+          base_front_view_url: c.base_model_image_url
+        })))
+        .catch(() => []),
+      fetchScenesByProject(currentProjectId)
+        .then(scenes => scenes.map((s: any) => ({ id: s.id, name: s.name, description: s.description })))
+        .catch(() => []),
+      fetch(`/api/props/project/${currentProjectId}`, { headers })
+        .then(res => res.ok ? res.json() : null)
+        .then(data => data?.props || [])
+        .catch(() => []),
+    ]).then(([chars, scenes, props]) => {
+      setProjectCharacters(chars);
+      setProjectScenes(scenes);
+      setProjectProps(props);
+    });
   }, [currentProjectId]);
 
-  // ===== 加载剧本内容 =====
-  useEffect(() => {
-    if (!currentScriptId) {
+  // ===== 加载剧本内容（按需加载）=====
+  const loadScriptContent = useCallback(() => {
+    if (!currentScriptId || !currentProjectId) {
       setScriptContent(null);
       setScriptTitle('');
-      return;
+      return Promise.resolve();
     }
     setIsLoadingScript(true);
     const token = getAuthToken();
-    fetch(`/api/scripts/project/${currentProjectId}/episode/${currentEpisode}`, {
+    return fetch(`/api/scripts/project/${currentProjectId}/episode/${currentEpisode}`, {
       headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     })
       .then(res => res.ok ? res.json() : null)
@@ -718,40 +718,40 @@ export function useStoryboardCore(options: UseStoryboardCoreOptions) {
     setSelectedScene,
     selectedSceneData,
     isLoading,
-    
+
     // 操作
     sceneActions,
     generationActions,
     resourceActions,
-    
+
     // 集数
     handleEpisodeSelect,
     handleStandaloneEpisodeChange,
     handleCreateNextEpisode,
     handleImportScenes,
-    
+
     // 事件
     emit,
     on,
-    
+
     // 状态更新
     setState,
-    
+
     // AI 助手面板控制
     isAssistantOpen, toggleAssistant, openAssistant,
     leftPanelOpen, rightPanelOpen, bottomPanelOpen,
     closeLeftPanel, closeRightPanel, closeBottomPanel,
-    
+
     // 自动分镜
     autoStoryboard,
-    
+
     // 任务
     tasks,
     isRunning,
-    
+
     // 工具
     showToast,
-    
+
     // 原始数据（供骨架使用）
     projectCharacters: effectiveProjectCharacters,
     projectScenes,
@@ -759,5 +759,8 @@ export function useStoryboardCore(options: UseStoryboardCoreOptions) {
     storyboardStates,
     currentProject,
     scripts,
+
+    // 按需加载
+    loadScriptContent,
   };
 }
