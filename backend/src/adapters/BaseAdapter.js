@@ -154,16 +154,27 @@ class BaseAdapter {
    */
   async parseResponse(response) {
     const text = await response.text();
+    const status = response.status;
+    const contentType = response.headers.get('content-type') || 'unknown';
+
+    // 空响应体诊断
+    if (!text || text.trim().length === 0) {
+      console.error(`[${this.constructor.name}] API 返回空响应体: HTTP ${status}, Content-Type: ${contentType}, URL: ${response.url || 'N/A'}`);
+      throw new Error(`API 返回空响应体 (HTTP ${status})，请检查模型配置和 API 端点是否正确`);
+    }
+
     let data;
     try {
       data = JSON.parse(text);
     } catch (e) {
-      throw new Error(`API 返回的不是有效的 JSON: ${text.substring(0, 200)}`);
+      console.error(`[${this.constructor.name}] API 返回非 JSON: HTTP ${status}, Content-Type: ${contentType}, 内容: ${text.substring(0, 500)}`);
+      throw new Error(`API 返回的不是有效的 JSON (HTTP ${status}): ${text.substring(0, 200)}`);
     }
 
     if (!response.ok) {
-      const errorMsg = data.error?.message || `API 调用失败: ${response.status}`;
-      throw new Error(errorMsg);
+      const errorMsg = data.error?.message || data.message || data.msg || JSON.stringify(data).substring(0, 200);
+      console.error(`[${this.constructor.name}] API 调用失败: HTTP ${status}, 错误: ${errorMsg}`);
+      throw new Error(`API 调用失败 (HTTP ${status}): ${errorMsg}`);
     }
 
     return data;

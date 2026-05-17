@@ -98,6 +98,12 @@ function determineEndpoint(config, params) {
   }
   // 视频生成：必须有 video_gen 能力，且传了视频相关参数
   if (capabilities.includes('video_gen') && (params.duration || params.ratio || params.prompt)) {
+    // 火山引擎 Seedance 使用 /contents/generations（非标准 /videos/generations）
+    const modelId = (config.model_id || config.name || '').toLowerCase();
+    const providerName = (config._provider?.name || '').toLowerCase();
+    if (providerName.includes('volcengine') || providerName.includes('火山') || modelId.includes('seedance')) {
+      return '/contents/generations';
+    }
     return '/videos/generations';
   }
 
@@ -113,6 +119,7 @@ function buildRequestBody(config, params, modelId, endpoint) {
     case '/images/generations':
       return buildImageGenBody(config, params, modelId);
     case '/videos/generations':
+    case '/contents/generations':
       return buildVideoGenBody(config, params, modelId);
     case '/chat/completions':
     default:
@@ -354,7 +361,7 @@ function parseOpenAIResponse(data, mapping = null, endpoint = '/chat/completions
     if (data.usage) {
       result.tokens = data.usage.total_tokens || 0;
     }
-  } else if (endpoint === '/videos/generations') {
+  } else if (endpoint === '/videos/generations' || endpoint === '/contents/generations') {
     // 视频生成响应：可能返回 task_id 或直接的 video_url
     result.taskId = data.task_id || data.taskId || data.id || '';
     result.videoUrl = data.video_url || data.url || '';

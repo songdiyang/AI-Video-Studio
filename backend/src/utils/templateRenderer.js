@@ -83,8 +83,9 @@ function renderJsonTemplate(template, data) {
           result[k] = processed;
         }
       }
-      // 如果对象为空（所有字段都被移除），则标记整个对象为删除
-      if (Object.keys(result).length === 0) {
+      // 如果对象原本有字段但全部被移除，则标记整个对象为删除
+      // 注意：空对象 {}（原本就没有字段）应保留为 {}，不是删除标记
+      if (Object.keys(value).length > 0 && Object.keys(result).length === 0) {
         return '__REMOVE_FIELD__';
       }
       // 特殊处理：如果对象只剩下 role/type 等元数据字段，但缺少关键数据字段（如 image_url, url, text 等），则标记为删除

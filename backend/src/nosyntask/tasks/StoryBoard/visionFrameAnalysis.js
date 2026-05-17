@@ -28,12 +28,23 @@ function safeJsonParse(text) {
 /**
  * 检测模型是否可能支持 vision
  * 基于模型名称和配置进行启发式判断
+ * 
+ * 纯文本模型（如 DeepSeek Chat、Qwen）明确不支持 image_url，
+ * 必须跳过视觉分析以避免 HTTP 400 错误。
  */
 function isVisionCapable(modelName) {
   if (!modelName) return false;
-  const visionKeywords = ['vision', 'multimodal', 'vl', '4o', 'opus', 'gemini', 'pro-vision'];
-  const name = modelName.toLowerCase();
-  return visionKeywords.some(k => name.includes(k));
+
+  // 纯文本模型明确不支持 vision（黑名单优先）
+  const textOnlyKeywords = ['deepseek-chat', 'deepseek reasoner', 'deepseek-v3', 'qwen-plus', 'qwen-turbo', 'qwen-max'];
+  const nameLower = modelName.toLowerCase();
+  if (textOnlyKeywords.some(k => nameLower.includes(k.toLowerCase()))) {
+    return false;
+  }
+
+  // 多模态/视觉模型白名单
+  const visionKeywords = ['vision', 'multimodal', 'vl', '4o', 'opus', 'gemini', 'pro-vision', 'seed', 'doubao-seed', 'glm-4v'];
+  return visionKeywords.some(k => nameLower.includes(k));
 }
 
 /**
@@ -111,9 +122,10 @@ async function handleVisionFrameAnalysis(inputParams, onProgress) {
     return null;
   }
 
-  // 启发式检测模型是否支持 vision
+  // 检测模型是否支持 vision
   if (!isVisionCapable(modelName)) {
-    console.log(`[VisionAnalysis] 模型 ${modelName} 可能不支持 vision，尝试调用（失败将降级）`);
+    console.log(`[VisionAnalysis] 模型 ${modelName} 不支持 vision，跳过视觉分析`);
+    return null;
   }
 
   console.log('[VisionAnalysis] 开始视觉分析，图片数:', imageUrls.length, '模型:', modelName);

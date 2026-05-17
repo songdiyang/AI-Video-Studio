@@ -197,8 +197,8 @@ module.exports = {
     console.log('[Seedance1.5 Handler] 开始处理请求');
     console.log('[Seedance1.5 Handler] 原始参数:', JSON.stringify(params, null, 2));
 
-    // 0. API 密钥处理：优先 model.api_key，其次 params.apiKey，最后环境变量
-    const apiKey = model.api_key || params.apiKey || process.env.SEEDANCE_API_KEY;
+    // 0. API 密钥处理：优先 model.api_key，其次 provider key，再次 params.apiKey，最后环境变量
+    const apiKey = model.api_key || (model._provider?.api_key) || params.apiKey || process.env.SEEDANCE_API_KEY || process.env.VOLCENGINE_API_KEY;
     if (!apiKey) {
       throw new Error('Seedance API Key 未配置：请在模型配置中设置 API Key 或配置环境变量 SEEDANCE_API_KEY');
     }
@@ -224,8 +224,9 @@ module.exports = {
     const processedParams = processParams(params);
 
     // 3. 构建请求体
-    // 从 rendered.body 中获取 model 字段（如果模板中有配置）
-    const modelId = rendered.body?.model || params.model || model.name || 'doubao-seedance-1-5-pro-251215';
+    // model_id 优先级：model.model_id（数据库配置） > rendered.body.model（模板） > params.model > 兜底值
+    // 注意：model.name 是显示名称（如 "Seedance 1.5 Pro"），不能作为 API model_id
+    const modelId = model.model_id || rendered.body?.model || params.model || 'doubao-seedance-1-5-pro-251215';
 
     const requestBody = {
       model: modelId,
@@ -238,6 +239,12 @@ module.exports = {
     // 4. 发送请求
     console.log(`[Seedance1.5 Handler] 调用 ${rendered.url}`);
 
+    // 确保 Content-Type 为 application/json（方舟平台需要此 header 才能正确解析请求体）
+    const requestHeaders = {
+      ...rendered.headers,
+      'Content-Type': 'application/json'
+    };
+
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 120000);
 
@@ -245,7 +252,7 @@ module.exports = {
     try {
       response = await fetch(rendered.url, {
         method: rendered.method || 'POST',
-        headers: rendered.headers,
+        headers: requestHeaders,
         body: JSON.stringify(requestBody),
         signal: controller.signal
       });

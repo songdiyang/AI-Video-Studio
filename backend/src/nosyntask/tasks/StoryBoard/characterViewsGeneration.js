@@ -783,16 +783,19 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
         if (hasUserRefs) {
           genParams.imageUrls = [...userReferenceUrls];
           // 根据参考图类型动态调整 strength：
-          // - 白膜+服装设定图：较高 strength 让 AI 看清服装细节 (0.45)
-          // - 仅有白膜图：需要较高 strength 保留角色身份特征 (0.55)
-          //   白膜图是角色身份锚点，strength 太低会导致生成完全不同的角色
-          // - 白膜模式：较低 strength 仅保留脸部特征 (0.20)
+          // Seedream 的 strength 是"图生图变化强度"：值越低越忠实于参考图，值越高偏离越大
+          // - 白膜+服装设定图：需要忠实复制服装细节，strength 应低 (0.30)
+          //   两张参考图（白膜身份锚+服装设定图），低 strength 让 AI 同时忠实于两者
+          // - 仅有白膜图：需要在白膜基础上叠加文字描述的服装，strength 偏低 (0.35)
+          //   白膜图是角色身份锚点，strength 太高会导致角色脸部体貌偏离白膜
+          // - 白膜模式：极低 strength 仅保留脸部特征 (0.20)
+          //   白膜三视图有参考图时，只保留脸部发型，服装按文字提示生成
           if (isBaseModel) {
             genParams.strength = 0.20;
           } else if (hasCostumeRefImage) {
-            genParams.strength = 0.45;
+            genParams.strength = 0.30;
           } else {
-            genParams.strength = 0.55;
+            genParams.strength = 0.35;
           }
           console.log(`[CharacterViews] ${view}视图参考图 (strength=${genParams.strength}):`, userReferenceUrls);
         }

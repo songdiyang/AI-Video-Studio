@@ -16,6 +16,7 @@
  */
 
 const BaseAdapter = require('./BaseAdapter');
+const { resolveToInternalUrl } = require('../utils/fileStorage');
 
 class OpenAICompatibleAdapter extends BaseAdapter {
   // ============================================================
@@ -28,13 +29,15 @@ class OpenAICompatibleAdapter extends BaseAdapter {
     const headers = this.buildHeaders();
     const body = this.buildRequestBody(params, endpoint);
 
-    this.log(`Submit → ${endpoint}`, { model: this.modelId });
+    this.log(`Submit → ${endpoint}`, { model: this.modelId, url });
 
     const response = await this.safeRequest(url, {
       method: 'POST',
       headers,
       body: JSON.stringify(body)
     }, `submit.${endpoint}`);
+
+    this.log(`Response status: ${response.status} ${response.statusText}, Content-Type: ${response.headers.get('content-type') || 'N/A'}`);
 
     const data = await this.parseResponse(response);
 
@@ -126,7 +129,14 @@ class OpenAICompatibleAdapter extends BaseAdapter {
     }
 
     // 视频生成
+    // 火山引擎 Seedance 使用 /contents/generations（非标准 /videos/generations）
     if (caps.includes('video_gen') && (params.duration || params.ratio || params.prompt)) {
+      const modelId = (this.modelId || '').toLowerCase();
+      const isVolcengine = (this.provider.name || '').toLowerCase().includes('volcengine') ||
+        (this.provider.name || '').includes('火山');
+      if (isVolcengine || modelId.includes('seedance')) {
+        return '/contents/generations';
+      }
       return '/videos/generations';
     }
 
@@ -142,6 +152,7 @@ class OpenAICompatibleAdapter extends BaseAdapter {
       case '/images/generations':
         return this.buildImageGenBody(params);
       case '/videos/generations':
+      case '/contents/generations':
         return this.buildVideoGenBody(params);
       case '/chat/completions':
       default:
@@ -184,14 +195,30 @@ class OpenAICompatibleAdapter extends BaseAdapter {
     if (params.quality) body.quality = params.quality;
     if (params.style) body.style = params.style;
 
-    // 参考图（图生图）- 支持多张参考图，用逗号分隔
+    // strength: 图生图变化强度（0.0-1.0），控制参考图影响权重
+    // 低 strength → 更忠实于参考图；高 strength → 更多自由创作
+    if (params.strength !== undefined && params.strength !== null && params.strength !== '_REMOVE_') {
+      const strength = parseFloat(params.strength);
+      if (!isNaN(strength) && strength >= 0 && strength <= 1) {
+        body.strength = strength;
+      }
+    }
+
+    // 参考图（图生图）处理
+    // Seedream 使用 `image` 数组参数，其他平台使用 `image_url` 字符串
+    const isSeedream = (this.modelId || '').toLowerCase().includes('seedream');
     if (params.imageUrls || params.imageUrl) {
       const urls = params.imageUrls || [params.imageUrl];
-      if (urls.length > 1) {
-        // 多张参考图：用逗号分隔所有 URL
-        body.image_url = urls.join(',');
+      if (isSeedream) {
+        // Seedream: 使用 image 数组
+        body.image = Array.isArray(urls) ? urls.filter(Boolean) : [urls].filter(Boolean);
       } else {
-        body.image_url = urls[0];
+        // 其他平台: 使用逗号分隔的 image_url 字符串
+        if (urls.length > 1) {
+          body.image_url = urls.join(',');
+        } else {
+          body.image_url = urls[0];
+        }
       }
     }
 
@@ -211,7 +238,7 @@ class OpenAICompatibleAdapter extends BaseAdapter {
         content.push({ type: 'text', text: params.prompt });
       }
 
-      // 2. 添加首帧图片
+      // 2. 添加首帧图片（使用 resolveToInternalUrl 转换 URL，与 Seedance 1.5 自定义 handler 保持一致）
       const imageUrls = params.imageUrls || (params.imageUrl ? [params.imageUrl] : []);
       const startFrame = params.startFrame;
       const endFrame = params.endFrame;
@@ -222,7 +249,7 @@ class OpenAICompatibleAdapter extends BaseAdapter {
       if (rawFirstFrame) {
         content.push({
           type: 'image_url',
-          image_url: { url: rawFirstFrame },
+          image_url: { url: resolveToInternalUrl(rawFirstFrame) },
           role: 'first_frame'
         });
       }
@@ -234,7 +261,7 @@ class OpenAICompatibleAdapter extends BaseAdapter {
       if (rawLastFrame) {
         content.push({
           type: 'image_url',
-          image_url: { url: rawLastFrame },
+          image_url: { url: resolveToInternalUrl(rawLastFrame) },
           role: 'last_frame'
         });
       }
@@ -354,6 +381,7 @@ class OpenAICompatibleAdapter extends BaseAdapter {
       case '/images/generations':
         return this.parseImageResponse(data);
       case '/videos/generations':
+      case '/contents/generations':
         return this.parseVideoResponse(data);
       case '/chat/completions':
       default:

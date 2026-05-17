@@ -314,7 +314,12 @@ async function callAIModel(modelName, params = {}, apiKey = null) {
       [modelName]
     );
 
-    if (newModel) {
+    // 如果旧架构配置了 custom_handler，优先使用旧架构的自定义 handler
+    // 因为 custom_handler 专门处理特殊模型（如 Seedance）的非标准 API
+    if (model.custom_handler) {
+      console.log(`[AI Model] 旧架构配置了 custom_handler "${model.custom_handler}"，优先使用旧架构调用 ${modelName}`);
+      // 跳过新架构，直接走下面的旧架构逻辑
+    } else if (newModel) {
       console.log(`[AI Model] 使用新架构 Adapter 调用 ${modelName}`);
 
       // 构建模型配置
@@ -374,7 +379,10 @@ async function callAIModel(modelName, params = {}, apiKey = null) {
     }
 
     // ============ 兼容层：OpenAI 适配层（旧架构） ============
-    if (model.provider_id && model.model_id) {
+    // 注意：如果旧架构配置了 custom_handler，优先走 custom_handler 路径，
+    // 因为 custom_handler 专门处理特殊模型（如 Seedance）的非标准 API
+    // OpenAI 适配层对这类模型会发错请求格式
+    if (!model.custom_handler && model.provider_id && model.model_id) {
       console.log(`[AI Model] 使用兼容层 OpenAI 适配层调用 ${modelName}`);
 
       if (!apiKey) {
@@ -427,11 +435,10 @@ async function callAIModel(modelName, params = {}, apiKey = null) {
       if (handler && typeof handler.call === 'function') {
         console.log(`[AI Model] 使用自定义 handler "${model.custom_handler}" 调用 ${modelName}`);
 
-        // API Key 处理
+        // API Key 处理（优先模型自身 key，其次平台 provider key）
         if (!apiKey) {
-          if (model.api_key) {
-            apiKey = model.api_key;
-          } else {
+          apiKey = model.api_key || (model._provider?.api_key);
+          if (!apiKey) {
             const envKey = `${model.provider.toUpperCase()}_API_KEY`;
             apiKey = process.env[envKey];
             if (!apiKey) {
@@ -536,11 +543,10 @@ async function callAIModel(modelName, params = {}, apiKey = null) {
     const defaultParams = parseJsonField(model.default_params, {});
     const responseMapping = parseJsonField(model.response_mapping);
 
-    // API Key 优先级：1. 数据库配置 2. 函数参数 3. 环境变量
+    // API Key 优先级：1. 模型自身配置 2. 平台 provider key 3. 函数参数 4. 环境变量
     if (!apiKey) {
-      if (model.api_key) {
-        apiKey = model.api_key;
-      } else {
+      apiKey = model.api_key || (model._provider?.api_key);
+      if (!apiKey) {
         const envKey = `${model.provider.toUpperCase()}_API_KEY`;
         apiKey = process.env[envKey];
 
@@ -793,11 +799,10 @@ async function queryAIModel(modelName, params = {}, apiKey = null) {
       throw new Error(`模型 "${modelName}" 未配置查询接口`);
     }
 
-    // API Key
+    // API Key（优先模型自身 key，其次 provider key，最后环境变量）
     if (!apiKey) {
-      if (model.api_key) {
-        apiKey = model.api_key;
-      } else {
+      apiKey = model.api_key || (model._provider?.api_key);
+      if (!apiKey) {
         const envKey = `${model.provider.toUpperCase()}_API_KEY`;
         apiKey = process.env[envKey];
       }
