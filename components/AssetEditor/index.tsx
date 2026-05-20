@@ -26,6 +26,7 @@ import { listEnvironments, type Environment } from '../../services/environments'
 import { listBuildings, type Building } from '../../services/buildings';
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
+import { usePreview } from '../../components/PreviewProvider';
 import CharacterStateEditor from '../../views/AssetsManager/AssetModel/CharacterStateEditor';
 import ReferenceImageManager from '../../views/AssetsManager/AssetModel/ReferenceImageManager';
 import PropStyleConfigPanel, { PropStyleConfig } from '../../views/AssetsManager/AssetModel/PropStyleConfig';
@@ -59,6 +60,7 @@ const ASSET_TYPE_CONFIG: Record<string, { label: string; icon: React.ReactNode; 
 const AssetEditor: React.FC<AssetEditorProps> = ({ tabId, assetType, initialData, onClose, scenes = [], onSelectScene }) => {
   const { showToast } = useToast();
   const { confirm } = useConfirm();
+  const { openPreview } = usePreview();
   const [formData, setFormData] = useState<any>(initialData || {});
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState<string>('basic');
@@ -1154,110 +1156,204 @@ const AssetEditor: React.FC<AssetEditorProps> = ({ tabId, assetType, initialData
       { value: 'unisex', label: '通用' }
     ];
 
+    // 收集所有可用的预览图片
+    const previewImages = [
+      formData.image_url,
+      formData.front_view_url,
+      formData.side_view_url,
+      formData.back_view_url,
+    ].filter(Boolean) as string[];
+
+    const hasPreviewImage = previewImages.length > 0;
+
+    const handlePreviewClick = (index: number) => {
+      const slides = previewImages.map((url, i) => ({
+        src: url,
+        alt: i === 0 && formData.image_url === url
+          ? `${formData.name || '服装'} - 设定图`
+          : i === 0 && formData.front_view_url === url
+          ? `${formData.name || '服装'} - 正面`
+          : url === formData.side_view_url
+          ? `${formData.name || '服装'} - 侧面`
+          : url === formData.back_view_url
+          ? `${formData.name || '服装'} - 背面`
+          : `${formData.name || '服装'} - 预览`,
+      }));
+      openPreview(slides, index);
+    };
+
     return (
-      <div className="space-y-6">
-        {/* 服装图片展示 */}
-        {(formData.image_url || formData.front_view_url) && (
-          <div className="space-y-2">
-            <h4 className="text-sm font-semibold text-slate-400">服装预览</h4>
-            <div className="relative rounded-lg overflow-hidden border border-slate-600/50 bg-slate-800/40">
-              <img
-                src={formData.image_url || formData.front_view_url}
-                alt={formData.name || '服装预览'}
-                className="w-full h-48 object-contain"
+      <Tabs
+        selectedKey={activeTab}
+        onSelectionChange={(key) => setActiveTab(key as string)}
+        classNames={{
+          tabList: "bg-slate-800/60 border border-slate-700/50",
+          tab: "text-slate-400 data-[selected=true]:text-slate-100",
+          cursor: "bg-purple-500/20",
+          panel: "py-4"
+        }}
+      >
+        <Tab key="basic" title={<div className="flex items-center gap-1.5"><Settings className="w-4 h-4" /><span>基础信息</span></div>}>
+          <div className="space-y-6">
+            <div className="space-y-3">
+              <h4 className="text-sm font-semibold text-slate-400">基本信息</h4>
+              <Input
+                label="服装名称"
+                placeholder="输入服装名称"
+                value={formData.name || ''}
+                onValueChange={(value) => setFormData({ ...formData, name: value })}
+                classNames={{
+                  input: "bg-transparent text-slate-100",
+                  label: "text-slate-400 font-medium",
+                  inputWrapper: "bg-slate-800/60 border border-slate-600/50 hover:border-blue-500/50 shadow-sm"
+                }}
+              />
+              <Textarea
+                label="服装描述"
+                placeholder="描述这件服装的特点、风格等"
+                value={formData.description || ''}
+                onValueChange={(value) => setFormData({ ...formData, description: value })}
+                minRows={3}
+                classNames={{
+                  input: "bg-transparent text-slate-100",
+                  label: "text-slate-400 font-medium",
+                  inputWrapper: "bg-slate-800/60 border border-slate-600/50 hover:border-blue-500/50 shadow-sm"
+                }}
               />
             </div>
+            <div className="space-y-3">
+              <h4 className="text-sm font-semibold text-slate-400">分类配置</h4>
+              <div className="grid grid-cols-2 gap-4">
+                <Select
+                  label="服装分类"
+                  placeholder="选择分类"
+                  selectedKeys={formData.category ? [formData.category] : []}
+                  onSelectionChange={(keys) => {
+                    const value = Array.from(keys)[0] as CostumeCategory;
+                    setFormData({ ...formData, category: value });
+                  }}
+                  classNames={{
+                    trigger: "bg-slate-800/60 border border-slate-600/50 hover:border-blue-500/50 shadow-sm",
+                    value: "text-slate-100",
+                    label: "text-slate-400 font-medium",
+                    popoverContent: "bg-slate-800 border border-slate-700"
+                  }}
+                >
+                  {COSTUME_CATEGORIES.map((category) => (
+                    <SelectItem key={category} textValue={category}>{category}</SelectItem>
+                  ))}
+                </Select>
+                <Select
+                  label="适用性别"
+                  placeholder="选择性别"
+                  selectedKeys={formData.gender ? [formData.gender] : new Set(['unisex'])}
+                  onSelectionChange={(keys) => {
+                    const value = Array.from(keys)[0] as string;
+                    setFormData({ ...formData, gender: value });
+                  }}
+                  classNames={{
+                    trigger: "bg-slate-800/60 border border-slate-600/50 hover:border-blue-500/50 shadow-sm",
+                    value: "text-slate-100",
+                    label: "text-slate-400 font-medium",
+                    popoverContent: "bg-slate-800 border border-slate-700"
+                  }}
+                >
+                  {genderOptions.map((option) => (
+                    <SelectItem key={option.value} textValue={option.label}>{option.label}</SelectItem>
+                  ))}
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-3">
+              <h4 className="text-sm font-semibold text-slate-400">AI生成提示词</h4>
+              <Textarea
+                label="服装提示词"
+                placeholder="描述服装的具体样式，用于AI生成三视图..."
+                value={formData.outfit_prompt || ''}
+                onValueChange={(value) => setFormData({ ...formData, outfit_prompt: value })}
+                minRows={4}
+                classNames={{
+                  input: "bg-transparent text-slate-100 font-mono text-sm",
+                  label: "text-slate-400 font-medium",
+                  inputWrapper: "bg-slate-800/60 border border-slate-600/50 hover:border-blue-500/50 shadow-sm"
+                }}
+              />
+              <p className="text-xs text-slate-500">
+                此提示词将用于生成服装的三视图。建议使用英文描述，包含服装的颜色、材质、款式等关键词。
+              </p>
+            </div>
           </div>
-        )}
-        <div className="space-y-3">
-          <h4 className="text-sm font-semibold text-slate-400">基本信息</h4>
-          <Input
-            label="服装名称"
-            placeholder="输入服装名称"
-            value={formData.name || ''}
-            onValueChange={(value) => setFormData({ ...formData, name: value })}
-            classNames={{
-              input: "bg-transparent text-slate-100",
-              label: "text-slate-400 font-medium",
-              inputWrapper: "bg-slate-800/60 border border-slate-600/50 hover:border-blue-500/50 shadow-sm"
-            }}
-          />
-          <Textarea
-            label="服装描述"
-            placeholder="描述这件服装的特点、风格等"
-            value={formData.description || ''}
-            onValueChange={(value) => setFormData({ ...formData, description: value })}
-            minRows={3}
-            classNames={{
-              input: "bg-transparent text-slate-100",
-              label: "text-slate-400 font-medium",
-              inputWrapper: "bg-slate-800/60 border border-slate-600/50 hover:border-blue-500/50 shadow-sm"
-            }}
-          />
-          {/* 图片URL字段隐藏，通过AI生成或外部系统设置 */}
-        </div>
-        <div className="space-y-3">
-          <h4 className="text-sm font-semibold text-slate-400">分类配置</h4>
-          <div className="grid grid-cols-2 gap-4">
-            <Select
-              label="服装分类"
-              placeholder="选择分类"
-              selectedKeys={formData.category ? [formData.category] : []}
-              onSelectionChange={(keys) => {
-                const value = Array.from(keys)[0] as CostumeCategory;
-                setFormData({ ...formData, category: value });
-              }}
-              classNames={{
-                trigger: "bg-slate-800/60 border border-slate-600/50 hover:border-blue-500/50 shadow-sm",
-                value: "text-slate-100",
-                label: "text-slate-400 font-medium",
-                popoverContent: "bg-slate-800 border border-slate-700"
-              }}
-            >
-              {COSTUME_CATEGORIES.map((category) => (
-                <SelectItem key={category} textValue={category}>{category}</SelectItem>
-              ))}
-            </Select>
-            <Select
-              label="适用性别"
-              placeholder="选择性别"
-              selectedKeys={formData.gender ? [formData.gender] : new Set(['unisex'])}
-              onSelectionChange={(keys) => {
-                const value = Array.from(keys)[0] as string;
-                setFormData({ ...formData, gender: value });
-              }}
-              classNames={{
-                trigger: "bg-slate-800/60 border border-slate-600/50 hover:border-blue-500/50 shadow-sm",
-                value: "text-slate-100",
-                label: "text-slate-400 font-medium",
-                popoverContent: "bg-slate-800 border border-slate-700"
-              }}
-            >
-              {genderOptions.map((option) => (
-                <SelectItem key={option.value} textValue={option.label}>{option.label}</SelectItem>
-              ))}
-            </Select>
+        </Tab>
+        <Tab key="preview" title={<div className="flex items-center gap-1.5"><ImageIcon className="w-4 h-4" /><span>服装预览</span></div>}>
+          <div className="space-y-4">
+            {hasPreviewImage ? (
+              <>
+                {/* 主预览图 */}
+                <div
+                  className="relative group cursor-zoom-in rounded-lg border border-slate-700/50 overflow-hidden bg-slate-800/40"
+                  onClick={() => handlePreviewClick(0)}
+                >
+                  <img
+                    src={previewImages[0]}
+                    alt={formData.name || '服装预览'}
+                    className="w-full h-56 object-contain"
+                  />
+                  <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                    <ZoomIn className="w-6 h-6 text-white" />
+                  </div>
+                  <div className="absolute bottom-2 left-2 px-2 py-0.5 rounded bg-black/60 text-[10px] text-white">
+                    {previewImages[0] === formData.image_url ? '设定图' : '正面'}
+                  </div>
+                </div>
+
+                {/* 多视角缩略图 */}
+                {previewImages.length > 1 && (
+                  <div className="grid grid-cols-3 gap-2">
+                    {previewImages.slice(1).map((url, idx) => {
+                      const label = url === formData.front_view_url
+                        ? '正面'
+                        : url === formData.side_view_url
+                        ? '侧面'
+                        : url === formData.back_view_url
+                        ? '背面'
+                        : `视角 ${idx + 2}`;
+                      return (
+                        <div
+                          key={url}
+                          className="relative group cursor-zoom-in rounded-lg border border-slate-700/50 overflow-hidden bg-slate-800/40 aspect-square"
+                          onClick={() => handlePreviewClick(idx + 1)}
+                        >
+                          <img
+                            src={url}
+                            alt={label}
+                            className="w-full h-full object-cover"
+                          />
+                          <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                            <ZoomIn className="w-5 h-5 text-white" />
+                          </div>
+                          <div className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded bg-black/60 text-[10px] text-white">
+                            {label}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                <p className="text-xs text-slate-500 text-center">
+                  点击图片可放大预览，支持滚轮缩放与拖拽平移
+                </p>
+              </>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-12 text-slate-500">
+                <Shirt className="w-12 h-12 mb-3 opacity-30" />
+                <p className="text-sm">暂无服装预览图</p>
+                <p className="text-xs mt-1 opacity-60">请在资源面板中生成服装设定图</p>
+              </div>
+            )}
           </div>
-        </div>
-        <div className="space-y-3">
-          <h4 className="text-sm font-semibold text-slate-400">AI生成提示词</h4>
-          <Textarea
-            label="服装提示词"
-            placeholder="描述服装的具体样式，用于AI生成三视图..."
-            value={formData.outfit_prompt || ''}
-            onValueChange={(value) => setFormData({ ...formData, outfit_prompt: value })}
-            minRows={4}
-            classNames={{
-              input: "bg-transparent text-slate-100 font-mono text-sm",
-              label: "text-slate-400 font-medium",
-              inputWrapper: "bg-slate-800/60 border border-slate-600/50 hover:border-blue-500/50 shadow-sm"
-            }}
-          />
-          <p className="text-xs text-slate-500">
-            此提示词将用于生成服装的三视图。建议使用英文描述，包含服装的颜色、材质、款式等关键词。
-          </p>
-        </div>
-      </div>
+        </Tab>
+      </Tabs>
     );
   };
 

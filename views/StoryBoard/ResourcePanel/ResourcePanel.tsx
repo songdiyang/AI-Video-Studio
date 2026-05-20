@@ -16,14 +16,14 @@ import CreateAssetModal, { CreateAssetType } from './CreateAssetModal';
 import { useResourceModals } from './useResourceModals';
 import { Character } from './types';
 import { getAuthToken } from '../../../services/auth';
-import { deleteCharacter, uploadCharacterImage, extractPropsFromScript } from '../../../services/assets';
+import { deleteCharacter, uploadCharacterImage, extractPropsFromScript, deleteProp } from '../../../services/assets';
 import {
   extractStudioComponentsFromScript, composeStudiosFromScript,
-  generateStudioNineGrid,
+  generateStudioNineGrid, deleteStudio,
 } from '../../../services/studios';
-import { listEnvironments, generateEnvironmentImage } from '../../../services/environments';
-import { listBuildings, generateBuildingImage } from '../../../services/buildings';
-import { fetchCostumes, generateCostumeViews } from '../../../services/costumes';
+import { listEnvironments, generateEnvironmentImage, deleteEnvironment } from '../../../services/environments';
+import { listBuildings, generateBuildingImage, deleteBuilding } from '../../../services/buildings';
+import { fetchCostumes, generateCostumeViews, deleteCostume } from '../../../services/costumes';
 import type { Environment } from '../../../services/environments';
 import type { Building } from '../../../services/buildings';
 import type { Costume } from '../../../services/costumes';
@@ -393,6 +393,106 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
     }
   };
 
+  // === 影棚右键删除 ===
+  const handleDeleteStudioFromCard = async (scene: Scene) => {
+    const ok = await confirm({
+      title: '删除影棚',
+      message: `确定要删除影棚「${scene.name}」吗？此操作不可撤销。`,
+      confirmText: '删除',
+      cancelText: '取消',
+      type: 'danger',
+    });
+    if (!ok) return;
+    try {
+      await deleteStudio(scene.id);
+      showToast('影棚已删除', 'success');
+      await loadScenes();
+    } catch (error: any) {
+      showToast('删除失败: ' + (error?.message || '未知错误'), 'error');
+    }
+  };
+
+  // === 道具右键删除 ===
+  const handleDeletePropFromCard = async (prop: import('./types').PropItem) => {
+    if (!prop.id) return;
+    const ok = await confirm({
+      title: '删除道具',
+      message: `确定要删除道具「${prop.name}」吗？此操作不可撤销。`,
+      confirmText: '删除',
+      cancelText: '取消',
+      type: 'danger',
+    });
+    if (!ok) return;
+    try {
+      await deleteProp(prop.id);
+      showToast('道具已删除', 'success');
+      onRefreshProps?.();
+    } catch (error: any) {
+      showToast('删除失败: ' + (error?.message || '未知错误'), 'error');
+    }
+  };
+
+  // === 环境右键删除 ===
+  const handleDeleteEnvironmentFromCard = async (env: Environment) => {
+    const ok = await confirm({
+      title: '删除环境',
+      message: `确定要删除环境「${env.name}」吗？此操作不可撤销。`,
+      confirmText: '删除',
+      cancelText: '取消',
+      type: 'danger',
+    });
+    if (!ok) return;
+    try {
+      await deleteEnvironment(env.id);
+      showToast('环境已删除', 'success');
+      await loadEnvironments();
+      // 广播事件通知 AssetEditor 等组件
+      window.dispatchEvent(new CustomEvent('environment:deleted', { detail: { environmentId: env.id } }));
+    } catch (error: any) {
+      showToast('删除失败: ' + (error?.message || '未知错误'), 'error');
+    }
+  };
+
+  // === 建筑右键删除 ===
+  const handleDeleteBuildingFromCard = async (b: Building) => {
+    const ok = await confirm({
+      title: '删除建筑',
+      message: `确定要删除建筑「${b.name}」吗？此操作不可撤销。`,
+      confirmText: '删除',
+      cancelText: '取消',
+      type: 'danger',
+    });
+    if (!ok) return;
+    try {
+      await deleteBuilding(b.id);
+      showToast('建筑已删除', 'success');
+      await loadBuildings();
+      // 广播事件通知 AssetEditor 等组件
+      window.dispatchEvent(new CustomEvent('building:deleted', { detail: { buildingId: b.id } }));
+    } catch (error: any) {
+      showToast('删除失败: ' + (error?.message || '未知错误'), 'error');
+    }
+  };
+
+  // === 服装右键删除 ===
+  const handleDeleteCostumeFromCard = async (costume: Costume) => {
+    const ok = await confirm({
+      title: '删除服装',
+      message: `确定要删除服装「${costume.name}」吗？此操作不可撤销。`,
+      confirmText: '删除',
+      cancelText: '取消',
+      type: 'danger',
+    });
+    if (!ok) return;
+    try {
+      await deleteCostume(costume.id);
+      showToast('服装已删除', 'success');
+      await loadCostumes();
+    } catch (error: any) {
+      showToast('删除失败: ' + (error?.message || '未知错误'), 'error');
+    }
+  };
+
   const handleGenerateSceneImage = async (sceneId: number, imageModelName?: string, options?: { customPromptA?: string; customPromptB?: string }) => {
     const modelName = imageModelName || effectiveImageModel;
     try {
@@ -530,7 +630,7 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
                 <p className="text-sm">加载影棚中...</p>
               </div>
             ) : (
-              <LocationsTab scenes={dbScenes} />
+              <LocationsTab scenes={dbScenes} onDelete={handleDeleteStudioFromCard} />
             )}
           </>
         )}
@@ -541,6 +641,7 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
             isExtracting={isExtractingProps}
             onExtractFromScript={scriptId ? handleExtractPropsFromScript : undefined}
             imageModel={effectiveImageModel}
+            onDelete={handleDeletePropFromCard}
           />
         )}
 
@@ -548,6 +649,7 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
           <EnvironmentsTab
             environments={dbEnvironments}
             isLoading={isLoadingEnvironments}
+            onDelete={handleDeleteEnvironmentFromCard}
           />
         )}
 
@@ -555,6 +657,7 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
           <BuildingsTab
             buildings={dbBuildings}
             isLoading={isLoadingBuildings}
+            onDelete={handleDeleteBuildingFromCard}
           />
         )}
 
@@ -577,6 +680,7 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
                 showToast('启动失败: ' + (error?.message || '未知错误'), 'error');
               }
             }}
+            onDelete={handleDeleteCostumeFromCard}
           />
         )}
       </div>

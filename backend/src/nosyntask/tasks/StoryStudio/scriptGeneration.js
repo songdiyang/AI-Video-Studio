@@ -58,18 +58,13 @@ async function handleScriptGeneration(inputParams, onProgress) {
       );
       scriptId = existingScript.id;
     } else if (existingScript.status === 'completed') {
-      // 已完成 → 创建新集数（递推）
-      const maxEp = await queryOne(
-        'SELECT MAX(episode_number) as max_ep FROM scripts WHERE project_id = ?',
-        [projectId]
+      // 已完成 → 用户要求重新生成，覆盖原有剧本（与前端路由层行为一致）
+      console.log(`[ScriptGeneration] 第${targetEpisode}集已完成，覆盖重写`);
+      await execute(
+        'UPDATE scripts SET status = ?, title = ?, content = ?, updated_at = NOW() WHERE id = ?',
+        ['generating', title || `第${targetEpisode}集`, '', existingScript.id]
       );
-      const nextEp = (maxEp?.max_ep || targetEpisode) + 1;
-      console.log(`[ScriptGeneration] 第${targetEpisode}集已完成，自动递推到第${nextEp}集`);
-      const insResult = await execute(
-        'INSERT INTO scripts (user_id, project_id, episode_number, title, content, status) VALUES (?, ?, ?, ?, ?, ?)',
-        [effectiveUserId, projectId, nextEp, title || `第${nextEp}集`, '', 'generating']
-      );
-      scriptId = insResult.insertId;
+      scriptId = existingScript.id;
     } else {
       throw new Error(`第${targetEpisode}集已存在（状态：${existingScript.status}），无法生成`);
     }
@@ -221,12 +216,9 @@ ${userPrompt}`;
 
   if (onProgress) onProgress(90);
 
-  // ── 后处理：保存内容到 scripts 表 ──
-  await execute(
-    'UPDATE scripts SET content = ?, model_provider = ?, token_used = ?, status = ?, updated_at = NOW() WHERE id = ?',
-    [result.content, result._model?.provider || 'unknown', result.tokens || 0, 'completed', scriptId]
-  );
-  console.log(`[ScriptGeneration] 已保存剧本: scriptId=${scriptId}, tokens=${result.tokens || 0}`);
+  // ── 后处理：不再直接写库，由 save-from-workflow 统一回写 ──
+  // 工作流引擎只负责生成内容，将结果存入 result_data 供前端回调使用
+  console.log(`[ScriptGeneration] 剧本生成完成: scriptId=${scriptId}, tokens=${result.tokens || 0}，等待 save-from-workflow 回写`);
 
   return {
     content: result.content,

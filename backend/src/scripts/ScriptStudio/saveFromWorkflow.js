@@ -140,8 +140,14 @@ async function saveFromWorkflow(req, res) {
 
     // 更新剧本内容和状态
     await execute(
-      'UPDATE scripts SET content = ?, model_provider = ?, token_used = ?, status = ?, updated_at = NOW() WHERE id = ?', 
+      'UPDATE scripts SET content = ?, model_provider = ?, token_used = ?, status = ?, updated_at = NOW() WHERE id = ?',
       [content, provider, tokens, 'completed', scriptId]
+    );
+
+    // 获取更新后的剧本信息（包括可能被递推后的 episode_number）
+    const updatedScript = await queryOne(
+      'SELECT id, project_id, episode_number, title, content FROM scripts WHERE id = ?',
+      [scriptId]
     );
 
     console.log('[Save Script from Workflow] 保存成功:', { scriptId, tokens, provider });
@@ -149,7 +155,10 @@ async function saveFromWorkflow(req, res) {
     res.json({
       success: true,
       scriptId,
-      episodeNumber: script.episode_number,
+      episodeNumber: updatedScript?.episode_number || script.episode_number,
+      project_id: updatedScript?.project_id || script.project_id,
+      title: updatedScript?.title || '',
+      content: updatedScript?.content || content,
       message: '剧本保存成功'
     });
   } catch (error) {

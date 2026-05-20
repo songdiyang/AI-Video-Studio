@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardBody, Button, Input, Textarea, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure, Chip, Spinner } from '@heroui/react';
-import { FolderOpen, Plus, Edit, Trash2, Search, BookOpen, Clock, Palette, Sparkles, ImagePlus, Globe, Upload, Users, Crop } from 'lucide-react';
+import { FolderOpen, Plus, Edit, Trash2, Search, BookOpen, Clock, Palette, Sparkles, ImagePlus, Globe, Upload, Users, Crop, ExternalLink, Settings } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Project, fetchProjects, createProject, updateProject, deleteProject, UserStylePreset, fetchMyStyles, createMyStyle, updateMyStyle, deleteMyStyle } from '../services/projects';
 import { Team, fetchTeams } from '../services/collaboration';
@@ -75,7 +75,45 @@ const Projects: React.FC = () => {
   const [cropperOpen, setCropperOpen] = useState(false);
   const [cropperSource, setCropperSource] = useState<string>('');
   const [showQuickStart, setShowQuickStart] = useState(false);
-  
+
+  // 右键菜单状态
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; project: Project } | null>(null);
+
+  useEffect(() => {
+    const handleClick = () => setContextMenu(null);
+    window.addEventListener('click', handleClick);
+    return () => window.removeEventListener('click', handleClick);
+  }, []);
+
+  const handleProjectContextMenu = (e: React.MouseEvent, project: Project) => {
+    e.preventDefault();
+    // 只有 owner/admin 可以删除
+    const canDelete = !project.my_role || project.my_role === 'owner' || project.my_role === 'admin';
+    if (!canDelete) return;
+    setContextMenu({ x: e.clientX, y: e.clientY, project });
+  };
+
+  const handleDeleteFromContextMenu = async () => {
+    if (!contextMenu) return;
+    const project = contextMenu.project;
+    setContextMenu(null);
+    await handleDelete(project.id);
+  };
+
+  const handleEditFromContextMenu = () => {
+    if (!contextMenu) return;
+    const project = contextMenu.project;
+    setContextMenu(null);
+    handleEdit(project);
+  };
+
+  const handleEnterFromContextMenu = () => {
+    if (!contextMenu) return;
+    const project = contextMenu.project;
+    setContextMenu(null);
+    handleEnterProject(project);
+  };
+
   // 我的风格
   const [myStyles, setMyStyles] = useState<UserStylePreset[]>([]);
   const myStylesDisclosure = useDisclosure();
@@ -754,6 +792,7 @@ const Projects: React.FC = () => {
                       <Card 
                         className="pro-card cursor-pointer group h-full"
                         onDoubleClick={() => handleEnterProject(project)}
+                        onContextMenu={(e) => handleProjectContextMenu(e, project)}
                       >
                         <CardBody className="p-0 h-full flex flex-col">
                           {/* 封面区域 */}
@@ -846,6 +885,7 @@ const Projects: React.FC = () => {
                 key={project.id} 
                 className="pro-card cursor-pointer group"
                 onDoubleClick={() => handleEnterProject(project)}
+                onContextMenu={(e) => handleProjectContextMenu(e, project)}
               >
                 <CardBody className="p-0">
                   {/* 封面区域 */}
@@ -923,6 +963,83 @@ const Projects: React.FC = () => {
                 </CardBody>
               </Card>
             ))}
+          </div>
+        )}
+
+        {/* 右键菜单 */}
+        {contextMenu && (
+          <div
+            className="fixed z-50 bg-(--bg-card) border border-(--border-color) rounded-lg shadow-xl py-1.5 min-w-[180px] select-none"
+            style={{ top: contextMenu.y, left: contextMenu.x }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* 打开 */}
+            <button
+              className="w-full text-left px-3 py-1.5 text-sm text-(--text-primary) hover:bg-(--accent)/10 flex items-center gap-2.5 transition-colors"
+              onClick={handleEnterFromContextMenu}
+            >
+              <ExternalLink className="w-4 h-4 text-(--accent)" />
+              打开工程
+            </button>
+
+            {/* 编辑 */}
+            {(!contextMenu.project.my_role || contextMenu.project.my_role !== 'viewer') && (
+              <button
+                className="w-full text-left px-3 py-1.5 text-sm text-(--text-primary) hover:bg-(--accent)/10 flex items-center gap-2.5 transition-colors"
+                onClick={handleEditFromContextMenu}
+              >
+                <Settings className="w-4 h-4 text-(--text-secondary)" />
+                工程设置
+              </button>
+            )}
+
+            {/* 分割线 */}
+            <div className="my-1 border-t border-(--border-color)" />
+
+            {/* 删除 */}
+            {(!contextMenu.project.my_role || contextMenu.project.my_role === 'owner' || contextMenu.project.my_role === 'admin') && (
+              <button
+                className="w-full text-left px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 flex items-center gap-2.5 transition-colors"
+                onClick={handleDeleteFromContextMenu}
+              >
+                <Trash2 className="w-4 h-4" />
+                删除工程
+              </button>
+            )}
+
+            {/* 底部快捷栏 */}
+            <div className="mt-1.5 pt-1.5 border-t border-(--border-color) px-2 pb-1">
+              <div className="flex items-center justify-around">
+                <button
+                  className="flex flex-col items-center gap-0.5 p-1.5 rounded hover:bg-(--accent)/10 transition-colors"
+                  onClick={handleEnterFromContextMenu}
+                  title="打开"
+                >
+                  <ExternalLink className="w-4 h-4 text-(--accent)" />
+                  <span className="text-[10px] text-(--text-muted)">打开</span>
+                </button>
+                {(!contextMenu.project.my_role || contextMenu.project.my_role !== 'viewer') && (
+                  <button
+                    className="flex flex-col items-center gap-0.5 p-1.5 rounded hover:bg-(--accent)/10 transition-colors"
+                    onClick={handleEditFromContextMenu}
+                    title="设置"
+                  >
+                    <Settings className="w-4 h-4 text-(--text-secondary)" />
+                    <span className="text-[10px] text-(--text-muted)">设置</span>
+                  </button>
+                )}
+                {(!contextMenu.project.my_role || contextMenu.project.my_role === 'owner' || contextMenu.project.my_role === 'admin') && (
+                  <button
+                    className="flex flex-col items-center gap-0.5 p-1.5 rounded hover:bg-red-500/10 transition-colors"
+                    onClick={handleDeleteFromContextMenu}
+                    title="删除"
+                  >
+                    <Trash2 className="w-4 h-4 text-red-400" />
+                    <span className="text-[10px] text-red-400">删除</span>
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
         )}
 

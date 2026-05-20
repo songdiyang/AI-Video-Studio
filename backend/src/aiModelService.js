@@ -677,6 +677,14 @@ async function callAIModel(modelName, params = {}, apiKey = null) {
         console.log('[AI Model] Response Text (first 500 chars):', responseText.substring(0, 500));
       }
 
+      // 非 JSON 响应提前检测（如 HTML 错误页面）
+      const responseContentType = response.headers.get('content-type') || 'unknown';
+      const isHtmlResponse = responseText.trim().startsWith('<') || responseContentType.includes('text/html');
+      if (isHtmlResponse) {
+        console.error(`[AI Model] API 返回 HTML 而非 JSON: HTTP ${response.status}, Content-Type: ${responseContentType}, 内容: ${responseText.substring(0, 500)}`);
+        throw new Error(`API 返回 HTML 页面而非 JSON (HTTP ${response.status})，可能是网关错误、WAF 拦截或端点配置错误。响应内容: ${responseText.substring(0, 200)}`);
+      }
+
       // 尝试解析 JSON
       try {
         data = JSON.parse(responseText);
@@ -691,7 +699,8 @@ async function callAIModel(modelName, params = {}, apiKey = null) {
       }
 
       if (!response.ok) {
-        throw new Error(data.error?.message || `API 调用失败: ${response.status}`);
+        const errorMsg = data?.error?.message || data?.message || data?.msg || `API 调用失败: ${response.status}`;
+        throw new Error(errorMsg);
       }
     } catch (fetchError) {
       clearTimeout(timeout);
@@ -820,7 +829,11 @@ async function queryAIModel(modelName, params = {}, apiKey = null) {
     const url = renderWithFallback('string', model.query_url_template, runtimeParams, defaultParams, 'query_url');
 
     // 两轮渲染查询 Headers
-    const queryHeadersTemplate = parseJsonField(model.query_headers_template, {});
+    let queryHeadersTemplate = parseJsonField(model.query_headers_template, {});
+    // 兜底：如果查询 headers 模板为空但有 apiKey，自动添加 Authorization
+    if ((!queryHeadersTemplate || Object.keys(queryHeadersTemplate).length === 0) && apiKey) {
+      queryHeadersTemplate = { 'Authorization': 'Bearer {{apiKey}}' };
+    }
     const headers = renderWithFallback('json', queryHeadersTemplate, runtimeParams, defaultParams, 'query_headers');
 
     // 构建请求
@@ -909,6 +922,10 @@ async function queryAIModel(modelName, params = {}, apiKey = null) {
     
     // === 默认模板 fetch 流程 ===
     console.log(`[AI Model Query] Querying ${modelName}:`, url);
+    console.log(`[AI Model Query] Query method: ${queryMethod}, headers keys:`, Object.keys(headers));
+    if (requestOptions.body) {
+      console.log(`[AI Model Query] Query body:`, requestOptions.body.substring ? requestOptions.body.substring(0, 500) : JSON.stringify(requestOptions.body).substring(0, 500));
+    }
 
     // 添加超时控制（从 default_params.queryTimeout 读取，默认60秒）
     const controller = new AbortController();
@@ -919,7 +936,24 @@ async function queryAIModel(modelName, params = {}, apiKey = null) {
     try {
       const response = await fetchWithRetry(url, { ...requestOptions, signal: controller.signal }, `AI 模型 ${modelName} 查询请求`);
       clearTimeout(timeout);
-      data = await response.json();
+
+      const responseText = await response.text();
+
+      // 非 JSON 响应提前检测（如 HTML 错误页面）
+      const responseContentType = response.headers.get('content-type') || 'unknown';
+      const isHtmlResponse = responseText.trim().startsWith('<') || responseContentType.includes('text/html');
+      if (isHtmlResponse) {
+        console.error(`[AI Model Query] API 返回 HTML 而非 JSON: HTTP ${response.status}, Content-Type: ${responseContentType}, 内容: ${responseText.substring(0, 500)}`);
+        throw new Error(`API 返回 HTML 页面而非 JSON (HTTP ${response.status})，可能是网关错误、WAF 拦截或端点配置错误。响应内容: ${responseText.substring(0, 200)}`);
+      }
+
+      try {
+        data = JSON.parse(responseText);
+      } catch (parseError) {
+        console.error('[AI Model Query] JSON Parse Error:', parseError.message);
+        console.error('[AI Model Query] Raw Response:', responseText);
+        throw new Error(`API 返回的不是有效的 JSON 格式。响应内容: ${responseText.substring(0, 200)}...`);
+      }
     } catch (fetchError) {
       clearTimeout(timeout);
       if (fetchError.name === 'AbortError') {
@@ -931,6 +965,7 @@ async function queryAIModel(modelName, params = {}, apiKey = null) {
     if (isDebug) {
       console.log('[AI Model Query] Response:', JSON.stringify(data, null, 2));
     }
+    console.log(`[AI Model Query] Query response parsed for ${modelName}:`, JSON.stringify(data, null, 2));
 
     // 使用查询响应映射
     const queryResponseMapping = parseJsonField(model.query_response_mapping);

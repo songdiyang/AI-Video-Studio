@@ -116,6 +116,7 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
     if (scriptId) {
       loadStoryboards(scriptId);
     } else if (projectId) {
+      // 自由分镜模式：后端自动查找/创建隐式剧本后返回分镜数据
       loadStandaloneStoryboards(projectId, effectiveEpisode);
     } else {
       setScenes([]);
@@ -461,7 +462,7 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
                 'Content-Type': 'application/json',
                 ...(token ? { Authorization: `Bearer ${token}` } : {})
               },
-              body: JSON.stringify({ projectId, order: reorderBody })
+              body: JSON.stringify({ projectId, episodeNumber: effectiveEpisode, order: reorderBody })
             }).then(() => {
               console.log('[useSceneManager] 自由分镜顺序已重新排序');
             }).catch(err => {

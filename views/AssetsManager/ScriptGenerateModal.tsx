@@ -214,6 +214,15 @@ const ScriptGenerateModal: React.FC<ScriptGenerateModalProps> = ({
           console.warn('[ScriptGenerateModal] 回拉剧本内容失败（不影响成功提示）:', e);
         }
 
+        // 触发剧本列表刷新事件，确保所有监听组件同步更新
+        const pid = Number(projectId);
+        const epi = Number(data.episodeNumber);
+        if (pid && epi) {
+          window.dispatchEvent(new CustomEvent('reload-scripts', {
+            detail: { projectId: pid, episodeNumber: epi }
+          }));
+        }
+
         onSuccess?.(payload);
         onOpenChange(false);
       } catch (err: any) {

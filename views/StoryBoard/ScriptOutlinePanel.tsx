@@ -7,8 +7,9 @@
  */
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { ChevronRight, ChevronDown, FileText, Clapperboard, MessageSquare, Globe, Link2, Link2Off, Plus, Search, CheckCircle2, X, Sparkles, Upload, Pencil } from 'lucide-react';
-import { fetchScriptLibrary, type ScriptLibraryItem } from '../../services/scripts';
+import { ChevronRight, ChevronDown, FileText, Clapperboard, MessageSquare, Globe, Link2, Link2Off, Plus, Search, CheckCircle2, X, Sparkles, Upload, Pencil, Trash2 } from 'lucide-react';
+import { fetchScriptLibrary, deleteScript, type ScriptLibraryItem } from '../../services/scripts';
+import { useToast } from '../../contexts/ToastContext';
 
 // ==================== 类型 ====================
 
@@ -31,6 +32,10 @@ interface ScriptOutlinePanelProps {
   episodeNumber?: number;
   /** 当前剧本 ID，用于打开编辑标签页 */
   scriptId?: number | null;
+  /** 项目下的所有剧本列表 */
+  scripts?: { id: number; episode_number: number; title: string; status: string }[];
+  /** 切换剧本回调 */
+  onSelectScript?: (script: { id: number; episode_number: number; title: string }) => void;
   /** 是否允许在面板内选择参考剧本（弱绑定） */
   canPick?: boolean;
   /**
@@ -43,6 +48,116 @@ interface ScriptOutlinePanelProps {
   /** 请求生成新剧本（弱绑定参考剧本场景），由父组件打开 ScriptGenerateModal */
   onCreateNewScript?: () => void;
 }
+
+// ==================== 剧本列表组件 ====================
+
+interface ScriptListProps {
+  scripts: { id: number; episode_number: number; title: string; status: string }[];
+  scriptId?: number | null;
+  projectId?: number | null;
+  onSelectScript?: (script: { id: number; episode_number: number; title: string }) => void;
+  onDeleteScript?: (scriptId: number, episodeNumber: number) => void;
+}
+
+const ScriptList: React.FC<ScriptListProps> = ({ scripts, scriptId, projectId, onSelectScript, onDeleteScript }) => {
+  const { showToast } = useToast();
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+
+  const handleDelete = async (e: React.MouseEvent, script: { id: number; episode_number: number; title: string }) => {
+    e.stopPropagation();
+    
+    const confirmed = window.confirm(`确定要删除「第${script.episode_number}集 - ${script.title || '剧本'}」吗？\n此操作不可撤销。`);
+    if (!confirmed) return;
+
+    setDeletingId(script.id);
+    try {
+      await deleteScript(script.id);
+      showToast(`已删除第${script.episode_number}集`, 'success');
+      onDeleteScript?.(script.id, script.episode_number);
+    } catch (err) {
+      console.error('删除剧本失败:', err);
+      showToast('删除失败，请重试', 'error');
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  if (scripts.length === 0) {
+    return (
+      <div className="shrink-0 px-2 py-2 border-b border-[var(--border-color)]">
+        <div className="text-[10px] text-[var(--text-muted)] mb-1.5 px-1">项目剧本</div>
+        <div className="px-2 py-3 text-center">
+          <p className="text-xs text-[var(--text-muted)] opacity-50">暂无剧本</p>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="shrink-0 px-2 py-2 border-b border-[var(--border-color)]">
+      <div className="text-[10px] text-[var(--text-muted)] mb-1.5 px-1">项目剧本</div>
+      <div className="space-y-1">
+        {scripts.map((script) => {
+          const isActive = script.id === scriptId;
+          const isDeleting = deletingId === script.id;
+          return (
+            <div
+              key={script.id}
+              className={`group flex items-center gap-1 rounded-md transition-colors ${
+                isActive
+                  ? 'bg-[var(--accent)]/10'
+                  : 'hover:bg-[var(--bg-hover)]'
+              }`}
+            >
+              <button
+                onClick={() => onSelectScript?.(script)}
+                onDoubleClick={() => {
+                  // 双击打开剧本编辑标签页
+                  window.dispatchEvent(new CustomEvent('openScriptGenerateTab', {
+                    detail: {
+                      episodeNumber: script.episode_number,
+                      scriptId: script.id,
+                      scriptTitle: script.title || '',
+                      scriptContent: '',
+                    }
+                  }));
+                }}
+                disabled={isDeleting}
+                className={`flex-1 text-left px-2 py-1.5 text-xs flex items-center gap-2 min-w-0 ${
+                  isActive
+                    ? 'text-[var(--accent)]'
+                    : 'text-[var(--text-primary)]'
+                } ${isDeleting ? 'opacity-50 cursor-not-allowed' : ''}`}
+              >
+                <span className="text-[10px] shrink-0 w-8 text-center py-0.5 rounded bg-[var(--bg-input)]">
+                  第{script.episode_number}集
+                </span>
+                <span className="truncate flex-1">{script.title || `剧本 #${script.id}`}</span>
+                {script.status === 'generating' && (
+                  <span className="text-[10px] text-amber-400 shrink-0">生成中</span>
+                )}
+                {script.status === 'completed' && isActive && (
+                  <CheckCircle2 className="w-3 h-3 shrink-0" />
+                )}
+              </button>
+              <button
+                onClick={(e) => handleDelete(e, script)}
+                disabled={isDeleting}
+                className="shrink-0 p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-red-500/10 hover:text-red-500 transition-all disabled:opacity-30"
+                title={`删除第${script.episode_number}集`}
+              >
+                {isDeleting ? (
+                  <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <Trash2 className="w-3 h-3" />
+                )}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
 
 // ==================== 剧本解析 ====================
 
@@ -371,6 +486,22 @@ const ScriptPicker: React.FC<ScriptPickerProps> = ({ projectId, currentScriptId,
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [keyword, setKeyword] = useState('');
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const { showToast } = useToast();
+
+  const loadItems = () => {
+    setLoading(true);
+    setErr(null);
+    fetchScriptLibrary('all')
+      .then((all) => {
+        const list = all.filter(
+          (s) => s.project_id === projectId || s.project_id === null
+        );
+        setItems(list);
+      })
+      .catch((e) => setErr(e?.message || '加载剧本库失败'))
+      .finally(() => setLoading(false));
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -379,7 +510,6 @@ const ScriptPicker: React.FC<ScriptPickerProps> = ({ projectId, currentScriptId,
     fetchScriptLibrary('all')
       .then((all) => {
         if (cancelled) return;
-        // 项目内的剧本 + 未绑定项目的个人剧本都可侜选择
         const list = all.filter(
           (s) => s.project_id === projectId || s.project_id === null
         );
@@ -389,6 +519,31 @@ const ScriptPicker: React.FC<ScriptPickerProps> = ({ projectId, currentScriptId,
       .finally(() => !cancelled && setLoading(false));
     return () => { cancelled = true; };
   }, [projectId]);
+
+  const handleDelete = async (e: React.MouseEvent, item: ScriptLibraryItem) => {
+    e.stopPropagation();
+    if (deletingId === item.id) return;
+    
+    if (!confirm(`确定要删除剧本「${item.title || '无标题'}」吗？此操作不可恢复。`)) {
+      return;
+    }
+    
+    setDeletingId(item.id);
+    try {
+      await deleteScript(item.id);
+      showToast('剧本已删除', 'success');
+      // 如果删除的是当前选中的剧本，触发解绑
+      if (item.id === currentScriptId) {
+        onSelect(null);
+      }
+      // 重新加载列表
+      loadItems();
+    } catch (err: any) {
+      showToast(err?.message || '删除失败', 'error');
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   const filtered = useMemo(() => {
     const kw = keyword.trim().toLowerCase();
@@ -442,41 +597,55 @@ const ScriptPicker: React.FC<ScriptPickerProps> = ({ projectId, currentScriptId,
           <div className="space-y-1">
             {filtered.map((it) => {
               const isCurrent = it.id === currentScriptId;
+              const isDeleting = deletingId === it.id;
               return (
-                <button
+                <div
                   key={it.id}
-                  onClick={() => onSelect(it)}
-                  className={`w-full text-left px-2 py-2 rounded-md border transition-colors ${
+                  className={`group relative w-full text-left px-2 py-2 rounded-md border transition-colors ${
                     isCurrent
                       ? 'bg-[var(--accent)]/10 border-[var(--accent)]/40'
                       : 'bg-[var(--bg-card)] border-[var(--border-color)] hover:bg-[var(--bg-input)]'
                   }`}
                 >
-                  <div className="flex items-center gap-1.5">
-                    <FileText className="w-3.5 h-3.5 shrink-0 text-[var(--text-muted)]" />
-                    <span className="text-xs font-medium text-[var(--text-primary)] truncate">
-                      {it.title || `无标题剧本 #${it.id}`}
-                    </span>
-                    {isCurrent && <CheckCircle2 className="w-3 h-3 text-[var(--accent)] shrink-0" />}
-                  </div>
-                  <div className="flex items-center gap-2 mt-0.5 ml-5">
-                    {it.project_id ? (
-                      <span className="text-[10px] text-cyan-400">
-                        {it.project_name || `项目 #${it.project_id}`} · 第{it.episode_number}集
+                  <button
+                    onClick={() => onSelect(it)}
+                    className="w-full text-left"
+                  >
+                    <div className="flex items-center gap-1.5 pr-6">
+                      <FileText className="w-3.5 h-3.5 shrink-0 text-[var(--text-muted)]" />
+                      <span className="text-xs font-medium text-[var(--text-primary)] truncate">
+                        {it.title || `无标题剧本 #${it.id}`}
                       </span>
-                    ) : (
-                      <span className="text-[10px] text-amber-400">个人剧本</span>
+                      {isCurrent && <CheckCircle2 className="w-3 h-3 text-[var(--accent)] shrink-0" />}
+                    </div>
+                    <div className="flex items-center gap-2 mt-0.5 ml-5">
+                      {it.project_id ? (
+                        <span className="text-[10px] text-cyan-400">
+                          {it.project_name || `项目 #${it.project_id}`} · 第{it.episode_number}集
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-amber-400">个人剧本</span>
+                      )}
+                      <span className="text-[10px] text-[var(--text-muted)]">
+                        {(it.content || '').length} 字
+                      </span>
+                    </div>
+                    {it.content && (
+                      <p className="text-[10px] text-[var(--text-muted)] mt-1 ml-5 line-clamp-2">
+                        {it.content.slice(0, 80)}
+                      </p>
                     )}
-                    <span className="text-[10px] text-[var(--text-muted)]">
-                      {(it.content || '').length} 字
-                    </span>
-                  </div>
-                  {it.content && (
-                    <p className="text-[10px] text-[var(--text-muted)] mt-1 ml-5 line-clamp-2">
-                      {it.content.slice(0, 80)}
-                    </p>
-                  )}
-                </button>
+                  </button>
+                  {/* 删除按钮 */}
+                  <button
+                    onClick={(e) => handleDelete(e, it)}
+                    disabled={isDeleting}
+                    className="absolute top-1.5 right-1.5 p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-red-500/20 text-[var(--text-muted)] hover:text-red-400 transition-all disabled:opacity-50"
+                    title="删除剧本"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                </div>
               );
             })}
           </div>
@@ -495,6 +664,8 @@ const ScriptOutlinePanel: React.FC<ScriptOutlinePanelProps> = ({
   projectId,
   episodeNumber,
   scriptId,
+  scripts = [],
+  onSelectScript,
   canPick,
   isBoundViaEpisode,
   onPickScript,
@@ -538,7 +709,6 @@ const ScriptOutlinePanel: React.FC<ScriptOutlinePanelProps> = ({
 
   const allowPick = !!canPick && !!onPickScript;
   const allowCreate = !!onCreateNewScript;
-  console.log('[ScriptOutlinePanel] allowCreate:', allowCreate, 'onCreateNewScript:', onCreateNewScript);
 
   if (isLoading) {
     return (
@@ -551,33 +721,41 @@ const ScriptOutlinePanel: React.FC<ScriptOutlinePanelProps> = ({
     );
   }
 
-  // 空态
+  // 空态：显示剧本列表
   if (!scriptContent) {
     return (
-      <div className="relative flex-1 flex items-center justify-center h-full">
-        <div className="text-center px-4">
-          <FileText className="w-10 h-10 mx-auto mb-3 text-[var(--text-muted)] opacity-40" />
-          <p className="text-sm text-[var(--text-muted)]">暂无剧本内容</p>
-          <p className="text-xs text-[var(--text-muted)] mt-1 opacity-60">
-            剧本是 AI 智能分镜的参考，可选
+      <div className="relative flex flex-col h-full overflow-hidden">
+        <ScriptList 
+          scripts={scripts} 
+          scriptId={scriptId} 
+          projectId={projectId}
+          onSelectScript={onSelectScript}
+          onDeleteScript={(_id, episodeNumber) => {
+            // 删除后重新加载剧本列表
+            window.dispatchEvent(new CustomEvent('reload-scripts', {
+              detail: { projectId, episodeNumber }
+            }));
+          }}
+        />
+        <div className="flex-1 flex flex-col items-center justify-center gap-2">
+          <FileText className="w-8 h-8 text-[var(--text-muted)] opacity-30" />
+          <p className="text-xs text-[var(--text-muted)] opacity-60">
+            点击剧本卡片查看内容
           </p>
-          <button
-            onClick={() => {
-              // 打开剧本创作中心标签页
-              window.dispatchEvent(new CustomEvent('openScriptGenerateTab', {
-                detail: { episodeNumber }
-              }));
-            }}
-            className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 rounded-md bg-[var(--accent)] text-white text-xs font-medium hover:opacity-90 transition-opacity"
-            title="AI生成新剧本或上传已有剧本"
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            添加剧本
-          </button>
-          {!allowPick && !allowCreate && (
-            <p className="text-[10px] text-[var(--text-muted)] mt-3 opacity-50">
-              绑定剧本后可在此查看大纲
-            </p>
+          {allowCreate && (
+            <button
+              onClick={() => {
+                // 打开剧本创作中心标签页
+                window.dispatchEvent(new CustomEvent('openScriptGenerateTab', {
+                  detail: { episodeNumber }
+                }));
+              }}
+              className="inline-flex items-center gap-1 px-2 py-1 rounded text-[10px] text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)] transition-colors"
+              title="AI生成新剧本或上传已有剧本"
+            >
+              <Sparkles className="w-3 h-3" />
+              添加剧本
+            </button>
           )}
         </div>
         {pickerOpen && (
@@ -597,6 +775,19 @@ const ScriptOutlinePanel: React.FC<ScriptOutlinePanelProps> = ({
 
   return (
     <div className="relative flex flex-col h-full overflow-hidden">
+      <ScriptList 
+        scripts={scripts} 
+        scriptId={scriptId} 
+        projectId={projectId}
+        onSelectScript={onSelectScript}
+        onDeleteScript={(_id, episodeNumber) => {
+          // 删除后重新加载剧本列表
+          window.dispatchEvent(new CustomEvent('reload-scripts', {
+            detail: { projectId, episodeNumber }
+          }));
+        }}
+      />
+
       {/* 头部信息 */}
       <div className="shrink-0 px-3 py-2 border-b border-[var(--border-color)]">
         <div className="flex items-center gap-2">
@@ -613,18 +804,6 @@ const ScriptOutlinePanel: React.FC<ScriptOutlinePanelProps> = ({
               >
                 <Link2 className="w-3.5 h-3.5" />
               </button>
-              {allowCreate && (
-                <button
-                  onClick={() => {
-                    console.log('[ScriptOutlinePanel] 点击头部生成新剧本按钮，调用 onCreateNewScript');
-                    onCreateNewScript?.();
-                  }}
-                  className="p-1 rounded hover:bg-[var(--bg-input)] text-[var(--text-muted)] hover:text-[var(--accent)] transition-colors"
-                  title="AI 生成新剧本作为参考"
-                >
-                  <Sparkles className="w-3.5 h-3.5" />
-                </button>
-              )}
               <button
                 onClick={() => onPickScript!(null, null)}
                 className="p-1 rounded hover:bg-[var(--bg-input)] text-[var(--text-muted)] hover:text-red-400 transition-colors"
@@ -642,19 +821,28 @@ const ScriptOutlinePanel: React.FC<ScriptOutlinePanelProps> = ({
               项目绑定
             </span>
           )}
+          {allowCreate && (
+            <button
+              onClick={() => {
+                console.log('[ScriptOutlinePanel] 点击生成新剧本按钮，调用 onCreateNewScript');
+                onCreateNewScript?.();
+              }}
+              className="p-1 rounded hover:bg-[var(--bg-input)] text-[var(--text-muted)] hover:text-[var(--accent)] transition-colors"
+              title="AI 生成新剧本"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+            </button>
+          )}
           {scriptId && (
             <button
               onClick={() => {
-                window.dispatchEvent(new CustomEvent('openAssetEditTab', {
+                // 打开统一的剧本创作中心标签页，传入当前剧本数据进入编辑模式
+                window.dispatchEvent(new CustomEvent('openScriptGenerateTab', {
                   detail: {
-                    assetType: 'script',
-                    assetId: scriptId,
-                    assetName: scriptTitle || `剧本 #${scriptId}`,
-                    initialData: {
-                      id: scriptId,
-                      name: scriptTitle || '',
-                      content: scriptContent || '',
-                    },
+                    episodeNumber,
+                    scriptId,
+                    scriptTitle: scriptTitle || '',
+                    scriptContent: scriptContent || '',
                   }
                 }));
               }}
@@ -683,21 +871,17 @@ const ScriptOutlinePanel: React.FC<ScriptOutlinePanelProps> = ({
         )}
       </div>
 
-      {/* 大纲主体：Markdown 剧本按 md 渲染，普通文本走原有树形大纲 */}
+      {/* 左侧只显示剧本列表导航，剧本内容在右侧标签页中显示 */}
       <div className="flex-1 overflow-y-auto px-2 py-2">
-        {isMarkdown ? (
-          <MarkdownOutlineView lines={markdownLines} />
-        ) : outlineNodes.length === 0 ? (
-          <div className="text-center py-8">
-            <p className="text-xs text-[var(--text-muted)]">无法解析大纲结构</p>
-          </div>
-        ) : (
-          <div className="space-y-0.5">
-            {outlineNodes.map((node) => (
-              <OutlineNodeView key={node.id} node={node} depth={0} />
-            ))}
-          </div>
-        )}
+        <div className="flex flex-col items-center justify-center h-full text-center py-8">
+          <FileText className="w-8 h-8 text-[var(--text-muted)] opacity-30 mb-2" />
+          <p className="text-xs text-[var(--text-muted)] opacity-60">
+            剧本内容请在右侧标签页中查看和编辑
+          </p>
+          <p className="text-[10px] text-[var(--text-muted)] opacity-40 mt-1">
+            点击上方编辑按钮打开剧本创作中心
+          </p>
+        </div>
       </div>
 
       {pickerOpen && (

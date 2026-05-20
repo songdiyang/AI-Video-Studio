@@ -83,6 +83,14 @@ module.exports = {
       console.log('[DeepSeek Handler] Response status:', response.status);
       console.log('[DeepSeek Handler] Response preview:', responseText.substring(0, 300));
 
+      // HTML 错误页面提前检测
+      const responseContentType = response.headers.get('content-type') || 'unknown';
+      const isHtmlResponse = responseText.trim().startsWith('<') || responseContentType.includes('text/html');
+      if (isHtmlResponse) {
+        console.error(`[DeepSeek Handler] API 返回 HTML 而非 JSON: HTTP ${response.status}, Content-Type: ${responseContentType}, 内容: ${responseText.substring(0, 500)}`);
+        throw new Error(`API 返回 HTML 页面而非 JSON (HTTP ${response.status})，可能是网关错误、WAF 拦截或端点配置错误。响应内容: ${responseText.substring(0, 200)}`);
+      }
+
       let data;
       try {
         data = JSON.parse(responseText);
@@ -97,7 +105,7 @@ module.exports = {
       }
 
       if (!response.ok) {
-        const errMsg = data.error?.message || data.message || JSON.stringify(data);
+        const errMsg = data?.error?.message || data?.message || JSON.stringify(data);
         throw new Error(`DeepSeek API 错误 (${response.status}): ${errMsg}`);
       }
 

@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Card, CardBody, Chip, Image } from '@heroui/react';
-import { LayoutGrid, Cloud, Building2 } from 'lucide-react';
+import { LayoutGrid, Cloud, Building2, Trash2, ExternalLink, Settings } from 'lucide-react';
 import { Scene } from './useSceneData';
 
 interface LocationsTabProps {
@@ -9,6 +9,8 @@ interface LocationsTabProps {
   selectedId?: number | null;
   /** 点击卡片回调 */
   onSelect?: (scene: Scene) => void;
+  /** 右键删除回调 */
+  onDelete?: (scene: Scene) => void;
 }
 
 const openAssetEditTab = (scene: Scene) => {
@@ -26,7 +28,22 @@ const LocationsTab: React.FC<LocationsTabProps> = ({
   scenes,
   selectedId,
   onSelect,
+  onDelete,
 }) => {
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; scene: Scene } | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClick = () => setContextMenu(null);
+    window.addEventListener('click', handleClick);
+    return () => window.removeEventListener('click', handleClick);
+  }, []);
+
+  const handleContextMenu = (e: React.MouseEvent, scene: Scene) => {
+    e.preventDefault();
+    if (!onDelete) return;
+    setContextMenu({ x: e.clientX, y: e.clientY, scene });
+  };
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between mb-2">
@@ -54,6 +71,7 @@ const LocationsTab: React.FC<LocationsTabProps> = ({
             isPressable
             onPress={() => onSelect?.(scene)}
             onDoubleClick={() => openAssetEditTab(scene)}
+            onContextMenu={(e) => handleContextMenu(e, scene)}
             className={`border transition-all cursor-pointer ${
               isSelected
                 ? 'ring-2 ring-(--accent) border-(--accent)'
@@ -113,6 +131,69 @@ const LocationsTab: React.FC<LocationsTabProps> = ({
           </Card>
         );
       })}
+
+      {/* 右键菜单 */}
+      {contextMenu && (
+        <div
+          ref={menuRef}
+          className="fixed z-50 bg-(--bg-card) border border-(--border-color) rounded-lg shadow-xl py-1.5 min-w-[180px] select-none"
+          style={{ top: contextMenu.y, left: contextMenu.x }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* 打开 */}
+          <button
+            className="w-full text-left px-3 py-1.5 text-sm text-(--text-primary) hover:bg-(--accent)/10 flex items-center gap-2.5 transition-colors"
+            onClick={() => {
+              openAssetEditTab(contextMenu.scene);
+              setContextMenu(null);
+            }}
+          >
+            <ExternalLink className="w-4 h-4 text-(--accent)" />
+            打开详情
+          </button>
+
+          {/* 分割线 */}
+          {onDelete && <div className="my-1 border-t border-(--border-color)" />}
+
+          {/* 删除 */}
+          {onDelete && (
+            <button
+              className="w-full text-left px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 flex items-center gap-2.5 transition-colors"
+              onClick={() => {
+                onDelete(contextMenu.scene);
+                setContextMenu(null);
+              }}
+            >
+              <Trash2 className="w-4 h-4" />
+              删除影棚
+            </button>
+          )}
+
+          {/* 底部快捷栏 */}
+          <div className="mt-1.5 pt-1.5 border-t border-(--border-color) px-2 pb-1">
+            <div className="flex items-center justify-around">
+              <button
+                className="flex flex-col items-center gap-0.5 p-1.5 rounded hover:bg-(--accent)/10 transition-colors"
+                onClick={() => { openAssetEditTab(contextMenu.scene); setContextMenu(null); }}
+                title="打开"
+              >
+                <ExternalLink className="w-4 h-4 text-(--accent)" />
+                <span className="text-[10px] text-(--text-muted)">打开</span>
+              </button>
+              {onDelete && (
+                <button
+                  className="flex flex-col items-center gap-0.5 p-1.5 rounded hover:bg-red-500/10 transition-colors"
+                  onClick={() => { onDelete(contextMenu.scene); setContextMenu(null); }}
+                  title="删除"
+                >
+                  <Trash2 className="w-4 h-4 text-red-400" />
+                  <span className="text-[10px] text-red-400">删除</span>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -13,6 +13,7 @@ export interface Script {
   id: number;
   episode_number: number;
   title: string;
+  content?: string;
   status: string;
 }
 

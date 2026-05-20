@@ -33,6 +33,7 @@ const MODEL_POLL_INTERVALS = {
   // 视频类（通常 60-300s 完成）—— 长间隔
   'Seedance 1.0': { initialMs: 15000, maxMs: 60000 },
   'Seedance 1.0 Pro': { initialMs: 20000, maxMs: 60000 },
+  'Seedance 2.0': { initialMs: 15000, maxMs: 60000 },
   'Kling': { initialMs: 15000, maxMs: 60000 },
   // 多模态理解（通常3-15s完成，同步API为主）
   'Doubao-Seed-2.0-Pro': { initialMs: 3000, maxMs: 15000 },
@@ -140,6 +141,7 @@ class PollManager {
         pollId,
         modelName: params.modelName,
         queryFields: params.queryFields,
+        apiKey: params.apiKey || null,
         intervalMs: params.intervalMs || modelConfig.initialMs,
         currentInterval: params.intervalMs || modelConfig.initialMs,
         maxDurationMs: params.maxDurationMs || 600000,
@@ -253,7 +255,7 @@ class PollManager {
     try {
       // 使用轮询限流池控制并发
       const queryResult = await withPollRateLimit(
-        () => queryAIModel(task.modelName, task.queryFields),
+        () => queryAIModel(task.modelName, task.queryFields, task.apiKey),
         { logTag: task.logTag }
       );
 
@@ -261,6 +263,7 @@ class PollManager {
       task.networkErrors = 0;
 
       console.log(`[${task.logTag}] 第 ${task.pollCount} 次查询, elapsed=${Math.round(elapsed / 1000)}s`);
+      console.log(`[${task.logTag}] 查询原始响应:`, JSON.stringify(queryResult?._raw || queryResult, null, 2));
 
       // 调用结果判断回调
       if (task.onPollResult) {
@@ -275,10 +278,14 @@ class PollManager {
         } else if (result.status === 'failed') {
           task.status = POLL_STATUS.FAILED;
           this.stats.totalFailed++;
+          console.log(`[${task.logTag}] 任务失败: ${task.pollId}, 错误=${result.error}`);
           task.reject(new Error(result.error || '任务失败'));
           this.tasks.delete(task.pollId);
         }
         // pending: 继续等待下次 tick
+        else {
+          console.log(`[${task.logTag}] 任务继续轮询: ${task.pollId}, status=pending, 下次间隔=${task.currentInterval}ms`);
+        }
       }
     } catch (err) {
       // 区分轮询限流超时和网络错误

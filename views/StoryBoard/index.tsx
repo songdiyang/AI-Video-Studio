@@ -23,6 +23,7 @@ import { useAIAssistantUI } from '../../contexts/AIAssistantContext';
 import { useToast } from '../../contexts/ToastContext';
 import { useWorkbench } from '../../contexts/WorkbenchContext';
 import { Project } from '../../services/projects';
+import EpisodeSelector from './EpisodeSelector';
 
 // ===== 默认插件 =====
 import SceneListPlugin from './plugins/scene-list';
@@ -202,7 +203,6 @@ const StoryboardSkeleton: React.FC<StoryboardSkeletonProps> = ({
   return (
     <StoryboardProvider value={contextValue}>
       <div className="h-full flex flex-col bg-(--bg-app)">
-
 
         {/* ===== 无项目提示 ===== */}
         {!state.currentProjectId && (

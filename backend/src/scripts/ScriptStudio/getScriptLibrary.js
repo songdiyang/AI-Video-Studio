@@ -18,7 +18,7 @@ async function getScriptLibrary(req, res) {
   const userId = req.user.id;
   const scope = (req.query.scope || 'all').toString();
 
-  let whereClause = 'WHERE s.user_id = ?';
+  let whereClause = 'WHERE s.user_id = ? AND s.is_implicit = FALSE';
   const params = [userId];
 
   if (scope === 'personal') {

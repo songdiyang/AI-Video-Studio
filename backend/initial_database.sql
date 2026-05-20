@@ -84,9 +84,12 @@ CREATE TABLE IF NOT EXISTS scripts (
   episode_number INT NOT NULL DEFAULT 1 COMMENT '集数编号，从1开始',
   title VARCHAR(255),
   content TEXT NOT NULL,
+  raw_content TEXT COMMENT '原始上传内容（人工上传时保留原样）',
   model_provider VARCHAR(100),
   token_used INT DEFAULT 0,
   status ENUM('generating', 'completed', 'failed') DEFAULT 'completed' COMMENT '生成状态',
+  source_type ENUM('ai_generated', 'manual_upload', 'manual_create', 'implicit') DEFAULT 'manual_create' COMMENT '剧本来源类型：ai_generated=AI生成, manual_upload=人工上传, manual_create=手动创建, implicit=自由分镜隐式剧本',
+  is_implicit BOOLEAN DEFAULT FALSE COMMENT '是否为隐式剧本（自由分镜自动生成，不在剧本库展示）',
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
@@ -96,6 +99,7 @@ CREATE TABLE IF NOT EXISTS scripts (
   INDEX idx_project_id (project_id),
   INDEX idx_episode_number (episode_number),
   INDEX idx_status (status),
+  INDEX idx_source_type (source_type, is_implicit),
   INDEX idx_created_at (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

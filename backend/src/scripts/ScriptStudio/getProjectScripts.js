@@ -17,10 +17,11 @@ async function getProjectScripts(req, res) {
       return res.status(404).json({ message: '项目不存在或无权访问' });
     }
 
-    // 获取项目的所有剧本（按集数排序）
+    // 获取项目的所有剧本（按集数排序，包含隐式剧本）
+    // 隐式剧本是自由分镜自动创建的绑定载体，也是项目下的合法剧本
     const scripts = await queryAll(
-      `SELECT id, episode_number, title, content, draft_description, draft_length, model_provider, token_used, status, created_at, updated_at 
-       FROM scripts WHERE project_id = ? 
+      `SELECT id, episode_number, title, content, draft_description, draft_length, model_provider, token_used, status, source_type, is_implicit, created_at, updated_at 
+       FROM scripts WHERE project_id = ?
        ORDER BY episode_number ASC`,
       [projectId]
     );

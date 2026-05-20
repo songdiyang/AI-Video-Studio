@@ -103,7 +103,7 @@ const StoryBoardPage: React.FC = () => {
         setProject(projectData);
 
         // 3) 加载该项目的所有剧本
-        const listRes = await fetch(`/api/projects/${script.project_id}/scripts`, {
+        const listRes = await fetch(`/api/scripts/project/${script.project_id}`, {
           headers,
         });
         if (listRes.ok) {

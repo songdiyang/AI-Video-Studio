@@ -124,7 +124,12 @@ const CharacterTagSelector: React.FC<{
       </button>
 
       {isOpen && (
-        <div className="absolute top-full left-0 mt-1 z-50 w-56 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg shadow-xl p-2 space-y-1">
+        <div className="fixed z-[100] w-56 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg shadow-xl p-2 space-y-1"
+          style={{
+            left: containerRef.current?.getBoundingClientRect().left ?? 0,
+            top: (containerRef.current?.getBoundingClientRect().bottom ?? 0) + 4,
+          }}
+        >
           <div className="flex items-center gap-1 border-b border-[var(--border-color)] pb-1 mb-1">
             <Search className="w-3 h-3 text-[var(--text-muted)]" />
             <input
@@ -338,7 +343,12 @@ const PropsTagSelector: React.FC<{
       </button>
 
       {isOpen && (
-        <div className="absolute top-full left-0 mt-1 z-50 w-48 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg shadow-xl p-2 space-y-1">
+        <div className="fixed z-[100] w-48 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg shadow-xl p-2 space-y-1"
+          style={{
+            left: containerRef.current?.getBoundingClientRect().left ?? 0,
+            top: (containerRef.current?.getBoundingClientRect().bottom ?? 0) + 4,
+          }}
+        >
           <div className="flex items-center gap-1 border-b border-[var(--border-color)] pb-1 mb-1">
             <Search className="w-3 h-3 text-[var(--text-muted)]" />
             <input
@@ -430,7 +440,12 @@ const SceneDropdownSelector: React.FC<{
       </button>
 
       {isOpen && (
-        <div className="absolute top-full left-0 mt-1 z-50 w-56 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg shadow-xl p-2 space-y-1">
+        <div className="fixed z-[100] w-56 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg shadow-xl p-2 space-y-1"
+          style={{
+            left: containerRef.current?.getBoundingClientRect().left ?? 0,
+            top: (containerRef.current?.getBoundingClientRect().bottom ?? 0) + 4,
+          }}
+        >
           <div className="flex items-center gap-1 border-b border-[var(--border-color)] pb-1 mb-1">
             <Search className="w-3 h-3 text-[var(--text-muted)]" />
             <input
@@ -532,7 +547,12 @@ const DurationSelector: React.FC<{
       </button>
 
       {isOpen && (
-        <div className="absolute top-full left-0 mt-1 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg shadow-xl z-50 py-1 min-w-[80px] max-h-[240px] overflow-y-auto">
+        <div className="fixed bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg shadow-xl z-[100] py-1 min-w-[80px] max-h-[240px] overflow-y-auto"
+          style={{
+            left: containerRef.current?.getBoundingClientRect().left ?? 0,
+            top: (containerRef.current?.getBoundingClientRect().bottom ?? 0) + 4,
+          }}
+        >
           {DURATION_OPTIONS.map(val => (
             <button
               key={val}

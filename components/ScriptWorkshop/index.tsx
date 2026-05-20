@@ -1,9 +1,9 @@
 /**
- * ScriptGenerateTab - 剧本创作中心标签页
- * 整合AI生成、上传剧本两大功能
+ * ScriptWorkshop - 剧本创作中心（统一标签页）
+ * 整合AI生成、上传剧本、编辑剧本三大功能
  */
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   Button,
   Input,
@@ -14,14 +14,15 @@ import {
 } from '@heroui/react';
 import {
   Sparkles, Info, X, Upload, FileText,
-  Check, ArrowLeftRight, Save,
-  Loader2
+  Save, Loader2, ArrowLeft, Pencil, Wand2,
+  Eye, EyeOff,
 } from 'lucide-react';
 import { useWorkflow, consumeWorkflow } from '../../hooks/useWorkflow';
 import { getAuthToken } from '../../services/auth';
 import type { Project } from '../../services/projects';
-import { uploadScriptFile } from '../../services/scripts';
+import { uploadScriptFile, updateScript } from '../../services/scripts';
 import { useToast } from '../../contexts/ToastContext';
+import MarkdownRenderer from '../../components/MarkdownRenderer';
 
 interface AIModel {
   name: string;
@@ -30,8 +31,7 @@ interface AIModel {
   category?: string;
 }
 
-/** 生成完成后回传的剧本信息 */
-export interface ScriptGeneratedPayload {
+export interface ScriptWorkshopPayload {
   scriptId: number;
   content: string;
   title: string;
@@ -39,27 +39,21 @@ export interface ScriptGeneratedPayload {
   episodeNumber: number;
 }
 
-interface ScriptGenerateTabProps {
+interface ScriptWorkshopProps {
   projects: Project[];
   aiModels: AIModel[];
   defaultTextModel?: string;
-  /** 锁定目标项目 */
   lockProjectId?: number;
-  /** 锁定目标集数 */
   lockEpisodeNumber?: number;
-  /** 生成成功回调 */
-  onSuccess?: (payload?: ScriptGeneratedPayload) => void;
+  initialScriptId?: number;
+  initialTitle?: string;
+  initialContent?: string;
+  onSuccess?: (payload?: ScriptWorkshopPayload) => void;
   onError?: (msg: string) => void;
-  /** 关闭标签页回调 */
   onClose: () => void;
 }
 
-type TabKey = 'generate' | 'upload';
-
-const TABS: { key: TabKey; label: string; icon: React.ReactNode }[] = [
-  { key: 'generate', label: 'AI生成', icon: <Sparkles className="w-4 h-4" /> },
-  { key: 'upload', label: '上传剧本', icon: <Upload className="w-4 h-4" /> },
-];
+type WorkshopMode = 'generate' | 'upload' | 'edit';
 
 // ==================== AI生成子组件 ====================
 
@@ -69,9 +63,9 @@ const GeneratePanel: React.FC<{
   defaultTextModel?: string;
   lockProjectId?: number;
   lockEpisodeNumber?: number;
-  onSuccess?: (payload?: ScriptGeneratedPayload) => void;
+  onGenerated: (payload: ScriptWorkshopPayload) => void;
   onError?: (msg: string) => void;
-}> = ({ projects, aiModels, defaultTextModel, lockProjectId, lockEpisodeNumber, onSuccess, onError }) => {
+}> = ({ projects, aiModels, defaultTextModel, lockProjectId, lockEpisodeNumber, onGenerated, onError }) => {
   const [projectId, setProjectId] = useState<string>('');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -161,19 +155,19 @@ const GeneratePanel: React.FC<{
         });
         const data = await res.json();
         if (res.ok) {
-          const payload: ScriptGeneratedPayload = {
+          const payload: ScriptWorkshopPayload = {
             scriptId: generatingScriptId,
             content: data.content || '',
             title: data.title || '',
             projectId: data.project_id || Number(projectId),
             episodeNumber: data.episode_number || ((lockEpisodeNumber !== undefined && lockEpisodeNumber !== null) ? lockEpisodeNumber : Number(episodeInput)) || 1,
           };
-          onSuccess?.(payload);
+          onGenerated(payload);
         } else {
           onError?.(data.message || '保存剧本失败');
         }
       } catch (err: any) {
-        console.error('[ScriptGenerateTab] 保存剧本失败:', err);
+        console.error('[ScriptWorkshop] 保存剧本失败:', err);
         onError?.(err?.message || '保存剧本失败');
       }
     },
@@ -191,9 +185,7 @@ const GeneratePanel: React.FC<{
       onError?.('请选择项目');
       return;
     }
-    // 优先使用 lockEpisodeNumber，其次 episodeInput
     const targetEpisode = (lockEpisodeNumber !== undefined && lockEpisodeNumber !== null) ? lockEpisodeNumber : Number(episodeInput);
-    console.log('[ScriptGenerateTab] handleGenerate, lockEpisodeNumber:', lockEpisodeNumber, 'episodeInput:', episodeInput, 'targetEpisode:', targetEpisode);
     if (!targetEpisode || targetEpisode < 1) {
       onError?.('请输入有效的集数');
       return;
@@ -228,7 +220,7 @@ const GeneratePanel: React.FC<{
       setGeneratingScriptId(data.scriptId);
       setJobId(data.jobId);
     } catch (err: any) {
-      console.error('[ScriptGenerateTab] 生成失败:', err);
+      console.error('[ScriptWorkshop] 生成失败:', err);
       onError?.(err?.message || '生成失败');
       setGenerating(false);
     }
@@ -242,7 +234,7 @@ const GeneratePanel: React.FC<{
         <Info className="w-4 h-4 text-[var(--accent)] shrink-0 mt-0.5" />
         <div className="text-xs text-[var(--text-secondary)] leading-relaxed">
           <p>AI 将根据您的描述生成剧本内容，生成的剧本会自动保存到当前项目的指定集数。</p>
-          <p className="mt-1">生成过程中您可以切换到其他标签页继续工作，完成后会自动通知您。</p>
+          <p className="mt-1">生成完成后会自动切换到编辑模式，您可以直接修改剧本内容。</p>
         </div>
       </div>
 
@@ -391,9 +383,9 @@ type UploadMode = 'file' | 'text';
 const UploadPanel: React.FC<{
   lockProjectId?: number;
   lockEpisodeNumber?: number;
-  onSuccess?: (payload?: ScriptGeneratedPayload) => void;
+  onUploaded: (payload: ScriptWorkshopPayload) => void;
   onError?: (msg: string) => void;
-}> = ({ lockProjectId, lockEpisodeNumber, onSuccess, onError }) => {
+}> = ({ lockProjectId, lockEpisodeNumber, onUploaded, onError }) => {
   const { showToast } = useToast();
   const [inputMode, setInputMode] = useState<UploadMode>('file');
   const [file, setFile] = useState<File | null>(null);
@@ -423,7 +415,7 @@ const UploadPanel: React.FC<{
     if (droppedFile) handleFileSelect(droppedFile);
   };
 
-  const handleUpload = async (mode: 'save' | 'analyze') => {
+  const handleUpload = async () => {
     if (inputMode === 'file' && !file) {
       showToast('请先选择文件', 'error');
       return;
@@ -440,10 +432,10 @@ const UploadPanel: React.FC<{
         projectId: lockProjectId,
         episodeNumber: lockEpisodeNumber,
         title: inputMode === 'file' && file ? file.name.replace(/\.[^.]+$/, '') : undefined,
-        mode,
+        mode: 'save',
       });
       showToast(result.message, 'success');
-      onSuccess?.({
+      onUploaded({
         scriptId: result.scriptId,
         content: result.content,
         title: result.title,
@@ -488,7 +480,6 @@ const UploadPanel: React.FC<{
 
       {inputMode === 'file' ? (
         <>
-          {/* 拖拽上传区 */}
           <div
             className={`border-2 border-dashed rounded-xl p-8 text-center transition-colors cursor-pointer ${
               dragOver
@@ -518,7 +509,6 @@ const UploadPanel: React.FC<{
         </>
       ) : (
         <>
-          {/* 直接输入文本区 */}
           <Textarea
             label="剧本内容"
             placeholder="在此粘贴或输入剧本内容..."
@@ -535,7 +525,6 @@ const UploadPanel: React.FC<{
         </>
       )}
 
-      {/* 内容预览 / 操作按钮 */}
       {content && (
         <div className="space-y-3">
           <div className="rounded-xl border border-[var(--border-color)] overflow-hidden">
@@ -555,74 +544,318 @@ const UploadPanel: React.FC<{
             className="w-full"
             startContent={<Save className="w-4 h-4" />}
             isLoading={uploading}
-            onPress={() => handleUpload('save')}
+            onPress={handleUpload}
           >
             {uploading ? '保存中...' : '保存剧本'}
           </Button>
         </div>
       )}
-
-
     </div>
   );
 };
 
+// ==================== 编辑剧本子组件 ====================
 
+const EditPanel: React.FC<{
+  scriptId: number;
+  initialTitle: string;
+  initialContent: string;
+  onSaved?: (title: string, content: string) => void;
+  onError?: (msg: string) => void;
+}> = ({ scriptId, initialTitle, initialContent, onSaved, onError }) => {
+  const { showToast } = useToast();
+  const [title, setTitle] = useState(initialTitle);
+  const [content, setContent] = useState(initialContent);
+  const [saving, setSaving] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastSavedRef = useRef<string>(JSON.stringify({ title: initialTitle, content: initialContent }));
+
+  // 同步初始数据变化
+  useEffect(() => {
+    setTitle(initialTitle);
+    setContent(initialContent);
+    lastSavedRef.current = JSON.stringify({ title: initialTitle, content: initialContent });
+    setIsDirty(false);
+  }, [initialTitle, initialContent]);
+
+  // 自动保存：防抖 2 秒后自动保存
+  useEffect(() => {
+    const currentJson = JSON.stringify({ title, content });
+    if (currentJson === lastSavedRef.current) {
+      setIsDirty(false);
+      return;
+    }
+    setIsDirty(true);
+
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+    }
+    saveTimerRef.current = setTimeout(() => {
+      handleSave();
+    }, 2000);
+
+    return () => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [title, content]);
+
+  // 组件卸载时如果还有未保存的更改，立即保存
+  useEffect(() => {
+    return () => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+      }
+      const currentJson = JSON.stringify({ title, content });
+      if (currentJson !== lastSavedRef.current) {
+        handleSave();
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleSave = useCallback(async () => {
+    setSaving(true);
+    try {
+      await updateScript(scriptId, title || '', content || '');
+      lastSavedRef.current = JSON.stringify({ title, content });
+      setIsDirty(false);
+      showToast('保存成功', 'success');
+      onSaved?.(title, content);
+    } catch (error: any) {
+      showToast(error?.message || '保存失败', 'error');
+      onError?.(error?.message || '保存失败');
+    } finally {
+      setSaving(false);
+    }
+  }, [scriptId, title, content, onSaved, onError, showToast]);
+
+  return (
+    <div className="max-w-4xl mx-auto space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Pencil className="w-4 h-4 text-[var(--accent)]" />
+          <span className="text-sm font-medium text-[var(--text-primary)]">编辑剧本</span>
+        </div>
+        <div className="flex items-center gap-2">
+          {isDirty && (
+            <span className="text-[10px] text-amber-400 animate-pulse">
+              未保存
+            </span>
+          )}
+          <Button
+            size="sm"
+            variant="flat"
+            className="text-xs bg-[var(--bg-input)] text-[var(--text-secondary)] hover:text-[var(--accent)]"
+            startContent={showPreview ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+            onPress={() => setShowPreview(v => !v)}
+          >
+            {showPreview ? '隐藏预览' : '预览'}
+          </Button>
+          <Button
+            size="sm"
+            color="primary"
+            isLoading={saving}
+            isDisabled={!isDirty}
+            onPress={handleSave}
+            startContent={<Save className="w-3.5 h-3.5" />}
+          >
+            保存
+          </Button>
+        </div>
+      </div>
+
+      <Input
+        label="剧本名称"
+        placeholder="输入剧本名称"
+        value={title}
+        onValueChange={setTitle}
+        classNames={{
+          input: "bg-transparent text-[var(--text-primary)]",
+          label: "text-[var(--text-secondary)] font-medium",
+          inputWrapper: "bg-[var(--bg-input)] border border-[var(--border-color)] hover:border-[var(--accent)]/50 shadow-sm"
+        }}
+      />
+
+      {showPreview ? (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-[var(--text-secondary)]">剧本预览</span>
+            <span className="text-[10px] text-[var(--text-muted)]">Markdown 格式渲染</span>
+          </div>
+          <div className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-input)] p-4 overflow-y-auto" style={{ maxHeight: '520px' }}>
+            <MarkdownRenderer content={content} />
+          </div>
+        </div>
+      ) : (
+        <Textarea
+          label="剧本内容"
+          placeholder="在此输入或编辑剧本内容..."
+          value={content}
+          onValueChange={setContent}
+          minRows={20}
+          classNames={{
+            input: "bg-transparent text-[var(--text-primary)] font-mono text-sm leading-relaxed",
+            label: "text-[var(--text-secondary)] font-medium",
+            inputWrapper: "bg-[var(--bg-input)] border border-[var(--border-color)] hover:border-[var(--accent)]/50 shadow-sm"
+          }}
+        />
+      )}
+
+      <p className="text-[11px] text-[var(--text-muted)]">
+        提示：剧本内容修改后将在 2 秒后自动保存，也可手动点击上方保存按钮
+        {showPreview && ' · 点击「隐藏预览」可返回编辑模式'}
+      </p>
+    </div>
+  );
+};
 
 // ==================== 主组件 ====================
 
-const ScriptGenerateTab: React.FC<ScriptGenerateTabProps> = ({
+const ScriptWorkshop: React.FC<ScriptWorkshopProps> = ({
   projects,
   aiModels,
   defaultTextModel,
   lockProjectId,
   lockEpisodeNumber,
+  initialScriptId,
+  initialTitle = '',
+  initialContent = '',
   onSuccess,
   onError,
   onClose,
 }) => {
-  const [activeTab, setActiveTab] = useState<TabKey>('generate');
+  const { showToast } = useToast();
+
+  // 根据是否有初始剧本数据决定初始模式
+  const [mode, setMode] = useState<WorkshopMode>(initialScriptId ? 'edit' : 'generate');
+  const [scriptData, setScriptData] = useState<{
+    scriptId: number;
+    title: string;
+    content: string;
+    projectId: number;
+    episodeNumber: number;
+  } | null>(
+    initialScriptId
+      ? {
+          scriptId: initialScriptId,
+          title: initialTitle,
+          content: initialContent,
+          projectId: lockProjectId || 0,
+          episodeNumber: lockEpisodeNumber || 1,
+        }
+      : null
+  );
+
+  // 生成/上传成功后的处理
+  const handleGenerated = (payload: ScriptWorkshopPayload) => {
+    setScriptData({
+      scriptId: payload.scriptId,
+      title: payload.title,
+      content: payload.content,
+      projectId: payload.projectId,
+      episodeNumber: payload.episodeNumber,
+    });
+    setMode('edit');
+    showToast('剧本生成成功，已切换到编辑模式', 'success');
+    onSuccess?.(payload);
+  };
+
+  const handleUploaded = (payload: ScriptWorkshopPayload) => {
+    setScriptData({
+      scriptId: payload.scriptId,
+      title: payload.title,
+      content: payload.content,
+      projectId: payload.projectId,
+      episodeNumber: payload.episodeNumber,
+    });
+    setMode('edit');
+    showToast('剧本上传成功，已切换到编辑模式', 'success');
+    onSuccess?.(payload);
+  };
+
+  // 模式切换选项（使用 useMemo 避免重复创建）
+  const modeOptions = useMemo(() => {
+    const options: { key: WorkshopMode; label: string; icon: React.ReactNode }[] = [
+      { key: 'generate', label: 'AI生成', icon: <Sparkles className="w-3.5 h-3.5" /> },
+      { key: 'upload', label: '上传剧本', icon: <Upload className="w-3.5 h-3.5" /> },
+    ];
+    if (scriptData) {
+      options.push({ key: 'edit', label: '编辑剧本', icon: <Pencil className="w-3.5 h-3.5" /> });
+    }
+    return options;
+  }, [scriptData]);
 
   return (
     <div className="flex flex-col h-full">
-      {/* Tab 切换 */}
+      {/* 顶部模式切换栏 */}
       <div className="shrink-0 px-4 py-3 border-b border-[var(--border-color)]">
-        <div className="flex gap-1">
-          {TABS.map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-t-lg text-xs font-medium transition-colors ${
-                activeTab === tab.key
-                  ? 'text-[var(--accent)] border-b-2 border-[var(--accent)] bg-[var(--accent)]/5'
-                  : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-input)]'
-              }`}
+        <div className="flex items-center justify-between">
+          <div className="flex gap-1">
+            {modeOptions.map((opt) => (
+              <button
+                key={opt.key}
+                onClick={() => setMode(opt.key)}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-t-lg text-xs font-medium transition-colors ${
+                  mode === opt.key
+                    ? 'text-[var(--accent)] border-b-2 border-[var(--accent)] bg-[var(--accent)]/5'
+                    : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-input)]'
+                }`}
+              >
+                {opt.icon}
+                {opt.label}
+              </button>
+            ))}
+          </div>
+
+          {/* 右侧：如果有剧本数据，显示重新生成按钮 */}
+          {scriptData && mode === 'edit' && (
+            <Button
+              size="sm"
+              variant="flat"
+              className="text-xs bg-[var(--accent)]/10 text-[var(--accent)] hover:bg-[var(--accent)]/20"
+              startContent={<Wand2 className="w-3.5 h-3.5" />}
+              onPress={() => setMode('generate')}
             >
-              {tab.icon}
-              {tab.label}
-            </button>
-          ))}
+              重新生成
+            </Button>
+          )}
         </div>
       </div>
 
       {/* 内容区 */}
       <div className="flex-1 overflow-y-auto p-4">
-        {activeTab === 'generate' && (
+        {mode === 'generate' && (
           <GeneratePanel
             projects={projects}
             aiModels={aiModels}
             defaultTextModel={defaultTextModel}
             lockProjectId={lockProjectId}
             lockEpisodeNumber={lockEpisodeNumber}
-            onSuccess={onSuccess}
+            onGenerated={handleGenerated}
             onError={onError}
           />
         )}
-        {activeTab === 'upload' && (
+        {mode === 'upload' && (
           <UploadPanel
             lockProjectId={lockProjectId}
             lockEpisodeNumber={lockEpisodeNumber}
-            onSuccess={onSuccess}
+            onUploaded={handleUploaded}
+            onError={onError}
+          />
+        )}
+        {mode === 'edit' && scriptData && (
+          <EditPanel
+            scriptId={scriptData.scriptId}
+            initialTitle={scriptData.title}
+            initialContent={scriptData.content}
+            onSaved={(title, content) => {
+              setScriptData(prev => prev ? { ...prev, title, content } : null);
+            }}
             onError={onError}
           />
         )}
@@ -631,4 +864,4 @@ const ScriptGenerateTab: React.FC<ScriptGenerateTabProps> = ({
   );
 };
 
-export default ScriptGenerateTab;
+export default ScriptWorkshop;

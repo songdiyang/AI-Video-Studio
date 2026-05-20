@@ -4,6 +4,7 @@
  */
 
 const { queryOne } = require('../../dbHelper');
+const { getEffectiveProjectRole } = require('../../middleware/collaborationAuth');
 
 async function getEpisode(req, res) {
   const userId = req.user.id;
@@ -14,15 +15,16 @@ async function getEpisode(req, res) {
   }
 
   try {
-    const project = await queryOne('SELECT id FROM projects WHERE id = ? AND user_id = ?', [projectId, userId]);
-    if (!project) {
+    // 协作鉴权：支持团队项目成员访问
+    const role = await getEffectiveProjectRole(userId, projectId);
+    if (!role) {
       return res.status(404).json({ message: '项目不存在或无权访问' });
     }
 
     const script = await queryOne(
       `SELECT id, episode_number, title, content, model_provider, token_used, status, created_at, updated_at 
-       FROM scripts WHERE project_id = ? AND episode_number = ? AND user_id = ?`,
-      [projectId, episodeNumber, userId]
+       FROM scripts WHERE project_id = ? AND episode_number = ?`,
+      [projectId, episodeNumber]
     );
 
     // 即使 script 为 null 也返回 200（表示该集不存在，前端可正常处理）

@@ -42,6 +42,17 @@ try {
 const MAX_STEPS = parseInt(process.env.WORKFLOW_MAX_STEPS, 10) || 100;
 const MAX_CONCURRENT_TASKS = parseInt(process.env.WORKFLOW_MAX_CONCURRENT, 10) || 20;
 const TASK_TIMEOUT = parseInt(process.env.WORKFLOW_TASK_TIMEOUT, 10) || 300000; // 5分钟
+
+// 按任务类型动态超时（毫秒）：视频生成通常需要 10-30 分钟
+const TASK_TIMEOUT_BY_TYPE = {
+  scene_video: 3600000,           // 1小时
+  batch_scene_video_generation: 3600000, // 1小时
+  _default: TASK_TIMEOUT
+};
+
+function getTaskTimeout(stepType) {
+  return TASK_TIMEOUT_BY_TYPE[stepType] || TASK_TIMEOUT_BY_TYPE._default;
+}
 const TASK_MAX_RETRIES = parseInt(process.env.WORKFLOW_TASK_MAX_RETRIES, 10) || 3; // 任务最大重试次数
 const TASK_RETRY_BASE_DELAY_MS = parseInt(process.env.WORKFLOW_TASK_RETRY_BASE_DELAY, 10) || 3000; // 重试基础延迟
 const SNAPSHOT_INTERVAL = parseInt(process.env.WORKFLOW_SNAPSHOT_INTERVAL, 10) || 15000; // 快照持久化间隔
@@ -675,7 +686,8 @@ class WorkflowExecutor {
         () => runWithTrace(taskId, stepDef.type, () => stepDef.handler(inputParams, onProgress))
       );
 
-      const { result: resultData, trace: traceData } = await executeWithTimeout(taskExecution, TASK_TIMEOUT);
+      const taskTimeout = getTaskTimeout(stepDef.type);
+      const { result: resultData, trace: traceData } = await executeWithTimeout(taskExecution, taskTimeout);
 
       // 任务成功：保存 result_data + trace
       await this.jobStatusManager.completeTask(taskId, resultData, traceData);

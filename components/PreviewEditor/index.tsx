@@ -9,7 +9,7 @@ import AssetEditor from '../AssetEditor';
 import AssetSceneRelations from '../AssetSceneRelations';
 import Settings from '../../views/Settings';
 import { ExtensionDetailView } from '../../views/Extensions';
-import ScriptGenerateTab from '../ScriptGenerateTab';
+import ScriptWorkshop from '../ScriptWorkshop';
 import { StoryboardScene } from '../../views/StoryBoard/useSceneManager';
 import { useAIAssistantUI } from '../../contexts/AIAssistantContext';
 
@@ -119,6 +119,11 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
   // 剧本生成标签页（单例，可关闭）
   const [scriptGenerateTabOpen, setScriptGenerateTabOpen] = useState(false);
   const [scriptGenerateTabEpisode, setScriptGenerateTabEpisode] = useState<number | undefined>(undefined);
+  const [scriptWorkshopData, setScriptWorkshopData] = useState<{
+    scriptId?: number;
+    scriptTitle?: string;
+    scriptContent?: string;
+  } | undefined>(undefined);
 
   // 获取当前显示的标签列表（合并所有分镜标签、资产标签、扩展详情标签、设置标签和剧本生成标签，全部平铺显示）
   const tabs = useMemo(() => {
@@ -241,7 +246,9 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
           const parsed = JSON.parse(savedScriptGenerate);
           if (parsed.open) {
             setScriptGenerateTabOpen(true);
-            setScriptGenerateTabEpisode(parsed.episode);
+            // 修复：不恢复旧的 episode 值，而是使用当前实际的 episodeNumber
+            // 避免用户切换集数后仍然显示之前集数的剧本生成状态
+            setScriptGenerateTabEpisode(episodeNumber !== undefined && episodeNumber !== null ? episodeNumber : parsed.episode);
           }
         } catch {
           // ignore
@@ -600,17 +607,28 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
     };
   }, []);
 
-  // 监听打开剧本生成标签页事件（支持传递集数信息）
+  // 监听打开剧本生成标签页事件（支持传递集数信息和剧本数据）
   useEffect(() => {
-    const handleOpenScriptGenerateTab = (event: CustomEvent<{ episodeNumber?: number }>) => {
-      console.log('[PreviewEditor] 收到 openScriptGenerateTab 事件', event.detail);
+    const handleOpenScriptGenerateTab = (event: CustomEvent<{
+      episodeNumber?: number;
+      scriptId?: number;
+      scriptTitle?: string;
+      scriptContent?: string;
+    }>) => {
+      const detail = event.detail || {};
+      console.log('[PreviewEditor] 收到 openScriptGenerateTab 事件', detail);
       setScriptGenerateTabOpen(true);
-      setScriptGenerateTabEpisode(event.detail?.episodeNumber);
+      setScriptGenerateTabEpisode(detail.episodeNumber);
+      setScriptWorkshopData(detail.scriptId ? {
+        scriptId: detail.scriptId,
+        scriptTitle: detail.scriptTitle,
+        scriptContent: detail.scriptContent,
+      } : undefined);
       setActiveAssetTabId(null);
       setActiveTabId(null);
       setActiveExtensionDetailTabId(null);
       setSettingsTabOpen(false);
-      console.log('[PreviewEditor] 已打开剧本生成标签页');
+      console.log('[PreviewEditor] 已打开剧本创作标签页，目标集数:', detail.episodeNumber, '剧本ID:', detail.scriptId);
     };
 
     window.addEventListener('openScriptGenerateTab', handleOpenScriptGenerateTab as EventListener);
@@ -618,6 +636,15 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
       window.removeEventListener('openScriptGenerateTab', handleOpenScriptGenerateTab as EventListener);
     };
   }, []);
+
+  // 当 episodeNumber 变化时，如果剧本生成标签页已打开，则更新 scriptGenerateTabEpisode
+  // 修复：始终同步到当前集数，避免显示错误的集数信息
+  useEffect(() => {
+    if (scriptGenerateTabOpen && episodeNumber !== undefined && episodeNumber !== null) {
+      console.log('[PreviewEditor] episodeNumber 变化，更新 scriptGenerateTabEpisode 为:', episodeNumber);
+      setScriptGenerateTabEpisode(episodeNumber);
+    }
+  }, [episodeNumber, scriptGenerateTabOpen]);
 
   // 监听打开扩展详情标签页事件
   useEffect(() => {
@@ -984,24 +1011,36 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
           )}
           {activeTab?.type === 'script-generate' && (
             <div className="w-full h-full overflow-hidden">
-              <ScriptGenerateTab
+              <ScriptWorkshop
+                key={`script-workshop-${scriptGenerateTabEpisode || episodeNumber || 'default'}-${scriptWorkshopData?.scriptId || 'new'}`}
                 projects={projects}
                 aiModels={directorSpaceProps.models || []}
                 defaultTextModel={textModel}
                 lockProjectId={directorSpaceProps.projectId || undefined}
                 lockEpisodeNumber={scriptGenerateTabEpisode || episodeNumber || undefined}
+                initialScriptId={scriptWorkshopData?.scriptId}
+                initialTitle={scriptWorkshopData?.scriptTitle}
+                initialContent={scriptWorkshopData?.scriptContent}
                 onSuccess={(payload) => {
                   onScriptGenerated?.(payload);
-                  // 生成成功后关闭标签页
-                  setScriptGenerateTabOpen(false);
-                  setScriptGenerateTabEpisode(undefined);
+                  // 派发剧本刷新事件，通知左侧大纲面板更新剧本列表和内容
+                  if (payload) {
+                    window.dispatchEvent(new CustomEvent('reload-scripts', {
+                      detail: {
+                        projectId: directorSpaceProps.projectId,
+                        episodeNumber: payload.episodeNumber,
+                      }
+                    }));
+                  }
+                  // 生成成功后不关闭标签页，保持在编辑模式
                 }}
                 onError={(msg) => {
-                  // 错误处理由 ScriptGenerateTab 内部处理
+                  // 错误处理由 ScriptWorkshop 内部处理
                 }}
                 onClose={() => {
                   setScriptGenerateTabOpen(false);
                   setScriptGenerateTabEpisode(undefined);
+                  setScriptWorkshopData(undefined);
                 }}
               />
             </div>

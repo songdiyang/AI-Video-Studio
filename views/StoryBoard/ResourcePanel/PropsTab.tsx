@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardBody, Button, Chip } from '@heroui/react';
-import { Sparkles, Loader2, Wand2, X } from 'lucide-react';
+import { Sparkles, Loader2, Wand2, X, Trash2, ExternalLink } from 'lucide-react';
 import { PropItem } from './types';
 import { getAuthToken } from '../../../services/auth';
 
@@ -20,10 +20,25 @@ interface PropsTabProps {
   isExtracting?: boolean;
   onExtractFromScript?: () => void;
   imageModel?: string;
+  /** 右键删除回调 */
+  onDelete?: (prop: PropItem) => void;
 }
 
-const PropsTab: React.FC<PropsTabProps> = ({ props, isExtracting, onExtractFromScript, imageModel }) => {
+const PropsTab: React.FC<PropsTabProps> = ({ props, isExtracting, onExtractFromScript, imageModel, onDelete }) => {
   const [generatingIds, setGeneratingIds] = useState<Set<number>>(new Set());
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; prop: PropItem } | null>(null);
+
+  useEffect(() => {
+    const handleClick = () => setContextMenu(null);
+    window.addEventListener('click', handleClick);
+    return () => window.removeEventListener('click', handleClick);
+  }, []);
+
+  const handleContextMenu = (e: React.MouseEvent, prop: PropItem) => {
+    e.preventDefault();
+    if (!onDelete) return;
+    setContextMenu({ x: e.clientX, y: e.clientY, prop });
+  };
 
   const handleGenerate = async (prop: PropItem) => {
     if (!prop.id || generatingIds.has(prop.id)) return;
@@ -108,7 +123,7 @@ const PropsTab: React.FC<PropsTabProps> = ({ props, isExtracting, onExtractFromS
         )}
       </div>
       {props.map((prop) => (
-        <Card key={`${prop.id}-${prop.name}`} className="bg-slate-800/60 border border-slate-700/50 hover:border-emerald-500/30 transition-colors cursor-pointer" onDoubleClick={() => openAssetEditTab(prop)}>
+        <Card key={`${prop.id}-${prop.name}`} className="bg-slate-800/60 border border-slate-700/50 hover:border-emerald-500/30 transition-colors cursor-pointer" onDoubleClick={() => openAssetEditTab(prop)} onContextMenu={(e) => handleContextMenu(e, prop)}>
           <CardBody className="p-3">
             <div className="flex items-center justify-between h-[56px]">
               <div className="flex-1 min-w-0">
@@ -159,6 +174,68 @@ const PropsTab: React.FC<PropsTabProps> = ({ props, isExtracting, onExtractFromS
         <div className="text-center py-8 text-slate-500">
           <p className="text-sm">暂无道具</p>
           <p className="text-xs mt-1">分镜中添加道具或点击「从剧本提取」</p>
+        </div>
+      )}
+
+      {/* 右键菜单 */}
+      {contextMenu && (
+        <div
+          className="fixed z-50 bg-slate-800 border border-slate-700 rounded-lg shadow-xl py-1.5 min-w-[180px] select-none"
+          style={{ top: contextMenu.y, left: contextMenu.x }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* 打开 */}
+          <button
+            className="w-full text-left px-3 py-1.5 text-sm text-slate-100 hover:bg-slate-700/50 flex items-center gap-2.5 transition-colors"
+            onClick={() => {
+              openAssetEditTab(contextMenu.prop);
+              setContextMenu(null);
+            }}
+          >
+            <ExternalLink className="w-4 h-4 text-emerald-400" />
+            打开详情
+          </button>
+
+          {/* 分割线 */}
+          {onDelete && <div className="my-1 border-t border-slate-700" />}
+
+          {/* 删除 */}
+          {onDelete && (
+            <button
+              className="w-full text-left px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 flex items-center gap-2.5 transition-colors"
+              onClick={() => {
+                onDelete(contextMenu.prop);
+                setContextMenu(null);
+              }}
+            >
+              <Trash2 className="w-4 h-4" />
+              删除道具
+            </button>
+          )}
+
+          {/* 底部快捷栏 */}
+          <div className="mt-1.5 pt-1.5 border-t border-slate-700 px-2 pb-1">
+            <div className="flex items-center justify-around">
+              <button
+                className="flex flex-col items-center gap-0.5 p-1.5 rounded hover:bg-slate-700/50 transition-colors"
+                onClick={() => { openAssetEditTab(contextMenu.prop); setContextMenu(null); }}
+                title="打开"
+              >
+                <ExternalLink className="w-4 h-4 text-emerald-400" />
+                <span className="text-[10px] text-slate-400">打开</span>
+              </button>
+              {onDelete && (
+                <button
+                  className="flex flex-col items-center gap-0.5 p-1.5 rounded hover:bg-red-500/10 transition-colors"
+                  onClick={() => { onDelete(contextMenu.prop); setContextMenu(null); }}
+                  title="删除"
+                >
+                  <Trash2 className="w-4 h-4 text-red-400" />
+                  <span className="text-[10px] text-red-400">删除</span>
+                </button>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>

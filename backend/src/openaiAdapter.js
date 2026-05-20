@@ -463,6 +463,14 @@ async function callOpenAICompatible(config, params = {}) {
 
     const responseText = await response.text();
 
+    // 非 JSON 响应提前检测（如 HTML 错误页面）
+    const responseContentType = response.headers.get('content-type') || 'unknown';
+    const isHtmlResponse = responseText.trim().startsWith('<') || responseContentType.includes('text/html');
+    if (isHtmlResponse) {
+      console.error(`[OpenAI Adapter] API 返回 HTML 而非 JSON: HTTP ${response.status}, Content-Type: ${responseContentType}, 内容: ${responseText.substring(0, 500)}`);
+      throw new Error(`API 返回 HTML 页面而非 JSON (HTTP ${response.status})，可能是网关错误、WAF 拦截或端点配置错误。响应内容: ${responseText.substring(0, 200)}`);
+    }
+
     // 尝试解析 JSON
     let data;
     try {
@@ -472,7 +480,7 @@ async function callOpenAICompatible(config, params = {}) {
     }
 
     if (!response.ok) {
-      const errorMsg = data.error?.message || `API 调用失败: ${response.status}`;
+      const errorMsg = data?.error?.message || data?.message || data?.msg || `API 调用失败: ${response.status}`;
       throw new Error(errorMsg);
     }
 

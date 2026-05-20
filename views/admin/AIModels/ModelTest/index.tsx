@@ -158,7 +158,29 @@ const ModelTestModal: React.FC<ModelTestModalProps> = ({ isOpen, onClose, model 
         signal: controller.signal
       });
 
-      const data = await res.json();
+      const contentType = res.headers.get('content-type') || '';
+      const responseText = await res.text();
+
+      // 检测 HTML 响应（网关错误、WAF 拦截等）
+      const isHtmlResponse = responseText.trim().startsWith('<') || contentType.includes('text/html');
+      if (isHtmlResponse) {
+        setTestResult({
+          success: false,
+          message: `API 返回 HTML 页面而非 JSON (HTTP ${res.status})，可能是网关错误、WAF 拦截或端点配置错误。响应内容: ${responseText.substring(0, 200)}`
+        });
+        return;
+      }
+
+      let data;
+      try {
+        data = JSON.parse(responseText);
+      } catch (parseError: any) {
+        setTestResult({
+          success: false,
+          message: `API 返回的不是有效的 JSON (HTTP ${res.status}): ${responseText.substring(0, 200)}`
+        });
+        return;
+      }
 
       if (data.success) {
         setTestResult({

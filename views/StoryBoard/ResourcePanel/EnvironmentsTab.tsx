@@ -1,11 +1,13 @@
-import React, { useState } from 'react';
-import { Card, CardBody, Chip, Image, Modal, ModalContent, ModalHeader, ModalBody } from '@heroui/react';
-import { ZoomIn, Globe } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Card, CardBody, Chip, Image } from '@heroui/react';
+import { ZoomIn, Globe, Trash2, ExternalLink } from 'lucide-react';
 import type { Environment } from '../../../services/environments';
 
 interface EnvironmentsTabProps {
   environments: Environment[];
   isLoading?: boolean;
+  /** 右键删除回调 */
+  onDelete?: (env: Environment) => void;
 }
 
 const openAssetEditTab = (env: Environment) => {
@@ -49,8 +51,21 @@ const STATUS_CLASS: Record<string, string> = {
 const EnvironmentsTab: React.FC<EnvironmentsTabProps> = ({
   environments,
   isLoading,
+  onDelete,
 }) => {
-  const [previewImage, setPreviewImage] = useState<{ url: string; name: string } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; env: Environment } | null>(null);
+
+  useEffect(() => {
+    const handleClick = () => setContextMenu(null);
+    window.addEventListener('click', handleClick);
+    return () => window.removeEventListener('click', handleClick);
+  }, []);
+
+  const handleContextMenu = (e: React.MouseEvent, env: Environment) => {
+    e.preventDefault();
+    if (!onDelete) return;
+    setContextMenu({ x: e.clientX, y: e.clientY, env });
+  };
 
   return (
     <div className="space-y-3">
@@ -84,6 +99,7 @@ const EnvironmentsTab: React.FC<EnvironmentsTabProps> = ({
               className="border transition-colors hover:border-sky-500/30 cursor-pointer"
               style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}
               onDoubleClick={() => openAssetEditTab(env)}
+              onContextMenu={(e) => handleContextMenu(e, env)}
               isPressable
             >
               <CardBody className="p-3">
@@ -96,11 +112,7 @@ const EnvironmentsTab: React.FC<EnvironmentsTabProps> = ({
                           src={env.image_url}
                           alt={env.name}
                           removeWrapper
-                          className="w-14 h-14 object-cover rounded-lg border border-slate-700/50 cursor-zoom-in"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setPreviewImage({ url: env.image_url!, name: env.name });
-                          }}
+                          className="w-14 h-14 object-cover rounded-lg border border-slate-700/50 cursor-pointer"
                         />
                         {hasBack && (
                           <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-sky-500/80 rounded-full flex items-center justify-center">
@@ -168,23 +180,67 @@ const EnvironmentsTab: React.FC<EnvironmentsTabProps> = ({
       )}
 
 
-      {/* 图片预览弹窗 */}
-      <Modal isOpen={!!previewImage} onOpenChange={() => setPreviewImage(null)} size="xl">
-        <ModalContent className="bg-slate-900/95 backdrop-blur-xl border border-slate-700/50">
-          <ModalHeader className="text-slate-100 font-bold">
-            {previewImage?.name}
-          </ModalHeader>
-          <ModalBody className="p-2 flex items-center justify-center">
-            {previewImage?.url && (
-              <img
-                src={previewImage.url}
-                alt={previewImage.name}
-                className="max-w-full max-h-[70vh] object-contain rounded-lg"
-              />
-            )}
-          </ModalBody>
-        </ModalContent>
-      </Modal>
+      {/* 右键菜单 */}
+      {contextMenu && (
+        <div
+          className="fixed z-50 bg-(--bg-card) border border-(--border-color) rounded-lg shadow-xl py-1.5 min-w-[180px] select-none"
+          style={{ top: contextMenu.y, left: contextMenu.x }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* 打开 */}
+          <button
+            className="w-full text-left px-3 py-1.5 text-sm text-(--text-primary) hover:bg-(--accent)/10 flex items-center gap-2.5 transition-colors"
+            onClick={() => {
+              openAssetEditTab(contextMenu.env);
+              setContextMenu(null);
+            }}
+          >
+            <ExternalLink className="w-4 h-4 text-sky-400" />
+            打开详情
+          </button>
+
+          {/* 分割线 */}
+          {onDelete && <div className="my-1 border-t border-(--border-color)" />}
+
+          {/* 删除 */}
+          {onDelete && (
+            <button
+              className="w-full text-left px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 flex items-center gap-2.5 transition-colors"
+              onClick={() => {
+                onDelete(contextMenu.env);
+                setContextMenu(null);
+              }}
+            >
+              <Trash2 className="w-4 h-4" />
+              删除环境
+            </button>
+          )}
+
+          {/* 底部快捷栏 */}
+          <div className="mt-1.5 pt-1.5 border-t border-(--border-color) px-2 pb-1">
+            <div className="flex items-center justify-around">
+              <button
+                className="flex flex-col items-center gap-0.5 p-1.5 rounded hover:bg-(--accent)/10 transition-colors"
+                onClick={() => { openAssetEditTab(contextMenu.env); setContextMenu(null); }}
+                title="打开"
+              >
+                <ExternalLink className="w-4 h-4 text-sky-400" />
+                <span className="text-[10px] text-(--text-muted)">打开</span>
+              </button>
+              {onDelete && (
+                <button
+                  className="flex flex-col items-center gap-0.5 p-1.5 rounded hover:bg-red-500/10 transition-colors"
+                  onClick={() => { onDelete(contextMenu.env); setContextMenu(null); }}
+                  title="删除"
+                >
+                  <Trash2 className="w-4 h-4 text-red-400" />
+                  <span className="text-[10px] text-red-400">删除</span>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

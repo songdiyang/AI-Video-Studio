@@ -1451,7 +1451,7 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
             )}
           </div>
 
-          {/* 提示 + AI优化按钮 + 生成操作栏 */}
+          {/* 提示 + AI优化按钮 */}
           <div className="mt-2 flex items-center justify-between">
             <div className="text-xs text-[var(--text-muted)]">
               提示：点击左侧组件直接插入，或拖拽组件到文本区域
@@ -1484,72 +1484,75 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
                   </button>
                 </div>
               )}
-              {/* 生成操作栏：图片/视频生成 + 模型切换 */}
-              {promptMode === 'image' && onGenerateImage && (
-                <div className="flex items-center gap-1.5">
-                  <button
-                    onClick={handleGenerateImage}
-                    disabled={isGeneratingMedia || !promptText.trim()}
-                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-500/10 text-blue-600 text-xs hover:bg-blue-500/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
-                    title="生成图片"
-                  >
-                    {isGeneratingMedia ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <ImageIcon className="w-3.5 h-3.5" />
-                    )}
-                    生成图片
-                  </button>
-                  {imageModels.length > 0 && onImageModelChange && (
-                    <div className="relative group">
-                      <select
-                        value={propImageModel || ''}
-                        onChange={(e) => onImageModelChange(e.target.value)}
-                        className="h-7 min-w-[120px] pl-2 pr-6 rounded-md bg-[var(--bg-input)] border border-[var(--border-color)] text-[var(--text-secondary)] text-xs focus:outline-none focus:border-[var(--accent)]/50 appearance-none cursor-pointer"
-                        aria-label="图片模型"
-                      >
-                        {imageModels.map((m) => (
-                          <option key={m.name} value={m.name}>{m.name}</option>
-                        ))}
-                      </select>
-                      <ChevronDown className="w-3 h-3 text-[var(--text-muted)] absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
-                    </div>
-                  )}
-                </div>
-              )}
-              {promptMode === 'video' && onGenerateVideo && (
-                <div className="flex items-center gap-1.5">
-                  <button
-                    onClick={handleGenerateVideo}
-                    disabled={isGeneratingMedia || !promptText.trim()}
-                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-500/10 text-rose-600 text-xs hover:bg-rose-500/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
-                    title="生成视频"
-                  >
-                    {isGeneratingMedia ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <Film className="w-3.5 h-3.5" />
-                    )}
-                    生成视频
-                  </button>
-                  {videoModels.length > 0 && onVideoModelChange && (
-                    <div className="relative group">
-                      <select
-                        value={propVideoModel || ''}
-                        onChange={(e) => onVideoModelChange(e.target.value)}
-                        className="h-7 min-w-[120px] pl-2 pr-6 rounded-md bg-[var(--bg-input)] border border-[var(--border-color)] text-[var(--text-secondary)] text-xs focus:outline-none focus:border-[var(--accent)]/50 appearance-none cursor-pointer"
-                        aria-label="视频模型"
-                      >
-                        {videoModels.map((m) => (
-                          <option key={m.name} value={m.name}>{m.name}</option>
-                        ))}
-                      </select>
-                      <ChevronDown className="w-3 h-3 text-[var(--text-muted)] absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
-                    </div>
-                  )}
-                </div>
-              )}
             </div>
+          </div>
+
+          {/* 生成操作栏：图片/视频生成 + 模型切换 — 位于输入框右下角 */}
+          <div className="mt-2 flex items-center justify-end gap-2 flex-wrap">
+            {promptMode === 'image' && onGenerateImage && (
+              <div className="flex items-center gap-1.5">
+                {imageModels.length > 0 && onImageModelChange && (
+                  <div className="relative group">
+                    <select
+                      value={propImageModel || ''}
+                      onChange={(e) => onImageModelChange(e.target.value)}
+                      className="h-7 min-w-[120px] pl-2 pr-6 rounded-md bg-[var(--bg-input)] border border-[var(--border-color)] text-[var(--text-secondary)] text-xs focus:outline-none focus:border-[var(--accent)]/50 appearance-none cursor-pointer"
+                      aria-label="图片模型"
+                    >
+                      {imageModels.map((m) => (
+                        <option key={m.name} value={m.name}>{m.name}</option>
+                      ))}
+                    </select>
+                    <ChevronDown className="w-3 h-3 text-[var(--text-muted)] absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  </div>
+                )}
+                <button
+                  onClick={handleGenerateImage}
+                  disabled={isGeneratingMedia || !promptText.trim()}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-500/10 text-blue-600 text-xs hover:bg-blue-500/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+                  title="生成图片"
+                >
+                  {isGeneratingMedia ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <ImageIcon className="w-3.5 h-3.5" />
+                  )}
+                  生成图片
+                </button>
+              </div>
+            )}
+            {promptMode === 'video' && onGenerateVideo && (
+              <div className="flex items-center gap-1.5">
+                {videoModels.length > 0 && onVideoModelChange && (
+                  <div className="relative group">
+                    <select
+                      value={propVideoModel || ''}
+                      onChange={(e) => onVideoModelChange(e.target.value)}
+                      className="h-7 min-w-[120px] pl-2 pr-6 rounded-md bg-[var(--bg-input)] border border-[var(--border-color)] text-[var(--text-secondary)] text-xs focus:outline-none focus:border-[var(--accent)]/50 appearance-none cursor-pointer"
+                      aria-label="视频模型"
+                    >
+                      {videoModels.map((m) => (
+                        <option key={m.name} value={m.name}>{m.name}</option>
+                      ))}
+                    </select>
+                    <ChevronDown className="w-3 h-3 text-[var(--text-muted)] absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  </div>
+                )}
+                <button
+                  onClick={handleGenerateVideo}
+                  disabled={isGeneratingMedia || !promptText.trim()}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-500/10 text-rose-600 text-xs hover:bg-rose-500/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+                  title="生成视频"
+                >
+                  {isGeneratingMedia ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Film className="w-3.5 h-3.5" />
+                  )}
+                  生成视频
+                </button>
+              </div>
+            )}
           </div>
 
 

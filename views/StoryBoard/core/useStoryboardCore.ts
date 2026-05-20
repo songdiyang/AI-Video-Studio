@@ -134,21 +134,38 @@ export function useStoryboardCore(options: UseStoryboardCoreOptions) {
     }
   }, [scriptId, projectId, episodeNumber, imageModel, videoModel]);
 
-  // 同步外部 scripts 数组（仅当外部数组有新增脚本时同步，避免覆盖本地新增）
+  // 同步外部 scripts 数组（当外部数据变化时同步）
   useEffect(() => {
     setScripts(prev => {
-      // 首次加载或外部有新增脚本时同步
-      const currentIds = new Set(prev.map(s => s.id));
-      const newFromExternal = externalScripts.filter(s => !currentIds.has(s.id));
-      if (newFromExternal.length > 0) {
-        // 外部有新增，合并到本地
-        return [...prev, ...newFromExternal];
+      // 如果外部数组为空，保持本地数据（避免初始化时的空覆盖）
+      if (externalScripts.length === 0) return prev;
+        
+      // 如果本地为空，直接使用外部数据
+      if (prev.length === 0) return externalScripts;
+        
+      // 合并外部数据和本地数据，以外部数据为准（更新状态等）
+      const externalMap = new Map(externalScripts.map(s => [s.id, s]));
+      const merged = prev.map(localScript => {
+        const externalScript = externalMap.get(localScript.id);
+        if (externalScript) {
+          // 更新现有剧本的状态和标题
+          return { ...localScript, ...externalScript };
+        }
+        return localScript;
+      });
+        
+      // 添加外部有但本地没有的新剧本
+      const localIds = new Set(prev.map(s => s.id));
+      const newScripts = externalScripts.filter(s => !localIds.has(s.id));
+        
+      if (newScripts.length > 0) {
+        return [...merged, ...newScripts];
       }
-      // 如果本地为空但外部有数据，使用外部数据
-      if (prev.length === 0 && externalScripts.length > 0) {
-        return externalScripts;
-      }
-      // 否则保留本地数据（避免外部旧数据覆盖本地新增）
+        
+      // 如果数据有变化，返回合并后的数组
+      const hasChanges = merged.some((s, i) => s.id !== prev[i]?.id || s.status !== prev[i]?.status || s.title !== prev[i]?.title);
+      if (hasChanges) return merged;
+        
       return prev;
     });
     scriptsRef.current = externalScripts;
@@ -334,26 +351,72 @@ export function useStoryboardCore(options: UseStoryboardCoreOptions) {
     }
     setIsLoadingScript(true);
     const token = getAuthToken();
+    console.log('[useStoryboardCore] 开始加载剧本内容, project:', currentProjectId, 'episode:', currentEpisode);
     return fetch(`/api/scripts/project/${currentProjectId}/episode/${currentEpisode}`, {
       headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     })
       .then(res => res.ok ? res.json() : null)
       .then(data => {
         const script = data?.script;
+        console.log('[useStoryboardCore] 剧本内容加载结果:', script ? { id: script.id, title: script.title, contentLength: script.content?.length } : '无剧本');
         setScriptContent(script?.content || null);
         setScriptTitle(script?.title || `第${currentEpisode}集`);
       })
-      .catch(() => { setScriptContent(null); setScriptTitle(''); })
+      .catch((err) => { console.error('[useStoryboardCore] 加载剧本内容失败:', err); setScriptContent(null); setScriptTitle(''); })
       .finally(() => setIsLoadingScript(false));
   }, [currentScriptId, currentProjectId, currentEpisode]);
+
+  // ===== 剧本内容自动加载 =====
+  useEffect(() => {
+    if (!currentScriptId || !currentProjectId) {
+      setScriptContent(null);
+      setScriptTitle('');
+      return;
+    }
+    console.log('[useStoryboardCore] 触发剧本内容自动加载, scriptId:', currentScriptId, 'episode:', currentEpisode);
+    loadScriptContent();
+  }, [currentScriptId, currentProjectId, currentEpisode, loadScriptContent]);
 
   // ===== 加载项目详情 =====
   useEffect(() => {
     if (!currentProjectId) { setCurrentProject(null); return; }
     let cancelled = false;
+    
+    // 加载项目详情
     fetchProject(currentProjectId)
       .then(p => { if (!cancelled) setCurrentProject(p); })
       .catch(() => { if (!cancelled) setCurrentProject(null); });
+    
+    // 加载项目剧本列表
+    const token = getAuthToken();
+    fetch(`/api/scripts/project/${currentProjectId}`, {
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    })
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (!cancelled && data?.scripts) {
+          const formattedScripts = data.scripts.map((s: any) => ({
+            id: s.id,
+            episode_number: s.episode_number || 1,
+            title: s.title || `第${s.episode_number || 1}集`,
+            status: s.status || 'completed',
+          }));
+          console.log('[useStoryboardCore] 加载项目剧本列表:', formattedScripts.length, '个剧本');
+          setScripts(formattedScripts);
+
+          // 页面刷新后自动选中第一个有效剧本（解决刷新后不显示问题）
+          if (formattedScripts.length > 0 && !currentScriptId) {
+            const firstScript = formattedScripts[0];
+            console.log('[useStoryboardCore] 自动选中第一个剧本:', firstScript.title);
+            setCurrentScriptId(firstScript.id);
+            setCurrentEpisode(firstScript.episode_number);
+          }
+        }
+      })
+      .catch(err => {
+        console.error('[useStoryboardCore] 加载剧本列表失败:', err);
+      });
+    
     return () => { cancelled = true; };
   }, [currentProjectId]);
 
@@ -367,9 +430,62 @@ export function useStoryboardCore(options: UseStoryboardCoreOptions) {
     return () => window.removeEventListener('open-storyboard-comment', handleOpenComment as EventListener);
   }, []);
 
+  // ===== 监听剧本删除/生成事件 =====
+  useEffect(() => {
+    const handleReloadScripts = (e: CustomEvent) => {
+      const { projectId: eventProjectId, episodeNumber: eventEpisodeNumber } = e.detail || {};
+      // 只处理当前项目的事件（如果事件未指定projectId，也执行刷新，兼容旧代码）
+      if (!eventProjectId || eventProjectId === currentProjectId) {
+        console.log('[useStoryboardCore] 监听到剧本刷新事件，重新加载剧本列表');
+        const token = getAuthToken();
+        fetch(`/api/scripts/project/${currentProjectId}`, {
+          headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        })
+          .then(res => res.ok ? res.json() : null)
+          .then(data => {
+            if (data?.scripts) {
+              const formattedScripts = data.scripts.map((s: any) => ({
+                id: s.id,
+                episode_number: s.episode_number || 1,
+                title: s.title || `第${s.episode_number || 1}集`,
+                status: s.status || 'completed',
+              }));
+              console.log('[useStoryboardCore] 剧本列表已刷新:', formattedScripts.length, '个剧本');
+              setScripts(formattedScripts);
+              
+              // 如果有指定集数，自动选择该集
+              if (eventEpisodeNumber) {
+                const targetScript = formattedScripts.find((s: any) => s.episode_number === eventEpisodeNumber);
+                if (targetScript) {
+                  console.log('[useStoryboardCore] 自动选择新生成的剧本:', targetScript.title);
+                  setCurrentScriptId(targetScript.id);
+                  setCurrentEpisode(targetScript.episode_number);
+                }
+              }
+              
+              // 如果删除的是当前剧本，清空当前剧本
+              const deletedEpisode = e.detail?.episodeNumber;
+              if (deletedEpisode && currentEpisode === deletedEpisode && !eventEpisodeNumber) {
+                console.log('[useStoryboardCore] 删除的是当前剧本，清空选择');
+                setCurrentScriptId(null);
+                setScriptContent(null);
+                setScriptTitle('');
+              }
+            }
+          })
+          .catch(err => {
+            console.error('[useStoryboardCore] 刷新剧本列表失败:', err);
+          });
+      }
+    };
+    window.addEventListener('reload-scripts', handleReloadScripts as EventListener);
+    return () => window.removeEventListener('reload-scripts', handleReloadScripts as EventListener);
+  }, [currentProjectId, currentEpisode]);
+
   // ===== 集数切换 =====
   const handleEpisodeSelect = useCallback((script: Script | null) => {
     if (!script) { setCurrentScriptId(null); return; }
+    console.log('[useStoryboardCore] 集数切换, scriptId:', script.id, 'episode:', script.episode_number);
     setCurrentScriptId(script.id);
     setCurrentEpisode(script.episode_number);
     onEpisodeChange?.(script.episode_number, script.id);
@@ -536,6 +652,8 @@ export function useStoryboardCore(options: UseStoryboardCoreOptions) {
         }
       }));
       const token = getAuthToken();
+      // 统一存储层后，所有分镜都绑定到剧本（包括隐式剧本）。
+      // 但自由分镜模式下 currentScriptId 可能为 null，此时仍使用 standalone 端点（后端会自动关联隐式剧本）
       const endpoint = currentScriptId
         ? `/api/storyboards/${currentScriptId}`
         : `/api/storyboards/project/${currentProjectId}/standalone`;
@@ -632,6 +750,7 @@ export function useStoryboardCore(options: UseStoryboardCoreOptions) {
       case 'currentScriptId': setCurrentScriptId(value as number | null); break;
       case 'currentProjectId': setCurrentProjectId(value as number | null); break;
       case 'currentEpisode': setCurrentEpisode(value as number); break;
+      case 'scripts': setScripts(value as Script[]); break;
       case 'showBatchDownloadModal': setShowBatchDownloadModal(value as boolean); break;
       case 'isAnimaticOpen': setIsAnimaticOpen(value as boolean); break;
       case 'isCommentPanelOpen': setIsCommentPanelOpen(value as boolean); break;

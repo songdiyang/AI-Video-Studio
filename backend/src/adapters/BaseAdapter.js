@@ -163,6 +163,13 @@ class BaseAdapter {
       throw new Error(`API 返回空响应体 (HTTP ${status})，请检查模型配置和 API 端点是否正确`);
     }
 
+    // 非 JSON 响应诊断（如 HTML 错误页面）
+    const isHtmlResponse = text.trim().startsWith('<') || contentType.includes('text/html');
+    if (isHtmlResponse) {
+      console.error(`[${this.constructor.name}] API 返回 HTML 而非 JSON: HTTP ${status}, Content-Type: ${contentType}, 内容: ${text.substring(0, 500)}`);
+      throw new Error(`API 返回 HTML 页面而非 JSON (HTTP ${status})，可能是网关错误、WAF 拦截或端点配置错误。响应内容: ${text.substring(0, 200)}`);
+    }
+
     let data;
     try {
       data = JSON.parse(text);

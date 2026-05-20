@@ -184,6 +184,15 @@ async function createVolcengineSpeaker({ audio_url, audio_base64, model_id }) {
   });
 
   const responseText = await response.text();
+
+  // 非 JSON 响应提前检测（如 HTML 错误页面）
+  const responseContentType = response.headers.get('content-type') || 'unknown';
+  const isHtmlResponse = responseText.trim().startsWith('<') || responseContentType.includes('text/html');
+  if (isHtmlResponse) {
+    console.error(`[CloneVoice] API 返回 HTML 而非 JSON: HTTP ${response.status}, Content-Type: ${responseContentType}, 内容: ${responseText.substring(0, 500)}`);
+    throw new Error(`API 返回 HTML 页面而非 JSON (HTTP ${response.status})，可能是网关错误、WAF 拦截或端点配置错误。响应内容: ${responseText.substring(0, 200)}`);
+  }
+
   let data;
   try {
     data = JSON.parse(responseText);
@@ -192,7 +201,7 @@ async function createVolcengineSpeaker({ audio_url, audio_base64, model_id }) {
   }
 
   if (!response.ok) {
-    const errorMsg = data.error?.message || data.message || `HTTP ${response.status}`;
+    const errorMsg = data?.error?.message || data?.message || `HTTP ${response.status}`;
     throw new Error(`火山引擎API错误: ${errorMsg}`);
   }
 

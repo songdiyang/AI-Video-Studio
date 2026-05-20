@@ -6,7 +6,6 @@
 import React, { useCallback } from 'react';
 import PreviewEditor from '../../../../components/PreviewEditor';
 import { useStoryboardContext } from '../../core/StoryboardContext';
-import { fetchScripts } from '../../../../services/scripts';
 import { getAuthToken } from '../../../../services/auth';
 
 const PreviewEditorPlugin: React.FC = () => {
@@ -39,43 +38,75 @@ const PreviewEditorPlugin: React.FC = () => {
     showToast('剧本生成成功！', 'success');
 
     try {
-      // 1. 刷新剧本列表
-      const refreshedScripts = await fetchScripts();
-      const formattedScripts = refreshedScripts.map((s: any) => ({
-        id: s.id,
-        episode_number: s.episode_number || 1,
-        title: s.title || `第${s.episode_number || 1}集`,
-        status: s.status || 'completed',
-      }));
+      // 确定目标项目ID（优先用 payload 中的 projectId，回退到当前项目）
+      const targetProjectId = payload.projectId || state.currentProjectId;
+      const targetEpisode = payload.episodeNumber || payload.episode_number || 1;
+
+      console.log('[PreviewEditorPlugin] 剧本生成成功，目标项目:', targetProjectId, '目标集数:', targetEpisode, '当前集数:', state.currentEpisode);
+      console.log('[PreviewEditorPlugin] payload 内容长度:', payload.content?.length || 0, 'payload.scriptId:', payload.scriptId);
+
+      // 1. 从项目级别接口刷新剧本列表（仅当前项目的剧本，保持集数绑定）
+      const token = getAuthToken();
+      const projectRes = await fetch(`/api/scripts/project/${targetProjectId}`, {
+        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      });
+      let formattedScripts: any[] = [];
+      if (projectRes.ok) {
+        const projectData = await projectRes.json();
+        const projectScripts = projectData.scripts || [];
+        formattedScripts = projectScripts.map((s: any) => ({
+          id: s.id,
+          episode_number: s.episode_number || 1,
+          title: s.title || `第${s.episode_number || 1}集`,
+          status: s.status || 'completed',
+        }));
+      } else {
+        // 回退：如果项目接口失败，使用 payload 构造最小剧本列表
+        formattedScripts = [{
+          id: payload.scriptId,
+          episode_number: targetEpisode,
+          title: payload.title || `第${targetEpisode}集`,
+          status: 'completed',
+        }];
+      }
+      console.log('[PreviewEditorPlugin] 刷新后的剧本列表:', formattedScripts.map(s => ({ id: s.id, episode: s.episode_number })));
       setState('scripts', formattedScripts);
 
-      // 2. 确定目标集数
-      const targetEpisode = payload.episodeNumber || payload.episode_number || 1;
-      const targetProjectId = payload.projectId || state.currentProjectId;
-
-      // 3. 如果生成的是当前项目+集数，刷新剧本内容（仅刷新大纲面板，不刷新整个工作台）
+      // 2. 如果生成的是当前项目+集数，刷新剧本内容
       if (targetProjectId && state.currentProjectId === targetProjectId) {
-        const token = getAuthToken();
-        const res = await fetch(`/api/scripts/project/${targetProjectId}/episode/${targetEpisode}`, {
-          headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        });
-        if (res.ok) {
-          const data = await res.json();
-          const script = data?.script;
-          if (script) {
-            // 直接更新剧本内容状态，触发大纲面板重新渲染
-            setState('scriptContent', script.content || null);
-            setState('scriptTitle', script.title || `第${targetEpisode}集`);
-          }
-        }
-
-        // 4. 如果当前不在目标集数，切换到目标集数
+        // 3. 如果当前不在目标集数，先切换到目标集数（切换会触发剧本内容自动加载）
         if (state.currentEpisode !== targetEpisode) {
+          console.log('[PreviewEditorPlugin] 当前集数与目标集数不一致，切换到目标集数:', targetEpisode);
           const targetScript = formattedScripts.find((s: any) => s.episode_number === targetEpisode);
           if (targetScript) {
             handleEpisodeSelect(targetScript);
           }
+        } else {
+          // 当前已在目标集数，优先使用 payload 中的内容（避免请求时序问题）
+          console.log('[PreviewEditorPlugin] 当前已在目标集数，直接刷新剧本内容');
+          if (payload.content) {
+            console.log('[PreviewEditorPlugin] 使用 payload.content 直接设置, 长度:', payload.content.length);
+            setState('scriptContent', payload.content);
+            setState('scriptTitle', payload.title || `第${targetEpisode}集`);
+          } else {
+            // payload 无内容时回退到接口请求
+            console.log('[PreviewEditorPlugin] payload 无内容，回退到接口请求');
+            const refreshRes = await fetch(`/api/scripts/project/${targetProjectId}/episode/${targetEpisode}`, {
+              headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+            });
+            if (refreshRes.ok) {
+              const refreshData = await refreshRes.json();
+              const refreshedScript = refreshData?.script;
+              console.log('[PreviewEditorPlugin] 接口刷新结果:', refreshedScript ? { id: refreshedScript.id, contentLength: refreshedScript.content?.length } : '无剧本');
+              if (refreshedScript) {
+                setState('scriptContent', refreshedScript.content || null);
+                setState('scriptTitle', refreshedScript.title || `第${targetEpisode}集`);
+              }
+            }
+          }
         }
+      } else {
+        console.log('[PreviewEditorPlugin] 项目不匹配，跳过内容刷新。targetProjectId:', targetProjectId, 'currentProjectId:', state.currentProjectId);
       }
     } catch (err) {
       console.error('[PreviewEditorPlugin] 剧本生成后刷新失败:', err);

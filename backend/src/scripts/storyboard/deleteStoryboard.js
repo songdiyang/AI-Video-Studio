@@ -48,14 +48,14 @@ async function deleteStoryboard(req, res) {
       return res.status(404).json({ message: '分镜不存在' });
     }
 
-    // 权限检查：剧本模式检查剧本所有者，独立模式检查项目权限
+    // 权限检查：统一通过项目权限验证
     let isOwner = false;
     if (storyboard.script_id && storyboard.script_user_id) {
-      // 剧本模式：检查剧本所有者
+      // 检查剧本所有者
       isOwner = storyboard.script_user_id === userId;
     }
     if (!isOwner) {
-      // 检查是否为项目协作者（适用于剧本模式和独立模式）
+      // 检查是否为项目协作者
       const { getEffectiveProjectRole } = require('../../middleware/collaborationAuth');
       const projectId = storyboard.project_id;
       if (projectId) {
@@ -63,23 +63,22 @@ async function deleteStoryboard(req, res) {
         if (!role || role === 'viewer') {
           return res.status(403).json({ message: '无权删除此分镜' });
         }
-      } else if (!storyboard.script_id) {
-        // 独立模式且无 project_id，无法验证权限
+      } else {
         return res.status(403).json({ message: '无权删除此分镜' });
       }
     }
 
     const scriptId = storyboard.script_id;
+    if (!scriptId) {
+      return res.status(500).json({ message: '分镜数据异常：缺少 script_id' });
+    }
 
     // 删除该分镜
     await execute('DELETE FROM storyboards WHERE id = ?', [storyboardId]);
     console.log(`[DeleteStoryboard] 已删除分镜 ${storyboardId}`);
 
     // 重排剩余分镜的 idx（保持连续）
-    // 支持剧本模式和独立模式（script_id 为 null 时按 project_id 重排）
-    const remaining = scriptId
-      ? await queryAll('SELECT id FROM storyboards WHERE script_id = ? ORDER BY idx ASC', [scriptId])
-      : await queryAll('SELECT id FROM storyboards WHERE script_id IS NULL AND project_id = ? ORDER BY idx ASC', [storyboard.project_id]);
+    const remaining = await queryAll('SELECT id FROM storyboards WHERE script_id = ? ORDER BY idx ASC', [scriptId]);
     for (let i = 0; i < remaining.length; i++) {
       await execute(
         'UPDATE storyboards SET idx = ? WHERE id = ?',

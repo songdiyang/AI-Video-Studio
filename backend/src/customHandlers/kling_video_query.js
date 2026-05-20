@@ -57,6 +57,14 @@ module.exports = {
     console.log('[Kling Query Handler] Response status:', response.status);
     console.log('[Kling Query Handler] Response body:', responseText);
 
+    // 非 JSON 响应提前检测（如 HTML 错误页面）
+    const responseContentType = response.headers.get('content-type') || 'unknown';
+    const isHtmlResponse = responseText.trim().startsWith('<') || responseContentType.includes('text/html');
+    if (isHtmlResponse) {
+      console.error(`[Kling Query Handler] API 返回 HTML 而非 JSON: HTTP ${response.status}, Content-Type: ${responseContentType}, 内容: ${responseText.substring(0, 500)}`);
+      throw new Error(`API 返回 HTML 页面而非 JSON (HTTP ${response.status})，可能是网关错误、WAF 拦截或端点配置错误。响应内容: ${responseText.substring(0, 200)}`);
+    }
+
     let data;
     try {
       data = JSON.parse(responseText);
@@ -72,7 +80,7 @@ module.exports = {
     }
 
     if (!response.ok) {
-      throw new Error(data.message || data.msg || JSON.stringify(data) || `Kling API 错误: ${response.status}`);
+      throw new Error(data?.message || data?.msg || JSON.stringify(data) || `Kling API 错误: ${response.status}`);
     }
 
     return data;

@@ -238,14 +238,22 @@ async function generateScript(req, res) {
           ['generating', title || `第${targetEpisode}集`, combinedQuery.existing_script_id]
         );
         scriptId = combinedQuery.existing_script_id;
+      } else if (combinedQuery.existing_script_status === 'completed') {
+        // 已完成 → 允许用户重新生成（覆盖原有剧本）
+        console.log(`[Generate Script] 第${targetEpisode}集已完成，用户要求重新生成，覆盖原有剧本`);
+        await execute(
+          'UPDATE scripts SET status = ?, title = ?, content = \'\', updated_at = NOW() WHERE id = ?',
+          ['generating', title || `第${targetEpisode}集`, combinedQuery.existing_script_id]
+        );
+        scriptId = combinedQuery.existing_script_id;
       } else {
-        return res.status(400).json({ message: `第${targetEpisode}集已存在，请编辑或生成下一集` });
+        return res.status(400).json({ message: `第${targetEpisode}集已存在（状态：${combinedQuery.existing_script_status}），请编辑或生成下一集` });
       }
     } else {
-      // 创建生成中的剧本记录
+      // 创建生成中的剧本记录（标记为 AI 生成来源）
       const insertResult = await execute(
-        'INSERT INTO scripts (user_id, project_id, episode_number, title, content, status) VALUES (?, ?, ?, ?, ?, ?)', 
-        [userId, projectId, targetEpisode, title || `第${targetEpisode}集`, '', 'generating']
+        'INSERT INTO scripts (user_id, project_id, episode_number, title, content, status, source_type) VALUES (?, ?, ?, ?, ?, ?, ?)', 
+        [userId, projectId, targetEpisode, title || `第${targetEpisode}集`, '', 'generating', 'ai_generated']
       );
       scriptId = insertResult.insertId;
     }

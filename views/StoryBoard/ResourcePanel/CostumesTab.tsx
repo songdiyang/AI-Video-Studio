@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
-import { Card, CardBody, Chip, Button, Image, Modal, ModalContent, ModalHeader, ModalBody } from '@heroui/react';
-import { Sparkles, Loader2, ZoomIn, Shirt } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Card, CardBody, Chip, Button, Image } from '@heroui/react';
+import { Sparkles, Loader2, ZoomIn, Shirt, Trash2, ExternalLink } from 'lucide-react';
 import type { Costume } from '../../../services/costumes';
 
 interface CostumesTabProps {
@@ -9,6 +9,8 @@ interface CostumesTabProps {
   imageModel?: string;
   textModel?: string;
   onGenerateViews?: (costume: Costume) => void;
+  /** 右键删除回调 */
+  onDelete?: (costume: Costume) => void;
 }
 
 const genderLabelMap: Record<string, string> = {
@@ -54,9 +56,22 @@ const CostumesTab: React.FC<CostumesTabProps> = ({
   imageModel,
   textModel,
   onGenerateViews,
+  onDelete,
 }) => {
   const [generatingIds, setGeneratingIds] = useState<Set<number>>(new Set());
-  const [previewImage, setPreviewImage] = useState<{ url: string; name: string } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; costume: Costume } | null>(null);
+
+  useEffect(() => {
+    const handleClick = () => setContextMenu(null);
+    window.addEventListener('click', handleClick);
+    return () => window.removeEventListener('click', handleClick);
+  }, []);
+
+  const handleContextMenu = (e: React.MouseEvent, costume: Costume) => {
+    e.preventDefault();
+    if (!onDelete) return;
+    setContextMenu({ x: e.clientX, y: e.clientY, costume });
+  };
 
   const handleGenerate = async (costume: Costume) => {
     if (!onGenerateViews) return;
@@ -103,6 +118,7 @@ const CostumesTab: React.FC<CostumesTabProps> = ({
               className="border transition-colors hover:border-pink-500/30 cursor-pointer"
               style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}
               onDoubleClick={() => openAssetEditTab(costume)}
+              onContextMenu={(e) => handleContextMenu(e, costume)}
               isPressable
             >
               <CardBody className="p-3">
@@ -115,10 +131,10 @@ const CostumesTab: React.FC<CostumesTabProps> = ({
                           src={costume.image_url}
                           alt={costume.name}
                           removeWrapper
-                          className="w-14 h-14 object-cover rounded-lg border border-slate-700/50 cursor-zoom-in"
+                          className="w-14 h-14 object-cover rounded-lg border border-slate-700/50 cursor-pointer"
                           onClick={(e) => {
                             e.stopPropagation();
-                            setPreviewImage({ url: costume.image_url, name: costume.name });
+                            openAssetEditTab(costume);
                           }}
                         />
                         <div className="absolute inset-0 bg-black/40 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
@@ -180,24 +196,67 @@ const CostumesTab: React.FC<CostumesTabProps> = ({
         })
       )}
 
+      {/* 右键菜单 */}
+      {contextMenu && (
+        <div
+          className="fixed z-50 bg-(--bg-card) border border-(--border-color) rounded-lg shadow-xl py-1.5 min-w-[180px] select-none"
+          style={{ top: contextMenu.y, left: contextMenu.x }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* 打开 */}
+          <button
+            className="w-full text-left px-3 py-1.5 text-sm text-(--text-primary) hover:bg-(--accent)/10 flex items-center gap-2.5 transition-colors"
+            onClick={() => {
+              openAssetEditTab(contextMenu.costume);
+              setContextMenu(null);
+            }}
+          >
+            <ExternalLink className="w-4 h-4 text-pink-400" />
+            打开详情
+          </button>
 
-      {/* 图片预览弹窗 */}
-      <Modal isOpen={!!previewImage} onOpenChange={() => setPreviewImage(null)} size="xl">
-        <ModalContent className="bg-slate-900/95 backdrop-blur-xl border border-slate-700/50">
-          <ModalHeader className="text-slate-100 font-bold">
-            {previewImage?.name}
-          </ModalHeader>
-          <ModalBody className="p-2 flex items-center justify-center">
-            {previewImage?.url && (
-              <img
-                src={previewImage.url}
-                alt={previewImage.name}
-                className="max-w-full max-h-[70vh] object-contain rounded-lg"
-              />
-            )}
-          </ModalBody>
-        </ModalContent>
-      </Modal>
+          {/* 分割线 */}
+          {onDelete && <div className="my-1 border-t border-(--border-color)" />}
+
+          {/* 删除 */}
+          {onDelete && (
+            <button
+              className="w-full text-left px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 flex items-center gap-2.5 transition-colors"
+              onClick={() => {
+                onDelete(contextMenu.costume);
+                setContextMenu(null);
+              }}
+            >
+              <Trash2 className="w-4 h-4" />
+              删除服装
+            </button>
+          )}
+
+          {/* 底部快捷栏 */}
+          <div className="mt-1.5 pt-1.5 border-t border-(--border-color) px-2 pb-1">
+            <div className="flex items-center justify-around">
+              <button
+                className="flex flex-col items-center gap-0.5 p-1.5 rounded hover:bg-(--accent)/10 transition-colors"
+                onClick={() => { openAssetEditTab(contextMenu.costume); setContextMenu(null); }}
+                title="打开"
+              >
+                <ExternalLink className="w-4 h-4 text-pink-400" />
+                <span className="text-[10px] text-(--text-muted)">打开</span>
+              </button>
+              {onDelete && (
+                <button
+                  className="flex flex-col items-center gap-0.5 p-1.5 rounded hover:bg-red-500/10 transition-colors"
+                  onClick={() => { onDelete(contextMenu.costume); setContextMenu(null); }}
+                  title="删除"
+                >
+                  <Trash2 className="w-4 h-4 text-red-400" />
+                  <span className="text-[10px] text-red-400">删除</span>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

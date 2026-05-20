@@ -12,6 +12,7 @@
 
 const { queryOne, queryAll } = require('../../dbHelper');
 const { isNonCharacterEntity, MIN_CHARACTER_APPEARANCE } = require('../../utils/characterFilter');
+const { getOrCreateImplicitScript } = require('./implicitScriptHelper');
 
 module.exports = async (req, res) => {
   try {
@@ -31,6 +32,8 @@ module.exports = async (req, res) => {
       return res.status(400).json({ error: 'type 参数必须为 frame 或 video' });
     }
 
+    let effectiveScriptId = scriptId;
+
     // Verify ownership
     if (scriptId) {
       const script = await queryOne(
@@ -46,19 +49,19 @@ module.exports = async (req, res) => {
       if (!role) {
         return res.status(403).json({ error: '无权访问该项目' });
       }
+      // 自由分镜模式：获取/创建隐式剧本
+      const ep = Number.isFinite(Number(req.body.episodeNumber)) && Number(req.body.episodeNumber) >= 1
+        ? Number(req.body.episodeNumber)
+        : 1;
+      effectiveScriptId = await getOrCreateImplicitScript(projectId, ep, userId);
     }
 
     // 1. 批量获取所有分镜数据
     const placeholders = sceneIds.map(() => '?').join(',');
-    const storyboards = scriptId
-      ? await queryAll(
-          `SELECT * FROM storyboards WHERE id IN (${placeholders}) AND script_id = ?`,
-          [...sceneIds, scriptId]
-        )
-      : await queryAll(
-          `SELECT * FROM storyboards WHERE id IN (${placeholders}) AND project_id = ? AND script_id IS NULL`,
-          [...sceneIds, projectId]
-        );
+    const storyboards = await queryAll(
+      `SELECT * FROM storyboards WHERE id IN (${placeholders}) AND script_id = ?`,
+      [...sceneIds, effectiveScriptId]
+    );
 
     // 建立 id -> storyboard 映射
     const storyboardMap = {};
@@ -102,17 +105,12 @@ module.exports = async (req, res) => {
       studiosByStoryboard[s.storyboard_id].push(s);
     });
 
-    // 4. 统计同一剧本/项目中每个角色在所有分镜中的出现次数
+    // 4. 统计同一剧本中每个角色在所有分镜中的出现次数
     const charAppearanceMap = {};
-    const allScriptStoryboards = scriptId
-      ? await queryAll(
-          `SELECT variables_json FROM storyboards WHERE script_id = ?`,
-          [scriptId]
-        )
-      : await queryAll(
-          `SELECT variables_json FROM storyboards WHERE project_id = ? AND script_id IS NULL`,
-          [projectId]
-        );
+    const allScriptStoryboards = await queryAll(
+      `SELECT variables_json FROM storyboards WHERE script_id = ?`,
+      [effectiveScriptId]
+    );
     for (const sb of allScriptStoryboards) {
       let vars = {};
       try { vars = typeof sb.variables_json === 'string' ? JSON.parse(sb.variables_json) : (sb.variables_json || {}); } catch { vars = {}; }

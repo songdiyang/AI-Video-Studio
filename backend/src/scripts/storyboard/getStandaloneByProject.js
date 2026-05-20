@@ -1,14 +1,16 @@
 /**
  * GET /api/storyboards/project/:projectId/standalone
- * 获取指定项目下的"自由分镜"（script_id IS NULL）
+ * 获取指定项目下的自由分镜（通过隐式剧本统一绑定）
  *
- * 与 getByScriptId 配对：剧集分镜走 /:scriptId，自由分镜走此端点。
+ * 改造后：自由分镜不再使用 script_id = NULL，而是通过隐式剧本绑定。
+ * 此端点保持 API 兼容性，内部自动查找/创建隐式剧本后返回分镜数据。
  */
 
 const { queryOne, queryAll } = require('../../dbHelper');
 const { authMiddleware } = require('../../middleware');
 const { getBatchStoryboardLinks } = require('../../resourceLinks/queryLinks');
 const { getEffectiveProjectRole } = require('../../middleware/collaborationAuth');
+const { getOrCreateImplicitScript } = require('./implicitScriptHelper');
 
 // 与 getByScriptId 共用的缩略图 URL 生成逻辑
 function generateThumbUrl(originalUrl) {
@@ -42,16 +44,13 @@ module.exports = (router) => {
         return res.status(403).json({ message: '无权访问该项目' });
       }
 
-      // 查询自由分镜（script_id IS NULL），按集数可选过滤
-      let sql = 'SELECT * FROM storyboards WHERE project_id = ? AND script_id IS NULL';
-      const params = [projectId];
-      if (useEpisode !== null) {
-        // 旧数据 episode_number 已回填为 1；新数据写入时也默认 1，因此直接相等过滤即可
-        sql += ' AND episode_number = ?';
-        params.push(useEpisode);
-      }
-      sql += ' ORDER BY idx ASC';
-      const storyboards = await queryAll(sql, params);
+      // 查找/创建隐式剧本，然后按 script_id 查询分镜
+      const implicitScriptId = await getOrCreateImplicitScript(projectId, useEpisode || 1, userId);
+
+      const storyboards = await queryAll(
+        'SELECT * FROM storyboards WHERE script_id = ? ORDER BY idx ASC',
+        [implicitScriptId]
+      );
 
       // 批量补齐资源关联
       const sbIds = storyboards.map(sb => sb.id);

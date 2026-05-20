@@ -63,6 +63,14 @@ module.exports = {
     console.log('[Nano Banana Query] 响应状态:', response.status);
     console.log('[Nano Banana Query] 响应内容:', responseText);
 
+    // 非 JSON 响应提前检测（如 HTML 错误页面）
+    const responseContentType = response.headers.get('content-type') || 'unknown';
+    const isHtmlResponse = responseText.trim().startsWith('<') || responseContentType.includes('text/html');
+    if (isHtmlResponse) {
+      console.error(`[Nano Banana Query] API 返回 HTML 而非 JSON: HTTP ${response.status}, Content-Type: ${responseContentType}, 内容: ${responseText.substring(0, 500)}`);
+      throw new Error(`API 返回 HTML 页面而非 JSON (HTTP ${response.status})，可能是网关错误、WAF 拦截或端点配置错误。响应内容: ${responseText.substring(0, 200)}`);
+    }
+
     // 3. 解析响应
     let data;
     try {
@@ -73,7 +81,7 @@ module.exports = {
 
     // 4. 检查响应状态
     if (!response.ok) {
-      const errorMsg = data.msg || data.error || JSON.stringify(data);
+      const errorMsg = data?.msg || data?.error || JSON.stringify(data);
       throw new Error(`Nano Banana API 错误 (${response.status}): ${errorMsg}`);
     }
 

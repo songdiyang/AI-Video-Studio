@@ -2024,7 +2024,28 @@ router.post('/ai-models/:id/test-handler', authMiddleware, requireAdmin, async (
   const { params } = req.body;
 
   try {
-    const model = await queryOne('SELECT id, name, category FROM ai_model_configs WHERE id = ?', [id]);
+    // 优先查 V2 表（避免 V1/V2 ID 冲突，如 id=10 在旧表是图片模型、在 V2 表是视频模型）
+    let model = null;
+    const v2Model = await queryOne(
+      `SELECT m.id, m.name, m.capabilities 
+       FROM ai_models_v2 m WHERE m.id = ?`,
+      [id]
+    );
+    if (v2Model) {
+      const caps = parseJsonField(v2Model.capabilities, []);
+      const category = caps.includes('video_gen') ? 'VIDEO'
+        : caps.includes('image_gen') ? 'IMAGE'
+        : caps.includes('audio_gen') ? 'AUDIO'
+        : caps.includes('vision') ? 'MULTIMODAL'
+        : 'TEXT';
+      model = { id: v2Model.id, name: v2Model.name, category };
+    }
+
+    // V2 表没有时，再回退到旧表
+    if (!model) {
+      model = await queryOne('SELECT id, name, category FROM ai_model_configs WHERE id = ?', [id]);
+    }
+    
     if (!model) {
       return res.status(404).json({ success: false, message: '模型不存在' });
     }

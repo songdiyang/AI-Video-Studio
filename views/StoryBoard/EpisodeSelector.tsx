@@ -9,35 +9,28 @@ interface Script {
   status: string;
 }
 
-// 「无参考剧本」虚拟项 id（保证与真实 script id 不冲突）
-export const STANDALONE_SCRIPT_ID = 0;
 // 「+ 新建下一集」虚拟项 id（与真实 script id 不冲突）
 export const CREATE_NEXT_EPISODE_ID = -1;
 
 interface EpisodeSelectorProps {
   scripts: Script[];
   currentEpisode: number;
-  /** 当前选中的 scriptId，null 表示未绑定任何参考剧本 */
+  /** 当前选中的 scriptId */
   currentScriptId?: number | null;
   /** 当前项目名称 */
   projectName?: string;
   onSelect: (script: Script | null) => void;
   /**
-   * 未绑定参考剧本时直接输入「当前进度的集数标签」。
-   * 集数仅作为用户侧的工作量标记（方便识别做到第几集），不参与数据归档。
-   * 未提供时不渲染标签输入框。
+   * 自由创作模式下的集数切换回调。
+   * 统一存储层后，自由分镜也绑定隐式剧本，但前端仍保留此回调用于集数标签切换。
    */
   onStandaloneEpisodeChange?: (episode: number) => void;
   /**
-   * 无参考剧本模式下用户已使用的最大集数标签（localStorage 持久化）。
-   * 用于在集数下拉里列出 1..max 供用户自由切换。
-   * 未提供时退回纯数字输入框。
+   * 自由创作模式下已使用的最大集数标签。
    */
   standaloneMaxEpisode?: number;
   /**
    * 点击"+ 新建下一集"时回调。
-   * 由父组件负责调用后端创建空白剧集（episodeNumber = max+1）并刷新列表。
-   * 未提供时不渲染该入口。
    */
   onCreateNextEpisode?: () => void;
   /**
@@ -47,11 +40,12 @@ interface EpisodeSelectorProps {
 }
 
 /**
- * 参考剧本与集数选择器
- *  - 左侧：参考剧本选择（无 / 某剧本，剧本仅作为 prompt 注入参考）
- *  - 右侧：集数进度标签
- *      - 未绑剧本时：数字输入框，保存在本地，方便用户识别「做到第几集」
- *      - 已绑剧本且有多集时：剧本集数切换 + 「新建下一集」入口
+ * 集数选择器
+ * 统一存储层后，所有分镜都绑定到剧本（包括隐式剧本）。
+ * 此组件负责：
+ *  - 显示项目名称
+ *  - 集数切换（绑定剧本时显示剧本列表，自由创作时显示进度标签）
+ *  - 新建下一集入口
  */
 const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
   scripts,
@@ -76,29 +70,13 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
       editInputRef.current.select();
     }
   }, [editingId]);
-  const isStandalone = currentScriptId == null || currentScriptId === STANDALONE_SCRIPT_ID;
-
   // 当前选中的剧本（按 scriptId 匹配）
-  const currentScript = !isStandalone
+  const currentScript = currentScriptId
     ? scripts.find(s => s.id === currentScriptId)
     : null;
 
-  // ---- 剧本绑定选择 ----
-  const bindSelectedKey = isStandalone
-    ? String(STANDALONE_SCRIPT_ID)
-    : (currentScript ? String(currentScript.id) : String(STANDALONE_SCRIPT_ID));
-
-  const handleBindChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const selectedId = parseInt(e.target.value, 10);
-    if (selectedId === STANDALONE_SCRIPT_ID) {
-      onSelect(null);
-      return;
-    }
-    const script = scripts.find(s => s.id === selectedId);
-    if (script) {
-      onSelect(script);
-    }
-  };
+  // 是否有绑定剧本（非隐式剧本）
+  const hasBoundScript = !!currentScript;
 
   // ---- 集数切换选择 ----
   const handleEpisodeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -132,17 +110,17 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
           className="h-8 min-h-8 px-3 inline-flex items-center gap-1.5 rounded-lg bg-[var(--accent)]/8 border border-[var(--accent)]/20 text-sm font-semibold text-[var(--accent)] truncate"
           title={projectName || '未命名项目'}
         >
-          {isStandalone ? (
-            <Pencil className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-          ) : (
+          {hasBoundScript ? (
             <BookOpen className="w-3.5 h-3.5 text-violet-400 shrink-0" />
+          ) : (
+            <Pencil className="w-3.5 h-3.5 text-amber-400 shrink-0" />
           )}
           <span className="truncate">{projectName || '未命名项目'}</span>
         </div>
       </div>
 
-      {/* 未绑剧本时：集数作为「进度标签」，纯前端 localStorage 持久化，不参与数据归档 */}
-      {isStandalone && onStandaloneEpisodeChange && (() => {
+      {/* 自由创作模式：集数作为「进度标签」 */}
+      {!hasBoundScript && onStandaloneEpisodeChange && (() => {
         // 读取父组件传入的最大集数，确保 Select 保留所有已到达的集数选项，用户可自由前后切换
         const maxEp = Math.max(standaloneMaxEpisode || 0, currentEpisode || 1, 1);
         const options = Array.from({ length: maxEp }, (_, i) => i + 1);
@@ -196,8 +174,8 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
         );
       })()}
 
-      {/* 集数切换器（绑定剧本后始终显示，包含「新建下一集」） */}
-      {!isStandalone && (
+      {/* 集数切换器（绑定剧本后显示剧本集数列表） */}
+      {hasBoundScript && (
         <>
           <div className="w-px h-5 bg-(--border-color)" />
           <Select

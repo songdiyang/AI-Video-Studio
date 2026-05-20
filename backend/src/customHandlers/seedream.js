@@ -369,6 +369,14 @@ module.exports = {
     console.log('[Seedream Handler] 响应状态:', response.status);
     console.log('[Seedream Handler] 响应内容:', responseText.substring(0, 500));
 
+    // 非 JSON 响应提前检测（如 HTML 错误页面）
+    const responseContentType = response.headers.get('content-type') || 'unknown';
+    const isHtmlResponse = responseText.trim().startsWith('<') || responseContentType.includes('text/html');
+    if (isHtmlResponse) {
+      console.error(`[Seedream Handler] API 返回 HTML 而非 JSON: HTTP ${response.status}, Content-Type: ${responseContentType}, 内容: ${responseText.substring(0, 500)}`);
+      throw new Error(`API 返回 HTML 页面而非 JSON (HTTP ${response.status})，可能是网关错误、WAF 拦截或端点配置错误。响应内容: ${responseText.substring(0, 200)}`);
+    }
+
     // 5. 解析响应
     let data;
     try {
@@ -378,7 +386,7 @@ module.exports = {
     }
 
     if (!response.ok) {
-      const errorMsg = data.error?.message || data.message || data.msg || JSON.stringify(data);
+      const errorMsg = data?.error?.message || data?.message || data?.msg || JSON.stringify(data);
       const userMsg = friendlyErrorMessage(response.status, errorMsg);
       throw new Error(`Seedream 图片生成失败: ${userMsg}`);
     }

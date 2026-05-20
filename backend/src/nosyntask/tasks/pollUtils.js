@@ -352,10 +352,14 @@ async function submitAndPoll(modelName, submitParams, options = {}) {
 
   console.log(`[${logTag}] 异步任务已提交, taskId=${taskId}, 委托给 PollManager 统一调度轮询...`);
 
+  // 提取 apiKey 供查询阶段使用（优先使用 submitResult._submitParams 中的 apiKey，其次 submitParams）
+  const apiKey = submitResult._submitParams?.apiKey || submitParams.apiKey || null;
+
   // 通过 PollManager 注册轮询任务
   const pollResult = await pollManager.register({
     modelName,
     queryFields,
+    apiKey,
     intervalMs: intervalMs,
     maxDurationMs: maxDurationMs,
     maxNetworkErrors,
@@ -369,7 +373,18 @@ async function submitAndPoll(modelName, submitParams, options = {}) {
 
     // 每次轮询结果的判断回调
     onPollResult: (queryResult) => {
+      // 检测查询响应中的 error 对象（如认证错误、服务端错误等）
       const rawData = queryResult._raw || queryResult;
+      if (rawData && rawData.error) {
+        const errorCode = rawData.error.code || '';
+        const errorMsg = rawData.error.message || rawData.error.msg || JSON.stringify(rawData.error);
+        console.warn(`[${logTag}] 查询返回错误对象: code=${errorCode}, message=${errorMsg}`);
+        return {
+          status: 'failed',
+          error: `查询接口返回错误 [${errorCode}]: ${errorMsg} (taskId: ${taskId})`
+        };
+      }
+
       const mappedBase = { ...queryResult };
       delete mappedBase._raw;
 

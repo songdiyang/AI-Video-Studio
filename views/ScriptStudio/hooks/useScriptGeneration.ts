@@ -186,6 +186,10 @@ export function useScriptGeneration({
         // 刷新剧本列表
         if (selectedProject) {
           await loadProjectScript(selectedProject.id, data.episodeNumber);
+          // 发送事件通知 StoryBoard 刷新剧本列表
+          window.dispatchEvent(new CustomEvent('reload-scripts', {
+            detail: { projectId: selectedProject.id, episodeNumber: data.episodeNumber }
+          }));
         }
         
         // 标记工作流已消费

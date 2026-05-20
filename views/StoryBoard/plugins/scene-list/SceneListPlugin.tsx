@@ -33,6 +33,7 @@ const SceneListPlugin: React.FC = () => {
       currentEpisode={state.currentEpisode}
       currentScriptId={state.currentScriptId}
       projectName={state.currentProject?.name}
+      standaloneMaxEpisode={state.standaloneMaxEpisode}
       onSelectScene={setSelectedScene}
       onInsertScene={sceneActions.insertScene}
       onDeleteScene={sceneActions.deleteScene}
@@ -67,7 +68,6 @@ const SceneListPlugin: React.FC = () => {
           const { updateScriptTitle, fetchScripts } = await import('../../../../services/scripts');
           await updateScriptTitle(scriptId, title);
           const refreshed = await fetchScripts();
-          // 触发重新渲染
           window.dispatchEvent(new CustomEvent('scriptsRefreshed', { detail: refreshed }));
         } catch (err: any) {
           console.error('更新标题失败:', err);

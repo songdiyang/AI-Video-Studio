@@ -469,7 +469,11 @@ const AIModels: React.FC = () => {
           id: testingV2Model.id,
           name: testingV2Model.name,
           provider: testingV2Model.provider,
-          category: 'TEXT',
+          category: testingV2Model.capabilities?.includes('video_gen') ? 'VIDEO'
+            : testingV2Model.capabilities?.includes('image_gen') ? 'IMAGE'
+            : testingV2Model.capabilities?.includes('audio_gen') ? 'AUDIO'
+            : testingV2Model.capabilities?.includes('vision') ? 'MULTIMODAL'
+            : 'TEXT',
           is_active: testingV2Model.is_active,
           provider_id: testingV2Model.provider_id,
           model_id: testingV2Model.model_id,
