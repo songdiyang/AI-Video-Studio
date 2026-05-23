@@ -20,7 +20,7 @@ async function lockStoryboard(req, res) {
     }
 
     // 检查分镜是否存在
-    const [storyboard] = await execute(
+    const storyboard = await execute(
       'SELECT id, is_locked, locked_by FROM storyboards WHERE id = ?',
       [storyboardId]
     );
@@ -73,7 +73,7 @@ async function unlockStoryboard(req, res) {
     }
 
     // 检查分镜是否存在
-    const [storyboard] = await execute(
+    const storyboard = await execute(
       'SELECT id, is_locked, locked_by FROM storyboards WHERE id = ?',
       [storyboardId]
     );

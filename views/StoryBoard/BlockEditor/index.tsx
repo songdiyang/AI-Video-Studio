@@ -7,7 +7,10 @@ import React from 'react';
 import DialogEditor from './DialogEditor';
 import { BlockEditorProps } from './types/blockTypes';
 
-const BlockEditor: React.FC<BlockEditorProps> = ({
+const BlockEditor: React.FC<BlockEditorProps & {
+  textModel?: string;
+  onTextModelChange?: (model: string) => void;
+}> = ({
   storyboardId,
   initialBlocks = [],
   onChange,
@@ -35,6 +38,8 @@ const BlockEditor: React.FC<BlockEditorProps> = ({
   onGenerateVideo,
   hasAction,
   imageFrameTab,
+  textModel,
+  onTextModelChange,
 }) => {
   // 将积木块转换为提示词文本
   const initialPrompt = initialBlocks
@@ -101,6 +106,8 @@ const BlockEditor: React.FC<BlockEditorProps> = ({
       onGenerateVideo={onGenerateVideo}
       hasAction={hasAction}
       imageFrameTab={imageFrameTab}
+      textModel={textModel}
+      onTextModelChange={onTextModelChange}
     />
   );
 };

@@ -4,6 +4,7 @@
  */
 
 const { queryOne, execute } = require('../../dbHelper');
+const ragService = require('../../services/ragService');
 
 async function createScript(req, res) {
   const { projectId, title, content, episodeNumber } = req.body || {};
@@ -53,6 +54,19 @@ async function createScript(req, res) {
       [userId, projectId || null, targetEpisode, title || `第${targetEpisode}集`, scriptContent, 'completed', 'manual', 0]
     );
     const scriptId = result.insertId;
+
+    // 异步建立 RAG 索引（不阻塞响应）
+    if (projectId && scriptContent.trim()) {
+      ragService.indexScript({
+        id: scriptId,
+        project_id: projectId,
+        episode_number: targetEpisode,
+        title: title || `第${targetEpisode}集`,
+        content: scriptContent,
+      }).catch(err => {
+        console.error('[Create Script] RAG 索引失败:', err);
+      });
+    }
 
     res.json({
       success: true,

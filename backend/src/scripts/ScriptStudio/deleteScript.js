@@ -4,6 +4,7 @@
  */
 
 const { queryOne, execute } = require('../../dbHelper');
+const ragService = require('../../services/ragService');
 
 async function deleteScript(req, res) {
   const userId = req.user.id;
@@ -18,6 +19,11 @@ async function deleteScript(req, res) {
 
     // 删除剧本
     await execute('DELETE FROM scripts WHERE id = ? AND user_id = ?', [id, userId]);
+
+    // 异步删除 RAG 索引（不阻塞响应）
+    ragService.deleteScriptIndex(script.id).catch(err => {
+      console.error('[Delete Script] RAG 索引删除失败:', err);
+    });
 
     return res.json({ message: '剧本删除成功' });
   } catch (err) {

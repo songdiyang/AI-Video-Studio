@@ -6,6 +6,7 @@
 const { queryOne, execute } = require('../../dbHelper');
 const { getEffectiveProjectRole } = require('../../middleware/collaborationAuth');
 const { safeDecodeId } = require('../../utils/workflowId');
+const ragService = require('../../services/ragService');
 
 const WRITABLE_ROLES = new Set(['owner', 'admin', 'editor']);
 
@@ -149,6 +150,19 @@ async function saveFromWorkflow(req, res) {
       'SELECT id, project_id, episode_number, title, content FROM scripts WHERE id = ?',
       [scriptId]
     );
+
+    // 异步建立 RAG 索引（不阻塞响应）
+    if (updatedScript?.project_id && content.trim()) {
+      ragService.indexScript({
+        id: scriptId,
+        project_id: updatedScript.project_id,
+        episode_number: updatedScript?.episode_number || script.episode_number,
+        title: updatedScript?.title || `第${updatedScript?.episode_number || script.episode_number}集`,
+        content,
+      }).catch(err => {
+        console.error('[Save Script from Workflow] RAG 索引失败:', err);
+      });
+    }
 
     console.log('[Save Script from Workflow] 保存成功:', { scriptId, tokens, provider });
 

@@ -29,11 +29,16 @@ interface PreviewEditorProps {
     onUpdateDialogues?: (dialogues: any[]) => Promise<boolean>;
     onUpdateVoiceover?: (voiceover: any) => Promise<boolean>;
     onGenerateImage?: (id: number, prompt: string, regenerateTarget?: 'first' | 'last' | 'both', forceRegenerate?: boolean) => Promise<{ success: boolean; error?: string }>;
+    onGenerateVideo?: (id: number) => Promise<{ success: boolean; error?: string }>;
     models?: { name: string; type?: string; category?: string; description?: string; priceSummary?: string }[];
     imageModel?: string;
     onImageModelChange?: (model: string) => void;
+    videoModel?: string;
+    onVideoModelChange?: (model: string) => void;
     multimodalModel?: string;
     onMultimodalModelChange?: (model: string) => void;
+    textModel?: string;
+    onTextModelChange?: (model: string) => void;
     // 项目资源数据，避免 DirectorSpace 重复加载
     projectCharacters?: any[];
     projectScenes?: any[];

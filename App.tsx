@@ -57,6 +57,7 @@ const AnnouncementManagement = React.lazy(() => import('./views/admin/Announceme
 const BillingConfig = React.lazy(() => import('./views/admin/BillingConfig'));
 const AdminLog = React.lazy(() => import('./views/admin/AdminLog'));
 const ModelProviders = React.lazy(() => import('./views/admin/ModelProviders'));
+const RAGStatus = React.lazy(() => import('./views/admin/RAGStatus'));
 
 // 加载中回退组件
 const LoadingFallback = () => (
@@ -261,6 +262,11 @@ const App: React.FC = () => {
               <Route path="logs" element={
                 <Suspense fallback={<LoadingFallback />}>
                   <AdminLog />
+                </Suspense>
+              } />
+              <Route path="rag-status" element={
+                <Suspense fallback={<LoadingFallback />}>
+                  <RAGStatus />
                 </Suspense>
               } />
               <Route index element={<Navigate to="/admin/dashboard" replace />} />

@@ -25,7 +25,8 @@ interface ReferenceImageManagerProps {
 
 /**
  * 参考图管理组件（精简版）
- * - 只保留一张「角色设定图」作为白膜三视图生成参考
+ * - 道具：上传一张道具设定图
+ * - 角色：上传一张角色设定图作为白膜三视图生成参考
  * - 不再区分正/侧/背三视图，也不再提供其他参考图
  * - 后端按 is_enabled=1 聚合所有参考图作为参考，单张即可生效
  */
@@ -37,6 +38,15 @@ const ReferenceImageManager: React.FC<ReferenceImageManagerProps> = ({
   globalEnabled = true,
   onGlobalEnabledChange
 }) => {
+  // 根据资产类型获取显示名称
+  const getAssetLabel = () => {
+    if (assetType === 'prop') return '道具设定图';
+    if (assetType === 'character') return '角色设定图';
+    if (assetType === 'character_state') return '状态设定图';
+    return '设定图';
+  };
+
+  const assetLabel = getAssetLabel();
   const [images, setImages] = useState<AssetReferenceImage[]>([]);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -46,7 +56,7 @@ const ReferenceImageManager: React.FC<ReferenceImageManagerProps> = ({
   const { showToast } = useToast();
   const { isOpen: isPreviewOpen, onOpen: onPreviewOpen, onOpenChange: onPreviewOpenChange } = useDisclosure();
 
-  // 当前「角色设定图」：取第一张启用的参考图（不区分视角）
+  // 当前设定图：取第一张启用的参考图（不区分视角）
   const sheetImage = useMemo<AssetReferenceImage | undefined>(() => {
     const enabled = images.filter(img => img.is_enabled !== false);
     if (enabled.length > 0) return enabled[0];
@@ -70,7 +80,7 @@ const ReferenceImageManager: React.FC<ReferenceImageManagerProps> = ({
     loadImages();
   }, [loadImages]);
 
-  // 上传本地文件（固定 view_type='front' 作为角色设定图）
+  // 上传本地文件（固定 view_type='front' 作为设定图）
   const handleFileUpload = async (file: File) => {
     const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
     if (!allowedTypes.includes(file.type)) {
@@ -95,7 +105,7 @@ const ReferenceImageManager: React.FC<ReferenceImageManagerProps> = ({
         (progress) => setUploadProgress(progress)
       );
       await loadImages();
-      showToast('角色设定图上传成功', 'success');
+      showToast(`${assetLabel}上传成功`, 'success');
     } catch (error: any) {
       console.error('上传失败:', error);
       showToast(error.message || '上传失败，请重试', 'error');
@@ -120,7 +130,7 @@ const ReferenceImageManager: React.FC<ReferenceImageManagerProps> = ({
     try {
       await deleteReferenceImage(sheetImage.id);
       await loadImages();
-      showToast('角色设定图已删除', 'success');
+      showToast(`${assetLabel}已删除`, 'success');
     } catch (error: any) {
       showToast(error.message || '删除失败', 'error');
     }
@@ -156,7 +166,7 @@ const ReferenceImageManager: React.FC<ReferenceImageManagerProps> = ({
             <Power className={`w-4 h-4 ${globalEnabled ? 'text-green-400' : 'text-slate-500'}`} />
             <span className="text-sm text-slate-200">使用参考图生成白膜三视图</span>
             <Tooltip
-              content="开启后，AI生成白膜三视图时会参考上传的角色设定图。关闭则仅基于角色描述生成白膜。其他状态（如服装变体）的生成不受此开关影响，它们始终以白膜三视图为参考基准。"
+              content={`开启后，AI生成白膜三视图时会参考上传的${assetType === 'prop' ? '道具' : '角色'}设定图。关闭则仅基于${assetType === 'prop' ? '道具' : '角色'}描述生成白膜。其他状态（如服装变体）的生成不受此开关影响，它们始终以白膜三视图为参考基准。`}
               placement="right"
             >
               <HelpCircle className="w-3.5 h-3.5 text-slate-500 cursor-help" />
@@ -171,12 +181,12 @@ const ReferenceImageManager: React.FC<ReferenceImageManagerProps> = ({
         </div>
       )}
 
-      {/* 角色设定图区域 */}
+      {/* 设定图区域 */}
       <div>
         <div className="flex items-center gap-2 mb-3">
-          <h4 className="text-sm font-medium text-slate-200">角色设定图</h4>
+          <h4 className="text-sm font-medium text-slate-200">{assetLabel}</h4>
           <Tooltip
-            content="上传一张角色设定图，仅用于白膜三视图生成时作为参考。其他状态的三视图始终基于白膜生成，不使用参考图。"
+            content={`上传一张${assetType === 'prop' ? '道具' : '角色'}设定图，仅用于${assetType === 'prop' ? '道具' : '白膜三视图'}生成时作为参考。`}
             placement="right"
           >
             <HelpCircle className="w-4 h-4 text-slate-500 cursor-help" />
@@ -200,7 +210,7 @@ const ReferenceImageManager: React.FC<ReferenceImageManagerProps> = ({
               <div className="relative aspect-[3/4] rounded-lg overflow-hidden border border-slate-600/50 bg-slate-800/60 group">
                 <img
                   src={sheetImage.image_url}
-                  alt="角色设定图"
+                  alt={assetLabel}
                   className="w-full h-full object-cover object-top cursor-pointer"
                   onClick={onPreviewOpen}
                 />
@@ -249,7 +259,7 @@ const ReferenceImageManager: React.FC<ReferenceImageManagerProps> = ({
                 {disabled ? (
                   <div className="text-center">
                     <ImageIcon className="w-8 h-8 mx-auto mb-1 text-slate-600" />
-                    <p className="text-xs text-slate-500">暂无角色设定图</p>
+                    <p className="text-xs text-slate-500">暂无{assetLabel}</p>
                   </div>
                 ) : uploading ? (
                   <div className="w-full px-2">
@@ -313,14 +323,14 @@ const ReferenceImageManager: React.FC<ReferenceImageManagerProps> = ({
             <>
               <ModalHeader className="text-slate-100 flex items-center gap-2">
                 <ImageIcon className="w-5 h-5" />
-                <span>角色设定图</span>
+                <span>{assetLabel}</span>
               </ModalHeader>
               <ModalBody>
                 {sheetImage && (
                   <div className="relative">
                     <img
                       src={sheetImage.image_url}
-                      alt="角色设定图"
+                      alt={assetLabel}
                       className="w-full max-h-[70vh] object-contain"
                     />
                   </div>

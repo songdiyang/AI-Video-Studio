@@ -1048,6 +1048,20 @@ const AssetEditor: React.FC<AssetEditorProps> = ({ tabId, assetType, initialData
   // 渲染道具编辑表单
   const renderPropForm = () => {
     const [styleConfig, setStyleConfig] = useState<PropStyleConfig>({});
+    const [isGenerating, setIsGenerating] = useState(false);
+    const [generationStatus, setGenerationStatus] = useState<string>('idle');
+    const [selectedImageModel, setSelectedImageModel] = useState<string>('');
+    const [selectedTextModel, setSelectedTextModel] = useState<string>('');
+    
+    // 获取可用的 AI 模型列表
+    const { models, loading: modelsLoading } = useAIModels(null);
+    const imageModels = models.filter(m => (m.type || m.category || '').toUpperCase() === 'IMAGE');
+    const textModels = models.filter(m => (m.type || m.category || '').toUpperCase() === 'TEXT');
+    
+    // 调试日志
+    useEffect(() => {
+      console.log('[PropForm] 模型数据:', { models, imageModels, textModels, modelsLoading });
+    }, [models, modelsLoading]);
 
     useEffect(() => {
       if (formData.style_config) {
@@ -1060,7 +1074,109 @@ const AssetEditor: React.FC<AssetEditorProps> = ({ tabId, assetType, initialData
           setStyleConfig({});
         }
       }
-    }, [formData.style_config]);
+      // 初始化生成状态
+      if (formData.generation_status) {
+        setGenerationStatus(formData.generation_status);
+      }
+    }, [formData.style_config, formData.generation_status]);
+
+    // 设置默认模型
+    useEffect(() => {
+      if (imageModels.length > 0 && !selectedImageModel) {
+        setSelectedImageModel(imageModels[0].name);
+      }
+      if (textModels.length > 0 && !selectedTextModel) {
+        setSelectedTextModel(textModels[0].name);
+      }
+    }, [imageModels, textModels]);
+
+    // 生成道具设定图
+    const handleGenerate = async () => {
+      if (!formData.id) {
+        showToast('请先保存道具后再生成设定图', 'error');
+        return;
+      }
+
+      if (!selectedImageModel) {
+        showToast('请选择图像生成模型', 'error');
+        return;
+      }
+
+      setIsGenerating(true);
+      setGenerationStatus('generating');
+
+      try {
+        const token = getAuthToken();
+        const response = await fetch(`/api/props/${formData.id}/generate-image`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            imageModel: selectedImageModel,
+            textModel: selectedTextModel,
+            styleConfig
+          })
+        });
+
+        if (!response.ok) {
+          const data = await response.json();
+          throw new Error(data.message || '启动生成失败');
+        }
+
+        // 开始轮询状态
+        pollGenerationStatus();
+      } catch (error: any) {
+        console.error('生成失败:', error);
+        setGenerationStatus('failed');
+        showToast('生成失败: ' + error.message, 'error');
+      } finally {
+        setIsGenerating(false);
+      }
+    };
+
+    // 轮询生成状态
+    const pollGenerationStatus = async () => {
+      if (!formData.id) return;
+
+      const token = getAuthToken();
+      let attempts = 0;
+      const maxAttempts = 60;
+
+      const poll = async () => {
+        try {
+          const response = await fetch(`/api/props/${formData.id}/generation-status`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          
+          if (response.ok) {
+            const data = await response.json();
+            setGenerationStatus(data.status);
+
+            if (data.status === 'completed' && data.imageUrl) {
+              setFormData({ ...formData, image_url: data.imageUrl, generation_status: 'completed' });
+              showToast('道具设定图生成成功', 'success');
+              return;
+            }
+
+            if (data.status === 'failed') {
+              showToast('道具设定图生成失败', 'error');
+              return;
+            }
+          }
+
+          attempts++;
+          if (attempts < maxAttempts) {
+            setTimeout(poll, 3000);
+          }
+        } catch (error) {
+          console.error('轮询状态失败:', error);
+        }
+      };
+
+      poll();
+    };
 
     return (
       <Tabs
@@ -1127,22 +1243,164 @@ const AssetEditor: React.FC<AssetEditorProps> = ({ tabId, assetType, initialData
                 inputWrapper: "bg-slate-800/60 border border-slate-600/50 hover:border-blue-500/50 shadow-sm"
               }}
             />
-            <Input
-              label="图片URL"
-              placeholder="图片地址（选填，可通过AI生成）"
-              value={formData.image_url || ''}
-              onValueChange={(val) => setFormData({ ...formData, image_url: val })}
-              classNames={{
-                input: "bg-transparent text-slate-100 placeholder:text-slate-500",
-                label: "text-slate-400 font-medium",
-                inputWrapper: "bg-slate-800/60 border border-slate-600/50 hover:border-blue-500/50 shadow-sm"
-              }}
-            />
+            {/* 道具设定图 */}
+            {formData.id ? (
+              <div className="space-y-3">
+                <label className="text-slate-400 font-medium text-sm flex items-center gap-1.5">
+                  <ImageIcon className="w-4 h-4" />
+                  道具设定图
+                </label>
+                {formData.image_url ? (
+                  <div className="bg-slate-800/60 rounded-lg border border-slate-600/50 overflow-hidden">
+                    <img
+                      src={formData.image_url}
+                      alt={formData.name}
+                      className="w-full h-auto object-contain max-h-48"
+                    />
+                  </div>
+                ) : (
+                  <div className="w-full h-32 bg-slate-800/60 rounded-lg border border-dashed border-slate-600/50 flex items-center justify-center">
+                    <div className="text-center text-slate-500">
+                      <ImageIcon className="w-8 h-8 mx-auto mb-1" />
+                      <p className="text-xs">暂无设定图</p>
+                    </div>
+                  </div>
+                )}
+                <ReferenceImageManager
+                  assetType="prop"
+                  assetId={formData.id}
+                />
+              </div>
+            ) : (
+              <div className="text-center py-4 bg-slate-800/60 rounded-lg border border-slate-600/50">
+                <ImageIcon className="w-8 h-8 mx-auto mb-2 text-slate-500" />
+                <p className="text-sm text-slate-500">保存道具后可查看设定图</p>
+              </div>
+            )}
             {renderTagInput()}
           </div>
         </Tab>
         <Tab key="style" title={<div className="flex items-center gap-1.5"><Palette className="w-4 h-4" /><span>样式配置</span></div>}>
           <PropStyleConfigPanel value={styleConfig} onChange={setStyleConfig} />
+        </Tab>
+        <Tab key="generate" title={<div className="flex items-center gap-1.5"><Wand2 className="w-4 h-4" /><span>AI 生成</span></div>}>
+          <div className="space-y-6">
+            {/* 调试信息 */}
+            <div className="text-xs text-slate-500">
+              模型总数: {models.length}, 图像模型: {imageModels.length}, 文本模型: {textModels.length}, 加载中: {modelsLoading ? '是' : '否'}
+              <br />
+              当前道具ID: {formData.id}, 表单数据: {JSON.stringify(formData).slice(0, 100)}
+            </div>
+            <div className="space-y-4 max-w-md">
+              <label className="text-sm font-medium mb-2 block">生成设置</label>
+              
+              <Select
+                label="图像生成模型"
+                size="sm"
+                selectedKeys={selectedImageModel ? [selectedImageModel] : []}
+                onSelectionChange={(keys) => {
+                  const selected = Array.from(keys)[0] as string;
+                  if (selected) setSelectedImageModel(selected);
+                }}
+                isLoading={modelsLoading}
+                classNames={{
+                  trigger: "bg-slate-800/60 border border-slate-600/50 hover:border-blue-500/50 shadow-sm",
+                  value: "text-slate-100",
+                  label: "text-slate-400 font-medium",
+                  popoverContent: "bg-slate-800 border border-slate-700"
+                }}
+              >
+                {imageModels.map((model) => (
+                  <SelectItem key={model.name} textValue={model.name}>
+                    {model.name}
+                  </SelectItem>
+                ))}
+              </Select>
+
+              <Select
+                label="文本生成模型（用于生成提示词）"
+                size="sm"
+                selectedKeys={selectedTextModel ? [selectedTextModel] : []}
+                onSelectionChange={(keys) => {
+                  const selected = Array.from(keys)[0] as string;
+                  if (selected) setSelectedTextModel(selected);
+                }}
+                isLoading={modelsLoading}
+                classNames={{
+                  trigger: "bg-slate-800/60 border border-slate-600/50 hover:border-blue-500/50 shadow-sm",
+                  value: "text-slate-100",
+                  label: "text-slate-400 font-medium",
+                  popoverContent: "bg-slate-800 border border-slate-700"
+                }}
+              >
+                {textModels.map((model) => (
+                  <SelectItem key={model.name} textValue={model.name}>
+                    {model.name}
+                  </SelectItem>
+                ))}
+              </Select>
+
+              <div className="bg-slate-800/40 rounded-lg p-3 border border-slate-600/50 mt-4">
+                <p className="text-xs text-slate-400 mb-2">样式配置预览</p>
+                <div className="flex flex-wrap gap-1">
+                  {styleConfig.material && (
+                    <Chip size="sm" variant="flat" className="bg-blue-500/10 text-blue-400">材质: {styleConfig.material}</Chip>
+                  )}
+                  {styleConfig.primaryColor && (
+                    <Chip size="sm" variant="flat" className="bg-purple-500/10 text-purple-400">颜色: {styleConfig.primaryColor}</Chip>
+                  )}
+                  {styleConfig.style && (
+                    <Chip size="sm" variant="flat" className="bg-green-500/10 text-green-400">风格: {styleConfig.style}</Chip>
+                  )}
+                  {styleConfig.condition && (
+                    <Chip size="sm" variant="flat" className="bg-amber-500/10 text-amber-400">状态: {styleConfig.condition}</Chip>
+                  )}
+                  {!styleConfig.material && !styleConfig.primaryColor && !styleConfig.style && (
+                    <span className="text-xs text-slate-500">未配置样式，将使用默认设置</span>
+                  )}
+                </div>
+              </div>
+
+              <Button
+                className="w-full bg-blue-500/20 text-blue-400 border border-blue-500/30 hover:bg-blue-500/30"
+                startContent={
+                  isGenerating || generationStatus === 'generating' ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Wand2 className="w-4 h-4" />
+                  )
+                }
+                isDisabled={isGenerating || generationStatus === 'generating' || !selectedImageModel}
+                onPress={handleGenerate}
+              >
+                {generationStatus === 'generating' ? '生成中...' : 
+                 formData.image_url ? '重新生成设定图' : '生成道具设定图'}
+              </Button>
+
+              {generationStatus === 'failed' && (
+                <p className="text-xs text-red-400 text-center">
+                  生成失败，请重试
+                </p>
+              )}
+            </div>
+
+            {/* 当前设定图预览 */}
+            {formData.image_url && (
+              <div>
+                <label className="text-sm font-medium mb-2 block">当前道具设定图</label>
+                <div className="bg-slate-800/60 rounded-lg border border-slate-600/50 overflow-hidden">
+                  <img
+                    src={formData.image_url}
+                    alt={formData.name}
+                    className="w-full h-auto object-contain max-h-80"
+                  />
+                </div>
+                <p className="text-xs text-slate-500 mt-2 text-center">
+                  包含正面、侧面、背面多视角的道具设定图
+                </p>
+              </div>
+            )}
+          </div>
         </Tab>
       </Tabs>
     );
@@ -1658,26 +1916,6 @@ const AssetEditor: React.FC<AssetEditorProps> = ({ tabId, assetType, initialData
       return () => window.removeEventListener('building:updated', handleBldUpdated as EventListener);
     }, [bldId, refreshBldData]);
 
-    const handleDelete = async () => {
-      if (!bldId) return;
-      const ok = await confirm({
-        title: '删除建筑',
-        message: `确定要删除建筑 "${formData.name || ''}" 吗？此操作不可恢复。`,
-        confirmText: '删除',
-        cancelText: '取消',
-        type: 'danger',
-      });
-      if (!ok) return;
-      try {
-        await deleteBuilding(bldId);
-        window.dispatchEvent(new CustomEvent('building:deleted', { detail: { buildingId: bldId } }));
-        showToast('建筑已删除', 'success');
-        onClose();
-      } catch (err: any) {
-        showToast('删除失败: ' + (err?.message || '未知错误'), 'error');
-      }
-    };
-
     const handleGenerateBldImage = async (viewType: 'exterior' | 'interior' | 'both') => {
       if (!bldId) return;
       if (!effectiveImageModel) {
@@ -1764,18 +2002,7 @@ const AssetEditor: React.FC<AssetEditorProps> = ({ tabId, assetType, initialData
                 inputWrapper: "bg-slate-800/60 border border-slate-600/50 hover:border-blue-500/50 shadow-sm"
               }}
             />
-            {/* 删除操作 */}
-            <div className="pt-4 border-t border-slate-700/30">
-              <Button
-                size="sm"
-                variant="light"
-                className="text-red-400 hover:bg-red-500/10"
-                startContent={<Trash2 className="w-3.5 h-3.5" />}
-                onPress={handleDelete}
-              >
-                删除建筑
-              </Button>
-            </div>
+
           </div>
         </Tab>
         <Tab key="images" title={<div className="flex items-center gap-1.5"><ImageIcon className="w-4 h-4" /><span>图片预览</span></div>}>
@@ -1946,6 +2173,35 @@ const AssetEditor: React.FC<AssetEditorProps> = ({ tabId, assetType, initialData
             <span className="text-[10px] text-amber-400 animate-pulse">
               未保存
             </span>
+          )}
+          {assetType === 'building' && formData.id && (
+            <Button
+              size="sm"
+              variant="light"
+              className="text-red-400 hover:bg-red-500/10 h-7 px-2"
+              startContent={<Trash2 className="w-3.5 h-3.5" />}
+              onPress={async () => {
+                const bldId = formData.id as number;
+                const ok = await confirm({
+                  title: '删除建筑',
+                  message: `确定要删除建筑 "${formData.name || ''}" 吗？此操作不可恢复。`,
+                  confirmText: '删除',
+                  cancelText: '取消',
+                  type: 'danger',
+                });
+                if (!ok) return;
+                try {
+                  await deleteBuilding(bldId);
+                  window.dispatchEvent(new CustomEvent('building:deleted', { detail: { buildingId: bldId } }));
+                  showToast('建筑已删除', 'success');
+                  onClose();
+                } catch (err: any) {
+                  showToast('删除失败: ' + (err?.message || '未知错误'), 'error');
+                }
+              }}
+            >
+              删除
+            </Button>
           )}
         </div>
       </div>

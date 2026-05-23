@@ -285,7 +285,7 @@ const AIAssistantPlugin: React.FC = () => {
         }))}
         characters={state.projectCharacters.map((c: any) => ({ id: c.id, name: c.name, description: c.base_appearance || c.outfit_appearance }))}
         locations={state.projectScenes.map((l: any) => ({ id: l.id, name: l.name, description: l.description }))}
-        scripts={state.scripts.map((sc: any) => ({ id: sc.id, episode_number: sc.episode_number, title: sc.title }))}
+        scripts={state.scripts.map((sc: any) => ({ id: sc.id, episode_number: sc.episode_number, title: sc.title, content: sc.content }))}
         onClose={() => {}}
         onAction={handleAction}
       />

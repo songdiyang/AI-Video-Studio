@@ -4,7 +4,7 @@
  */
 
 import React, { createContext, useContext, useState, useCallback, useEffect, useMemo } from 'react';
-import { Project } from '../services/projects';
+import { Project, fetchProject, fetchProjects } from '../services/projects';
 import { ProjectType, WorkbenchTab, isValidProjectType, mapLegacyProjectType } from '../types/projectTypes';
 import { 
   WorkbenchState, 
@@ -49,12 +49,14 @@ interface WorkbenchProviderProps {
   initialProject?: Project | null;
 }
 
+const LAST_PROJECT_KEY = 'nanostory_last_project_id';
+
 export function WorkbenchProvider({ children, initialProject = null }: WorkbenchProviderProps) {
   // 当前项目
   const [currentProject, setCurrentProject] = useState<Project | null>(initialProject);
   
   // 加载状态
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   
   // 从项目获取有效的项目类型
   const getValidProjectType = useCallback((project: Project | null): ProjectType => {
@@ -71,6 +73,50 @@ export function WorkbenchProvider({ children, initialProject = null }: Workbench
     const projectType = getValidProjectType(initialProject);
     return createInitialWorkbenchState(initialProject?.id || null, projectType);
   });
+
+  // 初始化：自动加载上次打开的项目
+  useEffect(() => {
+    const initializeProject = async () => {
+      try {
+        const lastProjectId = localStorage.getItem(LAST_PROJECT_KEY);
+        
+        if (lastProjectId) {
+          // 尝试加载上次的项目
+          try {
+            const project = await fetchProject(parseInt(lastProjectId));
+            if (project) {
+              setCurrentProject(project);
+              setIsLoading(false);
+              return;
+            }
+          } catch (e) {
+            // 上次项目已不存在，清除记录
+            console.warn('上次项目已不存在，将加载最近的项目');
+            localStorage.removeItem(LAST_PROJECT_KEY);
+          }
+        }
+        
+        // 没有上次记录或已不存在，尝试加载最近的项目
+        const projects = await fetchProjects();
+        if (projects && projects.length > 0) {
+          const recentProject = projects.sort((a: Project, b: Project) => 
+            new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+          )[0];
+          setCurrentProject(recentProject);
+          localStorage.setItem(LAST_PROJECT_KEY, recentProject.id.toString());
+        } else {
+          setCurrentProject(null);
+          localStorage.removeItem(LAST_PROJECT_KEY);
+        }
+      } catch (error) {
+        console.error('加载项目失败:', error);
+        localStorage.removeItem(LAST_PROJECT_KEY);
+      }
+      setIsLoading(false);
+    };
+
+    initializeProject();
+  }, []);
   
   // 当项目变化时更新工作台状态
   useEffect(() => {
@@ -102,6 +148,7 @@ export function WorkbenchProvider({ children, initialProject = null }: Workbench
   const switchProject = useCallback((project: Project) => {
     const projectType = getValidProjectType(project);
     setCurrentProject(project);
+    localStorage.setItem(LAST_PROJECT_KEY, project.id.toString());
     setWorkbenchState(prevState => 
       updateWorkbenchStateForProject(prevState, project.id, projectType)
     );

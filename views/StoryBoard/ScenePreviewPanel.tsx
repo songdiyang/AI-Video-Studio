@@ -621,7 +621,8 @@ const DescriptionEditor: React.FC<{
   scene: StoryboardScene;
   projectId?: number | null;
   onUpdateBaseDescription?: (baseDescription: string) => Promise<boolean>;
-}> = ({ scene, projectId, onUpdateBaseDescription }) => {
+  onUpdateDescription?: (description: string) => Promise<boolean>;
+}> = ({ scene, projectId, onUpdateBaseDescription, onUpdateDescription }) => {
   const [text, setText] = useState(scene.baseDescription || '');
   const [isSaving, setIsSaving] = useState(false);
   const [isOptimizing, setIsOptimizing] = useState(false);
@@ -797,6 +798,7 @@ const DescriptionEditor: React.FC<{
 
   return (
     <div className="h-full flex flex-col gap-2">
+      {/* 原始分镜描述 */}
       <div className="flex items-center justify-between">
         <span className="text-xs font-medium text-[var(--text-muted)]">
           分镜描述（AI将根据此描述生成图片和视频提示词）
@@ -827,6 +829,23 @@ const DescriptionEditor: React.FC<{
           一键生成双提示词
         </button>
       </div>
+
+      {/* AI优化后的图片提示词（只读展示） */}
+      {scene.description && (
+        <>
+          <div className="border-t border-[var(--border-color)] pt-2 mt-1">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-blue-400">
+                图片提示词（AI优化后）
+              </span>
+              <span className="text-[10px] text-[var(--text-muted)]">只读</span>
+            </div>
+            <div className="mt-1.5 w-full bg-blue-500/5 border border-blue-500/20 rounded-lg p-3 text-sm text-[var(--text-secondary)] overflow-y-auto max-h-[120px]">
+              {scene.description}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 };
@@ -1169,7 +1188,7 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
     }
   };
 
-  // 生成视频
+  // 生成视频（已移至 BlockEditor 输入框内，保留此函数供其他组件调用）
   const handleGenerateVideo = async () => {
     if (!scene) return;
 
@@ -2403,6 +2422,7 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                   scene={scene}
                   projectId={projectId}
                   onUpdateBaseDescription={onUpdateBaseDescription}
+                  onUpdateDescription={onUpdateDescription}
                 />
               ) : (
                 <BlockEditor
@@ -2515,56 +2535,7 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
         </div>
         */}
 
-        {/* 生成操作 - 运动模式才显示视频生成 */}
-        {hasFrames && scene.hasAction && (
-          <div className="px-4 py-3 border-t border-[var(--border-color)] flex items-center gap-2 flex-wrap">
-            {/* 视频生成 + 模型选择 */}
-            <div className="flex items-center gap-1.5">
-              <Button
-                size="sm"
-                className={hasVideo
-                  ? "bg-[var(--bg-app)] text-[var(--text-secondary)] border border-[var(--border-color)]"
-                  : "bg-rose-500/20 text-rose-400 border border-rose-500/30"
-                }
-                startContent={<Film className="w-4 h-4" />}
-                onPress={handleGenerateVideo}
-                isLoading={isGeneratingVideo}
-                isDisabled={isGeneratingImage || isGeneratingVideo}
-              >
-                {hasVideo ? '重新生成视频' : '生成视频'}
-              </Button>
-              {videoModels.length > 0 && onVideoModelChange && (
-                <Select
-                  size="sm"
-                  selectedKeys={propVideoModel ? [propVideoModel] : []}
-                  onChange={(e) => onVideoModelChange(e.target.value)}
-                  classNames={{
-                    trigger: "h-8 min-w-[140px] bg-[var(--bg-input)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:border-[var(--accent)]/50",
-                    value: "text-xs",
-                    selectorIcon: "text-[var(--text-muted)]"
-                  }}
-                  popoverProps={{
-                    classNames: { content: "bg-[var(--bg-elevated)] border border-[var(--border-color)]" }
-                  }}
-                  aria-label="视频模型"
-                >
-                  {videoModels.map((m) => (
-                    <SelectItem key={m.name} textValue={m.name}>
-                      <span className="text-xs">{m.name}</span>
-                    </SelectItem>
-                  ))}
-                </Select>
-              )}
-            </div>
-
-            {/* 状态提示 */}
-            {(isGeneratingImage || isGeneratingVideo) && (
-              <span className="text-xs text-[var(--text-muted)] ml-auto">
-                {isGeneratingImage ? '正在生成图片...' : '正在生成视频...'}
-              </span>
-            )}
-          </div>
-        )}
+        {/* 生成操作已移至 BlockEditor 输入框内 */}
       </div>
 
       {/* 历史版本可拖拽浮动面板 */}

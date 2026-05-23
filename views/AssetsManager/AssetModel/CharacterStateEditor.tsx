@@ -1669,6 +1669,9 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                                     size="sm"
                                     variant="flat"
                                     className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 cursor-pointer hover:bg-emerald-500/25"
+                                    avatar={ep.image_url ? (
+                                      <img src={ep.image_url} alt={ep.name} className="w-4 h-4 rounded-full object-cover" />
+                                    ) : undefined}
                                     onClose={() => handleUnequipProp(state, ep.prop_id)}
                                     onClick={(e) => {
                                       e.stopPropagation();
@@ -1837,6 +1840,7 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {/* 左侧：基本信息 */}
                     <div className="space-y-3">
+                      {/* 状态名称 + 分类 */}
                       <Input
                         label="状态名称"
                         placeholder="如：童年、青年、战斗、受伤"
@@ -1849,7 +1853,7 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                           inputWrapper: "bg-slate-800/60 border border-slate-600/50"
                         }}
                       />
-                      
+
                       {/* 状态分类（自动推断，只读展示） */}
                       <div className="space-y-1.5">
                         <label className="text-xs font-medium text-slate-400">状态分类（自动）</label>
@@ -1876,7 +1880,7 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                           })()}
                         </div>
                       </div>
-                      
+
                       <Textarea
                         label="状态描述"
                         placeholder="描述该状态的特点"
@@ -1889,7 +1893,7 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                           inputWrapper: "bg-slate-800/60 border border-slate-600/50"
                         }}
                       />
-                      
+
                       <Textarea
                         label="外貌特征"
                         placeholder="该状态下的外貌变化"
@@ -1904,37 +1908,67 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                       />
                     </div>
                     
-                    {/* 右侧：三视图 + 外观属性卡片 */}
+                    {/* 右侧：设定图/三视图 + 外观属性卡片 */}
                     <div className="space-y-3">
-                      {/* 三视图预览 */}
-                      <div>
-                        <label className="text-sm font-medium text-slate-400 mb-2 block">三视图</label>
-                        <div className="grid grid-cols-3 gap-2">
-                          {[{ key: 'front_view_url', label: '正面' }, { key: 'side_view_url', label: '侧面' }, { key: 'back_view_url', label: '背面' }].map(({ key, label }) => {
-                            const url = formData[key as keyof typeof formData];
-                            return (
-                              <div key={key} className="space-y-1">
-                                <p className="text-xs text-slate-500 text-center">{label}</p>
-                                <div className="aspect-[3/4] bg-slate-800/60 rounded-lg overflow-hidden border border-slate-700/50 flex items-center justify-center">
-                                  {url ? (
-                                    <img src={String(url)} alt={label} className="w-full h-full object-cover object-top" />
-                                  ) : (
-                                    <ImageIcon className="w-6 h-6 text-slate-600" />
-                                  )}
+                      {/* 白膜状态显示设定图(image_url)，非白膜状态显示三视图 */}
+                      {!isBaseModel && (
+                        <div>
+                          <label className="text-sm font-medium text-slate-400 mb-2 block">三视图</label>
+                          <div className="grid grid-cols-3 gap-2">
+                            {[{ key: 'front_view_url', label: '正面' }, { key: 'side_view_url', label: '侧面' }, { key: 'back_view_url', label: '背面' }].map(({ key, label }) => {
+                              const url = formData[key as keyof typeof formData];
+                              return (
+                                <div key={key} className="space-y-1">
+                                  <p className="text-xs text-slate-500 text-center">{label}</p>
+                                  <div className="aspect-[3/4] bg-slate-800/60 rounded-lg overflow-hidden border border-slate-700/50 flex items-center justify-center">
+                                    {url ? (
+                                      <img src={String(url)} alt={label} className="w-full h-full object-cover object-top" />
+                                    ) : (
+                                      <ImageIcon className="w-6 h-6 text-slate-600" />
+                                    )}
+                                  </div>
                                 </div>
-                              </div>
-                            );
-                          })}
+                              );
+                            })}
+                          </div>
                         </div>
-                      </div>
-                      
-                      {/* 外观属性卡片列表 */}
-                      <label className="text-sm font-medium text-slate-400 flex items-center gap-2">
-                        <Shirt className="w-4 h-4" />
-                        外观属性
-                      </label>
-                      
-                      <div className="space-y-2.5">
+                      )}
+
+                      {/* 白膜状态：显示身体元素（纹身/疤痕等）和参考图提示 */}
+                      {isBaseModel && (
+                        <Card className="bg-slate-800/40 border border-slate-700/40">
+                          <CardBody className="p-3 space-y-2">
+                            <div className="flex items-center gap-1.5">
+                              <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+                              <span className="text-xs font-medium text-slate-300">身体元素（白膜专用）</span>
+                            </div>
+                            <Textarea
+                              size="sm"
+                              placeholder="描述角色身体上的永久性标记，如：纹身、疤痕、胎记、痣等。这些标记会在白膜中保留。"
+                              value={formData.body_elements || ''}
+                              onValueChange={(val) => setFormData({ ...formData, body_elements: val })}
+                              minRows={2}
+                              classNames={{
+                                input: "bg-transparent text-slate-100 text-xs",
+                                inputWrapper: "bg-slate-800/60 border border-slate-600/50"
+                              }}
+                            />
+                            <p className="text-[10px] text-slate-500">
+                              身体元素是角色固有的永久性标记，生成白膜时会保留在身体上。
+                            </p>
+                          </CardBody>
+                        </Card>
+                      )}
+
+                      {/* 外观属性卡片列表 - 白膜状态隐藏 */}
+                      {!isBaseModel && (
+                        <>
+                          <label className="text-sm font-medium text-slate-400 flex items-center gap-2">
+                            <Shirt className="w-4 h-4" />
+                            外观属性
+                          </label>
+
+                          <div className="space-y-2.5">
                         {/* 服装卡片 */}
                         <Card className="bg-slate-800/40 border border-slate-700/40">
                           <CardBody className="p-3 space-y-2">
@@ -2321,6 +2355,8 @@ const CharacterStateEditor: React.FC<CharacterStateEditorProps> = ({
                           </div>
                         )}
                       </div>
+                    </>
+                  )}
                     </div>
                   </div>
                 </ModalBody>

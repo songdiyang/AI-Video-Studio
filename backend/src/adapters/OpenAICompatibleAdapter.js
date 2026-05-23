@@ -211,7 +211,9 @@ class OpenAICompatibleAdapter extends BaseAdapter {
       const urls = params.imageUrls || [params.imageUrl];
       if (isSeedream) {
         // Seedream: 使用 image 数组
-        body.image = Array.isArray(urls) ? urls.filter(Boolean) : [urls].filter(Boolean);
+        // 将相对路径转换为可访问的绝对 URL（外部 API 无法解析相对路径）
+        const rawUrls = Array.isArray(urls) ? urls.filter(Boolean) : [urls].filter(Boolean);
+        body.image = rawUrls.map(url => resolveToInternalUrl(url));
       } else {
         // 其他平台: 使用逗号分隔的 image_url 字符串
         if (urls.length > 1) {

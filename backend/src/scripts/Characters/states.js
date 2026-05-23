@@ -834,7 +834,7 @@ module.exports = (router) => {
             if (!existingLink) {
               await execute(
                 `INSERT INTO character_state_props (character_state_id, prop_id, prop_type, is_equipped, hand_position, usage_mode)
-                 VALUES (?, ?, ?, 1, 'right_hand', 'held')`,
+                 VALUES (?, ?, ?, 1, 'right', 'hold')`,
                 [stateId, prop.id, 'interactive']
               );
               console.log(`[Update Character State] 建立道具关联: state=${stateId} prop=${prop.id}`);

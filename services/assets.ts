@@ -50,6 +50,13 @@ function normalizeStateUrls<T extends Record<string, any>>(state: T): T {
       result[field] = normalizeStorageUrl(result[field]);
     }
   }
+  // 规范化 equipped_props 中每个道具的 image_url
+  if (Array.isArray(result.equipped_props)) {
+    result.equipped_props = result.equipped_props.map((ep: any) => ({
+      ...ep,
+      image_url: ep.image_url ? normalizeStorageUrl(ep.image_url) : ep.image_url,
+    }));
+  }
   return result as T;
 }
 
@@ -667,7 +674,15 @@ export async function fetchProps(): Promise<{ props: Prop[]; heldPropsRefs: Held
     throw new Error('获取道具列表失败');
   }
   const data = await response.json();
-  return { props: data.props || [], heldPropsRefs: data.heldPropsRefs || [] };
+  // 规范化道具 URL（MinIO 内网地址 → /storage/ 相对路径）
+  const urlFields = ['image_url', 'front_view_url', 'side_view_url', 'back_view_url'] as const;
+  const props = (data.props || []).map((p: any) => {
+    for (const field of urlFields) {
+      if (p[field]) p[field] = normalizeStorageUrl(p[field]);
+    }
+    return p;
+  });
+  return { props, heldPropsRefs: data.heldPropsRefs || [] };
 }
 
 export async function createProp(prop: Partial<Prop>): Promise<Prop> {

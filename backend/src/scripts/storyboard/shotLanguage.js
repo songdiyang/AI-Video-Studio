@@ -57,7 +57,7 @@ async function updateShotLanguage(req, res) {
     }
 
     // 检查分镜是否存在
-    const [storyboard] = await execute(
+    const storyboard = await execute(
       'SELECT id, is_locked FROM storyboards WHERE id = ?',
       [storyboardId]
     );
@@ -105,7 +105,7 @@ async function getShotLanguage(req, res) {
     }
 
     const fields = SHOT_LANGUAGE_FIELDS.join(', ');
-    const [storyboard] = await execute(
+    const storyboard = await execute(
       `SELECT ${fields} FROM storyboards WHERE id = ?`,
       [storyboardId]
     );

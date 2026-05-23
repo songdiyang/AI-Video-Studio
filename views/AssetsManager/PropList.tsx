@@ -65,7 +65,7 @@ const PropList: React.FC<PropListProps> = ({ props, onEdit, onDelete }) => {
       onPress={() => onEdit(prop)}
     >
       <CardBody className="p-4 flex flex-col gap-3 h-full">
-        {/* 道具图片 */}
+        {/* 道具设定图（点击可预览大图） */}
         {prop.image_url ? (
           <img
             src={prop.image_url}
@@ -107,7 +107,6 @@ const PropList: React.FC<PropListProps> = ({ props, onEdit, onDelete }) => {
         </div>
         <p className="text-sm text-(--text-secondary) line-clamp-2 flex-1">{prop.description}</p>
         <div className="flex flex-wrap gap-2 mt-auto">
-          {/* 道具类型标签 */}
           {prop.prop_type && (
             <Chip size="sm" variant="flat" className={
               prop.prop_type === 'permanent' ? 'bg-blue-500/10 text-blue-400 font-medium' :
@@ -117,7 +116,6 @@ const PropList: React.FC<PropListProps> = ({ props, onEdit, onDelete }) => {
               {prop.prop_type === 'permanent' ? t.assetsManager.prop.permanent : prop.prop_type === 'held' ? t.assetsManager.prop.held : t.assetsManager.prop.interactive}
             </Chip>
           )}
-          {/* 生成状态标签 */}
           {prop.generation_status && (
             <Chip size="sm" variant="flat" className={
               prop.generation_status === 'completed' ? 'bg-green-500/10 text-green-400 font-medium' :

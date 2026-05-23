@@ -225,11 +225,16 @@ const PreviewEditorPlugin: React.FC = () => {
           return false;
         },
         onGenerateImage: generationActions.generateImage,
+        onGenerateVideo: generationActions.generateVideo,
         models: state.models,
         imageModel: state.currentImageModel,
+        videoModel: state.currentVideoModel,
         onImageModelChange: (model: string) => setState('currentImageModel', model),
+        onVideoModelChange: (model: string) => setState('currentVideoModel', model),
         multimodalModel: state.currentMultimodalModel,
         onMultimodalModelChange: (model: string) => setState('currentMultimodalModel', model),
+        textModel: state.textModel,
+        onTextModelChange: (model: string) => setState('textModel', model),
         // 传递项目资源数据，避免 DirectorSpace 重复加载
         projectCharacters: state.projectCharacters,
         projectScenes: state.projectScenes,

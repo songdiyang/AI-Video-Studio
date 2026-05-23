@@ -22,7 +22,7 @@ import { getAuthToken } from '../../services/auth';
 import type { Project } from '../../services/projects';
 import { uploadScriptFile, updateScript } from '../../services/scripts';
 import { useToast } from '../../contexts/ToastContext';
-import MarkdownRenderer from '../../components/MarkdownRenderer';
+import ScriptPreviewRenderer from '../../components/ScriptPreviewRenderer';
 
 interface AIModel {
   name: string;
@@ -688,7 +688,7 @@ const EditPanel: React.FC<{
             <span className="text-[10px] text-[var(--text-muted)]">Markdown 格式渲染</span>
           </div>
           <div className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-input)] p-4 overflow-y-auto" style={{ maxHeight: '520px' }}>
-            <MarkdownRenderer content={content} />
+            <ScriptPreviewRenderer content={content} />
           </div>
         </div>
       ) : (

@@ -10,6 +10,7 @@ import { useWorkbench } from '../../contexts/WorkbenchContext';
 
 const ScriptStudio: React.FC = () => {
   const { showToast } = useToast();
+  const { setCurrentProject } = useWorkbench();
 
   // 使用自定义 hooks
   const { selectedProject, initLoading } = useProjectInit();
@@ -32,12 +33,13 @@ const ScriptStudio: React.FC = () => {
   // 全局 AI 模型管理
   const aiModels = useAIModels(selectedProject?.id);
 
-  // 加载项目剧本
+  // 同步项目到 WorkbenchContext，并加载项目剧本
   useEffect(() => {
     if (selectedProject) {
+      setCurrentProject(selectedProject);
       loadProjectScript(selectedProject.id);
     }
-  }, [selectedProject]);
+  }, [selectedProject, setCurrentProject]);
 
   if (initLoading) {
     return <LoadingScreen />;

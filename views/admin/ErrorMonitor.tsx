@@ -541,8 +541,8 @@ const ErrorMonitor: React.FC = () => {
       )}
 
       {/* 表格 */}
-      <div className="rounded-xl border border-white/10 overflow-hidden bg-white/[0.06]">
-        <table className="w-full">
+      <div className="rounded-xl border border-white/10 overflow-x-auto bg-white/[0.06]">
+        <table className="w-full min-w-[900px]">
           <thead>
             <tr className="border-b border-white/10 bg-white/10">
               <th className="text-center px-3 py-3 w-10">
@@ -555,7 +555,7 @@ const ErrorMonitor: React.FC = () => {
               <th className="text-left px-4 py-3 text-xs font-semibold text-white/80 uppercase tracking-wider">任务类型</th>
               <th className="text-left px-4 py-3 text-xs font-semibold text-white/80 uppercase tracking-wider">错误信息</th>
               <th className="text-left px-4 py-3 text-xs font-semibold text-white/80 uppercase tracking-wider">时间</th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-white/80 uppercase tracking-wider">状态</th>
+              <th className="text-left px-4 py-3 text-xs font-semibold text-white/80 uppercase tracking-wider w-24">状态</th>
             </tr>
           </thead>
           <tbody>
@@ -614,10 +614,10 @@ const ErrorMonitor: React.FC = () => {
                           handleUpdateTaskStatus(job.id, !job.admin_resolved);
                         }}
                         disabled={taskUpdatingId === job.id}
-                        className={`text-xs px-2.5 py-1.5 rounded-full flex items-center gap-1.5 transition-all cursor-pointer hover:scale-105 ${
+                        className={`inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded transition-all cursor-pointer whitespace-nowrap min-w-[64px] justify-center ${
                           job.admin_resolved
-                            ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30'
-                            : 'bg-amber-500/20 text-amber-400 hover:bg-amber-500/30'
+                            ? 'bg-green-500/15 text-green-400 border border-green-500/30 hover:bg-green-500/25'
+                            : 'bg-amber-500/15 text-amber-400 border border-amber-500/30 hover:bg-amber-500/25'
                         } ${taskUpdatingId === job.id ? 'opacity-50' : ''}`}
                       >
                         {taskUpdatingId === job.id ? (
@@ -796,8 +796,8 @@ const ErrorMonitor: React.FC = () => {
       )}
 
       {/* 表格 */}
-      <div className="rounded-xl border border-white/10 overflow-hidden bg-white/[0.06]">
-        <table className="w-full">
+      <div className="rounded-xl border border-white/10 overflow-x-auto bg-white/[0.06]">
+        <table className="w-full min-w-[900px]">
           <thead>
             <tr className="border-b border-white/10 bg-white/10">
               <th className="text-center px-3 py-3 w-10">
@@ -810,7 +810,7 @@ const ErrorMonitor: React.FC = () => {
               <th className="text-left px-4 py-3 text-xs font-semibold text-white/80 uppercase tracking-wider">来源</th>
               <th className="text-left px-4 py-3 text-xs font-semibold text-white/80 uppercase tracking-wider">错误信息</th>
               <th className="text-left px-4 py-3 text-xs font-semibold text-white/80 uppercase tracking-wider">时间</th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-white/80 uppercase tracking-wider">状态</th>
+              <th className="text-left px-4 py-3 text-xs font-semibold text-white/80 uppercase tracking-wider w-24">状态</th>
             </tr>
           </thead>
           <tbody>
@@ -877,10 +877,10 @@ const ErrorMonitor: React.FC = () => {
                           handleUpdateSystemStatus(error.id, !error.is_resolved);
                         }}
                         disabled={systemUpdatingId === error.id}
-                        className={`text-xs px-2.5 py-1.5 rounded-full flex items-center gap-1.5 transition-all cursor-pointer hover:scale-105 ${
+                        className={`inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded transition-all cursor-pointer whitespace-nowrap min-w-[64px] justify-center ${
                           error.is_resolved
-                            ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30'
-                            : 'bg-amber-500/20 text-amber-400 hover:bg-amber-500/30'
+                            ? 'bg-green-500/15 text-green-400 border border-green-500/30 hover:bg-green-500/25'
+                            : 'bg-amber-500/15 text-amber-400 border border-amber-500/30 hover:bg-amber-500/25'
                         } ${systemUpdatingId === error.id ? 'opacity-50' : ''}`}
                       >
                         {systemUpdatingId === error.id ? (

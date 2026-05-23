@@ -400,6 +400,7 @@ export function useStoryboardCore(options: UseStoryboardCoreOptions) {
             episode_number: s.episode_number || 1,
             title: s.title || `第${s.episode_number || 1}集`,
             status: s.status || 'completed',
+            content: s.content || undefined,
           }));
           console.log('[useStoryboardCore] 加载项目剧本列表:', formattedScripts.length, '个剧本');
           setScripts(formattedScripts);

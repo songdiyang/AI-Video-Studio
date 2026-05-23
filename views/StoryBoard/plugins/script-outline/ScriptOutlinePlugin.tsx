@@ -70,12 +70,7 @@ const ScriptOutlinePlugin: React.FC = () => {
       canPick={false}
       isBoundViaEpisode={hasStrongBinding}
       onPickScript={undefined}
-      onCreateNewScript={() => {
-        // 发送自定义事件打开剧本生成标签页
-        window.dispatchEvent(new CustomEvent('openScriptGenerateTab', {
-          detail: { episodeNumber: state.currentEpisode }
-        }));
-      }}
+
     />
   );
 };

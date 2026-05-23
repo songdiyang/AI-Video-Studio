@@ -64,7 +64,7 @@ module.exports = function(router) {
           propId,
           projectId: prop.project_id,
           imageModel: effectiveImageModel,
-          aspectRatio: '1:1'  // 道具图默认正方形
+          aspectRatio: '16:9'  // 道具设定图：宽图展示多视角（与 prompt 中 three-view layout 一致）
         },
         metadata: {
           targetType: 'prop',

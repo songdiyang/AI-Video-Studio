@@ -68,6 +68,7 @@ const novelRoutes = require('./novelRoutes');
 const statsRoutes = require('./statsRoutes');
 const extensionRoutes = require('./extensions');
 const speakerVoicesRoutes = require('./scripts/SpeakerVoices');
+const ragRoutes = require('./ragRoutes');
 const { setupWebSocket } = require('./websocket');
 const { errorHandlerMiddleware, initGlobalErrorHandlers } = require('./globalErrorHandler');
 const callbackHandler = require('./nosyntask/callbackHandler');
@@ -197,6 +198,7 @@ app.use('/api', approvalsRouter);
 app.use('/api/system-configs', systemConfigRoutes);
 app.use('/api', extensionRoutes);
 app.use('/api/speaker-voices', speakerVoicesRoutes);
+app.use('/api/rag', ragRoutes);
 // AI 任务回调接口（不需要认证，AI 服务直接回调）
 app.use('/api/callbacks', callbackHandler.router);
 

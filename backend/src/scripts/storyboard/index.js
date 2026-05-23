@@ -34,6 +34,7 @@ const shotLanguageRoutes = require('./shotLanguage');
 const frameHistoryRoutes = require('./frameHistory');  // 帧历史版本管理
 const promptHistoryRoutes = require('./promptHistory');  // 提示词历史版本管理
 const optimizePromptRoutes = require('./optimizePrompt');  // AI 优化分镜描述
+const sketchFramesRoutes = require('./sketchFrames');  // 首尾帧草图管理
 
 // 注册路由（顺序很重要！具体路由在前，通用路由在后）
 
@@ -49,6 +50,7 @@ router.patch('/:storyboardId/media', authMiddleware, updateMedia);
 router.patch('/:storyboardId/content', authMiddleware, updateContent);
 updateDirectorParams(router);  // 导演参数更新
 sketchRoutes(router);          // 草图上传与管理
+sketchFramesRoutes(router);    // 首尾帧草图管理
 lockRoutes(router);            // 分镜锁定/解锁
 shotLanguageRoutes(router);    // 镜头语言参数管理
 frameHistoryRoutes(router);    // 帧历史版本管理

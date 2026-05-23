@@ -65,23 +65,39 @@ async function generateBuildingPrompt(buildingName, description, interiorExterio
   · 正中：overhead floor plan（俯视平面布局图，顶视）
   · 右中：isometric cutaway view（3/4 等距轴测剖切视角）
 - 第三行（细节特写 3 张）：
-  · 左下：furniture closeup detail（家具细节特写）
+  · 左下：furniture closeup detail（室内陈设细节特写，如货架、桌椅、设备等）
   · 中下：material & texture closeup detail（墙面/地面材质与纹理特写）
-  · 右下：decor & props closeup detail（陈设/装饰物特写）
+  · 右下：decor & props closeup detail（装饰物/道具特写）
 - 每一格下方用英文标注视角/特写名（e.g. "Entrance" / "Back Wall" / "Left Wall" / "Right Wall" / "Overhead Plan" / "Isometric" / "Furniture Detail" / "Material Detail" / "Decor Detail"）
-- 9 格之间保持相同的室内空间、相同的家具与陈设、相同的材质配色、相同的画风与光照，互相呼应
+- 9 格之间保持相同的室内空间、相同的陈设与布局、相同的材质配色、相同的画风与光照，互相呼应
 - 画风：手绘线稿 + 轻度水彩淡彩上色（hand drawn lines with soft watercolor tint），室内设计参考图 / architectural interior reference sheet, concept art
 - 禁止出现任何人物；暖色柔和打光；线条干净、标注感强；不追求照片级写实`;
+
+  const interiorTypeHint = isInterior ? `
+【建筑类型识别 - 极其重要】
+- 请根据"建筑名称"和"建筑描述"判断这是什么类型的建筑/室内空间
+- 如果是便利店/商店：应包含货架(shelves)、收银台(cashier counter)、冷藏柜(refrigerator)、商品陈列等商业元素
+- 如果是住宅/公寓：应包含沙发(sofa)、床(bed)、餐桌(dining table)等居住元素
+- 如果是餐厅/咖啡馆：应包含餐桌、吧台、厨房设备等餐饮元素
+- 如果是办公室：应包含办公桌、电脑、文件柜等办公元素
+- 请确保生成的提示词准确反映该建筑类型的典型内部特征，不要生成与建筑类型不符的室内场景` : '';
+
+  // 检测建筑名称的语言，保持提示词语言与用户输入一致
+  const isChinese = /[\u4e00-\u9fff]/.test(buildingName || '');
+  const languageHint = isChinese
+    ? '提示词使用中文输出，保持用户原始描述的语言和风格'
+    : '提示词使用英文输出，保持用户原始描述的语言和风格';
 
   const prompt = `你是一个专业的图片生成提示词专家。请根据以下建筑信息生成高质量的建筑${viewLabel}提示词（用于 AI 绘图工具）。
 
 通用要求：
-1. 提示词必须用英文输出
+1. ${languageHint}
 2. 使用逗号分隔的关键词格式
 3. 长度控制在 80-140 个单词
 4. 严格禁止出现任何人物、角色、人影
 5. 在提示词开头加上 "single isolated building, no people, no characters,"
-${isInterior ? interiorSpec : exteriorSpec}
+6. 必须根据建筑名称和描述，准确识别建筑类型和场景特征（如便利店应有货架收银台、住宅应有沙发床等）
+${isInterior ? interiorSpec : exteriorSpec}${isInterior ? interiorTypeHint : ''}
 
 建筑名称：${buildingName || '未命名'}
 建筑描述：${description || '无'}
@@ -89,7 +105,7 @@ ${isInterior ? interiorSpec : exteriorSpec}
 结构类型：${structureType || '无'}
 视觉风格：${style || '写实风格'}
 
-请直接输出英文提示词，不要包含任何解释或其他内容。`;
+请直接输出提示词，不要包含任何解释或其他内容。`;
 
   const response = await handleBaseTextModelCall({
     prompt,
@@ -166,9 +182,9 @@ async function handleBuildingImageGeneration(inputParams, onProgress) {
         );
       }
       if (!prompt) {
-        // fallback
+        // fallback：直接使用用户原始输入，不强制翻译为英文
         if (singleView === 'interior') {
-          prompt = `single isolated building interior, no people, no characters, ${buildingName || ''}, ${description || ''}, square 1:1 aspect ratio, 3x3 grid layout showing 9 interior panels, row1: entrance view, back wall view, left wall view; row2: right wall view, overhead floor plan, isometric cutaway view; row3: furniture closeup detail, material texture closeup detail, decor closeup detail, each panel labeled in English, hand drawn lines with soft watercolor tint, architectural interior reference sheet, concept art, same space same materials same lighting across 9 panels, ${structureType || ''}, clean lines, warm lighting, high detail`;
+          prompt = `single isolated building interior, no people, no characters, ${buildingName || ''}, ${description || ''}, square 1:1 aspect ratio, 3x3 grid layout showing 9 interior panels, row1: entrance view, back wall view, left wall view; row2: right wall view, overhead floor plan, isometric cutaway view; row3: interior fixtures closeup detail, material texture closeup detail, decor closeup detail, each panel labeled in English, hand drawn lines with soft watercolor tint, architectural interior reference sheet, concept art, same space same materials same lighting across 9 panels, ${structureType || ''}, clean lines, warm lighting, high detail`;
         } else {
           prompt = `single isolated building, no people, no characters, ${buildingName || ''}, ${description || ''}, wide 16:9 aspect ratio, 2x2 grid layout showing four orthographic views, front view top-left, back view top-right, left side view bottom-left, right side view bottom-right, labeled Front Back Left Right, same building same materials same color palette same art style same lighting, orthographic projection, architectural reference sheet, turnaround sheet, white clean background, ${structureType || ''}, high quality, detailed`;
         }

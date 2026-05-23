@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardBody, Button, Chip } from '@heroui/react';
-import { Sparkles, Loader2, Wand2, X, Trash2, ExternalLink } from 'lucide-react';
+import { Wand2, X, Trash2, ExternalLink } from 'lucide-react';
 import { PropItem } from './types';
 import { getAuthToken } from '../../../services/auth';
 
@@ -17,14 +17,12 @@ const openAssetEditTab = (prop: PropItem) => {
 
 interface PropsTabProps {
   props: PropItem[];
-  isExtracting?: boolean;
-  onExtractFromScript?: () => void;
   imageModel?: string;
   /** 右键删除回调 */
   onDelete?: (prop: PropItem) => void;
 }
 
-const PropsTab: React.FC<PropsTabProps> = ({ props, isExtracting, onExtractFromScript, imageModel, onDelete }) => {
+const PropsTab: React.FC<PropsTabProps> = ({ props, imageModel, onDelete }) => {
   const [generatingIds, setGeneratingIds] = useState<Set<number>>(new Set());
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; prop: PropItem } | null>(null);
 
@@ -107,20 +105,8 @@ const PropsTab: React.FC<PropsTabProps> = ({ props, isExtracting, onExtractFromS
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center mb-3">
         <span className="text-sm font-semibold text-slate-300">全部道具 ({props.length})</span>
-        {onExtractFromScript && (
-          <Button
-            size="sm"
-            variant="flat"
-            className="h-7 px-2 text-xs bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20"
-            startContent={isExtracting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
-            onPress={onExtractFromScript}
-            isDisabled={isExtracting}
-          >
-            {isExtracting ? '提取中...' : '从剧本提取'}
-          </Button>
-        )}
       </div>
       {props.map((prop) => (
         <Card key={`${prop.id}-${prop.name}`} className="bg-slate-800/60 border border-slate-700/50 hover:border-emerald-500/30 transition-colors cursor-pointer" onDoubleClick={() => openAssetEditTab(prop)} onContextMenu={(e) => handleContextMenu(e, prop)}>
@@ -173,7 +159,7 @@ const PropsTab: React.FC<PropsTabProps> = ({ props, isExtracting, onExtractFromS
       {props.length === 0 && (
         <div className="text-center py-8 text-slate-500">
           <p className="text-sm">暂无道具</p>
-          <p className="text-xs mt-1">分镜中添加道具或点击「从剧本提取」</p>
+          <p className="text-xs mt-1">在资产库中手动创建道具</p>
         </div>
       )}
 

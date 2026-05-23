@@ -4,6 +4,7 @@ module.exports = {
       name: 'nanostory-backend',
       cwd: '/var/www/nanostory/backend',
       script: 'src/index.js',
+      env_file: './backend/.env',
       env: {
         NODE_ENV: 'production',
         PORT: 4000,

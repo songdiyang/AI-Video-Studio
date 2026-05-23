@@ -271,6 +271,131 @@ export async function saveSketchData(
   }
 }
 
+// ============================================================
+// 首尾帧草图管理 API
+// ============================================================
+
+export interface SketchFrameInfo {
+  sketch_data: any;
+  version: number;
+  updated_at: string | null;
+}
+
+export interface SketchFramesResponse {
+  first: SketchFrameInfo | null;
+  last: SketchFrameInfo | null;
+}
+
+/**
+ * 获取分镜首尾帧草图信息
+ */
+export async function getSketchFrames(storyboardId: number): Promise<SketchFramesResponse> {
+  const res = await fetch(`/api/storyboards/${storyboardId}/sketch-frames`, {
+    headers: authHeaders(),
+  });
+
+  const data = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw new Error(data?.message || 'Failed to get sketch frames');
+  }
+
+  return data as SketchFramesResponse;
+}
+
+/**
+ * 保存首帧草图数据
+ */
+export async function saveFirstSketchData(
+  storyboardId: number,
+  sketchData: object
+): Promise<{ version: number }> {
+  const res = await fetch(`/api/storyboards/${storyboardId}/first-sketch-data`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders(),
+    },
+    body: JSON.stringify({ sketch_data: sketchData }),
+  });
+
+  const data = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw new Error(data?.message || 'Failed to save first sketch data');
+  }
+
+  return data as { version: number };
+}
+
+/**
+ * 保存尾帧草图数据
+ */
+export async function saveLastSketchData(
+  storyboardId: number,
+  sketchData: object
+): Promise<{ version: number }> {
+  const res = await fetch(`/api/storyboards/${storyboardId}/last-sketch-data`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders(),
+    },
+    body: JSON.stringify({ sketch_data: sketchData }),
+  });
+
+  const data = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw new Error(data?.message || 'Failed to save last sketch data');
+  }
+
+  return data as { version: number };
+}
+
+/**
+ * 删除草图
+ */
+export async function deleteSketchFrame(
+  storyboardId: number,
+  frameType: 'first' | 'last'
+): Promise<void> {
+  const res = await fetch(`/api/storyboards/${storyboardId}/${frameType}-sketch`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+
+  const data = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw new Error(data?.message || 'Failed to delete sketch frame');
+  }
+}
+
+/**
+ * 将 Excalidraw 草图数据导出为图片 URL（Base64）
+ */
+export async function exportSketchToImage(sketchData: any): Promise<string> {
+  const { exportToBlob } = await import('@excalidraw/excalidraw');
+  
+  const blob = await exportToBlob({
+    elements: sketchData.elements || [],
+    appState: {
+      exportBackground: true,
+      viewBackgroundColor: '#ffffff',
+    },
+    files: sketchData.files || {},
+    mimeType: 'image/png',
+  });
+
+  if (!blob) {
+    throw new Error('导出草图失败');
+  }
+
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
 /**
  * 基于草图生成帧
  * 调用工作流引擎启动 sketch_frame_generation 工作流

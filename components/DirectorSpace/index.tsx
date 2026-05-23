@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Blocks, Sparkles, Network } from 'lucide-react';
-import { Button, Select, SelectItem } from '@heroui/react';
+import { Blocks, Sparkles, Network, Loader2 } from 'lucide-react';
+import { Button, Select, SelectItem, Tooltip } from '@heroui/react';
 import { StoryboardScene } from '../../views/StoryBoard/useSceneManager';
 import BlockEditor from '../../views/StoryBoard/BlockEditor';
 import { BlockEditorState } from '../../views/StoryBoard/BlockEditor/types/blockTypes';
@@ -36,11 +36,16 @@ interface DirectorSpaceProps {
   onUpdateDialogues?: (dialogues: any[]) => Promise<boolean>;
   onUpdateVoiceover?: (voiceover: any) => Promise<boolean>;
   onGenerateImage?: (id: number, prompt: string, regenerateTarget?: 'first' | 'last' | 'both', forceRegenerate?: boolean) => Promise<{ success: boolean; error?: string }>;
+  onGenerateVideo?: (id: number) => Promise<{ success: boolean; error?: string }>;
   models?: AIModel[];
   imageModel?: string;
   onImageModelChange?: (model: string) => void;
+  videoModel?: string;
+  onVideoModelChange?: (model: string) => void;
   multimodalModel?: string;
   onMultimodalModelChange?: (model: string) => void;
+  textModel?: string;
+  onTextModelChange?: (model: string) => void;
   // 项目资源（从外部传入，避免重复加载）
   projectCharacters?: {
     id: number;
@@ -199,11 +204,16 @@ const DirectorSpace: React.FC<DirectorSpaceProps> = ({
   onUpdateDialogues,
   onUpdateVoiceover,
   onGenerateImage,
+  onGenerateVideo,
   models = [],
   imageModel,
   onImageModelChange,
+  videoModel,
+  onVideoModelChange,
   multimodalModel,
   onMultimodalModelChange,
+  textModel,
+  onTextModelChange,
   // 项目资源（优先使用外部传入的，避免重复加载）
   projectCharacters: externalProjectCharacters,
   projectScenes: externalProjectScenes,
@@ -423,6 +433,132 @@ const DirectorSpace: React.FC<DirectorSpaceProps> = ({
     });
     return Array.from(uniqueMap.values());
   }, [models]);
+
+  const videoModels = useMemo(() => {
+    const uniqueMap = new Map<string, AIModel>();
+    models.filter(m => (m.type || m.category)?.toUpperCase() === 'VIDEO').forEach(m => {
+      if (!uniqueMap.has(m.name)) uniqueMap.set(m.name, m);
+    });
+    return Array.from(uniqueMap.values());
+  }, [models]);
+
+  const textModels = useMemo(() => {
+    const uniqueMap = new Map<string, AIModel>();
+    models.filter(m => (m.type || m.category)?.toUpperCase() === 'TEXT').forEach(m => {
+      if (!uniqueMap.has(m.name)) uniqueMap.set(m.name, m);
+    });
+    return Array.from(uniqueMap.values());
+  }, [models]);
+
+  const [isGeneratingPrompt, setIsGeneratingPrompt] = useState(false);
+  const { showToast } = useToast();
+
+  // AI 生成提示词：根据当前 promptMode 调用对应的工作流
+  const handleGeneratePrompt = async () => {
+    if (isGeneratingPrompt || !projectId) {
+      if (!projectId) showToast('缺少项目信息', 'warning');
+      return;
+    }
+    if (!textModel && textModels.length === 0) {
+      showToast('请先选择文本模型以使用 AI 生成提示词', 'warning');
+      return;
+    }
+
+    // 获取当前分镜的基础描述作为输入
+    const baseText = (scene.baseDescription || scene.description || '').trim();
+    if (!baseText) {
+      showToast('请先输入分镜描述再生成提示词', 'warning');
+      return;
+    }
+
+    // 根据 promptMode 选择工作流类型
+    const workflowType =
+      promptMode === 'video'
+        ? 'single_video_prompt_optimization'
+        : promptMode === 'image'
+          ? 'single_image_prompt_optimization'
+          : 'single_prompt_optimization';
+
+    setIsGeneratingPrompt(true);
+    try {
+      const { jobId } = await startWorkflow(workflowType, projectId, {
+        storyboardId: scene.id,
+        prompt: baseText,
+        textModel: textModel || textModels[0]?.name || undefined,
+      });
+
+      const pollStatus = async (): Promise<void> => {
+        const job = await getWorkflowStatus(jobId);
+        if (job.status === 'completed') {
+          const lastTask = job.tasks?.[job.tasks.length - 1];
+          const resultData = lastTask?.result_data;
+
+          if (promptMode === 'description') {
+            // 分镜描述模式：使用 optimized 字段更新描述
+            const optimized = resultData?.optimized || (typeof resultData === 'string' ? resultData : '');
+            if (optimized) {
+              const token = getAuthToken();
+              await fetch(`/api/storyboards/${scene.id}/content`, {
+                method: 'PATCH',
+                headers: {
+                  'Content-Type': 'application/json',
+                  ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                },
+                body: JSON.stringify({ description: optimized }),
+              });
+              onUpdateDescription?.(optimized);
+              showToast('分镜描述生成成功', 'success');
+            }
+          } else if (promptMode === 'image') {
+            // 图片提示词模式
+            const optimized = resultData?.optimized || '';
+            const negativePrompt = resultData?.negativePrompt || '';
+            if (optimized) {
+              const token = getAuthToken();
+              const body: any = { prompt_template: optimized };
+              if (negativePrompt) body.negative_prompt = negativePrompt;
+              await fetch(`/api/storyboards/${scene.id}/content`, {
+                method: 'PATCH',
+                headers: {
+                  'Content-Type': 'application/json',
+                  ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                },
+                body: JSON.stringify(body),
+              });
+              onUpdateFirstFramePrompt?.(optimized);
+              showToast('图片提示词生成成功', 'success');
+            }
+          } else if (promptMode === 'video') {
+            // 视频提示词模式
+            const videoPrompt = resultData?.videoPrompt || resultData?.optimized || '';
+            if (videoPrompt) {
+              const token = getAuthToken();
+              await fetch(`/api/storyboards/${scene.id}/content`, {
+                method: 'PATCH',
+                headers: {
+                  'Content-Type': 'application/json',
+                  ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                },
+                body: JSON.stringify({ video_prompt: videoPrompt }),
+              });
+              onUpdateVideoPrompt?.(videoPrompt);
+              showToast('视频提示词生成成功', 'success');
+            }
+          }
+          setIsGeneratingPrompt(false);
+        } else if (job.status === 'failed') {
+          showToast('提示词生成失败', 'error');
+          setIsGeneratingPrompt(false);
+        } else {
+          setTimeout(pollStatus, 2000);
+        }
+      };
+      pollStatus();
+    } catch (error: any) {
+      showToast(error.message || '提示词生成失败', 'error');
+      setIsGeneratingPrompt(false);
+    }
+  };
 
   return (
     <div className="flex flex-col h-full">
@@ -659,6 +795,17 @@ const DirectorSpace: React.FC<DirectorSpaceProps> = ({
                 const success = await onUpdateDescription?.(state.generatedPrompt);
                 return success || false;
               }}
+              models={models}
+              imageModel={imageModel}
+              videoModel={videoModel}
+              onImageModelChange={onImageModelChange}
+              onVideoModelChange={onVideoModelChange}
+              onGenerateImage={onGenerateImage}
+              onGenerateVideo={onGenerateVideo}
+              hasAction={scene.hasAction}
+              imageFrameTab={imageFrameTab}
+              textModel={textModel}
+              onTextModelChange={onTextModelChange}
             />
         </div>
 

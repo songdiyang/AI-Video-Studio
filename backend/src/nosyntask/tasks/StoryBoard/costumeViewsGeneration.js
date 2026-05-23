@@ -23,16 +23,17 @@ const { downloadAndStore } = require('../../../utils/fileStorage');
 const { requireVisualStyle } = require('../../../utils/getProjectStyle');
 
 // 通用服装人台（白色简单人形 mannequin），刻意避开任何角色身份
+// 要求：无表情、无个性、无面部特征，像商城人体模特一样纯粹展示服装
 const MANNEQUIN_BODY = {
-  male: 'male mannequin body, neutral facial features, average male proportions, plain white skin tone, simple generic human form, no distinct personality or character identity, T-pose neutral standing, clean empty background',
-  female: 'female mannequin body, neutral facial features, average female proportions, plain white skin tone, simple generic human form, no distinct personality or character identity, T-pose neutral standing, clean empty background',
-  unisex: 'androgynous mannequin body, neutral facial features, average proportions, plain white skin tone, simple generic human form, no distinct personality or character identity, T-pose neutral standing, clean empty background'
+  male: 'male mannequin body, completely blank expressionless face, no eyes no mouth no nose no eyebrows, smooth featureless face like a store display mannequin, average male proportions, plain white skin tone, simple generic human form, no distinct personality or character identity, T-pose neutral standing, clean empty background',
+  female: 'female mannequin body, completely blank expressionless face, no eyes no mouth no nose no eyebrows, smooth featureless face like a store display mannequin, average female proportions, plain white skin tone, simple generic human form, no distinct personality or character identity, T-pose neutral standing, clean empty background',
+  unisex: 'androgynous mannequin body, completely blank expressionless face, no eyes no mouth no nose no eyebrows, smooth featureless face like a store display mannequin, average proportions, plain white skin tone, simple generic human form, no distinct personality or character identity, T-pose neutral standing, clean empty background'
 };
 
 function buildCostumePrompt(style, outfitDesc, gender) {
   const mannequin = MANNEQUIN_BODY[gender] || MANNEQUIN_BODY.unisex;
   const styleKeywords = style || 'anime style';
-  return `costume design reference sheet, three-view turnaround of a standalone costume/outfit displayed on three identical generic mannequins arranged horizontally in a single wide 16:9 image, ${mannequin}, left mannequin shows front view, center mannequin shows side profile view, right mannequin shows back view, all three mannequins are wearing the exact same outfit: ${outfitDesc}, the outfit must be fully visible and clear on every view, preserve all costume details fabric texture color pattern trim buttons seams accessories attached to the outfit, arms slightly away from body to fully reveal the outfit, ${styleKeywords}, clean solid light gray background, even soft studio lighting, no dramatic shadow, no extra props, no weapons, no held items, neutral pose, professional costume turnaround reference sheet, highly detailed, consistent design across all three angles, crisp line art feel`;
+  return `costume design reference sheet, three-view turnaround of a standalone costume/outfit displayed on three identical generic mannequins arranged horizontally in a single wide 16:9 image, ${mannequin}, left mannequin shows front view, center mannequin shows side profile view, right mannequin shows back view, all three mannequins are wearing the exact same outfit: ${outfitDesc}, the outfit must be fully visible and clear on every view, preserve all costume details fabric texture color pattern trim buttons seams accessories attached to the outfit, arms slightly away from body to fully reveal the outfit, ${styleKeywords}, clean solid light gray background, even soft studio lighting, no dramatic shadow, no extra props, no weapons, no held items, neutral pose, completely blank face with no expression no eyes no mouth no facial features, smooth mannequin face, professional costume turnaround reference sheet, highly detailed, consistent design across all three angles, crisp line art feel`;
 }
 
 async function handleCostumeViewsGeneration(inputParams, onProgress) {

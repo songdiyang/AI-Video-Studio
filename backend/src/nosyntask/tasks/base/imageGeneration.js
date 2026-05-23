@@ -77,8 +77,18 @@ async function handleImageGeneration(inputParams, onProgress) {
   if (size) submitParams.size = size;  // 支持直接传递 size（如 '2k', '3k'）
   if (width !== undefined && width !== null) submitParams.width = width;
   if (height !== undefined && height !== null) submitParams.height = height;
-  if (aspectRatio) submitParams.aspectRatio = aspectRatio;
+  if (aspectRatio) submitParams.aspectRatio = aspectRatio;  // 确保 aspectRatio 被传递
   if (resolution) submitParams.resolution = resolution;
+
+  console.log('[ImageGen] 提交参数诊断:', {
+    aspectRatio: aspectRatio || null,
+    size: size || null,
+    width: width ?? null,
+    height: height ?? null,
+    resolution: resolution || null,
+    hasPrompt: !!finalPrompt,
+    promptLength: finalPrompt?.length || 0
+  });
 
   if (imageUrl)    submitParams.imageUrl = imageUrl;
   if (imageUrls)   submitParams.imageUrls = imageUrls;

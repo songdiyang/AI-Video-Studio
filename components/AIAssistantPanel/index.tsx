@@ -51,8 +51,8 @@ export interface AIAssistantPanelProps {
   characters?: { id: number; name: string; description?: string }[];
   /** 项目场景清单 */
   locations?: { id: number; name: string; description?: string }[];
-  /** 项目剧本清单 */
-  scripts?: { id: number; episode_number: number; title?: string }[];
+  /** 项目剧本清单（含内容） */
+  scripts?: { id: number; episode_number: number; title?: string; content?: string }[];
   onClose: () => void;
   onAction?: (action: string, params: any) => void;
 }
@@ -851,12 +851,67 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
     const isStream = currentModel?.category?.toUpperCase() === 'MULTIMODAL';
 
     // 根据 includeContext 开关决定是否注入项目上下文
+    // 分层检索策略：RAG 精准片段 + 全剧本目录概览
+    let retrievedScriptContext = '';
+    if (includeContext && projectId && text) {
+      try {
+        const ragRes = await fetch('/api/rag/search-with-context', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(getAuthToken() ? { Authorization: `Bearer ${getAuthToken()}` } : {}),
+          },
+          body: JSON.stringify({
+            query: text,
+            projectId,
+            topK: 8,
+          }),
+        });
+        if (ragRes.ok) {
+          const ragData = await ragRes.json();
+          if (ragData.success && ragData.context) {
+            retrievedScriptContext = ragData.context;
+          }
+        }
+      } catch (e) {
+        console.warn('[AIAssistant] RAG 检索失败:', e);
+      }
+    }
+
+    // 构建剧本上下文：RAG 结果 + 全剧本目录
+    const MAX_SCRIPT_CHARS = 4000;
+    let scriptsForContext;
+    
+    if (retrievedScriptContext) {
+      // 有 RAG 结果：提供检索片段 + 全剧本目录（供 AI 全局参考）
+      const scriptCatalog = scripts?.map(s => 
+        `第${s.episode_number}集《${s.title || '未命名'}》(${s.content ? s.content.length + '字符' : '无内容'})`
+      ).join('\n');
+      
+      scriptsForContext = [{
+        id: 0,
+        episode_number: 0,
+        title: '相关剧本内容',
+        content: `${retrievedScriptContext}\n\n---\n【全剧本目录】\n${scriptCatalog || '无'}`,
+      }];
+    } else {
+      // 无 RAG 结果：回退到原始剧本内容（截断）
+      scriptsForContext = scripts?.map(s => ({
+        ...s,
+        content: s.content
+          ? (s.content.length > MAX_SCRIPT_CHARS
+            ? s.content.slice(0, MAX_SCRIPT_CHARS) + `\n[…剧本已截断，原长 ${s.content.length} 字符…]`
+            : s.content)
+          : undefined,
+      }));
+    }
+
     const contextPayload = includeContext ? {
       projectName: projectName || undefined,
       projectDescription: projectDescription || undefined,
       characters,
       locations,
-      scripts,
+      scripts: scriptsForContext,
       scenes,
       ...(currentFrame ? {
         frameId: currentFrame.id,
@@ -1775,14 +1830,47 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
               <span className="pointer-events-none absolute right-1 top-1/2 -translate-y-1/2 text-[9px] text-[var(--text-muted)]">▾</span>
             </div>
             <div className="flex-1" />
-            <button
-              onClick={handleSend}
-              disabled={isLoading || (!inputText.trim() && attachments.length === 0)}
-              className="p-1 rounded-md bg-[var(--accent)] text-white hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
-              title="发送 (Enter)"
-            >
-              <Send size={14} />
-            </button>
+            {isLoading ? (
+              <button
+                onClick={() => {
+                  // 中断当前流式输出
+                  if (streamingId) {
+                    // 通过更新消息状态标记为已中断
+                    const currentSid = currentSessionIdRef.current;
+                    if (currentSid) {
+                      updateSessionMessages(currentSid, (prev) => {
+                        const lastMsg = prev[prev.length - 1];
+                        if (lastMsg?.role === 'assistant' && lastMsg.id === streamingId) {
+                          return prev.map((m) =>
+                            m.id === streamingId
+                              ? { ...m, content: m.content + '\n\n[已中断]' }
+                              : m
+                          );
+                        }
+                        return prev;
+                      });
+                      setSessionStreaming(currentSid, null);
+                      setSessionLoading(currentSid, false);
+                    }
+                  }
+                }}
+                className="p-1 rounded-md bg-red-500 text-white hover:opacity-90 transition-opacity animate-pulse"
+                title="中断输出"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                  <rect x="6" y="6" width="12" height="12" rx="2" />
+                </svg>
+              </button>
+            ) : (
+              <button
+                onClick={handleSend}
+                disabled={!inputText.trim() && attachments.length === 0}
+                className="p-1 rounded-md bg-[var(--accent)] text-white hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
+                title="发送 (Enter)"
+              >
+                <Send size={14} />
+              </button>
+            )}
           </div>
         </div>
       </div>

@@ -330,7 +330,7 @@ router.post('/admin/errors/batch-resolve', authMiddleware, requireAdmin, async (
       }
     }
 
-    const [result] = await execute(
+    const result = await execute(
       `UPDATE workflow_jobs wj ${where.replace('WHERE', 'SET wj.admin_resolved = 1 WHERE')}`,
       params
     );
@@ -352,7 +352,7 @@ router.post('/batch-consume-failed', authMiddleware, async (req, res) => {
   try {
     const userId = req.user.id;
     const { execute } = require('../dbHelper');
-    const [result] = await execute(
+    const result = await execute(
       `UPDATE workflow_jobs SET is_consumed = 1 
        WHERE user_id = ? AND status IN ('failed', 'cancelled') AND is_consumed = 0`,
       [userId]

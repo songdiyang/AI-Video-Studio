@@ -19,8 +19,8 @@ import type { StoryboardValidationIssue } from '../utils/validateStoryboardConte
 import { getWorstSeverity } from '../utils/validateStoryboardContent';
 import StoryboardLockButton from '../components/StoryboardLockButton';
 import { ShotSizeBadge, ShotSizeSelector } from '../components/ShotSizeSelector';
-import { CameraMovementSelector } from '../components/CameraMovementSelector';
-import { CAMERA_MOVEMENT_LABELS } from '../components/CameraMovementSelector';
+// import { CameraMovementSelector } from '../components/CameraMovementSelector';
+// import { CAMERA_MOVEMENT_LABELS } from '../components/CameraMovementSelector';
 import { FrameTypeSelector } from '../components/FrameTypeSelector';
 
 export interface SceneCardProps {
@@ -432,14 +432,52 @@ const SceneCard: React.FC<SceneCardProps> = ({
 
             {/* 内容 */}
             <div className="flex-1 min-w-0 overflow-hidden pr-6">
-              {/* 描述文字 */}
-              <p className="text-[11px] text-[var(--text-secondary)] leading-snug overflow-hidden text-ellipsis" style={{
-                display: '-webkit-box',
-                WebkitLineClamp: 2,
-                WebkitBoxOrient: 'vertical'
-              }}>
-                {scene.baseDescription || '暂无描述'}
-              </p>
+              {/* 描述文字 - 可点击编辑 */}
+              {isEditingDescription ? (
+                <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                  <input
+                    type="text"
+                    value={editedDescription}
+                    onChange={(e) => setEditedDescription(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        handleSaveDescription();
+                      } else if (e.key === 'Escape') {
+                        setIsEditingDescription(false);
+                        setEditedDescription(scene.baseDescription);
+                      }
+                    }}
+                    onBlur={() => {
+                      if (editedDescription !== scene.baseDescription) {
+                        handleSaveDescription();
+                      } else {
+                        setIsEditingDescription(false);
+                      }
+                    }}
+                    autoFocus
+                    className="flex-1 text-[11px] bg-[var(--bg-input)] border border-[var(--accent)]/50 rounded px-1.5 py-0.5 text-[var(--text-primary)] outline-none min-w-0"
+                  />
+                  {isSavingDescription && (
+                    <div className="w-3 h-3 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin flex-shrink-0" />
+                  )}
+                </div>
+              ) : (
+                <p
+                  className="text-[11px] text-[var(--text-secondary)] leading-snug overflow-hidden text-ellipsis cursor-text hover:text-[var(--text-primary)] hover:bg-[var(--bg-input)] rounded px-0.5 -mx-0.5 transition-colors"
+                  style={{
+                    display: '-webkit-box',
+                    WebkitLineClamp: 2,
+                    WebkitBoxOrient: 'vertical'
+                  }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsEditingDescription(true);
+                  }}
+                  title="点击编辑分镜描述"
+                >
+                  {scene.baseDescription || '暂无描述'}
+                </p>
+              )}
               {/* 元数据工具栏 - 紧凑单行 */}
               <div className="flex items-center gap-1 mt-0.5">
                 {/* 景别 */}
@@ -457,8 +495,8 @@ const SceneCard: React.FC<SceneCardProps> = ({
                 {!onUpdateScene && scene.shotType && (
                   <ShotSizeBadge value={scene.shotType} />
                 )}
-                {/* 运镜 */}
-                {onUpdateScene && (
+                {/* 运镜 - 隐藏，由AI在视频提示词生成阶段自动判断 */}
+                {/* {onUpdateScene && (
                   <div onClick={(e) => e.stopPropagation()} className="flex-shrink-0">
                     <CameraMovementSelector
                       value={scene.cameraMovement}
@@ -473,14 +511,67 @@ const SceneCard: React.FC<SceneCardProps> = ({
                   <span className="text-[10px] px-1 py-0.5 rounded bg-slate-500/15 text-slate-400 whitespace-nowrap">
                     {CAMERA_MOVEMENT_LABELS[scene.cameraMovement] || scene.cameraMovement}
                   </span>
-                )}
+                )} */}
                 {/* 画面类型 */}
                 {onUpdateScene && (
                   <div onClick={(e) => e.stopPropagation()} className="flex-shrink-0">
                     <FrameTypeSelector
                       hasAction={scene.hasAction}
-                      onChange={(newHasAction) => {
-                        onUpdateScene(scene.id, { hasAction: newHasAction });
+                      onChange={async (newHasAction) => {
+                        // 如果画面类型没有变化，不做任何操作
+                        if (newHasAction === scene.hasAction) return;
+
+                        // 如果当前已有帧图片或视频，询问用户是否切换并重新生成
+                        const hasFrames = !!(scene.startFrame || scene.endFrame || scene.imageUrl);
+                        const hasVideo = !!scene.videoUrl;
+
+                        if (hasFrames || hasVideo) {
+                          const fromMode = scene.hasAction ? '运动（双图）' : '静止（单帧）';
+                          const toMode = newHasAction ? '运动（双图）' : '静止（单帧）';
+                          const confirmed = await confirm({
+                            title: '切换画面类型',
+                            message: `确定要从「${fromMode}」切换到「${toMode}」吗？\n\n切换后，现有的分镜图片将被视为其他历史阶段的产物，需要重新生成新的分镜图片。`,
+                            type: 'warning',
+                            confirmText: '切换并重新生成',
+                            cancelText: '取消'
+                          });
+                          if (!confirmed) return;
+
+                          // 先更新 hasAction 状态
+                          onUpdateScene(scene.id, { hasAction: newHasAction });
+
+                          // 清除现有帧和视频，表示这是其他历史阶段
+                          try {
+                            const token = getAuthToken();
+                            await fetch(`/api/storyboards/${scene.id}/media`, {
+                              method: 'PATCH',
+                              headers: {
+                                'Content-Type': 'application/json',
+                                ...(token ? { Authorization: `Bearer ${token}` } : {})
+                              },
+                              body: JSON.stringify({
+                                startFrame: null,
+                                endFrame: null,
+                                imageUrl: null,
+                                videoUrl: null
+                              })
+                            });
+                            // 更新本地状态清除帧和视频
+                            onUpdateScene(scene.id, {
+                              startFrame: undefined,
+                              endFrame: undefined,
+                              imageUrl: undefined,
+                              videoUrl: undefined
+                            });
+                            showToast('画面类型已切换，请重新生成分镜图片', 'info');
+                          } catch (err) {
+                            console.error('[SceneCard] 清除历史帧失败:', err);
+                            showToast('切换成功，但清除历史帧失败，请手动删除', 'warning');
+                          }
+                        } else {
+                          // 没有帧和视频，直接切换
+                          onUpdateScene(scene.id, { hasAction: newHasAction });
+                        }
                       }}
                       compact={true}
                     />

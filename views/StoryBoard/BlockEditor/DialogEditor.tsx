@@ -5,9 +5,10 @@
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Button, Tabs, Tab } from '@heroui/react';
-import { Save, Trash2, Wand2, MessageCircle, Mic, History, RotateCcw, GitCompare, Sparkles, Undo2, Loader2, Plus, X as XIcon, Star, ImageIcon, Film, ChevronDown } from 'lucide-react';
+import { Save, Trash2, Wand2, MessageCircle, Mic, History, RotateCcw, GitCompare, Sparkles, Undo2, Loader2, Plus, X as XIcon, Star, ImageIcon, Film, ChevronDown, Pencil } from 'lucide-react';
 import { useToast } from '../../../contexts/ToastContext';
 import { BLOCK_OPTIONS } from './utils/blockRegistry';
+import SketchFramesPanel from './SketchFramesPanel';
 import { getAuthToken } from '../../../services/auth';
 import { startWorkflow, getWorkflowStatus, WorkflowJob } from '../../../hooks/useWorkflow';
 
@@ -63,6 +64,10 @@ interface DialogEditorProps {
   hasAction?: boolean;
   /** 图片帧标签（运动模式时 first/last） */
   imageFrameTab?: 'first' | 'last';
+  /** 当前文本模型 */
+  textModel?: string;
+  /** 文本模型切换回调 */
+  onTextModelChange?: (model: string) => void;
 }
 
 interface Character {
@@ -210,6 +215,8 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
   onGenerateVideo,
   hasAction = false,
   imageFrameTab = 'first',
+  textModel,
+  onTextModelChange,
 }) => {
   const { showToast } = useToast();
   const editorRef = useRef<HTMLDivElement>(null);
@@ -238,11 +245,19 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
   // AI 优化状态（支持图片和视频并发优化）
   const [isOptimizingImage, setIsOptimizingImage] = useState(false);
   const [isOptimizingVideo, setIsOptimizingVideo] = useState(false);
+  // 多模态视觉优化状态
+  const [isMultimodalOptimizingImage, setIsMultimodalOptimizingImage] = useState(false);
+  const [isMultimodalOptimizingVideo, setIsMultimodalOptimizingVideo] = useState(false);
   const [preOptimizeText, setPreOptimizeText] = useState<string | null>(null);
   const optimizeImageJobIdRef = useRef<string | null>(null);
   const optimizeVideoJobIdRef = useRef<string | null>(null);
   const optimizeImagePollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const optimizeVideoPollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 多模态优化轮询引用
+  const multimodalImageJobIdRef = useRef<string | null>(null);
+  const multimodalVideoJobIdRef = useRef<string | null>(null);
+  const multimodalImagePollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const multimodalVideoPollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // 台词编辑状态
   const [editingDialogues, setEditingDialogues] = useState<DialogueLine[]>([]);
@@ -274,6 +289,115 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
     });
     return Array.from(uniqueMap.values());
   }, [models]);
+
+  const textModels = React.useMemo(() => {
+    const uniqueMap = new Map<string, typeof models[number]>();
+    models.filter(m => (m.type || m.category)?.toUpperCase() === 'TEXT').forEach(m => {
+      if (!uniqueMap.has(m.name)) uniqueMap.set(m.name, m);
+    });
+    return Array.from(uniqueMap.values());
+  }, [models]);
+
+  // 多模态模型列表（用于视觉参考优化）
+  const multimodalModels = React.useMemo(() => {
+    const uniqueMap = new Map<string, typeof models[number]>();
+    models.filter(m => (m.type || m.category)?.toUpperCase() === 'MULTIMODAL').forEach(m => {
+      if (!uniqueMap.has(m.name)) uniqueMap.set(m.name, m);
+    });
+    return Array.from(uniqueMap.values());
+  }, [models]);
+
+  // AI 生成提示词：根据当前 promptMode 调用对应的工作流
+  const [isGeneratingPrompt, setIsGeneratingPrompt] = useState(false);
+  const [isGenerateMenuOpen, setIsGenerateMenuOpen] = useState(false);
+
+  const handleGeneratePrompt = async (type: 'image' | 'video') => {
+    if (isGeneratingPrompt || !projectId) {
+      if (!projectId) showToast('缺少项目信息', 'warning');
+      return;
+    }
+    if (!textModel && textModels.length === 0) {
+      showToast('请先选择文本模型以使用 AI 生成提示词', 'warning');
+      return;
+    }
+
+    // 获取当前分镜的基础描述作为输入
+    const baseText = (basePrompt || promptText || '').trim();
+    if (!baseText) {
+      showToast('请先输入分镜描述再生成提示词', 'warning');
+      return;
+    }
+
+    // 根据 type 参数选择工作流类型
+    const workflowType =
+      type === 'video'
+        ? 'single_video_prompt_optimization'
+        : 'single_image_prompt_optimization';
+
+    setIsGeneratingPrompt(true);
+    try {
+      const { jobId } = await startWorkflow(workflowType, projectId, {
+        storyboardId,
+        prompt: baseText,
+        textModel: textModel || textModels[0]?.name || undefined,
+      });
+
+      const pollStatus = async (): Promise<void> => {
+        const job = await getWorkflowStatus(jobId);
+        if (job.status === 'completed') {
+          const lastTask = job.tasks?.[job.tasks.length - 1];
+          const resultData = lastTask?.result_data;
+
+          if (type === 'image') {
+            // 图片提示词模式
+            const optimized = resultData?.optimized || '';
+            const negativePrompt = resultData?.negativePrompt || '';
+            if (optimized) {
+              const token = getAuthToken();
+              const body: any = { prompt_template: optimized };
+              if (negativePrompt) body.negative_prompt = negativePrompt;
+              await fetch(`/api/storyboards/${storyboardId}/content`, {
+                method: 'PATCH',
+                headers: {
+                  'Content-Type': 'application/json',
+                  ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                },
+                body: JSON.stringify(body),
+              });
+              onChange?.(optimized);
+              showToast('图片提示词生成成功', 'success');
+            }
+          } else if (type === 'video') {
+            // 视频提示词模式
+            const videoPrompt = resultData?.videoPrompt || resultData?.optimized || '';
+            if (videoPrompt) {
+              const token = getAuthToken();
+              await fetch(`/api/storyboards/${storyboardId}/content`, {
+                method: 'PATCH',
+                headers: {
+                  'Content-Type': 'application/json',
+                  ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                },
+                body: JSON.stringify({ video_prompt: videoPrompt }),
+              });
+              onChange?.(videoPrompt);
+              showToast('视频提示词生成成功', 'success');
+            }
+          }
+          setIsGeneratingPrompt(false);
+        } else if (job.status === 'failed') {
+          showToast('提示词生成失败', 'error');
+          setIsGeneratingPrompt(false);
+        } else {
+          setTimeout(pollStatus, 2000);
+        }
+      };
+      pollStatus();
+    } catch (error: any) {
+      showToast(error.message || '提示词生成失败', 'error');
+      setIsGeneratingPrompt(false);
+    }
+  };
 
   // 生成中状态
   const [isGeneratingMedia, setIsGeneratingMedia] = useState(false);
@@ -325,10 +449,22 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
         clearTimeout(optimizeVideoPollTimerRef.current);
         optimizeVideoPollTimerRef.current = null;
       }
+      if (multimodalImagePollTimerRef.current) {
+        clearTimeout(multimodalImagePollTimerRef.current);
+        multimodalImagePollTimerRef.current = null;
+      }
+      if (multimodalVideoPollTimerRef.current) {
+        clearTimeout(multimodalVideoPollTimerRef.current);
+        multimodalVideoPollTimerRef.current = null;
+      }
       optimizeImageJobIdRef.current = null;
       optimizeVideoJobIdRef.current = null;
+      multimodalImageJobIdRef.current = null;
+      multimodalVideoJobIdRef.current = null;
       setIsOptimizingImage(false);
       setIsOptimizingVideo(false);
+      setIsMultimodalOptimizingImage(false);
+      setIsMultimodalOptimizingVideo(false);
     };
   }, [storyboardId]);
 
@@ -533,6 +669,220 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
     ]);
   };
 
+  // 多模态视觉优化：基于分镜图片参考优化提示词
+  const runMultimodalOptimize = async (targetType: 'image' | 'video') => {
+    const text = (basePrompt || promptText).trim();
+    if (!text) return;
+
+    const isImage = targetType === 'image';
+    const setOptimizing = isImage ? setIsMultimodalOptimizingImage : setIsMultimodalOptimizingVideo;
+    const jobIdRef = isImage ? multimodalImageJobIdRef : multimodalVideoJobIdRef;
+    const pollTimerRef = isImage ? multimodalImagePollTimerRef : multimodalVideoPollTimerRef;
+
+    setOptimizing(true);
+    try {
+      if (!projectId) {
+        showToast('缺少项目信息', 'warning');
+        setOptimizing(false);
+        return;
+      }
+
+      // 收集视觉参考图：首帧 + 尾帧
+      const imageUrls: string[] = [];
+      if (availableFrames?.startFrame) imageUrls.push(availableFrames.startFrame);
+      if (availableFrames?.endFrame) imageUrls.push(availableFrames.endFrame);
+
+      const workflowType = isImage
+        ? 'single_image_prompt_optimization'
+        : 'single_video_prompt_optimization';
+
+      const { jobId } = await startWorkflow(workflowType, projectId, {
+        storyboardId,
+        prompt: text,
+        multimodalModel: multimodalModels[0]?.name || textModels[0]?.name || undefined,
+      });
+
+      jobIdRef.current = jobId;
+      console.log(`[DialogEditor] 多模态优化任务已启动, type=${targetType}, jobId=${jobId}`);
+
+      const pollOptimizeStatus = async () => {
+        if (!jobIdRef.current) return;
+        try {
+          const job = await getWorkflowStatus(jobIdRef.current);
+
+          if (job.status === 'completed') {
+            const lastTask = job.tasks?.[job.tasks.length - 1];
+            const resultData = lastTask?.result_data;
+
+            if (isImage) {
+              const optimized = resultData?.optimized || (typeof resultData === 'string' ? resultData : '');
+              const negativePrompt = resultData?.negativePrompt || '';
+
+              if (optimized) {
+                try {
+                  const token = getAuthToken();
+                  const body: any = { prompt_template: optimized };
+                  if (negativePrompt) body.negative_prompt = negativePrompt;
+                  const res = await fetch(`/api/storyboards/${storyboardId}/content`, {
+                    method: 'PATCH',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      ...(token ? { Authorization: `Bearer ${token}` } : {})
+                    },
+                    body: JSON.stringify(body)
+                  });
+                  if (!res.ok) {
+                    showToast('图片提示词保存失败', 'error');
+                  }
+                } catch (saveErr) {
+                  console.error('[DialogEditor] 保存图片提示词失败:', saveErr);
+                  showToast('图片提示词保存失败', 'error');
+                }
+
+                if (targetType === promptMode) {
+                  setPreOptimizeText(text);
+                  setPromptText(optimized);
+                  if (editorRef.current) {
+                    editorRef.current.innerHTML = refTextToHtml(optimized, referenceImages);
+                    lastRenderedRef.current = optimized;
+                  }
+                  setIsDirty(false);
+                }
+              }
+            } else {
+              // 视频提示词处理
+              const actionAnalysis = resultData?.actionAnalysis;
+              const videoPrompt = resultData?.videoPrompt;
+              const videoStartPrompt = resultData?.videoStartPrompt;
+              const videoEndPrompt = resultData?.videoEndPrompt;
+              const negativePrompt = resultData?.negativePrompt || '';
+
+              const body: any = {};
+              const savedFields: string[] = [];
+
+              if (actionAnalysis?.useEndFrame === false) {
+                if (videoPrompt) {
+                  body.video_prompt = videoPrompt;
+                  savedFields.push('视频提示词');
+                }
+              } else if (actionAnalysis?.useEndFrame === true) {
+                if (videoStartPrompt) {
+                  body.video_start_prompt = videoStartPrompt;
+                  savedFields.push('视频首帧提示词');
+                }
+                if (videoEndPrompt) {
+                  body.video_end_prompt = videoEndPrompt;
+                  savedFields.push('视频尾帧提示词');
+                }
+              } else {
+                const optimized = resultData?.optimized || (typeof resultData === 'string' ? resultData : '');
+                if (optimized) {
+                  body.video_prompt = optimized;
+                  savedFields.push('视频提示词');
+                }
+              }
+
+              if (negativePrompt) {
+                body.negative_prompt = negativePrompt;
+              }
+
+              if (Object.keys(body).length > 0) {
+                try {
+                  const token = getAuthToken();
+                  const res = await fetch(`/api/storyboards/${storyboardId}/content`, {
+                    method: 'PATCH',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      ...(token ? { Authorization: `Bearer ${token}` } : {})
+                    },
+                    body: JSON.stringify(body)
+                  });
+                  if (!res.ok) {
+                    showToast('视频提示词保存失败', 'error');
+                  } else if (targetType === promptMode && savedFields.length > 0) {
+                    const displayPrompt = videoStartPrompt || videoPrompt || resultData?.optimized || '';
+                    if (displayPrompt) {
+                      setPreOptimizeText(text);
+                      setPromptText(displayPrompt);
+                      if (editorRef.current) {
+                        editorRef.current.innerHTML = refTextToHtml(displayPrompt, referenceImages);
+                        lastRenderedRef.current = displayPrompt;
+                      }
+                      setIsDirty(false);
+                    }
+                  }
+                } catch (saveErr) {
+                  console.error('[DialogEditor] 保存视频提示词失败:', saveErr);
+                  showToast('视频提示词保存失败', 'error');
+                }
+              }
+            }
+
+            if (targetType === promptMode) {
+              showToast('多模态视觉优化完成', 'success');
+            } else {
+              showToast('多模态视觉优化完成，请切换到对应标签查看', 'info');
+            }
+            jobIdRef.current = null;
+            setOptimizing(false);
+            return;
+          } else if (job.status === 'failed') {
+            const failedTask = job.tasks?.find(t => t.status === 'failed');
+            const errorMsg = job.error_message || failedTask?.error_message || '优化失败';
+            showToast(errorMsg, 'error');
+            jobIdRef.current = null;
+            setOptimizing(false);
+            return;
+          } else if (job.status === 'cancelled') {
+            showToast('优化任务已取消', 'info');
+            jobIdRef.current = null;
+            setOptimizing(false);
+            return;
+          }
+
+          pollTimerRef.current = setTimeout(pollOptimizeStatus, 1000);
+        } catch (err: any) {
+          console.error('[DialogEditor] 轮询多模态优化任务状态失败:', err);
+          pollTimerRef.current = setTimeout(pollOptimizeStatus, 2000);
+        }
+      };
+
+      pollOptimizeStatus();
+    } catch (error: any) {
+      showToast(error.message || '多模态视觉优化失败', 'error');
+      setOptimizing(false);
+    }
+  };
+
+  // 多模态优化：同时启动图片和视频视觉优化（并发队列）
+  const handleMultimodalOptimize = async () => {
+    const text = (basePrompt || promptText).trim();
+    if (!text || isMultimodalOptimizingImage || isMultimodalOptimizingVideo) return;
+    if (!projectId) {
+      showToast('缺少项目信息', 'warning');
+      return;
+    }
+
+    // 检查是否有视觉参考图
+    if (!availableFrames?.startFrame && !availableFrames?.endFrame) {
+      showToast('当前分镜没有图片参考，将使用普通优化', 'warning');
+      await handleOptimize();
+      return;
+    }
+
+    // 检查是否有多模态模型
+    if (multimodalModels.length === 0 && textModels.length === 0) {
+      showToast('没有可用的 AI 模型', 'warning');
+      return;
+    }
+
+    // 并发启动两个工作流，相互独立
+    await Promise.all([
+      runMultimodalOptimize('image'),
+      runMultimodalOptimize('video')
+    ]);
+  };
+
   // 生成图片
   const handleGenerateImage = async () => {
     if (!onGenerateImage || !storyboardId) return;
@@ -558,7 +908,7 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
     }
   };
 
-  // 生成视频
+  // 生成视频（带预检：锁定检查 + 提示词保存 + 视频校验）
   const handleGenerateVideo = async () => {
     if (!onGenerateVideo || !storyboardId) return;
     const text = promptText.trim();
@@ -566,6 +916,34 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
       showToast('提示词为空，无法生成', 'warning');
       return;
     }
+
+    // 先保存当前提示词
+    if (onSave) {
+      const saved = await onSave(text);
+      if (!saved) {
+        showToast('保存提示词失败', 'error');
+        return;
+      }
+    }
+
+    // 视频生成前校验
+    try {
+      const token = getAuthToken();
+      const res = await fetch(`/api/storyboards/${storyboardId}/validate?type=video`, {
+        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (!data.ready) {
+          const msg = data.issues.map((i: any) => i.message).join('\n');
+          showToast(`无法生成视频：${msg}`, 'error');
+          return;
+        }
+      }
+    } catch {
+      // 校验失败继续尝试生成
+    }
+
     setIsGeneratingMedia(true);
     try {
       const result = await onGenerateVideo(storyboardId);
@@ -1285,16 +1663,6 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
           </Button>
           <Button
             size="sm"
-            variant="flat"
-            className="bg-[var(--bg-input)] text-[var(--text-secondary)]"
-            startContent={<Trash2 className="w-3.5 h-3.5" />}
-            onPress={handleClear}
-            isDisabled={!promptText && referenceImages.length === 0}
-          >
-            清空
-          </Button>
-          <Button
-            size="sm"
             className="pro-btn-primary"
             startContent={<Save className="w-3.5 h-3.5" />}
             onPress={handleSave}
@@ -1328,9 +1696,15 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
           </div>
 
           {/* 组件列表 */}
-          <div className="flex-1 overflow-y-auto p-3">
-            {renderComponentButtons()}
-          </div>
+          {activeTab === 'sketches' ? (
+            <div className="flex-1 overflow-hidden">
+              <SketchFramesPanel storyboardId={storyboardId} />
+            </div>
+          ) : (
+            <div className="flex-1 overflow-y-auto p-3">
+              {renderComponentButtons()}
+            </div>
+          )}
 
           {/* 参考图区域 */}
           {(availableFrames?.startFrame || availableFrames?.endFrame) && (
@@ -1441,7 +1815,7 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
                 }
               }}
               data-placeholder="点击左侧组件插入，或拖拽组件/参考图到此处..."
-              className="w-full h-full p-4 rounded-lg bg-[var(--bg-input)] border border-[var(--border-color)] text-sm text-[var(--text-primary)] overflow-y-auto focus:outline-none focus:border-[var(--accent)] empty:before:content-[attr(data-placeholder)] empty:before:text-[var(--text-muted)] empty:before:pointer-events-none"
+              className="w-full h-full p-4 pb-12 rounded-lg bg-[var(--bg-input)] border border-[var(--border-color)] text-sm text-[var(--text-primary)] overflow-y-auto focus:outline-none focus:border-[var(--accent)] empty:before:content-[attr(data-placeholder)] empty:before:text-[var(--text-muted)] empty:before:pointer-events-none"
               style={{ minHeight: '120px', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
             />
             {isDraggingOver && (
@@ -1449,110 +1823,176 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
                 <span className="text-sm text-[var(--accent)]">释放以插入</span>
               </div>
             )}
-          </div>
-
-          {/* 提示 + AI优化按钮 */}
-          <div className="mt-2 flex items-center justify-between">
-            <div className="text-xs text-[var(--text-muted)]">
-              提示：点击左侧组件直接插入，或拖拽组件到文本区域
-            </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              {/* AI 优化 / 撤回按钮 */}
-              {preOptimizeText !== null ? (
+            {/* 底部工具栏 - 嵌入输入框内部右下角 */}
+            <div className="absolute bottom-2 right-2 flex items-center gap-1.5 z-10">
+                {/* 参考图按钮 */}
                 <button
-                  onClick={handleUndoOptimize}
-                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-500/10 text-amber-600 text-xs hover:bg-amber-500/20 transition-colors shrink-0"
-                  title="撤回优化，恢复原文"
+                  className="p-1.5 rounded-md hover:bg-[var(--bg-hover)] transition-colors text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                  title="添加参考图"
                 >
-                  <Undo2 className="w-3.5 h-3.5" />
-                  撤回
+                  <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                    <circle cx="8.5" cy="8.5" r="1.5" />
+                    <polyline points="21 15 16 10 5 21" />
+                  </svg>
                 </button>
-              ) : (
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <button
-                    onClick={handleOptimize}
-                    disabled={isOptimizingImage || isOptimizingVideo || !promptText.trim()}
-                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-gradient-to-r from-purple-500/10 to-indigo-500/10 text-purple-600 text-xs hover:from-purple-500/20 hover:to-indigo-500/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                    title="基于分镜描述同时生成图片提示词和视频提示词"
-                  >
-                    {(isOptimizingImage || isOptimizingVideo) ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <Sparkles className="w-3.5 h-3.5" />
+                {/* AI 优化按钮 */}
+                <button
+                  onClick={() => setIsGenerateMenuOpen(!isGenerateMenuOpen)}
+                  disabled={!promptText.trim()}
+                  className="p-1.5 rounded-md hover:bg-[var(--bg-hover)] transition-colors text-[var(--text-muted)] hover:text-purple-500 disabled:opacity-40 disabled:cursor-not-allowed relative"
+                  title="AI 生成"
+                >
+                  {isGeneratingPrompt || isOptimizingImage || isOptimizingVideo || isMultimodalOptimizingImage || isMultimodalOptimizingVideo || isGeneratingMedia ? (
+                    <Loader2 className="w-4 h-4 animate-spin text-purple-500" />
+                  ) : (
+                    <Sparkles className="w-4 h-4" />
+                  )}
+                  
+                  {/* AI 生成菜单下拉 */}
+                  {isGenerateMenuOpen && (
+                    <div className="absolute bottom-full left-0 mb-2 w-48 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg shadow-lg py-1 z-50"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <button
+                        onClick={() => { handleOptimize(); setIsGenerateMenuOpen(false); }}
+                        disabled={isOptimizingImage || isOptimizingVideo || !promptText.trim()}
+                        className="w-full text-left px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] disabled:opacity-40 flex items-center gap-2"
+                      >
+                        {isOptimizingImage || isOptimizingVideo ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-purple-500" />
+                        ) : (
+                          <Sparkles className="w-3.5 h-3.5 text-purple-500" />
+                        )}
+                        优化提示词
+                      </button>
+                      <button
+                        onClick={() => { handleGeneratePrompt('image'); setIsGenerateMenuOpen(false); }}
+                        disabled={isGeneratingPrompt || !promptText.trim()}
+                        className="w-full text-left px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] disabled:opacity-40 flex items-center gap-2"
+                      >
+                        {isGeneratingPrompt ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-500" />
+                        ) : (
+                          <Wand2 className="w-3.5 h-3.5 text-blue-500" />
+                        )}
+                        生成图片提示词
+                      </button>
+                      <button
+                        onClick={() => { handleGeneratePrompt('video'); setIsGenerateMenuOpen(false); }}
+                        disabled={isGeneratingPrompt || !promptText.trim()}
+                        className="w-full text-left px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] disabled:opacity-40 flex items-center gap-2"
+                      >
+                        {isGeneratingPrompt ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-rose-500" />
+                        ) : (
+                          <Film className="w-3.5 h-3.5 text-rose-500" />
+                        )}
+                        生成视频提示词
+                      </button>
+                      <div className="my-1 border-t border-[var(--border-color)]" />
+                      <button
+                        onClick={() => { handleMultimodalOptimize(); setIsGenerateMenuOpen(false); }}
+                        disabled={isMultimodalOptimizingImage || isMultimodalOptimizingVideo || !promptText.trim()}
+                        className="w-full text-left px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] disabled:opacity-40 flex items-center gap-2"
+                        title={!availableFrames?.startFrame && !availableFrames?.endFrame ? '当前分镜无图片参考，将使用普通优化' : '基于分镜图片调用多模态大模型优化提示词'}
+                      >
+                        {isMultimodalOptimizingImage || isMultimodalOptimizingVideo ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-500" />
+                        ) : (
+                          <svg className="w-3.5 h-3.5 text-amber-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M2 12a10 10 0 1 1 20 0 10 10 0 0 1-20 0z" />
+                            <path d="M2 12h20" />
+                            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+                          </svg>
+                        )}
+                        多模态视觉优化
+                      </button>
+                    </div>
+                  )}
+                </button>
+
+                {/* 生成图片按钮 */}
+                {promptMode === 'image' && onGenerateImage && (
+                  <>
+                    {imageModels.length > 0 && onImageModelChange && (
+                      <div className="relative">
+                        <select
+                          value={propImageModel || ''}
+                          onChange={(e) => onImageModelChange(e.target.value)}
+                          className="h-7 pl-2 pr-5 rounded-md bg-[var(--bg-input)] border border-[var(--border-color)] text-[var(--text-secondary)] text-[11px] focus:outline-none focus:border-blue-500 appearance-none cursor-pointer hover:border-blue-400 transition-colors"
+                          aria-label="图片模型"
+                        >
+                          {imageModels.map((m) => (
+                            <option key={m.name} value={m.name}>{m.name}</option>
+                          ))}
+                        </select>
+                        <ChevronDown className="w-2.5 h-2.5 text-[var(--text-muted)] absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      </div>
                     )}
-                    {(isOptimizingImage || isOptimizingVideo) ? '生成中...' : '提示词生成'}
-                  </button>
-                </div>
-              )}
+                    <button
+                      onClick={handleGenerateImage}
+                      disabled={isGeneratingMedia || !promptText.trim()}
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-blue-500/15 text-blue-500 text-[11px] hover:bg-blue-500/25 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      {isGeneratingMedia ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <ImageIcon className="w-3.5 h-3.5" />
+                      )}
+                      生成图片
+                    </button>
+                  </>
+                )}
+                {/* 生成视频按钮 */}
+                {promptMode === 'video' && onGenerateVideo && (
+                  <>
+                    {videoModels.length > 0 && onVideoModelChange && (
+                      <div className="relative">
+                        <select
+                          value={propVideoModel || ''}
+                          onChange={(e) => onVideoModelChange(e.target.value)}
+                          className="h-7 pl-2 pr-5 rounded-md bg-[var(--bg-input)] border border-[var(--border-color)] text-[var(--text-secondary)] text-[11px] focus:outline-none focus:border-rose-500 appearance-none cursor-pointer hover:border-rose-400 transition-colors"
+                          aria-label="视频模型"
+                        >
+                          {videoModels.map((m) => (
+                            <option key={m.name} value={m.name}>{m.name}</option>
+                          ))}
+                        </select>
+                        <ChevronDown className="w-2.5 h-2.5 text-[var(--text-muted)] absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      </div>
+                    )}
+                    <button
+                      onClick={handleGenerateVideo}
+                      disabled={isGeneratingMedia || !promptText.trim()}
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-rose-500/15 text-rose-500 text-[11px] hover:bg-rose-500/25 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      {isGeneratingMedia ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Film className="w-3.5 h-3.5" />
+                      )}
+                      生成视频
+                    </button>
+                  </>
+                )}
+                {/* 发送按钮 */}
+                <button
+                  onClick={() => setIsGenerateMenuOpen(!isGenerateMenuOpen)}
+                  disabled={!promptText.trim()}
+                  className="p-1.5 rounded-md bg-gradient-to-r from-violet-500 to-indigo-500 text-white hover:from-violet-600 hover:to-indigo-600 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                  title="AI 生成菜单"
+                >
+                  {isGeneratingPrompt || isOptimizingImage || isOptimizingVideo || isMultimodalOptimizingImage || isMultimodalOptimizingVideo || isGeneratingMedia ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                      <line x1="12" y1="19" x2="12" y2="5" />
+                      <polyline points="5 12 12 5 19 12" />
+                    </svg>
+                  )}
+                </button>
             </div>
-          </div>
-
-          {/* 生成操作栏：图片/视频生成 + 模型切换 — 位于输入框右下角 */}
-          <div className="mt-2 flex items-center justify-end gap-2 flex-wrap">
-            {promptMode === 'image' && onGenerateImage && (
-              <div className="flex items-center gap-1.5">
-                {imageModels.length > 0 && onImageModelChange && (
-                  <div className="relative group">
-                    <select
-                      value={propImageModel || ''}
-                      onChange={(e) => onImageModelChange(e.target.value)}
-                      className="h-7 min-w-[120px] pl-2 pr-6 rounded-md bg-[var(--bg-input)] border border-[var(--border-color)] text-[var(--text-secondary)] text-xs focus:outline-none focus:border-[var(--accent)]/50 appearance-none cursor-pointer"
-                      aria-label="图片模型"
-                    >
-                      {imageModels.map((m) => (
-                        <option key={m.name} value={m.name}>{m.name}</option>
-                      ))}
-                    </select>
-                    <ChevronDown className="w-3 h-3 text-[var(--text-muted)] absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  </div>
-                )}
-                <button
-                  onClick={handleGenerateImage}
-                  disabled={isGeneratingMedia || !promptText.trim()}
-                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-500/10 text-blue-600 text-xs hover:bg-blue-500/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
-                  title="生成图片"
-                >
-                  {isGeneratingMedia ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <ImageIcon className="w-3.5 h-3.5" />
-                  )}
-                  生成图片
-                </button>
-              </div>
-            )}
-            {promptMode === 'video' && onGenerateVideo && (
-              <div className="flex items-center gap-1.5">
-                {videoModels.length > 0 && onVideoModelChange && (
-                  <div className="relative group">
-                    <select
-                      value={propVideoModel || ''}
-                      onChange={(e) => onVideoModelChange(e.target.value)}
-                      className="h-7 min-w-[120px] pl-2 pr-6 rounded-md bg-[var(--bg-input)] border border-[var(--border-color)] text-[var(--text-secondary)] text-xs focus:outline-none focus:border-[var(--accent)]/50 appearance-none cursor-pointer"
-                      aria-label="视频模型"
-                    >
-                      {videoModels.map((m) => (
-                        <option key={m.name} value={m.name}>{m.name}</option>
-                      ))}
-                    </select>
-                    <ChevronDown className="w-3 h-3 text-[var(--text-muted)] absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  </div>
-                )}
-                <button
-                  onClick={handleGenerateVideo}
-                  disabled={isGeneratingMedia || !promptText.trim()}
-                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-500/10 text-rose-600 text-xs hover:bg-rose-500/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
-                  title="生成视频"
-                >
-                  {isGeneratingMedia ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Film className="w-3.5 h-3.5" />
-                  )}
-                  生成视频
-                </button>
-              </div>
-            )}
           </div>
 
 
@@ -1568,18 +2008,6 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
                 )}
               </div>
               <div className="flex items-center gap-1.5">
-                {editingNegativePrompt && (
-                  <button
-                    onClick={() => {
-                      setEditingNegativePrompt('');
-                      setIsNegativePromptDirty(true);
-                    }}
-                    className="text-[10px] text-[var(--text-muted)] hover:text-red-500 transition-colors"
-                    title="清空反向提示词"
-                  >
-                    清空
-                  </button>
-                )}
                 {isNegativePromptDirty && onUpdateNegativePrompt && (
                   <button
                     onClick={async () => {

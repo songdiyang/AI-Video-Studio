@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { ChevronDown, ChevronRight, LogOut, Settings, Users, Cpu, LayoutDashboard, Server, BarChart3, Gauge, CreditCard, Globe, MessageSquare, AlertTriangle, Megaphone, Calculator, Sun, Moon, Contrast, ClipboardList, Database } from 'lucide-react';
+import { ChevronDown, ChevronRight, LogOut, Settings, Users, Cpu, LayoutDashboard, Server, BarChart3, Gauge, CreditCard, Globe, MessageSquare, AlertTriangle, Megaphone, Calculator, Sun, Moon, Contrast, ClipboardList, Database, BookOpen } from 'lucide-react';
 import { getAuthUser, logout, getUserRole } from '../../services/auth';
 import { getAdminEmployeeId } from '../../services/admin';
 
@@ -171,6 +171,12 @@ const AdminLayout: React.FC = () => {
           label: '操作日志',
           icon: <ClipboardList className="w-4 h-4" />,
           path: '/admin/logs'
+        },
+        {
+          id: 'rag-status',
+          label: '知识库状态',
+          icon: <BookOpen className="w-4 h-4" />,
+          path: '/admin/rag-status'
         }
       ]
     }

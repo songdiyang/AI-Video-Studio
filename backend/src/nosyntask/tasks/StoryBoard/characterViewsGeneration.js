@@ -29,6 +29,88 @@ const { downloadAndStore, uploadBuffer, resolveToInternalUrl } = require('../../
 const { assertUpdated, assertPersistedFields } = require('./persistenceGuard');
 const composeCharacterSheet = require('../../../utils/composeCharacterSheet');
 
+// =============================================================================
+// 角色形态判断：使用 LLM 区分人形态 vs 非人形态（怪物/动物/宠物/机械等）
+// =============================================================================
+
+/**
+ * 使用 LLM 判断角色是否为人形态（humanoid）。
+ * 人形态：人类、类人角色（精灵、矮人、兽人等直立双足行走的人形生物）。
+ * 非人形态：怪物、动物、宠物、机械、载具、异形等。
+ *
+ * @param {string} characterName - 角色名称
+ * @param {string} appearance - 外貌特征
+ * @param {string} description - 角色描述
+ * @param {string} textModel - 文本模型名称
+ * @returns {Promise<boolean>} - true=人形态（需要白膜标准化着装），false=非人形态（自由生成）
+ */
+async function detectHumanoidForm(characterName, appearance, description, textModel) {
+  const judgePrompt = `你是一个角色分类专家。请根据以下角色信息，判断该角色是否属于"人形态"（humanoid）。
+
+判断标准：
+- 人形态（humanoid）：人类、精灵、矮人、兽人、机器人（人形）、天使、恶魔（人形）等具有人类基本身体结构（头、躯干、四肢，直立双足行走）的角色。
+- 非人形态（non-humanoid）：怪物、动物、宠物、龙、昆虫、异形、机械兽、载具、植物、能量体等不具备人类基本身体结构的角色。
+
+角色名称：${characterName || '未命名'}
+外貌特征：${appearance || '无'}
+角色描述：${description || '无'}
+
+请只回答一个单词：如果是人形态，回答 "humanoid"；如果是非人形态，回答 "non-humanoid"。不要有任何解释。`;
+
+  try {
+    console.log('[CharacterViews] 正在使用 LLM 判断角色形态...');
+    const response = await handleBaseTextModelCall({
+      prompt: judgePrompt,
+      textModel: textModel,
+      maxTokens: 50,
+      temperature: 0.1
+    });
+
+    let result = '';
+    if (typeof response === 'string') {
+      result = response;
+    } else if (response && response.content) {
+      result = response.content;
+    } else if (response && response.text) {
+      result = response.text;
+    } else if (response && response.message) {
+      result = response.message;
+    }
+
+    result = String(result).toLowerCase().trim();
+    const isHumanoid = result.includes('humanoid') && !result.includes('non-humanoid');
+
+    console.log(`[CharacterViews] 角色形态判断结果: ${isHumanoid ? '人形态(humanoid)' : '非人形态(non-humanoid)'} (原始响应: ${result})`);
+    return isHumanoid;
+  } catch (err) {
+    console.error('[CharacterViews] 角色形态判断失败，默认按人形态处理:', err.message);
+    // 判断失败时保守处理：按人形态走（保持原有行为）
+    return true;
+  }
+}
+
+// 缓存形态判断结果（避免同一角色多次调用 LLM）
+const _humanoidCache = new Map();
+
+/**
+ * 带缓存的角色形态判断
+ * @param {string} characterName - 角色名称
+ * @param {string} appearance - 外貌特征
+ * @param {string} description - 角色描述
+ * @param {string} textModel - 文本模型名称
+ * @returns {Promise<boolean>}
+ */
+async function isHumanoidCharacter(characterName, appearance, description, textModel) {
+  const cacheKey = `${characterName || ''}|${appearance || ''}|${description || ''}`;
+  if (_humanoidCache.has(cacheKey)) {
+    console.log('[CharacterViews] 使用缓存的角色形态判断结果');
+    return _humanoidCache.get(cacheKey);
+  }
+  const result = await detectHumanoidForm(characterName, appearance, description, textModel);
+  _humanoidCache.set(cacheKey, result);
+  return result;
+}
+
 /**
  * 有参考图时，构建简化提示词（让参考图主导角色外貌，提示词仅指定风格+视角）
  * 跳过 LLM 翻译，直接输出英文关键词，节省成本且避免文字描述与参考图冲突
@@ -104,7 +186,7 @@ const BASE_MODEL_BODY = {
  * 与通用 buildReferenceGuidedPrompt 的区别：去掉了服装/配饰保留指令
  */
 function buildBaseModelReferencePrompt(view, style, characterName, options = {}) {
-  const { gender = 'unknown', bodyElements = '' } = options;
+  const { isHumanoid = true, gender = 'unknown', bodyElements = '' } = options;
   const viewConfig = {
     front: 'front view, eye-level shot, facing directly at the camera, standing upright with relaxed natural posture, arms at sides, feet shoulder-width apart, looking straight ahead',
     side: 'side view, profile shot, turned 90 degrees to the right, full body, standing upright, showing full side profile silhouette, arms naturally at sides',
@@ -112,13 +194,18 @@ function buildBaseModelReferencePrompt(view, style, characterName, options = {})
   };
   const viewAngle = viewConfig[view] || viewConfig.front;
   const styleKeywords = style || 'anime style';
-  const bodyPrompt = BASE_MODEL_BODY[gender] || BASE_MODEL_BODY.unknown;
-  const bodyElementsPrompt = bodyElements
+  const bodyPrompt = isHumanoid ? (BASE_MODEL_BODY[gender] || BASE_MODEL_BODY.unknown) : '';
+  const bodyElementsPrompt = (isHumanoid && bodyElements)
     ? `, body markings and features: ${bodyElements}`
     : '';
 
-  // 脸部+发型严格保留 → 裸体基础形态 → 身体元素 → 视角+风格
-  return `match the character face and hairstyle from the reference image exactly, preserve all facial features face shape eye shape eye color hair style hair color hair length from reference, keep identical face proportions jawline nose shape lip shape eyebrow shape from reference image, ${bodyPrompt}${bodyElementsPrompt}, character design reference sheet style, ${styleKeywords}, single character, solo, one person, full body, ${viewAngle}, simple clean background, even soft lighting, neutral natural expression`;
+  if (isHumanoid) {
+    // 人形态：脸部+发型严格保留 → 标准化基础着装 → 身体元素 → 视角+风格
+    return `match the character face and hairstyle from the reference image exactly, preserve all facial features face shape eye shape eye color hair style hair color hair length from reference, keep identical face proportions jawline nose shape lip shape eyebrow shape from reference image, ${bodyPrompt}${bodyElementsPrompt}, character design reference sheet style, ${styleKeywords}, single character, solo, one person, full body, ${viewAngle}, simple clean background, even soft lighting, neutral natural expression`;
+  }
+
+  // 非人形态：保留参考图的整体外观特征，不强制标准化着装，按原始形态生成
+  return `match the character appearance from the reference image exactly, preserve all physical features body shape texture color pattern markings from reference, keep identical proportions and silhouette from reference image, character design reference sheet style, ${styleKeywords}, single character, solo, one person, full body, ${viewAngle}, simple clean background, even soft lighting, neutral natural expression`;
 }
 
 /**
@@ -131,6 +218,7 @@ function buildBaseModelReferencePrompt(view, style, characterName, options = {})
  * @param {string} textModel - 文本模型
  * @param {object} options - 额外选项
  * @param {boolean} options.isBaseModel - 是否为白膜模式
+ * @param {boolean} options.isHumanoid - 是否为人形态（由LLM判断）
  * @param {string} options.gender - 性别: male, female, unknown
  * @param {string} options.outfit - 服装描述（状态级别）
  * @param {string} options.hairstyle - 发型描述（状态级别）
@@ -140,7 +228,7 @@ function buildBaseModelReferencePrompt(view, style, characterName, options = {})
  * @param {string} options.heldProps - 手持/携带道具描述（状态级别，白膜不使用）
  */
 async function generateViewPrompt(view, characterName, appearance, description, style, textModel, options = {}) {
-  const { isBaseModel = false, gender = 'unknown', outfit, hairstyle, accessories, ageStage, bodyProportionInstruction, bodyElements, heldProps } = options;
+  const { isBaseModel = false, isHumanoid = true, gender = 'unknown', outfit, hairstyle, accessories, ageStage, bodyProportionInstruction, bodyElements, heldProps } = options;
   
   const viewConfig = {
     front: {
@@ -164,13 +252,15 @@ async function generateViewPrompt(view, characterName, appearance, description, 
 
   console.log(`[CharacterViews] 使用 AI 生成${cfg.desc}提示词...`);
   
-  // 白膜模式下的基础人体形态提示词
-  const baseModelBodyPrompt = isBaseModel ? BASE_MODEL_BODY[gender] || BASE_MODEL_BODY.unknown : '';
-  const bodyElementsNote = (isBaseModel && bodyElements)
+  // 白膜模式下的基础人体形态提示词（仅人形态角色强制标准化着装）
+  const effectiveIsBaseModel = isBaseModel && isHumanoid;
+  const baseModelBodyPrompt = effectiveIsBaseModel ? BASE_MODEL_BODY[gender] || BASE_MODEL_BODY.unknown : '';
+  const bodyElementsNote = (effectiveIsBaseModel && bodyElements)
     ? `\n- 【身体元素标记】角色身体上有以下永久性标记，必须在生成的图像中体现：${bodyElements}`
     : '';
-  const baseModelNote = isBaseModel 
-    ? `\n\n【白膜模式 - 标准化基础着装】此角色正在生成基础白膜版本，类似游戏建模里的 base mesh，穿着统一的标准化占位着装（白色背心 + 白色短裤），以便后续叠加服装和配饰：
+  const baseModelNote = isBaseModel
+    ? (isHumanoid
+      ? `\n\n【白膜模式 - 标准化基础着装】此角色正在生成基础白膜版本，类似游戏建模里的 base mesh，穿着统一的标准化占位着装（白色背心 + 白色短裤），以便后续叠加服装和配饰：
 - 身体描述必须为：${baseModelBodyPrompt}
 - 必须穿着：纯白色无花纹无 logo 的贴身背心（无袖）+ 纯白色短裤，仅此两件
 - 严禁穿着任何其他服装（裙子、外套、披风、长裤、裤装、盔甲、战袍等都不行）
@@ -181,6 +271,7 @@ async function generateViewPrompt(view, characterName, appearance, description, 
 - 保留角色的体型比例（身高、体型、肤色等）
 - 展示人体的基本结构、肌肉轮廓和皮肤${bodyElementsNote}
 - 此基础形态将作为后续叠加服装和装饰的纯净基准参考`
+      : `\n\n【非人形态白膜模式】此角色为非人形态（怪物/动物/宠物/机械等），不强制标准化人体着装。请按照角色原本的外貌特征生成三视图，保留其天然形态、皮肤/毛发/鳞片/外壳等原始外观，不添加任何不符合角色本质的服装或装饰。此基础形态将作为后续叠加装备或装饰的纯净基准参考。`)
     : '';
 
   // 侧面/背面时强调与正面图严格一致
@@ -197,8 +288,9 @@ async function generateViewPrompt(view, characterName, appearance, description, 
 
   // 组装完整的外貌描述：基础外貌 + 状态级别属性（服装/发型/配饰/年龄阶段/手持道具）
   // ★ 白膜模式：不叠加任何状态量（服装/发型/配饰/年龄/手持道具），白膜只表达永久体貌特征
+  // ★ 非人形态白膜：允许保留原始外貌，不强制过滤状态属性
   const stateAppearanceParts = [];
-  if (!isBaseModel) {
+  if (!isBaseModel || !isHumanoid) {
     if (ageStage) stateAppearanceParts.push(`年龄阶段: ${ageStage}`);
     if (outfit) stateAppearanceParts.push(`服装: ${outfit}`);
     if (hairstyle) stateAppearanceParts.push(`发型: ${hairstyle}`);
@@ -209,9 +301,11 @@ async function generateViewPrompt(view, characterName, appearance, description, 
     ? `${appearance || ''}${appearance ? '；' : ''}${stateAppearanceParts.join('；')}`
     : appearance;
 
-  const clothingRule = isBaseModel
+  const clothingRule = effectiveIsBaseModel
     ? `4. 【白膜模式】角色必须穿着统一的标准化白膜着装：纯白色无花纹贴身背心 + 纯白色短裤，类似游戏建模 base mesh。不能包含任何其他服装、装饰品、装备或鞋子。重点描述人体的基本结构（肤色、体型、肌肉轮廓）和面部/头发特征。必须包含: ${baseModelBodyPrompt}`
-    : '4. 必须包含角色的完整外貌特征（服装、发型、体型、配饰、肤色等），越详细越好。每一个服装细节都必须逐项写出：衣服的款式、颜色、材质、层次（内衣/外衣/披风/盔甲等）、领口样式、袖口样式、腰带、鞋子等';
+    : (isBaseModel && !isHumanoid)
+      ? `4. 【非人形态白膜模式】此角色为非人形态，按照其原始天然形态生成。保留角色原本的皮肤/毛发/鳞片/外壳/翅膀/尾巴等所有自然特征，不强制穿着任何服装。仅移除后期可变的装饰性装备（如盔甲、饰品、武器等），保留其本质形态。`
+      : '4. 必须包含角色的完整外貌特征（服装、发型、体型、配饰、肤色等），越详细越好。每一个服装细节都必须逐项写出：衣服的款式、颜色、材质、层次（内衣/外衣/披风/盔甲等）、领口样式、袖口样式、腰带、鞋子等';
 
   const fullPrompt = `你是一个专业的角色设计图提示词专家。你的任务是生成用于 AI 绘图的单个角色参考图提示词。
 
@@ -287,11 +381,15 @@ ${isNonFront ? '\n【再次强调】提示词中必须完整重复上面的「�
  * 与 generateViewPrompt 的区别：要求在同一张图上展示正面/侧面/背面三个视角
  */
 async function generateDesignSheetPrompt(characterName, appearance, description, style, textModel, options = {}) {
-  const { gender = 'unknown', bodyProportionInstruction, bodyElements } = options;
-  const bodyPrompt = BASE_MODEL_BODY[gender] || BASE_MODEL_BODY.unknown;
-  const bodyElementsNote = bodyElements
+  const { isHumanoid = true, gender = 'unknown', bodyProportionInstruction, bodyElements } = options;
+  const bodyPrompt = isHumanoid ? (BASE_MODEL_BODY[gender] || BASE_MODEL_BODY.unknown) : '';
+  const bodyElementsNote = (isHumanoid && bodyElements)
     ? `\n- 【身体元素标记】角色身体上有以下永久性标记，必须在生成的图像中体现：${bodyElements}`
     : '';
+
+  const baseModelRule = isHumanoid
+    ? `5. 【白膜模式】角色必须穿着统一的标准化白膜着装：纯白色无花纹贴身背心 + 纯白色短裤，类似游戏建模 base mesh。不能包含任何其他服装、装饰品、装备或鞋子。必须包含: ${bodyPrompt}`
+    : `5. 【非人形态白膜模式】此角色为非人形态（怪物/动物/宠物/机械等），不强制标准化人体着装。请按照角色原本的外貌特征生成设定图，保留其天然形态、皮肤/毛发/鳞片/外壳等原始外观，不添加任何不符合角色本质的服装或装饰。`;
 
   const fullPrompt = `你是一个专业的角色设计图提示词专家。你的任务是生成用于 AI 绘图的「角色设定图 / Character Design Reference Sheet」提示词。
 
@@ -300,7 +398,7 @@ async function generateDesignSheetPrompt(characterName, appearance, description,
 2. 【关键】这是一张角色设定图（Character Design Reference Sheet），需要在同一张图上展示同一角色的正面、侧面、背面三个视角的全身立绘，类似游戏角色的 turnaround reference sheet
 3. 必须包含：character design reference sheet, turnaround, front view, side view, back view, same character, full body, simple clean white background, professional character sheet layout
 4. 【画风一致性】角色的绘制风格必须严格匹配下方「风格要求」。提示词的前几个关键词必须是风格描述词
-5. 【白膜模式】角色必须穿着统一的标准化白膜着装：纯白色无花纹贴身背心 + 纯白色短裤，类似游戏建模 base mesh。不能包含任何其他服装、装饰品、装备或鞋子。必须包含: ${bodyPrompt}
+${baseModelRule}
 6. 绝对不要加入任何场景、背景元素、故事情节
 7. 保持中性自然表情
 8. 长度控制在 100-180 个单词
@@ -486,6 +584,13 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
 
   if (onProgress) onProgress(5);
 
+  // === 角色形态判断（白膜模式下使用 LLM 区别人形态 vs 非人形态）===
+  let isHumanoid = true;
+  if (isBaseModel && textModel) {
+    isHumanoid = await isHumanoidCharacter(characterName, appearance, description, textModel);
+  }
+  console.log(`[CharacterViews] 白膜模式形态判断: isHumanoid=${isHumanoid}`);
+
   // 判断写入目标：状态级别 vs 角色级别
   const isStateGeneration = !!stateId;
   const targetTable = isStateGeneration ? 'character_states' : 'characters';
@@ -653,13 +758,17 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
 
     if (hasUserRefs) {
       // 有参考图：保留脸部发型，白膜标准着装，三视角设定图
-      const bodyPrompt = BASE_MODEL_BODY[gender] || BASE_MODEL_BODY.unknown;
-      const bodyElementsPrompt = bodyElements ? `, body markings and features: ${bodyElements}` : '';
-      designSheetPrompt = `match the character face and hairstyle from the reference image exactly, preserve all facial features face shape eye shape eye color hair style hair color hair length from reference, keep identical face proportions from reference image, character design reference sheet, three-angle turnaround showing front view side view and back view of the same character on one image, ${bodyPrompt}${bodyElementsPrompt}, ${style || 'anime style'}, full body, simple clean white background, even soft lighting, neutral natural expression, professional character sheet layout`;
+      const bodyPrompt = isHumanoid ? (BASE_MODEL_BODY[gender] || BASE_MODEL_BODY.unknown) : '';
+      const bodyElementsPrompt = (isHumanoid && bodyElements) ? `, body markings and features: ${bodyElements}` : '';
+      if (isHumanoid) {
+        designSheetPrompt = `match the character face and hairstyle from the reference image exactly, preserve all facial features face shape eye shape eye color hair style hair color hair length from reference, keep identical face proportions from reference image, character design reference sheet, three-angle turnaround showing front view side view and back view of the same character on one image, ${bodyPrompt}${bodyElementsPrompt}, ${style || 'anime style'}, full body, simple clean white background, even soft lighting, neutral natural expression, professional character sheet layout`;
+      } else {
+        designSheetPrompt = `match the character appearance from the reference image exactly, preserve all physical features body shape texture color pattern markings from reference, keep identical proportions and silhouette from reference image, character design reference sheet, three-angle turnaround showing front view side view and back view of the same character on one image, ${style || 'anime style'}, full body, simple clean white background, even soft lighting, neutral natural expression, professional character sheet layout`;
+      }
       console.log('[CharacterViews] ✅ 白膜设定图：有参考图 → 使用简化提示词（保留脸部发型）');
     } else {
       // 无参考图：使用 AI 根据外貌描述生成详细提示词
-      designSheetPrompt = await generateDesignSheetPrompt(characterName, appearance, description, style, textModel, { gender, bodyProportionInstruction, bodyElements });
+      designSheetPrompt = await generateDesignSheetPrompt(characterName, appearance, description, style, textModel, { isHumanoid, gender, bodyProportionInstruction, bodyElements });
     }
 
     if (onProgress) onProgress(10);
@@ -757,12 +866,12 @@ async function handleCharacterViewsGeneration(inputParams, onProgress) {
         }
         if (hasUserRefs) {
           if (isBaseModel) {
-            return { view, prompt: buildBaseModelReferencePrompt(view, style, characterName, { gender, bodyElements }) };
+            return { view, prompt: buildBaseModelReferencePrompt(view, style, characterName, { isHumanoid, gender, bodyElements }) };
           }
           // 非白膜状态：参考图通常是白膜设定图+服装设定图，以服装图纸为主导指导服装生成
           return { view, prompt: buildReferenceGuidedPrompt(view, style, characterName, { isBaseModel, gender, outfit, hairstyle, accessories, ageStage, heldProps: effectiveHeldProps, hasCostumeRef: hasCostumeRefImage }) };
         }
-        const prompt = await generateViewPrompt(view, characterName, appearance, description, style, textModel, { isBaseModel, gender, outfit, hairstyle, accessories, ageStage, bodyProportionInstruction, bodyElements, heldProps: effectiveHeldProps });
+        const prompt = await generateViewPrompt(view, characterName, appearance, description, style, textModel, { isBaseModel, isHumanoid, gender, outfit, hairstyle, accessories, ageStage, bodyProportionInstruction, bodyElements, heldProps: effectiveHeldProps });
         return { view, prompt };
       })
     );

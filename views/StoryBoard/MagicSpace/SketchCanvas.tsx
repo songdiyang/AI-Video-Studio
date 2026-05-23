@@ -27,10 +27,13 @@ export interface SketchCanvasHandle {
   exportSketchImage: () => Promise<string>;
   resetCanvas: () => void;
   hasContent: () => boolean;
+  loadSketchData: (data: any) => void;
+  getSketchData: () => any;
 }
 
 interface SketchCanvasProps {
   onStrokeCountChange?: (count: number) => void;
+  initialData?: any;  // 初始草图数据
 }
 
 interface ExcalidrawAPI {
@@ -43,10 +46,40 @@ interface ExcalidrawAPI {
 
 const SketchCanvas = forwardRef<SketchCanvasHandle, SketchCanvasProps>(({
   onStrokeCountChange,
+  initialData,
 }, ref) => {
   const excalidrawRef = useRef<ExcalidrawAPI | null>(null);
   const [isReady, setIsReady] = useState(false);
   const [elementCount, setElementCount] = useState(0);
+  const [initialDataLoaded, setInitialDataLoaded] = useState(false);
+
+  // 加载初始数据
+  useEffect(() => {
+    if (isReady && initialData && !initialDataLoaded && excalidrawRef.current) {
+      try {
+        const elements = initialData.elements || [];
+        const appState = initialData.appState || {};
+        const files = initialData.files || {};
+        
+        excalidrawRef.current.updateScene({
+          elements,
+          appState: {
+            ...appState,
+            viewBackgroundColor: '#f5f5f5',
+            exportBackground: true,
+          },
+        });
+        
+        setElementCount(elements.length);
+        onStrokeCountChange?.(elements.length);
+        setInitialDataLoaded(true);
+        
+        console.log('[SketchCanvas] Initial data loaded:', { elementCount: elements.length });
+      } catch (error) {
+        console.error('[SketchCanvas] Failed to load initial data:', error);
+      }
+    }
+  }, [isReady, initialData, initialDataLoaded, onStrokeCountChange]);
 
   // 监听元素变化
   const handleChange = useCallback((elements: readonly unknown[]) => {
@@ -103,10 +136,50 @@ const SketchCanvas = forwardRef<SketchCanvasHandle, SketchCanvasProps>(({
     return elementCount > 0;
   }, [elementCount]);
 
+  // 加载草图数据
+  const loadSketchData = useCallback((data: any) => {
+    if (!excalidrawRef.current || !data) return;
+    
+    try {
+      const elements = data.elements || [];
+      const appState = data.appState || {};
+      
+      excalidrawRef.current.updateScene({
+        elements,
+        appState: {
+          ...appState,
+          viewBackgroundColor: '#f5f5f5',
+          exportBackground: true,
+        },
+      });
+      
+      setElementCount(elements.length);
+      onStrokeCountChange?.(elements.length);
+      setInitialDataLoaded(true);
+      
+      console.log('[SketchCanvas] Sketch data loaded:', { elementCount: elements.length });
+    } catch (error) {
+      console.error('[SketchCanvas] Failed to load sketch data:', error);
+    }
+  }, [onStrokeCountChange]);
+
+  // 获取当前草图数据
+  const getSketchData = useCallback(() => {
+    if (!excalidrawRef.current) return null;
+    
+    return {
+      elements: excalidrawRef.current.getSceneElements(),
+      appState: excalidrawRef.current.getAppState(),
+      files: excalidrawRef.current.getFiles(),
+    };
+  }, []);
+
   useImperativeHandle(ref, () => ({
     exportSketchImage,
     resetCanvas,
     hasContent,
+    loadSketchData,
+    getSketchData,
   }));
 
   return (

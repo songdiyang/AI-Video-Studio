@@ -50,7 +50,7 @@ router.get('/style-presets', authMiddleware, (req, res) => {
 router.get('/my-styles', authMiddleware, async (req, res) => {
   try {
     const userId = req.user.id;
-    const [rows] = await queryAll(
+    const rows = await queryAll(
       'SELECT id, name, prompt, style_category, created_at, updated_at FROM user_style_presets WHERE user_id = ? ORDER BY created_at DESC',
       [userId]
     );
@@ -70,11 +70,11 @@ router.post('/my-styles', authMiddleware, async (req, res) => {
       return res.status(400).json({ message: '风格名称和提示词不能为空' });
     }
     const category = style_category || 'anime';
-    const [result] = await execute(
+    const result = await execute(
       'INSERT INTO user_style_presets (user_id, name, prompt, style_category) VALUES (?, ?, ?, ?)',
       [userId, name.trim(), prompt.trim(), category]
     );
-    const [rows] = await queryAll(
+    const rows = await queryAll(
       'SELECT id, name, prompt, style_category, created_at, updated_at FROM user_style_presets WHERE id = ?',
       [result.insertId]
     );
@@ -92,7 +92,7 @@ router.put('/my-styles/:id', authMiddleware, async (req, res) => {
     const styleId = parseInt(req.params.id);
     const { name, prompt, style_category } = req.body;
     // 校验所有权
-    const [rows] = await queryAll('SELECT user_id FROM user_style_presets WHERE id = ?', [styleId]);
+    const rows = await queryAll('SELECT user_id FROM user_style_presets WHERE id = ?', [styleId]);
     if (!rows.length || rows[0].user_id !== userId) {
       return res.status(403).json({ message: '无权修改此风格' });
     }
@@ -106,7 +106,7 @@ router.put('/my-styles/:id', authMiddleware, async (req, res) => {
     }
     params.push(styleId);
     await execute(`UPDATE user_style_presets SET ${updates.join(', ')} WHERE id = ?`, params);
-    const [updated] = await queryAll(
+    const updated = await queryAll(
       'SELECT id, name, prompt, style_category, created_at, updated_at FROM user_style_presets WHERE id = ?',
       [styleId]
     );
@@ -122,7 +122,7 @@ router.delete('/my-styles/:id', authMiddleware, async (req, res) => {
   try {
     const userId = req.user.id;
     const styleId = parseInt(req.params.id);
-    const [rows] = await queryAll('SELECT user_id FROM user_style_presets WHERE id = ?', [styleId]);
+    const rows = await queryAll('SELECT user_id FROM user_style_presets WHERE id = ?', [styleId]);
     if (!rows.length || rows[0].user_id !== userId) {
       return res.status(403).json({ message: '无权删除此风格' });
     }

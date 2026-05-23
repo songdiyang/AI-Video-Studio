@@ -106,10 +106,20 @@ function buildSystemPrompt(context) {
     systemPrompt += `\n\n【项目场景】${list}`;
   }
 
-  // 剧本清单
+  // 剧本清单（包含内容）
   if (Array.isArray(context.scripts) && context.scripts.length > 0) {
-    const list = context.scripts.map(s => `第${s.episode_number}集《${s.title || '未命名'}》(ID:${s.id})`).join('；');
-    systemPrompt += `\n\n【项目剧本】${list}`;
+    const MAX_SCRIPT_CONTENT_LEN = 3000; // 单集剧本内容最大字符数
+    const scriptDetails = context.scripts.map(s => {
+      let detail = `第${s.episode_number}集《${s.title || '未命名'}》(ID:${s.id})`;
+      if (s.content) {
+        const content = s.content.length > MAX_SCRIPT_CONTENT_LEN
+          ? s.content.slice(0, MAX_SCRIPT_CONTENT_LEN) + `\n[…剧本内容已截断，原长 ${s.content.length} 字符…]`
+          : s.content;
+        detail += `\n${content}`;
+      }
+      return detail;
+    }).join('\n\n---\n\n');
+    systemPrompt += `\n\n【项目剧本内容】\n${scriptDetails}`;
   }
 
   // 分镜清单（带提示词 & 素材状态，供 AI 判断是否需要质检/生成）
