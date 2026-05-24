@@ -213,17 +213,26 @@ export function useStoryboardCore(options: UseStoryboardCoreOptions) {
     }
 
     // 图片比例/分辨率默认值
-    if (!projectSettings?.imageAspectRatio) {
+    // 优先使用项目设置，项目设置不存在时才使用模型默认值
+    if (projectSettings?.imageAspectRatio) {
+      // 项目有设置，直接使用项目设置
+      setImageAspectRatio(projectSettings.imageAspectRatio);
+    } else {
+      // 项目没有设置，使用模型的第一个选项
       if (imageAspectRatioOptions.length === 0) setImageAspectRatio('');
       else setImageAspectRatio(current => imageAspectRatioOptions.some(o => o.value === current) ? current : imageAspectRatioOptions[0].value);
     }
-    if (!projectSettings?.imageResolution) {
+    if (projectSettings?.imageResolution) {
+      setImageResolution(projectSettings.imageResolution);
+    } else {
       if (imageResolutionOptions.length === 0) setImageResolution('');
       else setImageResolution(current => imageResolutionOptions.some(o => o.value === current) ? current : imageResolutionOptions[0].value);
     }
 
     // 视频比例/时长默认值
-    if (!projectSettings?.videoAspectRatio) {
+    if (projectSettings?.videoAspectRatio) {
+      setVideoAspectRatio(projectSettings.videoAspectRatio);
+    } else {
       if (videoAspectRatioOptions.length === 0) setVideoAspectRatio('');
       else setVideoAspectRatio(current => videoAspectRatioOptions.some(o => o.value === current) ? current : videoAspectRatioOptions[0].value);
     }
@@ -237,7 +246,9 @@ export function useStoryboardCore(options: UseStoryboardCoreOptions) {
     }
 
     // 视频分辨率默认值
-    if (!projectSettings?.videoResolution) {
+    if (projectSettings?.videoResolution) {
+      setVideoResolution(projectSettings.videoResolution);
+    } else {
       if (videoResolutionOptions.length === 0) setVideoResolution('');
       else setVideoResolution(current => videoResolutionOptions.some(o => o.value === current) ? current : videoResolutionOptions[0].value);
     }
@@ -794,6 +805,22 @@ export function useStoryboardCore(options: UseStoryboardCoreOptions) {
     updateScene: async (id, updates) => {
       setScenes(prev => prev.map(s => s.id === id ? { ...s, ...updates } : s));
       if (updates.shotType !== undefined) await updateShotType(id, updates.shotType);
+      // 持久化 hasAction 到后端 variables_json
+      if (updates.hasAction !== undefined) {
+        try {
+          const token = getAuthToken();
+          await fetch(`/api/storyboards/${id}/content`, {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token ? { Authorization: `Bearer ${token}` } : {})
+            },
+            body: JSON.stringify({ hasAction: updates.hasAction })
+          });
+        } catch (err) {
+          console.error('[updateScene] 持久化 hasAction 失败:', err);
+        }
+      }
       return true;
     },
     refreshScenes, loadStoryboards,
