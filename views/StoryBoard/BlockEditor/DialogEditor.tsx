@@ -5,7 +5,7 @@
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Button, Tabs, Tab } from '@heroui/react';
-import { Save, Trash2, Wand2, MessageCircle, Mic, History, RotateCcw, GitCompare, Sparkles, Undo2, Loader2, Plus, X as XIcon, Star, ImageIcon, Film, ChevronDown, Pencil } from 'lucide-react';
+import { Save, Trash2, MessageCircle, Mic, History, RotateCcw, GitCompare, Sparkles, Undo2, Loader2, Plus, X as XIcon, Star, ImageIcon, Film, ChevronDown, Pencil } from 'lucide-react';
 import { useToast } from '../../../contexts/ToastContext';
 import { BLOCK_OPTIONS } from './utils/blockRegistry';
 import SketchFramesPanel from './SketchFramesPanel';
@@ -242,22 +242,10 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
   // 图片预览状态
   const [previewImage, setPreviewImage] = useState<{ url: string; title: string } | null>(null);
 
-  // AI 优化状态（支持图片和视频并发优化）
-  const [isOptimizingImage, setIsOptimizingImage] = useState(false);
-  const [isOptimizingVideo, setIsOptimizingVideo] = useState(false);
-  // 多模态视觉优化状态
-  const [isMultimodalOptimizingImage, setIsMultimodalOptimizingImage] = useState(false);
-  const [isMultimodalOptimizingVideo, setIsMultimodalOptimizingVideo] = useState(false);
-  const [preOptimizeText, setPreOptimizeText] = useState<string | null>(null);
-  const optimizeImageJobIdRef = useRef<string | null>(null);
-  const optimizeVideoJobIdRef = useRef<string | null>(null);
-  const optimizeImagePollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const optimizeVideoPollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // 多模态优化轮询引用
-  const multimodalImageJobIdRef = useRef<string | null>(null);
-  const multimodalVideoJobIdRef = useRef<string | null>(null);
-  const multimodalImagePollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const multimodalVideoPollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // AI 优化状态
+  const [isOptimizing, setIsOptimizing] = useState(false);
+  const optimizeJobIdRef = useRef<string | null>(null);
+  const optimizePollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // 台词编辑状态
   const [editingDialogues, setEditingDialogues] = useState<DialogueLine[]>([]);
@@ -298,20 +286,12 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
     return Array.from(uniqueMap.values());
   }, [models]);
 
-  // 多模态模型列表（用于视觉参考优化）
-  const multimodalModels = React.useMemo(() => {
-    const uniqueMap = new Map<string, typeof models[number]>();
-    models.filter(m => (m.type || m.category)?.toUpperCase() === 'MULTIMODAL').forEach(m => {
-      if (!uniqueMap.has(m.name)) uniqueMap.set(m.name, m);
-    });
-    return Array.from(uniqueMap.values());
-  }, [models]);
 
-  // AI 生成提示词：根据当前 promptMode 调用对应的工作流
+
+  // AI 生成提示词：根据当前 promptMode 自动调用对应的工作流
   const [isGeneratingPrompt, setIsGeneratingPrompt] = useState(false);
-  const [isGenerateMenuOpen, setIsGenerateMenuOpen] = useState(false);
 
-  const handleGeneratePrompt = async (type: 'image' | 'video') => {
+  const handleGeneratePrompt = async () => {
     if (isGeneratingPrompt || !projectId) {
       if (!projectId) showToast('缺少项目信息', 'warning');
       return;
@@ -321,18 +301,18 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
       return;
     }
 
-    // 获取当前分镜的基础描述作为输入
-    const baseText = (basePrompt || promptText || '').trim();
+    // 获取当前输入框内容作为输入（输入什么就优化什么）
+    const baseText = promptText.trim();
     if (!baseText) {
-      showToast('请先输入分镜描述再生成提示词', 'warning');
+      showToast('请先输入内容再生成提示词', 'warning');
       return;
     }
 
-    // 根据 type 参数选择工作流类型
-    const workflowType =
-      type === 'video'
-        ? 'single_video_prompt_optimization'
-        : 'single_image_prompt_optimization';
+    // 根据 promptMode 自动选择工作流类型
+    const isVideo = promptMode === 'video';
+    const workflowType = isVideo
+      ? 'single_video_prompt_optimization'
+      : 'single_image_prompt_optimization';
 
     setIsGeneratingPrompt(true);
     try {
@@ -348,40 +328,90 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
           const lastTask = job.tasks?.[job.tasks.length - 1];
           const resultData = lastTask?.result_data;
 
-          if (type === 'image') {
+          if (!isVideo) {
             // 图片提示词模式
             const optimized = resultData?.optimized || '';
-            const negativePrompt = resultData?.negativePrompt || '';
             if (optimized) {
-              const token = getAuthToken();
-              const body: any = { prompt_template: optimized };
-              if (negativePrompt) body.negative_prompt = negativePrompt;
-              await fetch(`/api/storyboards/${storyboardId}/content`, {
-                method: 'PATCH',
-                headers: {
-                  'Content-Type': 'application/json',
-                  ...(token ? { Authorization: `Bearer ${token}` } : {}),
-                },
-                body: JSON.stringify(body),
-              });
+              setPromptText(optimized);
+              if (editorRef.current) {
+                editorRef.current.innerHTML = refTextToHtml(optimized, referenceImages);
+                lastRenderedRef.current = optimized;
+              }
+              setIsDirty(false);
               onChange?.(optimized);
+              // 通过 onSave 保存到数据库并更新全局状态
+              await onSave?.(optimized);
               showToast('图片提示词生成成功', 'success');
             }
-          } else if (type === 'video') {
-            // 视频提示词模式
-            const videoPrompt = resultData?.videoPrompt || resultData?.optimized || '';
-            if (videoPrompt) {
-              const token = getAuthToken();
-              await fetch(`/api/storyboards/${storyboardId}/content`, {
-                method: 'PATCH',
-                headers: {
-                  'Content-Type': 'application/json',
-                  ...(token ? { Authorization: `Bearer ${token}` } : {}),
-                },
-                body: JSON.stringify({ video_prompt: videoPrompt }),
-              });
-              onChange?.(videoPrompt);
-              showToast('视频提示词生成成功', 'success');
+          } else {
+            // 视频提示词模式：处理首尾帧分离的情况
+            const actionAnalysis = resultData?.actionAnalysis;
+            const videoPrompt = resultData?.videoPrompt;
+            const videoStartPrompt = resultData?.videoStartPrompt;
+            const videoEndPrompt = resultData?.videoEndPrompt;
+            const negativePrompt = resultData?.negativePrompt || '';
+
+            // 根据动作类型保存不同的字段
+            const body: any = {};
+            const savedFields: string[] = [];
+
+            if (actionAnalysis?.useEndFrame === false) {
+              if (videoPrompt) {
+                body.video_prompt = videoPrompt;
+                savedFields.push('视频提示词');
+              }
+            } else if (actionAnalysis?.useEndFrame === true) {
+              if (videoStartPrompt) {
+                body.video_start_prompt = videoStartPrompt;
+                savedFields.push('视频首帧提示词');
+              }
+              if (videoEndPrompt) {
+                body.video_end_prompt = videoEndPrompt;
+                savedFields.push('视频尾帧提示词');
+              }
+            } else {
+              const optimized = resultData?.optimized || (typeof resultData === 'string' ? resultData : '');
+              if (optimized) {
+                body.video_prompt = optimized;
+                savedFields.push('视频提示词');
+              }
+            }
+
+            if (negativePrompt) {
+              body.negative_prompt = negativePrompt;
+            }
+
+            // 持久化到数据库
+            if (Object.keys(body).length > 0) {
+              try {
+                const token = getAuthToken();
+                const res = await fetch(`/api/storyboards/${storyboardId}/content`, {
+                  method: 'PATCH',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    ...(token ? { Authorization: `Bearer ${token}` } : {})
+                  },
+                  body: JSON.stringify(body)
+                });
+                if (!res.ok) {
+                  showToast('视频提示词保存失败', 'error');
+                } else if (savedFields.length > 0) {
+                  showToast(`${savedFields.join('、')}已生成并保存`, 'success');
+                  const displayPrompt = videoStartPrompt || videoPrompt || resultData?.optimized || '';
+                  if (displayPrompt) {
+                    setPromptText(displayPrompt);
+                    if (editorRef.current) {
+                      editorRef.current.innerHTML = refTextToHtml(displayPrompt, referenceImages);
+                      lastRenderedRef.current = displayPrompt;
+                    }
+                    setIsDirty(false);
+                    onChange?.(displayPrompt);
+                  }
+                }
+              } catch (saveErr) {
+                console.error('[DialogEditor] 保存视频提示词失败:', saveErr);
+                showToast('视频提示词保存失败', 'error');
+              }
             }
           }
           setIsGeneratingPrompt(false);
@@ -441,74 +471,49 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
   // 切换分镜时清理 AI 优化轮询
   useEffect(() => {
     return () => {
-      if (optimizeImagePollTimerRef.current) {
-        clearTimeout(optimizeImagePollTimerRef.current);
-        optimizeImagePollTimerRef.current = null;
+      if (optimizePollTimerRef.current) {
+        clearTimeout(optimizePollTimerRef.current);
+        optimizePollTimerRef.current = null;
       }
-      if (optimizeVideoPollTimerRef.current) {
-        clearTimeout(optimizeVideoPollTimerRef.current);
-        optimizeVideoPollTimerRef.current = null;
-      }
-      if (multimodalImagePollTimerRef.current) {
-        clearTimeout(multimodalImagePollTimerRef.current);
-        multimodalImagePollTimerRef.current = null;
-      }
-      if (multimodalVideoPollTimerRef.current) {
-        clearTimeout(multimodalVideoPollTimerRef.current);
-        multimodalVideoPollTimerRef.current = null;
-      }
-      optimizeImageJobIdRef.current = null;
-      optimizeVideoJobIdRef.current = null;
-      multimodalImageJobIdRef.current = null;
-      multimodalVideoJobIdRef.current = null;
-      setIsOptimizingImage(false);
-      setIsOptimizingVideo(false);
-      setIsMultimodalOptimizingImage(false);
-      setIsMultimodalOptimizingVideo(false);
+      optimizeJobIdRef.current = null;
+      setIsOptimizing(false);
     };
   }, [storyboardId]);
 
-  // 启动单个 AI 优化任务
-  const runOptimize = async (targetType: 'image' | 'video') => {
-    const text = (basePrompt || promptText).trim();
-    if (!text) return;
+  // AI 优化：根据 promptMode 自动选择对应工作流
+  const handleOptimize = async () => {
+    const text = promptText.trim();
+    if (!text || isOptimizing) return;
+    if (!projectId) {
+      showToast('缺少项目信息', 'warning');
+      return;
+    }
 
-    const isImage = targetType === 'image';
-    const setOptimizing = isImage ? setIsOptimizingImage : setIsOptimizingVideo;
-    const jobIdRef = isImage ? optimizeImageJobIdRef : optimizeVideoJobIdRef;
-    const pollTimerRef = isImage ? optimizeImagePollTimerRef : optimizeVideoPollTimerRef;
+    const isVideo = promptMode === 'video';
+    const workflowType = isVideo
+      ? 'single_video_prompt_optimization'
+      : 'single_image_prompt_optimization';
 
-    setOptimizing(true);
+    setIsOptimizing(true);
     try {
-      if (!projectId) {
-        showToast('缺少项目信息', 'warning');
-        setOptimizing(false);
-        return;
-      }
-
-      const workflowType = isImage
-        ? 'single_image_prompt_optimization'
-        : 'single_video_prompt_optimization';
-
       const { jobId } = await startWorkflow(workflowType, projectId, {
         storyboardId,
         prompt: text
       });
 
-      jobIdRef.current = jobId;
-      console.log(`[DialogEditor] AI优化任务已启动, type=${targetType}, jobId=${jobId}`);
+      optimizeJobIdRef.current = jobId;
+      console.log(`[DialogEditor] AI优化任务已启动, mode=${promptMode}, jobId=${jobId}`);
 
       const pollOptimizeStatus = async () => {
-        if (!jobIdRef.current) return;
+        if (!optimizeJobIdRef.current) return;
         try {
-          const job = await getWorkflowStatus(jobIdRef.current);
+          const job = await getWorkflowStatus(optimizeJobIdRef.current);
 
           if (job.status === 'completed') {
             const lastTask = job.tasks?.[job.tasks.length - 1];
             const resultData = lastTask?.result_data;
-            
-            // 根据是否为图片提示词，处理不同的返回格式
-            if (isImage) {
+
+            if (!isVideo) {
               // 图片提示词：使用 optimized 字段
               const optimized = resultData?.optimized || (typeof resultData === 'string' ? resultData : '');
               const negativePrompt = resultData?.negativePrompt || '';
@@ -535,15 +540,12 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
                   showToast('图片提示词保存失败', 'error');
                 }
 
-                if (targetType === promptMode) {
-                  setPreOptimizeText(text);
-                  setPromptText(optimized);
-                  if (editorRef.current) {
-                    editorRef.current.innerHTML = refTextToHtml(optimized, referenceImages);
-                    lastRenderedRef.current = optimized;
-                  }
-                  setIsDirty(false);
+                setPromptText(optimized);
+                if (editorRef.current) {
+                  editorRef.current.innerHTML = refTextToHtml(optimized, referenceImages);
+                  lastRenderedRef.current = optimized;
                 }
+                setIsDirty(false);
               }
             } else {
               // 视频提示词：处理首尾帧分离的情况
@@ -597,11 +599,10 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
                   });
                   if (!res.ok) {
                     showToast('视频提示词保存失败', 'error');
-                  } else if (targetType === promptMode && savedFields.length > 0) {
+                  } else if (savedFields.length > 0) {
                     showToast(`${savedFields.join('、')}已优化并保存`, 'success');
                     const displayPrompt = videoStartPrompt || videoPrompt || resultData?.optimized || '';
                     if (displayPrompt) {
-                      setPreOptimizeText(text);
                       setPromptText(displayPrompt);
                       if (editorRef.current) {
                         editorRef.current.innerHTML = refTextToHtml(displayPrompt, referenceImages);
@@ -617,270 +618,36 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
               }
             }
 
-            if (targetType === promptMode) {
-              showToast('AI 优化完成', 'success');
-            } else {
-              showToast('AI 优化完成，请切换到对应标签查看', 'info');
-            }
-            jobIdRef.current = null;
-            setOptimizing(false);
+            showToast('AI 优化完成', 'success');
+            optimizeJobIdRef.current = null;
+            setIsOptimizing(false);
             return;
           } else if (job.status === 'failed') {
             const failedTask = job.tasks?.find(t => t.status === 'failed');
             const errorMsg = job.error_message || failedTask?.error_message || '优化失败';
             showToast(errorMsg, 'error');
-            jobIdRef.current = null;
-            setOptimizing(false);
+            optimizeJobIdRef.current = null;
+            setIsOptimizing(false);
             return;
           } else if (job.status === 'cancelled') {
             showToast('优化任务已取消', 'info');
-            jobIdRef.current = null;
-            setOptimizing(false);
+            optimizeJobIdRef.current = null;
+            setIsOptimizing(false);
             return;
           }
 
-          pollTimerRef.current = setTimeout(pollOptimizeStatus, 1000);
+          optimizePollTimerRef.current = setTimeout(pollOptimizeStatus, 1000);
         } catch (err: any) {
           console.error('[DialogEditor] 轮询优化任务状态失败:', err);
-          pollTimerRef.current = setTimeout(pollOptimizeStatus, 2000);
+          optimizePollTimerRef.current = setTimeout(pollOptimizeStatus, 2000);
         }
       };
 
       pollOptimizeStatus();
     } catch (error: any) {
       showToast(error.message || 'AI 优化失败', 'error');
-      setOptimizing(false);
+      setIsOptimizing(false);
     }
-  };
-
-  // AI 优化：同时启动图片和视频提示词优化（并发队列）
-  const handleOptimize = async () => {
-    const text = (basePrompt || promptText).trim();
-    if (!text || isOptimizingImage || isOptimizingVideo) return;
-    if (!projectId) {
-      showToast('缺少项目信息', 'warning');
-      return;
-    }
-
-    // 并发启动两个工作流，相互独立
-    await Promise.all([
-      runOptimize('image'),
-      runOptimize('video')
-    ]);
-  };
-
-  // 多模态视觉优化：基于分镜图片参考优化提示词
-  const runMultimodalOptimize = async (targetType: 'image' | 'video') => {
-    const text = (basePrompt || promptText).trim();
-    if (!text) return;
-
-    const isImage = targetType === 'image';
-    const setOptimizing = isImage ? setIsMultimodalOptimizingImage : setIsMultimodalOptimizingVideo;
-    const jobIdRef = isImage ? multimodalImageJobIdRef : multimodalVideoJobIdRef;
-    const pollTimerRef = isImage ? multimodalImagePollTimerRef : multimodalVideoPollTimerRef;
-
-    setOptimizing(true);
-    try {
-      if (!projectId) {
-        showToast('缺少项目信息', 'warning');
-        setOptimizing(false);
-        return;
-      }
-
-      // 收集视觉参考图：首帧 + 尾帧
-      const imageUrls: string[] = [];
-      if (availableFrames?.startFrame) imageUrls.push(availableFrames.startFrame);
-      if (availableFrames?.endFrame) imageUrls.push(availableFrames.endFrame);
-
-      const workflowType = isImage
-        ? 'single_image_prompt_optimization'
-        : 'single_video_prompt_optimization';
-
-      const { jobId } = await startWorkflow(workflowType, projectId, {
-        storyboardId,
-        prompt: text,
-        multimodalModel: multimodalModels[0]?.name || textModels[0]?.name || undefined,
-      });
-
-      jobIdRef.current = jobId;
-      console.log(`[DialogEditor] 多模态优化任务已启动, type=${targetType}, jobId=${jobId}`);
-
-      const pollOptimizeStatus = async () => {
-        if (!jobIdRef.current) return;
-        try {
-          const job = await getWorkflowStatus(jobIdRef.current);
-
-          if (job.status === 'completed') {
-            const lastTask = job.tasks?.[job.tasks.length - 1];
-            const resultData = lastTask?.result_data;
-
-            if (isImage) {
-              const optimized = resultData?.optimized || (typeof resultData === 'string' ? resultData : '');
-              const negativePrompt = resultData?.negativePrompt || '';
-
-              if (optimized) {
-                try {
-                  const token = getAuthToken();
-                  const body: any = { prompt_template: optimized };
-                  if (negativePrompt) body.negative_prompt = negativePrompt;
-                  const res = await fetch(`/api/storyboards/${storyboardId}/content`, {
-                    method: 'PATCH',
-                    headers: {
-                      'Content-Type': 'application/json',
-                      ...(token ? { Authorization: `Bearer ${token}` } : {})
-                    },
-                    body: JSON.stringify(body)
-                  });
-                  if (!res.ok) {
-                    showToast('图片提示词保存失败', 'error');
-                  }
-                } catch (saveErr) {
-                  console.error('[DialogEditor] 保存图片提示词失败:', saveErr);
-                  showToast('图片提示词保存失败', 'error');
-                }
-
-                if (targetType === promptMode) {
-                  setPreOptimizeText(text);
-                  setPromptText(optimized);
-                  if (editorRef.current) {
-                    editorRef.current.innerHTML = refTextToHtml(optimized, referenceImages);
-                    lastRenderedRef.current = optimized;
-                  }
-                  setIsDirty(false);
-                }
-              }
-            } else {
-              // 视频提示词处理
-              const actionAnalysis = resultData?.actionAnalysis;
-              const videoPrompt = resultData?.videoPrompt;
-              const videoStartPrompt = resultData?.videoStartPrompt;
-              const videoEndPrompt = resultData?.videoEndPrompt;
-              const negativePrompt = resultData?.negativePrompt || '';
-
-              const body: any = {};
-              const savedFields: string[] = [];
-
-              if (actionAnalysis?.useEndFrame === false) {
-                if (videoPrompt) {
-                  body.video_prompt = videoPrompt;
-                  savedFields.push('视频提示词');
-                }
-              } else if (actionAnalysis?.useEndFrame === true) {
-                if (videoStartPrompt) {
-                  body.video_start_prompt = videoStartPrompt;
-                  savedFields.push('视频首帧提示词');
-                }
-                if (videoEndPrompt) {
-                  body.video_end_prompt = videoEndPrompt;
-                  savedFields.push('视频尾帧提示词');
-                }
-              } else {
-                const optimized = resultData?.optimized || (typeof resultData === 'string' ? resultData : '');
-                if (optimized) {
-                  body.video_prompt = optimized;
-                  savedFields.push('视频提示词');
-                }
-              }
-
-              if (negativePrompt) {
-                body.negative_prompt = negativePrompt;
-              }
-
-              if (Object.keys(body).length > 0) {
-                try {
-                  const token = getAuthToken();
-                  const res = await fetch(`/api/storyboards/${storyboardId}/content`, {
-                    method: 'PATCH',
-                    headers: {
-                      'Content-Type': 'application/json',
-                      ...(token ? { Authorization: `Bearer ${token}` } : {})
-                    },
-                    body: JSON.stringify(body)
-                  });
-                  if (!res.ok) {
-                    showToast('视频提示词保存失败', 'error');
-                  } else if (targetType === promptMode && savedFields.length > 0) {
-                    const displayPrompt = videoStartPrompt || videoPrompt || resultData?.optimized || '';
-                    if (displayPrompt) {
-                      setPreOptimizeText(text);
-                      setPromptText(displayPrompt);
-                      if (editorRef.current) {
-                        editorRef.current.innerHTML = refTextToHtml(displayPrompt, referenceImages);
-                        lastRenderedRef.current = displayPrompt;
-                      }
-                      setIsDirty(false);
-                    }
-                  }
-                } catch (saveErr) {
-                  console.error('[DialogEditor] 保存视频提示词失败:', saveErr);
-                  showToast('视频提示词保存失败', 'error');
-                }
-              }
-            }
-
-            if (targetType === promptMode) {
-              showToast('多模态视觉优化完成', 'success');
-            } else {
-              showToast('多模态视觉优化完成，请切换到对应标签查看', 'info');
-            }
-            jobIdRef.current = null;
-            setOptimizing(false);
-            return;
-          } else if (job.status === 'failed') {
-            const failedTask = job.tasks?.find(t => t.status === 'failed');
-            const errorMsg = job.error_message || failedTask?.error_message || '优化失败';
-            showToast(errorMsg, 'error');
-            jobIdRef.current = null;
-            setOptimizing(false);
-            return;
-          } else if (job.status === 'cancelled') {
-            showToast('优化任务已取消', 'info');
-            jobIdRef.current = null;
-            setOptimizing(false);
-            return;
-          }
-
-          pollTimerRef.current = setTimeout(pollOptimizeStatus, 1000);
-        } catch (err: any) {
-          console.error('[DialogEditor] 轮询多模态优化任务状态失败:', err);
-          pollTimerRef.current = setTimeout(pollOptimizeStatus, 2000);
-        }
-      };
-
-      pollOptimizeStatus();
-    } catch (error: any) {
-      showToast(error.message || '多模态视觉优化失败', 'error');
-      setOptimizing(false);
-    }
-  };
-
-  // 多模态优化：同时启动图片和视频视觉优化（并发队列）
-  const handleMultimodalOptimize = async () => {
-    const text = (basePrompt || promptText).trim();
-    if (!text || isMultimodalOptimizingImage || isMultimodalOptimizingVideo) return;
-    if (!projectId) {
-      showToast('缺少项目信息', 'warning');
-      return;
-    }
-
-    // 检查是否有视觉参考图
-    if (!availableFrames?.startFrame && !availableFrames?.endFrame) {
-      showToast('当前分镜没有图片参考，将使用普通优化', 'warning');
-      await handleOptimize();
-      return;
-    }
-
-    // 检查是否有多模态模型
-    if (multimodalModels.length === 0 && textModels.length === 0) {
-      showToast('没有可用的 AI 模型', 'warning');
-      return;
-    }
-
-    // 并发启动两个工作流，相互独立
-    await Promise.all([
-      runMultimodalOptimize('image'),
-      runMultimodalOptimize('video')
-    ]);
   };
 
   // 生成图片
@@ -960,6 +727,7 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
   };
 
   // 撤回优化
+  const [preOptimizeText, setPreOptimizeText] = useState<string | null>(null);
   const handleUndoOptimize = () => {
     if (preOptimizeText === null) return;
     setPromptText(preOptimizeText);
@@ -1633,46 +1401,6 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
 
   return (
     <div className="relative flex flex-col h-full bg-[var(--bg-body)] rounded-lg border border-[var(--border-color)] overflow-hidden">
-      {/* 头部工具栏 */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-color)] bg-[var(--bg-card)]">
-        <div className="flex items-center gap-2">
-          <Wand2 className="w-5 h-5 text-[var(--accent)]" />
-          <h2 className="text-sm font-semibold text-[var(--text-primary)]">
-            导演空间
-          </h2>
-          <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
-            promptMode === 'video'
-              ? 'bg-rose-500/20 text-rose-400'
-              : 'bg-blue-500/20 text-blue-400'
-          }`}>
-            {promptMode === 'video' ? '视频提示词' : '图片提示词'}
-          </span>
-          {isDirty && (
-            <span className="text-xs text-[var(--text-muted)]">(未保存)</span>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            variant="flat"
-            className="bg-[var(--bg-input)] text-[var(--text-secondary)]"
-            startContent={<History className="w-3.5 h-3.5" />}
-            onPress={handleOpenVersionPanel}
-          >
-            版本
-          </Button>
-          <Button
-            size="sm"
-            className="pro-btn-primary"
-            startContent={<Save className="w-3.5 h-3.5" />}
-            onPress={handleSave}
-            isDisabled={!isDirty}
-          >
-            保存
-          </Button>
-        </div>
-      </div>
-
       {/* 主编辑区 */}
       <div className="flex flex-1 overflow-hidden min-h-0">
         {/* 左侧组件面板 */}
@@ -1836,79 +1564,17 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
                     <polyline points="21 15 16 10 5 21" />
                   </svg>
                 </button>
-                {/* AI 优化按钮 */}
+                {/* AI 生成提示词按钮 */}
                 <button
-                  onClick={() => setIsGenerateMenuOpen(!isGenerateMenuOpen)}
-                  disabled={!promptText.trim()}
+                  onClick={handleGeneratePrompt}
+                  disabled={isGeneratingPrompt || isOptimizing || !promptText.trim()}
                   className="p-1.5 rounded-md hover:bg-[var(--bg-hover)] transition-colors text-[var(--text-muted)] hover:text-purple-500 disabled:opacity-40 disabled:cursor-not-allowed relative"
-                  title="AI 生成"
+                  title={promptMode === 'video' ? '生成视频提示词' : '生成图片提示词'}
                 >
-                  {isGeneratingPrompt || isOptimizingImage || isOptimizingVideo || isMultimodalOptimizingImage || isMultimodalOptimizingVideo || isGeneratingMedia ? (
+                  {isGeneratingPrompt || isOptimizing ? (
                     <Loader2 className="w-4 h-4 animate-spin text-purple-500" />
                   ) : (
                     <Sparkles className="w-4 h-4" />
-                  )}
-                  
-                  {/* AI 生成菜单下拉 */}
-                  {isGenerateMenuOpen && (
-                    <div className="absolute bottom-full left-0 mb-2 w-48 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg shadow-lg py-1 z-50"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <button
-                        onClick={() => { handleOptimize(); setIsGenerateMenuOpen(false); }}
-                        disabled={isOptimizingImage || isOptimizingVideo || !promptText.trim()}
-                        className="w-full text-left px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] disabled:opacity-40 flex items-center gap-2"
-                      >
-                        {isOptimizingImage || isOptimizingVideo ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin text-purple-500" />
-                        ) : (
-                          <Sparkles className="w-3.5 h-3.5 text-purple-500" />
-                        )}
-                        优化提示词
-                      </button>
-                      <button
-                        onClick={() => { handleGeneratePrompt('image'); setIsGenerateMenuOpen(false); }}
-                        disabled={isGeneratingPrompt || !promptText.trim()}
-                        className="w-full text-left px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] disabled:opacity-40 flex items-center gap-2"
-                      >
-                        {isGeneratingPrompt ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-500" />
-                        ) : (
-                          <Wand2 className="w-3.5 h-3.5 text-blue-500" />
-                        )}
-                        生成图片提示词
-                      </button>
-                      <button
-                        onClick={() => { handleGeneratePrompt('video'); setIsGenerateMenuOpen(false); }}
-                        disabled={isGeneratingPrompt || !promptText.trim()}
-                        className="w-full text-left px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] disabled:opacity-40 flex items-center gap-2"
-                      >
-                        {isGeneratingPrompt ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin text-rose-500" />
-                        ) : (
-                          <Film className="w-3.5 h-3.5 text-rose-500" />
-                        )}
-                        生成视频提示词
-                      </button>
-                      <div className="my-1 border-t border-[var(--border-color)]" />
-                      <button
-                        onClick={() => { handleMultimodalOptimize(); setIsGenerateMenuOpen(false); }}
-                        disabled={isMultimodalOptimizingImage || isMultimodalOptimizingVideo || !promptText.trim()}
-                        className="w-full text-left px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] disabled:opacity-40 flex items-center gap-2"
-                        title={!availableFrames?.startFrame && !availableFrames?.endFrame ? '当前分镜无图片参考，将使用普通优化' : '基于分镜图片调用多模态大模型优化提示词'}
-                      >
-                        {isMultimodalOptimizingImage || isMultimodalOptimizingVideo ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-500" />
-                        ) : (
-                          <svg className="w-3.5 h-3.5 text-amber-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <path d="M2 12a10 10 0 1 1 20 0 10 10 0 0 1-20 0z" />
-                            <path d="M2 12h20" />
-                            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
-                          </svg>
-                        )}
-                        多模态视觉优化
-                      </button>
-                    </div>
                   )}
                 </button>
 
@@ -1976,22 +1642,7 @@ const DialogEditor: React.FC<DialogEditorProps> = ({
                     </button>
                   </>
                 )}
-                {/* 发送按钮 */}
-                <button
-                  onClick={() => setIsGenerateMenuOpen(!isGenerateMenuOpen)}
-                  disabled={!promptText.trim()}
-                  className="p-1.5 rounded-md bg-gradient-to-r from-violet-500 to-indigo-500 text-white hover:from-violet-600 hover:to-indigo-600 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                  title="AI 生成菜单"
-                >
-                  {isGeneratingPrompt || isOptimizingImage || isOptimizingVideo || isMultimodalOptimizingImage || isMultimodalOptimizingVideo || isGeneratingMedia ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                      <line x1="12" y1="19" x2="12" y2="5" />
-                      <polyline points="5 12 12 5 19 12" />
-                    </svg>
-                  )}
-                </button>
+
             </div>
           </div>
 
