@@ -48,11 +48,27 @@ const AIAssistantPlugin: React.FC = () => {
       if (!sceneId) { showToast('请先选择分镜', 'warning'); return; }
       const target = scenes.find(s => s.id === sceneId);
       const prompt = params?.prompt || target?.description || selectedSceneData?.description || '';
-      generationActions.generateImage(sceneId, prompt);
+      generationActions.generateImage(sceneId, prompt)
+        .then((result) => {
+          if (!result.success) {
+            showToast(result.error || '生成分镜图失败', 'error');
+          }
+        })
+        .catch((err: any) => {
+          showToast('生成分镜图失败: ' + (err?.message || err), 'error');
+        });
     } else if (action === 'generate_video') {
       const sceneId = sceneIdFrom(params);
       if (!sceneId) { showToast('请先选择分镜', 'warning'); return; }
-      generationActions.generateVideo(sceneId);
+      generationActions.generateVideo(sceneId)
+        .then((result) => {
+          if (!result.success) {
+            showToast(result.error || '生成视频失败', 'error');
+          }
+        })
+        .catch((err: any) => {
+          showToast('生成视频失败: ' + (err?.message || err), 'error');
+        });
     } else if (action === 'auto_storyboard') {
       // AI 自动触发时直接执行，不弹确认框
       if (!state.currentScriptId) {
