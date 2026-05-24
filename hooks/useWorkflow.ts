@@ -69,12 +69,15 @@ export class ApiError extends Error {
 // API 函数
 // ============================================================
 
+// 工作流相关 API 的超时时间（毫秒）：需与后端 WorkflowExecutor 的 TASK_TIMEOUT 保持一致
+const WORKFLOW_API_TIMEOUT = 360000; // 6分钟，略大于后端 5 分钟任务超时
+
 async function fetchApi(url: string, options: RequestInit = {}) {
   const token = getAuthToken();
   
   const doFetch = async (isRetry = false): Promise<any> => {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    const timeoutId = setTimeout(() => controller.abort(), WORKFLOW_API_TIMEOUT);
 
     try {
       const res = await fetch(url, {
@@ -104,7 +107,7 @@ async function fetchApi(url: string, options: RequestInit = {}) {
       clearTimeout(timeoutId);
       if (err instanceof ApiError) throw err; // 业务错误不重试
       if (err.name === 'AbortError') {
-        throw new Error('请求超时（30秒）');
+        throw new Error(`请求超时（${WORKFLOW_API_TIMEOUT / 1000}秒）`);
       }
       // 网络错误且不是重试时，自动重试一次
       if (!isRetry) {
