@@ -26,6 +26,7 @@ interface PropModalProps {
   formData: any;
   setFormData: (data: any) => void;
   onSave: () => void;
+  imageAspectRatio?: string;
 }
 
 const PropModal: React.FC<PropModalProps> = ({
@@ -34,7 +35,8 @@ const PropModal: React.FC<PropModalProps> = ({
   editMode,
   formData,
   setFormData,
-  onSave
+  onSave,
+  imageAspectRatio
 }) => {
   const [activeTab, setActiveTab] = useState<'basic' | 'style' | 'generate'>('basic');
   const [styleConfig, setStyleConfig] = useState<PropStyleConfig>({});
@@ -111,7 +113,8 @@ const PropModal: React.FC<PropModalProps> = ({
         body: JSON.stringify({
           imageModel: selectedImageModel,
           textModel: selectedTextModel,
-          styleConfig
+          styleConfig,
+          aspectRatio: imageAspectRatio || undefined,
         })
       });
 

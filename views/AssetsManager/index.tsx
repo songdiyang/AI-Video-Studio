@@ -2158,6 +2158,7 @@ const AssetsManager: React.FC = () => {
             formData={formData}
             setFormData={setFormData}
             onSave={handleSave}
+            imageAspectRatio={(currentProject as any)?.settings?.imageAspectRatio}
           />
         )}
 

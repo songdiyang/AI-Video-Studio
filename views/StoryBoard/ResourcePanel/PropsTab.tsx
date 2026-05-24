@@ -18,11 +18,12 @@ const openAssetEditTab = (prop: PropItem) => {
 interface PropsTabProps {
   props: PropItem[];
   imageModel?: string;
+  imageAspectRatio?: string;
   /** 右键删除回调 */
   onDelete?: (prop: PropItem) => void;
 }
 
-const PropsTab: React.FC<PropsTabProps> = ({ props, imageModel, onDelete }) => {
+const PropsTab: React.FC<PropsTabProps> = ({ props, imageModel, imageAspectRatio, onDelete }) => {
   const [generatingIds, setGeneratingIds] = useState<Set<number>>(new Set());
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; prop: PropItem } | null>(null);
 
@@ -52,6 +53,7 @@ const PropsTab: React.FC<PropsTabProps> = ({ props, imageModel, onDelete }) => {
         },
         body: JSON.stringify({
           imageModel: imageModel || undefined,
+          aspectRatio: imageAspectRatio || undefined,
         })
       });
 

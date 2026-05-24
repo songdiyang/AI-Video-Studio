@@ -619,6 +619,7 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
           <PropsTab
             props={props}
             imageModel={effectiveImageModel}
+            imageAspectRatio={effectiveImageAspectRatio}
             onDelete={handleDeletePropFromCard}
           />
         )}
