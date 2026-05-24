@@ -17,6 +17,9 @@ const { resolveToInternalUrl } = require('../utils/fileStorage');
 function friendlyErrorMessage(statusCode, rawMsg) {
   const msg = (rawMsg || '').toLowerCase();
 
+  if (msg.includes('real person') || msg.includes('real face') || msg.includes('real human')) {
+    return '输入图片被 API 安全策略识别为可能包含真人面孔（即使图片是 AI 生成的）。系统将自动尝试纯文本模式重新生成。';
+  }
   if (msg.includes('sensitive') || msg.includes('安全') || msg.includes('违规')) {
     return '提示词或参考图片可能包含敏感内容，请修改后重试。如果您认为内容没有问题，可以尝试换一种描述方式。';
   }

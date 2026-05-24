@@ -649,16 +649,46 @@ Prompt:`;
     console.log('[SceneVideoGen] 检测到台词/画外音，开启音频生成 generate_audio=true');
   }
 
-  const result = await submitAndPoll(modelName, submitParams, {
-    intervalMs: 3000,
-    maxDurationMs: 3600000,
-    logTag: 'SceneVideoGen',
-    onProgress: onProgress ? (p) => {
-      // 将 submitAndPoll 的 30-90% 进度映射到 20-85%（留 5% 给下载）
-      const mapped = 20 + Math.round((p - 30) * (85 - 20) / (90 - 30));
-      onProgress(Math.min(mapped, 85));
-    } : undefined
-  });
+  let result;
+  try {
+    result = await submitAndPoll(modelName, submitParams, {
+      intervalMs: 3000,
+      maxDurationMs: 3600000,
+      logTag: 'SceneVideoGen',
+      onProgress: onProgress ? (p) => {
+        // 将 submitAndPoll 的 30-90% 进度映射到 20-85%（留 5% 给下载）
+        const mapped = 20 + Math.round((p - 30) * (85 - 20) / (90 - 30));
+        onProgress(Math.min(mapped, 85));
+      } : undefined
+    });
+  } catch (videoErr) {
+    // 检测 "real person" 内容安全错误，自动降级为纯文本模式（去掉参考图）重试
+    // 匹配两种格式：API 原始错误（"real person"）和自定义 handler 友好消息（"真人"/"安全策略"）
+    const errMsg = (videoErr.message || '').toLowerCase();
+    const isRealPersonError = errMsg.includes('real person') || errMsg.includes('real face') || errMsg.includes('real human') || errMsg.includes('真人');
+    if (isRealPersonError && (submitParams.imageUrls || submitParams.startFrame)) {
+      console.warn('[SceneVideoGen] 检测到 "real person" 安全策略错误，自动降级为纯文本模式重试（去掉参考图）');
+      trace('视频生成降级重试', { reason: 'real_person_content_policy', originalImageCount: imageUrls.length });
+
+      const fallbackParams = { ...submitParams };
+      delete fallbackParams.imageUrls;
+      delete fallbackParams.startFrame;
+      delete fallbackParams.endFrame;
+
+      result = await submitAndPoll(modelName, fallbackParams, {
+        intervalMs: 3000,
+        maxDurationMs: 3600000,
+        logTag: 'SceneVideoGen-Fallback',
+        onProgress: onProgress ? (p) => {
+          const mapped = 20 + Math.round((p - 30) * (85 - 20) / (90 - 30));
+          onProgress(Math.min(mapped, 85));
+        } : undefined
+      });
+      console.log('[SceneVideoGen] 纯文本模式降级重试成功');
+    } else {
+      throw videoErr;
+    }
+  }
 
   const mediaResolution = resolveMediaUrl(result, 'video');
   console.log('[SceneVideoGen] 返回字段诊断:', {
