@@ -623,15 +623,15 @@ const DescriptionEditor: React.FC<{
   onUpdateBaseDescription?: (baseDescription: string) => Promise<boolean>;
   onUpdateDescription?: (description: string) => Promise<boolean>;
 }> = ({ scene, projectId, onUpdateBaseDescription, onUpdateDescription }) => {
-  const [text, setText] = useState(scene.baseDescription || '');
+  const [text, setText] = useState(scene.baseDescription || scene.description || '');
   const [isSaving, setIsSaving] = useState(false);
   const [isOptimizing, setIsOptimizing] = useState(false);
   const { showToast } = useToast();
 
   // 当外部 scene 变化时同步文本
   useEffect(() => {
-    setText(scene.baseDescription || '');
-  }, [scene.id, scene.baseDescription]);
+    setText(scene.baseDescription || scene.description || '');
+  }, [scene.id, scene.baseDescription, scene.description]);
 
   // 防抖保存
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -694,7 +694,8 @@ const DescriptionEditor: React.FC<{
         }),
         startWorkflow('single_video_prompt_optimization', projectId, {
           storyboardId: scene.id,
-          prompt: baseText
+          prompt: baseText,
+          multimodalModel
         })
       ]);
       console.log('[DescriptionEditor] 双优化任务已启动:', { image: imageJob.jobId, video: videoJob.jobId });
@@ -891,6 +892,10 @@ interface ScenePreviewPanelProps {
   onImageModelChange?: (model: string) => void;
   /** 视频模型切换回调 */
   onVideoModelChange?: (model: string) => void;
+  /** 当前多模态模型（用于视觉分析） */
+  multimodalModel?: string;
+  /** 多模态模型切换回调 */
+  onMultimodalModelChange?: (model: string) => void;
   /** 隐藏导演空间（用于在BottomPanel中独立显示） */
   hideDirectorSpace?: boolean;
 }
@@ -917,6 +922,8 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
   onGenerateWithCamera,
   onGenerateWithPaint,
   onGenerateWithSketch,
+  multimodalModel,
+  onMultimodalModelChange,
 
   onUpdateScene,
   onUpdateDuration,

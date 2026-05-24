@@ -89,14 +89,47 @@ function buildVisionMessages(imageUrls, description) {
     "cameraAngle": "机位角度（平视/俯视/仰视）",
     "framing": "构图方式"
   },
-  "objects": ["画面中所有可见物体的清单"]
+  "objects": ["画面中所有可见物体的清单"],
+  "detailedElements": [
+    {
+      "type": "character|object|environment",
+      "name": "元素名称",
+      "position": "在画面中的位置（如：左侧前景、中央、右侧背景）",
+      "size": "相对大小（大/中/小）",
+      "material": "材质（如：布料、金属、木质、玻璃、皮肤等）",
+      "state": "当前状态（静止/微动/运动中）",
+      "motionPotential": "运动潜力：该元素在视频中可能如何运动（轨迹、速度、方式）"
+    }
+  ],
+  "motionAnalysis": {
+    "characterMotions": [
+      {
+        "name": "角色名",
+        "currentPose": "当前姿态",
+        "possibleActions": ["基于画面可能发生的动作1", "动作2"],
+        "physicalConstraints": "物理限制（如：坐姿角色无法突然站立奔跑，手持物品限制手臂运动）",
+        "suggestedMotion": "建议的运动轨迹和方式"
+      }
+    ],
+    "objectInteractions": [
+      {
+        "objects": ["物体A", "物体B"],
+        "interactionType": "互动类型（碰撞/支撑/遮挡/传递等）",
+        "interactionDynamics": "互动动态描述"
+      }
+    ],
+    "cameraMovementPotential": "基于画面构图推荐的摄像机运动（推/拉/摇/移/跟/升降/环绕），包含运动理由",
+    "dynamicComposition": "画面从静态到动态的构图演变建议",
+    "lightingDynamics": "光影随运动的变化潜力（如：移动角色经过窗户时光影在脸上扫过）"
+  }
 }
 
 注意：
 1. 必须基于图片实际内容，不要编造图片中没有的元素
 2. 角色服装颜色必须准确描述
 3. 如果有多张图片，请对比分析它们之间的关系（如首尾帧的连续性）
-4. 仅输出 JSON，不要输出其他文字`;
+4. motionAnalysis 必须基于画面中元素的实际物理状态，不要编造不合理的运动
+5. 仅输出 JSON，不要输出其他文字`;
 
   content.push({
     type: 'text',
@@ -171,6 +204,8 @@ async function handleVisionFrameAnalysis(inputParams, onProgress) {
       scene: parsed.scene || {},
       composition: parsed.composition || {},
       objects: parsed.objects || [],
+      detailedElements: parsed.detailedElements || [],
+      motionAnalysis: parsed.motionAnalysis || {},
       _raw: content
     };
 

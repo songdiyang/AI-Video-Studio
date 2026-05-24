@@ -209,11 +209,11 @@ async function validateForVideo(res, storyboard, variables) {
     });
   }
 
-  // 2. 检查提示词
-  if (!storyboard.prompt_template || storyboard.prompt_template.trim() === '') {
+  // 2. 检查视频提示词
+  if (!storyboard.video_prompt || storyboard.video_prompt.trim() === '') {
     issues.push({
       type: 'no_prompt',
-      message: '分镜缺少描述/提示词'
+      message: '分镜缺少视频提示词，请在导演空间的"视频提示词"标签中编辑后再生成'
     });
   }
 

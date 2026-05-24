@@ -1058,7 +1058,7 @@ const WORKFLOW_DEFINITIONS = {
         targetType: 'storyboard',
         handler: handleSingleVideoPromptOptimization,
         buildInput: createBuildInput([
-          'storyboardId', 'prompt', 'textModel'
+          'storyboardId', 'prompt', 'textModel', 'multimodalModel'
         ])
       }
     ]
