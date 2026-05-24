@@ -620,9 +620,10 @@ const DurationSelector: React.FC<{
 const DescriptionEditor: React.FC<{
   scene: StoryboardScene;
   projectId?: number | null;
+  multimodalModel?: string;
   onUpdateBaseDescription?: (baseDescription: string) => Promise<boolean>;
   onUpdateDescription?: (description: string) => Promise<boolean>;
-}> = ({ scene, projectId, onUpdateBaseDescription, onUpdateDescription }) => {
+}> = ({ scene, projectId, multimodalModel, onUpdateBaseDescription, onUpdateDescription }) => {
   const [text, setText] = useState(scene.baseDescription || scene.description || '');
   const [isSaving, setIsSaving] = useState(false);
   const [isOptimizing, setIsOptimizing] = useState(false);
@@ -2428,6 +2429,7 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                 <DescriptionEditor
                   scene={scene}
                   projectId={projectId}
+                  multimodalModel={multimodalModel}
                   onUpdateBaseDescription={onUpdateBaseDescription}
                   onUpdateDescription={onUpdateDescription}
                 />
