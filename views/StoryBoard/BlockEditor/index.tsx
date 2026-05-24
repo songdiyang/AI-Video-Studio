@@ -41,7 +41,7 @@ const BlockEditor: React.FC<BlockEditorProps & {
   textModel,
   onTextModelChange,
 }) => {
-  // 将积木块转换为提示词文本
+  // 将积木块转换为提示词文本，若为空则使用 basePrompt（分镜描述）作为 fallback
   const initialPrompt = initialBlocks
     .map(block => {
       if (block.type === 'text') {
@@ -50,7 +50,8 @@ const BlockEditor: React.FC<BlockEditorProps & {
       return '';
     })
     .filter(Boolean)
-    .join('');
+    .join('')
+    .trim() || basePrompt || '';
 
   const handleChange = (prompt: string) => {
     onChange?.({
