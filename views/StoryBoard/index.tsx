@@ -13,15 +13,16 @@
  * - 中间内容：固定为 PreviewEditor（核心编辑区）
  */
 
-import React, { useState, useMemo, Component, ReactNode, lazy, Suspense, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useMemo, Component, ReactNode, useCallback, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Wand2 } from 'lucide-react';
 import { useStoryboardCore, StoryboardProvider } from './core';
 import type { StoryboardSkeletonProps, StoryboardPlugin } from './core/types';
 import { PanelGroup } from '../../components/PanelGroup';
 import ResizablePanel, { ResizablePanelRef } from '../../components/ResizablePanel';
-import { useAIAssistantUI } from '../../contexts/AIAssistantContext';
 import { useToast } from '../../contexts/ToastContext';
 import { useWorkbench } from '../../contexts/WorkbenchContext';
+import { useStoryboardBridgeSafe } from '../../contexts/StoryboardBridgeContext';
 import { Project } from '../../services/projects';
 import EpisodeSelector from './EpisodeSelector';
 
@@ -31,9 +32,10 @@ import ResourcePanelPlugin from './plugins/resource-panel';
 import ScriptOutlinePlugin from './plugins/script-outline';
 import ExtensionsPanelPlugin from './plugins/extensions-panel';
 import PreviewEditorPlugin from './plugins/preview-editor';
-
-// 懒加载 AI 助手
-const AIAssistantPlugin = lazy(() => import('./plugins/ai-assistant'));
+import { useStoryboardAIAssistantBridge } from './plugins/ai-assistant';
+// ===== 工作台左侧面板扩展（主界面内嵌为标签页） =====
+import ProjectsSidePanel from '../../components/SidePanels/ProjectsSidePanel';
+import TeamsSidePanel from '../../components/SidePanels/TeamsSidePanel';
 
 // ===== Error Boundary =====
 interface ErrorBoundaryState {
@@ -76,9 +78,11 @@ class StoryboardErrorBoundary extends Component<
 
 // ===== 默认左侧标签页配置 =====
 const DEFAULT_LEFT_TABS = [
+  { id: 'projects', label: '工程', component: ProjectsSidePanel },
   { id: 'scenes', label: '分镜列表', component: SceneListPlugin },
   { id: 'resources', label: '资源', component: ResourcePanelPlugin },
   { id: 'outline', label: '大纲', component: ScriptOutlinePlugin },
+  { id: 'teams', label: '团队', component: TeamsSidePanel },
   { id: 'extensions', label: '扩展', component: ExtensionsPanelPlugin },
 ];
 
@@ -123,11 +127,9 @@ const StoryboardSkeleton: React.FC<StoryboardSkeletonProps> = ({
     emit,
     on,
     setState,
-    isAssistantOpen,
     leftPanelOpen,
-    rightPanelOpen,
+    openLeftPanel,
     closeLeftPanel,
-    closeRightPanel,
     tasks,
     isRunning,
     autoStoryboard,
@@ -140,28 +142,31 @@ const StoryboardSkeleton: React.FC<StoryboardSkeletonProps> = ({
     return stored && leftPanelTabs.some(t => t.id === stored) ? stored : (leftPanelTabs[0]?.id || 'scenes');
   });
 
-  // 监听外部切换左侧面板标签事件
+  // 切换左侧面板标签（展开面板 + 持久化 + 通知图标栏激活态）
+  const switchLeftPanelTab = useCallback((tabId: string) => {
+    if (!leftPanelTabs.some(t => t.id === tabId)) return;
+    setLeftPanelTab(tabId);
+    localStorage.setItem('nanostory_left_panel_tab', tabId);
+    window.dispatchEvent(new CustomEvent('leftPanelTabChanged'));
+    openLeftPanel();
+  }, [leftPanelTabs, openLeftPanel]);
+
+  // 监听外部切换左侧面板标签事件（Layout 图标栏/命令面板/快捷键触发）
   useEffect(() => {
     const handleSwitchLeftPanelTab = (e: CustomEvent<{ tabId: string }>) => {
-      const { tabId } = e.detail;
-      if (leftPanelTabs.some(t => t.id === tabId)) {
-        setLeftPanelTab(tabId);
-        // 同步到 localStorage，让导航栏能读取激活状态
-        localStorage.setItem('nanostory_left_panel_tab', tabId);
-      }
+      switchLeftPanelTab(e.detail.tabId);
     };
     window.addEventListener('switchLeftPanelTab', handleSwitchLeftPanelTab as EventListener);
     return () => {
       window.removeEventListener('switchLeftPanelTab', handleSwitchLeftPanelTab as EventListener);
     };
-  }, [leftPanelTabs]);
+  }, [switchLeftPanelTab]);
 
   // ===== 当前项目（从 Workbench 读取，用于集数选择器等） =====
   const { currentProject } = useWorkbench();
 
   // refs
   const resourcePanelRef = React.useRef<ResizablePanelRef>(null);
-  const assistantPanelRef = React.useRef<ResizablePanelRef>(null);
 
   // 当前选中的标签页组件
   const ActiveLeftPanel = useMemo(() => {
@@ -200,6 +205,56 @@ const StoryboardSkeleton: React.FC<StoryboardSkeletonProps> = ({
     autoStoryboard,
   }), [state, scenes, selectedScene, selectedSceneData, isLoading, sceneActions, generationActions, resourceActions, setState, setSelectedScene, setScenes, emit, on, showToast, handleEpisodeSelect, handleStandaloneEpisodeChange, handleCreateNextEpisode, tasks, isRunning, autoStoryboard]);
 
+  // 将工作台数据/动作桥接到全局 AI 助手侧边栏
+  useStoryboardAIAssistantBridge({
+    state,
+    scenes,
+    selectedScene,
+    sceneActions,
+    generationActions,
+    resourceActions,
+    setState,
+    showToast,
+    autoStoryboard,
+  });
+
+  // ===== 桥接到 Layout 侧栏（VSCode 式）：上报标签 + 提供 portal 容器 =====
+  const bridge = useStoryboardBridgeSafe();
+  const bridgeTabs = useMemo(
+    () => leftPanelTabs.map(t => ({ id: t.id, label: t.label })),
+    [leftPanelTabs],
+  );
+  // 注册标签与切换函数；卸载时注销
+  useEffect(() => {
+    if (!bridge) return;
+    bridge.registerTabs(bridgeTabs, leftPanelTab);
+    bridge.setRequestSwitchTab(() => switchLeftPanelTab);
+    return () => {
+      bridge.unregisterTabs();
+      bridge.setRequestSwitchTab(null);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bridge, bridgeTabs, switchLeftPanelTab]);
+  // 激活标签变化时同步给桥接（用于活动栏高亮）
+  useEffect(() => {
+    if (!bridge || !bridge.isRegistered) return;
+    bridge.registerTabs(bridgeTabs, leftPanelTab);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leftPanelTab]);
+
+  // 渲染到 Layout 侧栏容器的面板内容（portal 保留 StoryboardProvider 上下文）
+  const bridgePanelContent = (
+    <div className="flex flex-col h-full overflow-hidden">
+      {leftPanelTab === 'projects' ? (
+        <ProjectsSidePanel onOpenProject={() => switchLeftPanelTab('scenes')} />
+      ) : leftPanelTab === 'teams' ? (
+        <TeamsSidePanel />
+      ) : (
+        <ActiveLeftPanel />
+      )}
+    </div>
+  );
+
   return (
     <StoryboardProvider value={contextValue}>
       <div className="h-full flex flex-col bg-(--bg-app)">
@@ -218,74 +273,10 @@ const StoryboardSkeleton: React.FC<StoryboardSkeletonProps> = ({
         {/* ===== 主内容区 - 三栏布局 ===== */}
         {state.currentProjectId && (
           <div className="flex-1 overflow-hidden flex flex-col min-h-0">
+            {/* 左侧面板已通过 Portal 桥接到 Layout 侧栏（VSCode 式），此处仅渲染中间编辑区 */}
+            {bridge?.containerEl && createPortal(bridgePanelContent, bridge.containerEl)}
             <div className="flex-1 overflow-hidden relative min-h-0">
-              <PanelGroup 
-                direction="horizontal" 
-                storageKey="storyboard-layout"
-                mobileDefaultPanel={1}
-                mobilePanelLabels={rightPanelOpen ? ['分镜/资源', '预览编辑', 'AI助手'] : ['分镜/资源', '预览编辑']}
-              >
-                {/* ===== 左侧：可扩展标签页面板 ===== */}
-                <ResizablePanel 
-                  ref={resourcePanelRef} 
-                  defaultSize={25} 
-                  minSize={15} 
-                  maxSize={35} 
-                  collapsedSize={8} 
-                  collapsible={true} 
-                  collapsed={!leftPanelOpen} 
-                  onCollapse={(collapsed) => { if (collapsed) closeLeftPanel(); }}
-                >
-                  <div className="flex flex-col h-full overflow-hidden">
-                    {/* 标签切换栏 - 动态渲染 */}
-                    <div className="flex items-center gap-0.5 px-2 py-1.5 border-b shrink-0" style={{ borderColor: 'var(--border-color)', backgroundColor: 'var(--bg-secondary)' }}>
-                      {leftPanelTabs.map(tab => (
-                        <button
-                          key={tab.id}
-                          onClick={() => {
-                            setLeftPanelTab(tab.id);
-                            localStorage.setItem('nanostory_left_panel_tab', tab.id);
-                          }}
-                          className={`flex-1 px-3 py-1 text-xs font-medium rounded-md transition-all ${
-                            leftPanelTab === tab.id
-                              ? 'text-[var(--accent)]'
-                              : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
-                          }`}
-                          style={leftPanelTab === tab.id ? { backgroundColor: 'color-mix(in srgb, var(--accent) 15%, transparent)' } : {}}
-                        >
-                          {tab.label}
-                        </button>
-                      ))}
-                    </div>
-
-                    {/* 内容区域 - 渲染当前选中的插件 */}
-                    <div className="flex-1 overflow-hidden">
-                      <ActiveLeftPanel />
-                    </div>
-                  </div>
-                </ResizablePanel>
-
-                {/* ===== 中间：预览编辑（核心，不可替换） ===== */}
-                <ResizablePanel defaultSize={rightPanelOpen ? 50 : 75} minSize={35}>
-                  <PreviewEditorPlugin />
-                </ResizablePanel>
-
-                {/* ===== 右侧：AI 助手（可扩展为其他插件） ===== */}
-                {rightPanelOpen && (
-                  <ResizablePanel
-                    ref={assistantPanelRef}
-                    defaultSize={25}
-                    minSize={18}
-                    maxSize={40}
-                    collapsedSize={8}
-                    collapsible={true}
-                    collapsed={!rightPanelOpen}
-                    onCollapse={(collapsed) => { if (collapsed) closeRightPanel(); }}
-                  >
-                    <AIAssistantPlugin />
-                  </ResizablePanel>
-                )}
-              </PanelGroup>
+              <PreviewEditorPlugin />
 
               {/* 智能拆分中遮罩 */}
               {autoStoryboard.isGenerating && (

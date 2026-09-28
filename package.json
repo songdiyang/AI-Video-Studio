@@ -27,7 +27,11 @@
     "docker:logs": "node scripts/docker-compose.mjs logs",
     "build:release": "node scripts/build-release.mjs",
     "release:bootstrap": "node scripts/release-bootstrap.mjs",
-    "release:upload": "node scripts/release-upload.mjs"
+    "release:upload": "node scripts/release-upload.mjs",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
+    "tauri:build:windows": "tauri build --target x86_64-pc-windows-msvc"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -36,6 +40,10 @@
     "@ffmpeg/ffmpeg": "^0.12.15",
     "@ffmpeg/util": "^0.12.2",
     "@heroui/react": "^2.8.7",
+    "@tauri-apps/plugin-dialog": "^2.7.3",
+    "@tauri-apps/plugin-fs": "^2.5.2",
+    "@tauri-apps/plugin-shell": "^2.3.6",
+    "@tauri-apps/plugin-sql": "^2.4.1",
     "@types/three": "^0.184.0",
     "framer-motion": "^12.23.26",
     "jszip": "^3.10.1",
@@ -43,16 +51,15 @@
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
     "react-router-dom": "^7.11.0",
-    "socket.io-client": "^4.8.3",
     "three": "^0.184.0",
-    "undici": "^7.24.7",
     "yet-another-react-lightbox": "^3.28.0"
   },
   "devDependencies": {
     "@gltf-transform/core": "^4.3.0",
     "@gltf-transform/extensions": "^4.3.0",
-    "@gltf-transform/functions": "^4.3.0",
     "@tailwindcss/postcss": "^4.1.18",
+    "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/cli": "^2.11.5",
     "@types/node": "^22.14.0",
     "@types/react": "^19.2.13",
     "@types/react-dom": "^19.2.3",

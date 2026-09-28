@@ -314,8 +314,8 @@ const Landing: React.FC = () => {
         </div>
       </section>
 
-      {/* Pricing Section */}
-      <section className="py-24 px-4" style={{ backgroundColor: 'var(--bg-elevated)' }}>
+      {/* Pricing Section - 商业化功能已移除 */}
+      {/* <section className="py-24 px-4" style={{ backgroundColor: 'var(--bg-elevated)' }}>
         <div className="max-w-6xl mx-auto">
           <AnimatedSection className="text-center mb-16">
             <motion.h2
@@ -415,7 +415,7 @@ const Landing: React.FC = () => {
             </Link>
           </motion.div>
         </div>
-      </section>
+      </section> */}
 
       {/* Final CTA Section */}
       <section className="relative py-24 px-4 overflow-hidden">
@@ -466,16 +466,16 @@ const Landing: React.FC = () => {
                 <Sparkles className="w-5 h-5 text-white" />
               </div>
               <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>
-                {t.nav?.studioName || '饺子动漫'}
+                {t.nav?.studioName || 'AI视频编辑器'}
               </span>
             </div>
 
             {/* 链接 */}
             <nav className="flex flex-wrap items-center justify-center gap-6">
-              {(['about', 'pricing', 'community', 'terms', 'privacy'] as const).map((key) => (
+              {(['about', 'community', 'terms', 'privacy'] as const).map((key) => (
                 <Link
                   key={key}
-                  to={key === 'about' ? '/about' : key === 'pricing' ? '/pricing' : key === 'community' ? '/community' : `/${key}`}
+                  to={key === 'about' ? '/about' : key === 'community' ? '/community' : `/${key}`}
                   className="text-sm transition-colors hover:text-(--accent)"
                   style={{ color: 'var(--text-muted)' }}
                 >
@@ -486,7 +486,7 @@ const Landing: React.FC = () => {
 
             {/* 版权 */}
             <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-              {t.landing?.footer?.copyright || '© 2026 饺子动漫. 保留所有权利.'}
+              {t.landing?.footer?.copyright || '© 2026 AI视频编辑器. 保留所有权利.'}
             </p>
           </div>
         </div>

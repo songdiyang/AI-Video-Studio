@@ -5,6 +5,7 @@
 
 import React, { createContext, useContext, useState, useCallback, useEffect, useMemo } from 'react';
 import { Project, fetchProject, fetchProjects } from '../services/projects';
+import { setActiveProject, flushAll } from '../services/localStore';
 import { ProjectType, WorkbenchTab, isValidProjectType, mapLegacyProjectType } from '../types/projectTypes';
 import { 
   WorkbenchState, 
@@ -36,6 +37,20 @@ interface WorkbenchContextValue {
   // 加载状态
   isLoading: boolean;
   setIsLoading: (loading: boolean) => void;
+
+  // ===== VSCode 式布局：左侧面板 =====
+  /** 左侧栏当前激活的活动 id（projects/teams/extensions/scenes/resources/outline…），null 表示收起 */
+  leftSidebarTab: string | null;
+  /** 设置左侧栏激活活动（再次点击同一 id 传入 null 可收起） */
+  setLeftSidebarTab: (tab: string | null) => void;
+  /** 左侧栏是否展开 */
+  leftSidebarOpen: boolean;
+
+  // ===== VSCode 式布局：底部面板 =====
+  /** 底部面板是否展开 */
+  bottomPanelOpen: boolean;
+  setBottomPanelOpen: (open: boolean) => void;
+  toggleBottomPanel: () => void;
 }
 
 // ==================== Context 创建 ====================
@@ -57,6 +72,32 @@ export function WorkbenchProvider({ children, initialProject = null }: Workbench
   
   // 加载状态
   const [isLoading, setIsLoading] = useState(true);
+
+  // ===== VSCode 式布局：左侧面板 =====
+  // 持久化激活的活动 id，默认收起（null）
+  const [leftSidebarTab, setLeftSidebarTabState] = useState<string | null>(() => {
+    try { return localStorage.getItem('vscode_left_sidebar_tab'); } catch { return null; }
+  });
+  const setLeftSidebarTab = useCallback((tab: string | null) => {
+    setLeftSidebarTabState(tab);
+    try {
+      if (tab) localStorage.setItem('vscode_left_sidebar_tab', tab);
+      else localStorage.removeItem('vscode_left_sidebar_tab');
+    } catch { /* 忽略 */ }
+  }, []);
+  const leftSidebarOpen = leftSidebarTab !== null;
+
+  // ===== VSCode 式布局：底部面板 =====
+  const [bottomPanelOpen, setBottomPanelOpenState] = useState<boolean>(() => {
+    try { return localStorage.getItem('vscode_bottom_panel_open') === '1'; } catch { return false; }
+  });
+  const setBottomPanelOpen = useCallback((open: boolean) => {
+    setBottomPanelOpenState(open);
+    try { localStorage.setItem('vscode_bottom_panel_open', open ? '1' : '0'); } catch { /* 忽略 */ }
+  }, []);
+  const bottomPanelRef = React.useRef(bottomPanelOpen);
+  bottomPanelRef.current = bottomPanelOpen;
+  const toggleBottomPanel = useCallback(() => setBottomPanelOpen(!bottomPanelRef.current), [setBottomPanelOpen]);
   
   // 从项目获取有效的项目类型
   const getValidProjectType = useCallback((project: Project | null): ProjectType => {
@@ -129,6 +170,16 @@ export function WorkbenchProvider({ children, initialProject = null }: Workbench
       setWorkbenchState(createInitialWorkbenchState(null, 'comic_drama'));
     }
   }, [currentProject, getValidProjectType]);
+
+  // 离线模式：同步"当前活动本地工程"给数据层/路由拦截器，切换前落盘待写数据
+  useEffect(() => {
+    void flushAll();
+    if (currentProject && currentProject.source === 'local') {
+      setActiveProject({ id: currentProject.id, local_path: currentProject.local_path });
+    } else {
+      setActiveProject(null);
+    }
+  }, [currentProject]);
   
   // 设置活动标签页
   const setActiveTab = useCallback((tab: string) => {
@@ -175,6 +226,12 @@ export function WorkbenchProvider({ children, initialProject = null }: Workbench
     switchProject,
     isLoading,
     setIsLoading,
+    leftSidebarTab,
+    setLeftSidebarTab,
+    leftSidebarOpen,
+    bottomPanelOpen,
+    setBottomPanelOpen,
+    toggleBottomPanel,
   }), [
     currentProject,
     workbenchState,
@@ -184,6 +241,12 @@ export function WorkbenchProvider({ children, initialProject = null }: Workbench
     projectType,
     switchProject,
     isLoading,
+    leftSidebarTab,
+    setLeftSidebarTab,
+    leftSidebarOpen,
+    bottomPanelOpen,
+    setBottomPanelOpen,
+    toggleBottomPanel,
   ]);
   
   return (

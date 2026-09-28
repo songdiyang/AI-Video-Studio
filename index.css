@@ -29,8 +29,8 @@
   --bg-elevated: rgba(30, 30, 35, 0.85);
   
   /* 边框 - 中性灰色调 */
-  --border-color: rgba(140, 140, 155, 0.15);
-  --border-subtle: rgba(140, 140, 155, 0.08);
+  --border-color: rgba(150, 150, 168, 0.22);
+  --border-subtle: rgba(150, 150, 168, 0.12);
   --border-glow: rgba(59, 130, 246, 0.35);
   
   /* 文字 - 暖白/中灰（WCAG AAA 对比度） */

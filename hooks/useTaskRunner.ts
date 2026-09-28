@@ -13,7 +13,8 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { startWorkflow, getWorkflowStatus, getActiveWorkflows, consumeWorkflow, resumeWorkflow, WorkflowJob, ApiError } from './useWorkflow';
 import { useWebSocket, TaskStatusMessage } from './useWebSocket';
-import { triggerInsufficientPoints } from '../contexts/PointsContext';
+// 商业化功能已移除
+// import { triggerInsufficientPoints } from '../contexts/PointsContext';
 
 export interface TaskState {
   jobId: string;
@@ -305,18 +306,18 @@ export function useTaskRunner(options: UseTaskRunnerOptions = {}) {
       
       return jobId;
     } catch (error: any) {
-      // 402 积分不足：触发积分不足弹窗
-      if (error instanceof ApiError && error.status === 402) {
-        const required = error.data?.required || 0;
-        const current = error.data?.balance || 0;
-        triggerInsufficientPoints({ required, current });
-        activeKeysRef.current.delete(key);
-        updateTask(key, {
-          status: 'failed',
-          error: '积分不足，请充值后重试'
-        });
-        throw error;
-      }
+      // 商业化功能已移除 - 402 积分不足处理
+      // if (error instanceof ApiError && error.status === 402) {
+      //   const required = error.data?.required || 0;
+      //   const current = error.data?.balance || 0;
+      //   triggerInsufficientPoints({ required, current });
+      //   activeKeysRef.current.delete(key);
+      //   updateTask(key, {
+      //     status: 'failed',
+      //     error: '积分不足，请充值后重试'
+      //   });
+      //   throw error;
+      // }
 
       if (error instanceof ApiError && error.status === 409 && error.data?.jobId) {
         const conflictJobId = String(error.data.jobId);

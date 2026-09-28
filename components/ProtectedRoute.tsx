@@ -1,24 +1,17 @@
 import React from 'react';
-import { Navigate, useLocation } from 'react-router-dom';
-import { getAuthToken } from '../services/auth';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
 }
 
 /**
- * 路由守卫组件 - 保护需要登录才能访问的路由
- * 如果用户未登录，自动重定向到登录页面
+ * 路由守卫组件 - 功能优先模式
+ * 允许所有用户访问所有功能，无需登录
+ * 登录仅用于数据同步和个性化功能
  */
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
-  const location = useLocation();
-  const token = getAuthToken();
-
-  if (!token) {
-    // 保存当前路径，登录后可以返回
-    return <Navigate to="/auth" state={{ from: location }} replace />;
-  }
-
+  // 功能优先：不再强制要求登录
+  // 所有用户都可以访问所有功能
   return <>{children}</>;
 };
 

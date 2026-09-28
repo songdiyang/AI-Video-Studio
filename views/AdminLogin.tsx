@@ -67,7 +67,7 @@ const AdminLogin: React.FC = () => {
               <Shield className="w-9 h-9 text-white" />
             </div>
             <h1 className="text-2xl font-bold text-[var(--text-primary)]">管理员后台</h1>
-            <p className="text-[var(--text-muted)] text-sm mt-1">饺子动漫 Admin Panel</p>
+            <p className="text-[var(--text-muted)] text-sm mt-1">AI视频编辑器 Admin Panel</p>
           </div>
 
           <form onSubmit={handleLogin} className="space-y-5">

@@ -2,13 +2,28 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Settings as SettingsIcon, Moon, Sun, Eye, Check, Send, 
-  Palette, MessageSquare, Info, ChevronRight, Sparkles, Monitor, Globe, RotateCcw, Maximize, Minimize, HardDrive, Trash2, Shield, EyeOff, Eye as EyeIcon, Bot, Coins
+  Palette, MessageSquare, Info, ChevronRight, Sparkles, Monitor, Globe, RotateCcw, Maximize, Minimize, HardDrive, Trash2, Shield, EyeOff, Eye as EyeIcon, Bot,
+  Cpu, Database, BarChart3, Users, Gauge, AlertTriangle, Megaphone, ClipboardList, BookOpen, Key
 } from 'lucide-react';
 import { useTheme, ThemeType } from '../../contexts/ThemeContext';
 import { useLanguage, LanguageType } from '../../contexts/LanguageContext';
-import { getAuthToken } from '../../services/auth';
+import { getAuthToken, getUserRole } from '../../services/auth';
 import { useToast } from '../../contexts/ToastContext';
 import { getCacheStats, clearMediaCache, formatCacheSize, isCacheSupported } from '../../services/mediaCache';
+import AIModelSettings from './AIModelSettings';
+
+// 导入管理后台功能组件
+const AIModels = React.lazy(() => import('../admin/AIModels'));
+const ModelProviders = React.lazy(() => import('../admin/ModelProviders'));
+const ModelStatsDashboard = React.lazy(() => import('../admin/ModelStatsDashboard'));
+const UserManagement = React.lazy(() => import('../admin/UserManagement'));
+const RateLimitManagement = React.lazy(() => import('../admin/RateLimitManagement'));
+const SiteSettings = React.lazy(() => import('../admin/SiteSettings'));
+const FeedbackManagement = React.lazy(() => import('../admin/FeedbackManagement'));
+const ErrorMonitor = React.lazy(() => import('../admin/ErrorMonitor'));
+const AnnouncementManagement = React.lazy(() => import('../admin/AnnouncementManagement'));
+const AdminLog = React.lazy(() => import('../admin/AdminLog'));
+const RAGStatus = React.lazy(() => import('../admin/RAGStatus'));
 
 type FeedbackType = 'bug' | 'feature' | 'improvement' | 'other';
 
@@ -217,17 +232,30 @@ const ThemePreviewMini: React.FC<{ preset: ThemePreset; isActive: boolean }> = (
 interface SettingSection {
   id: string;
   icon: React.ReactNode;
+  isAdmin?: boolean; // 标记是否为管理员功能
 }
 
 const SETTING_SECTIONS: SettingSection[] = [
   { id: 'appearance', icon: <Palette className="w-4 h-4" /> },
   { id: 'language', icon: <Globe className="w-4 h-4" /> },
+  { id: 'ai_models', icon: <Key className="w-4 h-4" /> }, // 新增：AI 模型密钥配置
   { id: 'ai_assistant', icon: <Bot className="w-4 h-4" /> },
-  { id: 'points', icon: <Coins className="w-4 h-4" /> },
   { id: 'storage', icon: <HardDrive className="w-4 h-4" /> },
   { id: 'security', icon: <Shield className="w-4 h-4" /> },
   { id: 'feedback', icon: <MessageSquare className="w-4 h-4" /> },
   { id: 'about', icon: <Info className="w-4 h-4" /> },
+  // 管理员功能（从管理后台迁移）
+  { id: 'admin_ai_models', icon: <Cpu className="w-4 h-4" />, isAdmin: true },
+  { id: 'admin_model_providers', icon: <Database className="w-4 h-4" />, isAdmin: true },
+  { id: 'admin_model_stats', icon: <BarChart3 className="w-4 h-4" />, isAdmin: true },
+  { id: 'admin_users', icon: <Users className="w-4 h-4" />, isAdmin: true },
+  { id: 'admin_rate_limits', icon: <Gauge className="w-4 h-4" />, isAdmin: true },
+  { id: 'admin_site_settings', icon: <Globe className="w-4 h-4" />, isAdmin: true },
+  { id: 'admin_feedback', icon: <MessageSquare className="w-4 h-4" />, isAdmin: true },
+  { id: 'admin_error_monitor', icon: <AlertTriangle className="w-4 h-4" />, isAdmin: true },
+  { id: 'admin_announcements', icon: <Megaphone className="w-4 h-4" />, isAdmin: true },
+  { id: 'admin_logs', icon: <ClipboardList className="w-4 h-4" />, isAdmin: true },
+  { id: 'admin_rag_status', icon: <BookOpen className="w-4 h-4" />, isAdmin: true },
 ];
 
 const Settings: React.FC = () => {
@@ -235,6 +263,10 @@ const Settings: React.FC = () => {
   const { language, setLanguage, t } = useLanguage();
   const { showToast } = useToast();
   const [activeSection, setActiveSection] = useState('appearance');
+  
+  // 获取用户角色，判断是否为管理员
+  const userRole = getUserRole();
+  const isAdmin = userRole === 'admin' || userRole === 'ops';
 
   // AI 助手设置项
   const AI_SETTINGS_KEY = 'ai_assistant_settings_v1';
@@ -284,11 +316,6 @@ const Settings: React.FC = () => {
   const [hintLoading, setHintLoading] = useState(false);
   const [passwordLoading, setPasswordLoading] = useState(false);
 
-  // 积分预警设置状态
-  const [pointsThreshold, setPointsThreshold] = useState<string>('');
-  const [pointsThresholdLoading, setPointsThresholdLoading] = useState(false);
-  const [pointsThresholdSaving, setPointsThresholdSaving] = useState(false);
-
   // 加载缓存统计
   const loadCacheStats = useCallback(async () => {
     if (!isCacheSupported()) return;
@@ -327,30 +354,6 @@ const Settings: React.FC = () => {
         } catch { /* ignore */ }
       };
       fetchHint();
-    }
-  }, [activeSection]);
-
-  // 进入 points 区域时加载积分预警阈值
-  useEffect(() => {
-    if (activeSection === 'points') {
-      const fetchThreshold = async () => {
-        setPointsThresholdLoading(true);
-        try {
-          const token = getAuthToken();
-          if (!token) return;
-          const res = await fetch('/api/users/points-warning-threshold', {
-            headers: { Authorization: `Bearer ${token}` }
-          });
-          if (res.ok) {
-            const data = await res.json();
-            setPointsThreshold(data.threshold !== null && data.threshold !== undefined ? String(data.threshold) : '');
-          }
-        } catch { /* ignore */ }
-        finally {
-          setPointsThresholdLoading(false);
-        }
-      };
-      fetchThreshold();
     }
   }, [activeSection]);
 
@@ -720,7 +723,7 @@ const Settings: React.FC = () => {
     };
 
     return (
-      <div className="space-y-8">
+      <div className="space-y-8 max-w-lg">
         {/* 密码提示 */}
         <div>
           <h3 className="text-sm font-medium mb-3" style={{ color: 'var(--text-primary)' }}>
@@ -1150,123 +1153,29 @@ const Settings: React.FC = () => {
     );
   };
 
-  // 渲染积分预警设置区域
-  const renderPointsSection = () => {
-    const pt = (t.settings as any).points || {};
-
-    const handleSaveThreshold = async () => {
-      setPointsThresholdSaving(true);
-      try {
-        const token = getAuthToken();
-        const trimmed = pointsThreshold.trim();
-        const thresholdValue = trimmed === '' ? null : parseInt(trimmed, 10);
-
-        if (thresholdValue !== null && (isNaN(thresholdValue) || thresholdValue < 0)) {
-          showToast(pt.thresholdHint || '阈值必须是大于等于0的整数', 'error');
-          return;
-        }
-
-        const res = await fetch('/api/users/points-warning-threshold', {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {})
-          },
-          body: JSON.stringify({ threshold: thresholdValue })
-        });
-
-        if (res.ok) {
-          showToast(pt.saved || '预警设置已保存', 'success');
-        } else {
-          const data = await res.json().catch(() => ({}));
-          showToast(data.message || pt.saveFailed || '保存失败', 'error');
-        }
-      } catch {
-        showToast(pt.saveFailed || '保存失败', 'error');
-      } finally {
-        setPointsThresholdSaving(false);
-      }
-    };
-
-    const inputStyle = {
-      backgroundColor: 'var(--bg-input)',
-      border: '1px solid var(--border-color)',
-      color: 'var(--text-primary)',
-    };
-
-    return (
-      <div className="space-y-6">
-        <div>
-          <h3 className="text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>
-            {pt.title || '积分余额预警'}
-          </h3>
-          <p className="text-xs mb-6" style={{ color: 'var(--text-muted)' }}>
-            {pt.description || '当您的积分余额低于设定阈值时，系统会自动发送站内信提醒您及时充值。'}
-          </p>
-
-          {pointsThresholdLoading ? (
-            <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-muted)' }}>
-              <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-              加载中...
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {/* 阈值输入 */}
-              <div
-                className="p-4 rounded-xl"
-                style={{ backgroundColor: 'var(--bg-body)', border: '1px solid var(--border-color)' }}
-              >
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                    {pt.thresholdLabel || '预警阈值'}
-                  </span>
-                  <span className="text-xs font-mono" style={{ color: 'var(--accent-primary)' }}>
-                    {pointsThreshold.trim() === '' || parseInt(pointsThreshold) <= 0
-                      ? (pt.disabled || '已关闭')
-                      : `${parseInt(pointsThreshold)} 积分`}
-                  </span>
-                </div>
-                <p className="text-xs leading-relaxed mb-3" style={{ color: 'var(--text-muted)' }}>
-                  {pt.thresholdHint || '设置为 0 或留空表示关闭此功能'}
-                </p>
-                <div className="flex items-center gap-3">
-                  <input
-                    type="number"
-                    min={0}
-                    value={pointsThreshold}
-                    onChange={e => setPointsThreshold(e.target.value)}
-                    placeholder={pt.thresholdPlaceholder || '输入积分数量，例如：100'}
-                    className="flex-1 rounded-xl px-4 py-3 text-sm transition-all"
-                    style={inputStyle}
-                  />
-                  <button
-                    onClick={handleSaveThreshold}
-                    disabled={pointsThresholdSaving}
-                    className="px-6 py-3 rounded-xl font-medium text-sm transition-all shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
-                    style={{ backgroundColor: 'var(--accent-primary)', color: 'white' }}
-                  >
-                    {pointsThresholdSaving ? (pt.saving || '保存中...') : (pt.save || '保存')}
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  };
-
   // 渲染当前激活的区域
   const renderActiveSection = () => {
     switch (activeSection) {
       case 'appearance': return renderAppearanceSection();
       case 'language': return renderLanguageSection();
+      case 'ai_models': return <AIModelSettings />; // 新增：AI 模型密钥配置
       case 'ai_assistant': return renderAiAssistantSection();
-      case 'points': return renderPointsSection();
       case 'storage': return renderStorageSection();
       case 'security': return renderSecuritySection();
       case 'feedback': return renderFeedbackSection();
       case 'about': return renderAboutSection();
+      // 管理员功能（从管理后台迁移）
+      case 'admin_ai_models': return <React.Suspense fallback={<div>加载中...</div>}><AIModels /></React.Suspense>;
+      case 'admin_model_providers': return <React.Suspense fallback={<div>加载中...</div>}><ModelProviders /></React.Suspense>;
+      case 'admin_model_stats': return <React.Suspense fallback={<div>加载中...</div>}><ModelStatsDashboard /></React.Suspense>;
+      case 'admin_users': return <React.Suspense fallback={<div>加载中...</div>}><UserManagement /></React.Suspense>;
+      case 'admin_rate_limits': return <React.Suspense fallback={<div>加载中...</div>}><RateLimitManagement /></React.Suspense>;
+      case 'admin_site_settings': return <React.Suspense fallback={<div>加载中...</div>}><SiteSettings /></React.Suspense>;
+      case 'admin_feedback': return <React.Suspense fallback={<div>加载中...</div>}><FeedbackManagement /></React.Suspense>;
+      case 'admin_error_monitor': return <React.Suspense fallback={<div>加载中...</div>}><ErrorMonitor /></React.Suspense>;
+      case 'admin_announcements': return <React.Suspense fallback={<div>加载中...</div>}><AnnouncementManagement /></React.Suspense>;
+      case 'admin_logs': return <React.Suspense fallback={<div>加载中...</div>}><AdminLog /></React.Suspense>;
+      case 'admin_rag_status': return <React.Suspense fallback={<div>加载中...</div>}><RAGStatus /></React.Suspense>;
       default: return renderAppearanceSection();
     }
   };
@@ -1275,9 +1184,9 @@ const Settings: React.FC = () => {
 
   return (
     <div className="h-full overflow-y-auto" style={{ background: 'var(--bg-body)', color: 'var(--text-primary)' }}>
-      <div className="max-w-5xl mx-auto px-6 py-8">
+      <div className="max-w-5xl mx-auto px-6 py-6">
         {/* 页面标题 */}
-        <div className="mb-8">
+        <div className="mb-6">
           <div className="flex items-center gap-3">
             <div 
               className="p-2.5 rounded-xl"
@@ -1297,26 +1206,26 @@ const Settings: React.FC = () => {
           {/* 左侧导航 */}
           <div className="lg:w-56 shrink-0">
             <div 
-              className="rounded-2xl p-2 lg:sticky lg:top-6"
+              className="rounded-2xl p-2 lg:sticky lg:top-6 lg:max-h-[calc(100vh-3rem)] lg:overflow-y-auto"
               style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)' }}
             >
               <nav className="flex lg:flex-col gap-1">
-                {SETTING_SECTIONS.map(section => (
+                {SETTING_SECTIONS.filter(section => !section.isAdmin || isAdmin).map(section => (
                   <button
                     key={section.id}
                     onClick={() => setActiveSection(section.id)}
-                    className="flex items-center gap-3 px-4 py-3 rounded-xl text-left transition-all w-full"
+                    className="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-left transition-all w-full"
                     style={{
                       backgroundColor: activeSection === section.id ? 'var(--accent-primary)' : 'transparent',
                       color: activeSection === section.id ? 'white' : 'var(--text-secondary)',
                     }}
                   >
-                    <span className={activeSection === section.id ? 'opacity-100' : 'opacity-60'}>
+                    <span className={`shrink-0 ${activeSection === section.id ? 'opacity-100' : 'opacity-60'}`}>
                       {section.icon}
                     </span>
-                    <div className="hidden lg:block">
+                    <div className="hidden lg:block min-w-0 flex-1">
                       <div className="text-sm font-medium">{getSectionTitle(section.id)}</div>
-                      <div className="text-xs opacity-70">{getSectionDesc(section.id)}</div>
+                      <div className="text-xs opacity-70 truncate">{getSectionDesc(section.id)}</div>
                     </div>
                     <span className="lg:hidden text-sm font-medium">{getSectionTitle(section.id)}</span>
                   </button>

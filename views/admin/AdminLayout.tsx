@@ -95,91 +95,8 @@ const AdminLayout: React.FC = () => {
       icon: <Server className="w-5 h-5" />,
       path: '/admin/services'
     },
-    {
-      id: 'system',
-      label: '系统管理',
-      icon: <Settings className="w-5 h-5" />,
-      children: [
-        {
-          id: 'ai-models',
-          label: 'AI 模型配置',
-          icon: <Cpu className="w-4 h-4" />,
-          path: '/admin/ai-models'
-        },
-        {
-          id: 'model-providers',
-          label: '模型平台管理',
-          icon: <Database className="w-4 h-4" />,
-          path: '/admin/model-providers'
-        },
-        {
-          id: 'model-stats',
-          label: '模型性能统计',
-          icon: <BarChart3 className="w-4 h-4" />,
-          path: '/admin/model-stats'
-        },
-        {
-          id: 'users',
-          label: '用户管理',
-          icon: <Users className="w-4 h-4" />,
-          path: '/admin/users'
-        },
-        {
-          id: 'rate-limits',
-          label: 'AI 限流配置',
-          icon: <Gauge className="w-4 h-4" />,
-          path: '/admin/rate-limits'
-        },
-        {
-          id: 'subscriptions',
-          label: '订阅管理',
-          icon: <CreditCard className="w-4 h-4" />,
-          path: '/admin/subscriptions'
-        },
-        {
-          id: 'billing-config',
-          label: '计费配置',
-          icon: <Calculator className="w-4 h-4" />,
-          path: '/admin/billing-config'
-        },
-        {
-          id: 'site-settings',
-          label: '站点设置',
-          icon: <Globe className="w-4 h-4" />,
-          path: '/admin/site-settings'
-        },
-        {
-          id: 'feedback',
-          label: '反馈管理',
-          icon: <MessageSquare className="w-4 h-4" />,
-          path: '/admin/feedback'
-        },
-        {
-          id: 'error-monitor',
-          label: '错误监控',
-          icon: <AlertTriangle className="w-4 h-4" />,
-          path: '/admin/error-monitor'
-        },
-        {
-          id: 'announcements',
-          label: '公告管理',
-          icon: <Megaphone className="w-4 h-4" />,
-          path: '/admin/announcements'
-        },
-        {
-          id: 'admin-logs',
-          label: '操作日志',
-          icon: <ClipboardList className="w-4 h-4" />,
-          path: '/admin/logs'
-        },
-        {
-          id: 'rag-status',
-          label: '知识库状态',
-          icon: <BookOpen className="w-4 h-4" />,
-          path: '/admin/rag-status'
-        }
-      ]
-    }
+    // 非商业化功能已迁移到用户设置页面 (/settings)
+    // 仅保留运维监控相关功能
   ];
 
   const toggleMenu = (menuId: string) => {
@@ -286,7 +203,7 @@ const AdminLayout: React.FC = () => {
             </div>
             <div>
               <h1 className={`font-bold text-lg ${isLight ? 'text-slate-800' : 'text-white'}`}>管理后台</h1>
-              <p className={`text-xs ${isLight ? 'text-slate-400' : 'text-white/70'}`}>饺子动漫 Admin</p>
+              <p className={`text-xs ${isLight ? 'text-slate-400' : 'text-white/70'}`}>AI视频编辑器 Admin</p>
             </div>
           </div>
         </div>

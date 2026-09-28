@@ -8,10 +8,9 @@ import ProtectedRoute from './components/ProtectedRoute';
 import { PreviewProvider } from './components/PreviewProvider';
 import { WorkbenchProvider } from './contexts/WorkbenchContext';
 import { AIAssistantProvider } from './contexts/AIAssistantContext';
-import TaskQueueBubble from './components/TaskQueueBubble';
+import { StoryboardBridgeProvider } from './contexts/StoryboardBridgeContext';
 import Skeleton from './components/Skeleton';
 import ErrorBoundary from './components/ErrorBoundary';
-import { PointsProvider } from './contexts/PointsContext';
 import { ExtensionProvider } from './contexts/ExtensionContext';
 
 // 懒加载主要视图组件
@@ -25,16 +24,9 @@ const Settings = React.lazy(() => import('./views/Settings'));
 const UserCenter = React.lazy(() => import('./views/UserCenter'));
 // SketchStudio removed - 草图功能已集成到魔术空间
 const Landing = React.lazy(() => import('./views/Landing'));
-const Pricing = React.lazy(() => import('./views/Pricing'));
 const TemplateGallery = React.lazy(() => import('./views/TemplateGallery'));
 const Community = React.lazy(() => import('./views/Community'));
 const CreatorProfile = React.lazy(() => import('./views/Community/CreatorProfile'));
-// 模板市场已移除
-// const Marketplace = React.lazy(() => import('./views/Marketplace'));
-// const TemplateDetail = React.lazy(() => import('./views/Marketplace/TemplateDetail'));
-// const Shop = React.lazy(() => import('./views/Marketplace/Shop'));
-// const SellerManagement = React.lazy(() => import('./views/Marketplace/SellerManagement'));
-// const CreateRecipe = React.lazy(() => import('./views/Marketplace/CreateRecipe'));
 const Teams = React.lazy(() => import('./views/Teams'));
 const AcceptInvite = React.lazy(() => import('./views/AcceptInvite'));
 // 扩展页面已集成到工作台标签页
@@ -49,12 +41,10 @@ const AIModels = React.lazy(() => import('./views/admin/AIModels'));
 const UserManagement = React.lazy(() => import('./views/admin/UserManagement'));
 const ModelStatsDashboard = React.lazy(() => import('./views/admin/ModelStatsDashboard'));
 const RateLimitManagement = React.lazy(() => import('./views/admin/RateLimitManagement'));
-const SubscriptionManagement = React.lazy(() => import('./views/admin/SubscriptionManagement'));
 const SiteSettings = React.lazy(() => import('./views/admin/SiteSettings'));
 const FeedbackManagement = React.lazy(() => import('./views/admin/FeedbackManagement'));
 const ErrorMonitor = React.lazy(() => import('./views/admin/ErrorMonitor'));
 const AnnouncementManagement = React.lazy(() => import('./views/admin/AnnouncementManagement'));
-const BillingConfig = React.lazy(() => import('./views/admin/BillingConfig'));
 const AdminLog = React.lazy(() => import('./views/admin/AdminLog'));
 const ModelProviders = React.lazy(() => import('./views/admin/ModelProviders'));
 const RAGStatus = React.lazy(() => import('./views/admin/RAGStatus'));
@@ -108,8 +98,12 @@ const AnimatedRoutes: React.FC = () => {
             <PageTransition><Projects /></PageTransition>
           </Suspense>
         } />
-        {/* 设置已集成到工作台标签页，不再作为独立页面 */}
-        <Route path="/settings" element={<Navigate to="/" replace />} />
+        {/* 设置页面 - 独立路由 */}
+        <Route path="/settings" element={
+          <Suspense fallback={<LoadingFallback />}>
+            <PageTransition><Settings /></PageTransition>
+          </Suspense>
+        } />
         <Route path="/user-center" element={
           <Suspense fallback={<LoadingFallback />}>
             <PageTransition><UserCenter /></PageTransition>
@@ -170,11 +164,6 @@ const App: React.FC = () => {
                 <Landing />
               </Suspense>
             } />
-            <Route path="/pricing" element={
-              <Suspense fallback={<LoadingFallback />}>
-                <Pricing />
-              </Suspense>
-            } />
             <Route path="/invite/:code" element={
               <Suspense fallback={<LoadingFallback />}>
                 <AcceptInvite />
@@ -204,7 +193,8 @@ const App: React.FC = () => {
                   <ServiceDashboard />
                 </Suspense>
               } />
-              <Route path="ai-models" element={
+              {/* 非商业化功能已迁移到 /settings */}
+              {/* <Route path="ai-models" element={
                 <Suspense fallback={<LoadingFallback />}>
                   <AIModels />
                 </Suspense>
@@ -229,11 +219,6 @@ const App: React.FC = () => {
                   <RateLimitManagement />
                 </Suspense>
               } />
-              <Route path="subscriptions" element={
-                <Suspense fallback={<LoadingFallback />}>
-                  <SubscriptionManagement />
-                </Suspense>
-              } />
               <Route path="site-settings" element={
                 <Suspense fallback={<LoadingFallback />}>
                   <SiteSettings />
@@ -254,11 +239,6 @@ const App: React.FC = () => {
                   <AnnouncementManagement />
                 </Suspense>
               } />
-              <Route path="billing-config" element={
-                <Suspense fallback={<LoadingFallback />}>
-                  <BillingConfig />
-                </Suspense>
-              } />
               <Route path="logs" element={
                 <Suspense fallback={<LoadingFallback />}>
                   <AdminLog />
@@ -268,7 +248,7 @@ const App: React.FC = () => {
                 <Suspense fallback={<LoadingFallback />}>
                   <RAGStatus />
                 </Suspense>
-              } />
+              } /> */}
               <Route index element={<Navigate to="/admin/dashboard" replace />} />
             </Route>
 
@@ -277,19 +257,18 @@ const App: React.FC = () => {
               <ProtectedRoute>
                 <WorkbenchProvider>
                   <AIAssistantProvider>
-                    <PointsProvider>
-                      <ExtensionProvider>
+                    <ExtensionProvider>
+                      <StoryboardBridgeProvider>
                         <Layout>
                           <AnimatedRoutes />
                         </Layout>
-                      </ExtensionProvider>
-                    </PointsProvider>
+                      </StoryboardBridgeProvider>
+                    </ExtensionProvider>
                   </AIAssistantProvider>
                 </WorkbenchProvider>
               </ProtectedRoute>
             } />
           </Routes>
-          <TaskQueueBubble />
         </PreviewProvider>
       </Router>
     </ErrorBoundary>

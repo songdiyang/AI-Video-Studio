@@ -40,12 +40,21 @@ export interface AIAssistantFrameContext {
   last_frame_url?: string;
   video_url?: string;
   scene_description?: string;
+  first_frame_prompt?: string;
+  last_frame_prompt?: string;
+  video_prompt?: string;
 }
 
 export interface AIAssistantSceneSummary {
   id: number;
   index: number;
   description?: string;
+  first_frame_url?: string;
+  last_frame_url?: string;
+  video_url?: string;
+  first_frame_prompt?: string;
+  last_frame_prompt?: string;
+  video_prompt?: string;
 }
 
 export type AIAssistantAction = (action: string, params: any) => void;
@@ -96,6 +105,9 @@ export interface AIAssistantDataContextValue {
   locations: AIAssistantLocationSummary[];
   scripts: AIAssistantScriptSummary[];
   onAction: AIAssistantAction | null;
+  /** 当前项目名称/描述（注入 AI 系统提示词） */
+  projectName: string | null;
+  projectDescription: string | null;
 }
 
 export interface AIAssistantSettersContextValue {
@@ -105,6 +117,7 @@ export interface AIAssistantSettersContextValue {
   setLocations: (list: AIAssistantLocationSummary[]) => void;
   setScripts: (list: AIAssistantScriptSummary[]) => void;
   setOnAction: (handler: AIAssistantAction | null) => void;
+  setProjectInfo: (info: { name?: string | null; description?: string | null }) => void;
   clearContext: () => void;
 }
 
@@ -172,6 +185,8 @@ export const AIAssistantProvider: React.FC<AIAssistantProviderProps> = ({ childr
   const [characters, setCharactersState] = useState<AIAssistantCharacterSummary[]>([]);
   const [locations, setLocationsState] = useState<AIAssistantLocationSummary[]>([]);
   const [scripts, setScriptsState] = useState<AIAssistantScriptSummary[]>([]);
+  const [projectName, setProjectName] = useState<string | null>(null);
+  const [projectDescription, setProjectDescription] = useState<string | null>(null);
   const onActionRef = useRef<AIAssistantAction | null>(null);
   const [onActionVersion, setOnActionVersion] = useState(0);
 
@@ -187,7 +202,10 @@ export const AIAssistantProvider: React.FC<AIAssistantProviderProps> = ({ childr
         prev.first_frame_url === frame.first_frame_url &&
         prev.last_frame_url === frame.last_frame_url &&
         prev.video_url === frame.video_url &&
-        prev.scene_description === frame.scene_description
+        prev.scene_description === frame.scene_description &&
+        prev.first_frame_prompt === frame.first_frame_prompt &&
+        prev.last_frame_prompt === frame.last_frame_prompt &&
+        prev.video_prompt === frame.video_prompt
       ) {
         return prev;
       }
@@ -203,7 +221,12 @@ export const AIAssistantProvider: React.FC<AIAssistantProviderProps> = ({ childr
         for (let i = 0; i < prev.length; i++) {
           const a = prev[i];
           const b = next[i];
-          if (a.id !== b.id || a.index !== b.index || a.description !== b.description) {
+          if (
+            a.id !== b.id || a.index !== b.index || a.description !== b.description ||
+            a.first_frame_url !== b.first_frame_url || a.last_frame_url !== b.last_frame_url ||
+            a.video_url !== b.video_url || a.first_frame_prompt !== b.first_frame_prompt ||
+            a.last_frame_prompt !== b.last_frame_prompt || a.video_prompt !== b.video_prompt
+          ) {
             same = false;
             break;
           }
@@ -265,6 +288,11 @@ export const AIAssistantProvider: React.FC<AIAssistantProviderProps> = ({ childr
     });
   }, []);
 
+  const setProjectInfo = useCallback((info: { name?: string | null; description?: string | null }) => {
+    setProjectName(prev => (prev === (info.name ?? null) ? prev : (info.name ?? null)));
+    setProjectDescription(prev => (prev === (info.description ?? null) ? prev : (info.description ?? null)));
+  }, []);
+
   const setOnAction = useCallback((handler: AIAssistantAction | null) => {
     const prev = onActionRef.current;
     onActionRef.current = handler;
@@ -281,6 +309,8 @@ export const AIAssistantProvider: React.FC<AIAssistantProviderProps> = ({ childr
     setCharactersState([]);
     setLocationsState([]);
     setScriptsState([]);
+    setProjectName(null);
+    setProjectDescription(null);
     if (onActionRef.current !== null) {
       onActionRef.current = null;
       setOnActionVersion((v) => v + 1);
@@ -294,6 +324,8 @@ export const AIAssistantProvider: React.FC<AIAssistantProviderProps> = ({ childr
     setCharactersState([]);
     setLocationsState([]);
     setScriptsState([]);
+    setProjectName(null);
+    setProjectDescription(null);
     if (onActionRef.current !== null) {
       onActionRef.current = null;
       setOnActionVersion((v) => v + 1);
@@ -310,14 +342,14 @@ export const AIAssistantProvider: React.FC<AIAssistantProviderProps> = ({ childr
   }, [onActionVersion]);
 
   const dataValue = useMemo<AIAssistantDataContextValue>(
-    () => ({ currentFrame, scenes, characters, locations, scripts, onAction }),
-    [currentFrame, scenes, characters, locations, scripts, onAction],
+    () => ({ currentFrame, scenes, characters, locations, scripts, onAction, projectName, projectDescription }),
+    [currentFrame, scenes, characters, locations, scripts, onAction, projectName, projectDescription],
   );
 
   // setter 永远稳定，settersValue 永不变化，订阅方不会因此重渲染
   const settersValue = useMemo<AIAssistantSettersContextValue>(
-    () => ({ setFrame, setScenes, setCharacters, setLocations, setScripts, setOnAction, clearContext }),
-    [setFrame, setScenes, setCharacters, setLocations, setScripts, setOnAction, clearContext],
+    () => ({ setFrame, setScenes, setCharacters, setLocations, setScripts, setOnAction, setProjectInfo, clearContext }),
+    [setFrame, setScenes, setCharacters, setLocations, setScripts, setOnAction, setProjectInfo, clearContext],
   );
 
   return (
@@ -380,9 +412,15 @@ export function useAIAssistantWorkbenchContext(params: {
   locations?: AIAssistantLocationSummary[];
   scripts?: AIAssistantScriptSummary[];
   onAction?: AIAssistantAction | null;
+  projectName?: string | null;
+  projectDescription?: string | null;
 }) {
-  const { setFrame, setScenes, setCharacters, setLocations, setScripts, setOnAction } = useAIAssistantSetters();
-  const { frame, scenes, characters, locations, scripts, onAction } = params;
+  const { setFrame, setScenes, setCharacters, setLocations, setScripts, setOnAction, setProjectInfo } = useAIAssistantSetters();
+  const { frame, scenes, characters, locations, scripts, onAction, projectName, projectDescription } = params;
+
+  useEffect(() => {
+    setProjectInfo({ name: projectName ?? null, description: projectDescription ?? null });
+  }, [projectName, projectDescription, setProjectInfo]);
 
   useEffect(() => {
     setFrame(frame ?? null);

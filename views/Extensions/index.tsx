@@ -9,7 +9,7 @@ import {
   Search, Puzzle, Star, DownloadIcon, Plus, ToggleLeft, ToggleRight,
   Trash2, Package, User, Calendar, Tag, Loader2, FileText, Upload, X,
   RefreshCw, MoreHorizontal, LayoutList, LayoutGrid, ChevronDown, ChevronRight,
-  Filter, Check
+  Filter, Check, AlertTriangle
 } from 'lucide-react';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { useExtensions } from '../../contexts/ExtensionContext';
@@ -418,7 +418,12 @@ type TabType = 'marketplace' | 'installed';
 type SortType = 'download' | 'newest' | 'rating' | 'name';
 type FilterType = 'all' | 'featured' | 'mcp' | 'recommended' | 'recent' | 'popular' | 'installed' | 'updates' | 'builtin' | 'enabled' | 'disabled' | 'unsupported';
 
-const Extensions: React.FC = () => {
+interface ExtensionsProps {
+  /** 嵌入左侧边栏面板时传入：本组件头部行兼任面板标题栏（含关闭按钮） */
+  onClose?: () => void;
+}
+
+const Extensions: React.FC<ExtensionsProps> = ({ onClose }) => {
   const { t } = useLanguage();
   const { uninstallLocalExtension } = useExtensions();
   const tx = t.extensions;
@@ -453,6 +458,9 @@ const Extensions: React.FC = () => {
   // 操作状态
   const [installingId, setInstallingId] = useState<number | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  // 列表加载错误（内联显示在对应 Tab 内容区，不占底部提示行）
+  const [marketError, setMarketError] = useState<string | null>(null);
+  const [installedError, setInstalledError] = useState<string | null>(null);
 
   // 本地扩展状态
   const [localExtensions, setLocalExtensions] = useState<Array<{
@@ -477,7 +485,7 @@ const Extensions: React.FC = () => {
   // 加载市场数据
   const loadMarketplace = async (p = 1) => {
     setLoading(true);
-    setActionError(null);
+    setMarketError(null);
     try {
       const res = await getExtensions({
         q: searchQuery || undefined,
@@ -490,7 +498,7 @@ const Extensions: React.FC = () => {
       setTotal(res.total);
       setPage(p);
     } catch (e: any) {
-      setActionError(e.message || '加载失败');
+      setMarketError(e.message || '加载扩展市场失败');
     } finally {
       setLoading(false);
     }
@@ -507,11 +515,12 @@ const Extensions: React.FC = () => {
   // 加载已安装扩展
   const loadUserExtensions = async () => {
     setUserExtsLoading(true);
+    setInstalledError(null);
     try {
       const res = await getUserExtensions();
       setUserExtensions(res.extensions);
     } catch (e: any) {
-      setActionError(e.message || '加载已安装扩展失败');
+      setInstalledError(e.message || '加载已安装扩展失败');
     } finally {
       setUserExtsLoading(false);
     }
@@ -885,8 +894,23 @@ const Extensions: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden" style={{ backgroundColor: 'var(--bg-app)' }}>
-      {/* 顶部标题栏 */}
+    <div
+      className={`flex flex-col overflow-hidden transition-shadow ${onClose ? 'h-full' : 'h-screen'} ${dragOver ? 'outline outline-2 outline-blue-500/60 -outline-offset-2' : ''}`}
+      style={{ backgroundColor: 'var(--bg-app)' }}
+      onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+      onDragLeave={(e) => { if (e.currentTarget === e.target) setDragOver(false); }}
+      onDrop={onDrop}
+      title="可将 .aom 扩展文件拖到此处安装"
+    >
+      {/* 隐藏的 AOM 文件选择器（由 ⋯ 菜单项触发） */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".aom"
+        onChange={onFileChange}
+        className="hidden"
+      />
+      {/* 顶部标题栏（嵌入侧边栏时即面板唯一标题行） */}
       <div className="flex items-center justify-between px-4 py-3 border-b shrink-0" style={{ borderColor: 'var(--border-color)' }}>
           <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
             {tx.title}
@@ -906,6 +930,13 @@ const Extensions: React.FC = () => {
                 </button>
               }
             >
+              <DropdownItem onClick={() => fileInputRef.current?.click()}>
+                <span className="flex items-center gap-1.5">
+                  <Upload className="w-3.5 h-3.5" />
+                  从 AOM 安装扩展
+                </span>
+              </DropdownItem>
+              <DropdownDivider />
               <DropdownItem onClick={() => { setActiveTab('marketplace'); setActiveFilter('featured'); }} active={activeFilter === 'featured'}>
                 {tx.filterFeatured}
               </DropdownItem>
@@ -987,6 +1018,16 @@ const Extensions: React.FC = () => {
                 </DropdownMenu>
               </div>
             </DropdownMenu>
+            {onClose && (
+              <button
+                onClick={onClose}
+                className="p-1.5 rounded transition-colors hover:bg-[var(--bg-hover)]"
+                title="关闭面板"
+                aria-label="关闭面板"
+              >
+                <X className="w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
+              </button>
+            )}
           </div>
         </div>
 
@@ -1136,14 +1177,43 @@ const Extensions: React.FC = () => {
                 </>
               )}
 
+              {/* 市场加载失败：错误直接内联显示在市场列表区域 */}
+              {activeTab === 'marketplace' && marketError && extensions.length === 0 && !loading && (
+                <div className="text-center py-12 px-4" style={{ color: 'var(--text-muted)' }}>
+                  <AlertTriangle className="w-12 h-12 mx-auto mb-3 opacity-40" />
+                  <p className="text-sm">扩展市场加载失败</p>
+                  <p className="text-xs mt-1 opacity-80 break-all">{marketError}</p>
+                  <button
+                    onClick={() => loadMarketplace(1)}
+                    className="inline-flex items-center gap-1 text-sm text-blue-500 mt-3 hover:underline"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    重试
+                  </button>
+                </div>
+              )}
               {/* 空状态 */}
-              {activeTab === 'marketplace' && filteredExtensions.length === 0 && !loading && (
+              {activeTab === 'marketplace' && !marketError && filteredExtensions.length === 0 && !loading && (
                 <div className="text-center py-12 px-4" style={{ color: 'var(--text-muted)' }}>
                   <Package className="w-12 h-12 mx-auto mb-3 opacity-30" />
                   <p className="text-sm">{tx.noExtensions}</p>
                 </div>
               )}
-              {activeTab === 'installed' && listData.length === 0 && localExtensions.length === 0 && (
+              {activeTab === 'installed' && listData.length === 0 && localExtensions.length === 0 && installedError && !userExtsLoading && (
+                <div className="text-center py-12 px-4" style={{ color: 'var(--text-muted)' }}>
+                  <AlertTriangle className="w-12 h-12 mx-auto mb-3 opacity-40" />
+                  <p className="text-sm">已安装扩展加载失败</p>
+                  <p className="text-xs mt-1 opacity-80 break-all">{installedError}</p>
+                  <button
+                    onClick={() => loadUserExtensions()}
+                    className="inline-flex items-center gap-1 text-sm text-blue-500 mt-3 hover:underline"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    重试
+                  </button>
+                </div>
+              )}
+              {activeTab === 'installed' && listData.length === 0 && localExtensions.length === 0 && !installedError && (
                 <div className="text-center py-12 px-4" style={{ color: 'var(--text-muted)' }}>
                   <Package className="w-12 h-12 mx-auto mb-3 opacity-30" />
                   <p className="text-sm">{tx.noInstalled}</p>
@@ -1159,42 +1229,21 @@ const Extensions: React.FC = () => {
           )}
         </div>
 
-        {/* ZIP 上传安装区域 */}
-        <div className="p-4 border-t" style={{ borderColor: 'var(--border-color)' }}>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".aom"
-            onChange={onFileChange}
-            className="hidden"
-          />
-          <div
-            onClick={() => fileInputRef.current?.click()}
-            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-            onDragLeave={() => setDragOver(false)}
-            onDrop={onDrop}
-            className={`w-full py-3 px-4 rounded border border-dashed text-sm flex items-center justify-center gap-2 cursor-pointer transition-colors ${
-              dragOver ? 'border-blue-500 bg-blue-500/5 text-blue-500' : ''
-            }`}
-            style={{
-              borderColor: dragOver ? undefined : 'var(--border-color)',
-              color: dragOver ? undefined : 'var(--text-muted)',
-            }}
-          >
-            {zipInstalling ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Upload className="w-4 h-4" />
-            )}
-            {zipInstalling ? '安装中...' : zipInstallMsg || '从 AOM 安装扩展'}
-          </div>
-          {actionError && (
-            <div className="flex items-center gap-1 mt-2 text-xs text-red-500">
-              <X className="w-3.5 h-3.5" />
-              {actionError}
+        {/* 安装结果提示条（仅在有内容时显示） */}
+        {(zipInstalling || zipInstallMsg || actionError) && (
+          <div className="px-4 py-2 border-t shrink-0" style={{ borderColor: 'var(--border-color)' }}>
+            <div className={`flex items-center gap-1.5 text-xs ${actionError ? 'text-red-500' : 'text-[var(--text-muted)]'}`}>
+              {zipInstalling ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+              ) : actionError ? (
+                <X className="w-3.5 h-3.5 shrink-0" />
+              ) : (
+                <Check className="w-3.5 h-3.5 shrink-0" />
+              )}
+              <span className="truncate">{zipInstalling ? '安装中...' : actionError || zipInstallMsg}</span>
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
       {/* Markdown 样式 */}
       <style>{`

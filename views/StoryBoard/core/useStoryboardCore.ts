@@ -93,6 +93,7 @@ export function useStoryboardCore(options: UseStoryboardCoreOptions) {
     leftPanelOpen, 
     rightPanelOpen, 
     bottomPanelOpen,
+    openLeftPanel,
     closeLeftPanel, 
     closeRightPanel, 
     closeBottomPanel 
@@ -887,7 +888,7 @@ export function useStoryboardCore(options: UseStoryboardCoreOptions) {
     // AI 助手面板控制
     isAssistantOpen, toggleAssistant, openAssistant,
     leftPanelOpen, rightPanelOpen, bottomPanelOpen,
-    closeLeftPanel, closeRightPanel, closeBottomPanel,
+    openLeftPanel, closeLeftPanel, closeRightPanel, closeBottomPanel,
 
     // 自动分镜
     autoStoryboard,

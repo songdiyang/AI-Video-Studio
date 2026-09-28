@@ -1829,6 +1829,51 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
               </select>
               <span className="pointer-events-none absolute right-1 top-1/2 -translate-y-1/2 text-[9px] text-[var(--text-muted)]">▾</span>
             </div>
+            {/* 助手行为设置浮层（与设置页共享 ai_assistant_settings_v1） */}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowSettings(!showSettings)}
+                className={`p-1 rounded transition-colors ${showSettings ? 'bg-[var(--bg-app)] text-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-app)]'}`}
+                title="助手设置"
+                aria-label="助手设置"
+              >
+                <Settings size={14} />
+              </button>
+              {showSettings && (
+                <div className="absolute bottom-full right-0 mb-2 w-64 rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] shadow-2xl p-3 z-[60] space-y-3">
+                  <div className="text-[11px] font-semibold text-[var(--text-primary)]">助手设置</div>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="text-[11px] text-[var(--text-secondary)]">注入项目上下文</div>
+                      <div className="text-[10px] text-[var(--text-muted)]">发送时附带剧本/角色等背景</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIncludeContext(!includeContext)}
+                      className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${includeContext ? 'bg-[var(--accent)]' : 'bg-[var(--border-color)]'}`}
+                      role="switch"
+                      aria-checked={includeContext}
+                    >
+                      <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${includeContext ? 'translate-x-4' : ''}`} />
+                    </button>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-[11px] text-[var(--text-secondary)]">历史消息上限</div>
+                    <select
+                      value={String(historyLimit)}
+                      onChange={(e) => setHistoryLimit(Number(e.target.value))}
+                      className="text-[10px] rounded-md bg-[var(--bg-app)] border border-[var(--border-color)] px-1.5 py-0.5 text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
+                    >
+                      <option value="20">最近 20 条</option>
+                      <option value="50">最近 50 条</option>
+                      <option value="100">最近 100 条</option>
+                      <option value="0">不限</option>
+                    </select>
+                  </div>
+                </div>
+              )}
+            </div>
             <div className="flex-1" />
             {isLoading ? (
               <button
