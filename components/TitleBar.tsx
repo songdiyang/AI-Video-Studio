@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Minus, Square, Copy, X } from 'lucide-react';
+import { Minus, Square, Copy, X, FolderOpen } from 'lucide-react';
 import { isTauri } from '../services/localApi';
+import { useWorkbench } from '../contexts/WorkbenchContext';
 
 /**
  * 获取当前窗口的最小化 / 最大化(还原) / 关闭 控制逻辑。
@@ -79,16 +80,27 @@ export const WindowControls: React.FC = () => {
  * 不能在 mousedown 调用 startDragging()，其系统模态拖拽循环会吞掉 click 事件。
  */
 const TitleBar: React.FC = () => {
+  const { currentProject } = useWorkbench();
+  
   return (
     <header
       data-tauri-drag-region
       className="flex items-center justify-between h-9 shrink-0 select-none bg-(--bg-nav) border-b border-(--border-color)"
     >
-      <div data-tauri-drag-region className="flex items-center gap-2 pl-3 h-full">
-        <div className="w-4 h-4 rounded bg-linear-to-br from-blue-500 to-blue-600 flex items-center justify-center">
+      <div data-tauri-drag-region className="flex items-center gap-2 pl-3 h-full flex-1 min-w-0">
+        <div className="w-4 h-4 rounded bg-linear-to-br from-blue-500 to-blue-600 flex items-center justify-center shrink-0">
           <span className="text-white text-[9px] font-bold">A</span>
         </div>
-        <span data-tauri-drag-region className="text-xs text-(--text-primary) opacity-80">AI视频编辑器</span>
+        {currentProject ? (
+          <div className="flex items-center gap-1.5 min-w-0 flex-1">
+            <FolderOpen className="w-3 h-3 text-blue-500 shrink-0" />
+            <span className="text-xs font-medium text-(--text-primary) truncate">
+              {currentProject.name}
+            </span>
+          </div>
+        ) : (
+          <span data-tauri-drag-region className="text-xs text-(--text-primary) opacity-80">AI视频编辑器</span>
+        )}
       </div>
       <WindowControls />
     </header>

@@ -97,19 +97,21 @@ const ActivityBarSidebar: React.FC = () => {
           resize.isDragging ? 'bg-(--accent)/60' : 'hover:bg-(--accent)/40'
         }`}
       />
-      {/* 面板头部：标题 + 关闭 */}
-      <div className="flex items-center justify-between px-3 h-9 border-b border-(--border-color) shrink-0">
-        <span className="text-xs font-medium uppercase tracking-wider text-(--text-muted) truncate">
-          {title}
-        </span>
-        <button
-          onClick={() => setLeftSidebarTab(null)}
-          className="p-1 rounded-md text-(--text-muted) hover:text-(--text-primary) hover:bg-white/5 transition-colors"
-          aria-label="收起侧栏"
-        >
-          <X className="w-3.5 h-3.5" />
-        </button>
-      </div>
+      {/* 面板头部：标题 + 关闭（扩展面板除外，它有自己的标题栏） */}
+      {leftSidebarTab !== 'extensions' && (
+        <div className="flex items-center justify-between px-3 h-9 border-b border-(--border-color) shrink-0">
+          <span className="text-xs font-medium uppercase tracking-wider text-(--text-muted) truncate">
+            {title}
+          </span>
+          <button
+            onClick={() => setLeftSidebarTab(null)}
+            className="p-1 rounded-md text-(--text-muted) hover:text-(--text-primary) hover:bg-white/5 transition-colors"
+            aria-label="收起侧栏"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
       {/* 面板内容 */}
       <div className="flex-1 overflow-hidden min-h-0">
         {renderContent()}

@@ -481,6 +481,11 @@ const Extensions: React.FC<ExtensionsProps> = ({ onClose }) => {
   // 折叠状态
   const [localExpanded, setLocalExpanded] = useState(true);
   const [marketplaceExpanded, setMarketplaceExpanded] = useState(true);
+  const [enabledExpanded, setEnabledExpanded] = useState(false);
+  const [disabledExpanded, setDisabledExpanded] = useState(false);
+  const [featuredExpanded, setFeaturedExpanded] = useState(false);
+  const [popularExpanded, setPopularExpanded] = useState(false);
+  const [recentExpanded, setRecentExpanded] = useState(false);
 
   // 加载市场数据
   const loadMarketplace = async (p = 1) => {
@@ -910,26 +915,27 @@ const Extensions: React.FC<ExtensionsProps> = ({ onClose }) => {
         onChange={onFileChange}
         className="hidden"
       />
-      {/* 顶部标题栏（嵌入侧边栏时即面板唯一标题行） */}
-      <div className="flex items-center justify-between px-4 py-3 border-b shrink-0" style={{ borderColor: 'var(--border-color)' }}>
-          <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-            {tx.title}
-          </span>
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => { loadMarketplace(1); loadUserExtensions(); loadLocalExtensions(); }}
-              className="p-1.5 rounded transition-colors hover:bg-[var(--bg-hover)]"
-              title={tx.refresh}
-            >
-              <RefreshCw className="w-4 h-4" style={{ color: 'var(--text-muted)' }} />
-            </button>
-            <DropdownMenu
-              trigger={
-                <button className="p-1.5 rounded transition-colors hover:bg-[var(--bg-hover)]" title={tx.moreActions}>
-                  <MoreHorizontal className="w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
-                </button>
-              }
-            >
+
+      {/* 顶部标题栏 */}
+      <div className="flex items-center justify-between px-4 py-1.5 shrink-0 border-b" style={{ borderColor: 'var(--border-color)' }}>
+        <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+          {tx.title}
+        </span>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => { loadMarketplace(1); loadUserExtensions(); loadLocalExtensions(); }}
+            className="p-1.5 rounded transition-colors hover:bg-[var(--bg-hover)]"
+            title={tx.refresh}
+          >
+            <RefreshCw className="w-4 h-4" style={{ color: 'var(--text-muted)' }} />
+          </button>
+          <DropdownMenu
+            trigger={
+              <button className="p-1.5 rounded transition-colors hover:bg-[var(--bg-hover)]" title={tx.moreActions}>
+                <MoreHorizontal className="w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
+              </button>
+            }
+          >
               <DropdownItem onClick={() => fileInputRef.current?.click()}>
                 <span className="flex items-center gap-1.5">
                   <Upload className="w-3.5 h-3.5" />
@@ -1018,232 +1024,375 @@ const Extensions: React.FC<ExtensionsProps> = ({ onClose }) => {
                 </DropdownMenu>
               </div>
             </DropdownMenu>
-            {onClose && (
-              <button
-                onClick={onClose}
-                className="p-1.5 rounded transition-colors hover:bg-[var(--bg-hover)]"
-                title="关闭面板"
-                aria-label="关闭面板"
-              >
-                <X className="w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
-              </button>
+        </div>
+      </div>
+
+      {/* 搜索框 - VS Code 风格 */}
+      <div className="px-3 py-2 border-b" style={{ borderColor: 'var(--border-color)' }}>
+        <div className="relative flex items-center">
+          <input
+            type="text"
+            placeholder={activeTab === 'marketplace' ? tx.searchPlaceholder : tx.searchInMarketplace}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-2 pr-16 py-1 text-xs rounded-sm outline-none focus:ring-1 focus:ring-blue-500/50"
+            style={{
+              backgroundColor: 'var(--bg-input, rgba(0,0,0,0.2))',
+              border: 'none',
+              color: 'var(--text-primary)',
+            }}
+          />
+          <div className="absolute right-0.5 flex items-center">
+            <button
+              className="p-1 rounded-sm transition-colors hover:bg-[var(--bg-hover)]"
+              title={tx.viewList}
+            >
+              <LayoutList className="w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
+            </button>
+            <button
+              className="p-1 rounded-sm transition-colors hover:bg-[var(--bg-hover)]"
+              title={tx.moreActions}
+              onClick={() => setFilterMenuOpen(!filterMenuOpen)}
+            >
+              <Filter className="w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* 扩展列表 - VS Code 树形分类风格 */}
+      <div className="flex-1 overflow-y-auto">
+        {/* 已安装分类 */}
+        <div>
+          <button
+            onClick={() => setLocalExpanded(!localExpanded)}
+            className={`w-full flex items-center gap-1 px-2 py-1 text-xs font-medium transition-colors ${
+              localExpanded ? 'bg-blue-500/20 text-blue-500' : 'hover:bg-[var(--bg-hover)]'
+            }`}
+            style={{ color: localExpanded ? undefined : 'var(--text-muted)' }}
+          >
+            {localExpanded ? (
+              <ChevronDown className="w-3 h-3" />
+            ) : (
+              <ChevronRight className="w-3 h-3" />
             )}
-          </div>
-        </div>
-
-        {/* 搜索框 */}
-        <div className="px-4 py-3">
-          <div className="relative flex items-center">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
-            <input
-              type="text"
-              placeholder={activeTab === 'marketplace' ? tx.searchPlaceholder : tx.searchInMarketplace}
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-20 py-2 text-sm rounded border outline-none focus:ring-1 focus:ring-blue-500"
-              style={{
-                backgroundColor: 'var(--bg-input, var(--bg-body))',
-                borderColor: 'var(--border-color)',
-                color: 'var(--text-primary)',
-              }}
-            />
-            <div className="absolute right-1 flex items-center gap-0.5">
-              <button
-                className="p-1.5 rounded transition-colors hover:bg-[var(--bg-hover)]"
-                title={tx.viewList}
-              >
-                <LayoutList className="w-4 h-4" style={{ color: 'var(--text-muted)' }} />
-              </button>
-              <button
-                className="p-1.5 rounded transition-colors hover:bg-[var(--bg-hover)]"
-                title={tx.moreActions}
-                onClick={() => setFilterMenuOpen(!filterMenuOpen)}
-              >
-                <Filter className="w-4 h-4" style={{ color: 'var(--text-muted)' }} />
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Tab 切换 */}
-        <div className="flex border-b px-4" style={{ borderColor: 'var(--border-color)' }}>
-          <button
-            onClick={() => { setActiveTab('marketplace'); setSelectedExtension(null); }}
-            className={`flex-1 py-2 text-xs font-medium flex items-center justify-center gap-1 transition-colors ${
-              activeTab === 'marketplace' ? 'border-b-2 border-blue-500 text-blue-500' : ''
-            }`}
-            style={{ color: activeTab === 'marketplace' ? undefined : 'var(--text-muted)' }}
-          >
-            {tx.marketplace}
-          </button>
-          <button
-            onClick={() => { setActiveTab('installed'); loadUserExtensions(); setSelectedExtension(null); }}
-            className={`flex-1 py-2 text-xs font-medium flex items-center justify-center gap-1 transition-colors ${
-              activeTab === 'installed' ? 'border-b-2 border-blue-500 text-blue-500' : ''
-            }`}
-            style={{ color: activeTab === 'installed' ? undefined : 'var(--text-muted)' }}
-          >
             {tx.installed}
-            {userExtensions.length > 0 && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-500/10 text-blue-500">
-                {userExtensions.length}
-              </span>
-            )}
+            <span className={`ml-auto px-1.5 py-0.5 rounded-full text-[10px] ${
+              localExpanded ? 'bg-blue-500 text-white' : 'bg-[var(--bg-hover)] text-[var(--text-muted)]'
+            }`}>
+              {userExtensions.length + localExtensions.length}
+            </span>
           </button>
-        </div>
-
-        {/* 扩展列表 */}
-        <div className="flex-1 overflow-y-auto">
-          {activeTab === 'marketplace' && loading && extensions.length === 0 ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="w-5 h-5 animate-spin" style={{ color: 'var(--text-muted)' }} />
-            </div>
-          ) : activeTab === 'installed' && userExtsLoading ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="w-5 h-5 animate-spin" style={{ color: 'var(--text-muted)' }} />
-            </div>
-          ) : (
-            <div>
-              {/* 市场扩展 - 可折叠 */}
-              {activeTab === 'marketplace' && filteredExtensions.length > 0 && (
-                <>
-                  <button
-                    onClick={() => setMarketplaceExpanded(!marketplaceExpanded)}
-                    className="w-full flex items-center gap-1.5 px-4 py-2 text-xs font-medium uppercase tracking-wider transition-colors hover:bg-[var(--bg-hover)]"
-                    style={{ color: 'var(--text-muted)' }}
-                  >
-                    {marketplaceExpanded ? (
-                      <ChevronDown className="w-3.5 h-3.5" />
-                    ) : (
-                      <ChevronRight className="w-3.5 h-3.5" />
-                    )}
-                    {tx.marketplace}
-                    <span className="ml-auto">{filteredExtensions.length}</span>
-                  </button>
-                  {marketplaceExpanded && (
-                    <div className="divide-y" style={{ borderColor: 'var(--border-color)' }}>
-                      {filteredExtensions.map(ext => renderExtensionItem(ext))}
-                      {extensions.length < total && (
-                        <div className="p-3 text-center">
-                          <button
-                            onClick={() => loadMarketplace(page + 1)}
-                            disabled={loading}
-                            className="text-sm text-blue-500 hover:underline disabled:opacity-50"
-                          >
-                            {loading ? <Loader2 className="w-4 h-4 animate-spin inline" /> : tx.loadMore}
-                          </button>
-                        </div>
-                      )}
-                    </div>
+          
+          {/* 已安装子分类 */}
+          {localExpanded && (
+            <div className="ml-4">
+              {/* 已启用 */}
+              <div>
+                <button
+                  onClick={() => setEnabledExpanded(!enabledExpanded)}
+                  className={`w-full flex items-center gap-1 px-2 py-1 text-xs transition-colors ${
+                    enabledExpanded ? 'bg-blue-500/10 text-blue-500' : 'hover:bg-[var(--bg-hover)]'
+                  }`}
+                  style={{ color: enabledExpanded ? undefined : 'var(--text-muted)' }}
+                >
+                  {enabledExpanded ? (
+                    <ChevronDown className="w-3 h-3" />
+                  ) : (
+                    <ChevronRight className="w-3 h-3" />
                   )}
-                </>
-              )}
-
-              {/* 已安装扩展 - 可折叠 */}
-              {activeTab === 'installed' && listData.length > 0 && (
-                <>
-                  <button
-                    onClick={() => setLocalExpanded(!localExpanded)}
-                    className="w-full flex items-center gap-1.5 px-4 py-2 text-xs font-medium uppercase tracking-wider transition-colors hover:bg-[var(--bg-hover)]"
-                    style={{ color: 'var(--text-muted)' }}
-                  >
-                    {localExpanded ? (
-                      <ChevronDown className="w-3.5 h-3.5" />
+                  {tx.filterEnabled}
+                  <span className={`ml-auto px-1.5 py-0.5 rounded-full text-[10px] ${
+                    enabledExpanded ? 'bg-blue-500 text-white' : 'bg-[var(--bg-hover)] text-[var(--text-muted)]'
+                  }`}>
+                    {userExtensions.filter(ue => ue.is_enabled).length + localExtensions.filter(le => le.enabled).length}
+                  </span>
+                </button>
+                {enabledExpanded && (
+                  <div className="divide-y" style={{ borderColor: 'var(--border-color)' }}>
+                    {userExtsLoading ? (
+                      <div className="flex items-center justify-center py-4">
+                        <Loader2 className="w-4 h-4 animate-spin" style={{ color: 'var(--text-muted)' }} />
+                      </div>
+                    ) : userExtensions.filter(ue => ue.is_enabled).length === 0 && localExtensions.filter(le => le.enabled).length === 0 ? (
+                      <div className="text-center py-8 px-4" style={{ color: 'var(--text-muted)' }}>
+                        <Package className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                        <p className="text-xs">暂无已启用扩展</p>
+                      </div>
                     ) : (
-                      <ChevronRight className="w-3.5 h-3.5" />
+                      <>
+                        {userExtensions.filter(ue => ue.is_enabled).map(ue => {
+                          const ext = extensions.find(e => e.id === ue.extension_id);
+                          return ext ? renderExtensionItem(ext) : null;
+                        })}
+                        {localExtensions.filter(le => le.enabled).map(le => renderExtensionItem({
+                          id: 0,
+                          name: le.name,
+                          display_name: le.displayName,
+                          description: le.description,
+                          version: le.version,
+                          author: le.author,
+                          category: le.category,
+                          icon_url: '',
+                          download_count: 0,
+                          rating: 0,
+                          created_at: '',
+                          updated_at: '',
+                        }, true))}
+                      </>
                     )}
-                    {tx.localInstalled}
-                    <span className="ml-auto">{listData.length + localExtensions.length}</span>
-                  </button>
-                  {localExpanded && (
-                    <div className="divide-y" style={{ borderColor: 'var(--border-color)' }}>
-                      {listData.map(ext => renderExtensionItem(ext))}
-                      {localExtensions.map(le => renderExtensionItem({
-                        id: 0,
-                        name: le.name,
-                        display_name: le.displayName,
-                        description: le.description,
-                        version: le.version,
-                        author: le.author,
-                        category: le.category,
-                        icon_url: null,
-                        download_count: 0,
-                        rating: 0,
-                        created_at: '',
-                        updated_at: '',
-                      }, true))}
-                    </div>
-                  )}
-                </>
-              )}
+                  </div>
+                )}
+              </div>
 
-              {/* 市场加载失败：错误直接内联显示在市场列表区域 */}
-              {activeTab === 'marketplace' && marketError && extensions.length === 0 && !loading && (
-                <div className="text-center py-12 px-4" style={{ color: 'var(--text-muted)' }}>
-                  <AlertTriangle className="w-12 h-12 mx-auto mb-3 opacity-40" />
-                  <p className="text-sm">扩展市场加载失败</p>
-                  <p className="text-xs mt-1 opacity-80 break-all">{marketError}</p>
-                  <button
-                    onClick={() => loadMarketplace(1)}
-                    className="inline-flex items-center gap-1 text-sm text-blue-500 mt-3 hover:underline"
-                  >
-                    <RefreshCw className="w-3.5 h-3.5" />
-                    重试
-                  </button>
-                </div>
-              )}
-              {/* 空状态 */}
-              {activeTab === 'marketplace' && !marketError && filteredExtensions.length === 0 && !loading && (
-                <div className="text-center py-12 px-4" style={{ color: 'var(--text-muted)' }}>
-                  <Package className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                  <p className="text-sm">{tx.noExtensions}</p>
-                </div>
-              )}
-              {activeTab === 'installed' && listData.length === 0 && localExtensions.length === 0 && installedError && !userExtsLoading && (
-                <div className="text-center py-12 px-4" style={{ color: 'var(--text-muted)' }}>
-                  <AlertTriangle className="w-12 h-12 mx-auto mb-3 opacity-40" />
-                  <p className="text-sm">已安装扩展加载失败</p>
-                  <p className="text-xs mt-1 opacity-80 break-all">{installedError}</p>
-                  <button
-                    onClick={() => loadUserExtensions()}
-                    className="inline-flex items-center gap-1 text-sm text-blue-500 mt-3 hover:underline"
-                  >
-                    <RefreshCw className="w-3.5 h-3.5" />
-                    重试
-                  </button>
-                </div>
-              )}
-              {activeTab === 'installed' && listData.length === 0 && localExtensions.length === 0 && !installedError && (
-                <div className="text-center py-12 px-4" style={{ color: 'var(--text-muted)' }}>
-                  <Package className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                  <p className="text-sm">{tx.noInstalled}</p>
-                  <button
-                    onClick={() => setActiveTab('marketplace')}
-                    className="text-sm text-blue-500 mt-3 hover:underline"
-                  >
-                    {tx.browseMarketplace}
-                  </button>
-                </div>
-              )}
+              {/* 已禁用 */}
+              <div>
+                <button
+                  onClick={() => setDisabledExpanded(!disabledExpanded)}
+                  className={`w-full flex items-center gap-1 px-2 py-1 text-xs transition-colors ${
+                    disabledExpanded ? 'bg-blue-500/10 text-blue-500' : 'hover:bg-[var(--bg-hover)]'
+                  }`}
+                  style={{ color: disabledExpanded ? undefined : 'var(--text-muted)' }}
+                >
+                  {disabledExpanded ? (
+                    <ChevronDown className="w-3 h-3" />
+                  ) : (
+                    <ChevronRight className="w-3 h-3" />
+                  )}
+                  已禁用
+                  <span className={`ml-auto px-1.5 py-0.5 rounded-full text-[10px] ${
+                    disabledExpanded ? 'bg-blue-500 text-white' : 'bg-[var(--bg-hover)] text-[var(--text-muted)]'
+                  }`}>
+                    {userExtensions.filter(ue => !ue.is_enabled).length + localExtensions.filter(le => !le.enabled).length}
+                  </span>
+                </button>
+                {disabledExpanded && (
+                  <div className="divide-y" style={{ borderColor: 'var(--border-color)' }}>
+                    {userExtsLoading ? (
+                      <div className="flex items-center justify-center py-4">
+                        <Loader2 className="w-4 h-4 animate-spin" style={{ color: 'var(--text-muted)' }} />
+                      </div>
+                    ) : userExtensions.filter(ue => !ue.is_enabled).length === 0 && localExtensions.filter(le => !le.enabled).length === 0 ? (
+                      <div className="text-center py-8 px-4" style={{ color: 'var(--text-muted)' }}>
+                        <Package className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                        <p className="text-xs">暂无已禁用扩展</p>
+                      </div>
+                    ) : (
+                      <>
+                        {userExtensions.filter(ue => !ue.is_enabled).map(ue => {
+                          const ext = extensions.find(e => e.id === ue.extension_id);
+                          return ext ? renderExtensionItem(ext) : null;
+                        })}
+                        {localExtensions.filter(le => !le.enabled).map(le => renderExtensionItem({
+                          id: 0,
+                          name: le.name,
+                          display_name: le.displayName,
+                          description: le.description,
+                          version: le.version,
+                          author: le.author,
+                          category: le.category,
+                          icon_url: '',
+                          download_count: 0,
+                          rating: 0,
+                          created_at: '',
+                          updated_at: '',
+                        }, true))}
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
 
-        {/* 安装结果提示条（仅在有内容时显示） */}
-        {(zipInstalling || zipInstallMsg || actionError) && (
-          <div className="px-4 py-2 border-t shrink-0" style={{ borderColor: 'var(--border-color)' }}>
-            <div className={`flex items-center gap-1.5 text-xs ${actionError ? 'text-red-500' : 'text-[var(--text-muted)]'}`}>
-              {zipInstalling ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
-              ) : actionError ? (
-                <X className="w-3.5 h-3.5 shrink-0" />
-              ) : (
-                <Check className="w-3.5 h-3.5 shrink-0" />
-              )}
-              <span className="truncate">{zipInstalling ? '安装中...' : actionError || zipInstallMsg}</span>
+        {/* 市场分类 */}
+        <div>
+          <button
+            onClick={() => setMarketplaceExpanded(!marketplaceExpanded)}
+            className={`w-full flex items-center gap-1 px-2 py-1 text-xs font-medium transition-colors ${
+              marketplaceExpanded ? 'bg-blue-500/20 text-blue-500' : 'hover:bg-[var(--bg-hover)]'
+            }`}
+            style={{ color: marketplaceExpanded ? undefined : 'var(--text-muted)' }}
+          >
+            {marketplaceExpanded ? (
+              <ChevronDown className="w-3 h-3" />
+            ) : (
+              <ChevronRight className="w-3 h-3" />
+            )}
+            {tx.marketplace}
+            <span className={`ml-auto px-1.5 py-0.5 rounded-full text-[10px] ${
+              marketplaceExpanded ? 'bg-blue-500 text-white' : 'bg-[var(--bg-hover)] text-[var(--text-muted)]'
+            }`}>
+              {extensions.length}
+            </span>
+          </button>
+          
+          {/* 市场子分类 */}
+          {marketplaceExpanded && (
+            <div className="ml-4">
+              {/* 推荐 */}
+              <div>
+                <button
+                  onClick={() => setFeaturedExpanded(!featuredExpanded)}
+                  className={`w-full flex items-center gap-1 px-2 py-1 text-xs transition-colors ${
+                    featuredExpanded ? 'bg-blue-500/10 text-blue-500' : 'hover:bg-[var(--bg-hover)]'
+                  }`}
+                  style={{ color: featuredExpanded ? undefined : 'var(--text-muted)' }}
+                >
+                  {featuredExpanded ? (
+                    <ChevronDown className="w-3 h-3" />
+                  ) : (
+                    <ChevronRight className="w-3 h-3" />
+                  )}
+                  {tx.filterRecommended}
+                  <span className={`ml-auto px-1.5 py-0.5 rounded-full text-[10px] ${
+                    featuredExpanded ? 'bg-blue-500 text-white' : 'bg-[var(--bg-hover)] text-[var(--text-muted)]'
+                  }`}>
+                    {extensions.filter(e => e.rating >= 4.5 || e.download_count > 100).length}
+                  </span>
+                </button>
+                {featuredExpanded && (
+                  <div className="divide-y" style={{ borderColor: 'var(--border-color)' }}>
+                    {loading && extensions.length === 0 ? (
+                      <div className="flex items-center justify-center py-4">
+                        <Loader2 className="w-4 h-4 animate-spin" style={{ color: 'var(--text-muted)' }} />
+                      </div>
+                    ) : marketError ? (
+                      <div className="text-center py-8 px-4" style={{ color: 'var(--text-muted)' }}>
+                        <AlertTriangle className="w-8 h-8 mx-auto mb-2 opacity-40" />
+                        <p className="text-xs">扩展市场加载失败</p>
+                        <button
+                          onClick={() => loadMarketplace(1)}
+                          className="inline-flex items-center gap-1 text-xs text-blue-500 mt-2 hover:underline"
+                        >
+                          <RefreshCw className="w-3 h-3" />
+                          重试
+                        </button>
+                      </div>
+                    ) : extensions.filter(e => e.rating >= 4.5 || e.download_count > 100).length === 0 ? (
+                      <div className="text-center py-8 px-4" style={{ color: 'var(--text-muted)' }}>
+                        <Package className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                        <p className="text-xs">暂无推荐扩展</p>
+                      </div>
+                    ) : (
+                      extensions.filter(e => e.rating >= 4.5 || e.download_count > 100).map(ext => renderExtensionItem(ext))
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* 热门 */}
+              <div>
+                <button
+                  onClick={() => setPopularExpanded(!popularExpanded)}
+                  className={`w-full flex items-center gap-1 px-2 py-1 text-xs transition-colors ${
+                    popularExpanded ? 'bg-blue-500/10 text-blue-500' : 'hover:bg-[var(--bg-hover)]'
+                  }`}
+                  style={{ color: popularExpanded ? undefined : 'var(--text-muted)' }}
+                >
+                  {popularExpanded ? (
+                    <ChevronDown className="w-3 h-3" />
+                  ) : (
+                    <ChevronRight className="w-3 h-3" />
+                  )}
+                  热门
+                  <span className={`ml-auto px-1.5 py-0.5 rounded-full text-[10px] ${
+                    popularExpanded ? 'bg-blue-500 text-white' : 'bg-[var(--bg-hover)] text-[var(--text-muted)]'
+                  }`}>
+                    {[...extensions].sort((a, b) => b.download_count - a.download_count).slice(0, 10).length}
+                  </span>
+                </button>
+                {popularExpanded && (
+                  <div className="divide-y" style={{ borderColor: 'var(--border-color)' }}>
+                    {loading && extensions.length === 0 ? (
+                      <div className="flex items-center justify-center py-4">
+                        <Loader2 className="w-4 h-4 animate-spin" style={{ color: 'var(--text-muted)' }} />
+                      </div>
+                    ) : marketError ? (
+                      <div className="text-center py-8 px-4" style={{ color: 'var(--text-muted)' }}>
+                        <AlertTriangle className="w-8 h-8 mx-auto mb-2 opacity-40" />
+                        <p className="text-xs">扩展市场加载失败</p>
+                        <button
+                          onClick={() => loadMarketplace(1)}
+                          className="inline-flex items-center gap-1 text-xs text-blue-500 mt-2 hover:underline"
+                        >
+                          <RefreshCw className="w-3 h-3" />
+                          重试
+                        </button>
+                      </div>
+                    ) : (
+                      [...extensions].sort((a, b) => b.download_count - a.download_count).slice(0, 10).map(ext => renderExtensionItem(ext))
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* 最新 */}
+              <div>
+                <button
+                  onClick={() => setRecentExpanded(!recentExpanded)}
+                  className={`w-full flex items-center gap-1 px-2 py-1 text-xs transition-colors ${
+                    recentExpanded ? 'bg-blue-500/10 text-blue-500' : 'hover:bg-[var(--bg-hover)]'
+                  }`}
+                  style={{ color: recentExpanded ? undefined : 'var(--text-muted)' }}
+                >
+                  {recentExpanded ? (
+                    <ChevronDown className="w-3 h-3" />
+                  ) : (
+                    <ChevronRight className="w-3 h-3" />
+                  )}
+                  最新
+                  <span className={`ml-auto px-1.5 py-0.5 rounded-full text-[10px] ${
+                    recentExpanded ? 'bg-blue-500 text-white' : 'bg-[var(--bg-hover)] text-[var(--text-muted)]'
+                  }`}>
+                    {[...extensions].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 10).length}
+                  </span>
+                </button>
+                {recentExpanded && (
+                  <div className="divide-y" style={{ borderColor: 'var(--border-color)' }}>
+                    {loading && extensions.length === 0 ? (
+                      <div className="flex items-center justify-center py-4">
+                        <Loader2 className="w-4 h-4 animate-spin" style={{ color: 'var(--text-muted)' }} />
+                      </div>
+                    ) : marketError ? (
+                      <div className="text-center py-8 px-4" style={{ color: 'var(--text-muted)' }}>
+                        <AlertTriangle className="w-8 h-8 mx-auto mb-2 opacity-40" />
+                        <p className="text-xs">扩展市场加载失败</p>
+                        <button
+                          onClick={() => loadMarketplace(1)}
+                          className="inline-flex items-center gap-1 text-xs text-blue-500 mt-2 hover:underline"
+                        >
+                          <RefreshCw className="w-3 h-3" />
+                          重试
+                        </button>
+                      </div>
+                    ) : (
+                      [...extensions].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 10).map(ext => renderExtensionItem(ext))
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
+          )}
+        </div>
+      </div>
+
+      {/* 安装结果提示条（仅在有内容时显示） */}
+      {(zipInstalling || zipInstallMsg || actionError) && (
+        <div className="px-4 py-2 border-t shrink-0" style={{ borderColor: 'var(--border-color)' }}>
+          <div className={`flex items-center gap-1.5 text-xs ${actionError ? 'text-red-500' : 'text-[var(--text-muted)]'}`}>
+            {zipInstalling ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+            ) : actionError ? (
+              <X className="w-3.5 h-3.5 shrink-0" />
+            ) : (
+              <Check className="w-3.5 h-3.5 shrink-0" />
+            )}
+            <span className="truncate">{zipInstalling ? '安装中...' : actionError || zipInstallMsg}</span>
           </div>
-        )}
+        </div>
+      )}
 
       {/* Markdown 样式 */}
       <style>{`

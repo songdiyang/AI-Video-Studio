@@ -56,21 +56,9 @@ const WorkspaceSidePanel: React.FC = () => {
     );
   }
 
-  // ── 有工程：工程信息 + 快捷入口 ──
+  // ── 有工程：只显示快捷入口 ──
   return (
     <div className="flex flex-col h-full">
-      {/* 当前工程 */}
-      <div className="px-3 py-2.5 border-b border-(--border-color)">
-        <div className="text-[11px] text-(--text-muted) uppercase tracking-wider mb-1">当前工程</div>
-        <div className="flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-(--accent) shrink-0" />
-          <span className="text-sm font-medium text-(--text-primary) truncate">{currentProject.name}</span>
-        </div>
-        {currentProject.description && (
-          <p className="mt-1 text-xs text-(--text-muted) line-clamp-2">{currentProject.description}</p>
-        )}
-      </div>
-
       {/* 工作台快捷入口 */}
       <div className="flex-1 overflow-y-auto py-1">
         <div className="px-3 py-1.5 text-[11px] text-(--text-muted) uppercase tracking-wider">工作台</div>

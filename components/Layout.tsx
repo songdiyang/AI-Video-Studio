@@ -21,6 +21,7 @@ import AIAssistantSidePanel from './ActivityBar/AIAssistantSidePanel';
 import BottomTaskPanel from './ActivityBar/BottomTaskPanel';
 import AppMenuBar, { AppMenu } from './ActivityBar/AppMenuBar';
 import InternalMailbox from './InternalMailbox';
+import AuthModal from './AuthModal';
 // import LowBalanceBanner from './LowBalanceBanner';
 import { useRoutePreload } from '../hooks/useRoutePreload';
 import { useOfflineMode, isDesktop } from '../utils/runtimeMode';
@@ -53,7 +54,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const navigate = useNavigate();
   const { t, language, setLanguage } = useLanguage();
   const { theme, setTheme } = useTheme();
-  const { projectType, currentProject, switchProject, leftSidebarTab, setLeftSidebarTab, bottomPanelOpen, toggleBottomPanel } = useWorkbench();
+  const { projectType, currentProject, switchProject, leftSidebarTab, setLeftSidebarTab, bottomPanelOpen, toggleBottomPanel, hasUnsavedChanges } = useWorkbench();
   const { isOpen: isAIAssistantOpen, toggle: toggleAIAssistant, projectId: aiProjectId } = useAIAssistantUI();
   const { showToast } = useToast();
   const isAuth = location.pathname === '/auth';
@@ -75,6 +76,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [userAvatar, setUserAvatar] = useState<string | null>(null);
   const [userNickname, setUserNickname] = useState<string | null>(null);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
 
   // 侧边栏导航项排序状态（支持长按拖拽排序）
   const [navOrder, setNavOrder] = useState<string[]>(() => {
@@ -466,13 +468,12 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const handleAccountClick = (e: React.MouseEvent) => {
     if (!isLoggedIn) {
       e.preventDefault();
-      navigate('/auth');
+      setIsAuthModalOpen(true);
     }
   };
 
   const handleLogout = () => {
     logout();
-    navigate('/auth');
     window.location.reload();
   };
 
@@ -576,15 +577,27 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       {/* 顶部菜单栏 - 通栏（VSCode 式，横跨活动栏与主区域） */}
       <header data-tauri-drag-region className="pro-toolbar relative z-50 h-11 items-center justify-between pl-3 pr-2 bg-(--bg-nav) border-b border-(--border-color) hide-on-mobile flex select-none shrink-0 w-full">
         {/* 左侧：VSCode 式应用菜单（原 logo 位置） */}
-        <div className="flex items-center gap-1 min-w-0">
+        <div data-tauri-drag-region className="flex items-center gap-1 min-w-0 flex-1">
           <AppMenuBar menus={appMenus} />
+          {/* 当前打开的工程文件 */}
+          {currentProject && (
+            <div data-tauri-drag-region className="flex items-center gap-1.5 ml-3 min-w-0">
+              <FolderOpen className="w-3 h-3 text-blue-500 shrink-0" />
+              <span className="text-xs font-medium text-(--text-primary) truncate">
+                {currentProject.name}
+              </span>
+              {hasUnsavedChanges && (
+                <span className="text-orange-500 text-xs shrink-0" title="有未保存的更改">●</span>
+              )}
+            </div>
+          )}
         </div>
 
-        {/* 中间：可拖拽空白区 */}
-        <div data-tauri-drag-region className="flex-1 h-full" />
+        {/* 中间：可拖拽空白区（当左侧内容过多时收缩） */}
+        <div data-tauri-drag-region className="flex-shrink h-full min-w-[100px]" />
 
         {/* 右侧：辅助控件 */}
-        <div className="flex items-center gap-3">
+        <div data-tauri-drag-region className="flex items-center gap-3">
           {/* 布局切换按钮组（VSCode 式：左侧栏 / AI 助手 / 底部面板） */}
           <div className="flex items-center gap-0.5 bg-white/5 rounded-lg p-0.5">
             <button
@@ -692,14 +705,46 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
               </DropdownMenu>
             </Dropdown>
           ) : (
-            <button
-              onClick={handleAccountClick}
-              className="p-1.5 rounded-lg text-(--accent) hover:bg-(--accent)/10 transition-colors"
-              aria-label={t.common.login}
-              title={t.common.login}
-            >
-              <User className="w-4 h-4" />
-            </button>
+            <Dropdown placement="bottom-end">
+              <DropdownTrigger>
+                <button
+                  className="p-1.5 rounded-lg text-(--accent) hover:bg-(--accent)/10 transition-colors"
+                  aria-label={t.common.login}
+                  title={t.common.login}
+                >
+                  <User className="w-4 h-4" />
+                </button>
+              </DropdownTrigger>
+              <DropdownMenu
+                aria-label="账户菜单"
+                classNames={{
+                  base: "bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-lg rounded-xl min-w-[160px] p-1",
+                  list: "bg-transparent gap-0.5"
+                }}
+              >
+                <DropdownItem
+                  key="login"
+                  className="text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg py-2.5"
+                  startContent={<User className="w-4 h-4 text-slate-500" />}
+                  onPress={() => setIsAuthModalOpen(true)}
+                >
+                  {t.common.login}
+                </DropdownItem>
+                <DropdownItem
+                  key="settings"
+                  className="text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg py-2.5"
+                  startContent={<Settings className="w-4 h-4 text-slate-500" />}
+                  onPress={() => {
+                    navigate('/');
+                    setTimeout(() => {
+                      window.dispatchEvent(new CustomEvent('openSettingsTab'));
+                    }, 100);
+                  }}
+                >
+                  {t.nav.settings}
+                </DropdownItem>
+              </DropdownMenu>
+            </Dropdown>
           )}
 
           {/* 全屏切换 */}
@@ -934,7 +979,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
               </button>
             ) : (
               <button
-                onClick={handleAccountClick}
+                onClick={() => setIsAuthModalOpen(true)}
                 className="mobile-nav-item"
                 aria-label={t.common.login}
               >
@@ -1053,6 +1098,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           <span className="text-xs text-(--text-muted)">v1.0.0</span>
         </div>
       </footer>
+
+      {/* 登录弹窗 */}
+      <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} />
     </div>
   );
 };

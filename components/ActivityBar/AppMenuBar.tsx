@@ -73,7 +73,7 @@ const AppMenuBar: React.FC<AppMenuBarProps> = ({ menus }) => {
   }, []);
 
   return (
-    <div ref={barRef} className="flex items-center" role="menubar">
+    <div ref={barRef} data-tauri-drag-region className="flex items-center" role="menubar">
       {menus.map((menu) => {
         const isOpen = openMenu === menu.id;
         return (

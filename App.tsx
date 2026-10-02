@@ -2,7 +2,6 @@ import React, { Suspense } from 'react';
 import { HashRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import Layout from './components/Layout';
-import Auth from './views/Auth';
 import AdminRoute from './components/AdminRoute';
 import ProtectedRoute from './components/ProtectedRoute';
 import { PreviewProvider } from './components/PreviewProvider';
@@ -158,7 +157,7 @@ const App: React.FC = () => {
         <PreviewProvider>
           <Routes>
             {/* 公开路由 - 不需要登录 */}
-            <Route path="/auth" element={<Auth />} />
+            <Route path="/auth" element={<Navigate to="/" replace />} />
             <Route path="/landing" element={
               <Suspense fallback={<LoadingFallback />}>
                 <Landing />

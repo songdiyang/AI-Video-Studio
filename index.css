@@ -3,6 +3,25 @@
 
 @variant dark (&:where(.dark, .dark *));
 
+/* Tauri 窗口拖拽区域 */
+[data-tauri-drag-region] {
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+/* 拖拽区域内的交互元素需要排除拖拽 */
+[data-tauri-drag-region] button,
+[data-tauri-drag-region] a,
+[data-tauri-drag-region] input,
+[data-tauri-drag-region] select,
+[data-tauri-drag-region] textarea,
+[data-tauri-drag-region] [role="button"],
+[data-tauri-drag-region] [role="menuitem"],
+[data-tauri-drag-region] [data-no-drag] {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
 /* 隐藏滚动条工具类 */
 .scrollbar-hide::-webkit-scrollbar {
   display: none;

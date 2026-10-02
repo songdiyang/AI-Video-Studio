@@ -51,6 +51,18 @@ interface WorkbenchContextValue {
   bottomPanelOpen: boolean;
   setBottomPanelOpen: (open: boolean) => void;
   toggleBottomPanel: () => void;
+
+  // ===== 未保存状态管理 =====
+  /** 是否有未保存的更改 */
+  hasUnsavedChanges: boolean;
+  /** 标记为有未保存更改 */
+  markAsDirty: () => void;
+  /** 标记为已保存 */
+  markAsSaved: () => void;
+  /** 是否启用自动保存 */
+  autoSaveEnabled: boolean;
+  /** 切换自动保存 */
+  toggleAutoSave: () => void;
 }
 
 // ==================== Context 创建 ====================
@@ -98,6 +110,22 @@ export function WorkbenchProvider({ children, initialProject = null }: Workbench
   const bottomPanelRef = React.useRef(bottomPanelOpen);
   bottomPanelRef.current = bottomPanelOpen;
   const toggleBottomPanel = useCallback(() => setBottomPanelOpen(!bottomPanelRef.current), [setBottomPanelOpen]);
+
+  // ===== 未保存状态管理 =====
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [autoSaveEnabled, setAutoSaveEnabled] = useState(() => {
+    try { return localStorage.getItem('vscode_auto_save') === '1'; } catch { return true; }
+  });
+  
+  const markAsDirty = useCallback(() => setHasUnsavedChanges(true), []);
+  const markAsSaved = useCallback(() => setHasUnsavedChanges(false), []);
+  const toggleAutoSave = useCallback(() => {
+    setAutoSaveEnabled(prev => {
+      const next = !prev;
+      try { localStorage.setItem('vscode_auto_save', next ? '1' : '0'); } catch { /* 忽略 */ }
+      return next;
+    });
+  }, []);
   
   // 从项目获取有效的项目类型
   const getValidProjectType = useCallback((project: Project | null): ProjectType => {
@@ -232,6 +260,11 @@ export function WorkbenchProvider({ children, initialProject = null }: Workbench
     bottomPanelOpen,
     setBottomPanelOpen,
     toggleBottomPanel,
+    hasUnsavedChanges,
+    markAsDirty,
+    markAsSaved,
+    autoSaveEnabled,
+    toggleAutoSave,
   }), [
     currentProject,
     workbenchState,
@@ -247,6 +280,11 @@ export function WorkbenchProvider({ children, initialProject = null }: Workbench
     bottomPanelOpen,
     setBottomPanelOpen,
     toggleBottomPanel,
+    hasUnsavedChanges,
+    markAsDirty,
+    markAsSaved,
+    autoSaveEnabled,
+    toggleAutoSave,
   ]);
   
   return (
