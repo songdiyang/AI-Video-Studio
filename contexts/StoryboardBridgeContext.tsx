@@ -27,10 +27,15 @@ export interface BridgeLeftPanelTabMeta {
 }
 
 interface StoryboardBridgeContextValue {
-  /** Layout 侧栏提供的内容容器元素（StoryBoard portal 的目标） */
+  /** Layout 侧栏提供的内容容器元素（StoryBoard portal 的目标，单容器旧路径） */
   containerEl: HTMLElement | null;
-  /** Layout 侧栏注册容器 */
+  /** Layout 侧栏注册容器（单容器旧路径） */
   setContainerEl: (el: HTMLElement | null) => void;
+
+  /** 多容器：按标签 id 注册的内容容器（手风琴分组各自一个 portal 目标） */
+  containers: Record<string, HTMLElement | null>;
+  /** 注册/注销某个标签的内容容器（el 为 null 表示注销） */
+  setContainer: (tabId: string, el: HTMLElement | null) => void;
 
   /** StoryBoard 上报的可用标签（分镜/资源/大纲等） */
   tabs: BridgeLeftPanelTabMeta[];
@@ -51,10 +56,26 @@ const StoryboardBridgeContext = createContext<StoryboardBridgeContextValue | nul
 
 export const StoryboardBridgeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [containerEl, setContainerEl] = useState<HTMLElement | null>(null);
+  const [containers, setContainers] = useState<Record<string, HTMLElement | null>>({});
   const [tabs, setTabs] = useState<BridgeLeftPanelTabMeta[]>([]);
   const [activeTab, setActiveTab] = useState<string | null>(null);
   const [isRegistered, setIsRegistered] = useState(false);
   const [requestSwitchTab, setRequestSwitchTabState] = useState<((tabId: string) => void) | null>(null);
+
+  // 注册/注销某个标签的内容容器（手风琴分组各自的 portal 目标）
+  const setContainer = useCallback((tabId: string, el: HTMLElement | null) => {
+    setContainers(prev => {
+      if (el === null) {
+        // 注销：仅在存在时移除，避免无意义的新对象触发重渲染
+        if (!(tabId in prev)) return prev;
+        const next = { ...prev };
+        delete next[tabId];
+        return next;
+      }
+      if (prev[tabId] === el) return prev;
+      return { ...prev, [tabId]: el };
+    });
+  }, []);
 
   const registerTabs = useCallback((t: BridgeLeftPanelTabMeta[], active: string) => {
     setTabs(t);
@@ -77,6 +98,8 @@ export const StoryboardBridgeProvider: React.FC<{ children: React.ReactNode }> =
     () => ({
       containerEl,
       setContainerEl,
+      containers,
+      setContainer,
       tabs,
       activeTab,
       isRegistered,
@@ -85,7 +108,7 @@ export const StoryboardBridgeProvider: React.FC<{ children: React.ReactNode }> =
       requestSwitchTab,
       setRequestSwitchTab,
     }),
-    [containerEl, tabs, activeTab, isRegistered, registerTabs, unregisterTabs, requestSwitchTab, setRequestSwitchTab],
+    [containerEl, containers, setContainer, tabs, activeTab, isRegistered, registerTabs, unregisterTabs, requestSwitchTab, setRequestSwitchTab],
   );
 
   return (

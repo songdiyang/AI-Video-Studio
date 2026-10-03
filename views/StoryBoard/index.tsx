@@ -168,12 +168,6 @@ const StoryboardSkeleton: React.FC<StoryboardSkeletonProps> = ({
   // refs
   const resourcePanelRef = React.useRef<ResizablePanelRef>(null);
 
-  // 当前选中的标签页组件
-  const ActiveLeftPanel = useMemo(() => {
-    const tab = leftPanelTabs.find(t => t.id === leftPanelTab);
-    return tab?.component || leftPanelTabs[0]?.component;
-  }, [leftPanelTabs, leftPanelTab]);
-
   // 注册外部插件
   React.useEffect(() => {
     plugins.forEach(plugin => {
@@ -220,40 +214,49 @@ const StoryboardSkeleton: React.FC<StoryboardSkeletonProps> = ({
 
   // ===== 桥接到 Layout 侧栏（VSCode 式）：上报标签 + 提供 portal 容器 =====
   const bridge = useStoryboardBridgeSafe();
+  // 解构出稳定方法（均为 useCallback 空依赖，引用不随 containers 变化），
+  // 避免下方 effect 依赖整个 bridge 对象：手风琴展开/折叠会更新 containers →
+  // 重建 bridge → 触发本 effect 清理重跑 → isRegistered 瞬时为 false →
+  // 创作工作台分组内容容器被卸载又挂载，造成抖动。
+  const registerTabs = bridge?.registerTabs;
+  const unregisterTabs = bridge?.unregisterTabs;
+  const setRequestSwitchTab = bridge?.setRequestSwitchTab;
   const bridgeTabs = useMemo(
     () => leftPanelTabs.map(t => ({ id: t.id, label: t.label })),
     [leftPanelTabs],
   );
   // 注册标签与切换函数；卸载时注销
   useEffect(() => {
-    if (!bridge) return;
-    bridge.registerTabs(bridgeTabs, leftPanelTab);
-    bridge.setRequestSwitchTab(() => switchLeftPanelTab);
+    if (!registerTabs || !unregisterTabs || !setRequestSwitchTab) return;
+    registerTabs(bridgeTabs, leftPanelTab);
+    // 传入切换函数本身（Context 内部已用惰性形式包装，防止 setState 误判 updater）。
+    // 若再包一层 () => switchLeftPanelTab，requestSwitchTab 会变成“返回函数的函数”，
+    // 调用它不会真正执行切换，导致 StoryBoard 内部 leftPanelTab 不更新、
+    // Layout 侧栏标题与 Portal 内容错位（如标题“大纲”却显示团队面板）。
+    setRequestSwitchTab(switchLeftPanelTab);
     return () => {
-      bridge.unregisterTabs();
-      bridge.setRequestSwitchTab(null);
+      unregisterTabs();
+      setRequestSwitchTab(null);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bridge, bridgeTabs, switchLeftPanelTab]);
+  }, [registerTabs, unregisterTabs, setRequestSwitchTab, bridgeTabs, switchLeftPanelTab]);
   // 激活标签变化时同步给桥接（用于活动栏高亮）
   useEffect(() => {
-    if (!bridge || !bridge.isRegistered) return;
-    bridge.registerTabs(bridgeTabs, leftPanelTab);
+    if (!registerTabs || !bridge?.isRegistered) return;
+    registerTabs(bridgeTabs, leftPanelTab);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [leftPanelTab]);
 
   // 渲染到 Layout 侧栏容器的面板内容（portal 保留 StoryboardProvider 上下文）
-  const bridgePanelContent = (
-    <div className="flex flex-col h-full overflow-hidden">
-      {leftPanelTab === 'projects' ? (
-        <ProjectsSidePanel onOpenProject={() => switchLeftPanelTab('scenes')} />
-      ) : leftPanelTab === 'teams' ? (
-        <TeamsSidePanel />
-      ) : (
-        <ActiveLeftPanel />
-      )}
-    </div>
-  );
+  // 手风琴整合：分镜/资源/大纲三个面板同时挂载，各自 portal 到创作工作台
+  // 侧栏对应分组的容器（bridge.containers[id]）。projects/teams 整面板由
+  // ActivityBarSidebar 直接渲染（不经过本 portal），故此处无需单容器旧路径。
+  const containers = bridge?.containers ?? {};
+  const accordionPanels = [
+    { id: 'scenes', node: <SceneListPlugin /> },
+    { id: 'resources', node: <ResourcePanelPlugin /> },
+    { id: 'outline', node: <ScriptOutlinePlugin /> },
+  ];
 
   return (
     <StoryboardProvider value={contextValue}>
@@ -273,8 +276,15 @@ const StoryboardSkeleton: React.FC<StoryboardSkeletonProps> = ({
         {/* ===== 主内容区 - 三栏布局 ===== */}
         {state.currentProjectId && (
           <div className="flex-1 overflow-hidden flex flex-col min-h-0">
-            {/* 左侧面板已通过 Portal 桥接到 Layout 侧栏（VSCode 式），此处仅渲染中间编辑区 */}
-            {bridge?.containerEl && createPortal(bridgePanelContent, bridge.containerEl)}
+            {/* 手风琴三分组：分镜/资源/大纲分别 portal 到创作工作台侧栏对应容器 */}
+            {accordionPanels.map(p =>
+              containers[p.id]
+                ? createPortal(
+                    <div className="flex flex-col h-full overflow-hidden">{p.node}</div>,
+                    containers[p.id] as HTMLElement,
+                  )
+                : null,
+            )}
             <div className="flex-1 overflow-hidden relative min-h-0">
               <PreviewEditorPlugin />
 

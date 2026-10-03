@@ -9,10 +9,9 @@
  *
  * 宽度可拖拽调整（useResizableSidebar），可折叠。
  */
-import React, { useEffect, useRef } from 'react';
+import React from 'react';
 import { X } from 'lucide-react';
 import { useWorkbench } from '../../contexts/WorkbenchContext';
-import { useStoryboardBridgeSafe } from '../../contexts/StoryboardBridgeContext';
 import { useResizableSidebar } from '../../hooks/useResizableSidebar';
 import ProjectsSidePanel from '../SidePanels/ProjectsSidePanel';
 import TeamsSidePanel from '../SidePanels/TeamsSidePanel';
@@ -25,14 +24,13 @@ const TAB_TITLES: Record<string, string> = {
   projects: '我的工程',
   teams: '团队',
   extensions: '扩展',
-  scenes: '分镜列表',
-  resources: '资源',
-  outline: '大纲',
 };
+
+/** 分镜/资源/大纲：已整合进创作工作台手风琴，这些旧 tab id 统一重定向到 workspace */
+const WORKSPACE_SECTION_TABS = new Set(['scenes', 'resources', 'outline']);
 
 const ActivityBarSidebar: React.FC = () => {
   const { leftSidebarTab, setLeftSidebarTab } = useWorkbench();
-  const bridge = useStoryboardBridgeSafe();
 
   const resize = useResizableSidebar({
     storageKey: 'vscode_left_sidebar_width',
@@ -42,36 +40,16 @@ const ActivityBarSidebar: React.FC = () => {
     side: 'left',
   });
 
-  // 分镜类标签容器 ref（StoryBoard portal 的目标）
-  const bridgeContainerRef = useRef<HTMLDivElement>(null);
-
-  // 当前标签是否为分镜类（桥接）标签
-  const isBridgeTab = bridge?.tabs.some(t => t.id === leftSidebarTab) ?? false;
-
-  // 桥接标签激活时，把容器元素注册到桥接，供 StoryBoard portal
-  useEffect(() => {
-    if (!bridge) return;
-    if (isBridgeTab && bridgeContainerRef.current) {
-      bridge.setContainerEl(bridgeContainerRef.current);
-    } else {
-      bridge.setContainerEl(null);
-    }
-    return () => {
-      bridge.setContainerEl(null);
-    };
-  }, [bridge, isBridgeTab, leftSidebarTab]);
-
   if (!leftSidebarTab) return null;
 
   const renderContent = (): React.ReactNode => {
-    if (leftSidebarTab === 'workspace') return <WorkspaceSidePanel />;
+    // 分镜/资源/大纲：重定向到创作工作台手风琴面板
+    if (leftSidebarTab === 'workspace' || WORKSPACE_SECTION_TABS.has(leftSidebarTab)) {
+      return <WorkspaceSidePanel />;
+    }
     if (leftSidebarTab === 'projects') return <ProjectsSidePanel />;
     if (leftSidebarTab === 'teams') return <TeamsSidePanel />;
     if (leftSidebarTab === 'extensions') return <ExtensionsPanelPlugin />;
-    if (isBridgeTab) {
-      // 分镜类：渲染空容器，由 StoryBoard 通过 portal 填充
-      return <div ref={bridgeContainerRef} className="h-full overflow-hidden" />;
-    }
     return (
       <div className="flex flex-col items-center justify-center h-full text-(--text-muted) text-xs px-4 text-center">
         <p>该面板需要先进入一个项目的工作台</p>
@@ -79,9 +57,10 @@ const ActivityBarSidebar: React.FC = () => {
     );
   };
 
-  const title = TAB_TITLES[leftSidebarTab]
-    ?? bridge?.tabs.find(t => t.id === leftSidebarTab)?.label
-    ?? leftSidebarTab;
+  // 分镜/资源/大纲重定向后，标题统一显示「创作工作台」
+  const title = WORKSPACE_SECTION_TABS.has(leftSidebarTab)
+    ? TAB_TITLES.workspace
+    : (TAB_TITLES[leftSidebarTab] ?? leftSidebarTab);
 
   return (
     <div
