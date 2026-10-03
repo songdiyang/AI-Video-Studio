@@ -1,16 +1,17 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
-  Button, Input, Card, CardBody, Chip, Switch,
+  Button, Input, Chip, Switch,
   Modal, ModalContent, ModalHeader, ModalBody, ModalFooter,
 } from '@heroui/react';
 import {
-  Plus, Trash2, Eye, EyeOff, Star, Search, Zap,
+  Plus, Trash2, Star, Search, Zap,
   Loader2, ShieldCheck, MessageSquare, Image as ImageIcon, Clapperboard, X, AlertCircle,
+  CheckCircle2, XCircle, ChevronDown, Eye, EyeOff,
 } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 import {
   saveAIModelKey, listAIModelConfigs, deleteAIModelConfig,
-  updateAIModelConfigFlags, testAIModelConnection, DEFAULT_API_BASES,
+  updateAIModelConfigFlags, testAIModelConnection, testModelByCategory, DEFAULT_API_BASES,
   type AIModelConfig, type ConnectionTestResult,
 } from '../../services/localApi';
 
@@ -20,10 +21,14 @@ type ProviderCategory = 'multimodal' | 'text' | 'image' | 'video';
 interface ModelProvider {
   id: string;
   name: string;
-  category: ProviderCategory;
-  models: string[];
-  apiBasePlaceholder: string;
-  requiresApiBase: boolean;
+  /** 该提供商支持的模型类别（一个提供商可支持多种） */
+  supportedCategories: ProviderCategory[];
+  /** 按类别分组的模型列表 */
+  modelsByCategory: Partial<Record<ProviderCategory, string[]>>;
+  /** 默认 API Base（选择后自动填充，自定义除外） */
+  defaultApiBase: string;
+  /** 是否为自定义提供商（需要手动填写 API Base） */
+  isCustom: boolean;
   color: string;
 }
 
@@ -35,35 +40,84 @@ const CATEGORY_META: Record<ProviderCategory, { label: string; icon: React.React
 };
 
 const MODEL_PROVIDERS: ModelProvider[] = [
-  { id: 'deepseek', name: 'DeepSeek', category: 'text', models: ['deepseek-chat', 'deepseek-reasoner'], apiBasePlaceholder: 'https://api.deepseek.com/v1', requiresApiBase: false, color: '#4d6bfe' },
-  { id: 'qwen', name: '通义千问', category: 'text', models: ['qwen-turbo', 'qwen-plus', 'qwen-max'], apiBasePlaceholder: 'https://dashscope.aliyuncs.com/compatible-mode/v1', requiresApiBase: false, color: '#615ced' },
-  { id: 'doubao', name: '豆包', category: 'text', models: ['doubao-pro-4k', 'doubao-pro-32k', 'doubao-pro-128k'], apiBasePlaceholder: 'https://ark.cn-beijing.volces.com/api/v3', requiresApiBase: false, color: '#ff752d' },
-  { id: 'zhipu', name: '智谱 AI', category: 'text', models: ['glm-4-plus', 'glm-4v', 'glm-4-flash'], apiBasePlaceholder: 'https://open.bigmodel.cn/api/paas/v4', requiresApiBase: false, color: '#3b82f6' },
-  { id: 'openai', name: 'OpenAI', category: 'multimodal', models: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo'], apiBasePlaceholder: 'https://api.openai.com/v1', requiresApiBase: false, color: '#10a37f' },
-  { id: 'kling', name: '可灵', category: 'video', models: ['kling-v1', 'kling-v1-5', 'kling-v2-master'], apiBasePlaceholder: 'https://api.klingai.com', requiresApiBase: false, color: '#00c2a8' },
-  { id: 'seedance', name: 'Seedance', category: 'video', models: ['seedance-1-0-lite', 'seedance-1-0-pro'], apiBasePlaceholder: '', requiresApiBase: true, color: '#8b5cf6' },
-  { id: 'vidu', name: 'Vidu', category: 'video', models: ['viduq1', 'vidu2.0'], apiBasePlaceholder: 'https://api.vidu.cn', requiresApiBase: false, color: '#ef4444' },
+  {
+    id: 'deepseek', name: 'DeepSeek',
+    supportedCategories: ['text'],
+    modelsByCategory: { text: ['deepseek-chat', 'deepseek-reasoner'] },
+    defaultApiBase: 'https://api.deepseek.com/v1', isCustom: false, color: '#4d6bfe',
+  },
+  {
+    id: 'qwen', name: '通义千问',
+    supportedCategories: ['text', 'multimodal'],
+    modelsByCategory: {
+      text: ['qwen-turbo', 'qwen-plus', 'qwen-max', 'qwen-long'],
+      multimodal: ['qwen-vl-plus', 'qwen-vl-max'],
+    },
+    defaultApiBase: 'https://dashscope.aliyuncs.com/compatible-mode/v1', isCustom: false, color: '#615ced',
+  },
+  {
+    id: 'doubao', name: '豆包',
+    supportedCategories: ['text'],
+    modelsByCategory: { text: ['doubao-pro-4k', 'doubao-pro-32k', 'doubao-pro-128k'] },
+    defaultApiBase: 'https://ark.cn-beijing.volces.com/api/v3', isCustom: false, color: '#ff752d',
+  },
+  {
+    id: 'zhipu', name: '智谱 AI',
+    supportedCategories: ['text', 'multimodal'],
+    modelsByCategory: {
+      text: ['glm-4-plus', 'glm-4-flash', 'glm-4-long'],
+      multimodal: ['glm-4v', 'glm-4v-plus'],
+    },
+    defaultApiBase: 'https://open.bigmodel.cn/api/paas/v4', isCustom: false, color: '#3b82f6',
+  },
+  {
+    id: 'openai', name: 'OpenAI',
+    supportedCategories: ['multimodal', 'text', 'image'],
+    modelsByCategory: {
+      multimodal: ['gpt-4o', 'gpt-4o-mini'],
+      text: ['gpt-4-turbo', 'gpt-3.5-turbo'],
+      image: ['dall-e-3', 'dall-e-2'],
+    },
+    defaultApiBase: 'https://api.openai.com/v1', isCustom: false, color: '#10a37f',
+  },
+  {
+    id: 'kling', name: '可灵',
+    supportedCategories: ['video'],
+    modelsByCategory: { video: ['kling-v1', 'kling-v1-5', 'kling-v2-master'] },
+    defaultApiBase: 'https://api.klingai.com', isCustom: false, color: '#00c2a8',
+  },
+  {
+    id: 'seedance', name: 'Seedance',
+    supportedCategories: ['video'],
+    modelsByCategory: { video: ['seedance-1-0-lite', 'seedance-1-0-pro'] },
+    defaultApiBase: '', isCustom: true, color: '#8b5cf6',
+  },
+  {
+    id: 'vidu', name: 'Vidu',
+    supportedCategories: ['video'],
+    modelsByCategory: { video: ['viduq1', 'vidu2.0'] },
+    defaultApiBase: 'https://api.vidu.cn', isCustom: false, color: '#ef4444',
+  },
+  {
+    id: 'custom', name: '自定义',
+    supportedCategories: ['text', 'multimodal', 'image', 'video'],
+    modelsByCategory: {},
+    defaultApiBase: '', isCustom: true, color: '#64748b',
+  },
 ];
 
 const PROVIDER_MAP: Record<string, ModelProvider> = Object.fromEntries(MODEL_PROVIDERS.map((p) => [p.id, p]));
 
 const getProviderName = (id: string) => PROVIDER_MAP[id]?.name || id;
-const getCategory = (id: string): ProviderCategory => PROVIDER_MAP[id]?.category || 'text';
+/** 从配置中推断类别（用于列表分组展示） */
+const getCategory = (id: string): ProviderCategory => {
+  const p = PROVIDER_MAP[id];
+  if (!p) return 'text';
+  return p.supportedCategories[0] || 'text';
+};
 const configKey = (c: { provider: string; model_name: string }) => `${c.provider}::${c.model_name}`;
 
-// ─── 小组件：字母头像 ─────────────────────────────────────────
-const ProviderAvatar: React.FC<{ providerId: string }> = ({ providerId }) => {
-  const p = PROVIDER_MAP[providerId];
-  const label = p?.name?.slice(0, 1) || providerId.slice(0, 1).toUpperCase();
-  return (
-    <div
-      className="w-9 h-9 rounded-lg flex items-center justify-center text-white font-semibold shrink-0"
-      style={{ background: p?.color || '#64748b' }}
-    >
-      {label}
-    </div>
-  );
-};
+// ─── 小组件已移除（行式布局不再需要头像/密钥显隐） ────────────
 
 const AIModelSettings: React.FC = () => {
   const { showToast } = useToast();
@@ -74,7 +128,6 @@ const AIModelSettings: React.FC = () => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deletingConfig, setDeletingConfig] = useState<AIModelConfig | null>(null);
-  const [visibleKeys, setVisibleKeys] = useState<Set<string>>(new Set());
 
   // 连接测试状态
   const [testing, setTesting] = useState<Record<string, boolean>>({});
@@ -82,12 +135,19 @@ const AIModelSettings: React.FC = () => {
 
   // 新增表单
   const [selectedProvider, setSelectedProvider] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<ProviderCategory | ''>('');
   const [selectedModel, setSelectedModel] = useState('');
+  const [customModelId, setCustomModelId] = useState('');
   const [apiKey, setApiKey] = useState('');
   const [apiBase, setApiBase] = useState('');
   const [revealKey, setRevealKey] = useState(false);
   const [keyTouched, setKeyTouched] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  // 添加前测试状态
+  const [addTesting, setAddTesting] = useState(false);
+  const [addTestResult, setAddTestResult] = useState<ConnectionTestResult | null>(null);
+  const [addTestPassed, setAddTestPassed] = useState(false);
 
   useEffect(() => {
     loadConfigs();
@@ -108,15 +168,28 @@ const AIModelSettings: React.FC = () => {
 
   // ── 表单校验 ────────────────────────────────────────────
   const selectedProviderInfo = PROVIDER_MAP[selectedProvider];
+  const isCustomProvider = selectedProviderInfo?.isCustom ?? false;
+  // 当前可用的类别列表
+  const availableCategories = selectedProviderInfo?.supportedCategories ?? [];
+  // 当前类别下的可选模型
+  const availableModels = selectedCategory
+    ? (selectedProviderInfo?.modelsByCategory[selectedCategory] ?? [])
+    : [];
+  // 最终模型 ID（自定义提供商用手动输入，否则用下拉选择）
+  const effectiveModelId = isCustomProvider ? customModelId.trim() : selectedModel;
+
   const keyError = apiKey && apiKey.trim().length < 8
     ? '密钥长度过短，请检查是否完整粘贴'
     : (keyTouched && !apiKey.trim() ? '请填写 API Key' : '');
-  const apiBaseError = selectedProviderInfo?.requiresApiBase && !apiBase.trim()
-    ? '该服务商需要手动填写 API Base'
+  const apiBaseError = isCustomProvider && !apiBase.trim()
+    ? '自定义提供商需要填写 API Base'
     : '';
-  const canSave = !!selectedProvider && !!selectedModel && !!apiKey.trim() && !keyError && !apiBaseError;
+  const modelError = selectedCategory && !effectiveModelId
+    ? (isCustomProvider ? '请填写模型 ID' : '请选择模型')
+    : '';
+  const canSave = !!selectedProvider && !!selectedCategory && !!effectiveModelId && !!apiKey.trim() && !keyError && !apiBaseError && !modelError;
 
-  // ── 过滤后的配置列表（分组用） ──────────────────────────
+  // ── 过滤后的配置列表 ──────────────────────────────────────
   const filteredConfigs = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return configs;
@@ -125,29 +198,91 @@ const AIModelSettings: React.FC = () => {
     );
   }, [configs, search]);
 
-  const groupedConfigs = useMemo(() => {
-    const groups: Record<ProviderCategory, AIModelConfig[]> = { multimodal: [], text: [], image: [], video: [] };
-    filteredConfigs.forEach((c) => groups[getCategory(c.provider)].push(c));
-    return groups;
-  }, [filteredConfigs]);
-
   const handleAdd = () => {
     setSelectedProvider('');
+    setSelectedCategory('');
     setSelectedModel('');
+    setCustomModelId('');
     setApiKey('');
     setApiBase('');
     setRevealKey(false);
     setKeyTouched(false);
+    setAddTestResult(null);
+    setAddTestPassed(false);
+    setAddTesting(false);
     setShowAddModal(true);
   };
 
+  /** 选择提供商时：自动填充 API Base、重置下游选择 */
+  const handleProviderChange = (providerId: string) => {
+    setSelectedProvider(providerId);
+    setSelectedCategory('');
+    setSelectedModel('');
+    setCustomModelId('');
+    setKeyTouched(false);
+    setAddTestResult(null);
+    setAddTestPassed(false);
+    const p = PROVIDER_MAP[providerId];
+    if (p && !p.isCustom) {
+      setApiBase(p.defaultApiBase);
+    } else {
+      setApiBase('');
+    }
+  };
+
+  /** 选择模型类型时：重置模型选择 */
+  const handleCategoryChange = (cat: ProviderCategory) => {
+    setSelectedCategory(cat);
+    setSelectedModel('');
+    setCustomModelId('');
+    setAddTestResult(null);
+    setAddTestPassed(false);
+  };
+
+  /** 执行添加前的模型测试 */
+  const handleAddTest = async (): Promise<boolean> => {
+    if (!selectedCategory || !effectiveModelId || !apiKey.trim()) return false;
+    setAddTesting(true);
+    setAddTestResult(null);
+    setAddTestPassed(false);
+    try {
+      const config: AIModelConfig = {
+        provider: selectedProvider,
+        model_name: effectiveModelId,
+        api_key: apiKey.trim(),
+        api_base: apiBase.trim() || undefined,
+      };
+      const result = await testModelByCategory(selectedCategory, config);
+      setAddTestResult(result);
+      setAddTestPassed(result.ok);
+      return result.ok;
+    } catch (err: any) {
+      const failResult: ConnectionTestResult = {
+        ok: false, status: 'failed',
+        message: '测试请求异常',
+        detail: err?.message || '未知错误',
+      };
+      setAddTestResult(failResult);
+      setAddTestPassed(false);
+      return false;
+    } finally {
+      setAddTesting(false);
+    }
+  };
+
+  /** 保存（先测试，通过才保存） */
   const handleSave = async () => {
     if (!canSave) return;
+    // 如果尚未通过测试，先执行测试
+    if (!addTestPassed) {
+      const passed = await handleAddTest();
+      if (!passed) return; // 测试失败，不保存
+    }
     setSaving(true);
     try {
       await saveAIModelKey({
         provider: selectedProvider,
-        model_name: selectedModel,
+        model_name: effectiveModelId,
         api_key: apiKey.trim(),
         api_base: apiBase.trim() || undefined,
       });
@@ -213,132 +348,93 @@ const AIModelSettings: React.FC = () => {
     }
   };
 
-  const toggleKeyVisibility = (key: string) => {
-    setVisibleKeys((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key); else next.add(key);
-      return next;
-    });
-  };
-
-  const maskApiKey = (key: string) => (key.length <= 8 ? '****' : `${key.slice(0, 4)}****${key.slice(-4)}`);
-
   const enabledCount = configs.filter((c) => c.enabled !== false).length;
   const defaultCount = configs.filter((c) => c.is_default).length;
 
-  // ── 渲染单个配置卡片 ────────────────────────────────────
-  const renderConfigCard = (config: AIModelConfig) => {
+  // ── 渲染单个配置行（行式简洁布局） ────────────────────────
+  const renderConfigRow = (config: AIModelConfig) => {
     const key = configKey(config);
-    const isVisible = visibleKeys.has(key);
     const isEnabled = config.enabled !== false;
     const result = testResults[key];
     const isTesting = testing[key];
 
     return (
-      <Card key={key} className={`${isEnabled ? '' : 'opacity-60'}`}>
-        <CardBody className="space-y-3">
-          {/* 头部 */}
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3 min-w-0">
-              <ProviderAvatar providerId={config.provider} />
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <h4 className="font-semibold text-(--text-primary) truncate">{getProviderName(config.provider)}</h4>
-                  {config.is_default && (
-                    <Chip size="sm" color="primary" variant="flat" startContent={<Star className="w-3 h-3" />}>默认</Chip>
-                  )}
-                </div>
-                <p className="text-xs text-(--text-muted) font-mono truncate">{config.model_name}</p>
-              </div>
-            </div>
-            {/* 启用开关 */}
-            <div className="flex items-center gap-2 shrink-0">
-              <span className="text-xs text-(--text-muted)">{isEnabled ? '已启用' : '已停用'}</span>
-              <Switch
-                size="sm"
-                color="success"
-                isSelected={isEnabled}
-                onValueChange={(v) => handleToggleEnabled(config, v)}
-              />
-            </div>
-          </div>
-
-          {/* API Key */}
-          <div>
-            <label className="text-xs text-(--text-muted)">API Key</label>
-            <div className="flex items-center gap-2 mt-1">
-              <Input
-                type={isVisible ? 'text' : 'password'}
-                value={isVisible ? config.api_key : maskApiKey(config.api_key)}
-                readOnly
-                size="sm"
-                className="flex-1"
-              />
-              <Button isIconOnly size="sm" variant="light" onPress={() => toggleKeyVisibility(key)} aria-label="显示/隐藏密钥">
-                {isVisible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </Button>
-            </div>
-          </div>
-          {config.api_base && (
-            <div>
-              <label className="text-xs text-(--text-muted)">API Base</label>
-              <p className="text-xs text-(--text-secondary) mt-0.5 font-mono break-all">{config.api_base}</p>
-            </div>
-          )}
-
-          {/* 测试结果 */}
-          {result && (
-            <div
-              className={`flex items-center gap-1.5 text-xs rounded-lg px-2.5 py-1.5 ${
-                result.status === 'success'
-                  ? 'bg-green-500/10 text-green-500'
-                  : result.status === 'unknown'
-                    ? 'bg-amber-500/10 text-amber-500'
-                    : 'bg-red-500/10 text-red-500'
-              }`}
-            >
-              {result.status === 'success' ? <ShieldCheck className="w-3.5 h-3.5" /> : <AlertCircle className="w-3.5 h-3.5" />}
-              <span>{result.message}</span>
-            </div>
-          )}
-
-          {/* 操作栏 */}
-          <div className="flex items-center gap-2 pt-1">
-            <Button
-              size="sm"
-              variant="flat"
-              color={result?.status === 'success' ? 'success' : 'default'}
-              startContent={isTesting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
-              isLoading={false}
-              isDisabled={isTesting}
-              onPress={() => handleTest(config)}
-            >
-              {isTesting ? '测试中' : '连接测试'}
-            </Button>
-            {!config.is_default && (
-              <Button
-                size="sm"
-                variant="light"
-                startContent={<Star className="w-4 h-4" />}
-                isDisabled={!isEnabled}
-                onPress={() => handleSetDefault(config)}
-              >
-                设为默认
-              </Button>
+      <div
+        key={key}
+        className={`group flex items-center justify-between px-4 py-3.5 rounded-xl transition-colors hover:bg-(--bg-hover) ${
+          isEnabled ? '' : 'opacity-50'
+        }`}
+      >
+        {/* 左侧：模型信息 */}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className="font-semibold text-sm text-(--text-primary) truncate">{config.model_name}</span>
+            {config.is_default && (
+              <Chip size="sm" color="primary" variant="flat" className="text-xs shrink-0">默认</Chip>
             )}
+            {/* 测试结果行内提示 */}
+            {result && (
+              <span className={`inline-flex items-center gap-1 text-xs ${
+                result.status === 'success' ? 'text-green-500' : result.status === 'unknown' ? 'text-amber-500' : 'text-red-500'
+              }`}>
+                {result.status === 'success' ? <ShieldCheck className="w-3 h-3" /> : <AlertCircle className="w-3 h-3" />}
+                {result.status === 'success' ? '可用' : result.status === 'unknown' ? '未知' : '失败'}
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-(--text-muted) mt-0.5">{getProviderName(config.provider)}</p>
+        </div>
+
+        {/* 右侧：操作 + 开关 */}
+        <div className="flex items-center gap-1 shrink-0 ml-4">
+          {/* 连接测试 */}
+          <Button
+            isIconOnly
+            size="sm"
+            variant="light"
+            aria-label="连接测试"
+            isDisabled={isTesting}
+            onPress={() => handleTest(config)}
+            className="opacity-0 group-hover:opacity-100 transition-opacity"
+          >
+            {isTesting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
+          </Button>
+          {/* 设为默认 */}
+          {!config.is_default && (
             <Button
               isIconOnly
               size="sm"
-              color="danger"
               variant="light"
-              aria-label="删除配置"
-              onPress={() => { setDeletingConfig(config); setShowDeleteModal(true); }}
+              aria-label="设为默认"
+              isDisabled={!isEnabled}
+              onPress={() => handleSetDefault(config)}
+              className="opacity-0 group-hover:opacity-100 transition-opacity"
             >
-              <Trash2 className="w-4 h-4" />
+              <Star className="w-4 h-4" />
             </Button>
-          </div>
-        </CardBody>
-      </Card>
+          )}
+          {/* 删除 */}
+          <Button
+            isIconOnly
+            size="sm"
+            variant="light"
+            color="danger"
+            aria-label="删除配置"
+            onPress={() => { setDeletingConfig(config); setShowDeleteModal(true); }}
+            className="opacity-0 group-hover:opacity-100 transition-opacity"
+          >
+            <Trash2 className="w-4 h-4" />
+          </Button>
+          {/* 启用开关 */}
+          <Switch
+            size="sm"
+            color="success"
+            isSelected={isEnabled}
+            onValueChange={(v) => handleToggleEnabled(config, v)}
+            className="ml-2"
+          />
+        </div>
+      </div>
     );
   };
 
@@ -374,45 +470,24 @@ const AIModelSettings: React.FC = () => {
         )}
       </div>
 
-      {/* 配置列表 */}
+      {/* 配置列表：行式布局 */}
       {loading ? (
         <div className="flex items-center justify-center py-12">
           <div className="w-8 h-8 border-2 border-(--accent) border-t-transparent rounded-full animate-spin" />
         </div>
       ) : configs.length === 0 ? (
-        <Card>
-          <CardBody className="py-14">
-            <div className="text-center max-w-sm mx-auto">
-              <div className="w-14 h-14 mx-auto mb-4 rounded-2xl bg-(--accent)/10 flex items-center justify-center">
-                <MessageSquare className="w-7 h-7 text-(--accent)" />
-              </div>
-              <p className="text-(--text-primary) font-medium">还没有配置任何 AI 模型</p>
-              <p className="text-sm text-(--text-muted) mt-2">点击右上角「添加模型」，选择服务商并填入你的 API Key 即可开始</p>
-            </div>
-          </CardBody>
-        </Card>
+        <div className="py-14 text-center">
+          <div className="w-14 h-14 mx-auto mb-4 rounded-2xl bg-(--accent)/10 flex items-center justify-center">
+            <MessageSquare className="w-7 h-7 text-(--accent)" />
+          </div>
+          <p className="text-(--text-primary) font-medium">还没有配置任何 AI 模型</p>
+          <p className="text-sm text-(--text-muted) mt-2">点击右上角「添加模型」，选择服务商并填入你的 API Key 即可开始</p>
+        </div>
       ) : filteredConfigs.length === 0 ? (
-        <Card>
-          <CardBody className="py-10 text-center text-sm text-(--text-muted)">没有匹配「{search}」的配置</CardBody>
-        </Card>
+        <div className="py-10 text-center text-sm text-(--text-muted)">没有匹配「{search}」的配置</div>
       ) : (
-        <div className="space-y-6">
-          {(['multimodal', 'text', 'image', 'video'] as ProviderCategory[]).map((cat) => {
-            const items = groupedConfigs[cat];
-            if (items.length === 0) return null;
-            return (
-              <div key={cat} className="space-y-3">
-                <div className="flex items-center gap-2 text-sm font-medium text-(--text-secondary)">
-                  {CATEGORY_META[cat].icon}
-                  <span>{CATEGORY_META[cat].label}</span>
-                  <span className="text-xs text-(--text-muted)">({items.length})</span>
-                </div>
-                <div className="grid gap-4 md:grid-cols-2">
-                  {items.map(renderConfigCard)}
-                </div>
-              </div>
-            );
-          })}
+        <div className="space-y-1">
+          {filteredConfigs.map(renderConfigRow)}
         </div>
       )}
 
@@ -423,70 +498,98 @@ const AIModelSettings: React.FC = () => {
             <span className="text-base font-semibold text-(--text-primary)">添加模型</span>
           </ModalHeader>
           <ModalBody className="space-y-5">
-            {/* 提供商 */}
+            {/* 第一步：选择提供商 */}
             <div>
               <label className="block text-sm font-medium text-(--text-primary) mb-1.5">
                 <span className="text-red-400 mr-0.5">*</span>提供商
               </label>
-              <select
-                value={selectedProvider}
-                onChange={(e) => {
-                  setSelectedProvider(e.target.value);
-                  setSelectedModel('');
-                  const p = PROVIDER_MAP[e.target.value];
-                  setApiBase(p?.apiBasePlaceholder || '');
-                  setKeyTouched(false);
-                }}
-                className="w-full h-10 px-3 rounded-lg bg-(--bg-card) border border-(--border-color) text-(--text-primary) text-sm appearance-none cursor-pointer focus:outline-none focus:ring-1 focus:ring-(--accent) hover:border-(--accent)/50 transition-colors"
-              >
-                <option value="">选择提供商</option>
-                {(['multimodal', 'text', 'image', 'video'] as ProviderCategory[]).map((cat) => {
-                  const list = MODEL_PROVIDERS.filter((p) => p.category === cat);
-                  if (list.length === 0) return null;
-                  return (
-                    <optgroup key={cat} label={CATEGORY_META[cat].label}>
-                      {list.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                    </optgroup>
-                  );
-                })}
-              </select>
+              <div className="relative">
+                <select
+                  value={selectedProvider}
+                  onChange={(e) => handleProviderChange(e.target.value)}
+                  className="w-full h-10 px-3 pr-8 rounded-lg bg-(--bg-card) border border-(--border-color) text-(--text-primary) text-sm appearance-none cursor-pointer focus:outline-none focus:ring-1 focus:ring-(--accent) hover:border-(--accent)/50 transition-colors"
+                >
+                  <option value="">选择提供商</option>
+                  {MODEL_PROVIDERS.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+                <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-(--text-muted) pointer-events-none" />
+              </div>
             </div>
 
-            {/* 模型分类（自动派生） */}
+            {/* 第二步：选择模型类型（选定提供商后可用） */}
             {selectedProvider && selectedProviderInfo && (
               <div>
-                <label className="block text-sm font-medium text-(--text-primary) mb-1.5">模型分类</label>
-                <div className="flex items-center gap-2 h-10 px-3 rounded-lg bg-(--bg-card) border border-(--border-color)">
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-(--accent)/15 text-(--accent)">
-                    {CATEGORY_META[selectedProviderInfo.category].label}
-                  </span>
-                  <span className="text-xs text-(--text-muted)">
-                    {selectedProviderInfo.category === 'multimodal' && '支持文本、图像、语音等多种输入输出'}
-                    {selectedProviderInfo.category === 'text' && '纯文本对话与生成'}
-                    {selectedProviderInfo.category === 'image' && '文本生成图像'}
-                    {selectedProviderInfo.category === 'video' && '文本/图像生成视频'}
-                  </span>
+                <label className="block text-sm font-medium text-(--text-primary) mb-1.5">
+                  <span className="text-red-400 mr-0.5">*</span>模型类型
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  {availableCategories.map((cat) => {
+                    const meta = CATEGORY_META[cat];
+                    const isActive = selectedCategory === cat;
+                    return (
+                      <button
+                        key={cat}
+                        type="button"
+                        onClick={() => handleCategoryChange(cat)}
+                        className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border text-sm font-medium transition-all cursor-pointer ${
+                          isActive
+                            ? 'border-(--accent) bg-(--accent)/10 text-(--accent)'
+                            : 'border-(--border-color) bg-(--bg-card) text-(--text-secondary) hover:border-(--accent)/40'
+                        }`}
+                      >
+                        {meta.icon}
+                        <span>{meta.label}</span>
+                      </button>
+                    );
+                  })}
                 </div>
+                {selectedCategory && (
+                  <p className="text-xs text-(--text-muted) mt-1.5">
+                    {selectedCategory === 'multimodal' && '支持文本、图像、语音等多种输入输出'}
+                    {selectedCategory === 'text' && '纯文本对话与生成'}
+                    {selectedCategory === 'image' && '文本生成图像'}
+                    {selectedCategory === 'video' && '文本/图像生成视频'}
+                  </p>
+                )}
               </div>
             )}
 
-            {/* 模型 */}
-            <div>
-              <label className="block text-sm font-medium text-(--text-primary) mb-1.5">
-                <span className="text-red-400 mr-0.5">*</span>模型
-              </label>
-              <select
-                value={selectedModel}
-                onChange={(e) => setSelectedModel(e.target.value)}
-                disabled={!selectedProvider}
-                className="w-full h-10 px-3 rounded-lg bg-(--bg-card) border border-(--border-color) text-(--text-primary) text-sm appearance-none cursor-pointer focus:outline-none focus:ring-1 focus:ring-(--accent) hover:border-(--accent)/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <option value="">{selectedProvider ? '选择模型' : '请先选择提供商'}</option>
-                {selectedProviderInfo?.models.map((m) => (
-                  <option key={m} value={m}>{m}</option>
-                ))}
-              </select>
-            </div>
+            {/* 第三步：选择模型 ID */}
+            {selectedCategory && (
+              <div>
+                <label className="block text-sm font-medium text-(--text-primary) mb-1.5">
+                  <span className="text-red-400 mr-0.5">*</span>{isCustomProvider ? '模型 ID' : '模型'}
+                </label>
+                {isCustomProvider ? (
+                  <Input
+                    placeholder="输入模型 ID，如 gpt-4o、qwen-max"
+                    value={customModelId}
+                    onValueChange={(v) => { setCustomModelId(v); setAddTestPassed(false); setAddTestResult(null); }}
+                    isInvalid={!!modelError}
+                    errorMessage={modelError}
+                  />
+                ) : (
+                  <div className="relative">
+                    <select
+                      value={selectedModel}
+                      onChange={(e) => { setSelectedModel(e.target.value); setAddTestPassed(false); setAddTestResult(null); }}
+                      className="w-full h-10 px-3 pr-8 rounded-lg bg-(--bg-card) border border-(--border-color) text-(--text-primary) text-sm appearance-none cursor-pointer focus:outline-none focus:ring-1 focus:ring-(--accent) hover:border-(--accent)/50 transition-colors"
+                    >
+                      <option value="">选择模型</option>
+                      {availableModels.map((m) => (
+                        <option key={m} value={m}>{m}</option>
+                      ))}
+                    </select>
+                    <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-(--text-muted) pointer-events-none" />
+                  </div>
+                )}
+                {modelError && !isCustomProvider && (
+                  <p className="text-xs text-red-400 mt-1">{modelError}</p>
+                )}
+              </div>
+            )}
 
             {/* API 密钥 */}
             <div>
@@ -498,7 +601,7 @@ const AIModelSettings: React.FC = () => {
                   type={revealKey ? 'text' : 'password'}
                   placeholder="API密钥"
                   value={apiKey}
-                  onValueChange={setApiKey}
+                  onValueChange={(v) => { setApiKey(v); setAddTestPassed(false); setAddTestResult(null); }}
                   onBlur={() => setKeyTouched(true)}
                   isInvalid={!!keyError}
                   errorMessage={keyError}
@@ -516,25 +619,90 @@ const AIModelSettings: React.FC = () => {
               )}
             </div>
 
-            {/* API Base（可选） */}
+            {/* API Base：非自定义提供商自动填充且只读，自定义可编辑 */}
             <div>
-              <label className="block text-sm font-medium text-(--text-primary) mb-1.5">API Base（可选）</label>
+              <label className="block text-sm font-medium text-(--text-primary) mb-1.5">
+                API Base
+                {!isCustomProvider && selectedProvider && (
+                  <span className="text-xs text-(--text-muted) font-normal ml-2">已自动填充</span>
+                )}
+                {isCustomProvider && (
+                  <span className="text-red-400 ml-0.5">*</span>
+                )}
+              </label>
               <Input
-                placeholder={selectedProviderInfo?.apiBasePlaceholder || 'https://api.example.com/v1'}
+                placeholder={isCustomProvider ? 'https://api.example.com/v1' : (selectedProviderInfo?.defaultApiBase || '选择提供商后自动填充')}
                 value={apiBase}
-                onValueChange={setApiBase}
+                onValueChange={(v) => { setApiBase(v); setAddTestPassed(false); setAddTestResult(null); }}
                 isInvalid={!!apiBaseError}
                 errorMessage={apiBaseError}
+                isReadOnly={!isCustomProvider && !!selectedProvider}
+                className={!isCustomProvider && selectedProvider ? 'opacity-80' : ''}
               />
-              <p className="text-xs text-(--text-muted) mt-1">
-                留空则使用默认地址{DEFAULT_API_BASES[selectedProvider] ? `（${DEFAULT_API_BASES[selectedProvider]}）` : ''}
-              </p>
+              {!isCustomProvider && selectedProvider && (
+                <p className="text-xs text-(--text-muted) mt-1">
+                  使用 {selectedProviderInfo?.name} 官方默认地址
+                </p>
+              )}
             </div>
+
+            {/* 模型测试区域 */}
+            {selectedCategory && effectiveModelId && apiKey.trim() && (
+              <div className="rounded-lg border border-(--border-color) overflow-hidden">
+                <div className="flex items-center justify-between px-3 py-2.5 bg-(--bg-card)">
+                  <span className="text-sm font-medium text-(--text-primary)">模型测试</span>
+                  <Button
+                    size="sm"
+                    color={addTestPassed ? 'success' : 'primary'}
+                    variant={addTestPassed ? 'flat' : 'solid'}
+                    isDisabled={addTesting || !canSave}
+                    isLoading={addTesting}
+                    startContent={!addTesting && (addTestPassed ? <CheckCircle2 className="w-4 h-4" /> : <Zap className="w-4 h-4" />)}
+                    onPress={handleAddTest}
+                  >
+                    {addTesting ? '测试中…' : addTestPassed ? '测试通过' : '开始测试'}
+                  </Button>
+                </div>
+                {/* 测试说明 */}
+                <div className="px-3 py-2 text-xs text-(--text-muted) border-t border-(--border-color)">
+                  {selectedCategory === 'text' && '将发送「你好」测试文本对话能力'}
+                  {selectedCategory === 'multimodal' && '将发送一张测试图片并询问「这是什么」'}
+                  {selectedCategory === 'image' && '将请求生成一张测试图片'}
+                  {selectedCategory === 'video' && '将请求生成一段最低画质的小猫走路视频'}
+                </div>
+                {/* 测试结果 */}
+                {addTestResult && (
+                  <div className={`px-3 py-2.5 border-t border-(--border-color) ${
+                    addTestResult.ok ? 'bg-green-500/5' : 'bg-red-500/5'
+                  }`}>
+                    <div className={`flex items-start gap-2 text-sm ${
+                      addTestResult.ok ? 'text-green-500' : 'text-red-500'
+                    }`}>
+                      {addTestResult.ok
+                        ? <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" />
+                        : <XCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                      }
+                      <div className="min-w-0">
+                        <p className="font-medium">{addTestResult.message}</p>
+                        {addTestResult.detail && (
+                          <p className="text-xs mt-1 opacity-80 break-all font-mono">{addTestResult.detail}</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </ModalBody>
           <ModalFooter>
             <Button variant="light" onPress={() => setShowAddModal(false)}>取消</Button>
-            <Button color="primary" onPress={handleSave} isLoading={saving} isDisabled={!canSave}>
-              添加
+            <Button
+              color="primary"
+              onPress={handleSave}
+              isLoading={saving || addTesting}
+              isDisabled={!canSave}
+            >
+              {saving ? '保存中' : addTesting ? '测试中…' : addTestPassed ? '添加' : '测试并添加'}
             </Button>
           </ModalFooter>
         </ModalContent>

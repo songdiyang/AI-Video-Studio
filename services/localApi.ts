@@ -162,6 +162,8 @@ export interface ConnectionTestResult {
   ok: boolean;
   status: 'success' | 'failed' | 'unknown';
   message: string;
+  /** 详细错误信息（用于展示给用户） */
+  detail?: string;
 }
 
 // 连接测试：向兼容 OpenAI 的 /models 端点发起轻量鉴权请求
@@ -196,6 +198,197 @@ export async function testAIModelConnection(config: AIModelConfig): Promise<Conn
   } catch (err: any) {
     const msg = err?.name === 'AbortError' ? '连接超时（8s）' : (err?.message || '网络错误 / CORS 受限');
     return { ok: false, status: 'unknown', message: `${msg}，无法从当前环境验证` };
+  }
+}
+
+// ─── 分类别模型功能测试 ──────────────────────────────────────
+
+/** 测试用的 1x1 像素红色 PNG 图片 base64 */
+const TEST_IMAGE_BASE64 =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+/** 从错误响应体中提取可读信息 */
+async function extractErrorMessage(res: Response): Promise<string> {
+  try {
+    const body = await res.text();
+    // 尝试解析 JSON 错误
+    try {
+      const json = JSON.parse(body);
+      const msg = json?.error?.message || json?.message || json?.error?.code || json?.code;
+      if (msg) return `${res.status}: ${msg}`;
+    } catch { /* 非 JSON */ }
+    // 截断过长的响应
+    const truncated = body.length > 300 ? body.slice(0, 300) + '…' : body;
+    return `${res.status}: ${truncated || res.statusText}`;
+  } catch {
+    return `${res.status}: ${res.statusText}`;
+  }
+}
+
+/** 通用 fetch 带超时 */
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = 15000): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...init, signal: controller.signal });
+    clearTimeout(timer);
+    return res;
+  } catch (err: any) {
+    clearTimeout(timer);
+    if (err?.name === 'AbortError') throw new Error(`请求超时（${timeoutMs / 1000}s）`);
+    throw err;
+  }
+}
+
+/** 文本模型测试：发送"你好" */
+async function testTextModel(base: string, apiKey: string, modelId: string): Promise<ConnectionTestResult> {
+  const url = `${base}/chat/completions`;
+  try {
+    const res = await fetchWithTimeout(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: modelId,
+        messages: [{ role: 'user', content: '你好' }],
+        max_tokens: 16,
+      }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const reply = data?.choices?.[0]?.message?.content || '';
+      return { ok: true, status: 'success', message: `文本模型测试通过，模型回复: "${reply.slice(0, 50)}${reply.length > 50 ? '…' : ''}"` };
+    }
+    const detail = await extractErrorMessage(res);
+    return { ok: false, status: 'failed', message: '文本模型测试失败', detail };
+  } catch (err: any) {
+    return { ok: false, status: 'failed', message: '文本模型请求异常', detail: err?.message || '网络错误' };
+  }
+}
+
+/** 多模态模型测试：发送一张图片问"这是什么" */
+async function testMultimodalModel(base: string, apiKey: string, modelId: string): Promise<ConnectionTestResult> {
+  const url = `${base}/chat/completions`;
+  try {
+    const res = await fetchWithTimeout(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: modelId,
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'text', text: '这是什么？请用一句话描述。' },
+            { type: 'image_url', image_url: { url: `data:image/png;base64,${TEST_IMAGE_BASE64}` } },
+          ],
+        }],
+        max_tokens: 64,
+      }),
+    }, 20000);
+    if (res.ok) {
+      const data = await res.json();
+      const reply = data?.choices?.[0]?.message?.content || '';
+      return { ok: true, status: 'success', message: `多模态模型测试通过，模型回复: "${reply.slice(0, 80)}${reply.length > 80 ? '…' : ''}"` };
+    }
+    const detail = await extractErrorMessage(res);
+    return { ok: false, status: 'failed', message: '多模态模型测试失败', detail };
+  } catch (err: any) {
+    return { ok: false, status: 'failed', message: '多模态模型请求异常', detail: err?.message || '网络错误' };
+  }
+}
+
+/** 图片模型测试：请求生成一张极简图片 */
+async function testImageModel(base: string, apiKey: string, modelId: string): Promise<ConnectionTestResult> {
+  const url = `${base}/images/generations`;
+  try {
+    const res = await fetchWithTimeout(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: modelId,
+        prompt: 'a red dot on white background',
+        n: 1,
+        size: '256x256',
+      }),
+    }, 30000);
+    if (res.ok) {
+      return { ok: true, status: 'success', message: '图片模型测试通过，成功生成图片' };
+    }
+    const detail = await extractErrorMessage(res);
+    return { ok: false, status: 'failed', message: '图片模型测试失败', detail };
+  } catch (err: any) {
+    return { ok: false, status: 'failed', message: '图片模型请求异常', detail: err?.message || '网络错误' };
+  }
+}
+
+/** 视频模型测试：请求生成最低标准的小猫走路视频 */
+async function testVideoModel(base: string, apiKey: string, modelId: string): Promise<ConnectionTestResult> {
+  // 视频生成通常是异步任务，先提交任务
+  const url = `${base}/video/generations`;
+  try {
+    const res = await fetchWithTimeout(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: modelId,
+        prompt: 'A small cat walking on a white floor, minimal quality, shortest duration',
+        duration: 1,
+        resolution: '480p',
+      }),
+    }, 30000);
+    if (res.ok || res.status === 202) {
+      return { ok: true, status: 'success', message: '视频模型测试通过，视频生成任务已提交' };
+    }
+    const detail = await extractErrorMessage(res);
+    return { ok: false, status: 'failed', message: '视频模型测试失败', detail };
+  } catch (err: any) {
+    return { ok: false, status: 'failed', message: '视频模型请求异常', detail: err?.message || '网络错误' };
+  }
+}
+
+/**
+ * 按模型类别执行功能测试
+ * @param category 模型类别
+ * @param config 模型配置（含 provider / model_name / api_key / api_base）
+ */
+export async function testModelByCategory(
+  category: 'text' | 'multimodal' | 'image' | 'video',
+  config: AIModelConfig,
+): Promise<ConnectionTestResult> {
+  if (!config.api_key?.trim()) {
+    return { ok: false, status: 'failed', message: 'API Key 为空' };
+  }
+  const base = (config.api_base || DEFAULT_API_BASES[config.provider] || '').trim().replace(/\/$/, '');
+  if (!base) {
+    return { ok: false, status: 'failed', message: '缺少 API Base，无法测试' };
+  }
+  const modelId = config.model_name;
+  if (!modelId) {
+    return { ok: false, status: 'failed', message: '未指定模型 ID' };
+  }
+
+  switch (category) {
+    case 'text':
+      return testTextModel(base, config.api_key, modelId);
+    case 'multimodal':
+      return testMultimodalModel(base, config.api_key, modelId);
+    case 'image':
+      return testImageModel(base, config.api_key, modelId);
+    case 'video':
+      return testVideoModel(base, config.api_key, modelId);
+    default:
+      return { ok: false, status: 'failed', message: `未知的模型类别: ${category}` };
   }
 }
 

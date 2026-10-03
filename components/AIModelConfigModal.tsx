@@ -77,7 +77,7 @@ const AIModelConfigModal: React.FC<AIModelConfigModalProps> = ({
             </ModalBody>
             <ModalFooter className="border-t border-slate-700/50">
               <Button
-                className="bg-gradient-to-r from-blue-500 to-violet-600 text-white font-semibold shadow-lg shadow-blue-500/20"
+                className="bg-linear-to-r from-blue-500 to-violet-600 text-white font-semibold shadow-lg shadow-blue-500/20"
                 onPress={onClose}
               >
                 确定
