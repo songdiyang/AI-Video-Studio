@@ -9,6 +9,7 @@
  */
 
 import { getAuthToken } from './auth';
+import { isOfflineMode } from '../utils/runtimeMode';
 
 export interface RunSessionParams {
   sessionId: number;
@@ -75,9 +76,12 @@ export async function cancelSession(sessionId: number): Promise<{ success: true;
 
 /**
  * 判断模型是否支持 AI 助手长任务
- * 基于模型配置中的 supports_tool_calling 标志
+ * 基于模型配置中的 supports_tool_calling 标志。
+ * 离线模式下长任务 workflow（/sessions/:id/run）不可用，一律返回 false，
+ * 使面板回退到 stream/非流式聊天分支。
  */
 export function isLongTaskCapable(model: { supports_tool_calling?: boolean | number } | null | undefined): boolean {
+  if (isOfflineMode()) return false;
   if (!model) return false;
   return Boolean(model.supports_tool_calling);
 }

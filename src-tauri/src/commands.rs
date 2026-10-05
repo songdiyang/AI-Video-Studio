@@ -5,7 +5,7 @@ use crate::crypto;
 use crate::storage::{StoragePaths, ProjectMetadata, MediaFileInfo};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 use uuid::Uuid;
 
 /// 应用状态
@@ -155,9 +155,10 @@ pub async fn list_projects(
     Ok(pairs.into_iter().map(|(_, meta)| meta).collect())
 }
 
-/// 打开工程：校验清单、更新注册表最近打开时间
+/// 打开工程：校验清单、更新注册表最近打开时间，并授权工程 media/ 目录供 asset 协议读取
 #[tauri::command]
 pub async fn open_project(
+    app: AppHandle,
     path: String,
     state: State<'_, AppState>,
 ) -> Result<ProjectMetadata, String> {
@@ -168,16 +169,19 @@ pub async fn open_project(
         .ok_or("Invalid manifest location")?
         .to_path_buf();
     crate::storage::upsert_registry(&state.storage.root, &project_dir)?;
+    // 授予工程 media/ 目录（递归）读取权限，使已落地素材跨会话可渲染
+    grant_media_scope(&app, &project_dir.join("media"));
     Ok(meta)
 }
 
 /// 注册一个已存在的工程（文件夹或其 .jzp 文件路径）
 #[tauri::command]
 pub async fn register_project(
+    app: AppHandle,
     path: String,
     state: State<'_, AppState>,
 ) -> Result<ProjectMetadata, String> {
-    open_project(path, state).await
+    open_project(app, path, state).await
 }
 
 /// 从注册表移除工程（可选同时删除磁盘文件）
@@ -449,4 +453,280 @@ pub async fn get_project_dir(
 ) -> Result<String, String> {
     let project_dir = state.storage.get_project_dir(&project_id);
     Ok(project_dir.to_string_lossy().to_string())
+}
+
+// ==================== AI 厂商代理（规避 WebView CORS） ====================
+
+/// 转发的厂商请求（与前端 localAI.vendorFetch 的 payload 对齐）
+#[derive(Debug, Deserialize)]
+pub struct AiProxyRequest {
+    pub url: String,
+    pub method: String,
+    #[serde(default)]
+    pub headers: std::collections::HashMap<String, String>,
+    #[serde(default)]
+    pub body: Option<String>,
+}
+
+/// 厂商响应：整体返回 body 文本（不支持流式，流式由前端 WebView 直连）
+#[derive(Debug, Serialize)]
+pub struct AiProxyResponse {
+    pub status: u16,
+    pub body: String,
+}
+
+/// 用 reqwest 转发对厂商的 HTTP 调用，返回 { status, body }。
+#[tauri::command]
+pub async fn ai_proxy(req: AiProxyRequest) -> Result<AiProxyResponse, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(180))
+        .build()
+        .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
+    let method = reqwest::Method::from_bytes(req.method.to_uppercase().as_bytes())
+        .map_err(|e| format!("无效请求方法: {}", e))?;
+    let mut builder = client.request(method, &req.url);
+    for (k, v) in &req.headers {
+        builder = builder.header(k.as_str(), v.as_str());
+    }
+    if let Some(body) = &req.body {
+        builder = builder.body(body.clone());
+    }
+    let resp = builder
+        .send()
+        .await
+        .map_err(|e| format!("请求厂商失败: {}", e))?;
+    let status = resp.status().as_u16();
+    let body = resp
+        .text()
+        .await
+        .map_err(|e| format!("读取厂商响应失败: {}", e))?;
+    Ok(AiProxyResponse { status, body })
+}
+
+// ==================== 可灵 JWT（HS256，SecretKey 参与签名） ====================
+
+/// HMAC-SHA256（用 sha2 手写，避免额外依赖）
+fn hmac_sha256(key: &[u8], msg: &[u8]) -> [u8; 32] {
+    use sha2::{Digest, Sha256};
+    const BLOCK: usize = 64;
+    let mut k: Vec<u8> = if key.len() > BLOCK {
+        let mut h = Sha256::new();
+        h.update(key);
+        h.finalize().to_vec()
+    } else {
+        key.to_vec()
+    };
+    if k.len() < BLOCK {
+        k.resize(BLOCK, 0);
+    }
+    let mut ipad = vec![0u8; BLOCK];
+    let mut opad = vec![0u8; BLOCK];
+    for i in 0..BLOCK {
+        ipad[i] = k[i] ^ 0x36;
+        opad[i] = k[i] ^ 0x5c;
+    }
+    let mut inner = Sha256::new();
+    inner.update(&ipad);
+    inner.update(msg);
+    let inner_hash = inner.finalize();
+    let mut outer = Sha256::new();
+    outer.update(&opad);
+    outer.update(inner_hash);
+    let res = outer.finalize();
+    let mut out = [0u8; 32];
+    out.copy_from_slice(&res);
+    out
+}
+
+/// base64url（无填充），JWT 段编码
+fn b64url(input: &[u8]) -> String {
+    use base64::{engine::general_purpose, Engine as _};
+    general_purpose::URL_SAFE_NO_PAD.encode(input)
+}
+
+/// 解析可灵密钥：支持 "accessKey:secretKey" 或 "accessKey.secretKey"
+fn parse_kling_key(api_key: &str) -> Result<(String, String), String> {
+    let trimmed = api_key.trim();
+    let (a, s) = if let Some(pos) = trimmed.find(':') {
+        (&trimmed[..pos], &trimmed[pos + 1..])
+    } else if let Some(pos) = trimmed.find('.') {
+        (&trimmed[..pos], &trimmed[pos + 1..])
+    } else {
+        return Err("可灵密钥格式应为 'AccessKey:SecretKey'".to_string());
+    };
+    if a.is_empty() || s.is_empty() {
+        return Err("可灵 AccessKey / SecretKey 不能为空".to_string());
+    }
+    Ok((a.to_string(), s.to_string()))
+}
+
+/// 生成可灵 API 所需的 HS256 JWT（iss=AccessKey，exp=+30min，nbf=-5s）。
+#[tauri::command]
+pub async fn kling_sign_jwt(api_key: String) -> Result<String, String> {
+    let (access, secret) = parse_kling_key(&api_key)?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| format!("系统时间错误: {}", e))?
+        .as_secs() as i64;
+    let header = serde_json::json!({ "alg": "HS256", "typ": "JWT" });
+    let payload = serde_json::json!({ "iss": access, "exp": now + 1800, "nbf": now - 5 });
+    let signing_input = format!(
+        "{}.{}",
+        b64url(header.to_string().as_bytes()),
+        b64url(payload.to_string().as_bytes())
+    );
+    let mac = hmac_sha256(secret.as_bytes(), signing_input.as_bytes());
+    Ok(format!("{}.{}", signing_input, b64url(&mac)))
+}
+
+// ==================== 生成媒体离线落地 ====================
+
+/// 授权一个目录（递归）可经 asset 协议被 WebView 读取；失败仅告警不阻断主流程
+fn grant_media_scope(app: &AppHandle, dir: &PathBuf) {
+    match app.asset_protocol_scope().allow_directory(dir, true) {
+        Ok(_) => log::info!("Granted asset protocol scope: {:?}", dir),
+        Err(e) => log::warn!("Failed to grant asset protocol scope for {:?}: {}", dir, e),
+    }
+}
+
+/// 由 MIME 猜测文件扩展名
+fn ext_for_mime(mime: &str) -> Option<&'static str> {
+    let m = mime.to_ascii_lowercase();
+    Some(if m.contains("png") {
+        ".png"
+    } else if m.contains("jpeg") || m.contains("jpg") {
+        ".jpg"
+    } else if m.contains("webp") {
+        ".webp"
+    } else if m.contains("gif") {
+        ".gif"
+    } else if m.contains("bmp") {
+        ".bmp"
+    } else if m.contains("mp4") {
+        ".mp4"
+    } else if m.contains("webm") {
+        ".webm"
+    } else if m.contains("quicktime") {
+        ".mov"
+    } else if m.contains("avi") {
+        ".avi"
+    } else {
+        return None;
+    })
+}
+
+/// 由 URL 路径尾段猜测扩展名（忽略 query/fragment）
+fn guess_ext_from_url(url: &str) -> Option<String> {
+    let path = url.split(['?', '#']).next().unwrap_or(url);
+    let last = path.rsplit(['/', '\\']).next().unwrap_or("");
+    let dot = last.rfind('.')?;
+    let ext: String = last[dot..]
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .collect();
+    let ext = ext.to_ascii_lowercase();
+    if ext.is_empty() || ext.len() > 5 {
+        None
+    } else {
+        Some(format!(".{}", ext))
+    }
+}
+
+/// 解析 data URL（data:<mime>;base64,<payload>）为字节
+fn decode_data_url(rest: &str) -> Result<(Vec<u8>, Option<String>), String> {
+    use base64::{engine::general_purpose, Engine as _};
+    let (meta, payload) = rest.split_once(',').ok_or("Invalid data URL: missing comma")?;
+    let mime = meta.split(';').next().unwrap_or("");
+    let ext = ext_for_mime(mime).map(|s| s.to_string());
+    let clean: String = payload.chars().filter(|c| !c.is_whitespace()).collect();
+    let bytes = general_purpose::STANDARD
+        .decode(&clean)
+        .map_err(|e| format!("Base64 解码失败: {}", e))?;
+    Ok((bytes, ext))
+}
+
+/// 通过 reqwest 下载 http(s) 资源为字节
+async fn download_http_bytes(url: &str) -> Result<(Vec<u8>, Option<String>), String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(180))
+        .build()
+        .map_err(|e| format!("创建下载客户端失败: {}", e))?;
+    let resp = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| format!("下载失败: {}", e))?;
+    let status = resp.status();
+    if !status.is_success() {
+        return Err(format!("下载失败 HTTP {}", status.as_u16()));
+    }
+    let ct = resp
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+    let bytes = resp
+        .bytes()
+        .await
+        .map_err(|e| format!("读取下载内容失败: {}", e))?
+        .to_vec();
+    let ext = ext_for_mime(&ct)
+        .map(|s| s.to_string())
+        .or_else(|| guess_ext_from_url(url));
+    Ok((bytes, ext))
+}
+
+/// 把厂商临时 URL 或 base64 data URL 落地到工程 media/ 目录。
+/// 返回 MediaFileInfo（含绝对 file_path），并即时授权 asset 协议作用域，供 WebView 离线渲染。
+#[tauri::command]
+pub async fn download_media_file(
+    app: AppHandle,
+    project_path: String,
+    url: String,
+    name_hint: Option<String>,
+) -> Result<MediaFileInfo, String> {
+    // 校验工程有效性
+    crate::storage::resolve_manifest(&project_path)?;
+    let media_dir = PathBuf::from(&project_path).join("media");
+    std::fs::create_dir_all(&media_dir)
+        .map_err(|e| format!("Failed to create media dir: {}", e))?;
+
+    let (bytes, ext) = if let Some(rest) = url.strip_prefix("data:") {
+        decode_data_url(rest)?
+    } else {
+        download_http_bytes(&url).await?
+    };
+
+    // 扩展名优先级：内容类型/URL 推断 → name_hint → 兜底 .bin
+    let final_ext = ext
+        .or_else(|| name_hint.as_deref().and_then(guess_ext_from_url))
+        .unwrap_or_else(|| ".bin".to_string());
+    let file_name = format!("{}{}", Uuid::new_v4(), final_ext);
+    let dest_path = media_dir.join(&file_name);
+    std::fs::write(&dest_path, &bytes).map_err(|e| format!("写入媒体文件失败: {}", e))?;
+
+    // 授权 asset 协议可读该 media 目录（递归）
+    grant_media_scope(&app, &media_dir);
+
+    let file_size = crate::storage::get_file_size(&dest_path)?;
+    let mime_type = crate::storage::get_mime_type(&dest_path);
+    let stored_name = dest_path
+        .file_name()
+        .ok_or("Invalid file name")?
+        .to_string_lossy()
+        .to_string();
+
+    Ok(MediaFileInfo {
+        id: Uuid::new_v4().to_string(),
+        file_name: stored_name,
+        file_path: dest_path.to_string_lossy().to_string(),
+        file_type: determine_file_type(&mime_type),
+        file_size,
+        mime_type,
+        duration: None,
+        width: None,
+        height: None,
+        thumbnail_path: None,
+    })
 }

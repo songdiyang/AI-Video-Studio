@@ -17,6 +17,8 @@ export const LOCAL_DOCS = {
   props: 'props.json',
   projectMeta: 'project.meta.json',
   generationTasks: 'generation_tasks.json',
+  aiSessions: 'ai_sessions.json',
+  aiModelSelection: 'ai_model_selection.json',
 } as const;
 
 export type LocalDocName = keyof typeof LOCAL_DOCS;

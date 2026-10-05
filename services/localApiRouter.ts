@@ -16,6 +16,10 @@ import {
   resolveLocalPath,
   getActiveProjectPath,
 } from './localStore';
+import { routeAiAssistantSessions } from './localAiAssistant';
+import { routeAiChatAndModels } from './localAiAssistantChat';
+import { routeWorkflows } from './localWorkflowRouter';
+import { routeCloudFallback } from './localCloudFallback';
 
 // ==================== 本地数据模型 ====================
 
@@ -236,6 +240,33 @@ async function handleSceneContentPatch(idStr: string, body: any): Promise<Respon
   return jsonResponse(scene);
 }
 
+/**
+ * 分镜媒体回写（PATCH /api/storyboards/:id/media）。
+ * 消费方（useSceneGeneration.persistStoryboardMedia）在图片/视频工作流完成后调用，
+ * payload 形状：{ imageUrl?, startFrame?, endFrame?, videoUrl? }；映射到本地分镜文档字段并落 .jzp。
+ */
+async function handleSceneMediaPatch(idStr: string, body: any): Promise<Response> {
+  const path = await getActiveProjectPathOr(body?.projectId);
+  if (!path) return jsonResponse({ message: '未打开本地工程' }, 400);
+  const doc = await loadStoryboards(path);
+  const id = Number(idStr);
+  const scene = doc.scenes.find((s) => s.id === id);
+  if (!scene) return jsonResponse({ message: '分镜不存在' }, 404);
+  const startFrame = body?.startFrame ?? body?.first_frame_url;
+  const endFrame = body?.endFrame ?? body?.last_frame_url;
+  const videoUrl = body?.videoUrl ?? body?.video_url;
+  const imageUrl = body?.imageUrl ?? body?.image_url;
+  if (startFrame !== undefined && startFrame !== null) scene.first_frame_url = startFrame;
+  if (imageUrl !== undefined && imageUrl !== null) {
+    scene.image_ref = imageUrl;
+    if (!scene.first_frame_url) scene.first_frame_url = imageUrl;
+  }
+  if (endFrame !== undefined && endFrame !== null) scene.last_frame_url = endFrame;
+  if (videoUrl !== undefined && videoUrl !== null) scene.video_url = videoUrl;
+  saveStoryboards(path, doc);
+  return jsonResponse(scene);
+}
+
 async function handleSceneReorder(body: any): Promise<Response> {
   const path = await pathFor(body?.projectId);
   if (!path) return jsonResponse({ message: '未打开本地工程' }, 400);
@@ -360,6 +391,7 @@ async function route(url: URL, method: string, body: any): Promise<Response | nu
   if (pathname === '/api/storyboards/reorder' && m === 'PATCH') return handleSceneReorder(body || {});
   if ((mt = pathname.match(/^\/api\/storyboards\/scene\/(\d+)$/)) && m === 'DELETE') return handleSceneDelete(mt[1]);
   if ((mt = pathname.match(/^\/api\/storyboards\/(\d+)\/content$/)) && m === 'PATCH') return handleSceneContentPatch(mt[1], body || {});
+  if ((mt = pathname.match(/^\/api\/storyboards\/(\d+)\/media$/)) && m === 'PATCH') return handleSceneMediaPatch(mt[1], body || {});
   if ((mt = pathname.match(/^\/api\/storyboards\/(\d+)$/))) {
     const scriptId = num(mt[1]);
     const path = await getActiveProjectPathOr();
@@ -391,6 +423,30 @@ async function route(url: URL, method: string, body: any): Promise<Response | nu
     if (m === 'DELETE') return handleScriptDelete(mt[1]);
   }
 
+  // ---- AI 助手会话（本地持久化，回放后端契约）----
+  if (pathname.startsWith('/api/ai-assistant/sessions')) {
+    const res = await routeAiAssistantSessions(url, m, body);
+    if (res) return res;
+  }
+
+  // ---- AI 聊天 / 模型目录 / 项目模型选择（直连厂商）----
+  if (
+    pathname.startsWith('/api/ai-assistant/chat') ||
+    pathname === '/api/ai-assistant/enhance-prompt' ||
+    pathname === '/api/ai-assistant/compress' ||
+    pathname === '/api/ai-models' ||
+    /^\/api\/projects\/\d+\/models$/.test(pathname)
+  ) {
+    const res = await routeAiChatAndModels(url, m, body);
+    if (res) return res;
+  }
+
+  // ---- 图片/视频生成工作流（本地直连厂商引擎）----
+  if (pathname === '/api/workflows' || pathname.startsWith('/api/workflows/')) {
+    const res = await routeWorkflows(url, m, body);
+    if (res) return res;
+  }
+
   // ---- 道具（离线返回空集合，避免阻塞；增删改后续接入）----
   if ((mt = pathname.match(/^\/api\/props\/project\/(\d+)$/)) && m === 'GET') {
     const projectId = num(mt[1]);
@@ -399,6 +455,11 @@ async function route(url: URL, method: string, body: any): Promise<Response | nu
     const doc = await loadProps(path);
     return jsonResponse({ props: doc.props });
   }
+
+  // ---- 云专属能力优雅降级（社区/市场/订阅/团队/管理/计费/反馈/邮件/扩展/RAG/协作批注）----
+  // 放在所有本地已实现路由之后，仅兜底捕获未匹配的云服务调用，避免打到不存在的后端 501。
+  const degraded = routeCloudFallback(pathname);
+  if (degraded) return degraded;
 
   return null; // 未匹配 → 透传
 }

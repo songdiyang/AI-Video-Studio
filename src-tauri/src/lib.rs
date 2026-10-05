@@ -67,10 +67,15 @@ pub fn run() {
       show_in_explorer,
       open_file,
       import_media_file,
+      download_media_file,
       
       // 路径获取
       get_app_data_dir,
       get_project_dir,
+
+      // AI 厂商代理（规避 CORS）与可灵签名
+      ai_proxy,
+      kling_sign_jwt,
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

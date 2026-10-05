@@ -1,10 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Button } from '@heroui/react';
-import { Save } from 'lucide-react';
-import { ResourcePanelProps, TabType } from './types';
+import { Settings2, Sparkles, ChevronRight, ChevronDown, User, MapPin, Box, Cloud, Building2, Shirt, Tags, RefreshCw } from 'lucide-react';
+import { ResourcePanelProps } from './types';
 import { useCharacterData } from './useCharacterData';
 import { useSceneData, Scene } from './useSceneData';
-import TabButtons from './TabButtons';
 import CharactersTab from './CharactersTab';
 import LocationsTab from './LocationsTab';
 import PropsTab from './PropsTab';
@@ -31,6 +29,17 @@ import { useToast } from '../../../contexts/ToastContext';
 import { useConfirm } from '../../../contexts/ConfirmContext';
 import { useWorkflowTargetMonitor } from '../hooks/useWorkflowTargetMonitor';
 import { normalizeCapabilityOptions } from '../../../utils/modelCapabilities';
+import CategoryManageModal from './CategoryManageModal';
+import {
+  ALL_RESOURCE_TYPES,
+  CategoryResourceData,
+  CustomCategory,
+  RESOURCE_TYPE_REGISTRY,
+  ResourceTypeKey,
+  makeCustomKey,
+  useResourceCategories,
+  buildAllResourceEntries,
+} from './resourceCategories';
 
 export interface StoryboardStateOverride {
   stateId: number;
@@ -60,7 +69,10 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
   storyboardStates = {},
   onRefreshProps,
 }) => {
-  const [activeTab, setActiveTab] = useState<TabType>('characters');
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(() => new Set(['characters']));
+  /** AI/用户自定义模式：开启后自动隐藏无内容的分类分组 */
+  const [aiMode, setAiMode] = useState(false);
+  const [isCategoryModalOpen, setCategoryModalOpen] = useState(false);
   const { showToast } = useToast();
   const { confirm } = useConfirm();
 
@@ -91,7 +103,20 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
   const [isLoadingEnvironments, setIsLoadingEnvironments] = useState(false);
   const [isLoadingBuildings, setIsLoadingBuildings] = useState(false);
   const [isLoadingCostumes, setIsLoadingCostumes] = useState(false);
-  
+
+  // ── 资源分类：基本分类开关 + 用户/AI 自定义分类（localStorage 持久化） ──
+  const {
+    config: categoryConfig,
+    toggleType,
+    addCustomCategory,
+    renameCustomCategory,
+    removeCustomCategory,
+    addMember,
+    removeMember,
+    applyAiCategories,
+    clearAiCategories,
+  } = useResourceCategories();
+
   const [viewsCharacterId, setViewsCharacterId] = useState<number | undefined>(undefined);
 
   // 两阶段 AI 工作流 loading 状态
@@ -567,30 +592,54 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
     }
   };
 
-  return (
-    <div className="h-full flex flex-col bg-(--bg-app)">
-      {/* 头部 */}
-      <div className="shrink-0 px-3 py-2 border-b border-(--border-color)">
-        <div className="flex items-center justify-between mb-2">
-          <TabButtons activeTab={activeTab} onTabChange={setActiveTab} />
-          <Button
-            size="sm"
-            variant="flat"
-            className="h-7 px-2 text-xs bg-(--bg-card) text-(--text-muted) hover:text-(--text-primary) border border-(--border-color)"
-            startContent={<Save className="w-3 h-3" />}
-            onPress={handleRefreshResources}
-          >
-            刷新
-          </Button>
-        </div>
-      </div>
+  // === 手风琴分类派生数据（基本分类 + 自定义分类，AI 模式下隐藏空分组） ===
+  const categoryData: CategoryResourceData = useMemo(() => ({
+    characters: dbCharacters,
+    scenes: dbScenes,
+    props,
+    environments: dbEnvironments,
+    buildings: dbBuildings,
+    costumes: dbCostumes,
+  }), [dbCharacters, dbScenes, props, dbEnvironments, dbBuildings, dbCostumes]);
 
-      {/* 内容区域 */}
-      <div className="flex-1 overflow-y-auto p-3">
-        {activeTab === 'characters' && (
+  const allEntries = useMemo(() => buildAllResourceEntries(categoryData), [categoryData]);
+
+  const sectionCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const t of ALL_RESOURCE_TYPES) counts[t] = RESOURCE_TYPE_REGISTRY[t].count(categoryData);
+    for (const c of categoryConfig.customCategories) counts[makeCustomKey(c.id)] = c.members.length;
+    return counts;
+  }, [categoryData, categoryConfig.customCategories]);
+
+  const sections = useMemo(() => [
+    ...categoryConfig.enabledTypes.map(t => ({
+      key: t as string, kind: t as ResourceTypeKey | 'custom', label: RESOURCE_TYPE_REGISTRY[t].label, custom: null as CustomCategory | null,
+    })),
+    ...categoryConfig.customCategories.map(c => ({
+      key: makeCustomKey(c.id), kind: 'custom' as const, label: c.name, custom: c as CustomCategory | null,
+    })),
+  ], [categoryConfig]);
+
+  // AI 模式：仅展示有内容的分类，空分组自动折叠隐藏
+  const visibleSections = aiMode ? sections.filter(s => (sectionCounts[s.key] ?? 0) > 0) : sections;
+
+  const toggleSection = (key: string) => {
+    setExpandedSections(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  /** 渲染某内置类型的 Tab 内容（data 为全量或自定义分类过滤后的子集） */
+  const renderTypeContent = (type: ResourceTypeKey, data: CategoryResourceData) => {
+    switch (type) {
+      case 'characters':
+        return (
           <CharactersTab
-            characters={characters}
-            dbCharacters={dbCharacters}
+            characters={data.characters.map(c => c.name)}
+            dbCharacters={data.characters}
             isLoadingCharacters={isLoadingCharacters}
             scenes={scenes}
             activeCharacterIds={characterViewMonitor.activeTargetIds}
@@ -601,48 +650,28 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
             onDelete={handleDeleteCharacterFromCard}
             onStoryboardStateChange={onStoryboardStateChange}
           />
-        )}
-
-        {activeTab === 'locations' && (
-          <>
-            {isLoadingScenes ? (
-              <div className="text-center py-8 text-(--text-muted)">
-                <p className="text-sm">加载影棚中...</p>
-              </div>
-            ) : (
-              <LocationsTab scenes={dbScenes} onDelete={handleDeleteStudioFromCard} />
-            )}
-          </>
-        )}
-
-        {activeTab === 'props' && (
+        );
+      case 'locations':
+        return isLoadingScenes
+          ? <div className="text-center py-8 text-(--text-muted)"><p className="text-sm">加载影棚中...</p></div>
+          : <LocationsTab scenes={data.scenes} onDelete={handleDeleteStudioFromCard} />;
+      case 'props':
+        return (
           <PropsTab
-            props={props}
+            props={data.props}
             imageModel={effectiveImageModel}
             imageAspectRatio={effectiveImageAspectRatio}
             onDelete={handleDeletePropFromCard}
           />
-        )}
-
-        {activeTab === 'environments' && (
-          <EnvironmentsTab
-            environments={dbEnvironments}
-            isLoading={isLoadingEnvironments}
-            onDelete={handleDeleteEnvironmentFromCard}
-          />
-        )}
-
-        {activeTab === 'buildings' && (
-          <BuildingsTab
-            buildings={dbBuildings}
-            isLoading={isLoadingBuildings}
-            onDelete={handleDeleteBuildingFromCard}
-          />
-        )}
-
-        {activeTab === 'costumes' && (
+        );
+      case 'environments':
+        return <EnvironmentsTab environments={data.environments} isLoading={isLoadingEnvironments} onDelete={handleDeleteEnvironmentFromCard} />;
+      case 'buildings':
+        return <BuildingsTab buildings={data.buildings} isLoading={isLoadingBuildings} onDelete={handleDeleteBuildingFromCard} />;
+      case 'costumes':
+        return (
           <CostumesTab
-            costumes={dbCostumes}
+            costumes={data.costumes}
             isLoading={isLoadingCostumes}
             imageModel={effectiveImageModel}
             textModel={textModel}
@@ -661,7 +690,135 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
             }}
             onDelete={handleDeleteCostumeFromCard}
           />
+        );
+    }
+  };
+
+  /** 自定义分类内容：按成员引用过滤各类型子集，复用同一套 Tab 渲染 */
+  const renderCustomContent = (cat: CustomCategory) => {
+    const refs = new Set(cat.members);
+    const subsets: CategoryResourceData = {
+      characters: categoryData.characters.filter(c => refs.has(`characters:${c.id}`)),
+      scenes: categoryData.scenes.filter(s => refs.has(`locations:${s.id}`)),
+      props: categoryData.props.filter(p => refs.has(`props:${p.id}`)),
+      environments: categoryData.environments.filter(e => refs.has(`environments:${e.id}`)),
+      buildings: categoryData.buildings.filter(b => refs.has(`buildings:${b.id}`)),
+      costumes: categoryData.costumes.filter(c => refs.has(`costumes:${c.id}`)),
+    };
+    /** 取某类型子集（注意 locations 类型对应 data.scenes 字段） */
+    const subsetOf = (t: ResourceTypeKey): unknown[] =>
+      t === 'locations' ? subsets.scenes
+        : t === 'characters' ? subsets.characters
+        : t === 'props' ? subsets.props
+        : t === 'environments' ? subsets.environments
+        : t === 'buildings' ? subsets.buildings
+        : subsets.costumes;
+    const hasAny = ALL_RESOURCE_TYPES.some(t => subsetOf(t).length > 0);
+    if (!hasAny) {
+      return (
+        <div className="text-center py-6 text-(--text-muted)">
+          <Tags className="w-6 h-6 mx-auto mb-2 opacity-40" />
+          <p className="text-xs">该分类还没有成员</p>
+          <p className="text-[10px] mt-0.5 opacity-70">点击右上角「分类管理」添加资源或运行 AI 分类</p>
+        </div>
+      );
+    }
+    return (
+      <div className="space-y-4">
+        {ALL_RESOURCE_TYPES.map(t => {
+          const subset = subsetOf(t);
+          if (subset.length === 0) return null;
+          return <div key={t}>{renderTypeContent(t, { ...categoryData, [t === 'locations' ? 'scenes' : t]: subset } as CategoryResourceData)}</div>;
+        })}
+      </div>
+    );
+  };
+
+  const SECTION_ICONS: Record<ResourceTypeKey, React.ComponentType<{ className?: string }>> = {
+    characters: User,
+    locations: MapPin,
+    props: Box,
+    environments: Cloud,
+    buildings: Building2,
+    costumes: Shirt,
+  };
+
+  return (
+    <div className="h-full flex flex-col bg-(--bg-app)">
+      {/* 头部：标题 + AI 分类模式开关 + 刷新 / 分类管理 */}
+      <div className="shrink-0 px-3 py-1.5 border-b border-(--border-color) flex items-center gap-1">
+        <span className="flex-1 text-[11px] text-(--text-muted) uppercase tracking-wider">资源分类</span>
+        <button
+          type="button"
+          onClick={() => setAiMode(v => !v)}
+          aria-pressed={aiMode}
+          title={aiMode ? 'AI 分类模式：仅展示有内容的分类（点击关闭）' : '开启 AI 分类模式：自动隐藏空分类'}
+          className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] transition-colors ${
+            aiMode ? 'bg-(--accent)/20 text-(--accent)' : 'text-(--text-muted) hover:text-(--text-primary) hover:bg-white/5'
+          }`}
+        >
+          <Sparkles className="w-3 h-3" />
+          AI分类
+        </button>
+        <button
+          type="button"
+          onClick={handleRefreshResources}
+          title="刷新资源"
+          className="p-1 rounded text-(--text-muted) hover:text-(--text-primary) hover:bg-white/5"
+        >
+          <RefreshCw className="w-3.5 h-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={() => setCategoryModalOpen(true)}
+          title="分类管理：自定义资源分类"
+          className="p-1 rounded text-(--text-muted) hover:text-(--text-primary) hover:bg-white/5"
+        >
+          <Settings2 className="w-3.5 h-3.5" />
+        </button>
+      </div>
+
+      {/* 手风琴分类列表：每类一分组，标题行 chevron + 图标 + 名称 + 计数 */}
+      <div className="flex-1 overflow-y-auto py-1">
+        {visibleSections.length === 0 && (
+          <div className="px-3 py-6 text-center text-[11px] text-(--text-muted)">
+            {aiMode && sections.length > 0
+              ? '当前所有分类都没有内容，可关闭 AI 分类模式查看全部分类'
+              : '没有展示中的分类，点击右上角「分类管理」开启基本分类或新建自定义分类'}
+          </div>
         )}
+        {visibleSections.map(section => {
+          const expanded = expandedSections.has(section.key);
+          const ChevronIcon = expanded ? ChevronDown : ChevronRight;
+          const Icon = section.kind === 'custom' ? Tags : SECTION_ICONS[section.kind as ResourceTypeKey];
+          const count = sectionCounts[section.key] ?? 0;
+          return (
+            <div key={section.key} className="border-b border-(--border-color) last:border-b-0">
+              <div
+                role="button"
+                tabIndex={0}
+                aria-expanded={expanded}
+                onClick={() => toggleSection(section.key)}
+                onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSection(section.key); } }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs cursor-pointer text-(--text-primary) hover:bg-(--bg-card-hover) transition-colors"
+                title={expanded ? '点击折叠' : '点击展开'}
+              >
+                <ChevronIcon className="w-3.5 h-3.5 opacity-40 shrink-0" />
+                <Icon className="w-3.5 h-3.5 shrink-0 opacity-70" />
+                <span className="flex-1 truncate font-medium">{section.label}</span>
+                {section.custom?.aiGenerated && <Sparkles className="w-3 h-3 shrink-0 text-(--accent) opacity-70" />}
+                <span className="shrink-0 text-[10px] text-(--text-muted)">{count}</span>
+              </div>
+              {expanded && (
+                <div className="px-3 pb-3 max-h-[45vh] overflow-y-auto">
+                  {section.kind === 'custom'
+                    ? (section.custom && renderCustomContent(section.custom))
+                    : renderTypeContent(section.kind, categoryData)}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       {/* 弹窗 */}
@@ -690,6 +847,22 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
         scriptId={scriptId ?? null}
         onClose={closeCreateModal}
         onCreated={handleAssetCreated}
+      />
+
+      {/* 资源分类管理：基本分类开关 + 用户自定义分类 + AI 启发式分类 */}
+      <CategoryManageModal
+        isOpen={isCategoryModalOpen}
+        onClose={() => setCategoryModalOpen(false)}
+        config={categoryConfig}
+        entries={allEntries}
+        onToggleType={toggleType}
+        onAddCustom={addCustomCategory}
+        onRenameCustom={renameCustomCategory}
+        onRemoveCustom={removeCustomCategory}
+        onAddMember={addMember}
+        onRemoveMember={removeMember}
+        onApplyAi={applyAiCategories}
+        onClearAi={clearAiCategories}
       />
     </div>
   );

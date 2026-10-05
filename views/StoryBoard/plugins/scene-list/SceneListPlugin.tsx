@@ -32,7 +32,6 @@ const SceneListPlugin: React.FC = () => {
       scripts={state.scripts}
       currentEpisode={state.currentEpisode}
       currentScriptId={state.currentScriptId}
-      projectName={state.currentProject?.name}
       standaloneMaxEpisode={state.standaloneMaxEpisode}
       onSelectScene={setSelectedScene}
       onInsertScene={sceneActions.insertScene}

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Film, User, LogOut, Settings, Sparkles, Moon, Sun, Monitor, Contrast, Maximize, Minimize, UsersRound, Puzzle, HelpCircle, PanelLeft, PanelRight, PanelBottom, FolderOpen, GripVertical, Check, X } from 'lucide-react';
+import { Film, User, LogOut, Settings, Sparkles, Moon, Sun, Monitor, Contrast, UsersRound, Puzzle, HelpCircle, PanelLeft, PanelRight, PanelBottom, FolderOpen, GripVertical, Check, X } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from "@heroui/react";
 import { getAuthToken, logout } from '../services/auth';
@@ -598,7 +598,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
         {/* 右侧：辅助控件 */}
         <div data-tauri-drag-region className="flex items-center gap-3">
-          {/* 布局切换按钮组（VSCode 式：左侧栏 / AI 助手 / 底部面板） */}
+          {/* 布局切换按钮组（VSCode 式），按方位排序：左侧栏 / 底部面板 / 右侧栏 */}
           <div className="flex items-center gap-0.5 bg-white/5 rounded-lg p-0.5">
             <button
               onClick={() => setLeftSidebarTab(leftSidebarTab ? null : 'projects')}
@@ -613,18 +613,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
               <PanelLeft className="w-4 h-4" />
             </button>
             <button
-              onClick={toggleAIAssistant}
-              className={`p-1 rounded transition-colors ${
-                isAIAssistantOpen
-                  ? 'bg-[var(--accent)]/15 text-[var(--accent)]'
-                  : 'text-(--text-muted) hover:text-(--text-primary) hover:bg-white/5'
-              }`}
-              aria-label="AI 助手"
-              title="AI 助手"
-            >
-              <PanelRight className="w-4 h-4" />
-            </button>
-            <button
               onClick={toggleBottomPanel}
               className={`p-1 rounded transition-colors ${
                 bottomPanelOpen
@@ -635,6 +623,18 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
               title="底部面板"
             >
               <PanelBottom className="w-4 h-4" />
+            </button>
+            <button
+              onClick={toggleAIAssistant}
+              className={`p-1 rounded transition-colors ${
+                isAIAssistantOpen
+                  ? 'bg-[var(--accent)]/15 text-[var(--accent)]'
+                  : 'text-(--text-muted) hover:text-(--text-primary) hover:bg-white/5'
+              }`}
+              aria-label="右侧栏"
+              title="右侧栏（AI 助手）"
+            >
+              <PanelRight className="w-4 h-4" />
             </button>
           </div>
           {/* 积分余额入口已移除（商业化功能下线） */}
@@ -747,15 +747,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
             </Dropdown>
           )}
 
-          {/* 全屏切换 */}
-          <button
-            onClick={toggleFullscreen}
-            className="p-1.5 rounded-lg text-(--text-muted) hover:text-(--text-primary) hover:bg-white/5 transition-colors"
-            aria-label={isFullscreen ? t.settings?.appearance?.exitFullscreen || '退出全屏' : t.settings?.appearance?.enterFullscreen || '全屏'}
-            title={isFullscreen ? t.settings?.appearance?.exitFullscreen || '退出全屏' : t.settings?.appearance?.enterFullscreen || '全屏'}
-          >
-            {isFullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
-          </button>
           {isDesktop() && <WindowControls />}
         </div>
       </header>

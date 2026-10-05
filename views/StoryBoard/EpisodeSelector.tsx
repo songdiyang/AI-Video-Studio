@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Select, SelectItem } from '@heroui/react';
-import { Film, Plus, BookOpen, Pencil, Check, X, Settings2 } from 'lucide-react';
+import { Film, Plus, Pencil, Check, X, Settings2 } from 'lucide-react';
 
 interface Script {
   id: number;
@@ -17,8 +17,6 @@ interface EpisodeSelectorProps {
   currentEpisode: number;
   /** 当前选中的 scriptId */
   currentScriptId?: number | null;
-  /** 当前项目名称 */
-  projectName?: string;
   onSelect: (script: Script | null) => void;
   /**
    * 自由创作模式下的集数切换回调。
@@ -43,15 +41,14 @@ interface EpisodeSelectorProps {
  * 集数选择器
  * 统一存储层后，所有分镜都绑定到剧本（包括隐式剧本）。
  * 此组件负责：
- *  - 显示项目名称
- *  - 集数切换（绑定剧本时显示剧本列表，自由创作时显示进度标签）
+ *  - 集数切换（绑定剧本时显示剧本集数列表，自由创作时显示进度标签）
  *  - 新建下一集入口
+ * 注：项目名不在此展示（顶部导航栏/侧栏标题已承担项目标识）。
  */
 const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
   scripts,
   currentEpisode,
   currentScriptId,
-  projectName,
   onSelect,
   onStandaloneEpisodeChange,
   standaloneMaxEpisode,
@@ -104,21 +101,6 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
 
   return (
     <div className="flex items-center gap-2">
-      {/* 剧本绑定状态：只显示项目名，不再列出各集 */}
-      <div className="flex items-center gap-2">
-        <div
-          className="h-8 min-h-8 px-3 inline-flex items-center gap-1.5 rounded-lg bg-[var(--accent)]/8 border border-[var(--accent)]/20 text-sm font-semibold text-[var(--accent)] truncate"
-          title={projectName || '未命名项目'}
-        >
-          {hasBoundScript ? (
-            <BookOpen className="w-3.5 h-3.5 text-violet-400 shrink-0" />
-          ) : (
-            <Pencil className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-          )}
-          <span className="truncate">{projectName || '未命名项目'}</span>
-        </div>
-      </div>
-
       {/* 自由创作模式：集数作为「进度标签」 */}
       {!hasBoundScript && onStandaloneEpisodeChange && (() => {
         // 读取父组件传入的最大集数，确保 Select 保留所有已到达的集数选项，用户可自由前后切换
@@ -140,11 +122,11 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                 }
                 if (!isNaN(v) && v >= 1) onStandaloneEpisodeChange(v);
               }}
-              className="w-28"
+              className="w-24"
               startContent={<Film className="w-3.5 h-3.5 text-[var(--accent)]" />}
               classNames={{
-                trigger: "h-8 min-h-8 bg-white/5 border-[var(--border-color)] hover:border-[var(--accent)]/40 data-[open=true]:border-[var(--accent)]/40",
-                value: "text-sm font-medium text-[var(--text-primary)]",
+                trigger: "h-7 min-h-7 bg-transparent border-transparent hover:border-transparent data-[open=true]:border-transparent",
+                value: "text-xs font-medium text-[var(--text-primary)]",
               }}
             >
               {[
@@ -164,7 +146,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
             <button
               type="button"
               onClick={() => onStandaloneEpisodeChange(maxEp + 1)}
-              className="inline-flex items-center justify-center w-8 h-8 rounded-md border border-[var(--border-color)] hover:border-[var(--accent)]/50 hover:bg-[var(--accent)]/10 text-[var(--accent)] transition-colors"
+              className="inline-flex items-center justify-center w-7 h-7 rounded-md hover:bg-[var(--accent)]/10 text-[var(--accent)] transition-colors"
               title={`新建第${maxEp + 1}集`}
               aria-label="新建下一集"
             >
@@ -183,11 +165,11 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
             aria-label="切换集数"
             selectedKeys={currentScript ? [String(currentScript.id)] : [String(scripts[0]?.id)]}
             onChange={handleEpisodeChange}
-            className="w-28"
+            className="w-24"
             startContent={<Film className="w-3.5 h-3.5 text-[var(--accent)]" />}
             classNames={{
-              trigger: "h-8 min-h-8 bg-white/5 border-[var(--border-color)] hover:border-[var(--accent)]/40 data-[open=true]:border-[var(--accent)]/40",
-              value: "text-sm font-medium text-[var(--text-primary)]",
+              trigger: "h-7 min-h-7 bg-transparent border-transparent hover:border-transparent data-[open=true]:border-transparent",
+              value: "text-xs font-medium text-[var(--text-primary)]",
             }}
           >
             {[
@@ -217,7 +199,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
               }
             }}
             onClick={() => setManageOpen(true)}
-            className="inline-flex items-center justify-center w-8 h-8 rounded-md border border-[var(--border-color)] hover:border-[var(--accent)]/50 hover:bg-[var(--accent)]/10 text-[var(--text-muted)] hover:text-[var(--accent)] transition-colors"
+            className="inline-flex items-center justify-center w-7 h-7 rounded-md border border-[var(--border-color)] hover:border-[var(--accent)]/50 hover:bg-[var(--accent)]/10 text-[var(--text-muted)] hover:text-[var(--accent)] transition-colors"
             title="管理集数"
             aria-label="管理集数"
           >

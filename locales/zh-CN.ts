@@ -111,6 +111,8 @@ const zhCN = {
     },
     // 分区标题
     sections: {
+      general: '通用',
+      generalDesc: '外观与语言设置',
       appearance: '外观',
       appearanceDesc: '界面主题与风格',
       language: '语言',

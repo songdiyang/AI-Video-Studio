@@ -61,7 +61,7 @@ const AccordionSection: React.FC<{
         disabled={!enabled}
         onClick={() => onToggle(meta.id)}
         aria-expanded={expanded}
-        className={`w-full flex items-center gap-2.5 px-3 py-2 text-left text-xs transition-colors shrink-0 ${
+        className={`w-full flex items-center gap-2.5 px-3 py-1.5 text-left text-xs transition-colors shrink-0 ${
           enabled
             ? 'text-(--text-primary) hover:bg-(--bg-card-hover)'
             : 'text-(--text-muted) opacity-50 cursor-not-allowed'
@@ -135,11 +135,11 @@ const WorkspaceSidePanel: React.FC = () => {
     );
   }
 
-  // ── 有工程：手风琴分组（分镜列表 / 资源 / 大纲） ──
+  // ── 有工程：手风琴分组（分镜列表 / 资源 / 大纲）──
+  // 不渲染「工作台」小标题：侧栏头部标题已表明面板身份，避免重复
   return (
     <div className="flex flex-col h-full">
       <div className="flex-1 overflow-y-auto py-1">
-        <div className="px-3 py-1.5 text-[11px] text-(--text-muted) uppercase tracking-wider">工作台</div>
         {SECTIONS.map((meta) => (
           <AccordionSection
             key={meta.id}

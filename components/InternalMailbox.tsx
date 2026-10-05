@@ -719,10 +719,12 @@ const InternalMailbox: React.FC = () => {
         onClick={() => {
           if (!isOpen && triggerRef.current) {
             const rect = triggerRef.current.getBoundingClientRect();
-            setPanelPosition({
-              y: rect.bottom + 8,
-              x: Math.max(8, rect.left - 150),
-            });
+            // 面板尺寸约束：宽 w-95≈380px，高 max-h-130≈520px，需钳制在视口内避免溢出屏幕
+            const PANEL_W = 380;
+            const PANEL_H = 520;
+            const x = Math.max(8, Math.min(rect.left - 150, window.innerWidth - PANEL_W - 8));
+            const y = Math.max(8, Math.min(rect.bottom + 8, window.innerHeight - PANEL_H - 8));
+            setPanelPosition({ x, y });
           }
           setIsOpen(!isOpen);
           setSelectedMail(null);

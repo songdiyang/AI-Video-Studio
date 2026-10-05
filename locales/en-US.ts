@@ -113,6 +113,8 @@ const enUS: Translations = {
     },
     // Section titles
     sections: {
+      general: 'General',
+      generalDesc: 'Appearance & language',
       appearance: 'Appearance',
       appearanceDesc: 'Interface theme and style',
       language: 'Language',

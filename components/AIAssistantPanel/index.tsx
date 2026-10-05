@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { Sparkles, X, Send, Paperclip, ImagePlus, Trash2, Wand2, FileText, Settings, Image as ImageIcon, Loader2, History, Plus, Edit3, Check, MessageSquare, Video, Star, MessageCircle, ClipboardList, Brain } from 'lucide-react';
+import { Sparkles, X, Send, Paperclip, ImagePlus, Trash2, Wand2, FileText, Settings, Image as ImageIcon, Loader2, History, Plus, Edit3, Check, ChevronDown, MessageSquare, Video, Star, MessageCircle, ClipboardList, Brain } from 'lucide-react';
 import { getAuthToken } from '../../services/auth';
 import { useToast } from '../../contexts/ToastContext';
 import ChatMessageComponent, { ChatMessageData } from './ChatMessage';
@@ -67,6 +67,25 @@ const getWelcomeMessage = (hasProject: boolean): ChatMessageData => ({
   timestamp: Date.now(),
 });
 
+// ─── Token 估算（用于按 token 预算裁剪对话上下文）─────────────────
+function estimateTokens(text: string): number {
+  if (!text) return 0;
+  let cjk = 0;
+  for (const ch of text) {
+    if (/[\u3400-\u4DBF\u4E00-\u9FFF\u3040-\u30FF\uAC00-\uD7AF\u3000-\u303F\uFF00-\uFFEF]/.test(ch)) cjk++;
+  }
+  const other = text.length - cjk;
+  return Math.ceil(cjk + other / 4);
+}
+function estimateMessageTokens(m: { content?: string; attachments?: any[] }): number {
+  let t = estimateTokens(m.content || '') + 4;
+  if (m.attachments?.length) t += m.attachments.length * 512;
+  return t;
+}
+
+// 上下文窗口候选（token 预算，0=不限）
+const CONTEXT_WINDOW_OPTIONS = [2048, 4096, 8192, 16384, 0];
+
 // ─── Component ──────────────────────────────────────────────────────
 const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
   projectId,
@@ -112,27 +131,36 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
   const [isAnalyzingScript, setIsAnalyzingScript] = useState(false);
   const lastScriptContentRef = useRef<string>('');
 
-  // ── 设置项：上下文注入开关 / 历史消息上限 ───────────
+  // ── 设置项：上下文大小（token）/ 对话模型 ───────────
+  // 上下文注入改为智能默认开启（agent 自动携带项目当前状态），不再提供开关
   const SETTINGS_KEY = 'ai_assistant_settings_v1';
-  const [includeContext, setIncludeContext] = useState(true);
-  const [historyLimit, setHistoryLimit] = useState<number>(50);
+  const includeContext = true;
+  const [contextTokenLimit, setContextTokenLimit] = useState<number>(4096);
+  const storedChatModelRef = useRef<string>('');
 
   useEffect(() => {
     try {
       const raw = localStorage.getItem(SETTINGS_KEY);
       if (raw) {
         const s = JSON.parse(raw);
-        if (typeof s.includeContext === 'boolean') setIncludeContext(s.includeContext);
-        if (typeof s.historyLimit === 'number') setHistoryLimit(s.historyLimit);
+        if (typeof s.contextTokenLimit === 'number') setContextTokenLimit(s.contextTokenLimit);
+        if (typeof s.chatModel === 'string') storedChatModelRef.current = s.chatModel;
       }
     } catch { /* ignore */ }
   }, []);
 
-  useEffect(() => {
+  // 合并写入，保留其它字段（如设置页写入的 chatModel / contextTokenLimit）
+  const patchSettings = useCallback((patch: Record<string, any>) => {
     try {
-      localStorage.setItem(SETTINGS_KEY, JSON.stringify({ includeContext, historyLimit }));
+      const raw = localStorage.getItem(SETTINGS_KEY);
+      const prev = raw ? JSON.parse(raw) : {};
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify({ ...prev, ...patch }));
     } catch { /* ignore */ }
-  }, [includeContext, historyLimit]);
+  }, []);
+
+  useEffect(() => {
+    patchSettings({ contextTokenLimit });
+  }, [contextTokenLimit, patchSettings]);
 
   // ── localStorage key ─────────────────────────────────────────────
   const storageKey = projectId ? `ai_chat_${projectId}` : 'ai_chat_global';
@@ -437,6 +465,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
 
   // ── Load available multimodal models ─────────────────────────────
   const [modelOptions, setModelOptions] = useState<{ name: string; category?: string; description?: string }[]>([]);
+  const [modelsLoaded, setModelsLoaded] = useState(false);
 
   useEffect(() => {
     const fetchModels = async () => {
@@ -454,12 +483,19 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
             (m) => (m.type || m.category || '').toUpperCase() === 'MULTIMODAL'
           );
           setModelOptions(multimodalModels);
-          if (multimodalModels.length > 0 && !selectedModel) {
-            setSelectedModel(multimodalModels[0].name);
+          if (multimodalModels.length > 0) {
+            setSelectedModel((prev) => {
+              if (prev) return prev;
+              const stored = storedChatModelRef.current;
+              if (stored && multimodalModels.some((m) => m.name === stored)) return stored;
+              return multimodalModels[0].name;
+            });
           }
         }
       } catch (err) {
         console.error('[AIAssistant] Failed to load models:', err);
+      } finally {
+        setModelsLoaded(true);
       }
     };
     fetchModels();
@@ -680,7 +716,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
       return;
     }
     if (!selectedModel) {
-      showToast('请先选择模型', 'warning');
+      showToast('当前没有模型可用，请在「设置 › AI 模型密钥」中配置', 'warning');
       return;
     }
     setIsEnhancing(true);
@@ -722,7 +758,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
       return;
     }
     if (!selectedModel) {
-      showToast('请先选择模型', 'warning');
+      showToast('当前没有模型可用，请在「设置 › AI 模型密钥」中配置', 'warning');
       return;
     }
     setIsCompressing(true);
@@ -797,6 +833,10 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
     const text = inputText.trim();
     if (!text && attachments.length === 0) return;
     if (isLoading) return;
+    if (!selectedModel) {
+      showToast('当前没有模型可用，请在「设置 › AI 模型密钥」中配置', 'warning');
+      return;
+    }
 
     // 剧本附件的 textContent 自动拼接到消息文本中作为上下文
     const scriptContents = attachments.filter((a) => a.type === 'script' && a.textContent);
@@ -835,11 +875,20 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
     }
     if (sendSid) archiveMessage(sendSid, userMessage);
 
-    // 应用 historyLimit：仅取最近 N 条非 welcome 消息
+    // 按 token 预算裁剪历史（contextTokenLimit=0 表示不限）：从最新往回累加，超预算则截断
     const filtered = messages.filter((m) => m.id !== 'welcome');
-    const kept = historyLimit > 0 && filtered.length > historyLimit
-      ? filtered.slice(filtered.length - historyLimit)
-      : filtered;
+    let kept = filtered;
+    if (contextTokenLimit > 0) {
+      let used = estimateMessageTokens(userMessage); // 为当前发送消息预留
+      const acc: typeof filtered = [];
+      for (let i = filtered.length - 1; i >= 0; i--) {
+        const t = estimateMessageTokens(filtered[i]);
+        if (used + t > contextTokenLimit) break;
+        used += t;
+        acc.unshift(filtered[i]);
+      }
+      kept = acc;
+    }
     const apiMessages = [...kept, userMessage].map((m) => ({
       role: m.role,
       content: m.id === userMessage.id ? mergedText : m.content,
@@ -1163,7 +1212,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
     } finally {
       setSessionLoading(sendSid, false);
     }
-  }, [inputText, attachments, isLoading, messages, projectId, selectedModel, currentFrame, modelOptions, scenes, characters, locations, scripts, projectName, projectDescription, includeContext, historyLimit, apiCreateSession, archiveMessage, activeSessionKey, updateSessionMessages, setSessionLoading, setSessionStreaming]);
+  }, [inputText, attachments, isLoading, messages, projectId, selectedModel, currentFrame, modelOptions, scenes, characters, locations, scripts, projectName, projectDescription, includeContext, contextTokenLimit, apiCreateSession, archiveMessage, activeSessionKey, updateSessionMessages, setSessionLoading, setSessionStreaming, showToast]);
 
   // ── 上下文使用量估算（字符/4 作为 token 粗估） ──────────────
   const MAX_CONTEXT_TOKENS = 200000; // 默认 200k window
@@ -1813,63 +1862,65 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                 <span>视频</span>
               </button>
             )}
-            <div className="relative">
-              <select
-                value={selectedModel}
-                onChange={(e) => setSelectedModel(e.target.value)}
-                className="text-[10px] pl-2 pr-5 py-0.5 rounded-md bg-[var(--bg-app)] border border-[var(--border-color)] text-[var(--text-muted)] hover:text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)] appearance-none cursor-pointer max-w-[140px] truncate"
-                title="选择模型"
-              >
-                {modelOptions.length === 0 && (
-                  <option value="" disabled>加载模型中...</option>
-                )}
-                {modelOptions.map((m) => (
-                  <option key={m.name} value={m.name}>{m.name}</option>
-                ))}
-              </select>
-              <span className="pointer-events-none absolute right-1 top-1/2 -translate-y-1/2 text-[9px] text-[var(--text-muted)]">▾</span>
-            </div>
-            {/* 助手行为设置浮层（与设置页共享 ai_assistant_settings_v1） */}
+            {/* 模型选择下拉（含上下文窗口设置，与设置页共享 ai_assistant_settings_v1） */}
             <div className="relative">
               <button
                 type="button"
                 onClick={() => setShowSettings(!showSettings)}
-                className={`p-1 rounded transition-colors ${showSettings ? 'bg-[var(--bg-app)] text-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-app)]'}`}
-                title="助手设置"
-                aria-label="助手设置"
+                className={`flex items-center gap-1 text-[10px] pl-2 pr-1.5 py-0.5 rounded-md border transition-colors max-w-[150px] ${showSettings ? 'bg-[var(--bg-app)] text-[var(--text-primary)]' : 'bg-[var(--bg-app)] text-[var(--text-muted)] hover:text-[var(--text-primary)]'}`}
+                style={{ borderColor: 'var(--border-color)' }}
+                title="选择模型 / 上下文窗口"
               >
-                <Settings size={14} />
+                <span className="truncate">{selectedModel || (modelsLoaded ? '无可用模型' : '加载模型中…')}</span>
+                <ChevronDown size={11} className="shrink-0" />
               </button>
               {showSettings && (
-                <div className="absolute bottom-full right-0 mb-2 w-64 rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] shadow-2xl p-3 z-[60] space-y-3">
-                  <div className="text-[11px] font-semibold text-[var(--text-primary)]">助手设置</div>
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="text-[11px] text-[var(--text-secondary)]">注入项目上下文</div>
-                      <div className="text-[10px] text-[var(--text-muted)]">发送时附带剧本/角色等背景</div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setIncludeContext(!includeContext)}
-                      className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${includeContext ? 'bg-[var(--accent)]' : 'bg-[var(--border-color)]'}`}
-                      role="switch"
-                      aria-checked={includeContext}
-                    >
-                      <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${includeContext ? 'translate-x-4' : ''}`} />
-                    </button>
+                <div className="absolute bottom-full left-0 mb-2 w-60 rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] shadow-2xl z-[60] overflow-hidden">
+                  {/* 模型列表 */}
+                  <div className="py-1 max-h-52 overflow-y-auto">
+                    {!modelsLoaded && modelOptions.length === 0 && (
+                      <div className="px-3 py-2 text-[11px] text-[var(--text-muted)]">加载模型中…</div>
+                    )}
+                    {modelsLoaded && modelOptions.length === 0 && (
+                      <div className="px-3 py-2.5 text-[11px] text-[var(--text-muted)]">
+                        <div className="text-[var(--text-secondary)]">当前没有模型可用</div>
+                        <div className="mt-0.5 leading-relaxed">请在「设置 › AI 模型密钥」中配置模型</div>
+                      </div>
+                    )}
+                    {modelOptions.map((m) => {
+                      const active = m.name === selectedModel;
+                      return (
+                        <button
+                          key={m.name}
+                          type="button"
+                          onClick={() => { setSelectedModel(m.name); patchSettings({ chatModel: m.name }); }}
+                          className="w-full flex items-center justify-between gap-2 px-3 py-1.5 text-left text-[11px] transition-colors hover:bg-[var(--bg-app)]"
+                          style={{ color: active ? 'var(--accent)' : 'var(--text-secondary)' }}
+                        >
+                          <span className="truncate">{m.name}</span>
+                          {active && <Check size={12} className="shrink-0" />}
+                        </button>
+                      );
+                    })}
                   </div>
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="text-[11px] text-[var(--text-secondary)]">历史消息上限</div>
-                    <select
-                      value={String(historyLimit)}
-                      onChange={(e) => setHistoryLimit(Number(e.target.value))}
-                      className="text-[10px] rounded-md bg-[var(--bg-app)] border border-[var(--border-color)] px-1.5 py-0.5 text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
-                    >
-                      <option value="20">最近 20 条</option>
-                      <option value="50">最近 50 条</option>
-                      <option value="100">最近 100 条</option>
-                      <option value="0">不限</option>
-                    </select>
+                  {/* 上下文窗口 */}
+                  <div className="border-t border-[var(--border-color)] py-1">
+                    <div className="px-3 py-1 text-[10px] uppercase tracking-wide text-[var(--text-muted)]">上下文窗口</div>
+                    {CONTEXT_WINDOW_OPTIONS.map((n) => {
+                      const active = n === contextTokenLimit;
+                      return (
+                        <button
+                          key={n}
+                          type="button"
+                          onClick={() => setContextTokenLimit(n)}
+                          className="w-full flex items-center justify-between gap-2 px-3 py-1.5 text-left text-[11px] transition-colors hover:bg-[var(--bg-app)]"
+                          style={{ color: active ? 'var(--accent)' : 'var(--text-secondary)' }}
+                        >
+                          <span>{n === 0 ? '不限' : `${n / 1024}K`}</span>
+                          {active && <Check size={12} className="shrink-0" />}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               )}

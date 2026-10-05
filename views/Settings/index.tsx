@@ -1,15 +1,14 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  Settings as SettingsIcon, Moon, Sun, Eye, Check, Send, 
-  Palette, MessageSquare, Info, ChevronRight, Sparkles, Monitor, Globe, RotateCcw, Maximize, Minimize, HardDrive, Trash2, Shield, EyeOff, Eye as EyeIcon, Bot,
+  Moon, Sun, Eye, Send, ChevronDown, 
+  Palette, MessageSquare, Info, ChevronRight, Sparkles, Monitor, Globe, RotateCcw, SlidersHorizontal, Shield, EyeOff, Eye as EyeIcon,
   Cpu, Database, BarChart3, Users, Gauge, AlertTriangle, Megaphone, ClipboardList, BookOpen, Key
 } from 'lucide-react';
 import { useTheme, ThemeType } from '../../contexts/ThemeContext';
 import { useLanguage, LanguageType } from '../../contexts/LanguageContext';
-import { getAuthToken, getUserRole } from '../../services/auth';
+import { getAuthToken, getUserRole, getAuthUser } from '../../services/auth';
 import { useToast } from '../../contexts/ToastContext';
-import { getCacheStats, clearMediaCache, formatCacheSize, isCacheSupported } from '../../services/mediaCache';
 import AIModelSettings from './AIModelSettings';
 
 // 导入管理后台功能组件
@@ -97,137 +96,6 @@ const THEME_PRESETS: ThemePreset[] = [
   },
 ];
 
-const ThemePreviewMini: React.FC<{ preset: ThemePreset; isActive: boolean }> = ({ preset, isActive }) => {
-  const p = preset.preview;
-  
-  // system 主题特殊分屏预览
-  if (preset.key === 'system') {
-    const lightColors = { bg: '#f8fafc', nav: '#ffffff', card: '#f1f5f9', text: '#1e293b', accent: '#4f46e5', border: '#cbd5e1' };
-    const darkColors = { bg: '#0a0a0f', nav: '#0f172a', card: '#1e293b', text: '#e2e8f0', accent: '#6366f1', border: '#334155' };
-    
-    return (
-      <div
-        className="w-full aspect-16/10 rounded-lg overflow-hidden relative border-2 transition-all"
-        style={{
-          borderColor: isActive ? p.accent : p.border,
-          boxShadow: isActive ? `0 0 16px ${p.accent}44` : 'none',
-        }}
-      >
-        {/* 左半部分 - 浅色 */}
-        <div className="absolute inset-0 w-1/2" style={{ backgroundColor: lightColors.bg }}>
-          <div
-            className="h-[14%] flex items-center px-2 gap-1"
-            style={{ backgroundColor: lightColors.nav, borderBottom: `1px solid ${lightColors.border}` }}
-          >
-            <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: lightColors.accent }} />
-            <div className="w-5 h-1 rounded-full" style={{ backgroundColor: lightColors.text, opacity: 0.5 }} />
-          </div>
-          <div className="p-1.5 flex gap-1 h-[86%]">
-            <div className="w-[30%] rounded p-0.5 space-y-0.5" style={{ backgroundColor: lightColors.card }}>
-              <div className="h-1 rounded-full w-3/4" style={{ backgroundColor: lightColors.text, opacity: 0.4 }} />
-              <div className="h-1 rounded-full w-full" style={{ backgroundColor: lightColors.accent, opacity: 0.5 }} />
-            </div>
-            <div className="flex-1 rounded p-1 space-y-1" style={{ backgroundColor: lightColors.card }}>
-              <div className="h-1.5 rounded-full w-1/2" style={{ backgroundColor: lightColors.text, opacity: 0.5 }} />
-              <div className="h-4 rounded" style={{ backgroundColor: lightColors.bg }} />
-            </div>
-          </div>
-        </div>
-        
-        {/* 右半部分 - 深色 */}
-        <div className="absolute inset-0 left-1/2 w-1/2" style={{ backgroundColor: darkColors.bg }}>
-          <div
-            className="h-[14%] flex items-center px-2 gap-1"
-            style={{ backgroundColor: darkColors.nav, borderBottom: `1px solid ${darkColors.border}` }}
-          >
-            <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: darkColors.accent }} />
-            <div className="w-5 h-1 rounded-full" style={{ backgroundColor: darkColors.text, opacity: 0.5 }} />
-          </div>
-          <div className="p-1.5 flex gap-1 h-[86%]">
-            <div className="w-[30%] rounded p-0.5 space-y-0.5" style={{ backgroundColor: darkColors.card }}>
-              <div className="h-1 rounded-full w-3/4" style={{ backgroundColor: darkColors.text, opacity: 0.4 }} />
-              <div className="h-1 rounded-full w-full" style={{ backgroundColor: darkColors.accent, opacity: 0.5 }} />
-            </div>
-            <div className="flex-1 rounded p-1 space-y-1" style={{ backgroundColor: darkColors.card }}>
-              <div className="h-1.5 rounded-full w-1/2" style={{ backgroundColor: darkColors.text, opacity: 0.5 }} />
-              <div className="h-4 rounded" style={{ backgroundColor: darkColors.bg }} />
-            </div>
-          </div>
-        </div>
-        
-        {/* 中间分割线 */}
-        <div 
-          className="absolute top-0 bottom-0 left-1/2 w-0.5 -translate-x-1/2 z-10"
-          style={{ background: `linear-gradient(180deg, ${lightColors.border} 0%, ${darkColors.border} 100%)` }}
-        />
-
-        {/* Active indicator */}
-        {isActive && (
-          <div
-            className="absolute top-2 right-2 w-5 h-5 rounded-full flex items-center justify-center z-20"
-            style={{ backgroundColor: p.accent }}
-          >
-            <Check className="w-3 h-3" style={{ color: '#fff' }} />
-          </div>
-        )}
-      </div>
-    );
-  }
-  
-  return (
-    <div
-      className="w-full aspect-[16/10] rounded-lg overflow-hidden relative border-2 transition-all"
-      style={{
-        backgroundColor: p.bg,
-        borderColor: isActive ? p.accent : p.border,
-        boxShadow: isActive ? `0 0 16px ${p.accent}44` : 'none',
-      }}
-    >
-      {/* Mini nav */}
-      <div
-        className="h-[14%] flex items-center px-3 gap-1.5"
-        style={{ backgroundColor: p.nav, borderBottom: `1px solid ${p.border}` }}
-      >
-        <div className="w-2 h-2 rounded-full" style={{ backgroundColor: p.accent }} />
-        <div className="w-8 h-1.5 rounded-full" style={{ backgroundColor: p.text, opacity: 0.5 }} />
-        <div className="ml-auto flex gap-1">
-          <div className="w-6 h-1.5 rounded" style={{ backgroundColor: p.text, opacity: 0.2 }} />
-          <div className="w-6 h-1.5 rounded" style={{ backgroundColor: p.text, opacity: 0.2 }} />
-        </div>
-      </div>
-      {/* Mini body */}
-      <div className="p-2 flex gap-1.5 h-[86%]">
-        {/* Sidebar */}
-        <div className="w-[25%] rounded-md p-1 space-y-1" style={{ backgroundColor: p.card }}>
-          <div className="h-1.5 rounded-full w-3/4" style={{ backgroundColor: p.text, opacity: 0.4 }} />
-          <div className="h-1.5 rounded-full w-full" style={{ backgroundColor: p.accent, opacity: 0.5 }} />
-          <div className="h-1.5 rounded-full w-2/3" style={{ backgroundColor: p.text, opacity: 0.2 }} />
-        </div>
-        {/* Main content */}
-        <div className="flex-1 rounded-md p-1.5 space-y-1.5" style={{ backgroundColor: p.card }}>
-          <div className="h-2 rounded-full w-1/2" style={{ backgroundColor: p.text, opacity: 0.5 }} />
-          <div className="flex gap-1">
-            <div className="flex-1 h-6 rounded" style={{ backgroundColor: p.bg }} />
-            <div className="flex-1 h-6 rounded" style={{ backgroundColor: p.bg }} />
-          </div>
-          <div className="h-1.5 rounded-full w-3/4" style={{ backgroundColor: p.text, opacity: 0.2 }} />
-          <div className="h-1.5 rounded-full w-1/2" style={{ backgroundColor: p.text, opacity: 0.15 }} />
-        </div>
-      </div>
-
-      {/* Active indicator */}
-      {isActive && (
-        <div
-          className="absolute top-2 right-2 w-5 h-5 rounded-full flex items-center justify-center"
-          style={{ backgroundColor: p.accent }}
-        >
-          <Check className="w-3 h-3" style={{ color: p.bg }} />
-        </div>
-      )}
-    </div>
-  );
-};
-
 // 设置分组配置
 interface SettingSection {
   id: string;
@@ -236,11 +104,8 @@ interface SettingSection {
 }
 
 const SETTING_SECTIONS: SettingSection[] = [
-  { id: 'appearance', icon: <Palette className="w-4 h-4" /> },
-  { id: 'language', icon: <Globe className="w-4 h-4" /> },
+  { id: 'general', icon: <SlidersHorizontal className="w-4 h-4" /> },
   { id: 'ai_models', icon: <Key className="w-4 h-4" /> }, // 新增：AI 模型密钥配置
-  { id: 'ai_assistant', icon: <Bot className="w-4 h-4" /> },
-  { id: 'storage', icon: <HardDrive className="w-4 h-4" /> },
   { id: 'security', icon: <Shield className="w-4 h-4" /> },
   { id: 'feedback', icon: <MessageSquare className="w-4 h-4" /> },
   { id: 'about', icon: <Info className="w-4 h-4" /> },
@@ -262,48 +127,23 @@ const Settings: React.FC = () => {
   const { theme, setTheme } = useTheme();
   const { language, setLanguage, t } = useLanguage();
   const { showToast } = useToast();
-  const [activeSection, setActiveSection] = useState('appearance');
+  const [activeSection, setActiveSection] = useState('general');
   
   // 获取用户角色，判断是否为管理员
   const userRole = getUserRole();
   const isAdmin = userRole === 'admin' || userRole === 'ops';
 
-  // AI 助手设置项
-  const AI_SETTINGS_KEY = 'ai_assistant_settings_v1';
-  const [aiIncludeContext, setAiIncludeContext] = useState(true);
-  const [aiHistoryLimit, setAiHistoryLimit] = useState<number>(50);
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(AI_SETTINGS_KEY);
-      if (raw) {
-        const s = JSON.parse(raw);
-        if (typeof s.includeContext === 'boolean') setAiIncludeContext(s.includeContext);
-        if (typeof s.historyLimit === 'number') setAiHistoryLimit(s.historyLimit);
-      }
-    } catch { /* ignore */ }
-  }, []);
-
-  const saveAiSettings = useCallback((patch: Record<string, any>) => {
-    try {
-      const raw = localStorage.getItem(AI_SETTINGS_KEY);
-      const prev = raw ? JSON.parse(raw) : {};
-      const next = { ...prev, ...patch };
-      localStorage.setItem(AI_SETTINGS_KEY, JSON.stringify(next));
-    } catch { /* ignore */ }
-  }, []);
+  // 左侧资料块：从 JWT 声明中取邮箱/角色
+  const authUser = getAuthUser();
+  const userDisplayName = authUser?.email?.split('@')[0] || 'User';
+  const userEmail = authUser?.email || '—';
+  const userInitial = (userDisplayName.charAt(0) || 'U').toUpperCase();
 
   // 反馈功能状态
   const [type, setType] = useState<FeedbackType>('feature');
   const [content, setContent] = useState('');
   const [contact, setContact] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [isFullscreen, setIsFullscreen] = useState(false);
-
-  // 缓存管理状态
-  const [cacheStats, setCacheStats] = useState<{ count: number; size: number } | null>(null);
-  const [isClearing, setIsClearing] = useState(false);
-  const [cacheLoading, setCacheLoading] = useState(false);
 
   // 安全设置状态
   const [passwordHint, setPasswordHint] = useState('');
@@ -315,27 +155,6 @@ const Settings: React.FC = () => {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [hintLoading, setHintLoading] = useState(false);
   const [passwordLoading, setPasswordLoading] = useState(false);
-
-  // 加载缓存统计
-  const loadCacheStats = useCallback(async () => {
-    if (!isCacheSupported()) return;
-    setCacheLoading(true);
-    try {
-      const stats = await getCacheStats();
-      setCacheStats(stats);
-    } catch {
-      setCacheStats({ count: 0, size: 0 });
-    } finally {
-      setCacheLoading(false);
-    }
-  }, []);
-
-  // 进入 storage 区域时加载统计
-  useEffect(() => {
-    if (activeSection === 'storage') {
-      loadCacheStats();
-    }
-  }, [activeSection, loadCacheStats]);
 
   // 进入 security 区域时加载密码提示
   useEffect(() => {
@@ -356,32 +175,6 @@ const Settings: React.FC = () => {
       fetchHint();
     }
   }, [activeSection]);
-
-  // 监听全屏状态变化
-  useEffect(() => {
-    const handleFullscreenChange = () => {
-      setIsFullscreen(!!document.fullscreenElement);
-    };
-    document.addEventListener('fullscreenchange', handleFullscreenChange);
-    // 初始化检查
-    setIsFullscreen(!!document.fullscreenElement);
-    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
-  }, []);
-
-  // 切换全屏
-  const toggleFullscreen = async () => {
-    try {
-      if (!document.fullscreenElement) {
-        await document.documentElement.requestFullscreen();
-        showToast(t.settings.appearance.fullscreenEnabled, 'success');
-      } else {
-        await document.exitFullscreen();
-        showToast(t.settings.appearance.fullscreenDisabled, 'success');
-      }
-    } catch (err) {
-      console.error('Fullscreen error:', err);
-    }
-  };
 
   // 动态翻译数据
   const typeLabels: Record<FeedbackType, string> = {
@@ -451,116 +244,50 @@ const Settings: React.FC = () => {
   };
 
   // 渲染外观设置区域
-  const renderAppearanceSection = () => (
-    <div className="space-y-6">
-      {/* 主题选择 */}
-      <div>
-        <h3 className="text-sm font-medium mb-4" style={{ color: 'var(--text-primary)' }}>
-          {t.settings.appearance.title}
-        </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-          {THEME_PRESETS.map((preset) => {
-            const isActive = theme === preset.key;
-            const themeName = getThemeName(preset.nameKey);
-            const themeDesc = getThemeDesc(preset.nameKey);
-            return (
-              <button
-                key={preset.key}
-                onClick={() => {
-                  setTheme(preset.key);
-                  showToast(`${t.settings.appearance.switchedTo}${themeName}`, 'success');
-                }}
-                className={`group relative rounded-2xl p-4 transition-all duration-200 hover:scale-[1.02] ${isActive ? 'animate-success-bounce' : ''}`}
-                style={{
-                  backgroundColor: isActive ? `${preset.preview.accent}12` : 'var(--bg-card-hover)',
-                  border: `2px solid ${isActive ? preset.preview.accent : 'transparent'}`,
-                  boxShadow: isActive ? `0 0 24px ${preset.preview.accent}20` : 'none',
-                }}
-              >
-                {/* 预览图 */}
-                <ThemePreviewMini preset={preset} isActive={isActive} />
-                
-                {/* 信息 */}
-                <div className="mt-4 flex items-start gap-3">
-                  <div 
-                    className="p-2 rounded-xl shrink-0 transition-colors"
-                    style={{ 
-                      backgroundColor: isActive ? `${preset.preview.accent}20` : 'var(--bg-input)',
-                      color: isActive ? preset.preview.accent : 'var(--text-secondary)'
-                    }}
-                  >
-                    {preset.icon}
-                  </div>
-                  <div className="flex-1 text-left">
-                    <div className="flex items-center gap-2">
-                      <span className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
-                        {themeName}
-                      </span>
-                      {isActive && (
-                        <span 
-                          className="text-[10px] px-2 py-0.5 rounded-full font-medium"
-                          style={{ backgroundColor: `${preset.preview.accent}25`, color: preset.preview.accent }}
-                        >
-                          {t.common.current}
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs mt-1 leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-                      {themeDesc}
-                    </p>
-                  </div>
-                </div>
-              </button>
-            );
-          })}
+  const renderAppearanceSection = () => {
+    const activePreset = THEME_PRESETS.find((p) => p.key === theme) ?? THEME_PRESETS[0];
+    return (
+      <div className="space-y-6">
+        {/* 主题选择：下拉条切换，不展示预览样式 */}
+        <div>
+          <h3 className="text-sm font-medium mb-4" style={{ color: 'var(--text-primary)' }}>
+            {t.settings.appearance.title}
+          </h3>
+          <div className="relative max-w-sm">
+            <select
+              value={theme}
+              onChange={(e) => {
+                const preset = THEME_PRESETS.find((p) => p.key === e.target.value);
+                if (!preset) return;
+                setTheme(preset.key);
+                showToast(`${t.settings.appearance.switchedTo}${getThemeName(preset.nameKey)}`, 'success');
+              }}
+              className="w-full appearance-none rounded-xl px-4 py-3 pr-10 text-sm outline-none transition-colors cursor-pointer"
+              style={{
+                backgroundColor: 'var(--bg-input)',
+                color: 'var(--text-primary)',
+                border: '1px solid var(--border-color)',
+              }}
+            >
+              {THEME_PRESETS.map((preset) => (
+                <option key={preset.key} value={preset.key}>
+                  {getThemeName(preset.nameKey)}
+                </option>
+              ))}
+            </select>
+            <ChevronDown
+              className="w-4 h-4 pointer-events-none absolute right-3 top-1/2 -translate-y-1/2"
+              style={{ color: 'var(--text-muted)' }}
+            />
+          </div>
+          <p className="text-xs mt-2 max-w-sm" style={{ color: 'var(--text-muted)' }}>
+            {getThemeDesc(activePreset.nameKey)}
+          </p>
         </div>
-      </div>
 
-      {/* 全屏显示 */}
-      <div>
-        <h3 className="text-sm font-medium mb-4" style={{ color: 'var(--text-primary)' }}>
-          {t.settings.appearance.fullscreen}
-        </h3>
-        <button
-          onClick={toggleFullscreen}
-          className="w-full rounded-2xl p-4 transition-all duration-200 hover:scale-[1.01] flex items-center gap-4"
-          style={{
-            backgroundColor: isFullscreen ? 'var(--accent-primary)12' : 'var(--bg-card-hover)',
-            border: `2px solid ${isFullscreen ? 'var(--accent-primary)' : 'transparent'}`,
-          }}
-        >
-          <div 
-            className="p-3 rounded-xl shrink-0 transition-colors"
-            style={{ 
-              backgroundColor: isFullscreen ? 'var(--accent-primary)' : 'var(--bg-input)',
-              color: isFullscreen ? 'white' : 'var(--text-secondary)'
-            }}
-          >
-            {isFullscreen ? <Minimize className="w-5 h-5" /> : <Maximize className="w-5 h-5" />}
-          </div>
-          <div className="flex-1 text-left">
-            <div className="flex items-center gap-2">
-              <span className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
-                {isFullscreen ? t.settings.appearance.exitFullscreen : t.settings.appearance.enterFullscreen}
-              </span>
-              {isFullscreen && (
-                <span 
-                  className="text-[10px] px-2 py-0.5 rounded-full font-medium"
-                  style={{ backgroundColor: 'var(--accent-primary)25', color: 'var(--accent-primary)' }}
-                >
-                  {t.common.current}
-                </span>
-              )}
-            </div>
-            <p className="text-xs mt-1 leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-              {t.settings.appearance.fullscreenDesc}
-            </p>
-          </div>
-          <ChevronRight className="w-5 h-5 shrink-0" style={{ color: 'var(--text-muted)' }} />
-        </button>
       </div>
-    </div>
-  );
+    );
+  };
 
   // 渲染反馈区域
   const renderFeedbackSection = () => (
@@ -915,252 +642,63 @@ const Settings: React.FC = () => {
   );
 
   // 渲染语言设置区域
-  const renderLanguageSection = () => (
-    <div className="space-y-6">
-      <div>
-        <h3 className="text-sm font-medium mb-4" style={{ color: 'var(--text-primary)' }}>
-          {t.settings.language.title}
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {languageOptions.map((option) => {
-            const isActive = language === option.id;
-            return (
-              <button
-                key={option.id}
-                onClick={() => setLanguage(option.id)}
-                className={`group relative rounded-2xl p-4 transition-all duration-200 hover:scale-[1.02] ${isActive ? 'animate-success-bounce' : ''}`}
-                style={{
-                  backgroundColor: isActive ? 'var(--accent-primary)12' : 'var(--bg-card-hover)',
-                  border: `2px solid ${isActive ? 'var(--accent-primary)' : 'transparent'}`,
-                  boxShadow: isActive ? '0 0 24px var(--accent-primary)20' : 'none',
-                }}
-              >
-                <div className="flex items-start gap-4">
-                  <div 
-                    className="w-12 h-12 rounded-xl flex items-center justify-center text-lg font-bold shrink-0 transition-colors"
-                    style={{ 
-                      backgroundColor: isActive ? 'var(--accent-primary)' : 'var(--bg-input)',
-                      color: isActive ? 'white' : 'var(--text-secondary)'
-                    }}
-                  >
-                    {option.icon}
-                  </div>
-                  <div className="flex-1 text-left">
-                    <div className="flex items-center gap-2">
-                      <span className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
-                        {option.name}
-                      </span>
-                      {isActive && (
-                        <span 
-                          className="text-[10px] px-2 py-0.5 rounded-full font-medium"
-                          style={{ backgroundColor: 'var(--accent-primary)25', color: 'var(--accent-primary)' }}
-                        >
-                          {t.common.current}
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs mt-1 leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-                      {option.desc}
-                    </p>
-                  </div>
-                  {isActive && (
-                    <div
-                      className="w-5 h-5 rounded-full flex items-center justify-center shrink-0"
-                      style={{ backgroundColor: 'var(--accent-primary)' }}
-                    >
-                      <Check className="w-3 h-3" style={{ color: 'white' }} />
-                    </div>
-                  )}
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-    </div>
-  );
-
-  // 渲染 AI 助手设置区域
-  const renderAiAssistantSection = () => (
-    <div className="space-y-6">
-      {/* 注入项目上下文 */}
-      <label
-        className="flex items-start justify-between gap-4 p-4 rounded-xl cursor-pointer transition-colors"
-        style={{ backgroundColor: 'var(--bg-body)', border: '1px solid var(--border-color)' }}
-      >
-        <div className="flex-1">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>注入项目上下文</span>
-          </div>
-          <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-            开启后将角色、场景、剧本、分镜清单注入 AI 系统提示词。关闭可减少 token 消耗。
-          </p>
-        </div>
-        <input
-          type="checkbox"
-          checked={aiIncludeContext}
-          onChange={(e) => {
-            setAiIncludeContext(e.target.checked);
-            saveAiSettings({ includeContext: e.target.checked });
-          }}
-          className="mt-1 w-4 h-4"
-          style={{ accentColor: 'var(--accent-primary)' }}
-        />
-      </label>
-
-      {/* 历史消息上限 */}
-      <div
-        className="p-4 rounded-xl"
-        style={{ backgroundColor: 'var(--bg-body)', border: '1px solid var(--border-color)' }}
-      >
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>历史消息上限</span>
-          <span className="text-xs font-mono" style={{ color: 'var(--accent-primary)' }}>{aiHistoryLimit === 0 ? '不限' : aiHistoryLimit}</span>
-        </div>
-        <p className="text-xs leading-relaxed mb-3" style={{ color: 'var(--text-muted)' }}>
-          每次发送时最多携带多少条历史消息。越小越省 token，越大上下文越完整。
-        </p>
-        <div className="flex items-center gap-2">
-          {[10, 20, 50, 100, 0].map((n) => (
-            <button
-              key={n}
-              onClick={() => {
-                setAiHistoryLimit(n);
-                saveAiSettings({ historyLimit: n });
-              }}
-              className="flex-1 py-1.5 rounded-lg text-xs font-medium transition-colors"
-              style={{
-                backgroundColor: aiHistoryLimit === n ? 'var(--accent-primary)' : 'var(--bg-card)',
-                color: aiHistoryLimit === n ? 'white' : 'var(--text-muted)',
-                border: `1px solid ${aiHistoryLimit === n ? 'var(--accent-primary)' : 'var(--border-color)'}`,
-              }}
-            >
-              {n === 0 ? '不限' : n}
-            </button>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-
-  // 渲染存储管理区域
-  const renderStorageSection = () => {
-    const st = (t.settings as any).storage || {};
-    const supported = isCacheSupported();
-
-    const handleClearCache = async () => {
-      setIsClearing(true);
-      try {
-        const success = await clearMediaCache();
-        if (success) {
-          showToast(st.clearSuccess || '缓存已清除', 'success');
-          setCacheStats({ count: 0, size: 0 });
-        } else {
-          showToast(st.clearFailed || '清除缓存失败', 'error');
-        }
-      } catch {
-        showToast(st.clearFailed || '清除缓存失败', 'error');
-      } finally {
-        setIsClearing(false);
-      }
-    };
-
+  const renderLanguageSection = () => {
+    const activeOption = languageOptions.find((o) => o.id === language) ?? languageOptions[0];
     return (
       <div className="space-y-6">
         <div>
-          <h3 className="text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>
-            {st.title || '本地缓存'}
+          <h3 className="text-sm font-medium mb-4" style={{ color: 'var(--text-primary)' }}>
+            {t.settings.language.title}
           </h3>
-          <p className="text-xs mb-6" style={{ color: 'var(--text-muted)' }}>
-            {st.description || '图片和视频会自动缓存到浏览器本地，加快下次打开速度。'}
-          </p>
-
-          {!supported ? (
-            <div 
-              className="rounded-xl p-4 text-center text-sm"
-              style={{ backgroundColor: 'var(--bg-input)', color: 'var(--text-muted)' }}
+          <div className="relative max-w-sm">
+            <select
+              value={language}
+              onChange={(e) => {
+                const option = languageOptions.find((o) => o.id === (e.target.value as LanguageType));
+                if (!option) return;
+                setLanguage(option.id);
+              }}
+              className="w-full appearance-none rounded-xl px-4 py-3 pr-10 text-sm outline-none transition-colors cursor-pointer"
+              style={{
+                backgroundColor: 'var(--bg-input)',
+                color: 'var(--text-primary)',
+                border: '1px solid var(--border-color)',
+              }}
             >
-              {st.notSupported || '当前浏览器不支持本地缓存'}
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {/* 缓存统计卡片 */}
-              <div className="grid grid-cols-2 gap-4">
-                <div 
-                  className="rounded-xl p-4"
-                  style={{ backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-color)' }}
-                >
-                  <div className="flex items-center gap-2 mb-2">
-                    <HardDrive className="w-4 h-4" style={{ color: 'var(--accent-primary)' }} />
-                    <span className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>
-                      {st.cacheSize || '缓存大小'}
-                    </span>
-                  </div>
-                  <div className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>
-                    {cacheLoading 
-                      ? (st.calculating || '计算中...')
-                      : cacheStats 
-                        ? formatCacheSize(cacheStats.size)
-                        : '0 B'
-                    }
-                  </div>
-                </div>
-                <div 
-                  className="rounded-xl p-4"
-                  style={{ backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-color)' }}
-                >
-                  <div className="flex items-center gap-2 mb-2">
-                    <Sparkles className="w-4 h-4" style={{ color: 'var(--accent-primary)' }} />
-                    <span className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>
-                      {st.cacheCount || '已缓存'}
-                    </span>
-                  </div>
-                  <div className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>
-                    {cacheLoading 
-                      ? (st.calculating || '计算中...')
-                      : cacheStats
-                        ? `${cacheStats.count} ${st.cacheCountUnit || '个文件'}`
-                        : `0 ${st.cacheCountUnit || '个文件'}`
-                    }
-                  </div>
-                </div>
-              </div>
-
-              {/* 清除缓存按钮 */}
-              <button
-                onClick={handleClearCache}
-                disabled={isClearing || (cacheStats?.count === 0 && !cacheLoading)}
-                className="flex items-center gap-2 px-4 py-3 rounded-xl transition-all w-full justify-center font-medium text-sm"
-                style={{
-                  backgroundColor: isClearing ? 'var(--bg-input)' : 'rgba(239, 68, 68, 0.1)',
-                  color: isClearing ? 'var(--text-muted)' : '#ef4444',
-                  border: '1px solid rgba(239, 68, 68, 0.2)',
-                  cursor: (isClearing || (cacheStats?.count === 0 && !cacheLoading)) ? 'not-allowed' : 'pointer',
-                  opacity: (cacheStats?.count === 0 && !cacheLoading) ? 0.5 : 1,
-                }}
-              >
-                {isClearing ? (
-                  <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                ) : (
-                  <Trash2 className="w-4 h-4" />
-                )}
-                {isClearing ? (st.clearing || '清除中...') : (st.clearCache || '清除缓存')}
-              </button>
-            </div>
+              {languageOptions.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.name}
+                </option>
+              ))}
+            </select>
+            <ChevronDown
+              className="w-4 h-4 pointer-events-none absolute right-3 top-1/2 -translate-y-1/2"
+              style={{ color: 'var(--text-muted)' }}
+            />
+          </div>
+          {activeOption?.desc && (
+            <p className="text-xs mt-2 max-w-sm" style={{ color: 'var(--text-muted)' }}>
+              {activeOption.desc}
+            </p>
           )}
         </div>
       </div>
     );
   };
 
+  // 渲染通用设置区域（外观 + 语言整合）
+  const renderGeneralSection = () => (
+    <div className="space-y-8">
+      {renderAppearanceSection()}
+      {renderLanguageSection()}
+    </div>
+  );
+
   // 渲染当前激活的区域
   const renderActiveSection = () => {
     switch (activeSection) {
-      case 'appearance': return renderAppearanceSection();
-      case 'language': return renderLanguageSection();
+      case 'general': return renderGeneralSection();
       case 'ai_models': return <AIModelSettings />; // 新增：AI 模型密钥配置
-      case 'ai_assistant': return renderAiAssistantSection();
-      case 'storage': return renderStorageSection();
       case 'security': return renderSecuritySection();
       case 'feedback': return renderFeedbackSection();
       case 'about': return renderAboutSection();
@@ -1184,87 +722,93 @@ const Settings: React.FC = () => {
 
   return (
     <div className="h-full overflow-y-auto" style={{ background: 'var(--bg-body)', color: 'var(--text-primary)' }}>
-      <div className="max-w-5xl mx-auto px-6 py-6">
-        {/* 页面标题 */}
-        <div className="mb-6">
-          <div className="flex items-center gap-3">
-            <div 
-              className="p-2.5 rounded-xl"
-              style={{ backgroundColor: 'var(--accent-primary)', color: 'white' }}
+      <div className="flex flex-col lg:flex-row min-h-full">
+        {/* 左侧导航 */}
+        <aside
+          className="lg:w-64 shrink-0 p-4 lg:p-5 border-b lg:border-b-0 lg:border-r"
+          style={{ borderColor: 'var(--border-color)' }}
+        >
+          {/* 用户资料块 */}
+          <div
+            className="flex items-center gap-3 px-1 pb-4 mb-3"
+            style={{ borderBottom: '1px solid var(--border-color)' }}
+          >
+            <div
+              className="w-11 h-11 rounded-full flex items-center justify-center text-base font-semibold shrink-0"
+              style={{ backgroundColor: 'var(--bg-input)', color: 'var(--text-primary)', border: '1px solid var(--border-color)' }}
             >
-              <SettingsIcon className="w-5 h-5" />
+              {userInitial}
             </div>
-            <div>
-              <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>{t.settings.title}</h1>
-              <p className="text-sm" style={{ color: 'var(--text-muted)' }}>{t.settings.subtitle}</p>
-            </div>
-          </div>
-        </div>
-
-        {/* 主内容区域 */}
-        <div className="flex flex-col lg:flex-row gap-6">
-          {/* 左侧导航 */}
-          <div className="lg:w-56 shrink-0">
-            <div 
-              className="rounded-2xl p-2 lg:sticky lg:top-6 lg:max-h-[calc(100vh-3rem)] lg:overflow-y-auto"
-              style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)' }}
-            >
-              <nav className="flex lg:flex-col gap-1">
-                {SETTING_SECTIONS.filter(section => !section.isAdmin || isAdmin).map(section => (
-                  <button
-                    key={section.id}
-                    onClick={() => setActiveSection(section.id)}
-                    className="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-left transition-all w-full"
-                    style={{
-                      backgroundColor: activeSection === section.id ? 'var(--accent-primary)' : 'transparent',
-                      color: activeSection === section.id ? 'white' : 'var(--text-secondary)',
-                    }}
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>
+                  {userDisplayName}
+                </span>
+                {isAdmin && (
+                  <span
+                    className="text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0"
+                    style={{ backgroundColor: 'rgba(34,197,94,0.16)', color: '#22c55e' }}
                   >
-                    <span className={`shrink-0 ${activeSection === section.id ? 'opacity-100' : 'opacity-60'}`}>
-                      {section.icon}
-                    </span>
-                    <div className="hidden lg:block min-w-0 flex-1">
-                      <div className="text-sm font-medium">{getSectionTitle(section.id)}</div>
-                      <div className="text-xs opacity-70 truncate">{getSectionDesc(section.id)}</div>
-                    </div>
-                    <span className="lg:hidden text-sm font-medium">{getSectionTitle(section.id)}</span>
-                  </button>
-                ))}
-              </nav>
+                    {userRole}
+                  </span>
+                )}
+              </div>
+              <div className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>
+                {userEmail}
+              </div>
             </div>
           </div>
 
-          {/* 右侧内容 */}
-          <div className="flex-1 min-w-0">
-            <div 
-              className="rounded-2xl p-6"
-              style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)' }}
-            >
-              {/* 区域标题 */}
-              <div className="mb-6 pb-4" style={{ borderBottom: '1px solid var(--border-color)' }}>
-                <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
-                  {currentSection && getSectionTitle(currentSection.id)}
-                </h2>
-                <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
-                  {currentSection && getSectionDesc(currentSection.id)}
-                </p>
-              </div>
-              
-              {/* 区域内容 */}
-              <AnimatePresence mode="wait">
-                <motion.div
-                  key={activeSection}
-                  initial={{ opacity: 0, x: 12 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -12 }}
-                  transition={{ duration: 0.2, ease: [0.25, 0.46, 0.45, 0.94] }}
+          {/* 纯文字导航（无图标，选中项描边高亮） */}
+          <nav className="flex lg:flex-col gap-1 flex-wrap">
+            {SETTING_SECTIONS.filter(section => !section.isAdmin || isAdmin).map(section => {
+              const active = activeSection === section.id;
+              return (
+                <button
+                  key={section.id}
+                  onClick={() => setActiveSection(section.id)}
+                  className="text-left rounded-lg px-3 py-2 text-sm transition-all w-full"
+                  style={{
+                    backgroundColor: active ? 'var(--accent-primary)14' : 'transparent',
+                    border: `1px solid ${active ? 'var(--accent-primary)' : 'transparent'}`,
+                    color: active ? 'var(--text-primary)' : 'var(--text-secondary)',
+                    fontWeight: active ? 600 : 400,
+                  }}
                 >
-                  {renderActiveSection()}
-                </motion.div>
-              </AnimatePresence>
+                  {getSectionTitle(section.id)}
+                </button>
+              );
+            })}
+          </nav>
+        </aside>
+
+        {/* 右侧内容 */}
+        <main className="flex-1 min-w-0 p-6 lg:p-8">
+          {/* 区域头部：大标题 + 描述 */}
+          <div className="flex items-start justify-between gap-4 mb-6">
+            <div className="min-w-0">
+              <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
+                {currentSection && getSectionTitle(currentSection.id)}
+              </h1>
+              <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
+                {currentSection && getSectionDesc(currentSection.id)}
+              </p>
             </div>
           </div>
-        </div>
+
+          {/* 区域内容 */}
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={activeSection}
+              initial={{ opacity: 0, x: 12 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -12 }}
+              transition={{ duration: 0.2, ease: [0.25, 0.46, 0.45, 0.94] }}
+            >
+              {renderActiveSection()}
+            </motion.div>
+          </AnimatePresence>
+        </main>
       </div>
     </div>
   );

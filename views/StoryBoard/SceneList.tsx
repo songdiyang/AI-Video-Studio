@@ -24,7 +24,6 @@ interface SceneListProps {
   scripts?: Script[];
   currentEpisode?: number;
   currentScriptId?: number | null;
-  projectName?: string;
   standaloneMaxEpisode?: number;
   isLoading?: boolean;
   onSelectScene: (id: number) => void;
@@ -105,7 +104,6 @@ const SceneList: React.FC<SceneListProps> = ({
   scripts = [],
   currentEpisode = 1,
   currentScriptId,
-  projectName,
   standaloneMaxEpisode,
   isLoading = false,
   onSelectScene,
@@ -270,15 +268,14 @@ const SceneList: React.FC<SceneListProps> = ({
 
   return (
     <div className="h-full flex flex-col bg-[var(--bg-app)]">
-      {/* 紧凑的头部操作栏 */}
-      <div className="flex-shrink-0 px-2 py-2 border-b border-[var(--border-color)] flex items-center justify-between gap-2">
-        {/* 左侧：项目名 + 集数切换 */}
+      {/* 紧凑的头部操作栏（项目名不展示，顶部导航已承担项目标识） */}
+      <div className="flex-shrink-0 px-2 py-1.5 border-b border-[var(--border-color)] flex items-center justify-between gap-2">
+        {/* 左侧：集数切换 */}
         <div className="flex items-center gap-2">
           <EpisodeSelector
             scripts={scripts}
             currentEpisode={currentEpisode}
             currentScriptId={currentScriptId}
-            projectName={projectName}
             onSelect={onEpisodeSelect}
             onStandaloneEpisodeChange={onStandaloneEpisodeChange}
             standaloneMaxEpisode={standaloneMaxEpisode}
@@ -292,7 +289,7 @@ const SceneList: React.FC<SceneListProps> = ({
             <Tooltip content="批量下载打包" placement="bottom">
               <button
                 onClick={onBatchDownload}
-                className="h-7 w-7 flex items-center justify-center rounded-md text-xs bg-[var(--bg-card)] text-[var(--text-secondary)] border border-[var(--border-color)] hover:bg-emerald-500/15 hover:text-emerald-400 hover:border-emerald-500/30 transition-all cursor-pointer"
+                className="h-7 w-7 flex items-center justify-center rounded-md text-xs text-[var(--text-secondary)] hover:bg-emerald-500/15 hover:text-emerald-400 transition-all cursor-pointer"
               >
                 <Download className="w-3.5 h-3.5" />
               </button>
@@ -303,7 +300,7 @@ const SceneList: React.FC<SceneListProps> = ({
             <Tooltip content="播放分镜预览" placement="bottom">
               <button
                 onClick={onPlayAnimatic}
-                className="h-7 w-7 flex items-center justify-center rounded-md text-xs bg-[var(--bg-card)] text-[var(--text-secondary)] border border-[var(--border-color)] hover:bg-purple-500/15 hover:text-purple-400 hover:border-purple-500/30 transition-all cursor-pointer"
+                className="h-7 w-7 flex items-center justify-center rounded-md text-xs text-[var(--text-secondary)] hover:bg-purple-500/15 hover:text-purple-400 transition-all cursor-pointer"
               >
                 <Play className="w-3.5 h-3.5" />
               </button>

@@ -149,11 +149,37 @@ async function klingAuth(apiKey: string): Promise<string> {
 // ==================== 文本对话 ====================
 export interface ChatResult {
   content: string;
+  usage?: { input_tokens: number; output_tokens: number; total_tokens: number } | null;
+}
+
+/** 把内部消息 content（字符串或多模态数组）转为 OpenAI chat/completions 的 content 形状 */
+function toOpenAiContent(content: unknown): unknown {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content.map((c: any) => {
+      if (c.type === 'input_image' || c.type === 'image') {
+        return { type: 'image_url', image_url: { url: c.image_url || c.url || '' } };
+      }
+      if (c.type === 'input_text' || c.type === 'text') {
+        return { type: 'text', text: c.text || '' };
+      }
+      return { type: 'text', text: typeof c === 'string' ? c : JSON.stringify(c) };
+    });
+  }
+  return String(content ?? '');
+}
+
+function extractUsageFromData(data: any): ChatResult['usage'] {
+  const u = data?.usage;
+  if (!u) return null;
+  const input = u.prompt_tokens || u.input_tokens || 0;
+  const output = u.completion_tokens || u.output_tokens || 0;
+  return { input_tokens: input, output_tokens: output, total_tokens: u.total_tokens || input + output };
 }
 
 export async function chatText(opts: {
   model: OfflineModel;
-  messages: Array<{ role: string; content: string }>;
+  messages: Array<{ role: string; content: unknown }>;
   temperature?: number;
 }): Promise<ChatResult> {
   const base = apiBaseFor(opts.model);
@@ -162,10 +188,88 @@ export async function chatText(opts: {
     url,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${opts.model.api_key}` },
-    body: { model: opts.model.model_name, messages: opts.messages, temperature: opts.temperature ?? 0.7, stream: false },
+    body: {
+      model: opts.model.model_name,
+      messages: opts.messages.map((m) => ({ role: m.role, content: toOpenAiContent(m.content) })),
+      temperature: opts.temperature ?? 0.7,
+      stream: false,
+    },
   });
-  const content = data?.choices?.[0]?.message?.content ?? data?.output_text ?? '';
-  return { content };
+  const content =
+    data?.choices?.[0]?.message?.content ?? data?.output_text ?? '';
+  return { content, usage: extractUsageFromData(data) };
+}
+
+/**
+ * 流式文本对话（SSE）。
+ * 必须走 WebView 直连 fetch（ai_proxy 返回整体 body，不支持流），
+ * 逐块回调 onDelta / onReasoning，返回累计文本。
+ */
+export async function chatTextStream(opts: {
+  model: OfflineModel;
+  messages: Array<{ role: string; content: unknown }>;
+  temperature?: number;
+  signal?: AbortSignal;
+  onDelta?: (text: string) => void;
+  onReasoning?: (text: string) => void;
+}): Promise<ChatResult> {
+  const { model } = opts;
+  const base = apiBaseFor(model);
+  const url = `${base}/chat/completions`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${model.api_key}` },
+    signal: opts.signal,
+    body: JSON.stringify({
+      model: model.model_name,
+      messages: opts.messages.map((m) => ({ role: m.role, content: toOpenAiContent(m.content) })),
+      temperature: opts.temperature ?? 0.7,
+      stream: true,
+    }),
+  });
+  if (!res.ok || !res.body) {
+    const errText = await res.text().catch(() => '');
+    throw new Error(extractErrorMessage(errText) || `API 请求失败 (${res.status})`);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder('utf-8');
+  let buffer = '';
+  let fullContent = '';
+  let usage: ChatResult['usage'] = null;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    // SSE 事件以 \n\n 分隔
+    let boundary = buffer.indexOf('\n\n');
+    while (boundary !== -1) {
+      const block = buffer.slice(0, boundary);
+      buffer = buffer.slice(boundary + 2);
+      let dataLine = '';
+      for (const line of block.split('\n')) {
+        if (line.startsWith('data: ')) dataLine = line.slice(6);
+      }
+      if (dataLine && dataLine !== '[DONE]') {
+        try {
+          const parsed = JSON.parse(dataLine);
+          const delta = parsed?.choices?.[0]?.delta?.content || '';
+          const reasoning = parsed?.choices?.[0]?.delta?.reasoning_content || '';
+          if (delta) {
+            fullContent += delta;
+            opts.onDelta?.(delta);
+          }
+          if (reasoning) opts.onReasoning?.(reasoning);
+          if (parsed?.usage) usage = extractUsageFromData(parsed);
+        } catch {
+          // 忽略非 JSON 行
+        }
+      }
+      boundary = buffer.indexOf('\n\n');
+    }
+  }
+  return { content: fullContent, usage };
 }
 
 // ==================== 文生图 / 图生图 ====================
