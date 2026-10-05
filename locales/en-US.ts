@@ -27,8 +27,8 @@ const enUS: Translations = {
     connected: 'Connected',
     disconnected: 'Disconnected',
     pressForShortcuts: 'Press ? for shortcuts',
-    studioTitle: 'AI Video Editor',
-    studioName: 'AI Video Editor',
+    studioTitle: '子墨视频Studio',
+    studioName: '子墨视频Studio',
     shortcutPrefix: 'Ctrl+',
     mainNav: 'Main Navigation',
     bottomNav: 'Bottom Navigation',
@@ -102,7 +102,7 @@ const enUS: Translations = {
     // About
     about: {
       title: 'About',
-      appName: 'AI Video Editor',
+      appName: '子墨视频Studio',
       appSubtitle: '© songdiyang. All rights reserved.',
       version: 'Version',
       comingSoon: 'Coming Soon',
@@ -286,7 +286,7 @@ const enUS: Translations = {
   },
   // Auth page
   auth: {
-    title: 'AI Video Editor',
+    title: '子墨视频Studio',
     subtitle: 'AI-Powered Video Creation Platform',
     loginTab: 'Login',
     registerTab: 'Register',
@@ -1044,7 +1044,7 @@ const enUS: Translations = {
       button: 'Try Free Now',
     },
     footer: {
-      copyright: '© 2026 AI Video Editor. All rights reserved.',
+      copyright: '© 2026 子墨视频Studio. All rights reserved.',
       links: {
         about: 'About',
         pricing: 'Pricing',

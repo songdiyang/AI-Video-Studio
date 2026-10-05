@@ -99,7 +99,7 @@ const TitleBar: React.FC = () => {
             </span>
           </div>
         ) : (
-          <span data-tauri-drag-region className="text-xs text-(--text-primary) opacity-80">AI视频编辑器</span>
+          <span data-tauri-drag-region className="text-xs text-(--text-primary) opacity-80">子墨视频Studio</span>
         )}
       </div>
       <WindowControls />

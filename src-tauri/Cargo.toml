@@ -1,8 +1,8 @@
 [package]
 name = "app"
 version = "1.0.0"
-description = "AI Video Studio - Local First Desktop App"
-authors = ["AI Video Studio Team"]
+description = "子墨视频Studio - Local First Desktop App"
+authors = ["子墨视频Studio Team"]
 license = "MIT"
 repository = ""
 edition = "2021"

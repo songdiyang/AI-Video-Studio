@@ -25,8 +25,8 @@ const zhCN = {
     connected: '已连接',
     disconnected: '未连接',
     pressForShortcuts: '按 ? 查看快捷键',
-    studioTitle: 'AI视频编辑器',
-    studioName: 'AI视频编辑器',
+    studioTitle: '子墨视频Studio',
+    studioName: '子墨视频Studio',
     shortcutPrefix: 'Ctrl+',
     mainNav: '主导航',
     bottomNav: '底部导航',
@@ -100,7 +100,7 @@ const zhCN = {
     // 关于
     about: {
       title: '关于',
-      appName: 'AI视频编辑器',
+      appName: '子墨视频Studio',
       appSubtitle: 'songdiyang版权所有',
       version: '版本',
       comingSoon: '即将推出',
@@ -284,7 +284,7 @@ const zhCN = {
   },
   // 认证页面
   auth: {
-    title: 'AI视频编辑器',
+    title: '子墨视频Studio',
     subtitle: 'AI 驱动的视频创作平台',
     loginTab: '登录',
     registerTab: '注册',
@@ -1042,7 +1042,7 @@ const zhCN = {
       button: '立即免费试用',
     },
     footer: {
-      copyright: '© 2026 AI视频编辑器. 保留所有权利.',
+      copyright: '© 2026 子墨视频Studio. 保留所有权利.',
       links: {
         about: '关于我们',
         pricing: '定价',

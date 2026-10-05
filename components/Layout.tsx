@@ -547,7 +547,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           { label: '键盘快捷键', shortcut: '?', action: () => setShowShortcutsHelp(true) },
           { label: '命令面板', shortcut: 'Ctrl+K', action: () => setIsCommandPaletteOpen(true) },
           { label: '-' },
-          { label: '关于 AI视频编辑器', action: () => showToast('AI视频编辑器 v1.0.0', 'info') },
+          { label: '关于 子墨视频Studio', action: () => showToast('子墨视频Studio v1.0.0', 'info') },
         ],
       },
     ];
