@@ -37,6 +37,11 @@ interface StoryboardBridgeContextValue {
   /** 注册/注销某个标签的内容容器（el 为 null 表示注销） */
   setContainer: (tabId: string, el: HTMLElement | null) => void;
 
+  /** 手风琴分组标题行右侧的「操作插槽」容器（供面板把工具栏按钮 portal 进来） */
+  sectionHeaderSlots: Record<string, HTMLElement | null>;
+  /** 注册/注销某个分组的标题操作插槽（el 为 null 表示注销） */
+  setSectionHeaderSlot: (sectionId: string, el: HTMLElement | null) => void;
+
   /** StoryBoard 上报的可用标签（分镜/资源/大纲等） */
   tabs: BridgeLeftPanelTabMeta[];
   /** StoryBoard 上报当前激活标签 */
@@ -57,6 +62,7 @@ const StoryboardBridgeContext = createContext<StoryboardBridgeContextValue | nul
 export const StoryboardBridgeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [containerEl, setContainerEl] = useState<HTMLElement | null>(null);
   const [containers, setContainers] = useState<Record<string, HTMLElement | null>>({});
+  const [sectionHeaderSlots, setSectionHeaderSlots] = useState<Record<string, HTMLElement | null>>({});
   const [tabs, setTabs] = useState<BridgeLeftPanelTabMeta[]>([]);
   const [activeTab, setActiveTab] = useState<string | null>(null);
   const [isRegistered, setIsRegistered] = useState(false);
@@ -74,6 +80,20 @@ export const StoryboardBridgeProvider: React.FC<{ children: React.ReactNode }> =
       }
       if (prev[tabId] === el) return prev;
       return { ...prev, [tabId]: el };
+    });
+  }, []);
+
+  // 注册/注销某个分组的标题操作插槽（与 setContainer 同构：null 注销，同元素跳过）
+  const setSectionHeaderSlot = useCallback((sectionId: string, el: HTMLElement | null) => {
+    setSectionHeaderSlots(prev => {
+      if (el === null) {
+        if (!(sectionId in prev)) return prev;
+        const next = { ...prev };
+        delete next[sectionId];
+        return next;
+      }
+      if (prev[sectionId] === el) return prev;
+      return { ...prev, [sectionId]: el };
     });
   }, []);
 
@@ -100,6 +120,8 @@ export const StoryboardBridgeProvider: React.FC<{ children: React.ReactNode }> =
       setContainerEl,
       containers,
       setContainer,
+      sectionHeaderSlots,
+      setSectionHeaderSlot,
       tabs,
       activeTab,
       isRegistered,
@@ -108,7 +130,7 @@ export const StoryboardBridgeProvider: React.FC<{ children: React.ReactNode }> =
       requestSwitchTab,
       setRequestSwitchTab,
     }),
-    [containerEl, containers, setContainer, tabs, activeTab, isRegistered, registerTabs, unregisterTabs, requestSwitchTab, setRequestSwitchTab],
+    [containerEl, containers, setContainer, sectionHeaderSlots, setSectionHeaderSlot, tabs, activeTab, isRegistered, registerTabs, unregisterTabs, requestSwitchTab, setRequestSwitchTab],
   );
 
   return (

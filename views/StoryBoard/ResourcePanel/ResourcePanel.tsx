@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Settings2, Sparkles, ChevronRight, ChevronDown, User, MapPin, Box, Cloud, Building2, Shirt, Tags, RefreshCw } from 'lucide-react';
 import { ResourcePanelProps } from './types';
+import { useStoryboardBridgeSafe } from '../../../contexts/StoryboardBridgeContext';
 import { useCharacterData } from './useCharacterData';
 import { useSceneData, Scene } from './useSceneData';
 import CharactersTab from './CharactersTab';
@@ -73,6 +75,10 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
   /** AI/用户自定义模式：开启后自动隐藏无内容的分类分组 */
   const [aiMode, setAiMode] = useState(false);
   const [isCategoryModalOpen, setCategoryModalOpen] = useState(false);
+  // 手风琴标题行右侧的「操作插槽」：存在时把工具栏按钮 portal 上去，与「资源」标题合并为一行；
+  // 不存在（如独立使用本面板）时回退为面板内自带的标题行。
+  const bridge = useStoryboardBridgeSafe();
+  const headerSlot = bridge?.sectionHeaderSlots['resources'] ?? null;
   const { showToast } = useToast();
   const { confirm } = useConfirm();
 
@@ -743,40 +749,51 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
     costumes: Shirt,
   };
 
+  // 工具栏：AI 分类模式开关 + 刷新 / 分类管理。存在标题插槽时 portal 到「资源」标题行，
+  // 否则回退渲染在面板内自带标题行。
+  const categoryToolbar = (
+    <>
+      <button
+        type="button"
+        onClick={() => setAiMode(v => !v)}
+        aria-pressed={aiMode}
+        aria-label="AI分类"
+        title={aiMode ? 'AI 分类模式：仅展示有内容的分类（点击关闭）' : '开启 AI 分类模式：自动隐藏空分类'}
+        className={`p-1 rounded transition-colors ${
+          aiMode ? 'bg-(--accent)/20 text-(--accent)' : 'text-(--text-muted) hover:text-(--text-primary) hover:bg-white/5'
+        }`}
+      >
+        <Sparkles className="w-3.5 h-3.5" />
+      </button>
+      <button
+        type="button"
+        onClick={handleRefreshResources}
+        title="刷新资源"
+        className="p-1 rounded text-(--text-muted) hover:text-(--text-primary) hover:bg-white/5"
+      >
+        <RefreshCw className="w-3.5 h-3.5" />
+      </button>
+      <button
+        type="button"
+        onClick={() => setCategoryModalOpen(true)}
+        title="分类管理：自定义资源分类"
+        className="p-1 rounded text-(--text-muted) hover:text-(--text-primary) hover:bg-white/5"
+      >
+        <Settings2 className="w-3.5 h-3.5" />
+      </button>
+    </>
+  );
+
   return (
     <div className="h-full flex flex-col bg-(--bg-app)">
-      {/* 头部：标题 + AI 分类模式开关 + 刷新 / 分类管理 */}
-      <div className="shrink-0 px-3 py-1.5 border-b border-(--border-color) flex items-center gap-1">
-        <span className="flex-1 text-[11px] text-(--text-muted) uppercase tracking-wider">资源分类</span>
-        <button
-          type="button"
-          onClick={() => setAiMode(v => !v)}
-          aria-pressed={aiMode}
-          title={aiMode ? 'AI 分类模式：仅展示有内容的分类（点击关闭）' : '开启 AI 分类模式：自动隐藏空分类'}
-          className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] transition-colors ${
-            aiMode ? 'bg-(--accent)/20 text-(--accent)' : 'text-(--text-muted) hover:text-(--text-primary) hover:bg-white/5'
-          }`}
-        >
-          <Sparkles className="w-3 h-3" />
-          AI分类
-        </button>
-        <button
-          type="button"
-          onClick={handleRefreshResources}
-          title="刷新资源"
-          className="p-1 rounded text-(--text-muted) hover:text-(--text-primary) hover:bg-white/5"
-        >
-          <RefreshCw className="w-3.5 h-3.5" />
-        </button>
-        <button
-          type="button"
-          onClick={() => setCategoryModalOpen(true)}
-          title="分类管理：自定义资源分类"
-          className="p-1 rounded text-(--text-muted) hover:text-(--text-primary) hover:bg-white/5"
-        >
-          <Settings2 className="w-3.5 h-3.5" />
-        </button>
-      </div>
+      {/* 无标题插槽时（独立使用）才在面板内渲染自带标题行；否则工具栏已并入「资源」标题行 */}
+      {!headerSlot && (
+        <div className="shrink-0 px-3 py-1.5 border-b border-(--border-color) flex items-center gap-1">
+          <span className="flex-1 text-[11px] text-(--text-muted) uppercase tracking-wider">资源分类</span>
+          {categoryToolbar}
+        </div>
+      )}
+      {headerSlot && createPortal(categoryToolbar, headerSlot)}
 
       {/* 手风琴分类列表：每类一分组，标题行 chevron + 图标 + 名称 + 计数 */}
       <div className="flex-1 overflow-y-auto py-1">

@@ -38,10 +38,11 @@ const AccordionSection: React.FC<{
   onToggle: (id: string) => void;
 }> = ({ meta, expanded, enabled, onToggle }) => {
   const bridge = useStoryboardBridgeSafe();
-  // 只依赖稳定的 setContainer（useCallback 空依赖，引用不随 containers 变化）。
-  // 若依赖整个 bridge 对象，containers 更新会重建 bridge → 重建本 callback ref →
-  // 重新触发 setContainer → 无限循环（Maximum update depth exceeded）。
+  // 只依赖稳定的 setContainer / setSectionHeaderSlot（useCallback 空依赖，引用不随
+  // containers/slots 变化）。若依赖整个 bridge 对象，其更新会重建 bridge → 重建本
+  // callback ref → 重新触发注册 → 无限循环（Maximum update depth exceeded）。
   const setContainer = bridge?.setContainer;
+  const setSectionHeaderSlot = bridge?.setSectionHeaderSlot;
   const Icon = meta.icon;
   const ChevronIcon = expanded ? ChevronDown : ChevronRight;
 
@@ -53,25 +54,37 @@ const AccordionSection: React.FC<{
     [setContainer, meta.id],
   );
 
+  // callback ref：注册标题行右侧的操作插槽（供面板 portal 工具栏按钮）
+  const headerSlotRef = useCallback(
+    (el: HTMLDivElement | null) => {
+      setSectionHeaderSlot?.(meta.id, el);
+    },
+    [setSectionHeaderSlot, meta.id],
+  );
+
   return (
     <div className="flex flex-col border-b border-(--border-color) last:border-b-0">
-      {/* 分组标题行 */}
-      <button
-        type="button"
-        disabled={!enabled}
-        onClick={() => onToggle(meta.id)}
-        aria-expanded={expanded}
-        className={`w-full flex items-center gap-2.5 px-3 py-1.5 text-left text-xs transition-colors shrink-0 ${
-          enabled
-            ? 'text-(--text-primary) hover:bg-(--bg-card-hover)'
-            : 'text-(--text-muted) opacity-50 cursor-not-allowed'
-        }`}
-        title={enabled ? (expanded ? '点击折叠' : '点击展开') : '进入工作台后可用'}
-      >
-        <ChevronIcon className="w-3.5 h-3.5 opacity-40 transition-transform shrink-0" />
-        <Icon className="w-4 h-4 shrink-0 opacity-70" />
-        <span className="flex-1 font-medium">{meta.label}</span>
-      </button>
+      {/* 分组标题行：左侧可点击的折叠区 + 右侧操作插槽 */}
+      <div className="flex items-center gap-1 pr-2">
+        <button
+          type="button"
+          disabled={!enabled}
+          onClick={() => onToggle(meta.id)}
+          aria-expanded={expanded}
+          className={`flex-1 flex items-center gap-2.5 px-3 py-1.5 text-left text-xs transition-colors shrink-0 ${
+            enabled
+              ? 'text-(--text-primary) hover:bg-(--bg-card-hover)'
+              : 'text-(--text-muted) opacity-50 cursor-not-allowed'
+          }`}
+          title={enabled ? (expanded ? '点击折叠' : '点击展开') : '进入工作台后可用'}
+        >
+          <ChevronIcon className="w-3.5 h-3.5 opacity-40 transition-transform shrink-0" />
+          <Icon className="w-4 h-4 shrink-0 opacity-70" />
+          <span className="flex-1 font-medium text-left">{meta.label}</span>
+        </button>
+        {/* 操作插槽：仅展开且可用时存在，面板通过 portal 把工具栏按钮放进来 */}
+        {expanded && enabled && <div ref={headerSlotRef} className="flex items-center gap-1 shrink-0" />}
+      </div>
       {/* 分组内容容器：StoryBoard 通过 portal 填充。限高并内部滚动，避免多个
           展开组在手风琴整列滚动上下文里争抢/压扁高度。 */}
       {expanded && enabled && (
