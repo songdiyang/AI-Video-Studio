@@ -8,6 +8,7 @@ import { AnimaticPreview } from '../../views/StoryBoard/AnimaticPreview';
 import AssetEditor from '../AssetEditor';
 import AssetSceneRelations from '../AssetSceneRelations';
 import Settings from '../../views/Settings';
+import Teams from '../../views/Teams';
 import { ExtensionDetailView } from '../../views/Extensions';
 import ScriptWorkshop from '../ScriptWorkshop';
 import { StoryboardScene } from '../../views/StoryBoard/useSceneManager';
@@ -117,6 +118,9 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
   // 设置标签页（单例，始终只有一个）
   const [settingsTabOpen, setSettingsTabOpen] = useState(false);
 
+  // 团队管理标签页（单例，与设置一致的全局工具标签）
+  const [teamsTabOpen, setTeamsTabOpen] = useState(false);
+
   // 扩展详情标签页（多例，每个扩展独立标签）
   const [extensionDetailTabs, setExtensionDetailTabs] = useState<TabItem[]>([]);
   const [activeExtensionDetailTabId, setActiveExtensionDetailTabId] = useState<string | null>(null);
@@ -136,12 +140,15 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
     if (settingsTabOpen) {
       result.push({ id: 'settings', type: 'settings', title: '设置' });
     }
+    if (teamsTabOpen) {
+      result.push({ id: 'teams', type: 'teams', title: '团队管理' });
+    }
     if (scriptGenerateTabOpen) {
       const episodeTitle = scriptGenerateTabEpisode ? `第${scriptGenerateTabEpisode}集剧本` : '生成剧本';
       result.push({ id: 'script-generate', type: 'script-generate', title: episodeTitle });
     }
     return result;
-  }, [sceneTabs, assetTabs, extensionDetailTabs, settingsTabOpen, scriptGenerateTabOpen]);
+  }, [sceneTabs, assetTabs, extensionDetailTabs, settingsTabOpen, teamsTabOpen, scriptGenerateTabOpen]);
 
   // 从 localStorage 恢复所有标签状态（带版本控制，按 projectId 隔离）
   useEffect(() => {
@@ -568,6 +575,7 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
           setActiveAssetTabId(tabId);
           setActiveTabId(null);
           setSettingsTabOpen(false);
+          setTeamsTabOpen(false);
           return prev;
         } else {
           // 创建新标签
@@ -587,6 +595,7 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
           setActiveAssetTabId(tabId);
           setActiveTabId(null);
           setSettingsTabOpen(false);
+          setTeamsTabOpen(false);
           return [...prev, newTab];
         }
       });
@@ -602,6 +611,7 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
   useEffect(() => {
     const handleOpenSettingsTab = () => {
       setSettingsTabOpen(true);
+      setTeamsTabOpen(false);
       setActiveAssetTabId(null);
       setActiveTabId(null);
     };
@@ -609,6 +619,30 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
     window.addEventListener('openSettingsTab', handleOpenSettingsTab as EventListener);
     return () => {
       window.removeEventListener('openSettingsTab', handleOpenSettingsTab as EventListener);
+    };
+  }, []);
+
+  // 监听打开团队管理标签页事件
+  useEffect(() => {
+    const handleOpenTeamsTab = () => {
+      setTeamsTabOpen(true);
+      setSettingsTabOpen(false);
+      setActiveAssetTabId(null);
+      setActiveTabId(null);
+      setActiveExtensionDetailTabId(null);
+    };
+
+    window.addEventListener('openTeamsTab', handleOpenTeamsTab as EventListener);
+    return () => {
+      window.removeEventListener('openTeamsTab', handleOpenTeamsTab as EventListener);
+    };
+  }, []);
+
+  // 宿主就绪标记：供左侧栏「管理团队」按钮判断能否以标签页打开（否则回退整页 /teams）
+  useEffect(() => {
+    (window as any).__teamsTabHostReady = true;
+    return () => {
+      (window as any).__teamsTabHostReady = false;
     };
   }, []);
 
@@ -633,6 +667,7 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
       setActiveTabId(null);
       setActiveExtensionDetailTabId(null);
       setSettingsTabOpen(false);
+      setTeamsTabOpen(false);
       console.log('[PreviewEditor] 已打开剧本创作标签页，目标集数:', detail.episodeNumber, '剧本ID:', detail.scriptId);
     };
 
@@ -666,6 +701,7 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
         setActiveTabId(null);
         setActiveAssetTabId(null);
         setSettingsTabOpen(false);
+        setTeamsTabOpen(false);
       } else {
         // 创建新标签
         const newTab: TabItem = {
@@ -679,6 +715,7 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
         setActiveTabId(null);
         setActiveAssetTabId(null);
         setSettingsTabOpen(false);
+        setTeamsTabOpen(false);
       }
     };
 
@@ -695,8 +732,19 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
       setActiveAssetTabId(null);
       setActiveExtensionDetailTabId(null);
       setActiveTabId(null);
+      setTeamsTabOpen(false);
       // 确保设置标签页是打开的
       setSettingsTabOpen(true);
+      return;
+    }
+    // 判断是否为团队管理标签
+    if (tabId === 'teams') {
+      setActiveAssetTabId(null);
+      setActiveExtensionDetailTabId(null);
+      setActiveTabId(null);
+      setSettingsTabOpen(false);
+      // 确保团队管理标签页是打开的
+      setTeamsTabOpen(true);
       return;
     }
     // 判断是否为剧本生成标签
@@ -705,6 +753,7 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
       setActiveTabId(null);
       setActiveExtensionDetailTabId(null);
       setSettingsTabOpen(false);
+      setTeamsTabOpen(false);
       // 确保剧本生成标签页是打开的
       setScriptGenerateTabOpen(true);
       return;
@@ -717,6 +766,7 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
       setActiveTabId(null);
       setActiveExtensionDetailTabId(null);
       setSettingsTabOpen(false);
+      setTeamsTabOpen(false);
       return;
     }
     // 判断是否为扩展详情标签
@@ -726,12 +776,14 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
       setActiveTabId(null);
       setActiveAssetTabId(null);
       setSettingsTabOpen(false);
+      setTeamsTabOpen(false);
       return;
     }
     setActiveTabId(tabId);
     setActiveAssetTabId(null);
     setActiveExtensionDetailTabId(null);
     setSettingsTabOpen(false);
+    setTeamsTabOpen(false);
     if (tabId.startsWith('scene-')) {
       // 检测是否点击了其他集数的分镜标签，如果是则先切换集数
       const clickedTab = sceneTabs.find(t => t.id === tabId);
@@ -770,6 +822,22 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
     if (tabId === 'settings') {
       setSettingsTabOpen(false);
       // 关闭设置后，尝试激活其他标签
+      if (extensionDetailTabs.length > 0) {
+        setActiveExtensionDetailTabId(extensionDetailTabs[extensionDetailTabs.length - 1].id);
+      } else if (assetTabs.length > 0) {
+        setActiveAssetTabId(assetTabs[assetTabs.length - 1].id);
+      } else if (sceneTabs.length > 0) {
+        setActiveTabId(sceneTabs[sceneTabs.length - 1].id);
+      } else {
+        setActiveTabId(null);
+      }
+      return;
+    }
+
+    // 检查是否为团队管理标签
+    if (tabId === 'teams') {
+      setTeamsTabOpen(false);
+      // 关闭团队后，尝试激活其他标签
       if (extensionDetailTabs.length > 0) {
         setActiveExtensionDetailTabId(extensionDetailTabs[extensionDetailTabs.length - 1].id);
       } else if (assetTabs.length > 0) {
@@ -862,9 +930,19 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
     // 检查是否为设置标签
     if (tabId === 'settings') {
       setSettingsTabOpen(true);
+      setTeamsTabOpen(false);
       setActiveAssetTabId(null);
       setActiveExtensionDetailTabId(null);
       setActiveTabId('settings');
+      return;
+    }
+    // 检查是否为团队管理标签
+    if (tabId === 'teams') {
+      setTeamsTabOpen(true);
+      setSettingsTabOpen(false);
+      setActiveAssetTabId(null);
+      setActiveExtensionDetailTabId(null);
+      setActiveTabId('teams');
       return;
     }
     updateCurrentTabs(prev => prev.filter(t => t.id === tabId));
@@ -873,6 +951,7 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
     setExtensionDetailTabs([]);
     setActiveExtensionDetailTabId(null);
     setSettingsTabOpen(false);
+    setTeamsTabOpen(false);
     setActiveTabId(tabId);
   }, [updateCurrentTabs]);
 
@@ -881,9 +960,19 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
     // 检查是否为设置标签
     if (tabId === 'settings') {
       setSettingsTabOpen(true);
+      setTeamsTabOpen(false);
       setActiveAssetTabId(null);
       setActiveExtensionDetailTabId(null);
       setActiveTabId('settings');
+      return;
+    }
+    // 检查是否为团队管理标签
+    if (tabId === 'teams') {
+      setTeamsTabOpen(true);
+      setSettingsTabOpen(false);
+      setActiveAssetTabId(null);
+      setActiveExtensionDetailTabId(null);
+      setActiveTabId('teams');
       return;
     }
     updateCurrentTabs(prev => {
@@ -903,7 +992,7 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
       if ((e.ctrlKey || e.metaKey) && e.key === 'w') {
         e.preventDefault();
         // 获取当前激活的标签ID
-        const currentActiveId = activeExtensionDetailTabId || activeAssetTabId || activeTabId || (settingsTabOpen ? 'settings' : null);
+        const currentActiveId = activeExtensionDetailTabId || activeAssetTabId || activeTabId || (settingsTabOpen ? 'settings' : null) || (teamsTabOpen ? 'teams' : null);
         if (currentActiveId) {
           handleTabClose(currentActiveId);
         }
@@ -911,7 +1000,7 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
       // Ctrl+Tab / Cmd+Tab 切换到下一个标签
       if ((e.ctrlKey || e.metaKey) && e.key === 'Tab') {
         e.preventDefault();
-        const currentActiveId = activeExtensionDetailTabId || activeAssetTabId || activeTabId || (settingsTabOpen ? 'settings' : null);
+        const currentActiveId = activeExtensionDetailTabId || activeAssetTabId || activeTabId || (settingsTabOpen ? 'settings' : null) || (teamsTabOpen ? 'teams' : null);
         if (tabs.length > 1 && currentActiveId) {
           const currentIndex = tabs.findIndex(t => t.id === currentActiveId);
           const nextIndex = e.shiftKey
@@ -932,7 +1021,7 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeTabId, activeAssetTabId, activeExtensionDetailTabId, settingsTabOpen, tabs, handleTabClose, handleTabClick]);
+  }, [activeTabId, activeAssetTabId, activeExtensionDetailTabId, settingsTabOpen, teamsTabOpen, tabs, handleTabClose, handleTabClick]);
 
   // 拖拽排序
   const handleTabReorder = useCallback((newTabs: TabItem[]) => {
@@ -944,6 +1033,7 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
     || tabs.find(t => t.id === activeAssetTabId)
     || tabs.find(t => t.id === activeTabId)
     || (settingsTabOpen ? tabs.find(t => t.id === 'settings') : null)
+    || (teamsTabOpen ? tabs.find(t => t.id === 'teams') : null)
     || (scriptGenerateTabOpen ? tabs.find(t => t.id === 'script-generate') : null)
     || null;
 
@@ -952,7 +1042,7 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
       {/* 标签栏 */}
       <TabBar
         tabs={tabs}
-        activeTabId={activeExtensionDetailTabId || activeAssetTabId || activeTabId || (settingsTabOpen ? 'settings' : null) || (scriptGenerateTabOpen ? 'script-generate' : null)}
+        activeTabId={activeExtensionDetailTabId || activeAssetTabId || activeTabId || (settingsTabOpen ? 'settings' : null) || (teamsTabOpen ? 'teams' : null) || (scriptGenerateTabOpen ? 'script-generate' : null)}
         onTabClick={handleTabClick}
         onTabClose={handleTabClose}
         onCloseOthers={handleCloseOthers}
@@ -1007,6 +1097,11 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
           {activeTab?.type === 'settings' && (
             <div className="w-full h-full overflow-hidden">
               <Settings />
+            </div>
+          )}
+          {activeTab?.type === 'teams' && (
+            <div className="w-full h-full overflow-y-auto">
+              <Teams embedded onClose={() => setTeamsTabOpen(false)} />
             </div>
           )}
           {activeTab?.type === 'extension-detail' && activeTab.extId && (

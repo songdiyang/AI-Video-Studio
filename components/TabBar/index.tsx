@@ -1,9 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Camera, Users, Mountain, X, ChevronDown, Play, Box, Settings, Puzzle, Sparkles } from 'lucide-react';
+import { Camera, Users, UsersRound, Mountain, X, ChevronDown, Play, Box, Settings, Puzzle, Sparkles } from 'lucide-react';
 
 export interface TabItem {
   id: string;
-  type: 'scene' | 'character' | 'location' | 'animatic' | 'asset' | 'settings' | 'extension' | 'extension-detail' | 'script-generate';
+  type: 'scene' | 'character' | 'location' | 'animatic' | 'asset' | 'settings' | 'extension' | 'extension-detail' | 'script-generate' | 'teams';
   title: string;
   sceneIndex?: number; // 分镜序号
   scriptId?: number;   // 所属集数ID（用于跨集标签页显示）
@@ -78,6 +78,8 @@ const TabBar: React.FC<TabBarProps> = ({
         return <Box size={12} />;
       case 'settings':
         return <Settings size={12} />;
+      case 'teams':
+        return <UsersRound size={12} />;
       case 'extension':
         return <Puzzle size={12} />;
       case 'extension-detail':

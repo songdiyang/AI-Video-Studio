@@ -123,7 +123,15 @@ const TeamsSidePanel: React.FC<TeamsSidePanelProps> = ({ onOpenTeam }) => {
       {/* 底部：跳转到完整管理页 */}
       <div className="shrink-0 border-t border-[var(--border-color)] px-2 py-1.5">
         <button
-          onClick={() => navigate('/teams')}
+          onClick={() => {
+            // 优先在编辑区以标签页打开（与“设置”一致）；宿主未就绪（无项目）时回退整页 /teams
+            if ((window as any).__teamsTabHostReady) {
+              navigate('/');
+              setTimeout(() => window.dispatchEvent(new CustomEvent('openTeamsTab')), 100);
+            } else {
+              navigate('/teams');
+            }
+          }}
           className="w-full flex items-center justify-center gap-1.5 px-2 py-1 rounded-md text-xs text-[var(--text-muted)] hover:text-[var(--accent)] hover:bg-white/5 transition-colors"
         >
           <Settings2 className="w-3.5 h-3.5" />

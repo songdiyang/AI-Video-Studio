@@ -81,7 +81,14 @@ import {
   uploadTeamAvatar,
 } from '../../services/collaboration';
 
-const Teams: React.FC = () => {
+interface TeamsProps {
+  /** 内嵌模式：作为编辑区标签页渲染，列表/详情切换用内部状态而非路由 */
+  embedded?: boolean;
+  /** 内嵌模式下关闭标签页回调（如从团队进入项目时关闭自身） */
+  onClose?: () => void;
+}
+
+const Teams: React.FC<TeamsProps> = ({ embedded = false, onClose }) => {
   const navigate = useNavigate();
   const { id: teamIdParam } = useParams<{ id: string }>();
   const { showToast } = useToast();
@@ -89,12 +96,28 @@ const Teams: React.FC = () => {
   const { t } = useLanguage();
   const { setCurrentProject } = useWorkbench();
 
+  // 内嵌模式下的当前团队 id（路由模式下由 teamIdParam 驱动）
+  const [internalTeamId, setInternalTeamId] = useState<number | null>(null);
+  const activeTeamId = embedded ? internalTeamId : (teamIdParam ? parseInt(teamIdParam, 10) : null);
+
+  // 打开团队详情：内嵌用状态，路由用 navigate
+  const openTeam = useCallback((id: number) => {
+    if (embedded) setInternalTeamId(id);
+    else navigate(`/teams/${id}`);
+  }, [embedded, navigate]);
+  // 返回团队列表
+  const backToList = useCallback(() => {
+    if (embedded) setInternalTeamId(null);
+    else navigate('/teams');
+  }, [embedded, navigate]);
+
   // 项目打开
   const LAST_PROJECT_KEY = 'nanostory_last_project_id';
   const handleEnterProject = (project: any) => {
     localStorage.setItem(LAST_PROJECT_KEY, project.id.toString());
     setCurrentProject({ ...project, name: project.name || project.title });
-    navigate('/');
+    if (embedded) onClose?.();
+    else navigate('/');
   };
 
   // 辅助函数：与 Projects.tsx 保持一致
@@ -222,23 +245,23 @@ const Teams: React.FC = () => {
       } else {
         showToast(msg, 'error');
       }
-      navigate('/teams');
+      backToList();
     } finally {
       setLoading(false);
     }
-  }, [showToast, navigate]);
+  }, [showToast, navigate, backToList]);
 
   useEffect(() => {
     loadTeams();
   }, [loadTeams]);
 
   useEffect(() => {
-    if (teamIdParam) {
-      loadTeamDetail(parseInt(teamIdParam));
+    if (activeTeamId) {
+      loadTeamDetail(activeTeamId);
     } else {
       setSelectedTeam(null);
     }
-  }, [teamIdParam, loadTeamDetail]);
+  }, [activeTeamId, loadTeamDetail]);
 
   // 打开创建/编辑模态框
   const handleOpenModal = (team?: Team) => {
@@ -270,7 +293,7 @@ const Teams: React.FC = () => {
       } else {
         const { team } = await createTeam(formData);
         showToast('团队创建成功', 'success');
-        navigate(`/teams/${team.id}`);
+        openTeam(team.id);
       }
       await loadTeams();
       setShowModal(false);
@@ -297,7 +320,7 @@ const Teams: React.FC = () => {
         showToast('团队已删除', 'success');
         await loadTeams();
         if (selectedTeam?.id === team.id) {
-          navigate('/teams');
+          backToList();
         }
       } catch (error) {
         showToast(error instanceof Error ? error.message : '删除失败', 'error');
@@ -332,7 +355,7 @@ const Teams: React.FC = () => {
         // 无论成功失败，都刷新团队列表
         await loadTeams();
         if (selectedTeam?.id === team.id) {
-          navigate('/teams');
+          backToList();
         }
       }
     }
@@ -354,7 +377,7 @@ const Teams: React.FC = () => {
       await loadTeams();
       // 加入成功后直接跳转到团队详情页
       if (result.team?.id) {
-        navigate(`/teams/${result.team.id}`);
+        openTeam(result.team.id);
       }
     } catch (error) {
       showToast(error instanceof Error ? error.message : '加入失败', 'error');
@@ -705,7 +728,7 @@ const Teams: React.FC = () => {
                   {/* 上部：头像 + 信息 + 菜单 */}
                   <div
                     className="flex items-start justify-between mb-3"
-                    onClick={() => navigate(`/teams/${team.id}`)}
+                    onClick={() => openTeam(team.id)}
                   >
                     <div className="flex items-center gap-3.5">
                       {/* 头像 + 强调色装饰背景 */}
@@ -798,13 +821,13 @@ const Teams: React.FC = () => {
 
                   {/* 描述 */}
                   {team.description && (
-                    <p className="text-sm text-(--text-secondary) line-clamp-2 mb-3 leading-relaxed" onClick={() => navigate(`/teams/${team.id}`)}>
+                    <p className="text-sm text-(--text-secondary) line-clamp-2 mb-3 leading-relaxed" onClick={() => openTeam(team.id)}>
                       {team.description}
                     </p>
                   )}
 
                   {/* 分割线 + 统计信息 */}
-                  <div className="pt-3 mt-1 border-t border-(--border-subtle)" onClick={() => navigate(`/teams/${team.id}`)}>
+                  <div className="pt-3 mt-1 border-t border-(--border-subtle)" onClick={() => openTeam(team.id)}>
                     <div className="flex items-center gap-3">
                       <span className="inline-flex items-center gap-1.5 text-sm text-(--text-secondary) bg-(--bg-input)/60 rounded-md px-2 py-1">
                         <Users className="w-3.5 h-3.5 text-(--accent)/70" />
@@ -966,7 +989,7 @@ const Teams: React.FC = () => {
           isIconOnly
           variant="light"
           className="text-(--text-secondary) hover:text-(--text-primary) hover:bg-(--bg-input) rounded-lg transition-all duration-150"
-          onPress={() => navigate('/teams')}
+          onPress={() => backToList()}
         >
           <ArrowLeft className="w-5 h-5" />
         </Button>
