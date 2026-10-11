@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Settings2, Sparkles, ChevronRight, ChevronDown, User, MapPin, Box, Cloud, Building2, Shirt, Tags, RefreshCw } from 'lucide-react';
+import { Tooltip } from '@heroui/react';
 import { ResourcePanelProps } from './types';
 import { useStoryboardBridgeSafe } from '../../../contexts/StoryboardBridgeContext';
 import { useCharacterData } from './useCharacterData';
@@ -753,39 +754,46 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
   // 否则回退渲染在面板内自带标题行。
   const categoryToolbar = (
     <>
-      <button
-        type="button"
-        onClick={() => setAiMode(v => !v)}
-        aria-pressed={aiMode}
-        aria-label="AI分类"
-        title={aiMode ? 'AI 分类模式：仅展示有内容的分类（点击关闭）' : '开启 AI 分类模式：自动隐藏空分类'}
-        className={`p-1 rounded transition-colors ${
-          aiMode ? 'bg-(--accent)/20 text-(--accent)' : 'text-(--text-muted) hover:text-(--text-primary) hover:bg-white/5'
-        }`}
-      >
-        <Sparkles className="w-3.5 h-3.5" />
-      </button>
-      <button
-        type="button"
-        onClick={handleRefreshResources}
-        title="刷新资源"
-        className="p-1 rounded text-(--text-muted) hover:text-(--text-primary) hover:bg-white/5"
-      >
-        <RefreshCw className="w-3.5 h-3.5" />
-      </button>
-      <button
-        type="button"
-        onClick={() => setCategoryModalOpen(true)}
-        title="分类管理：自定义资源分类"
-        className="p-1 rounded text-(--text-muted) hover:text-(--text-primary) hover:bg-white/5"
-      >
-        <Settings2 className="w-3.5 h-3.5" />
-      </button>
+      <Tooltip content={aiMode ? 'AI 分类模式：仅展示有内容的分类（点击关闭）' : '开启 AI 分类模式：自动隐藏空分类'} placement="bottom">
+        <button
+          type="button"
+          onClick={() => setAiMode(v => !v)}
+          aria-pressed={aiMode}
+          aria-label="AI分类"
+          className={`p-1.5 rounded transition-colors ${
+            aiMode ? 'bg-(--accent)/20 text-(--accent)' : 'text-(--text-muted) hover:text-(--text-primary) hover:bg-white/5'
+          }`}
+        >
+          <Sparkles className="w-3.5 h-3.5" />
+        </button>
+      </Tooltip>
+      <Tooltip content="刷新资源" placement="bottom">
+        <button
+          type="button"
+          onClick={handleRefreshResources}
+          aria-label="刷新资源"
+          className="p-1.5 rounded text-(--text-muted) hover:text-(--text-primary) hover:bg-white/5"
+        >
+          <RefreshCw className="w-3.5 h-3.5" />
+        </button>
+      </Tooltip>
+      <Tooltip content="分类管理：自定义资源分类" placement="bottom">
+        <button
+          type="button"
+          onClick={() => setCategoryModalOpen(true)}
+          aria-label="分类管理"
+          className="p-1.5 rounded text-(--text-muted) hover:text-(--text-primary) hover:bg-white/5"
+        >
+          <Settings2 className="w-3.5 h-3.5" />
+        </button>
+      </Tooltip>
     </>
   );
 
+
+  // 背景透明：portal 到创作工作台侧栏后与 --bg-nav 底色融为一体，展开时不产生色差
   return (
-    <div className="h-full flex flex-col bg-(--bg-app)">
+    <div className="h-full flex flex-col bg-transparent">
       {/* 无标题插槽时（独立使用）才在面板内渲染自带标题行；否则工具栏已并入「资源」标题行 */}
       {!headerSlot && (
         <div className="shrink-0 px-3 py-1.5 border-b border-(--border-color) flex items-center gap-1">
@@ -824,7 +832,8 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
                 <Icon className="w-3.5 h-3.5 shrink-0 opacity-70" />
                 <span className="flex-1 truncate font-medium">{section.label}</span>
                 {section.custom?.aiGenerated && <Sparkles className="w-3 h-3 shrink-0 text-(--accent) opacity-70" />}
-                <span className="shrink-0 text-[10px] text-(--text-muted)">{count}</span>
+                {/* 空数据时隐藏计数，避免强化"空空如也"的挫败感 */}
+                {count > 0 && <span className="shrink-0 text-[10px] text-(--text-muted)">{count}</span>}
               </div>
               {expanded && (
                 <div className="px-3 pb-3 max-h-[45vh] overflow-y-auto">

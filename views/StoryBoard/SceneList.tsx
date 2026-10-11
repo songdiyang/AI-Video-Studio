@@ -266,8 +266,9 @@ const SceneList: React.FC<SceneListProps> = ({
     setContextMenu(null);
   };
 
+  // 背景透明：portal 到创作工作台侧栏后与 --bg-nav 底色融为一体，展开时不产生色差
   return (
-    <div className="h-full flex flex-col bg-[var(--bg-app)]">
+    <div className="h-full flex flex-col bg-transparent">
       {/* 紧凑的头部操作栏（项目名不展示，顶部导航已承担项目标识） */}
       <div className="flex-shrink-0 px-2 py-1.5 border-b border-[var(--border-color)] flex items-center justify-between gap-2">
         {/* 左侧：集数切换 */}
@@ -283,7 +284,19 @@ const SceneList: React.FC<SceneListProps> = ({
             onUpdateEpisodeTitle={onUpdateEpisodeTitle}
           />
         </div>
-        <div className="flex items-center gap-1">
+        {/* 右侧：操作按钮组（新增分镜｜导出｜预览），按钮间增加间距 */}
+        <div className="flex items-center gap-1.5">
+          {/* 新增分镜 */}
+          {onInsertScene && (
+            <Tooltip content="新增分镜" placement="bottom">
+              <button
+                onClick={() => onInsertScene(scenes.length)}
+                className="h-7 w-7 flex items-center justify-center rounded-md text-[var(--accent)] hover:bg-[var(--accent)]/15 transition-all cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+              </button>
+            </Tooltip>
+          )}
           {/* 批量下载 */}
           {onBatchDownload && (
             <Tooltip content="批量下载打包" placement="bottom">
@@ -339,10 +352,18 @@ const SceneList: React.FC<SceneListProps> = ({
         {isLoading ? (
           <SceneListSkeleton />
         ) : scenes.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-[var(--text-muted)] py-12">
-            <Film className="w-10 h-10 mb-3 opacity-30" />
-            <div className="text-sm font-medium mb-1">暂无分镜</div>
-            <div className="text-xs opacity-60">点击上方"+"按钮或右键添加分镜</div>
+          <div className="flex flex-col items-center justify-center h-full py-12 gap-3">
+            <Film className="w-10 h-10 text-[var(--text-muted)] opacity-30" />
+            <div className="text-xs text-[var(--text-secondary)]">暂无分镜</div>
+            {onInsertScene && (
+              <button
+                onClick={() => onInsertScene(0)}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-md bg-[var(--accent)] text-white text-xs font-medium hover:bg-[var(--accent-light)] shadow-sm transition-colors cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                添加分镜
+              </button>
+            )}
           </div>
         ) : (
           <motion.div

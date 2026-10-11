@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Select, SelectItem } from '@heroui/react';
-import { Film, Plus, Pencil, Check, X, Settings2 } from 'lucide-react';
+import { Film, Plus, Pencil, Check, X, Settings2, ChevronDown } from 'lucide-react';
 
 interface Script {
   id: number;
@@ -8,9 +7,6 @@ interface Script {
   title: string;
   status: string;
 }
-
-// 「+ 新建下一集」虚拟项 id（与真实 script id 不冲突）
-export const CREATE_NEXT_EPISODE_ID = -1;
 
 interface EpisodeSelectorProps {
   scripts: Script[];
@@ -37,6 +33,117 @@ interface EpisodeSelectorProps {
   onUpdateEpisodeTitle?: (scriptId: number, title: string) => Promise<void>;
 }
 
+/** 下拉中的单个剧集选项 */
+interface EpisodeOption {
+  key: string;
+  label: string;
+  selected: boolean;
+}
+
+/**
+ * 通用剧集下拉：
+ *  - 触发器：Film 图标 + 当前集数 + chevron
+ *  - 面板：已有剧集分组（左对齐、选中态为文字高亮 + 左侧短竖线，去掉粗蓝外框）
+ *          + 分割线 + 「新建第 N 集」动作项（固定加号图标）
+ *  - hover 背景反馈，点击外部 / Esc 关闭
+ */
+const EpisodeDropdown: React.FC<{
+  options: EpisodeOption[];
+  triggerLabel: string;
+  createLabel: string | null;
+  onSelect: (key: string) => void;
+  onCreate: () => void;
+}> = ({ options, triggerLabel, createLabel, onSelect, onCreate }) => {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  return (
+    <div ref={wrapRef} className="relative">
+      {/* 触发器 */}
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className="inline-flex items-center gap-1.5 h-7 px-2 rounded-md text-xs font-medium text-[var(--text-primary)] hover:bg-[var(--bg-card-hover)] transition-colors cursor-pointer"
+      >
+        <Film className="w-3.5 h-3.5 text-[var(--accent)] shrink-0" />
+        <span className="whitespace-nowrap">{triggerLabel}</span>
+        <ChevronDown
+          className={`w-3 h-3 text-[var(--text-muted)] transition-transform duration-150 ${open ? 'rotate-180' : ''}`}
+        />
+      </button>
+
+      {/* 下拉面板 */}
+      {open && (
+        <div
+          role="listbox"
+          className="absolute left-0 top-full mt-1 z-50 min-w-[9rem] py-1 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] shadow-xl"
+        >
+          {/* 已有剧集分组 */}
+          {options.map((opt) => (
+            <button
+              key={opt.key}
+              type="button"
+              role="option"
+              aria-selected={opt.selected}
+              onClick={() => {
+                onSelect(opt.key);
+                setOpen(false);
+              }}
+              className={`relative w-full pl-4 pr-3 py-1.5 text-left text-xs flex items-center transition-colors cursor-pointer ${
+                opt.selected
+                  ? 'text-[var(--accent)] font-medium bg-[var(--accent)]/[0.08]'
+                  : 'text-[var(--text-secondary)] hover:bg-[var(--bg-card-hover)] hover:text-[var(--text-primary)]'
+              }`}
+            >
+              {/* 选中态左侧短竖线标记（替代粗外框） */}
+              {opt.selected && (
+                <span className="absolute left-1 top-1/2 -translate-y-1/2 h-3.5 w-0.5 rounded-full bg-[var(--accent)]" />
+              )}
+              <span className="truncate">{opt.label}</span>
+            </button>
+          ))}
+
+          {/* 新建动作：分组分隔 */}
+          {createLabel && (
+            <>
+              <div className="my-1 border-t border-[var(--border-color)]" />
+              <button
+                type="button"
+                onClick={() => {
+                  onCreate();
+                  setOpen(false);
+                }}
+                className="w-full pl-4 pr-3 py-1.5 text-left text-xs flex items-center gap-1.5 text-[var(--accent)] font-medium hover:bg-[var(--accent)]/10 transition-colors cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate whitespace-nowrap">{createLabel}</span>
+              </button>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
 /**
  * 集数选择器
  * 统一存储层后，所有分镜都绑定到剧本（包括隐式剧本）。
@@ -53,7 +160,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
   onStandaloneEpisodeChange,
   standaloneMaxEpisode,
   onCreateNextEpisode,
-  onUpdateEpisodeTitle
+  onUpdateEpisodeTitle,
 }) => {
   // 弹窗管理状态
   const [manageOpen, setManageOpen] = useState(false);
@@ -67,146 +174,87 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
       editInputRef.current.select();
     }
   }, [editingId]);
+
   // 当前选中的剧本（按 scriptId 匹配）
   const currentScript = currentScriptId
-    ? scripts.find(s => s.id === currentScriptId)
+    ? scripts.find((s) => s.id === currentScriptId)
     : null;
 
   // 是否有绑定剧本（非隐式剧本）
   const hasBoundScript = !!currentScript;
 
-  // ---- 集数切换选择 ----
-  const handleEpisodeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const selectedId = parseInt(e.target.value, 10);
-    if (selectedId === CREATE_NEXT_EPISODE_ID) {
-      onCreateNextEpisode?.();
-      return;
-    }
-    const script = scripts.find(s => s.id === selectedId);
-    if (script) {
-      onSelect(script);
-    }
+  // ---- 自由创作模式：集数作为「进度标签」 ----
+  const renderStandalone = () => {
+    if (hasBoundScript || !onStandaloneEpisodeChange) return null;
+    const maxEp = Math.max(standaloneMaxEpisode || 0, currentEpisode || 1, 1);
+    const options: EpisodeOption[] = Array.from({ length: maxEp }, (_, i) => ({
+      key: String(i + 1),
+      label: `第${i + 1}集`,
+      selected: i + 1 === (currentEpisode || 1),
+    }));
+    return (
+      <div className="flex items-center gap-1">
+        <div className="w-px h-5 bg-[var(--border-color)]" />
+        <EpisodeDropdown
+          options={options}
+          triggerLabel={`第${currentEpisode || 1}集`}
+          createLabel={`新建第${maxEp + 1}集`}
+          onSelect={(key) => {
+            const v = parseInt(key, 10);
+            if (!isNaN(v) && v >= 1) onStandaloneEpisodeChange(v);
+          }}
+          onCreate={() => onStandaloneEpisodeChange(maxEp + 1)}
+        />
+      </div>
+    );
   };
 
-  // 按剧本标题分组（同一 title 的多集只显示一次 + 集数）
-  const scriptGroups = React.useMemo(() => {
-    const groupMap = new Map<string, Script[]>();
-    for (const s of scripts) {
-      const key = s.title || `剧本 #${s.id}`;
-      if (!groupMap.has(key)) groupMap.set(key, []);
-      groupMap.get(key)!.push(s);
-    }
-    return groupMap;
-  }, [scripts]);
+  // ---- 绑定剧本模式：显示剧本集数列表 ----
+  const renderBound = () => {
+    if (!hasBoundScript) return null;
+    const options: EpisodeOption[] = scripts.map((s) => ({
+      key: String(s.id),
+      label: `第${s.episode_number}集`,
+      selected: s.id === currentScript?.id,
+    }));
+    return (
+      <div className="flex items-center gap-1">
+        <div className="w-px h-5 bg-[var(--border-color)]" />
+        <EpisodeDropdown
+          options={options}
+          triggerLabel={`第${currentScript?.episode_number ?? currentEpisode}集`}
+          createLabel={onCreateNextEpisode ? '新建下一集' : null}
+          onSelect={(key) => {
+            const script = scripts.find((s) => s.id === parseInt(key, 10));
+            if (script) onSelect(script);
+          }}
+          onCreate={() => onCreateNextEpisode?.()}
+        />
+        {/* 集数管理按钮（带 ref 用于定位） */}
+        <button
+          type="button"
+          ref={(el) => {
+            if (el && manageOpen) {
+              const rect = el.getBoundingClientRect();
+              document.documentElement.style.setProperty('--episode-manage-top', `${rect.bottom + 4}px`);
+              document.documentElement.style.setProperty('--episode-manage-left', `${rect.right - 256}px`);
+            }
+          }}
+          onClick={() => setManageOpen(true)}
+          className="inline-flex items-center justify-center w-7 h-7 rounded-md border border-[var(--border-color)] hover:border-[var(--accent)]/50 hover:bg-[var(--accent)]/10 text-[var(--text-muted)] hover:text-[var(--accent)] transition-colors cursor-pointer"
+          title="管理集数"
+          aria-label="管理集数"
+        >
+          <Settings2 className="w-3.5 h-3.5" />
+        </button>
+      </div>
+    );
+  };
 
   return (
     <div className="flex items-center gap-2">
-      {/* 自由创作模式：集数作为「进度标签」 */}
-      {!hasBoundScript && onStandaloneEpisodeChange && (() => {
-        // 读取父组件传入的最大集数，确保 Select 保留所有已到达的集数选项，用户可自由前后切换
-        const maxEp = Math.max(standaloneMaxEpisode || 0, currentEpisode || 1, 1);
-        const options = Array.from({ length: maxEp }, (_, i) => i + 1);
-        return (
-          <>
-            <div className="w-px h-5 bg-(--border-color)" />
-            <Select
-              size="sm"
-              aria-label="切换进度集数"
-              selectedKeys={[String(currentEpisode || 1)]}
-              onChange={(e) => {
-                const v = parseInt((e.target as HTMLSelectElement).value, 10);
-                if (v === CREATE_NEXT_EPISODE_ID) {
-                  // 无参考剧本模式下直接推进进度标签，不创建 DB 剧本
-                  onStandaloneEpisodeChange(maxEp + 1);
-                  return;
-                }
-                if (!isNaN(v) && v >= 1) onStandaloneEpisodeChange(v);
-              }}
-              className="w-24"
-              startContent={<Film className="w-3.5 h-3.5 text-[var(--accent)]" />}
-              classNames={{
-                trigger: "h-7 min-h-7 bg-transparent border-transparent hover:border-transparent data-[open=true]:border-transparent",
-                value: "text-xs font-medium text-[var(--text-primary)]",
-              }}
-            >
-              {[
-                ...options.map((ep) => (
-                  <SelectItem key={String(ep)} textValue={`第${ep}集`}>
-                    <span>第{ep}集</span>
-                  </SelectItem>
-                )),
-                <SelectItem key={String(CREATE_NEXT_EPISODE_ID)} textValue="新建下一集">
-                  <div className="flex items-center gap-1.5 text-[var(--accent)]">
-                    <Plus className="w-3.5 h-3.5" />
-                    <span className="font-medium">新建第{maxEp + 1}集</span>
-                  </div>
-                </SelectItem>
-              ]}
-            </Select>
-            <button
-              type="button"
-              onClick={() => onStandaloneEpisodeChange(maxEp + 1)}
-              className="inline-flex items-center justify-center w-7 h-7 rounded-md hover:bg-[var(--accent)]/10 text-[var(--accent)] transition-colors"
-              title={`新建第${maxEp + 1}集`}
-              aria-label="新建下一集"
-            >
-              <Plus className="w-3.5 h-3.5" />
-            </button>
-          </>
-        );
-      })()}
-
-      {/* 集数切换器（绑定剧本后显示剧本集数列表） */}
-      {hasBoundScript && (
-        <>
-          <div className="w-px h-5 bg-(--border-color)" />
-          <Select
-            size="sm"
-            aria-label="切换集数"
-            selectedKeys={currentScript ? [String(currentScript.id)] : [String(scripts[0]?.id)]}
-            onChange={handleEpisodeChange}
-            className="w-24"
-            startContent={<Film className="w-3.5 h-3.5 text-[var(--accent)]" />}
-            classNames={{
-              trigger: "h-7 min-h-7 bg-transparent border-transparent hover:border-transparent data-[open=true]:border-transparent",
-              value: "text-xs font-medium text-[var(--text-primary)]",
-            }}
-          >
-            {[
-              ...scripts.map((s) => (
-                <SelectItem key={String(s.id)} textValue={`第${s.episode_number}集`}>
-                  <span>第{s.episode_number}集</span>
-                </SelectItem>
-              )),
-              ...(onCreateNextEpisode ? [(
-                <SelectItem key={String(CREATE_NEXT_EPISODE_ID)} textValue="新建下一集">
-                  <div className="flex items-center gap-1.5 text-[var(--accent)]">
-                    <Plus className="w-3.5 h-3.5" />
-                    <span className="font-medium">新建下一集</span>
-                  </div>
-                </SelectItem>
-              )] : [])
-            ]}
-          </Select>
-          {/* 集数管理按钮（带 ref 用于定位） */}
-          <button
-            type="button"
-            ref={(el) => {
-              if (el && manageOpen) {
-                const rect = el.getBoundingClientRect();
-                document.documentElement.style.setProperty('--episode-manage-top', `${rect.bottom + 4}px`);
-                document.documentElement.style.setProperty('--episode-manage-left', `${rect.right - 256}px`);
-              }
-            }}
-            onClick={() => setManageOpen(true)}
-            className="inline-flex items-center justify-center w-7 h-7 rounded-md border border-[var(--border-color)] hover:border-[var(--accent)]/50 hover:bg-[var(--accent)]/10 text-[var(--text-muted)] hover:text-[var(--accent)] transition-colors"
-            title="管理集数"
-            aria-label="管理集数"
-          >
-            <Settings2 className="w-3.5 h-3.5" />
-          </button>
-        </>
-      )}
+      {renderStandalone()}
+      {renderBound()}
 
       {/* 集数管理下拉弹窗 */}
       {manageOpen && (

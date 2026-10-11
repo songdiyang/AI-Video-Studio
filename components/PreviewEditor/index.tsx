@@ -1037,6 +1037,13 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
     || (scriptGenerateTabOpen ? tabs.find(t => t.id === 'script-generate') : null)
     || null;
 
+  // 仅「分镜标签」与「非剧本资产标签」有实质底部内容（导演空间 / 资产关联分镜）。
+  // 设置、团队、扩展详情、剧本生成等整页型标签隐藏底部面板，让内容铺满整个区域，
+  // 消除残留的「无可用的工作区域」，明确设置的模态为全屏标签页。
+  const hasBottomWorkArea =
+    activeTab?.type === 'scene' ||
+    (activeTab?.type === 'asset' && activeTab.assetType !== 'script');
+
   return (
     <div className="flex flex-col h-full bg-[var(--bg-app)] min-h-0">
       {/* 标签栏 */}
@@ -1147,7 +1154,8 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
           )}
         </TabContent>
 
-        {/* 底部面板（导演空间 / 资产关联分镜） */}
+        {/* 底部面板（导演空间 / 资产关联分镜）——仅分镜/资产标签显示，整页型标签隐藏 */}
+        {hasBottomWorkArea && (
         <BottomPanel
           collapsed={!bottomPanelOpen}
           onCollapsedChange={(collapsed) => {
@@ -1213,6 +1221,7 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
             </div>
           )}
         </BottomPanel>
+        )}
       </div>
     </div>
   );

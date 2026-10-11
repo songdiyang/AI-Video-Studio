@@ -61,6 +61,13 @@ const TABS: { key: TabKey; label: string; icon: React.ReactNode }[] = [
   { key: 'upload', label: '上传剧本', icon: <Upload className="w-4 h-4" /> },
 ];
 
+// 具象示例引导：降低新手"怎么描述"的表达门槛
+const EXAMPLE_DESCRIPTION =
+  '3分钟校园悬疑短片，转校生发现旧课桌里的日记，一步步揭开十年前的秘密，节奏紧凑有反转';
+// 剧本描述字数上限（用于实时字数统计，给用户明确预期）
+const DESC_MAX = 500;
+
+
 // ==================== AI生成子组件 ====================
 
 const GeneratePanel: React.FC<{
@@ -234,21 +241,34 @@ const GeneratePanel: React.FC<{
     }
   };
 
-  const canGenerate = projectId && (lockEpisodeNumber || episodeInput) && textModel && !generating;
+  // 实时校验：剧本描述为核心必填项，为空时按钮保持禁用
+  const canGenerate =
+    !!projectId &&
+    !!(lockEpisodeNumber || episodeInput) &&
+    !!textModel &&
+    description.trim().length > 0 &&
+    !generating;
+
+  // 统一控件规范：所有输入/选择控件共用同一底色、圆角、边框与聚焦高亮，仅高度区分单行/多行/下拉
+  const controlWrapper =
+    'bg-[var(--bg-input)] border border-[var(--border-color)] rounded-xl ' +
+    'hover:border-[var(--accent)]/50 focus-within:border-[var(--accent)] focus-within:ring-2 focus-within:ring-[var(--accent)]/25 ' +
+    'data-[focus=true]:border-[var(--accent)] data-[hover=true]:border-[var(--accent)]/50';
+  const labelClass = 'flex items-center gap-1 text-[var(--text-secondary)] font-medium text-xs';
 
   return (
-    <div className="max-w-2xl mx-auto space-y-4">
-      <div className="flex items-start gap-2 p-3 rounded-lg bg-[var(--accent)]/5 border border-[var(--accent)]/20">
-        <Info className="w-4 h-4 text-[var(--accent)] shrink-0 mt-0.5" />
-        <div className="text-xs text-[var(--text-secondary)] leading-relaxed">
-          <p>AI 将根据您的描述生成剧本内容，生成的剧本会自动保存到当前项目的指定集数。</p>
-          <p className="mt-1">生成过程中您可以切换到其他标签页继续工作，完成后会自动通知您。</p>
-        </div>
+    <div className="max-w-2xl mx-auto w-full px-2 py-2 space-y-5">
+      {/* 轻量提示条：辅助说明，弱化视觉权重，不抢表单焦点 */}
+      <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[var(--bg-input)]/40 border border-[var(--border-color)]/50">
+        <Info className="w-3.5 h-3.5 text-[var(--text-muted)] shrink-0" />
+        <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
+          AI 将根据描述生成剧本，自动保存至当前剧集，生成后可直接编辑
+        </p>
       </div>
 
       {!lockProjectId && (
         <Select
-          label="目标项目"
+          label={<span className="flex items-center gap-1">目标项目<span className="text-red-400">*</span></span>}
           placeholder="选择项目"
           selectedKeys={[projectId]}
           onSelectionChange={(keys) => {
@@ -257,8 +277,8 @@ const GeneratePanel: React.FC<{
           }}
           isRequired
           classNames={{
-            label: "text-[var(--text-secondary)] font-medium",
-            trigger: "bg-[var(--bg-input)] border border-[var(--border-color)] data-[hover=true]:border-[var(--accent)]/50",
+            label: labelClass,
+            trigger: controlWrapper,
             value: "text-[var(--text-primary)]",
           }}
         >
@@ -270,46 +290,79 @@ const GeneratePanel: React.FC<{
 
       {!lockEpisodeNumber && (
         <Input
-          label="集数"
+          label={<span className="flex items-center gap-1">集数<span className="text-red-400">*</span></span>}
           type="number"
           placeholder="输入集数（如：1）"
           value={episodeInput}
           onValueChange={setEpisodeInput}
           min={1}
           isRequired
+          size="sm"
           classNames={{
-            label: "text-[var(--text-secondary)] font-medium",
+            label: labelClass,
             input: "bg-transparent text-[var(--text-primary)] placeholder:text-[var(--text-muted)]",
-            inputWrapper: "bg-[var(--bg-input)] border border-[var(--border-color)] hover:border-[var(--accent)]/50",
+            inputWrapper: controlWrapper,
           }}
         />
       )}
 
       <Input
-        label="剧本标题（可选）"
+        label={
+          <span className="flex items-baseline gap-1">
+            剧本标题
+            <span className="text-[11px] font-normal text-[var(--text-muted)]">（可选）</span>
+          </span>
+        }
         placeholder="输入剧本标题"
         value={title}
         onValueChange={setTitle}
+        size="sm"
         classNames={{
-          label: "text-[var(--text-secondary)] font-medium",
+          label: labelClass,
           input: "bg-transparent text-[var(--text-primary)] placeholder:text-[var(--text-muted)]",
-          inputWrapper: "bg-[var(--bg-input)] border border-[var(--border-color)] hover:border-[var(--accent)]/50",
+          inputWrapper: controlWrapper,
         }}
       />
 
-      <Textarea
-        label="剧本描述"
-        placeholder="描述你想要生成的剧本内容、风格、情节等..."
-        value={description}
-        onValueChange={setDescription}
-        minRows={4}
-        maxRows={8}
-        classNames={{
-          label: "text-[var(--text-secondary)] font-medium",
-          input: "bg-transparent text-[var(--text-primary)] placeholder:text-[var(--text-muted)]",
-          inputWrapper: "bg-[var(--bg-input)] border border-[var(--border-color)] hover:border-[var(--accent)]/50",
-        }}
-      />
+      {/* 核心必填项：剧本描述——拉高多行输入区，聚焦高亮更明显，右下角实时字数统计 */}
+      <div className="space-y-1">
+        <Textarea
+          label={
+            <span className="flex items-center gap-1">
+              剧本描述
+              <span className="text-red-400">*</span>
+            </span>
+          }
+          labelPlacement="outside"
+          placeholder="例如：3分钟校园悬疑短片，转校生发现旧课桌里的日记，一步步揭开十年前的秘密，节奏紧凑有反转"
+          value={description}
+          onValueChange={setDescription}
+          maxLength={DESC_MAX}
+          minRows={5}
+          maxRows={12}
+          classNames={{
+            label: `${labelClass} font-semibold`,
+            input: "bg-transparent text-[var(--text-primary)] placeholder:text-[var(--text-muted)] leading-relaxed",
+            inputWrapper: controlWrapper,
+          }}
+        />
+        <div className="flex items-center justify-between px-0.5">
+          <button
+            type="button"
+            onClick={() => setDescription(EXAMPLE_DESCRIPTION)}
+            className="text-[11px] text-[var(--accent)] hover:text-[var(--accent-light)] hover:underline transition-colors cursor-pointer"
+          >
+            给个示例
+          </button>
+          <span
+            className={`text-[11px] tabular-nums transition-colors ${
+              description.length >= DESC_MAX ? 'text-red-400' : 'text-[var(--text-muted)]'
+            }`}
+          >
+            {description.length}/{DESC_MAX} 字
+          </span>
+        </div>
+      </div>
 
       <Select
         label="剧本长度"
@@ -319,19 +372,19 @@ const GeneratePanel: React.FC<{
           if (selected) setLength(selected);
         }}
         classNames={{
-          label: "text-[var(--text-secondary)] font-medium",
-          trigger: "bg-[var(--bg-input)] border border-[var(--border-color)] data-[hover=true]:border-[var(--accent)]/50",
+          label: labelClass,
+          trigger: controlWrapper,
           value: "text-[var(--text-primary)]",
         }}
       >
-        <SelectItem key="短篇">短篇（1~3分钟）</SelectItem>
-        <SelectItem key="中篇">中篇（3~5分钟）</SelectItem>
-        <SelectItem key="长篇">长篇（5~10分钟）</SelectItem>
+        <SelectItem key="短篇" textValue="短篇（1-3分钟 · 约300-800字）">短篇（1-3分钟 · 约300-800字）</SelectItem>
+        <SelectItem key="中篇" textValue="中篇（3-8分钟 · 约800-2000字）">中篇（3-8分钟 · 约800-2000字）</SelectItem>
+        <SelectItem key="长篇" textValue="长篇（8-15分钟 · 约2000-4000字）">长篇（8-15分钟 · 约2000-4000字）</SelectItem>
       </Select>
 
       {textModels.length > 0 && (
         <Select
-          label="文本模型"
+          label={<span className="flex items-center gap-1">文本模型<span className="text-red-400">*</span></span>}
           placeholder="选择文本模型"
           selectedKeys={[textModel]}
           onSelectionChange={(keys) => {
@@ -340,8 +393,8 @@ const GeneratePanel: React.FC<{
           }}
           isRequired
           classNames={{
-            label: "text-[var(--text-secondary)] font-medium",
-            trigger: "bg-[var(--bg-input)] border border-[var(--border-color)] data-[hover=true]:border-[var(--accent)]/50",
+            label: labelClass,
+            trigger: controlWrapper,
             value: "text-[var(--text-primary)]",
           }}
         >
@@ -372,7 +425,12 @@ const GeneratePanel: React.FC<{
       <Button
         color="primary"
         size="lg"
-        className="w-full"
+        className={
+          'w-full transition-colors ' +
+          'data-[disabled=true]:bg-[var(--bg-card-hover)] data-[disabled=true]:text-[var(--text-muted)] ' +
+          'data-[disabled=true]:border data-[disabled=true]:border-[var(--border-color)] ' +
+          'data-[disabled=true]:opacity-100 data-[disabled=true]:cursor-not-allowed'
+        }
         startContent={!generating && <Sparkles className="w-4 h-4" />}
         isLoading={generating}
         isDisabled={!canGenerate}
@@ -380,8 +438,16 @@ const GeneratePanel: React.FC<{
       >
         {generating ? `生成中 ${progressInfo ? `(${progressInfo.progress}%)` : '...'}` : '开始生成'}
       </Button>
+
+      {/* 新手引导：仅在因缺少核心必填项而禁用时给出轻量提示 */}
+      {!generating && !canGenerate && (
+        <p className="text-center text-[11px] text-[var(--text-muted)] -mt-2">
+          填写剧本描述后即可生成
+        </p>
+      )}
     </div>
   );
+
 };
 
 // ==================== 上传剧本子组件 ====================
@@ -585,25 +651,30 @@ const ScriptGenerateTab: React.FC<ScriptGenerateTabProps> = ({
 
   return (
     <div className="flex flex-col h-full">
-      {/* Tab 切换 */}
+      {/* Tab 切换：分段控件样式，明确"二选一"的生成模式 */}
       <div className="shrink-0 px-4 py-3 border-b border-[var(--border-color)]">
-        <div className="flex gap-1">
-          {TABS.map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-t-lg text-xs font-medium transition-colors ${
-                activeTab === tab.key
-                  ? 'text-[var(--accent)] border-b-2 border-[var(--accent)] bg-[var(--accent)]/5'
-                  : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-input)]'
-              }`}
-            >
-              {tab.icon}
-              {tab.label}
-            </button>
-          ))}
+        <div className="inline-flex gap-1 p-1 rounded-lg bg-[var(--bg-input)] border border-[var(--border-color)]">
+          {TABS.map((tab) => {
+            const active = activeTab === tab.key;
+            return (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                aria-pressed={active}
+                className={`flex items-center gap-1.5 px-4 py-1.5 rounded-md text-xs font-medium transition-colors cursor-pointer ${
+                  active
+                    ? 'bg-[var(--accent)] text-white shadow-sm'
+                    : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-card-hover)]'
+                }`}
+              >
+                {tab.icon}
+                {tab.label}
+              </button>
+            );
+          })}
         </div>
       </div>
+
 
       {/* 内容区 */}
       <div className="flex-1 overflow-y-auto p-4">

@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
-  Button, Input, Chip, Switch,
+  Button, Input, Switch,
   Modal, ModalContent, ModalHeader, ModalBody, ModalFooter,
 } from '@heroui/react';
 import {
-  Plus, Trash2, Star, Search, Zap,
+  Plus, Trash2, Star, Search, Zap, Pencil,
   Loader2, ShieldCheck, MessageSquare, Image as ImageIcon, Clapperboard, X, AlertCircle,
   CheckCircle2, XCircle, ChevronDown, Eye, EyeOff,
 } from 'lucide-react';
@@ -109,15 +109,14 @@ const MODEL_PROVIDERS: ModelProvider[] = [
 const PROVIDER_MAP: Record<string, ModelProvider> = Object.fromEntries(MODEL_PROVIDERS.map((p) => [p.id, p]));
 
 const getProviderName = (id: string) => PROVIDER_MAP[id]?.name || id;
-/** 从配置中推断类别（用于列表分组展示） */
-const getCategory = (id: string): ProviderCategory => {
-  const p = PROVIDER_MAP[id];
-  if (!p) return 'text';
-  return p.supportedCategories[0] || 'text';
-};
 const configKey = (c: { provider: string; model_name: string }) => `${c.provider}::${c.model_name}`;
-
-// ─── 小组件已移除（行式布局不再需要头像/密钥显隐） ────────────
+/** 从已有配置反推类别（编辑回填 / 卡片标签展示用） */
+const inferCategory = (c: { provider: string; model_name: string }): ProviderCategory => {
+  const p = PROVIDER_MAP[c.provider];
+  if (!p) return 'text';
+  const found = p.supportedCategories.find((cat) => (p.modelsByCategory[cat] ?? []).includes(c.model_name));
+  return found || p.supportedCategories[0] || 'text';
+};
 
 const AIModelSettings: React.FC = () => {
   const { showToast } = useToast();
@@ -126,6 +125,7 @@ const AIModelSettings: React.FC = () => {
   const [search, setSearch] = useState('');
 
   const [showAddModal, setShowAddModal] = useState(false);
+  const [editingConfig, setEditingConfig] = useState<AIModelConfig | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deletingConfig, setDeletingConfig] = useState<AIModelConfig | null>(null);
 
@@ -199,6 +199,7 @@ const AIModelSettings: React.FC = () => {
   }, [configs, search]);
 
   const handleAdd = () => {
+    setEditingConfig(null);
     setSelectedProvider('');
     setSelectedCategory('');
     setSelectedModel('');
@@ -211,6 +212,34 @@ const AIModelSettings: React.FC = () => {
     setAddTestPassed(false);
     setAddTesting(false);
     setShowAddModal(true);
+  };
+
+  /** 打开编辑：回填表单（提供商/类别/模型可改，改动后保存会替换旧配置） */
+  const handleEdit = (config: AIModelConfig) => {
+    setEditingConfig(config);
+    setSelectedProvider(config.provider);
+    setSelectedCategory(inferCategory(config));
+    const p = PROVIDER_MAP[config.provider];
+    if (p?.isCustom) {
+      setCustomModelId(config.model_name);
+      setSelectedModel('');
+    } else {
+      setSelectedModel(config.model_name);
+      setCustomModelId('');
+    }
+    setApiKey(config.api_key || '');
+    setApiBase(config.api_base || p?.defaultApiBase || '');
+    setRevealKey(false);
+    setKeyTouched(false);
+    setAddTestResult(null);
+    setAddTestPassed(false);
+    setAddTesting(false);
+    setShowAddModal(true);
+  };
+
+  const closeAddModal = () => {
+    setShowAddModal(false);
+    setEditingConfig(null);
   };
 
   /** 选择提供商时：自动填充 API Base、重置下游选择 */
@@ -280,14 +309,21 @@ const AIModelSettings: React.FC = () => {
     }
     setSaving(true);
     try {
+      const identityChanged =
+        !!editingConfig &&
+        (editingConfig.provider !== selectedProvider || editingConfig.model_name !== effectiveModelId);
+      if (identityChanged && editingConfig) {
+        await deleteAIModelConfig(editingConfig.provider, editingConfig.model_name);
+      }
       await saveAIModelKey({
         provider: selectedProvider,
         model_name: effectiveModelId,
         api_key: apiKey.trim(),
         api_base: apiBase.trim() || undefined,
+        ...(editingConfig ? { enabled: editingConfig.enabled, is_default: editingConfig.is_default } : {}),
       });
-      showToast('保存成功', 'success');
-      setShowAddModal(false);
+      showToast(editingConfig ? '模型已更新' : '保存成功', 'success');
+      closeAddModal();
       await loadConfigs();
     } catch (error) {
       console.error('Failed to save AI model config:', error);
@@ -348,33 +384,33 @@ const AIModelSettings: React.FC = () => {
     }
   };
 
-  const enabledCount = configs.filter((c) => c.enabled !== false).length;
-  const defaultCount = configs.filter((c) => c.is_default).length;
-
-  // ── 渲染单个配置行（行式简洁布局） ────────────────────────
+  // ── 渲染单个模型卡片（仿编辑器设置页的卡片式列表） ────────
   const renderConfigRow = (config: AIModelConfig) => {
     const key = configKey(config);
     const isEnabled = config.enabled !== false;
     const result = testResults[key];
     const isTesting = testing[key];
+    const category = inferCategory(config);
 
     return (
       <div
         key={key}
-        className={`group flex items-center justify-between px-4 py-3.5 rounded-xl transition-colors hover:bg-(--bg-hover) ${
-          isEnabled ? '' : 'opacity-50'
+        className={`flex items-center justify-between px-5 py-4 rounded-xl bg-(--bg-card) border border-(--border-color) transition-colors hover:border-(--accent)/40 ${
+          isEnabled ? '' : 'opacity-60'
         }`}
       >
-        {/* 左侧：模型信息 */}
+        {/* 左侧：模型名 + 类别标签，下方为提供商 */}
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <span className="font-semibold text-sm text-(--text-primary) truncate">{config.model_name}</span>
+            <span className="font-semibold text-[15px] text-(--text-primary) truncate">{config.model_name}</span>
+            <span className="text-xs text-(--text-muted) shrink-0">{CATEGORY_META[category].label}</span>
             {config.is_default && (
-              <Chip size="sm" color="primary" variant="flat" className="text-xs shrink-0">默认</Chip>
+              <span className="text-xs text-(--accent) shrink-0">默认</span>
             )}
+            {!isEnabled && <span className="text-xs text-(--text-muted) shrink-0">已禁用</span>}
             {/* 测试结果行内提示 */}
             {result && (
-              <span className={`inline-flex items-center gap-1 text-xs ${
+              <span className={`inline-flex items-center gap-1 text-xs shrink-0 ${
                 result.status === 'success' ? 'text-green-500' : result.status === 'unknown' ? 'text-amber-500' : 'text-red-500'
               }`}>
                 {result.status === 'success' ? <ShieldCheck className="w-3 h-3" /> : <AlertCircle className="w-3 h-3" />}
@@ -382,11 +418,11 @@ const AIModelSettings: React.FC = () => {
               </span>
             )}
           </div>
-          <p className="text-xs text-(--text-muted) mt-0.5">{getProviderName(config.provider)}</p>
+          <p className="text-sm text-(--text-muted) mt-1.5">{getProviderName(config.provider)}</p>
         </div>
 
-        {/* 右侧：操作 + 开关 */}
-        <div className="flex items-center gap-1 shrink-0 ml-4">
+        {/* 右侧：测试 / 默认 / 编辑 / 删除 + 启用开关 */}
+        <div className="flex items-center gap-0.5 shrink-0 ml-4">
           {/* 连接测试 */}
           <Button
             isIconOnly
@@ -395,7 +431,7 @@ const AIModelSettings: React.FC = () => {
             aria-label="连接测试"
             isDisabled={isTesting}
             onPress={() => handleTest(config)}
-            className="opacity-0 group-hover:opacity-100 transition-opacity"
+            className="text-(--text-muted)"
           >
             {isTesting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
           </Button>
@@ -408,11 +444,22 @@ const AIModelSettings: React.FC = () => {
               aria-label="设为默认"
               isDisabled={!isEnabled}
               onPress={() => handleSetDefault(config)}
-              className="opacity-0 group-hover:opacity-100 transition-opacity"
+              className="text-(--text-muted)"
             >
               <Star className="w-4 h-4" />
             </Button>
           )}
+          {/* 编辑 */}
+          <Button
+            isIconOnly
+            size="sm"
+            variant="light"
+            aria-label="编辑模型"
+            onPress={() => handleEdit(config)}
+            className="text-(--text-muted)"
+          >
+            <Pencil className="w-4 h-4" />
+          </Button>
           {/* 删除 */}
           <Button
             isIconOnly
@@ -421,7 +468,7 @@ const AIModelSettings: React.FC = () => {
             color="danger"
             aria-label="删除配置"
             onPress={() => { setDeletingConfig(config); setShowDeleteModal(true); }}
-            className="opacity-0 group-hover:opacity-100 transition-opacity"
+            className="text-(--text-muted)"
           >
             <Trash2 className="w-4 h-4" />
           </Button>
@@ -440,25 +487,35 @@ const AIModelSettings: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* 头部 */}
-      <div className="flex items-center justify-between gap-4">
+      {/* 头部：标题 + 副标题，右上角「添加」与「查看文档」 */}
+      <div className="flex items-start justify-between gap-4">
         <div>
-          <h3 className="text-lg font-semibold text-(--text-primary)">AI 模型配置</h3>
-          <p className="text-sm text-(--text-muted) mt-1">配置你自己的 AI 模型密钥，全部加密保存在本地，不上传任何服务器</p>
+          <h3 className="text-xl font-bold text-(--text-primary)">模型</h3>
+          <p className="text-sm text-(--text-muted) mt-1">使用自有 API Key 管理自定义模型，密钥仅加密保存在本地</p>
         </div>
-        <Button color="primary" startContent={<Plus className="w-4 h-4" />} onPress={handleAdd}>
-          添加模型
-        </Button>
+        <div className="flex flex-col items-end gap-1.5 shrink-0">
+          <Button
+            size="sm"
+            variant="bordered"
+            startContent={<Plus className="w-4 h-4" />}
+            onPress={handleAdd}
+            className="border-(--border-color) text-(--text-primary) hover:border-(--accent)/50"
+          >
+            添加
+          </Button>
+          <button
+            type="button"
+            onClick={() => showToast('帮助文档即将上线，可先参考各输入框旁的提示', 'info')}
+            className="text-xs text-(--accent) hover:underline cursor-pointer"
+          >
+            查看文档
+          </button>
+        </div>
       </div>
 
-      {/* 统计 + 搜索 */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-2 text-xs text-(--text-muted)">
-          <Chip size="sm" variant="flat">{configs.length} 个配置</Chip>
-          <Chip size="sm" variant="flat" color="success">{enabledCount} 个启用</Chip>
-          {defaultCount > 0 && <Chip size="sm" variant="flat" color="primary">{defaultCount} 个默认</Chip>}
-        </div>
-        {configs.length > 0 && (
+      {/* 搜索 */}
+      {configs.length > 0 && (
+        <div className="flex justify-end">
           <Input
             size="sm"
             startContent={<Search className="w-4 h-4 text-(--text-muted)" />}
@@ -467,10 +524,10 @@ const AIModelSettings: React.FC = () => {
             onValueChange={setSearch}
             className="w-56"
           />
-        )}
-      </div>
+        </div>
+      )}
 
-      {/* 配置列表：行式布局 */}
+      {/* 模型卡片列表 */}
       {loading ? (
         <div className="flex items-center justify-center py-12">
           <div className="w-8 h-8 border-2 border-(--accent) border-t-transparent rounded-full animate-spin" />
@@ -481,21 +538,21 @@ const AIModelSettings: React.FC = () => {
             <MessageSquare className="w-7 h-7 text-(--accent)" />
           </div>
           <p className="text-(--text-primary) font-medium">还没有配置任何 AI 模型</p>
-          <p className="text-sm text-(--text-muted) mt-2">点击右上角「添加模型」，选择服务商并填入你的 API Key 即可开始</p>
+          <p className="text-sm text-(--text-muted) mt-2">点击右上角「添加」，选择服务商并填入你的 API Key 即可开始</p>
         </div>
       ) : filteredConfigs.length === 0 ? (
         <div className="py-10 text-center text-sm text-(--text-muted)">没有匹配「{search}」的配置</div>
       ) : (
-        <div className="space-y-1">
+        <div className="space-y-3">
           {filteredConfigs.map(renderConfigRow)}
         </div>
       )}
 
-      {/* 添加配置模态框 */}
-      <Modal isOpen={showAddModal} onClose={() => setShowAddModal(false)} size="md" scrollBehavior="inside">
+      {/* 添加/编辑配置模态框 */}
+      <Modal isOpen={showAddModal} onClose={closeAddModal} size="md" scrollBehavior="inside">
         <ModalContent>
           <ModalHeader className="flex items-center justify-between">
-            <span className="text-base font-semibold text-(--text-primary)">添加模型</span>
+            <span className="text-base font-semibold text-(--text-primary)">{editingConfig ? '编辑模型' : '添加模型'}</span>
           </ModalHeader>
           <ModalBody className="space-y-5">
             {/* 第一步：选择提供商 */}
@@ -695,14 +752,14 @@ const AIModelSettings: React.FC = () => {
             )}
           </ModalBody>
           <ModalFooter>
-            <Button variant="light" onPress={() => setShowAddModal(false)}>取消</Button>
+            <Button variant="light" onPress={closeAddModal}>取消</Button>
             <Button
               color="primary"
               onPress={handleSave}
               isLoading={saving || addTesting}
               isDisabled={!canSave}
             >
-              {saving ? '保存中' : addTesting ? '测试中…' : addTestPassed ? '添加' : '测试并添加'}
+              {saving ? '保存中' : addTesting ? '测试中…' : editingConfig ? '保存' : addTestPassed ? '添加' : '测试并添加'}
             </Button>
           </ModalFooter>
         </ModalContent>

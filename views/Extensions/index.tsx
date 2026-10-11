@@ -232,7 +232,7 @@ export const ExtensionDetailView: React.FC<ExtensionDetailViewProps> = ({ extId 
   const loadUserExts = async () => {
     try {
       const res = await getUserExtensions();
-      setUserExts(res.extensions);
+      setUserExts(res.extensions || []);
     } catch { /* ignore */ }
   };
 
@@ -499,8 +499,8 @@ const Extensions: React.FC<ExtensionsProps> = ({ onClose }) => {
         page: p,
         limit: 20,
       });
-      setExtensions(p === 1 ? res.extensions : [...extensions, ...res.extensions]);
-      setTotal(res.total);
+      setExtensions(p === 1 ? (res.extensions || []) : [...extensions, ...(res.extensions || [])]);
+      setTotal(res.total || 0);
       setPage(p);
     } catch (e: any) {
       setMarketError(e.message || '加载扩展市场失败');
@@ -513,7 +513,7 @@ const Extensions: React.FC<ExtensionsProps> = ({ onClose }) => {
   const loadCategories = async () => {
     try {
       const res = await getExtensionCategories();
-      setCategories(res.categories);
+      setCategories(res.categories || []);
     } catch { /* ignore */ }
   };
 
@@ -523,7 +523,7 @@ const Extensions: React.FC<ExtensionsProps> = ({ onClose }) => {
     setInstalledError(null);
     try {
       const res = await getUserExtensions();
-      setUserExtensions(res.extensions);
+      setUserExtensions(res.extensions || []);
     } catch (e: any) {
       setInstalledError(e.message || '加载已安装扩展失败');
     } finally {
@@ -762,7 +762,7 @@ const Extensions: React.FC<ExtensionsProps> = ({ onClose }) => {
   };
 
   // 当前列表数据
-  const listData = activeTab === 'marketplace' ? extensions : userExtensions.map(ue => ({
+  const listData = activeTab === 'marketplace' ? (extensions || []) : userExtensions.map(ue => ({
     id: ue.extension_id,
     name: ue.name,
     display_name: ue.display_name,
@@ -777,9 +777,9 @@ const Extensions: React.FC<ExtensionsProps> = ({ onClose }) => {
     updated_at: ue.installed_at,
   } as Extension));
 
-  // 过滤后的市场数据
+  // 过滤后的市场数据（extensions 兼容 undefined，避免离线降级时 [...extensions] 抛 not iterable）
   const filteredExtensions = useMemo(() => {
-    let result = [...extensions];
+    let result = [...(extensions || [])];
     switch (activeFilter) {
       case 'featured':
       case 'recommended':
@@ -971,7 +971,7 @@ const Extensions: React.FC<ExtensionsProps> = ({ onClose }) => {
                   <DropdownItem onClick={() => setSelectedCategory('')} active={selectedCategory === ''}>
                     {tx.all}
                   </DropdownItem>
-                  {categories.map(cat => (
+                  {(categories || []).map(cat => (
                     <DropdownItem
                       key={cat.category}
                       onClick={() => setSelectedCategory(cat.category === selectedCategory ? '' : cat.category)}

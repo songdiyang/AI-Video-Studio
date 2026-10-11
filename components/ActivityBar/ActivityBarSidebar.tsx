@@ -10,7 +10,6 @@
  * 宽度可拖拽调整（useResizableSidebar），可折叠。
  */
 import React from 'react';
-import { X } from 'lucide-react';
 import { useWorkbench } from '../../contexts/WorkbenchContext';
 import { useResizableSidebar } from '../../hooks/useResizableSidebar';
 import ProjectsSidePanel from '../SidePanels/ProjectsSidePanel';
@@ -30,7 +29,7 @@ const TAB_TITLES: Record<string, string> = {
 const WORKSPACE_SECTION_TABS = new Set(['scenes', 'resources', 'outline']);
 
 const ActivityBarSidebar: React.FC = () => {
-  const { leftSidebarTab, setLeftSidebarTab } = useWorkbench();
+  const { leftSidebarTab } = useWorkbench();
 
   const resize = useResizableSidebar({
     storageKey: 'vscode_left_sidebar_width',
@@ -76,19 +75,12 @@ const ActivityBarSidebar: React.FC = () => {
           resize.isDragging ? 'bg-(--accent)/60' : 'hover:bg-(--accent)/40'
         }`}
       />
-      {/* 面板头部：标题 + 关闭（扩展面板除外，它有自己的标题栏） */}
+      {/* 面板头部：仅标题（收起由活动栏图标点击/Ctrl+B 承担，不再显示叉叉） */}
       {leftSidebarTab !== 'extensions' && (
-        <div className="flex items-center justify-between px-3 h-9 border-b border-(--border-color) shrink-0">
+        <div className="flex items-center px-3 h-9 border-b border-(--border-color) shrink-0">
           <span className="text-xs font-medium uppercase tracking-wider text-(--text-muted) truncate">
             {title}
           </span>
-          <button
-            onClick={() => setLeftSidebarTab(null)}
-            className="p-1 rounded-md text-(--text-muted) hover:text-(--text-primary) hover:bg-white/5 transition-colors"
-            aria-label="收起侧栏"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
         </div>
       )}
       {/* 面板内容 */}

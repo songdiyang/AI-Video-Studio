@@ -1,13 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Moon, Sun, Eye, Send, ChevronDown, 
-  Palette, MessageSquare, Info, ChevronRight, Sparkles, Monitor, Globe, RotateCcw, SlidersHorizontal, Shield, EyeOff, Eye as EyeIcon,
+  Palette, MessageSquare, Info, ChevronRight, Sparkles, Monitor, Globe, RotateCcw, SlidersHorizontal,
   Cpu, Database, BarChart3, Users, Gauge, AlertTriangle, Megaphone, ClipboardList, BookOpen, Key
 } from 'lucide-react';
 import { useTheme, ThemeType } from '../../contexts/ThemeContext';
 import { useLanguage, LanguageType } from '../../contexts/LanguageContext';
-import { getAuthToken, getUserRole, getAuthUser } from '../../services/auth';
+import { getAuthToken, getUserRole } from '../../services/auth';
 import { useToast } from '../../contexts/ToastContext';
 import AIModelSettings from './AIModelSettings';
 
@@ -106,7 +106,6 @@ interface SettingSection {
 const SETTING_SECTIONS: SettingSection[] = [
   { id: 'general', icon: <SlidersHorizontal className="w-4 h-4" /> },
   { id: 'ai_models', icon: <Key className="w-4 h-4" /> }, // 新增：AI 模型密钥配置
-  { id: 'security', icon: <Shield className="w-4 h-4" /> },
   { id: 'feedback', icon: <MessageSquare className="w-4 h-4" /> },
   { id: 'about', icon: <Info className="w-4 h-4" /> },
   // 管理员功能（从管理后台迁移）
@@ -133,48 +132,11 @@ const Settings: React.FC = () => {
   const userRole = getUserRole();
   const isAdmin = userRole === 'admin' || userRole === 'ops';
 
-  // 左侧资料块：从 JWT 声明中取邮箱/角色
-  const authUser = getAuthUser();
-  const userDisplayName = authUser?.email?.split('@')[0] || 'User';
-  const userEmail = authUser?.email || '—';
-  const userInitial = (userDisplayName.charAt(0) || 'U').toUpperCase();
-
   // 反馈功能状态
   const [type, setType] = useState<FeedbackType>('feature');
   const [content, setContent] = useState('');
   const [contact, setContact] = useState('');
   const [submitting, setSubmitting] = useState(false);
-
-  // 安全设置状态
-  const [passwordHint, setPasswordHint] = useState('');
-  const [oldPassword, setOldPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [showOldPassword, setShowOldPassword] = useState(false);
-  const [showNewPassword, setShowNewPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [hintLoading, setHintLoading] = useState(false);
-  const [passwordLoading, setPasswordLoading] = useState(false);
-
-  // 进入 security 区域时加载密码提示
-  useEffect(() => {
-    if (activeSection === 'security') {
-      const fetchHint = async () => {
-        try {
-          const token = getAuthToken();
-          if (!token) return;
-          const res = await fetch('/api/auth/password-hint', {
-            headers: { Authorization: `Bearer ${token}` }
-          });
-          if (res.ok) {
-            const data = await res.json();
-            setPasswordHint(data.hint || '');
-          }
-        } catch { /* ignore */ }
-      };
-      fetchHint();
-    }
-  }, [activeSection]);
 
   // 动态翻译数据
   const typeLabels: Record<FeedbackType, string> = {
@@ -280,7 +242,7 @@ const Settings: React.FC = () => {
               style={{ color: 'var(--text-muted)' }}
             />
           </div>
-          <p className="text-xs mt-2 max-w-sm" style={{ color: 'var(--text-muted)' }}>
+          <p className="text-xs mt-1.5 max-w-sm" style={{ color: 'var(--text-secondary)' }}>
             {getThemeDesc(activePreset.nameKey)}
           </p>
         </div>
@@ -377,192 +339,6 @@ const Settings: React.FC = () => {
       </button>
     </div>
   );
-
-  // 渲染安全设置区域
-  const renderSecuritySection = () => {
-    const sec = (t.settings as any).security || {};
-
-    const handleSaveHint = async () => {
-      setHintLoading(true);
-      try {
-        const token = getAuthToken();
-        const res = await fetch('/api/auth/password-hint', {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {})
-          },
-          body: JSON.stringify({ hint: passwordHint.trim() || null })
-        });
-        if (res.ok) {
-          showToast(sec.hintSaved || '密码提示已保存', 'success');
-        } else {
-          const data = await res.json().catch(() => ({}));
-          showToast(data.message || sec.hintSaveFailed || '保存失败', 'error');
-        }
-      } catch {
-        showToast(sec.networkError || '网络错误', 'error');
-      } finally {
-        setHintLoading(false);
-      }
-    };
-
-    const handleChangePassword = async () => {
-      if (newPassword !== confirmPassword) {
-        showToast(sec.passwordMismatch || '两次输入的新密码不一致', 'error');
-        return;
-      }
-      if (newPassword.length < 6) {
-        showToast(sec.passwordTooShort || '新密码至少需要 6 个字符', 'error');
-        return;
-      }
-      setPasswordLoading(true);
-      try {
-        const token = getAuthToken();
-        const res = await fetch('/api/auth/change-password', {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {})
-          },
-          body: JSON.stringify({ oldPassword, newPassword })
-        });
-        if (res.ok) {
-          showToast(sec.passwordChanged || '密码修改成功', 'success');
-          setOldPassword('');
-          setNewPassword('');
-          setConfirmPassword('');
-        } else {
-          const data = await res.json().catch(() => ({}));
-          showToast(data.message || sec.passwordChangeFailed || '密码修改失败', 'error');
-        }
-      } catch {
-        showToast(sec.networkError || '网络错误', 'error');
-      } finally {
-        setPasswordLoading(false);
-      }
-    };
-
-    const inputStyle = {
-      backgroundColor: 'var(--bg-input)',
-      border: '1px solid var(--border-color)',
-      color: 'var(--text-primary)',
-    };
-
-    return (
-      <div className="space-y-8 max-w-lg">
-        {/* 密码提示 */}
-        <div>
-          <h3 className="text-sm font-medium mb-3" style={{ color: 'var(--text-primary)' }}>
-            {sec.hintTitle || '密码提示'}
-          </h3>
-          <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
-            {sec.hintDesc || '设置密码提示，帮助您回忆密码。请勿直接填写密码本身。'}
-          </p>
-          <div className="flex gap-3">
-            <input
-              value={passwordHint}
-              onChange={e => setPasswordHint(e.target.value)}
-              placeholder={sec.hintPlaceholder || '例如：我常用的密码组合'}
-              maxLength={255}
-              className="flex-1 rounded-xl px-4 py-3 text-sm transition-all"
-              style={inputStyle}
-            />
-            <button
-              onClick={handleSaveHint}
-              disabled={hintLoading}
-              className="px-6 py-3 rounded-xl font-medium text-sm transition-all shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
-              style={{ backgroundColor: 'var(--accent-primary)', color: 'white' }}
-            >
-              {hintLoading ? (sec.saving || '保存中...') : (sec.save || '保存')}
-            </button>
-          </div>
-        </div>
-
-        {/* 修改密码 */}
-        <div>
-          <h3 className="text-sm font-medium mb-3" style={{ color: 'var(--text-primary)' }}>
-            {sec.changePasswordTitle || '修改密码'}
-          </h3>
-          <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
-            {sec.changePasswordDesc || '输入旧密码和新密码来修改您的登录密码。'}
-          </p>
-          <div className="space-y-3">
-            {/* 旧密码 */}
-            <div className="relative">
-              <input
-                type={showOldPassword ? 'text' : 'password'}
-                value={oldPassword}
-                onChange={e => setOldPassword(e.target.value)}
-                placeholder={sec.oldPasswordPlaceholder || '旧密码'}
-                className="w-full rounded-xl px-4 py-3 pr-10 text-sm transition-all"
-                style={inputStyle}
-              />
-              <button
-                type="button"
-                onClick={() => setShowOldPassword(!showOldPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2"
-                style={{ color: 'var(--text-muted)' }}
-              >
-                {showOldPassword ? <EyeOff className="w-4 h-4" /> : <EyeIcon className="w-4 h-4" />}
-              </button>
-            </div>
-            {/* 新密码 */}
-            <div className="relative">
-              <input
-                type={showNewPassword ? 'text' : 'password'}
-                value={newPassword}
-                onChange={e => setNewPassword(e.target.value)}
-                placeholder={sec.newPasswordPlaceholder || '新密码'}
-                className="w-full rounded-xl px-4 py-3 pr-10 text-sm transition-all"
-                style={inputStyle}
-              />
-              <button
-                type="button"
-                onClick={() => setShowNewPassword(!showNewPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2"
-                style={{ color: 'var(--text-muted)' }}
-              >
-                {showNewPassword ? <EyeOff className="w-4 h-4" /> : <EyeIcon className="w-4 h-4" />}
-              </button>
-            </div>
-            {/* 确认新密码 */}
-            <div className="relative">
-              <input
-                type={showConfirmPassword ? 'text' : 'password'}
-                value={confirmPassword}
-                onChange={e => setConfirmPassword(e.target.value)}
-                placeholder={sec.confirmPasswordPlaceholder || '确认新密码'}
-                className="w-full rounded-xl px-4 py-3 pr-10 text-sm transition-all"
-                style={inputStyle}
-              />
-              <button
-                type="button"
-                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2"
-                style={{ color: 'var(--text-muted)' }}
-              >
-                {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <EyeIcon className="w-4 h-4" />}
-              </button>
-            </div>
-          </div>
-          <button
-            onClick={handleChangePassword}
-            disabled={!oldPassword || !newPassword || !confirmPassword || passwordLoading}
-            className="w-full mt-4 py-3 rounded-xl font-medium text-sm transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-            style={{ backgroundColor: 'var(--accent-primary)', color: 'white' }}
-          >
-            {passwordLoading ? (
-              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-            ) : (
-              <Shield className="w-4 h-4" />
-            )}
-            {passwordLoading ? (sec.changing || '修改中...') : (sec.changePasswordBtn || '修改密码')}
-          </button>
-        </div>
-      </div>
-    );
-  };
 
   // 渲染关于区域
   const renderAboutSection = () => (
@@ -677,7 +453,7 @@ const Settings: React.FC = () => {
             />
           </div>
           {activeOption?.desc && (
-            <p className="text-xs mt-2 max-w-sm" style={{ color: 'var(--text-muted)' }}>
+            <p className="text-xs mt-1.5 max-w-sm" style={{ color: 'var(--text-secondary)' }}>
               {activeOption.desc}
             </p>
           )}
@@ -688,9 +464,15 @@ const Settings: React.FC = () => {
 
   // 渲染通用设置区域（外观 + 语言整合）
   const renderGeneralSection = () => (
-    <div className="space-y-8">
-      {renderAppearanceSection()}
-      {renderLanguageSection()}
+    <div className="max-w-2xl">
+      <div
+        className="rounded-xl border p-5 lg:p-6 space-y-6"
+        style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}
+      >
+        {renderAppearanceSection()}
+        <div className="h-px" style={{ backgroundColor: 'var(--border-color)' }} />
+        {renderLanguageSection()}
+      </div>
     </div>
   );
 
@@ -699,7 +481,6 @@ const Settings: React.FC = () => {
     switch (activeSection) {
       case 'general': return renderGeneralSection();
       case 'ai_models': return <AIModelSettings />; // 新增：AI 模型密钥配置
-      case 'security': return renderSecuritySection();
       case 'feedback': return renderFeedbackSection();
       case 'about': return renderAboutSection();
       // 管理员功能（从管理后台迁移）
@@ -725,76 +506,70 @@ const Settings: React.FC = () => {
       <div className="flex flex-col lg:flex-row min-h-full">
         {/* 左侧导航 */}
         <aside
-          className="lg:w-64 shrink-0 p-4 lg:p-5 border-b lg:border-b-0 lg:border-r"
+          className="lg:w-44 shrink-0 p-4 lg:p-5 border-b lg:border-b-0 lg:border-r"
           style={{ borderColor: 'var(--border-color)' }}
         >
-          {/* 用户资料块 */}
-          <div
-            className="flex items-center gap-3 px-1 pb-4 mb-3"
-            style={{ borderBottom: '1px solid var(--border-color)' }}
-          >
-            <div
-              className="w-11 h-11 rounded-full flex items-center justify-center text-base font-semibold shrink-0"
-              style={{ backgroundColor: 'var(--bg-input)', color: 'var(--text-primary)', border: '1px solid var(--border-color)' }}
-            >
-              {userInitial}
-            </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>
-                  {userDisplayName}
-                </span>
-                {isAdmin && (
-                  <span
-                    className="text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0"
-                    style={{ backgroundColor: 'rgba(34,197,94,0.16)', color: '#22c55e' }}
-                  >
-                    {userRole}
-                  </span>
-                )}
-              </div>
-              <div className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>
-                {userEmail}
-              </div>
-            </div>
-          </div>
-
-          {/* 纯文字导航（无图标，选中项描边高亮） */}
+          {/* 导航：「通用」为主标签，其余用分隔线归组（选中态为文字高亮 + 左侧短竖线） */}
           <nav className="flex lg:flex-col gap-1 flex-wrap">
-            {SETTING_SECTIONS.filter(section => !section.isAdmin || isAdmin).map(section => {
-              const active = activeSection === section.id;
+            {(() => {
+              const visible = SETTING_SECTIONS.filter(section => !section.isAdmin || isAdmin);
+              const renderButton = (section: SettingSection) => {
+                const active = activeSection === section.id;
+                const label = getSectionTitle(section.id);
+                return (
+                  <button
+                    key={section.id}
+                    onClick={() => setActiveSection(section.id)}
+                    title={label}
+                    className="relative text-left rounded-md pl-4 pr-3 py-2 text-sm transition-all w-full truncate"
+                    style={{
+                      backgroundColor: active ? 'var(--accent)1f' : 'transparent',
+                      color: active ? 'var(--text-primary)' : 'var(--text-secondary)',
+                      fontWeight: active ? 600 : 400,
+                    }}
+                  >
+                    {active && (
+                      <span
+                        className="absolute left-1 top-1/2 -translate-y-1/2 h-4 w-1 rounded-full"
+                        style={{ backgroundColor: 'var(--accent)' }}
+                      />
+                    )}
+                    <span className="hover:text-[var(--text-primary)] transition-colors">{label}</span>
+                  </button>
+                );
+              };
+              const general = visible.find(s => s.id === 'general');
+              const rest = visible.filter(s => s.id !== 'general');
               return (
-                <button
-                  key={section.id}
-                  onClick={() => setActiveSection(section.id)}
-                  className="text-left rounded-lg px-3 py-2 text-sm transition-all w-full"
-                  style={{
-                    backgroundColor: active ? 'var(--accent-primary)14' : 'transparent',
-                    border: `1px solid ${active ? 'var(--accent-primary)' : 'transparent'}`,
-                    color: active ? 'var(--text-primary)' : 'var(--text-secondary)',
-                    fontWeight: active ? 600 : 400,
-                  }}
-                >
-                  {getSectionTitle(section.id)}
-                </button>
+                <>
+                  {general && renderButton(general)}
+                  {rest.length > 0 && (
+                    <>
+                      <div className="hidden lg:block my-2 mx-2 h-px" style={{ backgroundColor: 'var(--border-color)' }} />
+                      {rest.map(renderButton)}
+                    </>
+                  )}
+                </>
               );
-            })}
+            })()}
           </nav>
         </aside>
 
         {/* 右侧内容 */}
         <main className="flex-1 min-w-0 p-6 lg:p-8">
-          {/* 区域头部：大标题 + 描述 */}
-          <div className="flex items-start justify-between gap-4 mb-6">
-            <div className="min-w-0">
-              <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
-                {currentSection && getSectionTitle(currentSection.id)}
-              </h1>
-              <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
-                {currentSection && getSectionDesc(currentSection.id)}
-              </p>
+          {/* 区域头部：大标题 + 描述（ai_models 页自带「模型」标题，不重复渲染） */}
+          {activeSection !== 'ai_models' && (
+            <div className="flex items-start justify-between gap-4 mb-6">
+              <div className="min-w-0">
+                <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
+                  {currentSection && getSectionTitle(currentSection.id)}
+                </h1>
+                <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
+                  {currentSection && getSectionDesc(currentSection.id)}
+                </p>
+              </div>
             </div>
-          </div>
+          )}
 
           {/* 区域内容 */}
           <AnimatePresence mode="wait">

@@ -37,27 +37,25 @@ const CharactersTab: React.FC<CharactersTabProps> = ({
 }) => {
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between mb-3">
-        <span className="text-sm font-semibold text-slate-300">
-          全部角色 ({dbCharacters.length > 0 ? dbCharacters.length : characters.length})
-        </span>
-        {onCreate && (
+      {/* 分类内不再重复「全部角色」标题（父级 section 已承担分类名与计数），仅保留新建动作 */}
+      {onCreate && (
+        <div className="flex items-center justify-end mb-1">
           <Button
             size="sm"
             variant="light"
-            className="h-7 px-2 text-xs text-(--text-muted) hover:text-(--text-primary)"
+            className="h-7 px-2 text-xs text-(--text-secondary) hover:text-(--text-primary)"
             startContent={<Plus className="w-3 h-3" />}
             onPress={onCreate}
           >
-            新建
+            新建角色
           </Button>
-        )}
-      </div>
+        </div>
+      )}
       
       {isLoadingCharacters ? (
         <div className="text-center py-12">
           <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-2"></div>
-          <p className="text-sm text-slate-500">加载中...</p>
+          <p className="text-sm text-(--text-secondary)">加载中...</p>
         </div>
       ) : dbCharacters.length > 0 ? (
         dbCharacters.map((char) => (
@@ -88,14 +86,15 @@ const CharactersTab: React.FC<CharactersTabProps> = ({
           ))}
         </>
       ) : (
-        <div className="text-center py-12 text-slate-400">
-          <UserRound className="mx-auto mb-2 h-10 w-10 stroke-1" aria-hidden="true" />
+        <div className="text-center py-10 text-(--text-secondary)">
+          <UserRound className="mx-auto mb-2 h-10 w-10 stroke-1 opacity-40" aria-hidden="true" />
           <p className="text-sm">暂无角色</p>
-          <p className="text-xs mt-1">生成分镜后自动识别，或点击右上角"新建"手动添加</p>
+          <p className="text-xs mt-1 text-(--text-muted)">生成分镜后自动识别，或点击「新建角色」手动添加</p>
         </div>
       )}
     </div>
   );
+
 };
 
 export default CharactersTab;
