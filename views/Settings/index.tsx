@@ -342,32 +342,59 @@ const Settings: React.FC = () => {
 
   // 渲染关于区域
   const renderAboutSection = () => (
-    <div className="space-y-6">
-      {/* 应用信息 */}
+    <div className="space-y-5">
+      {/* 应用信息卡片 */}
       <div 
         className="rounded-2xl p-6"
         style={{ backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-color)' }}
       >
-        <div className="flex items-center gap-4 mb-4">
+        {/* Logo 和标题 */}
+        <div className="flex items-center gap-4 mb-6">
           <div 
-            className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl"
+            className="w-16 h-16 rounded-2xl flex items-center justify-center text-3xl shadow-lg"
             style={{ backgroundColor: 'var(--accent-primary)', color: 'white' }}
           >
             🥟
           </div>
           <div>
-            <h3 className="font-bold text-lg" style={{ color: 'var(--text-primary)' }}>
+            <h3 className="font-bold text-xl" style={{ color: 'var(--text-primary)' }}>
               {t.settings.about.appName}
             </h3>
-            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+            <p className="text-sm mt-0.5" style={{ color: 'var(--text-muted)' }}>
               {t.settings.about.appSubtitle}
             </p>
           </div>
         </div>
-        <div className="space-y-3">
-          <div className="flex justify-between items-center py-2">
-            <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>{t.settings.about.version}</span>
-            <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>1.0.0-alpha</span>
+
+        {/* 版本信息 - 网格布局 */}
+        <div className="grid grid-cols-2 gap-4">
+          <div className="rounded-xl p-4" style={{ backgroundColor: 'var(--bg-card)' }}>
+            <span className="text-xs block mb-1" style={{ color: 'var(--text-muted)' }}>{t.settings.about.version}</span>
+            <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>1.0.0-alpha</span>
+          </div>
+          <div className="rounded-xl p-4" style={{ backgroundColor: 'var(--bg-card)' }}>
+            <span className="text-xs block mb-1" style={{ color: 'var(--text-muted)' }}>构建日期</span>
+            <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>2025.10</span>
+          </div>
+        </div>
+
+        {/* 技术栈标签 */}
+        <div className="mt-5 pt-5 border-t" style={{ borderColor: 'var(--border-color)' }}>
+          <span className="text-xs block mb-3" style={{ color: 'var(--text-muted)' }}>技术栈</span>
+          <div className="flex flex-wrap gap-2">
+            {['React 19', 'TypeScript', 'Tauri', 'Vite', 'Tailwind CSS'].map((tech) => (
+              <span 
+                key={tech}
+                className="px-2.5 py-1 rounded-md text-xs font-medium"
+                style={{ 
+                  backgroundColor: 'var(--accent-primary)', 
+                  color: 'white',
+                  opacity: 0.9
+                }}
+              >
+                {tech}
+              </span>
+            ))}
           </div>
         </div>
       </div>
@@ -377,43 +404,74 @@ const Settings: React.FC = () => {
         className="rounded-2xl p-6"
         style={{ backgroundColor: 'var(--bg-input)', border: '1px dashed var(--border-color)' }}
       >
-        <div className="flex items-center gap-3 mb-3">
-          <Sparkles className="w-5 h-5" style={{ color: 'var(--accent-primary)' }} />
-          <h3 className="font-medium" style={{ color: 'var(--text-primary)' }}>{t.settings.about.comingSoon}</h3>
+        <div className="flex items-center gap-3 mb-4">
+          <div 
+            className="w-8 h-8 rounded-lg flex items-center justify-center"
+            style={{ backgroundColor: 'var(--accent-primary)' }}
+          >
+            <Sparkles className="w-4 h-4 text-white" />
+          </div>
+          <div>
+            <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>{t.settings.about.comingSoon}</h3>
+            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>更多创作工具正在开发中</p>
+          </div>
         </div>
-        <ul className="space-y-2 text-sm" style={{ color: 'var(--text-muted)' }}>
-          <li className="flex items-center gap-2">
-            <ChevronRight className="w-4 h-4" style={{ color: 'var(--accent-primary)' }} />
-            {(t.settings.about as any).comicWorkbench || '漫画工作台'}
-          </li>
-          <li className="flex items-center gap-2">
-            <ChevronRight className="w-4 h-4" style={{ color: 'var(--accent-primary)' }} />
-            {(t.settings.about as any).novelWorkbench || '小说工作台'}
-          </li>
-          <li className="flex items-center gap-2">
-            <ChevronRight className="w-4 h-4" style={{ color: 'var(--accent-primary)' }} />
-            {(t.settings.about as any).shortVideoWorkbench || '短视频工作台'}
-          </li>
-          <li className="flex items-center gap-2">
-            <ChevronRight className="w-4 h-4" style={{ color: 'var(--accent-primary)' }} />
-            {(t.settings.about as any).musicWorkbench || '音乐工作台'}
-          </li>
-        </ul>
+        <div className="grid grid-cols-2 gap-3">
+          {[
+            { key: 'comicWorkbench', label: '漫画工作台', icon: '📖' },
+            { key: 'novelWorkbench', label: '小说工作台', icon: '📝' },
+            { key: 'shortVideoWorkbench', label: '短视频工作台', icon: '🎬' },
+            { key: 'musicWorkbench', label: '音乐工作台', icon: '🎵' },
+          ].map((item) => (
+            <div 
+              key={item.key}
+              className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm transition-colors"
+              style={{ 
+                backgroundColor: 'var(--bg-card)',
+                color: 'var(--text-secondary)',
+              }}
+            >
+              <span className="text-base">{item.icon}</span>
+              <span>{(t.settings.about as any)[item.key] || item.label}</span>
+            </div>
+          ))}
+        </div>
       </div>
 
-      {/* 重新播放引导 */}
-      <button
-        onClick={() => window.dispatchEvent(new Event('reset-onboarding'))}
-        className="w-full py-3 rounded-xl font-medium text-sm transition-all flex items-center justify-center gap-2 interactive-press hover:scale-[1.02]"
-        style={{
-          backgroundColor: 'var(--bg-input)',
-          border: '1px solid var(--border-color)',
-          color: 'var(--text-secondary)',
-        }}
-      >
-        <RotateCcw className="w-4 h-4" style={{ color: 'var(--accent-primary)' }} />
-        {t.onboarding?.replayButton || '重新播放新手引导'}
-      </button>
+      {/* 操作按钮组 */}
+      <div className="flex gap-3">
+        <button
+          onClick={() => window.dispatchEvent(new Event('reset-onboarding'))}
+          className="flex-1 py-3 rounded-xl font-medium text-sm transition-all flex items-center justify-center gap-2 interactive-press hover:scale-[1.02]"
+          style={{
+            backgroundColor: 'var(--bg-input)',
+            border: '1px solid var(--border-color)',
+            color: 'var(--text-secondary)',
+          }}
+        >
+          <RotateCcw className="w-4 h-4" style={{ color: 'var(--accent-primary)' }} />
+          {t.onboarding?.replayButton || '重新播放新手引导'}
+        </button>
+        <button
+          onClick={() => window.open('https://github.com', '_blank')}
+          className="px-4 py-3 rounded-xl font-medium text-sm transition-all flex items-center justify-center gap-2 interactive-press hover:scale-[1.02]"
+          style={{
+            backgroundColor: 'var(--bg-input)',
+            border: '1px solid var(--border-color)',
+            color: 'var(--text-secondary)',
+          }}
+          title="访问官网"
+        >
+          <Globe className="w-4 h-4" style={{ color: 'var(--accent-primary)' }} />
+        </button>
+      </div>
+
+      {/* 版权信息 */}
+      <div className="text-center pt-2">
+        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+          © 2025 子墨视频Studio. 保留所有权利.
+        </p>
+      </div>
     </div>
   );
 

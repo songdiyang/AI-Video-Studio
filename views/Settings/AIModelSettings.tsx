@@ -1,12 +1,12 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
-  Button, Input, Switch,
+  Button, Input, Switch, Tooltip,
   Modal, ModalContent, ModalHeader, ModalBody, ModalFooter,
 } from '@heroui/react';
 import {
   Plus, Trash2, Star, Search, Zap, Pencil,
   Loader2, ShieldCheck, MessageSquare, Image as ImageIcon, Clapperboard, X, AlertCircle,
-  CheckCircle2, XCircle, ChevronDown, Eye, EyeOff,
+  CheckCircle2, XCircle, ChevronDown, Eye, EyeOff, Check,
 } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 import {
@@ -30,6 +30,10 @@ interface ModelProvider {
   /** 是否为自定义提供商（需要手动填写 API Base） */
   isCustom: boolean;
   color: string;
+  /** 品牌徽标首字母缩写（无真实 logo 资源时的品牌标识降级方案） */
+  abbr: string;
+  /** 品牌 logo 图片路径（public/providers 下，可选；缺失时回退缩写徽标） */
+  logoUrl?: string;
 }
 
 const CATEGORY_META: Record<ProviderCategory, { label: string; icon: React.ReactNode }> = {
@@ -44,7 +48,7 @@ const MODEL_PROVIDERS: ModelProvider[] = [
     id: 'deepseek', name: 'DeepSeek',
     supportedCategories: ['text'],
     modelsByCategory: { text: ['deepseek-chat', 'deepseek-reasoner'] },
-    defaultApiBase: 'https://api.deepseek.com/v1', isCustom: false, color: '#4d6bfe',
+    defaultApiBase: 'https://api.deepseek.com/v1', isCustom: false, color: '#4d6bfe', abbr: 'DS', logoUrl: '/providers/deepseek.svg',
   },
   {
     id: 'qwen', name: '通义千问',
@@ -53,13 +57,13 @@ const MODEL_PROVIDERS: ModelProvider[] = [
       text: ['qwen-turbo', 'qwen-plus', 'qwen-max', 'qwen-long'],
       multimodal: ['qwen-vl-plus', 'qwen-vl-max'],
     },
-    defaultApiBase: 'https://dashscope.aliyuncs.com/compatible-mode/v1', isCustom: false, color: '#615ced',
+    defaultApiBase: 'https://dashscope.aliyuncs.com/compatible-mode/v1', isCustom: false, color: '#615ced', abbr: 'QW', logoUrl: '/providers/qwen.svg',
   },
   {
     id: 'doubao', name: '豆包',
     supportedCategories: ['text'],
     modelsByCategory: { text: ['doubao-pro-4k', 'doubao-pro-32k', 'doubao-pro-128k'] },
-    defaultApiBase: 'https://ark.cn-beijing.volces.com/api/v3', isCustom: false, color: '#ff752d',
+    defaultApiBase: 'https://ark.cn-beijing.volces.com/api/v3', isCustom: false, color: '#ff752d', abbr: '豆', logoUrl: '/providers/doubao.svg',
   },
   {
     id: 'zhipu', name: '智谱 AI',
@@ -68,7 +72,7 @@ const MODEL_PROVIDERS: ModelProvider[] = [
       text: ['glm-4-plus', 'glm-4-flash', 'glm-4-long'],
       multimodal: ['glm-4v', 'glm-4v-plus'],
     },
-    defaultApiBase: 'https://open.bigmodel.cn/api/paas/v4', isCustom: false, color: '#3b82f6',
+    defaultApiBase: 'https://open.bigmodel.cn/api/paas/v4', isCustom: false, color: '#3b82f6', abbr: 'GLM', logoUrl: '/providers/zhipu.svg',
   },
   {
     id: 'openai', name: 'OpenAI',
@@ -78,31 +82,31 @@ const MODEL_PROVIDERS: ModelProvider[] = [
       text: ['gpt-4-turbo', 'gpt-3.5-turbo'],
       image: ['dall-e-3', 'dall-e-2'],
     },
-    defaultApiBase: 'https://api.openai.com/v1', isCustom: false, color: '#10a37f',
+    defaultApiBase: 'https://api.openai.com/v1', isCustom: false, color: '#10a37f', abbr: 'OA', logoUrl: '/providers/openai.svg',
   },
   {
     id: 'kling', name: '可灵',
     supportedCategories: ['video'],
     modelsByCategory: { video: ['kling-v1', 'kling-v1-5', 'kling-v2-master'] },
-    defaultApiBase: 'https://api.klingai.com', isCustom: false, color: '#00c2a8',
+    defaultApiBase: 'https://api.klingai.com', isCustom: false, color: '#00c2a8', abbr: 'KL', logoUrl: '/providers/kling.svg',
   },
   {
     id: 'seedance', name: 'Seedance',
     supportedCategories: ['video'],
     modelsByCategory: { video: ['seedance-1-0-lite', 'seedance-1-0-pro'] },
-    defaultApiBase: '', isCustom: true, color: '#8b5cf6',
+    defaultApiBase: '', isCustom: true, color: '#8b5cf6', abbr: 'SD', logoUrl: '/providers/seedance.svg',
   },
   {
     id: 'vidu', name: 'Vidu',
     supportedCategories: ['video'],
     modelsByCategory: { video: ['viduq1', 'vidu2.0'] },
-    defaultApiBase: 'https://api.vidu.cn', isCustom: false, color: '#ef4444',
+    defaultApiBase: 'https://api.vidu.cn', isCustom: false, color: '#ef4444', abbr: 'VD', logoUrl: '/providers/vidu.svg',
   },
   {
     id: 'custom', name: '自定义',
     supportedCategories: ['text', 'multimodal', 'image', 'video'],
     modelsByCategory: {},
-    defaultApiBase: '', isCustom: true, color: '#64748b',
+    defaultApiBase: '', isCustom: true, color: '#64748b', abbr: '自',
   },
 ];
 
@@ -116,6 +120,195 @@ const inferCategory = (c: { provider: string; model_name: string }): ProviderCat
   if (!p) return 'text';
   const found = p.supportedCategories.find((cat) => (p.modelsByCategory[cat] ?? []).includes(c.model_name));
   return found || p.supportedCategories[0] || 'text';
+};
+
+// ─── 统一输入控件样式（正常/聚焦/错误/禁用仅靠边框与文字色区分） ──────
+const inputWrapperBase =
+  'bg-(--bg-input) border border-(--border-color) rounded-lg h-10 px-3 transition-colors ' +
+  'hover:border-(--accent)/50 data-[focus=true]:border-(--accent) data-[focus=true]:ring-1 data-[focus=true]:ring-(--accent)/30 ' +
+  'data-[invalid=true]:border-(--danger) data-[invalid=true]:bg-(--bg-input) shadow-none';
+const inputClassNames = {
+  inputWrapper: inputWrapperBase,
+  input: 'text-sm text-(--text-primary) placeholder:text-(--text-muted)',
+  errorMessage: 'hidden', // 错误提示统一由 FieldError 渲染，避免 HeroUI 默认红块
+};
+
+// ─── 轻量错误提示（细红边 + 小图标 + 小一号文字，替代整块红填充） ──────
+const FieldError: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <p className="flex items-center gap-1 mt-1.5 text-xs text-(--danger)">
+    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+    <span>{children}</span>
+  </p>
+);
+
+// ─── 统一表单标签（必填星号基线对齐；strong=必填加重，默认次级减弱） ──────
+const FieldLabel: React.FC<{
+  required?: boolean;
+  strong?: boolean;
+  step?: number;
+  children: React.ReactNode;
+  trailing?: React.ReactNode;
+}> = ({ required, strong = true, step, children, trailing }) => (
+  <label className={`flex items-center gap-1.5 mb-1.5 text-sm text-(--text-primary) ${strong ? 'font-medium' : 'font-normal text-(--text-secondary)'}`}>
+    {step != null && (
+      <span className="inline-flex items-center justify-center rounded-full bg-(--accent)/15 text-(--accent) text-[10px] font-semibold shrink-0" style={{ width: 18, height: 18 }}>
+        {step}
+      </span>
+    )}
+    {required && <span className="text-(--danger) leading-none">*</span>}
+    <span className="truncate">{children}</span>
+    {trailing && <span className="ml-auto pl-2 shrink-0">{trailing}</span>}
+  </label>
+);
+
+// ─── 提供商品牌徽标（优先真实 logo 图片，加载失败回退品牌色缩写徽标） ──
+const ProviderBadge: React.FC<{ color: string; abbr: string; logoUrl?: string; className?: string }> = ({ color, abbr, logoUrl, className = '' }) => {
+  const [imgFailed, setImgFailed] = useState(false);
+  if (logoUrl && !imgFailed) {
+    return (
+      <span className={`inline-flex items-center justify-center w-5 h-5 rounded-md shrink-0 overflow-hidden ${className}`}>
+        <img
+          src={logoUrl}
+          alt={abbr}
+          className="w-full h-full object-contain"
+          onError={() => setImgFailed(true)}
+        />
+      </span>
+    );
+  }
+  return (
+    <span
+      className={`inline-flex items-center justify-center w-5 h-5 rounded-md text-white font-semibold shrink-0 ${className}`}
+      style={{ backgroundColor: color, fontSize: abbr.length > 2 ? 8 : 10, letterSpacing: abbr.length > 2 ? 0 : 0.5 }}
+    >
+      {abbr}
+    </span>
+  );
+};
+
+// ─── 分组式自定义下拉（深色面板 / hover 高亮 / 选中对勾 / 键盘导航） ──
+interface SelectOption { id: string; name: string; color?: string; abbr?: string; logoUrl?: string }
+interface SelectGroup { title?: string; options: SelectOption[] }
+
+const GroupedSelect: React.FC<{
+  value: string;
+  onChange: (id: string) => void;
+  placeholder: string;
+  groups: SelectGroup[];
+  ariaLabel?: string;
+}> = ({ value, onChange, placeholder, groups, ariaLabel }) => {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const flat = useMemo(() => groups.flatMap((g) => g.options), [groups]);
+  const selectedIndex = flat.findIndex((o) => o.id === value);
+  const [activeIndex, setActiveIndex] = useState(selectedIndex);
+  const selectedOpt = flat.find((o) => o.id === value);
+  const selectedName = selectedOpt?.name;
+
+  useEffect(() => {
+    if (open) setActiveIndex(selectedIndex >= 0 ? selectedIndex : 0);
+  }, [open, selectedIndex]);
+
+  // 键盘导航 / 展开时，让高亮项平滑滚动进可视区
+  useEffect(() => {
+    if (!open || !listRef.current) return;
+    const el = listRef.current.querySelector<HTMLElement>(`[data-idx="${activeIndex}"]`);
+    el?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [activeIndex, open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDocMouseDown = (e: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDocMouseDown);
+    return () => document.removeEventListener('mousedown', onDocMouseDown);
+  }, [open]);
+
+  const commit = (idx: number) => {
+    const opt = flat[idx];
+    if (opt) { onChange(opt.id); setOpen(false); }
+  };
+
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') { setOpen(false); return; }
+    if (!open && (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Enter' || e.key === ' ')) {
+      e.preventDefault(); setOpen(true); return;
+    }
+    if (open) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); setActiveIndex((i) => Math.min(flat.length - 1, i + 1)); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); setActiveIndex((i) => Math.max(0, i - 1)); }
+      else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); commit(activeIndex); }
+    }
+  };
+
+  let runningIndex = -1;
+
+  return (
+    <div ref={rootRef} className="relative">
+      <button
+        type="button"
+        role="combobox"
+        aria-expanded={open}
+        aria-label={ariaLabel}
+        onClick={() => setOpen((v) => !v)}
+        onKeyDown={onKeyDown}
+        className={`flex w-full h-10 items-center justify-between gap-2 px-3 rounded-lg bg-(--bg-input) border text-sm transition-colors cursor-pointer focus:outline-none focus:ring-1 focus:ring-(--accent) ${
+          open ? 'border-(--accent) ring-1 ring-(--accent)' : 'border-(--border-color) hover:border-(--accent)/60'
+        }`}
+      >
+        <span className={`flex items-center gap-2 truncate ${selectedName ? 'text-(--text-primary)' : 'text-(--text-secondary)'}`}>
+          {selectedOpt?.color && selectedOpt?.abbr && <ProviderBadge color={selectedOpt.color} abbr={selectedOpt.abbr} logoUrl={selectedOpt.logoUrl} />}
+          <span className="truncate">{selectedName || placeholder}</span>
+        </span>
+        <ChevronDown className={`w-4 h-4 shrink-0 text-(--text-muted) transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {open && (
+        <div
+          ref={listRef}
+          className="absolute left-0 right-0 z-60 mt-1.5 max-h-80 overflow-y-auto overscroll-contain rounded-xl border border-(--border-color) py-1.5 animate-dropdown-in dropdown-scroll shadow-[0_12px_32px_rgba(0,0,0,0.55)]"
+          style={{ backgroundColor: 'var(--bg-popover)' }}
+          onWheel={(e) => e.stopPropagation()}
+          onTouchMove={(e) => e.stopPropagation()}
+        >
+          {groups.map((g, gi) => (
+            <React.Fragment key={`${g.title ?? 'g'}-${gi}`}>
+              {gi > 0 && <div className="mx-3 my-1.5 h-px bg-(--border-color)" />}
+              {g.title && (
+                <div className="px-3 pt-2 pb-1 text-[11px] font-semibold tracking-wide text-(--text-secondary) select-none">
+                  {g.title}
+                </div>
+              )}
+              {g.options.map((opt) => {
+                runningIndex += 1;
+                const idx = runningIndex;
+                const isSelected = opt.id === value;
+                const isActive = idx === activeIndex;
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    data-idx={idx}
+                    onClick={() => commit(idx)}
+                    onMouseEnter={() => setActiveIndex(idx)}
+                    className={`flex items-center gap-2.5 w-[calc(100%-8px)] mx-1 px-2.5 py-2 rounded-lg text-sm text-left transition-colors cursor-pointer ${
+                      isActive ? 'bg-white/10' : ''
+                    } ${isSelected ? 'text-(--accent) font-medium' : 'text-(--text-primary)'}`}
+                  >
+                    {opt.color && opt.abbr && <ProviderBadge color={opt.color} abbr={opt.abbr} logoUrl={opt.logoUrl} />}
+                    <span className="flex-1 truncate">{opt.name}</span>
+                    {isSelected && <Check className="w-4 h-4 shrink-0" />}
+                  </button>
+                );
+              })}
+            </React.Fragment>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 };
 
 const AIModelSettings: React.FC = () => {
@@ -549,39 +742,44 @@ const AIModelSettings: React.FC = () => {
       )}
 
       {/* 添加/编辑配置模态框 */}
-      <Modal isOpen={showAddModal} onClose={closeAddModal} size="md" scrollBehavior="inside">
+      <Modal
+        isOpen={showAddModal}
+        onClose={closeAddModal}
+        size="md"
+        scrollBehavior="inside"
+        classNames={{
+          base: 'bg-(--bg-card) border border-(--border-color) shadow-[0_24px_64px_rgba(0,0,0,0.6)]',
+          header: 'px-6 pt-5 pb-0 border-b-0',
+          body: 'px-6 pt-5 pb-2',
+          footer: 'px-6 pt-2 pb-5',
+          closeButton: 'text-(--text-muted) hover:text-(--text-primary) hover:bg-white/10 rounded-full transition-colors',
+        }}
+      >
         <ModalContent>
-          <ModalHeader className="flex items-center justify-between">
-            <span className="text-base font-semibold text-(--text-primary)">{editingConfig ? '编辑模型' : '添加模型'}</span>
+          <ModalHeader className="flex flex-col gap-0.5">
+            <span className="text-base font-bold text-(--text-primary)">{editingConfig ? '编辑模型' : '添加模型'}</span>
+            <span className="text-xs font-normal text-(--text-muted)">选择提供商并配置 API 密钥即可使用</span>
           </ModalHeader>
-          <ModalBody className="space-y-5">
+          <ModalBody>
             {/* 第一步：选择提供商 */}
             <div>
-              <label className="block text-sm font-medium text-(--text-primary) mb-1.5">
-                <span className="text-red-400 mr-0.5">*</span>提供商
-              </label>
-              <div className="relative">
-                <select
-                  value={selectedProvider}
-                  onChange={(e) => handleProviderChange(e.target.value)}
-                  className="w-full h-10 px-3 pr-8 rounded-lg bg-(--bg-card) border border-(--border-color) text-(--text-primary) text-sm appearance-none cursor-pointer focus:outline-none focus:ring-1 focus:ring-(--accent) hover:border-(--accent)/50 transition-colors"
-                >
-                  <option value="">选择提供商</option>
-                  {MODEL_PROVIDERS.map((p) => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </select>
-                <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-(--text-muted) pointer-events-none" />
-              </div>
+              <FieldLabel required step={1}>提供商</FieldLabel>
+              <GroupedSelect
+                value={selectedProvider}
+                onChange={handleProviderChange}
+                placeholder="选择提供商"
+                ariaLabel="选择提供商"
+                groups={[{
+                  options: MODEL_PROVIDERS.map((p) => ({ id: p.id, name: p.name, color: p.color, abbr: p.abbr, logoUrl: p.logoUrl })),
+                }]}
+              />
             </div>
 
-            {/* 第二步：选择模型类型（选定提供商后可用） */}
+            {/* 第二步：选择模型类型（选定提供商后平滑展开，分段控件单选即中） */}
             {selectedProvider && selectedProviderInfo && (
-              <div>
-                <label className="block text-sm font-medium text-(--text-primary) mb-1.5">
-                  <span className="text-red-400 mr-0.5">*</span>模型类型
-                </label>
-                <div className="grid grid-cols-2 gap-2">
+              <div className="animate-fade-in-up mt-5">
+                <FieldLabel required step={2}>模型类型</FieldLabel>
+                <div className="inline-flex flex-wrap gap-1 p-1 rounded-lg bg-(--bg-input) border border-(--border-color)">
                   {availableCategories.map((cat) => {
                     const meta = CATEGORY_META[cat];
                     const isActive = selectedCategory === cat;
@@ -590,10 +788,10 @@ const AIModelSettings: React.FC = () => {
                         key={cat}
                         type="button"
                         onClick={() => handleCategoryChange(cat)}
-                        className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border text-sm font-medium transition-all cursor-pointer ${
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all cursor-pointer ${
                           isActive
-                            ? 'border-(--accent) bg-(--accent)/10 text-(--accent)'
-                            : 'border-(--border-color) bg-(--bg-card) text-(--text-secondary) hover:border-(--accent)/40'
+                            ? 'bg-(--accent) text-white shadow-sm'
+                            : 'text-(--text-secondary) hover:text-(--text-primary) hover:bg-white/5'
                         }`}
                       >
                         {meta.icon}
@@ -615,61 +813,65 @@ const AIModelSettings: React.FC = () => {
 
             {/* 第三步：选择模型 ID */}
             {selectedCategory && (
-              <div>
-                <label className="block text-sm font-medium text-(--text-primary) mb-1.5">
-                  <span className="text-red-400 mr-0.5">*</span>{isCustomProvider ? '模型 ID' : '模型'}
-                </label>
+              <div className="animate-fade-in-up mt-5">
+                <FieldLabel required step={3}>{isCustomProvider ? '模型 ID' : '模型'}</FieldLabel>
                 {isCustomProvider ? (
-                  <Input
-                    placeholder="输入模型 ID，如 gpt-4o、qwen-max"
-                    value={customModelId}
-                    onValueChange={(v) => { setCustomModelId(v); setAddTestPassed(false); setAddTestResult(null); }}
-                    isInvalid={!!modelError}
-                    errorMessage={modelError}
-                  />
+                  <>
+                    <Input
+                      placeholder="输入模型 ID，如 gpt-4o、qwen-max"
+                      value={customModelId}
+                      onValueChange={(v) => { setCustomModelId(v); setAddTestPassed(false); setAddTestResult(null); }}
+                      isInvalid={!!modelError}
+                      classNames={inputClassNames}
+                    />
+                    {modelError && <FieldError>{modelError}</FieldError>}
+                  </>
                 ) : (
-                  <div className="relative">
-                    <select
-                      value={selectedModel}
-                      onChange={(e) => { setSelectedModel(e.target.value); setAddTestPassed(false); setAddTestResult(null); }}
-                      className="w-full h-10 px-3 pr-8 rounded-lg bg-(--bg-card) border border-(--border-color) text-(--text-primary) text-sm appearance-none cursor-pointer focus:outline-none focus:ring-1 focus:ring-(--accent) hover:border-(--accent)/50 transition-colors"
-                    >
-                      <option value="">选择模型</option>
-                      {availableModels.map((m) => (
-                        <option key={m} value={m}>{m}</option>
-                      ))}
-                    </select>
-                    <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-(--text-muted) pointer-events-none" />
-                  </div>
+                  <GroupedSelect
+                    value={selectedModel}
+                    onChange={(id) => { setSelectedModel(id); setAddTestPassed(false); setAddTestResult(null); }}
+                    placeholder="选择模型"
+                    ariaLabel="选择模型"
+                    groups={[{ options: availableModels.map((m) => ({ id: m, name: m })) }]}
+                  />
                 )}
-                {modelError && !isCustomProvider && (
-                  <p className="text-xs text-red-400 mt-1">{modelError}</p>
-                )}
+                {modelError && !isCustomProvider && <FieldError>{modelError}</FieldError>}
               </div>
             )}
 
             {/* API 密钥 */}
-            <div>
-              <label className="block text-sm font-medium text-(--text-primary) mb-1.5">
-                <span className="text-red-400 mr-0.5">*</span>API 密钥
-              </label>
-              <div className="relative">
-                <Input
-                  type={revealKey ? 'text' : 'password'}
-                  placeholder="API密钥"
-                  value={apiKey}
-                  onValueChange={(v) => { setApiKey(v); setAddTestPassed(false); setAddTestResult(null); }}
-                  onBlur={() => setKeyTouched(true)}
-                  isInvalid={!!keyError}
-                  errorMessage={keyError}
-                  endContent={
-                    <button type="button" onClick={() => setRevealKey((v) => !v)} className="text-(--text-muted) hover:text-(--text-primary)" aria-label="显示密钥">
+            <div className="mt-5">
+              <FieldLabel
+                required
+                trailing={
+                  <Tooltip content="密钥仅加密保存在本地，不会上传" placement="top">
+                    <span className="text-(--text-muted) hover:text-(--text-secondary) cursor-help inline-flex">
+                      <AlertCircle className="w-3.5 h-3.5" />
+                    </span>
+                  </Tooltip>
+                }
+              >
+                API 密钥
+              </FieldLabel>
+              <Input
+                type={revealKey ? 'text' : 'password'}
+                placeholder="粘贴你的 API 密钥"
+                value={apiKey}
+                onValueChange={(v) => { setApiKey(v.trimStart()); setAddTestPassed(false); setAddTestResult(null); }}
+                onBlur={() => setKeyTouched(true)}
+                isInvalid={!!keyError}
+                isDisabled={!selectedProvider}
+                classNames={inputClassNames}
+                endContent={
+                  <Tooltip content={revealKey ? '隐藏密钥' : '显示密钥'} placement="top">
+                    <button type="button" onClick={() => setRevealKey((v) => !v)} className="text-(--text-muted) hover:text-(--text-primary) transition-colors" aria-label="显示密钥">
                       {revealKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
-                  }
-                />
-              </div>
-              {selectedProvider && (
+                  </Tooltip>
+                }
+              />
+              {keyError && <FieldError>{keyError}</FieldError>}
+              {selectedProvider && !keyError && (
                 <p className="text-xs text-(--accent) mt-1.5 cursor-pointer hover:underline">
                   获取 API 密钥
                 </p>
@@ -677,27 +879,33 @@ const AIModelSettings: React.FC = () => {
             </div>
 
             {/* API Base：非自定义提供商自动填充且只读，自定义可编辑 */}
-            <div>
-              <label className="block text-sm font-medium text-(--text-primary) mb-1.5">
+            <div className="mt-4">
+              <FieldLabel
+                required={isCustomProvider}
+                strong={isCustomProvider}
+                trailing={
+                  !isCustomProvider && selectedProvider ? (
+                    <span className="text-xs text-(--text-muted) font-normal">已自动填充</span>
+                  ) : undefined
+                }
+              >
                 API Base
-                {!isCustomProvider && selectedProvider && (
-                  <span className="text-xs text-(--text-muted) font-normal ml-2">已自动填充</span>
-                )}
-                {isCustomProvider && (
-                  <span className="text-red-400 ml-0.5">*</span>
-                )}
-              </label>
+              </FieldLabel>
               <Input
-                placeholder={isCustomProvider ? 'https://api.example.com/v1' : (selectedProviderInfo?.defaultApiBase || '选择提供商后自动填充')}
+                placeholder={isCustomProvider ? 'https://api.example.com/v1' : '选择提供商后自动填充，可手动修改'}
                 value={apiBase}
                 onValueChange={(v) => { setApiBase(v); setAddTestPassed(false); setAddTestResult(null); }}
                 isInvalid={!!apiBaseError}
-                errorMessage={apiBaseError}
                 isReadOnly={!isCustomProvider && !!selectedProvider}
-                className={!isCustomProvider && selectedProvider ? 'opacity-80' : ''}
+                isDisabled={!selectedProvider}
+                classNames={{
+                  ...inputClassNames,
+                  inputWrapper: `${inputWrapperBase} ${!isCustomProvider && selectedProvider ? 'opacity-70 data-[hover=true]:border-(--border-color)' : ''}`,
+                }}
               />
-              {!isCustomProvider && selectedProvider && (
-                <p className="text-xs text-(--text-muted) mt-1">
+              {apiBaseError && <FieldError>{apiBaseError}</FieldError>}
+              {!isCustomProvider && selectedProvider && !apiBaseError && (
+                <p className="text-xs text-(--text-muted) mt-1.5">
                   使用 {selectedProviderInfo?.name} 官方默认地址
                 </p>
               )}
@@ -705,8 +913,8 @@ const AIModelSettings: React.FC = () => {
 
             {/* 模型测试区域 */}
             {selectedCategory && effectiveModelId && apiKey.trim() && (
-              <div className="rounded-lg border border-(--border-color) overflow-hidden">
-                <div className="flex items-center justify-between px-3 py-2.5 bg-(--bg-card)">
+              <div className="rounded-lg border border-(--border-color) overflow-hidden animate-fade-in-up mt-5">
+                <div className="flex items-center justify-between px-3 py-2.5 bg-(--bg-input)">
                   <span className="text-sm font-medium text-(--text-primary)">模型测试</span>
                   <Button
                     size="sm"
@@ -752,12 +960,19 @@ const AIModelSettings: React.FC = () => {
             )}
           </ModalBody>
           <ModalFooter>
-            <Button variant="light" onPress={closeAddModal}>取消</Button>
+            <Button
+              variant="light"
+              onPress={closeAddModal}
+              className="text-(--text-secondary) hover:text-(--text-primary)"
+            >
+              取消
+            </Button>
             <Button
               color="primary"
               onPress={handleSave}
               isLoading={saving || addTesting}
               isDisabled={!canSave}
+              className="data-[disabled=true]:bg-(--accent)/25 data-[disabled=true]:text-white/50 data-[disabled=true]:opacity-100 data-[disabled=true]:cursor-not-allowed"
             >
               {saving ? '保存中' : addTesting ? '测试中…' : editingConfig ? '保存' : addTestPassed ? '添加' : '测试并添加'}
             </Button>

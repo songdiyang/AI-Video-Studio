@@ -46,6 +46,8 @@
   --bg-card-hover: rgba(38, 38, 44, 0.95);
   --bg-input: rgba(20, 20, 24, 0.8);
   --bg-elevated: rgba(30, 30, 35, 0.85);
+  /* 浮层（下拉/弹窗内面板）：比卡片更亮，确保浮层层级感 */
+  --bg-popover: #26262d;
   
   /* 边框 - 中性灰色调 */
   --border-color: rgba(150, 150, 168, 0.22);
@@ -108,6 +110,8 @@
   --bg-card-hover: #f0f0f5;
   --bg-input: #fafafc;
   --bg-elevated: rgba(255, 255, 255, 0.9);
+  /* 浮层（下拉/弹窗内面板）：纯白浮于卡片之上 */
+  --bg-popover: #ffffff;
   
   --border-color: rgba(100, 116, 139, 0.25);
   --border-subtle: rgba(148, 163, 184, 0.2);
@@ -160,6 +164,8 @@
   --bg-card-hover: #1a1a1a;
   --bg-input: #111111;
   --bg-elevated: #0a0a0a;
+  /* 浮层（下拉/弹窗内面板）：高对比主题下的亮浮层 */
+  --bg-popover: #1c1c1c;
   
   --border-color: #555555;
   --border-subtle: #333333;
@@ -1494,6 +1500,39 @@ html.theme-transitioning .excalidraw *::after {
 
 .animate-fade-in-scale {
   animation: fadeInScale 0.3s ease-out both;
+}
+
+/* 下拉面板展开：从触发器顶部向下展开 + 淡入，回弹更自然 */
+@keyframes dropdown-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-dropdown-in {
+  transform-origin: top center;
+  animation: dropdown-in 0.18s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* 下拉面板滚动：平滑滚动 + 细滚动条 */
+.dropdown-scroll {
+  scroll-behavior: smooth;
+  overscroll-behavior: contain;
+}
+.dropdown-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.dropdown-scroll::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 3px;
+}
+.dropdown-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
 }
 
 /* 6. 脉冲发光效果 */
