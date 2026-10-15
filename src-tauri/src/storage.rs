@@ -61,10 +61,6 @@ impl StoragePaths {
         self.projects.join(project_id)
     }
 
-    /// 获取数据库文件路径
-    pub fn get_database_path(&self) -> PathBuf {
-        self.database.join("app.db")
-    }
 }
 
 /// 项目元数据（持久化为工程文件夹内的 .jzp 清单文件）

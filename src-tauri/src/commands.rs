@@ -1,7 +1,6 @@
 // Tauri 命令模块
 // 提供前端调用的本地 API
 
-use crate::crypto;
 use crate::storage::{StoragePaths, ProjectMetadata, MediaFileInfo};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -13,15 +12,6 @@ pub struct AppState {
     pub storage: StoragePaths,
 }
 
-/// AI 模型配置
-#[derive(Debug, Serialize, Deserialize)]
-pub struct AIModelConfig {
-    pub provider: String,
-    pub model_name: String,
-    pub api_key: String,
-    pub api_base: Option<String>,
-}
-
 /// 项目创建参数
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CreateProjectParams {
@@ -30,57 +20,6 @@ pub struct CreateProjectParams {
     pub project_type: String,
     /// 工程文件夹的父目录；缺省使用 文档\AI-Video-Studio作品
     pub parent_dir: Option<String>,
-}
-
-/// 保存 AI 模型密钥
-#[tauri::command]
-pub async fn save_ai_model_key(
-    config: AIModelConfig,
-    state: State<'_, AppState>,
-) -> Result<(), String> {
-    // 加密 API 密钥
-    let encrypted_key = crypto::encrypt_api_key(&config.api_key)?;
-    
-    // TODO: 保存到 SQLite 数据库
-    // 这里需要使用 tauri-plugin-sql 来操作数据库
-    
-    Ok(())
-}
-
-/// 获取 AI 模型密钥
-#[tauri::command]
-pub async fn get_ai_model_key(
-    provider: String,
-    model_name: String,
-    state: State<'_, AppState>,
-) -> Result<String, String> {
-    // TODO: 从 SQLite 数据库读取加密的密钥
-    // 解密并返回
-    
-    Ok("".to_string())
-}
-
-/// 列出所有 AI 模型配置
-#[tauri::command]
-pub async fn list_ai_model_configs(
-    state: State<'_, AppState>,
-) -> Result<Vec<AIModelConfig>, String> {
-    // TODO: 从 SQLite 数据库读取所有配置
-    // 注意：不解密 API 密钥，只返回配置信息
-    
-    Ok(vec![])
-}
-
-/// 删除 AI 模型配置
-#[tauri::command]
-pub async fn delete_ai_model_config(
-    provider: String,
-    model_name: String,
-    state: State<'_, AppState>,
-) -> Result<(), String> {
-    // TODO: 从 SQLite 数据库删除配置
-    
-    Ok(())
 }
 
 /// 创建新项目：在父目录下建立工程文件夹并写入 .jzp 清单
@@ -271,27 +210,6 @@ pub async fn update_project_manifest(
 #[tauri::command]
 pub async fn get_default_projects_root() -> Result<String, String> {
     Ok(crate::storage::default_projects_root().to_string_lossy().to_string())
-}
-
-/// 选择文件对话框
-#[tauri::command]
-pub async fn select_file(
-    _title: String,
-    _filters: Vec<(String, Vec<String>)>,
-) -> Result<Option<String>, String> {
-    // TODO: 使用 tauri-plugin-dialog 实现文件选择
-    // 暂时返回 None，前端会使用自己的文件选择器
-    Ok(None)
-}
-
-/// 选择目录对话框
-#[tauri::command]
-pub async fn select_directory(
-    _title: String,
-) -> Result<Option<String>, String> {
-    // TODO: 使用 tauri-plugin-dialog 实现目录选择
-    // 暂时返回 None，前端会使用自己的目录选择器
-    Ok(None)
 }
 
 /// 在资源管理器中显示文件
