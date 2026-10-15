@@ -748,6 +748,7 @@ const AIModelSettings: React.FC = () => {
         size="md"
         scrollBehavior="inside"
         classNames={{
+          wrapper: 'items-center justify-center',
           base: 'bg-(--bg-card) border border-(--border-color) shadow-[0_24px_64px_rgba(0,0,0,0.6)]',
           header: 'px-6 pt-5 pb-0 border-b-0',
           body: 'px-6 pt-5 pb-2',
