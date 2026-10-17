@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Button, Input, Switch, Tooltip,
   Modal, ModalContent, ModalHeader, ModalBody, ModalFooter,
@@ -199,12 +200,53 @@ const GroupedSelect: React.FC<{
 }> = ({ value, onChange, placeholder, groups, ariaLabel }) => {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const [popupStyle, setPopupStyle] = useState<React.CSSProperties>({});
   const flat = useMemo(() => groups.flatMap((g) => g.options), [groups]);
   const selectedIndex = flat.findIndex((o) => o.id === value);
   const [activeIndex, setActiveIndex] = useState(selectedIndex);
   const selectedOpt = flat.find((o) => o.id === value);
   const selectedName = selectedOpt?.name;
+
+  // 弹层 portal 到 body，用 fixed 定位贴合触发器，避免被 Modal 的 overflow 裁剪导致滑不到底
+  // 注意：位置/尺寸未发生变化时必须跳过 setState。否则在工作台这类持续滚动/动画的上下文里，
+  // 全局捕获 scroll 监听会不断触发「setState(新对象)→重渲染」形成重渲染风暴，打满 WebView2 渲染主线程导致窗口崩溃退出。
+  const updatePosition = useCallback(() => {
+    const trigger = triggerRef.current;
+    if (!trigger) return;
+    const rect = trigger.getBoundingClientRect();
+    const margin = 8;
+    const viewportH = window.innerHeight;
+    const spaceBelow = viewportH - rect.bottom - margin;
+    const spaceAbove = rect.top - margin;
+    const flipUp = spaceBelow < 220 && spaceAbove > spaceBelow;
+    const available = flipUp ? spaceAbove : spaceBelow;
+    const maxHeight = Math.max(160, Math.min(400, available));
+    const top = flipUp ? undefined : rect.bottom + 6;
+    const bottom = flipUp ? viewportH - rect.top + 6 : undefined;
+    setPopupStyle((prev) => {
+      if (
+        prev.left === rect.left &&
+        prev.width === rect.width &&
+        prev.maxHeight === maxHeight &&
+        prev.top === top &&
+        prev.bottom === bottom
+      ) {
+        return prev; // 数值未变则复用旧对象，避免无谓重渲染
+      }
+      const next: React.CSSProperties = {
+        position: 'fixed',
+        left: rect.left,
+        width: rect.width,
+        maxHeight,
+        zIndex: 9999,
+      };
+      if (bottom != null) next.bottom = bottom;
+      if (top != null) next.top = top;
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     if (open) setActiveIndex(selectedIndex >= 0 ? selectedIndex : 0);
@@ -219,12 +261,36 @@ const GroupedSelect: React.FC<{
 
   useEffect(() => {
     if (!open) return;
+    updatePosition();
+    // rAF 节流：多次 scroll/resize 合并到每帧一次，避免平滑滚动逐帧触发重排
+    let raf = 0;
+    const onScrollOrResize = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        updatePosition();
+      });
+    };
+    window.addEventListener('scroll', onScrollOrResize, true);
+    window.addEventListener('resize', onScrollOrResize);
+    return () => {
+      if (raf) cancelAnimationFrame(raf);
+      window.removeEventListener('scroll', onScrollOrResize, true);
+      window.removeEventListener('resize', onScrollOrResize);
+    };
+  }, [open, updatePosition]);
+
+  useEffect(() => {
+    if (!open) return;
     const onDocMouseDown = (e: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      if (rootRef.current?.contains(target) || listRef.current?.contains(target)) return;
+      setOpen(false);
     };
     document.addEventListener('mousedown', onDocMouseDown);
     return () => document.removeEventListener('mousedown', onDocMouseDown);
   }, [open]);
+
 
   const commit = (idx: number) => {
     const opt = flat[idx];
@@ -248,6 +314,7 @@ const GroupedSelect: React.FC<{
   return (
     <div ref={rootRef} className="relative">
       <button
+        ref={triggerRef}
         type="button"
         role="combobox"
         aria-expanded={open}
@@ -265,13 +332,18 @@ const GroupedSelect: React.FC<{
         <ChevronDown className={`w-4 h-4 shrink-0 text-(--text-muted) transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
       </button>
 
-      {open && (
+      {open && createPortal(
         <div
           ref={listRef}
-          className="absolute left-0 right-0 z-60 mt-1.5 max-h-80 overflow-y-auto overscroll-contain rounded-xl border border-(--border-color) py-1.5 animate-dropdown-in dropdown-scroll shadow-[0_12px_32px_rgba(0,0,0,0.55)]"
-          style={{ backgroundColor: 'var(--bg-popover)' }}
+          className="overflow-y-auto overscroll-contain rounded-xl border border-(--border-color) py-1.5 animate-dropdown-in dropdown-scroll shadow-[0_12px_32px_rgba(0,0,0,0.55)]"
+          style={{ ...popupStyle, backgroundColor: 'var(--bg-popover)' }}
           onWheel={(e) => e.stopPropagation()}
           onTouchMove={(e) => e.stopPropagation()}
+          // 弹层 portal 到 body，是 Modal overlay 的兄弟节点；不阻断冒泡时，点击选项的
+          // pointerdown/mousedown 会冒泡到 document，被 HeroUI Modal 的 useInteractOutside
+          // 判定为「点击遮罩外部」而关闭整个弹窗。阻断这两个事件即可让父级弹窗收不到该点击。
+          onPointerDown={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
         >
           {groups.map((g, gi) => (
             <React.Fragment key={`${g.title ?? 'g'}-${gi}`}>
@@ -305,7 +377,13 @@ const GroupedSelect: React.FC<{
               })}
             </React.Fragment>
           ))}
-        </div>
+        </div>,
+        // 关键：portal 到最近的 [role=dialog]（父级 Modal 容器）内部，而非 document.body。
+        // HeroUI Modal 用 react-aria useInteractOutside 判定「点击外部」并 preventDefault + 关闭弹窗；
+        // 若弹层是 body 直子（overlay 的兄弟），点选提供商/模型的 pointerdown 会被判为外部，
+        // 导致 onClick 不触发（不提交）且整个弹窗被关闭。放进 dialog 内即视为 overlay 内部，
+        // 由于 dialog 及其祖先均无 transform/filter，position:fixed 仍按视口定位、不会被裁剪。
+        (rootRef.current && rootRef.current.closest('[role=dialog]')) || document.body,
       )}
     </div>
   );
@@ -879,38 +957,23 @@ const AIModelSettings: React.FC = () => {
               )}
             </div>
 
-            {/* API Base：非自定义提供商自动填充且只读，自定义可编辑 */}
+            {/* API Base：仅自定义提供商需要手动填写并展示；非自定义自动填充、隐藏该字段 */}
+            {isCustomProvider && (
             <div className="mt-4">
-              <FieldLabel
-                required={isCustomProvider}
-                strong={isCustomProvider}
-                trailing={
-                  !isCustomProvider && selectedProvider ? (
-                    <span className="text-xs text-(--text-muted) font-normal">已自动填充</span>
-                  ) : undefined
-                }
-              >
-                API Base
-              </FieldLabel>
+              <FieldLabel required strong>API Base</FieldLabel>
               <Input
-                placeholder={isCustomProvider ? 'https://api.example.com/v1' : '选择提供商后自动填充，可手动修改'}
+                placeholder="https://api.example.com/v1"
                 value={apiBase}
                 onValueChange={(v) => { setApiBase(v); setAddTestPassed(false); setAddTestResult(null); }}
                 isInvalid={!!apiBaseError}
-                isReadOnly={!isCustomProvider && !!selectedProvider}
-                isDisabled={!selectedProvider}
                 classNames={{
                   ...inputClassNames,
-                  inputWrapper: `${inputWrapperBase} ${!isCustomProvider && selectedProvider ? 'opacity-70 data-[hover=true]:border-(--border-color)' : ''}`,
+                  inputWrapper: inputWrapperBase,
                 }}
               />
               {apiBaseError && <FieldError>{apiBaseError}</FieldError>}
-              {!isCustomProvider && selectedProvider && !apiBaseError && (
-                <p className="text-xs text-(--text-muted) mt-1.5">
-                  使用 {selectedProviderInfo?.name} 官方默认地址
-                </p>
-              )}
             </div>
+            )}
 
             {/* 模型测试区域 */}
             {selectedCategory && effectiveModelId && apiKey.trim() && (
