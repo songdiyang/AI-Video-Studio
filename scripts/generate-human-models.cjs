@@ -13,7 +13,8 @@ const { KHRONOS_EXTENSIONS } = require('@gltf-transform/extensions');
 const fs = require('fs');
 const path = require('path');
 
-const outDir = path.join(__dirname, '..', 'public', 'models');
+// 前后端分离后 public 已搬入 frontend/
+const outDir = path.join(__dirname, '..', 'frontend', 'public', 'models');
 fs.mkdirSync(outDir, { recursive: true });
 
 const io = new NodeIO().registerExtensions(KHRONOS_EXTENSIONS);

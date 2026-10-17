@@ -1,0 +1,22 @@
+{
+  "name": "ai-video-studio",
+  "private": true,
+  "version": "0.5.1",
+  "description": "子墨视频Studio 仓库级编排入口：委托 frontend/ 完成前端与 Tauri 构建，scripts/ 承载发布与 Docker 工具链。前端依赖请见 frontend/package.json。",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build": "cd frontend && npm run build",
+    "build:release": "node scripts/build-release.mjs",
+    "release:bootstrap": "node scripts/release-bootstrap.mjs",
+    "release:upload": "node scripts/release-upload.mjs",
+    "docker:dev": "node scripts/docker-compose.mjs dev",
+    "docker:up": "node scripts/docker-compose.mjs up",
+    "docker:down": "node scripts/docker-compose.mjs down",
+    "docker:logs": "node scripts/docker-compose.mjs logs",
+    "tauri": "cd frontend && npm run tauri",
+    "tauri:dev": "cd frontend && npm run tauri:dev",
+    "tauri:build": "cd frontend && npm run tauri:build",
+    "tauri:build:windows": "cd frontend && npm run tauri:build:windows"
+  }
+}

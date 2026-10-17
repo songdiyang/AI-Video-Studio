@@ -5,10 +5,13 @@
 
 const fs = require('fs');
 const path = require('path');
-const JSZip = require('jszip');
+// jszip 是 frontend/ 的依赖；本脚本位于仓库根 scripts/，CI 全新检出时根无 node_modules，
+// 需显式从 frontend/node_modules 解析，否则 require('jszip') 会找不到模块。
+const JSZip = require(require.resolve('jszip', { paths: [path.join(__dirname, '..', 'frontend')] }));
 
 const EXTENSIONS_DIR = path.join(__dirname, '..', 'extensions');
-const OUTPUT_DIR = path.join(__dirname, '..', 'public', 'extensions');
+// 前后端分离后 public 已搬入 frontend/，扩展 ZIP 需输出到 frontend/public/extensions 以便 vite 打包进 dist
+const OUTPUT_DIR = path.join(__dirname, '..', 'frontend', 'public', 'extensions');
 
 function ensureDir(dir) {
   if (!fs.existsSync(dir)) {

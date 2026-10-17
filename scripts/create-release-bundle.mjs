@@ -23,8 +23,9 @@ const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..');
 const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'nanostory-release-'));
 
-const rootPackage = JSON.parse(readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
-const frontendDistDir = path.join(repoRoot, 'dist');
+// 前后端分离后：版本信息取自 frontend/package.json，前端产物在 frontend/dist。
+const rootPackage = JSON.parse(readFileSync(path.join(repoRoot, 'frontend', 'package.json'), 'utf8'));
+const frontendDistDir = path.join(repoRoot, 'frontend', 'dist');
 const backendDir = path.join(repoRoot, 'backend');
 const outputDir = path.resolve(repoRoot, process.env.RELEASE_OUTPUT_DIR || 'artifacts');
 
