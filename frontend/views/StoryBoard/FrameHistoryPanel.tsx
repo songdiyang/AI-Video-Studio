@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { History, Clock, Trash2, Check, Image, Film, X } from 'lucide-react';
-import { getAuthToken } from '../../services/auth';
 import { useConfirm } from '../../contexts/ConfirmContext';
 
 interface VersionGroup {
@@ -45,10 +44,7 @@ const FrameHistoryPanel: React.FC<FrameHistoryPanelProps> = ({
   const loadHistory = async () => {
     setLoading(true);
     try {
-      const token = getAuthToken();
-      const res = await fetch(`/api/storyboards/${storyboardId}/frame-history`, {
-        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) }
-      });
+      const res = await fetch(`/api/storyboards/${storyboardId}/frame-history`);
       if (res.ok) {
         const data = await res.json();
         setVersions(data.versions || []);
@@ -64,7 +60,6 @@ const FrameHistoryPanel: React.FC<FrameHistoryPanelProps> = ({
     if (version.isCurrent) return;
 
     try {
-      const token = getAuthToken();
       const body: Record<string, unknown> = {};
       if (version.batchId) {
         body.batchId = version.batchId;
@@ -77,7 +72,6 @@ const FrameHistoryPanel: React.FC<FrameHistoryPanelProps> = ({
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
         body: JSON.stringify(body)
       });
@@ -108,7 +102,6 @@ const FrameHistoryPanel: React.FC<FrameHistoryPanelProps> = ({
     if (!confirmed) return;
 
     try {
-      const token = getAuthToken();
       const body: Record<string, unknown> = {};
       if (version.batchId) {
         body.batchId = version.batchId;
@@ -120,7 +113,6 @@ const FrameHistoryPanel: React.FC<FrameHistoryPanelProps> = ({
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
         body: JSON.stringify(body)
       });

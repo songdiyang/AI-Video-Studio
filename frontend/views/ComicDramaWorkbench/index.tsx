@@ -7,7 +7,6 @@ import React, { useState, useEffect, useCallback, Suspense, lazy, useMemo } from
 import { Spinner } from '@heroui/react';
 import { useToast } from '../../contexts/ToastContext';
 import { useLanguage } from '../../contexts/LanguageContext';
-import { getAuthToken } from '../../services/auth';
 import { Project, fetchProject } from '../../services/projects';
 import { AIModel } from '../../components/AIModelSelector';
 import { useAIModels } from '../../hooks/useAIModels';
@@ -73,10 +72,7 @@ const ScriptPanel: React.FC<ScriptPanelProps> = ({
     const loadScript = async () => {
       setLoading(true);
       try {
-        const token = getAuthToken();
-        const res = await fetch(`/api/scripts/${currentScriptId}`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
+        const res = await fetch(`/api/scripts/${currentScriptId}`);
         if (res.ok) {
           const data = await res.json();
           setContent(data.script?.content || data.content || '');
@@ -168,10 +164,7 @@ const ComicDramaWorkbench: React.FC<ComicDramaWorkbenchProps> = ({ projectId, ac
         setProject(projectData);
         
         // 加载剧本列表
-        const token = getAuthToken();
-        const res = await fetch(`/api/projects/${projectId}/scripts`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
+        const res = await fetch(`/api/projects/${projectId}/scripts`);
         
         if (res.ok) {
           const data = await res.json();
@@ -204,10 +197,7 @@ const ComicDramaWorkbench: React.FC<ComicDramaWorkbenchProps> = ({ projectId, ac
   // 刷新剧本列表
   const refreshScripts = useCallback(async () => {
     try {
-      const token = getAuthToken();
-      const res = await fetch(`/api/projects/${projectId}/scripts`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
+      const res = await fetch(`/api/projects/${projectId}/scripts`);
       
       if (res.ok) {
         const data = await res.json();
@@ -223,12 +213,10 @@ const ComicDramaWorkbench: React.FC<ComicDramaWorkbenchProps> = ({ projectId, ac
     try {
       const maxEp = scripts.reduce((m, s) => Math.max(m, s.episode_number || 0), 0);
       const nextEp = maxEp + 1;
-      const token = getAuthToken();
       const res = await fetch('/api/scripts/draft', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({
           projectId,

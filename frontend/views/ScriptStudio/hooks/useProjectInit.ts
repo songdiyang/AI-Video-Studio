@@ -3,7 +3,7 @@
  * 负责加载上次选择的项目或最近的项目
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Project, fetchProject, fetchProjects } from '../../../services/projects';
 
 const LAST_PROJECT_KEY = 'nanostory_last_project_id';
@@ -57,10 +57,10 @@ export function useProjectInit() {
     setInitLoading(false);
   };
 
-  const selectProject = (project: Project) => {
+  const selectProject = useCallback((project: Project) => {
     setSelectedProject(project);
     localStorage.setItem(LAST_PROJECT_KEY, project.id.toString());
-  };
+  }, []);
 
   return {
     selectedProject,

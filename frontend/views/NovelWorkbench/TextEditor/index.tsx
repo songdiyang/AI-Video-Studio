@@ -13,7 +13,6 @@ import {
 } from 'lucide-react';
 import { NovelChapter } from '../../../types/projectTypes';
 import { useToast } from '../../../contexts/ToastContext';
-import { getAuthToken } from '../../../services/auth';
 import { useTaskRunner, TaskState } from '../../../hooks/useTaskRunner';
 import { AIModel } from '../../../components/AIModelSelector';
 
@@ -250,14 +249,12 @@ const TextEditor: React.FC<TextEditorProps> = ({
     
     setSaving(true);
     try {
-      const token = getAuthToken();
       const wordCount = content.replace(/\s/g, '').length;
       
       await fetch(`/api/projects/${projectId}/novel/chapters/${chapter.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({
           content,

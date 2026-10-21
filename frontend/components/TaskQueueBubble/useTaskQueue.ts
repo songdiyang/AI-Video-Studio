@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { getAuthToken } from '../../services/auth';
 import { getWorkflowList, WorkflowJob } from '../../hooks/useWorkflow';
 
 // Polling interval constants (in milliseconds)
@@ -73,12 +72,6 @@ export function useTaskQueue(options?: UseTaskQueueOptions): UseTaskQueueReturn 
       return;
     }
     isFetchingRef.current = true;
-
-    const token = getAuthToken();
-    if (!token) {
-      isFetchingRef.current = false;
-      return;
-    }
 
     try {
       // 只在手动刷新或首次加载时显示 loading
@@ -177,9 +170,6 @@ export function useTaskQueue(options?: UseTaskQueueOptions): UseTaskQueueReturn 
 
   // Effect to manage adaptive polling interval
   useEffect(() => {
-    const token = getAuthToken();
-    if (!token) return;
-
     const newInterval = getPollingInterval();
     
     // Only reset interval if it changed
@@ -203,9 +193,6 @@ export function useTaskQueue(options?: UseTaskQueueOptions): UseTaskQueueReturn 
   // 页面可见性检测：页面不可见时暂停轮询，可见时恢复
   useEffect(() => {
     const handleVisibilityChange = () => {
-      const token = getAuthToken();
-      if (!token) return;
-      
       if (document.hidden) {
         // 页面不可见时暂停轮询
         if (intervalRef.current) {
@@ -233,10 +220,7 @@ export function useTaskQueue(options?: UseTaskQueueOptions): UseTaskQueueReturn 
       fetchJobs(false);
       // 恢复轮询
       if (!intervalRef.current) {
-        const token = getAuthToken();
-        if (token) {
-          intervalRef.current = setInterval(() => fetchJobs(false), currentIntervalRef.current);
-        }
+        intervalRef.current = setInterval(() => fetchJobs(false), currentIntervalRef.current);
       }
     };
 
@@ -259,8 +243,6 @@ export function useTaskQueue(options?: UseTaskQueueOptions): UseTaskQueueReturn 
 
   // Initial fetch on mount
   useEffect(() => {
-    const token = getAuthToken();
-    if (!token) return;
     fetchJobs(true); // First load shows loading state
   }, [fetchJobs]);
 

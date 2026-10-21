@@ -36,6 +36,8 @@ export interface StoredAssistantMessage {
   reasoning?: string | null;
   attachments?: unknown;
   suggestions?: unknown;
+  /** 后台任务进度卡片数据（TaskCardData 形状），缺省时该条消息不渲染卡片 */
+  task?: unknown;
   created_at: string;
 }
 
@@ -145,7 +147,22 @@ function toMessageDto(m: StoredAssistantMessage) {
     reasoning: m.reasoning || undefined,
     attachments: Array.isArray(m.attachments) ? m.attachments : undefined,
     suggestions: Array.isArray(m.suggestions) ? m.suggestions : undefined,
+    task: toTaskCardDto(m.task),
     timestamp: new Date(m.created_at).getTime(),
+  };
+}
+
+/** 校验持久化的任务卡片形状；旧版文档或手工编辑产生的脏数据一律忽略（不渲染卡片）。 */
+function toTaskCardDto(raw: unknown) {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const t = raw as Record<string, unknown>;
+  if (t.kind !== 'storyboard' && t.kind !== 'image' && t.kind !== 'video') return undefined;
+  if (typeof t.title !== 'string') return undefined;
+  return {
+    kind: t.kind,
+    jobId: t.jobId != null ? String(t.jobId) : undefined,
+    sceneCount: typeof t.sceneCount === 'number' ? t.sceneCount : undefined,
+    title: t.title,
   };
 }
 
@@ -264,7 +281,7 @@ async function handleMessagesLoad(idStr: string): Promise<Response> {
   return jsonResponse({ success: true, messages });
 }
 
-/** POST /sessions/:id/messages { role, content, reasoning?, attachments?, suggestions? } */
+/** POST /sessions/:id/messages { role, content, reasoning?, attachments?, suggestions?, task? } */
 async function handleMessageAppend(idStr: string, body: any): Promise<Response> {
   const sessionId = Number(idStr);
   const located = await locateSession(sessionId);
@@ -284,6 +301,7 @@ async function handleMessageAppend(idStr: string, body: any): Promise<Response> 
     reasoning: body.reasoning || null,
     attachments: body.attachments ?? null,
     suggestions: body.suggestions ?? null,
+    task: body.task ?? null,
     created_at: now,
   };
   doc.messages.push(msg);

@@ -10,10 +10,10 @@ import { useWorkbench } from '../../contexts/WorkbenchContext';
 
 const ScriptStudio: React.FC = () => {
   const { showToast } = useToast();
-  const { setCurrentProject } = useWorkbench();
+  const { currentProject, setCurrentProject } = useWorkbench();
 
   // 使用自定义 hooks
-  const { selectedProject, initLoading } = useProjectInit();
+  const { selectedProject, setSelectedProject, initLoading } = useProjectInit();
   
   const {
     scripts,
@@ -33,12 +33,23 @@ const ScriptStudio: React.FC = () => {
   // 全局 AI 模型管理
   const aiModels = useAIModels(selectedProject?.id);
 
-  // 同步项目到 WorkbenchContext，并加载项目剧本
+  // 工程切换后同步：WorkbenchContext 是侧栏 switchProject 的入口，
+  // 已挂载的 ScriptStudio 需跟随换入新工程，立即重新加载分镜工作台
+  useEffect(() => {
+    if (currentProject && currentProject.id !== selectedProject?.id) {
+      setSelectedProject(currentProject);
+    }
+  }, [currentProject, selectedProject, setSelectedProject]);
+
+  // 同步项目到 WorkbenchContext（id 一致时跳过，避免旧初始化结果覆盖刚切换的工程），并加载项目剧本
   useEffect(() => {
     if (selectedProject) {
-      setCurrentProject(selectedProject);
+      if (selectedProject.id !== currentProject?.id) {
+        setCurrentProject(selectedProject);
+      }
       loadProjectScript(selectedProject.id);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedProject, setCurrentProject]);
 
   if (initLoading) {

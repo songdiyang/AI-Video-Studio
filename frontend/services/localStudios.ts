@@ -11,6 +11,8 @@
 import { readDoc } from './localStore';
 import {
   activePath,
+  resolvePath,
+  assertProject,
   loadRestDoc,
   saveRestDoc,
   findById,
@@ -49,7 +51,7 @@ async function mutateStudio(studioId: number, fn: (studio: any) => void): Promis
   if (!path) return jsonResponse({ message: '未打开本地工程' }, 400);
   const doc = await loadRestDoc(path, 'studios');
   const studio = findById(doc.items, studioId);
-  if (!studio) return jsonResponse({ message: '影棚不存在' }, 404);
+  if (!studio || !assertProject(studio, path)) return jsonResponse({ message: '影棚不存在' }, 404);
   fn(studio);
   studio.updated_at = new Date().toISOString();
   saveRestDoc(path, 'studios', doc);
@@ -79,11 +81,11 @@ function attachElement(studio: any, elementId: number, body: any) {
 
 // 九宫组装图生成
 async function handleNineGrid(studioId: number, body: any): Promise<Response> {
-  const path = activePath();
+  const path = await resolvePath(body?.project_id ?? body?.projectId);
   if (!path) return jsonResponse({ message: '未打开本地工程' }, 400);
   const doc = await loadRestDoc(path, 'studios');
   const studio = findById(doc.items, studioId);
-  if (!studio) return jsonResponse({ message: '影棚不存在' }, 404);
+  if (!studio || !assertProject(studio, path)) return jsonResponse({ message: '影棚不存在' }, 404);
   const projectId = Number(studio.project_id) || 0;
   const prompt = String(studio.description || studio.name || '影棚九宫组装图，3×3 九机位视角');
   studio.nine_grid_generation_status = 'generating';
@@ -117,9 +119,9 @@ async function readScriptContent(path: string, scriptId: number): Promise<string
 }
 
 async function handleExtractComponents(body: any): Promise<Response> {
-  const path = activePath();
-  if (!path) return jsonResponse({ message: '未打开本地工程' }, 400);
   const projectId = Number(body?.projectId) || 0;
+  const path = await resolvePath(projectId || null);
+  if (!path) return jsonResponse({ message: '未打开本地工程' }, 400);
   const scriptId = Number(body?.scriptId) || 0;
   const jobId = submitGenJob({
     workflowType: 'studio_component_extraction',
@@ -153,9 +155,9 @@ async function handleExtractComponents(body: any): Promise<Response> {
 }
 
 async function handleComposeFromScript(body: any): Promise<Response> {
-  const path = activePath();
-  if (!path) return jsonResponse({ message: '未打开本地工程' }, 400);
   const projectId = Number(body?.projectId) || 0;
+  const path = await resolvePath(projectId || null);
+  if (!path) return jsonResponse({ message: '未打开本地工程' }, 400);
   const scriptId = Number(body?.scriptId) || 0;
   const jobId = submitGenJob({
     workflowType: 'studio_composition',
@@ -191,11 +193,11 @@ async function handleComposeFromScript(body: any): Promise<Response> {
 
 // ==================== 服装设定图生成 ====================
 async function handleCostumeGenerateViews(id: number, body: any): Promise<Response> {
-  const path = activePath();
+  const path = await resolvePath(body?.project_id ?? body?.projectId);
   if (!path) return jsonResponse({ message: '未打开本地工程' }, 400);
   const doc = await loadRestDoc(path, 'costumes');
   const c = findById(doc.items, id);
-  if (!c) return jsonResponse({ message: '服装不存在' }, 404);
+  if (!c || !assertProject(c, path)) return jsonResponse({ message: '服装不存在' }, 404);
   const projectId = Number(c.project_id) || 0;
   const base = String(c.outfit_prompt || c.generation_prompt || c.description || c.name || '服装设定图，白色人体模型');
   c.generation_status = 'generating';

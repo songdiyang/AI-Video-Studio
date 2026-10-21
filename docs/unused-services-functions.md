@@ -49,12 +49,20 @@
 | `addSceneBinding` | 2012 | 添加场景绑定 |
 | `removeSceneBinding` | 2027 | 移除场景绑定 |
 
-## services/auth.ts（认证）
+## services/auth.ts（认证）—— 已删除
+
+> 2026-10-21：本清单原记录的 `isOpsUser`、`getLoginRequirements` 已随去商业化删除；
+> 剩余唯一导出 `getAuthToken` 固定返回 `null`，曾被 70 个文件、276 处调用点用于拼接
+> Authorization 头（恒为假分支的"活代码形态死逻辑"，并造成任务队列轮询、邮箱、仪表盘统计、
+> 用户中心四处功能被永久关闭）。
+> 现已通过 AST 机械清扫移除全部鉴权头拼接（保留有 body 时的 `Content-Type: application/json`），
+> 并恢复了被门禁拦截的本地请求，`services/auth.ts` 已随调用点清零而整体删除。
+> 纯本地 fetch 无需任何请求头鉴权；第三方模型服务的 `Authorization`（`services/localAI.ts`、
+> `services/localApi.ts` 中的 provider api_key）不受影响，保持原样。
 
 | 函数 | 行号 | 说明 |
 |------|------|------|
-| `isOpsUser` | 183 | 检查是否为运营用户 |
-| `getLoginRequirements` | 271 | 获取登录要求 |
+| （模块已删除） | - | 无 |
 
 ## services/billing.ts（计费）
 
@@ -284,10 +292,10 @@
 | environments | 3 |
 | environmentVariants | 2 |
 | extensions | 3 |
-| auth | 2 |
+| auth | 0（模块已整体删除） |
 | collaboration | 2 |
 | modelStats | 1 |
-| **总计** | **~150** |
+| **总计** | **~150**（2026-10-15 快照口径，未逐项复核） |
 
 ---
 

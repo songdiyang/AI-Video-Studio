@@ -1,9 +1,8 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Sparkles, X, Send, Paperclip, ImagePlus, Trash2, Wand2, FileText, Settings, Image as ImageIcon, Loader2, History, Plus, Edit3, Check, ChevronDown, MessageSquare, Video, Star, MessageCircle, ClipboardList, Brain } from 'lucide-react';
-import { getAuthToken } from '../../services/auth';
 import { useToast } from '../../contexts/ToastContext';
-import ChatMessageComponent, { ChatMessageData, ChatMessageStep } from './ChatMessage';
+import ChatMessageComponent, { ChatMessageData, ChatMessageStep, TaskCardData } from './ChatMessage';
 import MediaAttachment from './MediaAttachment';
 import { isLongTaskCapable } from '../../services/aiAssistant';
 import { getWorkflowStatus } from '../../hooks/useWorkflow';
@@ -78,7 +77,11 @@ export interface AIAssistantPanelProps {
   /** 项目剧本清单（含内容） */
   scripts?: { id: number; episode_number: number; title?: string; content?: string }[];
   onClose: () => void;
-  onAction?: (action: string, params: any) => void | Promise<void>;
+  /**
+   * 工作台动作桥接：第三参 onProgress 回报子步骤，返回值是动作的执行结果
+   * （后台任务返回 { jobId }、离线分镜拆分返回 { sceneCount }），进度卡片依赖它挂载。
+   */
+  onAction?: (action: string, params: any, onProgress?: (label: string) => void) => unknown;
 }
 
 // ─── Welcome message ────────────────────────────────────────────────
@@ -259,7 +262,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
   const lastScriptContentRef = useRef<string>('');
   // agent 循环在 handleSend 中调用动作执行器，而 handleAction 定义在其后；
   // 用 ref 桥接避免 TDZ / 依赖顺序问题（每次渲染后同步为最新的 handleAction）。
-  const handleActionRef = useRef<(action: string, params: any, onProgress?: (label: string) => void) => Promise<unknown> | unknown>(() => {});
+  const handleActionRef = useRef<(action: string, params: any, onProgress?: (label: string) => void, originSid?: number | null) => Promise<unknown> | unknown>(() => {});
 
   // ── 设置项：上下文大小（token）/ 对话模型 ───────────
   // 上下文注入改为智能默认开启（agent 自动携带项目当前状态），不再提供开关
@@ -385,11 +388,10 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
 
   const fetchSessions = useCallback(async () => {
     try {
-      const token = getAuthToken();
       const url = projectId
         ? `/api/ai-assistant/sessions?projectId=${projectId}`
         : '/api/ai-assistant/sessions';
-      const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+      const res = await fetch(url);
       if (!res.ok) return [] as SessionLite[];
       const data = await res.json();
       if (data.success) {
@@ -404,18 +406,19 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
 
   const apiCreateSession = useCallback(async (title = '新会话'): Promise<number | null> => {
     try {
-      const token = getAuthToken();
       const res = await fetch('/api/ai-assistant/sessions', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ projectId: projectId || null, title, modelName: selectedModel || null }),
       });
       const data = await res.json();
       if (data.success && data.session) {
-        setAllSessions((prev) => [data.session, ...prev.filter((s) => s.id !== data.session.id)]);
+        // const 提取：函数式 setState 闭包内不能依赖对外层对象属性的收窄
+        const session = data.session as SessionLite;
+        setAllSessions((prev) => [session, ...prev.filter((s) => s.id !== session.id)]);
         // 新建的会话直接进标签栏（而不是依赖下一次全量拉取）
-        setOpenTabIds((prev) => [data.session.id, ...prev.filter((id: number) => id !== data.session.id)].slice(0, MAX_OPEN_TABS));
-        return data.session.id as number;
+        setOpenTabIds((prev) => [session.id, ...prev.filter((id: number) => id !== session.id)].slice(0, MAX_OPEN_TABS));
+        return session.id as number;
       }
     } catch (err) {
       console.error('[AIAssistant] create session failed:', err);
@@ -425,7 +428,6 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
 
   const archiveMessage = useCallback(async (sessionId: number, msg: ChatMessageData) => {
     try {
-      const token = getAuthToken();
       const body: any = {
         role: msg.role,
         content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
@@ -433,9 +435,12 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
       if (msg.reasoning) body.reasoning = msg.reasoning;
       if (msg.attachments && msg.attachments.length > 0) body.attachments = msg.attachments;
       if (msg.suggestions && msg.suggestions.length > 0) body.suggestions = msg.suggestions;
+      // 后台任务卡片必须落盘，否则重开会话后卡片消失、只剩一条空消息；
+      // jobId 一并保存，重开时由卡片按幂等语义重新查询一次工作流状态。
+      if (msg.task) body.task = msg.task;
       await fetch(`/api/ai-assistant/sessions/${sessionId}/messages`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
     } catch (err) {
@@ -465,10 +470,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
     }
     // 无缓存则从后端加载
     try {
-      const token = getAuthToken();
-      const res = await fetch(`/api/ai-assistant/sessions/${sessionId}/messages`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
+      const res = await fetch(`/api/ai-assistant/sessions/${sessionId}/messages`);
       const data = await res.json();
       if (data.success) {
         const loaded = (data.messages || []) as ChatMessageData[];
@@ -510,10 +512,8 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
 
   const deleteSessionFn = useCallback(async (sessionId: number) => {
     try {
-      const token = getAuthToken();
       const res = await fetch(`/api/ai-assistant/sessions/${sessionId}`, {
         method: 'DELETE',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       const data = await res.json();
       if (data.success) {
@@ -580,10 +580,9 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
     const trimmed = title.trim();
     if (!trimmed) return;
     try {
-      const token = getAuthToken();
       const res = await fetch(`/api/ai-assistant/sessions/${sessionId}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title: trimmed }),
       });
       const data = await res.json();
@@ -867,15 +866,12 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
     }
     setIsAnalyzingPrompt(true);
     try {
-      const token = getAuthToken();
       // 获取分镜详细信息
-      const res = await fetch(`/api/storyboards/${currentFrame.id}`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
+      const res = await fetch(`/api/storyboards/${currentFrame.id}`);
       const storyboardData = await res.json();
       
       // 构建分析请求
-      const promptsInfo = [];
+      const promptsInfo: string[] = [];
       if (storyboardData.first_frame_prompt) promptsInfo.push(`首帧提示词: ${storyboardData.first_frame_prompt}`);
       if (storyboardData.last_frame_prompt) promptsInfo.push(`尾帧提示词: ${storyboardData.last_frame_prompt}`);
       if (storyboardData.video_prompt) promptsInfo.push(`视频提示词: ${storyboardData.video_prompt}`);
@@ -887,10 +883,11 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
       }
       
       // 自动添加当前帧图片作为附件
-      if (currentFrame.first_frame_url && !attachments.some((a) => a.url === currentFrame.first_frame_url)) {
+      const frameImageUrl = currentFrame.first_frame_url;
+      if (frameImageUrl && !attachments.some((a) => a.url === frameImageUrl)) {
         setAttachments((prev) => [...prev, {
           type: 'image' as const,
-          url: currentFrame.first_frame_url,
+          url: frameImageUrl,
           name: `帧#${currentFrame.id}`,
         }]);
       }
@@ -1044,12 +1041,10 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
     }
     setIsEnhancing(true);
     try {
-      const token = getAuthToken();
       const res = await fetch('/api/ai-assistant/enhance-prompt', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({
           projectId,
@@ -1086,12 +1081,10 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
     }
     setIsCompressing(true);
     try {
-      const token = getAuthToken();
       const res = await fetch('/api/ai-assistant/compress', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({
           projectId,
@@ -1231,7 +1224,6 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            ...(getAuthToken() ? { Authorization: `Bearer ${getAuthToken()}` } : {}),
           },
           body: JSON.stringify({
             query: text,
@@ -1293,8 +1285,6 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
     } : { projectName: projectName || undefined };
 
     try {
-      const token = getAuthToken();
-
       // ── AI 助手 Agent 模式（前端编排 plan→execute→observe 循环） ──────
       // 触发条件：模型支持工具调用 + 已有 sessionId + 用户没有上传非文本附件。
       // 不依赖后端 /sessions/:id/run：每轮用本地/在线 chat 规划出 action，
@@ -1322,7 +1312,6 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
-                ...(token ? { Authorization: `Bearer ${token}` } : {}),
               },
               body: JSON.stringify({
                 projectId,
@@ -1352,9 +1341,9 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
 
             // 执行动作，收集观察结果
             const observations: string[] = [];
-            // 这些动作会触发后台生成/拆分任务（离线端同步落库后返回，云端转后台轮询）；
-            // 结果会自动刷新到列表，模型不应据此虚构具体数量或宣称「已完成」。
-            const ASYNC_START_ACTIONS = new Set(['auto_storyboard', 'generate_frame', 'generate_video']);
+            // 后台生成/拆分动作（分镜图/视频返回 jobId、离线分镜拆分返回 sceneCount）的进度卡片
+            // 由 handleAction 统一挂载（同时覆盖单次点击建议与 agent 循环两条路径），此处仅据实回报。
+            const TASK_ACTIONS = new Set(['auto_storyboard', 'generate_frame', 'generate_video']);
             let askedUser = false;
             for (const a of actions) {
               const label = a.label || a.action;
@@ -1371,13 +1360,25 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
               try {
                 // 执行前把进度刷到对话栏：长任务（如分镜拆分同步等待模型返回）期间显示「正在执行」
                 tracker.start(`执行：${label}`);
-                const result = await handleActionRef.current(a.action, a.params || {}, (sub) => tracker.touch(sub));
-                tracker.complete();
-                executedLog.push(`✓ ${label}`);
-                if (ASYNC_START_ACTIONS.has(a.action)) {
+                // 传入 sendSid：agent 循环是异步长流程，期间用户可能切换会话，卡片须归属发起会话
+                const result: any = await handleActionRef.current(a.action, a.params || {}, (sub) => tracker.touch(sub), sendSid);
+                // handleAction 已把桥接异常转为结构化失败结果：步骤据实标记失败，避免误报「已执行」
+                const failed = !!result && typeof result === 'object' && (result.success === false || !!result.error);
+                if (failed) tracker.fail(String(result.error) || '任务启动失败');
+                else tracker.complete();
+                executedLog.push(failed ? `✗ ${label}` : `✓ ${label}`);
+                const isTask = TASK_ACTIONS.has(a.action);
+                if (failed) {
+                  // 动作明确失败：回喂真实失败原因（handleAction 已跳过挂卡片）
+                  observations.push(`执行「${label}」失败：${result.error || '任务启动失败'}`);
+                } else if (isTask && result && result.jobId) {
+                  // 后台任务已提交：进度卡片由 handleAction 挂载并实时更新，此处据实回报
                   observations.push(
-                    `已启动「${label}」：任务已提交，完成后会自动更新到分镜/媒体列表。请如实告知用户「已在后台启动」，不要声称已经完成，也不要虚构具体的分镜/图片/视频数量。`,
+                    `已在后台启动「${label}」（工作流 #${result.jobId}），进度将实时显示在对话中并在完成后自动更新。请告知用户任务已开始、可在对话卡片查看进度，不要虚构具体的分镜/图片/视频数量。`,
                   );
+                } else if (isTask && result && result.sceneCount != null) {
+                  // 离线分镜拆分同步完成：handleAction 已挂完成态卡片，此处据实回报写入数量
+                  observations.push(`「${label}」已完成，共写入 ${result.sceneCount} 个分镜。请如实告知用户分镜数量。`);
                 } else if (typeof result === 'string' && result.trim()) {
                   // 动作返回了实质内容（如 read_script 的剧本正文）：直接回喂给模型作为观察结果。
                   observations.push(result);
@@ -1439,7 +1440,6 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
           },
           body: JSON.stringify({
             projectId,
@@ -1562,7 +1562,6 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
           },
           body: JSON.stringify({
             projectId,
@@ -1671,7 +1670,48 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
     showToast('质检请求已填写，点击发送按钮让 AI 开始分析', 'info');
   }, [scenes, showToast]);
 
-  const handleAction = useCallback(async (action: string, params: any) => {
+  // ── 后台任务进度卡片：动作→类别映射与挂载辅助 ──
+  // 提交长任务（分镜图/视频）返回 jobId、离线分镜拆分同步完成返回 sceneCount 时，
+  // 在对话内挂载一张自轮询进度卡片；任务未完成时同样挂载。适用于单次点击建议动作与 agent 循环两条路径。
+  const TASK_CARD_KIND: Record<string, TaskCardData['kind']> = useMemo(() => ({
+    auto_storyboard: 'storyboard',
+    generate_frame: 'image',
+    generate_video: 'video',
+  }), []);
+  const TASK_ACTION_LABEL: Record<string, string> = useMemo(() => ({
+    auto_storyboard: '自动分镜拆分',
+    generate_frame: '分镜图生成',
+    generate_video: '分镜视频生成',
+  }), []);
+  const TASK_KIND_LABEL: Record<TaskCardData['kind'], string> = useMemo(() => ({
+    storyboard: '分镜拆分',
+    image: '分镜图',
+    video: '分镜视频',
+  }), []);
+  const mountTaskCard = useCallback((action: string, result: any, labelText?: string, originSid?: number | null) => {
+    const kind = TASK_CARD_KIND[action];
+    if (!kind || !result || typeof result !== 'object') return;
+    if (result.success === false || result.error) return; // 明确失败：不挂卡片
+    const jobId = result.jobId != null ? String(result.jobId) : undefined;
+    const sceneCount = result.sceneCount != null ? Number(result.sceneCount) : undefined;
+    if (!jobId && sceneCount == null) return; // 既非后台任务，也非同步完成
+    const kindLabel = TASK_KIND_LABEL[kind];
+    const label = labelText || TASK_ACTION_LABEL[action] || kindLabel;
+    const cardId = `msg-${Date.now()}-task-${Math.random().toString(36).slice(2, 7)}`;
+    const cardTask: TaskCardData = { kind, jobId, sceneCount, title: `${kindLabel} · ${label}` };
+    const cardMsg: ChatMessageData = { id: cardId, role: 'assistant', content: '', timestamp: Date.now(), task: cardTask };
+    // 卡片归属发起动作时的会话：延迟执行路径（自动执行建议动作、agent 异步循环）若在期间发生会话切换，
+    // 读取实时的 currentSessionIdRef 会把卡片串写到另一个对话里。缺省时才退回当前会话。
+    const sid = originSid === undefined ? currentSessionIdRef.current : originSid;
+    // 同一 jobId 只挂一张卡：单次点击、自动执行建议、agent 循环共用 handleAction，
+    // 若同一作业结果被重复回报不应产生两张并行的轮询卡片。
+    const existing = sid === null ? undefined : messagesCacheRef.current.get(sid);
+    if (existing && jobId && existing.some((m) => m.task && m.task.jobId === jobId)) return;
+    updateSessionMessages(sid, (prev) => [...prev, cardMsg]);
+    if (sid) archiveMessage(sid, cardMsg);
+  }, [TASK_CARD_KIND, TASK_ACTION_LABEL, TASK_KIND_LABEL, updateSessionMessages, archiveMessage]);
+
+  const handleAction = useCallback(async (action: string, params: any, onProgress?: (label: string) => void, originSid?: number | null) => {
     // 质检：前端自包，不走 onAction 回调
     if (action === 'inspect_quality') {
       const sceneId = Number(params?.sceneId || currentFrame?.id);
@@ -1848,10 +1888,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
               clearInterval(pollInterval);
               pollTracker.complete('工作流完成，回读剧本正文');
               // 获取生成的剧本内容
-              const token = getAuthToken();
-              const scriptRes = await fetch(`/api/scripts/project/${targetProjectId}`, {
-                headers: token ? { Authorization: `Bearer ${token}` } : {},
-              });
+              const scriptRes = await fetch(`/api/scripts/project/${targetProjectId}`);
               let scriptContent = '';
               if (scriptRes.ok) {
                 const scriptData = await scriptRes.json();
@@ -1920,10 +1957,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
         let content = (target?.content || '').trim();
         // 2) 若列表未带正文，按项目拉取全部剧本正文兜底
         if (!content && projectId) {
-          const token = getAuthToken();
-          const res = await fetch(`/api/scripts/project/${projectId}`, {
-            headers: token ? { Authorization: `Bearer ${token}` } : {},
-          });
+          const res = await fetch(`/api/scripts/project/${projectId}`);
           if (res.ok) {
             const data = await res.json();
             const list: any[] = data.scripts || [];
@@ -1954,8 +1988,23 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
       return;
     }
 
-    await onAction?.(action, params);
-  }, [currentFrame, triggerInspectQuality, onAction, showToast, archiveMessage, updateSessionMessages, projectId, selectedModel, scripts]);
+    // 桥接执行：第三参 onProgress 让工作台回报子步骤（步骤流细粒度反馈依赖它），
+    // 返回值是动作执行结果，必须显式回传上层，否则 agent 循环拿不到 jobId。
+    let result: any;
+    try {
+      result = await onAction?.(action, params, onProgress);
+    } catch (err: any) {
+      // 桥接抛错转为结构化失败结果：既让单次点击路径有明确反馈（不产生游离 Promise rejection），
+      // 也让 agent 循环据实回报失败原因，避免误报成功。
+      const message = err?.message || String(err) || '动作执行失败';
+      showToast(`${TASK_ACTION_LABEL[action] || action}失败：${message}`, 'error');
+      return { success: false, error: message };
+    }
+    // 后台任务（分镜图/视频）提交后返回 jobId、离线分镜拆分同步完成返回 sceneCount：
+    // 在对话内挂载进度卡片（任务未完成时同样挂载）；同时把结果回传供 agent 循环构造观察。
+    mountTaskCard(action, result, undefined, originSid);
+    return result;
+  }, [currentFrame, triggerInspectQuality, onAction, showToast, archiveMessage, updateSessionMessages, projectId, selectedModel, scripts, mountTaskCard, TASK_ACTION_LABEL]);
 
   // 每次渲染同步最新 handleAction，供 handleSend 的 agent 循环调用
   handleActionRef.current = handleAction;
@@ -1987,10 +2036,13 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
     const MANUAL_ACTIONS = new Set(['inspect_quality', 'optimize_script', 'reanalyze_script', 'dismiss']);
     const targets = last.suggestions.filter((s) => !MANUAL_ACTIONS.has(s.action));
     if (targets.length === 0) return;
+    // 锁定发起会话：内层定时器不在本 effect 的清理范围内（取消会丢失已标记执行的动作），
+    // 期间用户可能切换会话，故把 sid 随动作一起透传，卡片只落回发起它的那个对话。
+    const originSid = currentSessionIdRef.current;
     const t = setTimeout(() => {
       targets.forEach((target, i) => {
         setTimeout(() => {
-          handleAction(target.action, target.params);
+          void handleAction(target.action, target.params, undefined, originSid);
         }, i * 300); // 每个 action 间隔 300ms 依次执行
       });
     }, 200);
@@ -2019,13 +2071,13 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
   // ── Render ───────────────────────────────────────────────────────
   return (
     <div
-      className="relative flex flex-col h-full bg-[var(--bg-app)] border-l border-[var(--border-color)] w-full"
+      className="relative flex flex-col h-full bg-(--bg-app) border-l border-(--border-color) w-full"
       onDrop={handleDrop}
       onDragOver={handleDragOver}
     >
       <style>{`.ai-tabs-scroll::-webkit-scrollbar { display: none; }`}</style>
       {/* ─ Header ──────────────────────────────────────────── */}
-      <div className="flex items-center justify-between px-2 py-1.5 border-b border-[var(--border-color)] bg-[var(--bg-nav)] gap-1">
+      <div className="flex items-center justify-between px-2 py-1.5 border-b border-(--border-color) bg-(--bg-nav) gap-1">
         <div
           className="ai-tabs-scroll flex items-center gap-1 min-w-0 flex-1 overflow-x-auto"
           style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
@@ -2053,7 +2105,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                     className="flex items-center gap-1 flex-1 min-w-0 truncate"
                   >
                     {isBgLoading && (
-                      <span className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-[var(--accent)] animate-pulse" />
+                      <span className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-(--accent) animate-pulse" />
                     )}
                     <span className="truncate">{s.title}</span>
                   </button>

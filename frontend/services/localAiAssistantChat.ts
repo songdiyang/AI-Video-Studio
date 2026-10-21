@@ -1,8 +1,8 @@
 // AI 助手聊天 / 模型目录 的离线直连处理
 //
-// 桌面离线模式下，把以下后端端点接到本地直连厂商层（localAI），完全不依赖 localhost:4001：
+// 本地实现下，把以下 /api 端点接到本地直连厂商层（localAI），不依赖任何后端服务器：
 //  - POST /api/ai-assistant/chat          非流式对话
-//  - POST /api/ai-assistant/chat/stream   流式对话（SSE，帧格式与后端一致）
+//  - POST /api/ai-assistant/chat/stream   流式对话（SSE，帧格式与原契约一致）
 //  - POST /api/ai-assistant/enhance-prompt 提示词增强
 //  - POST /api/ai-assistant/compress       历史压缩
 //  - GET  /api/ai-models                   由本地已保存模型配置合成目录

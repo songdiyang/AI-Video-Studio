@@ -8,10 +8,13 @@
  *   public/models/human-child.glb
  */
 
-const { Document, NodeIO } = require('@gltf-transform/core');
-const { KHRONOS_EXTENSIONS } = require('@gltf-transform/extensions');
 const fs = require('fs');
 const path = require('path');
+// @gltf-transform 是 frontend/ 的依赖；本脚本位于仓库根 scripts/，根目录无 node_modules，
+// 需显式从 frontend/node_modules 解析，否则 require 会找不到模块。
+const FRONTEND = path.join(__dirname, '..', 'frontend');
+const { Document, NodeIO } = require(require.resolve('@gltf-transform/core', { paths: [FRONTEND] }));
+const { KHRONOS_EXTENSIONS } = require(require.resolve('@gltf-transform/extensions', { paths: [FRONTEND] }));
 
 // 前后端分离后 public 已搬入 frontend/
 const outDir = path.join(__dirname, '..', 'frontend', 'public', 'models');

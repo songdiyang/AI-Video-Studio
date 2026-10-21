@@ -14,9 +14,13 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import JSZip from 'jszip';
+import { createRequire } from 'module';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// jszip 是 frontend/ 的依赖；本脚本位于仓库根 scripts/，根目录无 node_modules，
+// 需显式从 frontend/node_modules 解析，否则 import 会找不到模块。
+const require = createRequire(import.meta.url);
+const JSZip = require(require.resolve('jszip', { paths: [path.join(__dirname, '..', 'frontend')] }));
 
 const AOM_MAGIC = Buffer.from([0x41, 0x4F, 0x4D, 0x01]); // "AOM\x01"
 const AOM_VERSION = 1;

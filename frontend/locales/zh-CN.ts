@@ -268,6 +268,18 @@ const zhCN = {
       movDesc: '仅部分模型（Seedance 2.5）支持，其他模型将自动使用 MP4',
       changedToast: '视频输出格式已设为',
     },
+    // 工程默认保存位置
+    projectsLocation: {
+      title: '工程默认保存位置',
+      desc: '新建工程时自动保存到此目录；未自定义则使用系统默认位置',
+      currentLabel: '当前目录',
+      defaultTag: '系统默认',
+      customTag: '自定义',
+      choose: '选择目录',
+      reset: '恢复默认',
+      chooseToast: '工程默认保存位置已更新',
+      resetToast: '已恢复系统默认保存位置',
+    },
     // 反馈
     feedback: {
       title: '反馈类型',

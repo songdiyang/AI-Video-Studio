@@ -7,7 +7,6 @@
  *   DELETE /api/buildings/:id    删除
  *   POST   /api/buildings/:id/generate-image  建筑结构图生成
  */
-import { getAuthToken } from './auth';
 
 export interface Building {
   id: number;
@@ -27,11 +26,6 @@ export interface Building {
   updated_at: string;
 }
 
-function authHeaders() {
-  const token = getAuthToken();
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
-
 async function handle<T>(resp: Response): Promise<T> {
   if (!resp.ok) {
     let msg = `请求失败：${resp.status}`;
@@ -49,13 +43,13 @@ export async function listBuildings(projectId?: number, interiorExterior?: strin
   if (projectId) params.set('projectId', String(projectId));
   if (interiorExterior) params.set('interiorExterior', interiorExterior);
   const qs = params.toString();
-  const resp = await fetch(`/api/buildings${qs ? '?' + qs : ''}`, { headers: { ...authHeaders() } });
+  const resp = await fetch(`/api/buildings${qs ? '?' + qs : ''}`);
   const data = await handle<{ buildings: Building[] }>(resp);
   return data.buildings || [];
 }
 
 export async function getBuilding(id: number): Promise<Building> {
-  const resp = await fetch(`/api/buildings/${id}`, { headers: { ...authHeaders() } });
+  const resp = await fetch(`/api/buildings/${id}`);
   const data = await handle<{ building: Building }>(resp);
   return data.building;
 }
@@ -70,7 +64,7 @@ export async function createBuilding(payload: {
 }): Promise<Building> {
   const resp = await fetch('/api/buildings', {
     method: 'POST',
-    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    headers: {  'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
   });
   const data = await handle<{ building: Building }>(resp);
@@ -89,7 +83,7 @@ export async function updateBuilding(id: number, payload: {
 }): Promise<Building> {
   const resp = await fetch(`/api/buildings/${id}`, {
     method: 'PATCH',
-    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    headers: {  'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
   });
   const data = await handle<{ building: Building }>(resp);
@@ -99,7 +93,6 @@ export async function updateBuilding(id: number, payload: {
 export async function deleteBuilding(id: number): Promise<void> {
   const resp = await fetch(`/api/buildings/${id}`, {
     method: 'DELETE',
-    headers: { ...authHeaders() }
   });
   await handle<{ message: string }>(resp);
 }
@@ -107,7 +100,6 @@ export async function deleteBuilding(id: number): Promise<void> {
 export async function deleteBuildingImage(id: number): Promise<void> {
   const resp = await fetch(`/api/buildings/${id}/image`, {
     method: 'DELETE',
-    headers: { ...authHeaders() }
   });
   await handle<{ message: string }>(resp);
 }
@@ -119,7 +111,7 @@ export async function generateBuildingImage(id: number, payload: {
 }): Promise<{ jobId: string; buildingId: number; status: string }> {
   const resp = await fetch(`/api/buildings/${id}/generate-image`, {
     method: 'POST',
-    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    headers: {  'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
   });
   return handle<{ jobId: string; buildingId: number; status: string }>(resp);

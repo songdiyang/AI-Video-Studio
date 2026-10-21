@@ -7,6 +7,8 @@
 
 import {
   activePath,
+  resolvePath,
+  assertProject,
   loadRestDoc,
   saveRestDoc,
   findById,
@@ -21,11 +23,11 @@ const TERRAIN_TYPES = ['山地', '平原', '丘陵', '森林', '草原', '沙漠
 
 // ==================== 环境 ====================
 async function handleEnvironmentGenerateImage(envId: number, body: any): Promise<Response> {
-  const path = activePath();
+  const path = await resolvePath(body?.project_id ?? body?.projectId);
   if (!path) return jsonResponse({ message: '未打开本地工程' }, 400);
   const doc = await loadRestDoc(path, 'environments');
   const env = findById(doc.items, envId);
-  if (!env) return jsonResponse({ message: '环境不存在' }, 404);
+  if (!env || !assertProject(env, path)) return jsonResponse({ message: '环境不存在' }, 404);
   const projectId = Number(env.project_id) || 0;
   const base = String(env.generation_prompt || env.description || env.name || '环境氛围参考图');
   const mode = body?.mode || 'front';
@@ -72,7 +74,7 @@ async function handleRecognizeTerrain(envId: number): Promise<Response> {
   if (!path) return jsonResponse({ message: '未打开本地工程' }, 400);
   const doc = await loadRestDoc(path, 'environments');
   const env = findById(doc.items, envId);
-  if (!env) return jsonResponse({ message: '环境不存在' }, 404);
+  if (!env || !assertProject(env, path)) return jsonResponse({ message: '环境不存在' }, 404);
   const model = await pickTextModel();
   const terrainTypes = await recognizeTerrain(env, model);
   if (terrainTypes.length) {
@@ -84,10 +86,10 @@ async function handleRecognizeTerrain(envId: number): Promise<Response> {
 }
 
 async function handleRecognizeAllTerrains(body: any): Promise<Response> {
-  const path = activePath();
+  const projectId = Number(body?.projectId) || null;
+  const path = await resolvePath(projectId);
   if (!path) return jsonResponse({ message: '未打开本地工程', total: 0, changed: 0, results: [] });
   const doc = await loadRestDoc(path, 'environments');
-  const projectId = Number(body?.projectId) || null;
   const items = projectId ? doc.items.filter((e) => Number(e.project_id) === projectId) : doc.items;
   const model = await pickTextModel();
   const results: any[] = [];
@@ -116,7 +118,7 @@ async function handleSanitizeDescription(envId: number): Promise<Response> {
   if (!path) return jsonResponse({ message: '未打开本地工程' }, 400);
   const doc = await loadRestDoc(path, 'environments');
   const env = findById(doc.items, envId);
-  if (!env) return jsonResponse({ message: '环境不存在' }, 404);
+  if (!env || !assertProject(env, path)) return jsonResponse({ message: '环境不存在' }, 404);
   const model = await pickTextModel();
   const before = env.description || '';
   const after = await sanitizeDescription(env, model);
@@ -126,10 +128,10 @@ async function handleSanitizeDescription(envId: number): Promise<Response> {
 }
 
 async function handleSanitizeDescriptions(body: any): Promise<Response> {
-  const path = activePath();
+  const projectId = Number(body?.projectId) || null;
+  const path = await resolvePath(projectId);
   if (!path) return jsonResponse({ message: '未打开本地工程', total: 0, changed: 0, results: [] });
   const doc = await loadRestDoc(path, 'environments');
-  const projectId = Number(body?.projectId) || null;
   const items = projectId ? doc.items.filter((e) => Number(e.project_id) === projectId) : doc.items;
   const model = await pickTextModel();
   const results: any[] = [];
@@ -147,11 +149,11 @@ async function handleSanitizeDescriptions(body: any): Promise<Response> {
 
 // ==================== 建筑 ====================
 async function handleBuildingGenerateImage(id: number, body: any): Promise<Response> {
-  const path = activePath();
+  const path = await resolvePath(body?.project_id ?? body?.projectId);
   if (!path) return jsonResponse({ message: '未打开本地工程' }, 400);
   const doc = await loadRestDoc(path, 'buildings');
   const b = findById(doc.items, id);
-  if (!b) return jsonResponse({ message: '建筑不存在' }, 404);
+  if (!b || !assertProject(b, path)) return jsonResponse({ message: '建筑不存在' }, 404);
   const projectId = Number(b.project_id) || 0;
   const base = String(b.generation_prompt || b.description || b.name || '建筑结构图');
   const vt = body?.viewType || b.interior_exterior || 'exterior';
@@ -187,7 +189,7 @@ async function handleBuildingImageDelete(id: number): Promise<Response> {
   if (!path) return jsonResponse({ message: '未打开本地工程' }, 400);
   const doc = await loadRestDoc(path, 'buildings');
   const b = findById(doc.items, id);
-  if (b) {
+  if (b && assertProject(b, path)) {
     b.image_url = null; b.interior_image_url = null; b.exterior_image_url = null;
     b.generation_status = 'pending'; b.updated_at = new Date().toISOString();
     saveRestDoc(path, 'buildings', doc);
@@ -199,14 +201,15 @@ async function handleBuildingImageDelete(id: number): Promise<Response> {
 const VARIANT_FACES = ['front', 'right', 'back', 'left'];
 
 async function handleVariantGenerateFaces(id: number, body: any): Promise<Response> {
-  const path = activePath();
+  const path = await resolvePath(body?.project_id ?? body?.projectId);
   if (!path) return jsonResponse({ message: '未打开本地工程' }, 400);
   const doc = await loadRestDoc(path, 'environmentVariants');
   const v = findById(doc.items, id);
-  if (!v) return jsonResponse({ message: '变体不存在' }, 404);
+  if (!v || !assertProject(v, path)) return jsonResponse({ message: '变体不存在' }, 404);
   // 环境归属用于解析工程与提示词基线
   const edoc = await loadRestDoc(path, 'environments');
   const env = findById(edoc.items, v.environment_id) || {};
+  if (!assertProject(env, path)) return jsonResponse({ message: '变体不存在' }, 404);
   const projectId = Number(env.project_id) || 0;
   const base = String(v.generation_prompt || env.generation_prompt || env.description || env.name || '环境变体');
   v.generation_status = 'generating';

@@ -4,7 +4,6 @@ import { createPortal } from 'react-dom';
 import { Button, Progress } from '@heroui/react';
 import { Sparkles, Upload, FileText, Pencil, Wand2, Eye, EyeOff, X } from 'lucide-react';
 import { useWorkflow, consumeWorkflow } from '../../hooks/useWorkflow';
-import { getAuthToken } from '../../services/auth';
 import type { Project } from '../../services/projects';
 import { uploadScriptFile, updateScript } from '../../services/scripts';
 import { useToast } from '../../contexts/ToastContext';
@@ -225,10 +224,9 @@ const WorkshopSession: React.FC<ScriptWorkshopProps> = ({
     status('generate', 'saving');
     finalizing.current = Promise.resolve().then(async () => {
       try {
-        const token = getAuthToken();
         const res = await fetch('/api/scripts/save-from-workflow', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ scriptId: target.scriptId, jobId: target.jobId }),
         });
         const data = await res.json();
@@ -405,10 +403,9 @@ const WorkshopSession: React.FC<ScriptWorkshopProps> = ({
     setMessage('');
     try {
       if (!await flushDrafts() || !mounted.current) { setOperation(null); return; }
-      const token = getAuthToken();
       const res = await fetch('/api/scripts/generate', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ projectId, episodeNumber, title: draft.title.trim() || undefined,
           description: draft.description.trim() || undefined, length: draft.length, textModel: draft.textModel }),
       });

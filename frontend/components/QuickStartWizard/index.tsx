@@ -3,14 +3,12 @@ import { motion } from 'framer-motion';
 import { Input, Textarea, Spinner, Button } from '@heroui/react';
 import {
   X, Check,
-  Film, Sparkles,
-  Palette, Globe, ImagePlus, Upload,
-  BookOpen, Video, PenTool
+  Sparkles,
+  Palette, Globe, ImagePlus, Upload
 } from 'lucide-react';
-import { ProjectType, PROJECT_TYPES, VISUAL_STYLE_BY_CATEGORY, StyleCategory, BodyProportionRatio, BODY_PROPORTION_PRESETS, inferStyleCategory } from '../../types/projectTypes';
+import { ProjectType, VISUAL_STYLE_BY_CATEGORY, StyleCategory, BodyProportionRatio, BODY_PROPORTION_PRESETS, inferStyleCategory } from '../../types/projectTypes';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { useToast } from '../../contexts/ToastContext';
-import { getAuthToken } from '../../services/auth';
 import { UserStylePreset, fetchMyStyles } from '../../services/projects';
 import UpgradePrompt from '../UpgradePrompt';
 import { usePreview } from '../PreviewProvider';
@@ -23,21 +21,13 @@ interface QuickStartWizardProps {
 
 type CreationType = ProjectType;
 
-// 创作类型列表
-const CREATION_TYPES: { type: CreationType; icon: React.ElementType; color: string; desc: string }[] = [
-  { type: 'comic_drama', icon: Film, color: PROJECT_TYPES.comic_drama.color, desc: '制作精彩的漫剧短片' },
-  { type: 'manga', icon: BookOpen, color: PROJECT_TYPES.manga.color, desc: '创作漫画作品' },
-  { type: 'short_video', icon: Video, color: PROJECT_TYPES.short_video.color, desc: '制作短视频内容' },
-  { type: 'novel', icon: PenTool, color: PROJECT_TYPES.novel.color, desc: '创作小说作品' },
-];
-
 const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ isOpen, onClose, onComplete }) => {
   const { t } = useLanguage();
   const { showToast } = useToast();
   const { openPreview } = usePreview();
 
-  // 创作类型
-  const [selectedType, setSelectedType] = useState<CreationType>('comic_drama');
+  // 创作类型：工程仅支持漫剧一种类型，不再提供种类选择
+  const selectedType: CreationType = 'comic_drama';
 
   // 项目信息 & 设置
   const [projectName, setProjectName] = useState('');
@@ -107,7 +97,6 @@ const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ isOpen, onClose, on
   // 重置状态
   useEffect(() => {
     if (isOpen) {
-      setSelectedType('comic_drama');
       setProjectName('');
       setProjectDesc('');
       setFormData({
@@ -152,10 +141,9 @@ const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ isOpen, onClose, on
     }
     setAiSuggesting(true);
     try {
-      const token = getAuthToken();
       const res = await fetch('/api/projects/suggest-settings', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: projectName, description: projectDesc })
       });
       if (!res.ok) { const data = await res.json().catch(() => ({})); throw new Error(data.message || 'AI推荐失败'); }
@@ -183,10 +171,9 @@ const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ isOpen, onClose, on
     }
     setCoverGenerating(true);
     try {
-      const token = getAuthToken();
       const res = await fetch('/api/projects/generate-cover', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: projectName, description: projectDesc,
           visualStylePrompt: formData.visualStylePrompt,
@@ -223,7 +210,6 @@ const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ isOpen, onClose, on
   const validateRequiredFields = (): string[] => {
     const missing: string[] = [];
     if (!projectName.trim()) missing.push('项目名称');
-    if (!selectedType) missing.push('创作类型');
     if (!formData.styleCategory) missing.push('内容类型（真人/动漫）');
     if (!formData.visualStyle) missing.push('视觉风格');
     return missing;
@@ -240,7 +226,6 @@ const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ isOpen, onClose, on
     setCreating(true);
     setCreateError(null);
     try {
-      const token = getAuthToken();
       const settingsObj: any = {};
       const { visualStyle, visualStylePrompt, styleCategory, bodyProportionRatio, storyStyle, storyConstraints, narrativePerspective,
         imageAspectRatio, imageResolution,
@@ -270,7 +255,7 @@ const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ isOpen, onClose, on
 
       const res = await fetch('/api/projects', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(saveData),
       });
 
@@ -283,7 +268,6 @@ const QuickStartWizard: React.FC<QuickStartWizardProps> = ({ isOpen, onClose, on
             fd.append('cover', formData._coverFile);
             await fetch(`/api/projects/${pid}/cover`, {
               method: 'POST',
-              headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
               body: fd,
             });
           } catch (e) {

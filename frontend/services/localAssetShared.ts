@@ -6,7 +6,7 @@
 //  - 资产文档读写（沿用 localStore 文档 + localRest 的 RestDoc 形状）
 //  - 提交资产生成作业（localAssetJobs，非阻塞 + 完成回写）
 
-import { readDoc, writeDoc, getActiveProjectPath, type LocalDocName } from './localStore';
+import { readDoc, writeDoc, getActiveProjectPath, resolveLocalPath, projectIdForPath, type LocalDocName } from './localStore';
 import { resolveModel, getOfflineModels, chatText, generateImage, type OfflineModel } from './localAI';
 import { persistGeneratedMedia } from './localMedia';
 import { submitAssetGeneration } from './localAssetJobs';
@@ -35,6 +35,33 @@ export function normalizeKeys(body: Record<string, any> | null | undefined): Rec
 // ==================== 工程路径 ====================
 export function activePath(): string | null {
   return getActiveProjectPath();
+}
+
+/**
+ * 解析请求归属的工程路径：显式 projectId 优先（对齐 localRest.resolvePath 模式），
+ * 无有效 projectId 时兜底活动工程。防止切换工程后在途请求把数据写进新工程。
+ */
+export async function resolvePath(projectId?: number | string | null): Promise<string | null> {
+  const id = Number(projectId);
+  if (Number.isFinite(id) && id > 0) {
+    const p = await resolveLocalPath(id);
+    if (p) return p;
+  }
+  return getActiveProjectPath();
+}
+
+/**
+ * 归属校验：条目带 project_id 且解析出的工程路径能反查到工程 id 时，两者必须一致。
+ * 不一致说明跨工程 ID 碰撞（各工程文档独立自增序列），调用方应拒绝写入返回 404。
+ * 条目无 project_id 或路径反查失败则放行（宽容，避免误伤历史数据）。
+ */
+export function assertProject(item: any, projectPath: string | null): boolean {
+  if (!item || !projectPath) return true;
+  const itemProjectId = Number(item.project_id);
+  if (!Number.isFinite(itemProjectId) || itemProjectId <= 0) return true;
+  const pathProjectId = projectIdForPath(projectPath);
+  if (pathProjectId === null) return true;
+  return itemProjectId === pathProjectId;
 }
 
 // ==================== 文档读写 ====================

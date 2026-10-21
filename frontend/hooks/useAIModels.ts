@@ -8,7 +8,6 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { AIModel } from '../components/AIModelSelector';
-import { getAuthToken } from '../services/auth';
 import { getModelTypesForSlot } from '../utils/modelCapabilities';
 
 export interface AIModelSelection {
@@ -72,10 +71,7 @@ export function useAIModels(projectId: number | null | undefined): UseAIModelsRe
   useEffect(() => {
     const fetchModels = async () => {
       try {
-        const token = getAuthToken();
-        const res = await fetch('/api/ai-models', {
-          headers: token ? { Authorization: `Bearer ${token}` } : {}
-        });
+        const res = await fetch('/api/ai-models');
         if (res.ok) {
           const data = await res.json();
           setModels(data.models || []);
@@ -100,10 +96,7 @@ export function useAIModels(projectId: number | null | undefined): UseAIModelsRe
     initializedRef.current = false;
     const fetchSaved = async () => {
       try {
-        const token = getAuthToken();
-        const res = await fetch(`/api/projects/${projectId}/models`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {}
-        });
+        const res = await fetch(`/api/projects/${projectId}/models`);
         if (res.ok) {
           const data = await res.json();
           const saved = data.useModels || {};
@@ -153,7 +146,6 @@ export function useAIModels(projectId: number | null | undefined): UseAIModelsRe
     saveTimerRef.current = setTimeout(async () => {
       savingRef.current = true;
       try {
-        const token = getAuthToken();
         // 转为后端格式：category 大写作为 key
         const useModels: Record<string, string> = {};
         for (const [key, cat] of Object.entries({ text: 'TEXT', image: 'IMAGE', video: 'VIDEO', audio: 'AUDIO', multimodal: 'MULTIMODAL' })) {
@@ -164,7 +156,6 @@ export function useAIModels(projectId: number | null | undefined): UseAIModelsRe
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {})
           },
           body: JSON.stringify({ useModels })
         });

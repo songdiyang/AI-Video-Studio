@@ -19,7 +19,6 @@ import CharacterStateEditor from '../../views/AssetsManager/AssetModel/Character
 import ReferenceImageManager from '../../views/AssetsManager/AssetModel/ReferenceImageManager';
 import PropStyleConfigPanel from '../../views/AssetsManager/AssetModel/PropStyleConfig';
 import { useAIModels } from '../../hooks/useAIModels';
-import { getAuthToken } from '../../services/auth';
 import { StoryboardScene } from '../../views/StoryBoard/useSceneManager';
 import { ResourceDraft, ASSET_FIELDS, normalizeAsset, assetSavedData, pickResourceFields, type ResourceData } from './resourceDraft';
 import { useResourceDraft } from './useResourceDraft';
@@ -190,7 +189,7 @@ const AssetEditorSession: React.FC<AssetEditorProps> = ({ tabId, assetType, init
     if (pollTimer.current) clearTimeout(pollTimer.current);
     void (async () => {
       try {
-        const response = await fetch(`/api/props/${assetId}/generation-status`, { headers: { Authorization: `Bearer ${getAuthToken()}` } });
+        const response = await fetch(`/api/props/${assetId}/generation-status`);
         if (!response.ok) throw new Error('查询道具生成状态失败');
         const data = await response.json();
         if (!alive.current || sequence !== propPollSequence.current) return;
@@ -217,7 +216,7 @@ const AssetEditorSession: React.FC<AssetEditorProps> = ({ tabId, assetType, init
         if (alive.current) setStudioDetail(prev => prev ? { ...prev, studio: { ...prev.studio, nine_grid_generation_status: 'generating' } } : prev);
       } else if (assetType === 'prop') {
         const response = await fetch(`/api/props/${assetId}/generate-image`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAuthToken()}` },
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ ...params, styleConfig: session.data.style_config || {} }),
         });
         if (!response.ok) { const data = await response.json(); throw new Error(data.message || '启动生成失败'); }

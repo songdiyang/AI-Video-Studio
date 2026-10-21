@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { getAuthToken } from '../../../services/auth';
 import { Character } from './types';
 
 export const useCharacterData = (projectId?: number | null, scriptId?: number | null) => {
@@ -22,13 +21,8 @@ export const useCharacterData = (projectId?: number | null, scriptId?: number | 
     
     setIsLoadingCharacters(true);
     try {
-      const token = getAuthToken();
       // 获取项目所有角色（不按集数过滤，因为同一角色可能出现在多集）
-      const res = await fetch(`/api/characters/project/${projectId}`, {
-        headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        }
-      });
+      const res = await fetch(`/api/characters/project/${projectId}`);
 
       if (res.ok) {
         const data = await res.json();

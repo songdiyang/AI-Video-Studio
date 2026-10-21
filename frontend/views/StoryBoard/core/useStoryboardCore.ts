@@ -10,7 +10,6 @@ import { useSceneGeneration } from '../useSceneGeneration';
 import { useBatchResourceGeneration } from '../hooks/useBatchResourceGeneration';
 import { batchValidateScenes } from '../../../services/storyboards';
 import { fetchProject, updateProject, type Project } from '../../../services/projects';
-import { getAuthToken } from '../../../services/auth';
 import { fetchCharactersByProject, fetchScenesByProject, createCharacter, updateCharacter, deleteCharacter, generateCharacterViews, generateCharacterStateViews, fetchCharacterStates, createScene as createSceneAsset, updateScene as updateSceneAsset, deleteScene as deleteSceneAsset } from '../../../services/assets';
 import { createScript as createScriptApi, deleteScript as deleteScriptApi, updateScriptTitle, fetchScripts } from '../../../services/scripts';
 import { useToast } from '../../../contexts/ToastContext';
@@ -23,7 +22,7 @@ import type {
   SceneActions, 
   GenerationActions, 
   ResourceActions,
-  Script 
+  Script
 } from './types';
 
 interface UseStoryboardCoreOptions {
@@ -96,7 +95,7 @@ export function useStoryboardCore(options: UseStoryboardCoreOptions) {
     openLeftPanel,
     closeLeftPanel, 
     closeRightPanel, 
-    closeBottomPanel 
+    closeBottomPanel
   } = useAIAssistantUI();
 
   // 项目数据
@@ -138,15 +137,19 @@ export function useStoryboardCore(options: UseStoryboardCoreOptions) {
   // 同步外部 scripts 数组（当外部数据变化时同步）
   useEffect(() => {
     setScripts(prev => {
+      // 切换工程时先剔除明确属于其他工程的本地残留（无 project_id 的历史数据宽容保留）
+      const owned = projectId
+        ? prev.filter(s => (s as any).project_id == null || (s as any).project_id === projectId)
+        : prev;
       // 如果外部数组为空，保持本地数据（避免初始化时的空覆盖）
-      if (externalScripts.length === 0) return prev;
+      if (externalScripts.length === 0) return owned.length === prev.length ? prev : owned;
         
       // 如果本地为空，直接使用外部数据
-      if (prev.length === 0) return externalScripts;
+      if (owned.length === 0) return externalScripts;
         
       // 合并外部数据和本地数据，以外部数据为准（更新状态等）
       const externalMap = new Map(externalScripts.map(s => [s.id, s]));
-      const merged = prev.map(localScript => {
+      const merged = owned.map(localScript => {
         const externalScript = externalMap.get(localScript.id);
         if (externalScript) {
           // 更新现有剧本的状态和标题
@@ -156,7 +159,7 @@ export function useStoryboardCore(options: UseStoryboardCoreOptions) {
       });
         
       // 添加外部有但本地没有的新剧本
-      const localIds = new Set(prev.map(s => s.id));
+      const localIds = new Set(owned.map(s => s.id));
       const newScripts = externalScripts.filter(s => !localIds.has(s.id));
         
       if (newScripts.length > 0) {
@@ -164,13 +167,13 @@ export function useStoryboardCore(options: UseStoryboardCoreOptions) {
       }
         
       // 如果数据有变化，返回合并后的数组
-      const hasChanges = merged.some((s, i) => s.id !== prev[i]?.id || s.status !== prev[i]?.status || s.title !== prev[i]?.title);
+      const hasChanges = merged.some((s, i) => s.id !== owned[i]?.id || s.status !== owned[i]?.status || s.title !== owned[i]?.title);
       if (hasChanges) return merged;
         
-      return prev;
+      return owned.length === prev.length ? prev : owned;
     });
     scriptsRef.current = externalScripts;
-  }, [externalScripts]);
+  }, [externalScripts, projectId]);
 
   // 模型配置（合并计算）
   const {
@@ -292,6 +295,14 @@ export function useStoryboardCore(options: UseStoryboardCoreOptions) {
     },
     onError: (msg) => showToast(msg, 'error'),
     loadStoryboards,
+    onSplitCompleted: async () => {
+      // 拆分自动补齐了角色/影棚资源，重新拉取项目资源列表使「分镜引用的资源」在资源库中可见
+      if (!currentProjectId) return;
+      await Promise.all([
+        fetchCharactersByProject(currentProjectId).then(setProjectCharacters).catch(() => {}),
+        fetchScenesByProject(currentProjectId, currentScriptId || undefined).then(setProjectScenes).catch(() => {}),
+      ]);
+    },
     referenceScriptContent,
     referenceScriptTitle
   });
@@ -331,9 +342,6 @@ export function useStoryboardCore(options: UseStoryboardCoreOptions) {
   useEffect(() => {
     if (!currentProjectId) return;
 
-    const token = getAuthToken();
-    const headers = token ? { Authorization: `Bearer ${token}` } : {};
-
     Promise.all([
       fetchCharactersByProject(currentProjectId)
         .then(chars => chars.map((c: any) => ({
@@ -354,7 +362,7 @@ export function useStoryboardCore(options: UseStoryboardCoreOptions) {
       fetchScenesByProject(currentProjectId)
         .then(scenes => scenes.map((s: any) => ({ id: s.id, name: s.name, description: s.description })))
         .catch(() => []),
-      fetch(`/api/props/project/${currentProjectId}`, { headers })
+      fetch(`/api/props/project/${currentProjectId}`)
         .then(res => res.ok ? res.json() : null)
         .then(data => data?.props || [])
         .catch(() => []),
@@ -373,11 +381,8 @@ export function useStoryboardCore(options: UseStoryboardCoreOptions) {
       return Promise.resolve();
     }
     setIsLoadingScript(true);
-    const token = getAuthToken();
     console.log('[useStoryboardCore] 开始加载剧本内容, project:', currentProjectId, 'episode:', currentEpisode);
-    return fetch(`/api/scripts/project/${currentProjectId}/episode/${currentEpisode}`, {
-      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-    })
+    return fetch(`/api/scripts/project/${currentProjectId}/episode/${currentEpisode}`)
       .then(res => res.ok ? res.json() : null)
       .then(data => {
         const script = data?.script;
@@ -411,10 +416,7 @@ export function useStoryboardCore(options: UseStoryboardCoreOptions) {
       .catch(() => { if (!cancelled) setCurrentProject(null); });
     
     // 加载项目剧本列表
-    const token = getAuthToken();
-    fetch(`/api/scripts/project/${currentProjectId}`, {
-      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-    })
+    fetch(`/api/scripts/project/${currentProjectId}`)
       .then(res => res.ok ? res.json() : null)
       .then(data => {
         if (!cancelled && data?.scripts) {
@@ -461,10 +463,7 @@ export function useStoryboardCore(options: UseStoryboardCoreOptions) {
       // 只处理当前项目的事件（如果事件未指定projectId，也执行刷新，兼容旧代码）
       if (!eventProjectId || eventProjectId === currentProjectId) {
         console.log('[useStoryboardCore] 监听到剧本刷新事件，重新加载剧本列表');
-        const token = getAuthToken();
-        fetch(`/api/scripts/project/${currentProjectId}`, {
-          headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        })
+        fetch(`/api/scripts/project/${currentProjectId}`)
           .then(res => res.ok ? res.json() : null)
           .then(data => {
             if (data?.scripts) {
@@ -554,13 +553,9 @@ export function useStoryboardCore(options: UseStoryboardCoreOptions) {
     if (scenes.length === 0) { showToast('没有可优化的分镜', 'warning'); return; }
     setIsOptimizingAllPrompts(true);
     try {
-      const token = getAuthToken();
       const res = await fetch(`/api/storyboards/batch-optimize-prompts/${currentScriptId}`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ textModel, targetType })
       });
       if (!res.ok) {
@@ -675,7 +670,6 @@ export function useStoryboardCore(options: UseStoryboardCoreOptions) {
           endState: scene.endState
         }
       }));
-      const token = getAuthToken();
       // 统一存储层后，所有分镜都绑定到剧本（包括隐式剧本）。
       // 但自由分镜模式下 currentScriptId 可能为 null，此时仍使用 standalone 端点（后端会自动关联隐式剧本）
       const endpoint = currentScriptId
@@ -683,10 +677,7 @@ export function useStoryboardCore(options: UseStoryboardCoreOptions) {
         : `/api/storyboards/project/${currentProjectId}/standalone`;
       const res = await fetch(endpoint, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ items: formattedScenes })
       });
       if (!res.ok) {
@@ -820,13 +811,9 @@ export function useStoryboardCore(options: UseStoryboardCoreOptions) {
       // 持久化 hasAction 到后端 variables_json
       if (updates.hasAction !== undefined) {
         try {
-          const token = getAuthToken();
           await fetch(`/api/storyboards/${id}/content`, {
             method: 'PATCH',
-            headers: {
-              'Content-Type': 'application/json',
-              ...(token ? { Authorization: `Bearer ${token}` } : {})
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ hasAction: updates.hasAction })
           });
         } catch (err) {
@@ -852,10 +839,7 @@ export function useStoryboardCore(options: UseStoryboardCoreOptions) {
     },
     fetchProjectProps: async () => {
       if (!currentProjectId) return;
-      const token = getAuthToken();
-      fetch(`/api/props/project/${currentProjectId}`, {
-        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) }
-      })
+      fetch(`/api/props/project/${currentProjectId}`)
         .then(res => res.ok ? res.json() : null)
         .then(data => setProjectProps(data?.props || []))
         .catch(() => setProjectProps([]));

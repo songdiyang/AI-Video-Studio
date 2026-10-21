@@ -11,7 +11,6 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { useWorkbench } from '../../contexts/WorkbenchContext';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { useToast } from '../../contexts/ToastContext';
-import { getAuthToken } from '../../services/auth';
 import { consumeWorkflow, consumeAllFailed } from '../../hooks/useWorkflow';
 import { useTaskQueue } from '../TaskQueueBubble/useTaskQueue';
 import TaskItem, { getTaskName } from '../TaskQueueBubble/TaskItem';
@@ -98,9 +97,6 @@ const BottomTaskPanel: React.FC = () => {
     },
   });
 
-  // 未登录不显示
-  if (!getAuthToken()) return null;
-
   const runningCount = jobs.filter(j => j.status === 'running').length;
   const pendingCount = jobs.filter(j => j.status === 'pending').length;
   const failedCount = jobs.filter(j => j.status === 'failed').length;
@@ -124,7 +120,7 @@ const BottomTaskPanel: React.FC = () => {
             role="separator"
             aria-orientation="horizontal"
             title={t.frame.taskPanel.dragResize}
-            className={`absolute top-0 left-0 right-0 h-[5px] z-10 cursor-row-resize transition-colors ${
+            className={`absolute top-0 left-0 right-0 h-1.25 z-10 cursor-row-resize transition-colors ${
               isDragging ? 'bg-(--accent)/60' : 'hover:bg-(--accent)/40'
             }`}
           />

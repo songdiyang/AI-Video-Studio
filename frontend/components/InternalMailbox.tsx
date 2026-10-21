@@ -2,7 +2,6 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import ReactDOM from 'react-dom';
 import { Mail, X, Check, CheckCheck, Trash2, MessageSquare, Megaphone, Bell, ChevronLeft, ClipboardList, Clock, Flag, ExternalLink, CheckCircle, XCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { getAuthToken } from '../services/auth';
 
 interface TaskData {
   taskId: number;
@@ -176,32 +175,20 @@ const InternalMailbox: React.FC = () => {
   const dragState = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null);
   const limit = 20;
 
-  const headers = useCallback(() => {
-    const token = getAuthToken();
-    return {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    };
-  }, []);
-
   const fetchUnreadCount = useCallback(async () => {
-    const token = getAuthToken();
-    if (!token) return; // 未登录时不获取
     try {
-      const res = await fetch('/api/mail/unread-count', { headers: headers() });
+      const res = await fetch('/api/mail/unread-count');
       if (res.ok) {
         const data = await res.json();
         setUnreadCount(data.count || 0);
       }
     } catch { /* ignore */ }
-  }, [headers]);
+  }, []);
 
   const fetchMails = useCallback(async () => {
-    const token = getAuthToken();
-    if (!token) return; // 未登录时不获取
     setLoading(true);
     try {
-      const res = await fetch(`/api/mail?page=${page}&limit=${limit}`, { headers: headers() });
+      const res = await fetch(`/api/mail?page=${page}&limit=${limit}`);
       if (res.ok) {
         const data = await res.json();
         setMails(data.mails || []);
@@ -212,7 +199,7 @@ const InternalMailbox: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [page, headers]);
+  }, [page]);
 
   // Poll unread count every 30s
   useEffect(() => {
@@ -227,8 +214,6 @@ const InternalMailbox: React.FC = () => {
       fetchMails();
     }
   }, [isOpen, fetchMails]);
-
-
 
   // Click outside to close
   useEffect(() => {
@@ -245,7 +230,7 @@ const InternalMailbox: React.FC = () => {
 
   const markAsRead = async (mailId: number) => {
     try {
-      await fetch(`/api/mail/${mailId}/read`, { method: 'PATCH', headers: headers() });
+      await fetch(`/api/mail/${mailId}/read`, { method: 'PATCH' });
       setMails(prev => prev.map(m => m.id === mailId ? { ...m, is_read: 1 } : m));
       setUnreadCount(prev => Math.max(0, prev - 1));
     } catch { /* ignore */ }
@@ -253,7 +238,7 @@ const InternalMailbox: React.FC = () => {
 
   const markAllRead = async () => {
     try {
-      await fetch('/api/mail/read-all', { method: 'PATCH', headers: headers() });
+      await fetch('/api/mail/read-all', { method: 'PATCH' });
       setMails(prev => prev.map(m => ({ ...m, is_read: 1 })));
       setUnreadCount(0);
     } catch { /* ignore */ }
@@ -261,7 +246,7 @@ const InternalMailbox: React.FC = () => {
 
   const deleteMail = async (mailId: number) => {
     try {
-      await fetch(`/api/mail/${mailId}`, { method: 'DELETE', headers: headers() });
+      await fetch(`/api/mail/${mailId}`, { method: 'DELETE' });
       const wasUnread = mails.find(m => m.id === mailId)?.is_read === 0;
       setMails(prev => prev.filter(m => m.id !== mailId));
       setTotal(prev => prev - 1);
@@ -288,9 +273,8 @@ const InternalMailbox: React.FC = () => {
   const acceptTask = async (taskId: number) => {
     setTaskLoading(taskId);
     try {
-      const res = await fetch(`/api/tasks/${taskId}/accept`, { 
-        method: 'PATCH', 
-        headers: headers() 
+      const res = await fetch(`/api/tasks/${taskId}/accept`, {
+        method: 'PATCH'
       });
       if (res.ok) {
         setTaskStatus(prev => ({ ...prev, [taskId]: 'accepted' }));
@@ -314,8 +298,8 @@ const InternalMailbox: React.FC = () => {
     setTaskLoading(taskId);
     try {
       const res = await fetch(`/api/tasks/${taskId}/reject`, { 
-        method: 'PATCH', 
-        headers: headers(),
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reason })
       });
       if (res.ok) {

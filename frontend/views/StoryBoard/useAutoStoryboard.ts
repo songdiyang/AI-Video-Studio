@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useStoryboardGeneration, GenerationProgress } from './hooks/useStoryboardGeneration';
 import { StoryboardScene } from './useSceneManager';
-import { getAuthToken } from '../../services/auth';
 import { GenerateMode } from './AutoStoryboardModal';
 
 interface UseAutoStoryboardOptions {
@@ -13,6 +12,8 @@ interface UseAutoStoryboardOptions {
   onScenesGenerated: (scenes: StoryboardScene[]) => void;
   onError?: (message: string) => void;
   loadStoryboards?: (scriptId: number) => Promise<void>; // 增量加载回调
+  /** 拆分（含自动补齐的角色/影棚资源）落库完成后回调，供上层刷新资源列表 */
+  onSplitCompleted?: () => void | Promise<void>;
   useSceneMode?: boolean; // 是否使用按场景生成模式
   /** 弱绑定参考剧本正文（仅作为 AI 生成 prompt 的补充上下文） */
   referenceScriptContent?: string | null;
@@ -29,6 +30,7 @@ export function useAutoStoryboard({
   onScenesGenerated,
   onError,
   loadStoryboards,
+  onSplitCompleted,
   useSceneMode = true,
   referenceScriptContent,
   referenceScriptTitle
@@ -43,6 +45,8 @@ export function useAutoStoryboard({
     projectId,
     isActive,
     onComplete: async () => {
+      // 拆分时已自动补齐角色/影棚资源，刷新分镜的同时刷新资源列表
+      await onSplitCompleted?.();
       // 工作流完成后，优先使用增量加载，避免整页刷新
       if (loadStoryboards && scriptId) {
         await loadStoryboards(scriptId);
@@ -87,12 +91,10 @@ export function useAutoStoryboard({
   const cleanAndGenerate = async () => {
     if (!scriptId) return;
     try {
-      const token = getAuthToken();
       const res = await fetch('/api/storyboards/clean-before-regenerate', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
         body: JSON.stringify({ scriptId })
       });

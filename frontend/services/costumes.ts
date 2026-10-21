@@ -1,5 +1,3 @@
-import { getAuthToken } from './auth';
-
 // ============================================================
 // 服装资源接口定义
 // ============================================================
@@ -89,17 +87,12 @@ export async function fetchCostumes(
   projectId?: number | null,
   filters?: { category?: string; gender?: string }
 ): Promise<Costume[]> {
-  const token = getAuthToken();
   const params = new URLSearchParams();
   if (projectId) params.set('projectId', String(projectId));
   if (filters?.category) params.set('category', filters.category);
   if (filters?.gender) params.set('gender', filters.gender);
 
-  const response = await fetch(`/api/costumes?${params}`, {
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
-    }
-  });
+  const response = await fetch(`/api/costumes?${params}`);
 
   if (!response.ok) {
     throw new Error('获取服装列表失败');
@@ -113,12 +106,7 @@ export async function fetchCostumes(
  * 获取单个服装
  */
 export async function fetchCostume(id: number): Promise<Costume> {
-  const token = getAuthToken();
-  const response = await fetch(`/api/costumes/${id}`, {
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
-    }
-  });
+  const response = await fetch(`/api/costumes/${id}`);
 
   if (!response.ok) {
     const data = await response.json();
@@ -133,12 +121,10 @@ export async function fetchCostume(id: number): Promise<Costume> {
  * 创建服装
  */
 export async function createCostume(input: CostumeCreateInput): Promise<Costume> {
-  const token = getAuthToken();
   const response = await fetch('/api/costumes', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
     },
     body: JSON.stringify(input)
   });
@@ -156,12 +142,10 @@ export async function createCostume(input: CostumeCreateInput): Promise<Costume>
  * 更新服装
  */
 export async function updateCostume(id: number, input: CostumeUpdateInput): Promise<Costume> {
-  const token = getAuthToken();
   const response = await fetch(`/api/costumes/${id}`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
     },
     body: JSON.stringify(input)
   });
@@ -179,12 +163,8 @@ export async function updateCostume(id: number, input: CostumeUpdateInput): Prom
  * 删除服装
  */
 export async function deleteCostume(id: number): Promise<void> {
-  const token = getAuthToken();
   const response = await fetch(`/api/costumes/${id}`, {
     method: 'DELETE',
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
-    }
   });
 
   if (!response.ok) {
@@ -204,12 +184,7 @@ export async function fetchCharacterCostumes(characterId: number): Promise<{
   costumes: (Costume & { is_equipped: boolean; equipped_at?: string })[];
   characterGender: string;
 }> {
-  const token = getAuthToken();
-  const response = await fetch(`/api/characters/${characterId}/costumes`, {
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
-    }
-  });
+  const response = await fetch(`/api/characters/${characterId}/costumes`);
 
   if (!response.ok) {
     const data = await response.json();
@@ -223,14 +198,10 @@ export async function fetchCharacterCostumes(characterId: number): Promise<{
  * 为角色穿戴服装
  */
 export async function equipCostume(characterId: number, costumeId: number): Promise<Costume> {
-  const token = getAuthToken();
   const response = await fetch(
     `/api/characters/${characterId}/costumes/${costumeId}/equip`,
     {
       method: 'POST',
-      headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
-      }
     }
   );
 
@@ -247,14 +218,10 @@ export async function equipCostume(characterId: number, costumeId: number): Prom
  * 为角色脱下服装
  */
 export async function unequipCostume(characterId: number, costumeId: number): Promise<void> {
-  const token = getAuthToken();
   const response = await fetch(
     `/api/characters/${characterId}/costumes/${costumeId}/unequip`,
     {
       method: 'POST',
-      headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
-      }
     }
   );
 
@@ -268,14 +235,10 @@ export async function unequipCostume(characterId: number, costumeId: number): Pr
  * 移除角色服装关联
  */
 export async function removeCharacterCostume(characterId: number, costumeId: number): Promise<void> {
-  const token = getAuthToken();
   const response = await fetch(
     `/api/characters/${characterId}/costumes/${costumeId}`,
     {
       method: 'DELETE',
-      headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
-      }
     }
   );
 
@@ -289,12 +252,7 @@ export async function removeCharacterCostume(characterId: number, costumeId: num
  * 获取当前穿戴的服装
  */
 export async function fetchEquippedCostume(characterId: number): Promise<Costume | null> {
-  const token = getAuthToken();
-  const response = await fetch(`/api/characters/${characterId}/equipped-costume`, {
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
-    }
-  });
+  const response = await fetch(`/api/characters/${characterId}/equipped-costume`);
 
   if (!response.ok) {
     const data = await response.json();
@@ -313,12 +271,10 @@ export async function generateCostumeViews(
   costumeId: number,
   params: { imageModel: string; textModel?: string; aspectRatio?: string }
 ): Promise<{ jobId: string; status: string; costumeId: number; message?: string }> {
-  const token = getAuthToken();
   const response = await fetch(`/api/costumes/${costumeId}/generate-views`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
     },
     body: JSON.stringify(params)
   });
@@ -335,12 +291,10 @@ export async function generatePropViews(
   propId: number,
   params: { imageModel: string; textModel?: string; aspectRatio?: string }
 ): Promise<{ jobId: string; status: string; propId: number; message?: string }> {
-  const token = getAuthToken();
   const response = await fetch(`/api/props/${propId}/generate-views`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
     },
     body: JSON.stringify(params)
   });

@@ -7,7 +7,6 @@
  * - 影棚必须存在且有图片（九宫组装图或环境图）
  */
 
-import { getAuthToken } from '../../../services/auth';
 import { batchValidateScenes } from '../../../services/storyboards';
 
 export interface ValidationIssue {
@@ -171,10 +170,7 @@ function validateStudioFields(studio: StudioRecord, locationName: string): Valid
  * 从后端获取指定项目的角色列表
  */
 async function fetchProjectCharacters(projectId: number): Promise<CharacterRecord[]> {
-  const token = getAuthToken();
-  const res = await fetch(`/api/characters/project/${projectId}`, {
-    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-  });
+  const res = await fetch(`/api/characters/project/${projectId}`);
   if (!res.ok) return [];
   const data = await res.json();
   return data.characters || [];
@@ -184,10 +180,7 @@ async function fetchProjectCharacters(projectId: number): Promise<CharacterRecor
  * 从后端获取指定项目的影棚列表
  */
 async function fetchProjectStudios(projectId: number): Promise<StudioRecord[]> {
-  const token = getAuthToken();
-  const res = await fetch(`/api/studios?projectId=${projectId}`, {
-    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-  });
+  const res = await fetch(`/api/studios?projectId=${projectId}`);
   if (!res.ok) return [];
   const data = await res.json();
   return data.studios || [];
@@ -242,10 +235,7 @@ export async function validateFrameReadiness(
   // 3. 通过后端关联表校验（优先使用 storyboardId）
   if (storyboardId) {
     try {
-      const token = getAuthToken();
-      const res = await fetch(`/api/storyboards/${storyboardId}/validate?type=frame`, {
-        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-      });
+      const res = await fetch(`/api/storyboards/${storyboardId}/validate?type=frame`);
       if (res.ok) {
         const data = await res.json();
         if (!data.ready && data.issues) {
@@ -382,15 +372,12 @@ async function validateBatchFrameReadinessLegacy(
   scriptId?: number
 ): Promise<ValidationResult> {
   const allIssues: ValidationIssue[] = [];
-  const token = getAuthToken();
 
   // 逐个分镜通过后端关联表校验
   const validationPromises = scenes.map(async (s) => {
     if (!s.id) return; // 无 storyboardId 跳过
     try {
-      const res = await fetch(`/api/storyboards/${s.id}/validate?type=frame`, {
-        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-      });
+      const res = await fetch(`/api/storyboards/${s.id}/validate?type=frame`);
       if (res.ok) {
         const data = await res.json();
         if (!data.ready && data.issues) {

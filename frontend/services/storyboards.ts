@@ -1,4 +1,3 @@
-import { getAuthToken } from './auth';
 // import type { SketchHistoryEntry } from '../views/SketchStudio/SketchModule/types/sketch'; // 草图功能已集成到魔术空间
 interface SketchHistoryEntry {
   version: number;
@@ -43,21 +42,8 @@ export interface StoryboardTemplate {
   category: string;
 }
 
-function authHeaders(): Record<string, string> {
-  const token = getAuthToken();
-  return token
-    ? {
-        Authorization: `Bearer ${token}`,
-      }
-    : {};
-}
-
 export async function fetchStoryboardTemplates(): Promise<StoryboardTemplate[]> {
-  const res = await fetch('/api/storyboards/templates', {
-    headers: {
-      ...authHeaders(),
-    },
-  });
+  const res = await fetch('/api/storyboards/templates');
 
   if (!res.ok) {
     const data = await res.json().catch(() => null);
@@ -68,11 +54,7 @@ export async function fetchStoryboardTemplates(): Promise<StoryboardTemplate[]> 
 }
 
 export async function fetchStoryboards(scriptId: number): Promise<StoryboardItem[]> {
-  const res = await fetch(`/api/storyboards/${scriptId}`, {
-    headers: {
-      ...authHeaders(),
-    },
-  });
+  const res = await fetch(`/api/storyboards/${scriptId}`);
 
   if (!res.ok) {
     const data = await res.json().catch(() => null);
@@ -87,11 +69,7 @@ export async function fetchStoryboards(scriptId: number): Promise<StoryboardItem
  * 与 fetchStoryboards 配对：剧集分镜走 scriptId，自由分镜走 projectId。
  */
 export async function fetchStandaloneStoryboards(projectId: number): Promise<StoryboardItem[]> {
-  const res = await fetch(`/api/storyboards/project/${projectId}/standalone`, {
-    headers: {
-      ...authHeaders(),
-    },
-  });
+  const res = await fetch(`/api/storyboards/project/${projectId}/standalone`);
 
   if (!res.ok) {
     const data = await res.json().catch(() => null);
@@ -106,7 +84,6 @@ export async function saveStoryboards(scriptId: number, items: StoryboardItem[])
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...authHeaders(),
     },
     body: JSON.stringify({ items }),
   });
@@ -134,7 +111,6 @@ export async function batchValidateScenes(
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...authHeaders(),
     },
     body: JSON.stringify({ sceneIds, scriptId: scriptId || undefined, projectId: projectId || undefined, type }),
   });
@@ -158,7 +134,6 @@ export async function updateSpatialDescription(
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
-      ...authHeaders(),
     },
     body: JSON.stringify({ spatial_description: spatialDescription }),
   });
@@ -191,9 +166,6 @@ export async function uploadSketch(
 
   const res = await fetch(`/api/storyboards/${storyboardId}/sketch`, {
     method: 'POST',
-    headers: {
-      ...authHeaders(),
-    },
     body: formData,
   });
 
@@ -212,9 +184,6 @@ export async function uploadSketch(
 export async function deleteSketch(storyboardId: number): Promise<void> {
   const res = await fetch(`/api/storyboards/${storyboardId}/sketch`, {
     method: 'DELETE',
-    headers: {
-      ...authHeaders(),
-    },
   });
 
   const data = await res.json().catch(() => null);
@@ -236,7 +205,6 @@ export async function updateSketchSettings(
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
-      ...authHeaders(),
     },
     body: JSON.stringify(settings),
   });
@@ -260,7 +228,6 @@ export async function saveSketchData(
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
-      ...authHeaders(),
     },
     body: JSON.stringify({ sketch_data: sketchData }),
   });
@@ -290,9 +257,7 @@ export interface SketchFramesResponse {
  * 获取分镜首尾帧草图信息
  */
 export async function getSketchFrames(storyboardId: number): Promise<SketchFramesResponse> {
-  const res = await fetch(`/api/storyboards/${storyboardId}/sketch-frames`, {
-    headers: authHeaders(),
-  });
+  const res = await fetch(`/api/storyboards/${storyboardId}/sketch-frames`);
 
   const data = await res.json().catch(() => null);
   if (!res.ok) {
@@ -313,7 +278,6 @@ export async function saveFirstSketchData(
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
-      ...authHeaders(),
     },
     body: JSON.stringify({ sketch_data: sketchData }),
   });
@@ -337,7 +301,6 @@ export async function saveLastSketchData(
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
-      ...authHeaders(),
     },
     body: JSON.stringify({ sketch_data: sketchData }),
   });
@@ -359,7 +322,6 @@ export async function deleteSketchFrame(
 ): Promise<void> {
   const res = await fetch(`/api/storyboards/${storyboardId}/${frameType}-sketch`, {
     method: 'DELETE',
-    headers: authHeaders(),
   });
 
   const data = await res.json().catch(() => null);
@@ -415,7 +377,6 @@ export async function generateFromSketch(
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...authHeaders(),
     },
     body: JSON.stringify({
       workflowType: 'sketch_frame_generation',
@@ -456,9 +417,6 @@ export interface LockResult {
 export async function lockStoryboard(storyboardId: number): Promise<LockResult> {
   const res = await fetch(`/api/storyboards/${storyboardId}/lock`, {
     method: 'POST',
-    headers: {
-      ...authHeaders(),
-    },
   });
 
   const data = await res.json().catch(() => null);
@@ -476,9 +434,6 @@ export async function lockStoryboard(storyboardId: number): Promise<LockResult> 
 export async function unlockStoryboard(storyboardId: number): Promise<LockResult> {
   const res = await fetch(`/api/storyboards/${storyboardId}/unlock`, {
     method: 'POST',
-    headers: {
-      ...authHeaders(),
-    },
   });
 
   const data = await res.json().catch(() => null);
@@ -498,7 +453,6 @@ export async function batchLockStoryboards(storyboardIds: number[]): Promise<{ s
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...authHeaders(),
     },
     body: JSON.stringify({ storyboardIds }),
   });
@@ -520,7 +474,6 @@ export async function batchUnlockStoryboards(storyboardIds: number[]): Promise<{
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...authHeaders(),
     },
     body: JSON.stringify({ storyboardIds }),
   });
@@ -553,11 +506,7 @@ export async function getSketchHistory(
   const queryString = searchParams.toString();
   const url = `/api/storyboards/${storyboardId}/sketch/history${queryString ? `?${queryString}` : ''}`;
 
-  const res = await fetch(url, {
-    headers: {
-      ...authHeaders(),
-    },
-  });
+  const res = await fetch(url);
 
   const data = await res.json().catch(() => null);
   if (!res.ok) {
@@ -576,11 +525,7 @@ export async function getSketchHistoryVersion(
   storyboardId: number,
   version: number
 ): Promise<SketchHistoryEntry> {
-  const res = await fetch(`/api/storyboards/${storyboardId}/sketch/history/${version}`, {
-    headers: {
-      ...authHeaders(),
-    },
-  });
+  const res = await fetch(`/api/storyboards/${storyboardId}/sketch/history/${version}`);
 
   const data = await res.json().catch(() => null);
   if (!res.ok) {
@@ -608,9 +553,6 @@ export async function restoreSketchVersion(
 }> {
   const res = await fetch(`/api/storyboards/${storyboardId}/sketch/restore/${version}`, {
     method: 'POST',
-    headers: {
-      ...authHeaders(),
-    },
   });
 
   const data = await res.json().catch(() => null);

@@ -9,7 +9,7 @@ import { ThemeProvider } from './contexts/ThemeContext';
 import { LanguageProvider } from './contexts/LanguageContext';
 import { installOfflineRouter } from './services/localApiRouter';
 
-// 桌面离线模式：安装 /api 本地路由拦截器（须在业务请求发起前）
+// 本地实现唯一路径：应用启动即安装 /api 本地路由拦截器（须在业务请求发起前）
 installOfflineRouter();
 
 const rootElement = document.getElementById('root');

@@ -5,7 +5,6 @@ import { ImageIcon, Video, Film, Camera, Users, MapPin, Zap, X, Trash2, ZoomIn, 
 import { StoryboardScene, DialogueLine } from './useSceneManager';
 import { TaskState } from '../../hooks/useTaskRunner';
 import MagicSpacePanel, { CameraGenerateParams, PaintGenerateParams, SketchGenerateParams } from './MagicSpace';
-import { getAuthToken } from '../../services/auth';
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import { validateFrameReadiness, formatValidationMessage } from './utils/validateFrameReadiness';
@@ -84,7 +83,6 @@ const AnchoredPopover: React.FC<{
   );
 };
 
-
 /** 角色选择器：Chip 标签 + 添加下拉 + 点击预览角色长相（增强：显示白膜/服装状态） */
 const CharacterTagSelector: React.FC<{
   characters: string[];
@@ -133,7 +131,7 @@ const CharacterTagSelector: React.FC<{
 
   return (
     <div ref={containerRef} className="relative inline-flex items-center gap-1 flex-wrap">
-      <Users className="w-3 h-3 text-[var(--text-muted)] shrink-0" />
+      <Users className="w-3 h-3 text-(--text-muted) shrink-0" />
       {characters.map(name => {
         const charData = projectCharacters.find(c => c.name === name);
         const charImageUrl = charData?.active_state_image_url || charData?.base_front_view_url || charData?.front_view_url || charData?.image_url;
@@ -187,19 +185,19 @@ const CharacterTagSelector: React.FC<{
       })}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="w-4 h-4 flex items-center justify-center rounded bg-[var(--accent)]/20 text-[var(--accent)] hover:bg-[var(--accent)]/30 transition-colors"
+        className="w-4 h-4 flex items-center justify-center rounded bg-(--accent)/20 text-(--accent) hover:bg-(--accent)/30 transition-colors"
         title="添加角色"
       >
         <Plus className="w-3 h-3" />
       </button>
 
       {isOpen && (
-        <AnchoredPopover anchorRef={containerRef} className="w-56 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg shadow-xl p-2 space-y-1">
-          <div className="flex items-center gap-1 border-b border-[var(--border-color)] pb-1 mb-1">
-            <Search className="w-3 h-3 text-[var(--text-muted)]" />
+        <AnchoredPopover anchorRef={containerRef} className="w-56 bg-(--bg-card) border border-(--border-color) rounded-lg shadow-xl p-2 space-y-1">
+          <div className="flex items-center gap-1 border-b border-(--border-color) pb-1 mb-1">
+            <Search className="w-3 h-3 text-(--text-muted)" />
             <input
               ref={inputRef}
-              className="flex-1 bg-transparent text-xs text-[var(--text-primary)] placeholder-[var(--text-muted)] outline-none"
+              className="flex-1 bg-transparent text-xs text-(--text-primary) placeholder-(--text-muted) outline-none"
               placeholder="搜索或输入新角色名..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -208,7 +206,7 @@ const CharacterTagSelector: React.FC<{
           </div>
           <div className="max-h-36 overflow-y-auto space-y-0.5">
             {filtered.length === 0 && !search.trim() && (
-              <div className="text-xs text-[var(--text-muted)] px-2 py-1">项目暂无角色资源</div>
+              <div className="text-xs text-(--text-muted) px-2 py-1">项目暂无角色资源</div>
             )}
             {filtered.map(c => {
               const selected = characters.includes(c.name);
@@ -221,8 +219,8 @@ const CharacterTagSelector: React.FC<{
                   onClick={() => !isDisabled && toggleCharacter(c.name)}
                   className={`w-full text-left px-2 py-1 rounded text-xs transition-colors flex items-center gap-2 ${
                     isDisabled
-                      ? 'opacity-50 cursor-not-allowed text-[var(--text-muted)]'
-                      : selected ? 'bg-blue-500/20 text-blue-400' : 'hover:bg-[var(--bg-card-hover)] text-[var(--text-secondary)]'
+                      ? 'opacity-50 cursor-not-allowed text-(--text-muted)'
+                      : selected ? 'bg-blue-500/20 text-blue-400' : 'hover:bg-(--bg-card-hover) text-(--text-secondary)'
                   }`}
                   title={isDisabled ? '请先生成白膜设定图后再添加到分镜' : ''}
                 >
@@ -248,7 +246,7 @@ const CharacterTagSelector: React.FC<{
           {search.trim() && !projectCharacters.find(c => c.name === search.trim()) && (
             <button
               onClick={addCustom}
-              className="w-full text-left px-2 py-1 rounded text-xs text-[var(--accent)] hover:bg-[var(--accent)]/10 transition-colors flex items-center gap-1"
+              className="w-full text-left px-2 py-1 rounded text-xs text-(--accent) hover:bg-(--accent)/10 transition-colors flex items-center gap-1"
             >
               <Plus className="w-3 h-3" /> 添加自定义角色 "{search.trim()}"
             </button>
@@ -305,7 +303,7 @@ const CharacterTagSelector: React.FC<{
           {/* 全屏放大层 */}
           <div
             id="char-fullscreen-preview"
-            className="fixed inset-0 z-[60] hidden items-center justify-center bg-black/90 backdrop-blur-sm"
+            className="fixed inset-0 z-60 hidden items-center justify-center bg-black/90 backdrop-blur-sm"
             onClick={() => {
               const overlay = document.getElementById('char-fullscreen-preview');
               if (overlay) overlay.style.display = 'none';
@@ -381,9 +379,9 @@ const PropsTagSelector: React.FC<{
 
   return (
     <div ref={containerRef} className="relative inline-flex items-center gap-1 flex-wrap">
-      <Package className="w-3 h-3 text-[var(--text-muted)] shrink-0" />
+      <Package className="w-3 h-3 text-(--text-muted) shrink-0" />
       {selectedProps.length === 0 && (
-        <span className="text-[var(--text-muted)] text-xs">道具</span>
+        <span className="text-(--text-muted) text-xs">道具</span>
       )}
       {selectedProps.map(name => {
         const propData = projectProps.find(p => p.name === name);
@@ -411,12 +409,12 @@ const PropsTagSelector: React.FC<{
       </button>
 
       {isOpen && (
-        <AnchoredPopover anchorRef={containerRef} className="w-48 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg shadow-xl p-2 space-y-1">
-          <div className="flex items-center gap-1 border-b border-[var(--border-color)] pb-1 mb-1">
-            <Search className="w-3 h-3 text-[var(--text-muted)]" />
+        <AnchoredPopover anchorRef={containerRef} className="w-48 bg-(--bg-card) border border-(--border-color) rounded-lg shadow-xl p-2 space-y-1">
+          <div className="flex items-center gap-1 border-b border-(--border-color) pb-1 mb-1">
+            <Search className="w-3 h-3 text-(--text-muted)" />
             <input
               ref={inputRef}
-              className="flex-1 bg-transparent text-xs text-[var(--text-primary)] placeholder-[var(--text-muted)] outline-none"
+              className="flex-1 bg-transparent text-xs text-(--text-primary) placeholder-(--text-muted) outline-none"
               placeholder="搜索或输入道具名..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -425,7 +423,7 @@ const PropsTagSelector: React.FC<{
           </div>
           <div className="max-h-36 overflow-y-auto space-y-0.5">
             {filtered.length === 0 && !search.trim() && (
-              <div className="text-xs text-[var(--text-muted)] px-2 py-1">项目暂无道具资源</div>
+              <div className="text-xs text-(--text-muted) px-2 py-1">项目暂无道具资源</div>
             )}
             {filtered.map(p => {
               const selected = selectedProps.includes(p.name);
@@ -434,7 +432,7 @@ const PropsTagSelector: React.FC<{
                   key={p.id}
                   onClick={() => toggleProp(p.name)}
                   className={`w-full text-left px-2 py-1 rounded text-xs transition-colors flex items-center gap-2 ${
-                    selected ? 'bg-teal-500/20 text-teal-400' : 'hover:bg-[var(--bg-card-hover)] text-[var(--text-secondary)]'
+                    selected ? 'bg-teal-500/20 text-teal-400' : 'hover:bg-(--bg-card-hover) text-(--text-secondary)'
                   }`}
                 >
                   {selected ? <Check className="w-3 h-3 shrink-0" /> : <div className="w-3 h-3 shrink-0" />}
@@ -497,7 +495,7 @@ const SceneDropdownSelector: React.FC<{
     <div ref={containerRef} className="relative inline-flex items-center gap-1">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-1 text-[var(--text-muted)] cursor-pointer hover:text-[var(--accent)] transition-colors text-xs group"
+        className="flex items-center gap-1 text-(--text-muted) cursor-pointer hover:text-(--accent) transition-colors text-xs group"
         title="点击选择影棚"
       >
         <MapPin className="w-3 h-3" />
@@ -506,12 +504,12 @@ const SceneDropdownSelector: React.FC<{
       </button>
 
       {isOpen && (
-        <AnchoredPopover anchorRef={containerRef} className="w-56 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg shadow-xl p-2 space-y-1">
-          <div className="flex items-center gap-1 border-b border-[var(--border-color)] pb-1 mb-1">
-            <Search className="w-3 h-3 text-[var(--text-muted)]" />
+        <AnchoredPopover anchorRef={containerRef} className="w-56 bg-(--bg-card) border border-(--border-color) rounded-lg shadow-xl p-2 space-y-1">
+          <div className="flex items-center gap-1 border-b border-(--border-color) pb-1 mb-1">
+            <Search className="w-3 h-3 text-(--text-muted)" />
             <input
               ref={inputRef}
-              className="flex-1 bg-transparent text-xs text-[var(--text-primary)] placeholder-[var(--text-muted)] outline-none"
+              className="flex-1 bg-transparent text-xs text-(--text-primary) placeholder-(--text-muted) outline-none"
               placeholder="搜索影棚..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -519,14 +517,14 @@ const SceneDropdownSelector: React.FC<{
           </div>
           <div className="max-h-36 overflow-y-auto space-y-0.5">
             {filtered.length === 0 && !search.trim() && (
-              <div className="text-xs text-[var(--text-muted)] px-2 py-1">项目暂无影棚资源</div>
+              <div className="text-xs text-(--text-muted) px-2 py-1">项目暂无影棚资源</div>
             )}
             {filtered.map(s => (
               <button
                 key={s.id}
                 onClick={() => selectScene(s.name)}
                 className={`w-full text-left px-2 py-1 rounded text-xs transition-colors ${
-                  s.name === location ? 'bg-green-500/20 text-green-400' : 'hover:bg-[var(--bg-card-hover)] text-[var(--text-secondary)]'
+                  s.name === location ? 'bg-green-500/20 text-green-400' : 'hover:bg-(--bg-card-hover) text-(--text-secondary)'
                 }`}
               >
                 {s.name}
@@ -536,7 +534,7 @@ const SceneDropdownSelector: React.FC<{
           {search.trim() && !projectScenes.find(s => s.name === search.trim()) && (
             <button
               onClick={() => selectScene(search.trim())}
-              className="w-full text-left px-2 py-1 rounded text-xs text-[var(--accent)] hover:bg-[var(--accent)]/10 transition-colors flex items-center gap-1"
+              className="w-full text-left px-2 py-1 rounded text-xs text-(--accent) hover:bg-(--accent)/10 transition-colors flex items-center gap-1"
             >
               <Plus className="w-3 h-3" /> 使用自定义影棚 "{search.trim()}"
             </button>
@@ -606,31 +604,31 @@ const DurationSelector: React.FC<{
     <div ref={containerRef} className="relative inline-flex items-center gap-1">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-1 text-[var(--text-muted)] cursor-pointer hover:text-[var(--accent)] transition-colors text-xs group"
+        className="flex items-center gap-1 text-(--text-muted) cursor-pointer hover:text-(--accent) transition-colors text-xs group"
         title="点击选择时长"
       >
         <Clock className="w-3 h-3" />
-        <span className={!isPresetValue && duration ? 'text-[var(--accent)] font-medium' : ''}>{duration || 3}s</span>
+        <span className={!isPresetValue && duration ? 'text-(--accent) font-medium' : ''}>{duration || 3}s</span>
         <ChevronDown className="w-2.5 h-2.5 opacity-60 group-hover:opacity-100 transition-opacity" />
       </button>
 
       {isOpen && (
-        <AnchoredPopover anchorRef={containerRef} className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg shadow-xl py-1 min-w-[80px] max-h-[240px] overflow-y-auto">
+        <AnchoredPopover anchorRef={containerRef} className="bg-(--bg-card) border border-(--border-color) rounded-lg shadow-xl py-1 min-w-20 max-h-60 overflow-y-auto">
           {durationOptions.map(val => (
             <button
               key={val}
               onClick={() => selectDuration(val)}
               className={`w-full px-3 py-1.5 text-left text-xs transition-colors ${
                 duration === val
-                  ? 'text-[var(--accent)] bg-[var(--accent)]/10 font-medium'
-                  : 'text-[var(--text-secondary)] hover:bg-[var(--bg-card-hover)] hover:text-[var(--text-primary)]'
+                  ? 'text-(--accent) bg-(--accent)/10 font-medium'
+                  : 'text-(--text-secondary) hover:bg-(--bg-card-hover) hover:text-(--text-primary)'
               }`}
             >
               {val}s
             </button>
           ))}
           {/* 自定义输入 */}
-          <div className="border-t border-[var(--border-color)] mt-1 pt-1 px-2">
+          <div className="border-t border-(--border-color) mt-1 pt-1 px-2">
             {isCustomMode ? (
               <div className="flex items-center gap-1">
                 <input
@@ -643,18 +641,18 @@ const DurationSelector: React.FC<{
                   onChange={(e) => setCustomValue(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') handleCustomConfirm(); if (e.key === 'Escape') { setIsCustomMode(false); setCustomValue(''); } }}
                   placeholder="秒数"
-                  className="w-16 px-1.5 py-1 text-xs bg-[var(--bg-input)] border border-[var(--border-color)] rounded text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
+                  className="w-16 px-1.5 py-1 text-xs bg-(--bg-input) border border-(--border-color) rounded text-(--text-primary) outline-none focus:border-(--accent)"
                 />
                 <button
                   onClick={handleCustomConfirm}
-                  className="px-1.5 py-1 text-xs text-[var(--accent)] hover:bg-[var(--accent)]/10 rounded transition-colors"
+                  className="px-1.5 py-1 text-xs text-(--accent) hover:bg-(--accent)/10 rounded transition-colors"
                   title="确认"
                 >
                   <Check className="w-3 h-3" />
                 </button>
                 <button
                   onClick={() => { setIsCustomMode(false); setCustomValue(''); }}
-                  className="px-1.5 py-1 text-xs text-[var(--text-muted)] hover:bg-[var(--bg-card-hover)] rounded transition-colors"
+                  className="px-1.5 py-1 text-xs text-(--text-muted) hover:bg-(--bg-card-hover) rounded transition-colors"
                   title="取消"
                 >
                   <X className="w-3 h-3" />
@@ -665,8 +663,8 @@ const DurationSelector: React.FC<{
                 onClick={() => { setIsCustomMode(true); setCustomValue(String(duration || '')); }}
                 className={`w-full py-1.5 text-left text-xs transition-colors ${
                   !isPresetValue && duration
-                    ? 'text-[var(--accent)] bg-[var(--accent)]/10 font-medium'
-                    : 'text-[var(--text-muted)] hover:bg-[var(--bg-card-hover)] hover:text-[var(--text-primary)]'
+                    ? 'text-(--accent) bg-(--accent)/10 font-medium'
+                    : 'text-(--text-muted) hover:bg-(--bg-card-hover) hover:text-(--text-primary)'
                 }`}
               >
                 {!isPresetValue && duration ? `${duration}s (自定义)` : '自定义时长...'}
@@ -777,14 +775,12 @@ const DescriptionEditor: React.FC<{
       // 图片提示词持久化
       if (imageRes?.optimized) {
         try {
-          const token = getAuthToken();
           const body: any = { prompt_template: imageRes.optimized };
           if (imageRes.negativePrompt) body.negative_prompt = imageRes.negativePrompt;
           const res = await fetch(`/api/storyboards/${scene.id}/content`, {
             method: 'PATCH',
             headers: {
               'Content-Type': 'application/json',
-              ...(token ? { Authorization: `Bearer ${token}` } : {})
             },
             body: JSON.stringify(body)
           });
@@ -798,7 +794,6 @@ const DescriptionEditor: React.FC<{
       const actionAnalysis = videoRes?.actionAnalysis;
       if (videoRes) {
         try {
-          const token = getAuthToken();
           const body: any = {};
 
           if (actionAnalysis?.useEndFrame === false) {
@@ -832,7 +827,6 @@ const DescriptionEditor: React.FC<{
               method: 'PATCH',
               headers: {
                 'Content-Type': 'application/json',
-                ...(token ? { Authorization: `Bearer ${token}` } : {})
               },
               body: JSON.stringify(body)
             });
@@ -865,26 +859,26 @@ const DescriptionEditor: React.FC<{
     <div className="h-full flex flex-col gap-2">
       {/* 原始分镜描述 */}
       <div className="flex items-center justify-between">
-        <span className="text-xs font-medium text-[var(--text-muted)]">
+        <span className="text-xs font-medium text-(--text-muted)">
           分镜描述（AI将根据此描述生成图片和视频提示词）
         </span>
-        {isSaving && <span className="text-[10px] text-[var(--text-muted)]">保存中...</span>}
+        {isSaving && <span className="text-[10px] text-(--text-muted)">保存中...</span>}
       </div>
       <textarea
         value={text}
         onChange={(e) => handleChange(e.target.value)}
         disabled={scene.isLocked}
-        className="flex-1 w-full bg-[var(--bg-input)] border border-[var(--border-color)] rounded-lg p-3 text-sm text-[var(--text-primary)] resize-none focus:outline-none focus:border-[var(--accent)] overflow-y-auto"
+        className="flex-1 w-full bg-(--bg-input) border border-(--border-color) rounded-lg p-3 text-sm text-(--text-primary) resize-none focus:outline-none focus:border-(--accent) overflow-y-auto"
         placeholder="描述这个分镜的画面内容：影棚、角色、动作、情绪、镜头等..."
       />
       <div className="flex items-center justify-between">
-        <span className="text-xs text-[var(--text-muted)]">
+        <span className="text-xs text-(--text-muted)">
           {text.length} 字
         </span>
         <button
           onClick={handleDualOptimize}
           disabled={isOptimizing || !text.trim() || scene.isLocked}
-          className="px-3 py-1.5 rounded-lg bg-[var(--accent)] text-white text-xs font-medium hover:bg-[var(--accent)]/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+          className="px-3 py-1.5 rounded-lg bg-(--accent) text-white text-xs font-medium hover:bg-(--accent)/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
         >
           {isOptimizing ? (
             <Loader2 className="w-3 h-3 animate-spin" />
@@ -898,14 +892,14 @@ const DescriptionEditor: React.FC<{
       {/* AI优化后的图片提示词（只读展示） */}
       {scene.description && (
         <>
-          <div className="border-t border-[var(--border-color)] pt-2 mt-1">
+          <div className="border-t border-(--border-color) pt-2 mt-1">
             <div className="flex items-center justify-between">
               <span className="text-xs font-medium text-blue-400">
                 图片提示词（AI优化后）
               </span>
-              <span className="text-[10px] text-[var(--text-muted)]">只读</span>
+              <span className="text-[10px] text-(--text-muted)">只读</span>
             </div>
-            <div className="mt-1.5 w-full bg-blue-500/5 border border-blue-500/20 rounded-lg p-3 text-sm text-[var(--text-secondary)] overflow-y-auto max-h-[120px]">
+            <div className="mt-1.5 w-full bg-blue-500/5 border border-blue-500/20 rounded-lg p-3 text-sm text-(--text-secondary) overflow-y-auto max-h-30">
               {scene.description}
             </div>
           </div>
@@ -1082,10 +1076,7 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
     if (!scene) return;
     setHistoryLoading(true);
     try {
-      const token = getAuthToken();
-      const res = await fetch(`/api/storyboards/${scene.id}/frame-history`, {
-        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) }
-      });
+      const res = await fetch(`/api/storyboards/${scene.id}/frame-history`);
       if (res.ok) {
         const data = await res.json();
         const versions = (data.versions || []).map((v: any, idx: number) => ({
@@ -1108,7 +1099,6 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
   const restoreHistoryVersion = async (version: typeof historyVersions[0]) => {
     if (!scene || !version) return;
     try {
-      const token = getAuthToken();
       const body: Record<string, unknown> = {};
       if (typeof version.id === 'string' && version.id.startsWith('v')) {
         body.historyId = parseInt(version.id.split('-')[0].replace('v', ''));
@@ -1119,7 +1109,6 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
         body: JSON.stringify(body)
       });
@@ -1186,10 +1175,7 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
   const validateForVideo = async (): Promise<{ ready: boolean; message?: string }> => {
     if (!scene) return { ready: true };
     try {
-      const token = getAuthToken();
-      const res = await fetch(`/api/storyboards/${scene.id}/validate?type=video`, {
-        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) }
-      });
+      const res = await fetch(`/api/storyboards/${scene.id}/validate?type=video`);
       if (!res.ok) return { ready: true };
       const data = await res.json();
       if (!data.ready) {
@@ -1298,12 +1284,10 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
       return;
     }
     try {
-      const token = getAuthToken();
       await fetch(`/api/storyboards/${scene.id}/media`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
         body: JSON.stringify({ startFrame: null, endFrame: null })
       });
@@ -1335,12 +1319,10 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
     });
     if (!confirmed) return;
     try {
-      const token = getAuthToken();
       await fetch(`/api/storyboards/${scene.id}/media`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
         body: JSON.stringify({ firstFrameUrl: null })
       });
@@ -1371,12 +1353,10 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
     });
     if (!confirmed) return;
     try {
-      const token = getAuthToken();
       await fetch(`/api/storyboards/${scene.id}/media`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
         body: JSON.stringify({ lastFrameUrl: null })
       });
@@ -1399,12 +1379,10 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
       return;
     }
     try {
-      const token = getAuthToken();
       await fetch(`/api/storyboards/${scene.id}/media`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
         body: JSON.stringify({ videoUrl: null })
       });
@@ -1449,10 +1427,10 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
   // 空状态
   if (!scene) {
     return (
-      <div className="h-full flex items-center justify-center bg-[var(--bg-app)]">
+      <div className="h-full flex items-center justify-center bg-(--bg-app)">
         <div className="text-center">
-          <Film className="w-16 h-16 mx-auto mb-4 text-[var(--text-muted)] opacity-30" />
-          <p className="text-sm text-[var(--text-muted)]">选择一个分镜以查看详情</p>
+          <Film className="w-16 h-16 mx-auto mb-4 text-(--text-muted) opacity-30" />
+          <p className="text-sm text-(--text-muted)">选择一个分镜以查看详情</p>
         </div>
       </div>
     );
@@ -1473,10 +1451,10 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
   };
 
   return (
-    <div className="h-full flex flex-col bg-[var(--bg-app)]">
+    <div className="h-full flex flex-col bg-(--bg-app)">
       {/* 草图绘制面板 - 直接嵌入（草图阶段） */}
       {showMagicSpace && previewStage === 'sketch' && onGenerateWithSketch ? (
-        <div className="h-full flex flex-col bg-[var(--bg-app)]">
+        <div className="h-full flex flex-col bg-(--bg-app)">
           <MagicSpacePanel
             sourceImageUrl={scene.startFrame || scene.imageUrl || ''}
             aspectRatio={scene.hasAction ? '16:9' : '16:9'}
@@ -1497,7 +1475,7 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
         </div>
       ) : showMagicSpace && previewStage === 'first' && onGenerateWithSketch ? (
         // 首帧草图绘制面板
-        <div className="h-full flex flex-col bg-[var(--bg-app)]">
+        <div className="h-full flex flex-col bg-(--bg-app)">
           <MagicSpacePanel
             sourceImageUrl={scene.startFrame || scene.imageUrl || ''}
             aspectRatio={scene.hasAction ? '16:9' : '16:9'}
@@ -1516,14 +1494,12 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                   ia[i] = byteString.charCodeAt(i);
                 }
                 const blob = new Blob([ab], { type: mimeString });
-                const token = getAuthToken();
                 const formData = new FormData();
                 formData.append('file', blob, `start_sketch_${scene.id}_${Date.now()}.png`);
                 formData.append('path_prefix', 'images/sketches');
 
                 const uploadRes = await fetch('/api/upload/general', {
                   method: 'POST',
-                  headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
                   body: formData,
                 });
 
@@ -1552,7 +1528,7 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
         </div>
       ) : showMagicSpace && previewStage === 'last' && onGenerateWithSketch ? (
         // 尾帧草图绘制面板
-        <div className="h-full flex flex-col bg-[var(--bg-app)]">
+        <div className="h-full flex flex-col bg-(--bg-app)">
           <MagicSpacePanel
             sourceImageUrl={scene.endFrame || scene.startFrame || scene.imageUrl || ''}
             aspectRatio={scene.hasAction ? '16:9' : '16:9'}
@@ -1571,14 +1547,12 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                   ia[i] = byteString.charCodeAt(i);
                 }
                 const blob = new Blob([ab], { type: mimeString });
-                const token = getAuthToken();
                 const formData = new FormData();
                 formData.append('file', blob, `end_sketch_${scene.id}_${Date.now()}.png`);
                 formData.append('path_prefix', 'images/sketches');
 
                 const uploadRes = await fetch('/api/upload/general', {
                   method: 'POST',
-                  headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
                   body: formData,
                 });
 
@@ -1644,14 +1618,14 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
       {/* 预览区域 */}
       <div className="flex-1 flex flex-col min-h-0 relative">
         {/* 阶段导航栏 - 左上角：统一标签样式 */}
-        <div className="absolute top-3 left-3 z-10 flex items-center gap-1 bg-[var(--bg-card)]/90 backdrop-blur-sm rounded-lg p-1 border border-[var(--border-color)] shadow-lg">
+        <div className="absolute top-3 left-3 z-10 flex items-center gap-1 bg-(--bg-card)/90 backdrop-blur-sm rounded-lg p-1 border border-(--border-color) shadow-lg">
           {/* 草图阶段 */}
           <button
             onClick={() => setPreviewStage('sketch')}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
               previewStage === 'sketch'
-                ? 'bg-[var(--accent)] text-white shadow-sm'
-                : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
+                ? 'bg-(--accent) text-white shadow-sm'
+                : 'text-(--text-secondary) hover:text-(--text-primary) hover:bg-(--bg-hover)'
             }`}
           >
             <Pencil className="w-3.5 h-3.5" />
@@ -1666,8 +1640,8 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
             onClick={() => setPreviewStage('first')}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
               previewStage === 'first'
-                ? 'bg-[var(--accent)] text-white shadow-sm'
-                : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
+                ? 'bg-(--accent) text-white shadow-sm'
+                : 'text-(--text-secondary) hover:text-(--text-primary) hover:bg-(--bg-hover)'
             }`}
           >
             <Camera className="w-3.5 h-3.5" />
@@ -1683,8 +1657,8 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
               onClick={() => setPreviewStage('last')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
                 previewStage === 'last'
-                  ? 'bg-[var(--accent)] text-white shadow-sm'
-                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
+                  ? 'bg-(--accent) text-white shadow-sm'
+                  : 'text-(--text-secondary) hover:text-(--text-primary) hover:bg-(--bg-hover)'
               }`}
             >
               <ImageIcon className="w-3.5 h-3.5" />
@@ -1700,8 +1674,8 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
             onClick={() => setPreviewStage('video')}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
               previewStage === 'video'
-                ? 'bg-[var(--accent)] text-white shadow-sm'
-                : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
+                ? 'bg-(--accent) text-white shadow-sm'
+                : 'text-(--text-secondary) hover:text-(--text-primary) hover:bg-(--bg-hover)'
             }`}
           >
             <Video className="w-3.5 h-3.5" />
@@ -1717,7 +1691,7 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
           {/* 生成中遮罩层 */}
           {isGenerating && (
             <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/60 backdrop-blur-sm rounded-lg">
-              <Loader2 className="w-10 h-10 text-[var(--accent)] animate-spin mb-3" />
+              <Loader2 className="w-10 h-10 text-(--accent) animate-spin mb-3" />
               <p className="text-sm font-medium text-white mb-2">
                 {isGeneratingImage
                   ? (scene.hasAction ? '正在生成首尾帧...' : '正在生成图片...')
@@ -1727,7 +1701,7 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                 <div className="w-48 flex flex-col items-center gap-1.5">
                   <div className="w-full h-1.5 bg-white/20 rounded-full overflow-hidden">
                     <div
-                      className="h-full bg-[var(--accent)] rounded-full transition-all duration-500 ease-out"
+                      className="h-full bg-(--accent) rounded-full transition-all duration-500 ease-out"
                       style={{ width: `${Math.min(100, generatingProgress)}%` }}
                     />
                   </div>
@@ -1747,7 +1721,7 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                   <img
                     src={scene.sketchUrl}
                     alt="分镜草图"
-                    className="max-w-full max-h-full rounded-lg shadow-2xl object-contain cursor-zoom-in hover:ring-2 hover:ring-[var(--accent)]/50 transition-all"
+                    className="max-w-full max-h-full rounded-lg shadow-2xl object-contain cursor-zoom-in hover:ring-2 hover:ring-(--accent)/50 transition-all"
                     style={{ maxHeight: 'calc(100% - 2rem)' }}
                     onClick={() => {
                       setLightboxZoom(1);
@@ -1847,10 +1821,10 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                       <span className="text-xs">历史</span>
                     </button>
                   </div>
-                  <div className="w-32 h-20 rounded-lg border-2 border-dashed border-[var(--border-color)] flex items-center justify-center mb-4">
-                    <Pencil className="w-8 h-8 text-[var(--text-muted)]" />
+                  <div className="w-32 h-20 rounded-lg border-2 border-dashed border-(--border-color) flex items-center justify-center mb-4">
+                    <Pencil className="w-8 h-8 text-(--text-muted)" />
                   </div>
-                  <p className="text-sm text-[var(--text-muted)] mb-4">暂无草图</p>
+                  <p className="text-sm text-(--text-muted) mb-4">暂无草图</p>
                   {onGenerateWithSketch && (
                     <Button
                       size="sm"
@@ -1879,7 +1853,7 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                     key={scene.startFrame}
                     src={bustCache(scene.startFrame) || scene.startFrame}
                     alt={`分镜 ${sceneIndex + 1} - 首帧`}
-                    className="max-w-full max-h-full rounded-lg shadow-2xl object-contain cursor-zoom-in hover:ring-2 hover:ring-[var(--accent)]/50 transition-all"
+                    className="max-w-full max-h-full rounded-lg shadow-2xl object-contain cursor-zoom-in hover:ring-2 hover:ring-(--accent)/50 transition-all"
                     style={{ maxHeight: 'calc(100% - 2rem)' }}
                     onClick={openLightbox}
                     draggable
@@ -1944,8 +1918,8 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                         setShowHistory(!showHistory);
                       }}
                       disabled={isGenerating || historyLoading}
-                      className={`p-2 rounded-lg bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-muted)] transition-all flex items-center gap-1.5 ${
-                        isGenerating || historyLoading ? 'opacity-40 cursor-not-allowed' : 'hover:border-[var(--accent)]/50 hover:text-[var(--accent)]'
+                      className={`p-2 rounded-lg bg-(--bg-card) border border-(--border-color) text-(--text-muted) transition-all flex items-center gap-1.5 ${
+                        isGenerating || historyLoading ? 'opacity-40 cursor-not-allowed' : 'hover:border-(--accent)/50 hover:text-(--accent)'
                       }`}
                       title="历史版本"
                     >
@@ -1955,22 +1929,20 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                   </div>
 
                   {/* 空状态图标区域 */}
-                  <div className="relative mb-6">
-                    <div className="w-28 h-28 rounded-2xl bg-gradient-to-br from-[var(--accent)]/10 to-[var(--accent)]/5 border border-[var(--accent)]/20 flex items-center justify-center">
-                      <div className="w-20 h-20 rounded-xl bg-[var(--bg-card)] border border-[var(--border-color)] flex items-center justify-center shadow-inner">
-                        <Camera className="w-10 h-10 text-[var(--accent)]/60" />
+                  <div className="relative mb-5 flex items-center justify-center">
+                    <div className="absolute w-24 h-24 rounded-full bg-(--accent)/15 blur-2xl" />
+                    <div className="relative w-24 h-24 rounded-3xl bg-linear-to-br from-(--accent)/12 to-transparent border border-(--accent)/20 flex items-center justify-center">
+                      <div className="w-17 h-17 rounded-2xl bg-(--bg-card) border border-(--border-color) shadow-lg flex items-center justify-center">
+                        <Camera className="w-9 h-9 text-(--accent)/70" strokeWidth={1.5} />
                       </div>
                     </div>
-                    {/* 装饰性元素 */}
-                    <div className="absolute -top-1 -right-1 w-6 h-6 rounded-full bg-[var(--accent)]/20 animate-pulse" />
-                    <div className="absolute -bottom-1 -left-1 w-4 h-4 rounded-full bg-[var(--accent)]/10" />
                   </div>
 
                   {/* 标题和描述 */}
-                  <h3 className="text-base font-semibold text-[var(--text-primary)] mb-1.5">
+                  <h3 className="text-[15px] font-semibold text-(--text-primary) mb-1">
                     {scene.hasAction ? '暂无首帧' : '暂无图片'}
                   </h3>
-                  <p className="text-sm text-[var(--text-muted)] mb-6 max-w-[240px]">
+                  <p className="text-[13px] text-(--text-muted) mb-6 max-w-60 leading-relaxed">
                     {scene.hasAction ? '生成首尾帧或绘制草图开始创作' : '生成图片开始创作'}
                   </p>
 
@@ -1999,7 +1971,7 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                         <Button
                           size="sm"
                           variant="flat"
-                          className="px-4 bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:border-amber-500/50 hover:text-amber-500"
+                          className="px-4 bg-(--bg-card) border border-(--border-color) text-(--text-secondary) hover:border-amber-500/50 hover:text-amber-500"
                           startContent={<Pencil className="w-4 h-4" />}
                           onPress={() => {
                             setMagicSpaceInitialMode('sketch');
@@ -2011,9 +1983,9 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                       )}
                     </div>
                     {/* 功能说明 */}
-                    <div className="flex items-center gap-6 text-xs text-[var(--text-muted)]">
+                    <div className="flex items-center gap-6 text-xs text-(--text-muted)">
                       <div className="flex items-center gap-1.5">
-                        <div className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]" />
+                        <div className="w-1.5 h-1.5 rounded-full bg-(--accent)" />
                         <span>AI 自动生成画面</span>
                       </div>
                       {scene.hasAction && onGenerateWithSketch && (
@@ -2039,7 +2011,7 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                     key={scene.endFrame}
                     src={bustCache(scene.endFrame) || scene.endFrame}
                     alt={`分镜 ${sceneIndex + 1} - 尾帧`}
-                    className="max-w-full max-h-full rounded-lg shadow-2xl object-contain cursor-zoom-in hover:ring-2 hover:ring-[var(--accent)]/50 transition-all"
+                    className="max-w-full max-h-full rounded-lg shadow-2xl object-contain cursor-zoom-in hover:ring-2 hover:ring-(--accent)/50 transition-all"
                     style={{ maxHeight: 'calc(100% - 2rem)' }}
                     onClick={openLightbox}
                     draggable
@@ -2104,8 +2076,8 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                         setShowHistory(!showHistory);
                       }}
                       disabled={isGenerating || historyLoading}
-                      className={`p-2 rounded-lg bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-muted)] transition-all flex items-center gap-1.5 ${
-                        isGenerating || historyLoading ? 'opacity-40 cursor-not-allowed' : 'hover:border-[var(--accent)]/50 hover:text-[var(--accent)]'
+                      className={`p-2 rounded-lg bg-(--bg-card) border border-(--border-color) text-(--text-muted) transition-all flex items-center gap-1.5 ${
+                        isGenerating || historyLoading ? 'opacity-40 cursor-not-allowed' : 'hover:border-(--accent)/50 hover:text-(--accent)'
                       }`}
                       title="历史版本"
                     >
@@ -2115,22 +2087,20 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                   </div>
 
                   {/* 空状态图标区域 */}
-                  <div className="relative mb-6">
-                    <div className="w-28 h-28 rounded-2xl bg-gradient-to-br from-rose-500/10 to-rose-500/5 border border-rose-500/20 flex items-center justify-center">
-                      <div className="w-20 h-20 rounded-xl bg-[var(--bg-card)] border border-[var(--border-color)] flex items-center justify-center shadow-inner">
-                        <ImageIcon className="w-10 h-10 text-rose-500/60" />
+                  <div className="relative mb-5 flex items-center justify-center">
+                    <div className="absolute w-24 h-24 rounded-full bg-rose-500/15 blur-2xl" />
+                    <div className="relative w-24 h-24 rounded-3xl bg-linear-to-br from-rose-500/12 to-transparent border border-rose-500/20 flex items-center justify-center">
+                      <div className="w-17 h-17 rounded-2xl bg-(--bg-card) border border-(--border-color) shadow-lg flex items-center justify-center">
+                        <ImageIcon className="w-9 h-9 text-rose-500/70" strokeWidth={1.5} />
                       </div>
                     </div>
-                    {/* 装饰性元素 */}
-                    <div className="absolute -top-1 -right-1 w-6 h-6 rounded-full bg-rose-500/20 animate-pulse" />
-                    <div className="absolute -bottom-1 -left-1 w-4 h-4 rounded-full bg-rose-500/10" />
                   </div>
 
                   {/* 标题和描述 */}
-                  <h3 className="text-base font-semibold text-[var(--text-primary)] mb-1.5">
+                  <h3 className="text-[15px] font-semibold text-(--text-primary) mb-1">
                     暂无尾帧
                   </h3>
-                  <p className="text-sm text-[var(--text-muted)] mb-6 max-w-[240px]">
+                  <p className="text-[13px] text-(--text-muted) mb-6 max-w-60 leading-relaxed">
                     生成首尾帧或绘制草图完成分镜
                   </p>
 
@@ -2159,7 +2129,7 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                         <Button
                           size="sm"
                           variant="flat"
-                          className="px-4 bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:border-amber-500/50 hover:text-amber-500"
+                          className="px-4 bg-(--bg-card) border border-(--border-color) text-(--text-secondary) hover:border-amber-500/50 hover:text-amber-500"
                           startContent={<Pencil className="w-4 h-4" />}
                           onPress={() => {
                             setMagicSpaceInitialMode('sketch');
@@ -2171,9 +2141,9 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                       )}
                     </div>
                     {/* 功能说明 */}
-                    <div className="flex items-center gap-6 text-xs text-[var(--text-muted)]">
+                    <div className="flex items-center gap-6 text-xs text-(--text-muted)">
                       <div className="flex items-center gap-1.5">
-                        <div className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]" />
+                        <div className="w-1.5 h-1.5 rounded-full bg-(--accent)" />
                         <span>AI 自动生成画面</span>
                       </div>
                       {onGenerateWithSketch && (
@@ -2286,10 +2256,10 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                       <span className="text-xs">历史</span>
                     </button>
                   </div>
-                  <div className="w-32 h-20 rounded-lg border-2 border-dashed border-[var(--border-color)] flex items-center justify-center mb-4">
-                    <Video className="w-8 h-8 text-[var(--text-muted)]" />
+                  <div className="w-32 h-20 rounded-lg border-2 border-dashed border-(--border-color) flex items-center justify-center mb-4">
+                    <Video className="w-8 h-8 text-(--text-muted)" />
                   </div>
-                  <p className="text-sm text-[var(--text-muted)] mb-4">暂无视频</p>
+                  <p className="text-sm text-(--text-muted) mb-4">暂无视频</p>
                   {hasFrames && (
                     <Button
                       size="sm"
@@ -2312,7 +2282,7 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
       {/* Lightbox 放大预览 */}
       {lightboxOpen && currentFrame && (
         <div
-          className="fixed inset-0 z-[9999] bg-black/90 flex items-center justify-center"
+          className="fixed inset-0 z-9999 bg-black/90 flex items-center justify-center"
           onClick={() => setLightboxOpen(false)}
           onWheel={handleLightboxWheel}
           onMouseMove={handleLightboxMouseMove}
@@ -2325,7 +2295,7 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
             <button onClick={() => setLightboxZoom(z => Math.min(5, z + 0.5))} className="p-1.5 rounded-full hover:bg-white/20 text-white/80 hover:text-white transition-colors" title="放大">
               <ZoomIn className="w-4 h-4" />
             </button>
-            <span className="text-xs text-white/70 min-w-[3rem] text-center">{Math.round(lightboxZoom * 100)}%</span>
+            <span className="text-xs text-white/70 min-w-12 text-center">{Math.round(lightboxZoom * 100)}%</span>
             <button onClick={() => setLightboxZoom(z => Math.max(0.5, z - 0.5))} className="p-1.5 rounded-full hover:bg-white/20 text-white/80 hover:text-white transition-colors" title="缩小">
               <ZoomOut className="w-4 h-4" />
             </button>
@@ -2367,11 +2337,11 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
       )}
 
       {/* 信息和操作区域 */}
-      <div className="flex-shrink-0 bg-[var(--bg-card)]">
+      <div className="shrink-0 bg-(--bg-card)">
         {/* 元数据 */}
-        <div className="px-4 py-3 border-b border-[var(--border-color)]">
+        <div className="px-4 py-3 border-b border-(--border-color)">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">
+            <span className="text-xs font-semibold text-(--text-muted) uppercase tracking-wider">
               分镜 #{sceneIndex + 1}
             </span>
             <div className="flex items-center gap-1.5">
@@ -2386,7 +2356,7 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                 }}
               />
               {scene.hasAction && (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] text-[var(--text-muted)] bg-[var(--bg-input)] border border-[var(--border-color)]">
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] text-(--text-muted) bg-(--bg-input) border border-(--border-color)">
                   <Zap className="w-3 h-3" />
                   动作镜头
                 </span>
@@ -2438,14 +2408,14 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
 
         {/* 导演空间 - 当 hideDirectorSpace=true 时完全隐藏（由 BottomPanel 独立显示） */}
         {!hideDirectorSpace && (
-        <div className="border-t border-[var(--border-color)] flex flex-col flex-1 min-h-0">
+        <div className="border-t border-(--border-color) flex flex-col flex-1 min-h-0">
           {/* 标题栏 */}
           <div
             className="w-full px-4 py-3 flex items-center justify-between transition-colors"
           >
             <div className="flex items-center gap-2">
-              <Blocks className="w-4 h-4 text-[var(--accent)]" />
-              <span className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">
+              <Blocks className="w-4 h-4 text-(--accent)" />
+              <span className="text-xs font-semibold text-(--text-muted) uppercase tracking-wider">
                 导演空间
               </span>
               {/* 生成模式状态标签 - 轻量化 */}
@@ -2456,7 +2426,7 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                     已生成
                   </span>
                 ) : (
-                  <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-[var(--bg-input)] text-[var(--text-muted)] border border-[var(--border-color)]">
+                  <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-(--bg-input) text-(--text-muted) border border-(--border-color)">
                     图片阶段
                   </span>
                 )
@@ -2467,13 +2437,13 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                     视频生成
                   </span>
                 ) : (
-                  <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-[var(--bg-input)] text-[var(--text-muted)] border border-[var(--border-color)]">
+                  <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-(--bg-input) text-(--text-muted) border border-(--border-color)">
                     图片阶段
                   </span>
                 )
               )}
               {/* 提示词模式切换 - 统一标签样式 */}
-              <div className="flex items-center gap-1 ml-2 p-0.5 bg-[var(--bg-input)] rounded-lg">
+              <div className="flex items-center gap-1 ml-2 p-0.5 bg-(--bg-input) rounded-lg">
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
@@ -2481,8 +2451,8 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                   }}
                   className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
                     promptMode === 'description'
-                      ? 'bg-[var(--accent)] text-white shadow-sm'
-                      : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
+                      ? 'bg-(--accent) text-white shadow-sm'
+                      : 'text-(--text-muted) hover:text-(--text-secondary) hover:bg-(--bg-hover)'
                   }`}
                 >
                   分镜描述
@@ -2494,15 +2464,15 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                   }}
                   className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
                     promptMode === 'image'
-                      ? 'bg-[var(--accent)] text-white shadow-sm'
-                      : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
+                      ? 'bg-(--accent) text-white shadow-sm'
+                      : 'text-(--text-muted) hover:text-(--text-secondary) hover:bg-(--bg-hover)'
                   }`}
                 >
                   图片提示词
                 </button>
                 {/* 运动模式才显示首帧/尾帧子标签 */}
                 {scene.hasAction && promptMode === 'image' && (
-                  <div className="flex items-center gap-0.5 ml-1 p-0.5 bg-[var(--bg-card)] rounded-md border border-[var(--border-color)]">
+                  <div className="flex items-center gap-0.5 ml-1 p-0.5 bg-(--bg-card) rounded-md border border-(--border-color)">
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -2510,8 +2480,8 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                       }}
                       className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${
                         imageFrameTab === 'first'
-                          ? 'bg-[var(--accent)]/20 text-[var(--accent)]'
-                          : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+                          ? 'bg-(--accent)/20 text-(--accent)'
+                          : 'text-(--text-muted) hover:text-(--text-secondary)'
                       }`}
                     >
                       首帧
@@ -2523,8 +2493,8 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                       }}
                       className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${
                         imageFrameTab === 'last'
-                          ? 'bg-[var(--accent)]/20 text-[var(--accent)]'
-                          : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+                          ? 'bg-(--accent)/20 text-(--accent)'
+                          : 'text-(--text-muted) hover:text-(--text-secondary)'
                       }`}
                     >
                       尾帧
@@ -2533,7 +2503,7 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                 )}
                 {/* 静止模式：图片提示词直接保存到 first_frame_prompt */}
                 {!scene.hasAction && promptMode === 'image' && (
-                  <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-[var(--bg-card)] text-[var(--text-muted)] ml-1 border border-[var(--border-color)]">
+                  <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-(--bg-card) text-(--text-muted) ml-1 border border-(--border-color)">
                     单图
                   </span>
                 )}
@@ -2546,8 +2516,8 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                     }}
                     className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
                       promptMode === 'video'
-                        ? 'bg-[var(--accent)] text-white shadow-sm'
-                        : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
+                        ? 'bg-(--accent) text-white shadow-sm'
+                        : 'text-(--text-muted) hover:text-(--text-secondary) hover:bg-(--bg-hover)'
                     }`}
                   >
                     视频提示词
@@ -2602,12 +2572,10 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                   onUpdateVoiceover={onUpdateVoiceover}
                   negativePrompt={scene.negativePrompt}
                   onUpdateNegativePrompt={async (negativePrompt: string) => {
-                    const token = getAuthToken();
                     const res = await fetch(`/api/storyboards/${scene.id}/content`, {
                       method: 'PATCH',
                       headers: {
                         'Content-Type': 'application/json',
-                        ...(token ? { Authorization: `Bearer ${token}` } : {})
                       },
                       body: JSON.stringify({ negative_prompt: negativePrompt })
                     });
@@ -2662,7 +2630,7 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
 
         {/* 草图面板 - 已隐藏 */}
         {/*
-        <div className="px-4 py-3 border-t border-[var(--border-color)]">
+        <div className="px-4 py-3 border-t border-(--border-color)">
           <SketchPanel
             storyboardId={scene.id}
             sketchUrl={scene.sketchUrl}
@@ -2686,7 +2654,7 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
       {showHistory && (
         <div
           ref={historyPanelRef}
-          className="fixed z-[100] bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-2xl w-80 max-w-[90vw] overflow-hidden"
+          className="fixed z-100 bg-(--bg-card) border border-(--border-color) rounded-xl shadow-2xl w-80 max-w-[90vw] overflow-hidden"
           style={{
             left: historyPanelPos.x || '50%',
             top: historyPanelPos.y || 'auto',
@@ -2696,7 +2664,7 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
         >
           {/* 拖拽头部 */}
           <div
-            className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-color)] cursor-move select-none"
+            className="flex items-center justify-between px-4 py-3 border-b border-(--border-color) cursor-move select-none"
             onMouseDown={(e) => {
               isDraggingHistory.current = true;
               dragStartHistory.current = {
@@ -2725,11 +2693,11 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
           >
             <div className="flex items-center gap-2">
               <History className="w-4 h-4 text-amber-400" />
-              <h3 className="text-sm font-medium text-[var(--text-primary)]">历史版本</h3>
+              <h3 className="text-sm font-medium text-(--text-primary)">历史版本</h3>
             </div>
             <button
               onClick={() => setShowHistory(false)}
-              className="p-1 rounded-md hover:bg-[var(--bg-hover)] text-[var(--text-muted)] transition-colors"
+              className="p-1 rounded-md hover:bg-(--bg-hover) text-(--text-muted) transition-colors"
             >
               <X className="w-4 h-4" />
             </button>
@@ -2737,12 +2705,12 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
           {/* 面板内容 */}
           <div className="max-h-72 overflow-y-auto">
             {historyLoading ? (
-              <div className="flex items-center justify-center gap-2 px-4 py-8 text-sm text-[var(--text-muted)]">
+              <div className="flex items-center justify-center gap-2 px-4 py-8 text-sm text-(--text-muted)">
                 <Loader2 className="w-4 h-4 animate-spin" />
                 加载中...
               </div>
             ) : historyVersions.length === 0 ? (
-              <div className="flex flex-col items-center justify-center px-4 py-8 text-sm text-[var(--text-muted)]">
+              <div className="flex flex-col items-center justify-center px-4 py-8 text-sm text-(--text-muted)">
                 <Clock className="w-8 h-8 mb-2 opacity-30" />
                 暂无历史版本
               </div>
@@ -2755,20 +2723,20 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                       restoreHistoryVersion(version);
                       setShowHistory(false);
                     }}
-                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition-colors group"
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left text-sm text-(--text-secondary) hover:bg-(--bg-hover) transition-colors group"
                   >
-                    <div className="flex-shrink-0 w-8 h-8 rounded-md bg-[var(--bg-input)] flex items-center justify-center">
-                      <Clock className="w-4 h-4 text-[var(--text-muted)] group-hover:text-amber-400 transition-colors" />
+                    <div className="shrink-0 w-8 h-8 rounded-md bg-(--bg-input) flex items-center justify-center">
+                      <Clock className="w-4 h-4 text-(--text-muted) group-hover:text-amber-400 transition-colors" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="font-medium truncate">{version.label}</div>
-                      <div className="text-xs text-[var(--text-muted)] mt-0.5 flex items-center gap-2">
+                      <div className="text-xs text-(--text-muted) mt-0.5 flex items-center gap-2">
                         {version.firstFrameUrl && <span className="text-emerald-400/70">首帧</span>}
                         {version.lastFrameUrl && <span className="text-emerald-400/70">尾帧</span>}
                         {version.videoUrl && <span className="text-amber-400/70">视频</span>}
                       </div>
                     </div>
-                    <div className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
                       <span className="text-xs text-amber-400 font-medium">恢复</span>
                     </div>
                   </button>

@@ -7,7 +7,6 @@
  *   DELETE /api/environments/:id    删除
  *   POST   /api/environments/:id/generate-image  氛围参考图生成
  */
-import { getAuthToken } from './auth';
 import type { EnvironmentVariant } from './environmentVariants';
 
 export interface Environment {
@@ -37,11 +36,6 @@ export function parseTerrainTypes(env: Environment): string[] {
   return env.terrain_type.split(',').filter(Boolean);
 }
 
-function authHeaders() {
-  const token = getAuthToken();
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
-
 async function handle<T>(resp: Response): Promise<T> {
   if (!resp.ok) {
     let msg = `请求失败：${resp.status}`;
@@ -56,13 +50,13 @@ async function handle<T>(resp: Response): Promise<T> {
 
 export async function listEnvironments(projectId?: number): Promise<Environment[]> {
   const qs = projectId ? `?projectId=${projectId}` : '';
-  const resp = await fetch(`/api/environments${qs}`, { headers: { ...authHeaders() } });
+  const resp = await fetch(`/api/environments${qs}`);
   const data = await handle<{ environments: Environment[] }>(resp);
   return data.environments || [];
 }
 
 export async function getEnvironment(id: number): Promise<Environment> {
-  const resp = await fetch(`/api/environments/${id}`, { headers: { ...authHeaders() } });
+  const resp = await fetch(`/api/environments/${id}`);
   const data = await handle<{ environment: Environment }>(resp);
   return data.environment;
 }
@@ -79,7 +73,7 @@ export async function createEnvironment(payload: {
 }): Promise<Environment> {
   const resp = await fetch('/api/environments', {
     method: 'POST',
-    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    headers: {  'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
   });
   const data = await handle<{ environment: Environment }>(resp);
@@ -101,7 +95,7 @@ export async function updateEnvironment(id: number, payload: {
 }): Promise<Environment> {
   const resp = await fetch(`/api/environments/${id}`, {
     method: 'PATCH',
-    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    headers: {  'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
   });
   const data = await handle<{ environment: Environment }>(resp);
@@ -111,7 +105,6 @@ export async function updateEnvironment(id: number, payload: {
 export async function deleteEnvironment(id: number): Promise<void> {
   const resp = await fetch(`/api/environments/${id}`, {
     method: 'DELETE',
-    headers: { ...authHeaders() }
   });
   await handle<{ message: string }>(resp);
 }
@@ -123,7 +116,7 @@ export async function generateEnvironmentImage(id: number, payload: {
 }): Promise<{ jobId: string; environmentId: number; status: string }> {
   const resp = await fetch(`/api/environments/${id}/generate-image`, {
     method: 'POST',
-    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    headers: {  'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
   });
   return handle<{ jobId: string; environmentId: number; status: string }>(resp);
@@ -146,7 +139,7 @@ export interface SanitizeDescriptionResult {
 export async function sanitizeEnvironmentDescriptions(projectId: number): Promise<SanitizeDescriptionResult> {
   const resp = await fetch(`/api/environments/sanitize-descriptions`, {
     method: 'POST',
-    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    headers: {  'Content-Type': 'application/json' },
     body: JSON.stringify({ projectId })
   });
   return handle<SanitizeDescriptionResult>(resp);
@@ -162,7 +155,6 @@ export async function sanitizeEnvironmentDescription(id: number): Promise<{
 }> {
   const resp = await fetch(`/api/environments/${id}/sanitize-description`, {
     method: 'POST',
-    headers: { ...authHeaders() }
   });
   return handle<{
     message: string;
@@ -184,7 +176,6 @@ export interface TerrainRecognitionResult {
 export async function recognizeEnvironmentTerrain(id: number): Promise<TerrainRecognitionResult> {
   const resp = await fetch(`/api/environments/${id}/recognize-terrain`, {
     method: 'POST',
-    headers: { ...authHeaders() }
   });
   return handle<TerrainRecognitionResult>(resp);
 }
@@ -205,7 +196,7 @@ export interface BatchTerrainRecognitionResult {
 export async function recognizeAllEnvironmentTerrains(projectId: number): Promise<BatchTerrainRecognitionResult> {
   const resp = await fetch('/api/environments/recognize-all-terrains', {
     method: 'POST',
-    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    headers: {  'Content-Type': 'application/json' },
     body: JSON.stringify({ projectId })
   });
   return handle<BatchTerrainRecognitionResult>(resp);
@@ -213,6 +204,6 @@ export async function recognizeAllEnvironmentTerrains(projectId: number): Promis
 
 /** 获取支持的所有地貌类型列表 */
 export async function fetchTerrainTypes(): Promise<{ terrainTypes: string[]; total: number }> {
-  const resp = await fetch('/api/environments/terrain-types', { headers: { ...authHeaders() } });
+  const resp = await fetch('/api/environments/terrain-types');
   return handle<{ terrainTypes: string[]; total: number }>(resp);
 }

@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { getAuthToken } from '../services/auth';
 
 // ============================================================
 // Types
@@ -73,7 +72,6 @@ export class ApiError extends Error {
 const WORKFLOW_API_TIMEOUT = 360000; // 6分钟，略大于后端 5 分钟任务超时
 
 async function fetchApi(url: string, options: RequestInit = {}) {
-  const token = getAuthToken();
   
   const doFetch = async (isRetry = false): Promise<any> => {
     const controller = new AbortController();
@@ -84,7 +82,6 @@ async function fetchApi(url: string, options: RequestInit = {}) {
         ...options,
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
           ...options.headers
         },
         signal: controller.signal

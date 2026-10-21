@@ -15,7 +15,6 @@ import StoryboardTable from './StoryboardTable';
 import ResourceSidebar from './ResourceSidebar';
 import { Wand2, Users, Image, Film, Video, Play } from 'lucide-react';
 import { Button } from '@heroui/react';
-import { getAuthToken } from '../../services/auth';
 import { useToast } from '../../contexts/ToastContext';
 import { AIModel } from '../../components/AIModelSelector';
 import { normalizeCapabilityOptions } from '../../utils/modelCapabilities';
@@ -174,10 +173,7 @@ const SimpleStoryBoard: React.FC<SimpleStoryBoardProps> = ({
       setDbProps([]);
       return;
     }
-    const token = getAuthToken();
-    fetch(`/api/props/project/${currentProjectId}`, {
-      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) }
-    })
+    fetch(`/api/props/project/${currentProjectId}`)
       .then(res => res.ok ? res.json() : null)
       .then(data => setDbProps(data?.props || []))
       .catch(() => setDbProps([]));
@@ -237,12 +233,10 @@ const SimpleStoryBoard: React.FC<SimpleStoryBoardProps> = ({
 
     try {
       showToast('正在生成角色三视图...', 'info');
-      const token = getAuthToken();
       const response = await fetch(`/api/characters/${characterId}/generate-views`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({
           imageModel,
@@ -280,12 +274,10 @@ const SimpleStoryBoard: React.FC<SimpleStoryBoardProps> = ({
 
     try {
       showToast('正在生成场景图片...', 'info');
-      const token = getAuthToken();
       const response = await fetch(`/api/scenes/${sceneId}/generate-image`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({
           imageModel,
@@ -335,7 +327,6 @@ const SimpleStoryBoard: React.FC<SimpleStoryBoardProps> = ({
     await batchSceneVideoGen.startBatchVideoGeneration(false);
   };
 
-
   return (
     <div className="h-full flex flex-col" style={{ backgroundColor: 'var(--bg-body)', color: 'var(--text-primary)' }}>
       {/* 顶部栏 */}
@@ -343,7 +334,7 @@ const SimpleStoryBoard: React.FC<SimpleStoryBoardProps> = ({
         className="px-4 py-2.5 border-b flex items-center gap-4"
         style={{ 
           backgroundColor: 'var(--bg-card)', 
-          borderColor: 'var(--border-color)' 
+          borderColor: 'var(--border-color)'
         }}
       >
         <h2 className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>分镜设计</h2>

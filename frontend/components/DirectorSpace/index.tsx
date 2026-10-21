@@ -4,7 +4,6 @@ import type { StoryboardScene } from '../../views/StoryBoard/useSceneManager';
 import BlockEditor from '../../views/StoryBoard/BlockEditor';
 import type { PromptField } from '../../views/StoryBoard/BlockEditor/DialogEditor';
 import ContentEditorPanel, { type EditorSaveStatus, type EditorSessionHandle } from '../ContentEditorPanel';
-import { getAuthToken } from '../../services/auth';
 import { useToast } from '../../contexts/ToastContext';
 
 interface AIModel {
@@ -100,10 +99,9 @@ const DirectorSpaceSession: React.FC<DirectorSpaceProps> = (props) => {
   const activeField: PromptField = tab === 'content' ? 'content' : (!scene.hasAction && promptField === 'last' ? 'first' : promptField);
   const saveNegative = props.onUpdateNegativePrompt ?? (async (value: string) => {
     // 独立 DirectorSpace 入口的兼容路径；父宿主传入回调时不走此请求。
-    const token = getAuthToken();
     const res = await fetch(`/api/storyboards/${scene.id}/content`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ negative_prompt: value }),
     });
     return res.ok;

@@ -14,7 +14,6 @@ import { type EmbeddedEditorProps, type EditorSaveStatus } from '../../../compon
 import '../../../components/ContentEditorPanel/styles.css';
 import { ResourceDraft, STATE_FIELDS, normalizeState, statePayload, pickResourceFields, type ResourceData } from '../../../components/AssetEditor/resourceDraft';
 import { useResourceDraft } from '../../../components/AssetEditor/useResourceDraft';
-import { getAuthToken } from '../../../services/auth';
 import { generateCostumeViews, fetchCharacterCostumes, type Costume } from '../../../services/costumes';
 
 export interface CharacterStateEditorProps extends EmbeddedEditorProps {
@@ -290,7 +289,7 @@ const CharacterStateSession: React.FC<CharacterStateEditorProps> = ({ characterI
   const openEquip = (state: CharacterState) => runOperation(async () => {
     const targetProject = character?.project_id || projectId;
     if (!targetProject) throw new Error('角色未绑定项目，无法加载道具');
-    const response = await fetch(`/api/props/project/${targetProject}`, { headers: { Authorization: `Bearer ${getAuthToken()}` } });
+    const response = await fetch(`/api/props/project/${targetProject}`);
     if (!response.ok) throw new Error('加载项目道具失败');
     const result = await response.json();
     if (!alive.current) return;
@@ -301,7 +300,7 @@ const CharacterStateSession: React.FC<CharacterStateEditorProps> = ({ characterI
   const equipProp = () => runOperation(async () => {
     if (!equipStateId || !selectedPropId) return;
     const response = await fetch(`/api/characters/${characterId}/states/${equipStateId}/props`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAuthToken()}` },
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ propId: Number(selectedPropId), handPosition, usageMode }),
     });
     if (!response.ok) { const result = await response.json(); throw new Error(result.message || '叠加道具失败'); }
@@ -309,7 +308,7 @@ const CharacterStateSession: React.FC<CharacterStateEditorProps> = ({ characterI
     await loadStates();
   });
   const unequipProp = (stateId: number, propId: number) => runOperation(async () => {
-    const response = await fetch(`/api/characters/${characterId}/states/${stateId}/props/${propId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${getAuthToken()}` } });
+    const response = await fetch(`/api/characters/${characterId}/states/${stateId}/props/${propId}`, { method: 'DELETE'});
     if (!response.ok) { const result = await response.json(); throw new Error(result.message || '解绑道具失败'); }
     await loadStates();
   });
@@ -323,7 +322,7 @@ const CharacterStateSession: React.FC<CharacterStateEditorProps> = ({ characterI
       if (!selected.text || !character) throw new Error('请先选择文本模型并加载角色');
       const revision = target.revision;
       const response = await fetch(`/api/characters/${characterId}/states/analyze`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAuthToken()}` },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ type: 'voice', description: target.data.description || '', characterName: character.name,
           characterAppearance: target.data.appearance || character.appearance || '', textModel: selected.text }),
       });

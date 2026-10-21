@@ -9,7 +9,6 @@
  */
 
 import { useCallback, useState } from 'react';
-import { getAuthToken } from '../../../services/auth';
 import { batchValidateScenes, BatchValidationResult } from '../../../services/storyboards';
 import { useWorkflowRecovery } from './useWorkflowRecovery';
 import { WorkflowTask, WorkflowJob } from '../../../hooks/useWorkflow';
@@ -193,7 +192,6 @@ export function useBatchGeneration(
     }
 
     try {
-      const token = getAuthToken();
       
       // Build request body based on type
       const body: Record<string, unknown> = {
@@ -221,7 +219,6 @@ export function useBatchGeneration(
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
         body: JSON.stringify(body)
       });

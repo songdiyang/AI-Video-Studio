@@ -138,14 +138,32 @@ const StoryboardSkeleton: React.FC<StoryboardSkeletonProps> = ({
     return stored && leftPanelTabs.some(t => t.id === stored) ? stored : (leftPanelTabs[0]?.id || 'scenes');
   });
 
+  // ===== 当前项目（从 Workbench 读取，用于集数选择器等） =====
+  const { currentProject } = useWorkbench();
+
   // 切换左侧面板标签（展开面板 + 持久化 + 通知图标栏激活态）
   const switchLeftPanelTab = useCallback((tabId: string) => {
     if (!leftPanelTabs.some(t => t.id === tabId)) return;
     setLeftPanelTab(tabId);
     localStorage.setItem('nanostory_left_panel_tab', tabId);
+    // 按工程记忆内容标签；projects 是导航面板，不参与工程级记忆
+    if (currentProject?.id && tabId !== 'projects') {
+      localStorage.setItem(`nanostory_left_panel_tab_${currentProject.id}`, tabId);
+    }
     window.dispatchEvent(new CustomEvent('leftPanelTabChanged'));
     openLeftPanel();
-  }, [leftPanelTabs, openLeftPanel]);
+  }, [leftPanelTabs, openLeftPanel, currentProject?.id]);
+
+  // 标签页按工程隔离：切换工程时恢复该工程自己记住的标签（无记录则回到默认第一个标签）
+  useEffect(() => {
+    const pid = currentProject?.id;
+    if (!pid) return;
+    const stored = localStorage.getItem(`nanostory_left_panel_tab_${pid}`);
+    const target = stored && leftPanelTabs.some(t => t.id === stored)
+      ? stored
+      : (leftPanelTabs[0]?.id || 'scenes');
+    setLeftPanelTab(prev => (prev === target ? prev : target));
+  }, [currentProject?.id, leftPanelTabs]);
 
   // 监听外部切换左侧面板标签事件（Layout 图标栏/命令面板/快捷键触发）
   useEffect(() => {
@@ -157,9 +175,6 @@ const StoryboardSkeleton: React.FC<StoryboardSkeletonProps> = ({
       window.removeEventListener('switchLeftPanelTab', handleSwitchLeftPanelTab as EventListener);
     };
   }, [switchLeftPanelTab]);
-
-  // ===== 当前项目（从 Workbench 读取，用于集数选择器等） =====
-  const { currentProject } = useWorkbench();
 
   // refs
   const resourcePanelRef = React.useRef<ResizablePanelRef>(null);

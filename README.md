@@ -190,6 +190,6 @@ AI-Video-Studio/
 
 <div align="center">
 
-饺子动漫研究小组 · Jiaozi Anime Research Group
+© songdiyang · 版权所有
 
 </div>

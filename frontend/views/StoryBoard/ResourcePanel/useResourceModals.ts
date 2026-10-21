@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { useDisclosure } from '@heroui/react';
-import { getAuthToken } from '../../../services/auth';
 import { fetchReferenceImages } from '../../../services/assets';
 import { ResourceItem } from './types';
 
@@ -39,15 +38,10 @@ export const useResourceModals = (options: UseResourceModalsOptions = {}) => {
     // 如果是从角色卡片点击进来（没有 imageModel），先从数据库获取三视图数据
     if (!imageModel && !textModel && characterId) {
       try {
-        const token = getAuthToken();
         
         // 并行获取角色数据和参考图数据
         const [characterRes, referenceImages] = await Promise.all([
-          fetch(`/api/characters/${characterId}`, {
-            headers: {
-              ...(token ? { Authorization: `Bearer ${token}` } : {})
-            }
-          }),
+          fetch(`/api/characters/${characterId}`),
           fetchReferenceImages('character', characterId, true).catch(() => [])
         ]);
 
@@ -104,14 +98,12 @@ export const useResourceModals = (options: UseResourceModalsOptions = {}) => {
     setIsGenerating(true);
 
     try {
-      const token = getAuthToken();
       
       // 调用后端 API 启动三视图生成工作流
       const res = await fetch(`/api/characters/${characterId}/generate-views`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
         body: JSON.stringify({
           style: '动漫风格',

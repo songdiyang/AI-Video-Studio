@@ -8,7 +8,6 @@ import { Button, Input, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter
 import { Plus, Trash2, Edit2, GripVertical, FileText, BookOpen, Eye, MoreVertical, Copy, ArrowUp, ArrowDown, Wand2, Loader2, CheckCircle, XCircle } from 'lucide-react';
 import { NovelChapter } from '../../../types/projectTypes';
 import { useToast } from '../../../contexts/ToastContext';
-import { getAuthToken } from '../../../services/auth';
 import { useTaskRunner, TaskState } from '../../../hooks/useTaskRunner';
 import { AIModel } from '../../../components/AIModelSelector';
 
@@ -300,7 +299,6 @@ const ChapterManager: React.FC<ChapterManagerProps> = ({
 
     setSaving(true);
     try {
-      const token = getAuthToken();
       
       if (editingChapter) {
         // 更新章节

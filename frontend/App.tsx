@@ -2,7 +2,6 @@ import React, { Suspense, useEffect } from 'react';
 import { HashRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import Layout from './components/Layout';
-import ProtectedRoute from './components/ProtectedRoute';
 import { PreviewProvider } from './components/PreviewProvider';
 import { WorkbenchProvider } from './contexts/WorkbenchContext';
 import { AIAssistantProvider } from './contexts/AIAssistantContext';
@@ -143,19 +142,17 @@ const App: React.FC = () => {
               </Suspense>
             } />
 
-            {/* 受保护路由 - 需要登录 */}
+            {/* 本地免登录：直接进入应用 */}
             <Route path="*" element={
-              <ProtectedRoute>
-                <WorkbenchProvider>
-                  <AIAssistantProvider>
-                    <StoryboardBridgeProvider>
-                      <Layout>
-                        <AnimatedRoutes />
-                      </Layout>
-                    </StoryboardBridgeProvider>
-                  </AIAssistantProvider>
-                </WorkbenchProvider>
-              </ProtectedRoute>
+              <WorkbenchProvider>
+                <AIAssistantProvider>
+                  <StoryboardBridgeProvider>
+                    <Layout>
+                      <AnimatedRoutes />
+                    </Layout>
+                  </StoryboardBridgeProvider>
+                </AIAssistantProvider>
+              </WorkbenchProvider>
             } />
           </Routes>
         </PreviewProvider>

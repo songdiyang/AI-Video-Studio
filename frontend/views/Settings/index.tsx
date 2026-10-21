@@ -3,14 +3,19 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Moon, Sun, Eye, Mail, ChevronDown, Check, 
   Palette, MessageSquare, Info, ChevronRight, Sparkles, Monitor, Globe, RotateCcw, SlidersHorizontal,
-  Cpu, Database, BarChart3, Users, Gauge, AlertTriangle, Megaphone, ClipboardList, BookOpen, Key, Film
+  Cpu, Database, BarChart3, Users, Gauge, AlertTriangle, Megaphone, ClipboardList, BookOpen, Key, Film, FolderInput
 } from 'lucide-react';
 import { useTheme, ThemeType } from '../../contexts/ThemeContext';
 import { useLanguage, LanguageType } from '../../contexts/LanguageContext';
-import { getUserRole } from '../../services/auth';
 import { useToast } from '../../contexts/ToastContext';
 import AIModelSettings from './AIModelSettings';
 import { getPreferredVideoFormat, setPreferredVideoFormat } from '../../services/localAI';
+import {
+  getProjectsRootOverride,
+  setProjectsRootOverride,
+  getDefaultProjectsRoot,
+  selectDirectory,
+} from '../../services/localApi';
 
 // 用户反馈邮递收件箱（不在应用内入库，仅唤起系统邮件客户端发送）
 const FEEDBACK_EMAIL = 'songdiyang@aetherstudio.cn';
@@ -182,6 +187,13 @@ const Settings: React.FC = () => {
 
   // 视频输出格式偏好（localStorage 持久化，默认 mp4）
   const [videoFormat, setVideoFormat] = useState<string>(() => getPreferredVideoFormat());
+
+  // 工程默认保存位置（localStorage 持久化；空表示沿用系统默认）
+  const [projectsRoot, setProjectsRoot] = useState<string>(() => getProjectsRootOverride());
+  const [systemProjectsRoot, setSystemProjectsRoot] = useState<string>('');
+  useEffect(() => {
+    getDefaultProjectsRoot().then(setSystemProjectsRoot).catch(() => {});
+  }, []);
   
   // 清除 localStorage 中的 section（只使用一次）
   React.useEffect(() => {
@@ -190,9 +202,8 @@ const Settings: React.FC = () => {
     }
   }, [initialSection]);
   
-  // 获取用户角色，判断是否为管理员
-  const userRole = getUserRole();
-  const isAdmin = userRole === 'admin' || userRole === 'ops';
+  // 本地单人应用：默认拥有全部权限
+  const isAdmin = true;
 
   const getThemeName = (nameKey: ThemePreset['nameKey']) => {
     return t.settings.appearance[nameKey];
@@ -502,6 +513,76 @@ const Settings: React.FC = () => {
     );
   };
 
+  // 渲染工程默认保存位置区域（新建工程的落盘目录，桌面端可自定义）
+  const renderProjectsLocationSection = () => {
+    const effective = projectsRoot || systemProjectsRoot;
+    const isCustom = !!projectsRoot;
+    return (
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-6">
+        <div className="min-w-0 flex-1">
+          <h3 className="text-sm font-medium flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+            <FolderInput className="w-4 h-4" />
+            {t.settings.projectsLocation.title}
+          </h3>
+          <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
+            {t.settings.projectsLocation.desc}
+          </p>
+          <div className="mt-2 flex items-center gap-2 min-w-0">
+            <span
+              className="text-[10px] px-1.5 py-0.5 rounded shrink-0 border"
+              style={{
+                color: isCustom ? 'var(--accent)' : 'var(--text-muted)',
+                borderColor: isCustom ? 'var(--accent)' : 'var(--border-color)',
+              }}
+            >
+              {isCustom ? t.settings.projectsLocation.customTag : t.settings.projectsLocation.defaultTag}
+            </span>
+            <span
+              className="text-xs truncate flex-1 min-w-0"
+              title={effective}
+              style={{ color: 'var(--text-primary)' }}
+            >
+              {effective || '…'}
+            </span>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={async () => {
+              const dir = await selectDirectory(t.settings.projectsLocation.choose);
+              if (dir) {
+                setProjectsRootOverride(dir);
+                setProjectsRoot(dir);
+                showToast(t.settings.projectsLocation.chooseToast, 'success');
+              }
+            }}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border transition-colors cursor-pointer"
+            style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
+          >
+            <FolderInput className="w-3.5 h-3.5" />
+            {t.settings.projectsLocation.choose}
+          </button>
+          {isCustom && (
+            <button
+              type="button"
+              onClick={() => {
+                setProjectsRootOverride('');
+                setProjectsRoot('');
+                showToast(t.settings.projectsLocation.resetToast, 'success');
+              }}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg transition-colors cursor-pointer"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              {t.settings.projectsLocation.reset}
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   // 渲染通用设置区域（外观 + 语言整合）
   const renderGeneralSection = () => (
     <div className="max-w-2xl">
@@ -514,6 +595,8 @@ const Settings: React.FC = () => {
         {renderLanguageSection()}
         <div className="h-px" style={{ backgroundColor: 'var(--border-color)' }} />
         {renderVideoFormatSection()}
+        <div className="h-px" style={{ backgroundColor: 'var(--border-color)' }} />
+        {renderProjectsLocationSection()}
       </div>
     </div>
   );

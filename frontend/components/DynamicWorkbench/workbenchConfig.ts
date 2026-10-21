@@ -8,7 +8,7 @@ import {
   FileText, Film, Clapperboard, LayoutGrid, Paintbrush, 
   Clock, Sparkles, Network, List, PenTool, Video, BookOpen 
 } from 'lucide-react';
-import { ProjectType, WorkbenchConfig, WorkbenchTab, WORKBENCH_CONFIGS } from '../../types/projectTypes';
+import { ProjectType, WorkbenchConfig, WorkbenchTab, WORKBENCH_CONFIGS, DEFAULT_WORKBENCH_CONFIG } from '../../types/projectTypes';
 
 // ==================== 图标映射 ====================
 
@@ -43,7 +43,7 @@ export function getIcon(iconName: string): React.ComponentType<{ className?: str
  * 获取项目类型的工作台配置
  */
 export function getWorkbenchConfigForType(projectType: ProjectType): WorkbenchConfig {
-  return WORKBENCH_CONFIGS[projectType] || WORKBENCH_CONFIGS.comic_drama;
+  return WORKBENCH_CONFIGS[projectType] ?? DEFAULT_WORKBENCH_CONFIG;
 }
 
 /**
@@ -146,19 +146,20 @@ export function updateWorkbenchStateForProject(
   newProjectId: number,
   newProjectType: ProjectType
 ): WorkbenchState {
-  // 如果项目类型相同，尝试保持当前标签页
+  // 同一项目：保持当前标签页（若仍可用）
+  if (currentState.projectId === newProjectId && currentState.projectType === newProjectType) {
+    return currentState;
+  }
+
+  // 如果项目类型相同，恢复目标工程自己记住的最后活动标签（不沿用原工程的标签页）
   if (currentState.projectType === newProjectType) {
-    const newActiveTab = isTabAvailable(newProjectType, currentState.activeTab)
-      ? currentState.activeTab
-      : getLastActiveTab(newProjectId, newProjectType);
-    
     return {
       ...currentState,
       projectId: newProjectId,
-      activeTab: newActiveTab,
+      activeTab: getLastActiveTab(newProjectId, newProjectType),
     };
   }
-  
+
   // 项目类型不同，重新初始化
   return createInitialWorkbenchState(newProjectId, newProjectType);
 }

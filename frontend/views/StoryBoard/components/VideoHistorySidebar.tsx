@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { History, Film, Image, ChevronLeft, ChevronRight, Check, Loader2, RefreshCw } from 'lucide-react';
-import { getAuthToken } from '../../../services/auth';
 import { useToast } from '../../../contexts/ToastContext';
 import { bustCache } from '../../../services/mediaCache';
 
@@ -43,10 +42,7 @@ const VideoHistorySidebar: React.FC<VideoHistorySidebarProps> = ({
   const loadHistory = useCallback(async () => {
     setLoading(true);
     try {
-      const token = getAuthToken();
-      const res = await fetch(`/api/storyboards/${storyboardId}/frame-history`, {
-        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) }
-      });
+      const res = await fetch(`/api/storyboards/${storyboardId}/frame-history`);
       if (res.ok) {
         const data = await res.json();
         // 只保留有视频的版本
@@ -71,7 +67,6 @@ const VideoHistorySidebar: React.FC<VideoHistorySidebarProps> = ({
     const key = version.batchId || `v${version.versionNumber}`;
     setSwitchingId(key);
     try {
-      const token = getAuthToken();
       const body: Record<string, unknown> = {};
       if (version.batchId) {
         body.batchId = version.batchId;
@@ -83,7 +78,6 @@ const VideoHistorySidebar: React.FC<VideoHistorySidebarProps> = ({
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
         body: JSON.stringify(body)
       });

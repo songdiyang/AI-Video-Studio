@@ -1,6 +1,20 @@
 import React, { useState } from 'react';
 import { Check, AlertTriangle, Brain, Star, TrendingUp, TrendingDown, Lightbulb, MessageSquare, ChevronDown, Loader2, Circle } from 'lucide-react';
 import MediaAttachment from './MediaAttachment';
+import TaskProgressCard from './TaskProgressCard';
+import type {
+  ChatMessageData,
+  ChatMessageStep,
+} from './types';
+
+// 共享类型集中定义于 ./types，此处再导出以兼容既有从 './ChatMessage' 引入的调用方。
+export type {
+  ChatMessageAttachment,
+  ChatMessageData,
+  ChatMessageSuggestion,
+  ChatMessageStep,
+  TaskCardData,
+} from './types';
 
 const DESTRUCTIVE_ACTIONS: ReadonlySet<string> = new Set([
   'delete_scene', 'update_scene', 'insert_scene',
@@ -38,45 +52,6 @@ const AUTO_EXECUTE_ACTIONS: ReadonlySet<string> = new Set([
   'optimize_prompt',
   'upload_material',
 ]);
-
-export interface ChatMessageAttachment {
-  type: 'image' | 'video' | 'file' | 'script';
-  url: string;
-  name?: string;
-  /** 剧本附件文本内容 / 图片视频本地缓存 ID（与 AIAssistantPanel 生产侧一致） */
-  textContent?: string;
-}
-
-export interface ChatMessageSuggestion {
-  action: string;
-  label: string;
-  params?: any;
-}
-
-/** 执行步骤（编码智能体风格）：运行中展开逐步刷新，完成后折叠为摘要 */
-export interface ChatMessageStep {
-  id: string;
-  title: string;
-  status: 'pending' | 'running' | 'completed' | 'failed';
-  detail?: string;
-  startedAt?: number;
-  endedAt?: number;
-}
-
-export interface ChatMessageData {
-  id: string;
-  role: 'user' | 'assistant' | 'system';
-  content: string;
-  reasoning?: string; // 思考过程（默认折叠）
-  attachments?: ChatMessageAttachment[];
-  suggestions?: ChatMessageSuggestion[];
-  timestamp: number;
-  isLoading?: boolean;
-  /** 任务进行中：展示旋转指示器，消息内容作为动态进度文案（执行期间由 agent 循环刷新） */
-  running?: boolean;
-  /** 执行步骤列表：存在时渲染可折叠步骤区（运行中展开、完成/失败后折叠） */
-  steps?: ChatMessageStep[];
-}
 
 interface ChatMessageProps {
   message: ChatMessageData;
@@ -161,7 +136,7 @@ const LoadingDots: React.FC = () => (
     {[0, 1, 2].map((i) => (
       <span
         key={i}
-        className="w-1.5 h-1.5 rounded-full bg-[var(--text-muted)] animate-bounce"
+        className="w-1.5 h-1.5 rounded-full bg-(--text-muted) animate-bounce"
         style={{ animationDelay: `${i * 150}ms` }}
       />
     ))}
@@ -170,7 +145,7 @@ const LoadingDots: React.FC = () => (
 
 /** 任务进行中的旋转指示器 */
 const RunningSpinner: React.FC = () => (
-  <span className="inline-block w-3 h-3 rounded-full border-2 border-[var(--text-muted)] border-t-transparent animate-spin align-[-2px]" />
+  <span className="inline-block w-3 h-3 rounded-full border-2 border-(--text-muted) border-t-transparent animate-spin align-[-2px]" />
 );
 
 const formatDurationMs = (ms: number): string => {
@@ -196,13 +171,13 @@ const MessageSteps: React.FC<{ steps: ChatMessageStep[] }> = ({ steps }) => {
     : `执行中（${completed}/${steps.length}）`;
 
   return (
-    <div className="rounded-lg border border-[var(--border-color)]/60 bg-black/10 overflow-hidden">
+    <div className="rounded-lg border border-(--border-color)/60 bg-black/10 overflow-hidden">
       <button
         onClick={() => setExpanded(!open)}
-        className="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-medium text-[var(--text-secondary)] hover:bg-white/5 transition-colors cursor-pointer"
+        className="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-medium text-(--text-secondary) hover:bg-white/5 transition-colors cursor-pointer"
       >
-        {open ? <ChevronDown size={11} /> : <ChevronDown size={11} className="rotate-[-90deg]" />}
-        {!allDone && <Loader2 size={11} className="animate-spin text-[var(--accent)]" />}
+        {open ? <ChevronDown size={11} /> : <ChevronDown size={11} className="-rotate-90" />}
+        {!allDone && <Loader2 size={11} className="animate-spin text-(--accent)" />}
         <span>{summary}</span>
       </button>
       {open && (
@@ -211,21 +186,21 @@ const MessageSteps: React.FC<{ steps: ChatMessageStep[] }> = ({ steps }) => {
             <li key={s.id} className="flex items-start gap-1.5 text-[10px] leading-relaxed">
               {s.status === 'completed' && <Check size={11} className="mt-0.5 shrink-0 text-emerald-400" />}
               {s.status === 'failed' && <AlertTriangle size={11} className="mt-0.5 shrink-0 text-red-400" />}
-              {s.status === 'running' && <Loader2 size={11} className="mt-0.5 shrink-0 animate-spin text-[var(--accent)]" />}
-              {s.status === 'pending' && <Circle size={11} className="mt-0.5 shrink-0 text-[var(--text-muted)]" />}
+              {s.status === 'running' && <Loader2 size={11} className="mt-0.5 shrink-0 animate-spin text-(--accent)" />}
+              {s.status === 'pending' && <Circle size={11} className="mt-0.5 shrink-0 text-(--text-muted)" />}
               <span className={
-                s.status === 'running' ? 'text-[var(--text-primary)] font-medium'
+                s.status === 'running' ? 'text-(--text-primary) font-medium'
                   : s.status === 'failed' ? 'text-red-400'
-                    : s.status === 'pending' ? 'text-[var(--text-muted)]'
-                      : 'text-[var(--text-secondary)]'
+                    : s.status === 'pending' ? 'text-(--text-muted)'
+                      : 'text-(--text-secondary)'
               }>
                 {s.title}
                 {s.status === 'completed' && s.startedAt && s.endedAt && (
-                  <span className="ml-1 text-[9px] text-[var(--text-muted)]">{formatStepDuration(s)}</span>
+                  <span className="ml-1 text-[9px] text-(--text-muted)">{formatStepDuration(s)}</span>
                 )}
               </span>
               {s.detail && (
-                <span className="text-[9px] text-[var(--text-muted)] truncate max-w-[55%]" title={s.detail}>{s.detail}</span>
+                <span className="text-[9px] text-(--text-muted) truncate max-w-[55%]" title={s.detail}>{s.detail}</span>
               )}
             </li>
           ))}
@@ -250,7 +225,7 @@ const ChatMessageComponent: React.FC<ChatMessageProps> = ({ message, onAction })
   if (isSystem) {
     return (
       <div className="flex justify-center px-4 py-1">
-        <span className="text-[10px] text-[var(--text-muted)] italic whitespace-pre-wrap">{message.content}</span>
+        <span className="text-[10px] text-(--text-muted) italic whitespace-pre-wrap">{message.content}</span>
       </div>
     );
   }
@@ -274,10 +249,10 @@ const ChatMessageComponent: React.FC<ChatMessageProps> = ({ message, onAction })
               ))}
             </div>
           )}
-          <div className="px-3 py-2 rounded-xl rounded-tr-sm bg-[var(--accent)] text-white text-xs leading-relaxed whitespace-pre-wrap break-words">
+          <div className="px-3 py-2 rounded-xl rounded-tr-sm bg-(--accent) text-white text-xs leading-relaxed whitespace-pre-wrap wrap-break-word">
             {message.content}
           </div>
-          <span className="text-[9px] text-[var(--text-muted)] text-right">
+          <span className="text-[9px] text-(--text-muted) text-right">
             {new Date(message.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
           </span>
         </div>
@@ -311,7 +286,7 @@ const ScriptAnalysisCard: React.FC<{
         <div className={`text-2xl font-bold ${overallColor.text}`}>{data.overallScore}</div>
         <div className="flex-1">
           <div className={`text-xs font-medium ${overallColor.text}`}>总体评分 · {overallColor.label}</div>
-          <div className="text-[10px] text-[var(--text-muted)] mt-0.5">{data.summary}</div>
+          <div className="text-[10px] text-(--text-muted) mt-0.5">{data.summary}</div>
         </div>
       </div>
 
@@ -322,10 +297,10 @@ const ScriptAnalysisCard: React.FC<{
           return (
             <div key={i} className={`p-2.5 rounded-lg border ${colors.border} ${colors.bg}`}>
               <div className="flex items-center justify-between mb-1">
-                <span className="text-[10px] text-[var(--text-secondary)] truncate">{dim.name}</span>
+                <span className="text-[10px] text-(--text-secondary) truncate">{dim.name}</span>
                 <span className={`text-xs font-bold ${colors.text}`}>{dim.score}</span>
               </div>
-              <div className="text-[10px] text-[var(--text-muted)] leading-relaxed line-clamp-2">{dim.comment}</div>
+              <div className="text-[10px] text-(--text-muted) leading-relaxed line-clamp-2">{dim.comment}</div>
             </div>
           );
         })}
@@ -340,7 +315,7 @@ const ScriptAnalysisCard: React.FC<{
           </div>
           <ul className="space-y-1">
             {data.strengths.map((s, i) => (
-              <li key={i} className="text-[10px] text-[var(--text-secondary)] flex items-start gap-1">
+              <li key={i} className="text-[10px] text-(--text-secondary) flex items-start gap-1">
                 <span className="text-emerald-400 mt-0.5">+</span>
                 {s}
               </li>
@@ -358,7 +333,7 @@ const ScriptAnalysisCard: React.FC<{
           </div>
           <ul className="space-y-1">
             {data.weaknesses.map((w, i) => (
-              <li key={i} className="text-[10px] text-[var(--text-secondary)] flex items-start gap-1">
+              <li key={i} className="text-[10px] text-(--text-secondary) flex items-start gap-1">
                 <span className="text-red-400 mt-0.5">-</span>
                 {w}
               </li>
@@ -369,15 +344,15 @@ const ScriptAnalysisCard: React.FC<{
 
       {/* 建议 */}
       {data.suggestions && data.suggestions.length > 0 && (
-        <div className="p-2.5 rounded-lg border border-[var(--accent)]/20 bg-[var(--accent)]/5">
+        <div className="p-2.5 rounded-lg border border-(--accent)/20 bg-(--accent)/5">
           <div className="flex items-center gap-1 mb-1.5">
-            <Lightbulb size={11} className="text-[var(--accent)]" />
-            <span className="text-[10px] font-medium text-[var(--accent)]">优化建议</span>
+            <Lightbulb size={11} className="text-(--accent)" />
+            <span className="text-[10px] font-medium text-(--accent)">优化建议</span>
           </div>
           <ul className="space-y-1">
             {data.suggestions.map((s, i) => (
-              <li key={i} className="text-[10px] text-[var(--text-secondary)] flex items-start gap-1">
-                <span className="text-[var(--accent)] mt-0.5">•</span>
+              <li key={i} className="text-[10px] text-(--text-secondary) flex items-start gap-1">
+                <span className="text-(--accent) mt-0.5">•</span>
                 {s}
               </li>
             ))}
@@ -415,10 +390,10 @@ const ScriptAnalysisCard: React.FC<{
       <div className="w-full flex flex-col gap-1">
         <div className="flex items-center gap-1.5 mb-1">
           <Brain size={13} className="text-emerald-400" />
-          <span className="text-[11px] font-medium text-[var(--text-primary)]">剧本分析报告</span>
+          <span className="text-[11px] font-medium text-(--text-primary)">剧本分析报告</span>
         </div>
         <ScriptAnalysisCard data={analysisData} />
-        <span className="text-[9px] text-[var(--text-muted)] text-right">
+        <span className="text-[9px] text-(--text-muted) text-right">
           {new Date(message.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
         </span>
       </div>
@@ -449,7 +424,7 @@ const ScriptAnalysisCard: React.FC<{
         <div className="overflow-hidden">
           <button
             onClick={() => setReasoningExpanded((v) => !v)}
-            className="group flex items-center gap-1.5 text-[10px] text-[var(--text-muted)] hover:text-amber-400 transition-colors cursor-pointer"
+            className="group flex items-center gap-1.5 text-[10px] text-(--text-muted) hover:text-amber-400 transition-colors cursor-pointer"
           >
             <Brain size={10} className="text-amber-400/70" />
             <span className="font-medium">思考过程</span>
@@ -459,7 +434,7 @@ const ScriptAnalysisCard: React.FC<{
             />
           </button>
           {reasoningExpanded && (
-            <div className="mt-1.5 pl-4 border-l-2 border-amber-500/20 text-[10px] text-[var(--text-muted)] leading-relaxed whitespace-pre-wrap break-words animate-fade-in">
+            <div className="mt-1.5 pl-4 border-l-2 border-amber-500/20 text-[10px] text-(--text-muted) leading-relaxed whitespace-pre-wrap wrap-break-word animate-fade-in">
               {message.reasoning}
             </div>
           )}
@@ -470,10 +445,15 @@ const ScriptAnalysisCard: React.FC<{
         <MessageSteps steps={message.steps} />
       )}
 
-      <div className="text-xs leading-relaxed whitespace-pre-wrap break-words text-[var(--text-primary)]">
-        {message.running && <span className="mr-1.5"><RunningSpinner /></span>}
-        {renderMarkdown(message.content)}
-      </div>
+      {message.task && <TaskProgressCard task={message.task} />}
+
+      {/* 纯卡片消息（正文为空）不渲染正文容器，避免留下一块空白行 */}
+      {(message.content || message.running) && (
+        <div className="text-xs leading-relaxed whitespace-pre-wrap wrap-break-word text-(--text-primary)">
+          {message.running && <span className="mr-1.5"><RunningSpinner /></span>}
+          {renderMarkdown(message.content)}
+        </div>
+      )}
 
       {message.suggestions && message.suggestions.length > 0 && (
         <div className="flex gap-1.5 flex-wrap mt-0.5 justify-end">
@@ -498,7 +478,7 @@ const ScriptAnalysisCard: React.FC<{
         </div>
       )}
 
-      <span className="text-[9px] text-[var(--text-muted)] text-right">
+      <span className="text-[9px] text-(--text-muted) text-right">
         {new Date(message.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
       </span>
     </div>

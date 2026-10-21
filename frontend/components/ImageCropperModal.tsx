@@ -24,12 +24,10 @@ const ASPECT_MAP: Record<CropAspect, number | null> = {
  * 通过后端代理获取图片为 Blob URL（解决跨域问题）
  */
 async function fetchImageViaProxy(imageUrl: string): Promise<string> {
-  const token = localStorage.getItem('auth_token');
   const response = await fetch('/api/proxy/image', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
     body: JSON.stringify({ url: imageUrl }),
   });

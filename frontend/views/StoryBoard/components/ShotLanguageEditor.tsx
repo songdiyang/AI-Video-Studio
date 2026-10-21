@@ -18,7 +18,6 @@ import {
   MONTAGE_TYPE_OPTIONS,
   migrateShotLanguage,
 } from '../../../types/shotLanguage';
-import { getAuthToken } from '../../../services/auth';
 import CameraParametersPanel from './CameraParametersPanel';
 import LightingParametersPanel from './LightingParametersPanel';
 
@@ -124,12 +123,10 @@ const ShotLanguageEditor: React.FC<ShotLanguageEditorProps> = ({
   const handleSave = async () => {
     setSaving(true);
     try {
-      const token = getAuthToken();
       const res = await fetch(`/api/storyboards/${storyboardId}/shot-language`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify(values),
       });

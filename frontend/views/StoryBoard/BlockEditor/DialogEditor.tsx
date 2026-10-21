@@ -6,7 +6,6 @@ import { Save, Trash2, MessageCircle, Mic, History, RotateCcw, GitCompare, Spark
 import { useToast } from '../../../contexts/ToastContext';
 import { BLOCK_OPTIONS } from './utils/blockRegistry';
 import SketchFramesPanel from './SketchFramesPanel';
-import { getAuthToken } from '../../../services/auth';
 import { startWorkflow, getWorkflowStatus } from '../../../hooks/useWorkflow';
 import { filterModelsForTaskSlot } from '../../../utils/modelCapabilities';
 import type { EditorSaveStatus, EditorSessionHandle } from '../../../components/ContentEditorPanel';
@@ -224,9 +223,8 @@ const DialogEditorSession: React.FC<DialogEditorProps> = (props) => {
     voiceover: props.voiceover ?? '', negative: props.negativePrompt ?? '', videoFrames: {},
   };
   const patchContent = async (body: object) => {
-    const token = getAuthToken();
     const res = await fetch(`/api/storyboards/${storyboardId}/content`, {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
     return res.ok;
@@ -440,8 +438,7 @@ const DialogEditorSession: React.FC<DialogEditorProps> = (props) => {
     try {
       if (!await flush() || !alive.current) return;
       if (video) {
-        const token = getAuthToken();
-        const res = await fetch(`/api/storyboards/${storyboardId}/validate?type=video`, { headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) } });
+        const res = await fetch(`/api/storyboards/${storyboardId}/validate?type=video`);
         if (!res.ok) throw new Error('视频预检失败，请重试');
         const data = await res.json();
         if (!data.ready) throw new Error(`无法生成视频：${(data.issues || []).map((i: any) => i.message).join('\n')}`);
@@ -461,8 +458,7 @@ const DialogEditorSession: React.FC<DialogEditorProps> = (props) => {
   const loadVersions = async () => {
     setLoadingVersions(true);
     try {
-      const token = getAuthToken();
-      const res = await fetch(`/api/storyboards/${storyboardId}/prompt-history`, { headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) } });
+      const res = await fetch(`/api/storyboards/${storyboardId}/prompt-history`);
       if (!res.ok) throw new Error('加载版本历史失败');
       const data = await res.json();
       if (alive.current) setVersions(data.history || []);
@@ -479,9 +475,8 @@ const DialogEditorSession: React.FC<DialogEditorProps> = (props) => {
       const revision = session.revision(field);
       // 历史是旧提示词历史；面板只把文本应用到明确字段，不调用会改 prompt_template 的 restore。
       if (!panel) {
-        const token = getAuthToken();
         const res = await fetch(`/api/storyboards/${storyboardId}/prompt-history/${version.id}/restore`, {
-          method: 'PUT', headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
         });
         if (!res.ok) throw new Error('恢复失败');
       }

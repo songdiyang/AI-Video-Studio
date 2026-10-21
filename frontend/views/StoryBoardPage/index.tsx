@@ -13,7 +13,6 @@ import StoryBoard from '../StoryBoard';
 import AIModelConfigModal from '../../components/AIModelConfigModal';
 import { useAIModels } from '../../hooks/useAIModels';
 import { useToast } from '../../contexts/ToastContext';
-import { getAuthToken } from '../../services/auth';
 import { fetchProject, Project } from '../../services/projects';
 import { fetchScriptLibrary } from '../../services/scripts';
 import { useDisclosure } from '@heroui/react';
@@ -81,11 +80,6 @@ const StoryBoardPage: React.FC = () => {
       setLoading(true);
       setError(null);
       try {
-        const token = getAuthToken();
-        const headers: Record<string, string> = token
-          ? { Authorization: `Bearer ${token}` }
-          : {};
-
         // 1) 从剧本库中定位目标剧本
         const library = await fetchScriptLibrary('all');
         const script = library.find((s) => s.id === scriptId);
@@ -103,9 +97,7 @@ const StoryBoardPage: React.FC = () => {
         setProject(projectData);
 
         // 3) 加载该项目的所有剧本
-        const listRes = await fetch(`/api/scripts/project/${script.project_id}`, {
-          headers,
-        });
+        const listRes = await fetch(`/api/scripts/project/${script.project_id}`);
         if (listRes.ok) {
           const listData = await listRes.json();
           const list: ScriptRow[] = listData.scripts || [];
@@ -153,7 +145,6 @@ const StoryBoardPage: React.FC = () => {
 
   const handleCreateNextEpisode = useCallback(async () => {
     if (!project) return;
-    const token = getAuthToken();
     const maxEp = scripts.reduce((m, s) => Math.max(m, s.episode_number || 0), 0);
     const nextEp = maxEp + 1;
     try {
@@ -161,7 +152,6 @@ const StoryBoardPage: React.FC = () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({
           projectId: project.id,
@@ -177,9 +167,7 @@ const StoryBoardPage: React.FC = () => {
       const data = await res.json();
       const newId = data.scriptId || data.id;
       // 重新拉剧本列表
-      const listRes = await fetch(`/api/projects/${project.id}/scripts`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
+      const listRes = await fetch(`/api/projects/${project.id}/scripts`);
       if (listRes.ok) {
         const listData = await listRes.json();
         setScripts(listData.scripts || []);

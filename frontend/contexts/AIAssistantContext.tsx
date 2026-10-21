@@ -57,8 +57,8 @@ export interface AIAssistantSceneSummary {
   video_prompt?: string;
 }
 
-/** 动作执行器；onProgress 供长任务（如分镜拆分）回报细粒度步骤，由面板刷新到消息 */
-export type AIAssistantAction = (action: string, params: any, onProgress?: (label: string) => void) => void | Promise<void>;
+/** 动作执行器；onProgress 供长任务（如分镜拆分）回报细粒度步骤，由面板刷新到消息。返回值（如 jobId / sceneCount / 结果）回传给调用方供对话挂进度卡片 */
+export type AIAssistantAction = (action: string, params: any, onProgress?: (label: string) => void) => any | Promise<any>;
 
 export interface AIAssistantCharacterSummary {
   id: number;

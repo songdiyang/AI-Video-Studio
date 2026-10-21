@@ -129,8 +129,8 @@ export interface SceneActions {
 
 // ========== 生成操作接口 ==========
 export interface GenerationActions {
-  generateImage: (sceneId: number, prompt?: string, regenerateTarget?: 'first' | 'last' | 'both', forceRegenerate?: boolean) => Promise<{ success: boolean; error?: string }>;
-  generateVideo: (sceneId: number) => Promise<{ success: boolean; error?: string }>;
+  generateImage: (sceneId: number, prompt?: string, regenerateTarget?: 'first' | 'last' | 'both', forceRegenerate?: boolean) => Promise<{ success: boolean; error?: string; jobId?: string }>;
+  generateVideo: (sceneId: number) => Promise<{ success: boolean; error?: string; jobId?: string }>;
   generateWithCamera: (sceneId: number, cameraParams: CameraGenerateParams) => Promise<{ success: boolean; error?: string }>;
   generateWithPaint: (sceneId: number, paintParams: PaintGenerateParams) => Promise<{ success: boolean; error?: string }>;
   generateWithSketch: (sceneId: number, sketchParams: SketchGenerateParams) => Promise<{ success: boolean; error?: string }>;

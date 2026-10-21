@@ -6,7 +6,6 @@
 import React from 'react';
 import ScriptOutlinePanel from '../../ScriptOutlinePanel';
 import { useStoryboardContext } from '../../core/StoryboardContext';
-import { getAuthToken } from '../../../../services/auth';
 
 const ScriptOutlinePlugin: React.FC = () => {
   const {
@@ -31,11 +30,8 @@ const ScriptOutlinePlugin: React.FC = () => {
       handleEpisodeSelect(fullScript);
     }
 
-    const token = getAuthToken();
     try {
-      const res = await fetch(`/api/scripts/project/${state.currentProjectId}/episode/${script.episode_number}`, {
-        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-      });
+      const res = await fetch(`/api/scripts/project/${state.currentProjectId}/episode/${script.episode_number}`);
       const data = await res.json();
       
       if (data?.script) {

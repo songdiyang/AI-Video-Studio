@@ -10,7 +10,6 @@ import SceneCardMetadata from './SceneCardMetadata';
 import SceneCardActions from './SceneCardActions';
 import VideoPreviewModal from './VideoPreviewModal';
 import LazyImage from '../../../components/LazyImage';
-import { getAuthToken } from '../../../services/auth';
 import { validateFrameReadiness, formatValidationMessage } from '../utils/validateFrameReadiness';
 import { useToast } from '../../../contexts/ToastContext';
 import { useConfirm } from '../../../contexts/ConfirmContext';
@@ -68,8 +67,11 @@ const SceneCard: React.FC<SceneCardProps> = ({
   validationIssues,
   onContextMenu
 }) => {
+  // baseDescription 为可选字段，编辑态统一按空字符串归一化，避免 undefined 参与保存与比较
+  const originalDescription = scene.baseDescription ?? '';
+
   const [isEditingDescription, setIsEditingDescription] = useState(false);
-  const [editedDescription, setEditedDescription] = useState(scene.baseDescription);
+  const [editedDescription, setEditedDescription] = useState(originalDescription);
   const [isSavingDescription, setIsSavingDescription] = useState(false);
   const [showVideoPreview, setShowVideoPreview] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -79,9 +81,9 @@ const SceneCard: React.FC<SceneCardProps> = ({
 
   useEffect(() => {
     if (!isEditingDescription) {
-      setEditedDescription(scene.baseDescription);
+      setEditedDescription(originalDescription);
     }
-  }, [scene.baseDescription, isEditingDescription]);
+  }, [originalDescription, isEditingDescription]);
 
   const isGeneratingImage = imageTask?.status === 'pending' || imageTask?.status === 'running';
   const isGeneratingVideo = videoTask?.status === 'pending' || videoTask?.status === 'running';
@@ -89,12 +91,10 @@ const SceneCard: React.FC<SceneCardProps> = ({
   // 删除视频（数据库 + MinIO 存储桶）
   const handleDeleteVideo = useCallback(async () => {
     try {
-      const token = getAuthToken();
       await fetch(`/api/storyboards/${scene.id}/media`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
         body: JSON.stringify({ videoUrl: null })
       });
@@ -110,12 +110,10 @@ const SceneCard: React.FC<SceneCardProps> = ({
   // 删除首尾帧（动作镜头同时删除首帧和尾帧）
   const handleDeleteFrames = useCallback(async () => {
     try {
-      const token = getAuthToken();
       await fetch(`/api/storyboards/${scene.id}/media`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
         body: JSON.stringify({ startFrame: null, endFrame: null })
       });
@@ -132,12 +130,10 @@ const SceneCard: React.FC<SceneCardProps> = ({
   // 独立删除首帧
   const handleDeleteFirstFrame = useCallback(async () => {
     try {
-      const token = getAuthToken();
       await fetch(`/api/storyboards/${scene.id}/media`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
         body: JSON.stringify({ firstFrameUrl: null })
       });
@@ -145,7 +141,7 @@ const SceneCard: React.FC<SceneCardProps> = ({
       if (onUpdateScene) {
         onUpdateScene(scene.id, { 
           startFrame: undefined, 
-          imageUrl: scene.endFrame || undefined 
+          imageUrl: scene.endFrame || undefined
         });
       }
       console.log('[SceneCard] 已删除首帧, sceneId:', scene.id);
@@ -157,12 +153,10 @@ const SceneCard: React.FC<SceneCardProps> = ({
   // 独立删除尾帧
   const handleDeleteLastFrame = useCallback(async () => {
     try {
-      const token = getAuthToken();
       await fetch(`/api/storyboards/${scene.id}/media`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
         body: JSON.stringify({ lastFrameUrl: null })
       });
@@ -248,10 +242,7 @@ const SceneCard: React.FC<SceneCardProps> = ({
   // 预检：生成视频前校验首尾帧+提示词完整性
   const validateForVideo = async (): Promise<{ ready: boolean; message?: string }> => {
     try {
-      const token = getAuthToken();
-      const res = await fetch(`/api/storyboards/${scene.id}/validate?type=video`, {
-        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) }
-      });
+      const res = await fetch(`/api/storyboards/${scene.id}/validate?type=video`);
       if (!res.ok) return { ready: true };
       const data = await res.json();
       if (!data.ready) {
@@ -308,7 +299,7 @@ const SceneCard: React.FC<SceneCardProps> = ({
         className={`transition-all cursor-pointer rounded-lg group/scene ${
           isSelected
             ? 'border-l-2 border-l-[var(--accent)] border-y border-r border-[var(--border-color)] bg-[var(--bg-card-hover)]'
-            : `border border-[var(--border-color)] hover:border-[var(--accent)]/30 bg-[var(--bg-card)]${scene.isLocked ? ' opacity-75' : ''}`
+            : `border border-(--border-color) hover:border-(--accent)/30 bg-[var(--bg-card)]${scene.isLocked ? ' opacity-75' : ''}`
         }`}
         isPressable={false}
         onPress={() => onSelect(scene.id)}
@@ -364,7 +355,7 @@ const SceneCard: React.FC<SceneCardProps> = ({
             {/* 缩略图 - 支持拖拽到积木编辑器 */}
             {(scene.startFrame || scene.videoUrl) ? (
               <div 
-                className="relative w-14 h-9 flex-shrink-0 rounded overflow-hidden bg-[var(--bg-app)] cursor-grab active:cursor-grabbing hover:ring-2 hover:ring-[var(--accent)]/50 transition-all"
+                className="relative w-14 h-9 shrink-0 rounded overflow-hidden bg-(--bg-app) cursor-grab active:cursor-grabbing hover:ring-2 hover:ring-[var(--accent)]/50 transition-all"
                 draggable={!!scene.startFrame}
                 onDragStart={(e) => {
                   if (scene.startFrame) {
@@ -444,11 +435,11 @@ const SceneCard: React.FC<SceneCardProps> = ({
                         handleSaveDescription();
                       } else if (e.key === 'Escape') {
                         setIsEditingDescription(false);
-                        setEditedDescription(scene.baseDescription);
+                        setEditedDescription(originalDescription);
                       }
                     }}
                     onBlur={() => {
-                      if (editedDescription !== scene.baseDescription) {
+                      if (editedDescription !== originalDescription) {
                         handleSaveDescription();
                       } else {
                         setIsEditingDescription(false);
@@ -542,12 +533,10 @@ const SceneCard: React.FC<SceneCardProps> = ({
 
                           // 清除现有帧和视频，表示这是其他历史阶段
                           try {
-                            const token = getAuthToken();
                             await fetch(`/api/storyboards/${scene.id}/media`, {
                               method: 'PATCH',
                               headers: {
                                 'Content-Type': 'application/json',
-                                ...(token ? { Authorization: `Bearer ${token}` } : {})
                               },
                               body: JSON.stringify({
                                 startFrame: null,

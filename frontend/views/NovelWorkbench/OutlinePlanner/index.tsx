@@ -8,7 +8,6 @@ import { Button, Input, Textarea, Modal, ModalContent, ModalHeader, ModalBody, M
 import { Plus, Trash2, ChevronRight, ChevronDown, Wand2, Save, Edit2, GripVertical, Network } from 'lucide-react';
 import { NovelOutline } from '../../../types/projectTypes';
 import { useToast } from '../../../contexts/ToastContext';
-import { getAuthToken } from '../../../services/auth';
 import { AIModel } from '../../../components/AIModelSelector';
 
 // ==================== 类型定义 ====================
@@ -184,7 +183,6 @@ const OutlinePlanner: React.FC<OutlinePlannerProps> = ({
 
     setSaving(true);
     try {
-      const token = getAuthToken();
       const url = editingOutline
         ? `/api/projects/${projectId}/novel/outlines/${editingOutline.id}`
         : `/api/projects/${projectId}/novel/outlines`;
@@ -193,7 +191,6 @@ const OutlinePlanner: React.FC<OutlinePlannerProps> = ({
         method: editingOutline ? 'PUT' : 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({
           ...formData,
@@ -235,10 +232,8 @@ const OutlinePlanner: React.FC<OutlinePlannerProps> = ({
   // 删除大纲
   const handleDelete = async (id: number) => {
     try {
-      const token = getAuthToken();
       await fetch(`/api/projects/${projectId}/novel/outlines/${id}`, {
         method: 'DELETE',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       onOutlinesChange(outlines.filter(o => o.id !== id));
       showToast('已删除', 'success');
@@ -252,12 +247,10 @@ const OutlinePlanner: React.FC<OutlinePlannerProps> = ({
   const handleAIGenerate = async () => {
     setGenerating(true);
     try {
-      const token = getAuthToken();
       const res = await fetch(`/api/projects/${projectId}/novel/outlines/generate`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({ prompt: '生成一个完整的小说大纲' }),
       });

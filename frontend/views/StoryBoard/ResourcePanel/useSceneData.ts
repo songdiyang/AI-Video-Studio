@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { getAuthToken } from '../../../services/auth';
 import type { Environment } from '../../../services/environments';
 import type { Building } from '../../../services/buildings';
 
@@ -44,12 +43,7 @@ export const useSceneData = (projectId?: number | null, scriptId?: number | null
     
     setIsLoadingScenes(true);
     try {
-      const token = getAuthToken();
-      const res = await fetch(`/api/studios?projectId=${projectId}`, {
-        headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        }
-      });
+      const res = await fetch(`/api/studios?projectId=${projectId}`);
 
       if (res.ok) {
         const data = await res.json();

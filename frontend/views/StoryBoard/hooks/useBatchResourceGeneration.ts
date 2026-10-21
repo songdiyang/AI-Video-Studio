@@ -5,7 +5,6 @@
  */
 
 import { useState, useCallback } from 'react';
-import { getAuthToken } from '../../../services/auth';
 import { useToast } from '../../../contexts/ToastContext';
 import { useWorkflowRecovery } from './useWorkflowRecovery';
 
@@ -73,10 +72,7 @@ export function useBatchResourceGeneration({
       setIsSubmittingCharacterBatch(true);
       showToast('正在启动角色批量生成...', 'info');
 
-      const token = getAuthToken();
-      const charRes = await fetch(`/api/characters/project/${projectId}`, {
-        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-      });
+      const charRes = await fetch(`/api/characters/project/${projectId}`);
 
       if (!charRes.ok) throw new Error('获取角色数据失败');
 
@@ -98,7 +94,6 @@ export function useBatchResourceGeneration({
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              ...(token ? { Authorization: `Bearer ${token}` } : {}),
             },
             body: JSON.stringify({
               imageModel,
@@ -166,10 +161,8 @@ export function useBatchResourceGeneration({
       setIsSubmittingSceneBatch(true);
       showToast('正在启动场景批量生成...', 'info');
 
-      const token = getAuthToken();
       const sceneRes = await fetch(
-        `/api/scenes/project/${projectId}${scriptId ? `?scriptId=${scriptId}` : ''}`,
-        { headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) } },
+        `/api/scenes/project/${projectId}${scriptId ? `?scriptId=${scriptId}` : ''}`
       );
 
       if (!sceneRes.ok) throw new Error('获取场景数据失败');
@@ -192,7 +185,6 @@ export function useBatchResourceGeneration({
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              ...(token ? { Authorization: `Bearer ${token}` } : {}),
             },
             body: JSON.stringify({
               imageModel,

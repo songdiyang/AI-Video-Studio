@@ -3,7 +3,6 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { getAuthToken } from '../../../services/auth';
 
 export interface NovelScene {
   id: number;
@@ -32,10 +31,7 @@ export function useNovelScenes(projectId: number) {
     setError(null);
     
     try {
-      const token = getAuthToken();
-      const res = await fetch(`/api/novels/${projectId}/scenes`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
+      const res = await fetch(`/api/novels/${projectId}/scenes`);
       
       if (res.ok) {
         const data = await res.json();
@@ -58,12 +54,10 @@ export function useNovelScenes(projectId: number) {
   // 创建场景
   const createScene = useCallback(async (sceneData: Partial<NovelScene>) => {
     try {
-      const token = getAuthToken();
       const res = await fetch(`/api/novels/${projectId}/scenes`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify(sceneData),
       });
@@ -84,12 +78,10 @@ export function useNovelScenes(projectId: number) {
   // 更新场景
   const updateScene = useCallback(async (sceneId: number, sceneData: Partial<NovelScene>) => {
     try {
-      const token = getAuthToken();
       const res = await fetch(`/api/novels/${projectId}/scenes/${sceneId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify(sceneData),
       });
@@ -110,10 +102,8 @@ export function useNovelScenes(projectId: number) {
   // 删除场景
   const deleteScene = useCallback(async (sceneId: number) => {
     try {
-      const token = getAuthToken();
       const res = await fetch(`/api/novels/${projectId}/scenes/${sceneId}`, {
         method: 'DELETE',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
 
       if (res.ok) {

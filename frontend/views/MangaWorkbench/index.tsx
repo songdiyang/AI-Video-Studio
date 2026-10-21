@@ -8,7 +8,6 @@ import { Spinner, Button, Input, Textarea } from '@heroui/react';
 import { Plus, FileText, LayoutGrid, Paintbrush, ChevronLeft, ChevronRight, Trash2, Copy, Eye } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 import { useLanguage } from '../../contexts/LanguageContext';
-import { getAuthToken } from '../../services/auth';
 import { Project, fetchProject } from '../../services/projects';
 import { MangaPage, PanelLayout } from '../../types/projectTypes';
 import { useAIModels } from '../../hooks/useAIModels';
@@ -61,10 +60,7 @@ const MangaScriptPanel: React.FC<MangaScriptPanelProps> = ({
   useEffect(() => {
     const loadEpisodes = async () => {
       try {
-        const token = getAuthToken();
-        const res = await fetch(`/api/projects/${projectId}/manga/episodes`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
+        const res = await fetch(`/api/projects/${projectId}/manga/episodes`);
         if (res.ok) {
           const data = await res.json();
           setEpisodes(data.episodes || [{ number: 1, title: '第1话', pageCount: 0 }]);
@@ -84,10 +80,7 @@ const MangaScriptPanel: React.FC<MangaScriptPanelProps> = ({
     const loadScript = async () => {
       setLoading(true);
       try {
-        const token = getAuthToken();
-        const res = await fetch(`/api/projects/${projectId}/manga/scripts/${currentEpisode}`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
+        const res = await fetch(`/api/projects/${projectId}/manga/scripts/${currentEpisode}`);
         if (res.ok) {
           const data = await res.json();
           setScript(data.content || '');
@@ -107,12 +100,10 @@ const MangaScriptPanel: React.FC<MangaScriptPanelProps> = ({
   const handleSave = async () => {
     setSaving(true);
     try {
-      const token = getAuthToken();
       const res = await fetch(`/api/projects/${projectId}/manga/scripts/${currentEpisode}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({ content: script }),
       });
@@ -231,10 +222,7 @@ const MangaWorkbench: React.FC<MangaWorkbenchProps> = ({ projectId, activeTab })
         setProject(projectData);
         
         // 加载页面列表
-        const token = getAuthToken();
-        const res = await fetch(`/api/projects/${projectId}/manga/pages?episode=${currentEpisode}`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
+        const res = await fetch(`/api/projects/${projectId}/manga/pages?episode=${currentEpisode}`);
         if (res.ok) {
           const data = await res.json();
           setPages(data.pages || []);

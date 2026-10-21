@@ -3,13 +3,13 @@
 // 覆盖核心生产域中零散但被实际调用的端点：
 //   /api/reference-images        资产参考图（asset_type + asset_id 作用域，落在 referenceImages 文档）
 //   /api/upload[/status|/general] 文件上传（走 XHR，二进制经 localMedia 落地工程 media/）
-//   /api/users/*                 本地身份资料（localStorage，可选，未登录不被调用）
+//   /api/users/*                 本地身份资料（localStorage，无账号体系，默认返回本地档案）
 //   /api/stats/dashboard         仪表盘统计（聚合本地工程）
 //
 // 契约大小写/包裹差异逐个回放（见各 handler）。
 
-import { readDoc, writeDoc, getActiveProjectPath, getActiveProjectId } from './localStore';
-import { jsonResponse } from './localAssetShared';
+import { readDoc, writeDoc, getActiveProjectId } from './localStore';
+import { jsonResponse, resolvePath } from './localAssetShared';
 import { persistGeneratedMedia } from './localMedia';
 import { fetchLocalProjects } from './projects';
 
@@ -48,7 +48,8 @@ function refSort(items: any[]): any[] {
 async function routeReferenceImages(url: URL, m: string, body: any): Promise<Response | null> {
   const pathname = url.pathname;
   if (pathname !== '/api/reference-images' && !pathname.startsWith('/api/reference-images/')) return null;
-  const path = getActiveProjectPath();
+  // 归属解析：显式 projectId（body/query）优先，兜底活动工程
+  const path = await resolvePath(body?.project_id ?? body?.projectId ?? url.searchParams.get('projectId') ?? url.searchParams.get('project_id'));
 
   // 批量重排序（非数字段，先于 /:id）
   if (pathname === '/api/reference-images/batch-reorder' && m === 'PUT') {
@@ -126,21 +127,23 @@ async function routeReferenceImages(url: URL, m: string, body: any): Promise<Res
 
 // ==================== 上传 ====================
 
-async function routeUpload(m: string, body: any): Promise<Response | null> {
+async function routeUpload(m: string, body: any, url: URL): Promise<Response | null> {
   // POST /api/upload（XHR，绑定资产类型，同时创建参考图记录）
   if (m === 'POST') {
     const file = body?._files?.file as File | undefined;
     if (!file) return jsonResponse({ message: '没有上传文件或文件类型不支持' }, 400);
-    const activeId = getActiveProjectId();
+    // 归属解析：显式 projectId（body/query）优先，兜底活动工程
+    const explicitPid = Number(body?.project_id ?? body?.projectId ?? url.searchParams.get('projectId')) || 0;
+    const pid = explicitPid || getActiveProjectId();
     const dataUrl = await fileToDataUrl(file);
-    let url = dataUrl;
-    if (activeId) {
-      try { url = await persistGeneratedMedia(activeId, dataUrl, file.name || 'upload.png'); } catch { url = dataUrl; }
+    let url2 = dataUrl;
+    if (pid) {
+      try { url2 = await persistGeneratedMedia(pid, dataUrl, file.name || 'upload.png'); } catch { url2 = dataUrl; }
     }
     const { asset_type, asset_id, view_type = 'other', description } = body || {};
     let image: any = null;
     if (asset_type && asset_id) {
-      const path = getActiveProjectPath();
+      const path = await resolvePath(explicitPid || null);
       if (path) {
         const doc = await loadRefDoc(path);
         const now = new Date().toISOString();
@@ -149,7 +152,7 @@ async function routeUpload(m: string, body: any): Promise<Response | null> {
           id: doc.nextId++,
           asset_type,
           asset_id: Number(asset_id) || 0,
-          image_url: url,
+          image_url: url2,
           description: description || null,
           view_type: ['front', 'side', 'back', 'other'].includes(view_type) ? view_type : 'other',
           sort_order: scopedCount,
@@ -161,7 +164,7 @@ async function routeUpload(m: string, body: any): Promise<Response | null> {
         writeDoc(path, 'referenceImages', doc);
       }
     }
-    return jsonResponse({ message: '文件上传成功', image, url }, 201);
+    return jsonResponse({ message: '文件上传成功', image, url: url2 }, 201);
   }
   return null;
 }
@@ -269,16 +272,18 @@ export async function routeMisc(url: URL, method: string, body: any): Promise<Re
   if (pathname === '/api/upload/general' && m === 'POST') {
     const file = body?._files?.file as File | undefined;
     if (!file) return jsonResponse({ message: '没有上传文件或文件类型不支持' }, 400);
-    const activeId = getActiveProjectId();
+    // 归属解析：显式 projectId（body/query）优先，兜底活动工程
+    const explicitPid = Number(body?.project_id ?? body?.projectId ?? url.searchParams.get('projectId')) || 0;
+    const pid = explicitPid || getActiveProjectId();
     const dataUrl = await fileToDataUrl(file);
     let outUrl = dataUrl;
-    if (activeId) {
-      try { outUrl = await persistGeneratedMedia(activeId, dataUrl, file.name || 'general'); } catch { outUrl = dataUrl; }
+    if (pid) {
+      try { outUrl = await persistGeneratedMedia(pid, dataUrl, file.name || 'general'); } catch { outUrl = dataUrl; }
     }
     return jsonResponse({ url: outUrl, filePath: outUrl, size: file.size, mimeType: file.type || 'application/octet-stream' });
   }
   if (pathname === '/api/upload' && m === 'POST') {
-    res = await routeUpload(m, body);
+    res = await routeUpload(m, body, url);
     if (res) return res;
   }
 

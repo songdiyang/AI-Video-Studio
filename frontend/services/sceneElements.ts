@@ -1,5 +1,3 @@
-import { getAuthToken } from './auth';
-
 /**
  * 场景元素（影棚元素）service
  */
@@ -47,11 +45,9 @@ function normalizeElement<T extends { image_url?: string | null }>(el: T): T {
   return el;
 }
 
-function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
-  const token = getAuthToken();
+function jsonHeaders(extra: Record<string, string> = {}): Record<string, string> {
   return {
     'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...extra,
   };
 }
@@ -77,7 +73,7 @@ export async function listSceneElements(params: {
   if (params.projectId) q.set('projectId', String(params.projectId));
   if (params.category) q.set('category', params.category);
   const res = await fetch(`/api/scene-elements?${q.toString()}`, {
-    headers: authHeaders(),
+    headers: jsonHeaders(),
   });
   const data = await handleJson<{ elements: SceneElement[] }>(res);
   return (data.elements || []).map(normalizeElement);
@@ -85,7 +81,7 @@ export async function listSceneElements(params: {
 
 export async function getSceneElement(id: number): Promise<SceneElement> {
   const res = await fetch(`/api/scene-elements/${id}`, {
-    headers: authHeaders(),
+    headers: jsonHeaders(),
   });
   const data = await handleJson<{ element: SceneElement }>(res);
   return normalizeElement(data.element);
@@ -100,7 +96,7 @@ export async function createSceneElement(payload: {
 }): Promise<SceneElement> {
   const res = await fetch('/api/scene-elements', {
     method: 'POST',
-    headers: authHeaders(),
+    headers: jsonHeaders(),
     body: JSON.stringify(payload),
   });
   const data = await handleJson<{ element: SceneElement }>(res);
@@ -120,7 +116,7 @@ export async function updateSceneElement(
 ): Promise<SceneElement> {
   const res = await fetch(`/api/scene-elements/${id}`, {
     method: 'PATCH',
-    headers: authHeaders(),
+    headers: jsonHeaders(),
     body: JSON.stringify(payload),
   });
   const data = await handleJson<{ element: SceneElement }>(res);
@@ -130,7 +126,7 @@ export async function updateSceneElement(
 export async function deleteSceneElement(id: number): Promise<void> {
   const res = await fetch(`/api/scene-elements/${id}`, {
     method: 'DELETE',
-    headers: authHeaders(),
+    headers: jsonHeaders(),
   });
   await handleJson(res);
 }
@@ -143,7 +139,7 @@ export async function generateSceneElementImage(
 ): Promise<{ jobId: string | number; elementId: number; status: string }> {
   const res = await fetch(`/api/scene-elements/${id}/generate`, {
     method: 'POST',
-    headers: authHeaders(),
+    headers: jsonHeaders(),
     body: JSON.stringify(body),
   });
   return handleJson(res);
@@ -153,7 +149,7 @@ export async function generateSceneElementImage(
 
 export async function listSceneElementLinks(sceneId: number): Promise<SceneElementLink[]> {
   const res = await fetch(`/api/scenes/${sceneId}/elements`, {
-    headers: authHeaders(),
+    headers: jsonHeaders(),
   });
   const data = await handleJson<{ elements: SceneElementLink[] }>(res);
   return (data.elements || []).map(l => ({
@@ -169,7 +165,7 @@ export async function addSceneElementLink(sceneId: number, body: {
 }): Promise<{ linkId: number }> {
   const res = await fetch(`/api/scenes/${sceneId}/elements`, {
     method: 'POST',
-    headers: authHeaders(),
+    headers: jsonHeaders(),
     body: JSON.stringify(body),
   });
   return handleJson(res);
@@ -181,7 +177,7 @@ export async function updateSceneElementLink(sceneId: number, elementId: number,
 }): Promise<void> {
   const res = await fetch(`/api/scenes/${sceneId}/elements/${elementId}`, {
     method: 'PATCH',
-    headers: authHeaders(),
+    headers: jsonHeaders(),
     body: JSON.stringify(body),
   });
   await handleJson(res);
@@ -190,7 +186,7 @@ export async function updateSceneElementLink(sceneId: number, elementId: number,
 export async function removeSceneElementLink(sceneId: number, elementId: number): Promise<void> {
   const res = await fetch(`/api/scenes/${sceneId}/elements/${elementId}`, {
     method: 'DELETE',
-    headers: authHeaders(),
+    headers: jsonHeaders(),
   });
   await handleJson(res);
 }
@@ -202,7 +198,7 @@ export async function extractSceneElements(sceneId: number, body: {
 }): Promise<{ jobId: string | number; sceneId: number; status: string }> {
   const res = await fetch(`/api/scenes/${sceneId}/extract-elements`, {
     method: 'POST',
-    headers: authHeaders(),
+    headers: jsonHeaders(),
     body: JSON.stringify(body),
   });
   return handleJson(res);

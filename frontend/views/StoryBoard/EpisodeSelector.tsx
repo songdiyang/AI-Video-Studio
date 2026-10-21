@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Film, Plus, Pencil, Check, X, Settings2, ChevronDown } from 'lucide-react';
+import { Film, Plus, Pencil, Check, X, ChevronDown } from 'lucide-react';
 
 interface Script {
   id: number;
@@ -38,13 +38,17 @@ interface EpisodeOption {
   key: string;
   label: string;
   selected: boolean;
+  /** 集数标题（管理模式下行内重命名时展示） */
+  title?: string;
 }
 
 /**
  * 通用剧集下拉：
  *  - 触发器：Film 图标 + 当前集数 + chevron
- *  - 面板：已有剧集分组（左对齐、选中态为文字高亮 + 左侧短竖线，去掉粗蓝外框）
- *          + 分割线 + 「新建第 N 集」动作项（固定加号图标）
+ *  - 面板：已有剧集分组（左对齐、选中态为文字高亮 + 左侧短竖线）
+ *          + 分割线 + 「新建下一集」动作项（固定加号图标）
+ *  - 管理模式（传入 onRename 时）：每行追加铅笔按钮，可行内重命名标题，
+ *    将「集数切换 / 管理集数 / 新建下一集」整合到同一个下拉中。
  *  - hover 背景反馈，点击外部 / Esc 关闭
  */
 const EpisodeDropdown: React.FC<{
@@ -53,9 +57,14 @@ const EpisodeDropdown: React.FC<{
   createLabel: string | null;
   onSelect: (key: string) => void;
   onCreate: () => void;
-}> = ({ options, triggerLabel, createLabel, onSelect, onCreate }) => {
+  /** 行内重命名回调；存在时启用管理模式（显示标题 + 铅笔 + 编辑框） */
+  onRename?: (key: string, title: string) => Promise<void> | void;
+}> = ({ options, triggerLabel, createLabel, onSelect, onCreate, onRename }) => {
   const [open, setOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingTitle, setEditingTitle] = useState('');
   const wrapRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -72,6 +81,24 @@ const EpisodeDropdown: React.FC<{
       document.removeEventListener('keydown', onKey);
     };
   }, [open]);
+
+  useEffect(() => {
+    if (editingId !== null && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [editingId]);
+
+  const startEdit = (opt: EpisodeOption) => {
+    setEditingId(opt.key);
+    setEditingTitle(opt.title || '');
+  };
+  const commitEdit = (key: string) => {
+    Promise.resolve(onRename?.(key, editingTitle)).then(() => setEditingId(null));
+  };
+
+  // 面板宽度：管理模式需容纳标题与重命名输入框，普通模式保持紧凑。
+  const panelWidth = onRename ? 'w-64' : 'min-w-[9rem]';
 
   return (
     <div ref={wrapRef} className="relative">
@@ -94,37 +121,100 @@ const EpisodeDropdown: React.FC<{
       {open && (
         <div
           role="listbox"
-          className="absolute left-0 top-full mt-1 z-50 min-w-[9rem] py-1 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] shadow-xl"
+          className={`absolute left-0 top-full mt-1 z-50 ${panelWidth} py-1 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] shadow-xl`}
         >
           {/* 已有剧集分组 */}
-          {options.map((opt) => (
-            <button
-              key={opt.key}
-              type="button"
-              role="option"
-              aria-selected={opt.selected}
-              onClick={() => {
-                onSelect(opt.key);
-                setOpen(false);
-              }}
-              className={`relative w-full pl-4 pr-3 py-1.5 text-left text-xs flex items-center transition-colors cursor-pointer ${
-                opt.selected
-                  ? 'text-[var(--accent)] font-medium bg-[var(--accent)]/[0.08]'
-                  : 'text-[var(--text-secondary)] hover:bg-[var(--bg-card-hover)] hover:text-[var(--text-primary)]'
-              }`}
-            >
-              {/* 选中态左侧短竖线标记（替代粗外框） */}
-              {opt.selected && (
-                <span className="absolute left-1 top-1/2 -translate-y-1/2 h-3.5 w-0.5 rounded-full bg-[var(--accent)]" />
-              )}
-              <span className="truncate">{opt.label}</span>
-            </button>
-          ))}
+          {options.map((opt) => {
+            const editing = onRename && editingId === opt.key;
+            if (editing) {
+              return (
+                <div key={opt.key} className="flex items-center gap-1 px-2 py-1">
+                  <span className="shrink-0 text-xs font-medium text-[var(--accent)] w-10">{opt.label}</span>
+                  <input
+                    ref={inputRef}
+                    value={editingTitle}
+                    onChange={(e) => setEditingTitle(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') commitEdit(opt.key);
+                      else if (e.key === 'Escape') setEditingId(null);
+                    }}
+                    className="flex-1 min-w-0 text-xs bg-transparent border border-[var(--accent)]/40 rounded px-1.5 py-0.5 outline-none text-[var(--text-primary)]"
+                    maxLength={30}
+                    placeholder="输入标题"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => commitEdit(opt.key)}
+                    className="p-0.5 rounded hover:bg-[var(--accent)]/20 text-[var(--accent)] cursor-pointer"
+                    title="保存标题"
+                  >
+                    <Check className="w-3 h-3" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditingId(null)}
+                    className="p-0.5 rounded hover:bg-red-500/20 text-red-400 cursor-pointer"
+                    title="取消"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              );
+            }
+            return (
+              <div
+                key={opt.key}
+                className={`group flex items-center ${
+                  opt.selected ? 'bg-[var(--accent)]/[0.08]' : 'hover:bg-[var(--bg-card-hover)]'
+                } transition-colors`}
+              >
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={opt.selected}
+                  onClick={() => {
+                    onSelect(opt.key);
+                    setOpen(false);
+                  }}
+                  className={`relative flex-1 min-w-0 pl-4 pr-2 py-1.5 text-left text-xs flex items-center gap-1.5 cursor-pointer ${
+                    opt.selected
+                      ? 'text-[var(--accent)] font-medium'
+                      : 'text-[var(--text-secondary)] group-hover:text-[var(--text-primary)]'
+                  }`}
+                >
+                  {/* 选中态左侧短竖线标记（替代粗外框） */}
+                  {opt.selected && (
+                    <span className="absolute left-1 top-1/2 -translate-y-1/2 h-3.5 w-0.5 rounded-full bg-(--accent)" />
+                  )}
+                  <span className="shrink-0">{opt.label}</span>
+                  {onRename && (
+                    <span
+                      className="truncate text-[var(--text-muted)]"
+                      title={opt.title || '未命名'}
+                    >
+                      {opt.title || <span className="italic opacity-60">未命名</span>}
+                    </span>
+                  )}
+                </button>
+                {onRename && (
+                  <button
+                    type="button"
+                    onClick={() => startEdit(opt)}
+                    className="shrink-0 mr-1 p-1 rounded hover:bg-[var(--accent)]/10 text-[var(--text-muted)] hover:text-[var(--accent)] opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity cursor-pointer"
+                    title="编辑标题"
+                    aria-label={`编辑${opt.label}标题`}
+                  >
+                    <Pencil className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+            );
+          })}
 
           {/* 新建动作：分组分隔 */}
           {createLabel && (
             <>
-              <div className="my-1 border-t border-[var(--border-color)]" />
+              <div className="my-1 border-t border-(--border-color)" />
               <button
                 type="button"
                 onClick={() => {
@@ -149,7 +239,7 @@ const EpisodeDropdown: React.FC<{
  * 统一存储层后，所有分镜都绑定到剧本（包括隐式剧本）。
  * 此组件负责：
  *  - 集数切换（绑定剧本时显示剧本集数列表，自由创作时显示进度标签）
- *  - 新建下一集入口
+ *  - 集数管理（行内重命名标题）与新建下一集：均整合进同一个剧集下拉，不再单列齿轮入口
  * 注：项目名不在此展示（顶部导航栏/侧栏标题已承担项目标识）。
  */
 const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
@@ -162,19 +252,6 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
   onCreateNextEpisode,
   onUpdateEpisodeTitle,
 }) => {
-  // 弹窗管理状态
-  const [manageOpen, setManageOpen] = useState(false);
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [editingTitle, setEditingTitle] = useState('');
-  const editInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (editingId !== null && editInputRef.current) {
-      editInputRef.current.focus();
-      editInputRef.current.select();
-    }
-  }, [editingId]);
-
   // 当前选中的剧本（按 scriptId 匹配）
   const currentScript = currentScriptId
     ? scripts.find((s) => s.id === currentScriptId)
@@ -209,13 +286,14 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
     );
   };
 
-  // ---- 绑定剧本模式：显示剧本集数列表 ----
+  // ---- 绑定剧本模式：显示剧本集数列表（整合管理 + 新建） ----
   const renderBound = () => {
     if (!hasBoundScript) return null;
     const options: EpisodeOption[] = scripts.map((s) => ({
       key: String(s.id),
       label: `第${s.episode_number}集`,
       selected: s.id === currentScript?.id,
+      title: s.title,
     }));
     return (
       <div className="flex items-center gap-1">
@@ -229,24 +307,12 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
             if (script) onSelect(script);
           }}
           onCreate={() => onCreateNextEpisode?.()}
+          onRename={
+            onUpdateEpisodeTitle
+              ? (key, title) => onUpdateEpisodeTitle(Number(key), title)
+              : undefined
+          }
         />
-        {/* 集数管理按钮（带 ref 用于定位） */}
-        <button
-          type="button"
-          ref={(el) => {
-            if (el && manageOpen) {
-              const rect = el.getBoundingClientRect();
-              document.documentElement.style.setProperty('--episode-manage-top', `${rect.bottom + 4}px`);
-              document.documentElement.style.setProperty('--episode-manage-left', `${rect.right - 256}px`);
-            }
-          }}
-          onClick={() => setManageOpen(true)}
-          className="inline-flex items-center justify-center w-7 h-7 rounded-md border border-[var(--border-color)] hover:border-[var(--accent)]/50 hover:bg-[var(--accent)]/10 text-[var(--text-muted)] hover:text-[var(--accent)] transition-colors cursor-pointer"
-          title="管理集数"
-          aria-label="管理集数"
-        >
-          <Settings2 className="w-3.5 h-3.5" />
-        </button>
       </div>
     );
   };
@@ -255,123 +321,6 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
     <div className="flex items-center gap-2">
       {renderStandalone()}
       {renderBound()}
-
-      {/* 集数管理下拉弹窗 */}
-      {manageOpen && (
-        <div
-          className="fixed inset-0 z-50"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setManageOpen(false);
-          }}
-        >
-          {/* 弹窗内容：定位到按钮下方 */}
-          <div
-            className="absolute z-50 w-64 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg shadow-xl overflow-hidden"
-            style={{
-              top: 'var(--episode-manage-top, 48px)',
-              left: 'var(--episode-manage-left, 320px)',
-            }}
-          >
-            {/* 弹窗头部 */}
-            <div className="shrink-0 px-3 py-2 border-b border-[var(--border-color)] flex items-center justify-between">
-              <h3 className="text-sm font-medium text-[var(--text-primary)]">管理集数</h3>
-              <button
-                onClick={() => setManageOpen(false)}
-                className="p-0.5 rounded hover:bg-[var(--bg-app)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-            {/* 弹窗内容：集数列表 */}
-            <div className="max-h-64 overflow-y-auto p-2 space-y-1">
-              {scripts.map((s) => (
-                <div
-                  key={s.id}
-                  className="flex items-center gap-2 px-2 py-1.5 rounded-md bg-[var(--bg-app)]/50 border border-[var(--border-color)]/30 hover:border-[var(--accent)]/30 transition-colors"
-                >
-                  <span className="shrink-0 text-xs font-medium text-[var(--accent)] w-10">
-                    第{s.episode_number}集
-                  </span>
-                  {editingId === s.id ? (
-                    <div className="flex items-center gap-1 flex-1 min-w-0">
-                      <input
-                        ref={editInputRef}
-                        value={editingTitle}
-                        onChange={(e) => setEditingTitle(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            onUpdateEpisodeTitle?.(s.id, editingTitle).then(() => setEditingId(null));
-                          } else if (e.key === 'Escape') {
-                            setEditingId(null);
-                          }
-                        }}
-                        className="flex-1 min-w-0 text-xs bg-transparent border border-[var(--accent)]/40 rounded px-1.5 py-0.5 outline-none text-[var(--text-primary)]"
-                        maxLength={30}
-                        placeholder="输入标题"
-                      />
-                      <button
-                        onClick={() => onUpdateEpisodeTitle?.(s.id, editingTitle).then(() => setEditingId(null))}
-                        className="p-0.5 rounded hover:bg-[var(--accent)]/20 text-[var(--accent)]"
-                      >
-                        <Check className="w-3 h-3" />
-                      </button>
-                      <button
-                        onClick={() => setEditingId(null)}
-                        className="p-0.5 rounded hover:bg-red-500/20 text-red-400"
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-1 flex-1 min-w-0">
-                      <span
-                        className="flex-1 min-w-0 text-xs text-[var(--text-primary)] truncate cursor-pointer hover:text-[var(--accent)]"
-                        onClick={() => {
-                          setEditingId(s.id);
-                          setEditingTitle(s.title || '');
-                        }}
-                        title={s.title || '点击编辑标题'}
-                      >
-                        {s.title || (
-                          <span className="text-[var(--text-muted)]/50 italic">未命名</span>
-                        )}
-                      </span>
-                      <button
-                        onClick={() => {
-                          setEditingId(s.id);
-                          setEditingTitle(s.title || '');
-                        }}
-                        className="p-0.5 rounded hover:bg-[var(--accent)]/10 text-[var(--text-muted)] hover:text-[var(--accent)]"
-                        title="编辑标题"
-                      >
-                        <Pencil className="w-3 h-3" />
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-            {/* 弹窗底部 */}
-            <div className="shrink-0 px-3 py-2 border-t border-[var(--border-color)] flex items-center justify-between">
-              <span className="text-[10px] text-[var(--text-muted)]">
-                共 {scripts.length} 集
-              </span>
-              {onCreateNextEpisode && (
-                <button
-                  onClick={() => {
-                    setManageOpen(false);
-                    onCreateNextEpisode();
-                  }}
-                  className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-[var(--accent)]/10 text-[var(--accent)] text-xs font-medium hover:bg-[var(--accent)]/20 transition-colors"
-                >
-                  <Plus className="w-3 h-3" />
-                  新建
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

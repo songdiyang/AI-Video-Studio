@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from 'react';
-import { getAuthToken } from '../services/auth';
 
 interface RecentProject {
   id: string;
@@ -77,14 +76,6 @@ export function useDashboardStats(): UseDashboardStatsResult {
   const [refreshKey, setRefreshKey] = useState(0);
 
   const fetchStats = useCallback(async (forceRefresh = false) => {
-    const token = getAuthToken();
-    if (!token) {
-      setStats(defaultStats);
-      setLoading(false);
-      setError(null);
-      return;
-    }
-
     // 检查缓存（非强制刷新时）
     if (!forceRefresh) {
       const cached = getCachedStats();
@@ -101,9 +92,7 @@ export function useDashboardStats(): UseDashboardStatsResult {
 
     try {
       // 使用专用仪表盘统计端点（/api/stats/dashboard）
-      const res = await fetch('/api/stats/dashboard', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+      const res = await fetch('/api/stats/dashboard');
 
       if (!res.ok) {
         throw new Error('Failed to fetch dashboard stats');

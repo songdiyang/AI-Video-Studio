@@ -183,6 +183,16 @@ export function clearPathCache(): void {
   pathByProjectId.clear();
 }
 
+/** 反查工程绝对路径对应的本地工程 id；未解析过返回 null（供写入归属校验使用）。 */
+export function projectIdForPath(projectPath: string | null | undefined): number | null {
+  if (!projectPath) return null;
+  if (activeProjectPath === projectPath && activeProjectId !== null) return activeProjectId;
+  for (const [id, p] of pathByProjectId) {
+    if (p === projectPath) return id;
+  }
+  return null;
+}
+
 // ==================== 当前活动工程 ====================
 // 离线桌面为"单活动工程"模型：路由拦截器据此确定未显式携带 projectId 的请求归属。
 let activeProjectPath: string | null = null;

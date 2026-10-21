@@ -11,7 +11,7 @@
 
 
 > jiaozi-anime@0.5.1 build:extensions
-> node scripts/build-extensions.cjs
+> node ../scripts/build-extensions.cjs
 
 Building extensions...
   Packed: japanese-language-pack.zip
@@ -22,223 +22,432 @@ Done. 1 extension(s) packed.
 
 [36mvite v6.4.1 [32mbuilding for production...[36m[39m
 transforming...
-Browserslist: browsers data (caniuse-lite) is 8 months old. Please run:
-  npx update-browserslist-db@latest
-  Why you should do it regularly: https://github.com/browserslist/update-db#readme
-[32m✓[39m 5856 modules transformed.
+[32m✓[39m 5767 modules transformed.
 rendering chunks...
+[plugin vite:reporter] 
+(!) D:/Application/ai视频编辑器/AI-Video-Studio/frontend/services/localMedia.ts is dynamically imported by D:/Application/ai视频编辑器/AI-Video-Studio/frontend/services/localCharacters.ts but also statically imported by D:/Application/ai视频编辑器/AI-Video-Studio/frontend/services/localAssetShared.ts, D:/Application/ai视频编辑器/AI-Video-Studio/frontend/services/localMisc.ts, D:/Application/ai视频编辑器/AI-Video-Studio/frontend/services/localProjectsSub.ts, D:/Application/ai视频编辑器/AI-Video-Studio/frontend/services/localScenes.ts, D:/Application/ai视频编辑器/AI-Video-Studio/frontend/services/localWorkflow.ts, dynamic import will not move module into another chunk.
+
 computing gzip size...
 [2mdist/[22m[32mindex.html                                            [39m[1m[2m    0.75 kB[22m[1m[22m[2m │ gzip:     0.47 kB[22m
-[2mdist/[22m[32massets/worker-BAOIWoxA.js                             [39m[1m[2m    2.53 kB[22m[1m[22m
 [2mdist/[22m[32massets/Assistant-SemiBold-SCI4bEL9.woff2              [39m[1m[2m   20.21 kB[22m[1m[22m
 [2mdist/[22m[32massets/Assistant-Regular-DVxZuzxb.woff2               [39m[1m[2m   20.23 kB[22m[1m[22m
 [2mdist/[22m[32massets/Assistant-Medium-DrcxCXg3.woff2                [39m[1m[2m   20.32 kB[22m[1m[22m
 [2mdist/[22m[32massets/Assistant-Bold-gm-uSS1B.woff2                  [39m[1m[2m   20.38 kB[22m[1m[22m
+[2mdist/[22m[35massets/index-B8UgVRt6.css                             [39m[1m[2m    3.10 kB[22m[1m[22m[2m │ gzip:     0.90 kB[22m
 [2mdist/[22m[35massets/vendor-BTC6pobQ.css                            [39m[1m[2m   10.32 kB[22m[1m[22m[2m │ gzip:     2.13 kB[22m
-[2mdist/[22m[35massets/excalidraw-Br7VqBMS.css                        [39m[1m[2m  146.04 kB[22m[1m[22m[2m │ gzip:    23.11 kB[22m
-[2mdist/[22m[35massets/index-DtGQtOdk.css                             [39m[1m[2m  482.65 kB[22m[1m[22m[2m │ gzip:    58.24 kB[22m
-[2mdist/[22m[36massets/clone-BTZeslSK.js                              [39m[1m[2m    0.09 kB[22m[1m[22m[2m │ gzip:     0.11 kB[22m
-[2mdist/[22m[36massets/index-BJgKrDjI.js                              [39m[1m[2m    0.17 kB[22m[1m[22m[2m │ gzip:     0.17 kB[22m
+[2mdist/[22m[35massets/excalidraw-BcAUh2Nm.css                        [39m[1m[2m  145.58 kB[22m[1m[22m[2m │ gzip:    23.01 kB[22m
+[2mdist/[22m[35massets/index-ClXi3WmN.css                             [39m[1m[2m  448.17 kB[22m[1m[22m[2m │ gzip:    55.26 kB[22m
+[2mdist/[22m[36massets/clone-BOGQ7fV6.js                              [39m[1m[2m    0.09 kB[22m[1m[22m[2m │ gzip:     0.11 kB[22m
+[2mdist/[22m[36massets/index-C4lDuuOm.js                              [39m[1m[2m    0.17 kB[22m[1m[22m[2m │ gzip:     0.17 kB[22m
 [2mdist/[22m[36massets/file-open-7c801643-684qeFg4.js                 [39m[1m[2m    0.45 kB[22m[1m[22m[2m │ gzip:     0.32 kB[22m
 [2mdist/[22m[36massets/file-open-002ab408-DIuFHtCF.js                 [39m[1m[2m    0.54 kB[22m[1m[22m[2m │ gzip:     0.33 kB[22m
 [2mdist/[22m[36massets/directory-open-01563666-DWU9wJ6I.js            [39m[1m[2m    0.59 kB[22m[1m[22m[2m │ gzip:     0.36 kB[22m
-[2mdist/[22m[36massets/flowDiagram-v2-96b9c2cf-DhzBt3Cl.js            [39m[1m[2m    0.66 kB[22m[1m[22m[2m │ gzip:     0.40 kB[22m
+[2mdist/[22m[36massets/flowDiagram-v2-96b9c2cf-CHxp7gXU.js            [39m[1m[2m    0.66 kB[22m[1m[22m[2m │ gzip:     0.40 kB[22m
 [2mdist/[22m[36massets/file-save-3189631c-C1wFhQhH.js                 [39m[1m[2m    0.71 kB[22m[1m[22m[2m │ gzip:     0.46 kB[22m
-[2mdist/[22m[36massets/useVirtualList-KZt2L2d5.js                     [39m[1m[2m    0.72 kB[22m[1m[22m[2m │ gzip:     0.45 kB[22m
-[2mdist/[22m[36massets/core-mPlcS5K-.js                               [39m[1m[2m    0.83 kB[22m[1m[22m[2m │ gzip:     0.45 kB[22m
 [2mdist/[22m[36massets/file-save-745eba88-Bb9F9Kg7.js                 [39m[1m[2m    0.87 kB[22m[1m[22m[2m │ gzip:     0.50 kB[22m
-[2mdist/[22m[36massets/svgDrawCommon-08f97a94-F1XYCGVw.js             [39m[1m[2m    1.34 kB[22m[1m[22m[2m │ gzip:     0.58 kB[22m
-[2mdist/[22m[36massets/admin-Ce5lepHS.js                              [39m[1m[2m    1.35 kB[22m[1m[22m[2m │ gzip:     0.52 kB[22m
+[2mdist/[22m[36massets/svgDrawCommon-08f97a94-DhYlTYHf.js             [39m[1m[2m    1.34 kB[22m[1m[22m[2m │ gzip:     0.58 kB[22m
 [2mdist/[22m[36massets/directory-open-4ed118d0-CunoC1EB.js            [39m[1m[2m    1.55 kB[22m[1m[22m[2m │ gzip:     0.79 kB[22m
-[2mdist/[22m[36massets/useAIModels-DxzaoS_r.js                        [39m[1m[2m    2.24 kB[22m[1m[22m[2m │ gzip:     1.11 kB[22m
-[2mdist/[22m[36massets/community-C-02-L9G.js                          [39m[1m[2m    2.98 kB[22m[1m[22m[2m │ gzip:     1.11 kB[22m
+[2mdist/[22m[36massets/core-DhEqZVGG.js                               [39m[1m[2m    2.44 kB[22m[1m[22m[2m │ gzip:     0.98 kB[22m
 [2mdist/[22m[36massets/roundRect-0PYZxl1G.js                          [39m[1m[2m    3.05 kB[22m[1m[22m[2m │ gzip:     1.08 kB[22m
-[2mdist/[22m[36massets/scripts-DcQ-fhaJ.js                            [39m[1m[2m    3.54 kB[22m[1m[22m[2m │ gzip:     0.97 kB[22m
-[2mdist/[22m[36massets/index-B7dxydgJ.js                              [39m[1m[2m    3.57 kB[22m[1m[22m[2m │ gzip:     1.32 kB[22m
-[2mdist/[22m[36massets/index-scsjZFHV.js                              [39m[1m[2m    4.75 kB[22m[1m[22m[2m │ gzip:     2.04 kB[22m
-[2mdist/[22m[36massets/stateDiagram-v2-d93cdb3a-D5H2kGwC.js           [39m[1m[2m    4.82 kB[22m[1m[22m[2m │ gzip:     2.29 kB[22m
-[2mdist/[22m[36massets/UpgradePrompt-CRkpYuts.js                      [39m[1m[2m    4.83 kB[22m[1m[22m[2m │ gzip:     1.93 kB[22m
-[2mdist/[22m[36massets/classDiagram-v2-f2320105-B8spXna1.js           [39m[1m[2m    4.95 kB[22m[1m[22m[2m │ gzip:     2.19 kB[22m
-[2mdist/[22m[36massets/index-DD7NgHuv.js                              [39m[1m[2m    5.33 kB[22m[1m[22m[2m │ gzip:     2.13 kB[22m
-[2mdist/[22m[36massets/ffmpeg-CKxerpgD.js                             [39m[1m[2m    5.63 kB[22m[1m[22m[2m │ gzip:     2.26 kB[22m
-[2mdist/[22m[36massets/AcceptInvite-CDRz1MmV.js                       [39m[1m[2m    6.08 kB[22m[1m[22m[2m │ gzip:     1.96 kB[22m
-[2mdist/[22m[36massets/AdminLayout-BP1xgb88.js                        [39m[1m[2m    6.14 kB[22m[1m[22m[2m │ gzip:     2.30 kB[22m
-[2mdist/[22m[36massets/index-CrsW90RP.js                              [39m[1m[2m    6.30 kB[22m[1m[22m[2m │ gzip:     2.19 kB[22m
-[2mdist/[22m[36massets/AdminLogin-C1m4odW6.js                         [39m[1m[2m    6.37 kB[22m[1m[22m[2m │ gzip:     1.88 kB[22m
-[2mdist/[22m[36massets/index-MVtUjjhk.js                              [39m[1m[2m    6.73 kB[22m[1m[22m[2m │ gzip:     3.03 kB[22m
-[2mdist/[22m[36massets/index-Cf6P6kOt.js                              [39m[1m[2m    7.10 kB[22m[1m[22m[2m │ gzip:     2.77 kB[22m
-[2mdist/[22m[36massets/ModelProviders-CNx3BZkC.js                     [39m[1m[2m    7.11 kB[22m[1m[22m[2m │ gzip:     2.70 kB[22m
-[2mdist/[22m[36massets/ModelStatsDashboard-DddOSs-t.js                [39m[1m[2m    7.44 kB[22m[1m[22m[2m │ gzip:     2.16 kB[22m
-[2mdist/[22m[36massets/ServiceDashboard-Dy-1Oqtt.js                   [39m[1m[2m    7.85 kB[22m[1m[22m[2m │ gzip:     2.79 kB[22m
-[2mdist/[22m[36massets/useTaskRunner-DHIJO_Jp.js                      [39m[1m[2m    7.96 kB[22m[1m[22m[2m │ gzip:     3.18 kB[22m
-[2mdist/[22m[36massets/index-BEqjrKgv.js                              [39m[1m[2m    7.99 kB[22m[1m[22m[2m │ gzip:     2.93 kB[22m
-[2mdist/[22m[36massets/SiteSettings-LiRhGa5c.js                       [39m[1m[2m    8.32 kB[22m[1m[22m[2m │ gzip:     2.52 kB[22m
-[2mdist/[22m[36massets/index-CbgH7Ppt.js                              [39m[1m[2m    8.62 kB[22m[1m[22m[2m │ gzip:     3.09 kB[22m
-[2mdist/[22m[36massets/infoDiagram-f8f76790-D26kelxX.js               [39m[1m[2m    8.63 kB[22m[1m[22m[2m │ gzip:     3.25 kB[22m
-[2mdist/[22m[36massets/RAGStatus-4XsGTeRM.js                          [39m[1m[2m    8.88 kB[22m[1m[22m[2m │ gzip:     2.23 kB[22m
-[2mdist/[22m[36massets/UserCenter-C8d_hcCr.js                         [39m[1m[2m    9.01 kB[22m[1m[22m[2m │ gzip:     2.89 kB[22m
-[2mdist/[22m[36massets/classDiagram-70f12bd4-CeqJVLa8.js              [39m[1m[2m    9.19 kB[22m[1m[22m[2m │ gzip:     2.85 kB[22m
-[2mdist/[22m[36massets/index-B528-fJY.js                              [39m[1m[2m    9.28 kB[22m[1m[22m[2m │ gzip:     3.35 kB[22m
-[2mdist/[22m[36massets/index-CNULHBB9.js                              [39m[1m[2m    9.62 kB[22m[1m[22m[2m │ gzip:     3.44 kB[22m
-[2mdist/[22m[36massets/index-DtI_bfSo.js                              [39m[1m[2m    9.87 kB[22m[1m[22m[2m │ gzip:     3.00 kB[22m
-[2mdist/[22m[36massets/styles-c10674c1-DD8Lznpk.js                    [39m[1m[2m    9.88 kB[22m[1m[22m[2m │ gzip:     3.63 kB[22m
-[2mdist/[22m[36massets/index-CRHr3zfy.js                              [39m[1m[2m   10.01 kB[22m[1m[22m[2m │ gzip:     3.59 kB[22m
-[2mdist/[22m[36massets/stateDiagram-587899a1-CPu6q572.js              [39m[1m[2m   10.07 kB[22m[1m[22m[2m │ gzip:     3.49 kB[22m
-[2mdist/[22m[36massets/index-DiQBGevQ.js                              [39m[1m[2m   10.13 kB[22m[1m[22m[2m │ gzip:     3.29 kB[22m
-[2mdist/[22m[36massets/index-BqWhlMsj.js                              [39m[1m[2m   10.47 kB[22m[1m[22m[2m │ gzip:     3.42 kB[22m
-[2mdist/[22m[36massets/index-J-zp9nf6.js                              [39m[1m[2m   10.57 kB[22m[1m[22m[2m │ gzip:     3.11 kB[22m
-[2mdist/[22m[36massets/CreatorProfile-DNdX-2i6.js                     [39m[1m[2m   10.64 kB[22m[1m[22m[2m │ gzip:     2.96 kB[22m
-[2mdist/[22m[36massets/index-DvsUOmgP.js                              [39m[1m[2m   11.29 kB[22m[1m[22m[2m │ gzip:     3.73 kB[22m
-[2mdist/[22m[36massets/AdminLog-Blc-Dy7M.js                           [39m[1m[2m   11.96 kB[22m[1m[22m[2m │ gzip:     3.69 kB[22m
-[2mdist/[22m[36massets/index-3862675e-BTimBqtH.js                     [39m[1m[2m   11.99 kB[22m[1m[22m[2m │ gzip:     4.13 kB[22m
-[2mdist/[22m[36massets/RateLimitManagement-JmUWXEWZ.js                [39m[1m[2m   12.32 kB[22m[1m[22m[2m │ gzip:     3.66 kB[22m
-[2mdist/[22m[36massets/index-Hxg8gAuv.js                              [39m[1m[2m   12.42 kB[22m[1m[22m[2m │ gzip:     3.55 kB[22m
-[2mdist/[22m[36massets/AnnouncementManagement-Bv2cmCM3.js             [39m[1m[2m   12.80 kB[22m[1m[22m[2m │ gzip:     3.24 kB[22m
-[2mdist/[22m[36massets/pieDiagram-8a3498a8-DkPJkrZn.js                [39m[1m[2m   13.74 kB[22m[1m[22m[2m │ gzip:     5.15 kB[22m
-[2mdist/[22m[36massets/window-Dh1XkcIM.js                             [39m[1m[2m   14.62 kB[22m[1m[22m[2m │ gzip:     3.68 kB[22m
-[2mdist/[22m[36massets/index-D4UTcG2F.js                              [39m[1m[2m   14.80 kB[22m[1m[22m[2m │ gzip:     4.75 kB[22m
-[2mdist/[22m[36massets/index-Dk_5nu4l.js                              [39m[1m[2m   15.24 kB[22m[1m[22m[2m │ gzip:     3.90 kB[22m
-[2mdist/[22m[36massets/graph-BFYf1zgc.js                              [39m[1m[2m   17.48 kB[22m[1m[22m[2m │ gzip:     6.28 kB[22m
-[2mdist/[22m[36massets/UserManagement-Dt9Gazeg.js                     [39m[1m[2m   18.73 kB[22m[1m[22m[2m │ gzip:     4.84 kB[22m
-[2mdist/[22m[36massets/sankeyDiagram-04a897e0-DEmNLDJz.js             [39m[1m[2m   21.16 kB[22m[1m[22m[2m │ gzip:     7.69 kB[22m
-[2mdist/[22m[36massets/flowDiagram-66a62f08-CqWR8zs8.js               [39m[1m[2m   21.33 kB[22m[1m[22m[2m │ gzip:     6.96 kB[22m
-[2mdist/[22m[36massets/journeyDiagram-49397b02-BG-lBUmj.js            [39m[1m[2m   21.63 kB[22m[1m[22m[2m │ gzip:     7.62 kB[22m
-[2mdist/[22m[36massets/FeedbackManagement-TWFEyF8h.js                 [39m[1m[2m   22.35 kB[22m[1m[22m[2m │ gzip:     4.92 kB[22m
-[2mdist/[22m[36massets/timeline-definition-85554ec2-BoQ_E_Rh.js       [39m[1m[2m   22.59 kB[22m[1m[22m[2m │ gzip:     7.88 kB[22m
-[2mdist/[22m[36massets/requirementDiagram-deff3bca-B18w91O2.js        [39m[1m[2m   24.57 kB[22m[1m[22m[2m │ gzip:     8.44 kB[22m
-[2mdist/[22m[36massets/ErrorMonitor-DMGDpv4t.js                       [39m[1m[2m   26.40 kB[22m[1m[22m[2m │ gzip:     5.60 kB[22m
-[2mdist/[22m[36massets/styles-6aaf32cf-BlTNaz-t.js                    [39m[1m[2m   26.44 kB[22m[1m[22m[2m │ gzip:     8.46 kB[22m
-[2mdist/[22m[36massets/Dashboard-jkr8M0Ux.js                          [39m[1m[2m   27.79 kB[22m[1m[22m[2m │ gzip:     5.84 kB[22m
-[2mdist/[22m[36massets/layout-COtL9pSC.js                             [39m[1m[2m   28.85 kB[22m[1m[22m[2m │ gzip:    10.49 kB[22m
-[2mdist/[22m[36massets/assets-D2-ku988.js                             [39m[1m[2m   29.09 kB[22m[1m[22m[2m │ gzip:     6.17 kB[22m
-[2mdist/[22m[36massets/quadrantDiagram-120e2f19--atiBhl1.js           [39m[1m[2m   29.39 kB[22m[1m[22m[2m │ gzip:     8.32 kB[22m
-[2mdist/[22m[36massets/erDiagram-9861fffd-Dekrm4IT.js                 [39m[1m[2m   30.76 kB[22m[1m[22m[2m │ gzip:     9.98 kB[22m
-[2mdist/[22m[36massets/pica-CsFKa9z-.js                               [39m[1m[2m   32.42 kB[22m[1m[22m[2m │ gzip:    12.87 kB[22m
-[2mdist/[22m[36massets/edges-e0da2a9e-YDQJbOSN.js                     [39m[1m[2m   34.35 kB[22m[1m[22m[2m │ gzip:     8.90 kB[22m
-[2mdist/[22m[36massets/xychartDiagram-e933f94c-DAud8UJv.js            [39m[1m[2m   35.87 kB[22m[1m[22m[2m │ gzip:     9.88 kB[22m
-[2mdist/[22m[36massets/blockDiagram-38ab4fdb-C6QDj2FW.js              [39m[1m[2m   37.54 kB[22m[1m[22m[2m │ gzip:    11.89 kB[22m
-[2mdist/[22m[36massets/styles-9a916d00-hx0Rq1s_.js                    [39m[1m[2m   37.87 kB[22m[1m[22m[2m │ gzip:    12.59 kB[22m
-[2mdist/[22m[36massets/gitGraphDiagram-72cf32ee-SbSyyNWj.js           [39m[1m[2m   38.77 kB[22m[1m[22m[2m │ gzip:    11.59 kB[22m
-[2mdist/[22m[36massets/ganttDiagram-c361ad54-CRHUNC2N.js              [39m[1m[2m   40.51 kB[22m[1m[22m[2m │ gzip:    13.94 kB[22m
-[2mdist/[22m[36massets/index-BPt8_ggA.js                              [39m[1m[2m   45.30 kB[22m[1m[22m[2m │ gzip:    11.22 kB[22m
+[2mdist/[22m[36massets/useAIModels-DLdPn3rw.js                        [39m[1m[2m    3.31 kB[22m[1m[22m[2m │ gzip:     1.60 kB[22m
+[2mdist/[22m[36massets/scripts-sRmz135R.js                            [39m[1m[2m    3.43 kB[22m[1m[22m[2m │ gzip:     0.88 kB[22m
+[2mdist/[22m[36massets/index-6JwH_hx1.js                              [39m[1m[2m    3.57 kB[22m[1m[22m[2m │ gzip:     1.31 kB[22m
+[2mdist/[22m[36massets/useTaskRunner-B1e5girE.js                      [39m[1m[2m    4.42 kB[22m[1m[22m[2m │ gzip:     1.92 kB[22m
+[2mdist/[22m[36massets/index--ZJB6EIR.js                              [39m[1m[2m    4.75 kB[22m[1m[22m[2m │ gzip:     2.04 kB[22m
+[2mdist/[22m[36massets/stateDiagram-v2-d93cdb3a-pBl4m3vq.js           [39m[1m[2m    4.82 kB[22m[1m[22m[2m │ gzip:     2.30 kB[22m
+[2mdist/[22m[36massets/classDiagram-v2-f2320105-DlgCF0Si.js           [39m[1m[2m    4.95 kB[22m[1m[22m[2m │ gzip:     2.19 kB[22m
+[2mdist/[22m[36massets/index-BnE96Tvl.js                              [39m[1m[2m    5.25 kB[22m[1m[22m[2m │ gzip:     2.08 kB[22m
+[2mdist/[22m[36massets/index-AltUec-z.js                              [39m[1m[2m    6.30 kB[22m[1m[22m[2m │ gzip:     2.20 kB[22m
+[2mdist/[22m[36massets/index-BtMKIkMB.js                              [39m[1m[2m    6.72 kB[22m[1m[22m[2m │ gzip:     3.02 kB[22m
+[2mdist/[22m[36massets/index-CjJouEQi.js                              [39m[1m[2m    7.00 kB[22m[1m[22m[2m │ gzip:     2.76 kB[22m
+[2mdist/[22m[36massets/UserCenter-Boy1VFZ6.js                         [39m[1m[2m    7.45 kB[22m[1m[22m[2m │ gzip:     2.33 kB[22m
+[2mdist/[22m[36massets/index-DSIhdVrB.js                              [39m[1m[2m    7.99 kB[22m[1m[22m[2m │ gzip:     2.93 kB[22m
+[2mdist/[22m[36massets/infoDiagram-f8f76790-D6tR1fzq.js               [39m[1m[2m    8.63 kB[22m[1m[22m[2m │ gzip:     3.25 kB[22m
+[2mdist/[22m[36massets/classDiagram-70f12bd4-DoItLY0Q.js              [39m[1m[2m    9.19 kB[22m[1m[22m[2m │ gzip:     2.85 kB[22m
+[2mdist/[22m[36massets/index-nHciDl8y.js                              [39m[1m[2m    9.28 kB[22m[1m[22m[2m │ gzip:     3.35 kB[22m
+[2mdist/[22m[36massets/index-sBy1hjvb.js                              [39m[1m[2m    9.63 kB[22m[1m[22m[2m │ gzip:     3.44 kB[22m
+[2mdist/[22m[36massets/index-kgtPLsnW.js                              [39m[1m[2m    9.88 kB[22m[1m[22m[2m │ gzip:     3.00 kB[22m
+[2mdist/[22m[36massets/styles-c10674c1-CCyvFIpK.js                    [39m[1m[2m    9.88 kB[22m[1m[22m[2m │ gzip:     3.63 kB[22m
+[2mdist/[22m[36massets/stateDiagram-587899a1-BJIgB-nE.js              [39m[1m[2m   10.07 kB[22m[1m[22m[2m │ gzip:     3.49 kB[22m
+[2mdist/[22m[36massets/index-Beq4MDi_.js                              [39m[1m[2m   10.13 kB[22m[1m[22m[2m │ gzip:     3.29 kB[22m
+[2mdist/[22m[36massets/index-SJV171X_.js                              [39m[1m[2m   10.18 kB[22m[1m[22m[2m │ gzip:     3.64 kB[22m
+[2mdist/[22m[36massets/index-CpX0lkvQ.js                              [39m[1m[2m   10.47 kB[22m[1m[22m[2m │ gzip:     3.42 kB[22m
+[2mdist/[22m[36massets/index-OmC6Wk4E.js                              [39m[1m[2m   10.53 kB[22m[1m[22m[2m │ gzip:     3.10 kB[22m
+[2mdist/[22m[36massets/index-CI1aDeYs.js                              [39m[1m[2m   11.30 kB[22m[1m[22m[2m │ gzip:     3.73 kB[22m
+[2mdist/[22m[36massets/index-3862675e-B3hipTOu.js                     [39m[1m[2m   11.99 kB[22m[1m[22m[2m │ gzip:     4.13 kB[22m
+[2mdist/[22m[36massets/index-BVKma81O.js                              [39m[1m[2m   12.42 kB[22m[1m[22m[2m │ gzip:     3.55 kB[22m
+[2mdist/[22m[36massets/pieDiagram-8a3498a8-Cra6gqFc.js                [39m[1m[2m   13.74 kB[22m[1m[22m[2m │ gzip:     5.16 kB[22m
+[2mdist/[22m[36massets/window-BMvTpeRX.js                             [39m[1m[2m   14.62 kB[22m[1m[22m[2m │ gzip:     3.68 kB[22m
+[2mdist/[22m[36massets/index-DTFXnFdB.js                              [39m[1m[2m   14.80 kB[22m[1m[22m[2m │ gzip:     4.75 kB[22m
+[2mdist/[22m[36massets/graph-BYnDrx2l.js                              [39m[1m[2m   17.48 kB[22m[1m[22m[2m │ gzip:     6.28 kB[22m
+[2mdist/[22m[36massets/sankeyDiagram-04a897e0-4E6J7eKu.js             [39m[1m[2m   21.16 kB[22m[1m[22m[2m │ gzip:     7.69 kB[22m
+[2mdist/[22m[36massets/flowDiagram-66a62f08-Bjz3LVwH.js               [39m[1m[2m   21.33 kB[22m[1m[22m[2m │ gzip:     6.96 kB[22m
+[2mdist/[22m[36massets/journeyDiagram-49397b02-XaTwzgBJ.js            [39m[1m[2m   21.63 kB[22m[1m[22m[2m │ gzip:     7.62 kB[22m
+[2mdist/[22m[36massets/timeline-definition-85554ec2-BYwE2CIZ.js       [39m[1m[2m   22.59 kB[22m[1m[22m[2m │ gzip:     7.88 kB[22m
+[2mdist/[22m[36massets/requirementDiagram-deff3bca-BApc9mVI.js        [39m[1m[2m   24.57 kB[22m[1m[22m[2m │ gzip:     8.44 kB[22m
+[2mdist/[22m[36massets/styles-6aaf32cf-DzKkh9Kc.js                    [39m[1m[2m   26.44 kB[22m[1m[22m[2m │ gzip:     8.46 kB[22m
+[2mdist/[22m[36massets/layout-BMKxQc_L.js                             [39m[1m[2m   28.85 kB[22m[1m[22m[2m │ gzip:    10.49 kB[22m
+[2mdist/[22m[36massets/quadrantDiagram-120e2f19-BQksr4-z.js           [39m[1m[2m   29.39 kB[22m[1m[22m[2m │ gzip:     8.33 kB[22m
+[2mdist/[22m[36massets/erDiagram-9861fffd-DGJ9v0KN.js                 [39m[1m[2m   30.76 kB[22m[1m[22m[2m │ gzip:     9.98 kB[22m
+[2mdist/[22m[36massets/pica-CObMD1Qk.js                               [39m[1m[2m   32.42 kB[22m[1m[22m[2m │ gzip:    12.87 kB[22m
+[2mdist/[22m[36massets/edges-e0da2a9e-BNTjxTro.js                     [39m[1m[2m   34.35 kB[22m[1m[22m[2m │ gzip:     8.90 kB[22m
+[2mdist/[22m[36massets/xychartDiagram-e933f94c-BNQy0t6e.js            [39m[1m[2m   35.87 kB[22m[1m[22m[2m │ gzip:     9.88 kB[22m
+[2mdist/[22m[36massets/blockDiagram-38ab4fdb-DusUl7xB.js              [39m[1m[2m   37.54 kB[22m[1m[22m[2m │ gzip:    11.89 kB[22m
+[2mdist/[22m[36massets/styles-9a916d00-CKDRBp1Z.js                    [39m[1m[2m   37.87 kB[22m[1m[22m[2m │ gzip:    12.59 kB[22m
+[2mdist/[22m[36massets/gitGraphDiagram-72cf32ee-DdhKvvJQ.js           [39m[1m[2m   38.77 kB[22m[1m[22m[2m │ gzip:    11.59 kB[22m
+[2mdist/[22m[36massets/ganttDiagram-c361ad54-B_nxYLF0.js              [39m[1m[2m   40.51 kB[22m[1m[22m[2m │ gzip:    13.94 kB[22m
+[2mdist/[22m[36massets/index-BYUxgLeP.js                              [39m[1m[2m   42.46 kB[22m[1m[22m[2m │ gzip:    12.28 kB[22m
 [2mdist/[22m[36massets/image-blob-reduce.esm-D6s-rqMO.js              [39m[1m[2m   45.93 kB[22m[1m[22m[2m │ gzip:    16.78 kB[22m
-[2mdist/[22m[36massets/flowDb-956e92f1-B0KZB4Qc.js                    [39m[1m[2m   46.78 kB[22m[1m[22m[2m │ gzip:    15.29 kB[22m
-[2mdist/[22m[36massets/index-BeQW3cpa.js                              [39m[1m[2m   50.97 kB[22m[1m[22m[2m │ gzip:    12.54 kB[22m
-[2mdist/[22m[36massets/index-CZTGrHwm.js                              [39m[1m[2m   51.01 kB[22m[1m[22m[2m │ gzip:    14.53 kB[22m
-[2mdist/[22m[36massets/index-BpMIpJHJ.js                              [39m[1m[2m   52.29 kB[22m[1m[22m[2m │ gzip:    15.76 kB[22m
-[2mdist/[22m[36massets/createText-2e5e7dd3-DSxLT3fG.js                [39m[1m[2m   60.20 kB[22m[1m[22m[2m │ gzip:    17.88 kB[22m
-[2mdist/[22m[36massets/AnimaticPreview-DzrYWz8Y.js                    [39m[1m[2m   64.82 kB[22m[1m[22m[2m │ gzip:    15.58 kB[22m
-[2mdist/[22m[36massets/c4Diagram-3d4e48cf-ChD7Fwaq.js                 [39m[1m[2m   68.45 kB[22m[1m[22m[2m │ gzip:    19.19 kB[22m
-[2mdist/[22m[36massets/index-DsX7KK4h.js                              [39m[1m[2m   68.47 kB[22m[1m[22m[2m │ gzip:    19.55 kB[22m
-[2mdist/[22m[36massets/Projects-DDraDMOO.js                           [39m[1m[2m   74.80 kB[22m[1m[22m[2m │ gzip:    17.70 kB[22m
-[2mdist/[22m[36massets/sequenceDiagram-704730f1-BCjVTsZd.js           [39m[1m[2m   84.15 kB[22m[1m[22m[2m │ gzip:    24.23 kB[22m
-[2mdist/[22m[36massets/index-Dp4VYHEz.js                              [39m[1m[2m   92.48 kB[22m[1m[22m[2m │ gzip:    22.41 kB[22m
-[2mdist/[22m[36massets/index-BB_-Wsg4.js                              [39m[1m[2m  177.14 kB[22m[1m[22m[2m │ gzip:    43.18 kB[22m
+[2mdist/[22m[36massets/flowDb-956e92f1-Dkg8eNzx.js                    [39m[1m[2m   46.78 kB[22m[1m[22m[2m │ gzip:    15.29 kB[22m
+[2mdist/[22m[36massets/createText-2e5e7dd3-CZWe1pUH.js                [39m[1m[2m   60.20 kB[22m[1m[22m[2m │ gzip:    17.88 kB[22m
+[2mdist/[22m[36massets/c4Diagram-3d4e48cf-CGaaiVfv.js                 [39m[1m[2m   68.45 kB[22m[1m[22m[2m │ gzip:    19.19 kB[22m
+[2mdist/[22m[36massets/index-7RfFqX1g.js                              [39m[1m[2m   73.84 kB[22m[1m[22m[2m │ gzip:    22.41 kB[22m
+[2mdist/[22m[36massets/Projects-BCgH5Ue_.js                           [39m[1m[2m   78.51 kB[22m[1m[22m[2m │ gzip:    20.60 kB[22m
+[2mdist/[22m[36massets/sequenceDiagram-704730f1-BQlKwGm7.js           [39m[1m[2m   84.15 kB[22m[1m[22m[2m │ gzip:    24.23 kB[22m
+[2mdist/[22m[36massets/attachmentCache-Bzct35ym.js                    [39m[1m[2m  100.49 kB[22m[1m[22m[2m │ gzip:    33.83 kB[22m
 [2mdist/[22m[36massets/katex-B1X10hvy.js                              [39m[1m[2m  258.68 kB[22m[1m[22m[2m │ gzip:    76.90 kB[22m
-[2mdist/[22m[36massets/index-BQMYjrGq.js                              [39m[1m[2m  270.03 kB[22m[1m[22m[2m │ gzip:    81.55 kB[22m
-[2mdist/[22m[36massets/index-CtNhynxT.js                              [39m[1m[2m  493.69 kB[22m[1m[22m[2m │ gzip:   123.03 kB[22m
-[2mdist/[22m[36massets/mindmap-definition-fc14e90a-Cc1eR-xf.js        [39m[1m[2m  542.65 kB[22m[1m[22m[2m │ gzip:   169.87 kB[22m
-[2mdist/[22m[36massets/PropStyleConfig-FTwzdF7d.js                    [39m[1m[2m  645.25 kB[22m[1m[22m[2m │ gzip:   163.06 kB[22m
-[2mdist/[22m[36massets/vendor-BEUVlosA.js                             [39m[1m[33m1,308.52 kB[39m[22m[2m │ gzip:   379.02 kB[22m
-[2mdist/[22m[36massets/flowchart-elk-definition-4a651766-DP8oI05o.js  [39m[1m[33m1,451.65 kB[39m[22m[2m │ gzip:   444.12 kB[22m
-[2mdist/[22m[36massets/excalidraw-Yajunrs0.js                         [39m[1m[33m4,419.36 kB[39m[22m[2m │ gzip: 1,518.53 kB[22m
+[2mdist/[22m[36massets/index-D086jzWN.js                              [39m[1m[2m  375.89 kB[22m[1m[22m[2m │ gzip:   112.93 kB[22m
+[2mdist/[22m[36massets/mindmap-definition-fc14e90a-Doy-Vtp_.js        [39m[1m[2m  542.65 kB[22m[1m[22m[2m │ gzip:   169.88 kB[22m
+[2mdist/[22m[36massets/vendor-DDXNymHX.js                             [39m[1m[33m1,015.22 kB[39m[22m[2m │ gzip:   291.67 kB[22m
+[2mdist/[22m[36massets/index-CCZ8emSB.js                              [39m[1m[33m1,154.04 kB[39m[22m[2m │ gzip:   297.61 kB[22m
+[2mdist/[22m[36massets/flowchart-elk-definition-4a651766-j_-8N7g5.js  [39m[1m[33m1,451.65 kB[39m[22m[2m │ gzip:   444.12 kB[22m
+[2mdist/[22m[36massets/excalidraw-Bs-IjyXo.js                         [39m[1m[33m4,419.36 kB[39m[22m[2m │ gzip: 1,518.53 kB[22m
 
 (!) Some chunks are larger than 1000 kB after minification. Consider:
 - Using dynamic import() to code-split the application
 - Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
 - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
-[32m✓ built in 46.55s[39m
-   Compiling app v1.0.0 (D:\Application\ai视频编辑器\AI-Video-Studio\src-tauri)
-warning: unused import: `schema::*`
- --> src\db\mod.rs:4:9
-  |
-4 | pub use schema::*;
-  |         ^^^^^^^^^
-  |
-  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
-
-warning: unused variable: `state`
-  --> src\commands.rs:39:5
-   |
-39 |     state: State<'_, AppState>,
-   |     ^^^^^ help: if this is intentional, prefix it with an underscore: `_state`
-   |
-   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
-
-warning: unused variable: `encrypted_key`
-  --> src\commands.rs:42:9
-   |
-42 |     let encrypted_key = crypto::encrypt_api_key(&config.api_key)?;
-   |         ^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_encrypted_key`
-
-warning: unused variable: `provider`
-  --> src\commands.rs:53:5
-   |
-53 |     provider: String,
-   |     ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_provider`
-
-warning: unused variable: `model_name`
-  --> src\commands.rs:54:5
-   |
-54 |     model_name: String,
-   |     ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_model_name`
-
-warning: unused variable: `state`
-  --> src\commands.rs:55:5
-   |
-55 |     state: State<'_, AppState>,
-   |     ^^^^^ help: if this is intentional, prefix it with an underscore: `_state`
-
-warning: unused variable: `state`
-  --> src\commands.rs:66:5
-   |
-66 |     state: State<'_, AppState>,
-   |     ^^^^^ help: if this is intentional, prefix it with an underscore: `_state`
-
-warning: unused variable: `provider`
-  --> src\commands.rs:77:5
-   |
-77 |     provider: String,
-   |     ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_provider`
-
-warning: unused variable: `model_name`
-  --> src\commands.rs:78:5
-   |
-78 |     model_name: String,
-   |     ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_model_name`
-
-warning: unused variable: `state`
-  --> src\commands.rs:79:5
-   |
-79 |     state: State<'_, AppState>,
-   |     ^^^^^ help: if this is intentional, prefix it with an underscore: `_state`
-
-warning: function `decrypt_api_key` is never used
-  --> src\crypto.rs:91:8
-   |
-91 | pub fn decrypt_api_key(encrypted: &str) -> Result<String, String> {
-   |        ^^^^^^^^^^^^^^^
-   |
-   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
-
-warning: constant `DB_SCHEMA` is never used
- --> src\db\schema.rs:4:11
-  |
-4 | pub const DB_SCHEMA: &str = r#"
-  |           ^^^^^^^^^
-
-warning: constant `DB_VERSION` is never used
-   --> src\db\schema.rs:144:11
-    |
-144 | pub const DB_VERSION: i32 = 1;
-    |           ^^^^^^^^^^
-
-warning: `app` (lib) generated 13 warnings (run `cargo fix --lib -p app` to apply 10 suggestions)
-    Finished `release` profile [optimized] target(s) in 1m 46s
-       Built application at: D:\Application\ai视频编辑器\AI-Video-Studio\src-tauri\target\x86_64-pc-windows-msvc\release\app.exe
-        Info Patching D:\Application\ai视频编辑器\AI-Video-Studio\src-tauri\target\x86_64-pc-windows-msvc\release\app.exe with bundle type information: msi
+[32m✓ built in 40.17s[39m
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.26
+   Compiling quote v1.0.47
+   Compiling serde_core v1.0.229
+   Compiling parking_lot_core v0.9.12
+   Compiling icu_normalizer_data v2.3.0
+   Compiling icu_properties_data v2.3.0
+   Compiling siphasher v1.0.3
+   Compiling cfg-if v1.0.5
+   Compiling fastrand v2.5.0
+   Compiling stable_deref_trait v1.2.1
+   Compiling windows-link v0.2.1
+   Compiling zmij v1.0.23
+   Compiling thiserror v2.0.20
+   Compiling smallvec v1.16.1
+   Compiling getrandom v0.4.3
+   Compiling serde v1.0.229
+   Compiling memchr v2.8.3
+   Compiling typeid v1.0.3
+   Compiling autocfg v1.5.1
+   Compiling time-core v0.1.9
+   Compiling num-conv v0.2.2
+   Compiling writeable v0.6.4
+   Compiling thiserror v1.0.69
+   Compiling ident_case v1.0.1
+   Compiling itoa v1.0.18
+   Compiling strsim v0.11.1
+   Compiling erased-serde v0.4.10
+   Compiling litemap v0.8.3
+   Compiling utf8_iter v1.0.4
+   Compiling phf_shared v0.13.1
+   Compiling anyhow v1.0.104
+   Compiling new_debug_unreachable v1.0.6
+   Compiling scopeguard v1.2.0
+   Compiling winnow v1.0.4
+   Compiling precomputed-hash v0.1.1
+   Compiling serde_json v1.0.151
+   Compiling windows-sys v0.61.2
+   Compiling ctor-proc-macro v0.0.7
+   Compiling toml_writer v1.1.2+spec-1.1.0
+   Compiling log v0.4.34
+   Compiling dtoa v1.0.11
+   Compiling percent-encoding v2.3.2
+   Compiling indexmap v1.9.3
+   Compiling aho-corasick v1.1.5
+   Compiling unic-char-range v0.9.0
+   Compiling alloc-no-stdlib v2.0.4
+   Compiling unic-common v0.9.0
+   Compiling camino v1.2.6
+   Compiling regex-syntax v0.8.11
+   Compiling phf_generator v0.13.1
+   Compiling tendril v0.5.1
+   Compiling libc v0.2.189
+   Compiling lock_api v0.4.14
+   Compiling toml_parser v1.1.3+spec-1.1.0
+   Compiling byteorder v1.5.0
+   Compiling servo_arc v0.4.3
+   Compiling bit-vec v0.8.0
+   Compiling winapi-util v0.1.11
+   Compiling dtoa-short v0.3.5
+   Compiling hashbrown v0.12.3
+   Compiling form_urlencoded v1.2.2
+   Compiling unic-char-property v0.9.0
+   Compiling alloc-stdlib v0.2.4
+   Compiling unic-ucd-version v0.9.0
+   Compiling bitflags v2.13.2
+   Compiling equivalent v1.0.2
+   Compiling windows_x86_64_msvc v0.52.6
+   Compiling phf_codegen v0.13.1
+   Compiling serde_spanned v1.1.1
+   Compiling semver v1.0.28
+   Compiling parking_lot v0.12.5
+   Compiling toml_datetime v1.1.1+spec-1.1.0
+   Compiling regex-automata v0.4.18
+   Compiling rustc-hash v2.1.3
+   Compiling hashbrown v0.17.1
+   Compiling deranged v0.5.8
+   Compiling schemars v0.8.22
+   Compiling fnv v1.0.7
+   Compiling powerfmt v0.2.0
+   Compiling uuid v1.26.1
+   Compiling quick-xml v0.42.0
+   Compiling dunce v1.0.5
+   Compiling bit-set v0.8.0
+   Compiling same-file v1.0.6
+   Compiling base64 v0.23.1
+   Compiling bytes v1.12.1
+   Compiling dyn-clone v1.0.20
+   Compiling foldhash v0.2.0
+   Compiling brotli-decompressor v5.0.3
+   Compiling ctor v0.8.0
+   Compiling unic-ucd-ident v0.9.0
+   Compiling glob v0.3.4
+   Compiling version_check v0.9.5
+   Compiling syn v3.0.6
+   Compiling syn v2.0.119
+   Compiling string_cache_codegen v0.6.1
+   Compiling selectors v0.36.1
+   Compiling string_cache v0.9.0
+   Compiling toml v1.1.6+spec-1.1.0
+   Compiling indexmap v2.14.2
+   Compiling shlex v2.0.1
+   Compiling time v0.3.55
+   Compiling cfb v0.7.3
+   Compiling regex v1.13.1
+   Compiling find-msvc-tools v0.1.13
+   Compiling walkdir v2.5.0
+   Compiling windows-link v0.1.3
+   Compiling http v1.5.0
+   Compiling serde-untagged v0.1.9
+   Compiling pin-project-lite v0.2.17
+   Compiling brotli v8.0.4
+   Compiling once_cell v1.21.4
+   Compiling generic-array v0.14.7
+   Compiling web_atoms v0.2.6
+   Compiling rustc_version v0.4.1
+   Compiling toml_datetime v0.7.5+spec-1.1.0
+   Compiling serde_derive_internals v0.29.1
+   Compiling synstructure v0.14.0
+   Compiling darling_core v0.24.1
+   Compiling phf_macros v0.13.1
+   Compiling thiserror-impl v1.0.69
+   Compiling cssparser-macros v0.6.1
+   Compiling derive_more-impl v2.1.1
+   Compiling serde_derive v1.0.229
+   Compiling zerovec-derive v0.11.6
+   Compiling displaydoc v0.2.7
+   Compiling thiserror-impl v2.0.20
+   Compiling infer v0.19.0
+   Compiling cc v1.4.7
+   Compiling windows-result v0.3.4
+   Compiling windows-strings v0.4.2
+   Compiling windows-interface v0.59.3
+   Compiling windows-implement v0.60.2
+   Compiling winnow v0.7.15
+   Compiling option-ext v0.2.0
+   Compiling heck v0.5.0
+   Compiling crc32fast v1.5.2
+   Compiling windows-threading v0.1.0
+   Compiling tokio-macros v2.7.2
+   Compiling zerofrom-derive v0.1.8
+   Compiling yoke-derive v0.8.3
+   Compiling phf v0.13.1
+   Compiling schemars_derive v0.8.22
+   Compiling derive_more v2.1.1
+   Compiling socket2 v0.6.5
+   Compiling mio v1.2.3
+   Compiling windows-targets v0.52.6
+   Compiling darling_macro v0.24.1
+   Compiling vswhom-sys v0.1.3
+   Compiling dirs-sys v0.5.0
+   Compiling windows-core v0.61.2
+   Compiling toml v0.9.12+spec-1.1.0
+   Compiling tracing-core v0.1.36
+   Compiling simd-adler32 v0.3.10
+   Compiling zerofrom v0.1.8
+   Compiling cssparser v0.36.0
+   Compiling time-macros v0.2.32
+   Compiling windows-sys v0.59.0
+   Compiling adler2 v2.0.1
+   Compiling typenum v1.20.1
+   Compiling darling v0.24.1
+   Compiling jsonptr v0.6.3
+   Compiling cargo-platform v0.1.9
+   Compiling plist v1.10.1
+   Compiling dirs v6.0.0
+   Compiling tokio v1.53.1
+   Compiling windows-numerics v0.2.0
+   Compiling windows-collections v0.2.0
+   Compiling windows-future v0.2.1
+   Compiling cargo_toml v0.22.3
+   Compiling tracing v0.1.44
+   Compiling raw-window-handle v0.6.2
+   Compiling webview2-com-sys v0.38.2
+   Compiling yoke v0.8.3
+   Compiling markup5ever v0.38.0
+   Compiling windows-version v0.1.7
+   Compiling serde_with_macros v3.23.0
+   Compiling winreg v0.55.0
+   Compiling cargo_metadata v0.19.2
+   Compiling json-patch v3.0.1
+   Compiling crossbeam-utils v0.8.23
+   Compiling miniz_oxide v0.9.1
+   Compiling dpi v0.1.2
+   Compiling windows v0.61.3
+   Compiling cookie v0.18.2
+   Compiling zerovec v0.11.8
+   Compiling zerotrie v0.2.5
+   Compiling html5ever v0.38.0
+   Compiling serde_with v3.23.0
+   Compiling vswhom v0.1.0
+   Compiling futures-core v0.3.34
+   Compiling getrandom v0.3.4
+   Compiling crypto-common v0.1.7
+   Compiling block-buffer v0.10.4
+   Compiling miniz_oxide v0.8.9
+   Compiling tinystr v0.8.4
+   Compiling potential_utf v0.1.6
+   Compiling dom_query v0.27.0
+   Compiling flate2 v1.1.10
+   Compiling fdeflate v0.3.7
+   Compiling webview2-com-macros v0.8.1
+   Compiling embed-resource v3.0.11
+   Compiling unicode-segmentation v1.13.3
+   Compiling bitflags v1.3.2
+   Compiling icu_locale_core v2.3.0
+   Compiling digest v0.10.7
+   Compiling icu_collections v2.3.0
+   Compiling tauri-winres v0.3.6
+   Compiling tauri-runtime v2.11.3
+   Compiling cpufeatures v0.2.17
+   Compiling crossbeam-channel v0.5.17
+   Compiling wry v0.55.1
+   Compiling png v0.17.16
+   Compiling base64 v0.22.1
+   Compiling mime v0.3.17
+   Compiling icu_provider v2.3.1
+   Compiling tauri-runtime-wry v2.11.4
+   Compiling keyboard-types v0.7.0
+   Compiling softbuffer v0.4.8
+   Compiling serialize-to-javascript-impl v0.1.2
+   Compiling slab v0.4.12
+   Compiling rustversion v1.0.23
+   Compiling serde_repr v0.1.21
+   Compiling http-range v0.1.5
+   Compiling http-body v1.1.0
+   Compiling windows_x86_64_msvc v0.53.1
+   Compiling futures-task v0.3.34
+   Compiling zerocopy v0.8.57
+   Compiling futures-sink v0.3.34
+   Compiling httparse v1.10.1
+   Compiling sha2 v0.10.9
+   Compiling num-traits v0.2.19
+   Compiling native-tls v0.2.18
+   Compiling ico v0.5.0
+   Compiling tower-service v0.3.3
+   Compiling icu_normalizer v2.3.0
+   Compiling icu_properties v2.3.0
+   Compiling serialize-to-javascript v0.1.2
+   Compiling muda v0.19.3
+   Compiling atomic-waker v1.1.2
+   Compiling try-lock v0.2.5
+   Compiling futures-channel v0.3.34
+   Compiling futures-util v0.3.34
+   Compiling schannel v0.1.29
+   Compiling tokio-util v0.7.19
+   Compiling windows-result v0.4.1
+   Compiling windows-strings v0.5.1
+   Compiling rand_core v0.9.5
+   Compiling sync_wrapper v1.0.2
+   Compiling tower-layer v0.3.3
+   Compiling ipnet v2.12.2
+   Compiling unicase v2.9.0
+   Compiling idna_adapter v1.2.2
+   Compiling webview2-com v0.38.2
+   Compiling window-vibrancy v0.6.0
+   Compiling rfd v0.16.0
+   Compiling http-body-util v0.1.5
+   Compiling want v0.3.1
+   Compiling tauri-winrt-notification v0.7.3
+   Compiling quick-error v2.0.1
+   Compiling zeroize v1.9.0
+   Compiling simdutf8 v0.1.5
+   Compiling h2 v0.4.19
+   Compiling windows-registry v0.6.1
+   Compiling pxfm v0.1.30
+   Compiling zune-core v0.5.3
+   Compiling byteorder-lite v0.1.0
+   Compiling core_detect v1.0.0
+   Compiling tower v0.5.3
+   Compiling mime_guess v2.0.5
+   Compiling idna v1.1.0
+   Compiling ryu v1.0.23
+   Compiling multiversion_no_op v1.0.0
+   Compiling multiversion-macros v0.9.0
+   Compiling encoding_rs v0.8.41
+   Compiling fern v0.7.1
+   Compiling windows-targets v0.53.5
+   Compiling notify-rust v4.18.0
+   Compiling os_info v3.15.0
+   Compiling path-dedot v3.1.1
+   Compiling gethostname v1.1.0
+   Compiling rustls-pki-types v1.15.1
+   Compiling bytemuck v1.25.2
+   Compiling zune-jpeg v0.5.15
+   Compiling ppv-lite86 v0.2.21
+   Compiling tokio-native-tls v0.3.1
+   Compiling image-webp v0.2.4
+   Compiling sys-locale v0.3.2
+   Compiling chrono v0.4.45
+   Compiling hyper v1.11.1
+   Compiling url v2.5.8
+   Compiling serde_urlencoded v0.7.1
+   Compiling moxcms v0.8.1
+   Compiling windows-sys v0.60.2
+   Compiling multiversion v0.9.0
+   Compiling png v0.18.1
+   Compiling path-absolutize v3.1.1
+   Compiling rand_chacha v0.9.0
+   Compiling urlpattern v0.3.0
+   Compiling tao v0.35.3
+   Compiling tower-http v0.6.11
+   Compiling hyper-util v0.1.20
+   Compiling rand v0.9.5
+   Compiling tauri-utils v2.9.3
+   Compiling image v0.25.10
+   Compiling hyper-tls v0.6.0
+   Compiling reqwest v0.12.28
+   Compiling tauri-plugin v2.6.3
+   Compiling tauri-build v2.6.3
+   Compiling tauri-codegen v2.6.3
+   Compiling tauri v2.11.6
+   Compiling tauri-macros v2.6.3
+   Compiling tauri-plugin-fs v2.5.2
+   Compiling tauri-plugin-dialog v2.7.3
+   Compiling tauri-plugin-process v2.3.1
+   Compiling tauri-plugin-os v2.3.2
+   Compiling tauri-plugin-log v2.9.2
+   Compiling tauri-plugin-notification v2.4.0
+   Compiling app v1.0.0 (D:\Application\ai视频编辑器\AI-Video-Studio\frontend\src-tauri)
+    Finished `release` profile [optimized] target(s) in 4m 53s
+       Built application at: D:\Application\ai视频编辑器\AI-Video-Studio\frontend\src-tauri\target\x86_64-pc-windows-msvc\release\app.exe
+        Info Patching D:\Application\ai视频编辑器\AI-Video-Studio\frontend\src-tauri\target\x86_64-pc-windows-msvc\release\app.exe with bundle type information: msi
         Info Target: x64
-     Running candle for "D:\\Application\\ai视频编辑器\\AI-Video-Studio\\src-tauri\\target\\x86_64-pc-windows-msvc\\release\\wix\\x64\\main.wxs"
-     Running light to produce D:\Application\ai视频编辑器\AI-Video-Studio\src-tauri\target\x86_64-pc-windows-msvc\release\bundle\msi\AI Video Studio_1.0.0_x64_en-US.msi
-failed to bundle project: `failed to run C:\Users\songd\AppData\Local\tauri\WixTools314\light.exe`
-       Error failed to bundle project: `failed to run C:\Users\songd\AppData\Local\tauri\WixTools314\light.exe`
+     Running candle for "D:\\Application\\ai视频编辑器\\AI-Video-Studio\\frontend\\src-tauri\\target\\x86_64-pc-windows-msvc\\release\\wix\\x64\\main.wxs"
+     Running light to produce D:\Application\ai视频编辑器\AI-Video-Studio\frontend\src-tauri\target\x86_64-pc-windows-msvc\release\bundle\msi\AI Video Studio_1.0.0_x64_en-US.msi
+        Info Patching D:\Application\ai视频编辑器\AI-Video-Studio\frontend\src-tauri\target\x86_64-pc-windows-msvc\release\app.exe with bundle type information: nsis
+        Info Target: x64
+     Running makensis to produce D:\Application\ai视频编辑器\AI-Video-Studio\frontend\src-tauri\target\x86_64-pc-windows-msvc\release\bundle\nsis\AI Video Studio_1.0.0_x64-setup.exe
+    Finished 2 bundles at:
+        D:\Application\ai视频编辑器\AI-Video-Studio\frontend\src-tauri\target\x86_64-pc-windows-msvc\release\bundle\msi\AI Video Studio_1.0.0_x64_en-US.msi
+        D:\Application\ai视频编辑器\AI-Video-Studio\frontend\src-tauri\target\x86_64-pc-windows-msvc\release\bundle\nsis\AI Video Studio_1.0.0_x64-setup.exe
+

@@ -1,4 +1,3 @@
-import { getAuthToken } from './auth';
 import type { SceneElement } from './sceneElements';
 import type { Environment } from './environments';
 import type { Building } from './buildings';
@@ -52,11 +51,6 @@ export interface StudioDetail {
   elements: StudioElementSummary[];
 }
 
-function authHeaders() {
-  const token = getAuthToken();
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
-
 async function handle<T>(resp: Response): Promise<T> {
   if (!resp.ok) {
     let msg = `请求失败：${resp.status}`;
@@ -75,13 +69,13 @@ async function handle<T>(resp: Response): Promise<T> {
 
 export async function listStudios(projectId?: number): Promise<Studio[]> {
   const qs = projectId ? `?projectId=${projectId}` : '';
-  const resp = await fetch(`/api/studios${qs}`, { headers: { ...authHeaders() } });
+  const resp = await fetch(`/api/studios${qs}`);
   const data = await handle<{ studios: Studio[] }>(resp);
   return data.studios || [];
 }
 
 export async function getStudio(id: number): Promise<StudioDetail> {
-  const resp = await fetch(`/api/studios/${id}`, { headers: { ...authHeaders() } });
+  const resp = await fetch(`/api/studios/${id}`);
   return handle<StudioDetail>(resp);
 }
 
@@ -94,7 +88,7 @@ export async function createStudio(payload: {
 }): Promise<Studio> {
   const resp = await fetch('/api/studios', {
     method: 'POST',
-    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    headers: {  'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
   });
   const data = await handle<{ studio: Studio }>(resp);
@@ -109,7 +103,7 @@ export async function updateStudio(id: number, payload: {
 }): Promise<Studio> {
   const resp = await fetch(`/api/studios/${id}`, {
     method: 'PATCH',
-    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    headers: {  'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
   });
   const data = await handle<{ studio: Studio }>(resp);
@@ -119,7 +113,6 @@ export async function updateStudio(id: number, payload: {
 export async function deleteStudio(id: number): Promise<void> {
   const resp = await fetch(`/api/studios/${id}`, {
     method: 'DELETE',
-    headers: { ...authHeaders() }
   });
   await handle<{ message: string }>(resp);
 }
@@ -133,7 +126,7 @@ export async function attachEnvironmentToStudio(
 ): Promise<void> {
   const resp = await fetch(`/api/studios/${studioId}/environment`, {
     method: 'POST',
-    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    headers: {  'Content-Type': 'application/json' },
     body: JSON.stringify(view ? { environmentId, view } : { environmentId })
   });
   await handle<{ message: string }>(resp);
@@ -142,7 +135,6 @@ export async function attachEnvironmentToStudio(
 export async function detachEnvironmentFromStudio(studioId: number): Promise<void> {
   const resp = await fetch(`/api/studios/${studioId}/environment`, {
     method: 'DELETE',
-    headers: { ...authHeaders() }
   });
   await handle<{ message: string }>(resp);
 }
@@ -154,7 +146,7 @@ export async function setStudioEnvironmentView(
 ): Promise<void> {
   const resp = await fetch(`/api/studios/${studioId}/environment-view`, {
     method: 'PATCH',
-    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    headers: {  'Content-Type': 'application/json' },
     body: JSON.stringify({ view })
   });
   await handle<{ message: string }>(resp);
@@ -172,7 +164,7 @@ export async function attachBuildingToStudio(
   if (view) body.view = view;
   const resp = await fetch(`/api/studios/${studioId}/buildings/${buildingId}`, {
     method: 'POST',
-    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    headers: {  'Content-Type': 'application/json' },
     body: JSON.stringify(body)
   });
   await handle<{ message: string }>(resp);
@@ -181,7 +173,6 @@ export async function attachBuildingToStudio(
 export async function detachBuildingFromStudio(studioId: number, buildingId: number): Promise<void> {
   const resp = await fetch(`/api/studios/${studioId}/buildings/${buildingId}`, {
     method: 'DELETE',
-    headers: { ...authHeaders() }
   });
   await handle<{ message: string }>(resp);
 }
@@ -194,7 +185,7 @@ export async function setStudioBuildingView(
 ): Promise<void> {
   const resp = await fetch(`/api/studios/${studioId}/buildings/${buildingId}/view`, {
     method: 'PATCH',
-    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    headers: {  'Content-Type': 'application/json' },
     body: JSON.stringify({ view })
   });
   await handle<{ message: string }>(resp);
@@ -205,7 +196,7 @@ export async function setStudioBuildingView(
 export async function attachElementToStudio(studioId: number, elementId: number, sortOrder?: number): Promise<void> {
   const resp = await fetch(`/api/studios/${studioId}/elements/${elementId}`, {
     method: 'POST',
-    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    headers: {  'Content-Type': 'application/json' },
     body: JSON.stringify({ sortOrder: sortOrder ?? 0 })
   });
   await handle<{ message: string }>(resp);
@@ -214,7 +205,6 @@ export async function attachElementToStudio(studioId: number, elementId: number,
 export async function detachElementFromStudio(studioId: number, elementId: number): Promise<void> {
   const resp = await fetch(`/api/studios/${studioId}/elements/${elementId}`, {
     method: 'DELETE',
-    headers: { ...authHeaders() }
   });
   await handle<{ message: string }>(resp);
 }
@@ -236,7 +226,7 @@ export async function extractStudioComponentsFromScript(payload: {
 }): Promise<StudioWorkflowStartResponse> {
   const resp = await fetch('/api/studios/extract-components', {
     method: 'POST',
-    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    headers: {  'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
   });
   return handle<StudioWorkflowStartResponse>(resp);
@@ -250,7 +240,7 @@ export async function composeStudiosFromScript(payload: {
 }): Promise<StudioWorkflowStartResponse> {
   const resp = await fetch('/api/studios/compose-from-script', {
     method: 'POST',
-    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    headers: {  'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
   });
   return handle<StudioWorkflowStartResponse>(resp);
@@ -276,7 +266,7 @@ export async function generateStudioNineGrid(
 ): Promise<StudioNineGridGenerateResponse> {
   const resp = await fetch(`/api/studios/${studioId}/generate-nine-grid`, {
     method: 'POST',
-    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    headers: {  'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
   });
   return handle<StudioNineGridGenerateResponse>(resp);

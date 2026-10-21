@@ -12,7 +12,6 @@ import { useAIAssistantWorkbenchContext, AIAssistantAction, AIAssistantFrameCont
 import { createScript as createScriptApi, deleteScript as deleteScriptApi } from '../../../../services/scripts';
 import { generateCharacterViews } from '../../../../services/assets';
 import { updateProject as updateProjectApi } from '../../../../services/projects';
-import { getAuthToken } from '../../../../services/auth';
 
 export interface StoryboardAIAssistantBridgeParams {
   state: any;
@@ -64,26 +63,27 @@ export function useStoryboardAIAssistantBridge(params: StoryboardAIAssistantBrid
       if (!sceneId) { showToast('请先选择分镜', 'warning'); return; }
       const target = scenes.find((s) => s.id === sceneId);
       const prompt = actionParams?.prompt || target?.description || selectedSceneData?.description || '';
-      generationActions.generateImage(sceneId, prompt)
+      // 返回 Promise：把 { success, jobId, error } 回传给对话栏，用于挂后台任务进度卡片
+      return generationActions.generateImage(sceneId, prompt)
         .then((result: any) => {
-          if (!result.success) {
-            showToast(result.error || '生成分镜图失败', 'error');
-          }
+          if (!result.success) showToast(result.error || '生成分镜图失败', 'error');
+          return result;
         })
         .catch((err: any) => {
           showToast('生成分镜图失败: ' + (err?.message || err), 'error');
+          return { success: false, error: err?.message || String(err) };
         });
     } else if (action === 'generate_video') {
       const sceneId = sceneIdFrom(actionParams);
       if (!sceneId) { showToast('请先选择分镜', 'warning'); return; }
-      generationActions.generateVideo(sceneId)
+      return generationActions.generateVideo(sceneId)
         .then((result: any) => {
-          if (!result.success) {
-            showToast(result.error || '生成视频失败', 'error');
-          }
+          if (!result.success) showToast(result.error || '生成视频失败', 'error');
+          return result;
         })
         .catch((err: any) => {
           showToast('生成视频失败: ' + (err?.message || err), 'error');
+          return { success: false, error: err?.message || String(err) };
         });
     } else if (action === 'auto_storyboard') {
       // AI 自动触发时直接执行，不弹确认框。
@@ -98,15 +98,19 @@ export function useStoryboardAIAssistantBridge(params: StoryboardAIAssistantBrid
       onProgress?.('已校验剧本绑定，正在读取剧本正文…');
       const { startGeneration } = autoStoryboard as any;
       if (startGeneration) {
-        return startGeneration(state.textModel, true, false, {
+        let splitCount: number | undefined;
+        return Promise.resolve(startGeneration(state.textModel, true, false, {
           conflictStrategy: 'skip',
           referenceScriptContent: state.scriptContent || undefined,
           referenceScriptTitle: state.currentProject?.name || undefined,
           // 拆分关键阶段回报到对话栏步骤
           onSplitProgress: (label: string) => onProgress?.(label),
-          onSplitDone: (count?: number) => onProgress?.(count != null ? `拆分完成，写入 ${count} 个分镜` : '拆分完成，已同步分镜列表'),
+          onSplitDone: (count?: number) => {
+            splitCount = count;
+            onProgress?.(count != null ? `拆分完成，写入 ${count} 个分镜` : '拆分完成，已同步分镜列表');
+          },
           onSplitError: (msg: string) => onProgress?.(`拆分失败：${msg}`),
-        });
+        })).then(() => ({ sceneCount: splitCount }));
       }
       // 回退：调用原来的方法（会弹窗）
       autoStoryboard.handleAutoGenerateClick();

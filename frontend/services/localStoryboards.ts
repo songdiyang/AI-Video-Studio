@@ -16,6 +16,7 @@
 import { readDoc, writeDoc, resolveLocalPath, getActiveProjectPath } from './localStore';
 import { resolveModel, getOfflineModels, chatText, type OfflineModel } from './localAI';
 import { resolveScriptReferences } from './localScripts';
+import { restStore } from './localRest';
 
 // ==================== 文档类型（对齐 localApiRouter，仅取所需字段） ====================
 
@@ -163,13 +164,107 @@ const SPLIT_SYSTEM =
   '严格只输出一个 JSON 对象（不要任何解释、不要 Markdown 代码围栏），格式为：' +
   '{"scenes":[{"title":"镜头标题","description":"该镜头的画面描述","video_prompt":"视频生成提示词",' +
   '"first_frame_prompt":"首帧画面提示词","last_frame_prompt":"尾帧画面提示词","dialogue":"对白，没有则留空",' +
-  '"characters":["出场角色"],"location":"场景/地点","shotType":"景别，如 远景/全景/中景/近景/特写","duration":3}]}。' +
+  '"characters":["出场角色"],"location":"场景/地点","shotType":"景别，如 远景/全景/中景/近景/特写","duration":3}],' +
+  '"characters":[{"name":"角色名","description":"该角色的外形/服装/气质简述，用于出图保持一致"}],' +
+  '"locations":[{"name":"地点名","description":"该地点的环境/氛围/光线简述，用于出图"}]}。' +
   '要求：1) 拆分为 6-15 个镜头，完整覆盖剧本主要情节与转折；2) description / *_prompt 具体、可视化、可直接用于 AI 出图出视频；' +
-  '3) 全部使用中文；4) duration 为整数秒。';
+  '3) 全部使用中文；4) duration 为整数秒；' +
+  '5) 顶层 characters / locations 为资源清单，需去重并覆盖所有分镜中出现的角色与地点，每个都给出可视化简述。';
 
 function buildSplitUserPrompt(scriptTitle: string, content: string): string {
   const safe = (content || '').slice(0, 12000);
   return `剧本标题：${scriptTitle || '未命名'}\n\n剧本正文：\n${safe}\n\n请据此拆分分镜并只输出 JSON。`;
+}
+
+// ==================== 自动补齐资源（角色 / 影棚地点） ====================
+// 拆分出的分镜会引用角色名与地点名，但若资源库里没有对应资产，就会出现
+// 「分镜显示资源、实际资源不存在」的问题。这里在写库后按名称去重建资源，
+// 已存在（同名，忽略大小写与首尾空白）则跳过，仅补空白项。
+interface ResourceCandidate {
+  name: string;
+  description: string;
+}
+
+/** 归一化资源清单：兼容模型返回 [{name,description}] 或 [string]，并合并分镜内引用到的名称 */
+function collectResources(
+  manifest: any,
+  sceneRefs: string[],
+): ResourceCandidate[] {
+  const byName = new Map<string, ResourceCandidate>();
+  const put = (name: unknown, description?: unknown) => {
+    const n = String(name ?? '').trim();
+    if (!n) return;
+    const key = n.toLowerCase();
+    const d = String(description ?? '').trim();
+    const prev = byName.get(key);
+    if (!prev) byName.set(key, { name: n, description: d });
+    else if (!prev.description && d) prev.description = d;
+  };
+  // 优先资源清单（带简述）
+  if (Array.isArray(manifest)) {
+    for (const it of manifest) {
+      if (typeof it === 'string') put(it);
+      else if (it && typeof it === 'object') put(it.name ?? it.title, it.description ?? it.appearance);
+    }
+  }
+  // 再并入分镜内引用（保证不遗漏清单缺失项）
+  for (const n of sceneRefs) put(n);
+  return [...byName.values()];
+}
+
+/** 在 characters / scenes 文档中按名称去重补齐资源，返回新建数量 */
+async function ensureResources(
+  path: string,
+  projectId: number | null,
+  characters: ResourceCandidate[],
+  locations: ResourceCandidate[],
+): Promise<{ characters: number; locations: number }> {
+  if (projectId == null) return { characters: 0, locations: 0 };
+  const now = new Date().toISOString();
+
+  const addMissing = async (
+    docName: 'characters' | 'scenes',
+    candidates: ResourceCandidate[],
+    build: (c: ResourceCandidate, id: number) => any,
+  ): Promise<number> => {
+    if (candidates.length === 0) return 0;
+    const doc = await restStore.loadDoc(path, docName);
+    const existing = new Set(
+      doc.items
+        .filter((it: any) => String(it?.project_id) === String(projectId))
+        .map((it: any) => String(it?.name ?? '').trim().toLowerCase()),
+    );
+    let created = 0;
+    for (const c of candidates) {
+      const key = c.name.toLowerCase();
+      if (existing.has(key)) continue;
+      doc.items.push(build(c, doc.nextId++));
+      existing.add(key);
+      created++;
+    }
+    if (created > 0) restStore.saveDoc(path, docName, doc);
+    return created;
+  };
+
+  const createdChars = await addMissing('characters', characters, (c, id) => ({
+    id,
+    project_id: projectId,
+    name: c.name,
+    description: c.description,
+    base_appearance: c.description,
+    appearance: c.description,
+    created_at: now,
+    updated_at: now,
+  }));
+  const createdLocs = await addMissing('scenes', locations, (c, id) => ({
+    id,
+    project_id: projectId,
+    name: c.name,
+    description: c.description,
+    created_at: now,
+    updated_at: now,
+  }));
+  return { characters: createdChars, locations: createdLocs };
 }
 
 // ==================== 主处理：自动拆分 ====================
@@ -286,6 +381,18 @@ async function handleAutoGenerate({ scriptId, projectId, body }: AutoGenArgs): P
 
   saveStoryboards(path, doc);
 
+  // 自动补齐资源：把分镜引用到的角色 / 地点落为真实资产，避免「分镜显示资源但资源不存在」。
+  const charRefs: string[] = [];
+  const locRefs: string[] = [];
+  for (const raw of list) {
+    const chars = Array.isArray(raw?.characters) ? raw.characters : raw?.characters != null ? [raw.characters] : [];
+    for (const c of chars) charRefs.push(String(c ?? ''));
+    if (raw?.location) locRefs.push(String(raw.location));
+  }
+  const characters = collectResources(parsed?.characters, charRefs);
+  const locations = collectResources(parsed?.locations ?? parsed?.scenes_locations, locRefs);
+  const createdResources = await ensureResources(path, resolvedProjectId ?? null, characters, locations);
+
   const jobId = `sbg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
   return jsonResponse({
     success: true,
@@ -294,6 +401,8 @@ async function handleAutoGenerate({ scriptId, projectId, body }: AutoGenArgs): P
     total: doc.scenes.filter((s) => s._scope === scope).length,
     scriptId: scriptId ?? null,
     projectId: resolvedProjectId ?? null,
+    createdCharacters: createdResources.characters,
+    createdLocations: createdResources.locations,
     message: 'storyboards generated',
   });
 }

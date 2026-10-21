@@ -4,7 +4,6 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { getAuthToken } from '../../../services/auth';
 import type { CompositionClip, EpisodeGroup } from '../types';
 
 interface Script {
@@ -33,12 +32,9 @@ export function useCompositionData(projectId: number | null) {
     if (!projectId) return;
     setLoading(true);
     try {
-      const token = getAuthToken();
 
       // 1. 获取所有剧本
-      const scriptsRes = await fetch(`/api/scripts/project/${projectId}`, {
-        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) }
-      });
+      const scriptsRes = await fetch(`/api/scripts/project/${projectId}`);
       if (!scriptsRes.ok) throw new Error('加载剧本失败');
       const scriptsData = await scriptsRes.json();
       const scripts: Script[] = scriptsData.scripts || [];
@@ -46,9 +42,7 @@ export function useCompositionData(projectId: number | null) {
       // 2. 并行加载每集的分镜
       const episodeGroups: EpisodeGroup[] = await Promise.all(
         scripts.map(async (script) => {
-          const sbRes = await fetch(`/api/storyboards/${script.id}`, {
-            headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) }
-          });
+          const sbRes = await fetch(`/api/storyboards/${script.id}`);
           let storyboards: Storyboard[] = [];
           if (sbRes.ok) {
             const sbData = await sbRes.json();

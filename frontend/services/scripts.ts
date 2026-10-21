@@ -1,5 +1,3 @@
-import { getAuthToken } from './auth';
-
 export interface ScriptItem {
   id: number;
   title: string | null;
@@ -71,21 +69,8 @@ export interface GenerateScriptResponse extends ScriptItem {
   };
 }
 
-function authHeaders() {
-  const token = getAuthToken();
-  return token
-    ? {
-        Authorization: `Bearer ${token}`,
-      }
-    : {};
-}
-
 export async function fetchScripts(): Promise<ScriptItem[]> {
-  const res = await fetch('/api/scripts', {
-    headers: {
-      ...authHeaders(),
-    },
-  });
+  const res = await fetch('/api/scripts');
 
   if (!res.ok) {
     const data = await res.json().catch(() => null);
@@ -101,9 +86,7 @@ export async function fetchScripts(): Promise<ScriptItem[]> {
  */
 export async function fetchScriptLibrary(scope: ScriptLibraryScope = 'all'): Promise<ScriptLibraryItem[]> {
   const qs = scope && scope !== 'all' ? `?scope=${encodeURIComponent(scope)}` : '';
-  const res = await fetch(`/api/scripts/library${qs}`, {
-    headers: { ...authHeaders() },
-  });
+  const res = await fetch(`/api/scripts/library${qs}`);
   if (!res.ok) {
     const data = await res.json().catch(() => null);
     throw new Error(data?.message || '获取剧本库失败');
@@ -119,7 +102,6 @@ export async function createScript(params: CreateScriptParams): Promise<CreateSc
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...authHeaders(),
     },
     body: JSON.stringify(params),
   });
@@ -145,7 +127,6 @@ export async function bindScriptToProject(payload: {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...authHeaders(),
     },
     body: JSON.stringify(payload),
   });
@@ -162,7 +143,6 @@ export async function bindScriptToProject(payload: {
 export async function deleteScript(scriptId: number): Promise<void> {
   const res = await fetch(`/api/scripts/${scriptId}`, {
     method: 'DELETE',
-    headers: { ...authHeaders() },
   });
   if (!res.ok) {
     const data = await res.json().catch(() => null);
@@ -178,7 +158,6 @@ export async function updateScriptTitle(scriptId: number, title: string): Promis
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
-      ...authHeaders(),
     },
     body: JSON.stringify({ title, content: '' }),
   });
@@ -197,7 +176,6 @@ export async function updateScript(scriptId: number, title: string, content: str
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
-      ...authHeaders(),
     },
     body: JSON.stringify({ title, content }),
   });
@@ -213,7 +191,6 @@ export async function generateScript(params: GenerateScriptParams): Promise<Gene
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...authHeaders(),
     },
     body: JSON.stringify(params),
   });
@@ -320,9 +297,6 @@ export async function uploadScriptFile(params: UploadScriptParams): Promise<Uplo
 
   const res = await fetch('/api/scripts/upload', {
     method: 'POST',
-    headers: {
-      ...authHeaders(),
-    },
     body: formData,
   });
 
@@ -341,7 +315,6 @@ export async function analyzeScript(params: AnalyzeScriptParams): Promise<Analyz
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...authHeaders(),
     },
     body: JSON.stringify(params),
   });
@@ -361,7 +334,6 @@ export async function optimizeScript(params: OptimizeScriptParams): Promise<Opti
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...authHeaders(),
     },
     body: JSON.stringify(params),
   });

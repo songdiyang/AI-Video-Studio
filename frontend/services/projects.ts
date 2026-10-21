@@ -1,4 +1,3 @@
-import { getAuthToken } from './auth';
 import { ProjectType, mapLegacyProjectType } from '../types/projectTypes';
 import {
   listProjects as listLocalProjects,
@@ -41,13 +40,9 @@ function normalizeProject(project: any): Project {
 }
 
 const getHeaders = (): Record<string, string> => {
-  const token = getAuthToken();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
   return headers;
 };
 

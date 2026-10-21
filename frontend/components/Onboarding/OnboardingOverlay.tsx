@@ -41,7 +41,7 @@ const OnboardingOverlay: React.FC<OnboardingOverlayProps> = ({
 
   // 计算目标元素位置
   const calculateTargetRect = useCallback(() => {
-    if (!currentStep) return null;
+    if (!currentStep?.target) return null;
     
     const element = document.querySelector(currentStep.target);
     if (!element) return null;
@@ -56,7 +56,7 @@ const OnboardingOverlay: React.FC<OnboardingOverlayProps> = ({
   }, [currentStep]);
 
   // 计算气泡位置
-  const calculateBubblePosition = useCallback((rect: TargetRect | null, placement: string) => {
+  const calculateBubblePosition = useCallback((rect: TargetRect | null, placement: OnboardingStep['placement']) => {
     if (!rect || !bubbleRef.current) return { top: 0, left: 0 };
     
     const bubbleRect = bubbleRef.current.getBoundingClientRect();
@@ -125,7 +125,8 @@ const OnboardingOverlay: React.FC<OnboardingOverlayProps> = ({
     window.addEventListener('scroll', updatePositions, true);
 
     // ResizeObserver 监听目标元素
-    const element = document.querySelector(currentStep.target);
+    const target = currentStep.target;
+    const element = target ? document.querySelector(target) : null;
     let resizeObserver: ResizeObserver | null = null;
     if (element) {
       resizeObserver = new ResizeObserver(updatePositions);

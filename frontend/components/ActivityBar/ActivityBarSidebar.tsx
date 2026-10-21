@@ -67,7 +67,7 @@ const ActivityBarSidebar: React.FC = () => {
         {...resize.handleProps}
         role="separator"
         aria-orientation="vertical"
-        className={`absolute right-0 top-0 bottom-0 w-[5px] z-10 cursor-col-resize transition-colors ${
+        className={`absolute right-0 top-0 bottom-0 w-1.25 z-10 cursor-col-resize transition-colors ${
           resize.isDragging ? 'bg-(--accent)/60' : 'hover:bg-(--accent)/40'
         }`}
       />

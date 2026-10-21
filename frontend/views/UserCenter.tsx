@@ -1,8 +1,6 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { Button, Input, Textarea, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter } from '@heroui/react';
 import { FolderOpen, Sparkles, Users, Camera, Pencil, Save } from 'lucide-react';
-import { useLocation, useNavigate } from 'react-router-dom';
-import { getAuthToken, logout } from '../services/auth';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useToast } from '../contexts/ToastContext';
 
@@ -24,8 +22,6 @@ interface UserStats {
 }
 
 const UserCenter: React.FC = () => {
-  const navigate = useNavigate();
-  const location = useLocation();
   const { t } = useLanguage();
   const { showToast } = useToast();
 
@@ -44,30 +40,8 @@ const UserCenter: React.FC = () => {
   useEffect(() => {
     const init = async () => {
       try {
-        // 功能优先模式：使用本地默认数据
-        const token = getAuthToken();
-        if (token) {
-          // 已登录，从服务器获取数据
-          await fetchSummaryData();
-        } else {
-          // 未登录，使用本地默认数据
-          setProfile({
-            id: 0,
-            email: 'local@example.com',
-            nickname: '本地用户',
-            avatar_url: null,
-            signature: '功能优先模式，登录后可同步数据',
-            created_at: new Date().toISOString()
-          });
-          setStats({
-            scriptCount: 0,
-            videoCount: 0,
-            imageCount: 0,
-            projectCount: 0,
-            characterCount: 0
-          });
-          setLoading(false);
-        }
+        // 本地档案：/api/users/profile 由本地路由返回默认档案（无账号体系）
+        await fetchSummaryData();
       } catch (error) {
         console.error('初始化用户数据失败:', error);
         setLoading(false);
@@ -76,27 +50,13 @@ const UserCenter: React.FC = () => {
     init();
   }, []);
 
-  const redirectToAuth = () => {
-    logout();
-    navigate('/auth', { replace: true, state: { from: location } });
-  };
-
   const fetchSummaryData = async () => {
-    const token = getAuthToken();
-    if (!token) {
-      // 功能优先模式：未登录时使用本地数据
-      setLoading(false);
-      return;
-    }
-
     try {
-      const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
       const [profileRes, statsRes] = await Promise.all([
-        fetch('/api/users/profile', { headers }),
-        fetch('/api/users/stats', { headers })
+        fetch('/api/users/profile'),
+        fetch('/api/users/stats')
       ]);
 
-      // 功能优先模式：401 错误不再跳转登录页
       if (profileRes.ok) {
         setProfile(await profileRes.json());
       }
@@ -147,33 +107,17 @@ const UserCenter: React.FC = () => {
 
   // 保存资料
   const handleSaveProfile = async () => {
-    const token = getAuthToken();
-    if (!token) {
-      showToast('功能优先模式：登录后才能保存资料到服务器', 'warning');
-      return;
-    }
-
     setSavingProfile(true);
     try {
       const res = await fetch('/api/users/profile', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ nickname: editNickname, signature: editSignature }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message);
 
       setProfile(data.user);
-      // 同步 localStorage
-      try {
-        const stored = localStorage.getItem('auth_user');
-        if (stored) {
-          const user = JSON.parse(stored);
-          localStorage.setItem('auth_user', JSON.stringify({ ...user, nickname: data.user.nickname, avatar_url: data.user.avatar_url }));
-        }
-      } catch (localErr) {
-        console.error('更新本地用户数据失败:', localErr);
-      }
       setShowProfileModal(false);
       showToast('资料已更新', 'success');
     } catch (err) {
@@ -189,12 +133,6 @@ const UserCenter: React.FC = () => {
     if (!file) return;
     e.target.value = ''; // 清空以允许重复选择
 
-    const token = getAuthToken();
-    if (!token) {
-      showToast('功能优先模式：登录后才能上传头像到服务器', 'warning');
-      return;
-    }
-
     setUploadingAvatar(true);
     try {
       const formData = new FormData();
@@ -202,23 +140,12 @@ const UserCenter: React.FC = () => {
 
       const res = await fetch('/api/users/avatar', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
         body: formData,
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message);
 
       setProfile(prev => prev ? { ...prev, avatar_url: data.avatar_url } : prev);
-      // 同步 localStorage
-      try {
-        const stored = localStorage.getItem('auth_user');
-        if (stored) {
-          const user = JSON.parse(stored);
-          localStorage.setItem('auth_user', JSON.stringify({ ...user, avatar_url: data.avatar_url }));
-        }
-      } catch (localErr) {
-        console.error('更新本地用户数据失败:', localErr);
-      }
       showToast('头像已更新', 'success');
     } catch (err) {
       showToast(err instanceof Error ? err.message : '上传失败', 'error');

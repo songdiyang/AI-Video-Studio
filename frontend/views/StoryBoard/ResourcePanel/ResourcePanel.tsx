@@ -16,7 +16,6 @@ import CharacterViewsModal from './CharacterViewsModal';
 import CreateAssetModal, { CreateAssetType } from './CreateAssetModal';
 import { useResourceModals } from './useResourceModals';
 import { Character } from './types';
-import { getAuthToken } from '../../../services/auth';
 import { deleteCharacter, uploadCharacterImage, deleteProp } from '../../../services/assets';
 import {
   extractStudioComponentsFromScript, composeStudiosFromScript,
@@ -129,8 +128,6 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
   // 两阶段 AI 工作流 loading 状态
   const [isExtractingComponents, setIsExtractingComponents] = useState(false);
   const [isComposingStudios, setIsComposingStudios] = useState(false);
-
-
 
   // 自由添加资产弹窗
   const [createAssetType, setCreateAssetType] = useState<CreateAssetType | null>(null);
@@ -305,8 +302,6 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
     }));
   };
 
-
-
   const handleGenerateViewsWrapper = (charName: string, characterId: number) => {
     setViewsCharacterId(characterId);
     // 传空字符串表示仅打开弹窗查看，不立即生成
@@ -396,12 +391,10 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
         const newLinkedCharacters = scene.linkedCharacters?.filter(lc => lc.name !== character.name) || [];
         // 更新分镜内容（保留 location 不变）
         try {
-          const token = getAuthToken();
           await fetch(`/api/storyboards/${scene.id}/content`, {
             method: 'PATCH',
             headers: {
               'Content-Type': 'application/json',
-              ...(token ? { Authorization: `Bearer ${token}` } : {})
             },
             body: JSON.stringify({ characters: newCharacters })
           });
@@ -531,12 +524,10 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
         throw new Error('当前图片模型未配置可用长宽比');
       }
 
-      const token = getAuthToken();
       const res = await fetch(`/api/scenes/${sceneId}/generate-image`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({ 
           imageModel: modelName, 
@@ -790,7 +781,6 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
     </>
   );
 
-
   // 背景透明：portal 到创作工作台侧栏后与 --bg-nav 底色融为一体，展开时不产生色差
   return (
     <div className="h-full flex flex-col bg-transparent">
@@ -862,8 +852,6 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
         useReferenceImages={useReferenceImages}
         referenceImageCount={referenceImageCount}
       />
-
-
 
       {/* 自由添加角色 / 场景 */}
       <CreateAssetModal

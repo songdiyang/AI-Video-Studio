@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Film, User, LogOut, Settings, Sparkles, Moon, Sun, Monitor, Contrast, UsersRound, Puzzle, HelpCircle, PanelLeft, PanelRight, PanelBottom, FolderOpen, GripVertical, Check, X } from 'lucide-react';
+import { Film, User, Settings, Sparkles, Moon, Sun, Monitor, Contrast, UsersRound, Puzzle, PanelLeft, PanelRight, PanelBottom, FolderOpen, GripVertical, Check, X } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from "@heroui/react";
-import { getAuthToken, logout } from '../services/auth';
 import { useKeyboardShortcuts, ShortcutConfig, GLOBAL_SHORTCUTS_CONFIG } from '../hooks/useKeyboardShortcuts';
 import KeyboardShortcutsHelp from './KeyboardShortcutsHelp';
 import CommandPalette from './CommandPalette';
@@ -21,7 +19,6 @@ import AIAssistantSidePanel from './ActivityBar/AIAssistantSidePanel';
 import BottomTaskPanel from './ActivityBar/BottomTaskPanel';
 import AppMenuBar, { AppMenu } from './ActivityBar/AppMenuBar';
 import InternalMailbox from './InternalMailbox';
-import AuthModal from './AuthModal';
 // import LowBalanceBanner from './LowBalanceBanner';
 import { useRoutePreload } from '../hooks/useRoutePreload';
 import { isDesktop } from '../utils/runtimeMode';
@@ -57,9 +54,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const { projectType, currentProject, switchProject, leftSidebarTab, setLeftSidebarTab, bottomPanelOpen, toggleBottomPanel, hasUnsavedChanges } = useWorkbench();
   const { isOpen: isAIAssistantOpen, toggle: toggleAIAssistant, projectId: aiProjectId } = useAIAssistantUI();
   const { showToast } = useToast();
-  const isAuth = location.pathname === '/auth';
-  const isLoggedIn = !!getAuthToken();
-  // 桌面端本地优先：不依赖后端，跳过健康检测与用户资料拉取（网络仅反映联网状态）
+  // 桌面端本地优先：不依赖后端，跳过健康检测（网络仅反映联网状态）
   const offlineMode = isDesktop();
 
   // 活动栏点击：切换左侧栏活动（再次点击同一活动则收起）
@@ -73,9 +68,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [userAvatar, setUserAvatar] = useState<string | null>(null);
-  const [userNickname, setUserNickname] = useState<string | null>(null);
-  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
 
   // 侧边栏导航项排序状态（支持长按拖拽排序）
   const [navOrder, setNavOrder] = useState<string[]>(() => {
@@ -97,45 +89,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   // 路由预加载
   const { preload } = useRoutePreload();
-
-  // 获取用户头像和昵称（从localStorage或API）
-  useEffect(() => {
-    if (offlineMode || !isLoggedIn) {
-      setUserAvatar(null);
-      setUserNickname(null);
-      return;
-    }
-    // 先从 localStorage 读取
-    try {
-      const stored = localStorage.getItem('auth_user');
-      if (stored) {
-        const user = JSON.parse(stored);
-        if (user.avatar_url) setUserAvatar(user.avatar_url);
-        if (user.nickname) setUserNickname(user.nickname);
-      }
-    } catch {}
-    // 再从 API 拉取最新
-    const token = getAuthToken();
-    if (token) {
-      fetch('/api/users/profile', { headers: { Authorization: `Bearer ${token}` } })
-        .then(res => res.ok ? res.json() : null)
-        .then(data => {
-          if (data) {
-            setUserAvatar(data.avatar_url || null);
-            setUserNickname(data.nickname || null);
-            // 同步到 localStorage
-            try {
-              const stored = localStorage.getItem('auth_user');
-              if (stored) {
-                const user = JSON.parse(stored);
-                localStorage.setItem('auth_user', JSON.stringify({ ...user, avatar_url: data.avatar_url, nickname: data.nickname }));
-              }
-            } catch {}
-          }
-        })
-        .catch(() => {});
-    }
-  }, [isLoggedIn, offlineMode]);
 
   // 导航项配置（使用 useMemo 优化，依赖 t 对象）
   const navItems = useMemo(() => {
@@ -398,8 +351,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     },
   ], [navigate, switchWorkbenchLeftTab]);
 
-  // 注册全局快捷键（非登录页面生效）
-  useKeyboardShortcuts(globalShortcuts, !isAuth);
+  // 注册全局快捷键
+  useKeyboardShortcuts(globalShortcuts);
 
   // 引导系统步骤配置（首尾为居中步骤，无 target）
   const onboardingSteps: OnboardingStep[] = useMemo(() => [
@@ -420,18 +373,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     window.addEventListener('reset-onboarding', handler);
     return () => window.removeEventListener('reset-onboarding', handler);
   }, [onboarding.resetOnboarding]);
-
-  const handleAccountClick = (e: React.MouseEvent) => {
-    if (!isLoggedIn) {
-      e.preventDefault();
-      setIsAuthModalOpen(true);
-    }
-  };
-
-  const handleLogout = () => {
-    logout();
-    window.location.reload();
-  };
 
   // ===== VSCode 式应用菜单（文件/编辑/查看/转到/帮助） =====
   const appMenus = useMemo<AppMenu[]>(() => {
@@ -512,20 +453,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     setIsCommandPaletteOpen, setShowShortcutsHelp, showToast, t,
   ]);
 
-  // Auth 页面不显示导航
-  if (isAuth) {
-    return (
-      <div className="flex flex-col h-screen w-screen overflow-hidden">
-        {isDesktop() && <TitleBar />}
-        <div className="flex-1 min-h-0 flex bg-(--bg-app)">
-          <main className="flex-1 overflow-hidden">
-            {children}
-          </main>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden">
       {/* 顶部菜单栏 - 通栏（VSCode 式，横跨活动栏与主区域） */}
@@ -548,7 +475,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         </div>
 
         {/* 中间：可拖拽空白区（当左侧内容过多时收缩） */}
-        <div data-tauri-drag-region className="flex-shrink h-full min-w-[100px]" />
+        <div data-tauri-drag-region className="flex-shrink h-full min-w-25" />
 
         {/* 右侧：辅助控件 */}
         <div data-tauri-drag-region className="flex items-center gap-3">
@@ -558,7 +485,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
               onClick={() => setLeftSidebarTab(leftSidebarTab ? null : 'projects')}
               className={`p-1 rounded transition-colors ${
                 leftSidebarTab
-                  ? 'bg-[var(--accent)]/15 text-[var(--accent)]'
+                  ? 'bg-(--accent)/15 text-(--accent)'
                   : 'text-(--text-muted) hover:text-(--text-primary) hover:bg-white/5'
               }`}
               aria-label="左侧栏"
@@ -570,7 +497,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
               onClick={toggleBottomPanel}
               className={`p-1 rounded transition-colors ${
                 bottomPanelOpen
-                  ? 'bg-[var(--accent)]/15 text-[var(--accent)]'
+                  ? 'bg-(--accent)/15 text-(--accent)'
                   : 'text-(--text-muted) hover:text-(--text-primary) hover:bg-white/5'
               }`}
               aria-label="底部面板"
@@ -582,7 +509,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
               onClick={toggleAIAssistant}
               className={`p-1 rounded transition-colors ${
                 isAIAssistantOpen
-                  ? 'bg-[var(--accent)]/15 text-[var(--accent)]'
+                  ? 'bg-(--accent)/15 text-(--accent)'
                   : 'text-(--text-muted) hover:text-(--text-primary) hover:bg-white/5'
               }`}
               aria-label="右侧栏"
@@ -593,113 +520,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           </div>
           {/* 积分余额入口已移除（商业化功能下线） */}
           <InternalMailbox />
-
-          {/* 用户入口（登录 / 账户菜单） */}
-          {isLoggedIn ? (
-            <Dropdown placement="bottom-end">
-              <DropdownTrigger>
-                <button
-                  className="p-1.5 rounded-lg text-(--text-muted) hover:text-(--text-primary) hover:bg-white/10 transition-colors"
-                  aria-label={t.nav.myAccount}
-                  title={t.nav.myAccount}
-                >
-                  {userAvatar ? (
-                    <img src={userAvatar} alt="" className="w-5 h-5 rounded-full object-cover" />
-                  ) : (
-                    <User className="w-4 h-4" />
-                  )}
-                </button>
-              </DropdownTrigger>
-              <DropdownMenu
-                aria-label={t.nav.userMenu}
-                classNames={{
-                  base: "bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-lg rounded-xl min-w-[160px] p-1",
-                  list: "bg-transparent gap-0.5"
-                }}
-              >
-                <DropdownItem
-                  key="profile"
-                  className="text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg py-2.5"
-                  startContent={<User className="w-4 h-4 text-slate-500" />}
-                  onPress={() => navigate('/user-center')}
-                  description={userNickname || undefined}
-                >
-                  {t.nav.userCenter}
-                </DropdownItem>
-                <DropdownItem
-                  key="settings"
-                  className="text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg py-2.5"
-                  startContent={<Settings className="w-4 h-4 text-slate-500" />}
-                  onPress={() => {
-                    navigate('/');
-                    setTimeout(() => {
-                      window.dispatchEvent(new CustomEvent('openSettingsTab'));
-                    }, 100);
-                  }}
-                >
-                  {t.nav.settings}
-                </DropdownItem>
-                <DropdownItem
-                  key="helpDocs"
-                  className="text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg py-2.5"
-                  startContent={<HelpCircle className="w-4 h-4 text-blue-500" />}
-                  onPress={() => window.open('https://doubao.com', '_blank')}
-                >
-                  {t.nav.helpDocs}
-                </DropdownItem>
-                <DropdownItem
-                  key="logout"
-                  className="text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg py-2.5"
-                  color="danger"
-                  startContent={<LogOut className="w-4 h-4" />}
-                  onPress={handleLogout}
-                >
-                  {t.common.logout}
-                </DropdownItem>
-              </DropdownMenu>
-            </Dropdown>
-          ) : (
-            <Dropdown placement="bottom-end">
-              <DropdownTrigger>
-                <button
-                  className="p-1.5 rounded-lg text-(--accent) hover:bg-(--accent)/10 transition-colors"
-                  aria-label={t.common.login}
-                  title={t.common.login}
-                >
-                  <User className="w-4 h-4" />
-                </button>
-              </DropdownTrigger>
-              <DropdownMenu
-                aria-label="账户菜单"
-                classNames={{
-                  base: "bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-lg rounded-xl min-w-[160px] p-1",
-                  list: "bg-transparent gap-0.5"
-                }}
-              >
-                <DropdownItem
-                  key="login"
-                  className="text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg py-2.5"
-                  startContent={<User className="w-4 h-4 text-slate-500" />}
-                  onPress={() => setIsAuthModalOpen(true)}
-                >
-                  {t.common.login}
-                </DropdownItem>
-                <DropdownItem
-                  key="settings"
-                  className="text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg py-2.5"
-                  startContent={<Settings className="w-4 h-4 text-slate-500" />}
-                  onPress={() => {
-                    navigate('/');
-                    setTimeout(() => {
-                      window.dispatchEvent(new CustomEvent('openSettingsTab'));
-                    }, 100);
-                  }}
-                >
-                  {t.nav.settings}
-                </DropdownItem>
-              </DropdownMenu>
-            </Dropdown>
-          )}
 
           {isDesktop() && <WindowControls />}
         </div>
@@ -873,26 +693,15 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 </Link>
               );
             })}
-            {/* 用户按钮 */}
-            {isLoggedIn ? (
-              <button
-                onClick={() => navigate('/user-center')}
-                className="mobile-nav-item"
-                aria-label={t.nav.userCenter}
-              >
-                <User className="w-5 h-5" />
-                <span className="mobile-nav-label">{t.nav.my}</span>
-              </button>
-            ) : (
-              <button
-                onClick={() => setIsAuthModalOpen(true)}
-                className="mobile-nav-item"
-                aria-label={t.common.login}
-              >
-                <User className="w-5 h-5" />
-                <span className="mobile-nav-label">{t.common.login}</span>
-              </button>
-            )}
+            {/* 本地用户中心入口 */}
+            <button
+              onClick={() => navigate('/user-center')}
+              className="mobile-nav-item"
+              aria-label={t.nav.userCenter}
+            >
+              <User className="w-5 h-5" />
+              <span className="mobile-nav-label">{t.nav.my}</span>
+            </button>
           </div>
         </nav>
       )}
@@ -900,7 +709,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       {/* 活动栏右键上下文菜单：勾选显示/隐藏按钮 */}
       {activityMenu && (
         <div
-          className="fixed z-[9999] min-w-[180px] py-1 rounded-md border border-(--border-color) shadow-2xl"
+          className="fixed z-9999 min-w-[180px] py-1 rounded-md border border-(--border-color) shadow-2xl"
           style={{
             left: activityMenu.x,
             top: activityMenu.y,
@@ -999,9 +808,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           <span className="text-xs text-(--text-muted)">v1.0.0</span>
         </div>
       </footer>
-
-      {/* 登录弹窗 */}
-      <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} />
     </div>
   );
 };

@@ -174,36 +174,42 @@ export interface WorkbenchConfig {
 }
 
 /**
+ * 缺省工作台配置（漫剧）
+ * WORKBENCH_CONFIGS 是可选映射，取值兜底统一引用该常量以保证结果非空
+ */
+export const DEFAULT_WORKBENCH_CONFIG: WorkbenchConfig = {
+  projectType: 'comic_drama',
+  defaultTab: 'script',
+  tabs: [
+    {
+      key: 'script',
+      label: '剧本生成',
+      labelEn: 'Script',
+      icon: 'FileText',
+      component: 'ScriptPanel',
+    },
+    {
+      key: 'storyboard',
+      label: '分镜设计',
+      labelEn: 'Storyboard',
+      icon: 'Film',
+      component: 'StoryBoard',
+    },
+    {
+      key: 'composition',
+      label: '视频合成',
+      labelEn: 'Composition',
+      icon: 'Clapperboard',
+      component: 'VideoComposition',
+    },
+  ],
+};
+
+/**
  * 各项目类型的工作台配置
  */
 export const WORKBENCH_CONFIGS: Partial<Record<ProjectType, WorkbenchConfig>> = {
-  comic_drama: {
-    projectType: 'comic_drama',
-    defaultTab: 'script',
-    tabs: [
-      {
-        key: 'script',
-        label: '剧本生成',
-        labelEn: 'Script',
-        icon: 'FileText',
-        component: 'ScriptPanel',
-      },
-      {
-        key: 'storyboard',
-        label: '分镜设计',
-        labelEn: 'Storyboard',
-        icon: 'Film',
-        component: 'StoryBoard',
-      },
-      {
-        key: 'composition',
-        label: '视频合成',
-        labelEn: 'Composition',
-        icon: 'Clapperboard',
-        component: 'VideoComposition',
-      },
-    ],
-  },
+  comic_drama: DEFAULT_WORKBENCH_CONFIG,
 };
 
 // ==================== 辅助函数 ====================
@@ -212,7 +218,7 @@ export const WORKBENCH_CONFIGS: Partial<Record<ProjectType, WorkbenchConfig>> = 
  * 获取项目类型的工作台配置
  */
 export function getWorkbenchConfig(projectType: ProjectType): WorkbenchConfig {
-  return WORKBENCH_CONFIGS[projectType] || WORKBENCH_CONFIGS.comic_drama;
+  return WORKBENCH_CONFIGS[projectType] ?? DEFAULT_WORKBENCH_CONFIG;
 }
 
 /**

@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence, useMotionValue, useSpring, useTransform } from 'framer-motion';
 import { X, RotateCcw, ListTodo } from 'lucide-react';
-import { getAuthToken } from '../../services/auth';
 import { consumeWorkflow, consumeAllFailed } from '../../hooks/useWorkflow';
 import { useToast } from '../../contexts/ToastContext';
 import { useLanguage } from '../../contexts/LanguageContext';
@@ -271,8 +270,6 @@ const TaskQueueBubble: React.FC = () => {
     return { left, top };
   };
 
-  // 未登录不显示
-  if (!getAuthToken()) return null;
   if (!initialized) return null;
 
   const popupPos = getPopupPosition();

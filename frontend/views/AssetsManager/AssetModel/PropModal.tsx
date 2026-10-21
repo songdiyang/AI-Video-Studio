@@ -16,7 +16,6 @@ import {
 import { Image as ImageIcon, Wand2, Settings, Palette, RefreshCw } from 'lucide-react';
 import ReferenceImageManager from './ReferenceImageManager';
 import PropStyleConfigPanel, { PropStyleConfig } from './PropStyleConfig';
-import { getAuthToken } from '../../../services/auth';
 import { useAIModels } from '../../../hooks/useAIModels';
 import { filterModelsForTaskSlot } from '../../../utils/modelCapabilities';
 
@@ -105,12 +104,10 @@ const PropModal: React.FC<PropModalProps> = ({
     setGenerationStatus('generating');
 
     try {
-      const token = getAuthToken();
       const response = await fetch(`/api/props/${formData.id}/generate-image`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
         },
         body: JSON.stringify({
           imageModel: selectedImageModel,
@@ -140,15 +137,12 @@ const PropModal: React.FC<PropModalProps> = ({
   const pollGenerationStatus = async () => {
     if (!formData.id) return;
 
-    const token = getAuthToken();
     let attempts = 0;
     const maxAttempts = 60; // 最多轮询60次（约3分钟）
 
     const poll = async () => {
       try {
-        const response = await fetch(`/api/props/${formData.id}/generation-status`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
+        const response = await fetch(`/api/props/${formData.id}/generation-status`);
         
         if (response.ok) {
           const data = await response.json();

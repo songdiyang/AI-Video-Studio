@@ -1,8 +1,8 @@
 // 本地工作流引擎（localWorkflow）
 //
-// 桌面离线模式下，接管后端 /api/workflows 的「提交 → 轮询 → 取结果」契约，
+// 本地实现下，接管 /api/workflows 的「提交 → 轮询 → 取结果」契约，
 // 在内存作业注册表中异步派发 localAI 的出图 / 出视频 / 文本能力，直接命中厂商 API，
-// 完全不依赖 localhost:4001 的 Node 工作流引擎（Bull/Redis/MySQL）。
+// 不依赖任何后端工作流引擎（Bull/Redis/MySQL）。桌面端优先走 Rust 队列，此处为本地执行路径。
 //
 // 消费方（hooks/useWorkflow.ts、useTaskRunner、useSceneGeneration、NodeCanvas、DirectorSpace）
 // 通过 startWorkflow → getWorkflowStatus(jobId) 轮询，读取：
@@ -559,7 +559,7 @@ export async function start(workflowType: string, projectId: number, params: any
     const job = await viewToJob(view);
     return { jobId: job.id, tasks: job.tasks };
   }
-  // 浏览器离线：保留旧的进程内执行路径
+  // 非 Tauri 环境：本地进程内执行路径
   const job = createJob(workflowType, projectId, params);
   jobs.set(job.id, job);
   dispatch(job);

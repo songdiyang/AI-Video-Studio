@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { Button, Input, Tabs, Tab, useDisclosure, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Popover, PopoverTrigger, PopoverContent, Textarea } from '@heroui/react';
 import { Users, MapPin, FileText, Plus, Search, Tag, Settings, Edit2, X, ChevronDown, ChevronRight, BookOpen, Sparkles, Cloud, Building2, Wand2 } from 'lucide-react';
-import { getAuthToken } from '../../services/auth';
 import { useSceneImageGeneration } from '../StoryBoard/hooks/useSceneImageGeneration';
 import SceneDetailModal from '../StoryBoard/ResourcePanel/SceneDetailModal';
 import { 
@@ -669,10 +668,7 @@ const AssetsManager: React.FC = () => {
   useEffect(() => {
     const loadAiModels = async () => {
       try {
-        const token = getAuthToken();
-        const res = await fetch('/api/ai-models', {
-          headers: token ? { Authorization: `Bearer ${token}` } : {}
-        });
+        const res = await fetch('/api/ai-models');
         if (res.ok) {
           const data = await res.json();
           const models = data.models || [];
@@ -1260,12 +1256,10 @@ const AssetsManager: React.FC = () => {
         imageModel = imageModelOrOptions || '';
       }
 
-      const token = getAuthToken();
       const res = await fetch(`/api/scenes/${sceneId}/generate-image`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({ 
           style, 
@@ -2150,7 +2144,6 @@ const AssetsManager: React.FC = () => {
             projectId={formData.project_id || getActiveProjectId()}
           />
         )}
-        
         
         {activeTab === 'props' && (
           <PropModal

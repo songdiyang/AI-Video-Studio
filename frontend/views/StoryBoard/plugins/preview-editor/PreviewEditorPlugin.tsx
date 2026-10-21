@@ -6,7 +6,6 @@
 import React, { useCallback } from 'react';
 import PreviewEditor from '../../../../components/PreviewEditor';
 import { useStoryboardContext } from '../../core/StoryboardContext';
-import { getAuthToken } from '../../../../services/auth';
 
 const PreviewEditorPlugin: React.FC = () => {
   const {
@@ -52,10 +51,7 @@ const PreviewEditorPlugin: React.FC = () => {
       console.log('[PreviewEditorPlugin] payload 内容长度:', payload.content?.length || 0, 'payload.scriptId:', payload.scriptId);
 
       // 1. 从项目级别接口刷新剧本列表（仅当前项目的剧本，保持集数绑定）
-      const token = getAuthToken();
-      const projectRes = await fetch(`/api/scripts/project/${targetProjectId}`, {
-        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-      });
+      const projectRes = await fetch(`/api/scripts/project/${targetProjectId}`);
       let formattedScripts: any[] = [];
       if (projectRes.ok) {
         const projectData = await projectRes.json();

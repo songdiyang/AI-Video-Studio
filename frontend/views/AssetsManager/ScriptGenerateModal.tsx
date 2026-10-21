@@ -15,7 +15,6 @@ import {
 import { Sparkles, Wand2, Info } from 'lucide-react';
 import { useWorkflow, consumeWorkflow } from '../../hooks/useWorkflow';
 import { filterModelsForTaskSlot } from '../../utils/modelCapabilities';
-import { getAuthToken } from '../../services/auth';
 import type { Project } from '../../services/projects';
 
 interface AIModel {
@@ -162,12 +161,10 @@ const ScriptGenerateModal: React.FC<ScriptGenerateModalProps> = ({
       if (!generatingScriptId) return;
       try {
         // 保存工作流结果到剧本
-        const token = getAuthToken();
         const res = await fetch('/api/scripts/save-from-workflow', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
           },
           body: JSON.stringify({
             scriptId: generatingScriptId,
@@ -194,9 +191,7 @@ const ScriptGenerateModal: React.FC<ScriptGenerateModalProps> = ({
           const pid = Number(projectId);
           const epi = Number(data.episodeNumber);
           if (pid && epi) {
-            const detailRes = await fetch(`/api/scripts/project/${pid}/episode/${epi}`, {
-              headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-            });
+            const detailRes = await fetch(`/api/scripts/project/${pid}/episode/${epi}`);
             if (detailRes.ok) {
               const detailData = await detailRes.json();
               const script = detailData?.script;
@@ -239,12 +234,10 @@ const ScriptGenerateModal: React.FC<ScriptGenerateModalProps> = ({
       // 将生成中的剧本状态回滚为 draft
       if (generatingScriptId) {
         try {
-          const token = getAuthToken();
           await fetch(`/api/scripts/${generatingScriptId}/status`, {
             method: 'PATCH',
             headers: {
               'Content-Type': 'application/json',
-              ...(token ? { Authorization: `Bearer ${token}` } : {}),
             },
             body: JSON.stringify({ status: 'draft' }),
           });
@@ -284,12 +277,10 @@ const ScriptGenerateModal: React.FC<ScriptGenerateModalProps> = ({
 
     setGenerating(true);
     try {
-      const token = getAuthToken();
       const res = await fetch('/api/scripts/generate', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({
           projectId: Number(projectId),

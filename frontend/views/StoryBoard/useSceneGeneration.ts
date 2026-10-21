@@ -1,5 +1,4 @@
 import { useEffect, Dispatch, SetStateAction } from 'react';
-import { getAuthToken } from '../../services/auth';
 import { updateScene } from '../../services/assets';
 import { useTaskRunner, TaskState } from '../../hooks/useTaskRunner';
 import { WorkflowJob } from '../../hooks/useWorkflow';
@@ -79,14 +78,12 @@ function bustCache(url: string | null | undefined): string | null {
 }
 
 async function persistStoryboardMedia(storyboardId: number, payload: Record<string, unknown>) {
-  const token = getAuthToken();
 
   const doFetch = () =>
     fetch(`/api/storyboards/${storyboardId}/media`, {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
       },
       body: JSON.stringify(payload)
     });
@@ -242,7 +239,8 @@ export function useSceneGeneration({
   }, [tasks, clearTask, setScenes]);
 
   // 启动首尾帧生成 workflow
-  const generateImage = async (id: number, prompt: string, regenerateTarget?: 'first' | 'last' | 'both', forceRegenerate?: boolean): Promise<{ success: boolean; error?: string }> => {
+  // prompt 可选：未传时回退分镜自身的描述（与 GenerationActions 接口声明保持一致）
+  const generateImage = async (id: number, prompt?: string, regenerateTarget?: 'first' | 'last' | 'both', forceRegenerate?: boolean): Promise<{ success: boolean; error?: string; jobId?: string }> => {
     try {
       if (isTaskActive(`img_${id}`)) {
         return { success: false, error: '当前镜头正在生成首尾帧，请等待完成后再试' };
@@ -253,6 +251,8 @@ export function useSceneGeneration({
       if (!scene) {
         return { success: false, error: '找不到分镜' };
       }
+
+      const effectivePrompt = prompt ?? scene.description ?? '';
 
       const extraParams = {
         episodeNumber,
@@ -266,12 +266,13 @@ export function useSceneGeneration({
       }
 
       // 根据是否有动作选择不同的工作流
+      let jobId: string | undefined;
       if (scene.hasAction) {
         // 有动作：生成首尾帧
         console.log('[useSceneGeneration] 生成首尾帧（有动作）, target:', regenerateTarget || 'auto', 'forceRegenerate:', forceRegenerate);
-        await runTask(`img_${id}`, 'frame_generation', {
+        jobId = await runTask(`img_${id}`, 'frame_generation', {
           storyboardId: id,
-          prompt,
+          prompt: effectivePrompt,
           imageModel,
           textModel,
           regenerateTarget,
@@ -289,9 +290,9 @@ export function useSceneGeneration({
       } else {
         // 无动作：只生成单帧
         console.log('[useSceneGeneration] 生成单帧（无动作）');
-        await runTask(`img_${id}`, 'single_frame_generation', {
+        jobId = await runTask(`img_${id}`, 'single_frame_generation', {
           storyboardId: id,
-          description: prompt,
+          description: effectivePrompt,
           imageModel,
           textModel,
           // 单帧使用首帧草图作为参考
@@ -301,7 +302,7 @@ export function useSceneGeneration({
         });
       }
       
-      return { success: true };
+      return { success: true, jobId };
     } catch (error: any) {
       console.error('图片生成失败:', error);
       return { success: false, error: error.message || '图片生成失败' };
@@ -309,7 +310,7 @@ export function useSceneGeneration({
   };
 
   // 启动视频生成 workflow
-  const generateVideo = async (id: number): Promise<{ success: boolean; error?: string }> => {
+  const generateVideo = async (id: number): Promise<{ success: boolean; error?: string; jobId?: string }> => {
     if (isTaskActive(`vid_${id}`)) {
       return { success: false, error: '当前镜头正在生成视频，请等待完成后再试' };
     }
@@ -328,7 +329,7 @@ export function useSceneGeneration({
     // 时长由分镜设置决定，使用分镜自身的 duration
     const sceneDuration = scene.duration || 3;
     try {
-      await runTask(`vid_${id}`, 'scene_video', {
+      const jobId = await runTask(`vid_${id}`, 'scene_video', {
         storyboardId: id,
         videoModel,
         textModel,
@@ -339,7 +340,7 @@ export function useSceneGeneration({
         storyboardIndex: sceneIdx + 1,
         isRegenerate: !!scene.videoUrl
       });
-      return { success: true };
+      return { success: true, jobId };
     } catch (error: any) {
       console.error('视频生成失败:', error);
       return { success: false, error: error.message || '视频生成失败' };
@@ -372,16 +373,12 @@ export function useSceneGeneration({
         const blob = new Blob([ab], { type: mimeString });
 
         // Upload via /api/upload
-        const token = getAuthToken();
         const formData = new FormData();
         formData.append('file', blob, `camera_composite_${id}_${Date.now()}.png`);
         formData.append('path_prefix', `images/camera_composite`);
 
         const uploadRes = await fetch('/api/upload/general', {
           method: 'POST',
-          headers: {
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
           body: formData,
         });
 
@@ -451,14 +448,12 @@ export function useSceneGeneration({
           ia[i] = byteString.charCodeAt(i);
         }
         const blob = new Blob([ab], { type: mimeString });
-        const token = getAuthToken();
         const formData = new FormData();
         formData.append('file', blob, `paint_composite_${id}_${Date.now()}.png`);
         formData.append('path_prefix', 'images/paint_composite');
 
         const uploadRes = await fetch('/api/upload/general', {
           method: 'POST',
-          headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
           body: formData,
         });
 
@@ -483,14 +478,12 @@ export function useSceneGeneration({
           ia[i] = byteString.charCodeAt(i);
         }
         const blob = new Blob([ab], { type: mimeString });
-        const token = getAuthToken();
         const formData = new FormData();
         formData.append('file', blob, `paint_mask_${id}_${Date.now()}.png`);
         formData.append('path_prefix', 'images/paint_mask');
 
         const uploadRes = await fetch('/api/upload/general', {
           method: 'POST',
-          headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
           body: formData,
         });
 
@@ -549,14 +542,12 @@ export function useSceneGeneration({
           ia[i] = byteString.charCodeAt(i);
         }
         const blob = new Blob([ab], { type: mimeString });
-        const token = getAuthToken();
         const formData = new FormData();
         formData.append('file', blob, `sketch_${id}_${Date.now()}.png`);
         formData.append('path_prefix', 'images/sketches');
 
         const uploadRes = await fetch('/api/upload/general', {
           method: 'POST',
-          headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
           body: formData,
         });
 
@@ -631,12 +622,10 @@ export function useSceneGeneration({
   // 独立删除首帧
   const deleteFirstFrame = async (sceneId: number): Promise<{ success: boolean; error?: string; warnings?: string[] }> => {
     try {
-      const token = getAuthToken();
       const res = await fetch(`/api/storyboards/${sceneId}/media`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
         body: JSON.stringify({ firstFrameUrl: null })
       });
@@ -664,12 +653,10 @@ export function useSceneGeneration({
   // 独立删除尾帧
   const deleteLastFrame = async (sceneId: number): Promise<{ success: boolean; error?: string }> => {
     try {
-      const token = getAuthToken();
       const res = await fetch(`/api/storyboards/${sceneId}/media`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
         body: JSON.stringify({ lastFrameUrl: null })
       });

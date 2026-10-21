@@ -3,7 +3,6 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { getAuthToken } from '../../../services/auth';
 
 export interface NovelCharacter {
   id: number;
@@ -48,10 +47,7 @@ export function useNovelCharacters(projectId: number) {
     setError(null);
     
     try {
-      const token = getAuthToken();
-      const res = await fetch(`/api/novels/${projectId}/characters`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
+      const res = await fetch(`/api/novels/${projectId}/characters`);
       
       if (res.ok) {
         const data = await res.json();
@@ -74,12 +70,10 @@ export function useNovelCharacters(projectId: number) {
   // 创建人物
   const createCharacter = useCallback(async (characterData: Partial<NovelCharacter>) => {
     try {
-      const token = getAuthToken();
       const res = await fetch(`/api/novels/${projectId}/characters`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify(characterData),
       });
@@ -100,12 +94,10 @@ export function useNovelCharacters(projectId: number) {
   // 更新人物
   const updateCharacter = useCallback(async (characterId: number, characterData: Partial<NovelCharacter>) => {
     try {
-      const token = getAuthToken();
       const res = await fetch(`/api/novels/${projectId}/characters/${characterId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify(characterData),
       });
@@ -126,10 +118,8 @@ export function useNovelCharacters(projectId: number) {
   // 删除人物
   const deleteCharacter = useCallback(async (characterId: number) => {
     try {
-      const token = getAuthToken();
       const res = await fetch(`/api/novels/${projectId}/characters/${characterId}`, {
         method: 'DELETE',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
 
       if (res.ok) {

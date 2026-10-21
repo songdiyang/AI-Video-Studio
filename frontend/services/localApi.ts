@@ -1,6 +1,6 @@
 // 本地 API 服务
-// 使用 Tauri 命令替代后端 API
-// 兼容浏览器环境（开发模式）
+// 使用 Tauri 命令完成本地能力，不依赖任何后端服务器
+// 非 Tauri 环境下降级为 localStorage 等浏览器原生能力（仅作本地实现，非联网后端）
 
 // 类型定义
 export interface AIModelConfig {
@@ -608,6 +608,37 @@ export async function getDefaultProjectsRoot(): Promise<string> {
   const { invoke } = await getTauriApi();
   return await invoke('get_default_projects_root');
 }
+
+/** localStorage 键：用户自定义的默认工程根目录（空表示使用系统默认） */
+const PROJECTS_ROOT_KEY = 'local_default_projects_root';
+
+/** 读取用户设置的默认工程根目录（空串表示沿用系统默认） */
+export function getProjectsRootOverride(): string {
+  try {
+    return localStorage.getItem(PROJECTS_ROOT_KEY) || '';
+  } catch {
+    return '';
+  }
+}
+
+/** 设置默认工程根目录（传空串恢复系统默认） */
+export function setProjectsRootOverride(dir: string): void {
+  try {
+    const v = (dir || '').trim();
+    if (v) localStorage.setItem(PROJECTS_ROOT_KEY, v);
+    else localStorage.removeItem(PROJECTS_ROOT_KEY);
+  } catch {
+    // 忽略持久化失败
+  }
+}
+
+/** 生效的工程根目录：优先用户设置，否则系统默认 */
+export async function getEffectiveProjectsRoot(): Promise<string> {
+  const override = getProjectsRootOverride();
+  if (override) return override;
+  return getDefaultProjectsRoot();
+}
+
 
 // ==================== 文件操作 ====================
 

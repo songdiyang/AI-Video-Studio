@@ -1,22 +1,23 @@
 // 本地 API 路由拦截器（localApiRouter）
 //
-// 桌面端（Tauri）下，安装一个 fetch 拦截器，把前端对 `/api/*` 的相对请求
+// 应用启动时安装一个 fetch 拦截器，把前端对 `/api/*` 的相对请求
 // 路由到本地实现（localStore 文档 / localAI 直连厂商 / localWorkflow 队列），
-// 使桌面版无需 localhost:4001 后端即可完整工作。
+// 使应用无需任何后端服务器即可完整工作。
 //
 // 设计原则：
-//  - 桌面端常驻安装（installOfflineRouter 由 App 启动时调用）；浏览器端不安装，保持联调路径不变。
+//  - 常驻安装（installOfflineRouter 由应用启动时调用）；本地实现是唯一路径。
 //  - 只处理明确匹配、且能忠实回放的 `/api` 路由；其余（含 AI 厂商的绝对 https 请求）原样透传给真实 fetch。
-//  - 不改动任何业务调用点，保持云端/浏览器路径完全不变。
+//  - 未命中的 `/api` 路由返回中性空响应，绝不会打到任何真实服务器。
 
-import { isDesktop } from '../utils/runtimeMode';
 import {
   readDoc,
   writeDoc,
   resolveLocalPath,
   getActiveProjectPath,
+  projectIdForPath,
 } from './localStore';
 import { routeAiAssistantSessions } from './localAiAssistant';
+import { assertProject } from './localAssetShared';
 import { routeAiChatAndModels } from './localAiAssistantChat';
 import { routeScripts, resolveScriptReferences } from './localScripts';
 import { routeAutoGenerate } from './localStoryboards';
@@ -225,12 +226,12 @@ async function handleSceneAdd(body: any): Promise<Response> {
 }
 
 async function handleSceneContentPatch(idStr: string, body: any): Promise<Response> {
-  const path = await getActiveProjectPathOr(body?.projectId);
+  const path = await pathFor(body?.projectId);
   if (!path) return jsonResponse({ message: '未打开本地工程' }, 400);
   const doc = await loadStoryboards(path);
   const id = Number(idStr);
   const scene = doc.scenes.find((s) => s.id === id);
-  if (!scene) return jsonResponse({ message: '分镜不存在' }, 404);
+  if (!scene || !assertProject(scene, path)) return jsonResponse({ message: '分镜不存在' }, 404);
   const scalarFields = [
     'prompt_template', 'description', 'video_prompt', 'first_frame_prompt',
     'last_frame_prompt', 'negative_prompt', 'image_ref', 'video_url',
@@ -259,12 +260,12 @@ async function handleSceneContentPatch(idStr: string, body: any): Promise<Respon
  * payload 形状：{ imageUrl?, startFrame?, endFrame?, videoUrl? }；映射到本地分镜文档字段并落 .jzp。
  */
 async function handleSceneMediaPatch(idStr: string, body: any): Promise<Response> {
-  const path = await getActiveProjectPathOr(body?.projectId);
+  const path = await pathFor(body?.projectId);
   if (!path) return jsonResponse({ message: '未打开本地工程' }, 400);
   const doc = await loadStoryboards(path);
   const id = Number(idStr);
   const scene = doc.scenes.find((s) => s.id === id);
-  if (!scene) return jsonResponse({ message: '分镜不存在' }, 404);
+  if (!scene || !assertProject(scene, path)) return jsonResponse({ message: '分镜不存在' }, 404);
   const startFrame = body?.startFrame ?? body?.first_frame_url;
   const endFrame = body?.endFrame ?? body?.last_frame_url;
   const videoUrl = body?.videoUrl ?? body?.video_url;
@@ -294,7 +295,7 @@ async function handleSceneReorder(body: any): Promise<Response> {
 }
 
 async function handleSceneDelete(idStr: string): Promise<Response> {
-  const path = await getActiveProjectPathOr(null);
+  const path = await pathFor(null);
   if (!path) return jsonResponse({ message: '未打开本地工程' }, 400);
   const doc = await loadStoryboards(path);
   const id = Number(idStr);
@@ -340,12 +341,12 @@ async function handleScriptCreate(body: any): Promise<Response> {
 }
 
 async function handleScriptUpdate(idStr: string, body: any): Promise<Response> {
-  const path = await getActiveProjectPathOr(body?.projectId);
+  const path = await pathFor(body?.projectId);
   if (!path) return jsonResponse({ message: '未打开本地工程' }, 400);
   const doc = await loadScripts(path);
   const id = Number(idStr);
   const script = doc.scripts.find((s) => s.id === id);
-  if (!script) return jsonResponse({ message: '剧本不存在' }, 404);
+  if (!script || !assertProject(script, path)) return jsonResponse({ message: '剧本不存在' }, 404);
   if (body.title !== undefined) script.title = body.title;
   if (body.content !== undefined && body.content !== '') script.content = body.content;
   script.updated_at = new Date().toISOString();
@@ -354,10 +355,12 @@ async function handleScriptUpdate(idStr: string, body: any): Promise<Response> {
 }
 
 async function handleScriptDelete(idStr: string): Promise<Response> {
-  const path = await getActiveProjectPathOr(null);
+  const path = await pathFor(null);
   if (!path) return jsonResponse({ message: '未打开本地工程' }, 400);
   const doc = await loadScripts(path);
   const id = Number(idStr);
+  const target = doc.scripts.find((s) => s.id === id);
+  if (target && !assertProject(target, path)) return jsonResponse({ message: '剧本不存在' }, 404);
   doc.scripts = doc.scripts.filter((s) => s.id !== id);
   saveScripts(path, doc);
   return okJson({ message: 'deleted' });
@@ -365,60 +368,55 @@ async function handleScriptDelete(idStr: string): Promise<Response> {
 
 // ==================== 道具路由（本地 CRUD）====================
 async function handlePropsList(): Promise<Response> {
-  const path = await getActiveProjectPathOr(null);
+  const path = await pathFor(null);
   if (!path) return jsonResponse({ props: [], heldPropsRefs: [] });
   const doc = await loadProps(path);
   return jsonResponse({ props: doc.props, heldPropsRefs: [] });
 }
 
 async function handlePropCreate(body: any): Promise<Response> {
-  const path = await getActiveProjectPathOr(body?.project_id ?? body?.projectId ?? null);
+  const path = await pathFor(body?.project_id ?? body?.projectId ?? null);
   if (!path) return jsonResponse({ message: '未打开本地工程' }, 400);
   const doc = await loadProps(path);
   const now = new Date().toISOString();
   const id = doc.nextId++;
-  const prop: LocalProp = { ...(body || {}), id, created_at: now, updated_at: now };
+  const prop: LocalProp = { ...(body || {}), id, project_id: projectIdForPath(path) ?? body?.project_id ?? body?.projectId ?? null, created_at: now, updated_at: now };
   doc.props.push(prop);
   saveProps(path, doc);
   return jsonResponse({ success: true, prop });
 }
 
 async function handlePropUpdate(idStr: string, body: any): Promise<Response> {
-  const path = await getActiveProjectPathOr(body?.project_id ?? body?.projectId ?? null);
+  const path = await pathFor(body?.project_id ?? body?.projectId ?? null);
   if (!path) return jsonResponse({ message: '未打开本地工程' }, 400);
   const doc = await loadProps(path);
   const id = Number(idStr);
   const idx = doc.props.findIndex((p) => p.id === id);
-  if (idx === -1) return jsonResponse({ message: '道具不存在' }, 404);
+  if (idx === -1 || !assertProject(doc.props[idx], path)) return jsonResponse({ message: '道具不存在' }, 404);
   doc.props[idx] = { ...doc.props[idx], ...(body || {}), id, updated_at: new Date().toISOString() };
   saveProps(path, doc);
   return jsonResponse({ success: true, prop: doc.props[idx] });
 }
 
 async function handlePropDelete(idStr: string): Promise<Response> {
-  const path = await getActiveProjectPathOr(null);
+  const path = await pathFor(null);
   if (!path) return jsonResponse({ message: '未打开本地工程' }, 400);
   const doc = await loadProps(path);
   const id = Number(idStr);
+  const target = doc.props.find((p) => p.id === id);
+  if (target && !assertProject(target, path)) return jsonResponse({ message: '道具不存在' }, 404);
   doc.props = doc.props.filter((p) => p.id !== id);
   saveProps(path, doc);
   return okJson({ message: 'deleted' });
 }
 
 async function handlePropStates(idStr: string): Promise<Response> {
-  const path = await getActiveProjectPathOr(null);
+  const path = await pathFor(null);
   if (!path) return jsonResponse({ states: [] });
   const doc = await loadProps(path);
   const prop = doc.props.find((p) => p.id === Number(idStr));
   const states = Array.isArray((prop as any)?.states) ? (prop as any).states : [];
   return jsonResponse({ success: true, states });
-}
-
-async function getActiveProjectPathOr(_projectId?: number | null): Promise<string | null> {
-  // 内容/更新类操作多发生在活动工程上下文；若有 active 直接用，否则按 projectId 解析。
-  const active = getActiveProjectPath();
-  if (active) return active;
-  return _projectId ? pathFor(_projectId) : null;
 }
 
 function safeParse(s: string): any {
@@ -466,7 +464,7 @@ async function route(url: URL, method: string, body: any): Promise<Response | nu
   if ((mt = pathname.match(/^\/api\/storyboards\/(\d+)\/media$/)) && m === 'PATCH') return handleSceneMediaPatch(mt[1], body || {});
   if ((mt = pathname.match(/^\/api\/storyboards\/(\d+)$/))) {
     const scriptId = num(mt[1]);
-    const path = await getActiveProjectPathOr();
+    const path = await pathFor();
     if (!path) return jsonResponse([]);
     if (m === 'GET') return jsonResponse(await scenesInScope(path, scopeForScript(scriptId)));
     if (m === 'POST') return handleSceneImport(path, scopeForScript(scriptId), body?.items || []);
@@ -723,7 +721,7 @@ function installXhrRouter(): void {
 }
 
 export function installOfflineRouter(): void {
-  if (installed || typeof window === 'undefined' || !isDesktop()) return;
+  if (installed || typeof window === 'undefined') return;
   installed = true;
   const originalFetch = window.fetch.bind(window);
 

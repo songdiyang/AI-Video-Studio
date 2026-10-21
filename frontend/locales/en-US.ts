@@ -270,6 +270,18 @@ const enUS: Translations = {
       movDesc: 'Only supported by some models (Seedance 2.5); other models automatically fall back to MP4',
       changedToast: 'Video output format set to',
     },
+    // Default project location
+    projectsLocation: {
+      title: 'Default Project Location',
+      desc: 'New projects are saved to this folder automatically; uses the system default when not customized',
+      currentLabel: 'Current folder',
+      defaultTag: 'System default',
+      customTag: 'Custom',
+      choose: 'Choose folder',
+      reset: 'Restore default',
+      chooseToast: 'Default project location updated',
+      resetToast: 'Restored to system default location',
+    },
     // Feedback
     feedback: {
       title: 'Feedback Type',

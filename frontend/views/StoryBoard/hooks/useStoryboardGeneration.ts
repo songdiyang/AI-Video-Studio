@@ -4,7 +4,6 @@
  */
 
 import { useCallback, useMemo } from 'react';
-import { getAuthToken } from '../../../services/auth';
 import { ApiError } from '../../../hooks/useWorkflow';
 import { useToast } from '../../../contexts/ToastContext';
 import { useWorkflowRecovery } from './useWorkflowRecovery';
@@ -110,7 +109,6 @@ export function useStoryboardGeneration({
     }
 
     try {
-      const token = getAuthToken();
       // 根据 byScene 参数选择不同的 API
       // 无剧本模式：使用 projectId 作为路径参数
       const apiUrl = byScene
@@ -132,7 +130,6 @@ export function useStoryboardGeneration({
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
         body: JSON.stringify(body)
       });

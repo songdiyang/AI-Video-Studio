@@ -8,7 +8,6 @@ import { ProjectType, VISUAL_STYLE_BY_CATEGORY, StyleCategory, BodyProportionRat
 import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../contexts/ConfirmContext';
 import { useWorkbench } from '../contexts/WorkbenchContext';
-import { getAuthToken } from '../services/auth';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useVirtualList } from '../hooks/useVirtualList';
 import { usePreview } from '../components/PreviewProvider';
@@ -320,12 +319,10 @@ const Projects: React.FC = () => {
         // 新建项目后，如果有待上传的封面文件，立即上传
         if (newProject?.id && formData._coverFile) {
           try {
-            const token = getAuthToken();
             const fd = new FormData();
             fd.append('cover', formData._coverFile);
             await fetch(`/api/projects/${newProject.id}/cover`, {
               method: 'POST',
-              headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
               body: fd
             });
             setFormData(prev => ({ ...prev, _coverFile: null }));
@@ -399,12 +396,10 @@ const Projects: React.FC = () => {
 
     setAiSuggesting(true);
     try {
-      const token = getAuthToken();
       const res = await fetch('/api/projects/suggest-settings', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
         body: JSON.stringify({
           name: formData.name,
@@ -446,12 +441,10 @@ const Projects: React.FC = () => {
   
     setCoverGenerating(true);
     try {
-      const token = getAuthToken();
       const res = await fetch('/api/projects/generate-cover', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
         body: JSON.stringify({
           name: formData.name,
@@ -510,14 +503,10 @@ const Projects: React.FC = () => {
     if (editMode && currentId) {
       setCoverUploading(true);
       try {
-        const token = getAuthToken();
         const formDataUpload = new FormData();
         formDataUpload.append('cover', file);
         const res = await fetch(`/api/projects/${currentId}/cover`, {
           method: 'POST',
-          headers: {
-            ...(token ? { Authorization: `Bearer ${token}` } : {})
-          },
           body: formDataUpload
         });
 
@@ -561,12 +550,10 @@ const Projects: React.FC = () => {
     if (editMode && currentId) {
       setCoverUploading(true);
       try {
-        const token = getAuthToken();
         const res = await fetch(`/api/projects/${currentId}/cover/crop`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
           },
           body: JSON.stringify({
             sourceUrl: formData.cover_url,

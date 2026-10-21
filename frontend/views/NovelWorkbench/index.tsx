@@ -7,7 +7,6 @@ import React, { useState, useEffect, useCallback, Suspense, lazy, useMemo } from
 import { Spinner } from '@heroui/react';
 import { useToast } from '../../contexts/ToastContext';
 import { useLanguage } from '../../contexts/LanguageContext';
-import { getAuthToken } from '../../services/auth';
 import { Project, fetchProject } from '../../services/projects';
 import { NovelChapter, NovelOutline } from '../../types/projectTypes';
 import { useAIModels } from '../../hooks/useAIModels';
@@ -58,12 +57,8 @@ const NovelWorkbench: React.FC<NovelWorkbenchProps> = ({ projectId, activeTab })
         const projectData = await fetchProject(projectId);
         setProject(projectData);
         
-        const token = getAuthToken();
-        
         // 加载章节列表
-        const chaptersRes = await fetch(`/api/projects/${projectId}/novel/chapters`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
+        const chaptersRes = await fetch(`/api/projects/${projectId}/novel/chapters`);
         if (chaptersRes.ok) {
           const data = await chaptersRes.json();
           const chapterList = data.chapters || [];
@@ -74,9 +69,7 @@ const NovelWorkbench: React.FC<NovelWorkbenchProps> = ({ projectId, activeTab })
         }
         
         // 加载大纲
-        const outlinesRes = await fetch(`/api/projects/${projectId}/novel/outlines`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
+        const outlinesRes = await fetch(`/api/projects/${projectId}/novel/outlines`);
         if (outlinesRes.ok) {
           const data = await outlinesRes.json();
           setOutlines(data.outlines || []);
@@ -93,10 +86,7 @@ const NovelWorkbench: React.FC<NovelWorkbenchProps> = ({ projectId, activeTab })
   // 刷新章节
   const refreshChapters = useCallback(async () => {
     try {
-      const token = getAuthToken();
-      const res = await fetch(`/api/projects/${projectId}/novel/chapters`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
+      const res = await fetch(`/api/projects/${projectId}/novel/chapters`);
       if (res.ok) {
         const data = await res.json();
         setChapters(data.chapters || []);
@@ -109,10 +99,7 @@ const NovelWorkbench: React.FC<NovelWorkbenchProps> = ({ projectId, activeTab })
   // 刷新大纲
   const refreshOutlines = useCallback(async () => {
     try {
-      const token = getAuthToken();
-      const res = await fetch(`/api/projects/${projectId}/novel/outlines`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
+      const res = await fetch(`/api/projects/${projectId}/novel/outlines`);
       if (res.ok) {
         const data = await res.json();
         setOutlines(data.outlines || []);

@@ -9,7 +9,6 @@ import { Spinner, Button, Textarea, Input, Slider } from '@heroui/react';
 import { Wand2 } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 import { useLanguage } from '../../contexts/LanguageContext';
-import { getAuthToken } from '../../services/auth';
 import { Project, fetchProject } from '../../services/projects';
 import { VideoEffect } from '../../types/projectTypes';
 import { useAIModels } from '../../hooks/useAIModels';
@@ -69,10 +68,7 @@ const VideoScriptPanel: React.FC<VideoScriptPanelProps> = ({
     const loadScript = async () => {
       setLoading(true);
       try {
-        const token = getAuthToken();
-        const res = await fetch(`/api/projects/${projectId}/video/script`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
+        const res = await fetch(`/api/projects/${projectId}/video/script`);
         if (res.ok) {
           const data = await res.json();
           setScript(data.content || '');
@@ -124,12 +120,10 @@ const VideoScriptPanel: React.FC<VideoScriptPanelProps> = ({
     // 降级：直接调用 API
     setGenerating(true);
     try {
-      const token = getAuthToken();
       const res = await fetch(`/api/projects/${projectId}/video/script/generate`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({ title, duration }),
       });
@@ -169,12 +163,10 @@ const VideoScriptPanel: React.FC<VideoScriptPanelProps> = ({
   const handleSave = async () => {
     setSaving(true);
     try {
-      const token = getAuthToken();
       await fetch(`/api/projects/${projectId}/video/script`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({ title, content: script, duration }),
       });
@@ -303,10 +295,7 @@ const ShortVideoWorkbench: React.FC<ShortVideoWorkbenchProps> = ({ projectId, ac
         setProject(projectData);
         
         // 加载视频片段
-        const token = getAuthToken();
-        const res = await fetch(`/api/projects/${projectId}/video/clips`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
+        const res = await fetch(`/api/projects/${projectId}/video/clips`);
         if (res.ok) {
           const data = await res.json();
           // 转换为 VideoClip 格式
@@ -324,9 +313,7 @@ const ShortVideoWorkbench: React.FC<ShortVideoWorkbenchProps> = ({ projectId, ac
         }
         
         // 加载特效
-        const effectsRes = await fetch(`/api/projects/${projectId}/video/effects`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
+        const effectsRes = await fetch(`/api/projects/${projectId}/video/effects`);
         if (effectsRes.ok) {
           const effectsData = await effectsRes.json();
           setEffects(effectsData.effects || []);
@@ -366,12 +353,10 @@ const ShortVideoWorkbench: React.FC<ShortVideoWorkbenchProps> = ({ projectId, ac
     setClips(newClips);
     
     // 保存到后端（防抖）
-    const token = getAuthToken();
     fetch(`/api/projects/${projectId}/video/clips`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: JSON.stringify({ clips: newClips }),
     }).catch(err => console.error('保存片段失败:', err));
@@ -382,12 +367,10 @@ const ShortVideoWorkbench: React.FC<ShortVideoWorkbenchProps> = ({ projectId, ac
     setEffects(newEffects);
     
     // 保存到后端
-    const token = getAuthToken();
     fetch(`/api/projects/${projectId}/video/effects`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: JSON.stringify({ effects: newEffects }),
     }).catch(err => console.error('保存特效失败:', err));

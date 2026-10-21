@@ -9,6 +9,8 @@
 
 import {
   activePath,
+  resolvePath,
+  assertProject,
   loadRestDoc,
   saveRestDoc,
   findById,
@@ -48,7 +50,7 @@ async function handleStatesList(charId: number, byCategory: boolean, category?: 
 }
 
 async function handleStateCreate(charId: number, body: any): Promise<Response> {
-  const path = activePath();
+  const path = await resolvePath(body?.project_id ?? body?.projectId);
   if (!path) return jsonResponse({ message: '未打开本地工程' }, 400);
   const doc = await loadRestDoc(path, 'characterStates');
   const now = new Date().toISOString();
@@ -69,11 +71,11 @@ async function handleStateCreate(charId: number, body: any): Promise<Response> {
 }
 
 async function handleStateUpdate(charId: number, stateId: number, body: any): Promise<Response> {
-  const path = activePath();
+  const path = await resolvePath(body?.project_id ?? body?.projectId);
   if (!path) return jsonResponse({ message: '未打开本地工程' }, 400);
   const doc = await loadRestDoc(path, 'characterStates');
   const state = findById(doc.items, stateId);
-  if (!state) return jsonResponse({ message: '状态不存在' }, 404);
+  if (!state || !assertProject(state, path)) return jsonResponse({ message: '状态不存在' }, 404);
   const incoming = normalizeKeys(body);
   delete incoming.id;
   Object.assign(state, incoming, { updated_at: new Date().toISOString() });
@@ -115,11 +117,11 @@ async function handleStateActivate(charId: number, stateId: number): Promise<Res
 }
 
 async function handleStateDuplicate(charId: number, stateId: number, body: any): Promise<Response> {
-  const path = activePath();
+  const path = await resolvePath(body?.project_id ?? body?.projectId);
   if (!path) return jsonResponse({ message: '未打开本地工程' }, 400);
   const doc = await loadRestDoc(path, 'characterStates');
   const src = findById(doc.items, stateId);
-  if (!src) return jsonResponse({ message: '状态不存在' }, 404);
+  if (!src || !assertProject(src, path)) return jsonResponse({ message: '状态不存在' }, 404);
   const now = new Date().toISOString();
   const clone = {
     ...src,
@@ -139,7 +141,7 @@ async function handleStateBaseModelImageDelete(charId: number, stateId: number):
   if (!path) return jsonResponse({ message: '未打开本地工程' }, 400);
   const doc = await loadRestDoc(path, 'characterStates');
   const state = findById(doc.items, stateId);
-  if (!state) return jsonResponse({ message: '状态不存在' }, 404);
+  if (!state || !assertProject(state, path)) return jsonResponse({ message: '状态不存在' }, 404);
   for (const f of ['image_url', 'front_view_url', 'side_view_url', 'back_view_url']) state[f] = null;
   state.updated_at = new Date().toISOString();
   saveRestDoc(path, 'characterStates', doc);
@@ -148,13 +150,14 @@ async function handleStateBaseModelImageDelete(charId: number, stateId: number):
 
 // 状态三视图生成（作用于 characterStates）
 async function handleStateGenerateViews(charId: number, stateId: number, body: any): Promise<Response> {
-  const path = activePath();
+  const path = await resolvePath(body?.project_id ?? body?.projectId);
   if (!path) return jsonResponse({ message: '未打开本地工程' }, 400);
   const doc = await loadRestDoc(path, 'characterStates');
   const state = findById(doc.items, stateId);
-  if (!state) return jsonResponse({ message: '状态不存在' }, 404);
+  if (!state || !assertProject(state, path)) return jsonResponse({ message: '状态不存在' }, 404);
   const cdoc = await loadRestDoc(path, 'characters');
   const ch = findById(cdoc.items, charId) || {};
+  if (!assertProject(ch, path)) return jsonResponse({ message: '角色不存在' }, 404);
   const projectId = Number(ch.project_id) || 0;
   const prompts = buildViewPrompts({ ...ch, ...state });
   state.generation_status = 'generating';
@@ -182,11 +185,11 @@ async function handleStateGenerateViews(charId: number, stateId: number, body: a
 
 // 角色三视图生成（作用于 character 本体，白膜降级路径）
 async function handleGenerateViews(charId: number, body: any): Promise<Response> {
-  const path = activePath();
+  const path = await resolvePath(body?.project_id ?? body?.projectId);
   if (!path) return jsonResponse({ message: '未打开本地工程' }, 400);
   const doc = await loadRestDoc(path, 'characters');
   const ch = findById(doc.items, charId);
-  if (!ch) return jsonResponse({ message: '角色不存在' }, 404);
+  if (!ch || !assertProject(ch, path)) return jsonResponse({ message: '角色不存在' }, 404);
   const projectId = Number(ch.project_id) || 0;
   const prompts = buildViewPrompts(ch);
   ch.generation_status = 'generating';
@@ -213,11 +216,11 @@ async function handleGenerateViews(charId: number, body: any): Promise<Response>
 }
 
 async function handleGenerateConcept(charId: number, body: any): Promise<Response> {
-  const path = activePath();
+  const path = await resolvePath(body?.project_id ?? body?.projectId);
   if (!path) return jsonResponse({ message: '未打开本地工程' }, 400);
   const doc = await loadRestDoc(path, 'characters');
   const ch = findById(doc.items, charId);
-  if (!ch) return jsonResponse({ message: '角色不存在' }, 404);
+  if (!ch || !assertProject(ch, path)) return jsonResponse({ message: '角色不存在' }, 404);
   const projectId = Number(ch.project_id) || 0;
   const prompt = String(ch.generation_prompt || ch.concept_prompt || ch.base_appearance || ch.description || ch.name || '角色概念分解图');
   ch.concept_status = 'generating';
@@ -243,11 +246,11 @@ async function handleGenerateConcept(charId: number, body: any): Promise<Respons
 
 // 角色三视图提示词生成（纯文本）
 async function handleGenerateImagePrompt(charId: number, body: any): Promise<Response> {
-  const path = activePath();
+  const path = await resolvePath(body?.project_id ?? body?.projectId);
   if (!path) return jsonResponse({ message: '未打开本地工程' }, 400);
   const doc = await loadRestDoc(path, 'characters');
   const ch = findById(doc.items, charId);
-  if (!ch) return jsonResponse({ message: '角色不存在' }, 404);
+  if (!ch || !assertProject(ch, path)) return jsonResponse({ message: '角色不存在' }, 404);
   const model = await pickTextModel(body?.textModel);
   if (!model) return jsonResponse({ message: '请先配置可用的文本模型' }, 400);
   const sys =
@@ -270,11 +273,11 @@ async function handleGenerateImagePrompt(charId: number, body: any): Promise<Res
 }
 
 async function handleUploadImage(charId: number, body: any): Promise<Response> {
-  const path = activePath();
+  const path = await resolvePath(body?.project_id ?? body?.projectId);
   if (!path) return jsonResponse({ message: '未打开本地工程' }, 400);
   const doc = await loadRestDoc(path, 'characters');
   const ch = findById(doc.items, charId);
-  if (!ch) return jsonResponse({ message: '角色不存在' }, 404);
+  if (!ch || !assertProject(ch, path)) return jsonResponse({ message: '角色不存在' }, 404);
   const dataUrl = body?.image || body?.image_url || '';
   let imageUrl = String(dataUrl);
   if (/^(data:|https?:)/i.test(imageUrl)) {
@@ -301,7 +304,7 @@ async function handleDeleteView(charId: number, viewType: string): Promise<Respo
   if (!path) return jsonResponse({ message: '未打开本地工程' }, 400);
   const doc = await loadRestDoc(path, 'characters');
   const ch = findById(doc.items, charId);
-  if (!ch) return jsonResponse({ message: '角色不存在' }, 404);
+  if (!ch || !assertProject(ch, path)) return jsonResponse({ message: '角色不存在' }, 404);
   const field = `${viewType}_view_url`;
   if (['front', 'side', 'back'].includes(viewType)) ch[field] = null;
   ch.image_url = ch.front_view_url || ch.side_view_url || ch.back_view_url || null;
@@ -330,11 +333,11 @@ async function handleGenerationStatus(charId: number): Promise<Response> {
 }
 
 async function handleUseReferenceImages(charId: number, body: any): Promise<Response> {
-  const path = activePath();
+  const path = await resolvePath(body?.project_id ?? body?.projectId);
   if (!path) return jsonResponse({ message: '未打开本地工程' }, 400);
   const doc = await loadRestDoc(path, 'characters');
   const ch = findById(doc.items, charId);
-  if (!ch) return jsonResponse({ message: '角色不存在' }, 404);
+  if (!ch || !assertProject(ch, path)) return jsonResponse({ message: '角色不存在' }, 404);
   ch.use_reference_images = !!(body?.use_reference_images ?? body?.useReferenceImages);
   saveRestDoc(path, 'characters', doc);
   return jsonResponse({ message: 'updated', useReferenceImages: ch.use_reference_images });
@@ -390,11 +393,11 @@ async function handleLoadoutGet(charId: number): Promise<Response> {
 }
 
 async function handleLoadoutPut(charId: number, body: any): Promise<Response> {
-  const path = activePath();
+  const path = await resolvePath(body?.project_id ?? body?.projectId);
   if (!path) return jsonResponse({ message: '未打开本地工程' }, 400);
   const doc = await loadRestDoc(path, 'characters');
   const ch = findById(doc.items, charId);
-  if (!ch) return jsonResponse({ message: '角色不存在' }, 404);
+  if (!ch || !assertProject(ch, path)) return jsonResponse({ message: '角色不存在' }, 404);
   const loadout = {
     costumeStateId: body?.costumeStateId ?? body?.costume_state_id ?? null,
     expressionStateId: body?.expressionStateId ?? body?.expression_state_id ?? null,
@@ -422,7 +425,7 @@ async function handleCostumeEquip(charId: number, costumeId: number): Promise<Re
   if (!path) return jsonResponse({ message: '未打开本地工程' }, 400);
   const cdoc = await loadRestDoc(path, 'characters');
   const ch = findById(cdoc.items, charId);
-  if (!ch) return jsonResponse({ message: '角色不存在' }, 404);
+  if (!ch || !assertProject(ch, path)) return jsonResponse({ message: '角色不存在' }, 404);
   ch.equipped_costume_id = costumeId;
   saveRestDoc(path, 'characters', cdoc);
   const codoc = await loadRestDoc(path, 'costumes');

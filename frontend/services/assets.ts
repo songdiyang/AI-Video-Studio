@@ -1,5 +1,3 @@
-import { getAuthToken } from './auth';
-
 /**
  * 将内网 MinIO URL 规范化为 /storage/ 相对路径
  * 例: http://39.105.158.61:9000/nanostory/images/xxx.png → /storage/images/xxx.png
@@ -358,12 +356,7 @@ export interface AssetReferenceImage {
 
 // 角色API
 export async function fetchCharacters(): Promise<Character[]> {
-  const token = getAuthToken();
-  const response = await fetch('/api/characters', {
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
-    }
-  });
+  const response = await fetch('/api/characters');
   if (!response.ok) {
     throw new Error('获取角色列表失败');
   }
@@ -373,12 +366,7 @@ export async function fetchCharacters(): Promise<Character[]> {
 
 /** 按项目获取角色列表（支持团队成员访问） */
 export async function fetchCharactersByProject(projectId: number): Promise<Character[]> {
-  const token = getAuthToken();
-  const response = await fetch(`/api/characters/project/${projectId}`, {
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
-    }
-  });
+  const response = await fetch(`/api/characters/project/${projectId}`);
   if (!response.ok) {
     throw new Error('获取项目角色列表失败');
   }
@@ -387,12 +375,10 @@ export async function fetchCharactersByProject(projectId: number): Promise<Chara
 }
 
 export async function createCharacter(character: Partial<Character>): Promise<Character> {
-  const token = getAuthToken();
   const response = await fetch('/api/characters', {
     method: 'POST',
     headers: { 
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
     },
     body: JSON.stringify(character)
   });
@@ -405,12 +391,10 @@ export async function createCharacter(character: Partial<Character>): Promise<Ch
 }
 
 export async function updateCharacter(id: number, character: Partial<Character>): Promise<Character> {
-  const token = getAuthToken();
   const response = await fetch(`/api/characters/${id}`, {
     method: 'PUT',
     headers: { 
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
     },
     body: JSON.stringify(character)
   });
@@ -423,12 +407,8 @@ export async function updateCharacter(id: number, character: Partial<Character>)
 }
 
 export async function deleteCharacter(id: number): Promise<void> {
-  const token = getAuthToken();
   const response = await fetch(`/api/characters/${id}`, {
     method: 'DELETE',
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
-    }
   });
   if (!response.ok) {
     const data = await response.json();
@@ -440,12 +420,7 @@ export async function deleteCharacter(id: number): Promise<void> {
  * 获取单个角色详情
  */
 export async function fetchCharacter(characterId: number): Promise<Character> {
-  const token = getAuthToken();
-  const response = await fetch(`/api/characters/${characterId}`, {
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
-    }
-  });
+  const response = await fetch(`/api/characters/${characterId}`);
   if (!response.ok) {
     throw new Error('获取角色详情失败');
   }
@@ -460,15 +435,11 @@ export async function uploadCharacterImage(
   characterId: number,
   file: File
 ): Promise<{ image_url: string }> {
-  const token = getAuthToken();
   const formData = new FormData();
   formData.append('image', file);
 
   const response = await fetch(`/api/characters/${characterId}/upload-image`, {
     method: 'POST',
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
-    },
     body: formData
   });
   if (!response.ok) {
@@ -480,12 +451,7 @@ export async function uploadCharacterImage(
 
 // 场景API
 export async function fetchScenes(): Promise<Scene[]> {
-  const token = getAuthToken();
-  const response = await fetch('/api/scenes', {
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
-    }
-  });
+  const response = await fetch('/api/scenes');
   if (!response.ok) {
     throw new Error('获取场景列表失败');
   }
@@ -495,15 +461,10 @@ export async function fetchScenes(): Promise<Scene[]> {
 
 /** 按项目获取场景列表（支持团队成员访问）；可选 scriptId 按剧本过滤 */
 export async function fetchScenesByProject(projectId: number, scriptId?: number): Promise<Scene[]> {
-  const token = getAuthToken();
   const url = scriptId
     ? `/api/scenes/project/${projectId}?scriptId=${scriptId}`
     : `/api/scenes/project/${projectId}`;
-  const response = await fetch(url, {
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
-    }
-  });
+  const response = await fetch(url);
   if (!response.ok) {
     throw new Error('获取项目场景列表失败');
   }
@@ -512,12 +473,10 @@ export async function fetchScenesByProject(projectId: number, scriptId?: number)
 }
 
 export async function createScene(scene: Partial<Scene>): Promise<Scene> {
-  const token = getAuthToken();
   const response = await fetch('/api/scenes', {
     method: 'POST',
     headers: { 
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
     },
     body: JSON.stringify(scene)
   });
@@ -530,12 +489,10 @@ export async function createScene(scene: Partial<Scene>): Promise<Scene> {
 }
 
 export async function updateScene(id: number, scene: Partial<Scene>): Promise<Scene> {
-  const token = getAuthToken();
   const response = await fetch(`/api/scenes/${id}`, {
     method: 'PUT',
     headers: { 
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
     },
     body: JSON.stringify(scene)
   });
@@ -548,12 +505,8 @@ export async function updateScene(id: number, scene: Partial<Scene>): Promise<Sc
 }
 
 export async function deleteScene(id: number): Promise<void> {
-  const token = getAuthToken();
   const response = await fetch(`/api/scenes/${id}`, {
     method: 'DELETE',
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
-    }
   });
   if (!response.ok) {
     const data = await response.json();
@@ -593,12 +546,10 @@ export async function generateSceneImagePrompt(
   sceneId: number,
   params: GenerateScenePromptParams
 ): Promise<GenerateScenePromptResult> {
-  const token = getAuthToken();
   const response = await fetch(`/api/scenes/${sceneId}/generate-image-prompt`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
     },
     body: JSON.stringify(params)
   });
@@ -646,12 +597,10 @@ export async function generateCharacterImagePrompt(
   characterId: number,
   params: GenerateCharacterPromptParams
 ): Promise<GenerateCharacterPromptResult> {
-  const token = getAuthToken();
   const response = await fetch(`/api/characters/${characterId}/generate-image-prompt`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
     },
     body: JSON.stringify(params)
   });
@@ -664,12 +613,7 @@ export async function generateCharacterImagePrompt(
 
 // 道具API
 export async function fetchProps(): Promise<{ props: Prop[]; heldPropsRefs: HeldPropsRef[] }> {
-  const token = getAuthToken();
-  const response = await fetch('/api/props', {
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
-    }
-  });
+  const response = await fetch('/api/props');
   if (!response.ok) {
     throw new Error('获取道具列表失败');
   }
@@ -686,12 +630,10 @@ export async function fetchProps(): Promise<{ props: Prop[]; heldPropsRefs: Held
 }
 
 export async function createProp(prop: Partial<Prop>): Promise<Prop> {
-  const token = getAuthToken();
   const response = await fetch('/api/props', {
     method: 'POST',
     headers: { 
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
     },
     body: JSON.stringify(prop)
   });
@@ -704,12 +646,10 @@ export async function createProp(prop: Partial<Prop>): Promise<Prop> {
 }
 
 export async function updateProp(id: number, prop: Partial<Prop>): Promise<Prop> {
-  const token = getAuthToken();
   const response = await fetch(`/api/props/${id}`, {
     method: 'PUT',
     headers: { 
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
     },
     body: JSON.stringify(prop)
   });
@@ -722,12 +662,8 @@ export async function updateProp(id: number, prop: Partial<Prop>): Promise<Prop>
 }
 
 export async function deleteProp(id: number): Promise<void> {
-  const token = getAuthToken();
   const response = await fetch(`/api/props/${id}`, {
     method: 'DELETE',
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
-    }
   });
   if (!response.ok) {
     const data = await response.json();
@@ -741,12 +677,10 @@ export async function extractPropsFromScript(payload: {
   textModel: string;
   imageModel?: string;
 }): Promise<{ message: string; jobId?: string; status: string }> {
-  const token = getAuthToken();
   const response = await fetch('/api/props/extract-from-script', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
     },
     body: JSON.stringify(payload)
   });
@@ -776,12 +710,7 @@ export const TAG_GROUP_COLORS = [
 ];
 
 export async function fetchTagGroups(): Promise<TagGroup[]> {
-  const token = getAuthToken();
-  const response = await fetch('/api/characters/tag-groups', {
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
-    }
-  });
+  const response = await fetch('/api/characters/tag-groups');
   if (!response.ok) {
     throw new Error('获取标签分组失败');
   }
@@ -790,12 +719,10 @@ export async function fetchTagGroups(): Promise<TagGroup[]> {
 }
 
 export async function createTagGroup(data: { name: string; color: string; sort_order?: number }): Promise<TagGroup> {
-  const token = getAuthToken();
   const response = await fetch('/api/characters/tag-groups', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
     },
     body: JSON.stringify(data)
   });
@@ -808,12 +735,10 @@ export async function createTagGroup(data: { name: string; color: string; sort_o
 }
 
 export async function updateTagGroup(id: number, data: Partial<TagGroup>): Promise<TagGroup> {
-  const token = getAuthToken();
   const response = await fetch(`/api/characters/tag-groups/${id}`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
     },
     body: JSON.stringify(data)
   });
@@ -826,12 +751,8 @@ export async function updateTagGroup(id: number, data: Partial<TagGroup>): Promi
 }
 
 export async function deleteTagGroup(id: number): Promise<void> {
-  const token = getAuthToken();
   const response = await fetch(`/api/characters/tag-groups/${id}`, {
     method: 'DELETE',
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
-    }
   });
   if (!response.ok) {
     const result = await response.json();
@@ -885,12 +806,10 @@ export async function generateCharacterViews(
   characterId: number,
   params: GenerateViewsParams
 ): Promise<GenerateViewsResponse> {
-  const token = getAuthToken();
   const response = await fetch(`/api/characters/${characterId}/generate-views`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
     },
     body: JSON.stringify(params)
   });
@@ -908,12 +827,10 @@ export async function generateConceptBreakdown(
   characterId: number,
   params: GenerateConceptParams
 ): Promise<GenerateConceptResponse> {
-  const token = getAuthToken();
   const response = await fetch(`/api/characters/${characterId}/generate-concept`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
     },
     body: JSON.stringify(params)
   });
@@ -931,12 +848,8 @@ export async function deleteCharacterViewApi(
   characterId: number,
   viewType: 'front' | 'side' | 'back'
 ): Promise<{ message: string; front_view_url: string | null; side_view_url: string | null; back_view_url: string | null; image_url: string | null }> {
-  const token = getAuthToken();
   const response = await fetch(`/api/characters/${characterId}/views/${viewType}`, {
     method: 'DELETE',
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
-    }
   });
   if (!response.ok) {
     const result = await response.json();
@@ -951,12 +864,7 @@ export async function deleteCharacterViewApi(
 export async function getCharacterViewStatus(
   characterId: number
 ): Promise<GenerationStatusResponse> {
-  const token = getAuthToken();
-  const response = await fetch(`/api/characters/${characterId}/generation-status`, {
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
-    }
-  });
+  const response = await fetch(`/api/characters/${characterId}/generation-status`);
   if (!response.ok) {
     const result = await response.json();
     throw new Error(result.message || '查询生成状态失败');
@@ -971,12 +879,10 @@ export async function updateCharacterUseReferenceImages(
   characterId: number,
   useReferenceImages: boolean
 ): Promise<{ message: string; useReferenceImages: boolean }> {
-  const token = getAuthToken();
   const response = await fetch(`/api/characters/${characterId}/use-reference-images`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
     },
     body: JSON.stringify({ use_reference_images: useReferenceImages })
   });
@@ -1062,12 +968,7 @@ export async function downloadAllCharacterViews(
  * 获取角色的所有状态
  */
 export async function fetchCharacterStates(characterId: number): Promise<CharacterState[]> {
-  const token = getAuthToken();
-  const response = await fetch(`/api/characters/${characterId}/states`, {
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
-    }
-  });
+  const response = await fetch(`/api/characters/${characterId}/states`);
   if (!response.ok) {
     const result = await response.json();
     throw new Error(result.message || '获取角色状态失败');
@@ -1083,16 +984,11 @@ export async function fetchCharacterStatesByCategory(
   characterId: number,
   category?: StateCategory
 ): Promise<{ states: CharacterState[]; grouped: Record<string, CharacterState[]> }> {
-  const token = getAuthToken();
   const queryParams = new URLSearchParams();
   if (category) queryParams.append('category', category);
 
   const url = `/api/characters/${characterId}/states/by-category${queryParams.toString() ? '?' + queryParams.toString() : ''}`;
-  const response = await fetch(url, {
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
-    }
-  });
+  const response = await fetch(url);
   if (!response.ok) {
     const result = await response.json();
     throw new Error(result.message || '获取角色状态分类失败');
@@ -1117,12 +1013,10 @@ export async function createCharacterState(
   characterId: number,
   data: Partial<CharacterState>
 ): Promise<CharacterState> {
-  const token = getAuthToken();
   const response = await fetch(`/api/characters/${characterId}/states`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
     },
     body: JSON.stringify(data)
   });
@@ -1142,12 +1036,10 @@ export async function updateCharacterState(
   stateId: number,
   data: Partial<CharacterState>
 ): Promise<CharacterState> {
-  const token = getAuthToken();
   const response = await fetch(`/api/characters/${characterId}/states/${stateId}`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
     },
     body: JSON.stringify(data)
   });
@@ -1167,12 +1059,8 @@ export async function deleteCharacterStateBaseModelImage(
   characterId: number,
   stateId: number
 ): Promise<CharacterState> {
-  const token = getAuthToken();
   const response = await fetch(`/api/characters/${characterId}/states/${stateId}/base-model-image`, {
     method: 'DELETE',
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
-    }
   });
   if (!response.ok) {
     const result = await response.json();
@@ -1189,12 +1077,8 @@ export async function deleteCharacterState(
   characterId: number,
   stateId: number
 ): Promise<void> {
-  const token = getAuthToken();
   const response = await fetch(`/api/characters/${characterId}/states/${stateId}`, {
     method: 'DELETE',
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
-    }
   });
   if (!response.ok) {
     const result = await response.json();
@@ -1209,12 +1093,10 @@ export async function activateCharacterState(
   characterId: number,
   stateId: number
 ): Promise<CharacterState> {
-  const token = getAuthToken();
   const response = await fetch(`/api/characters/${characterId}/states/${stateId}/activate`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
     }
   });
   if (!response.ok) {
@@ -1233,12 +1115,10 @@ export async function duplicateCharacterState(
   stateId: number,
   newName?: string
 ): Promise<CharacterState> {
-  const token = getAuthToken();
   const response = await fetch(`/api/characters/${characterId}/states/${stateId}/duplicate`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
     },
     body: JSON.stringify({ newName })
   });
@@ -1259,12 +1139,10 @@ export async function generateCharacterStateViews(
   stateId: number,
   params: { imageModel: string; textModel?: string; regenerateOnly?: ('front' | 'side' | 'back')[]; generateMode?: 'design_sheet' | 'three_views' }
 ): Promise<{ message: string; jobId: string; characterId: number; stateId: number; status: string }> {
-  const token = getAuthToken();
   const response = await fetch(`/api/characters/${characterId}/states/${stateId}/generate-views`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
     },
     body: JSON.stringify(params)
   });
@@ -1283,12 +1161,7 @@ export async function generateCharacterStateViews(
 export async function getActiveCharacterState(
   characterId: number
 ): Promise<CharacterState | null> {
-  const token = getAuthToken();
-  const response = await fetch(`/api/characters/${characterId}/active-state`, {
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
-    }
-  });
+  const response = await fetch(`/api/characters/${characterId}/active-state`);
   if (!response.ok) {
     const result = await response.json();
     throw new Error(result.message || '获取激活状态失败');
@@ -1304,7 +1177,6 @@ export async function fetchCharacterStateHistory(
   characterId: number,
   params?: { stateId?: number; action?: string; limit?: number; offset?: number }
 ): Promise<CharacterStateHistoryResponse> {
-  const token = getAuthToken();
   const queryParams = new URLSearchParams();
   if (params?.action) queryParams.append('action', params.action);
   if (params?.limit) queryParams.append('limit', String(params.limit));
@@ -1321,11 +1193,7 @@ export async function fetchCharacterStateHistory(
 
   if (queryString) url += `?${queryString}`;
 
-  const response = await fetch(url, {
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
-    }
-  });
+  const response = await fetch(url);
   if (!response.ok) {
     const result = await response.json();
     throw new Error(result.message || '获取状态历史失败');
@@ -1346,7 +1214,6 @@ export async function fetchReferenceImages(
   assetId: number,
   enabledOnly: boolean = false
 ): Promise<AssetReferenceImage[]> {
-  const token = getAuthToken();
   const params = new URLSearchParams({
     asset_type: assetType,
     asset_id: assetId.toString()
@@ -1356,12 +1223,7 @@ export async function fetchReferenceImages(
   }
   
   const response = await fetch(
-    `/api/reference-images?${params.toString()}`,
-    {
-      headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
-      }
-    }
+    `/api/reference-images?${params.toString()}`
   );
   if (!response.ok) {
     const result = await response.json();
@@ -1382,12 +1244,10 @@ export async function uploadReferenceImage(
   viewType?: ReferenceViewType,
   isEnabled: boolean = true
 ): Promise<AssetReferenceImage> {
-  const token = getAuthToken();
   const response = await fetch('/api/reference-images', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
     },
     body: JSON.stringify({
       asset_type: assetType,
@@ -1413,12 +1273,10 @@ export async function updateReferenceImage(
   imageId: number,
   data: { image_url?: string; description?: string; sort_order?: number; view_type?: ReferenceViewType; is_enabled?: boolean }
 ): Promise<AssetReferenceImage> {
-  const token = getAuthToken();
   const response = await fetch(`/api/reference-images/${imageId}`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
     },
     body: JSON.stringify(data)
   });
@@ -1434,12 +1292,8 @@ export async function updateReferenceImage(
  * 删除参考图
  */
 export async function deleteReferenceImage(imageId: number): Promise<void> {
-  const token = getAuthToken();
   const response = await fetch(`/api/reference-images/${imageId}`, {
     method: 'DELETE',
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
-    }
   });
   if (!response.ok) {
     const result = await response.json();
@@ -1453,12 +1307,10 @@ export async function deleteReferenceImage(imageId: number): Promise<void> {
 export async function batchReorderReferenceImages(
   orders: { id: number; sort_order: number }[]
 ): Promise<void> {
-  const token = getAuthToken();
   const response = await fetch('/api/reference-images/batch-reorder', {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
     },
     body: JSON.stringify({ orders })
   });
@@ -1483,12 +1335,10 @@ export async function generatePropImage(
     styleConfig?: PropStyleConfig;
   }
 ): Promise<{ jobId: string; propId: number; status: string }> {
-  const token = getAuthToken();
   const response = await fetch(`/api/props/${propId}/generate-image`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
     },
     body: JSON.stringify(params)
   });
@@ -1505,12 +1355,7 @@ export async function generatePropImage(
 export async function getPropGenerationStatus(
   propId: number
 ): Promise<PropGenerationStatusResponse> {
-  const token = getAuthToken();
-  const response = await fetch(`/api/props/${propId}/generation-status`, {
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
-    }
-  });
+  const response = await fetch(`/api/props/${propId}/generation-status`);
   if (!response.ok) {
     const result = await response.json();
     throw new Error(result.message || '查询道具生成状态失败');
@@ -1525,12 +1370,10 @@ export async function updatePropStyleConfig(
   propId: number,
   styleConfig: PropStyleConfig
 ): Promise<{ styleConfig: PropStyleConfig }> {
-  const token = getAuthToken();
   const response = await fetch(`/api/props/${propId}/style-config`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
     },
     body: JSON.stringify({ styleConfig })
   });
@@ -1549,12 +1392,7 @@ export async function updatePropStyleConfig(
  * 获取道具的所有状态
  */
 export async function fetchPropStates(propId: number): Promise<PropState[]> {
-  const token = getAuthToken();
-  const response = await fetch(`/api/props/${propId}/states`, {
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
-    }
-  });
+  const response = await fetch(`/api/props/${propId}/states`);
   if (!response.ok) {
     const result = await response.json();
     throw new Error(result.message || '获取道具状态失败');
@@ -1570,12 +1408,10 @@ export async function createPropState(
   propId: number,
   data: Partial<PropState>
 ): Promise<PropState> {
-  const token = getAuthToken();
   const response = await fetch(`/api/props/${propId}/states`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
     },
     body: JSON.stringify(data)
   });
@@ -1595,12 +1431,10 @@ export async function updatePropState(
   stateId: number,
   data: Partial<PropState>
 ): Promise<PropState> {
-  const token = getAuthToken();
   const response = await fetch(`/api/props/${propId}/states/${stateId}`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
     },
     body: JSON.stringify(data)
   });
@@ -1619,12 +1453,8 @@ export async function deletePropState(
   propId: number,
   stateId: number
 ): Promise<void> {
-  const token = getAuthToken();
   const response = await fetch(`/api/props/${propId}/states/${stateId}`, {
     method: 'DELETE',
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
-    }
   });
   if (!response.ok) {
     const result = await response.json();
@@ -1646,15 +1476,11 @@ export async function uploadSceneSketch(
   sceneId: number,
   file: File
 ): Promise<{ sketch_url: string }> {
-  const token = getAuthToken();
   const formData = new FormData();
   formData.append('sketch', file);
 
   const response = await fetch(`/api/scenes/${sceneId}/sketch`, {
     method: 'POST',
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
-    },
     body: formData
   });
 
@@ -1670,12 +1496,8 @@ export async function uploadSceneSketch(
  * @param sceneId 场景ID
  */
 export async function deleteSceneSketch(sceneId: number): Promise<void> {
-  const token = getAuthToken();
   const response = await fetch(`/api/scenes/${sceneId}/sketch`, {
     method: 'DELETE',
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
-    }
   });
 
   if (!response.ok) {
@@ -1692,12 +1514,7 @@ export async function deleteSceneSketch(sceneId: number): Promise<void> {
 export async function getSceneSketch(
   sceneId: number
 ): Promise<{ sketch_url: string | null }> {
-  const token = getAuthToken();
-  const response = await fetch(`/api/scenes/${sceneId}/sketch`, {
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
-    }
-  });
+  const response = await fetch(`/api/scenes/${sceneId}/sketch`);
 
   if (!response.ok) {
     const result = await response.json();
@@ -1716,15 +1533,11 @@ export async function uploadSceneReferenceImage(
   sceneId: number,
   file: File
 ): Promise<{ reference_image_url: string }> {
-  const token = getAuthToken();
   const formData = new FormData();
   formData.append('reference_image', file);
 
   const response = await fetch(`/api/scenes/${sceneId}/reference-image`, {
     method: 'POST',
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
-    },
     body: formData
   });
 
@@ -1740,12 +1553,8 @@ export async function uploadSceneReferenceImage(
  * @param sceneId 场景ID
  */
 export async function deleteSceneReferenceImage(sceneId: number): Promise<void> {
-  const token = getAuthToken();
   const response = await fetch(`/api/scenes/${sceneId}/reference-image`, {
     method: 'DELETE',
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
-    }
   });
 
   if (!response.ok) {
@@ -1776,7 +1585,6 @@ export async function uploadFileToMinIO(
   description?: string,
   onProgress?: (progress: number) => void
 ): Promise<{ image: AssetReferenceImage; url: string }> {
-  const token = getAuthToken();
   const formData = new FormData();
   formData.append('file', file);
   formData.append('asset_type', assetType);
@@ -1826,9 +1634,6 @@ export async function uploadFileToMinIO(
     });
 
     xhr.open('POST', '/api/upload');
-    if (token) {
-      xhr.setRequestHeader('Authorization', `Bearer ${token}`);
-    }
     xhr.send(formData);
   });
 }
@@ -1842,12 +1647,7 @@ export async function checkUploadStatus(): Promise<{
   maxFileSize: number;
   allowedTypes: string[];
 }> {
-  const token = getAuthToken();
-  const response = await fetch('/api/upload/status', {
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
-    }
-  });
+  const response = await fetch('/api/upload/status');
 
   if (!response.ok) {
     const result = await response.json();
@@ -1888,10 +1688,7 @@ export interface CharacterCompositeResponse {
 
 /** 读取角色当前装配 */
 export async function fetchCharacterLoadout(characterId: number): Promise<{ characterId: number; loadout: CharacterLoadout }> {
-  const token = getAuthToken();
-  const response = await fetch(`/api/characters/${characterId}/loadout`, {
-    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) }
-  });
+  const response = await fetch(`/api/characters/${characterId}/loadout`);
   if (!response.ok) {
     const r = await response.json().catch(() => ({}));
     throw new Error(r.message || '获取装配信息失败');
@@ -1904,10 +1701,9 @@ export async function updateCharacterLoadout(
   characterId: number,
   data: { costumeStateId?: number | null; expressionStateId?: number | null }
 ): Promise<{ message: string; characterId: number; loadout: { costumeStateId: number | null; expressionStateId: number | null } }> {
-  const token = getAuthToken();
   const response = await fetch(`/api/characters/${characterId}/loadout`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
   if (!response.ok) {
@@ -1923,13 +1719,10 @@ export async function fetchCharacterComposite(
   projectId: number,
   overrides?: { costumeStateId?: number; expressionStateId?: number }
 ): Promise<CharacterCompositeResponse> {
-  const token = getAuthToken();
   const params = new URLSearchParams({ projectId: String(projectId) });
   if (overrides?.costumeStateId != null) params.append('costumeStateId', String(overrides.costumeStateId));
   if (overrides?.expressionStateId != null) params.append('expressionStateId', String(overrides.expressionStateId));
-  const response = await fetch(`/api/characters/${characterId}/composite?${params.toString()}`, {
-    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) }
-  });
+  const response = await fetch(`/api/characters/${characterId}/composite?${params.toString()}`);
   if (!response.ok) {
     const r = await response.json().catch(() => ({}));
     const err: any = new Error(r.message || '获取合成预览失败');
@@ -1953,10 +1746,7 @@ export interface ProjectBinding {
 
 /** 读取角色绑定的所有项目 */
 export async function fetchCharacterBindings(characterId: number): Promise<{ characterId: number; bindings: ProjectBinding[] }> {
-  const token = getAuthToken();
-  const response = await fetch(`/api/characters/${characterId}/bindings`, {
-    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) }
-  });
+  const response = await fetch(`/api/characters/${characterId}/bindings`);
   if (!response.ok) {
     const r = await response.json().catch(() => ({}));
     throw new Error(r.message || '获取角色绑定失败');
@@ -1966,10 +1756,9 @@ export async function fetchCharacterBindings(characterId: number): Promise<{ cha
 
 /** 添加角色-项目绑定 */
 export async function addCharacterBinding(characterId: number, projectId: number): Promise<{ message: string }> {
-  const token = getAuthToken();
   const response = await fetch(`/api/characters/${characterId}/bindings`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ projectId }),
   });
   if (!response.ok) {
@@ -1981,10 +1770,8 @@ export async function addCharacterBinding(characterId: number, projectId: number
 
 /** 解除角色-项目绑定（不能解除 owner） */
 export async function removeCharacterBinding(characterId: number, projectId: number): Promise<{ message: string }> {
-  const token = getAuthToken();
   const response = await fetch(`/api/characters/${characterId}/bindings/${projectId}`, {
     method: 'DELETE',
-    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) }
   });
   if (!response.ok) {
     const r = await response.json().catch(() => ({}));
@@ -1997,10 +1784,7 @@ export async function removeCharacterBinding(characterId: number, projectId: num
 
 /** 读取场景绑定的所有项目 (T7) */
 export async function fetchSceneBindings(sceneId: number): Promise<{ sceneId: number; bindings: ProjectBinding[] }> {
-  const token = getAuthToken();
-  const response = await fetch(`/api/scenes/${sceneId}/bindings`, {
-    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) }
-  });
+  const response = await fetch(`/api/scenes/${sceneId}/bindings`);
   if (!response.ok) {
     const r = await response.json().catch(() => ({}));
     throw new Error(r.message || '获取场景绑定失败');
@@ -2010,10 +1794,9 @@ export async function fetchSceneBindings(sceneId: number): Promise<{ sceneId: nu
 
 /** 添加场景-项目绑定 */
 export async function addSceneBinding(sceneId: number, projectId: number): Promise<{ message: string }> {
-  const token = getAuthToken();
   const response = await fetch(`/api/scenes/${sceneId}/bindings`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ projectId }),
   });
   if (!response.ok) {
@@ -2025,10 +1808,8 @@ export async function addSceneBinding(sceneId: number, projectId: number): Promi
 
 /** 解除场景-项目绑定 */
 export async function removeSceneBinding(sceneId: number, projectId: number): Promise<{ message: string }> {
-  const token = getAuthToken();
   const response = await fetch(`/api/scenes/${sceneId}/bindings/${projectId}`, {
     method: 'DELETE',
-    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) }
   });
   if (!response.ok) {
     const r = await response.json().catch(() => ({}));
@@ -2097,12 +1878,10 @@ export async function aiGenerateCharacterDraft(params: {
   userDescription: string;
   textModel?: string;
 }): Promise<AiDraftResponse> {
-  const token = getAuthToken();
   const response = await fetch('/api/characters/ai-generate-draft', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
     },
     body: JSON.stringify(params)
   });
@@ -2118,12 +1897,10 @@ export async function aiCommitCharacterDraft(params: {
   imageModel: string;
   textModel?: string;
 }): Promise<AiCommitResponse> {
-  const token = getAuthToken();
   const response = await fetch('/api/characters/ai-generate-commit', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
     },
     body: JSON.stringify(params)
   });
@@ -2137,12 +1914,10 @@ export async function generateDefaultCostumeState(
   characterId: number,
   params: { imageModel?: string; textModel?: string } = {}
 ): Promise<{ message: string; characterId: number; stateId: number; jobId: string; status: string }> {
-  const token = getAuthToken();
   const response = await fetch(`/api/characters/${characterId}/generate-default-costume-state`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
     },
     body: JSON.stringify(params)
   });
@@ -2165,12 +1940,10 @@ export async function aiGenerateSceneDraft(params: {
   userDescription: string;
   textModel?: string;
 }): Promise<{ draft: AiSceneDraft; projectStyle: { projectId: number; projectName: string; visualStylePrompt: string; hasStyle: boolean } }> {
-  const token = getAuthToken();
   const response = await fetch('/api/scenes/ai-generate-draft', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
     },
     body: JSON.stringify(params)
   });

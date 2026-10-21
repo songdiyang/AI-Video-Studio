@@ -8,8 +8,6 @@
  * 运行状态查询复用 /api/workflows/:jobId（hooks/useWorkflow.ts）
  */
 
-import { getAuthToken } from './auth';
-
 export interface RunSessionParams {
   sessionId: number;
   message: string;
@@ -37,12 +35,10 @@ export interface RunSessionError {
 }
 
 async function request<T = any>(url: string, init: RequestInit = {}): Promise<T> {
-  const token = getAuthToken();
   const res = await fetch(url, {
     ...init,
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(init.headers || {})
     }
   });

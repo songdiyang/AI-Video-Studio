@@ -8,6 +8,8 @@
 
 import {
   activePath,
+  resolvePath,
+  assertProject,
   loadRestDoc,
   saveRestDoc,
   findById,
@@ -49,11 +51,11 @@ async function handleSceneElementsGet(sceneId: number): Promise<Response> {
 }
 
 async function handleSceneElementAdd(sceneId: number, body: any): Promise<Response> {
-  const path = activePath();
+  const path = await resolvePath(body?.project_id ?? body?.projectId);
   if (!path) return jsonResponse({ message: '未打开本地工程' }, 400);
   const sdoc = await loadRestDoc(path, 'scenes');
   const scene = findById(sdoc.items, sceneId);
-  if (!scene) return jsonResponse({ message: '场景不存在' }, 404);
+  if (!scene || !assertProject(scene, path)) return jsonResponse({ message: '场景不存在' }, 404);
   scene.element_links = Array.isArray(scene.element_links) ? scene.element_links : [];
   const incoming = normalizeKeys(body);
   const linkId = (scene.element_links.reduce((mx: number, l: any) => Math.max(mx, Number(l.link_id) || 0), 0) + 1);
@@ -73,7 +75,7 @@ async function handleSceneElementPatch(sceneId: number, elementId: number, body:
   const sdoc = await loadRestDoc(path, 'scenes');
   const scene = findById(sdoc.items, sceneId);
   const link = scene?.element_links?.find((l: any) => Number(l.element_id) === Number(elementId));
-  if (!link) return jsonResponse({ message: '关联不存在' }, 404);
+  if (!link || !assertProject(scene, path)) return jsonResponse({ message: '关联不存在' }, 404);
   const incoming = normalizeKeys(body);
   if (incoming.position_hint !== undefined) link.position_hint = incoming.position_hint;
   if (incoming.sort_order !== undefined) link.sort_order = Number(incoming.sort_order);
@@ -86,7 +88,7 @@ async function handleSceneElementRemove(sceneId: number, elementId: number): Pro
   if (!path) return jsonResponse({ message: '未打开本地工程' }, 400);
   const sdoc = await loadRestDoc(path, 'scenes');
   const scene = findById(sdoc.items, sceneId);
-  if (scene && Array.isArray(scene.element_links)) {
+  if (scene && Array.isArray(scene.element_links) && assertProject(scene, path)) {
     scene.element_links = scene.element_links.filter((l: any) => Number(l.element_id) !== Number(elementId));
     saveRestDoc(path, 'scenes', sdoc);
   }
@@ -95,11 +97,11 @@ async function handleSceneElementRemove(sceneId: number, elementId: number): Pro
 
 // ==================== 生成 / 文本 ====================
 async function handleSceneGenerateImage(sceneId: number, body: any): Promise<Response> {
-  const path = activePath();
+  const path = await resolvePath(body?.project_id ?? body?.projectId);
   if (!path) return jsonResponse({ message: '未打开本地工程' }, 400);
   const doc = await loadRestDoc(path, 'scenes');
   const scene = findById(doc.items, sceneId);
-  if (!scene) return jsonResponse({ message: '场景不存在' }, 404);
+  if (!scene || !assertProject(scene, path)) return jsonResponse({ message: '场景不存在' }, 404);
   const projectId = Number(scene.project_id) || 0;
   const prompt = String(scene.generation_prompt || scene.image_prompt || scene.description || scene.name || '场景概念图');
   scene.generation_status = 'generating';
@@ -124,11 +126,11 @@ async function handleSceneGenerateImage(sceneId: number, body: any): Promise<Res
 }
 
 async function handleSceneGeneratePrompt(sceneId: number, body: any): Promise<Response> {
-  const path = activePath();
+  const path = await resolvePath(body?.project_id ?? body?.projectId);
   if (!path) return jsonResponse({ message: '未打开本地工程' }, 400);
   const doc = await loadRestDoc(path, 'scenes');
   const scene = findById(doc.items, sceneId);
-  if (!scene) return jsonResponse({ message: '场景不存在' }, 404);
+  if (!scene || !assertProject(scene, path)) return jsonResponse({ message: '场景不存在' }, 404);
   const model = await pickTextModel(body?.textModel);
   if (!model) return jsonResponse({ message: '请先配置可用的文本模型' }, 400);
   const sys = '你是专业的 AI 场景绘画提示词工程师。基于场景设定产出 A/B 两版高质量场景图提示词。严格只输出 JSON：{"style":"画风","A":"A面提示词","B":"B面提示词"}，全部中文。';
@@ -144,11 +146,11 @@ async function handleSceneGeneratePrompt(sceneId: number, body: any): Promise<Re
 }
 
 async function handleSceneExtractElements(sceneId: number, body: any): Promise<Response> {
-  const path = activePath();
+  const path = await resolvePath(body?.project_id ?? body?.projectId);
   if (!path) return jsonResponse({ message: '未打开本地工程' }, 400);
   const sdoc = await loadRestDoc(path, 'scenes');
   const scene = findById(sdoc.items, sceneId);
-  if (!scene) return jsonResponse({ message: '场景不存在' }, 404);
+  if (!scene || !assertProject(scene, path)) return jsonResponse({ message: '场景不存在' }, 404);
   const projectId = Number(scene.project_id) || 0;
   const jobId = submitGenJob({
     workflowType: 'scene_elements_extraction',
@@ -190,11 +192,11 @@ async function handleSceneExtractElements(sceneId: number, body: any): Promise<R
 
 // ==================== 草图 / 参考图 ====================
 async function handleSketch(sceneId: number, m: string, body: any): Promise<Response | null> {
-  const path = activePath();
+  const path = await resolvePath(body?.project_id ?? body?.projectId);
   if (!path) return jsonResponse({ sketch_url: null });
   const doc = await loadRestDoc(path, 'scenes');
   const scene = findById(doc.items, sceneId);
-  if (!scene) return jsonResponse({ sketch_url: null });
+  if (!scene || !assertProject(scene, path)) return jsonResponse({ sketch_url: null });
   if (m === 'GET') return jsonResponse({ sketch_url: scene.sketch_url || null });
   if (m === 'DELETE') {
     scene.sketch_url = null;
@@ -213,11 +215,11 @@ async function handleSketch(sceneId: number, m: string, body: any): Promise<Resp
 }
 
 async function handleReferenceImage(sceneId: number, m: string, body: any): Promise<Response | null> {
-  const path = activePath();
+  const path = await resolvePath(body?.project_id ?? body?.projectId);
   if (!path) return jsonResponse({ message: '未打开本地工程' }, 400);
   const doc = await loadRestDoc(path, 'scenes');
   const scene = findById(doc.items, sceneId);
-  if (!scene) return jsonResponse({ message: '场景不存在' }, 404);
+  if (!scene || !assertProject(scene, path)) return jsonResponse({ message: '场景不存在' }, 404);
   if (m === 'DELETE') {
     scene.reference_image_url = null;
     saveRestDoc(path, 'scenes', doc);
@@ -250,7 +252,7 @@ async function handleSceneBindingAdd(sceneId: number, body: any): Promise<Respon
   if (!path) return jsonResponse({ message: '未打开本地工程' }, 400);
   const doc = await loadRestDoc(path, 'scenes');
   const scene = findById(doc.items, sceneId);
-  if (!scene) return jsonResponse({ message: '场景不存在' }, 404);
+  if (!scene || !assertProject(scene, path)) return jsonResponse({ message: '场景不存在' }, 404);
   const pid = Number(body?.projectId ?? body?.project_id);
   if (!Number.isFinite(pid)) return jsonResponse({ message: '缺少 projectId' }, 400);
   scene.bindings = Array.isArray(scene.bindings) ? scene.bindings : [{ project_id: Number(scene.project_id) || 0, role: 'owner' }];
@@ -261,11 +263,11 @@ async function handleSceneBindingAdd(sceneId: number, body: any): Promise<Respon
 
 // ==================== 场景元素图片生成 ====================
 async function handleElementGenerate(elementId: number, body: any): Promise<Response> {
-  const path = activePath();
+  const path = await resolvePath(body?.project_id ?? body?.projectId);
   if (!path) return jsonResponse({ message: '未打开本地工程' }, 400);
   const doc = await loadRestDoc(path, 'sceneElements');
   const el = findById(doc.items, elementId);
-  if (!el) return jsonResponse({ message: '元素不存在' }, 404);
+  if (!el || !assertProject(el, path)) return jsonResponse({ message: '元素不存在' }, 404);
   const projectId = Number(el.project_id) || 0;
   const prompt = String(el.generation_prompt || el.description || el.name || '场景元素图');
   el.generation_status = 'generating';

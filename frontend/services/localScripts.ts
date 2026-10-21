@@ -313,8 +313,8 @@ async function handleOptimize(body: any): Promise<Response> {
 
 // ==================== 剧本库 ====================
 
-async function handleLibrary(): Promise<Response> {
-  const path = await getActiveProjectPath();
+async function handleLibrary(projectId?: number | string | null): Promise<Response> {
+  const path = await pathFor(projectId);
   if (!path) return jsonResponse([]);
   const doc = await loadScripts(path);
   const items = doc.scripts.map((s) => ({
@@ -451,7 +451,7 @@ export async function routeScripts(url: URL, method: string, body: any): Promise
     if (pathname === '/api/scripts/bind') return handleBind(body);
     if (pathname === '/api/scripts/upload') return handleUpload(body);
   }
-  if (m === 'GET' && pathname === '/api/scripts/library') return handleLibrary();
+  if (m === 'GET' && pathname === '/api/scripts/library') return handleLibrary(url.searchParams.get('projectId'));
 
   return null;
 }

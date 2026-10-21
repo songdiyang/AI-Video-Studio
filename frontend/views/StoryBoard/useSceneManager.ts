@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef } from 'react';
-import { getAuthToken } from '../../services/auth';
 import { DirectorParams } from '../SimpleStoryBoard/DirectorAssistant';
 import { useToast } from '../../contexts/ToastContext';
 import { ShotLanguage } from '../../types/shotLanguage';
@@ -233,11 +232,7 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
 
     setIsLoading(true);
     try {
-      const token = getAuthToken();
       const res = await fetch(`/api/storyboards/${targetScriptId}`, {
-        headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        },
         signal: abortController.signal
       });
 
@@ -295,11 +290,7 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
 
     setIsLoading(true);
     try {
-      const token = getAuthToken();
       const res = await fetch(`/api/storyboards/project/${targetProjectId}/standalone?episode=${episode}`, {
-        headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        },
         signal: abortController.signal
       });
 
@@ -383,13 +374,11 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
 
     if (scriptId) {
       try {
-        const token = getAuthToken();
         // 1. 创建新分镜（剧集模式）
         const res = await fetch('/api/storyboards/add', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {})
           },
           body: JSON.stringify({ scriptId, idx: atIndex, description: '', variables_json })
         });
@@ -414,7 +403,6 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
               method: 'PATCH',
               headers: {
                 'Content-Type': 'application/json',
-                ...(token ? { Authorization: `Bearer ${token}` } : {})
               },
               body: JSON.stringify({ scriptId, order: reorderBody })
             }).then(() => {
@@ -434,12 +422,10 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
     } else if (projectId) {
       // 自由分镜模式：无 scriptId，仅传 projectId
       try {
-        const token = getAuthToken();
         const res = await fetch('/api/storyboards/add', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {})
           },
           body: JSON.stringify({ projectId, idx: atIndex, description: '', variables_json, episodeNumber: effectiveEpisode })
         });
@@ -460,7 +446,6 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
               method: 'PATCH',
               headers: {
                 'Content-Type': 'application/json',
-                ...(token ? { Authorization: `Bearer ${token}` } : {})
               },
               body: JSON.stringify({ projectId, episodeNumber: effectiveEpisode, order: reorderBody })
             }).then(() => {
@@ -487,12 +472,10 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
     console.log('[useSceneManager] isLocalOnly:', isLocalOnly);
     if (!isLocalOnly) {
       try {
-        const token = getAuthToken();
         const url = `/api/storyboards/scene/${id}`;
-        console.log('[useSceneManager] DELETE 请求:', url, 'token:', token ? '有' : '无');
+        console.log('[useSceneManager] DELETE 请求:', url);
         const res = await fetch(url, {
           method: 'DELETE',
-          headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) }
         });
         console.log('[useSceneManager] DELETE 响应: status=', res.status, 'statusText=', res.statusText);
         if (!res.ok && res.status !== 404) {
@@ -542,12 +525,10 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
     setScenes(prevScenes => prevScenes.map(s => s.id === id ? { ...s, description } : s));
 
     try {
-      const token = getAuthToken();
       const res = await fetch(`/api/storyboards/${id}/content`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
         body: JSON.stringify({ prompt_template: description })
       });
@@ -578,12 +559,10 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
     setScenes(prevScenes => prevScenes.map(s => s.id === id ? { ...s, baseDescription } : s));
 
     try {
-      const token = getAuthToken();
       const res = await fetch(`/api/storyboards/${id}/content`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
         body: JSON.stringify({ description: baseDescription })
       });
@@ -613,12 +592,10 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
     setScenes(prevScenes => prevScenes.map(s => s.id === id ? { ...s, videoPrompt } : s));
 
     try {
-      const token = getAuthToken();
       const res = await fetch(`/api/storyboards/${id}/content`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
         body: JSON.stringify({ video_prompt: videoPrompt })
       });
@@ -647,12 +624,10 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
     setScenes(prevScenes => prevScenes.map(s => s.id === id ? { ...s, firstFramePrompt } : s));
 
     try {
-      const token = getAuthToken();
       const res = await fetch(`/api/storyboards/${id}/content`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
         body: JSON.stringify({ first_frame_prompt: firstFramePrompt })
       });
@@ -681,12 +656,10 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
     setScenes(prevScenes => prevScenes.map(s => s.id === id ? { ...s, lastFramePrompt } : s));
 
     try {
-      const token = getAuthToken();
       const res = await fetch(`/api/storyboards/${id}/content`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
         body: JSON.stringify({ last_frame_prompt: lastFramePrompt })
       });
@@ -713,7 +686,6 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
     if (!previousScene) return false;
 
     try {
-      const token = getAuthToken();
       const body: any = { video_start_prompt: videoStartPrompt };
       if (videoEndPrompt !== undefined) body.video_end_prompt = videoEndPrompt;
 
@@ -721,7 +693,6 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
         body: JSON.stringify(body)
       });
@@ -746,12 +717,10 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
 
     // 保存到后端（通过更新 variables_json）
     try {
-      const token = getAuthToken();
       const res = await fetch(`/api/storyboards/${id}/director-params`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
         body: JSON.stringify({ directorParams })
       });
@@ -780,12 +749,10 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
     setScenes(prev => prev.map(s => s.id === id ? { ...s, dialogues, dialogue: flatDialogue } : s));
 
     try {
-      const token = getAuthToken();
       const res = await fetch(`/api/storyboards/${id}/content`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
         body: JSON.stringify({ dialogues })
       });
@@ -814,12 +781,10 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
     setScenes(prev => prev.map(s => s.id === id ? { ...s, voiceover } : s));
 
     try {
-      const token = getAuthToken();
       const res = await fetch(`/api/storyboards/${id}/content`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
         body: JSON.stringify({ voiceover })
       });
@@ -850,7 +815,6 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
     ));
 
     try {
-      const token = getAuthToken();
       const body: Record<string, unknown> = { characters, location };
       if (characterIds && characterIds.length > 0) body.characterIds = characterIds;
       if (sceneId) body.sceneId = sceneId;
@@ -859,7 +823,6 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
         body: JSON.stringify(body)
       });
@@ -883,7 +846,6 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
   const persistReorder = async (orderedScenes: StoryboardScene[]) => {
     if (!scriptId && !projectId) return;
     try {
-      const token = getAuthToken();
       const order = orderedScenes.map((s, i) => ({ id: s.id, idx: i }));
       const body: Record<string, unknown> = { order };
       if (scriptId) {
@@ -895,7 +857,6 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
         body: JSON.stringify(body)
       });
@@ -920,12 +881,10 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
     ));
 
     try {
-      const token = getAuthToken();
       const res = await fetch(`/api/storyboards/${id}/content`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
         body: JSON.stringify({ duration })
       });
@@ -957,12 +916,10 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
     ));
 
     try {
-      const token = getAuthToken();
       const res = await fetch(`/api/storyboards/${id}/content`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
         body: JSON.stringify({ props })
       });
@@ -995,12 +952,10 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
     ));
 
     try {
-      const token = getAuthToken();
       const res = await fetch(`/api/storyboards/${id}/content`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
         body: JSON.stringify({ shotType })
       });
@@ -1033,12 +988,10 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
     ));
 
     try {
-      const token = getAuthToken();
       const res = await fetch(`/api/storyboards/${id}/content`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
         body: JSON.stringify({ characterStates })
       });

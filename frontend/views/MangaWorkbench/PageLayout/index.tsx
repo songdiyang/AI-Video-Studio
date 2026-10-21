@@ -11,7 +11,6 @@ import {
 } from 'lucide-react';
 import { MangaPage, PanelLayout as PanelLayoutType } from '../../../types/projectTypes';
 import { useToast } from '../../../contexts/ToastContext';
-import { getAuthToken } from '../../../services/auth';
 
 // ==================== 类型定义 ====================
 

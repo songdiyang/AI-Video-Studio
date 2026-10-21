@@ -5,7 +5,6 @@
  *   PATCH  /api/environment-variants/:id           更新
  *   DELETE /api/environment-variants/:id           删除
  */
-import { getAuthToken } from './auth';
 
 export interface EnvironmentVariant {
   id: number;
@@ -23,11 +22,6 @@ export interface EnvironmentVariant {
   updated_at: string;
 }
 
-function authHeaders() {
-  const token = getAuthToken();
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
-
 async function handle<T>(resp: Response): Promise<T> {
   if (!resp.ok) {
     let msg = `请求失败：${resp.status}`;
@@ -41,9 +35,7 @@ async function handle<T>(resp: Response): Promise<T> {
 }
 
 export async function listEnvironmentVariants(environmentId: number): Promise<EnvironmentVariant[]> {
-  const resp = await fetch(`/api/environment-variants?environmentId=${environmentId}`, {
-    headers: { ...authHeaders() }
-  });
+  const resp = await fetch(`/api/environment-variants?environmentId=${environmentId}`);
   const data = await handle<{ variants: EnvironmentVariant[] }>(resp);
   return data.variants || [];
 }
@@ -57,7 +49,7 @@ export async function createEnvironmentVariant(payload: {
 }): Promise<EnvironmentVariant> {
   const resp = await fetch('/api/environment-variants', {
     method: 'POST',
-    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    headers: {  'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
   });
   const data = await handle<{ variant: EnvironmentVariant }>(resp);
@@ -74,7 +66,7 @@ export async function updateEnvironmentVariant(id: number, payload: {
 }): Promise<EnvironmentVariant> {
   const resp = await fetch(`/api/environment-variants/${id}`, {
     method: 'PATCH',
-    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    headers: {  'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
   });
   const data = await handle<{ variant: EnvironmentVariant }>(resp);
@@ -84,7 +76,6 @@ export async function updateEnvironmentVariant(id: number, payload: {
 export async function deleteEnvironmentVariant(id: number): Promise<void> {
   const resp = await fetch(`/api/environment-variants/${id}`, {
     method: 'DELETE',
-    headers: { ...authHeaders() }
   });
   await handle<{ message: string }>(resp);
 }
@@ -95,7 +86,7 @@ export async function generateVariantFaces(id: number, payload: {
 }): Promise<{ jobId: string; variantId: number; environmentId: number; status: string; message: string }> {
   const resp = await fetch(`/api/environment-variants/${id}/generate-faces`, {
     method: 'POST',
-    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    headers: {  'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
   });
   return handle<{ jobId: string; variantId: number; environmentId: number; status: string; message: string }>(resp);

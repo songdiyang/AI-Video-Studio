@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Button, Chip, Textarea } from '@heroui/react';
 import { MapPin, Wand2, Loader2, Sparkles, ChevronDown, ChevronUp, Pencil, Cloud, Building2 } from 'lucide-react';
-import { getAuthToken } from '../../../services/auth';
 import { generateSceneImagePrompt } from '../../../services/assets';
 import SceneElementsPanel from './SceneElementsPanel';
 import type { Environment } from '../../../services/environments';

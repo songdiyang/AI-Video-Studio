@@ -4,7 +4,6 @@
  */
 
 import { useState } from 'react';
-import { getAuthToken } from '../../../services/auth';
 import { startWorkflow } from '../../../hooks/useWorkflow';
 import type { SplitEpisode } from '../ScriptSplitPreview';
 
@@ -39,12 +38,7 @@ export function useScriptManagement(options: UseScriptManagementOptions = {}) {
   const loadProjectScript = async (projectId: number, episode?: number) => {
     try {
       setLoadingScript(true);
-      const token = getAuthToken();
-      const res = await fetch(`/api/scripts/project/${projectId}`, {
-        headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        }
-      });
+      const res = await fetch(`/api/scripts/project/${projectId}`);
 
       if (res.ok) {
         const data = await res.json();
@@ -52,7 +46,11 @@ export function useScriptManagement(options: UseScriptManagementOptions = {}) {
         setNextEpisode(data.nextEpisode || 1);
         
         // 选择指定集，或保持当前集数，或默认第一集
-        const targetEpisode = episode || currentEpisode || (data.scripts.length > 0 ? data.scripts[0].episode_number : 1);
+        let targetEpisode = episode || currentEpisode || (data.scripts.length > 0 ? data.scripts[0].episode_number : 1);
+        // 切换工程时（无显式 episode 参数）：沿用的集数在新工程中不存在，回退到其最早的一集
+        if (!episode && data.scripts.length > 0 && !data.scripts.some((s: any) => s.episode_number === targetEpisode)) {
+          targetEpisode = Math.min(...data.scripts.map((s: any) => s.episode_number || 1));
+        }
         setCurrentEpisode(targetEpisode);
         
         const currentScript = data.scripts.find((s: any) => s.episode_number === targetEpisode);
@@ -97,12 +95,10 @@ export function useScriptManagement(options: UseScriptManagementOptions = {}) {
 
     try {
       setLoading(true);
-      const token = getAuthToken();
       const res = await fetch(`/api/scripts/${scriptId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
         body: JSON.stringify({ title, content })
       });
@@ -135,12 +131,8 @@ export function useScriptManagement(options: UseScriptManagementOptions = {}) {
 
     try {
       setLoading(true);
-      const token = getAuthToken();
       const res = await fetch(`/api/scripts/${scriptId}/episode`, {
         method: 'DELETE',
-        headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        }
       });
 
       const data = await res.json();
@@ -168,12 +160,10 @@ export function useScriptManagement(options: UseScriptManagementOptions = {}) {
   // 清理孤立角色/场景
   const handleCleanOrphans = async (characterIds: number[], sceneIds: number[]): Promise<boolean> => {
     try {
-      const token = getAuthToken();
       const res = await fetch('/api/scripts/clean-orphans', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
         body: JSON.stringify({ characterIds, sceneIds })
       });
@@ -187,12 +177,10 @@ export function useScriptManagement(options: UseScriptManagementOptions = {}) {
   const handleCreateScript = async (projectId: number, scriptTitle: string, scriptContent: string, episodeNumber: number) => {
     try {
       setLoading(true);
-      const token = getAuthToken();
       const res = await fetch('/api/scripts/create', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
         body: JSON.stringify({
           projectId,
@@ -219,12 +207,10 @@ export function useScriptManagement(options: UseScriptManagementOptions = {}) {
   // 创建或更新草稿
   const handleCreateDraft = async (projectId: number, episodeNumber: number, draftTitle?: string, description?: string, length?: string, content?: string) => {
     try {
-      const token = getAuthToken();
       const res = await fetch('/api/scripts/draft', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
         body: JSON.stringify({
           projectId,
@@ -253,12 +239,10 @@ export function useScriptManagement(options: UseScriptManagementOptions = {}) {
   const handleSaveDraft = async (draftScriptId: number, draftTitle?: string, draftContent?: string, description?: string, length?: string) => {
     try {
       setLoading(true);
-      const token = getAuthToken();
       const res = await fetch(`/api/scripts/draft/${draftScriptId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
         body: JSON.stringify({
           title: draftTitle,
@@ -284,12 +268,8 @@ export function useScriptManagement(options: UseScriptManagementOptions = {}) {
   // 删除草稿
   const handleDeleteDraft = async (draftScriptId: number) => {
     try {
-      const token = getAuthToken();
       const res = await fetch(`/api/scripts/draft/${draftScriptId}`, {
         method: 'DELETE',
-        headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        }
       });
       const data = await res.json();
       return res.ok ? { success: true, message: '' } : { success: false, message: '' };
@@ -361,7 +341,6 @@ export function useScriptManagement(options: UseScriptManagementOptions = {}) {
   ): Promise<boolean> => {
     try {
       setLoading(true);
-      const token = getAuthToken();
       let successCount = 0;
 
       for (const episode of episodes) {
@@ -369,7 +348,6 @@ export function useScriptManagement(options: UseScriptManagementOptions = {}) {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {})
           },
           body: JSON.stringify({
             projectId,

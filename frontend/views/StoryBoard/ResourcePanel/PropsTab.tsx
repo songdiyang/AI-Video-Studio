@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardBody, Button, Chip } from '@heroui/react';
 import { Wand2, X, Trash2, ExternalLink } from 'lucide-react';
 import { PropItem } from './types';
-import { getAuthToken } from '../../../services/auth';
 
 const openAssetEditTab = (prop: PropItem) => {
   window.dispatchEvent(new CustomEvent('openAssetEditTab', {
@@ -44,12 +43,10 @@ const PropsTab: React.FC<PropsTabProps> = ({ props, imageModel, imageAspectRatio
 
     setGeneratingIds(prev => new Set(prev).add(prop.id));
     try {
-      const token = getAuthToken();
       const response = await fetch(`/api/props/${prop.id}/generate-image`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
         },
         body: JSON.stringify({
           imageModel: imageModel || undefined,
@@ -81,12 +78,8 @@ const PropsTab: React.FC<PropsTabProps> = ({ props, imageModel, imageAspectRatio
   const handleCancel = async (prop: PropItem) => {
     if (!prop.id) return;
     try {
-      const token = getAuthToken();
       const response = await fetch(`/api/props/${prop.id}/cancel-generation`, {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
       });
       if (!response.ok) {
         const data = await response.json();

@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { getAuthToken } from '../services/auth';
 
 export interface Session {
   id: number;
@@ -39,16 +38,13 @@ export function useAIAssistantSessions(projectId: number | null) {
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const fetchingRef = useRef<Set<number>>(new Set());
 
-  const token = getAuthToken();
-  const headers = token ? { Authorization: `Bearer ${token}` } : {};
-
   // ── Load sessions list ────────────────────────────────
   const fetchSessions = useCallback(async () => {
     try {
       const url = projectId
         ? `/api/ai-assistant/sessions?projectId=${projectId}`
         : '/api/ai-assistant/sessions';
-      const res = await fetch(url, { headers });
+      const res = await fetch(url);
       const data = await res.json();
       if (data.success) {
         setSessions(data.sessions || []);
@@ -94,9 +90,7 @@ export function useAIAssistantSessions(projectId: number | null) {
       if (fetchingRef.current.has(sessionId)) return;
       fetchingRef.current.add(sessionId);
       try {
-        const res = await fetch(`/api/ai-assistant/sessions/${sessionId}/messages`, {
-          headers,
-        });
+        const res = await fetch(`/api/ai-assistant/sessions/${sessionId}/messages`);
         const data = await res.json();
         if (data.success) {
           setOpenTabs((prev) =>
@@ -117,7 +111,7 @@ export function useAIAssistantSessions(projectId: number | null) {
     try {
       const res = await fetch('/api/ai-assistant/sessions', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...headers },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ projectId }),
       });
       const data = await res.json();
@@ -185,7 +179,6 @@ export function useAIAssistantSessions(projectId: number | null) {
       try {
         const res = await fetch(`/api/ai-assistant/sessions/${sessionId}`, {
           method: 'DELETE',
-          headers,
         });
         const data = await res.json();
         if (data.success) {
@@ -210,7 +203,7 @@ export function useAIAssistantSessions(projectId: number | null) {
     try {
       const res = await fetch(`/api/ai-assistant/sessions/${sessionId}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', ...headers },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title: title.trim().substring(0, 120) }),
       });
       const data = await res.json();
@@ -230,13 +223,15 @@ export function useAIAssistantSessions(projectId: number | null) {
       try {
         const res = await fetch(`/api/ai-assistant/sessions/${sessionId}/generate-title`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...headers },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ modelName }),
         });
         const data = await res.json();
         if (data.success && data.title) {
+          // const 提取：函数式 setState 闭包内不能依赖对外层对象属性的收窄
+          const newTitle: string = data.title;
           setSessions((prev) =>
-            prev.map((s) => (s.id === sessionId ? { ...s, title: data.title } : s))
+            prev.map((s) => (s.id === sessionId ? { ...s, title: newTitle } : s))
           );
         }
       } catch (err) {

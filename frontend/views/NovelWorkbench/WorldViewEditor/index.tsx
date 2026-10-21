@@ -7,7 +7,6 @@ import React, { useState, useEffect } from 'react';
 import { Button, Textarea, Input, Card, CardBody, Progress } from '@heroui/react';
 import { Wand2, Save, Globe, BookOpen, Sparkles } from 'lucide-react';
 import { useToast } from '../../../contexts/ToastContext';
-import { getAuthToken } from '../../../services/auth';
 import { AIModel } from '../../../components/AIModelSelector';
 
 // ==================== 类型定义 ====================
@@ -36,7 +35,7 @@ interface NovelProject {
 const WorldViewEditor: React.FC<WorldViewEditorProps> = ({ 
   projectId, 
   models, 
-  textModel 
+  textModel
 }) => {
   const { showToast } = useToast();
   const [project, setProject] = useState<NovelProject | null>(null);
@@ -61,10 +60,7 @@ const WorldViewEditor: React.FC<WorldViewEditorProps> = ({
   const loadProject = async () => {
     setLoading(true);
     try {
-      const token = getAuthToken();
-      const res = await fetch(`/api/novels/${projectId}`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
+      const res = await fetch(`/api/novels/${projectId}`);
 
       if (res.ok) {
         const data = await res.json();
@@ -87,12 +83,10 @@ const WorldViewEditor: React.FC<WorldViewEditorProps> = ({
   const handleSave = async () => {
     setSaving(true);
     try {
-      const token = getAuthToken();
       const res = await fetch(`/api/novels/${projectId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify(formData),
       });
@@ -117,7 +111,6 @@ const WorldViewEditor: React.FC<WorldViewEditorProps> = ({
     setProgress(10);
     
     try {
-      const token = getAuthToken();
       
       // 模拟进度
       const progressInterval = setInterval(() => {
@@ -128,7 +121,6 @@ const WorldViewEditor: React.FC<WorldViewEditorProps> = ({
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({
           modelName: textModel,

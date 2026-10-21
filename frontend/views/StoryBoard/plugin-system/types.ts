@@ -140,8 +140,8 @@ export interface PluginAPI {
   updateCharacterStates: (sceneId: number, states: Record<number, any>) => Promise<boolean>;
 
   // ---- 生成操作 ----
-  generateImage: (sceneId: number, prompt: string, regenerateTarget?: 'first' | 'last' | 'both', forceRegenerate?: boolean) => Promise<{ success: boolean; error?: string }>;
-  generateVideo: (sceneId: number) => Promise<{ success: boolean; error?: string }>;
+  generateImage: (sceneId: number, prompt: string, regenerateTarget?: 'first' | 'last' | 'both', forceRegenerate?: boolean) => Promise<{ success: boolean; error?: string; jobId?: string }>;
+  generateVideo: (sceneId: number) => Promise<{ success: boolean; error?: string; jobId?: string }>;
   generateWithCamera: (sceneId: number, prompt: string, config?: any) => Promise<{ success: boolean; error?: string }>;
   generateWithPaint: (sceneId: number, prompt: string, config?: any) => Promise<{ success: boolean; error?: string }>;
   generateWithSketch: (sceneId: number, prompt: string, config?: any) => Promise<{ success: boolean; error?: string }>;
@@ -164,7 +164,6 @@ export interface PluginAPI {
 
   // ---- 工具 ----
   showToast: (message: string, type?: 'success' | 'error' | 'warning' | 'info') => void;
-  getAuthToken: () => string | null;
 }
 
 // ==================== 插件注册表 ====================

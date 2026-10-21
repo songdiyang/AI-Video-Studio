@@ -18,7 +18,6 @@ import {
   Loader2
 } from 'lucide-react';
 import { useWorkflow, consumeWorkflow } from '../../hooks/useWorkflow';
-import { getAuthToken } from '../../services/auth';
 import type { Project } from '../../services/projects';
 import { uploadScriptFile } from '../../services/scripts';
 import { useToast } from '../../contexts/ToastContext';
@@ -67,7 +66,6 @@ const EXAMPLE_DESCRIPTION =
   '3分钟校园悬疑短片，转校生发现旧课桌里的日记，一步步揭开十年前的秘密，节奏紧凑有反转';
 // 剧本描述字数上限（用于实时字数统计，给用户明确预期）
 const DESC_MAX = 500;
-
 
 // ==================== AI生成子组件 ====================
 
@@ -155,12 +153,10 @@ const GeneratePanel: React.FC<{
     onCompleted: async (completedJob) => {
       if (!generatingScriptId) return;
       try {
-        const token = getAuthToken();
         const res = await fetch('/api/scripts/save-from-workflow', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {})
           },
           body: JSON.stringify({
             scriptId: generatingScriptId,
@@ -213,12 +209,10 @@ const GeneratePanel: React.FC<{
     setGenerating(true);
     setProgressInfo(null);
     try {
-      const token = getAuthToken();
       const res = await fetch('/api/scripts/generate', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
         body: JSON.stringify({
           projectId: targetProjectId,
@@ -629,12 +623,9 @@ const UploadPanel: React.FC<{
         </div>
       )}
 
-
     </div>
   );
 };
-
-
 
 // ==================== 主组件 ====================
 
@@ -675,7 +666,6 @@ const ScriptGenerateTab: React.FC<ScriptGenerateTabProps> = ({
           })}
         </div>
       </div>
-
 
       {/* 内容区 */}
       <div className="flex-1 overflow-y-auto p-4">
