@@ -1,0 +1,233 @@
+import React, { useState, useEffect } from 'react';
+import { Card, CardBody, Button, Chip } from '@heroui/react';
+import { Wand2, X, Trash2, ExternalLink } from 'lucide-react';
+import { PropItem } from './types';
+import { getAuthToken } from '../../../services/auth';
+
+const openAssetEditTab = (prop: PropItem) => {
+  window.dispatchEvent(new CustomEvent('openAssetEditTab', {
+    detail: {
+      assetType: 'prop',
+      assetId: prop.id,
+      assetName: prop.name,
+      initialData: prop,
+    }
+  }));
+};
+
+interface PropsTabProps {
+  props: PropItem[];
+  imageModel?: string;
+  imageAspectRatio?: string;
+  /** 右键删除回调 */
+  onDelete?: (prop: PropItem) => void;
+}
+
+const PropsTab: React.FC<PropsTabProps> = ({ props, imageModel, imageAspectRatio, onDelete }) => {
+  const [generatingIds, setGeneratingIds] = useState<Set<number>>(new Set());
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; prop: PropItem } | null>(null);
+
+  useEffect(() => {
+    const handleClick = () => setContextMenu(null);
+    window.addEventListener('click', handleClick);
+    return () => window.removeEventListener('click', handleClick);
+  }, []);
+
+  const handleContextMenu = (e: React.MouseEvent, prop: PropItem) => {
+    e.preventDefault();
+    if (!onDelete) return;
+    setContextMenu({ x: e.clientX, y: e.clientY, prop });
+  };
+
+  const handleGenerate = async (prop: PropItem) => {
+    if (!prop.id || generatingIds.has(prop.id)) return;
+
+    setGeneratingIds(prev => new Set(prev).add(prop.id));
+    try {
+      const token = getAuthToken();
+      const response = await fetch(`/api/props/${prop.id}/generate-image`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          imageModel: imageModel || undefined,
+          aspectRatio: imageAspectRatio || undefined,
+        })
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.message || '启动生成失败');
+      }
+
+      // 广播事件通知刷新
+      window.dispatchEvent(new CustomEvent('prop:generationStarted', {
+        detail: { propId: prop.id }
+      }));
+    } catch (error: any) {
+      console.error('[PropsTab] 生成失败:', error);
+      alert('生成失败: ' + error.message);
+      // 失败后从本地 generatingIds 中移除
+      setGeneratingIds(prev => {
+        const next = new Set(prev);
+        next.delete(prop.id);
+        return next;
+      });
+    }
+  };
+
+  const handleCancel = async (prop: PropItem) => {
+    if (!prop.id) return;
+    try {
+      const token = getAuthToken();
+      const response = await fetch(`/api/props/${prop.id}/cancel-generation`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.message || '取消失败');
+      }
+      // 广播事件通知刷新
+      window.dispatchEvent(new CustomEvent('prop:generationCancelled', {
+        detail: { propId: prop.id }
+      }));
+    } catch (error: any) {
+      console.error('[PropsTab] 取消失败:', error);
+      alert('取消失败: ' + error.message);
+    }
+  };
+
+  const isGenerating = (prop: PropItem) =>
+    generatingIds.has(prop.id) || prop.generation_status === 'generating';
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center mb-3">
+        <span className="text-sm font-semibold text-slate-300">全部道具 ({props.length})</span>
+      </div>
+      {props.map((prop) => (
+        <Card key={`${prop.id}-${prop.name}`} className="bg-slate-800/60 border border-slate-700/50 hover:border-emerald-500/30 transition-colors cursor-pointer" onDoubleClick={() => openAssetEditTab(prop)} onContextMenu={(e) => handleContextMenu(e, prop)}>
+          <CardBody className="p-3">
+            <div className="flex items-center justify-between h-[56px]">
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-slate-100 truncate">{prop.name}</p>
+                <div className="flex gap-1 mt-1">
+                  {prop.prop_type && (
+                    <Chip size="sm" variant="flat" className={prop.prop_type === 'permanent' ? 'bg-blue-500/10 text-blue-400 text-[10px]' : 'bg-cyan-500/10 text-cyan-400 text-[10px]'}>
+                      {prop.prop_type === 'permanent' ? '永久' : '交互'}
+                    </Chip>
+                  )}
+                  {prop.generation_status && (
+                    <Chip size="sm" variant="flat" className={prop.generation_status === 'completed' ? 'bg-green-500/10 text-green-400 text-[10px]' : 'bg-amber-500/10 text-amber-400 text-[10px]'}>
+                      {prop.generation_status === 'completed' ? '已生成' : prop.generation_status === 'generating' ? '生成中' : '待生成'}
+                    </Chip>
+                  )}
+                </div>
+              </div>
+              {prop.id > 0 && prop.generation_status !== 'completed' && (
+                <div className="flex items-center gap-1 ml-2 shrink-0">
+                  {isGenerating(prop) ? (
+                    <Button
+                      size="sm"
+                      variant="flat"
+                      className="h-6 px-2 text-[10px] bg-red-500/10 text-red-400 hover:bg-red-500/20"
+                      startContent={<X className="w-3 h-3" />}
+                      onPress={() => handleCancel(prop)}
+                    >
+                      取消
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="flat"
+                      className="h-6 px-2 text-[10px] bg-purple-500/10 text-purple-400 hover:bg-purple-500/20"
+                      startContent={<Wand2 className="w-3 h-3" />}
+                      onPress={() => handleGenerate(prop)}
+                    >
+                      生成
+                    </Button>
+                  )}
+                </div>
+              )}
+            </div>
+          </CardBody>
+        </Card>
+      ))}
+      {props.length === 0 && (
+        <div className="text-center py-8 text-slate-500">
+          <p className="text-sm">暂无道具</p>
+          <p className="text-xs mt-1">在资产库中手动创建道具</p>
+        </div>
+      )}
+
+      {/* 右键菜单 */}
+      {contextMenu && (
+        <div
+          className="fixed z-50 bg-slate-800 border border-slate-700 rounded-lg shadow-xl py-1.5 min-w-[180px] select-none"
+          style={{ top: contextMenu.y, left: contextMenu.x }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* 打开 */}
+          <button
+            className="w-full text-left px-3 py-1.5 text-sm text-slate-100 hover:bg-slate-700/50 flex items-center gap-2.5 transition-colors"
+            onClick={() => {
+              openAssetEditTab(contextMenu.prop);
+              setContextMenu(null);
+            }}
+          >
+            <ExternalLink className="w-4 h-4 text-emerald-400" />
+            打开详情
+          </button>
+
+          {/* 分割线 */}
+          {onDelete && <div className="my-1 border-t border-slate-700" />}
+
+          {/* 删除 */}
+          {onDelete && (
+            <button
+              className="w-full text-left px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 flex items-center gap-2.5 transition-colors"
+              onClick={() => {
+                onDelete(contextMenu.prop);
+                setContextMenu(null);
+              }}
+            >
+              <Trash2 className="w-4 h-4" />
+              删除道具
+            </button>
+          )}
+
+          {/* 底部快捷栏 */}
+          <div className="mt-1.5 pt-1.5 border-t border-slate-700 px-2 pb-1">
+            <div className="flex items-center justify-around">
+              <button
+                className="flex flex-col items-center gap-0.5 p-1.5 rounded hover:bg-slate-700/50 transition-colors"
+                onClick={() => { openAssetEditTab(contextMenu.prop); setContextMenu(null); }}
+                title="打开"
+              >
+                <ExternalLink className="w-4 h-4 text-emerald-400" />
+                <span className="text-[10px] text-slate-400">打开</span>
+              </button>
+              {onDelete && (
+                <button
+                  className="flex flex-col items-center gap-0.5 p-1.5 rounded hover:bg-red-500/10 transition-colors"
+                  onClick={() => { onDelete(contextMenu.prop); setContextMenu(null); }}
+                  title="删除"
+                >
+                  <Trash2 className="w-4 h-4 text-red-400" />
+                  <span className="text-[10px] text-red-400">删除</span>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default PropsTab;

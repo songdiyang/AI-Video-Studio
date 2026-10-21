@@ -1,0 +1,97 @@
+name: Build Windows Setup
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g., v1.0.0)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: frontend/src-tauri
+
+      - name: Install dependencies
+        run: npm --prefix frontend ci
+
+      - name: Build frontend
+        run: npm --prefix frontend run build
+
+      - name: Compute version (Beijing time, to day)
+        id: version
+        shell: pwsh
+        run: |
+          # 北京时间 = UTC + 8，精确到日 yyyyMMdd
+          $version = (Get-Date).ToUniversalTime().AddHours(8).ToString("yyyyMMdd")
+          echo "version=$version" >> $env:GITHUB_OUTPUT
+          echo "构建版本号(北京时间,精确到日): $version"
+
+      - name: Build Tauri Windows Setup
+        run: npm --prefix frontend run tauri:build:windows
+
+      - name: Rename installers with version
+        shell: pwsh
+        run: |
+          # 将安装包文件名中的 semver(如 _1.0.0_) 替换为日期版本号；
+          # 不改 tauri.conf/Cargo 的 version 字段，避免裸数字破坏 semver / MSI 版本上限
+          $ver = "${{ steps.version.outputs.version }}"
+          $dirs = @(
+            "frontend/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi",
+            "frontend/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis"
+          )
+          Get-ChildItem -Path $dirs -Include *.msi,*.exe -Recurse | ForEach-Object {
+            $new = $_.Name -replace '_\d+\.\d+\.\d+', "_$ver"
+            Rename-Item $_.FullName -NewName $new
+            Write-Output "renamed -> $new"
+          }
+
+      - name: Upload Windows Setup artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-setup-${{ steps.version.outputs.version }}
+          path: |
+            frontend/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
+            frontend/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+          if-no-files-found: error
+
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/') || github.event.inputs.version != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || steps.version.outputs.version }}
+          name: AI Video Studio ${{ steps.version.outputs.version }}
+          draft: false
+          prerelease: false
+          files: |
+            frontend/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
+            frontend/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe

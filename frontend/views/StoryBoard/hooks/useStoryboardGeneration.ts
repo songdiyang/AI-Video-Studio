@@ -1,0 +1,262 @@
+/**
+ * 分镜生成 Hook
+ * 负责分镜生成和工作流轮询，提供实时进度信息
+ */
+
+import { useCallback, useMemo } from 'react';
+import { getAuthToken } from '../../../services/auth';
+import { ApiError } from '../../../hooks/useWorkflow';
+import { useToast } from '../../../contexts/ToastContext';
+import { useWorkflowRecovery } from './useWorkflowRecovery';
+
+// 步骤名称映射（用于用户友好展示）
+const STEP_NAMES: Record<string, string> = {
+  storyboard_generation: '生成分镜结构',
+  scene_storyboard_generation: '生成场景分镜',
+  batch_storyboard_generation: '批量分镜生成',
+  batch_frame_generation: '批量帧图片生成',
+  save_storyboards: '保存分镜数据',
+  character_extraction: '提取角色信息',
+  scene_state_analysis: '分析场景状态',
+  studio_components_compose: '组装影棚组件',
+  batch_character_views_generation: '生成角色设定图',
+  frame_generation: '生成首尾帧',
+  single_frame_generation: '生成单帧'
+};
+
+// Per-scene progress tracking
+export interface SceneProgress {
+  sceneId: number;
+  sceneIndex: number;
+  status: 'pending' | 'generating' | 'completed' | 'failed';
+}
+
+export interface GenerationProgress {
+  currentStep: number;
+  totalSteps: number;
+  stepName: string;
+  stepStatus: 'pending' | 'processing' | 'completed' | 'failed';
+  overallProgress: number; // 0-100
+  sceneStatuses: SceneProgress[]; // Per-scene status tracking
+}
+
+interface UseStoryboardGenerationProps {
+  scriptId: number | null;
+  projectId: number | null;
+  isActive: boolean; // 是否在分镜页面
+  onComplete: () => void;
+}
+
+export interface StartGenerationOptions {
+  /** 已有分镜时的冲突策略：skip=跳过同名 | smart=仅补空白 | overwrite=完全覆盖 */
+  conflictStrategy?: 'skip' | 'smart' | 'overwrite';
+  /** 追加模式，保留旧分镜（通常与 skip/smart 配合） */
+  appendMode?: boolean;
+  /** 弱绑定的参考剧本正文，仅作为 prompt 上下文 */
+  referenceScriptContent?: string | null;
+  /** 参考剧本标题 */
+  referenceScriptTitle?: string | null;
+  /** 拆分关键阶段进度回调（供 AI 助手对话栏逐步展示） */
+  onSplitProgress?: (label: string) => void;
+  /** 拆分完成回调（携带拆分数量时供步骤展示结果） */
+  onSplitDone?: (count?: number) => void;
+  /** 拆分失败回调：传入时不再静默吞错，供调用方（AI 助手）感知失败 */
+  onSplitError?: (message: string) => void;
+}
+
+export function useStoryboardGeneration({
+  scriptId,
+  projectId,
+  isActive,
+  onComplete
+}: UseStoryboardGenerationProps) {
+  const { showToast } = useToast();
+
+  const recovery = useWorkflowRecovery({
+    projectId,
+    workflowTypes: ['storyboard_generation', 'scene_storyboard_generation', 'batch_storyboard_generation'],
+    isActive,
+    matchJob: (job) => {
+      if (!scriptId) {
+        return true;
+      }
+
+      return Number(job.input_params?.scriptId) === scriptId;
+    },
+    onCompleted: async () => {
+      onComplete();
+    },
+    onFailed: () => {},
+    logPrefix: '[useStoryboardGeneration]'
+  });
+
+  // 启动分镜生成
+  const startGeneration = useCallback(async (
+    textModel: string,
+    byScene: boolean = false,
+    appendMode: boolean = false,
+    options: StartGenerationOptions = {}
+  ) => {
+    // 允许无剧本模式：scriptId 为 null 时，使用 projectId 作为关联
+    if (!scriptId && !projectId) {
+      showToast('请先选择项目或剧本', 'warning');
+      options.onSplitError?.('请先选择项目或剧本');
+      return;
+    }
+    if (recovery.isGenerating) {
+      showToast('当前已有分镜生成任务正在进行中', 'warning');
+      options.onSplitError?.('当前已有分镜生成任务正在进行中');
+      return;
+    }
+
+    try {
+      const token = getAuthToken();
+      // 根据 byScene 参数选择不同的 API
+      // 无剧本模式：使用 projectId 作为路径参数
+      const apiUrl = byScene
+        ? (scriptId ? `/api/storyboards/auto-generate-by-scene/${scriptId}` : `/api/storyboards/auto-generate-by-scene/project/${projectId}`)
+        : (scriptId ? `/api/storyboards/auto-generate/${scriptId}` : `/api/storyboards/auto-generate/project/${projectId}`);
+
+      // 组装请求体：显式传 appendMode 与 conflictStrategy
+      const body: Record<string, any> = {
+        textModel,
+        appendMode: !!(options.appendMode ?? appendMode)
+      };
+      if (options.conflictStrategy) body.conflictStrategy = options.conflictStrategy;
+      if (options.referenceScriptContent) body.referenceScriptContent = options.referenceScriptContent;
+      if (options.referenceScriptTitle) body.referenceScriptTitle = options.referenceScriptTitle;
+
+      options.onSplitProgress?.(`提交拆分请求（模型：${textModel || '自动选择'}），等待模型返回分镜 JSON…`);
+
+      const res = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify(body)
+      });
+
+      const data = await res.json();
+      options.onSplitProgress?.('模型已返回，分镜正在写入本地工程…');
+
+      if (!res.ok) {
+        if (res.status === 409 && data.jobId) {
+          recovery.startJob(data.jobId);
+          return;
+        }
+
+        throw new ApiError(data.message || '生成失败', res.status, data);
+      }
+
+      options.onSplitDone?.(typeof data?.count === 'number' ? data.count : undefined);
+
+      // 启动工作流轮询 - 统一处理，无论哪种模式都返回单个 jobId
+      recovery.startJob(data.jobId);
+    } catch (error: any) {
+      console.error('自动生成分镜失败:', error);
+      showToast('自动生成分镜失败，请稍后重试', 'error');
+      // 存在失败回调（AI 助手链路）时向上抛出，让 agent 循环把步骤标为失败而非误报成功
+      if (options.onSplitError) {
+        options.onSplitError(error?.message || '自动生成分镜失败');
+        throw error;
+      }
+    }
+  }, [scriptId, showToast, recovery]);
+
+  // 计算实时进度信息
+  const progress = useMemo<GenerationProgress | null>(() => {
+    if (!recovery.job || !recovery.job.tasks || recovery.job.tasks.length === 0) return null;
+
+    const tasks = recovery.job.tasks;
+    const totalSteps = tasks.length;
+
+    // 找到当前正在执行或下一个pending的步骤
+    let currentTask = tasks.find((t: any) => t.status === 'processing');
+    if (!currentTask) {
+      currentTask = tasks.find((t: any) => t.status === 'pending');
+    }
+    if (!currentTask) {
+      // 所有都完成了
+      currentTask = tasks[tasks.length - 1];
+    }
+
+    const currentStep = (currentTask?.step_index ?? 0) + 1;
+    const taskType = currentTask?.task_type || '';
+    const stepName = STEP_NAMES[taskType] || taskType;
+    const stepStatus = currentTask?.status || 'pending';
+
+    // 计算总体进度
+    const completedCount = tasks.filter((t: any) => t.status === 'completed').length;
+    const processingTask = tasks.find((t: any) => t.status === 'processing');
+    const processingProgress = processingTask?.progress || 0;
+
+    // 每个步骤占 100/totalSteps %，当前步骤按其 progress 比例计算
+    const overallProgress = Math.round(
+      (completedCount / totalSteps) * 100 +
+      (processingProgress / 100) * (100 / totalSteps)
+    );
+
+    // Build per-scene status from job metadata and tasks
+    const sceneStatuses: SceneProgress[] = [];
+    const inputParams = recovery.job.input_params as any;
+
+    // Try to extract scene info from input params or tasks
+    if (inputParams?.scenes && Array.isArray(inputParams.scenes)) {
+      inputParams.scenes.forEach((scene: any, index: number) => {
+        const sceneId = scene.id || scene.sceneId || index;
+        // Check if there's a task for this scene
+        const sceneTask = tasks.find((t: any) =>
+          t.metadata?.sceneId === sceneId ||
+          t.metadata?.scene_id === sceneId ||
+          t.metadata?.sceneIndex === index
+        );
+
+        let status: SceneProgress['status'] = 'pending';
+        if (sceneTask) {
+          switch (sceneTask.status) {
+            case 'completed': status = 'completed'; break;
+            case 'processing': status = 'generating'; break;
+            case 'failed': status = 'failed'; break;
+            default: status = 'pending';
+          }
+        } else if (index < completedCount) {
+          status = 'completed';
+        } else if (index === completedCount && processingTask) {
+          status = 'generating';
+        }
+
+        sceneStatuses.push({ sceneId, sceneIndex: index, status });
+      });
+    } else {
+      // Fallback: create scene statuses based on task count
+      tasks.forEach((task: any, index: number) => {
+        const sceneId = task.metadata?.sceneId || task.metadata?.scene_id || index;
+        let status: SceneProgress['status'] = 'pending';
+        switch (task.status) {
+          case 'completed': status = 'completed'; break;
+          case 'processing': status = 'generating'; break;
+          case 'failed': status = 'failed'; break;
+          default: status = 'pending';
+        }
+        sceneStatuses.push({ sceneId, sceneIndex: index, status });
+      });
+    }
+
+    return {
+      currentStep,
+      totalSteps,
+      stepName,
+      stepStatus,
+      overallProgress: Math.min(overallProgress, 99), // 完成前最多99%
+      sceneStatuses
+    };
+  }, [recovery.job]);
+
+  return {
+    isGenerating: recovery.isGenerating,
+    startGeneration,
+    progress, // 新增：实时进度信息
+    job: recovery.job // 新增：原始 job 对象，供高级用途
+  };
+}

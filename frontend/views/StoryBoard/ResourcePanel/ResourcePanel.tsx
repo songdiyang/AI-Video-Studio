@@ -1,0 +1,897 @@
+import React, { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { Settings2, Sparkles, ChevronRight, ChevronDown, User, MapPin, Box, Cloud, Building2, Shirt, Tags, RefreshCw } from 'lucide-react';
+import { Tooltip } from '@heroui/react';
+import { ResourcePanelProps } from './types';
+import { useStoryboardBridgeSafe } from '../../../contexts/StoryboardBridgeContext';
+import { useCharacterData } from './useCharacterData';
+import { useSceneData, Scene } from './useSceneData';
+import CharactersTab from './CharactersTab';
+import LocationsTab from './LocationsTab';
+import PropsTab from './PropsTab';
+import EnvironmentsTab from './EnvironmentsTab';
+import BuildingsTab from './BuildingsTab';
+import CostumesTab from './CostumesTab';
+import CharacterViewsModal from './CharacterViewsModal';
+import CreateAssetModal, { CreateAssetType } from './CreateAssetModal';
+import { useResourceModals } from './useResourceModals';
+import { Character } from './types';
+import { getAuthToken } from '../../../services/auth';
+import { deleteCharacter, uploadCharacterImage, deleteProp } from '../../../services/assets';
+import {
+  extractStudioComponentsFromScript, composeStudiosFromScript,
+  generateStudioNineGrid, deleteStudio,
+} from '../../../services/studios';
+import { listEnvironments, generateEnvironmentImage, deleteEnvironment } from '../../../services/environments';
+import { listBuildings, generateBuildingImage, deleteBuilding } from '../../../services/buildings';
+import { fetchCostumes, generateCostumeViews, deleteCostume } from '../../../services/costumes';
+import type { Environment } from '../../../services/environments';
+import type { Building } from '../../../services/buildings';
+import type { Costume } from '../../../services/costumes';
+import { useToast } from '../../../contexts/ToastContext';
+import { useConfirm } from '../../../contexts/ConfirmContext';
+import { useWorkflowTargetMonitor } from '../hooks/useWorkflowTargetMonitor';
+import { normalizeCapabilityOptions } from '../../../utils/modelCapabilities';
+import CategoryManageModal from './CategoryManageModal';
+import {
+  ALL_RESOURCE_TYPES,
+  CategoryResourceData,
+  CustomCategory,
+  RESOURCE_TYPE_REGISTRY,
+  ResourceTypeKey,
+  makeCustomKey,
+  useResourceCategories,
+  buildAllResourceEntries,
+} from './resourceCategories';
+
+export interface StoryboardStateOverride {
+  stateId: number;
+  stateName: string;
+  stateImage?: string;
+  stateOutfit?: string;
+}
+
+const ResourcePanel: React.FC<ResourcePanelProps & {
+  /** 分镜状态覆写回调 - 用户在资源面板选择某角色的分镜状态时触发 */
+  onStoryboardStateChange?: (characterId: number, state: StoryboardStateOverride | null) => void;
+  /** 当前分镜状态覆写映射 */
+  storyboardStates?: Record<number, StoryboardStateOverride>;
+  /** 刷新道具列表回调 */
+  onRefreshProps?: () => void;
+}> = ({ 
+  characters, 
+  props,
+  projectId,
+  scriptId,
+  scenes,
+  imageModel,
+  imageAspectRatio,
+  textModel,
+  models = [],
+  onStoryboardStateChange,
+  storyboardStates = {},
+  onRefreshProps,
+}) => {
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(() => new Set(['characters']));
+  /** AI/用户自定义模式：开启后自动隐藏无内容的分类分组 */
+  const [aiMode, setAiMode] = useState(false);
+  const [isCategoryModalOpen, setCategoryModalOpen] = useState(false);
+  // 手风琴标题行右侧的「操作插槽」：存在时把工具栏按钮 portal 上去，与「资源」标题合并为一行；
+  // 不存在（如独立使用本面板）时回退为面板内自带的标题行。
+  const bridge = useStoryboardBridgeSafe();
+  const headerSlot = bridge?.sectionHeaderSlots['resources'] ?? null;
+  const { showToast } = useToast();
+  const { confirm } = useConfirm();
+
+  // 当用户未手动选择图片模型时，自动从可用模型列表中选取第一个 IMAGE 模型作为 fallback
+  const effectiveImageModel = useMemo(() => {
+    if (imageModel) return imageModel;
+    const firstImageModel = models.find(m => m.type === 'IMAGE');
+    return firstImageModel?.name || '';
+  }, [imageModel, models]);
+
+  // 当使用 fallback 模型时，也要计算其对应的 aspectRatio
+  const effectiveImageAspectRatio = useMemo(() => {
+    if (imageAspectRatio) return imageAspectRatio;
+    if (!effectiveImageModel) return '';
+    const model = models.find(m => m.name === effectiveImageModel);
+    if (!model?.supportedAspectRatios) return '';
+    const options = normalizeCapabilityOptions(model.supportedAspectRatios, 'aspectRatio');
+    return options.length > 0 ? options[0].value : '';
+  }, [imageAspectRatio, effectiveImageModel, models]);
+  
+  const { dbCharacters, isLoadingCharacters, loadCharacters } = useCharacterData(projectId, scriptId);
+  const { dbScenes, isLoadingScenes, loadScenes } = useSceneData(projectId, scriptId);
+
+  // 环境、建筑和服装数据
+  const [dbEnvironments, setDbEnvironments] = useState<Environment[]>([]);
+  const [dbBuildings, setDbBuildings] = useState<Building[]>([]);
+  const [dbCostumes, setDbCostumes] = useState<Costume[]>([]);
+  const [isLoadingEnvironments, setIsLoadingEnvironments] = useState(false);
+  const [isLoadingBuildings, setIsLoadingBuildings] = useState(false);
+  const [isLoadingCostumes, setIsLoadingCostumes] = useState(false);
+
+  // ── 资源分类：基本分类开关 + 用户/AI 自定义分类（localStorage 持久化） ──
+  const {
+    config: categoryConfig,
+    toggleType,
+    addCustomCategory,
+    renameCustomCategory,
+    removeCustomCategory,
+    addMember,
+    removeMember,
+    applyAiCategories,
+    clearAiCategories,
+  } = useResourceCategories();
+
+  const [viewsCharacterId, setViewsCharacterId] = useState<number | undefined>(undefined);
+
+  // 两阶段 AI 工作流 loading 状态
+  const [isExtractingComponents, setIsExtractingComponents] = useState(false);
+  const [isComposingStudios, setIsComposingStudios] = useState(false);
+
+
+
+  // 自由添加资产弹窗
+  const [createAssetType, setCreateAssetType] = useState<CreateAssetType | null>(null);
+  const handleOpenCreate = (type: CreateAssetType) => {
+    if (!projectId) {
+      showToast('请先选择项目', 'warning');
+      return;
+    }
+    setCreateAssetType(type);
+  };
+  const closeCreateModal = () => setCreateAssetType(null);
+  const handleAssetCreated = async () => {
+    if (createAssetType === 'character') {
+      await loadCharacters();
+      showToast('角色已创建', 'success');
+    } else if (createAssetType === 'scene') {
+      await loadScenes();
+      showToast('影棚已创建', 'success');
+    }
+  };
+
+  // 项目切换时加载环境、建筑和服装
+  useEffect(() => {
+    if (projectId) {
+      loadEnvironments();
+      loadBuildings();
+      loadCostumes();
+    }
+  }, [projectId]);
+
+  // 监听环境删除事件，刷新环境列表
+  useEffect(() => {
+    const handleEnvDeleted = () => {
+      loadEnvironments();
+    };
+    window.addEventListener('environment:deleted', handleEnvDeleted);
+    return () => window.removeEventListener('environment:deleted', handleEnvDeleted);
+  }, []);
+
+  // 监听建筑删除事件
+  useEffect(() => {
+    const handleBldDeleted = () => {
+      loadBuildings();
+    };
+    window.addEventListener('building:deleted', handleBldDeleted);
+    return () => window.removeEventListener('building:deleted', handleBldDeleted);
+  }, []);
+
+  const characterViewMonitor = useWorkflowTargetMonitor({
+    projectId: projectId ?? null,
+    workflowTypes: ['character_views_generation'],
+    targetParamKey: 'characterId',
+    isActive: true,
+    onCompleted: async (job) => {
+      await loadCharacters();
+      showToast(`角色三视图生成完成：${job.input_params?.characterName || '角色'}`, 'success');
+    },
+    onFailed: async (job) => {
+      showToast(`角色三视图生成失败：${job.input_params?.characterName || '角色'}`, 'error');
+    }
+  });
+
+  const sceneImageMonitor = useWorkflowTargetMonitor({
+    projectId: projectId ?? null,
+    workflowTypes: ['scene_image_generation'],
+    targetParamKey: 'sceneId',
+    isActive: true,
+    onCompleted: async (job) => {
+      await loadScenes();
+      showToast(`影棚图片生成完成：${job.input_params?.sceneName || '影棚'}`, 'success');
+    },
+    onFailed: async (job) => {
+      showToast(`影棚图片生成失败：${job.input_params?.sceneName || '影棚'}`, 'error');
+    }
+  });
+
+  // 环境图片生成监控
+  const environmentImageMonitor = useWorkflowTargetMonitor({
+    projectId: projectId ?? null,
+    workflowTypes: ['environment_image_generation'],
+    targetParamKey: 'environmentId',
+    isActive: true,
+    onCompleted: async (job) => {
+      await loadEnvironments();
+      // 广播事件通知 AssetEditor 刷新数据
+      window.dispatchEvent(new CustomEvent('environment:updated', {
+        detail: { environmentId: job.input_params?.environmentId }
+      }));
+      showToast(`环境图片生成完成：${job.input_params?.environmentName || '环境'}`, 'success');
+    },
+    onFailed: async (job) => {
+      await loadEnvironments();
+      window.dispatchEvent(new CustomEvent('environment:updated', {
+        detail: { environmentId: job.input_params?.environmentId }
+      }));
+      showToast(`环境图片生成失败：${job.input_params?.environmentName || '环境'}`, 'error');
+    }
+  });
+
+  // 服装设定图生成监控
+  const costumeViewsMonitor = useWorkflowTargetMonitor({
+    projectId: projectId ?? null,
+    workflowTypes: ['costume_views_generation'],
+    targetParamKey: 'costumeId',
+    isActive: true,
+    onCompleted: async (job) => {
+      await loadCostumes();
+      showToast(`服装设定图生成完成：${job.input_params?.costumeName || '服装'}`, 'success');
+    },
+    onFailed: async (job) => {
+      showToast(`服装设定图生成失败：${job.input_params?.costumeName || '服装'}`, 'error');
+    }
+  });
+
+  // 建筑图片生成监控
+  const buildingImageMonitor = useWorkflowTargetMonitor({
+    projectId: projectId ?? null,
+    workflowTypes: ['building_image_generation'],
+    targetParamKey: 'buildingId',
+    isActive: true,
+    onCompleted: async (job) => {
+      await loadBuildings();
+      window.dispatchEvent(new CustomEvent('building:updated', {
+        detail: { buildingId: job.input_params?.buildingId }
+      }));
+      showToast(`建筑图片生成完成：${job.input_params?.buildingName || '建筑'}`, 'success');
+    },
+    onFailed: async (job) => {
+      showToast(`建筑图片生成失败：${job.input_params?.buildingName || '建筑'}`, 'error');
+    }
+  });
+
+  // 九宫组装图生成监控
+  const nineGridMonitor = useWorkflowTargetMonitor({
+    projectId: projectId ?? null,
+    workflowTypes: ['studio_nine_grid_generation'],
+    targetParamKey: 'studioId',
+    isActive: true,
+    onCompleted: async (job) => {
+      await loadScenes();
+      showToast(`九宫组装图生成完成：${job.input_params?.studioName || '影棚'}`, 'success');
+    },
+    onFailed: async (job) => {
+      showToast(`九宫组装图生成失败：${job.input_params?.studioName || '影棚'}`, 'error');
+    }
+  });
+
+  const {
+    selectedResource,
+    isGenerating,
+    generatedPrompts,
+    isViewsModalOpen,
+    useReferenceImages,
+    referenceImageCount,
+    handleGenerateViews,
+    closeViewsModal
+  } = useResourceModals({
+    onSuccess: (msg) => showToast(msg, 'success'),
+    onError: (msg) => showToast(msg, 'error'),
+    onJobAccepted: () => characterViewMonitor.refreshNow()
+  });
+
+  const handleShowDetail = (character: Character) => {
+    // 在工作台打开角色编辑标签页
+    window.dispatchEvent(new CustomEvent('openAssetEditTab', {
+      detail: {
+        assetType: 'character',
+        assetId: character.id,
+        assetName: character.name,
+        initialData: character,
+      }
+    }));
+  };
+
+
+
+  const handleGenerateViewsWrapper = (charName: string, characterId: number) => {
+    setViewsCharacterId(characterId);
+    // 传空字符串表示仅打开弹窗查看，不立即生成
+    handleGenerateViews(charName, '', '', '', characterId);
+  };
+
+  const loadEnvironments = async () => {
+    if (!projectId) return;
+    setIsLoadingEnvironments(true);
+    try {
+      const data = await listEnvironments(projectId);
+      setDbEnvironments(data);
+    } catch (error) {
+      console.error('[ResourcePanel] 加载环境失败:', error);
+    } finally {
+      setIsLoadingEnvironments(false);
+    }
+  };
+
+  const loadBuildings = async () => {
+    if (!projectId) return;
+    setIsLoadingBuildings(true);
+    try {
+      const data = await listBuildings(projectId);
+      setDbBuildings(data);
+    } catch (error) {
+      console.error('[ResourcePanel] 加载建筑失败:', error);
+    } finally {
+      setIsLoadingBuildings(false);
+    }
+  };
+
+  const loadCostumes = async () => {
+    if (!projectId) return;
+    setIsLoadingCostumes(true);
+    try {
+      const data = await fetchCostumes(projectId);
+      setDbCostumes(data);
+    } catch (error) {
+      console.error('[ResourcePanel] 加载服装失败:', error);
+    } finally {
+      setIsLoadingCostumes(false);
+    }
+  };
+
+  const handleRefreshResources = async () => {
+    if (!projectId) {
+      showToast('请先选择项目', 'warning');
+      return;
+    }
+    await loadCharacters();
+    await loadScenes();
+    await loadEnvironments();
+    await loadBuildings();
+    await loadCostumes();
+    onRefreshProps?.();
+  };
+
+  // === 角色详情回调 ===
+  const handleDeleteCharacter = async (characterId: number) => {
+    try {
+      await deleteCharacter(characterId);
+      showToast('角色已删除', 'success');
+      await loadCharacters();
+    } catch (error: any) {
+      showToast('删除失败: ' + error.message, 'error');
+    }
+  };
+
+  // 资源卡片上的右键删除（带二次确认）
+  // 删除角色时，同步从所有分镜中移除该角色的绑定
+  const handleDeleteCharacterFromCard = async (character: Character) => {
+    const ok = await confirm({
+      title: '删除角色',
+      message: `确定要删除角色「${character.name}」吗？该操作将同步移除其白膜、服装、状态等衍生资源，且不可撤销。已生成的图片/视频不受影响，但从所有分镜中移除该角色绑定。`,
+      confirmText: '删除',
+      cancelText: '取消',
+      type: 'danger',
+    });
+    if (!ok) return;
+    try {
+      // 1. 先找到所有绑定了该角色的分镜，移除绑定
+      const boundScenes = scenes?.filter(s => s.characters?.includes(character.name)) || [];
+      for (const scene of boundScenes) {
+        const newCharacters = scene.characters.filter(c => c !== character.name);
+        // 同时从 linkedCharacters 中移除
+        const newLinkedCharacters = scene.linkedCharacters?.filter(lc => lc.name !== character.name) || [];
+        // 更新分镜内容（保留 location 不变）
+        try {
+          const token = getAuthToken();
+          await fetch(`/api/storyboards/${scene.id}/content`, {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token ? { Authorization: `Bearer ${token}` } : {})
+            },
+            body: JSON.stringify({ characters: newCharacters })
+          });
+        } catch (err) {
+          console.error(`[ResourcePanel] 从分镜 ${scene.id} 移除角色绑定失败:`, err);
+        }
+      }
+
+      // 2. 触发事件通知节点画布移除该角色节点
+      window.dispatchEvent(new CustomEvent('resource:characterDeleted', {
+        detail: { characterId: character.id, characterName: character.name }
+      }));
+
+      // 3. 删除角色本身
+      await deleteCharacter(character.id);
+      showToast('角色已删除', 'success');
+      await loadCharacters();
+    } catch (error: any) {
+      showToast('删除失败: ' + (error?.message || '未知错误'), 'error');
+    }
+  };
+
+  // === 影棚右键删除 ===
+  const handleDeleteStudioFromCard = async (scene: Scene) => {
+    const ok = await confirm({
+      title: '删除影棚',
+      message: `确定要删除影棚「${scene.name}」吗？此操作不可撤销。`,
+      confirmText: '删除',
+      cancelText: '取消',
+      type: 'danger',
+    });
+    if (!ok) return;
+    try {
+      await deleteStudio(scene.id);
+      showToast('影棚已删除', 'success');
+      await loadScenes();
+    } catch (error: any) {
+      showToast('删除失败: ' + (error?.message || '未知错误'), 'error');
+    }
+  };
+
+  // === 道具右键删除 ===
+  const handleDeletePropFromCard = async (prop: import('./types').PropItem) => {
+    if (!prop.id) return;
+    const ok = await confirm({
+      title: '删除道具',
+      message: `确定要删除道具「${prop.name}」吗？此操作不可撤销。`,
+      confirmText: '删除',
+      cancelText: '取消',
+      type: 'danger',
+    });
+    if (!ok) return;
+    try {
+      await deleteProp(prop.id);
+      showToast('道具已删除', 'success');
+      onRefreshProps?.();
+    } catch (error: any) {
+      showToast('删除失败: ' + (error?.message || '未知错误'), 'error');
+    }
+  };
+
+  // === 环境右键删除 ===
+  const handleDeleteEnvironmentFromCard = async (env: Environment) => {
+    const ok = await confirm({
+      title: '删除环境',
+      message: `确定要删除环境「${env.name}」吗？此操作不可撤销。`,
+      confirmText: '删除',
+      cancelText: '取消',
+      type: 'danger',
+    });
+    if (!ok) return;
+    try {
+      await deleteEnvironment(env.id);
+      showToast('环境已删除', 'success');
+      await loadEnvironments();
+      // 广播事件通知 AssetEditor 等组件
+      window.dispatchEvent(new CustomEvent('environment:deleted', { detail: { environmentId: env.id } }));
+    } catch (error: any) {
+      showToast('删除失败: ' + (error?.message || '未知错误'), 'error');
+    }
+  };
+
+  // === 建筑右键删除 ===
+  const handleDeleteBuildingFromCard = async (b: Building) => {
+    const ok = await confirm({
+      title: '删除建筑',
+      message: `确定要删除建筑「${b.name}」吗？此操作不可撤销。`,
+      confirmText: '删除',
+      cancelText: '取消',
+      type: 'danger',
+    });
+    if (!ok) return;
+    try {
+      await deleteBuilding(b.id);
+      showToast('建筑已删除', 'success');
+      await loadBuildings();
+      // 广播事件通知 AssetEditor 等组件
+      window.dispatchEvent(new CustomEvent('building:deleted', { detail: { buildingId: b.id } }));
+    } catch (error: any) {
+      showToast('删除失败: ' + (error?.message || '未知错误'), 'error');
+    }
+  };
+
+  // === 服装右键删除 ===
+  const handleDeleteCostumeFromCard = async (costume: Costume) => {
+    const ok = await confirm({
+      title: '删除服装',
+      message: `确定要删除服装「${costume.name}」吗？此操作不可撤销。`,
+      confirmText: '删除',
+      cancelText: '取消',
+      type: 'danger',
+    });
+    if (!ok) return;
+    try {
+      await deleteCostume(costume.id);
+      showToast('服装已删除', 'success');
+      await loadCostumes();
+    } catch (error: any) {
+      showToast('删除失败: ' + (error?.message || '未知错误'), 'error');
+    }
+  };
+
+  const handleGenerateSceneImage = async (sceneId: number, imageModelName?: string, options?: { customPromptA?: string; customPromptB?: string }) => {
+    const modelName = imageModelName || effectiveImageModel;
+    try {
+      if (!effectiveImageAspectRatio) {
+        throw new Error('当前图片模型未配置可用长宽比');
+      }
+
+      const token = getAuthToken();
+      const res = await fetch(`/api/scenes/${sceneId}/generate-image`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ 
+          imageModel: modelName, 
+          textModel,
+          aspectRatio: effectiveImageAspectRatio,
+          customPromptA: options?.customPromptA,
+          customPromptB: options?.customPromptB
+        })
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (res.status === 409 && data.jobId) {
+          await sceneImageMonitor.refreshNow();
+          showToast('已恢复该影棚正在执行的生成任务', 'info');
+          return;
+        }
+
+        throw new Error(data.message || '启动生成失败');
+      }
+
+      console.log('[ResourcePanel] 场景图片生成已启动:', data.jobId);
+      
+      // 立即刷新工作流状态，确保只有当前目标进入生成中
+      await sceneImageMonitor.refreshNow();
+    } catch (error: any) {
+      console.error('[ResourcePanel] 生成场景图片失败:', error);
+      showToast('生成影棚图片失败: ' + error.message, 'error');
+      throw error;
+    }
+  };
+
+  const handleExtractStudioComponents = async () => {
+    if (!projectId) { showToast('请先选择项目', 'warning'); return; }
+    if (!textModel) { showToast('请先选择文本模型', 'warning'); return; }
+    setIsExtractingComponents(true);
+    try {
+      const res = await extractStudioComponentsFromScript({ projectId, scriptId, textModel });
+      showToast(res.message || '已启动拆分影棚组件', 'success');
+      setTimeout(() => { loadScenes(); }, 1500);
+    } catch (error: any) {
+      showToast('启动失败: ' + (error?.message || '未知错误'), 'error');
+    } finally {
+      setIsExtractingComponents(false);
+    }
+  };
+
+  const handleComposeStudiosFromScript = async () => {
+    if (!projectId) { showToast('请先选择项目', 'warning'); return; }
+    if (!textModel) { showToast('请先选择文本模型', 'warning'); return; }
+    setIsComposingStudios(true);
+    try {
+      const res = await composeStudiosFromScript({ projectId, scriptId, textModel });
+      showToast(res.message || '已启动拼接影棚', 'success');
+      setTimeout(() => { loadScenes(); }, 1500);
+    } catch (error: any) {
+      showToast('启动失败: ' + (error?.message || '未知错误'), 'error');
+    } finally {
+      setIsComposingStudios(false);
+    }
+  };
+
+  // === 手风琴分类派生数据（基本分类 + 自定义分类，AI 模式下隐藏空分组） ===
+  const categoryData: CategoryResourceData = useMemo(() => ({
+    characters: dbCharacters,
+    scenes: dbScenes,
+    props,
+    environments: dbEnvironments,
+    buildings: dbBuildings,
+    costumes: dbCostumes,
+  }), [dbCharacters, dbScenes, props, dbEnvironments, dbBuildings, dbCostumes]);
+
+  const allEntries = useMemo(() => buildAllResourceEntries(categoryData), [categoryData]);
+
+  const sectionCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const t of ALL_RESOURCE_TYPES) counts[t] = RESOURCE_TYPE_REGISTRY[t].count(categoryData);
+    for (const c of categoryConfig.customCategories) counts[makeCustomKey(c.id)] = c.members.length;
+    return counts;
+  }, [categoryData, categoryConfig.customCategories]);
+
+  const sections = useMemo(() => [
+    ...categoryConfig.enabledTypes.map(t => ({
+      key: t as string, kind: t as ResourceTypeKey | 'custom', label: RESOURCE_TYPE_REGISTRY[t].label, custom: null as CustomCategory | null,
+    })),
+    ...categoryConfig.customCategories.map(c => ({
+      key: makeCustomKey(c.id), kind: 'custom' as const, label: c.name, custom: c as CustomCategory | null,
+    })),
+  ], [categoryConfig]);
+
+  // AI 模式：仅展示有内容的分类，空分组自动折叠隐藏
+  const visibleSections = aiMode ? sections.filter(s => (sectionCounts[s.key] ?? 0) > 0) : sections;
+
+  const toggleSection = (key: string) => {
+    setExpandedSections(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  /** 渲染某内置类型的 Tab 内容（data 为全量或自定义分类过滤后的子集） */
+  const renderTypeContent = (type: ResourceTypeKey, data: CategoryResourceData) => {
+    switch (type) {
+      case 'characters':
+        return (
+          <CharactersTab
+            characters={data.characters.map(c => c.name)}
+            dbCharacters={data.characters}
+            isLoadingCharacters={isLoadingCharacters}
+            scenes={scenes}
+            activeCharacterIds={characterViewMonitor.activeTargetIds}
+            storyboardStates={storyboardStates}
+            onGenerateViews={handleGenerateViewsWrapper}
+            onShowDetail={handleShowDetail}
+            onCreate={() => handleOpenCreate('character')}
+            onDelete={handleDeleteCharacterFromCard}
+            onStoryboardStateChange={onStoryboardStateChange}
+          />
+        );
+      case 'locations':
+        return isLoadingScenes
+          ? <div className="text-center py-8 text-(--text-muted)"><p className="text-sm">加载影棚中...</p></div>
+          : <LocationsTab scenes={data.scenes} onDelete={handleDeleteStudioFromCard} />;
+      case 'props':
+        return (
+          <PropsTab
+            props={data.props}
+            imageModel={effectiveImageModel}
+            imageAspectRatio={effectiveImageAspectRatio}
+            onDelete={handleDeletePropFromCard}
+          />
+        );
+      case 'environments':
+        return <EnvironmentsTab environments={data.environments} isLoading={isLoadingEnvironments} onDelete={handleDeleteEnvironmentFromCard} />;
+      case 'buildings':
+        return <BuildingsTab buildings={data.buildings} isLoading={isLoadingBuildings} onDelete={handleDeleteBuildingFromCard} />;
+      case 'costumes':
+        return (
+          <CostumesTab
+            costumes={data.costumes}
+            isLoading={isLoadingCostumes}
+            imageModel={effectiveImageModel}
+            textModel={textModel}
+            onGenerateViews={async (costume) => {
+              if (!effectiveImageModel) {
+                showToast('请先选择图像模型', 'warning');
+                return;
+              }
+              try {
+                await generateCostumeViews(costume.id, { imageModel: effectiveImageModel, textModel });
+                await costumeViewsMonitor.refreshNow();
+                showToast('已启动服装设定图生成', 'success');
+              } catch (error: any) {
+                showToast('启动失败: ' + (error?.message || '未知错误'), 'error');
+              }
+            }}
+            onDelete={handleDeleteCostumeFromCard}
+          />
+        );
+    }
+  };
+
+  /** 自定义分类内容：按成员引用过滤各类型子集，复用同一套 Tab 渲染 */
+  const renderCustomContent = (cat: CustomCategory) => {
+    const refs = new Set(cat.members);
+    const subsets: CategoryResourceData = {
+      characters: categoryData.characters.filter(c => refs.has(`characters:${c.id}`)),
+      scenes: categoryData.scenes.filter(s => refs.has(`locations:${s.id}`)),
+      props: categoryData.props.filter(p => refs.has(`props:${p.id}`)),
+      environments: categoryData.environments.filter(e => refs.has(`environments:${e.id}`)),
+      buildings: categoryData.buildings.filter(b => refs.has(`buildings:${b.id}`)),
+      costumes: categoryData.costumes.filter(c => refs.has(`costumes:${c.id}`)),
+    };
+    /** 取某类型子集（注意 locations 类型对应 data.scenes 字段） */
+    const subsetOf = (t: ResourceTypeKey): unknown[] =>
+      t === 'locations' ? subsets.scenes
+        : t === 'characters' ? subsets.characters
+        : t === 'props' ? subsets.props
+        : t === 'environments' ? subsets.environments
+        : t === 'buildings' ? subsets.buildings
+        : subsets.costumes;
+    const hasAny = ALL_RESOURCE_TYPES.some(t => subsetOf(t).length > 0);
+    if (!hasAny) {
+      return (
+        <div className="text-center py-6 text-(--text-muted)">
+          <Tags className="w-6 h-6 mx-auto mb-2 opacity-40" />
+          <p className="text-xs">该分类还没有成员</p>
+          <p className="text-[10px] mt-0.5 opacity-70">点击右上角「分类管理」添加资源或运行 AI 分类</p>
+        </div>
+      );
+    }
+    return (
+      <div className="space-y-4">
+        {ALL_RESOURCE_TYPES.map(t => {
+          const subset = subsetOf(t);
+          if (subset.length === 0) return null;
+          return <div key={t}>{renderTypeContent(t, { ...categoryData, [t === 'locations' ? 'scenes' : t]: subset } as CategoryResourceData)}</div>;
+        })}
+      </div>
+    );
+  };
+
+  const SECTION_ICONS: Record<ResourceTypeKey, React.ComponentType<{ className?: string }>> = {
+    characters: User,
+    locations: MapPin,
+    props: Box,
+    environments: Cloud,
+    buildings: Building2,
+    costumes: Shirt,
+  };
+
+  // 工具栏：AI 分类模式开关 + 刷新 / 分类管理。存在标题插槽时 portal 到「资源」标题行，
+  // 否则回退渲染在面板内自带标题行。
+  const categoryToolbar = (
+    <>
+      <Tooltip content={aiMode ? 'AI 分类模式：仅展示有内容的分类（点击关闭）' : '开启 AI 分类模式：自动隐藏空分类'} placement="bottom">
+        <button
+          type="button"
+          onClick={() => setAiMode(v => !v)}
+          aria-pressed={aiMode}
+          aria-label="AI分类"
+          className={`p-1.5 rounded transition-colors ${
+            aiMode ? 'bg-(--accent)/20 text-(--accent)' : 'text-(--text-muted) hover:text-(--text-primary) hover:bg-white/5'
+          }`}
+        >
+          <Sparkles className="w-3.5 h-3.5" />
+        </button>
+      </Tooltip>
+      <Tooltip content="刷新资源" placement="bottom">
+        <button
+          type="button"
+          onClick={handleRefreshResources}
+          aria-label="刷新资源"
+          className="p-1.5 rounded text-(--text-muted) hover:text-(--text-primary) hover:bg-white/5"
+        >
+          <RefreshCw className="w-3.5 h-3.5" />
+        </button>
+      </Tooltip>
+      <Tooltip content="分类管理：自定义资源分类" placement="bottom">
+        <button
+          type="button"
+          onClick={() => setCategoryModalOpen(true)}
+          aria-label="分类管理"
+          className="p-1.5 rounded text-(--text-muted) hover:text-(--text-primary) hover:bg-white/5"
+        >
+          <Settings2 className="w-3.5 h-3.5" />
+        </button>
+      </Tooltip>
+    </>
+  );
+
+
+  // 背景透明：portal 到创作工作台侧栏后与 --bg-nav 底色融为一体，展开时不产生色差
+  return (
+    <div className="h-full flex flex-col bg-transparent">
+      {/* 无标题插槽时（独立使用）才在面板内渲染自带标题行；否则工具栏已并入「资源」标题行 */}
+      {!headerSlot && (
+        <div className="shrink-0 px-3 py-1.5 border-b border-(--border-color) flex items-center gap-1">
+          <span className="flex-1 text-[11px] text-(--text-muted) uppercase tracking-wider">资源分类</span>
+          {categoryToolbar}
+        </div>
+      )}
+      {headerSlot && createPortal(categoryToolbar, headerSlot)}
+
+      {/* 手风琴分类列表：每类一分组，标题行 chevron + 图标 + 名称 + 计数 */}
+      <div className="flex-1 overflow-y-auto py-1">
+        {visibleSections.length === 0 && (
+          <div className="px-3 py-6 text-center text-[11px] text-(--text-muted)">
+            {aiMode && sections.length > 0
+              ? '当前所有分类都没有内容，可关闭 AI 分类模式查看全部分类'
+              : '没有展示中的分类，点击右上角「分类管理」开启基本分类或新建自定义分类'}
+          </div>
+        )}
+        {visibleSections.map(section => {
+          const expanded = expandedSections.has(section.key);
+          const ChevronIcon = expanded ? ChevronDown : ChevronRight;
+          const Icon = section.kind === 'custom' ? Tags : SECTION_ICONS[section.kind as ResourceTypeKey];
+          const count = sectionCounts[section.key] ?? 0;
+          return (
+            <div key={section.key} className="border-b border-(--border-color) last:border-b-0">
+              <div
+                role="button"
+                tabIndex={0}
+                aria-expanded={expanded}
+                onClick={() => toggleSection(section.key)}
+                onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSection(section.key); } }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs cursor-pointer text-(--text-primary) hover:bg-(--bg-card-hover) transition-colors"
+                title={expanded ? '点击折叠' : '点击展开'}
+              >
+                <ChevronIcon className="w-3.5 h-3.5 opacity-40 shrink-0" />
+                <Icon className="w-3.5 h-3.5 shrink-0 opacity-70" />
+                <span className="flex-1 truncate font-medium">{section.label}</span>
+                {section.custom?.aiGenerated && <Sparkles className="w-3 h-3 shrink-0 text-(--accent) opacity-70" />}
+                {/* 空数据时隐藏计数，避免强化"空空如也"的挫败感 */}
+                {count > 0 && <span className="shrink-0 text-[10px] text-(--text-muted)">{count}</span>}
+              </div>
+              {expanded && (
+                <div className="px-3 pb-3 max-h-[45vh] overflow-y-auto">
+                  {section.kind === 'custom'
+                    ? (section.custom && renderCustomContent(section.custom))
+                    : renderTypeContent(section.kind, categoryData)}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* 弹窗 */}
+      <CharacterViewsModal
+        isOpen={isViewsModalOpen}
+        onClose={closeViewsModal}
+        selectedResource={selectedResource}
+        isGenerating={isGenerating || characterViewMonitor.isTargetActive(viewsCharacterId)}
+        generatedPrompts={generatedPrompts}
+        onGenerate={handleGenerateViews}
+        characterId={viewsCharacterId}
+        imageModel={effectiveImageModel}
+        textModel={textModel}
+        imageAspectRatio={effectiveImageAspectRatio}
+        useReferenceImages={useReferenceImages}
+        referenceImageCount={referenceImageCount}
+      />
+
+
+
+      {/* 自由添加角色 / 场景 */}
+      <CreateAssetModal
+        isOpen={!!createAssetType}
+        assetType={createAssetType || 'character'}
+        projectId={projectId ?? null}
+        scriptId={scriptId ?? null}
+        onClose={closeCreateModal}
+        onCreated={handleAssetCreated}
+      />
+
+      {/* 资源分类管理：基本分类开关 + 用户自定义分类 + AI 启发式分类 */}
+      <CategoryManageModal
+        isOpen={isCategoryModalOpen}
+        onClose={() => setCategoryModalOpen(false)}
+        config={categoryConfig}
+        entries={allEntries}
+        onToggleType={toggleType}
+        onAddCustom={addCustomCategory}
+        onRenameCustom={renameCustomCategory}
+        onRemoveCustom={removeCustomCategory}
+        onAddMember={addMember}
+        onRemoveMember={removeMember}
+        onApplyAi={applyAiCategories}
+        onClearAi={clearAiCategories}
+      />
+    </div>
+  );
+};
+
+export default ResourcePanel;
