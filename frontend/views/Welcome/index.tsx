@@ -15,11 +15,12 @@ import {
 } from '@heroui/react';
 import {
   FolderPlus, FolderOpen, FileArchive, BookOpen, Film, PenLine, Clapperboard, Music,
-  Loader2, Settings as SettingsIcon,
+  Loader2, Download, Trash2, Settings as SettingsIcon,
 } from 'lucide-react';
 import { useWorkbench } from '../../contexts/WorkbenchContext';
 import { useToast } from '../../contexts/ToastContext';
 import { useLanguage } from '../../contexts/LanguageContext';
+import { useConfirm } from '../../contexts/ConfirmContext';
 import { mapLocalProject } from '../../services/projects';
 import {
   createProject,
@@ -27,6 +28,9 @@ import {
   openProject,
   listProjects,
   registerProject,
+  deleteProject,
+  exportProjectPackage,
+  saveFile,
   getEffectiveProjectsRoot,
   selectDirectory,
   selectFile,
@@ -48,11 +52,15 @@ const Welcome: React.FC = () => {
   const { switchProject, currentProject } = useWorkbench();
   const { showToast } = useToast();
   const { t } = useLanguage();
+  const { confirm } = useConfirm();
   const w = t.welcome;
 
   const [recent, setRecent] = useState<ProjectMetadata[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAllRecent, setShowAllRecent] = useState(false);
+  // 正在打包导出的工程路径 / 正在删除的工程 id
+  const [exportingPath, setExportingPath] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   // 新建工程对话框
   const [createOpen, setCreateOpen] = useState(false);
@@ -126,6 +134,52 @@ const Welcome: React.FC = () => {
       activate(await importProjectPackage(path));
     } catch (err: any) {
       showToast(err?.message || w.openFailed, 'error');
+    }
+  };
+
+  /** 导出最近工程为 .jzp 工程包 */
+  const handleExportJzp = async (meta: ProjectMetadata) => {
+    if (!meta.path || exportingPath) return;
+    if (!isTauri()) {
+      showToast(w.desktopOnly, 'warning');
+      return;
+    }
+    const dest = await saveFile(
+      t.frame.projects.exportJzpTitle,
+      `${meta.name || '工程'}.jzp`,
+      [{ name: w.packageFilter, extensions: ['jzp'] }],
+    );
+    if (!dest) return;
+    setExportingPath(meta.path);
+    try {
+      const saved = await exportProjectPackage(meta.path, dest);
+      showToast(t.frame.projects.exportJzpSuccess.replace('{path}', saved), 'success');
+    } catch (err: any) {
+      showToast(err?.message || t.frame.projects.exportJzpFailed, 'error');
+    } finally {
+      setExportingPath(null);
+    }
+  };
+
+  /** 删除工程（解除注册并从磁盘删除文件夹），可用导出的 .jzp 重新导入 */
+  const handleDeleteProject = async (meta: ProjectMetadata) => {
+    if (!meta.path || deletingId) return;
+    const ok = await confirm({
+      title: w.deleteTitle,
+      message: w.deleteMessage.replace('{name}', meta.name || '未命名'),
+      confirmText: w.deleteConfirm,
+      type: 'warning',
+    });
+    if (!ok) return;
+    setDeletingId(meta.id);
+    try {
+      await deleteProject(meta.path, true);
+      showToast(w.deleteSuccess, 'success');
+      await loadRecent();
+    } catch (err: any) {
+      showToast(err?.message || w.deleteFailed, 'error');
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -275,20 +329,50 @@ const Welcome: React.FC = () => {
                 </div>
               ) : (
                 visibleRecent.map((item) => (
-                  <button
+                  <div
                     key={item.id}
-                    type="button"
-                    onClick={() => { void handleOpenRecent(item); }}
-                    className="group flex w-full items-baseline justify-between gap-6 py-2.5 text-left"
-                    title={item.path}
+                    className="group flex items-center gap-2 border-b border-(--border-color)/40 last:border-b-0"
                   >
-                    <span className="min-w-0 truncate text-sm group-hover:text-(--accent)">
-                      {item.name || '未命名'}
-                    </span>
-                    <span className="max-w-[52%] shrink-0 truncate text-xs text-(--text-muted)">
-                      {item.path ? dirOf(item.path) : ''}
-                    </span>
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => { void handleOpenRecent(item); }}
+                      className="flex min-w-0 flex-1 items-baseline justify-between gap-6 py-2.5 text-left"
+                      title={item.path}
+                    >
+                      <span className="min-w-0 truncate text-sm group-hover:text-(--accent)">
+                        {item.name || '未命名'}
+                      </span>
+                      <span className="max-w-[52%] shrink-0 truncate text-xs text-(--text-muted)">
+                        {item.path ? dirOf(item.path) : ''}
+                      </span>
+                    </button>
+                    <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                      <button
+                        type="button"
+                        onClick={() => { void handleExportJzp(item); }}
+                        disabled={!!exportingPath}
+                        className="rounded-md p-1.5 text-(--text-muted) hover:bg-white/5 hover:text-(--text-primary) disabled:opacity-40"
+                        title={w.exportPackage}
+                        aria-label={w.exportPackage}
+                      >
+                        {exportingPath === item.path
+                          ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          : <Download className="w-3.5 h-3.5" />}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { void handleDeleteProject(item); }}
+                        disabled={!!deletingId}
+                        className="rounded-md p-1.5 text-(--text-muted) hover:bg-red-500/10 hover:text-red-400 disabled:opacity-40"
+                        title={w.deleteProject}
+                        aria-label={w.deleteProject}
+                      >
+                        {deletingId === item.id
+                          ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          : <Trash2 className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+                  </div>
                 ))
               )}
             </div>
