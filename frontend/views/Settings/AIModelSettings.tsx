@@ -69,7 +69,8 @@ const MODEL_PROVIDERS: ModelProvider[] = [
     modelsByCategory: {
       text: ['doubao-seed-evolving', 'doubao-seed-2-1-pro-260915', 'doubao-seed-2-1-lite-260915', 'doubao-seed-2-1-turbo-260628'],
       multimodal: ['doubao-seed-evolving', 'doubao-seed-2-1-pro-260915', 'doubao-seed-2-1-lite-260915', 'doubao-seed-2-1-turbo-260628'],
-      image: ['doubao-seedream-5-0-pro-260628', 'doubao-seedream-5-0-flash-260915', 'doubao-seedream-5-0-260128'],
+      // 图片：官方当前推荐的 Seedream 5.0 pro / flash（旧版 5.0 lite 及 4.x 已标注即将下线，不再提供）
+      image: ['doubao-seedream-5-0-pro-260628', 'doubao-seedream-5-0-flash-260915'],
       video: ['doubao-seedance-2-5-260628', 'doubao-seedance-2-0-260128', 'doubao-seedance-2-0-fast-260128', 'doubao-seedance-2-0-mini-260615'],
     },
     defaultApiBase: 'https://ark.cn-beijing.volces.com/api/v3', isCustom: false, color: '#ff752d', abbr: '火山', logoUrl: '/providers/doubao.svg',
@@ -1078,56 +1079,27 @@ const AIModelSettings: React.FC = () => {
             </div>
             )}
 
-            {/* 模型测试区域 */}
-            <div className="rounded-lg border border-(--border-color) overflow-hidden bg-(--bg-card)">
-              <div className="flex items-center justify-between px-4 py-2.5 bg-(--bg-input) border-b border-(--border-color)">
-                <div className="flex items-center gap-2">
-                  <div className="w-1.5 h-1.5 rounded-full bg-(--accent)"></div>
-                  <span className="text-sm font-medium text-(--text-primary)">模型测试</span>
-                </div>
-                <Button
-                  size="sm"
-                  color={addTestPassed ? 'success' : 'primary'}
-                  variant={addTestPassed ? 'flat' : 'solid'}
-                  isDisabled={addTesting || !canSave}
-                  isLoading={addTesting}
-                  startContent={!addTesting && (addTestPassed ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Zap className="w-3.5 h-3.5" />)}
-                  onPress={handleAddTest}
-                  className="min-w-[90px] h-8"
-                >
-                  {addTesting ? '测试中…' : addTestPassed ? '测试通过' : '开始测试'}
-                </Button>
-              </div>
-              {/* 测试说明 */}
-              <div className="px-4 py-2.5 text-xs text-(--text-muted)">
-                {!selectedCategory && '请先选择模型类型'}
-                {selectedCategory === 'text' && '将发送「你好」测试文本对话能力'}
-                {selectedCategory === 'multimodal' && '将发送一张测试图片并询问「这是什么」'}
-                {selectedCategory === 'image' && '将请求生成一张测试图片'}
-                {selectedCategory === 'video' && '将请求生成一段最低画质的小猫走路视频'}
-              </div>
-              {/* 测试结果 */}
-              {addTestResult && (
-                <div className={`px-4 py-2.5 border-t border-(--border-color) ${
-                  addTestResult.ok ? 'bg-green-500/5' : 'bg-red-500/5'
+            {/* 测试结果：测试已并入底部主按钮，无结果时不渲染占位区域 */}
+            {addTestResult && (
+              <div className={`rounded-lg border border-(--border-color) overflow-hidden ${
+                addTestResult.ok ? 'bg-green-500/5' : 'bg-red-500/5'
+              }`}>
+                <div className={`flex items-start gap-2 px-4 py-3 text-sm ${
+                  addTestResult.ok ? 'text-green-500' : 'text-red-500'
                 }`}>
-                  <div className={`flex items-start gap-2 text-sm ${
-                    addTestResult.ok ? 'text-green-500' : 'text-red-500'
-                  }`}>
-                    {addTestResult.ok
-                      ? <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" />
-                      : <XCircle className="w-4 h-4 mt-0.5 shrink-0" />
-                    }
-                    <div className="min-w-0">
-                      <p className="font-medium">{addTestResult.message}</p>
-                      {addTestResult.detail && (
-                        <p className="text-xs mt-1 opacity-80 break-all font-mono">{addTestResult.detail}</p>
-                      )}
-                    </div>
+                  {addTestResult.ok
+                    ? <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" />
+                    : <XCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                  }
+                  <div className="min-w-0">
+                    <p className="font-medium">{addTestResult.message}</p>
+                    {addTestResult.detail && (
+                      <p className="text-xs mt-1 opacity-80 break-all font-mono">{addTestResult.detail}</p>
+                    )}
                   </div>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
           </ModalBody>
           <ModalFooter className="gap-3">
             <Button
@@ -1144,7 +1116,7 @@ const AIModelSettings: React.FC = () => {
               isDisabled={!canSave}
               className="min-w-[120px] data-[disabled=true]:bg-(--accent)/25 data-[disabled=true]:text-white/50 data-[disabled=true]:opacity-100 data-[disabled=true]:cursor-not-allowed"
             >
-              {saving ? '保存中' : addTesting ? '测试中…' : editingConfig ? '保存' : addTestPassed ? '添加' : '测试并添加'}
+              {saving ? '保存中' : addTesting ? '测试中…' : editingConfig ? '保存' : '添加'}
             </Button>
           </ModalFooter>
         </ModalContent>

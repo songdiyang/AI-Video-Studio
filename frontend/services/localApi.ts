@@ -386,6 +386,9 @@ async function testMultimodalModel(base: string, apiKey: string, modelId: string
 /** 图片模型测试：请求生成一张极简图片 */
 async function testImageModel(base: string, apiKey: string, modelId: string): Promise<ConnectionTestResult> {
   const url = `${base}/images/generations`;
+  // Seedream 全系要求成图面积 ≥ 921600 像素（256x256 会被方舟拒绝）；
+  // 2K 是 Seedream 5.0 pro/flash、5.0 lite、4.5、4.0 共同支持的分辨率档位。
+  const size = /^doubao-seedream/i.test(modelId) ? '2K' : '256x256';
   try {
     const res = await proxyVendorFetch(url, {
       method: 'POST',
@@ -397,9 +400,9 @@ async function testImageModel(base: string, apiKey: string, modelId: string): Pr
         model: modelId,
         prompt: 'a red dot on white background',
         n: 1,
-        size: '256x256',
+        size,
       }),
-    }, 30000);
+    }, 60000);
     if (res.ok) {
       return { ok: true, status: 'success', message: '图片模型测试通过，成功生成图片' };
     }
@@ -539,13 +542,47 @@ export async function openProject(path: string): Promise<ProjectMetadata> {
   return await invoke('open_project', { path });
 }
 
-/** 注册一个已存在的工程文件夹或其 .jzp 文件 */
+/** 注册一个已存在的工程文件夹或其 project.json */
 export async function registerProject(path: string): Promise<ProjectMetadata> {
   if (!isTauri()) {
     throw new Error('浏览器模式不支持注册本地工程');
   }
   const { invoke } = await getTauriApi();
   return await invoke('register_project', { path });
+}
+
+/** 导入 .jzp 工程包（解包到作品目录并注册；同一清单 id 已注册则直接打开） */
+export async function importProjectPackage(path: string, parentDir?: string | null): Promise<ProjectMetadata> {
+  if (!isTauri()) {
+    throw new Error('浏览器模式不支持导入 .jzp 工程包');
+  }
+  const { invoke } = await getTauriApi();
+  return await invoke('import_project_package', { path, parentDir: parentDir ?? null });
+}
+
+/** 把工程打包为 .jzp（ZIP：project.json + data/ + media/） */
+export async function exportProjectPackage(projectPath: string, destPath: string): Promise<string> {
+  if (!isTauri()) {
+    throw new Error('浏览器模式不支持导出 .jzp 工程包');
+  }
+  const { invoke } = await getTauriApi();
+  return await invoke('export_project_package', { projectPath, destPath });
+}
+
+/** 取走双击 .jzp 后待打开的工程路径（前端就绪时调用） */
+export async function takePendingProject(): Promise<string | null> {
+  if (!isTauri()) return null;
+  const { invoke } = await getTauriApi();
+  return await invoke('take_pending_project');
+}
+
+/** 注册 .jzp 文件关联到当前程序（Windows；免安装/开发环境也可用） */
+export async function registerJzpAssociation(): Promise<string> {
+  if (!isTauri()) {
+    throw new Error('仅桌面端支持注册文件关联');
+  }
+  const { invoke } = await getTauriApi();
+  return await invoke('register_jzp_association');
 }
 
 /** 移除工程（仅注销 / 或连文件一起删除） */
@@ -654,6 +691,21 @@ export async function selectFile(title: string, filters?: { name: string; extens
     multiple: false,
   });
   return result as string | null;
+}
+
+/** 保存文件对话框（打包导出等场景） */
+export async function saveFile(title: string, defaultPath?: string, filters?: { name: string; extensions: string[] }[]): Promise<string | null> {
+  if (!isTauri()) {
+    console.warn('Not in Tauri environment, save dialog not available');
+    return null;
+  }
+  const { save } = await import('@tauri-apps/plugin-dialog');
+  const result = await save({
+    title,
+    defaultPath,
+    filters: filters?.map(f => ({ name: f.name, extensions: f.extensions })),
+  });
+  return (result as string | null) ?? null;
 }
 
 export async function selectFiles(title: string, filters?: { name: string; extensions: string[] }[]): Promise<string[]> {

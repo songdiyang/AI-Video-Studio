@@ -19,6 +19,7 @@ const PreviewEditorPlugin: React.FC = () => {
     setState,
     handleEpisodeSelect,
     showToast,
+    isLoading,
   } = useStoryboardContext();
 
   const selectedSceneData = scenes.find(s => s.id === selectedScene);
@@ -84,6 +85,7 @@ const PreviewEditorPlugin: React.FC = () => {
   return (
     <PreviewEditor
       scenes={scenes}
+      scenesLoading={isLoading}
       selectedScene={selectedScene}
       onSelectScene={setSelectedScene}
       scriptId={state.currentScriptId}
@@ -171,6 +173,14 @@ const PreviewEditorPlugin: React.FC = () => {
         onUpdateLastFramePrompt: async (prompt) => (selectedScene ? await sceneActions.updateLastFramePrompt(selectedScene, prompt) : false),
         onUpdateDialogues: async (dialogues) => (selectedScene ? await sceneActions.updateDialogues(selectedScene, dialogues) : false),
         onUpdateVoiceover: async (voiceover) => (selectedScene ? await sceneActions.updateVoiceover(selectedScene, voiceover) : false),
+        onUpdateCharactersAndLocation: async (characters, location, characterIds, sceneId) => (selectedScene ? await sceneActions.updateCharactersAndLocation(selectedScene, characters, location, characterIds, sceneId) : false),
+        onUpdateProps: async (props) => (selectedScene ? await sceneActions.updateProps(selectedScene, props) : false),
+        onUpdateDuration: (duration) => (selectedScene ? sceneActions.updateDuration(selectedScene, duration) : Promise.resolve(false)),
+        onUpdateScene: async (updates) => {
+          if (!selectedScene) return false;
+          await sceneActions.updateScene(selectedScene, updates);
+          return true;
+        },
         onGenerateImage: generationActions.generateImage,
         onGenerateVideo: generationActions.generateVideo,
         models: state.models,

@@ -98,7 +98,7 @@ const AIModelSelector: React.FC<AIModelSelectorProps> = ({
       size={size as "sm" | "md" | "lg"}
       isDisabled={isDisabled}
       isRequired={isRequired}
-      description={dynamicDescription}
+      description={selectedModelInfo ? description : dynamicDescription}
       classNames={{
         trigger: `bg-slate-800/60 border border-slate-600/50 text-slate-100 font-semibold hover:border-blue-500/50 shadow-sm ${className}`,
         label: "text-slate-400 font-medium",

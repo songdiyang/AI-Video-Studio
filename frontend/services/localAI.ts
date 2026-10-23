@@ -61,6 +61,14 @@ const VIDEO_MODEL_CAPABILITIES: Array<{ match: string; capability: VideoModelCap
     match: 'seedance-2-0-260128',
     capability: { resolutions: ['480p', '720p', '1080p', '4k'], minDuration: 4, maxDuration: 15, formats: ['mp4'] },
   },
+  {
+    match: 'seedance-1-0-pro-fast',
+    capability: { resolutions: ['480p', '720p', '1080p'], minDuration: 2, maxDuration: 12, formats: ['mp4'] },
+  },
+  {
+    match: 'seedance-1-0-pro',
+    capability: { resolutions: ['480p', '720p', '1080p'], minDuration: 2, maxDuration: 12, formats: ['mp4'] },
+  },
 ];
 
 /** 依据模型名解析视频能力，命中已知方舟型号返回其能力，否则回退保守默认 */
@@ -519,6 +527,107 @@ function buildSeedanceContent(prompt: string, firstFrame?: string, lastFrame?: s
   return content;
 }
 
+/** 火山方舟图生视频仅接受公网 URL / Base64 / 资产 ID；工程内的本地帧需转成 data URL。 */
+const ARK_IMAGE_MAX_BYTES = 20 * 1024 * 1024;
+
+/** 把 asset/file 协议 URL 还原为绝对文件路径（Tauri convertFileSrc 的逆操作） */
+function assetUrlToPath(src: string): string | null {
+  let raw = '';
+  if (/^https?:\/\/asset\.localhost\//i.test(src)) raw = src.replace(/^https?:\/\/asset\.localhost\//i, '');
+  else if (/^asset:\/\/localhost\//i.test(src)) raw = src.replace(/^asset:\/\/localhost\//i, '');
+  else if (/^file:\/\//i.test(src)) raw = src.replace(/^file:\/\//i, '');
+  else return null;
+  try {
+    let path = decodeURIComponent(raw.split('?')[0].split('#')[0]);
+    // Windows asset URL 可能带多余的前导斜杠，如 /C:/Users/...
+    if (/^\/[A-Za-z]:[\\/]/.test(path)) path = path.slice(1);
+    return path;
+  } catch {
+    return null;
+  }
+}
+
+/** 本地图片转 data URL：Tauri 下直读文件（绕开 CSP/CORS），浏览器下回退 fetch */
+async function localImageToDataUrl(src: string): Promise<string> {
+  if (isTauri()) {
+    const path = assetUrlToPath(src);
+    if (path) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        return await invoke<string>('read_media_data_url', { path });
+      } catch (err) {
+        console.warn('[localAI] 本地帧直读失败，尝试通过 URL 读取:', err);
+      }
+    }
+  }
+  const res = await fetch(src);
+  if (!res.ok) throw new Error(`本地帧读取失败（HTTP ${res.status}），无法提交视频任务`);
+  const blob = await res.blob();
+  if (!blob.size) throw new Error('本地参考帧为空，无法提交视频任务');
+  if (blob.size > ARK_IMAGE_MAX_BYTES) throw new Error('本地参考帧超过 20MB，无法提交视频任务');
+
+  const mime = blob.type && blob.type.startsWith('image/') ? blob.type : 'image/png';
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let binary = '';
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+  }
+  return `data:${mime};base64,${btoa(binary)}`;
+}
+
+async function toArkImageInput(src?: string): Promise<string | undefined> {
+  if (!src) return undefined;
+  if (/^data:/i.test(src)) return src;
+  // 公网图片直接交给方舟拉取；本地 asset/blob（含 Windows asset.localhost）需内联
+  const isLocal = /^(asset:|blob:|file:|https?:\/\/asset\.localhost)/i.test(src);
+  if (!isLocal) return src;
+  return localImageToDataUrl(src);
+}
+
+/** 依模型能力归一化视频参数：时长钳制、分辨率校验、2.5 首尾帧 ratio 仅支持 adaptive。 */
+function normalizeVideoRequest(
+  model: OfflineModel,
+  opts: { duration?: number; aspectRatio?: string; resolution?: string },
+  capability: VideoModelCapability,
+) {
+  const duration = typeof opts.duration === 'number' && opts.duration > 0
+    ? Math.min(capability.maxDuration, Math.max(capability.minDuration, Math.round(opts.duration)))
+    : undefined;
+  const resolution = opts.resolution
+    ? (capability.resolutions.includes(opts.resolution)
+      ? opts.resolution
+      : capability.resolutions.includes('720p') ? '720p' : capability.resolutions[0])
+    : undefined;
+  return { duration, resolution, isSeedance25: /seedance-2-5/i.test(model.model_name || '') };
+}
+
+/** 组装方舟视频生成请求体；首尾帧在提交前转为方舟可读取的格式。 */
+async function buildArkVideoBody(
+  model: OfflineModel,
+  opts: { prompt: string; firstFrame?: string; lastFrame?: string; duration?: number; aspectRatio?: string; resolution?: string },
+  capability: VideoModelCapability,
+  effectiveFormat: string,
+): Promise<Record<string, unknown>> {
+  const { duration, resolution, isSeedance25 } = normalizeVideoRequest(model, opts, capability);
+  const [firstFrame, lastFrame] = await Promise.all([
+    toArkImageInput(opts.firstFrame),
+    toArkImageInput(opts.lastFrame),
+  ]);
+  const submitBody: Record<string, unknown> = {
+    model: model.model_name,
+    content: buildSeedanceContent(opts.prompt, firstFrame, lastFrame),
+  };
+  if (duration) submitBody.duration = duration;
+  // Seedance 2.5 首帧/首尾帧任务的 ratio 仅支持 adaptive，传入具体比例会被强校验拒绝
+  if (isSeedance25 && (opts.firstFrame || opts.lastFrame)) submitBody.ratio = 'adaptive';
+  else if (opts.aspectRatio) submitBody.ratio = opts.aspectRatio;
+  if (resolution) submitBody.resolution = resolution;
+  // output_format 为 Seedance 2.5 的新字段；2.0/1.0 无此参数，不能传旧的 format
+  if (isSeedance25 && capability.formats.includes(effectiveFormat)) submitBody.output_format = effectiveFormat;
+  return submitBody;
+}
+
 async function pollUntilDone(fetchStatus: () => Promise<{ status: string; url?: string; error?: string }>, timeoutMs = 9 * 60 * 1000): Promise<string> {
   const start = Date.now();
   // 自适应轮询：先 3s，逐步到 10s
@@ -529,7 +638,9 @@ async function pollUntilDone(fetchStatus: () => Promise<{ status: string; url?: 
       if (!s.url) throw new Error('视频生成完成但未返回地址');
       return s.url;
     }
-    if (s.status === 'failed' || s.status === 'error') throw new Error(s.error || '视频生成失败');
+    if (s.status === 'failed' || s.status === 'error' || s.status === 'expired' || s.status === 'cancelled') {
+      throw new Error(s.error || (s.status === 'expired' ? '视频生成超时（服务端任务已过期）' : '视频生成失败'));
+    }
     await new Promise((r) => setTimeout(r, delay));
     delay = Math.min(10000, delay + 1000);
   }
@@ -595,15 +706,7 @@ export async function generateVideo(opts: {
   }
 
   // ---- Ark / Seedance（含 doubao 视频）----
-  const content = buildSeedanceContent(opts.prompt, opts.firstFrame, opts.lastFrame);
-  const submitBody: Record<string, unknown> = {
-    model: model.model_name,
-    content,
-  };
-  if (opts.duration) submitBody.duration = opts.duration;
-  if (opts.aspectRatio) submitBody.ratio = opts.aspectRatio;
-  if (opts.resolution) submitBody.resolution = opts.resolution;
-  if (capability.formats.includes(effectiveFormat)) submitBody.format = effectiveFormat;
+  const submitBody = await buildArkVideoBody(model, opts, capability, effectiveFormat);
 
   const submit = await vendorFetch({
     url: `${base}/contents/generations/tasks`,
@@ -638,7 +741,7 @@ const VIDEO_POLL_TIMEOUT_MS = 12 * 60 * 1000;
 const VIDEO_RESULT_ALIASES = ['video_url', 'videoUrl', 'url'];
 
 /** 构造视频任务计划（Ark / 可灵）：提交 + 轮询 + 成品落地；含输出格式能力校验与降级 */
-export function buildVideoTaskPlan(
+export async function buildVideoTaskPlan(
   model: OfflineModel,
   opts: {
     prompt: string;
@@ -649,7 +752,7 @@ export function buildVideoTaskPlan(
     resolution?: string;
     format?: string;
   },
-): TaskPlan {
+): Promise<TaskPlan> {
   const base = getApiBase(model);
   const capability = model.videoCapability || getVideoModelCapabilities(model.model_name);
   const preferredFormat = opts.format || getPreferredVideoFormat();
@@ -702,12 +805,7 @@ export function buildVideoTaskPlan(
   }
 
   // ---- Ark / Seedance（含 doubao 视频）----
-  const content = buildSeedanceContent(opts.prompt, opts.firstFrame, opts.lastFrame);
-  const submitBody: Record<string, unknown> = { model: model.model_name, content };
-  if (opts.duration) submitBody.duration = opts.duration;
-  if (opts.aspectRatio) submitBody.ratio = opts.aspectRatio;
-  if (opts.resolution) submitBody.resolution = opts.resolution;
-  if (capability.formats.includes(effectiveFormat)) submitBody.format = effectiveFormat;
+  const submitBody = await buildArkVideoBody(model, opts, capability, effectiveFormat);
   const authHeader = `Bearer ${model.api_key}`;
   const submit: HttpStep = {
     url: `${base}/contents/generations/tasks`,
@@ -721,7 +819,7 @@ export function buildVideoTaskPlan(
     headers: { Authorization: authHeader },
     statusPaths: ['status'],
     successValues: ['succeeded', 'completed', 'done'],
-    failValues: ['failed', 'error'],
+    failValues: ['failed', 'error', 'expired', 'cancelled'],
     errorPaths: ['error.message'],
     progressMid: 55,
     intervalMs: VIDEO_POLL_INTERVAL_MS,

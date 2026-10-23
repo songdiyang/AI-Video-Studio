@@ -1,8 +1,11 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FileText, MessageCircle, Sparkles } from 'lucide-react';
 import type { StoryboardScene } from '../../views/StoryBoard/useSceneManager';
 import BlockEditor from '../../views/StoryBoard/BlockEditor';
 import type { PromptField } from '../../views/StoryBoard/BlockEditor/DialogEditor';
+import { SceneMetaBar } from '../../views/StoryBoard/ScenePreviewPanel';
+import StoryboardLockButton from '../../views/StoryBoard/components/StoryboardLockButton';
+import { getVideoModelCapabilities } from '../../services/localAI';
 import ContentEditorPanel, { type EditorSaveStatus, type EditorSessionHandle } from '../ContentEditorPanel';
 import { useToast } from '../../contexts/ToastContext';
 
@@ -27,6 +30,10 @@ interface DirectorSpaceProps {
   onUpdateDialogues?: (dialogues: any[]) => Promise<boolean>;
   onUpdateVoiceover?: (voiceover: any) => Promise<boolean>;
   onUpdateNegativePrompt?: (value: string) => Promise<boolean>;
+  onUpdateCharactersAndLocation?: (characters: string[], location: string, characterIds?: number[], sceneId?: number) => Promise<boolean>;
+  onUpdateProps?: (props: string[]) => Promise<boolean>;
+  onUpdateDuration?: (duration: number) => Promise<boolean>;
+  onUpdateScene?: (updates: Partial<StoryboardScene>) => Promise<boolean> | void;
   onGenerateImage?: (id: number, prompt: string, regenerateTarget?: 'first' | 'last' | 'both', forceRegenerate?: boolean) => Promise<{ success: boolean; error?: string }>;
   onGenerateVideo?: (id: number) => Promise<{ success: boolean; error?: string }>;
   models?: AIModel[];
@@ -83,6 +90,11 @@ const DirectorSpaceSession: React.FC<DirectorSpaceProps> = (props) => {
   const child = useRef<EditorSessionHandle | null>(null);
   const switching = useRef(false);
   const registerChild = useCallback((handle: EditorSessionHandle | null) => { child.current = handle; }, []);
+  // 分镜时长可选范围跟随当前视频模型能力，与预览区元数据栏保持一致
+  const videoDurationRange = useMemo(() => {
+    const capability = getVideoModelCapabilities(props.videoModel || '');
+    return { minDuration: capability.minDuration, maxDuration: capability.maxDuration };
+  }, [props.videoModel]);
   // 注册对象不随输入/标签重建；flush 始终读取当前子草稿。
   const handle = useRef<EditorSessionHandle>({ flush: async () => child.current ? child.current.flush() : false });
   useEffect(() => {
@@ -109,14 +121,35 @@ const DirectorSpaceSession: React.FC<DirectorSpaceProps> = (props) => {
 
   return (
     <ContentEditorPanel
-      title={`分镜 ${scene.order || scene.id}${scene.location ? ` · ${scene.location}` : ''}`}
+      title={`分镜 ${scene.order || scene.id}`}
       kind={scene.hasAction ? '运动分镜' : '静止分镜'}
+      meta={
+        <SceneMetaBar
+          scene={scene}
+          projectCharacters={props.projectCharacters || []}
+          projectScenes={props.projectScenes || []}
+          projectProps={props.projectProps || []}
+          videoDurationRange={videoDurationRange}
+          onUpdateCharactersAndLocation={props.onUpdateCharactersAndLocation}
+          onUpdateProps={props.onUpdateProps}
+          onUpdateScene={props.onUpdateScene}
+          onUpdateDuration={props.onUpdateDuration}
+        />
+      }
+      extra={
+        <StoryboardLockButton
+          storyboardId={scene.id}
+          isLocked={scene.isLocked || false}
+          size="sm"
+          onLockChange={(locked) => { void props.onUpdateScene?.({ isLocked: locked }); }}
+        />
+      }
       tabs={TABS}
       activeTab={tab}
       onTabChange={id => { void switchTo(() => setTab(id as typeof tab)); }}
       status={status}
       onSave={async () => { if (await handle.current.flush()) showToast('分镜已保存', 'success'); }}
-      actions={<div ref={setActionsTarget} className="flex flex-wrap items-center gap-2 min-w-0" />}
+      actions={<div ref={setActionsTarget} className="flex flex-1 flex-wrap items-center gap-2 min-w-0" />}
     >
       {tab === 'prompts' && (
         <div className="flex gap-2 overflow-x-auto pb-2" aria-label="提示词类型">

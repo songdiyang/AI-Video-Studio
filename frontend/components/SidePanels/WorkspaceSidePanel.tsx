@@ -6,10 +6,11 @@
  *    分组标题行（chevron + 图标 + 名称）在本面板渲染；分组内容仍由
  *    StoryBoard 内部渲染，通过 createPortal 送进各分组的内容容器
  *    （Portal 保留 StoryboardProvider 上下文，避免 useStoryboardContext 崩溃）。
+ *    折叠时仅用 CSS 隐藏内容容器、不卸载，保留滚动位置与编辑/草稿状态。
  *  - 无工程：提示用户创建工程，提供「新建工程」入口
  */
-import React, { useState, useCallback, useRef } from 'react';
-import { Film, FolderOpen, Plus, LayoutList, Package, FileText, ChevronRight, ChevronDown } from 'lucide-react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
+import { Film, FolderOpen, Plus, LayoutList, Package, FileText, ChevronRight } from 'lucide-react';
 import { useWorkbench } from '../../contexts/WorkbenchContext';
 import { useStoryboardBridgeSafe } from '../../contexts/StoryboardBridgeContext';
 import { useLanguage } from '../../contexts/LanguageContext';
@@ -36,13 +37,14 @@ const AccordionSection: React.FC<{
   label: string;
   expanded: boolean;
   enabled: boolean;
-  /** 是否占据剩余空间（分镜列表）：未手动拖拽前自动填满，展开其他分组时让位 */
+  /** 是否优先获得更多弹性空间（分镜列表）：未手动拖拽前参与剩余空间分配，展开其他分组时按权重让位 */
   grow: boolean;
   /** 手动拖拽后固定的高度（px）；null 表示自适应/填充 */
   height: number | null;
   onResize: (id: string, px: number) => void;
+  onReset: (id: string) => void;
   onToggle: (id: string) => void;
-}> = ({ meta, label, expanded, enabled, grow, height, onResize, onToggle }) => {
+}> = ({ meta, label, expanded, enabled, grow, height, onResize, onReset, onToggle }) => {
   const bridge = useStoryboardBridgeSafe();
   const { t } = useLanguage();
   // 只依赖稳定的 setContainer / setSectionHeaderSlot（useCallback 空依赖，引用不随
@@ -51,11 +53,13 @@ const AccordionSection: React.FC<{
   const setContainer = bridge?.setContainer;
   const setSectionHeaderSlot = bridge?.setSectionHeaderSlot;
   const Icon = meta.icon;
-  const ChevronIcon = expanded ? ChevronDown : ChevronRight;
   const localRef = useRef<HTMLDivElement | null>(null);
+  // 整个分组（标题 + 内容 + 拖拽条）的根节点，用于拖拽测高与高度约束
+  const sectionRef = useRef<HTMLDivElement | null>(null);
   const [resizing, setResizing] = useState(false);
 
-  // callback ref：元素挂载时注册容器（同时留存本地引用用于拖拽测高），卸载（折叠）时注销
+  // callback ref：元素挂载时注册容器（同时留存本地引用用于拖拽测高）。
+  // 折叠时不卸载容器（仅由 CSS hidden 隐藏），确保各面板的滚动位置和编辑状态不丢失。
   const containerRef = useCallback(
     (el: HTMLDivElement | null) => {
       localRef.current = el;
@@ -72,29 +76,50 @@ const AccordionSection: React.FC<{
     [setSectionHeaderSlot, meta.id],
   );
 
-  // 拖拽下边界调整本分组高度：从当前渲染高度出发，跟手计算新高度。
-  // 上下均有限制：下限 MIN_H；上限为可用区域高度扣除预留（保证其他分组标题/手柄仍可见）。
+  // 底部锚定的分组：手柄在顶部，向上拖动 = 撑开（顶部边缘跟随指针，底部保持锚定）
+  const handleAtTop = !grow;
+
+  // 拖拽边界调整本分组高度：从当前渲染高度出发，跟手计算新高度。
+  // 上限为可用区域高度扣除预留，保证各分组标题/拖拽条始终在可视区内。
   const startResize = useCallback(
     (e: React.PointerEvent) => {
       if (e.button !== 0) return;
-      e.preventDefault();
       const MIN_H = 80;
       const MIN_RESERVE = 120;
       const startY = e.clientY;
-      const startH = localRef.current?.offsetHeight ?? 200;
+      const startH = sectionRef.current?.offsetHeight ?? 200;
+      const handleEl = e.currentTarget as HTMLElement;
+      const pointerId = e.pointerId;
+      try { handleEl.setPointerCapture(pointerId); } catch { /* 忽略 */ }
+      let next = startH;
+      let started = false;
+      let frame = 0;
       setResizing(true);
       document.body.style.cursor = 'row-resize';
       document.body.style.userSelect = 'none';
-      const onMove = (ev: PointerEvent) => {
-        const dy = ev.clientY - startY;
-        // 容器根节点的父元素即手风琴列包裹层，其 clientHeight 为可用总高
-        const wrapper = localRef.current?.parentElement?.parentElement;
-        const avail = wrapper ? wrapper.clientHeight : window.innerHeight;
-        const maxH = Math.max(MIN_H, avail - MIN_RESERVE);
-        const next = Math.min(maxH, Math.max(MIN_H, Math.round(startH + dy)));
+
+      const apply = () => {
+        frame = 0;
         onResize(meta.id, next);
       };
+      const onMove = (ev: PointerEvent) => {
+        const delta = ev.clientY - startY;
+        // 未超过阈值视为点击，不把弹性分组转成固定高度
+        if (!started && Math.abs(delta) < 2) return;
+        started = true;
+        // 手风琴列包裹层的可用总高
+        const wrapper = sectionRef.current?.parentElement;
+        const avail = wrapper ? wrapper.clientHeight : window.innerHeight;
+        const maxH = Math.max(MIN_H, avail - MIN_RESERVE);
+        // 顶部手柄：向上拖（delta 为负）应增加高度
+        next = Math.min(maxH, Math.max(MIN_H, Math.round(startH + (handleAtTop ? -delta : delta))));
+        // 用 rAF 合并高频 pointermove，避免拖拽时整栏重渲染掉帧
+        if (!frame) frame = requestAnimationFrame(apply);
+      };
       const onUp = () => {
+        if (frame) cancelAnimationFrame(frame);
+        if (started) onResize(meta.id, next);
+        try { handleEl.releasePointerCapture(pointerId); } catch { /* 忽略 */ }
         window.removeEventListener('pointermove', onMove);
         window.removeEventListener('pointerup', onUp);
         document.body.style.cursor = '';
@@ -107,10 +132,43 @@ const AccordionSection: React.FC<{
     [meta.id, onResize],
   );
 
-  const isFill = grow && height == null;
+  const isFlexible = expanded && (height == null || grow);
+  const isFixed = expanded && height != null && !grow;
+  // 展开的分组共享侧栏高度：分镜列表权重更高，其他分组展开时从它的空间里分走一部分
+  const growWeight = grow ? 1.6 : 1;
 
   return (
-    <div className={`flex flex-col border-b border-(--border-color) last:border-b-0 min-h-0 ${isFill ? 'flex-1' : 'shrink-0'}`}>
+    <div
+      ref={sectionRef}
+      className={`relative flex flex-col border-b border-(--border-color) last:border-b-0 ${
+        expanded ? 'min-h-9' : 'min-h-0'
+      } ${isFlexible ? 'flex-1' : isFixed ? 'shrink' : 'shrink-0'}`}
+      style={
+        isFlexible
+          ? { flexGrow: growWeight, flexBasis: 0 }
+          : isFixed
+            ? { height }
+            : undefined
+      }
+    >
+      {/* 拖拽手柄：覆盖在分组边界上的 6px 命中区；悬停显示 1px 强调线，双击恢复自动高度 */}
+      {expanded && enabled && !grow && (
+        <div
+          onPointerDown={startResize}
+          onDoubleClick={(e) => { e.preventDefault(); onReset(meta.id); }}
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label="拖动调整分组高度，双击恢复自动高度"
+          title="拖动调整高度，双击恢复自动高度"
+          className="group absolute -top-0.5 left-0 right-0 z-20 h-1.5 cursor-row-resize touch-none"
+        >
+          <div
+            className={`pointer-events-none absolute left-0 right-0 top-1/2 h-px -translate-y-1/2 transition-colors ${
+              resizing ? 'bg-(--accent)' : 'bg-transparent group-hover:bg-(--accent)/60'
+            }`}
+          />
+        </div>
+      )}
       {/* 分组标题行：左侧可点击的折叠区 + 右侧操作插槽 */}
       <div className="flex items-center gap-1 pr-2">
         <button
@@ -118,44 +176,28 @@ const AccordionSection: React.FC<{
           disabled={!enabled}
           onClick={() => onToggle(meta.id)}
           aria-expanded={expanded}
-          className={`flex-1 flex items-center gap-2.5 px-3 py-1.5 text-left text-xs transition-colors shrink-0 ${
+          className={`flex-1 flex items-center gap-2 px-2.5 py-1 text-left text-xs transition-colors shrink-0 select-none ${
             enabled
               ? 'text-(--text-primary) hover:bg-(--bg-card-hover)'
               : 'text-(--text-muted) opacity-50 cursor-not-allowed'
           }`}
           title={enabled ? (expanded ? t.frame.workspace.clickCollapse : t.frame.workspace.clickExpand) : t.frame.workspace.availableInWorkspace}
         >
-          <ChevronIcon className="w-3.5 h-3.5 opacity-40 transition-transform shrink-0" />
+          <ChevronRight className={`w-3.5 h-3.5 opacity-40 transition-transform duration-150 shrink-0 ${expanded ? 'rotate-90' : ''}`} />
           <Icon className="w-4 h-4 shrink-0 opacity-70" />
           <span className="flex-1 font-medium text-left">{label}</span>
         </button>
-        {/* 操作插槽：仅展开且可用时存在，面板通过 portal 把工具栏按钮放进来 */}
-        {expanded && enabled && <div ref={headerSlotRef} className="flex items-center gap-1 shrink-0" />}
+        {/* 操作插槽：仅展开且可用时可见，面板通过 portal 把工具栏按钮放进来；折叠时保留挂载以维持工具状态 */}
+        {enabled && (
+          <div ref={headerSlotRef} className={`flex items-center gap-1 shrink-0 ${expanded ? '' : 'hidden'}`} />
+        )}
       </div>
       {/* 分组内容容器：StoryBoard 通过 portal 填充。
-          手动拖拽后（height 非空）固定高度；否则 grow 分组填满剩余，其余随内容自适应。 */}
-      {expanded && enabled && (
+          折叠时只做 CSS 隐藏、不卸载，保证展开后滚动位置/草稿状态原样恢复。 */}
+      {enabled && (
         <div
           ref={containerRef}
-          style={height != null ? { height } : undefined}
-          className={
-            height != null
-              ? 'shrink-0 overflow-y-auto'
-              : grow
-                ? 'flex-1 min-h-0 overflow-y-auto'
-                : 'max-h-[45vh] overflow-y-auto shrink-0'
-          }
-        />
-      )}
-      {/* 拖拽手柄：上下拖动调整本分组高度 */}
-      {expanded && enabled && (
-        <div
-          onPointerDown={startResize}
-          role="separator"
-          aria-orientation="horizontal"
-          className={`h-[5px] shrink-0 cursor-row-resize transition-colors -mt-[2px] ${
-            resizing ? 'bg-(--accent)/60' : 'hover:bg-(--accent)/40'
-          }`}
+          className={`flex-1 min-h-0 overflow-y-auto ${expanded ? '' : 'hidden'}`}
         />
       )}
     </div>
@@ -181,16 +223,30 @@ const WorkspaceSidePanel: React.FC = () => {
   });
 
   const handleResize = useCallback((id: string, px: number) => {
+    setSectionHeights(prev => (prev[id] === px ? prev : { ...prev, [id]: px }));
+  }, []);
+
+  // 双击拖拽条恢复为自动/弹性高度
+  const handleReset = useCallback((id: string) => {
     setSectionHeights(prev => {
-      const next = { ...prev, [id]: px };
-      try {
-        localStorage.setItem('workspace_section_heights', JSON.stringify(next));
-      } catch {
-        /* 忽略 */
-      }
+      if (!(id in prev)) return prev;
+      const next = { ...prev };
+      delete next[id];
       return next;
     });
   }, []);
+
+  // 拖拽结束后再落盘（防抖），避免拖动过程中每帧同步写 localStorage 造成掉帧
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      try {
+        localStorage.setItem('workspace_section_heights', JSON.stringify(sectionHeights));
+      } catch {
+        /* 忽略 */
+      }
+    }, 200);
+    return () => window.clearTimeout(timer);
+  }, [sectionHeights]);
 
   // 切换展开/折叠（只切换折叠，不再跳转侧栏 tab，避免标题与内容跳走）
   const toggleSection = useCallback((sectionId: string) => {
@@ -253,6 +309,7 @@ const WorkspaceSidePanel: React.FC = () => {
             grow={meta.id === 'scenes'}
             height={sectionHeights[meta.id] ?? null}
             onResize={handleResize}
+            onReset={handleReset}
             onToggle={toggleSection}
           />
         ))}

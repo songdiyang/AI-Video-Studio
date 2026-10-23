@@ -9,12 +9,13 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAIAssistantUI, useAIAssistantData } from '../../contexts/AIAssistantContext';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { useResizableSidebar } from '../../hooks/useResizableSidebar';
+import ResizeRevealHandle from './ResizeRevealHandle';
 
 const AIAssistantPanel = lazy(() => import('../AIAssistantPanel'));
 
 const AIAssistantSidePanel: React.FC = () => {
-  const { isOpen, close, projectId } = useAIAssistantUI();
-  const { currentFrame, scenes, onAction, characters, locations, scripts, projectName, projectDescription } = useAIAssistantData();
+  const { isOpen, open, close, projectId } = useAIAssistantUI();
+  const { currentFrame, scenes, onAction, characters, locations, studios, scripts, projectName, projectDescription } = useAIAssistantData();
   const { t } = useLanguage();
 
   const resize = useResizableSidebar({
@@ -23,10 +24,14 @@ const AIAssistantSidePanel: React.FC = () => {
     minWidth: 300,
     maxWidth: 720,
     side: 'right',
+    // 先拖到最小宽度 300，继续向内拖 60px 才收起（参考 VS Code）
+    collapseThreshold: 240,
+    onCollapse: close,
   });
 
   return (
-    <AnimatePresence>
+    <>
+      <AnimatePresence>
       {isOpen && (
         <motion.aside
           key="ai-assistant-sidepanel"
@@ -42,7 +47,7 @@ const AIAssistantSidePanel: React.FC = () => {
             {...resize.handleProps}
             role="separator"
             aria-orientation="vertical"
-            className={`absolute left-0 top-0 bottom-0 w-[5px] z-10 cursor-col-resize transition-colors ${
+            className={`absolute left-0 top-0 bottom-0 w-1.25 z-10 cursor-col-resize transition-colors ${
               resize.isDragging ? 'bg-(--accent)/60' : 'hover:bg-(--accent)/40'
             }`}
           />
@@ -62,6 +67,7 @@ const AIAssistantSidePanel: React.FC = () => {
               scenes={scenes}
               characters={characters}
               locations={locations}
+              studios={studios}
               scripts={scripts}
               onClose={close}
               onAction={onAction || undefined}
@@ -70,6 +76,14 @@ const AIAssistantSidePanel: React.FC = () => {
         </motion.aside>
       )}
     </AnimatePresence>
+      {!isOpen && (
+        <ResizeRevealHandle
+          side="right"
+          label={t.frame.activityBar.revealRight}
+          onReveal={open}
+        />
+      )}
+    </>
   );
 };
 

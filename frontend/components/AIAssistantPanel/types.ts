@@ -30,7 +30,7 @@ export interface ChatMessageStep {
 /** 后台任务进度卡片数据：由 agent 循环在提交长任务后挂到对话消息上，卡片自轮询工作流状态 */
 export interface TaskCardData {
   /** 任务类别 */
-  kind: 'storyboard' | 'image' | 'video';
+  kind: 'storyboard' | 'image' | 'video' | 'generic';
   /** 工作流 jobId；离线分镜拆分同步完成时可缺省（直接进入完成态，用 sceneCount） */
   jobId?: string;
   /** 卡片标题（如「重新拆分 · 第1集」） */

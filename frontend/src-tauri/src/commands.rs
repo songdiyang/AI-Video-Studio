@@ -4,12 +4,14 @@
 use crate::storage::{StoragePaths, ProjectMetadata, MediaFileInfo};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use uuid::Uuid;
 
 /// 应用状态
 pub struct AppState {
     pub storage: StoragePaths,
+    /// 双击 / 命令行打开 .jzp 后待前端接管的工程目录（前端就绪后取走）
+    pub pending_open: std::sync::Mutex<Option<String>>,
 }
 
 /// 项目创建参数
@@ -101,15 +103,24 @@ pub async fn open_project(
     path: String,
     state: State<'_, AppState>,
 ) -> Result<ProjectMetadata, String> {
-    let manifest_path = crate::storage::resolve_manifest(&path)?;
+    open_project_inner(&app, &state.storage, &path)
+}
+
+/// 打开已有工作态工程的内部实现（命令与双击入口共用）
+fn open_project_inner(
+    app: &AppHandle,
+    storage: &StoragePaths,
+    path: &str,
+) -> Result<ProjectMetadata, String> {
+    let manifest_path = crate::storage::resolve_manifest(path)?;
     let meta = crate::storage::read_manifest(&manifest_path)?;
     let project_dir = manifest_path
         .parent()
         .ok_or("Invalid manifest location")?
         .to_path_buf();
-    crate::storage::upsert_registry(&state.storage.root, &project_dir)?;
+    crate::storage::upsert_registry(&storage.root, &project_dir)?;
     // 授予工程 media/ 目录（递归）读取权限，使已落地素材跨会话可渲染
-    grant_media_scope(&app, &project_dir.join("media"));
+    grant_media_scope(app, &project_dir.join("media"));
     Ok(meta)
 }
 
@@ -647,4 +658,200 @@ pub async fn download_media_file(
         height: None,
         thumbnail_path: None,
     })
+}
+
+/// 读取本地媒体文件并转为 data URL。
+/// 供无法访问本机 asset 协议的厂商 API（如方舟图生视频的首尾帧）使用，避免 CORS/CSP 限制。
+#[tauri::command]
+pub async fn read_media_data_url(path: String) -> Result<String, String> {
+    use base64::{engine::general_purpose, Engine as _};
+    const MAX_BYTES: usize = 20 * 1024 * 1024;
+    let file_path = PathBuf::from(&path);
+    let meta = tokio::fs::metadata(&file_path)
+        .await
+        .map_err(|e| format!("读取本地媒体信息失败: {}", e))?;
+    if meta.len() as usize > MAX_BYTES {
+        return Err("本地媒体超过 20MB，无法提交给厂商 API".into());
+    }
+    let bytes = tokio::fs::read(&file_path)
+        .await
+        .map_err(|e| format!("读取本地媒体失败: {}", e))?;
+    if bytes.is_empty() {
+        return Err("本地媒体为空".into());
+    }
+    let mime = crate::storage::get_mime_type(&file_path);
+    Ok(format!("data:{};base64,{}", mime, general_purpose::STANDARD.encode(bytes)))
+}
+
+// ==================== 工程归档包（.jzp）与双击打开 ====================
+
+/// 在已注册工程中按清单 id 查找（双击同一个 .jzp 时避免重复解包）
+fn find_project_by_id(app_root: &PathBuf, id: &str) -> Option<String> {
+    for entry in crate::storage::read_registry(app_root) {
+        if let Ok(manifest) = crate::storage::resolve_manifest(&entry.path)
+            .and_then(|m| crate::storage::read_manifest(&m))
+        {
+            if manifest.id == id {
+                return Some(entry.path);
+            }
+        }
+    }
+    None
+}
+
+/// 通知前端：工程已打开（事件 + 待处理标记，覆盖“前端未就绪”的场景）
+fn announce_opened(app: &AppHandle, meta: &ProjectMetadata) {
+    if let Some(state) = app.try_state::<AppState>() {
+        if let Ok(mut slot) = state.pending_open.lock() {
+            *slot = Some(meta.path.clone());
+        }
+    }
+    let _ = app.emit("jzp-project-opened", meta);
+}
+
+/// 打开 .jzp：已注册（同清单 id）直接打开，否则解包到作品目录后注册并打开。
+/// 供双击文件关联 / 命令行参数调用；前端通过事件或 take_pending_project 接管。
+pub fn handle_open_package(app: &AppHandle, package_path: String) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let result = (|| -> Result<ProjectMetadata, String> {
+            let package = PathBuf::from(&package_path);
+            let meta = crate::package::read_package_manifest(&package)?;
+            let state = app.state::<AppState>();
+            if let Some(existing) = find_project_by_id(&state.storage.root, &meta.id) {
+                return open_project_inner(&app, &state.storage, &existing);
+            }
+            let root = crate::storage::default_projects_root();
+            let imported = crate::package::import_package(&package, &root)?;
+            let project_dir = PathBuf::from(&imported.path);
+            crate::storage::upsert_registry(&state.storage.root, &project_dir)?;
+            grant_media_scope(&app, &project_dir.join("media"));
+            Ok(imported)
+        })();
+        match result {
+            Ok(meta) => announce_opened(&app, &meta),
+            Err(err) => log::error!("打开工程包失败 {}: {}", package_path, err),
+        }
+    });
+}
+
+/// 把 .jzp 关联到当前可执行文件（当前用户注册表，无需管理员）
+pub fn ensure_jzp_association() -> Result<String, String> {
+    #[cfg(target_os = "windows")]
+    {
+        use winreg::enums::HKEY_CURRENT_USER;
+        use winreg::RegKey;
+
+        let exe = std::env::current_exe()
+            .map_err(|e| format!("获取程序路径失败: {}", e))?
+            .to_string_lossy()
+            .to_string();
+        let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+
+        let (ext, _) = hkcu
+            .create_subkey("Software\\Classes\\.jzp")
+            .map_err(|e| format!("写入 .jzp 扩展名关联失败: {}", e))?;
+        ext.set_value("", &"AIVideoStudio.jzp".to_string())
+            .map_err(|e| format!("写入 .jzp 扩展名关联失败: {}", e))?;
+
+        let (prog, _) = hkcu
+            .create_subkey("Software\\Classes\\AIVideoStudio.jzp")
+            .map_err(|e| format!("写入工程文件类型失败: {}", e))?;
+        prog.set_value("", &"AI Video Studio 工程".to_string())
+            .map_err(|e| format!("写入工程文件类型失败: {}", e))?;
+
+        let (icon, _) = hkcu
+            .create_subkey("Software\\Classes\\AIVideoStudio.jzp\\DefaultIcon")
+            .map_err(|e| format!("写入图标关联失败: {}", e))?;
+        icon.set_value("", &format!("\"{}\",0", exe))
+            .map_err(|e| format!("写入图标关联失败: {}", e))?;
+
+        let (cmd, _) = hkcu
+            .create_subkey("Software\\Classes\\AIVideoStudio.jzp\\shell\\open\\command")
+            .map_err(|e| format!("写入打开命令失败: {}", e))?;
+        cmd.set_value("", &format!("\"{}\" \"%1\"", exe))
+            .map_err(|e| format!("写入打开命令失败: {}", e))?;
+
+        log::info!("Registered .jzp file association -> {}", exe);
+        Ok(exe)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        Err("当前平台暂不支持自动注册文件关联".to_string())
+    }
+}
+
+/// 注册 .jzp 文件关联到当前可执行文件（设置页手动触发）
+#[tauri::command]
+pub async fn register_jzp_association() -> Result<String, String> {
+    ensure_jzp_association()
+}
+
+/// 从命令行参数中提取 .jzp 工程包路径
+pub fn package_arg(args: &[String]) -> Option<String> {
+    args.iter().find_map(|arg| {
+        let path = PathBuf::from(arg);
+        let is_package = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.eq_ignore_ascii_case(crate::storage::PROJECT_FILE_EXT))
+            .unwrap_or(false);
+        if !is_package {
+            return None;
+        }
+        let abs = if path.is_absolute() {
+            path
+        } else {
+            std::env::current_dir().ok()?.join(path)
+        };
+        if abs.is_file() {
+            Some(abs.to_string_lossy().to_string())
+        } else {
+            None
+        }
+    })
+}
+
+/// 导入 .jzp 工程包（已注册则直接打开）
+#[tauri::command]
+pub async fn import_project_package(
+    app: AppHandle,
+    path: String,
+    parent_dir: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<ProjectMetadata, String> {
+    let package = PathBuf::from(&path);
+    let package_meta = crate::package::read_package_manifest(&package)?;
+
+    if let Some(existing) = find_project_by_id(&state.storage.root, &package_meta.id) {
+        let meta = open_project_inner(&app, &state.storage, &existing)?;
+        announce_opened(&app, &meta);
+        return Ok(meta);
+    }
+
+    let root = match parent_dir {
+        Some(dir) if !dir.trim().is_empty() => PathBuf::from(dir),
+        _ => crate::storage::default_projects_root(),
+    };
+    let imported = crate::package::import_package(&package, &root)?;
+    let project_dir = PathBuf::from(&imported.path);
+    crate::storage::upsert_registry(&state.storage.root, &project_dir)?;
+    grant_media_scope(&app, &project_dir.join("media"));
+    announce_opened(&app, &imported);
+    Ok(imported)
+}
+
+/// 把工程打包为 .jzp（ZIP：project.json + data/ + media/）
+#[tauri::command]
+pub async fn export_project_package(
+    project_path: String,
+    dest_path: String,
+) -> Result<String, String> {
+    crate::package::export_package(&project_path, &dest_path)
+}
+
+/// 前端启动时取走待打开的工程（双击 .jzp 且当时前端尚未就绪）
+#[tauri::command]
+pub async fn take_pending_project(state: State<'_, AppState>) -> Result<Option<String>, String> {
+    Ok(state.pending_open.lock().ok().and_then(|mut slot| slot.take()))
 }

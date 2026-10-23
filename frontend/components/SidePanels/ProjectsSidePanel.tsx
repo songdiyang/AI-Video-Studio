@@ -6,19 +6,25 @@
  * 完整管理功能保留在 /projects 页面（底部入口跳转）。
  */
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { FolderOpen, RefreshCw, Loader2, Settings2, Plus, X, Monitor, Cloud } from 'lucide-react';
+import { FolderOpen, FolderInput, FileArchive, RefreshCw, Loader2, Settings2, Plus, X, Monitor, Cloud } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { Project, fetchProjects } from '../../services/projects';
+import { Project, fetchProjects, mapLocalProject } from '../../services/projects';
 import {
   createProject,
   openProject,
   deleteProject,
   getEffectiveProjectsRoot,
+  importProjectPackage,
+  exportProjectPackage,
+  saveFile,
+  selectFile,
+  isTauri,
 } from '../../services/localApi';
 import { PROJECT_TYPES } from '../../types/projectTypes';
 import { useWorkbench } from '../../contexts/WorkbenchContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import { useLanguage } from '../../contexts/LanguageContext';
+import { useToast } from '../../contexts/ToastContext';
 
 interface ProjectsSidePanelProps {
   /** 打开项目后回调（用于关闭侧边栏面板） */
@@ -30,6 +36,7 @@ const ProjectsSidePanel: React.FC<ProjectsSidePanelProps> = ({ onOpenProject }) 
   const { currentProject, switchProject } = useWorkbench();
   const { confirm } = useConfirm();
   const { t } = useLanguage();
+  const { showToast } = useToast();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -40,6 +47,10 @@ const ProjectsSidePanel: React.FC<ProjectsSidePanelProps> = ({ onOpenProject }) 
   const [newName, setNewName] = useState('');
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  // 正在导入 .jzp 工程包
+  const [importingJzp, setImportingJzp] = useState(false);
+  // 正在打包的工程（local_path）
+  const [exportingPath, setExportingPath] = useState<string | null>(null);
 
   const loadProjects = useCallback(async () => {
     setLoading(true);
@@ -124,9 +135,54 @@ const ProjectsSidePanel: React.FC<ProjectsSidePanelProps> = ({ onOpenProject }) 
     }
   };
 
+  /** 导入 .jzp 工程包：解包到作品目录并注册打开 */
+  const handleAddJzp = async () => {
+    if (importingJzp) return;
+    if (!isTauri()) {
+      showToast(t.frame.projects.addJzpDesktopOnly, 'warning');
+      return;
+    }
+    const path = await selectFile(t.frame.projects.addJzpTitle, [
+      { name: t.frame.projects.addJzpFilter, extensions: ['jzp'] },
+    ]);
+    if (!path) return;
+    setImportingJzp(true);
+    try {
+      const meta = await importProjectPackage(path);
+      await loadProjects();
+      showToast(t.frame.projects.addJzpSuccess, 'success');
+      await handleOpen(mapLocalProject(meta));
+    } catch (err: any) {
+      showToast(err?.message || t.frame.projects.addJzpFailed, 'error');
+    } finally {
+      setImportingJzp(false);
+    }
+  };
+
+  /** 打包工程为 .jzp（含 project.json + data/ + media/） */
+  const handleExportJzp = async (e: React.MouseEvent, project: Project) => {
+    e.stopPropagation();
+    if (!project.local_path || exportingPath) return;
+    const dest = await saveFile(
+      t.frame.projects.exportJzpTitle,
+      `${project.name || '工程'}.jzp`,
+      [{ name: t.frame.projects.addJzpFilter, extensions: ['jzp'] }],
+    );
+    if (!dest) return;
+    setExportingPath(project.local_path);
+    try {
+      const saved = await exportProjectPackage(project.local_path, dest);
+      showToast(t.frame.projects.exportJzpSuccess.replace('{path}', saved), 'success');
+    } catch (err: any) {
+      showToast(err?.message || t.frame.projects.exportJzpFailed, 'error');
+    } finally {
+      setExportingPath(null);
+    }
+  };
+
   return (
     <div className="flex flex-col h-full min-h-0">
-      {/* 搜索 + 新建 + 刷新 */}
+      {/* 搜索 + 新建 + 添加 .jzp + 刷新 */}
       <div className="flex items-center gap-1.5 px-2 py-1.5 shrink-0">
         <input
           type="text"
@@ -141,6 +197,15 @@ const ProjectsSidePanel: React.FC<ProjectsSidePanelProps> = ({ onOpenProject }) 
           title={t.frame.projects.newTitle}
         >
           {showCreate ? <X className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
+        </button>
+        <button
+          onClick={handleAddJzp}
+          disabled={importingJzp}
+          className="p-1.5 rounded-md text-(--text-muted) hover:text-(--text-primary) hover:bg-white/5 transition-colors disabled:opacity-50"
+          title={t.frame.projects.addJzpTitle}
+          aria-label={t.frame.projects.addJzpTitle}
+        >
+          {importingJzp ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FolderInput className="w-3.5 h-3.5" />}
         </button>
         <button
           onClick={loadProjects}
@@ -241,13 +306,26 @@ const ProjectsSidePanel: React.FC<ProjectsSidePanelProps> = ({ onOpenProject }) 
                     )}
                   </button>
                   {isLocal && (
-                    <button
-                      onClick={(e) => handleRemoveLocal(e, project)}
-                      className="absolute right-1 top-1/2 -translate-y-1/2 p-1 rounded-md opacity-0 group-hover:opacity-100 text-[var(--text-muted)] hover:text-red-400 transition-all"
-                      title={t.frame.projects.removeHint}
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
+                    <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all">
+                      <button
+                        onClick={(e) => { void handleExportJzp(e, project); }}
+                        disabled={exportingPath === project.local_path}
+                        className="p-1 rounded-md text-[var(--text-muted)] hover:text-(--accent) transition-colors disabled:opacity-50"
+                        title={t.frame.projects.exportJzpTitle}
+                        aria-label={t.frame.projects.exportJzpTitle}
+                      >
+                        {exportingPath === project.local_path
+                          ? <Loader2 className="w-3 h-3 animate-spin" />
+                          : <FileArchive className="w-3 h-3" />}
+                      </button>
+                      <button
+                        onClick={(e) => handleRemoveLocal(e, project)}
+                        className="p-1 rounded-md text-[var(--text-muted)] hover:text-red-400 transition-colors"
+                        title={t.frame.projects.removeHint}
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
                   )}
                 </li>
               );

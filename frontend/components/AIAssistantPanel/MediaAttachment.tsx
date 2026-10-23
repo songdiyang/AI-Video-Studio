@@ -59,14 +59,14 @@ const MediaAttachment: React.FC<MediaAttachmentProps> = ({
 
   return (
     <div
-      className={`relative ${s.container} rounded-lg overflow-hidden border border-[var(--border-color)] bg-[var(--bg-input)] group flex-shrink-0 ${type === 'image' ? 'cursor-zoom-in' : 'cursor-pointer'}`}
+      className={`relative ${s.container} rounded-lg overflow-hidden border border-(--border-color) bg-(--bg-input) group shrink-0 ${type === 'image' ? 'cursor-zoom-in' : 'cursor-pointer'}`}
       onDoubleClick={handleDoubleClick}
       title={type === 'image' ? `双击放大${name ? `：${name}` : ''}` : (name || url)}
     >
       {type === 'image' ? (
         loading ? (
           <div className="w-full h-full flex items-center justify-center">
-            <div className="w-4 h-4 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin" />
+            <div className="w-4 h-4 border-2 border-(--accent) border-t-transparent rounded-full animate-spin" />
           </div>
         ) : (
           <img
@@ -79,14 +79,14 @@ const MediaAttachment: React.FC<MediaAttachmentProps> = ({
       ) : (
         <div className="w-full h-full flex flex-col items-center justify-center gap-1 p-1">
           {type === 'video' ? (
-            <Film size={s.icon} className="text-[var(--text-muted)]" />
+            <Film size={s.icon} className="text-(--text-muted)" />
           ) : type === 'script' ? (
-            <BookText size={s.icon} className="text-[var(--accent)]" />
+            <BookText size={s.icon} className="text-(--accent)" />
           ) : (
-            <FileText size={s.icon} className="text-[var(--text-muted)]" />
+            <FileText size={s.icon} className="text-(--text-muted)" />
           )}
           {name && (
-            <span className={`${s.text} ${type === 'script' ? 'text-[var(--accent)]' : 'text-[var(--text-muted)]'} truncate w-full text-center px-1`}>
+            <span className={`${s.text} ${type === 'script' ? 'text-(--accent)' : 'text-(--text-muted)'} truncate w-full text-center px-1`}>
               {name}
             </span>
           )}

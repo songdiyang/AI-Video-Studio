@@ -1,6 +1,5 @@
 import React from 'react';
-import { Button } from '@heroui/react';
-import { Plus, UserRound } from 'lucide-react';
+import { UserRound } from 'lucide-react';
 import { Character } from './types';
 import CharacterCard from './CharacterCard';
 import SimpleCharacterCard from './SimpleCharacterCard';
@@ -16,7 +15,6 @@ interface CharactersTabProps {
   onGenerateViews: (charName: string, characterId: number) => void;
   onShowDetail: (character: Character) => void;
   onPreview?: (character: Character) => void;
-  onCreate?: () => void;
   onDelete?: (character: Character) => void;
   onStoryboardStateChange?: (characterId: number, state: { stateId: number; stateName: string; stateImage?: string; stateOutfit?: string } | null) => void;
 }
@@ -31,27 +29,11 @@ const CharactersTab: React.FC<CharactersTabProps> = ({
   onGenerateViews,
   onShowDetail,
   onPreview,
-  onCreate,
   onDelete,
   onStoryboardStateChange,
 }) => {
   return (
     <div className="space-y-3">
-      {/* 分类内不再重复「全部角色」标题（父级 section 已承担分类名与计数），仅保留新建动作 */}
-      {onCreate && (
-        <div className="flex items-center justify-end mb-1">
-          <Button
-            size="sm"
-            variant="light"
-            className="h-7 px-2 text-xs text-(--text-secondary) hover:text-(--text-primary)"
-            startContent={<Plus className="w-3 h-3" />}
-            onPress={onCreate}
-          >
-            新建角色
-          </Button>
-        </div>
-      )}
-      
       {isLoadingCharacters ? (
         <div className="text-center py-12">
           <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-2"></div>

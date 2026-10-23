@@ -1,7 +1,13 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import ReactDOM from 'react-dom';
-import { Mail, X, Check, CheckCheck, Trash2, MessageSquare, Megaphone, Bell, ChevronLeft, ClipboardList, Clock, Flag, ExternalLink, CheckCircle, XCircle } from 'lucide-react';
+import { Mail, X, Check, CheckCheck, Trash2, MessageSquare, Megaphone, Bell, ChevronLeft, ClipboardList, Clock, Flag, ExternalLink, CheckCircle, XCircle, ListTodo, RotateCcw } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useLanguage } from '../contexts/LanguageContext';
+import { useToast } from '../contexts/ToastContext';
+import { consumeWorkflow, consumeAllFailed } from '../hooks/useWorkflow';
+import { useTaskQueue } from './TaskQueueBubble/useTaskQueue';
+import TaskItem, { getTaskName } from './TaskQueueBubble/TaskItem';
+import type { Translations } from '../locales/zh-CN';
 
 interface TaskData {
   taskId: number;
@@ -43,6 +49,28 @@ const PRIORITY_CONFIG: Record<string, { label: string; color: string; bgColor: s
   medium: { label: '中', color: '#3b82f6', bgColor: '#3b82f618' },
   high: { label: '高', color: '#f59e0b', bgColor: '#f59e0b18' },
   urgent: { label: '紧急', color: '#ef4444', bgColor: '#ef444418' },
+};
+
+// 任务状态样式（与底部面板原实现一致）
+const getTaskStatusColor = (status: string) => {
+  switch (status) {
+    case 'running': return 'text-[var(--accent)]';
+    case 'pending': return 'text-[var(--warning)]';
+    case 'completed': return 'text-[var(--success)]';
+    case 'failed': return 'text-[var(--danger)]';
+    default: return 'text-[var(--text-muted)]';
+  }
+};
+
+const getTaskStatusLabel = (status: string, t: Translations) => {
+  switch (status) {
+    case 'running': return t.frame.taskPanel.running;
+    case 'pending': return t.frame.taskPanel.pending;
+    case 'completed': return t.frame.taskPanel.completed;
+    case 'failed': return t.frame.taskPanel.failed;
+    case 'cancelled': return t.frame.taskPanel.cancelled;
+    default: return status;
+  }
 };
 
 /**
@@ -160,6 +188,8 @@ function renderLightMarkdown(text: string): React.ReactNode[] {
 }
 
 const InternalMailbox: React.FC = () => {
+  const { t } = useLanguage();
+  const { showToast } = useToast();
   const [isOpen, setIsOpen] = useState(false);
   const [mails, setMails] = useState<InternalMail[]>([]);
   const [total, setTotal] = useState(0);
@@ -174,6 +204,50 @@ const InternalMailbox: React.FC = () => {
   const triggerRef = useRef<HTMLButtonElement>(null);
   const dragState = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null);
   const limit = 20;
+
+  // 任务队列（自底部面板迁移）：轮询工作流任务进度，展示在站内信消息列表顶部
+  const { jobs, loading: tasksLoading, fetchJobs, getJobProgress, setIsExpanded: setTasksExpanded } = useTaskQueue({
+    onJobFailed: (job) => {
+      const name = getTaskName(job, t);
+      const reason = job.error_message || t.frame.taskPanel.unknownError;
+      showToast(
+        t.frame.taskPanel.failedToast.replace('{name}', name).replace('{reason}', reason),
+        'error',
+      );
+    },
+  });
+  const runningCount = jobs.filter(j => j.status === 'running').length;
+  const pendingCount = jobs.filter(j => j.status === 'pending').length;
+  const failedCount = jobs.filter(j => j.status === 'failed').length;
+  const activeCount = runningCount + pendingCount;
+
+  // 面板展开时加快轮询，收起时降速
+  useEffect(() => {
+    setTasksExpanded(isOpen);
+  }, [isOpen, setTasksExpanded]);
+
+  // 打开前将面板定位到站内信按钮下方（钳制在视口内）
+  const locatePanelNearTrigger = useCallback(() => {
+    if (!triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    const PANEL_W = 380;
+    const PANEL_H = 520;
+    setPanelPosition({
+      x: Math.max(8, Math.min(rect.left - 150, window.innerWidth - PANEL_W - 8)),
+      y: Math.max(8, Math.min(rect.bottom + 8, window.innerHeight - PANEL_H - 8)),
+    });
+  }, []);
+
+  // 支持外部事件打开（菜单栏/状态栏「任务」入口）
+  useEffect(() => {
+    const handleOpenRequest = () => {
+      locatePanelNearTrigger();
+      setIsOpen(true);
+      setSelectedMail(null);
+    };
+    window.addEventListener('internal-mailbox:open', handleOpenRequest);
+    return () => window.removeEventListener('internal-mailbox:open', handleOpenRequest);
+  }, [locatePanelNearTrigger]);
 
   const fetchUnreadCount = useCallback(async () => {
     try {
@@ -214,6 +288,16 @@ const InternalMailbox: React.FC = () => {
       fetchMails();
     }
   }, [isOpen, fetchMails]);
+
+  // 长任务完成等本地推送：立即刷新未读徽标与列表
+  useEffect(() => {
+    const onUpdated = () => {
+      void fetchUnreadCount();
+      if (isOpen) void fetchMails();
+    };
+    window.addEventListener('internal-mailbox:updated', onUpdated);
+    return () => window.removeEventListener('internal-mailbox:updated', onUpdated);
+  }, [fetchUnreadCount, fetchMails, isOpen]);
 
   // Click outside to close
   useEffect(() => {
@@ -609,6 +693,65 @@ const InternalMailbox: React.FC = () => {
                     animate={{ opacity: 1, x: 0 }}
                     exit={{ opacity: 0, x: 20 }}
                   >
+                    {/* 任务进度区（自底部任务面板迁移） */}
+                    <div className="sticky top-0 z-10" style={{ backgroundColor: 'var(--bg-card)' }}>
+                      <div className="flex items-center justify-between px-4 py-2" style={{ borderBottom: '1px solid var(--border-color)' }}>
+                        <div className="flex items-center gap-2">
+                          <ListTodo className="w-3.5 h-3.5" style={{ color: 'var(--text-secondary)' }} />
+                          <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>{t.frame.taskPanel.queue}</span>
+                          {activeCount > 0 && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded text-white" style={{ backgroundColor: 'var(--accent)' }}>{activeCount}</span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1">
+                          {failedCount > 0 && (
+                            <button
+                              onClick={async () => {
+                                try { await consumeAllFailed(); fetchJobs(false); }
+                                catch (err) { console.error('[Mailbox] 批量清除失败任务失败:', err); }
+                              }}
+                              className="text-[10px] px-1.5 py-0.5 rounded hover:bg-red-500/10 transition-colors"
+                              style={{ color: 'var(--danger)' }}
+                              title={t.frame.taskPanel.clearAllFailed}
+                            >
+                              {t.frame.taskPanel.failedCount.replace('{n}', String(failedCount))} · {t.frame.taskPanel.clear}
+                            </button>
+                          )}
+                          <button
+                            onClick={() => fetchJobs(true)}
+                            className="p-1 rounded hover:bg-(--bg-input) transition-colors"
+                            title={t.frame.taskPanel.refresh}
+                          >
+                            <RotateCcw className={`w-3.5 h-3.5 ${tasksLoading ? 'animate-spin' : ''}`} style={{ color: 'var(--text-muted)' }} />
+                          </button>
+                        </div>
+                      </div>
+                      {/* 任务列表 */}
+                      {jobs.length === 0 ? (
+                        <div className="px-4 py-3 text-xs" style={{ color: 'var(--text-muted)' }}>
+                          {activeCount === 0 && failedCount === 0 ? t.frame.taskPanel.noActive : t.frame.taskPanel.noRunning}
+                        </div>
+                      ) : (
+                        <div className="p-3 space-y-1.5" style={{ borderBottom: '1px solid var(--border-color)' }}>
+                          {jobs.map((job, index) => (
+                            <TaskItem
+                              key={job.id}
+                              job={job}
+                              progress={getJobProgress(job)}
+                              statusColor={getTaskStatusColor(job.status)}
+                              statusLabel={getTaskStatusLabel(job.status, t)}
+                              onCancelled={() => fetchJobs(false)}
+                              onDismiss={async () => {
+                                try { await consumeWorkflow(job.id); fetchJobs(false); }
+                                catch (err) { console.error('[Mailbox] 删除任务失败:', err); }
+                              }}
+                              index={index}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
                     {loading ? (
                       <div className="py-12 text-center text-sm" style={{ color: 'var(--text-muted)' }}>加载中...</div>
                     ) : mails.length === 0 ? (
@@ -701,28 +844,27 @@ const InternalMailbox: React.FC = () => {
       <button
         ref={triggerRef}
         onClick={() => {
-          if (!isOpen && triggerRef.current) {
-            const rect = triggerRef.current.getBoundingClientRect();
-            // 面板尺寸约束：宽 w-95≈380px，高 max-h-130≈520px，需钳制在视口内避免溢出屏幕
-            const PANEL_W = 380;
-            const PANEL_H = 520;
-            const x = Math.max(8, Math.min(rect.left - 150, window.innerWidth - PANEL_W - 8));
-            const y = Math.max(8, Math.min(rect.bottom + 8, window.innerHeight - PANEL_H - 8));
-            setPanelPosition({ x, y });
+          if (!isOpen) {
+            locatePanelNearTrigger();
           }
           setIsOpen(!isOpen);
           setSelectedMail(null);
         }}
         className="relative p-1.5 rounded-lg text-(--text-muted) hover:text-(--text-primary) hover:bg-white/5 transition-colors"
         aria-label="站内信"
-        title="站内信"
+        title="站内信 / 任务进度"
       >
         <Mail className="w-4 h-4" />
-        {unreadCount > 0 && (
+        {unreadCount > 0 ? (
           <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center leading-none">
             {unreadCount > 99 ? '99+' : unreadCount}
           </span>
-        )}
+        ) : activeCount > 0 ? (
+          /* 无未读邮件时，徽章显示进行中的任务数 */
+          <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 text-white text-[10px] font-bold rounded-full flex items-center justify-center leading-none" style={{ backgroundColor: 'var(--accent)' }}>
+            {activeCount > 99 ? '99+' : activeCount}
+          </span>
+        ) : null}
       </button>
 
       {/* Portal: render panel at document.body to avoid stacking context issues */}

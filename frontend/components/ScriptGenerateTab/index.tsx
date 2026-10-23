@@ -246,17 +246,17 @@ const GeneratePanel: React.FC<{
 
   // 统一控件规范：所有输入/选择控件共用同一底色、圆角、边框与聚焦高亮，仅高度区分单行/多行/下拉
   const controlWrapper =
-    'bg-[var(--bg-input)] border border-[var(--border-color)] rounded-xl ' +
-    'hover:border-[var(--accent)]/50 focus-within:border-[var(--accent)] focus-within:ring-2 focus-within:ring-[var(--accent)]/25 ' +
-    'data-[focus=true]:border-[var(--accent)] data-[hover=true]:border-[var(--accent)]/50';
-  const labelClass = 'flex items-center gap-1 text-[var(--text-secondary)] font-medium text-xs';
+    'bg-(--bg-input) border border-(--border-color) rounded-xl ' +
+    'hover:border-(--accent)/50 focus-within:border-(--accent) focus-within:ring-2 focus-within:ring-(--accent)/25 ' +
+    'data-[focus=true]:border-(--accent) data-[hover=true]:border-(--accent)/50';
+  const labelClass = 'flex items-center gap-1 text-(--text-secondary) font-medium text-xs';
 
   return (
     <div className="max-w-2xl mx-auto w-full px-2 py-2 space-y-5">
       {/* 轻量提示条：辅助说明，弱化视觉权重，不抢表单焦点 */}
-      <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[var(--bg-input)]/40 border border-[var(--border-color)]/50">
-        <Info className="w-3.5 h-3.5 text-[var(--text-muted)] shrink-0" />
-        <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
+      <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-(--bg-input)/40 border border-(--border-color)/50">
+        <Info className="w-3.5 h-3.5 text-(--text-muted) shrink-0" />
+        <p className="text-xs text-(--text-secondary) leading-relaxed">
           AI 将根据描述生成剧本，自动保存至当前剧集，生成后可直接编辑
         </p>
       </div>
@@ -274,7 +274,7 @@ const GeneratePanel: React.FC<{
           classNames={{
             label: labelClass,
             trigger: controlWrapper,
-            value: "text-[var(--text-primary)]",
+            value: "text-(--text-primary)",
           }}
         >
           {projects.map((project) => (
@@ -295,7 +295,7 @@ const GeneratePanel: React.FC<{
           size="sm"
           classNames={{
             label: labelClass,
-            input: "bg-transparent text-[var(--text-primary)] placeholder:text-[var(--text-muted)]",
+            input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted)",
             inputWrapper: controlWrapper,
           }}
         />
@@ -305,7 +305,7 @@ const GeneratePanel: React.FC<{
         label={
           <span className="flex items-baseline gap-1">
             剧本标题
-            <span className="text-[11px] font-normal text-[var(--text-muted)]">（可选）</span>
+            <span className="text-[11px] font-normal text-(--text-muted)">（可选）</span>
           </span>
         }
         placeholder="输入剧本标题"
@@ -314,7 +314,7 @@ const GeneratePanel: React.FC<{
         size="sm"
         classNames={{
           label: labelClass,
-          input: "bg-transparent text-[var(--text-primary)] placeholder:text-[var(--text-muted)]",
+          input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted)",
           inputWrapper: controlWrapper,
         }}
       />
@@ -337,7 +337,7 @@ const GeneratePanel: React.FC<{
           maxRows={12}
           classNames={{
             label: `${labelClass} font-semibold`,
-            input: "bg-transparent text-[var(--text-primary)] placeholder:text-[var(--text-muted)] leading-relaxed",
+            input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted) leading-relaxed",
             inputWrapper: controlWrapper,
           }}
         />
@@ -345,13 +345,13 @@ const GeneratePanel: React.FC<{
           <button
             type="button"
             onClick={() => setDescription(EXAMPLE_DESCRIPTION)}
-            className="text-[11px] text-[var(--accent)] hover:text-[var(--accent-light)] hover:underline transition-colors cursor-pointer"
+            className="text-[11px] text-(--accent) hover:text-(--accent-light) hover:underline transition-colors cursor-pointer"
           >
             给个示例
           </button>
           <span
             className={`text-[11px] tabular-nums transition-colors ${
-              description.length >= DESC_MAX ? 'text-red-400' : 'text-[var(--text-muted)]'
+              description.length >= DESC_MAX ? 'text-red-400' : 'text-(--text-muted)'
             }`}
           >
             {description.length}/{DESC_MAX} 字
@@ -369,7 +369,7 @@ const GeneratePanel: React.FC<{
         classNames={{
           label: labelClass,
           trigger: controlWrapper,
-          value: "text-[var(--text-primary)]",
+          value: "text-(--text-primary)",
         }}
       >
         <SelectItem key="短篇" textValue="短篇（1-3分钟 · 约300-800字）">短篇（1-3分钟 · 约300-800字）</SelectItem>
@@ -390,7 +390,7 @@ const GeneratePanel: React.FC<{
           classNames={{
             label: labelClass,
             trigger: controlWrapper,
-            value: "text-[var(--text-primary)]",
+            value: "text-(--text-primary)",
           }}
         >
           {textModels.map((model) => (
@@ -402,18 +402,18 @@ const GeneratePanel: React.FC<{
       {generating && progressInfo && (
         <div className="space-y-2">
           <div className="flex items-center justify-between text-xs">
-            <span className="text-[var(--text-secondary)]">{progressInfo.stepName}</span>
-            <span className="text-[var(--text-muted)]">{progressInfo.step}/{progressInfo.totalSteps}</span>
+            <span className="text-(--text-secondary)">{progressInfo.stepName}</span>
+            <span className="text-(--text-muted)">{progressInfo.step}/{progressInfo.totalSteps}</span>
           </div>
           <Progress
             value={progressInfo.progress}
             classNames={{
               base: "max-w-full",
-              track: "bg-[var(--bg-input)]",
-              indicator: "bg-gradient-to-r from-[var(--accent)] to-[var(--accent)]/70",
+              track: "bg-(--bg-input)",
+              indicator: "bg-linear-to-r from-(--accent) to-(--accent)/70",
             }}
           />
-          <p className="text-xs text-[var(--text-muted)] text-center">生成中，请稍候...</p>
+          <p className="text-xs text-(--text-muted) text-center">生成中，请稍候...</p>
         </div>
       )}
 
@@ -422,8 +422,8 @@ const GeneratePanel: React.FC<{
         size="lg"
         className={
           'w-full transition-colors ' +
-          'data-[disabled=true]:bg-[var(--bg-card-hover)] data-[disabled=true]:text-[var(--text-muted)] ' +
-          'data-[disabled=true]:border data-[disabled=true]:border-[var(--border-color)] ' +
+          'data-[disabled=true]:bg-(--bg-card-hover) data-[disabled=true]:text-(--text-muted) ' +
+          'data-[disabled=true]:border data-[disabled=true]:border-(--border-color) ' +
           'data-[disabled=true]:opacity-100 data-[disabled=true]:cursor-not-allowed'
         }
         startContent={!generating && <Sparkles className="w-4 h-4" />}
@@ -436,7 +436,7 @@ const GeneratePanel: React.FC<{
 
       {/* 新手引导：仅在因缺少核心必填项而禁用时给出轻量提示 */}
       {!generating && !canGenerate && (
-        <p className="text-center text-[11px] text-[var(--text-muted)] -mt-2">
+        <p className="text-center text-[11px] text-(--text-muted) -mt-2">
           填写剧本描述后即可生成
         </p>
       )}
@@ -522,13 +522,13 @@ const UploadPanel: React.FC<{
   return (
     <div className="max-w-2xl mx-auto space-y-4">
       {/* 方式切换 */}
-      <div className="flex gap-1 p-1 rounded-lg bg-[var(--bg-input)] border border-[var(--border-color)]">
+      <div className="flex gap-1 p-1 rounded-lg bg-(--bg-input) border border-(--border-color)">
         <button
           onClick={() => { setInputMode('file'); setContent(''); setFile(null); }}
           className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-medium transition-colors ${
             inputMode === 'file'
-              ? 'bg-[var(--accent)] text-white'
-              : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+              ? 'bg-(--accent) text-white'
+              : 'text-(--text-muted) hover:text-(--text-secondary)'
           }`}
         >
           <Upload className="w-3.5 h-3.5" />
@@ -538,8 +538,8 @@ const UploadPanel: React.FC<{
           onClick={() => { setInputMode('text'); setContent(''); setFile(null); }}
           className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-medium transition-colors ${
             inputMode === 'text'
-              ? 'bg-[var(--accent)] text-white'
-              : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+              ? 'bg-(--accent) text-white'
+              : 'text-(--text-muted) hover:text-(--text-secondary)'
           }`}
         >
           <FileText className="w-3.5 h-3.5" />
@@ -553,8 +553,8 @@ const UploadPanel: React.FC<{
           <div
             className={`border-2 border-dashed rounded-xl p-8 text-center transition-colors cursor-pointer ${
               dragOver
-                ? 'border-[var(--accent)] bg-[var(--accent)]/5'
-                : 'border-[var(--border-color)] hover:border-[var(--accent)]/50'
+                ? 'border-(--accent) bg-(--accent)/5'
+                : 'border-(--border-color) hover:border-(--accent)/50'
             }`}
             onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
             onDragLeave={() => setDragOver(false)}
@@ -568,11 +568,11 @@ const UploadPanel: React.FC<{
               className="hidden"
               onChange={(e) => e.target.files?.[0] && handleFileSelect(e.target.files[0])}
             />
-            <Upload className="w-10 h-10 mx-auto mb-3 text-[var(--text-muted)]" />
-            <p className="text-sm text-[var(--text-primary)] font-medium">
+            <Upload className="w-10 h-10 mx-auto mb-3 text-(--text-muted)" />
+            <p className="text-sm text-(--text-primary) font-medium">
               {file ? file.name : '点击或拖拽上传剧本文件'}
             </p>
-            <p className="text-xs text-[var(--text-muted)] mt-1">
+            <p className="text-xs text-(--text-muted) mt-1">
               支持 .txt、.md 格式，最大 5MB
             </p>
           </div>
@@ -588,9 +588,9 @@ const UploadPanel: React.FC<{
             minRows={8}
             maxRows={16}
             classNames={{
-              label: "text-[var(--text-secondary)] font-medium",
-              input: "bg-transparent text-[var(--text-primary)] placeholder:text-[var(--text-muted)]",
-              inputWrapper: "bg-[var(--bg-input)] border border-[var(--border-color)] hover:border-[var(--accent)]/50",
+              label: "text-(--text-secondary) font-medium",
+              input: "bg-transparent text-(--text-primary) placeholder:text-(--text-muted)",
+              inputWrapper: "bg-(--bg-input) border border-(--border-color) hover:border-(--accent)/50",
             }}
           />
         </>
@@ -599,13 +599,13 @@ const UploadPanel: React.FC<{
       {/* 内容预览 / 操作按钮 */}
       {content && (
         <div className="space-y-3">
-          <div className="rounded-xl border border-[var(--border-color)] overflow-hidden">
-            <div className="px-3 py-2 bg-[var(--bg-input)] border-b border-[var(--border-color)] flex items-center justify-between">
-              <span className="text-xs font-medium text-[var(--text-secondary)]">内容预览</span>
-              <span className="text-xs text-[var(--text-muted)]">{content.length} 字</span>
+          <div className="rounded-xl border border-(--border-color) overflow-hidden">
+            <div className="px-3 py-2 bg-(--bg-input) border-b border-(--border-color) flex items-center justify-between">
+              <span className="text-xs font-medium text-(--text-secondary)">内容预览</span>
+              <span className="text-xs text-(--text-muted)">{content.length} 字</span>
             </div>
             <div className="p-3 max-h-48 overflow-y-auto">
-              <pre className="text-xs text-[var(--text-secondary)] whitespace-pre-wrap font-mono leading-relaxed">
+              <pre className="text-xs text-(--text-secondary) whitespace-pre-wrap font-mono leading-relaxed">
                 {content.length > 1000 ? content.slice(0, 1000) + '...' : content}
               </pre>
             </div>
@@ -644,8 +644,8 @@ const ScriptGenerateTab: React.FC<ScriptGenerateTabProps> = ({
   return (
     <div className="flex flex-col h-full">
       {/* Tab 切换：分段控件样式，明确"二选一"的生成模式 */}
-      <div className="shrink-0 px-4 py-3 border-b border-[var(--border-color)]">
-        <div className="inline-flex gap-1 p-1 rounded-lg bg-[var(--bg-input)] border border-[var(--border-color)]">
+      <div className="shrink-0 px-4 py-3 border-b border-(--border-color)">
+        <div className="inline-flex gap-1 p-1 rounded-lg bg-(--bg-input) border border-(--border-color)">
           {TABS.map((tab) => {
             const active = activeTab === tab.key;
             return (
@@ -655,8 +655,8 @@ const ScriptGenerateTab: React.FC<ScriptGenerateTabProps> = ({
                 aria-pressed={active}
                 className={`flex items-center gap-1.5 px-4 py-1.5 rounded-md text-xs font-medium transition-colors cursor-pointer ${
                   active
-                    ? 'bg-[var(--accent)] text-white shadow-sm'
-                    : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-card-hover)]'
+                    ? 'bg-(--accent) text-white shadow-sm'
+                    : 'text-(--text-secondary) hover:text-(--text-primary) hover:bg-(--bg-card-hover)'
                 }`}
               >
                 {tab.icon}

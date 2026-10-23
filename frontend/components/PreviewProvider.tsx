@@ -81,7 +81,7 @@ export const PreviewProvider: React.FC<PreviewProviderProps> = ({ children }) =>
   const renderWindowControls = useCallback(
     () => (
       <div
-        className="fixed top-1 right-2 z-[10000] flex items-center"
+        className="fixed top-1 right-2 z-10000 flex items-center"
         onClick={(e) => e.stopPropagation()}
         onDoubleClick={(e) => e.stopPropagation()}
       >

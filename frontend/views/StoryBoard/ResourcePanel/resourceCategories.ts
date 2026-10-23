@@ -2,41 +2,22 @@
  * 资源分类定义与用户/AI 自定义分类
  * ──────────────────────────────────────────────────────────────
  * - 内置资源类型注册表：哪些分类可展示、其显示名与计数方式
- * - 用户自定义分类：localStorage 持久化（键 resource_categories_v1），
- *   默认仅保留「角色 / 影棚 / 道具」三个基本分类，其余内置类型按需手动开启
+ * - 分类配置与资源清单由 /api/resource-library 统一返回并持久化到工程文档；
+ *   本文件不再单独读写 localStorage，避免配置与资源数据脱节。
  * - AI 启发式分类：基于资源名称关键词自动生成自定义分类（classifyResources）
  */
-import { useCallback, useEffect, useState } from 'react';
+import type { ResourceTypeKey, CategoryMemberRef, CustomCategory, ResourceCategoryConfig } from '../../../types/resourceLibrary';
 import type { Character, PropItem } from './types';
 import type { Scene } from './useSceneData';
 import type { Environment } from '../../../services/environments';
 import type { Building } from '../../../services/buildings';
 import type { Costume } from '../../../services/costumes';
 
-/** 可展示的资源类型（与 ResourcePanel 手风琴内容渲染器 key 一致） */
-export type ResourceTypeKey =
-  | 'characters' | 'locations' | 'props' | 'environments' | 'buildings' | 'costumes';
-
+export type { ResourceTypeKey, CategoryMemberRef, CustomCategory } from '../../../types/resourceLibrary';
+/** 兼容旧命名 */
+export type CategoryConfig = ResourceCategoryConfig;
 /** 手风琴分组 key：内置类型 或 自定义分类（custom:{id}） */
 export type ResourceCategoryKey = string;
-
-/** 自定义分类成员引用：`类型:资源ID` */
-export type CategoryMemberRef = string;
-
-export interface CustomCategory {
-  id: string;
-  name: string;
-  /** AI 启发式生成的分类带标记，用户手动创建的没有 */
-  aiGenerated?: boolean;
-  members: CategoryMemberRef[];
-}
-
-export interface CategoryConfig {
-  /** 当前展示（开启）的内置类型 */
-  enabledTypes: ResourceTypeKey[];
-  /** 用户 / AI 自定义分类 */
-  customCategories: CustomCategory[];
-}
 
 /** 默认只保留最基本的三个分类 */
 export const DEFAULT_ENABLED_TYPES: ResourceTypeKey[] = ['characters', 'locations', 'props'];
@@ -134,142 +115,3 @@ export function classifyResources(entries: CategoryResourceEntry[]): Omit<Custom
     .map(([name, members]) => ({ name, aiGenerated: true, members }));
 }
 
-// ── 持久化 ──
-
-const STORAGE_KEY = 'resource_categories_v1';
-
-export function loadCategoryConfig(): CategoryConfig {
-  const fallback: CategoryConfig = { enabledTypes: [...DEFAULT_ENABLED_TYPES], customCategories: [] };
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return fallback;
-    const parsed = JSON.parse(raw) as Partial<CategoryConfig>;
-    const enabledTypes = Array.isArray(parsed.enabledTypes)
-      ? parsed.enabledTypes.filter((t): t is ResourceTypeKey => ALL_RESOURCE_TYPES.includes(t))
-      : fallback.enabledTypes;
-    const customCategories = Array.isArray(parsed.customCategories)
-      ? parsed.customCategories.filter(c => c && typeof c.id === 'string' && typeof c.name === 'string')
-        .map(c => ({ ...c, members: Array.isArray(c.members) ? c.members : [] }))
-      : [];
-    return { enabledTypes, customCategories };
-  } catch {
-    return fallback;
-  }
-}
-
-export function saveCategoryConfig(config: CategoryConfig): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
-  } catch {
-    /* localStorage 不可用时静默降级 */
-  }
-}
-
-// ── 状态管理 Hook ──
-
-/** 资源分类配置：展示哪些内置类型 + 自定义分类增删改，自动持久化 */
-export function useResourceCategories() {
-  const [config, setConfig] = useState<CategoryConfig>(loadCategoryConfig);
-
-  useEffect(() => {
-    saveCategoryConfig(config);
-  }, [config]);
-
-  /** 开启/关闭某个内置类型的展示 */
-  const toggleType = useCallback((type: ResourceTypeKey) => {
-    setConfig(prev => ({
-      ...prev,
-      enabledTypes: prev.enabledTypes.includes(type)
-        ? prev.enabledTypes.filter(t => t !== type)
-        : [...prev.enabledTypes, type],
-    }));
-  }, []);
-
-  /** 新建自定义分类（同名则复用现有分类改名语义，直接拒绝） */
-  const addCustomCategory = useCallback((name: string, members: CategoryMemberRef[] = []): boolean => {
-    const trimmed = name.trim();
-    if (!trimmed) return false;
-    let added = false;
-    setConfig(prev => {
-      if (prev.customCategories.some(c => c.name === trimmed)) return prev;
-      added = true;
-      return {
-        ...prev,
-        customCategories: [...prev.customCategories, { id: `c${Date.now()}`, name: trimmed, members }],
-      };
-    });
-    return added;
-  }, []);
-
-  const renameCustomCategory = useCallback((id: string, name: string) => {
-    const trimmed = name.trim();
-    if (!trimmed) return;
-    setConfig(prev => ({
-      ...prev,
-      customCategories: prev.customCategories.map(c => (c.id === id ? { ...c, name: trimmed, aiGenerated: undefined } : c)),
-    }));
-  }, []);
-
-  const removeCustomCategory = useCallback((id: string) => {
-    setConfig(prev => ({
-      ...prev,
-      customCategories: prev.customCategories.filter(c => c.id !== id),
-    }));
-  }, []);
-
-  /** 向自定义分类添加成员（去重） */
-  const addMember = useCallback((id: string, ref: CategoryMemberRef) => {
-    setConfig(prev => ({
-      ...prev,
-      customCategories: prev.customCategories.map(c =>
-        c.id === id && !c.members.includes(ref) ? { ...c, members: [...c.members, ref] } : c,
-      ),
-    }));
-  }, []);
-
-  const removeMember = useCallback((id: string, ref: CategoryMemberRef) => {
-    setConfig(prev => ({
-      ...prev,
-      customCategories: prev.customCategories.map(c =>
-        c.id === id ? { ...c, members: c.members.filter(m => m !== ref) } : c,
-      ),
-    }));
-  }, []);
-
-  /** 批量应用 AI 分类结果（同名分类覆盖成员，其余追加） */
-  const applyAiCategories = useCallback((suggestions: Omit<CustomCategory, 'id'>[]) => {
-    setConfig(prev => {
-      const next = [...prev.customCategories];
-      for (const s of suggestions) {
-        const existing = next.find(c => c.name === s.name);
-        if (existing) {
-          existing.members = [...new Set([...existing.members, ...s.members])];
-          existing.aiGenerated = true;
-        } else {
-          next.push({ id: `ai${Date.now()}${Math.random().toString(36).slice(2, 6)}`, ...s });
-        }
-      }
-      return { ...prev, customCategories: next };
-    });
-  }, []);
-
-  /** 移除所有 AI 生成的分类（保留用户手动创建的） */
-  const clearAiCategories = useCallback(() => {
-    setConfig(prev => ({
-      ...prev,
-      customCategories: prev.customCategories.filter(c => !c.aiGenerated),
-    }));
-  }, []);
-
-  return {
-    config,
-    toggleType,
-    addCustomCategory,
-    renameCustomCategory,
-    removeCustomCategory,
-    addMember,
-    removeMember,
-    applyAiCategories,
-    clearAiCategories,
-  };
-}

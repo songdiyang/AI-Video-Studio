@@ -160,7 +160,7 @@ const ResizablePanel = forwardRef<ResizablePanelRef, ResizablePanelProps>((props
         strokeLinejoin="round"
         animate={{ rotate: iconRotation }}
         transition={{ duration: 0.2 }}
-        className="text-[var(--text-muted)]"
+        className="text-(--text-muted)"
       >
         <polyline points="15 18 9 12 15 6" />
       </motion.svg>
@@ -177,7 +177,7 @@ const ResizablePanel = forwardRef<ResizablePanelRef, ResizablePanelProps>((props
       data-tablet={__isTablet}
       className={`
         relative flex flex-col
-        bg-[var(--bg-app)] 
+        bg-(--bg-app)
         overflow-hidden
         ${__isMobile ? 'h-full' : ''}
         ${className}
@@ -196,7 +196,7 @@ const ResizablePanel = forwardRef<ResizablePanelRef, ResizablePanelProps>((props
             transition={{ duration: 0.15 }}
             className={`
               group absolute inset-0 flex items-center justify-center
-              bg-[var(--border-color)]/30 hover:bg-[var(--accent)]/60
+              bg-(--border-color)/30 hover:bg-(--accent)/60
               transition-colors duration-150
               ${isHorizontal ? 'cursor-col-resize' : 'cursor-row-resize'}
             `}
@@ -217,10 +217,10 @@ const ResizablePanel = forwardRef<ResizablePanelRef, ResizablePanelProps>((props
               className={`
                 pointer-events-none absolute
                 ${isHorizontal
-                  ? 'top-0 bottom-0 left-1/2 -translate-x-1/2 w-[1px]'
-                  : 'left-0 right-0 top-1/2 -translate-y-1/2 h-[1px]'
+                  ? 'top-0 bottom-0 left-1/2 -translate-x-1/2 w-px'
+                  : 'left-0 right-0 top-1/2 -translate-y-1/2 h-px'
                 }
-                bg-[var(--border-color)] group-hover:bg-[var(--accent)]
+                bg-(--border-color) group-hover:bg-(--accent)
                 transition-colors duration-150
               `}
             />
@@ -238,19 +238,19 @@ const ResizablePanel = forwardRef<ResizablePanelRef, ResizablePanelProps>((props
             {(title || headerActions) && !__isMobile && (
               <div 
                 className={`
-                  flex-shrink-0 h-8 px-3 flex items-center justify-between gap-2
-                  bg-[var(--bg-card)] border-b border-[var(--border-color)]
+                  shrink-0 h-8 px-3 flex items-center justify-between gap-2
+                  bg-(--bg-card) border-b border-(--border-color)
                 `}
               >
                 <div className="flex items-center gap-2 min-w-0">
                   {title && (
-                    <span className="text-xs font-medium uppercase tracking-wider text-[var(--text-muted)] truncate">
+                    <span className="text-xs font-medium uppercase tracking-wider text-(--text-muted) truncate">
                       {title}
                     </span>
                   )}
                 </div>
                 {headerActions && (
-                  <div className="flex items-center gap-1 flex-shrink-0">
+                  <div className="flex items-center gap-1 shrink-0">
                     {headerActions}
                   </div>
                 )}

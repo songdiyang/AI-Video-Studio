@@ -28,13 +28,22 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
   const [height, setHeight] = useState(defaultHeight);
   const [isCollapsed, setIsCollapsed] = useState(collapsed);
   const isDraggingRef = useRef(false);
+  // 拖拽回调在 mousedown 时闭包捕获，用 ref 读取最新状态，避免折叠/拉起后父级开关不同步
+  const isCollapsedRef = useRef(isCollapsed);
+  const heightRef = useRef(height);
+
+  useEffect(() => {
+    heightRef.current = height;
+  }, [height]);
 
   // 同步外部 collapsed prop
   useEffect(() => {
     setIsCollapsed(collapsed);
+    isCollapsedRef.current = collapsed;
   }, [collapsed]);
 
   const handleCollapseChange = (newCollapsed: boolean) => {
+    isCollapsedRef.current = newCollapsed;
     setIsCollapsed(newCollapsed);
     onCollapsedChange?.(newCollapsed);
   };
@@ -42,8 +51,8 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
   const handleMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
     const startY = e.clientY;
-    const startHeight = height;
-    const wasCollapsed = isCollapsed;
+    const startHeight = heightRef.current;
+    const wasCollapsed = isCollapsedRef.current;
     isDraggingRef.current = true;
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
@@ -56,6 +65,7 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
         if (newHeight >= COLLAPSE_THRESHOLD) {
           setHeight(newHeight);
           setIsCollapsed(false);
+          isCollapsedRef.current = false;
         }
       } else {
         // 正常拖拽调整高度
@@ -66,9 +76,11 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
         const newHeight = Math.min(effectiveMaxHeight, Math.max(0, startHeight + deltaY));
         if (newHeight < COLLAPSE_THRESHOLD) {
           setIsCollapsed(true);
+          isCollapsedRef.current = true;
         } else {
           setHeight(newHeight);
           setIsCollapsed(false);
+          isCollapsedRef.current = false;
         }
       }
     };
@@ -78,10 +90,11 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
 
-      // 拖拽结束时，如果处于折叠状态，同步通知外部
-      if (isCollapsed) {
-        onCollapsedChange?.(true);
-      } else if (height < minHeight) {
+      // 只在实际发生变化时通知外部，保证顶部工具栏开关与面板状态一致
+      const endedCollapsed = isCollapsedRef.current;
+      if (endedCollapsed !== wasCollapsed) {
+        onCollapsedChange?.(endedCollapsed);
+      } else if (!endedCollapsed && heightRef.current < minHeight) {
         // 如果高度在阈值和 minHeight 之间，恢复到 minHeight
         setHeight(minHeight);
       }

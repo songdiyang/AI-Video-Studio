@@ -13,7 +13,7 @@ interface EpisodeSelectorProps {
   currentEpisode: number;
   /** 当前选中的 scriptId */
   currentScriptId?: number | null;
-  onSelect: (script: Script | null) => void;
+  onSelect?: (script: Script | null) => void;
   /**
    * 自由创作模式下的集数切换回调。
    * 统一存储层后，自由分镜也绑定隐式剧本，但前端仍保留此回调用于集数标签切换。
@@ -108,12 +108,12 @@ const EpisodeDropdown: React.FC<{
         onClick={() => setOpen((o) => !o)}
         aria-haspopup="listbox"
         aria-expanded={open}
-        className="inline-flex items-center gap-1.5 h-7 px-2 rounded-md text-xs font-medium text-[var(--text-primary)] hover:bg-[var(--bg-card-hover)] transition-colors cursor-pointer"
+        className="inline-flex items-center gap-1.5 h-7 px-2 rounded-md text-xs font-medium text-(--text-primary) hover:bg-(--bg-card-hover) transition-colors cursor-pointer"
       >
-        <Film className="w-3.5 h-3.5 text-[var(--accent)] shrink-0" />
+        <Film className="w-3.5 h-3.5 text-(--accent) shrink-0" />
         <span className="whitespace-nowrap">{triggerLabel}</span>
         <ChevronDown
-          className={`w-3 h-3 text-[var(--text-muted)] transition-transform duration-150 ${open ? 'rotate-180' : ''}`}
+          className={`w-3 h-3 text-(--text-muted) transition-transform duration-150 ${open ? 'rotate-180' : ''}`}
         />
       </button>
 
@@ -121,7 +121,7 @@ const EpisodeDropdown: React.FC<{
       {open && (
         <div
           role="listbox"
-          className={`absolute left-0 top-full mt-1 z-50 ${panelWidth} py-1 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] shadow-xl`}
+          className={`absolute left-0 top-full mt-1 z-50 ${panelWidth} py-1 rounded-lg border border-(--border-color) bg-(--bg-card) shadow-xl`}
         >
           {/* 已有剧集分组 */}
           {options.map((opt) => {
@@ -129,7 +129,7 @@ const EpisodeDropdown: React.FC<{
             if (editing) {
               return (
                 <div key={opt.key} className="flex items-center gap-1 px-2 py-1">
-                  <span className="shrink-0 text-xs font-medium text-[var(--accent)] w-10">{opt.label}</span>
+                  <span className="shrink-0 text-xs font-medium text-(--accent) w-10">{opt.label}</span>
                   <input
                     ref={inputRef}
                     value={editingTitle}
@@ -138,14 +138,14 @@ const EpisodeDropdown: React.FC<{
                       if (e.key === 'Enter') commitEdit(opt.key);
                       else if (e.key === 'Escape') setEditingId(null);
                     }}
-                    className="flex-1 min-w-0 text-xs bg-transparent border border-[var(--accent)]/40 rounded px-1.5 py-0.5 outline-none text-[var(--text-primary)]"
+                    className="flex-1 min-w-0 text-xs bg-transparent border border-(--accent)/40 rounded px-1.5 py-0.5 outline-none text-(--text-primary)"
                     maxLength={30}
                     placeholder="输入标题"
                   />
                   <button
                     type="button"
                     onClick={() => commitEdit(opt.key)}
-                    className="p-0.5 rounded hover:bg-[var(--accent)]/20 text-[var(--accent)] cursor-pointer"
+                    className="p-0.5 rounded hover:bg-(--accent)/20 text-(--accent) cursor-pointer"
                     title="保存标题"
                   >
                     <Check className="w-3 h-3" />
@@ -165,7 +165,7 @@ const EpisodeDropdown: React.FC<{
               <div
                 key={opt.key}
                 className={`group flex items-center ${
-                  opt.selected ? 'bg-[var(--accent)]/[0.08]' : 'hover:bg-[var(--bg-card-hover)]'
+                  opt.selected ? 'bg-(--accent)/8' : 'hover:bg-(--bg-card-hover)'
                 } transition-colors`}
               >
                 <button
@@ -173,13 +173,13 @@ const EpisodeDropdown: React.FC<{
                   role="option"
                   aria-selected={opt.selected}
                   onClick={() => {
-                    onSelect(opt.key);
+                    onSelect?.(opt.key);
                     setOpen(false);
                   }}
                   className={`relative flex-1 min-w-0 pl-4 pr-2 py-1.5 text-left text-xs flex items-center gap-1.5 cursor-pointer ${
                     opt.selected
-                      ? 'text-[var(--accent)] font-medium'
-                      : 'text-[var(--text-secondary)] group-hover:text-[var(--text-primary)]'
+                      ? 'text-(--accent) font-medium'
+                      : 'text-(--text-secondary) group-hover:text-(--text-primary)'
                   }`}
                 >
                   {/* 选中态左侧短竖线标记（替代粗外框） */}
@@ -189,7 +189,7 @@ const EpisodeDropdown: React.FC<{
                   <span className="shrink-0">{opt.label}</span>
                   {onRename && (
                     <span
-                      className="truncate text-[var(--text-muted)]"
+                      className="truncate text-(--text-muted)"
                       title={opt.title || '未命名'}
                     >
                       {opt.title || <span className="italic opacity-60">未命名</span>}
@@ -200,7 +200,7 @@ const EpisodeDropdown: React.FC<{
                   <button
                     type="button"
                     onClick={() => startEdit(opt)}
-                    className="shrink-0 mr-1 p-1 rounded hover:bg-[var(--accent)]/10 text-[var(--text-muted)] hover:text-[var(--accent)] opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity cursor-pointer"
+                    className="shrink-0 mr-1 p-1 rounded hover:bg-(--accent)/10 text-(--text-muted) hover:text-(--accent) opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity cursor-pointer"
                     title="编辑标题"
                     aria-label={`编辑${opt.label}标题`}
                   >
@@ -221,7 +221,7 @@ const EpisodeDropdown: React.FC<{
                   onCreate();
                   setOpen(false);
                 }}
-                className="w-full pl-4 pr-3 py-1.5 text-left text-xs flex items-center gap-1.5 text-[var(--accent)] font-medium hover:bg-[var(--accent)]/10 transition-colors cursor-pointer"
+                className="w-full pl-4 pr-3 py-1.5 text-left text-xs flex items-center gap-1.5 text-(--accent) font-medium hover:bg-(--accent)/10 transition-colors cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5 shrink-0" />
                 <span className="truncate whitespace-nowrap">{createLabel}</span>
@@ -271,7 +271,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
     }));
     return (
       <div className="flex items-center gap-1">
-        <div className="w-px h-5 bg-[var(--border-color)]" />
+        <div className="w-px h-5 bg-(--border-color)" />
         <EpisodeDropdown
           options={options}
           triggerLabel={`第${currentEpisode || 1}集`}
@@ -297,14 +297,14 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
     }));
     return (
       <div className="flex items-center gap-1">
-        <div className="w-px h-5 bg-[var(--border-color)]" />
+        <div className="w-px h-5 bg-(--border-color)" />
         <EpisodeDropdown
           options={options}
           triggerLabel={`第${currentScript?.episode_number ?? currentEpisode}集`}
           createLabel={onCreateNextEpisode ? '新建下一集' : null}
           onSelect={(key) => {
             const script = scripts.find((s) => s.id === parseInt(key, 10));
-            if (script) onSelect(script);
+            if (script) onSelect?.(script);
           }}
           onCreate={() => onCreateNextEpisode?.()}
           onRename={

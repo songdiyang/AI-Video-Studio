@@ -4,7 +4,7 @@
  */
 
 import React, { createContext, useContext, useState, useCallback, useEffect, useMemo } from 'react';
-import { Project, fetchProject, fetchProjects } from '../services/projects';
+import { Project, fetchProject } from '../services/projects';
 import { setActiveProject, flushAll } from '../services/localStore';
 import { ProjectType, WorkbenchTab, isValidProjectType, mapLegacyProjectType } from '../types/projectTypes';
 import { 
@@ -45,12 +45,6 @@ interface WorkbenchContextValue {
   setLeftSidebarTab: (tab: string | null) => void;
   /** 左侧栏是否展开 */
   leftSidebarOpen: boolean;
-
-  // ===== VSCode 式布局：底部面板 =====
-  /** 底部面板是否展开 */
-  bottomPanelOpen: boolean;
-  setBottomPanelOpen: (open: boolean) => void;
-  toggleBottomPanel: () => void;
 
   // ===== 未保存状态管理 =====
   /** 是否有未保存的更改 */
@@ -98,18 +92,6 @@ export function WorkbenchProvider({ children, initialProject = null }: Workbench
     } catch { /* 忽略 */ }
   }, []);
   const leftSidebarOpen = leftSidebarTab !== null;
-
-  // ===== VSCode 式布局：底部面板 =====
-  const [bottomPanelOpen, setBottomPanelOpenState] = useState<boolean>(() => {
-    try { return localStorage.getItem('vscode_bottom_panel_open') === '1'; } catch { return false; }
-  });
-  const setBottomPanelOpen = useCallback((open: boolean) => {
-    setBottomPanelOpenState(open);
-    try { localStorage.setItem('vscode_bottom_panel_open', open ? '1' : '0'); } catch { /* 忽略 */ }
-  }, []);
-  const bottomPanelRef = React.useRef(bottomPanelOpen);
-  bottomPanelRef.current = bottomPanelOpen;
-  const toggleBottomPanel = useCallback(() => setBottomPanelOpen(!bottomPanelRef.current), [setBottomPanelOpen]);
 
   // ===== 未保存状态管理 =====
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
@@ -165,18 +147,9 @@ export function WorkbenchProvider({ children, initialProject = null }: Workbench
           }
         }
         
-        // 没有上次记录或已不存在，尝试加载最近的项目
-        const projects = await fetchProjects();
-        if (projects && projects.length > 0) {
-          const recentProject = projects.sort((a: Project, b: Project) => 
-            new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
-          )[0];
-          setCurrentProject(recentProject);
-          localStorage.setItem(LAST_PROJECT_KEY, recentProject.id.toString());
-        } else {
-          setCurrentProject(null);
-          localStorage.removeItem(LAST_PROJECT_KEY);
-        }
+        // 没有上次打开记录：进入欢迎页，不再自动打开最近工程
+        setCurrentProject(null);
+        localStorage.removeItem(LAST_PROJECT_KEY);
       } catch (error) {
         console.error('加载项目失败:', error);
         localStorage.removeItem(LAST_PROJECT_KEY);
@@ -257,9 +230,6 @@ export function WorkbenchProvider({ children, initialProject = null }: Workbench
     leftSidebarTab,
     setLeftSidebarTab,
     leftSidebarOpen,
-    bottomPanelOpen,
-    setBottomPanelOpen,
-    toggleBottomPanel,
     hasUnsavedChanges,
     markAsDirty,
     markAsSaved,
@@ -277,9 +247,6 @@ export function WorkbenchProvider({ children, initialProject = null }: Workbench
     leftSidebarTab,
     setLeftSidebarTab,
     leftSidebarOpen,
-    bottomPanelOpen,
-    setBottomPanelOpen,
-    toggleBottomPanel,
     hasUnsavedChanges,
     markAsDirty,
     markAsSaved,

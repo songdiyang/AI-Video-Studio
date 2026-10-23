@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Card, CardBody, Button, Tooltip } from '@heroui/react';
-import { Layers, Eye, Loader2, Star, Shirt, Trash2, ChevronDown, Check } from 'lucide-react';
+import { Star, Shirt, Trash2, ChevronDown, Check, Film, Edit2, UserRound } from 'lucide-react';
 import { Character, CharacterState } from './types';
 import { fetchCharacterStates } from '../../../services/assets';
 
@@ -33,8 +33,9 @@ const CharacterCard: React.FC<CharacterCardProps> = ({
   onDelete,
   onStoryboardStateChange,
 }) => {
-  // 双击打开角色编辑标签页
-  const handleDoubleClick = () => {
+  // 双击打开角色编辑标签页（有回调时优先走工作台注册的入口）
+  const openEditor = () => {
+    if (onShowDetail) { onShowDetail(character); return; }
     window.dispatchEvent(new CustomEvent('openAssetEditTab', {
       detail: {
         assetType: 'character',
@@ -44,6 +45,7 @@ const CharacterCard: React.FC<CharacterCardProps> = ({
       }
     }));
   };
+  const handleDoubleClick = () => openEditor();
 
   const hasBaseModelViews = character.has_base_model_views === true || character.has_base_model_views === 1;
   const statesCount = character.statesCount ?? 0;
@@ -52,6 +54,8 @@ const CharacterCard: React.FC<CharacterCardProps> = ({
   const displayStateName = storyboardState?.stateName ?? character.active_state_name;
   const displayStateOutfit = storyboardState?.stateOutfit ?? character.active_state_outfit;
   const displayStateImage = storyboardState?.stateImage ?? character.active_state_image_url;
+  const thumb = displayStateImage || character.imageUrl || character.base_model_image_url || character.active_state_image_url;
+  const sceneCount = scenes?.filter(s => s.characters?.includes(character.name)).length || 0;
 
   // 状态选择下拉
   const [isStateDropdownOpen, setIsStateDropdownOpen] = useState(false);
@@ -137,33 +141,47 @@ const CharacterCard: React.FC<CharacterCardProps> = ({
 
   return (
     <Card
-      className="w-full bg-slate-800/60 shadow-sm hover:shadow-md hover:shadow-blue-500/5 transition-shadow border border-slate-700/50"
+      className="group w-full rounded-lg border border-(--border-color) bg-(--bg-card) shadow-none transition-colors hover:border-(--accent)/30 hover:bg-(--bg-card-hover)"
       onDoubleClick={handleDoubleClick}
       onContextMenu={handleContextMenu}
     >
-      <CardBody className="p-3">
-        <div className="flex items-start gap-3 mb-3 h-[88px]">
+      <CardBody className="p-2.5">
+        <div className="flex items-start gap-2.5 min-h-[88px]">
+          <div className="flex h-14 w-11 shrink-0 items-center justify-center overflow-hidden rounded-md border border-(--border-color) bg-(--bg-app)">
+            {thumb
+              ? <img src={thumb} alt="" className="h-full w-full object-cover" />
+              : <UserRound className="h-5 w-5 text-(--text-muted) opacity-50" />}
+          </div>
           <div className="flex-1 min-w-0">
-            <div className="flex items-center justify-between mb-1">
-              <div className="flex items-center gap-1.5">
-                <h4 className="font-bold text-slate-100 truncate">{character.name}</h4>
+            <div className="flex items-center justify-between gap-1.5 mb-1">
+              <h4 className="truncate text-sm font-semibold text-(--text-primary)">{character.name}</h4>
+              <div className="flex shrink-0 items-center gap-1">
+                <span title="关联分镜" className="inline-flex items-center gap-0.5 text-[10px] text-(--text-muted)">
+                  <Film className="h-3 w-3" />{sceneCount}
+                </span>
+                <button
+                  type="button"
+                  onClick={e => { e.stopPropagation(); openEditor(); }}
+                  className="rounded p-0.5 text-(--text-muted) opacity-0 transition-opacity hover:bg-white/5 hover:text-(--text-primary) group-hover:opacity-100 focus-visible:opacity-100"
+                  title="编辑角色"
+                  aria-label="编辑角色"
+                >
+                  <Edit2 className="h-3.5 w-3.5" />
+                </button>
               </div>
-              <span className="text-xs text-slate-500 ml-2">
-                {scenes?.filter(s => s.characters?.includes(character.name)).length || 0} 次
-              </span>
             </div>
             {/* 白膜/服装分层标识行 + 状态选择器 */}
             <div className="flex items-center gap-1.5 mb-1 flex-wrap">
               {hasBaseModelViews ? (
                 <Tooltip content="白膜三视图已生成，角色体貌一致性有保障">
-                  <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                  <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/10 text-amber-400/80 border border-amber-500/20">
                     <Star className="w-2.5 h-2.5" />
                     白膜
                   </span>
                 </Tooltip>
               ) : (
                 <Tooltip content="白膜未生成，建议先生成白膜保持角色一致性">
-                  <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-500/15 text-slate-400 border border-slate-500/30">
+                  <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-(--bg-app) text-(--text-muted) border border-(--border-color)">
                     <Star className="w-2.5 h-2.5" />
                     未生成白膜
                   </span>
@@ -184,7 +202,7 @@ const CharacterCard: React.FC<CharacterCardProps> = ({
                     disabled={statesCount === 0}
                   >
                     <Shirt className="w-2.5 h-2.5" />
-                    {displayStateName || '选择状态'}
+                    {displayStateName || (statesCount > 0 ? '选择状态' : '无状态')}
                     {statesCount > 0 && <ChevronDown className="w-2.5 h-2.5" />}
                   </button>
                 </Tooltip>
@@ -230,7 +248,7 @@ const CharacterCard: React.FC<CharacterCardProps> = ({
                 )}
               </div>
               {statesCount > 0 && (
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700/50 text-slate-400">
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-(--bg-app) text-(--text-muted)">
                   {statesCount} 状态
                 </span>
               )}
@@ -238,23 +256,23 @@ const CharacterCard: React.FC<CharacterCardProps> = ({
             {/* 外貌显示：优先展示白膜+服装分层信息 */}
             {character.base_appearance ? (
               <div className="space-y-0.5">
-                <p className="text-xs text-cyan-400/80 line-clamp-1">
-                  <span className="font-semibold text-cyan-400/60">体貌：</span>{character.base_appearance}
+                <p className="text-[11px] text-(--text-secondary) line-clamp-1">
+                  <span className="font-medium text-(--text-muted)">体貌 </span>{character.base_appearance}
                 </p>
                 {(displayStateOutfit || character.outfit_appearance) && (
-                  <p className="text-xs text-pink-400/80 line-clamp-1">
-                    <span className="font-semibold text-pink-400/60">服装：</span>{displayStateOutfit || character.outfit_appearance}
+                  <p className="text-[11px] text-(--text-secondary) line-clamp-1">
+                    <span className="font-medium text-(--text-muted)">服装 </span>{displayStateOutfit || character.outfit_appearance}
                   </p>
                 )}
               </div>
             ) : character.appearance ? (
-              <p className="text-xs text-slate-400 line-clamp-2 mb-1">
-                <span className="font-semibold">外貌：</span>{character.appearance}
+              <p className="text-[11px] text-(--text-secondary) line-clamp-2 mb-1">
+                <span className="font-medium text-(--text-muted)">外貌 </span>{character.appearance}
               </p>
             ) : null}
             {character.personality && (
-              <p className="text-xs text-slate-400 line-clamp-1">
-                <span className="font-semibold">性格：</span>{character.personality}
+              <p className="text-[11px] text-(--text-secondary) line-clamp-1">
+                <span className="font-medium text-(--text-muted)">性格 </span>{character.personality}
               </p>
             )}
           </div>

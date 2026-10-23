@@ -340,7 +340,7 @@ const SceneList: React.FC<SceneListProps> = ({
       {/* 分镜卡片列表 - 紧凑间距 */}
       <div 
         ref={scrollContainerRef}
-        className="flex-1 overflow-y-auto p-2 space-y-1 scroll-fade-top scroll-fade-bottom"
+        className="flex-1 overflow-y-auto p-2 space-y-1 scroll-fade-bottom"
         onContextMenu={(e) => {
           // 空白区域右键菜单
           if (onInsertScene && !(e.target as HTMLElement).closest('[data-scene-id]')) {

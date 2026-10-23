@@ -27,6 +27,10 @@ tauri-plugin-dialog = "2"
 tauri-plugin-os = "2"
 tauri-plugin-process = "2"
 tauri-plugin-notification = "2"
+# 单实例：双击 .jzp 时把打开请求转交给已运行实例
+tauri-plugin-single-instance = "2"
+# 工程归档包（.jzp = ZIP）
+zip = { version = "0.6", default-features = false, features = ["deflate"] }
 reqwest = { version = "0.12", features = ["json", "stream"] }
 tokio = { version = "1", features = ["full"] }
 chrono = { version = "0.4", features = ["serde"] }
@@ -37,3 +41,7 @@ dirs = "6.0"
 path-absolutize = "3.1"
 mime_guess = "2.0"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
+
+# .jzp 文件关联注册（当前用户注册表，无需管理员）
+[target.'cfg(windows)'.dependencies]
+winreg = "0.52"

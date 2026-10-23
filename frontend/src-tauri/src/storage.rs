@@ -78,15 +78,16 @@ pub struct ProjectMetadata {
     pub path: String,
 }
 
-// ==================== 本地工程：清单文件 + 注册表 ====================
+// ==================== 本地工程：工作态文件夹 + 归档包 ====================
 //
-// 工程模型（文件夹 = 工程）：
-//   <用户选择的目录>\<工程名>\
-//     ├── <工程名>.jzp      ← 清单文件（工程身份，双击可唤起应用）
-//     ├── data\             ← 结构化数据 JSON（script.json 等）
-//     ├── media\            ← 导入素材
-//     └── exports\          ← 导出产物
+// 工作态（文件夹 = 工作区）：
+//   <目录>\<工程名>\
+//     ├── project.json    ← 工程清单（索引/元数据）
+//     ├── data\           ← 结构化数据文档（scripts / storyboards …）
+//     ├── media\          ← 素材与生成产物
+//     └── exports\        ← 导出产物
 //
+// 归档态（.jzp = ZIP）：project.json + data/ + media/
 // 注册表：<appdata>\AI-Video-Studio\recent_projects.json
 //   [{ "path": "<工程文件夹>", "last_opened": "rfc3339" }]
 
@@ -97,7 +98,9 @@ pub struct RegistryEntry {
     pub last_opened: String,
 }
 
-/// 清单文件后缀
+/// 工作态清单文件名
+pub const MANIFEST_FILE_NAME: &str = "project.json";
+/// 归档包后缀
 pub const PROJECT_FILE_EXT: &str = "jzp";
 
 /// 默认工程根目录：文档\AI-Video-Studio作品
@@ -146,27 +149,44 @@ pub fn write_registry(app_root: &PathBuf, entries: &[RegistryEntry]) -> Result<(
     Ok(())
 }
 
-/// 查找工程文件夹内的 .jzp 清单文件（返回第一个）
+/// 查找工程文件夹内的清单文件（project.json）
+/// 兼容旧版 <工程名>.jzp（JSON 清单）：首次读取时就地迁移为 project.json。
 pub fn find_manifest(project_dir: &PathBuf) -> Option<PathBuf> {
     if !project_dir.is_dir() {
         return None;
     }
+    let canonical = project_dir.join(MANIFEST_FILE_NAME);
+    if canonical.is_file() {
+        return Some(canonical);
+    }
+
+    // 归档包是 ZIP（PK 开头），不会被误迁移
     let entries = std::fs::read_dir(project_dir).ok()?;
     for entry in entries.flatten() {
         let path = entry.path();
         if path.extension().and_then(|e| e.to_str()) == Some(PROJECT_FILE_EXT) && path.is_file() {
-            return Some(path);
+            if let Ok(content) = std::fs::read_to_string(&path) {
+                if content.trim_start().starts_with('{') {
+                    let _ = std::fs::rename(&path, &canonical);
+                    return Some(canonical);
+                }
+            }
         }
     }
     None
 }
 
 /// 解析工程路径 → 清单文件路径。
-/// 允许传入工程文件夹或其 .jzp 文件；若为文件夹父级则不处理。
+/// 支持工程文件夹或 project.json；.jzp 是归档包，需通过导入流程解包。
 pub fn resolve_manifest(path: &str) -> Result<PathBuf, String> {
     let p = PathBuf::from(path);
-    if p.is_file() && p.extension().and_then(|e| e.to_str()) == Some(PROJECT_FILE_EXT) {
-        return Ok(p);
+    if p.is_file() {
+        if p.file_name().and_then(|n| n.to_str()) == Some(MANIFEST_FILE_NAME) {
+            return Ok(p);
+        }
+        if p.extension().and_then(|e| e.to_str()) == Some(PROJECT_FILE_EXT) {
+            return Err("这是 .jzp 工程归档包，请使用「导入 .jzp 工程包」打开".to_string());
+        }
     }
     if p.is_dir() {
         if let Some(m) = find_manifest(&p) {
@@ -183,10 +203,10 @@ pub fn read_manifest(manifest_path: &PathBuf) -> Result<ProjectMetadata, String>
     serde_json::from_str(&content).map_err(|e| format!("Invalid manifest {:?}: {}", manifest_path, e))
 }
 
-/// 写入清单文件（原子写）
+/// 写入清单文件（原子写；固定为 project.json，改名工程不重命名文件）
 pub fn write_manifest(project_dir: &PathBuf, meta: &ProjectMetadata) -> Result<PathBuf, String> {
-    let manifest_path = project_dir.join(format!("{}.{}", sanitize_folder_name(&meta.name), PROJECT_FILE_EXT));
-    let tmp = manifest_path.with_extension("jzp.tmp");
+    let manifest_path = project_dir.join(MANIFEST_FILE_NAME);
+    let tmp = project_dir.join("project.json.tmp");
     let content = serde_json::to_string_pretty(meta)
         .map_err(|e| format!("Failed to serialize manifest: {}", e))?;
     std::fs::write(&tmp, content).map_err(|e| format!("Failed to write manifest: {}", e))?;
@@ -199,7 +219,7 @@ pub fn upsert_registry(app_root: &PathBuf, project_dir: &PathBuf) -> Result<(), 
     let path_str = project_dir.to_string_lossy().to_string();
     let now = chrono::Utc::now().to_rfc3339();
     let mut entries = read_registry(app_root);
-    // 清理：清单文件已不存在的条目
+    // 清理：清单已不存在的条目
     entries.retain(|e| resolve_manifest(&e.path).is_ok());
     match entries.iter_mut().find(|e| e.path == path_str) {
         Some(entry) => entry.last_opened = now,

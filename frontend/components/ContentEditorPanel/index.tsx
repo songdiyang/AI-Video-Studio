@@ -30,6 +30,10 @@ export interface ContentEditorPanelProps {
   status?: EditorSaveStatus;
   onSave?: () => void | Promise<unknown>;
   actions?: React.ReactNode;
+  /** 标题行内联的分镜元数据（角色/道具/影棚/时长等） */
+  meta?: React.ReactNode;
+  /** 标题行右侧的附加操作（如分镜锁定） */
+  extra?: React.ReactNode;
   children: React.ReactNode;
   className?: string;
 }
@@ -38,25 +42,44 @@ const STATUS_LABELS: Record<EditorSaveStatus, string> = {
   idle: '就绪', dirty: '未保存', saving: '保存中', saved: '已保存', error: '保存失败',
 };
 
+// 状态控件降权：悬停时用 tooltip 解释含义，避免干扰主视线
+const STATUS_HINTS: Record<EditorSaveStatus, string> = {
+  idle: '分镜内容已就绪；停止输入后会自动保存',
+  dirty: '有未保存的修改，停止输入后会自动保存',
+  saving: '正在保存当前分镜内容…',
+  saved: '分镜内容已保存',
+  error: '保存失败，请点击保存重试',
+};
+
 /** 统一展示外壳；领域字段、校验、保存与生成均由各编辑器提供。 */
 const ContentEditorPanel: React.FC<ContentEditorPanelProps> = ({
   title, kind, tabs, activeTab, onTabChange, status = 'idle', onSave,
-  actions, children, className = '',
+  actions, meta, extra, children, className = '',
 }) => {
   const id = useId();
   const StatusIcon = status === 'saving' ? Loader2 : status === 'error' ? AlertCircle : status === 'saved' ? Check : Circle;
   return (
     <section className={`content-editor-panel ${className}`} aria-label={`${kind}编辑面板`}>
       <div className="content-editor-heading">
-        <div className="content-editor-identity">
+        <h2 className="content-editor-identity" title={`${kind} · ${title || '未命名'}`}>
           <span className="content-editor-kind">{kind}</span>
-          <span className="content-editor-title" title={title}>{title || '未命名'}</span>
+          <span className="content-editor-title-sep" aria-hidden="true">·</span>
+          <span className="content-editor-title">{title || '未命名'}</span>
+        </h2>
+        <div className="content-editor-heading-side">
+          {extra}
+          <span
+            className={`content-editor-status is-${status}`}
+            role="status"
+            aria-live="polite"
+            title={STATUS_HINTS[status]}
+          >
+            <StatusIcon size={12} className={status === 'saving' ? 'animate-spin' : ''} />
+            {STATUS_LABELS[status]}
+          </span>
         </div>
-        <span className={`content-editor-status is-${status}`} role="status" aria-live="polite">
-          <StatusIcon size={12} className={status === 'saving' ? 'animate-spin' : ''} />
-          {STATUS_LABELS[status]}
-        </span>
       </div>
+      {meta && <div className="content-editor-properties">{meta}</div>}
       <div className="content-editor-tabs" role="tablist" aria-label="编辑内容">
         {tabs.map((tab, index) => (
           <button

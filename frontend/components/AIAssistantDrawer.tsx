@@ -17,7 +17,7 @@ const AIAssistantPanel = lazy(() => import('./AIAssistantPanel'));
 
 const AIAssistantDrawer: React.FC = () => {
   const { isOpen, close, projectId } = useAIAssistantUI();
-  const { currentFrame, scenes, onAction, characters, locations, scripts, projectName, projectDescription } = useAIAssistantData();
+  const { currentFrame, scenes, onAction, characters, locations, studios, scripts, projectName, projectDescription } = useAIAssistantData();
   // 左缘拖拽伸缩（宽度持久化 + 双击复位）
   const resize = useResizableSidebar({
     storageKey: 'nanostory_ai_sidebar_width',
@@ -36,7 +36,7 @@ const AIAssistantDrawer: React.FC = () => {
           animate={{ opacity: 1, x: 0 }}
           exit={{ opacity: 0, x: 24 }}
           transition={{ duration: 0.18, ease: 'easeOut' }}
-          className="relative shrink-0 min-w-0 pt-11 pb-7 bg-(--bg-app) border-l border-(--border-color) overflow-hidden flex flex-col max-md:fixed max-md:top-10 max-md:right-0 max-md:bottom-0 max-md:h-auto max-md:w-full max-md:max-w-[440px] max-md:z-[150] max-md:shadow-2xl"
+          className="relative shrink-0 min-w-0 pt-11 pb-7 bg-(--bg-app) border-l border-(--border-color) overflow-hidden flex flex-col max-md:fixed max-md:top-10 max-md:right-0 max-md:bottom-0 max-md:h-auto max-md:w-full max-md:max-w-110 max-md:z-150 max-md:shadow-2xl"
           style={{ width: `min(${resize.width}px, 95vw)` }}
         >
           {/* 拖拽伸缩手柄（小屏覆盖层模式下不需要） */}
@@ -44,7 +44,7 @@ const AIAssistantDrawer: React.FC = () => {
             {...resize.handleProps}
             role="separator"
             aria-orientation="vertical"
-            className={`absolute left-0 top-0 bottom-0 w-[5px] z-10 cursor-col-resize transition-colors max-md:hidden ${
+            className={`absolute left-0 top-0 bottom-0 w-1.25 z-10 cursor-col-resize transition-colors max-md:hidden ${
               resize.isDragging ? 'bg-(--accent)/60' : 'hover:bg-(--accent)/40'
             }`}
           />
@@ -64,6 +64,7 @@ const AIAssistantDrawer: React.FC = () => {
               scenes={scenes}
               characters={characters}
               locations={locations}
+              studios={studios}
               scripts={scripts}
               onClose={close}
               onAction={onAction || undefined}

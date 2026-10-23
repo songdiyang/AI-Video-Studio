@@ -1,11 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Settings2, Sparkles, ChevronRight, ChevronDown, User, MapPin, Box, Cloud, Building2, Shirt, Tags, RefreshCw } from 'lucide-react';
+import { Settings2, Sparkles, ChevronRight, ChevronDown, User, MapPin, Box, Cloud, Building2, Shirt, Tags, RefreshCw, Plus } from 'lucide-react';
 import { Tooltip } from '@heroui/react';
 import { ResourcePanelProps } from './types';
 import { useStoryboardBridgeSafe } from '../../../contexts/StoryboardBridgeContext';
-import { useCharacterData } from './useCharacterData';
-import { useSceneData, Scene } from './useSceneData';
+import { type Scene } from './useSceneData';
 import CharactersTab from './CharactersTab';
 import LocationsTab from './LocationsTab';
 import PropsTab from './PropsTab';
@@ -15,15 +14,16 @@ import CostumesTab from './CostumesTab';
 import CharacterViewsModal from './CharacterViewsModal';
 import CreateAssetModal, { CreateAssetType } from './CreateAssetModal';
 import { useResourceModals } from './useResourceModals';
+import { useResourceLibrary } from './useResourceLibrary';
 import { Character } from './types';
 import { deleteCharacter, uploadCharacterImage, deleteProp } from '../../../services/assets';
 import {
   extractStudioComponentsFromScript, composeStudiosFromScript,
   generateStudioNineGrid, deleteStudio,
 } from '../../../services/studios';
-import { listEnvironments, generateEnvironmentImage, deleteEnvironment } from '../../../services/environments';
-import { listBuildings, generateBuildingImage, deleteBuilding } from '../../../services/buildings';
-import { fetchCostumes, generateCostumeViews, deleteCostume } from '../../../services/costumes';
+import { generateEnvironmentImage, deleteEnvironment } from '../../../services/environments';
+import { generateBuildingImage, deleteBuilding } from '../../../services/buildings';
+import { generateCostumeViews, deleteCostume } from '../../../services/costumes';
 import type { Environment } from '../../../services/environments';
 import type { Building } from '../../../services/buildings';
 import type { Costume } from '../../../services/costumes';
@@ -39,7 +39,6 @@ import {
   RESOURCE_TYPE_REGISTRY,
   ResourceTypeKey,
   makeCustomKey,
-  useResourceCategories,
   buildAllResourceEntries,
 } from './resourceCategories';
 
@@ -58,8 +57,7 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
   /** 刷新道具列表回调 */
   onRefreshProps?: () => void;
 }> = ({ 
-  characters, 
-  props,
+  props: propsProp,
   projectId,
   scriptId,
   scenes,
@@ -99,20 +97,12 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
     return options.length > 0 ? options[0].value : '';
   }, [imageAspectRatio, effectiveImageModel, models]);
   
-  const { dbCharacters, isLoadingCharacters, loadCharacters } = useCharacterData(projectId, scriptId);
-  const { dbScenes, isLoadingScenes, loadScenes } = useSceneData(projectId, scriptId);
-
-  // 环境、建筑和服装数据
-  const [dbEnvironments, setDbEnvironments] = useState<Environment[]>([]);
-  const [dbBuildings, setDbBuildings] = useState<Building[]>([]);
-  const [dbCostumes, setDbCostumes] = useState<Costume[]>([]);
-  const [isLoadingEnvironments, setIsLoadingEnvironments] = useState(false);
-  const [isLoadingBuildings, setIsLoadingBuildings] = useState(false);
-  const [isLoadingCostumes, setIsLoadingCostumes] = useState(false);
-
-  // ── 资源分类：基本分类开关 + 用户/AI 自定义分类（localStorage 持久化） ──
+  // 单一数据源：资源清单 + 分类显示配置由 /api/resource-library 一次返回
   const {
-    config: categoryConfig,
+    data: libraryData,
+    categories: categoryConfig,
+    isLoading: isLoadingLibrary,
+    refresh: refreshLibrary,
     toggleType,
     addCustomCategory,
     renameCustomCategory,
@@ -121,7 +111,45 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
     removeMember,
     applyAiCategories,
     clearAiCategories,
-  } = useResourceCategories();
+  } = useResourceLibrary(projectId, scriptId);
+
+  const dbCharacters = libraryData.characters;
+  const dbScenes = libraryData.locations;
+  // 合并父级从分镜文本中提取、但尚未入库的道具（id=0），避免这些名称在资源面板丢失
+  const props = useMemo(() => {
+    const dbIds = new Set(libraryData.props.map(p => p.id));
+    const extras = (propsProp || []).filter(p => !dbIds.has(p.id));
+    return extras.length > 0 ? [...libraryData.props, ...extras] : libraryData.props;
+  }, [libraryData.props, propsProp]);
+  const dbEnvironments = libraryData.environments;
+  const dbBuildings = libraryData.buildings;
+  const dbCostumes = libraryData.costumes;
+
+  // 所有资源子列表共享同一次加载状态
+  const isLoadingCharacters = isLoadingLibrary;
+  const isLoadingScenes = isLoadingLibrary;
+  const isLoadingEnvironments = isLoadingLibrary;
+  const isLoadingBuildings = isLoadingLibrary;
+  const isLoadingCostumes = isLoadingLibrary;
+
+  // 兼容旧 CRUD 刷新调用：每次动作后统一重取整份资源库
+  const loadCharacters = refreshLibrary;
+  const loadScenes = refreshLibrary;
+  const loadEnvironments = refreshLibrary;
+  const loadBuildings = refreshLibrary;
+  const loadCostumes = refreshLibrary;
+
+  // 父级道具清单变化时同步刷新统一资源库（父级新增/删除道具不会自动经过面板 CRUD）
+  const propsSignature = useMemo(
+    () => (propsProp || []).map(p => `${p.id}:${p.image_url || ''}:${p.generation_status || ''}`).join('|'),
+    [propsProp],
+  );
+  const lastPropsSignatureRef = useRef(propsSignature);
+  useEffect(() => {
+    if (lastPropsSignatureRef.current === propsSignature) return;
+    lastPropsSignatureRef.current = propsSignature;
+    void refreshLibrary();
+  }, [propsSignature, refreshLibrary]);
 
   const [viewsCharacterId, setViewsCharacterId] = useState<number | undefined>(undefined);
 
@@ -149,16 +177,9 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
     }
   };
 
-  // 项目切换时加载环境、建筑和服装
-  useEffect(() => {
-    if (projectId) {
-      loadEnvironments();
-      loadBuildings();
-      loadCostumes();
-    }
-  }, [projectId]);
+  // 项目切换时由 useResourceLibrary 统一重取资源库与分类配置，无需分列表重复加载
 
-  // 监听环境删除事件，刷新环境列表
+  // 监听环境删除事件，刷新资源库
   useEffect(() => {
     const handleEnvDeleted = () => {
       loadEnvironments();
@@ -308,55 +329,12 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
     handleGenerateViews(charName, '', '', '', characterId);
   };
 
-  const loadEnvironments = async () => {
-    if (!projectId) return;
-    setIsLoadingEnvironments(true);
-    try {
-      const data = await listEnvironments(projectId);
-      setDbEnvironments(data);
-    } catch (error) {
-      console.error('[ResourcePanel] 加载环境失败:', error);
-    } finally {
-      setIsLoadingEnvironments(false);
-    }
-  };
-
-  const loadBuildings = async () => {
-    if (!projectId) return;
-    setIsLoadingBuildings(true);
-    try {
-      const data = await listBuildings(projectId);
-      setDbBuildings(data);
-    } catch (error) {
-      console.error('[ResourcePanel] 加载建筑失败:', error);
-    } finally {
-      setIsLoadingBuildings(false);
-    }
-  };
-
-  const loadCostumes = async () => {
-    if (!projectId) return;
-    setIsLoadingCostumes(true);
-    try {
-      const data = await fetchCostumes(projectId);
-      setDbCostumes(data);
-    } catch (error) {
-      console.error('[ResourcePanel] 加载服装失败:', error);
-    } finally {
-      setIsLoadingCostumes(false);
-    }
-  };
-
   const handleRefreshResources = async () => {
     if (!projectId) {
       showToast('请先选择项目', 'warning');
       return;
     }
-    await loadCharacters();
-    await loadScenes();
-    await loadEnvironments();
-    await loadBuildings();
-    await loadCostumes();
+    await refreshLibrary();
     onRefreshProps?.();
   };
 
@@ -386,9 +364,9 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
       // 1. 先找到所有绑定了该角色的分镜，移除绑定
       const boundScenes = scenes?.filter(s => s.characters?.includes(character.name)) || [];
       for (const scene of boundScenes) {
-        const newCharacters = scene.characters.filter(c => c !== character.name);
+        const newCharacters = scene.characters.filter((c: string) => c !== character.name);
         // 同时从 linkedCharacters 中移除
-        const newLinkedCharacters = scene.linkedCharacters?.filter(lc => lc.name !== character.name) || [];
+        const newLinkedCharacters = scene.linkedCharacters?.filter((lc: { name?: string }) => lc.name !== character.name) || [];
         // 更新分镜内容（保留 location 不变）
         try {
           await fetch(`/api/storyboards/${scene.id}/content`, {
@@ -450,6 +428,7 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
     try {
       await deleteProp(prop.id);
       showToast('道具已删除', 'success');
+      await refreshLibrary();
       onRefreshProps?.();
     } catch (error: any) {
       showToast('删除失败: ' + (error?.message || '未知错误'), 'error');
@@ -562,6 +541,7 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
 
   const handleExtractStudioComponents = async () => {
     if (!projectId) { showToast('请先选择项目', 'warning'); return; }
+    if (!scriptId) { showToast('请先选择剧本', 'warning'); return; }
     if (!textModel) { showToast('请先选择文本模型', 'warning'); return; }
     setIsExtractingComponents(true);
     try {
@@ -577,6 +557,7 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
 
   const handleComposeStudiosFromScript = async () => {
     if (!projectId) { showToast('请先选择项目', 'warning'); return; }
+    if (!scriptId) { showToast('请先选择剧本', 'warning'); return; }
     if (!textModel) { showToast('请先选择文本模型', 'warning'); return; }
     setIsComposingStudios(true);
     try {
@@ -619,7 +600,34 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
   ], [categoryConfig]);
 
   // AI 模式：仅展示有内容的分类，空分组自动折叠隐藏
-  const visibleSections = aiMode ? sections.filter(s => (sectionCounts[s.key] ?? 0) > 0) : sections;
+  // 若分类配置为空（历史误操作把基本分类全部关闭），先兜底展示实际有资源的类型，
+  // 避免出现「分镜里有角色/场景，但资源面板完全没有分类」的死状态。
+  const fallbackSections = useMemo(() => {
+    if (sections.length > 0) return [];
+    return ALL_RESOURCE_TYPES
+      .filter(t => (sectionCounts[t] ?? 0) > 0)
+      .map(t => ({
+        key: t as string,
+        kind: t as ResourceTypeKey | 'custom',
+        label: RESOURCE_TYPE_REGISTRY[t].label,
+        custom: null as CustomCategory | null,
+      }));
+  }, [sections.length, sectionCounts]);
+
+  const visibleSections = aiMode
+    ? sections.filter(s => (sectionCounts[s.key] ?? 0) > 0)
+    : sections.length > 0
+      ? sections
+      : fallbackSections;
+
+  // 分类配置为空但确有资源时，自动恢复为「有资源的分类」并持久化，
+  // 让分类管理弹窗与面板展示保持一致。
+  useEffect(() => {
+    if (categoryConfig.enabledTypes.length > 0 || categoryConfig.customCategories.length > 0) return;
+    const typesWithResources = ALL_RESOURCE_TYPES.filter(t => (sectionCounts[t] ?? 0) > 0);
+    if (typesWithResources.length === 0) return;
+    typesWithResources.forEach(toggleType);
+  }, [categoryConfig.enabledTypes.length, categoryConfig.customCategories.length, sectionCounts, toggleType]);
 
   const toggleSection = (key: string) => {
     setExpandedSections(prev => {
@@ -644,7 +652,6 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
             storyboardStates={storyboardStates}
             onGenerateViews={handleGenerateViewsWrapper}
             onShowDetail={handleShowDetail}
-            onCreate={() => handleOpenCreate('character')}
             onDelete={handleDeleteCharacterFromCard}
             onStoryboardStateChange={onStoryboardStateChange}
           />
@@ -824,6 +831,18 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
                 {section.custom?.aiGenerated && <Sparkles className="w-3 h-3 shrink-0 text-(--accent) opacity-70" />}
                 {/* 空数据时隐藏计数，避免强化"空空如也"的挫败感 */}
                 {count > 0 && <span className="shrink-0 text-[10px] text-(--text-muted)">{count}</span>}
+                {section.kind === 'characters' && (
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); handleOpenCreate('character'); }}
+                    onKeyDown={(e) => e.stopPropagation()}
+                    className="shrink-0 inline-flex items-center justify-center h-5 w-5 rounded text-(--text-secondary) hover:text-(--text-primary) hover:bg-white/5 transition-colors"
+                    title="新建角色"
+                    aria-label="新建角色"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </div>
               {expanded && (
                 <div className="px-3 pb-3 max-h-[45vh] overflow-y-auto">

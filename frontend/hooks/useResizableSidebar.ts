@@ -2,7 +2,8 @@
  * 侧边栏拖拽伸缩 Hook
  * ──────────────────────────────────────────────────────────────
  * 供 Layout 左侧内容面板与右侧 AI 助手侧边栏共用：
- * - 拖拽手柄 pointer 事件调整宽度（min/max 夹取）
+ * - 超宽/过窄夹取
+ * - 拖到指定阈值以下时自动收起（左右侧栏共用）
  * - 宽度持久化到 localStorage
  * - 双击手柄恢复默认宽度
  * - 拖拽期间锁定光标为 col-resize 并禁用文本选中
@@ -17,6 +18,10 @@ export interface ResizableSidebarOptions {
   maxWidth: number;
   /** 'left'：侧栏在左、向右拖拽变宽；'right'：侧栏在右、向左拖拽变宽 */
   side: 'left' | 'right';
+  /** 拖拽宽度低于该值时自动收起（建议比 minWidth 少 40~80px，先到最小宽度再额外拖一段） */
+  collapseThreshold?: number;
+  /** 触发自动收起的回调（通常为关闭侧栏） */
+  onCollapse?: () => void;
 }
 
 export interface ResizableSidebarResult {
@@ -36,6 +41,8 @@ export function useResizableSidebar({
   minWidth,
   maxWidth,
   side,
+  collapseThreshold,
+  onCollapse,
 }: ResizableSidebarOptions): ResizableSidebarResult {
   const clamp = useCallback(
     (w: number) => Math.min(maxWidth, Math.max(minWidth, Math.round(w))),
@@ -73,20 +80,34 @@ export function useResizableSidebar({
     document.body.style.cursor = 'col-resize';
     document.body.style.userSelect = 'none';
 
-    const onMove = (ev: PointerEvent) => {
-      const dx = ev.clientX - startX;
-      setWidth(clamp(side === 'left' ? startWidth + dx : startWidth - dx));
-    };
-    const onUp = () => {
+    function cleanup() {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
       setIsDragging(false);
-    };
+    }
+
+    function onMove(ev: PointerEvent) {
+      const dx = ev.clientX - startX;
+      const rawWidth = side === 'left' ? startWidth + dx : startWidth - dx;
+
+      // 拖到阈值以下：停止拖拽并自动收起侧栏
+      if (onCollapse && collapseThreshold !== undefined && rawWidth < collapseThreshold) {
+        cleanup();
+        onCollapse();
+        return;
+      }
+      setWidth(clamp(rawWidth));
+    }
+
+    function onUp() {
+      cleanup();
+    }
+
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
-  }, [clamp, side]);
+  }, [clamp, side, collapseThreshold, onCollapse]);
 
   const resetWidth = useCallback(() => setWidth(defaultWidth), [defaultWidth]);
 
@@ -96,7 +117,7 @@ export function useResizableSidebar({
     handleProps: {
       onPointerDown: startDrag,
       onDoubleClick: resetWidth,
-      title: '拖拽调整宽度，双击恢复默认',
+      title: onCollapse ? '拖拽调整宽度；到最小宽度后继续向内拖可收起，双击恢复默认' : '拖拽调整宽度，双击恢复默认',
     },
   };
 }
