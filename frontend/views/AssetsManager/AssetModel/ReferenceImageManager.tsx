@@ -52,6 +52,7 @@ const ReferenceImageManager: React.FC<ReferenceImageManagerProps> = ({
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number>(0);
   const [isHovering, setIsHovering] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { showToast } = useToast();
   const { isOpen: isPreviewOpen, onOpen: onPreviewOpen, onOpenChange: onPreviewOpenChange } = useDisclosure();
@@ -157,19 +158,32 @@ const ReferenceImageManager: React.FC<ReferenceImageManagerProps> = ({
 
   const enabled = sheetImage?.is_enabled !== false;
 
+  const cardStyle: React.CSSProperties = {
+    background: 'var(--bg-card)',
+    borderColor: 'var(--border-color)',
+  };
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* 全局启用开关 */}
       {showGlobalToggle && (
-        <div className="flex items-center justify-between p-3 bg-slate-800/50 rounded-lg border border-slate-700/50">
-          <div className="flex items-center gap-2">
-            <Power className={`w-4 h-4 ${globalEnabled ? 'text-green-400' : 'text-slate-500'}`} />
-            <span className="text-sm text-slate-200">使用参考图生成白膜三视图</span>
+        <div
+          className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg border"
+          style={cardStyle}
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            <Power
+              className="w-3.5 h-3.5 shrink-0"
+              style={{ color: globalEnabled ? 'var(--success)' : 'var(--text-muted)' }}
+            />
+            <span className="text-xs truncate" style={{ color: 'var(--text-secondary)' }}>
+              使用参考图生成白膜三视图
+            </span>
             <Tooltip
               content={`开启后，AI生成白膜三视图时会参考上传的${assetType === 'prop' ? '道具' : '角色'}设定图。关闭则仅基于${assetType === 'prop' ? '道具' : '角色'}描述生成白膜。其他状态（如服装变体）的生成不受此开关影响，它们始终以白膜三视图为参考基准。`}
               placement="right"
             >
-              <HelpCircle className="w-3.5 h-3.5 text-slate-500 cursor-help" />
+              <HelpCircle className="w-3.5 h-3.5 shrink-0 cursor-help" style={{ color: 'var(--text-muted)' }} />
             </Tooltip>
           </div>
           <Switch
@@ -183,31 +197,48 @@ const ReferenceImageManager: React.FC<ReferenceImageManagerProps> = ({
 
       {/* 设定图区域 */}
       <div>
-        <div className="flex items-center gap-2 mb-3">
-          <h4 className="text-sm font-medium text-slate-200">{assetLabel}</h4>
+        <div className="flex items-center gap-1.5 mb-2 min-w-0">
+          <h4 className="text-xs font-medium shrink-0" style={{ color: 'var(--text-secondary)' }}>{assetLabel}</h4>
           <Tooltip
             content={`上传一张${assetType === 'prop' ? '道具' : '角色'}设定图，仅用于${assetType === 'prop' ? '道具' : '白膜三视图'}生成时作为参考。`}
             placement="right"
           >
-            <HelpCircle className="w-4 h-4 text-slate-500 cursor-help" />
+            <HelpCircle className="w-3.5 h-3.5 shrink-0 cursor-help" style={{ color: 'var(--text-muted)' }} />
           </Tooltip>
           {globalEnabled === false && (
-            <span className="text-xs text-amber-400 bg-amber-400/10 px-2 py-0.5 rounded">
+            <span
+              className="text-[10px] px-1.5 py-0.5 rounded shrink-0"
+              style={{ color: '#d49a36', background: 'rgba(212, 154, 54, 0.12)' }}
+            >
               参考图功能已关闭
             </span>
           )}
         </div>
 
+        <input
+          type="file"
+          ref={fileInputRef}
+          onChange={handleFileSelect}
+          accept="image/jpeg,image/png,image/gif,image/webp"
+          className="hidden"
+        />
+
         {loading ? (
-          <div className="text-center py-4 text-slate-400 text-sm">加载中...</div>
+          <div
+            className="w-60 max-w-full aspect-[3/4] rounded-lg border flex items-center justify-center text-xs"
+            style={{ ...cardStyle, color: 'var(--text-muted)' }}
+          >
+            加载中…
+          </div>
         ) : (
           <div
-            className="relative flex flex-col max-w-xs"
+            className="relative w-60 max-w-full aspect-[3/4] rounded-lg overflow-hidden"
+            style={sheetImage ? { border: '1px solid var(--border-color)' } : undefined}
             onMouseEnter={() => setIsHovering(true)}
             onMouseLeave={() => setIsHovering(false)}
           >
             {sheetImage ? (
-              <div className="relative aspect-[3/4] rounded-lg overflow-hidden border border-slate-600/50 bg-slate-800/60 group">
+              <>
                 <img
                   src={sheetImage.image_url}
                   alt={assetLabel}
@@ -217,13 +248,28 @@ const ReferenceImageManager: React.FC<ReferenceImageManagerProps> = ({
                 {!disabled && isHovering && (
                   <div className="absolute inset-0 bg-black/50 flex items-center justify-center gap-2">
                     <button
+                      type="button"
                       onClick={onPreviewOpen}
                       className="p-2 bg-slate-700 rounded-lg hover:bg-slate-600 transition-colors"
                       title="预览"
+                      aria-label="预览设定图"
                     >
                       <Eye className="w-4 h-4 text-white" />
                     </button>
                     <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        fileInputRef.current?.click();
+                      }}
+                      className="p-2 bg-slate-700 rounded-lg hover:bg-slate-600 transition-colors"
+                      title="更换"
+                      aria-label="更换设定图"
+                    >
+                      <Upload className="w-4 h-4 text-white" />
+                    </button>
+                    <button
+                      type="button"
                       onClick={(e) => {
                         e.stopPropagation();
                         handleToggleEnabled();
@@ -234,74 +280,89 @@ const ReferenceImageManager: React.FC<ReferenceImageManagerProps> = ({
                           : 'bg-slate-500/80 hover:bg-slate-500'
                       }`}
                       title={enabled ? '禁用' : '启用'}
+                      aria-label={enabled ? '禁用参考图' : '启用参考图'}
                     >
                       <Power className="w-4 h-4 text-white" />
                     </button>
                     <button
+                      type="button"
                       onClick={handleDelete}
                       className="p-2 bg-red-500/80 rounded-lg hover:bg-red-500 transition-colors"
                       title="删除"
+                      aria-label="删除设定图"
                     >
                       <Trash2 className="w-4 h-4 text-white" />
                     </button>
                   </div>
                 )}
                 {!enabled && (
-                  <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                  <div className="absolute inset-0 bg-black/40 flex items-center justify-center pointer-events-none">
                     <span className="text-white text-xs font-medium px-2 py-1 bg-black/60 rounded">
                       已禁用
                     </span>
                   </div>
                 )}
+              </>
+            ) : uploading ? (
+              <div
+                className="w-full h-full flex flex-col items-center justify-center px-5 rounded-lg border border-dashed"
+                style={cardStyle}
+              >
+                <Upload className="w-6 h-6 mb-2 text-blue-400 animate-pulse" />
+                <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                  上传中… {uploadProgress}%
+                </p>
+                <Progress
+                  value={uploadProgress}
+                  size="sm"
+                  color="primary"
+                  className="w-full mt-2"
+                />
               </div>
             ) : (
-              <div className="aspect-[3/4] rounded-lg border-2 border-dashed border-slate-600/50 bg-slate-800/30 flex flex-col items-center justify-center p-3">
-                {disabled ? (
-                  <div className="text-center">
-                    <ImageIcon className="w-8 h-8 mx-auto mb-1 text-slate-600" />
-                    <p className="text-xs text-slate-500">暂无{assetLabel}</p>
-                  </div>
-                ) : uploading ? (
-                  <div className="w-full px-2">
-                    <div className="text-center mb-2">
-                      <Upload className="w-8 h-8 mx-auto mb-1 text-blue-400 animate-pulse" />
-                      <p className="text-xs text-slate-400">上传中...</p>
-                    </div>
-                    <Progress
-                      value={uploadProgress}
-                      size="sm"
-                      color="primary"
-                      className="w-full"
-                    />
-                    <p className="text-xs text-center text-slate-500 mt-1">
-                      {uploadProgress}%
-                    </p>
-                  </div>
-                ) : (
-                  <>
-                    <ImageIcon className="w-10 h-10 mb-3 text-slate-500 opacity-50" />
-                    <input
-                      type="file"
-                      ref={fileInputRef}
-                      onChange={handleFileSelect}
-                      accept="image/jpeg,image/png,image/gif,image/webp"
-                      className="hidden"
-                    />
-                    <Button
-                      size="sm"
-                      variant="flat"
-                      className="w-full h-8 text-xs bg-blue-600 text-white border border-blue-500 font-medium"
-                      onPress={() => fileInputRef.current?.click()}
-                    >
-                      <Upload className="w-3 h-3 mr-1" />
-                      上传本地图片
-                    </Button>
-                    <p className="text-[11px] text-slate-500 mt-2 text-center">
-                      支持 JPEG / PNG / GIF / WebP，最大 10MB
-                    </p>
-                  </>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
+                onDragLeave={(e) => {
+                  if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setIsDragOver(false);
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setIsDragOver(false);
+                  const file = e.dataTransfer.files?.[0];
+                  if (file) void handleFileUpload(file);
+                }}
+                disabled={disabled}
+                aria-label={`上传${assetLabel}`}
+                className={`group w-full h-full flex flex-col items-center justify-center px-4 rounded-lg border border-dashed transition-colors bg-[var(--bg-card)] ${
+                  disabled ? 'cursor-default' : 'hover:bg-[var(--bg-card-hover)]'
+                }`}
+                style={{
+                  borderColor: isDragOver ? 'var(--accent)' : 'var(--border-color)',
+                  background: isDragOver ? 'var(--bg-card-hover)' : undefined,
+                }}
+              >
+                <Upload
+                  className={`w-6 h-6 mb-2 transition-colors text-[var(--text-muted)] ${
+                    disabled ? '' : 'group-hover:text-[var(--accent)]'
+                  }`}
+                  style={isDragOver ? { color: 'var(--accent)' } : undefined}
+                />
+                <span className={`text-xs font-medium ${disabled ? 'text-[var(--text-muted)]' : 'text-[var(--text-primary)]'}`}>
+                  {disabled ? `暂无${assetLabel}` : `上传${assetLabel}`}
+                </span>
+                {!disabled && (
+                  <span className="mt-1 text-[11px] text-center text-[var(--text-secondary)]">
+                    点击选择或拖拽图片到此处
+                  </span>
                 )}
-              </div>
+                <span className="mt-2 text-[11px] text-center leading-relaxed text-[var(--text-muted)]">
+                  JPEG / PNG / GIF / WebP
+                  <br />
+                  大小不超过 10MB
+                </span>
+              </button>
             )}
           </div>
         )}

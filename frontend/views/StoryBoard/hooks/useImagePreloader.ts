@@ -130,7 +130,7 @@ export const useImagePreloader = (
  * @param debounceMs 防抖时间，默认 100ms
  */
 export const useScrollIndex = (
-  containerRef: React.RefObject<HTMLElement>,
+  containerRef: React.RefObject<HTMLElement | null>,
   itemHeight: number = 120,
   debounceMs: number = 100
 ) => {

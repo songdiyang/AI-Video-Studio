@@ -646,7 +646,7 @@ const NodeCanvas: React.FC<NodeCanvasProps> = ({
                     draggable={false}
                   />
                   {/* 状态标签 */}
-                  <div className="absolute bottom-0 left-0 right-0 px-2 py-1 bg-gradient-to-t from-black/60 to-transparent">
+                  <div className="absolute bottom-0 left-0 right-0 px-2 py-1 bg-linear-to-t from-black/60 to-transparent">
                     <span className="text-[10px] text-white font-medium truncate block">
                       {node.title}
                     </span>
@@ -677,7 +677,7 @@ const NodeCanvas: React.FC<NodeCanvasProps> = ({
                     className="w-full h-full object-cover"
                     draggable={false}
                   />
-                  <div className="absolute bottom-0 left-0 right-0 px-2 py-1 bg-gradient-to-t from-black/60 to-transparent">
+                  <div className="absolute bottom-0 left-0 right-0 px-2 py-1 bg-linear-to-t from-black/60 to-transparent">
                     <span className="text-[10px] text-white font-medium truncate block">
                       {node.title}
                     </span>
@@ -744,7 +744,7 @@ const NodeCanvas: React.FC<NodeCanvasProps> = ({
 
           {/* 视频节点 */}
           {node.type === 'video' && (
-            <div className="relative rounded overflow-hidden bg-gray-100 min-h-[80px] flex items-center justify-center">
+            <div className="relative rounded overflow-hidden bg-gray-100 min-h-20 flex items-center justify-center">
               {node.videoUrl ? (
                 <video
                   src={node.videoUrl}
@@ -866,7 +866,7 @@ const NodeCanvas: React.FC<NodeCanvasProps> = ({
     <div className="relative w-full h-full flex overflow-hidden bg-white">
       {/* 左侧资源面板 */}
       <div
-        className={`flex-shrink-0 bg-gray-50 border-r border-gray-200 transition-all duration-200 overflow-hidden flex flex-col ${showResourcePanel ? 'w-52' : 'w-0'}`}
+        className={`shrink-0 bg-gray-50 border-r border-gray-200 transition-all duration-200 overflow-hidden flex flex-col ${showResourcePanel ? 'w-52' : 'w-0'}`}
       >
         <div className="p-3 border-b border-gray-200">
           <h3 className="text-xs font-semibold text-gray-700 mb-2">资源库</h3>
@@ -1033,7 +1033,7 @@ const NodeCanvas: React.FC<NodeCanvasProps> = ({
 
       {/* 右侧详情面板 */}
       <div
-        className={`flex-shrink-0 bg-gray-50 border-l border-gray-200 transition-all duration-200 overflow-hidden flex flex-col ${showDetailPanel && selectedNode ? 'w-60' : 'w-0'}`}
+        className={`shrink-0 bg-gray-50 border-l border-gray-200 transition-all duration-200 overflow-hidden flex flex-col ${showDetailPanel && selectedNode ? 'w-60' : 'w-0'}`}
       >
         {selectedNode && (
           <div className="flex flex-col h-full">
@@ -1204,7 +1204,7 @@ const NodeCanvas: React.FC<NodeCanvasProps> = ({
         <>
           <div className="fixed inset-0 z-40" onClick={() => setContextMenu(null)} />
           <div
-            className="fixed z-50 bg-white border border-slate-600 rounded-lg shadow-xl py-1 min-w-[160px]"
+            className="fixed z-50 bg-white border border-slate-600 rounded-lg shadow-xl py-1 min-w-40"
             style={{ left: contextMenu.x, top: contextMenu.y }}
           >
             <button

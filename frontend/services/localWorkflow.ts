@@ -467,7 +467,7 @@ async function buildQueuePlanAndMeta(workflowType: string, projectId: number, pa
     const ctx = await loadSceneContext(projectId, p.storyboardId);
     const prompt = (p.prompt || ctx.prompt || '').trim();
     if (!prompt) throw new Error('缺少视频生成提示词');
-    plan = buildVideoTaskPlan(model, {
+    plan = await buildVideoTaskPlan(model, {
       prompt,
       firstFrame: p.imageUrl || p.firstFrame || ctx.firstFrame,
       lastFrame: p.lastFrame || ctx.lastFrame,

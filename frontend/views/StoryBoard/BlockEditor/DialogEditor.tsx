@@ -8,6 +8,7 @@ import { BLOCK_OPTIONS } from './utils/blockRegistry';
 import SketchFramesPanel from './SketchFramesPanel';
 import { startWorkflow, getWorkflowStatus } from '../../../hooks/useWorkflow';
 import { filterModelsForTaskSlot } from '../../../utils/modelCapabilities';
+import DropdownSelect from '../../../components/ui/DropdownSelect';
 import type { EditorSaveStatus, EditorSessionHandle } from '../../../components/ContentEditorPanel';
 
 interface PromptVersion {
@@ -251,6 +252,9 @@ const DialogEditorSession: React.FC<DialogEditorProps> = (props) => {
   const showText = !panel || panel.tab !== 'dialogue';
   const showDialogue = !panel || panel.tab === 'dialogue';
   const isSaving = session.status === 'saving';
+  const fieldLabel = isContent ? '原始描述' : isVideo ? '视频提示词' : (panel ? field === 'last' : props.imageFrameTab === 'last') ? '尾帧提示词' : '首帧提示词';
+  // 字符数不统计参考图占位符，避免长度虚高
+  const charCount = promptText.replace(/\[参考图:ref-\d+\]/g, '').length;
 
   useEffect(() => { session.sync(incoming); }, [JSON.stringify(incoming)]);
   useEffect(() => { props.onStatusChange?.(session.status); }, [session.status, props.onStatusChange]);
@@ -501,8 +505,12 @@ const DialogEditorSession: React.FC<DialogEditorProps> = (props) => {
   const handleAddDialogueLine = (character = names[0] || '') => session.update('dialogues', [...session.values.dialogues, { character, line: '' }]);
   const handleUpdateDialogueLine = (index: number, key: 'character' | 'line', value: string) => session.update('dialogues', session.values.dialogues.map((d, i) => i === index ? { ...d, [key]: value } : d));
   const handleRemoveDialogueLine = (index: number) => session.update('dialogues', session.values.dialogues.filter((_, i) => i !== index));
-  const inputClass = 'w-full min-w-0 text-xs px-2 py-1.5 rounded bg-[var(--bg-input)] border border-[var(--border-color)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]';
-  const buttonClass = 'inline-flex items-center gap-1 px-2 py-1 rounded bg-[var(--bg-input)] text-[var(--text-secondary)] hover:text-[var(--accent)] disabled:opacity-40 disabled:cursor-not-allowed';
+  const inputClass = 'w-full min-w-0 text-[13px] px-3 py-2 rounded-md bg-[var(--bg-input)] border border-[var(--border-color)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]/25 transition-colors';
+  const buttonClass = 'inline-flex items-center justify-center gap-1 h-[26px] px-2 rounded-md text-[11px] bg-[var(--bg-input)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:text-[var(--accent)] hover:border-[var(--accent)]/40 disabled:opacity-40 disabled:cursor-not-allowed transition-colors';
+  const actionButtonClass = 'inline-flex items-center justify-center gap-1 h-7 px-2.5 rounded-md text-[11px] text-[var(--text-secondary)] bg-transparent border border-[var(--border-color)] hover:text-[var(--text-primary)] hover:border-[var(--text-muted)] disabled:opacity-40 disabled:cursor-not-allowed transition-all active:scale-[0.98]';
+  const primaryButtonClass = 'inline-flex items-center justify-center gap-1 h-7 px-3 rounded-md text-[11px] font-semibold text-white bg-[var(--accent)] border border-[var(--accent)] hover:bg-[var(--accent-dark)] hover:border-[var(--accent-dark)] disabled:opacity-40 disabled:cursor-not-allowed transition-all active:scale-[0.98]';
+  const dangerButtonClass = 'inline-flex items-center justify-center h-7 w-7 rounded-md text-red-400/75 hover:text-red-400 hover:bg-red-500/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors';
+  const actionDivider = <span className="w-px h-4 bg-[var(--border-color)] mx-0.5 shrink-0" aria-hidden="true" />;
   const renderComponentButtons = () => {
     switch (activeTab) {
       case 'shot':
@@ -519,10 +527,15 @@ const DialogEditorSession: React.FC<DialogEditorProps> = (props) => {
           {values.dialogues.length === 0 && <div className="text-[var(--text-muted)] py-3 text-center">暂无台词</div>}
           {values.dialogues.map((dl, idx) => <div key={idx} className="space-y-1.5">
             <div className="flex gap-2 min-w-0">
-              {names.length ? <select aria-label={`第${idx + 1}行角色`} value={dl.character} onChange={e => handleUpdateDialogueLine(idx, 'character', e.target.value)} className={inputClass}>
-                <option value="">选择角色</option>{dl.character && !names.includes(dl.character) && <option value={dl.character}>{dl.character}</option>}{names.map(name => <option key={name} value={name}>{name}</option>)}
-              </select> : <input aria-label={`第${idx + 1}行角色`} value={dl.character} onChange={e => handleUpdateDialogueLine(idx, 'character', e.target.value)} placeholder="角色名" className={inputClass} />}
-              <button className="text-red-400" onClick={() => handleRemoveDialogueLine(idx)} title="删除此行台词"><XIcon size={14} /></button>
+              {names.length ? <DropdownSelect
+                label={`第${idx + 1}行角色`}
+                value={dl.character}
+                placeholder="选择角色"
+                options={names.map(name => ({ value: name, label: name }))}
+                onChange={value => handleUpdateDialogueLine(idx, 'character', value)}
+                className="h-[30px] text-xs"
+              /> : <input aria-label={`第${idx + 1}行角色`} value={dl.character} onChange={e => handleUpdateDialogueLine(idx, 'character', e.target.value)} placeholder="角色名" className={inputClass} />}
+              <button className="p-1 self-center rounded-md text-red-400 hover:bg-red-500/10 transition-colors" onClick={() => handleRemoveDialogueLine(idx)} title="删除此行台词" aria-label={`删除第${idx + 1}行台词`}><XIcon size={14} /></button>
             </div>
             <textarea aria-label={`第${idx + 1}行台词`} value={dl.line} onChange={e => handleUpdateDialogueLine(idx, 'line', e.target.value)} placeholder="输入台词内容..." rows={2} className={inputClass} />
           </div>)}
@@ -546,33 +559,43 @@ const DialogEditorSession: React.FC<DialogEditorProps> = (props) => {
       <img src={availableFrames[key]} alt={key === 'startFrame' ? '首帧' : '尾帧'} className="w-full h-full object-cover" />
     </div>)}
   </div>;
-  const modelSelect = (label: string, options: typeof models, value: string | undefined, change: ((value: string) => void) | undefined) => options.length > 0 && change && <select aria-label={label} title={label} disabled={!!busy} value={value || ''} onChange={e => change(e.target.value)} className={`${inputClass} max-w-[200px]`}>
-    <option value="" disabled>选择{label}</option>{options.map(m => <option key={m.name} value={m.name}>{m.name}</option>)}
-  </select>;
+  const modelSelect = (label: string, options: typeof models, value: string | undefined, change: ((value: string) => void) | undefined) => options.length > 0 && change && <DropdownSelect
+    label={label}
+    value={value || ''}
+    placeholder={`选择${label}`}
+    options={options.map(m => ({ value: m.name, label: m.name }))}
+    onChange={change}
+    disabled={!!busy}
+    className="h-7 max-w-[190px] text-[11px]"
+  />;
   const actions = <>
     {showText && <>
       {useMultimodal && multimodalModels.length
         ? modelSelect('多模态模型', multimodalModels, props.multimodalModel, props.onMultimodalModelChange)
         : modelSelect('文本模型', textModels, props.textModel, props.onTextModelChange)}
-      <button className={buttonClass} onClick={() => void handleGeneratePrompt()} disabled={!!busy} title={isContent ? '生成分镜描述' : isVideo ? '生成视频提示词' : '生成图片提示词'}>{busy === 'generate' ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}{isContent ? '生成描述' : '生成提示词'}</button>
-      <button className={buttonClass} onClick={() => void handleOptimize()} disabled={!!busy || !promptText.trim()}>{busy === 'optimize' ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}优化</button>
-      {preOptimizeText?.field === field && <button className={buttonClass} disabled={!!busy} onClick={handleUndoOptimize}><Undo2 size={13} />撤回优化</button>}
-      <button className={buttonClass} disabled={!!busy} onClick={handleClear} title="清空"><Trash2 size={13} /></button>
-      {!isContent && <button className={buttonClass} disabled={!!busy} onClick={handleOpenVersionPanel} title="旧提示词版本历史"><History size={13} />历史</button>}
+      <button className={primaryButtonClass} onClick={() => void handleGeneratePrompt()} disabled={!!busy} title={`${isContent ? '生成分镜描述' : isVideo ? '生成视频提示词' : '生成图片提示词'}（Ctrl+Enter）`}>{busy === 'generate' ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}{isContent ? '生成描述' : '生成提示词'}</button>
+      <button className={actionButtonClass} onClick={() => void handleOptimize()} disabled={!!busy || !promptText.trim()} title={isContent ? 'AI 优化分镜描述' : 'AI 优化当前提示词'}>{busy === 'optimize' ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}优化</button>
+      {preOptimizeText?.field === field && <button className={actionButtonClass} disabled={!!busy} onClick={handleUndoOptimize} title="撤回本次优化"><Undo2 size={13} />撤回优化</button>}
+      {!isContent && <button className={actionButtonClass} disabled={!!busy} onClick={handleOpenVersionPanel} title="旧提示词版本历史"><History size={13} />历史</button>}
       {!isContent && !isVideo && props.onGenerateImage && <>
+        {actionDivider}
         {modelSelect('图片模型', imageModels, props.imageModel, props.onImageModelChange)}
-        <button className={buttonClass} onClick={() => void handleGenerateImage()} disabled={!!busy || !promptText.trim()}>{busy === 'media' ? <Loader2 size={13} className="animate-spin" /> : <ImageIcon size={13} />}{(panel ? field === 'last' : props.hasAction && props.imageFrameTab === 'last') ? '生成尾帧' : '生成首帧'}</button>
+        <button className={primaryButtonClass} onClick={() => void handleGenerateImage()} disabled={!!busy || !promptText.trim()}>{busy === 'media' ? <Loader2 size={13} className="animate-spin" /> : <ImageIcon size={13} />}{(panel ? field === 'last' : props.hasAction && props.imageFrameTab === 'last') ? '生成尾帧' : '生成首帧'}</button>
       </>}
       {!isContent && isVideo && props.onGenerateVideo && <>
+        {actionDivider}
         {modelSelect('视频模型', videoModels, props.videoModel, props.onVideoModelChange)}
-        <button className={buttonClass} onClick={() => void handleGenerateVideo()} disabled={!!busy || !promptText.trim()}>{busy === 'media' ? <Loader2 size={13} className="animate-spin" /> : <Film size={13} />}生成视频</button>
+        <button className={primaryButtonClass} onClick={() => void handleGenerateVideo()} disabled={!!busy || !promptText.trim()}>{busy === 'media' ? <Loader2 size={13} className="animate-spin" /> : <Film size={13} />}生成视频</button>
       </>}
+      {/* 危险操作靠右，与右侧保存按钮形成稳定分组 */}
+      <span className="w-px h-4 bg-[var(--border-color)] mx-0.5 shrink-0 ml-auto" aria-hidden="true" />
+      <button className={dangerButtonClass} disabled={!!busy || !promptText.trim()} onClick={handleClear} title="清空当前内容" aria-label="清空当前内容"><Trash2 size={14} /></button>
     </>}
-    {!panel && <><span role="status">{{ idle: '就绪', dirty: '未保存', saving: '保存中', saved: '已保存', error: '保存失败' }[session.status]}</span><button className={buttonClass} onClick={() => void handleSave()} disabled={isSaving}><Save size={13} />保存</button></>}
+    {!panel && <><span role="status">{{ idle: '就绪', dirty: '未保存', saving: '保存中', saved: '已保存', error: '保存失败' }[session.status]}</span><button className={actionButtonClass} onClick={() => void handleSave()} disabled={isSaving}><Save size={13} />保存</button></>}
   </>;
 
-  return <div className={panel ? 'relative min-w-0' : 'relative flex flex-col h-full bg-[var(--bg-body)] rounded-lg border border-[var(--border-color)] overflow-hidden'}>
-    <div className={panel ? 'min-w-0' : 'flex flex-1 overflow-hidden min-h-0'}>
+  return <div className={panel ? 'relative min-w-0 h-full min-h-0 flex flex-col' : 'relative flex flex-col h-full bg-[var(--bg-body)] rounded-lg border border-[var(--border-color)] overflow-hidden'}>
+    <div className={panel ? 'min-w-0 flex-1 min-h-0 flex flex-col' : 'flex flex-1 overflow-hidden min-h-0'}>
       {showDialogue && <div className={panel ? 'content-editor-full-width' : 'w-56 shrink-0 bg-[var(--bg-card)] border-r border-[var(--border-color)] flex flex-col'}>
         <div className="flex flex-wrap gap-1 pb-2">
           {COMPONENT_CATEGORIES.map(cat => <button key={cat.key} type="button" aria-pressed={activeTab === cat.key} className={`${buttonClass} ${activeTab === cat.key ? 'text-[var(--accent)]' : ''}`} onClick={async () => { if (await flush()) setActiveTab(cat.key); }}><cat.icon size={13} />{cat.label}</button>)}
@@ -580,17 +603,37 @@ const DialogEditorSession: React.FC<DialogEditorProps> = (props) => {
         {activeTab === 'sketches' ? <SketchFramesPanel storyboardId={storyboardId} /> : <div className="flex-1 min-w-0 overflow-y-auto p-1">{renderComponentButtons()}</div>}
         {!panel && frameReferences}
       </div>}
-      {showText && <div className={panel ? 'content-editor-fields' : 'flex-1 flex flex-col p-4 min-h-0 min-w-0 overflow-auto'}>
-        <div className="content-editor-field content-editor-full-width">
-          <span>{isContent ? '原始描述' : isVideo ? '视频提示词' : (panel ? field === 'last' : props.imageFrameTab === 'last') ? '尾帧提示词' : '首帧提示词'}</span>
-          <div className={`relative ${isDraggingOver ? 'ring-2 ring-[var(--accent)]' : ''}`} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}>
-            <div ref={editorRef} role="textbox" aria-multiline="true" aria-label={isContent ? '原始描述' : isVideo ? '视频提示词' : (panel ? field === 'last' : props.imageFrameTab === 'last') ? '尾帧提示词' : '首帧提示词'} contentEditable suppressContentEditableWarning
+      {showText && <div className={panel ? (isContent ? 'flex flex-col flex-1 min-h-0' : 'content-editor-fields') : 'flex-1 flex flex-col p-4 min-h-0 min-w-0 overflow-auto'}>
+        <div className={`content-editor-field ${isContent ? 'flex-1 min-h-0' : 'content-editor-full-width'}`}>
+          <div className="flex shrink-0 items-center justify-between gap-2 min-h-5">
+            <span className="text-[11px] font-medium text-[var(--text-secondary)]">{fieldLabel}</span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] tabular-nums text-[var(--text-muted)]">{charCount} 字</span>
+              <button
+                type="button"
+                onClick={handleClear}
+                disabled={!!busy || !promptText.trim()}
+                className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] text-[var(--text-muted)] hover:text-red-400 hover:bg-red-500/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                title="清空当前内容"
+                aria-label="清空当前内容"
+              >
+                <Trash2 size={10} />清空
+              </button>
+            </div>
+          </div>
+          <div className={`relative ${isContent ? 'flex-1 min-h-0' : ''} ${isDraggingOver ? 'ring-2 ring-[var(--accent)]' : ''}`} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}>
+            <div ref={editorRef} role="textbox" aria-multiline="true" aria-label={fieldLabel} contentEditable suppressContentEditableWarning
               onInput={syncEditor} onCompositionStart={() => { composing.current = true; }} onCompositionEnd={() => { composing.current = false; syncEditor(); if (session.isDirty) void flush(); }}
               onPaste={e => { e.preventDefault(); insertComponent(e.clipboardData.getData('text/plain')); }}
               onClick={e => { const id = (e.target as HTMLElement).dataset?.deleteRef; if (id) { e.preventDefault(); e.stopPropagation(); removeReferenceImage(id); } }}
+              onKeyDown={e => {
+                if (!(e.ctrlKey || e.metaKey)) return;
+                if (e.key === 'Enter') { e.preventDefault(); void handleGeneratePrompt(); }
+                else if (e.key.toLowerCase() === 's') { e.preventDefault(); void handleSave(); }
+              }}
               data-placeholder={isContent ? '输入分镜原始描述...' : '输入提示词，或拖拽参考图到此处...'}
-              className={`${inputClass} overflow-y-auto empty:before:content-[attr(data-placeholder)] empty:before:text-[var(--text-muted)]`}
-              style={{ minHeight: 100, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }} />
+              className={`${inputClass} content-editor-rich-text overflow-y-auto leading-relaxed ${isContent ? 'h-full' : ''} empty:before:content-[attr(data-placeholder)] empty:before:text-[var(--text-muted)]`}
+              style={{ minHeight: 160, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }} />
             {isDraggingOver && <div className="absolute inset-0 flex items-center justify-center bg-[var(--accent)]/10 pointer-events-none">释放以插入</div>}
           </div>
         </div>

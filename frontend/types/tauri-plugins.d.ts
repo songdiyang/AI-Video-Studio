@@ -8,7 +8,14 @@ declare module '@tauri-apps/plugin-dialog' {
     directory?: boolean;
   }
 
+  export interface SaveDialogOptions {
+    title?: string;
+    defaultPath?: string;
+    filters?: Array<{ name: string; extensions: string[] }>;
+  }
+
   export function open(options?: OpenDialogOptions): Promise<string | string[] | null>;
+  export function save(options?: SaveDialogOptions): Promise<string | null>;
 }
 
 declare module '@tauri-apps/plugin-shell' {

@@ -38,8 +38,10 @@ const ScriptStudio: React.FC = () => {
   useEffect(() => {
     if (currentProject && currentProject.id !== selectedProject?.id) {
       setSelectedProject(currentProject);
+      // 切换工程先断开旧工程的脚本绑定，避免分镜请求与标签恢复沿用上一个工程的 scriptId
+      setScriptId(null);
     }
-  }, [currentProject, selectedProject, setSelectedProject]);
+  }, [currentProject, selectedProject, setSelectedProject, setScriptId]);
 
   // 同步项目到 WorkbenchContext（id 一致时跳过，避免旧初始化结果覆盖刚切换的工程），并加载项目剧本
   useEffect(() => {

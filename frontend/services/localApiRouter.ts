@@ -31,6 +31,8 @@ import { routeProjectsSub } from './localProjectsSub';
 import { routeNovels } from './localNovels';
 import { routeMisc } from './localMisc';
 import { routeRest } from './localRest';
+import { routeResourceLibrary } from './localResourceLibrary';
+import { routeLocalMail } from './localMail';
 
 // ==================== 本地数据模型 ====================
 
@@ -510,6 +512,12 @@ async function route(url: URL, method: string, body: any): Promise<Response | nu
     if (res) return res;
   }
 
+  // ---- 站内信（本地持久化，供长任务完成通知与未读徽标）----
+  if (pathname === '/api/mail' || pathname.startsWith('/api/mail/')) {
+    const res = routeLocalMail(url, m);
+    if (res) return res;
+  }
+
   // ---- AI 助手会话（本地持久化，回放后端契约）----
   if (pathname.startsWith('/api/ai-assistant/sessions')) {
     const res = await routeAiAssistantSessions(url, m, body);
@@ -553,6 +561,12 @@ async function route(url: URL, method: string, body: any): Promise<Response | nu
   // ---- 用户自定义风格预设（/api/projects/my-styles，本地持久化）----
   if (pathname === '/api/projects/my-styles' || pathname.startsWith('/api/projects/my-styles/')) {
     const res = routeStyles(url, m, body);
+    if (res) return res;
+  }
+
+  // ---- 资源库聚合（分类配置 + 全量资源，一次返回）----
+  if (pathname === '/api/resource-library' || pathname === '/api/resource-library/categories') {
+    const res = await routeResourceLibrary(url, m, body);
     if (res) return res;
   }
 

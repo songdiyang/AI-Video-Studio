@@ -86,7 +86,7 @@ const AnchoredPopover: React.FC<{
 /** 角色选择器：Chip 标签 + 添加下拉 + 点击预览角色长相（增强：显示白膜/服装状态） */
 const CharacterTagSelector: React.FC<{
   characters: string[];
-  projectCharacters: { id: number; name: string; image_url?: string; front_view_url?: string; base_appearance?: string; outfit_appearance?: string; has_base_model?: number; has_base_model_views?: number; states_count?: number; active_state_name?: string; active_state_outfit?: string; active_state_image_url?: string; base_front_view_url?: string }[];
+  projectCharacters: { id: number; name: string; image_url?: string; front_view_url?: string; base_appearance?: string; outfit_appearance?: string; has_base_model?: number | boolean; has_base_model_views?: number | boolean; states_count?: number; active_state_name?: string; active_state_outfit?: string; active_state_image_url?: string; base_front_view_url?: string }[];
   onSave: (characters: string[]) => void;
 }> = ({ characters, projectCharacters, onSave }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -130,8 +130,8 @@ const CharacterTagSelector: React.FC<{
   );
 
   return (
-    <div ref={containerRef} className="relative inline-flex items-center gap-1 flex-wrap">
-      <Users className="w-3 h-3 text-(--text-muted) shrink-0" />
+    <div ref={containerRef} className="relative inline-flex min-h-6 items-center gap-1 flex-wrap">
+      <Users className="w-3.5 h-3.5 text-(--text-muted) shrink-0" />
       {characters.map(name => {
         const charData = projectCharacters.find(c => c.name === name);
         const charImageUrl = charData?.active_state_image_url || charData?.base_front_view_url || charData?.front_view_url || charData?.image_url;
@@ -143,12 +143,12 @@ const CharacterTagSelector: React.FC<{
         return (
           <span
             key={name}
-            className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs group/char ${
+            className={`inline-flex items-center gap-1 pl-1 pr-1.5 py-0.5 rounded-md text-[11px] leading-4 group/char transition-colors ${
               isIncomplete
-                ? 'bg-slate-500/15 text-slate-400 border border-dashed border-slate-500/30'
-                : 'bg-blue-500/15 text-blue-400'
+                ? 'bg-amber-500/10 text-amber-400/90 border border-dashed border-amber-500/30'
+                : 'bg-blue-500/10 text-blue-300 border border-blue-500/20'
             }`}
-            title={isIncomplete ? '该角色尚未生成白膜，请在资源面板完善资产' : ''}
+            title={isIncomplete ? '该角色尚未生成白膜，请在资源面板完善资产' : stateLabel ? `${name} · ${stateLabel}` : name}
           >
             {charImageUrl ? (
               <img src={charImageUrl} alt={name} className={`w-3.5 h-3.5 rounded-full object-cover shrink-0 ${isIncomplete ? 'opacity-50' : ''}`} />
@@ -177,7 +177,12 @@ const CharacterTagSelector: React.FC<{
                 )}
               </>
             )}
-            <button onClick={() => toggleCharacter(name)} className="hover:text-red-400 transition-colors">
+            <button
+              onClick={() => toggleCharacter(name)}
+              className="opacity-0 pointer-events-none group-hover/char:opacity-100 group-hover/char:pointer-events-auto focus-visible:opacity-100 focus-visible:pointer-events-auto hover:text-red-400 transition-opacity"
+              title={`移除角色 ${name}`}
+              aria-label={`移除角色 ${name}`}
+            >
               <X className="w-2.5 h-2.5" />
             </button>
           </span>
@@ -185,8 +190,9 @@ const CharacterTagSelector: React.FC<{
       })}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="w-4 h-4 flex items-center justify-center rounded bg-(--accent)/20 text-(--accent) hover:bg-(--accent)/30 transition-colors"
+        className="w-[22px] h-[22px] flex items-center justify-center rounded-md border border-(--border-color) bg-(--bg-input) text-(--text-muted) hover:text-(--accent) hover:border-(--accent)/40 transition-colors"
         title="添加角色"
+        aria-label="添加角色"
       >
         <Plus className="w-3 h-3" />
       </button>
@@ -378,23 +384,29 @@ const PropsTagSelector: React.FC<{
   );
 
   return (
-    <div ref={containerRef} className="relative inline-flex items-center gap-1 flex-wrap">
-      <Package className="w-3 h-3 text-(--text-muted) shrink-0" />
+    <div ref={containerRef} className="relative inline-flex min-h-6 items-center gap-1 flex-wrap">
+      <Package className="w-3.5 h-3.5 text-(--text-muted) shrink-0" />
       {selectedProps.length === 0 && (
-        <span className="text-(--text-muted) text-xs">道具</span>
+        <span className="text-(--text-muted) text-[11px] leading-4">道具</span>
       )}
       {selectedProps.map(name => {
         const propData = projectProps.find(p => p.name === name);
         return (
           <span
             key={name}
-            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs bg-teal-500/15 text-teal-400"
+            className="inline-flex items-center gap-1 pl-1 pr-1.5 py-0.5 rounded-md text-[11px] leading-4 bg-teal-500/10 text-teal-300 border border-teal-500/20 group/prop"
+            title={name}
           >
             {propData?.image_url ? (
               <img src={propData.image_url} alt={name} className="w-3.5 h-3.5 rounded object-cover shrink-0" />
             ) : null}
             <span className="truncate max-w-20">{name}</span>
-            <button onClick={() => toggleProp(name)} className="hover:text-red-400 transition-colors">
+            <button
+              onClick={() => toggleProp(name)}
+              className="opacity-0 pointer-events-none group-hover/prop:opacity-100 group-hover/prop:pointer-events-auto focus-visible:opacity-100 focus-visible:pointer-events-auto hover:text-red-400 transition-opacity"
+              title={`移除道具 ${name}`}
+              aria-label={`移除道具 ${name}`}
+            >
               <X className="w-2.5 h-2.5" />
             </button>
           </span>
@@ -402,8 +414,9 @@ const PropsTagSelector: React.FC<{
       })}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="w-4 h-4 flex items-center justify-center rounded bg-teal-500/20 text-teal-500 hover:bg-teal-500/30 transition-colors"
+        className="w-[22px] h-[22px] flex items-center justify-center rounded-md border border-(--border-color) bg-(--bg-input) text-(--text-muted) hover:text-teal-400 hover:border-teal-500/40 transition-colors"
         title="添加道具"
+        aria-label="添加道具"
       >
         <Plus className="w-3 h-3" />
       </button>
@@ -495,12 +508,12 @@ const SceneDropdownSelector: React.FC<{
     <div ref={containerRef} className="relative inline-flex items-center gap-1">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-1 text-(--text-muted) cursor-pointer hover:text-(--accent) transition-colors text-xs group"
-        title="点击选择影棚"
+        className="flex h-[22px] max-w-[150px] items-center gap-1 px-1.5 rounded-md border border-(--border-color) bg-(--bg-input) text-(--text-secondary) cursor-pointer hover:text-(--text-primary) hover:border-(--accent)/40 transition-colors text-[11px] leading-4 group"
+        title={location ? `影棚：${location}（点击更换）` : '点击选择影棚'}
       >
-        <MapPin className="w-3 h-3" />
-        <span>{location || '选择影棚'}</span>
-        <ChevronDown className="w-2.5 h-2.5 opacity-60 group-hover:opacity-100 transition-opacity" />
+        <MapPin className="w-3 h-3 text-(--text-muted)" />
+        <span className="truncate">{location || '选择影棚'}</span>
+        <ChevronDown className="w-3 h-3 opacity-60 group-hover:opacity-100 transition-opacity" />
       </button>
 
       {isOpen && (
@@ -546,7 +559,7 @@ const SceneDropdownSelector: React.FC<{
 };
 
 // 分镜时长选择器 - 可选范围由所选视频模型能力决定（默认兜底 4~12 秒）
-interface DurationRange { minDuration: number; maxDuration: number; }
+export interface DurationRange { minDuration: number; maxDuration: number; }
 
 const DurationSelector: React.FC<{
   duration: number;
@@ -604,12 +617,12 @@ const DurationSelector: React.FC<{
     <div ref={containerRef} className="relative inline-flex items-center gap-1">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-1 text-(--text-muted) cursor-pointer hover:text-(--accent) transition-colors text-xs group"
-        title="点击选择时长"
+        className="flex h-[22px] items-center gap-1 px-1.5 rounded-md border border-(--border-color) bg-(--bg-input) text-(--text-secondary) cursor-pointer hover:text-(--text-primary) hover:border-(--accent)/40 transition-colors text-[11px] leading-4 group"
+        title={`时长 ${duration || 3}s（点击修改）`}
       >
-        <Clock className="w-3 h-3" />
+        <Clock className="w-3 h-3 text-(--text-muted)" />
         <span className={!isPresetValue && duration ? 'text-(--accent) font-medium' : ''}>{duration || 3}s</span>
-        <ChevronDown className="w-2.5 h-2.5 opacity-60 group-hover:opacity-100 transition-opacity" />
+        <ChevronDown className="w-3 h-3 opacity-60 group-hover:opacity-100 transition-opacity" />
       </button>
 
       {isOpen && (
@@ -673,6 +686,65 @@ const DurationSelector: React.FC<{
           </div>
         </AnchoredPopover>
       )}
+    </div>
+  );
+};
+
+export interface SceneMetaBarProps {
+  scene: StoryboardScene;
+  projectCharacters: { id: number; name: string; image_url?: string; front_view_url?: string; base_appearance?: string; outfit_appearance?: string; has_base_model?: number | boolean; has_base_model_views?: number | boolean; states_count?: number; active_state_name?: string; active_state_outfit?: string; active_state_image_url?: string; base_front_view_url?: string }[];
+  projectScenes: { id: number; name: string; description?: string }[];
+  projectProps: { id: number; name: string; image_url?: string }[];
+  videoDurationRange?: DurationRange;
+  onUpdateCharactersAndLocation?: (characters: string[], location: string, characterIds?: number[], sceneId?: number) => Promise<boolean> | void;
+  onUpdateProps?: (props: string[]) => Promise<boolean> | void;
+  onUpdateScene?: (updates: Partial<StoryboardScene>) => void;
+  onUpdateDuration?: (duration: number) => Promise<boolean> | void;
+}
+
+/** 分镜元数据栏：角色 / 道具 / 影棚 / 时长，在预览信息区与底部编辑器头部复用。 */
+export const SceneMetaBar: React.FC<SceneMetaBarProps> = ({
+  scene, projectCharacters, projectScenes, projectProps, videoDurationRange,
+  onUpdateCharactersAndLocation, onUpdateProps, onUpdateScene, onUpdateDuration,
+}) => {
+  const syncCharactersAndLocation = (characters: string[], location: string) => {
+    const ids = characters
+      .map(name => projectCharacters.find(c => c.name === name)?.id)
+      .filter((id): id is number => id !== undefined);
+    void onUpdateCharactersAndLocation?.(characters, location, ids, projectScenes.find(s => s.name === location)?.id);
+  };
+
+  return (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-xs min-w-0">
+      <CharacterTagSelector
+        characters={scene.characters || []}
+        projectCharacters={projectCharacters}
+        onSave={(chars) => syncCharactersAndLocation(chars, scene.location || '')}
+      />
+      <span className="self-center w-px h-3.5 bg-(--border-color)" aria-hidden="true" />
+      <PropsTagSelector
+        props={scene.props || []}
+        projectProps={projectProps}
+        onSave={(nextProps) => {
+          onUpdateScene?.({ props: nextProps });
+          void onUpdateProps?.(nextProps);
+        }}
+      />
+      <span className="self-center w-px h-3.5 bg-(--border-color)" aria-hidden="true" />
+      <SceneDropdownSelector
+        location={scene.location || ''}
+        projectScenes={projectScenes}
+        onSave={(location) => syncCharactersAndLocation(scene.characters || [], location)}
+      />
+      <span className="self-center w-px h-3.5 bg-(--border-color)" aria-hidden="true" />
+      <DurationSelector
+        duration={scene.duration || 3}
+        range={videoDurationRange}
+        onSave={(value) => {
+          onUpdateScene?.({ duration: value });
+          void onUpdateDuration?.(value);
+        }}
+      />
     </div>
   );
 };
@@ -909,7 +981,7 @@ const DescriptionEditor: React.FC<{
   );
 };
 
-interface ScenePreviewPanelProps {
+export interface ScenePreviewPanelProps {
   scene: StoryboardScene | null;
   sceneIndex: number;
   projectId?: number | null;
@@ -1622,6 +1694,8 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
           {/* 草图阶段 */}
           <button
             onClick={() => setPreviewStage('sketch')}
+            title="草图"
+            aria-label="草图阶段"
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
               previewStage === 'sketch'
                 ? 'bg-(--accent) text-white shadow-sm'
@@ -1629,7 +1703,6 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
             }`}
           >
             <Pencil className="w-3.5 h-3.5" />
-            <span>草图</span>
             {scene.sketchUrl && (
               <span className={`w-1.5 h-1.5 rounded-full ${previewStage === 'sketch' ? 'bg-white' : 'bg-amber-500'}`} />
             )}
@@ -1638,6 +1711,8 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
           {/* 首帧/图片阶段 */}
           <button
             onClick={() => setPreviewStage('first')}
+            title={scene.hasAction ? '首帧' : '图片'}
+            aria-label={scene.hasAction ? '首帧阶段' : '图片阶段'}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
               previewStage === 'first'
                 ? 'bg-(--accent) text-white shadow-sm'
@@ -1645,7 +1720,6 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
             }`}
           >
             <Camera className="w-3.5 h-3.5" />
-            <span>{scene.hasAction ? '首帧' : '图片'}</span>
             {scene.startFrame && (
               <span className={`w-1.5 h-1.5 rounded-full ${previewStage === 'first' ? 'bg-white' : 'bg-emerald-500'}`} />
             )}
@@ -1655,6 +1729,8 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
           {scene.hasAction && (
             <button
               onClick={() => setPreviewStage('last')}
+              title="尾帧"
+              aria-label="尾帧阶段"
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
                 previewStage === 'last'
                   ? 'bg-(--accent) text-white shadow-sm'
@@ -1662,7 +1738,6 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
               }`}
             >
               <ImageIcon className="w-3.5 h-3.5" />
-              <span>尾帧</span>
               {scene.endFrame && (
                 <span className={`w-1.5 h-1.5 rounded-full ${previewStage === 'last' ? 'bg-white' : 'bg-rose-500'}`} />
               )}
@@ -1672,6 +1747,8 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
           {/* 视频阶段 */}
           <button
             onClick={() => setPreviewStage('video')}
+            title="视频"
+            aria-label="视频阶段"
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
               previewStage === 'video'
                 ? 'bg-(--accent) text-white shadow-sm'
@@ -1679,7 +1756,6 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
             }`}
           >
             <Video className="w-3.5 h-3.5" />
-            <span>视频</span>
             {scene.videoUrl && (
               <span className={`w-1.5 h-1.5 rounded-full ${previewStage === 'video' ? 'bg-white' : 'bg-emerald-500'}`} />
             )}
@@ -1755,7 +1831,6 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                       title="历史版本"
                     >
                       <History className="w-4 h-4" />
-                      <span className="text-xs">历史</span>
                     </button>
                     {onGenerateWithSketch && (
                       <button
@@ -1770,7 +1845,6 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                         title="编辑草图"
                       >
                         <Pencil className="w-4 h-4" />
-                        <span className="text-xs">编辑</span>
                       </button>
                     )}
                     <button
@@ -1803,7 +1877,7 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                 </>
               ) : (
                 <div className="flex flex-col items-center justify-center text-center">
-                  <div className="absolute top-2 right-2">
+                  <div className="absolute top-2 right-2 flex items-center gap-1">
                     <button
                       onClick={async () => {
                         if (!showHistory && historyVersions.length === 0) {
@@ -1818,7 +1892,6 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                       title="历史版本"
                     >
                       <History className="w-4 h-4" />
-                      <span className="text-xs">历史</span>
                     </button>
                   </div>
                   <div className="w-32 h-20 rounded-lg border-2 border-dashed border-(--border-color) flex items-center justify-center mb-4">
@@ -1870,6 +1943,7 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                   />
                   {/* 历史版本/删除帧按钮 */}
                   <div className="absolute top-2 right-2 flex items-center gap-1">
+                    
                     <button
                       onClick={async () => {
                         if (!showHistory && historyVersions.length === 0) {
@@ -1884,7 +1958,6 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                       title="历史版本"
                     >
                       <History className="w-4 h-4" />
-                      <span className="text-xs">历史</span>
                     </button>
                     <button
                       onClick={handleDeleteFirstFrame}
@@ -1909,7 +1982,8 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
               ) : (
                 <div className="flex flex-col items-center justify-center text-center px-6">
                   {/* 历史按钮 - 右上角 */}
-                  <div className="absolute top-3 right-3">
+                  <div className="absolute top-3 right-3 z-10 flex items-center gap-0.5 rounded-lg border border-(--border-color) bg-(--bg-card)/85 backdrop-blur-sm p-0.5 shadow-lg">
+                    
                     <button
                       onClick={async () => {
                         if (!showHistory && historyVersions.length === 0) {
@@ -1918,33 +1992,20 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                         setShowHistory(!showHistory);
                       }}
                       disabled={isGenerating || historyLoading}
-                      className={`p-2 rounded-lg bg-(--bg-card) border border-(--border-color) text-(--text-muted) transition-all flex items-center gap-1.5 ${
-                        isGenerating || historyLoading ? 'opacity-40 cursor-not-allowed' : 'hover:border-(--accent)/50 hover:text-(--accent)'
+                      className={`p-1.5 rounded-md transition-colors ${showHistory ? 'bg-(--accent)/15 text-(--accent)' : 'text-(--text-secondary) hover:bg-(--accent)/10 hover:text-(--accent)'} ${
+                        isGenerating || historyLoading ? 'opacity-40 cursor-not-allowed' : ''
                       }`}
                       title="历史版本"
+                      aria-label="历史版本"
                     >
                       <History className="w-4 h-4" />
-                      <span className="text-xs">历史</span>
                     </button>
                   </div>
 
-                  {/* 空状态图标区域 */}
-                  <div className="relative mb-5 flex items-center justify-center">
-                    <div className="absolute w-24 h-24 rounded-full bg-(--accent)/15 blur-2xl" />
-                    <div className="relative w-24 h-24 rounded-3xl bg-linear-to-br from-(--accent)/12 to-transparent border border-(--accent)/20 flex items-center justify-center">
-                      <div className="w-17 h-17 rounded-2xl bg-(--bg-card) border border-(--border-color) shadow-lg flex items-center justify-center">
-                        <Camera className="w-9 h-9 text-(--accent)/70" strokeWidth={1.5} />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* 标题和描述 */}
+                  {/* 标题 */}
                   <h3 className="text-[15px] font-semibold text-(--text-primary) mb-1">
                     {scene.hasAction ? '暂无首帧' : '暂无图片'}
                   </h3>
-                  <p className="text-[13px] text-(--text-muted) mb-6 max-w-60 leading-relaxed">
-                    {scene.hasAction ? '生成首尾帧或绘制草图开始创作' : '生成图片开始创作'}
-                  </p>
 
                   {/* 草图提示 */}
                   {scene.hasAction && scene.startSketchUrl && (
@@ -1955,12 +2016,11 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                   )}
 
                   {/* 操作按钮组 */}
-                  <div className="flex flex-col items-center gap-4">
+                  <div className="mt-5 flex flex-col items-center gap-4">
                     <div className="flex items-center gap-3">
                       <Button
                         size="sm"
-                        className="pro-btn-primary px-5"
-                        startContent={<ImageIcon className="w-4 h-4" />}
+                        className="px-5 rounded-lg bg-(--accent) text-white font-medium hover:bg-(--accent-dark) shadow-none"
                         onPress={handleGenerateImage}
                         isLoading={isGeneratingImage}
                         isDisabled={isGeneratingImage}
@@ -1980,19 +2040,6 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                         >
                           {scene.startSketchUrl ? '编辑草图' : '绘制草图'}
                         </Button>
-                      )}
-                    </div>
-                    {/* 功能说明 */}
-                    <div className="flex items-center gap-6 text-xs text-(--text-muted)">
-                      <div className="flex items-center gap-1.5">
-                        <div className="w-1.5 h-1.5 rounded-full bg-(--accent)" />
-                        <span>AI 自动生成画面</span>
-                      </div>
-                      {scene.hasAction && onGenerateWithSketch && (
-                        <div className="flex items-center gap-1.5">
-                          <div className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                          <span>手动绘制草稿</span>
-                        </div>
                       )}
                     </div>
                   </div>
@@ -2028,6 +2075,7 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                   />
                   {/* 历史版本/删除帧按钮 */}
                   <div className="absolute top-2 right-2 flex items-center gap-1">
+                    
                     <button
                       onClick={async () => {
                         if (!showHistory && historyVersions.length === 0) {
@@ -2042,7 +2090,6 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                       title="历史版本"
                     >
                       <History className="w-4 h-4" />
-                      <span className="text-xs">历史</span>
                     </button>
                     <button
                       onClick={handleDeleteLastFrame}
@@ -2067,7 +2114,8 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
               ) : (
                 <div className="flex flex-col items-center justify-center text-center px-6">
                   {/* 历史按钮 - 右上角 */}
-                  <div className="absolute top-3 right-3">
+                  <div className="absolute top-3 right-3 z-10 flex items-center gap-0.5 rounded-lg border border-(--border-color) bg-(--bg-card)/85 backdrop-blur-sm p-0.5 shadow-lg">
+                    
                     <button
                       onClick={async () => {
                         if (!showHistory && historyVersions.length === 0) {
@@ -2076,33 +2124,20 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                         setShowHistory(!showHistory);
                       }}
                       disabled={isGenerating || historyLoading}
-                      className={`p-2 rounded-lg bg-(--bg-card) border border-(--border-color) text-(--text-muted) transition-all flex items-center gap-1.5 ${
-                        isGenerating || historyLoading ? 'opacity-40 cursor-not-allowed' : 'hover:border-(--accent)/50 hover:text-(--accent)'
+                      className={`p-1.5 rounded-md transition-colors ${showHistory ? 'bg-(--accent)/15 text-(--accent)' : 'text-(--text-secondary) hover:bg-(--accent)/10 hover:text-(--accent)'} ${
+                        isGenerating || historyLoading ? 'opacity-40 cursor-not-allowed' : ''
                       }`}
                       title="历史版本"
+                      aria-label="历史版本"
                     >
                       <History className="w-4 h-4" />
-                      <span className="text-xs">历史</span>
                     </button>
                   </div>
 
-                  {/* 空状态图标区域 */}
-                  <div className="relative mb-5 flex items-center justify-center">
-                    <div className="absolute w-24 h-24 rounded-full bg-rose-500/15 blur-2xl" />
-                    <div className="relative w-24 h-24 rounded-3xl bg-linear-to-br from-rose-500/12 to-transparent border border-rose-500/20 flex items-center justify-center">
-                      <div className="w-17 h-17 rounded-2xl bg-(--bg-card) border border-(--border-color) shadow-lg flex items-center justify-center">
-                        <ImageIcon className="w-9 h-9 text-rose-500/70" strokeWidth={1.5} />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* 标题和描述 */}
+                  {/* 标题 */}
                   <h3 className="text-[15px] font-semibold text-(--text-primary) mb-1">
                     暂无尾帧
                   </h3>
-                  <p className="text-[13px] text-(--text-muted) mb-6 max-w-60 leading-relaxed">
-                    生成首尾帧或绘制草图完成分镜
-                  </p>
 
                   {/* 草图提示 */}
                   {scene.endSketchUrl && (
@@ -2113,12 +2148,11 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                   )}
 
                   {/* 操作按钮组 */}
-                  <div className="flex flex-col items-center gap-4">
+                  <div className="mt-5 flex flex-col items-center gap-4">
                     <div className="flex items-center gap-3">
                       <Button
                         size="sm"
-                        className="pro-btn-primary px-5"
-                        startContent={<ImageIcon className="w-4 h-4" />}
+                        className="px-5 rounded-lg bg-(--accent) text-white font-medium hover:bg-(--accent-dark) shadow-none"
                         onPress={handleGenerateImage}
                         isLoading={isGeneratingImage}
                         isDisabled={isGeneratingImage}
@@ -2138,19 +2172,6 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                         >
                           {scene.endSketchUrl ? '编辑草图' : '绘制草图'}
                         </Button>
-                      )}
-                    </div>
-                    {/* 功能说明 */}
-                    <div className="flex items-center gap-6 text-xs text-(--text-muted)">
-                      <div className="flex items-center gap-1.5">
-                        <div className="w-1.5 h-1.5 rounded-full bg-(--accent)" />
-                        <span>AI 自动生成画面</span>
-                      </div>
-                      {onGenerateWithSketch && (
-                        <div className="flex items-center gap-1.5">
-                          <div className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                          <span>手动绘制草稿</span>
-                        </div>
                       )}
                     </div>
                   </div>
@@ -2195,6 +2216,7 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                     />
                     {/* 历史版本/视频历史切换/删除 */}
                     <div className="absolute top-2 right-2 flex items-center gap-1">
+                      
                       <button
                         onClick={async () => {
                           if (!showHistory && historyVersions.length === 0) {
@@ -2209,7 +2231,6 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                         title="历史版本"
                       >
                         <History className="w-4 h-4" />
-                        <span className="text-xs">历史</span>
                       </button>
                       <button
                         onClick={() => setShowVideoHistory(prev => !prev)}
@@ -2238,7 +2259,8 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                 </>
               ) : (
                 <div className="flex-1 flex flex-col items-center justify-center text-center relative">
-                  <div className="absolute top-2 right-2">
+                  <div className="absolute top-2 right-2 flex items-center gap-1">
+                    
                     <button
                       onClick={async () => {
                         if (!showHistory && historyVersions.length === 0) {
@@ -2253,7 +2275,6 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                       title="历史版本"
                     >
                       <History className="w-4 h-4" />
-                      <span className="text-xs">历史</span>
                     </button>
                   </div>
                   <div className="w-32 h-20 rounded-lg border-2 border-dashed border-(--border-color) flex items-center justify-center mb-4">
@@ -2336,75 +2357,46 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
         </div>
       )}
 
-      {/* 信息和操作区域 */}
-      <div className="shrink-0 bg-(--bg-card)">
-        {/* 元数据 */}
-        <div className="px-4 py-3 border-b border-(--border-color)">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-semibold text-(--text-muted) uppercase tracking-wider">
-              分镜 #{sceneIndex + 1}
-            </span>
-            <div className="flex items-center gap-1.5">
+      {/* 信息和操作区域（独立布局用；内嵌时由顶部工具栏控制底部编辑面板） */}
+      <div className="bg-(--bg-card) shrink-0">
+        {/* 元数据：仅在独立布局展示；内嵌底部编辑器时由编辑器头部统一承载 */}
+        {!hideDirectorSpace && (
+          <div className="px-4 pt-2.5 pb-2 border-b border-(--border-color)">
+            <div className="flex items-center justify-between gap-3 mb-1.5">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-[11px] font-semibold text-(--text-secondary) tracking-wide whitespace-nowrap">
+                  分镜 #{sceneIndex + 1}
+                </span>
+                {scene.hasAction && (
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-(--bg-input) border border-(--border-color) text-[10px] text-(--text-muted) whitespace-nowrap">
+                    <Zap className="w-2.5 h-2.5" />
+                    动作镜头
+                  </span>
+                )}
+              </div>
               <StoryboardLockButton
                 storyboardId={scene.id}
                 isLocked={scene.isLocked || false}
-                size="md"
+                size="sm"
                 onLockChange={(locked) => {
-                  if (onUpdateScene) {
-                    onUpdateScene({ isLocked: locked });
-                  }
+                  onUpdateScene?.({ isLocked: locked });
                 }}
               />
-              {scene.hasAction && (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] text-(--text-muted) bg-(--bg-input) border border-(--border-color)">
-                  <Zap className="w-3 h-3" />
-                  动作镜头
-                </span>
-              )}
             </div>
-          </div>
-          
-          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs items-start">
-            <CharacterTagSelector
-              characters={scene.characters || []}
+
+            <SceneMetaBar
+              scene={scene}
               projectCharacters={projectCharacters}
-              onSave={(chars) => {
-                const charIds = chars
-                  .map(name => projectCharacters.find(pc => pc.name === name)?.id)
-                  .filter((id): id is number => id !== undefined);
-                const curSceneId = projectScenes.find(s => s.name === scene.location)?.id;
-                onUpdateCharactersAndLocation?.(chars, scene.location || '', charIds, curSceneId);
-              }}
-            />
-            <PropsTagSelector
-              props={scene.props || []}
-              projectProps={projectProps}
-              onSave={(props) => {
-                onUpdateScene?.({ props });
-                onUpdateProps?.(props);
-              }}
-            />
-            <SceneDropdownSelector
-              location={scene.location || ''}
               projectScenes={projectScenes}
-              onSave={(loc) => {
-                const charIds = (scene.characters || [])
-                  .map(name => projectCharacters.find(pc => pc.name === name)?.id)
-                  .filter((id): id is number => id !== undefined);
-                const newSceneId = projectScenes.find(s => s.name === loc)?.id;
-                onUpdateCharactersAndLocation?.(scene.characters || [], loc, charIds, newSceneId);
-              }}
-            />
-            <DurationSelector
-              duration={scene.duration || 3}
-              range={videoDurationRange}
-              onSave={(val) => {
-                onUpdateScene?.({ duration: val });
-                onUpdateDuration?.(val);
-              }}
+              projectProps={projectProps}
+              videoDurationRange={videoDurationRange}
+              onUpdateCharactersAndLocation={onUpdateCharactersAndLocation}
+              onUpdateProps={onUpdateProps}
+              onUpdateScene={onUpdateScene}
+              onUpdateDuration={onUpdateDuration}
             />
           </div>
-        </div>
+        )}
 
         {/* 导演空间 - 当 hideDirectorSpace=true 时完全隐藏（由 BottomPanel 独立显示） */}
         {!hideDirectorSpace && (

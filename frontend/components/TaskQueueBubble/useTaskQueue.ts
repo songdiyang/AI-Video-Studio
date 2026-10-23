@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { getWorkflowList, WorkflowJob } from '../../hooks/useWorkflow';
+import { activeLongTasks, getLongTask, updateLongTask } from '../../services/longTasks';
+import { pushInternalMail } from '../../services/localMail';
 
 // Polling interval constants (in milliseconds)
 const POLLING_ACTIVE = 3000;    // When there are active tasks
@@ -82,6 +84,55 @@ export function useTaskQueue(options?: UseTaskQueueOptions): UseTaskQueueReturn 
       const currentJobs = data.jobs || [];
       const currentJobIds = new Set(currentJobs.map((j: WorkflowJob) => j.id));
 
+      // 同步全局长任务注册表（智能体登记的后台任务）：
+      // 运行中持续刷新进度；失败立即写站内信；完成在下方消失检测中处理。
+      currentJobs.forEach((job) => {
+        const record = getLongTask(job.id);
+        if (!record) return;
+        const total = job.tasks?.length ?? job.total_steps ?? 0;
+        const current = job.tasks
+          ? job.tasks.filter((task) => task.status === 'completed' || task.status === 'failed').length
+          : job.current_step_index ?? 0;
+        const progress = job.tasks && job.tasks.length > 0
+          ? Math.round(job.tasks.reduce((sum, task) => sum + (task.progress || 0), 0) / job.tasks.length)
+          : record.progress;
+        const failed = job.status === 'failed';
+        updateLongTask(job.id, {
+          status: failed ? 'failed' : job.status === 'pending' ? 'pending' : 'running',
+          progress: failed ? record.progress : progress,
+          current,
+          total,
+          error: failed ? job.error_message || '任务失败' : null,
+        });
+        if (failed && record.status !== 'failed') {
+          pushInternalMail({
+            title: `任务未完成：${record.title}`,
+            content: `AI 助手发起的「${record.title}」执行失败${job.error_message ? `：${job.error_message}` : '。'}`,
+            mail_type: 'system',
+            dedupe_key: `job:${job.id}:failed`,
+          });
+        }
+      });
+
+      // 首次加载时对账：已登记但已不在活跃列表中的任务视为已完成（覆盖关闭应用期间完成的任务）
+      if (isFirstLoad.current) {
+        activeLongTasks().forEach((record) => {
+          if (currentJobIds.has(record.jobId)) return;
+          updateLongTask(record.jobId, {
+            status: 'completed',
+            progress: 100,
+            current: record.total || record.current,
+            error: null,
+          });
+          pushInternalMail({
+            title: `任务完成：${record.title}`,
+            content: `AI 助手发起的「${record.title}」已完成，可以回到工作台查看结果。`,
+            mail_type: 'system',
+            dedupe_key: `job:${record.jobId}:completed`,
+          });
+        });
+      }
+
       // 检测已完成的任务（之前存在但现在不在列表中）
       if (!isFirstLoad.current) {
         const completedJobIds: string[] = [];
@@ -89,6 +140,25 @@ export function useTaskQueue(options?: UseTaskQueueOptions): UseTaskQueueReturn 
           if (!currentJobIds.has(id)) {
             completedJobIds.push(id);
           }
+        });
+
+        // 已完成的长任务：更新注册表并写站内信（中央轮询，不依赖对话卡片是否挂载）
+        completedJobIds.forEach((id) => {
+          const record = getLongTask(id);
+          if (!record) return;
+          if (record.status === 'completed' || record.status === 'failed' || record.status === 'cancelled') return;
+          updateLongTask(id, {
+            status: 'completed',
+            progress: 100,
+            current: record.total || record.current,
+            error: null,
+          });
+          pushInternalMail({
+            title: `任务完成：${record.title}`,
+            content: `AI 助手发起的「${record.title}」已完成，可以回到工作台查看结果。`,
+            mail_type: 'system',
+            dedupe_key: `job:${id}:completed`,
+          });
         });
 
         // 检查是否有需要触发更新的任务完成
@@ -150,9 +220,10 @@ export function useTaskQueue(options?: UseTaskQueueOptions): UseTaskQueueReturn 
 
   // Calculate adaptive polling interval based on task states and panel visibility
   const getPollingInterval = useCallback(() => {
-    // When minimized/collapsed, use slower polling
+    // 有智能体长任务在跑时，即使面板收起也保持较快轮询，保证完成通知及时
+    const hasTrackedLongTask = activeLongTasks().length > 0;
     if (!isExpanded) {
-      return POLLING_MINIMIZED;
+      return hasTrackedLongTask ? POLLING_ACTIVE : POLLING_MINIMIZED;
     }
     // Check for active tasks (running or pending)
     const hasActiveTasks = jobs.some(
@@ -244,6 +315,13 @@ export function useTaskQueue(options?: UseTaskQueueOptions): UseTaskQueueReturn 
   // Initial fetch on mount
   useEffect(() => {
     fetchJobs(true); // First load shows loading state
+  }, [fetchJobs]);
+
+  // 智能体登记长任务后立即触发一次拉取（面板收起时无需等下一轮慢轮询）
+  useEffect(() => {
+    const onRegistered = () => { void fetchJobs(false); };
+    window.addEventListener('long-task:registered', onRegistered);
+    return () => window.removeEventListener('long-task:registered', onRegistered);
   }, [fetchJobs]);
 
   const getJobProgress = useCallback((job: WorkflowJob) => {

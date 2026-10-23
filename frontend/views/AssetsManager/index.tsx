@@ -7,18 +7,21 @@ import { useSceneImageGeneration } from '../StoryBoard/hooks/useSceneImageGenera
 import SceneDetailModal from '../StoryBoard/ResourcePanel/SceneDetailModal';
 import { 
   Character, Scene, Prop, TagGroup, CharacterTagGroupEntry, HeldPropsRef,
-  fetchCharacters, fetchCharactersByProject, fetchScenes, fetchScenesByProject, fetchProps,
-  createCharacter, createScene, createProp,
-  updateCharacter, updateScene, updateProp,
-  deleteCharacter, deleteScene, deleteProp,
+  fetchCharacters, fetchCharactersByProject, fetchProps,
+  createCharacter, createProp,
+  updateCharacter, updateProp,
+  deleteCharacter, deleteProp,
   fetchTagGroups, createTagGroup, updateTagGroup, deleteTagGroup,
   TAG_GROUP_COLORS,
-  generateCharacterViews,
   generateCharacterStateViews,
   createCharacterState,
   fetchCharacterStates,
+  fetchCharacter,
+  updateCharacterState,
 } from '../../services/assets';
 import { Project, fetchProjects } from '../../services/projects';
+import { registerLongTask } from '../../services/longTasks';
+import { createStudio, updateStudio, deleteStudio } from '../../services/studios';
 
 import { fetchCostumes, deleteCostume as deleteCostumeApi, generateCostumeViews, updateCostume, generatePropViews } from '../../services/costumes';
 import type { Costume } from '../../services/costumes';
@@ -517,40 +520,62 @@ const AssetsManager: React.FC = () => {
 
   // ── AI 助手上下文注册：资产管理侧 ─────────────────────────────
   const handleAIAction = useCallback((action: string, params: any) => {
-    const toastOk = (m: string) => showToast(m, 'success');
+    // AI 发起的任务统一在对话步骤流/结果消息中反馈，不再弹全局成功 toast
+    const toastOk = (_m: string) => {};
     const toastErr = (prefix: string) => (e: any) => showToast(prefix + ': ' + (e?.message || e), 'error');
+    const fail = (prefix: string) => (e: any) => {
+      const msg = e?.message || String(e);
+      return { success: false, error: msg || prefix };
+    };
     const ensureProject = () => {
       const pid = projectFilter !== 'all' && projectFilter !== 'unused' ? Number(projectFilter) : currentProject?.id || null;
       if (!pid) { showToast('未选择项目', 'warning'); return null; }
       return pid;
     };
 
-    // ── 白膌三视图生成（作用于角色的「白膌状态」而非角色本体）──
+    // ── 白膜三视图生成（作用于角色的「白膜状态」而非角色本体）──
     if (action === 'generate_base_model') {
       const id = Number(params?.characterId); if (!id) { showToast('缺少 characterId', 'warning'); return; }
-      // 查找该角色的白膌状态，对状态集合中的 base_model state 生成三视图
-      fetchCharacterStates(id)
-        .then((states) => {
-          const baseState = states.find((s) => s.is_base_model);
-          if (!baseState || !baseState.id) {
-            // 无白膌状态 → 降级为旧接口（导致 character 字段直生）
-            return generateCharacterViews(id, {
-              imageModel: params?.imageModel || selectedImageModel || undefined,
-              textModel: params?.textModel || selectedTextModel || undefined,
-            } as any).then((res) => {
-              toastOk('白膌三视图生成已启动');
-              if (res?.jobId) setPendingCharGen({ characterId: id, jobId: res.jobId });
-            });
+      const pid = ensureProject(); if (!pid) return;
+      const imageModel = params?.imageModel || selectedImageModel;
+      if (!imageModel) { showToast('请先选择图像生成模型', 'warning'); return; }
+      (async () => {
+        try {
+          const char = await fetchCharacter(id);
+          const states = await fetchCharacterStates(id);
+          let baseState = states.find((s) => s.is_base_model);
+          if (!baseState) {
+            // 设定图只是参考；先建立白膜状态，再生成三视图基础网格。
+            baseState = await createCharacterState(id, {
+              project_id: pid,
+              name: '白膜',
+              description: char.base_appearance || char.appearance || char.description || '',
+              appearance: char.base_appearance || char.appearance || '',
+              outfit: char.outfit_appearance || '',
+              is_base_model: true,
+              image_url: char.image_url || '',
+              front_view_url: char.front_view_url || '',
+              side_view_url: char.side_view_url || '',
+              back_view_url: char.back_view_url || '',
+              state_category: 'daily',
+              tags: '[]',
+              generation_status: 'idle',
+            } as any);
           }
-          return generateCharacterStateViews(id, baseState.id, {
-            imageModel: params?.imageModel || selectedImageModel,
+          if (!baseState?.id) throw new Error('白膜状态创建失败');
+          const res = await generateCharacterStateViews(id, baseState.id, {
+            imageModel,
             textModel: params?.textModel || selectedTextModel || undefined,
-          }).then(() => {
-            toastOk('白膌状态三视图生成已启动');
-            loadData();
           });
-        })
-        .catch(toastErr('生成失败'));
+          if (res?.jobId) {
+            registerLongTask({ jobId: String(res.jobId), title: `白膜三视图 · ${char.name}`, kind: 'image' });
+          }
+          toastOk('白膜三视图生成已启动；完成前不能添加服装、道具或状态');
+          loadData();
+        } catch (e: any) {
+          showToast(e?.message || '生成失败', 'error');
+        }
+      })();
     }
     // ── 角色状态三视图生成 ──
     else if (action === 'generate_state_views') {
@@ -563,69 +588,191 @@ const AssetsManager: React.FC = () => {
         .then(() => { toastOk('状态三视图生成已启动'); loadData(); })
         .catch(toastErr('状态三视图生成失败'));
     }
-    // ── 创建角色状态 ──
-    else if (action === 'create_state') {
+    // ── 创建角色状态（白膜三视图完成后才允许）──
+    else if (action === 'create_state' || action === 'create_character_state') {
       const charId = Number(params?.characterId); if (!charId) { showToast('缺少 characterId', 'warning'); return; }
-      createCharacterState(charId, {
-        name: params?.name || '新状态',
-        description: params?.description,
-        state_category: params?.state_category || 'daily',
-        outfit: params?.outfit,
-        age_stage: params?.age_stage,
-        hairstyle: params?.hairstyle,
-      } as any)
-        .then(() => { toastOk('角色状态已创建'); loadData(); })
-        .catch(toastErr('创建状态失败'));
+      const pid = ensureProject(); if (!pid) return;
+      (async () => {
+        try {
+          const states = await fetchCharacterStates(charId);
+          const base = states.find((s) => s.is_base_model);
+          if (!(base?.front_view_url && base?.side_view_url && base?.back_view_url)) {
+            showToast('白膜三视图未完成：请先生成白膜三视图，再创建角色状态', 'warning');
+            return;
+          }
+          await createCharacterState(charId, {
+            project_id: pid,
+            name: params?.name || '新状态',
+            description: params?.description || '',
+            state_category: params?.state_category || 'daily',
+            outfit: params?.outfit || '',
+            age_stage: params?.age_stage || '',
+            hairstyle: params?.hairstyle || '',
+            accessories: params?.accessories || '',
+            body_elements: params?.body_elements || '',
+            held_props: params?.held_props || '',
+            costume_id: params?.costume_id ?? null,
+            tags: params?.tags || '[]',
+          } as any);
+          toastOk('角色状态已创建');
+          loadData();
+        } catch (e: any) {
+          showToast(e?.message || '创建状态失败', 'error');
+        }
+      })();
     }
-    // ── 角色 CRUD ──
+    // ── 更新角色状态（派生状态要求白膜三视图就绪）──
+    else if (action === 'update_character_state') {
+      const charId = Number(params?.characterId); const stateId = Number(params?.stateId);
+      if (!charId || !stateId) { showToast('缺少 characterId 或 stateId', 'warning'); return; }
+      const pid = ensureProject(); if (!pid) return;
+      (async () => {
+        try {
+          const states = await fetchCharacterStates(charId);
+          const target = states.find((s) => s.id === stateId);
+          if (!target) { showToast(`角色状态 #${stateId} 不存在`, 'warning'); return; }
+          if (!target.is_base_model) {
+            const base = states.find((s) => s.is_base_model);
+            if (!(base?.front_view_url && base?.side_view_url && base?.back_view_url)) {
+              showToast('白膜三视图未完成：请先补齐白膜三视图，再修改派生状态', 'warning');
+              return;
+            }
+          }
+          const fields = params?.fields && typeof params.fields === 'object' ? params.fields : {};
+          await updateCharacterState(charId, stateId, { project_id: pid, ...fields } as any);
+          toastOk('角色状态已更新');
+          loadData();
+        } catch (e: any) {
+          showToast(e?.message || '更新状态失败', 'error');
+        }
+      })();
+    }
+    // ── 角色库 CRUD ──
     else if (action === 'create_character') {
       const pid = ensureProject(); if (!pid) return;
-      createCharacter({ projectId: pid, name: String(params?.name || '新角色'), description: params?.description, base_appearance: params?.base_appearance } as any)
-        .then(c => { toastOk(`已创建角色「${c.name}」`); loadData(); })
-        .catch(toastErr('创建角色失败'));
+      const payload: Record<string, any> = {
+        project_id: pid,
+        name: String(params?.name || '新角色').trim() || '新角色',
+        description: params?.description,
+        appearance: params?.appearance,
+        base_appearance: params?.base_appearance,
+        outfit_appearance: params?.outfit_appearance,
+        personality: params?.personality,
+        gender: params?.gender,
+        tags: params?.tags,
+      };
+      Object.keys(payload).forEach((k) => { if (payload[k] === undefined) delete payload[k]; });
+      return createCharacter(payload as any)
+        .then(c => {
+          toastOk(`已创建角色「${c.name}」（ID:${c.id}）`);
+          loadAllData();
+          return `已创建角色「${c.name}」（ID:${c.id}）`;
+        })
+        .catch(fail('创建角色失败'));
     } else if (action === 'update_character') {
-      const id = Number(params?.characterId); if (!id) { showToast('缺少 characterId', 'warning'); return; }
-      updateCharacter(id, params?.fields || {})
-        .then(() => { toastOk('角色已更新'); loadData(); })
-        .catch(toastErr('更新角色失败'));
+      const id = Number(params?.characterId);
+      if (!id) return { success: false, error: '缺少 characterId' };
+      return updateCharacter(id, params?.fields || {})
+        .then(() => {
+          toastOk(`角色 #${id} 已更新`);
+          loadAllData();
+          return `角色 #${id} 已更新`;
+        })
+        .catch(fail('更新角色失败'));
     } else if (action === 'delete_character') {
-      const id = Number(params?.characterId); if (!id) { showToast('缺少 characterId', 'warning'); return; }
-      deleteCharacter(id)
-        .then(() => { toastOk('角色已删除'); loadData(); })
-        .catch(toastErr('删除角色失败'));
+      const id = Number(params?.characterId);
+      if (!id) return { success: false, error: '缺少 characterId' };
+      return deleteCharacter(id)
+        .then(() => {
+          toastOk(`角色 #${id} 已删除`);
+          loadAllData();
+          return `角色 #${id} 已删除`;
+        })
+        .catch(fail('删除角色失败'));
     }
-    // ── 场景 CRUD ──
-    else if (action === 'create_location') {
+    // ── 场景库（Studio）CRUD：资产库「场景」页的真实数据源 ──
+    else if (action === 'create_studio' || action === 'create_location') {
       const pid = ensureProject(); if (!pid) return;
-      createScene({ project_id: pid, name: String(params?.name || '新影棚'), description: params?.description } as any)
-        .then(s => { toastOk(`已创建影棚「${s.name}」`); loadData(); })
-        .catch(toastErr('创建影棚失败'));
-    } else if (action === 'update_location') {
-      const id = Number(params?.locationId); if (!id) { showToast('缺少 locationId', 'warning'); return; }
-      updateScene(id, params?.fields || {})
-        .then(() => { toastOk('影棚已更新'); loadData(); })
-        .catch(toastErr('更新影棚失败'));
-    } else if (action === 'delete_location') {
-      const id = Number(params?.locationId); if (!id) { showToast('缺少 locationId', 'warning'); return; }
-      deleteScene(id)
-        .then(() => { toastOk('影棚已删除'); loadData(); })
-        .catch(toastErr('删除影棚失败'));
+      const name = String(params?.name || '').trim();
+      if (!name) return { success: false, error: '缺少场景名称' };
+      return createStudio({ projectId: pid, name, description: params?.description, coverImageUrl: params?.coverImageUrl })
+        .then(s => {
+          toastOk(`已创建场景「${s.name}」（ID:${s.id}）`);
+          loadAllData();
+          return `已创建场景「${s.name}」（ID:${s.id}）`;
+        })
+        .catch(fail('创建场景失败'));
+    } else if (action === 'update_studio' || action === 'update_location') {
+      const id = Number(params?.studioId ?? params?.locationId);
+      if (!id) return { success: false, error: '缺少 studioId' };
+      const fields = params?.fields || {};
+      const payload: Record<string, any> = {};
+      if (fields.name !== undefined) payload.name = String(fields.name);
+      if (fields.description !== undefined) payload.description = fields.description == null ? null : String(fields.description);
+      const cover = fields.coverImageUrl ?? fields.cover_image_url;
+      if (cover !== undefined) payload.coverImageUrl = cover == null ? null : String(cover);
+      if (typeof fields.sortOrder === 'number') payload.sortOrder = fields.sortOrder;
+      return updateStudio(id, payload)
+        .then(s => {
+          toastOk(`场景「${s.name}」已更新`);
+          loadAllData();
+          return `场景「${s.name}」（ID:${s.id}）已更新`;
+        })
+        .catch(fail('更新场景失败'));
+    } else if (action === 'delete_studio' || action === 'delete_location') {
+      const id = Number(params?.studioId ?? params?.locationId);
+      if (!id) return { success: false, error: '缺少 studioId' };
+      return deleteStudio(id)
+        .then(() => {
+          toastOk(`场景 #${id} 已删除`);
+          loadAllData();
+          return `场景 #${id} 已删除`;
+        })
+        .catch(fail('删除场景失败'));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectFilter, currentProject, selectedImageModel, selectedTextModel, showToast]);
 
-  // 注册角色/场景/onAction 到 AI 助手全局上下文
+  // 注册角色/场景/场景库/onAction 到 AI 助手全局上下文
   const aiCharacters = useMemo(() =>
-    characters.map(c => ({ id: c.id, name: c.name, description: (c as any).base_appearance || c.description })),
+    characters.map(c => ({
+      id: c.id,
+      name: c.name,
+      description: (c as any).base_appearance || c.description,
+      appearance: (c as any).appearance || (c as any).base_appearance,
+      base_appearance: (c as any).base_appearance,
+      outfit_appearance: (c as any).outfit_appearance,
+      active_state_name: (c as any).active_state_name,
+      active_state_outfit: (c as any).active_state_outfit,
+      states_count: (c as any).states_count,
+      has_base_model_views: !!(c as any).has_base_model_views,
+      image_url: (c as any).image_url || (c as any).active_state_image_url || (c as any).base_model_image_url,
+    })),
     [characters]
   );
-  const aiLocations = useMemo(() =>
-    scenes.map(s => ({ id: s.id, name: s.name, description: s.description })),
-    [scenes]
+  const aiStudios = useMemo(() =>
+    studios.map(s => {
+      const env = (s as any).environment;
+      const buildings = Array.isArray((s as any).buildings) ? (s as any).buildings : [];
+      return {
+        id: s.id,
+        name: s.name,
+        description: s.description ?? undefined,
+        cover_image_url: s.cover_image_url ?? undefined,
+        environment_name: typeof env === 'string' ? env : env?.name ?? undefined,
+        building_names: buildings
+          .map((b: any) => (typeof b === 'string' ? b : b?.name))
+          .filter((n: any): n is string => !!n),
+        scene_count: s.scene_count,
+        element_count: s.element_count,
+        nine_grid_image_url: s.nine_grid_image_url ?? undefined,
+      };
+    }),
+    [studios]
   );
   useAIAssistantWorkbenchContext({
     characters: aiCharacters,
-    locations: aiLocations,
+    studios: aiStudios,
     onAction: handleAIAction,
   });
 

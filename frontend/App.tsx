@@ -1,20 +1,22 @@
 import React, { Suspense, useEffect } from 'react';
-import { HashRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { HashRouter as Router, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import Layout from './components/Layout';
 import { PreviewProvider } from './components/PreviewProvider';
-import { WorkbenchProvider } from './contexts/WorkbenchContext';
+import { WorkbenchProvider, useWorkbench } from './contexts/WorkbenchContext';
 import { AIAssistantProvider } from './contexts/AIAssistantContext';
 import { StoryboardBridgeProvider } from './contexts/StoryboardBridgeContext';
 import Skeleton from './components/Skeleton';
 import ErrorBoundary from './components/ErrorBoundary';
+import { isTauri, openProject, takePendingProject, type ProjectMetadata } from './services/localApi';
+import { mapLocalProject } from './services/projects';
 
 // 懒加载主要视图组件
 const DynamicWorkbench = React.lazy(() => import('./components/DynamicWorkbench'));
 const ScriptStudio = React.lazy(() => import('./views/ScriptStudio/index'));
 const StoryBoardPage = React.lazy(() => import('./views/StoryBoardPage'));
-const Projects = React.lazy(() => import('./views/Projects'));
-const Settings = React.lazy(() => import('./views/Settings'));
+const Welcome = React.lazy(() => import('./views/Welcome'));
+const AppTabs = React.lazy(() => import('./components/AppTabs'));
 const UserCenter = React.lazy(() => import('./views/UserCenter'));
 // SketchStudio removed - 草图功能已集成到魔术空间
 const Landing = React.lazy(() => import('./views/Landing'));
@@ -42,6 +44,12 @@ const PageTransition: React.FC<{ children: React.ReactNode }> = ({ children }) =
 // 带动画的路由内容组件
 const AnimatedRoutes: React.FC = () => {
   const location = useLocation();
+  const { currentProject, isLoading: workbenchLoading } = useWorkbench();
+
+  // 无工程的首屏直接进入欢迎页（不经过页面过渡动画，避免后台启动/隐藏页卡在退出动画）
+  if (!workbenchLoading && !currentProject && location.pathname === '/') {
+    return <Navigate to="/welcome" replace />;
+  }
   
   return (
     <AnimatePresence mode="wait">
@@ -62,15 +70,17 @@ const AnimatedRoutes: React.FC = () => {
             <PageTransition><StoryBoardPage /></PageTransition>
           </Suspense>
         } />
-        <Route path="/projects" element={
+        <Route path="/projects" element={<Navigate to="/welcome" replace />} />
+        <Route path="/welcome" element={
           <Suspense fallback={<LoadingFallback />}>
-            <PageTransition><Projects /></PageTransition>
+            <Welcome />
           </Suspense>
         } />
-        {/* 设置页面 - 独立路由 */}
-        <Route path="/settings" element={
+        {/* 设置：应用级标签容器（不依赖工程） */}
+        <Route path="/settings" element={<Navigate to="/app-tabs" replace />} />
+        <Route path="/app-tabs" element={
           <Suspense fallback={<LoadingFallback />}>
-            <PageTransition><Settings /></PageTransition>
+            <AppTabs />
           </Suspense>
         } />
         <Route path="/user-center" element={
@@ -94,6 +104,64 @@ const AnimatedRoutes: React.FC = () => {
       </Routes>
     </AnimatePresence>
   );
+};
+
+/**
+ * 接管双击 .jzp / 命令行打开：
+ * - 启动时取走 Rust 侧待打开工程（前端未就绪时已完成导入/注册）
+ * - 运行中监听 jzp-project-opened 事件
+ */
+const PendingProjectOpen: React.FC = () => {
+  const navigate = useNavigate();
+  const { switchProject } = useWorkbench();
+
+  useEffect(() => {
+    if (!isTauri()) return;
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    const openByPath = async (path: string) => {
+      try {
+        const meta = await openProject(path);
+        if (disposed) return;
+        const project = mapLocalProject(meta);
+        switchProject(project);
+        localStorage.setItem('nanostory_last_project_id', String(project.id));
+        navigate('/');
+      } catch (err) {
+        console.error('[PendingProjectOpen] 打开工程失败:', err);
+      }
+    };
+
+    void (async () => {
+      try {
+        const { listen } = await import('@tauri-apps/api/event');
+        unlisten = await listen<ProjectMetadata>('jzp-project-opened', (event) => {
+          const path = event.payload?.path;
+          if (!path) return;
+          void openByPath(path).finally(() => { void takePendingProject(); });
+        });
+        if (disposed) {
+          unlisten();
+          unlisten = undefined;
+          return;
+        }
+
+        // 先监听再取，避免“事件已发出但监听未注册”的竞态
+        const pending = await takePendingProject();
+        if (pending && !disposed) await openByPath(pending);
+      } catch (err) {
+        console.warn('[PendingProjectOpen] 监听工程打开事件失败:', err);
+      }
+    })();
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [navigate, switchProject]);
+
+  return null;
 };
 
 const App: React.FC = () => {
@@ -150,6 +218,7 @@ const App: React.FC = () => {
                     <Layout>
                       <AnimatedRoutes />
                     </Layout>
+                    <PendingProjectOpen />
                   </StoryboardBridgeProvider>
                 </AIAssistantProvider>
               </WorkbenchProvider>

@@ -64,12 +64,37 @@ export interface AIAssistantCharacterSummary {
   id: number;
   name: string;
   description?: string;
+  /** 角色库中的完整外貌 / 当前造型信息，供智能体区分同名或近似角色 */
+  appearance?: string;
+  base_appearance?: string;
+  outfit_appearance?: string;
+  active_state_name?: string;
+  active_state_outfit?: string;
+  states_count?: number;
+  has_base_model_views?: boolean;
+  image_url?: string;
 }
 
 export interface AIAssistantLocationSummary {
   id: number;
   name: string;
   description?: string;
+  image_url?: string;
+  environment?: string;
+  buildings?: string[];
+}
+
+/** 资源面板中的场景库（Studio）：环境 + 建筑 + 场景元素聚合 */
+export interface AIAssistantStudioSummary {
+  id: number;
+  name: string;
+  description?: string;
+  cover_image_url?: string;
+  environment_name?: string;
+  building_names?: string[];
+  scene_count?: number;
+  element_count?: number;
+  nine_grid_image_url?: string;
 }
 
 export interface AIAssistantScriptSummary {
@@ -104,6 +129,7 @@ export interface AIAssistantDataContextValue {
   scenes: AIAssistantSceneSummary[];
   characters: AIAssistantCharacterSummary[];
   locations: AIAssistantLocationSummary[];
+  studios: AIAssistantStudioSummary[];
   scripts: AIAssistantScriptSummary[];
   onAction: AIAssistantAction | null;
   /** 当前项目名称/描述（注入 AI 系统提示词） */
@@ -116,6 +142,7 @@ export interface AIAssistantSettersContextValue {
   setScenes: (scenes: AIAssistantSceneSummary[]) => void;
   setCharacters: (list: AIAssistantCharacterSummary[]) => void;
   setLocations: (list: AIAssistantLocationSummary[]) => void;
+  setStudios: (list: AIAssistantStudioSummary[]) => void;
   setScripts: (list: AIAssistantScriptSummary[]) => void;
   setOnAction: (handler: AIAssistantAction | null) => void;
   setProjectInfo: (info: { name?: string | null; description?: string | null }) => void;
@@ -185,6 +212,7 @@ export const AIAssistantProvider: React.FC<AIAssistantProviderProps> = ({ childr
   const [scenes, setScenesState] = useState<AIAssistantSceneSummary[]>([]);
   const [characters, setCharactersState] = useState<AIAssistantCharacterSummary[]>([]);
   const [locations, setLocationsState] = useState<AIAssistantLocationSummary[]>([]);
+  const [studios, setStudiosState] = useState<AIAssistantStudioSummary[]>([]);
   const [scripts, setScriptsState] = useState<AIAssistantScriptSummary[]>([]);
   const [projectName, setProjectName] = useState<string | null>(null);
   const [projectDescription, setProjectDescription] = useState<string | null>(null);
@@ -244,7 +272,13 @@ export const AIAssistantProvider: React.FC<AIAssistantProviderProps> = ({ childr
       if (prev.length === next.length) {
         let same = true;
         for (let i = 0; i < prev.length; i++) {
-          if (prev[i].id !== next[i].id || prev[i].name !== next[i].name || prev[i].description !== next[i].description) {
+          if (
+            prev[i].id !== next[i].id || prev[i].name !== next[i].name || prev[i].description !== next[i].description ||
+            prev[i].appearance !== next[i].appearance || prev[i].base_appearance !== next[i].base_appearance ||
+            prev[i].outfit_appearance !== next[i].outfit_appearance ||
+            prev[i].active_state_name !== next[i].active_state_name ||
+            prev[i].states_count !== next[i].states_count || prev[i].has_base_model_views !== next[i].has_base_model_views
+          ) {
             same = false;
             break;
           }
@@ -261,7 +295,37 @@ export const AIAssistantProvider: React.FC<AIAssistantProviderProps> = ({ childr
       if (prev.length === next.length) {
         let same = true;
         for (let i = 0; i < prev.length; i++) {
-          if (prev[i].id !== next[i].id || prev[i].name !== next[i].name || prev[i].description !== next[i].description) {
+          if (
+            prev[i].id !== next[i].id || prev[i].name !== next[i].name || prev[i].description !== next[i].description ||
+            prev[i].image_url !== next[i].image_url || prev[i].environment !== next[i].environment ||
+            (prev[i].buildings || []).join('|') !== (next[i].buildings || []).join('|')
+          ) {
+            same = false;
+            break;
+          }
+        }
+        if (same) return prev;
+      }
+      return next;
+    });
+  }, []);
+
+  const setStudios = useCallback((next: AIAssistantStudioSummary[]) => {
+    setStudiosState((prev) => {
+      if (prev === next) return prev;
+      if (prev.length === next.length) {
+        let same = true;
+        for (let i = 0; i < prev.length; i++) {
+          const a = prev[i];
+          const b = next[i];
+          if (
+            a.id !== b.id || a.name !== b.name || a.description !== b.description ||
+            a.environment_name !== b.environment_name ||
+            a.cover_image_url !== b.cover_image_url ||
+            a.scene_count !== b.scene_count || a.element_count !== b.element_count ||
+            a.nine_grid_image_url !== b.nine_grid_image_url ||
+            (a.building_names || []).join('|') !== (b.building_names || []).join('|')
+          ) {
             same = false;
             break;
           }
@@ -309,6 +373,7 @@ export const AIAssistantProvider: React.FC<AIAssistantProviderProps> = ({ childr
     setScenesState([]);
     setCharactersState([]);
     setLocationsState([]);
+    setStudiosState([]);
     setScriptsState([]);
     setProjectName(null);
     setProjectDescription(null);
@@ -324,6 +389,7 @@ export const AIAssistantProvider: React.FC<AIAssistantProviderProps> = ({ childr
     setScenesState([]);
     setCharactersState([]);
     setLocationsState([]);
+    setStudiosState([]);
     setScriptsState([]);
     setProjectName(null);
     setProjectDescription(null);
@@ -341,14 +407,14 @@ export const AIAssistantProvider: React.FC<AIAssistantProviderProps> = ({ childr
   }, [onActionVersion]);
 
   const dataValue = useMemo<AIAssistantDataContextValue>(
-    () => ({ currentFrame, scenes, characters, locations, scripts, onAction, projectName, projectDescription }),
-    [currentFrame, scenes, characters, locations, scripts, onAction, projectName, projectDescription],
+    () => ({ currentFrame, scenes, characters, locations, studios, scripts, onAction, projectName, projectDescription }),
+    [currentFrame, scenes, characters, locations, studios, scripts, onAction, projectName, projectDescription],
   );
 
   // setter 永远稳定，settersValue 永不变化，订阅方不会因此重渲染
   const settersValue = useMemo<AIAssistantSettersContextValue>(
-    () => ({ setFrame, setScenes, setCharacters, setLocations, setScripts, setOnAction, setProjectInfo, clearContext }),
-    [setFrame, setScenes, setCharacters, setLocations, setScripts, setOnAction, setProjectInfo, clearContext],
+    () => ({ setFrame, setScenes, setCharacters, setLocations, setStudios, setScripts, setOnAction, setProjectInfo, clearContext }),
+    [setFrame, setScenes, setCharacters, setLocations, setStudios, setScripts, setOnAction, setProjectInfo, clearContext],
   );
 
   return (
@@ -396,13 +462,14 @@ export function useAIAssistantWorkbenchContext(params: {
   scenes?: AIAssistantSceneSummary[];
   characters?: AIAssistantCharacterSummary[];
   locations?: AIAssistantLocationSummary[];
+  studios?: AIAssistantStudioSummary[];
   scripts?: AIAssistantScriptSummary[];
   onAction?: AIAssistantAction | null;
   projectName?: string | null;
   projectDescription?: string | null;
 }) {
-  const { setFrame, setScenes, setCharacters, setLocations, setScripts, setOnAction, setProjectInfo } = useAIAssistantSetters();
-  const { frame, scenes, characters, locations, scripts, onAction, projectName, projectDescription } = params;
+  const { setFrame, setScenes, setCharacters, setLocations, setStudios, setScripts, setOnAction, setProjectInfo } = useAIAssistantSetters();
+  const { frame, scenes, characters, locations, studios, scripts, onAction, projectName, projectDescription } = params;
 
   useEffect(() => {
     setProjectInfo({ name: projectName ?? null, description: projectDescription ?? null });
@@ -423,6 +490,10 @@ export function useAIAssistantWorkbenchContext(params: {
   useEffect(() => {
     setLocations(locations ?? []);
   }, [locations, setLocations]);
+
+  useEffect(() => {
+    setStudios(studios ?? []);
+  }, [studios, setStudios]);
 
   useEffect(() => {
     setScripts(scripts ?? []);

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Film, User, Settings, Sparkles, Moon, Sun, Monitor, Contrast, UsersRound, Puzzle, PanelLeft, PanelRight, PanelBottom, FolderOpen, GripVertical, Check, X } from 'lucide-react';
+import { Film, User, Settings, Sparkles, Moon, Sun, Monitor, Contrast, UsersRound, Puzzle, PanelLeft, PanelRight, PanelBottom, ListTodo, FolderOpen, GripVertical, Check, X } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useKeyboardShortcuts, ShortcutConfig, GLOBAL_SHORTCUTS_CONFIG } from '../hooks/useKeyboardShortcuts';
 import KeyboardShortcutsHelp from './KeyboardShortcutsHelp';
@@ -16,12 +16,13 @@ import NetworkStatusBar from './NetworkStatusBar';
 import TitleBar, { WindowControls } from './TitleBar';
 import ActivityBarSidebar from './ActivityBar/ActivityBarSidebar';
 import AIAssistantSidePanel from './ActivityBar/AIAssistantSidePanel';
-import BottomTaskPanel from './ActivityBar/BottomTaskPanel';
 import AppMenuBar, { AppMenu } from './ActivityBar/AppMenuBar';
 import InternalMailbox from './InternalMailbox';
 // import LowBalanceBanner from './LowBalanceBanner';
 import { useRoutePreload } from '../hooks/useRoutePreload';
 import { isDesktop } from '../utils/runtimeMode';
+import { listProjects, openProject, type ProjectMetadata } from '../services/localApi';
+import { mapLocalProject } from '../services/projects';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -51,8 +52,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const navigate = useNavigate();
   const { t, language, setLanguage } = useLanguage();
   const { theme, setTheme } = useTheme();
-  const { projectType, currentProject, switchProject, leftSidebarTab, setLeftSidebarTab, bottomPanelOpen, toggleBottomPanel, hasUnsavedChanges } = useWorkbench();
+  const { projectType, currentProject, switchProject, leftSidebarTab, setLeftSidebarTab, hasUnsavedChanges } = useWorkbench();
   const { isOpen: isAIAssistantOpen, toggle: toggleAIAssistant, projectId: aiProjectId } = useAIAssistantUI();
+  const { bottomPanelOpen, toggleBottomPanel } = useAIAssistantUI();
   const { showToast } = useToast();
   // 桌面端本地优先：不依赖后端，跳过健康检测（网络仅反映联网状态）
   const offlineMode = isDesktop();
@@ -62,20 +64,64 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     setLeftSidebarTab(leftSidebarTab === tabId ? null : tabId);
   }, [leftSidebarTab, setLeftSidebarTab]);
 
+  // 菜单「打开最近的工程」：按需刷新注册表中的本地工程
+  const loadRecentProjects = useCallback(async () => {
+    setRecentLoading(true);
+    try {
+      setRecentProjects(await listProjects());
+    } catch (err) {
+      console.warn('[Layout] 加载最近工程失败:', err);
+    } finally {
+      setRecentLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadRecentProjects();
+  }, [loadRecentProjects]);
+
+  const handleOpenRecent = useCallback(async (meta: ProjectMetadata) => {
+    if (!meta.path) {
+      showToast(t.welcome.openFailed, 'error');
+      return;
+    }
+    try {
+      const opened = await openProject(meta.path);
+      const project = mapLocalProject(opened);
+      switchProject(project);
+      localStorage.setItem('nanostory_last_project_id', String(project.id));
+      navigate('/');
+    } catch (err: any) {
+      showToast(err?.message || t.welcome.openFailed, 'error');
+    }
+  }, [navigate, switchProject, showToast, t]);
+
+  /** 设置：有工程时打开工作台设置标签；无工程时进入应用级标签容器 */
+  const openSettings = useCallback(() => {
+    if (currentProject) {
+      navigate('/');
+      setTimeout(() => window.dispatchEvent(new CustomEvent('openSettingsTab')), 100);
+    } else {
+      navigate('/app-tabs');
+    }
+  }, [currentProject, navigate]);
+
   const [isConnected, setIsConnected] = useState(true);
   // 纯网络连通性指示（在线/无网），不再把“离线模式/本地模式”当作功能概念展示
   const [netOnline, setNetOnline] = useState(() => (typeof navigator !== 'undefined' ? navigator.onLine : true));
   const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [recentProjects, setRecentProjects] = useState<ProjectMetadata[]>([]);
+  const [recentLoading, setRecentLoading] = useState(false);
 
   // 侧边栏导航项排序状态（支持长按拖拽排序）
   const [navOrder, setNavOrder] = useState<string[]>(() => {
     try {
       const stored = localStorage.getItem('nanostory_nav_order');
-      return stored ? JSON.parse(stored) : ['/', '/projects'];
+      return stored ? JSON.parse(stored) : ['/'];
     } catch {
-      return ['/', '/projects'];
+      return ['/'];
     }
   });
   const [draggingNav, setDraggingNav] = useState<string | null>(null);
@@ -94,7 +140,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const navItems = useMemo(() => {
     const allItems = [
       { path: '/', icon: Film, label: t.nav.workspace },
-      { path: '/projects', icon: FolderOpen, label: t.nav.projects },
     ];
     // 按 navOrder 排序
     const orderMap = new Map(navOrder.map((p, i) => [p, i]));
@@ -304,9 +349,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     { id: 'nav-workspace', title: t.nav.workspace, category: 'navigation', icon: <Film className="w-4 h-4" />, shortcut: 'Ctrl+1', action: () => navigate('/'), keywords: ['studio', '工作台', '创作'] },
     // 资产管理已集成到工作台标签页，不再作为独立入口
     // { id: 'nav-assets', title: t.nav.assets, category: 'navigation', icon: <Package className="w-4 h-4" />, shortcut: 'Ctrl+2', action: () => navigate('/assets'), keywords: ['asset', '素材', '角色'] },
-    { id: 'nav-projects', title: t.nav.projects, category: 'navigation', icon: <FolderOpen className="w-4 h-4" />, shortcut: 'Ctrl+2', action: () => switchWorkbenchLeftTab('projects'), keywords: ['project', '工程'] },
+    { id: 'nav-projects', title: t.nav.projects, category: 'navigation', icon: <FolderOpen className="w-4 h-4" />, shortcut: 'Ctrl+2', action: () => navigate('/welcome'), keywords: ['project', '工程'] },
     // { id: 'nav-sketch', title: t.nav.sketch, category: 'navigation', icon: <Pencil className="w-4 h-4" />, shortcut: 'Ctrl+4', action: () => navigate('/sketch'), keywords: ['draw', '绘制', '草图'] },
-    { id: 'nav-settings', title: t.nav.settings, category: 'navigation', icon: <Settings className="w-4 h-4" />, shortcut: 'Ctrl+5', action: () => { navigate('/'); setTimeout(() => window.dispatchEvent(new CustomEvent('openSettingsTab')), 100); }, keywords: ['setting', '设置', '偏好'] },
+    { id: 'nav-settings', title: t.nav.settings, category: 'navigation', icon: <Settings className="w-4 h-4" />, shortcut: 'Ctrl+5', action: openSettings, keywords: ['setting', '设置', '偏好'] },
     // 操作类
     { id: 'action-shortcuts', title: t.commandPalette.commands.showShortcuts, category: 'action', action: () => setShowShortcutsHelp(true), keywords: ['keyboard', '快捷键', 'shortcut'] },
     // 设置类
@@ -316,7 +361,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     { id: 'settings-system', title: t.commandPalette.commands.themeSystem, category: 'settings', icon: <Monitor className="w-4 h-4" />, action: () => setTheme('system'), keywords: ['theme', '主题', '系统', 'system'] },
     { id: 'settings-lang-zh', title: t.commandPalette.commands.langZh, category: 'settings', action: () => setLanguage('zh-CN'), keywords: ['language', '语言', '中文'] },
     { id: 'settings-lang-en', title: t.commandPalette.commands.langEn, category: 'settings', action: () => setLanguage('en-US'), keywords: ['language', '语言', 'english'] },
-  ], [t, navigate, setTheme, setLanguage, switchWorkbenchLeftTab]);
+  ], [t, navigate, setTheme, setLanguage, switchWorkbenchLeftTab, openSettings]);
 
   // 全局快捷键
   const globalShortcuts = useMemo<ShortcutConfig[]>(() => [
@@ -331,7 +376,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     // },
     {
       ...GLOBAL_SHORTCUTS_CONFIG.NAVIGATE_PROJECTS,
-      action: () => switchWorkbenchLeftTab('projects'),
+      action: () => navigate('/welcome'),
     },
     // {
     //   ...GLOBAL_SHORTCUTS_CONFIG.NAVIGATE_SKETCH,
@@ -339,7 +384,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     // },
     {
       ...GLOBAL_SHORTCUTS_CONFIG.NAVIGATE_SETTINGS,
-      action: () => { navigate('/'); setTimeout(() => window.dispatchEvent(new CustomEvent('openSettingsTab')), 100); },
+      action: openSettings,
     },
     {
       ...GLOBAL_SHORTCUTS_CONFIG.SHOW_HELP,
@@ -349,7 +394,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       ...GLOBAL_SHORTCUTS_CONFIG.COMMAND_PALETTE,
       action: () => setIsCommandPaletteOpen(true),
     },
-  ], [navigate, switchWorkbenchLeftTab]);
+  ], [navigate, switchWorkbenchLeftTab, openSettings]);
 
   // 注册全局快捷键
   useKeyboardShortcuts(globalShortcuts);
@@ -384,9 +429,17 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         id: 'file',
         label: t.menu.file,
         items: [
-          { label: t.menu.newProject, shortcut: 'Ctrl+N', action: () => { setLeftSidebarTab('projects'); } },
-          { label: t.menu.openProject, shortcut: 'Ctrl+O', action: () => { setLeftSidebarTab('projects'); } },
-          { label: t.menu.openRecent, action: () => setLeftSidebarTab('projects') },
+          { label: t.menu.newProject, shortcut: 'Ctrl+N', action: () => { navigate('/welcome'); } },
+          { label: t.menu.openProject, shortcut: 'Ctrl+O', action: () => { navigate('/welcome'); } },
+          { label: t.menu.openRecent, action: () => navigate('/welcome'), submenu: recentLoading
+            ? [{ label: t.menu.recentLoading, disabled: true }]
+            : recentProjects.length
+              ? recentProjects.map((p) => ({
+                  label: p.name || '未命名',
+                  action: () => { void handleOpenRecent(p); },
+                }))
+              : [{ label: t.menu.recentNone, disabled: true }] },
+          { label: t.menu.recentManage, action: () => navigate('/welcome') },
           { label: '-' },
           { label: t.menu.save, shortcut: 'Ctrl+S', action: () => execCmd('save') },
           { label: t.menu.saveAll, shortcut: 'Ctrl+K S', disabled: true },
@@ -412,9 +465,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         id: 'view',
         label: t.menu.view,
         items: [
-          { label: t.menu.leftSidebar, shortcut: 'Ctrl+B', checked: !!leftSidebarTab, action: () => setLeftSidebarTab(leftSidebarTab ? null : 'projects') },
+          { label: t.menu.leftSidebar, shortcut: 'Ctrl+B', checked: !!leftSidebarTab, action: () => setLeftSidebarTab(leftSidebarTab ? null : 'workspace') },
           { label: t.menu.aiAssistant, checked: isAIAssistantOpen, action: toggleAIAssistant },
-          { label: t.menu.bottomPanel, checked: bottomPanelOpen, action: toggleBottomPanel },
+          { label: t.menu.bottomPanel, action: () => window.dispatchEvent(new CustomEvent('internal-mailbox:open')) },
           { label: '-' },
           { label: t.menu.fullscreen, shortcut: 'F11', checked: isFullscreen, action: toggleFullscreen },
           { label: '-' },
@@ -429,9 +482,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         label: t.menu.go,
         items: [
           { label: t.menu.workspace, shortcut: 'Ctrl+1', action: () => navigate('/') },
-          { label: t.menu.projects, shortcut: 'Ctrl+2', action: () => switchWorkbenchLeftTab('projects') },
+          { label: t.menu.projects, shortcut: 'Ctrl+2', action: () => navigate('/welcome') },
           { label: '-' },
-          { label: t.menu.settings, shortcut: 'Ctrl+,', action: () => { navigate('/'); setTimeout(() => window.dispatchEvent(new CustomEvent('openSettingsTab')), 100); } },
+          { label: t.menu.settings, shortcut: 'Ctrl+,', action: openSettings },
           { label: t.menu.commandPalette, shortcut: 'Ctrl+K', action: () => setIsCommandPaletteOpen(true) },
         ],
       },
@@ -448,9 +501,10 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     ];
   }, [
     leftSidebarTab, setLeftSidebarTab, isAIAssistantOpen, toggleAIAssistant,
-    bottomPanelOpen, toggleBottomPanel, isFullscreen, toggleFullscreen,
+    isFullscreen, toggleFullscreen,
     theme, setTheme, navigate, switchWorkbenchLeftTab,
     setIsCommandPaletteOpen, setShowShortcutsHelp, showToast, t,
+    recentProjects, recentLoading, handleOpenRecent, openSettings,
   ]);
 
   return (
@@ -459,7 +513,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       <header data-tauri-drag-region className="pro-toolbar relative z-50 h-11 items-center justify-between pl-3 pr-2 bg-(--bg-nav) border-b border-(--border-color) hide-on-mobile flex select-none shrink-0 w-full">
         {/* 左侧：VSCode 式应用菜单（原 logo 位置） */}
         <div data-tauri-drag-region className="flex items-center gap-1 min-w-0 flex-1">
-          <AppMenuBar menus={appMenus} />
+          <AppMenuBar menus={appMenus} onMenuOpen={(id) => { if (id === 'file') void loadRecentProjects(); }} />
           {/* 当前打开的工程文件 */}
           {currentProject && (
             <div data-tauri-drag-region className="flex items-center gap-1.5 ml-3 min-w-0">
@@ -475,14 +529,14 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         </div>
 
         {/* 中间：可拖拽空白区（当左侧内容过多时收缩） */}
-        <div data-tauri-drag-region className="flex-shrink h-full min-w-25" />
+        <div data-tauri-drag-region className="shrink h-full min-w-25" />
 
         {/* 右侧：辅助控件 */}
         <div data-tauri-drag-region className="flex items-center gap-3">
           {/* 布局切换按钮组（VSCode 式），按方位排序：左侧栏 / 底部面板 / 右侧栏 */}
           <div className="flex items-center gap-0.5 bg-white/5 rounded-lg p-0.5">
             <button
-              onClick={() => setLeftSidebarTab(leftSidebarTab ? null : 'projects')}
+              onClick={() => setLeftSidebarTab(leftSidebarTab ? null : 'workspace')}
               className={`p-1 rounded transition-colors ${
                 leftSidebarTab
                   ? 'bg-(--accent)/15 text-(--accent)'
@@ -501,7 +555,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                   : 'text-(--text-muted) hover:text-(--text-primary) hover:bg-white/5'
               }`}
               aria-label="底部面板"
-              title="底部面板"
+              title="底部面板（分镜编辑器）"
+              aria-pressed={bottomPanelOpen}
             >
               <PanelBottom className="w-4 h-4" />
             </button>
@@ -518,6 +573,15 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
               <PanelRight className="w-4 h-4" />
             </button>
           </div>
+          {/* 设置入口：在分镜工作台内以标签页打开，与菜单入口保持一致 */}
+          <button
+            onClick={openSettings}
+            className="p-1 rounded transition-colors text-(--text-muted) hover:text-(--text-primary) hover:bg-white/5"
+            aria-label="设置"
+            title="设置"
+          >
+            <Settings className="w-4 h-4" />
+          </button>
           {/* 积分余额入口已移除（商业化功能下线） */}
           <InternalMailbox />
 
@@ -531,8 +595,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         {/* 导航图标列表 */}
         <nav className="flex-1 flex flex-col pt-2" role="navigation" aria-label={t.nav.mainNav}>
           {visibleNavItems.map((item, index) => {
-            // 工作台/工程/团队：在左侧栏打开对应面板（不整页跳转）；其余走路由
-            const panelTabId = item.path === '/' ? 'workspace' : item.path === '/projects' ? 'projects' : null;
+            // 工作台：在左侧栏打开对应面板（不整页跳转）；工程入口已迁移到欢迎页
+            const panelTabId = item.path === '/' ? 'workspace' : null;
             const isActive = panelTabId
               ? leftSidebarTab === panelTabId
               : location.pathname === item.path;
@@ -667,9 +731,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           {/* VSCode 式右侧 AI 助手面板 */}
           <AIAssistantSidePanel />
         </div>
-
-        {/* VSCode 式底部任务面板（可折叠可拖高） */}
-        <BottomTaskPanel />
       </div>
 
       {/* 小屏底部导航栏 */}
@@ -709,7 +770,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       {/* 活动栏右键上下文菜单：勾选显示/隐藏按钮 */}
       {activityMenu && (
         <div
-          className="fixed z-9999 min-w-[180px] py-1 rounded-md border border-(--border-color) shadow-2xl"
+          className="fixed z-9999 min-w-45 py-1 rounded-md border border-(--border-color) shadow-2xl"
           style={{
             left: activityMenu.x,
             top: activityMenu.y,
@@ -794,15 +855,15 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           </button>
         </div>
 
-        {/* 右侧：底部面板切换 + 版本信息 */}
+        {/* 右侧：任务入口（打开站内信任务进度） + 版本信息 */}
         <div className="flex items-center gap-3">
           <button
-            onClick={toggleBottomPanel}
-            className={`flex items-center gap-1 text-xs transition-colors ${bottomPanelOpen ? 'text-(--accent)' : 'text-(--text-muted) hover:text-(--text-secondary)'}`}
+            onClick={() => window.dispatchEvent(new CustomEvent('internal-mailbox:open'))}
+            className="flex items-center gap-1 text-xs transition-colors text-(--text-muted) hover:text-(--text-secondary)"
             aria-label={t.nav.taskPanel}
             title={t.nav.taskPanel}
           >
-            <PanelBottom className="w-3.5 h-3.5" />
+            <ListTodo className="w-3.5 h-3.5" />
             <span>{t.nav.tasks}</span>
           </button>
           <span className="text-xs text-(--text-muted)">v1.0.0</span>

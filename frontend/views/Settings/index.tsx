@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Moon, Sun, Eye, Mail, ChevronDown, Check, 
-  Palette, MessageSquare, Info, ChevronRight, Sparkles, Monitor, Globe, RotateCcw, SlidersHorizontal,
+  Palette, MessageSquare, Info, ChevronRight, Sparkles, Monitor, Globe, RotateCcw, SlidersHorizontal, FileArchive,
   Cpu, Database, BarChart3, Users, Gauge, AlertTriangle, Megaphone, ClipboardList, BookOpen, Key, Film, FolderInput
 } from 'lucide-react';
 import { useTheme, ThemeType } from '../../contexts/ThemeContext';
@@ -15,6 +15,7 @@ import {
   setProjectsRootOverride,
   getDefaultProjectsRoot,
   selectDirectory,
+  registerJzpAssociation,
 } from '../../services/localApi';
 
 // 用户反馈邮递收件箱（不在应用内入库，仅唤起系统邮件客户端发送）
@@ -190,6 +191,7 @@ const Settings: React.FC = () => {
 
   // 工程默认保存位置（localStorage 持久化；空表示沿用系统默认）
   const [projectsRoot, setProjectsRoot] = useState<string>(() => getProjectsRootOverride());
+  const [associatingJzp, setAssociatingJzp] = useState(false);
   const [systemProjectsRoot, setSystemProjectsRoot] = useState<string>('');
   useEffect(() => {
     getDefaultProjectsRoot().then(setSystemProjectsRoot).catch(() => {});
@@ -248,6 +250,20 @@ const Settings: React.FC = () => {
       document.body.removeChild(a);
     } catch {
       showToast(t.settings.feedback.networkError, 'error');
+    }
+  };
+
+  /** 关联 .jzp 文件类型（Windows），关联后可直接双击工程包打开 */
+  const handleAssociateJzp = async () => {
+    if (associatingJzp) return;
+    setAssociatingJzp(true);
+    try {
+      const exe = await registerJzpAssociation();
+      showToast(t.settings.about.associateJzpSuccess.replace('{path}', exe), 'success');
+    } catch (err: any) {
+      showToast(err?.message || t.settings.about.associateJzpFailed, 'error');
+    } finally {
+      setAssociatingJzp(false);
     }
   };
 
@@ -323,12 +339,13 @@ const Settings: React.FC = () => {
       >
         {/* Logo 和标题 */}
         <div className="flex items-center gap-4 mb-6">
-          <div 
-            className="w-16 h-16 rounded-2xl flex items-center justify-center text-3xl shadow-lg"
-            style={{ backgroundColor: 'var(--accent-primary)', color: 'white' }}
-          >
-            🥟
-          </div>
+          {/* 与桌面应用（Tauri）打包图标保持一致 */}
+          <img
+            src="/icon.png"
+            alt={t.settings.about.appName}
+            className="w-16 h-16 rounded-2xl object-cover shadow-lg shrink-0"
+            draggable={false}
+          />
           <div>
             <h3 className="font-bold text-xl" style={{ color: 'var(--text-primary)' }}>
               {t.settings.about.appName}
@@ -424,6 +441,19 @@ const Settings: React.FC = () => {
         >
           <RotateCcw className="w-4 h-4" style={{ color: 'var(--accent-primary)' }} />
           {t.onboarding?.replayButton || '重新播放新手引导'}
+        </button>
+        <button
+          onClick={() => { void handleAssociateJzp(); }}
+          disabled={associatingJzp}
+          className="flex-1 py-3 rounded-xl font-medium text-sm transition-all flex items-center justify-center gap-2 interactive-press hover:scale-[1.02] disabled:opacity-60"
+          style={{
+            backgroundColor: 'var(--bg-input)',
+            border: '1px solid var(--border-color)',
+            color: 'var(--text-secondary)',
+          }}
+        >
+          <FileArchive className="w-4 h-4" style={{ color: 'var(--accent-primary)' }} />
+          {t.settings.about.associateJzp}
         </button>
         <button
           onClick={() => window.open('https://github.com', '_blank')}

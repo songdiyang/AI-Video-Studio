@@ -101,22 +101,29 @@ export function buildSystemPrompt(context: any): string {
     '\n- delete_scene：删除分镜。params:{sceneId}' +
     '\n- update_scene：更新分镜字段。params:{sceneId, field:"description|base_description|first_frame_prompt|last_frame_prompt|video_prompt|voiceover|duration", value:"新内容（duration 传秒数的数字字符串）"}' +
     '\n- update_scene_dialogues：更新对白。params:{sceneId, dialogues:[{character,line}或字符串列表]}' +
-    '\n- update_scene_characters_location：绑定角色和场景。params:{sceneId, characters:["角色名1",..], location:"场景名", characterIds?:[角色ID,..], locationId?:场景ID}' +
+    '\n- update_scene_characters_location：绑定角色和分镜地点。params:{sceneId, characters:["角色名1",..], location:"地点名", characterIds?:[角色ID,..], locationId?:分镜地点ID}。注意 locationId 来自【分镜地点】清单，不是场景库 Studio 的 ID。' +
     '\n- move_scene：上移/下移一步。params:{sceneId, direction:"up|down"}' +
     '\n- reorder_scenes：按给定顺序重排。params:{sceneIds:[ID1,ID2,..]}' +
-    '\n// 角色' +
-    '\n- create_character：新建角色。params:{name, description?, base_appearance?}' +
-    '\n- update_character：更新角色字段。params:{characterId, fields:{name?, description?, base_appearance?, outfit_appearance?}}' +
+    '\n// 角色库（资源面板「角色」页）' +
+    '\n- create_character：新建角色。params:{name, description?, appearance?, base_appearance?, outfit_appearance?, personality?, gender?, tags?}。仅生成角色设定图/参考图，不是白膜。' +
+    '\n- update_character：更新角色字段。params:{characterId, fields:{name?, description?, appearance?, base_appearance?, outfit_appearance?, personality?, gender?, tags?}}' +
     '\n- delete_character：删除角色。params:{characterId}（破坏性）' +
-    '\n- generate_base_model：生成角色白膜三视图。params:{characterId}' +
-    '\n// 场景（环境地点）' +
-    '\n- create_location：新建场景。params:{name, description?}' +
-    '\n- update_location：更新场景字段。params:{locationId, fields:{name?, description?}}' +
-    '\n- delete_location：删除场景。params:{locationId}（破坏性）' +
+    '\n- generate_base_model：生成白膜三视图（基础网格）。params:{characterId}。默认强制流程：白膜三视图完成前不能创建派生状态；生成期间按长任务反馈。' +
+    '\n- create_character_state：在白膜三视图完成后创建角色状态。params:{characterId, name, description?, state_category?, outfit?, age_stage?, hairstyle?, accessories?, body_elements?, held_props?, costume_id?, tags?}。状态 = 白膜基础 + 服装 + 道具 + 状态属性，对应一场戏中角色需要的造型。' +
+    '\n- update_character_state：更新角色状态。params:{characterId, stateId, fields:{...}}。白膜三视图未完成时禁止修改派生状态。' +
+    '\n// 场景库（资源面板「场景」页，Studio：环境+建筑）' +
+    '\n- create_studio：新建场景库条目（会显示在资源面板「场景」页）。params:{name, description?, coverImageUrl?}' +
+    '\n- update_studio：更新场景库条目。params:{studioId, fields:{name?, description?, coverImageUrl?}}' +
+    '\n- delete_studio：删除场景库条目。params:{studioId}（破坏性）' +
+    '\n// 分镜地点（Scenes，用于给分镜绑定地点；与场景库 Studio 独立）' +
+    '\n- create_location：新建分镜地点（仅用于分镜绑定，不显示在资源面板「场景」页）。params:{name, description?}' +
+    '\n- update_location：更新分镜地点。params:{locationId, fields:{name?, description?}}' +
+    '\n- delete_location：删除分镜地点。params:{locationId}（破坏性）' +
     '\n// 剧本' +
     '\n- create_script：新建剧本。params:{title?, episodeNumber?, content}' +
     '\n- read_script：查看/读取剧本正文。params:{scriptId?}——不传则读当前集剧本。需要参考剧情、回答“大纲/内容是什么”、或基于剧本拆分前，先用它获取完整正文。' +
     '\n- generate_script：AI生成剧本。params:{projectId, episodeNumber?, title?, description?, style?, length?, textModel?}。启动异步工作流生成剧本，生成中剧本状态为 generating，完成后自动保存。' +
+    '\n- get_task_status：查看后台长任务状态。params:{jobId?}——不传返回最近长任务，传 jobId 查单个。用户问“任务进度/好了没”时使用。' +
     '\n- delete_script：删除剧本。params:{scriptId}（破坏性）' +
     '\n- bind_script：切换当前参考剧本（弱绑定）。params:{scriptId}——传 null 则解绑' +
     '\n- switch_episode：切换当前集数进度标签。params:{episodeNumber:数字}' +
@@ -124,7 +131,15 @@ export function buildSystemPrompt(context: any): string {
     '\n- update_project：更新项目信息。params:{fields:{name?, description?, art_style?}}' +
     '\n// 协作 & 版本' +
     '\n- invite_member：邀请协作者。params:{username, role?:"editor|viewer"}' +
-    '\n\n重要：你拥有项目的完整操作权限。当用户明确要求执行某个操作时，直接在回复中说明你正在做什么，并附上对应的 action 指令。系统将自动执行，不需要用户再次确认。对于删除等不可逆操作，在回复正文中简要说明影响即可。';
+    '\n\n重要：你拥有项目的完整操作权限。当用户明确要求执行某个操作时，直接在回复中说明你正在做什么，并附上对应的 action 指令。系统将自动执行，不需要用户再次确认。对于删除等不可逆操作，在回复正文中简要说明影响即可。' +
+    '\n\n【角色状态生产流程（默认强制）】' +
+    '\n1. create_character 生成角色设定图/参考图；设定图只是参考层，不是白膜。' +
+    '\n2. generate_base_model 生成白膜三视图；这是基础网格，必须先完成并等待任务结束。' +
+    '\n3. 只有白膜三视图完成后，才能 create_character_state / update_character_state，组合服装、道具与体貌/状态属性。' +
+    '\n4. 一个角色状态 = 白膜基础 + 服装 + 道具 + 状态属性，对应一场戏中角色需要的造型；不要跳过白膜直接造状态或出图。' +
+    '\n例外：用户明确说明该资源只出现一次/为一次性资源时，可按需求一次性生成完整内容；其余情况必须走白膜→状态流程。' +
+    '\n角色库与场景库的完整清单会随项目上下文一并提供；新增成功后系统会返回新条目的 ID，可直接用于后续 update_* 或绑定分镜。不要臆造清单中不存在的 ID。' +
+    '\n\n【场景库与分镜地点的区别】场景库 Studio 是资源面板「场景」页的数据；分镜地点 Scenes 仅用于分镜绑定。创建场景库 Studio 后，如需在分镜中引用该场景，直接把 Studio 名称作为 location 传给 update_scene_characters_location，不要为同一个场景重复 create_location；只有用户明确要求维护分镜地点清单时才创建 Scenes。';
 
   if (!context) return systemPrompt;
 
@@ -142,18 +157,45 @@ export function buildSystemPrompt(context: any): string {
     systemPrompt += `\n【当前选中第 ${context.frameIndex} 个分镜】`;
   }
 
-  if (Array.isArray(context.characters) && context.characters.length > 0) {
+  if (Array.isArray(context.characters)) {
     const list = context.characters
-      .map((c: any) => `${c.name}(ID:${c.id})${c.description ? '-' + String(c.description).slice(0, 40) : ''}`)
-      .join('；');
-    systemPrompt += `\n\n【项目角色】${list}`;
+      .map((c: any) => {
+        const bits: string[] = [];
+        if (c.active_state_name) bits.push(`当前造型:${c.active_state_name}`);
+        if (c.states_count != null) bits.push(`造型数:${c.states_count}`);
+        if (c.has_base_model_views) bits.push('白膜已建');
+        const meta = bits.length ? `（${bits.join('，')}）` : '';
+        const appearance = c.appearance || c.base_appearance || c.outfit_appearance || c.description;
+        const desc = appearance ? `：${String(appearance).slice(0, 120)}` : '';
+        return `- ${c.name}（ID:${c.id}）${meta}${desc}`;
+      })
+      .join('\n');
+    systemPrompt += `\n\n【项目角色库】\n${list || '（空，可用 create_character 创建）'}`;
   }
 
-  if (Array.isArray(context.locations) && context.locations.length > 0) {
+  if (Array.isArray(context.studios)) {
+    const list = context.studios
+      .map((s: any) => {
+        const bits: string[] = [];
+        if (s.environment_name) bits.push(`环境:${s.environment_name}`);
+        if (Array.isArray(s.building_names) && s.building_names.length) bits.push(`建筑:${s.building_names.join('、')}`);
+        if (s.cover_image_url) bits.push('有封面');
+        const meta = bits.length ? `（${bits.join('，')}）` : '';
+        const desc = s.description ? `：${String(s.description).slice(0, 100)}` : '';
+        return `- ${s.name}（ID:${s.id}）${meta}${desc}`;
+      })
+      .join('\n');
+    systemPrompt += `\n\n【项目场景库（Studio）】\n${list || '（空，可用 create_studio 创建）'}`;
+  }
+
+  if (Array.isArray(context.locations)) {
     const list = context.locations
-      .map((l: any) => `${l.name}(ID:${l.id})${l.description ? '-' + String(l.description).slice(0, 40) : ''}`)
-      .join('；');
-    systemPrompt += `\n\n【项目场景】${list}`;
+      .map((l: any) => {
+        const desc = l.description ? `：${String(l.description).slice(0, 80)}` : '';
+        return `- ${l.name}（ID:${l.id}）${desc}`;
+      })
+      .join('\n');
+    systemPrompt += `\n\n【分镜地点（Scenes，用于绑定分镜）】\n${list || '（空；通常无需单独创建，绑定场景时可直接使用场景库 Studio 名称）'}`;
   }
 
   if (Array.isArray(context.scripts) && context.scripts.length > 0) {
@@ -187,6 +229,24 @@ export function buildSystemPrompt(context: any): string {
       })
       .join('\n');
     systemPrompt += `\n\n【项目分镜列表（按顺序）】\n${lines}\n\n当用户说"第X个分镜"时，请根据上面列表匹配对应的分镜ID，并在 action 的 params 中传入正确的 sceneId。`;
+  }
+
+  if (Array.isArray(context.longTasks) && context.longTasks.length > 0) {
+    const statusLabel: Record<string, string> = {
+      pending: '等待中',
+      running: '运行中',
+      completed: '已完成',
+      failed: '失败',
+      cancelled: '已取消',
+    };
+    const lines = context.longTasks
+      .map((task: any) => {
+        const count = task.total > 0 ? `（${task.current || 0}/${task.total}）` : '';
+        const error = task.error ? `，错误：${task.error}` : '';
+        return `- [${task.jobId}] ${task.title}：${statusLabel[task.status] || task.status} ${task.progress || 0}%${count}${error}`;
+      })
+      .join('\n');
+    systemPrompt += `\n\n【后台长任务】\n${lines}\n\n这些长任务在后台执行，用户可以继续其他操作；完成后会通过站内信通知。用户询问进度时按上述状态回答，不要虚构进度；需要最新状态时可调用 get_task_status。`;
   }
 
   return systemPrompt;

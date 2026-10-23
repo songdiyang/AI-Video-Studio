@@ -1,12 +1,13 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Sparkles, X, Send, Paperclip, ImagePlus, Trash2, Wand2, FileText, Settings, Image as ImageIcon, Loader2, History, Plus, Edit3, Check, ChevronDown, MessageSquare, Video, Star, MessageCircle, ClipboardList, Brain } from 'lucide-react';
+import { Sparkles, X, Send, Paperclip, ImagePlus, Trash2, Wand2, FileText, Settings, Image as ImageIcon, Loader2, History, Plus, Edit3, Check, ChevronDown, MessageSquare, Video, Star, MessageCircle, ClipboardList, Brain, Shrink } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 import ChatMessageComponent, { ChatMessageData, ChatMessageStep, TaskCardData } from './ChatMessage';
 import MediaAttachment from './MediaAttachment';
 import { isLongTaskCapable } from '../../services/aiAssistant';
 import { getWorkflowStatus } from '../../hooks/useWorkflow';
 import { analyzeScript, optimizeScript, generateScript, type ScriptAnalysisResult } from '../../services/scripts';
+import { getLongTasksSummary, listLongTasks, registerLongTask } from '../../services/longTasks';
 
 // ─── Types ──────────────────────────────────────────────────────────
 interface Attachment {
@@ -70,10 +71,34 @@ export interface AIAssistantPanelProps {
     last_frame_prompt?: string;
     video_prompt?: string;
   }[];
-  /** 项目角色清单（AI 可基于此推理 action 参数） */
-  characters?: { id: number; name: string; description?: string }[];
+  /** 项目角色库清单（含外貌/当前造型，AI 可基于此推理 action 参数） */
+  characters?: {
+    id: number;
+    name: string;
+    description?: string;
+    appearance?: string;
+    base_appearance?: string;
+    outfit_appearance?: string;
+    active_state_name?: string;
+    active_state_outfit?: string;
+    states_count?: number;
+    has_base_model_views?: boolean;
+    image_url?: string;
+  }[];
   /** 项目场景清单 */
   locations?: { id: number; name: string; description?: string }[];
+  /** 项目场景库（资源面板中的 Studio，与环境/建筑关联） */
+  studios?: {
+    id: number;
+    name: string;
+    description?: string;
+    environment_name?: string;
+    building_names?: string[];
+    cover_image_url?: string;
+    scene_count?: number;
+    element_count?: number;
+    nine_grid_image_url?: string;
+  }[];
   /** 项目剧本清单（含内容） */
   scripts?: { id: number; episode_number: number; title?: string; content?: string }[];
   onClose: () => void;
@@ -115,6 +140,13 @@ const CONTEXT_WINDOW_OPTIONS = [2048, 4096, 8192, 16384, 0];
 
 // 标签栏最多同时打开的会话数
 const MAX_OPEN_TABS = 5;
+
+// 资源库动作：执行结果直接追加到对话中，替代全局成功 toast
+const INLINE_RESULT_ACTIONS = new Set([
+  'create_character', 'update_character', 'delete_character',
+  'create_studio', 'update_studio', 'delete_studio',
+  'create_location', 'update_location', 'delete_location',
+]);
 
 /**
  * 步骤跟踪器：编码智能体风格的「边执行边刷新 + 完成后折叠」。
@@ -181,6 +213,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
   scenes,
   characters,
   locations,
+  studios,
   scripts,
   onClose,
   onAction,
@@ -262,7 +295,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
   const lastScriptContentRef = useRef<string>('');
   // agent 循环在 handleSend 中调用动作执行器，而 handleAction 定义在其后；
   // 用 ref 桥接避免 TDZ / 依赖顺序问题（每次渲染后同步为最新的 handleAction）。
-  const handleActionRef = useRef<(action: string, params: any, onProgress?: (label: string) => void, originSid?: number | null) => Promise<unknown> | unknown>(() => {});
+  const handleActionRef = useRef<(action: string, params: any, onProgress?: (label: string) => void, originSid?: number | null, options?: { inlineResult?: boolean }) => Promise<unknown> | unknown>(() => {});
 
   // ── 设置项：上下文大小（token）/ 对话模型 ───────────
   // 上下文注入改为智能默认开启（agent 自动携带项目当前状态），不再提供开关
@@ -607,7 +640,8 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
         }
       }
     } catch { /* ignore */ }
-    if (stored) setOpenTabIds(stored);
+    // 显式替换：没有落盘记录时也要清空，避免上一个工程的打开集残留
+    setOpenTabIds(stored ?? []);
 
     let lastActive: number | null = null;
     try {
@@ -1275,8 +1309,10 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
       projectDescription: projectDescription || undefined,
       characters,
       locations,
+      studios,
       scripts: scriptsForContext,
       scenes,
+      longTasks: listLongTasks().slice(0, 10),
       ...(currentFrame ? {
         frameId: currentFrame.id,
         frameIndex: currentFrame.index,
@@ -1361,11 +1397,12 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                 // 执行前把进度刷到对话栏：长任务（如分镜拆分同步等待模型返回）期间显示「正在执行」
                 tracker.start(`执行：${label}`);
                 // 传入 sendSid：agent 循环是异步长流程，期间用户可能切换会话，卡片须归属发起会话
-                const result: any = await handleActionRef.current(a.action, a.params || {}, (sub) => tracker.touch(sub), sendSid);
+                const result: any = await handleActionRef.current(a.action, a.params || {}, (sub) => tracker.touch(sub), sendSid, { inlineResult: false });
                 // handleAction 已把桥接异常转为结构化失败结果：步骤据实标记失败，避免误报「已执行」
                 const failed = !!result && typeof result === 'object' && (result.success === false || !!result.error);
                 if (failed) tracker.fail(String(result.error) || '任务启动失败');
-                else tracker.complete();
+                // 资源库动作的结果字符串直接展示在步骤详情中（对话内可展开回看）
+                else tracker.complete(typeof result === 'string' ? result.trim() : undefined);
                 executedLog.push(failed ? `✗ ${label}` : `✓ ${label}`);
                 const isTask = TASK_ACTIONS.has(a.action);
                 if (failed) {
@@ -1382,6 +1419,14 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                 } else if (typeof result === 'string' && result.trim()) {
                   // 动作返回了实质内容（如 read_script 的剧本正文）：直接回喂给模型作为观察结果。
                   observations.push(result);
+                } else if (result && typeof result === 'object') {
+                  // 结构化结果（如新建角色/场景返回的 ID）回喂给模型，便于串联后续动作。
+                  try {
+                    const detail = JSON.stringify(result);
+                    observations.push(`已执行「${label}」：${detail.length > 800 ? detail.slice(0, 800) + '…' : detail}`);
+                  } catch {
+                    observations.push(`已执行「${label}」`);
+                  }
                 } else {
                   observations.push(`已执行「${label}」`);
                 }
@@ -1603,7 +1648,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
     } finally {
       setSessionLoading(sendSid, false);
     }
-  }, [inputText, attachments, isLoading, messages, projectId, selectedModel, currentFrame, modelOptions, scenes, characters, locations, scripts, projectName, projectDescription, includeContext, contextTokenLimit, apiCreateSession, archiveMessage, activeSessionKey, updateSessionMessages, setSessionLoading, setSessionStreaming, showToast]);
+  }, [inputText, attachments, isLoading, messages, projectId, selectedModel, currentFrame, modelOptions, scenes, characters, locations, studios, scripts, projectName, projectDescription, includeContext, contextTokenLimit, apiCreateSession, archiveMessage, activeSessionKey, updateSessionMessages, setSessionLoading, setSessionStreaming, showToast]);
 
   // ── 上下文使用量估算（字符/4 作为 token 粗估） ──────────────
   const MAX_CONTEXT_TOKENS = 200000; // 默认 200k window
@@ -1687,22 +1732,33 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
     storyboard: '分镜拆分',
     image: '分镜图',
     video: '分镜视频',
+    generic: '任务',
   }), []);
   const mountTaskCard = useCallback((action: string, result: any, labelText?: string, originSid?: number | null) => {
-    const kind = TASK_CARD_KIND[action];
-    if (!kind || !result || typeof result !== 'object') return;
+    if (!result || typeof result !== 'object') return;
     if (result.success === false || result.error) return; // 明确失败：不挂卡片
     const jobId = result.jobId != null ? String(result.jobId) : undefined;
     const sceneCount = result.sceneCount != null ? Number(result.sceneCount) : undefined;
     if (!jobId && sceneCount == null) return; // 既非后台任务，也非同步完成
+
+    const mappedKind = TASK_CARD_KIND[action];
+    if (!jobId && !mappedKind) return;
+    // 未显式映射但返回了 jobId 的工具，一律按通用长任务处理
+    const kind: TaskCardData['kind'] = mappedKind ?? 'generic';
     const kindLabel = TASK_KIND_LABEL[kind];
-    const label = labelText || TASK_ACTION_LABEL[action] || kindLabel;
+    const label = labelText || TASK_ACTION_LABEL[action] || action;
+    const title = mappedKind ? `${kindLabel} · ${label}` : label;
+
     const cardId = `msg-${Date.now()}-task-${Math.random().toString(36).slice(2, 7)}`;
-    const cardTask: TaskCardData = { kind, jobId, sceneCount, title: `${kindLabel} · ${label}` };
+    const cardTask: TaskCardData = { kind, jobId, sceneCount, title };
     const cardMsg: ChatMessageData = { id: cardId, role: 'assistant', content: '', timestamp: Date.now(), task: cardTask };
     // 卡片归属发起动作时的会话：延迟执行路径（自动执行建议动作、agent 异步循环）若在期间发生会话切换，
     // 读取实时的 currentSessionIdRef 会把卡片串写到另一个对话里。缺省时才退回当前会话。
     const sid = originSid === undefined ? currentSessionIdRef.current : originSid;
+
+    // 登记全局长任务：站内信任务区展示、后台轮询与模型上下文共用
+    if (jobId) registerLongTask({ jobId, title, kind, sessionId: sid });
+
     // 同一 jobId 只挂一张卡：单次点击、自动执行建议、agent 循环共用 handleAction，
     // 若同一作业结果被重复回报不应产生两张并行的轮询卡片。
     const existing = sid === null ? undefined : messagesCacheRef.current.get(sid);
@@ -1711,7 +1767,26 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
     if (sid) archiveMessage(sid, cardMsg);
   }, [TASK_CARD_KIND, TASK_ACTION_LABEL, TASK_KIND_LABEL, updateSessionMessages, archiveMessage]);
 
-  const handleAction = useCallback(async (action: string, params: any, onProgress?: (label: string) => void, originSid?: number | null) => {
+  // 将动作结果作为一条对话消息挂载到发起会话，避免全局 toast 弹窗
+  const appendActionResult = useCallback((text: string, originSid?: number | null) => {
+    if (!text.trim()) return;
+    const sid = originSid === undefined ? currentSessionIdRef.current : originSid;
+    const resultMsg: ChatMessageData = {
+      id: `msg-${Date.now()}-action-${Math.random().toString(36).slice(2, 7)}`,
+      role: 'assistant',
+      content: text,
+      timestamp: Date.now(),
+    };
+    updateSessionMessages(sid, (prev) => [...prev, resultMsg]);
+    if (sid) archiveMessage(sid, resultMsg);
+  }, [updateSessionMessages, archiveMessage]);
+
+  const handleAction = useCallback(async (action: string, params: any, onProgress?: (label: string) => void, originSid?: number | null, options?: { inlineResult?: boolean }) => {
+    // 查询后台长任务状态（供模型回答进度相关问题）
+    if (action === 'get_task_status') {
+      return getLongTasksSummary(params?.jobId ? String(params.jobId) : undefined);
+    }
+
     // 质检：前端自包，不走 onAction 回调
     if (action === 'inspect_quality') {
       const sceneId = Number(params?.sceneId || currentFrame?.id);
@@ -1863,6 +1938,8 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
           return;
         }
         // 更新启动消息为进行中
+        // 长任务注册：对话内挂载轮询卡片，同时写入全局注册表（站内信/模型可见）
+        mountTaskCard('generate_script', { jobId }, resultTitle || `第${resultEp ?? episodeNumber ?? '新'}集剧本`, currentSid);
         const progressMsgId = `script-gen-progress-${Date.now()}`;
         updateSessionMessages(currentSid, (prev) => [
           ...prev,
@@ -1997,14 +2074,32 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
       // 桥接抛错转为结构化失败结果：既让单次点击路径有明确反馈（不产生游离 Promise rejection），
       // 也让 agent 循环据实回报失败原因，避免误报成功。
       const message = err?.message || String(err) || '动作执行失败';
-      showToast(`${TASK_ACTION_LABEL[action] || action}失败：${message}`, 'error');
+      if (INLINE_RESULT_ACTIONS.has(action)) {
+        if (options?.inlineResult !== false) {
+          appendActionResult(`✗ ${TASK_ACTION_LABEL[action] || action}失败：${message}`, originSid);
+        }
+      } else {
+        showToast(`${TASK_ACTION_LABEL[action] || action}失败：${message}`, 'error');
+      }
       return { success: false, error: message };
+    }
+    // 资源库动作：把成功/失败结果直接挂到对话中，和 agent 步骤流一起构成完整反馈。
+    if (INLINE_RESULT_ACTIONS.has(action) && options?.inlineResult !== false) {
+      const errorText = result && typeof result === 'object' && (result.success === false || result.error)
+        ? String(result.error || '未知错误')
+        : '';
+      const successText = typeof result === 'string' ? result.trim() : '';
+      if (errorText) {
+        appendActionResult(`✗ ${TASK_ACTION_LABEL[action] || action}失败：${errorText}`, originSid);
+      } else if (successText) {
+        appendActionResult(`✓ ${successText}`, originSid);
+      }
     }
     // 后台任务（分镜图/视频）提交后返回 jobId、离线分镜拆分同步完成返回 sceneCount：
     // 在对话内挂载进度卡片（任务未完成时同样挂载）；同时把结果回传供 agent 循环构造观察。
     mountTaskCard(action, result, undefined, originSid);
     return result;
-  }, [currentFrame, triggerInspectQuality, onAction, showToast, archiveMessage, updateSessionMessages, projectId, selectedModel, scripts, mountTaskCard, TASK_ACTION_LABEL]);
+  }, [currentFrame, triggerInspectQuality, onAction, showToast, archiveMessage, updateSessionMessages, projectId, selectedModel, scripts, mountTaskCard, TASK_ACTION_LABEL, appendActionResult]);
 
   // 每次渲染同步最新 handleAction，供 handleSend 的 agent 循环调用
   handleActionRef.current = handleAction;
@@ -2083,7 +2178,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
           style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
         >
           {sessions.length === 0 ? (
-            <span className="text-[11px] text-[var(--text-muted)] flex-shrink-0 px-1">新会话</span>
+            <span className="text-[11px] text-(--text-muted) shrink-0 px-1">新会话</span>
           ) : (
             sessions.slice(0, MAX_OPEN_TABS).map((s) => {
               const isActive = s.id === currentSessionId;
@@ -2091,12 +2186,12 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
               return (
                 <div
                   key={s.id}
-                  className={`flex-shrink-0 px-1.5 py-1 rounded-md text-[11px] transition-colors truncate max-w-[110px] flex items-center gap-1 group ${
+                  className={`shrink-0 px-1.5 py-1 rounded-md text-[11px] transition-colors truncate max-w-27.5 flex items-center gap-1 group ${
                     isActive
-                      ? 'bg-[var(--accent)]/15 text-[var(--accent)] font-medium'
+                      ? 'bg-(--accent)/15 text-(--accent) font-medium'
                       : isBgLoading
-                        ? 'text-[var(--accent)]/70 bg-[var(--accent)]/5'
-                        : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-input)]'
+                        ? 'text-(--accent)/70 bg-(--accent)/5'
+                        : 'text-(--text-muted) hover:text-(--text-primary) hover:bg-(--bg-input)'
                   }`}
                   title={isBgLoading ? `${s.title}（后台处理中…）` : s.title}
                 >
@@ -2105,7 +2200,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                     className="flex items-center gap-1 flex-1 min-w-0 truncate"
                   >
                     {isBgLoading && (
-                      <span className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-(--accent) animate-pulse" />
+                      <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-(--accent) animate-pulse" />
                     )}
                     <span className="truncate">{s.title}</span>
                   </button>
@@ -2114,7 +2209,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                       e.stopPropagation();
                       closeSession(s.id);
                     }}
-                    className="flex-shrink-0 p-0.5 rounded hover:bg-red-500/20 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"
+                    className="shrink-0 p-0.5 rounded hover:bg-red-500/20 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"
                     title="关闭此对话"
                   >
                     <X size={10} />
@@ -2124,17 +2219,17 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
             })
           )}
         </div>
-        <div className="flex items-center gap-0.5 flex-shrink-0">
+        <div className="flex items-center gap-0.5 shrink-0">
           <button
             onClick={() => setShowHistory(true)}
-            className="p-1 rounded hover:bg-[var(--bg-input)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+            className="p-1 rounded hover:bg-(--bg-input) text-(--text-muted) hover:text-(--text-primary) transition-colors"
             title="全部历史对话"
           >
             <History size={13} />
           </button>
           <button
             onClick={createNewSession}
-            className="p-1 rounded hover:bg-[var(--bg-input)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+            className="p-1 rounded hover:bg-(--bg-input) text-(--text-muted) hover:text-(--text-primary) transition-colors"
             title="新建对话"
           >
             <Plus size={13} />
@@ -2146,15 +2241,15 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
       {/* ─ Model selector ──────────────────────────────────── */}
       {/* ─ 剧本分析输入面板 ────────────────────────────────── */}
       {showScriptAnalysis && (
-        <div className="shrink-0 px-3 py-2 border-b border-[var(--border-color)] bg-[var(--bg-nav)]">
+        <div className="shrink-0 px-3 py-2 border-b border-(--border-color) bg-(--bg-nav)">
           <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-1.5 text-xs font-medium text-[var(--text-primary)]">
+            <div className="flex items-center gap-1.5 text-xs font-medium text-(--text-primary)">
               <Brain size={13} className="text-emerald-400" />
               <span>剧本分析</span>
             </div>
             <button
               onClick={() => { setShowScriptAnalysis(false); setScriptContent(''); }}
-              className="p-0.5 rounded hover:bg-[var(--bg-input)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+              className="p-0.5 rounded hover:bg-(--bg-input) text-(--text-muted) hover:text-(--text-primary)"
             >
               <X size={12} />
             </button>
@@ -2164,7 +2259,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
             onChange={(e) => setScriptContent(e.target.value)}
             placeholder="在此粘贴剧本内容，AI将从8个维度进行评分分析..."
             rows={3}
-            className="w-full bg-[var(--bg-input)] border border-[var(--border-color)] rounded-lg px-2.5 py-2 text-[11px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)] resize-none overflow-y-auto"
+            className="w-full bg-(--bg-input) border border-(--border-color) rounded-lg px-2.5 py-2 text-[11px] text-(--text-primary) placeholder:text-(--text-muted) focus:outline-none focus:border-(--accent) resize-none overflow-y-auto"
           />
           <div className="flex justify-end mt-2">
             <button
@@ -2248,7 +2343,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
             />
           </div>
         )}
-        <div className="px-3 py-3 space-y-3 relative z-[1]">
+        <div className="px-3 py-3 space-y-3 relative z-1">
           {messages.map((msg) => (
             <ChatMessageComponent key={msg.id} message={msg} onAction={handleAction} />
           ))}
@@ -2269,7 +2364,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
 
       {/* ─ Attachments preview ─────────────────────────────── */}
       {attachments.length > 0 && (
-        <div className="px-3 py-2 border-t border-[var(--border-color)] flex gap-2 flex-wrap">
+        <div className="px-3 py-2 border-t border-(--border-color) flex gap-2 flex-wrap">
           {attachments.map((att, idx) => (
             <MediaAttachment
               key={`${att.url}-${idx}`}
@@ -2290,36 +2385,24 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
 
       {/* Context usage bar: always visible with compress/reset buttons */}
       {contextUsage.realMsgCount >= 2 && (() => {
-        const canCompress = contextUsage.percent >= 50 && !isCompressing;
-        const dotColor = contextUsage.percent >= 80 ? 'bg-red-400' : contextUsage.percent >= 60 ? 'bg-yellow-400' : 'bg-[var(--accent)]';
-        const textColor = contextUsage.percent >= 80 ? 'text-red-400' : contextUsage.percent >= 60 ? 'text-yellow-400' : 'text-[var(--accent)]';
+        const dotColor = contextUsage.percent >= 80 ? 'bg-red-400' : contextUsage.percent >= 60 ? 'bg-yellow-400' : 'bg-(--accent)';
+        const textColor = contextUsage.percent >= 80 ? 'text-red-400' : contextUsage.percent >= 60 ? 'text-yellow-400' : 'text-(--accent)';
         return (
           <div className="px-3 pt-1.5 flex items-center justify-end gap-1.5">
             {/* 小徐章：占用比 + token */}
             <div
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] bg-[var(--bg-input)] border border-[var(--border-color)]"
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] bg-(--bg-input) border border-(--border-color)"
               title={`已用 ${formatTokens(contextUsage.tokens)} / ${formatTokens(MAX_CONTEXT_TOKENS)} tokens，共 ${contextUsage.realMsgCount} 条消息`}
             >
               <span className={`w-1.5 h-1.5 rounded-full ${dotColor}`} />
               <span className={textColor + ' font-semibold'}>{contextUsage.percent}%</span>
-              <span className="text-[var(--text-muted)]">上下文</span>
+              <span className="text-(--text-muted)">上下文</span>
             </div>
-            {/* 压缩按钮：常驻 */}
-            <button
-              type="button"
-              onClick={handleCompressContext}
-              disabled={!canCompress}
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] text-[var(--text-muted)] bg-[var(--bg-input)] border border-[var(--border-color)] hover:text-[var(--accent)] hover:border-[var(--accent)] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:text-[var(--text-muted)] disabled:hover:border-[var(--border-color)] transition-colors"
-              title={contextUsage.percent < 50 ? '上下文高于 50% 后可压缩' : '压缩当前会话为摘要'}
-            >
-              {isCompressing ? <Loader2 size={10} className="animate-spin" /> : <Sparkles size={10} />}
-              <span>{isCompressing ? '压缩中' : '压缩'}</span>
-            </button>
             {/* 新建会话：常驻 */}
             <button
               type="button"
               onClick={createNewSession}
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] text-[var(--text-muted)] bg-[var(--bg-input)] border border-[var(--border-color)] hover:text-[var(--accent)] hover:border-[var(--accent)] transition-colors"
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] text-(--text-muted) bg-(--bg-input) border border-(--border-color) hover:text-(--accent) hover:border-(--accent) transition-colors"
               title="创建新会话"
             >
               <Plus size={10} />
@@ -2330,8 +2413,8 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
       })()}
 
       {/* Composer card (Qoder-style) */}
-      <div className="px-3 py-2 border-t border-[var(--border-color)]">
-        <div className="bg-[var(--bg-input)] border border-[var(--border-color)] rounded-xl focus-within:ring-1 focus-within:ring-[var(--accent)] transition-shadow">
+      <div className="px-3 py-2 border-t border-(--border-color)">
+        <div className="bg-(--bg-input) border border-(--border-color) rounded-xl focus-within:ring-1 focus-within:ring-(--accent) transition-shadow">
           <textarea
             ref={textareaRef}
             value={inputText}
@@ -2339,26 +2422,26 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
             onKeyDown={handleKeyDown}
             placeholder="规划与创作，Enter 发送，Shift+Enter 换行..."
             rows={2}
-            className="w-full bg-transparent border-0 resize-none text-xs px-3 pt-2.5 pb-1 text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none max-h-[140px] leading-relaxed"
+            className="w-full bg-transparent border-0 resize-none text-xs px-3 pt-2.5 pb-1 text-(--text-primary) placeholder:text-(--text-muted) focus:outline-none max-h-35 leading-relaxed"
           />
           <div className="flex items-center gap-1 px-1.5 pb-1.5 pt-0.5">
             <button
               onClick={openMediaPicker}
-              className="p-1 rounded hover:bg-[var(--bg-app)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+              className="p-1 rounded hover:bg-(--bg-app) text-(--text-muted) hover:text-(--text-primary) transition-colors"
               title="添加附件（任意文件）"
             >
               <Paperclip size={14} />
             </button>
             <button
               onClick={openImagePicker}
-              className="p-1 rounded hover:bg-[var(--bg-app)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+              className="p-1 rounded hover:bg-(--bg-app) text-(--text-muted) hover:text-(--text-primary) transition-colors"
               title="上传图片"
             >
               <ImageIcon size={14} />
             </button>
             <button
               onClick={openScriptPicker}
-              className="p-1 rounded hover:bg-[var(--bg-app)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+              className="p-1 rounded hover:bg-(--bg-app) text-(--text-muted) hover:text-(--text-primary) transition-colors"
               title="上传剧本文件让 AI 解析"
             >
               <FileText size={14} />
@@ -2366,7 +2449,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
             <button
               onClick={handleEnhancePrompt}
               disabled={isEnhancing || !inputText.trim()}
-              className="p-1 rounded hover:bg-[var(--bg-app)] text-[var(--text-muted)] hover:text-[var(--accent)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              className="p-1 rounded hover:bg-(--bg-app) text-(--text-muted) hover:text-(--accent) disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               title="提示词增强：自动改写当前输入为更清晰的指令"
             >
               {isEnhancing ? <Loader2 size={14} className="animate-spin" /> : <Wand2 size={14} />}
@@ -2374,7 +2457,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
             {currentFrame?.first_frame_url && (
               <button
                 onClick={attachCurrentFrame}
-                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-[var(--accent)] hover:bg-[var(--bg-app)] transition-colors"
+                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-(--accent) hover:bg-(--bg-app) transition-colors"
                 title="附加当前帧图片"
               >
                 <ImagePlus size={11} />
@@ -2384,7 +2467,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
             {currentFrame?.video_url && (
               <button
                 onClick={attachCurrentVideo}
-                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-purple-400 hover:bg-[var(--bg-app)] transition-colors"
+                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-purple-400 hover:bg-(--bg-app) transition-colors"
                 title="附加当前分镜视频"
               >
                 <Video size={11} />
@@ -2397,7 +2480,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                 ref={settingsBtnRef}
                 type="button"
                 onClick={() => setShowSettings(!showSettings)}
-                className={`flex items-center gap-1 text-[10px] pl-2 pr-1.5 py-0.5 rounded-md border transition-colors max-w-[150px] ${showSettings ? 'bg-[var(--bg-app)] text-[var(--text-primary)]' : 'bg-[var(--bg-app)] text-[var(--text-muted)] hover:text-[var(--text-primary)]'}`}
+                className={`flex items-center gap-1 text-[10px] pl-2 pr-1.5 py-0.5 rounded-md border transition-colors max-w-37.5 ${showSettings ? 'bg-(--bg-app) text-(--text-primary)' : 'bg-(--bg-app) text-(--text-muted) hover:text-(--text-primary)'}`}
                 style={{ borderColor: 'var(--border-color)' }}
                 title="选择模型 / 上下文窗口"
               >
@@ -2418,32 +2501,32 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                     const ctxLabel = contextTokenLimit === 0 ? '不限' : `${contextTokenLimit / 1024}K`;
                     const thinkLabels = { low: '低', medium: '中', high: '高' } as const;
                     return (
-                      <div className="absolute bottom-0 right-full mr-2 max-h-[calc(100vh-24px)] w-[200px] overflow-y-auto overflow-x-hidden rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] shadow-2xl">
+                      <div className="absolute bottom-0 right-full mr-2 max-h-[calc(100vh-24px)] w-50 overflow-y-auto overflow-x-hidden rounded-xl border border-(--border-color) bg-(--bg-card) shadow-2xl">
                         {/* 头部：模型名 + 描述 */}
-                        <div className="p-2.5 border-b border-[var(--border-color)]">
-                          <div className="text-[12px] font-semibold text-[var(--text-primary)] truncate">{previewName}</div>
+                        <div className="p-2.5 border-b border-(--border-color)">
+                          <div className="text-[12px] font-semibold text-(--text-primary) truncate">{previewName}</div>
                           {preview?.description && (
-                            <div className="mt-0.5 text-[9px] leading-relaxed text-[var(--text-muted)]">{preview.description}</div>
+                            <div className="mt-0.5 text-[9px] leading-relaxed text-(--text-muted)">{preview.description}</div>
                           )}
                         </div>
                         {!editingParams ? (
                           /* 只读预览 */
                           <div className="p-2.5 space-y-1 text-[10px]">
                             <div className="flex items-center justify-between">
-                              <span className="text-[var(--text-muted)]">上下文窗口</span>
-                              <span className="text-[var(--text-primary)]">{ctxLabel}</span>
+                              <span className="text-(--text-muted)">上下文窗口</span>
+                              <span className="text-(--text-primary)">{ctxLabel}</span>
                             </div>
                             <div className="flex items-center justify-between">
-                              <span className="text-[var(--text-muted)]">思考模式</span>
-                              <span className="text-[var(--text-primary)]">{thinkLabels[reasoningEffort]}</span>
+                              <span className="text-(--text-muted)">思考模式</span>
+                              <span className="text-(--text-primary)">{thinkLabels[reasoningEffort]}</span>
                             </div>
-                            <div className="pt-0.5 text-[9px] text-[var(--text-muted)]">点击右侧「编辑」修改参数</div>
+                            <div className="pt-0.5 text-[9px] text-(--text-muted)">点击右侧「编辑」修改参数</div>
                           </div>
                         ) : (
                           /* 内联参数编辑 */
                           <div>
-                            <div className="p-2.5 border-b border-[var(--border-color)]">
-                              <div className="text-[9px] font-medium uppercase tracking-wide text-[var(--text-muted)] mb-1.5">上下文窗口</div>
+                            <div className="p-2.5 border-b border-(--border-color)">
+                              <div className="text-[9px] font-medium uppercase tracking-wide text-(--text-muted) mb-1.5">上下文窗口</div>
                               <div className="space-y-0.5">
                                 {CONTEXT_WINDOW_OPTIONS.map((n) => {
                                   const active = n === contextTokenLimit;
@@ -2453,7 +2536,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                                       type="button"
                                       onClick={() => setContextTokenLimit(n)}
                                       className={`w-full flex items-center justify-between gap-2 px-2 py-1 rounded text-left text-[10px] transition-colors ${
-                                        active ? 'bg-[var(--accent)]/10 text-[var(--accent)]' : 'text-[var(--text-secondary)] hover:bg-[var(--bg-app)]'
+                                        active ? 'bg-(--accent)/10 text-(--accent)' : 'text-(--text-secondary) hover:bg-(--bg-app)'
                                       }`}
                                     >
                                       <span>{n === 0 ? '不限' : `${n / 1024}K`}</span>
@@ -2464,7 +2547,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                               </div>
                             </div>
                             <div className="p-2.5">
-                              <div className="text-[9px] font-medium uppercase tracking-wide text-[var(--text-muted)] mb-1.5">思考模式</div>
+                              <div className="text-[9px] font-medium uppercase tracking-wide text-(--text-muted) mb-1.5">思考模式</div>
                               <div className="space-y-0.5">
                                 {(['low', 'medium', 'high'] as const).map((level) => {
                                   const active = level === reasoningEffort;
@@ -2474,7 +2557,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                                       type="button"
                                       onClick={() => setReasoningEffort(level)}
                                       className={`w-full flex items-center justify-between gap-2 px-2 py-1 rounded text-left text-[10px] transition-colors ${
-                                        active ? 'bg-[var(--accent)]/10 text-[var(--accent)]' : 'text-[var(--text-secondary)] hover:bg-[var(--bg-app)]'
+                                        active ? 'bg-(--accent)/10 text-(--accent)' : 'text-(--text-secondary) hover:bg-(--bg-app)'
                                       }`}
                                     >
                                       <span>{thinkLabels[level]}</span>
@@ -2484,11 +2567,11 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                                 })}
                               </div>
                             </div>
-                            <div className="border-t border-[var(--border-color)] p-2">
+                            <div className="border-t border-(--border-color) p-2">
                               <button
                                 type="button"
                                 onClick={() => setEditingParams(false)}
-                                className="w-full px-2 py-1 rounded-lg text-[10px] font-medium bg-[var(--accent)] text-white hover:opacity-90 transition-opacity"
+                                className="w-full px-2 py-1 rounded-lg text-[10px] font-medium bg-(--accent) text-white hover:opacity-90 transition-opacity"
                               >
                                 完成
                               </button>
@@ -2500,15 +2583,15 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                   })()}
 
                   {/* 右侧：模型列表卡 */}
-                  <div className="w-[220px] shrink-0 rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] shadow-2xl overflow-hidden">
-                    <div className="py-0.5 max-h-[280px] overflow-y-auto">
+                  <div className="w-55 shrink-0 rounded-xl border border-(--border-color) bg-(--bg-card) shadow-2xl overflow-hidden">
+                    <div className="py-0.5 max-h-70 overflow-y-auto">
                       {!modelsLoaded && modelOptions.length === 0 && (
-                        <div className="px-4 py-3 text-[11px] text-[var(--text-muted)] text-center">加载模型中…</div>
+                        <div className="px-4 py-3 text-[11px] text-(--text-muted) text-center">加载模型中…</div>
                       )}
                       {modelsLoaded && modelOptions.length === 0 && (
                         <div className="px-4 py-6 text-center">
-                          <div className="text-[11px] text-[var(--text-secondary)] mb-1">当前没有模型可用</div>
-                          <div className="text-[10px] text-[var(--text-muted)] leading-relaxed">请在「设置 › 模型」中配置模型</div>
+                          <div className="text-[11px] text-(--text-secondary) mb-1">当前没有模型可用</div>
+                          <div className="text-[10px] text-(--text-muted) leading-relaxed">请在「设置 › 模型」中配置模型</div>
                         </div>
                       )}
                       {modelOptions.map((m) => {
@@ -2518,7 +2601,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                             key={m.name}
                             onMouseEnter={() => setHoveredModel(m.name)}
                             className={`group relative flex items-center justify-between gap-2 px-3 py-1.5 transition-colors ${
-                              active ? 'bg-[var(--accent)]/10' : 'hover:bg-[var(--bg-app)]'
+                              active ? 'bg-(--accent)/10' : 'hover:bg-(--bg-app)'
                             }`}
                           >
                             <button
@@ -2526,19 +2609,19 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                               onClick={() => { setSelectedModel(m.name); patchSettings({ chatModel: m.name }); }}
                               className="flex-1 min-w-0 text-left"
                             >
-                              <div className={`text-[12px] font-medium truncate ${active ? 'text-[var(--accent)]' : 'text-[var(--text-primary)]'}`}>
+                              <div className={`text-[12px] font-medium truncate ${active ? 'text-(--accent)' : 'text-(--text-primary)'}`}>
                                 {m.name}
                               </div>
                             </button>
                             <div className="flex items-center gap-2 shrink-0">
                               {/* 默认显示提供商，悬停时换为「编辑」按钮 */}
-                              <div className="text-[10px] text-[var(--text-muted)] group-hover:hidden">
+                              <div className="text-[10px] text-(--text-muted) group-hover:hidden">
                                 {m.description?.split(' - ')[0] || 'Unknown'}
                               </div>
                               <button
                                 type="button"
                                 onClick={() => { setHoveredModel(m.name); setEditingParams(true); }}
-                                className="hidden group-hover:flex items-center gap-1 text-[10px] text-[var(--text-secondary)] hover:text-[var(--accent)]"
+                                className="hidden group-hover:flex items-center gap-1 text-[10px] text-(--text-secondary) hover:text-(--accent)"
                               >
                                 <Edit3 size={10} /> 编辑
                               </button>
@@ -2553,6 +2636,17 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
               )}
             </div>
             <div className="flex-1" />
+            {/* 压缩上下文：单图标，上下文达阈值后可点 */}
+            <button
+              type="button"
+              onClick={handleCompressContext}
+              disabled={contextUsage.percent < 50 || isCompressing}
+              className="p-1 rounded-md text-(--text-muted) hover:text-(--accent) hover:bg-(--bg-app) disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-(--text-muted) disabled:hover:bg-transparent transition-colors"
+              title={isCompressing ? '正在压缩上下文' : contextUsage.percent < 50 ? '上下文高于 50% 后可压缩' : '压缩当前会话为摘要'}
+              aria-label="压缩上下文"
+            >
+              {isCompressing ? <Loader2 size={14} className="animate-spin" /> : <Shrink size={14} />}
+            </button>
             {isLoading ? (
               <button
                 onClick={() => {
@@ -2588,7 +2682,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
               <button
                 onClick={handleSend}
                 disabled={!inputText.trim() && attachments.length === 0}
-                className="p-1 rounded-md bg-[var(--accent)] text-white hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
+                className="p-1 rounded-md bg-(--accent) text-white hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
                 title="发送 (Enter)"
               >
                 <Send size={14} />
@@ -2631,18 +2725,18 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
       {showHistory && (
         <div className="absolute inset-0 bg-black/40 flex items-start justify-center pt-10 z-20" onClick={() => setShowHistory(false)}>
           <div
-            className="bg-[var(--bg-nav)] border border-[var(--border-color)] rounded-lg shadow-xl w-[320px] max-w-[92%] max-h-[80%] flex flex-col overflow-hidden"
+            className="bg-(--bg-nav) border border-(--border-color) rounded-lg shadow-xl w-80 max-w-[92%] max-h-[80%] flex flex-col overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--border-color)]">
+            <div className="flex items-center justify-between px-3 py-2 border-b border-(--border-color)">
               <div className="flex items-center gap-2">
-                <History size={14} className="text-[var(--accent)]" />
-                <span className="font-semibold text-sm text-[var(--text-primary)]">历史对话</span>
-                <span className="text-[10px] text-[var(--text-muted)]">({allSessions.length})</span>
+                <History size={14} className="text-(--accent)" />
+                <span className="font-semibold text-sm text-(--text-primary)">历史对话</span>
+                <span className="text-[10px] text-(--text-muted)">({allSessions.length})</span>
               </div>
               <button
                 onClick={() => setShowHistory(false)}
-                className="p-0.5 rounded hover:bg-[var(--bg-input)] text-[var(--text-muted)]"
+                className="p-0.5 rounded hover:bg-(--bg-input) text-(--text-muted)"
               >
                 <X size={14} />
               </button>
@@ -2651,7 +2745,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
             <div className="flex-1 overflow-y-auto">
               {/* 历史列表用全量 allSessions：已关闭的标签仍可从历史重新打开 */}
               {allSessions.length === 0 ? (
-                <div className="p-6 text-center text-[11px] text-[var(--text-muted)]">
+                <div className="p-6 text-center text-[11px] text-(--text-muted)">
                   <MessageSquare size={20} className="mx-auto mb-2 opacity-50" />
                   <div>还没有历史对话</div>
                   <div className="mt-1 opacity-70">发送消息或点右上角 + 号开始</div>
@@ -2669,13 +2763,13 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                         key={s.id}
                         className={`group px-2 py-1.5 mx-1 rounded-md cursor-pointer transition-colors ${
                           isActive
-                            ? 'bg-[var(--accent)]/15 border border-[var(--accent)]/40'
-                            : 'hover:bg-[var(--bg-input)] border border-transparent'
+                            ? 'bg-(--accent)/15 border border-(--accent)/40'
+                            : 'hover:bg-(--bg-input) border border-transparent'
                         }`}
                         onClick={() => { if (!isEditing) switchSession(s.id); }}
                       >
                         <div className="flex items-center gap-2">
-                          <MessageSquare size={12} className={isActive ? 'text-[var(--accent)]' : 'text-[var(--text-muted)]'} />
+                          <MessageSquare size={12} className={isActive ? 'text-(--accent)' : 'text-(--text-muted)'} />
                           {isEditing ? (
                             <input
                               autoFocus
@@ -2690,10 +2784,10 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                                   setEditingTitleId(null);
                                 }
                               }}
-                              className="flex-1 text-xs bg-[var(--bg-app)] border border-[var(--border-color)] rounded px-1.5 py-0.5 text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
+                              className="flex-1 text-xs bg-(--bg-app) border border-(--border-color) rounded px-1.5 py-0.5 text-(--text-primary) focus:outline-none focus:border-(--accent)"
                             />
                           ) : (
-                            <span className="flex-1 text-xs text-[var(--text-primary)] truncate" title={s.title}>
+                            <span className="flex-1 text-xs text-(--text-primary) truncate" title={s.title}>
                               {s.title}
                             </span>
                           )}
@@ -2705,7 +2799,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                                   renameSessionFn(s.id, editingTitleDraft);
                                   setEditingTitleId(null);
                                 }}
-                                className="p-0.5 rounded hover:bg-[var(--bg-app)] text-[var(--accent)]"
+                                className="p-0.5 rounded hover:bg-(--bg-app) text-(--accent)"
                                 title="保存"
                               >
                                 <Check size={11} />
@@ -2717,7 +2811,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                                   setEditingTitleId(s.id);
                                   setEditingTitleDraft(s.title);
                                 }}
-                                className="p-0.5 rounded hover:bg-[var(--bg-app)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                                className="p-0.5 rounded hover:bg-(--bg-app) text-(--text-muted) hover:text-(--text-primary)"
                                 title="重命名"
                               >
                                 <Edit3 size={11} />
@@ -2728,21 +2822,21 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                                 e.stopPropagation();
                                 deleteSessionFn(s.id);
                               }}
-                              className="p-0.5 rounded hover:bg-[var(--bg-app)] text-[var(--text-muted)] hover:text-red-400"
+                              className="p-0.5 rounded hover:bg-(--bg-app) text-(--text-muted) hover:text-red-400"
                               title="删除"
                             >
                               <Trash2 size={11} />
                             </button>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2 mt-0.5 pl-[18px] text-[10px] text-[var(--text-muted)]">
+                        <div className="flex items-center gap-2 mt-0.5 pl-4.5 text-[10px] text-(--text-muted)">
                           <span>{s.message_count} 条</span>
                           <span>·</span>
                           <span>{timeStr}</span>
                           {openTabIds.includes(s.id) && (
                             <>
                               <span>·</span>
-                              <span className="text-[var(--accent)]">已打开</span>
+                              <span className="text-(--accent)">已打开</span>
                             </>
                           )}
                         </div>

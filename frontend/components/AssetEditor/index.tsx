@@ -21,6 +21,7 @@ import PropStyleConfigPanel from '../../views/AssetsManager/AssetModel/PropStyle
 import { useAIModels } from '../../hooks/useAIModels';
 import { StoryboardScene } from '../../views/StoryBoard/useSceneManager';
 import { ResourceDraft, ASSET_FIELDS, normalizeAsset, assetSavedData, pickResourceFields, type ResourceData } from './resourceDraft';
+import { ASSET_FIELD_CLASS_NAMES, ASSET_SELECT_CLASS_NAMES } from './fieldStyles';
 import { useResourceDraft } from './useResourceDraft';
 
 export interface AssetEditorProps extends EmbeddedEditorProps {
@@ -238,12 +239,12 @@ const AssetEditorSession: React.FC<AssetEditorProps> = ({ tabId, assetType, init
   const switchTab = async (tab: string) => { if (tab === activeTab) return; if (await flush() && alive.current) setActiveTab(tab); };
   const field = (key: string, label: string, multiline = false) => (
     <div key={key} className={multiline ? 'content-editor-field content-editor-full-width' : 'content-editor-field'}>
-      {multiline ? <Textarea label={label} value={formData[key] ?? ''} onValueChange={value => session.edit({ [key]: value })} minRows={3} />
-        : <Input label={label} value={formData[key] ?? ''} onValueChange={value => session.edit({ [key]: value })} />}
+      {multiline ? <Textarea size="sm" variant="flat" labelPlacement="outside" classNames={ASSET_FIELD_CLASS_NAMES} label={label} value={formData[key] ?? ''} onValueChange={value => session.edit({ [key]: value })} minRows={3} />
+        : <Input size="sm" variant="flat" labelPlacement="outside" classNames={ASSET_FIELD_CLASS_NAMES} label={label} value={formData[key] ?? ''} onValueChange={value => session.edit({ [key]: value })} />}
     </div>
   );
   const selectField = (key: string, label: string, options: [string, string][]) => (
-    <Select className="content-editor-field" label={label} selectedKeys={formData[key] ? [formData[key]] : []}
+    <Select size="sm" variant="flat" labelPlacement="outside" classNames={ASSET_SELECT_CLASS_NAMES} className="content-editor-field" label={label} selectedKeys={formData[key] ? [formData[key]] : []}
       onSelectionChange={keys => { const value = Array.from(keys)[0]; if (value != null) session.edit({ [key]: value }); }}>
       {options.map(([value, text]) => <SelectItem key={value} textValue={text}>{text}</SelectItem>)}
     </Select>
@@ -332,19 +333,19 @@ const AssetEditorSession: React.FC<AssetEditorProps> = ({ tabId, assetType, init
   const previews = images.filter(([key]) => formData[key]).map(([key, label]) => ({ src: formData[key] as string, alt: `${formData.name} · ${label}` }));
   if (studioDetail?.studio.nine_grid_image_url) previews.unshift({ src: studioDetail.studio.nine_grid_image_url, alt: `${formData.name} · 九宫组装图` });
   if (!previews.length && formData.cover_image_url) previews.push({ src: formData.cover_image_url, alt: formData.name });
-  return <div className="flex flex-col h-full min-h-0 bg-[var(--bg-app)] text-[var(--text-primary)]">
-    {!embedded && <header className="flex justify-between p-3 border-b border-[var(--border-color)]"><span>{formData.name || '未命名'} · {kind}</span><Button size="sm" onPress={() => { void flush().then(ok => { if (ok && alive.current) callbacks.current.onClose(); }); }}>保存并关闭</Button></header>}
+  return <div className="flex flex-col h-full min-h-0 bg-(--bg-app) text-(--text-primary)">
+    {!embedded && <header className="flex justify-between p-3 border-b border-(--border-color)"><span>{formData.name || '未命名'} · {kind}</span><Button size="sm" onPress={() => { void flush().then(ok => { if (ok && alive.current) callbacks.current.onClose(); }); }}>保存并关闭</Button></header>}
     <div className={embedded ? 'flex-1 min-h-0 overflow-auto p-3' : 'shrink-0 max-h-[45%] overflow-auto p-3'}>
       {loadError && <p role="alert" className="text-warning text-xs">{loadError}<Button size="sm" onPress={() => { void refresh(); }}>重试加载</Button></p>}
       {assetType === 'character' ? <CharacterStateEditor characterId={assetId} projectId={formData.project_id || null}
         editorPortalTarget={stateFieldsTarget} actionsPortalTarget={stateActionsTarget} onRegisterEditor={registerStateEditor}
         onEditorStatusChange={stateStatusChange} beforeGenerate={flushAsset}
         onStateActivated={state => publishMedia({ image_url: state.image_url || state.front_view_url || session.data.image_url })} />
-        : assetType === 'script' ? <article className="whitespace-pre-wrap text-sm text-[var(--text-secondary)]">{formData.content || '暂无剧本内容'}</article>
-          : previews.length ? <div className="flex flex-wrap gap-3 justify-center">{previews.map((slide, index) => <button type="button" key={`${slide.src}:${index}`} className="min-w-0 rounded-xl overflow-hidden bg-[var(--bg-card)] shadow-sm" onClick={() => openPreview(previews, index)}>
+        : assetType === 'script' ? <article className="whitespace-pre-wrap text-sm text-(--text-secondary)">{formData.content || '暂无剧本内容'}</article>
+          : previews.length ? <div className="flex flex-wrap gap-3 justify-center">{previews.map((slide, index) => <button type="button" key={`${slide.src}:${index}`} className="min-w-0 rounded-xl overflow-hidden bg-(--bg-card) shadow-sm" onClick={() => openPreview(previews, index)}>
             <img src={slide.src} alt={slide.alt} className="max-h-72 max-w-full object-contain" /><p className="text-xs p-1">{slide.alt}</p></button>)}</div>
-            : <div className="min-h-40 flex flex-col items-center justify-center text-[var(--text-muted)]"><ImageIcon size={32} /><p className="text-xs mt-2">暂无{kind}预览图</p>{assetType === 'costume' && <p className="text-xs">可在资源面板生成服装设定图</p>}</div>}
-      {generating && <p role="status" className="text-xs text-[var(--accent)] mt-2">图片生成中，可刷新查看状态</p>}
+            : <div className="min-h-40 flex flex-col items-center justify-center text-(--text-muted)"><ImageIcon size={32} /><p className="text-xs mt-2">暂无{kind}预览图</p>{assetType === 'costume' && <p className="text-xs">可在资源面板生成服装设定图</p>}</div>}
+      {generating && <p role="status" className="text-xs text-(--accent) mt-2">图片生成中，可刷新查看状态</p>}
     </div>
     {embedded ? (editorPortalTarget ? createPortal(panel, editorPortalTarget) : null) : <div className="flex-1 min-h-0">{panel}</div>}
   </div>;

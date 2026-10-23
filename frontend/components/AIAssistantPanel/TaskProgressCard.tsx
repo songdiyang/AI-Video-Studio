@@ -3,9 +3,10 @@
  */
 import React, { useEffect, useState } from 'react';
 import { Progress } from '@heroui/react';
-import { Loader2, CheckCircle2, XCircle, Clock, Image as ImageIcon, Video, LayoutList } from 'lucide-react';
+import { Loader2, CheckCircle2, XCircle, Clock, Image as ImageIcon, Video, LayoutList, ListTodo } from 'lucide-react';
 import { getWorkflowStatus, ApiError, WorkflowJob } from '../../hooks/useWorkflow';
 import type { TaskCardData } from './types';
+import { pushInternalMail } from '../../services/localMail';
 
 /** 轮询间隔：与 generate_script 先例、全局任务队列一致 */
 const POLL_MS = 2000;
@@ -74,6 +75,7 @@ const KIND_META = {
   storyboard: { label: '分镜拆分', Icon: LayoutList },
   image: { label: '分镜图', Icon: ImageIcon },
   video: { label: '分镜视频', Icon: Video },
+  generic: { label: '任务', Icon: ListTodo },
 } as const;
 
 const STATUS_META: Record<CardStatus, { label: string; color: string }> = {
@@ -91,6 +93,27 @@ const STATUS_ICON: Record<CardStatus, React.ReactNode> = {
   failed: <XCircle size={13} />,
   cancelled: <XCircle size={13} />,
 };
+
+/** 已发过站内信的任务终态（避免卡片重挂时重复通知） */
+const MAILED_TERMINAL = new Set<string>();
+
+/** 长任务终态 → 站内信通知（纯离线存储，InternalMailbox 即时刷新） */
+function notifyTaskFinished(task: TaskCardData, status: CardStatus, error: string | null): void {
+  if (!task.jobId) return;
+  const key = `job:${task.jobId}:${status}`;
+  if (MAILED_TERMINAL.has(key)) return;
+  MAILED_TERMINAL.add(key);
+
+  const completed = status === 'completed';
+  pushInternalMail({
+    title: completed ? `任务完成：${task.title}` : `任务未完成：${task.title}`,
+    content: completed
+      ? `AI 助手发起的「${task.title}」已完成，可以回到工作台查看结果。`
+      : `AI 助手发起的「${task.title}」${status === 'cancelled' ? '已取消' : '执行失败'}${error ? `：${error}` : '。'}`,
+    mail_type: 'system',
+    dedupe_key: key,
+  });
+}
 
 interface TaskProgressCardProps {
   task: TaskCardData;
@@ -152,7 +175,10 @@ const TaskProgressCard: React.FC<TaskProgressCardProps> = ({ task }) => {
     };
 
     const commit = (next: CardState, memoize: boolean) => {
-      if (memoize) rememberTerminal(jobId, next);
+      if (memoize) {
+        rememberTerminal(jobId, next);
+        notifyTaskFinished(task, next.status, next.error);
+      }
       setState(next);
     };
 
@@ -186,6 +212,7 @@ const TaskProgressCard: React.FC<TaskProgressCardProps> = ({ task }) => {
         if (stopped) return;
         // 作业记录已不存在（本地注册表重启后清空等）：永远等不到结果，落失败终态而不是无限打点
         if (err instanceof ApiError && err.status === 404) {
+          notifyTaskFinished(task, 'failed', '任务记录已失效，无法继续查询进度');
           commit(
             { status: 'failed', progress: 0, current: 0, total: 0, mediaUrl: null, error: '任务记录已失效，无法继续查询进度' },
             false,
@@ -194,6 +221,7 @@ const TaskProgressCard: React.FC<TaskProgressCardProps> = ({ task }) => {
         }
         failures += 1;
         if (failures >= MAX_CONSECUTIVE_FAILURES) {
+          notifyTaskFinished(task, 'failed', err?.message || '进度查询失败');
           commit(
             { status: 'failed', progress: 0, current: 0, total: 0, mediaUrl: null, error: err?.message || '进度查询失败' },
             false,
@@ -241,6 +269,14 @@ const TaskProgressCard: React.FC<TaskProgressCardProps> = ({ task }) => {
         </span>
       </div>
 
+      {/* 长任务提示：明确告知耗时较长，可先去处理其他内容 */}
+      {task.jobId && showBar && (
+        <div className="px-3 pb-1.5 flex items-start gap-1.5 text-[11px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+          <Clock size={11} className="mt-0.5 shrink-0" />
+          <span>任务耗时较长，你可以先去处理其他内容；完成后会通过站内信通知你。</span>
+        </div>
+      )}
+
       {/* 进度条 + 计数 */}
       {showBar && (
         <div className="px-3 pb-2 flex items-center gap-2">
@@ -250,8 +286,8 @@ const TaskProgressCard: React.FC<TaskProgressCardProps> = ({ task }) => {
             maxValue={100}
             className="flex-1"
             classNames={{
-              track: 'bg-[var(--bg-tertiary)]',
-              indicator: 'bg-[var(--accent)]',
+              track: 'bg-(--bg-tertiary)',
+              indicator: 'bg-(--accent)',
             }}
           />
           <span className="text-[10px] tabular-nums shrink-0" style={{ color: 'var(--text-muted)' }}>

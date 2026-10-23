@@ -35,6 +35,7 @@ export const LOCAL_DOCS = {
   novels: 'novels.json',
   projectCover: 'project_cover.json',
   projectWorkspace: 'project_workspace.json',
+  resourceCategories: 'resource_categories.json',
   userProfiles: 'user_profiles.json',
   uploadTasks: 'upload_tasks.json',
 } as const;

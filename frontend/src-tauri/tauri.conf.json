@@ -42,8 +42,8 @@
       {
         "ext": ["jzp"],
         "name": "AI Video Studio Project",
-        "description": "AI Video Studio project manifest",
-        "mimeType": "application/json",
+        "description": "AI Video Studio project package",
+        "mimeType": "application/zip",
         "role": "Editor"
       }
     ],
@@ -61,7 +61,8 @@
       "nsis": {
         "installMode": "currentUser",
         "languages": ["SimpChinese", "English"],
-        "displayLanguageSelector": true
+        "displayLanguageSelector": true,
+        "installerHooks": "windows/installer-hooks.nsh"
       }
     }
   }
