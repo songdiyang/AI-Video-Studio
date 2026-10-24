@@ -683,6 +683,62 @@ pub async fn read_media_data_url(path: String) -> Result<String, String> {
     Ok(format!("data:{};base64,{}", mime, general_purpose::STANDARD.encode(bytes)))
 }
 
+/// 媒体文件探测结果（只读元数据：大小 / MIME / 图片尺寸），供 AI 助手资源查询使用。
+#[derive(Debug, Serialize, Deserialize)]
+pub struct MediaProbeResult {
+    pub file_name: String,
+    pub file_size: u64,
+    pub mime_type: String,
+    pub file_type: String,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+    /// 文件不存在（清单里有引用但磁盘缺文件）
+    pub missing: bool,
+}
+
+/// 探测本地媒体文件元数据。
+/// 图片仅读头部取宽高（image::image_dimensions，不解码全图）；
+/// 视频返回大小与类型，宽高由前端 <video> 元数据补充。
+/// 文件缺失不报错，返回 missing=true 供调用方汇总。
+#[tauri::command]
+pub async fn probe_media_file(path: String) -> Result<MediaProbeResult, String> {
+    let file_path = PathBuf::from(&path);
+    let file_name = file_path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
+    if !file_path.is_file() {
+        return Ok(MediaProbeResult {
+            file_name,
+            file_size: 0,
+            mime_type: String::new(),
+            file_type: "missing".to_string(),
+            width: None,
+            height: None,
+            missing: true,
+        });
+    }
+    let file_size = crate::storage::get_file_size(&file_path)?;
+    let mime_type = crate::storage::get_mime_type(&file_path);
+    let mut width = None;
+    let mut height = None;
+    if mime_type.starts_with("image/") {
+        if let Ok((w, h)) = image::image_dimensions(&file_path) {
+            width = Some(w);
+            height = Some(h);
+        }
+    }
+    Ok(MediaProbeResult {
+        file_name,
+        file_size,
+        mime_type: mime_type.clone(),
+        file_type: determine_file_type(&mime_type),
+        width,
+        height,
+        missing: false,
+    })
+}
+
 // ==================== 工程归档包（.jzp）与双击打开 ====================
 
 /// 在已注册工程中按清单 id 查找（双击同一个 .jzp 时避免重复解包）

@@ -281,10 +281,11 @@ async function handleUploadImage(charId: number, body: any): Promise<Response> {
   const dataUrl = body?.image || body?.image_url || '';
   let imageUrl = String(dataUrl);
   if (/^(data:|https?:)/i.test(imageUrl)) {
+    // 落地硬约束：失败时不得回填厂商临时 URL（必过期）或内联 base64（膨胀文档），直接显式报错
     try {
       imageUrl = await genPersistFromSrc(Number(ch.project_id) || 0, imageUrl);
-    } catch {
-      /* 落地失败保留原值 */
+    } catch (e: any) {
+      return jsonResponse({ message: '图片保存到工程媒体目录失败：' + (e?.message || e) }, 500);
     }
   }
   ch.image_url = imageUrl;

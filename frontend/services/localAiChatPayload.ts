@@ -93,7 +93,8 @@ export function buildSystemPrompt(context: any): string {
     '\n- upload_material：上传分镜素材。params:{sceneId}' +
     '\n- optimize_prompt：优化分镜提示词。params:{sceneId}' +
     '\n- auto_storyboard：由当前绑定的剧本自动拆分分镜。⚠️ 前置条件：必须已有绑定的剧本（currentScriptId 存在）；若当前没有剧本，禁止直接调用它，必须先用 ask 询问用户想要什么样的故事，收到回答后用 generate_script 生成剧本，再 auto_storyboard 拆分。' +
-    '\n- inspect_quality：检查分镜质量。params:{sceneId}。视频>图片>提示词 降级，1-5 星评级 + 改进建议。' +
+    '\n- inspect_quality：检查分镜质量。params:{sceneId}。自动执行时系统会采集该分镜的真实素材（提示词、首尾帧/视频生成情况、分辨率、文件大小）并把首尾帧图片一并回喂，你现在能直接看到画面，必须在后续回复正文中基于真实画面给出 1-5 星评级与改进建议，不得只说“我这就去质检”就结束。' +
+    '\n- view_image：主动查看项目内的图片（分镜首尾帧/角色立绘/场景封面/道具图）。params:{sceneId?（分镜 ID，看该分镜首尾帧）, urls?（图片地址数组）, scope?"characters|studios|locations|props", keyword?"按名称筛选", max?（默认 4，最多 6）}。系统会把图片内联后附在下一条消息里给你，下一轮你必须先看清画面再作答（构图/色彩/人物与场景一致性/与分镜要求的偏差）。用户问“这张图里有什么/画面对不对/帮我看看”类问题时用它，不要臆测画面内容。' +
     '\n// 交互（向用户提问）' +
     '\n- ask：向用户提出澄清问题并暂停，等待用户回答后再继续后续动作。params:{question:"要问用户的问题", options?["可选选项1","选项2"]}。当缺少必要信息（例如没有绑定剧本、不清楚要什么题材/风格/篇幅/主角）时必须先用它询问用户，不要臆测。' +
     '\n// 分镜 CRUD（破坏性）' +
@@ -115,12 +116,17 @@ export function buildSystemPrompt(context: any): string {
     '\n- create_studio：新建场景库条目（会显示在资源面板「场景」页）。params:{name, description?, coverImageUrl?}' +
     '\n- update_studio：更新场景库条目。params:{studioId, fields:{name?, description?, coverImageUrl?}}' +
     '\n- delete_studio：删除场景库条目。params:{studioId}（破坏性）' +
+    '\n// 道具库（资源面板「道具」页）' +
+    '\n- create_prop：新建道具（会显示在资源面板「道具」页）。params:{name, description?, category?}' +
+    '\n- update_prop：更新道具。params:{propId, fields:{name?, description?, category?}}' +
+    '\n- delete_prop：删除道具。params:{propId}（破坏性）' +
     '\n// 分镜地点（Scenes，用于给分镜绑定地点；与场景库 Studio 独立）' +
     '\n- create_location：新建分镜地点（仅用于分镜绑定，不显示在资源面板「场景」页）。params:{name, description?}' +
     '\n- update_location：更新分镜地点。params:{locationId, fields:{name?, description?}}' +
     '\n- delete_location：删除分镜地点。params:{locationId}（破坏性）' +
     '\n// 剧本' +
     '\n- create_script：新建剧本。params:{title?, episodeNumber?, content}' +
+    '\n- update_script：写入/更新某一集的大纲（即剧本正文）。params:{scriptId?|episodeNumber?（二选一，缺省为当前集）, title?, content}。⚠️ content 为该集全文整体替换，请在正文中给出完整大纲/剧情；工作台「大纲」面板由此正文实时解析渲染。编写/修订每一集大纲就用 create_script（增）/ read_script（查）/ update_script（改）/ delete_script（删）组合完成，严禁臆造 update_outline 等清单外动作。' +
     '\n- read_script：查看/读取剧本正文。params:{scriptId?}——不传则读当前集剧本。需要参考剧情、回答“大纲/内容是什么”、或基于剧本拆分前，先用它获取完整正文。' +
     '\n- generate_script：AI生成剧本。params:{projectId, episodeNumber?, title?, description?, style?, length?, textModel?}。启动异步工作流生成剧本，生成中剧本状态为 generating，完成后自动保存。' +
     '\n- get_task_status：查看后台长任务状态。params:{jobId?}——不传返回最近长任务，传 jobId 查单个。用户问“任务进度/好了没”时使用。' +
@@ -129,6 +135,9 @@ export function buildSystemPrompt(context: any): string {
     '\n- switch_episode：切换当前集数进度标签。params:{episodeNumber:数字}' +
     '\n// 项目' +
     '\n- update_project：更新项目信息。params:{fields:{name?, description?, art_style?}}' +
+    '\n- get_project_settings：查看当前工程的生成设置（图片/视频分辨率与画面比例，设置页·工程设置同一数据）。无 params。' +
+    '\n- update_project_settings：修改当前工程生成设置（保存后已打开的工作台实时生效）。params:{fields:{imageResolution?:"720p|1080p|2K|4K|auto", imageAspectRatio?:"1:1|16:9|9:16|4:3|3:4|21:9|auto", videoResolution?:"480p|720p|1080p|auto", videoAspectRatio?:"16:9|9:16|1:1|4:3|3:4|auto"}}，只传要改的字段，auto 表示自动（跟随模型默认）。' +
+    '\n- query_media_info：查询项目内每个媒体资源（角色图/场景封面/道具图/分镜首尾帧与视频）的分辨率与文件大小。params:{scope?:"characters|studios|props|storyboards|locations|video", keyword?:"按名称筛选"}——不传 scope 则查全部。用户问“分辨率/文件大小/占用空间/有哪些高清图”类问题时用它获取真实数据，不要臆测；结果由系统逐文件探测返回，按结果汇总回答。' +
     '\n// 协作 & 版本' +
     '\n- invite_member：邀请协作者。params:{username, role?:"editor|viewer"}' +
     '\n\n重要：你拥有项目的完整操作权限。当用户明确要求执行某个操作时，直接在回复中说明你正在做什么，并附上对应的 action 指令。系统将自动执行，不需要用户再次确认。对于删除等不可逆操作，在回复正文中简要说明影响即可。' +
@@ -138,7 +147,7 @@ export function buildSystemPrompt(context: any): string {
     '\n3. 只有白膜三视图完成后，才能 create_character_state / update_character_state，组合服装、道具与体貌/状态属性。' +
     '\n4. 一个角色状态 = 白膜基础 + 服装 + 道具 + 状态属性，对应一场戏中角色需要的造型；不要跳过白膜直接造状态或出图。' +
     '\n例外：用户明确说明该资源只出现一次/为一次性资源时，可按需求一次性生成完整内容；其余情况必须走白膜→状态流程。' +
-    '\n角色库与场景库的完整清单会随项目上下文一并提供；新增成功后系统会返回新条目的 ID，可直接用于后续 update_* 或绑定分镜。不要臆造清单中不存在的 ID。' +
+    '\n角色库、场景库与道具库的完整清单会随项目上下文一并提供；新增成功后系统会返回新条目的 ID，可直接用于后续 update_* 或绑定分镜。不要臆造清单中不存在的 ID。' +
     '\n\n【场景库与分镜地点的区别】场景库 Studio 是资源面板「场景」页的数据；分镜地点 Scenes 仅用于分镜绑定。创建场景库 Studio 后，如需在分镜中引用该场景，直接把 Studio 名称作为 location 传给 update_scene_characters_location，不要为同一个场景重复 create_location；只有用户明确要求维护分镜地点清单时才创建 Scenes。';
 
   if (!context) return systemPrompt;
@@ -186,6 +195,20 @@ export function buildSystemPrompt(context: any): string {
       })
       .join('\n');
     systemPrompt += `\n\n【项目场景库（Studio）】\n${list || '（空，可用 create_studio 创建）'}`;
+  }
+
+  if (Array.isArray(context.props)) {
+    const list = context.props
+      .map((p: any) => {
+        const bits: string[] = [];
+        if (p.category) bits.push(`分类:${p.category}`);
+        if (p.image_url) bits.push('有图');
+        const meta = bits.length ? `（${bits.join('，')}）` : '';
+        const desc = p.description ? `：${String(p.description).slice(0, 100)}` : '';
+        return `- ${p.name}（ID:${p.id}）${meta}${desc}`;
+      })
+      .join('\n');
+    systemPrompt += `\n\n【项目道具库】\n${list || '（空，可用 create_prop 创建）'}`;
   }
 
   if (Array.isArray(context.locations)) {

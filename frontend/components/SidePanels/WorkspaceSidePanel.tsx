@@ -37,14 +37,17 @@ const AccordionSection: React.FC<{
   label: string;
   expanded: boolean;
   enabled: boolean;
-  /** 是否优先获得更多弹性空间（分镜列表）：未手动拖拽前参与剩余空间分配，展开其他分组时按权重让位 */
+  /** 是否弹性分组（分镜列表/资源）：始终参与剩余空间分配并忽略历史持久化的固定高度，
+   * 避免分组下方出现无法吸收的黑色空白；两者同展开时按权重分配 */
   grow: boolean;
   /** 手动拖拽后固定的高度（px）；null 表示自适应/填充 */
   height: number | null;
+  /** 底部锚定：折叠时也贴紧侧栏底部（大纲），与上方弹性分组之间的空白由 mt-auto 吸收 */
+  pinBottom?: boolean;
   onResize: (id: string, px: number) => void;
   onReset: (id: string) => void;
   onToggle: (id: string) => void;
-}> = ({ meta, label, expanded, enabled, grow, height, onResize, onReset, onToggle }) => {
+}> = ({ meta, label, expanded, enabled, grow, height, pinBottom, onResize, onReset, onToggle }) => {
   const bridge = useStoryboardBridgeSafe();
   const { t } = useLanguage();
   // 只依赖稳定的 setContainer / setSectionHeaderSlot（useCallback 空依赖，引用不随
@@ -134,7 +137,7 @@ const AccordionSection: React.FC<{
 
   const isFlexible = expanded && (height == null || grow);
   const isFixed = expanded && height != null && !grow;
-  // 展开的分组共享侧栏高度：分镜列表权重更高，其他分组展开时从它的空间里分走一部分
+  // 展开的分组共享侧栏高度：分镜列表权重更高，资源分组展开时按权重让位
   const growWeight = grow ? 1.6 : 1;
 
   return (
@@ -142,7 +145,7 @@ const AccordionSection: React.FC<{
       ref={sectionRef}
       className={`relative flex flex-col border-b border-(--border-color) last:border-b-0 ${
         expanded ? 'min-h-9' : 'min-h-0'
-      } ${isFlexible ? 'flex-1' : isFixed ? 'shrink' : 'shrink-0'}`}
+      } ${pinBottom ? 'mt-auto ' : ''}${isFlexible ? 'flex-1' : isFixed ? 'shrink' : 'shrink-0'}`}
       style={
         isFlexible
           ? { flexGrow: growWeight, flexBasis: 0 }
@@ -210,8 +213,8 @@ const WorkspaceSidePanel: React.FC = () => {
   const bridgeReady = bridge?.isRegistered ?? false;
   const { t } = useLanguage();
 
-  // 展开/折叠状态管理（默认展开「分镜列表」）
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(() => new Set(['scenes']));
+  // 展开/折叠状态管理（默认只展开中间的「资源」分组，「大纲」折叠并锚定在底部）
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(() => new Set(['resources']));
 
   // 各分组手动拖拽后固定的高度（px），持久化到 localStorage
   const [sectionHeights, setSectionHeights] = useState<Record<string, number>>(() => {
@@ -306,8 +309,9 @@ const WorkspaceSidePanel: React.FC = () => {
             label={(t.frame.workspace as Record<string, string>)[meta.id]}
             expanded={expandedSections.has(meta.id)}
             enabled={bridgeReady}
-            grow={meta.id === 'scenes'}
+            grow={meta.id !== 'outline'}
             height={sectionHeights[meta.id] ?? null}
+            pinBottom={meta.id === 'outline'}
             onResize={handleResize}
             onReset={handleReset}
             onToggle={toggleSection}

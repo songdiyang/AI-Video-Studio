@@ -38,6 +38,8 @@ export const LOCAL_DOCS = {
   resourceCategories: 'resource_categories.json',
   userProfiles: 'user_profiles.json',
   uploadTasks: 'upload_tasks.json',
+  /** 工程生成参数（图片/视频分辨率与比例，设置页·工程设置） */
+  projectSettings: 'project_settings.json',
 } as const;
 
 export type LocalDocName = keyof typeof LOCAL_DOCS;

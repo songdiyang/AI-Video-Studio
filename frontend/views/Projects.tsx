@@ -452,7 +452,9 @@ const Projects: React.FC = () => {
           visualStylePrompt: formData.visualStylePrompt,
           storyStyle: formData.storyStyle,
           storyConstraints: formData.storyConstraints,
-          bodyProportionRatio: formData.bodyProportionRatio || undefined
+          bodyProportionRatio: formData.bodyProportionRatio || undefined,
+          // 编辑模式：把目标工程传给本地层，确保封面直接落地到该工程 media/（而非回填厂商临时 URL）
+          ...(editMode && currentId ? { project_id: currentId } : {}),
         })
       });
   

@@ -8,6 +8,8 @@ import { isLongTaskCapable } from '../../services/aiAssistant';
 import { getWorkflowStatus } from '../../hooks/useWorkflow';
 import { analyzeScript, optimizeScript, generateScript, type ScriptAnalysisResult } from '../../services/scripts';
 import { getLongTasksSummary, listLongTasks, registerLongTask } from '../../services/longTasks';
+import { probeMediaBatch, formatBytes, formatResolution, toVisionImageUrls } from '../../services/mediaInfo';
+import { SCRIPT_ANALYSIS_EVENT, consumePendingScriptAnalysis, type ScriptAnalysisRequest } from '../../services/scriptAnalysisBridge';
 
 // ─── Types ──────────────────────────────────────────────────────────
 interface Attachment {
@@ -19,6 +21,14 @@ interface Attachment {
 }
 
 // ─── Helper Functions ───────────────────────────────────────────────
+/**
+ * 需要转 data URL 的图片附件：工程内的图片是 asset 协议 URL（仅本机能访问），
+ * blob: 同理；而 file:// 前缀是已上传到厂商的文件句柄、data: 已是内联，保持原样。
+ */
+function needsVisionHydrate(a: { type: string; url?: string }): boolean {
+  return a.type === 'image' && !!a.url && !/^data:/i.test(a.url) && !/^file:\/\//i.test(a.url);
+}
+
 /** 将 blob URL 转换为 base64 data URL */
 async function blobUrlToBase64(blobUrl: string): Promise<string> {
   try {
@@ -99,6 +109,8 @@ export interface AIAssistantPanelProps {
     element_count?: number;
     nine_grid_image_url?: string;
   }[];
+  /** 项目道具库清单（资源面板「道具」页） */
+  props?: { id: number; name: string; description?: string; category?: string; image_url?: string }[];
   /** 项目剧本清单（含内容） */
   scripts?: { id: number; episode_number: number; title?: string; content?: string }[];
   onClose: () => void;
@@ -214,6 +226,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
   characters,
   locations,
   studios,
+  props,
   scripts,
   onClose,
   onAction,
@@ -760,12 +773,89 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
     };
   }, []);
 
+  // ── 智能体看图：附件图片本地化 ──────────────────────────────────
+  // asset/blob 图片只有本机能访问，送给厂商前必须转 data URL；
+  // 会话存档/输入芯片仍用原始 URL，避免 base64 撑爆工程文档。
+  const hydrateImageAttachments = useCallback(async (atts: Attachment[]): Promise<Attachment[]> => {
+    const need = atts.filter(needsVisionHydrate);
+    if (need.length === 0) return atts;
+    const converted = await toVisionImageUrls(need.map((a) => a.url));
+    const bySrc = new Map(converted.map((r) => [r.src, r]));
+    return atts.map((a) => {
+      const hit = needsVisionHydrate(a) ? bySrc.get(a.url) : undefined;
+      // 读取失败时保留原地址（远程 http 图厂商或许自己能取）
+      return hit?.dataUrl ? { ...a, url: hit.dataUrl } : a;
+    });
+  }, []);
+
+  // 项目内可查看的图片清单（按业务语义命名，供 view_image 定位）
+  const projectImageIndex = useMemo(() => {
+    const out: Array<{ group: string; label: string; url: string; id?: number }> = [];
+    (characters || []).forEach((c: any) => {
+      if (c.image_url) out.push({ group: '角色', label: `角色「${c.name}」主图`, url: c.image_url });
+    });
+    (studios || []).forEach((s: any) => {
+      if (s.cover_image_url) out.push({ group: '场景库', label: `场景「${s.name}」封面`, url: s.cover_image_url });
+      if (s.nine_grid_image_url) out.push({ group: '场景库', label: `场景「${s.name}」九宫格`, url: s.nine_grid_image_url });
+    });
+    (locations || []).forEach((l: any) => {
+      if (l.image_url) out.push({ group: '分镜地点', label: `地点「${l.name}」图`, url: l.image_url });
+    });
+    (props || []).forEach((p: any) => {
+      if (p.image_url) out.push({ group: '道具', label: `道具「${p.name}」图`, url: p.image_url });
+    });
+    (scenes || []).forEach((s: any) => {
+      if (s.first_frame_url) out.push({ group: '分镜', label: `分镜#${s.index} 首帧`, url: s.first_frame_url, id: s.id });
+      if (s.last_frame_url && s.last_frame_url !== s.first_frame_url) {
+        out.push({ group: '分镜', label: `分镜#${s.index} 尾帧`, url: s.last_frame_url, id: s.id });
+      }
+    });
+    return out;
+  }, [characters, studios, locations, props, scenes]);
+
+  /** 按 sceneId / urls / scope / keyword 定位待看的图片（sceneId 只对应分镜，避免与资产 id 歧义） */
+  const resolveImageTargets = useCallback((params: any): Array<{ label: string; url: string }> => {
+    const explicit: string[] = Array.isArray(params?.urls)
+      ? params.urls.filter((u: any) => typeof u === 'string' && u.trim())
+      : (typeof params?.url === 'string' && params.url.trim() ? [params.url.trim()] : []);
+    if (explicit.length > 0) {
+      return explicit.slice(0, 6).map((u, i) => {
+        const known = projectImageIndex.find((e) => e.url === u);
+        return { label: known?.label || `图片${i + 1}`, url: u };
+      });
+    }
+    const sceneId = Number(params?.sceneId) || Number(currentFrame?.id) || 0;
+    if (sceneId) {
+      const frames = projectImageIndex.filter((e) => e.group === '分镜' && e.id === sceneId);
+      if (frames.length > 0) return frames.slice(0, 4).map((f) => ({ label: f.label, url: f.url }));
+      const target = (scenes || []).find((s) => s.id === sceneId) || (currentFrame && currentFrame.id === sceneId ? currentFrame : null);
+      if (target) return []; // 分镜存在但尚无画面
+    }
+    const SCOPE_ALIAS: Record<string, string> = {
+      character: '角色', characters: '角色', studio: '场景库', studios: '场景库',
+      location: '分镜地点', locations: '分镜地点', prop: '道具', props: '道具',
+      storyboard: '分镜', storyboards: '分镜', frame: '分镜', frames: '分镜',
+    };
+    const group = SCOPE_ALIAS[String(params?.scope || '').trim().toLowerCase()];
+    if (params?.scope && !group && String(params.scope).trim().toLowerCase() !== 'all') {
+      return [];
+    }
+    const keyword = String(params?.keyword || '').trim().toLowerCase();
+    const cap = Math.min(Math.max(Number(params?.max) || 4, 1), 6);
+    const matched = projectImageIndex.filter((e) => {
+      if (group && e.group !== group) return false;
+      if (keyword && !e.label.toLowerCase().includes(keyword)) return false;
+      return true;
+    });
+    return matched.slice(0, cap);
+  }, [projectImageIndex, scenes, currentFrame]);
+
   // ── Attach current frame ─────────────────────────────────────────
+  // 附件芯片已在输入区可见，成功/进行中不再弹右下角 toast，仅保留需要用户处理的警告/错误
   const attachCurrentFrame = useCallback(async () => {
     if (!currentFrame?.first_frame_url) return;
     // Avoid duplicate
     if (attachments.some((a) => a.url === currentFrame.first_frame_url)) {
-      showToast('当前帧图片已添加', 'info');
       return;
     }
     
@@ -804,7 +894,6 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
       const cachedFileId = await saveAttachmentToCache(file, conversationId);
 
       // 上传到 AI 服务器
-      showToast('正在上传当前帧图片...', 'info');
       const fileId = await uploadFileToAI(file, modelConfig);
       
       setAttachments((prev) => [
@@ -817,7 +906,6 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
         },
       ]);
       
-      showToast('当前帧图片已添加', 'success');
     } catch (error: any) {
       console.error('添加当前帧失败:', error);
       showToast(`添加失败：${error.message}`, 'error');
@@ -832,7 +920,6 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
     }
     // Avoid duplicate
     if (attachments.some((a) => a.url === currentFrame.video_url)) {
-      showToast('当前视频已添加', 'info');
       return;
     }
     
@@ -871,7 +958,6 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
       const cachedFileId = await saveAttachmentToCache(file, conversationId);
 
       // 上传到 AI 服务器
-      showToast('正在上传当前视频...', 'info');
       const fileId = await uploadFileToAI(file, modelConfig);
       
       setAttachments((prev) => [
@@ -884,7 +970,6 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
         },
       ]);
       
-      showToast('当前分镜视频已添加', 'success');
     } catch (error: any) {
       console.error('添加当前视频失败:', error);
       showToast(`添加失败：${error.message}`, 'error');
@@ -1061,6 +1146,28 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
     }
     e.target.value = '';
   };
+
+  // ── 外部剧本分析请求（大纲面板上传后提交）：填入剧本附件与提问，由用户确认发送 ──
+  useEffect(() => {
+    const applyRequest = (request: ScriptAnalysisRequest | null | undefined) => {
+      const trimmed = request?.content?.trim();
+      if (!request || !trimmed) return;
+      const MAX_CHARS = 60000;
+      const content = trimmed.length > MAX_CHARS
+        ? trimmed.slice(0, MAX_CHARS) + `\n\n[…剧本过长已截断，原文 ${trimmed.length} 字符…]`
+        : trimmed;
+      setAttachments((prev) => [...prev, { type: 'script', url: '', name: request.name, textContent: content }]);
+      setInputText((prev) => (prev.trim()
+        ? prev
+        : `请分析剧本《${request.name.replace(/\.[^.]+$/, '')}》：梳理结构与节奏、人物弧光与对白质量，指出问题并给出改进建议。`));
+      showToast('剧本已添加到对话框，点击发送即可开始分析', 'info');
+    };
+    const handler = (event: Event) => applyRequest((event as CustomEvent<ScriptAnalysisRequest>).detail);
+    // 面板懒加载：事件可能先于挂载到达，挂载时消费 pending 兜底。
+    applyRequest(consumePendingScriptAnalysis());
+    window.addEventListener(SCRIPT_ANALYSIS_EVENT, handler);
+    return () => window.removeEventListener(SCRIPT_ANALYSIS_EVENT, handler);
+  }, [showToast]);
 
   // 提示词增强
   const handleEnhancePrompt = useCallback(async () => {
@@ -1239,10 +1346,21 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
       }
       kept = acc;
     }
+    // 送给厂商前把本地图片附件内联为 data URL（仅 API 载荷，消息本身仍存原始 URL）：
+    // 工程内图片是 asset 协议地址，厂商 API 访问不到，不内联就“看不见图”。
+    let payloadAttachments = apiAttachments;
+    if (apiAttachments.some(needsVisionHydrate)) {
+      try {
+        payloadAttachments = await hydrateImageAttachments(apiAttachments);
+      } catch (e: any) {
+        console.warn('[AIAssistant] 图片附件内联失败，按原地址发送:', e?.message);
+      }
+    }
+
     const apiMessages = [...kept, userMessage].map((m) => ({
       role: m.role,
       content: m.id === userMessage.id ? mergedText : m.content,
-      attachments: m.id === userMessage.id ? apiAttachments : m.attachments,
+      attachments: m.id === userMessage.id ? payloadAttachments : m.attachments,
     }));
 
     // 判断当前模型是否支持流式
@@ -1310,6 +1428,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
       characters,
       locations,
       studios,
+      props,
       scripts: scriptsForContext,
       scenes,
       longTasks: listLongTasks().slice(0, 10),
@@ -1337,11 +1456,82 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
 
         try {
           // 循环中跳过确需人工确认的动作；generate_script 等可自动执行的动作直接跑。
-          const AGENT_MANUAL_ACTIONS = new Set(['dismiss', 'inspect_quality', 'optimize_script', 'reanalyze_script']);
-          const history: Array<{ role: string; content: string }> = apiMessages.map((m) => ({ role: m.role, content: m.content }));
+          // inspect_quality 不再当人工动作：循环内自动收集分镜素材（提示词/生成情况/分辨率/大小）回喂模型，确保看完有反馈。
+          const AGENT_MANUAL_ACTIONS = new Set(['dismiss', 'optimize_script', 'reanalyze_script']);
+          type AgentImage = { type: 'image'; url: string; name?: string };
+          type AgentHistoryItem = { role: string; content: string; attachments?: AgentImage[] };
+          const history: AgentHistoryItem[] = apiMessages.map((m) => ({ role: m.role, content: m.content, attachments: m.attachments as AgentImage[] | undefined }));
           const MAX_ROUNDS = 5;
           const executedLog: string[] = [];
           let roundReply = '';
+          let manualNotified = false;
+
+          /** 本轮待回喂的实测图片（已转 data URL）；随观察消息一起交给模型 */
+          let roundImages: AgentImage[] = [];
+          // 全循环图片预算：base64 会留在 history 里逐轮重发，不限量会把请求撑爆
+          const imageBudget = { left: 6 };
+          /** 把定位到的图片转 data URL 收入本轮，返回实际内联数与读取失败说明 */
+          const collectRoundImages = async (items: Array<{ label: string; url: string }>, cap = 4): Promise<{ inlined: number; failedNote: string }> => {
+            const allowed = Math.min(cap, imageBudget.left);
+            const picked = items.slice(0, allowed);
+            const skipped = items.length - picked.length;
+            if (picked.length === 0) {
+              return { inlined: 0, failedNote: skipped > 0 ? `- 另有 ${skipped} 张图片因单次对话图片额度已用尽而未发送` : '' };
+            }
+            const converted = await toVisionImageUrls(picked.map((it) => it.url));
+            const failed: string[] = [];
+            let inlined = 0;
+            converted.forEach((r, i) => {
+              if (r.dataUrl) {
+                roundImages.push({ type: 'image', url: r.dataUrl, name: picked[i].label });
+                inlined += 1;
+              } else {
+                failed.push(`- ${picked[i].label}：图片读取失败（${r.error || '未知原因'}）`);
+              }
+            });
+            imageBudget.left -= inlined;
+            if (skipped > 0) failed.push(`- 另有 ${skipped} 张图片因单次对话图片额度已用尽而未发送`);
+            return { inlined, failedNote: failed.join('\n') };
+          };
+
+          // 质检素材报告：汇总分镜的提示词、生成情况与本地文件元数据（分辨率/大小），并交出画面图片供模型真看
+          const buildInspectionReport = async (sceneId: number): Promise<{ text: string; images: Array<{ label: string; url: string }> }> => {
+            const target = scenes?.find((s) => s.id === sceneId)
+              || (currentFrame && currentFrame.id === sceneId ? currentFrame : null);
+            if (!target) return { text: '质检失败：找不到对应分镜（sceneId 无效）。请告知用户先选中一个分镜。', images: [] };
+            const mediaEntries: Array<{ key: string; url: string; kind: 'image' | 'video' }> = [];
+            if (target.first_frame_url) mediaEntries.push({ key: '首帧', url: target.first_frame_url, kind: 'image' });
+            if (target.last_frame_url && target.last_frame_url !== target.first_frame_url) mediaEntries.push({ key: '尾帧', url: target.last_frame_url, kind: 'image' });
+            if (target.video_url) mediaEntries.push({ key: '视频', url: target.video_url, kind: 'video' });
+            const probes = mediaEntries.length > 0
+              ? await probeMediaBatch(mediaEntries.map((m) => ({ src: m.url, kind: m.kind })))
+              : [];
+            const mediaLines = mediaEntries.map((m, i) => {
+              const p = probes[i];
+              if (p?.missing) return `- ${m.key}：文件缺失（清单有引用但工程 media/ 无实体）`;
+              return `- ${m.key}：${formatResolution(p?.width, p?.height)} · ${formatBytes(p?.bytes)}`;
+            });
+            if (mediaLines.length === 0) mediaLines.push('- 尚未生成任何画面/视频');
+            const images = mediaEntries
+              .map((m, i) => ({ m, missing: !!probes[i]?.missing }))
+              .filter(({ m, missing }) => m.kind === 'image' && !missing)
+              .map(({ m }) => ({ label: `分镜#${target.index} ${m.key}`, url: m.url }));
+            const sight = images.length > 0
+              ? '本条消息已附带该分镜的真实画面图片，你必须看清画面后再评价构图/色彩/人物一致性，不得臆测图中没有的内容。'
+              : '该分镜没有可用画面，请仅基于提示词分析，并如实告知用户看不到画面。';
+            return {
+              text: [
+                `【分镜质检素材 #${target.index}（ID:${target.id}）】`,
+                `描述：${(target as any).description || (target as any).scene_description || '（无）'}`,
+                ...mediaLines,
+                `首帧提示词：${(target as any).first_frame_prompt || '（无）'}`,
+                `尾帧提示词：${(target as any).last_frame_prompt || '（无）'}`,
+                `视频提示词：${(target as any).video_prompt || '（无）'}`,
+                `请基于以上真实素材给出 1-5 星评级与具体改进建议，并把反馈直接写进回复正文交给用户。${sight}`,
+              ].join('\n'),
+              images,
+            };
+          };
 
           for (let round = 0; round < MAX_ROUNDS; round++) {
             const planRes = await fetch('/api/ai-assistant/chat', {
@@ -1364,11 +1554,25 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
             roundReply = planData.reply || '';
             const rawSuggestions: any[] = Array.isArray(planData.suggestions) ? planData.suggestions : [];
             const actions = rawSuggestions.filter((s) => s && s.action && !AGENT_MANUAL_ACTIONS.has(s.action));
+            const skippedManual = rawSuggestions.filter((s) => s && s.action && AGENT_MANUAL_ACTIONS.has(s.action));
             history.push({ role: 'assistant', content: planData.reply || '' });
             tracker.complete(`第 ${round + 1} 轮规划返回`);
 
-            // 无自动动作 → agent 收敛，结束循环
-            if (actions.length === 0) break;
+            // 无自动动作 → agent 收敛，结束循环。
+            // 但若模型请求了人工动作，正文会停在「我打算去做…」的承诺上、看完没反馈；
+            // 改为回喂一次说明让模型基于已有信息收敛出最终回复，不静默丢弃。
+            if (actions.length === 0) {
+              if (skippedManual.length > 0 && !manualNotified && round < MAX_ROUNDS - 1) {
+                manualNotified = true;
+                history.push({
+                  role: 'user',
+                  content: `【执行结果】\n${skippedManual.map((s) => s.action).join('、')} 需要用户在界面上手动触发，本次已跳过。请不要再附带 SUGGESTIONS，直接基于已有信息给出面向用户的最终回复。`,
+                });
+                tracker.complete('人工动作需用户触发，已回喂收敛');
+                continue;
+              }
+              break;
+            }
 
             const planSummary = actions.map((a) => a.label || a.action).join('、');
             updateSessionMessages(sendSid, (prev) => prev.map((m) =>
@@ -1377,6 +1581,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
 
             // 执行动作，收集观察结果
             const observations: string[] = [];
+            roundImages = []; // 本轮内联的图片，随观察消息一起回喂
             // 后台生成/拆分动作（分镜图/视频返回 jobId、离线分镜拆分返回 sceneCount）的进度卡片
             // 由 handleAction 统一挂载（同时覆盖单次点击建议与 agent 循环两条路径），此处仅据实回报。
             const TASK_ACTIONS = new Set(['auto_storyboard', 'generate_frame', 'generate_video']);
@@ -1392,6 +1597,57 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                 observations.push(`已向用户提问，等待其回答后再继续：${question}`);
                 askedUser = true;
                 break;
+              }
+              // 质检：循环内自动采集分镜素材（提示词/生成情况/分辨率/大小）+ 内联真实画面回喂，下一轮模型据实给出评级反馈
+              if (a.action === 'inspect_quality') {
+                tracker.start('质检：采集分镜素材与画面中…');
+                try {
+                  const sid = Number(a.params?.sceneId) || Number(currentFrame?.id) || 0;
+                  const report = await buildInspectionReport(sid);
+                  const ok = !report.text.startsWith('质检失败');
+                  if (ok) {
+                    const got = await collectRoundImages(report.images, 4);
+                    observations.push(got.failedNote ? `${report.text}\n${got.failedNote}` : report.text);
+                    tracker.complete(`素材已采集${got.inlined ? `，已内联 ${got.inlined} 张画面` : ''}，待模型给出评级反馈`);
+                  } else tracker.fail('未找到对应分镜');
+                  executedLog.push(`${ok ? '✓' : '✗'} ${label}`);
+                  if (!ok) observations.push(report.text);
+                } catch (e: any) {
+                  tracker.fail(e?.message || '素材采集失败');
+                  executedLog.push(`✗ ${label}`);
+                  observations.push(`质检素材采集失败：${e?.message || e}。请如实告知用户并给出后续建议。`);
+                }
+                continue;
+              }
+              // 看图：把项目内的图片内联为 data URL 随观察回喂，模型下一轮才真正“看到”画面
+              if (a.action === 'view_image') {
+                tracker.start('查看画面：定位图片中…');
+                try {
+                  const targets = resolveImageTargets(a.params || {});
+                  if (targets.length === 0) {
+                    tracker.fail('未找到匹配的图片');
+                    executedLog.push(`✗ ${label}`);
+                    observations.push(`view_image 没找到匹配的图片（params：${JSON.stringify(a.params || {})}）。可改用 sceneId 或更准确的 keyword 重试，或如实告知用户该资产暂无图片。`);
+                  } else {
+                    const got = await collectRoundImages(targets, 4);
+                    executedLog.push(`✓ ${label}`);
+                    if (got.inlined > 0) {
+                      tracker.complete(`已内联 ${got.inlined} 张图片，待模型观看反馈`);
+                      observations.push(
+                        `已取出 ${got.inlined} 张图片（${targets.slice(0, 4).map((t) => t.label).join('、')}）附在本条消息中。` +
+                        `这些图已经是你亲眼看到的画面，请在后续回复正文里基于实际内容作答（构图/色彩/人物与场景一致性/与分镜要求的偏差），不得臆测图中没有的东西；${got.failedNote ? `部分图片读取失败：\n${got.failedNote}` : ''}`,
+                      );
+                    } else {
+                      tracker.fail('图片读取失败');
+                      observations.push(`view_image 找到 ${targets.length} 张图片但都无法读取：\n${got.failedNote}。请如实告知用户并建议重新生成该画面或检查工程 media/ 目录。`);
+                    }
+                  }
+                } catch (e: any) {
+                  tracker.fail(e?.message || '图片读取失败');
+                  executedLog.push(`✗ ${label}`);
+                  observations.push(`查看图片失败：${e?.message || e}。请告知用户并改用文字素材作答。`);
+                }
+                continue;
               }
               try {
                 // 执行前把进度刷到对话栏：长任务（如分镜拆分同步等待模型返回）期间显示「正在执行」
@@ -1440,9 +1696,10 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
             // 已向用户提问 → 结束本轮循环，把提问作为最终回复交还用户输入。
             if (askedUser) break;
 
-            // 回喂执行结果作为新一轮用户侧上下文
+            // 回喂执行结果作为新一轮用户侧上下文（本轮内联的真实画面随消息一起交给模型）
             const obsText = `【执行结果】\n${observations.join('\n')}\n\n请根据以上执行结果继续规划后续步骤；若任务已全部完成，请给出最终总结且不再附带 SUGGESTIONS。`;
-            history.push({ role: 'user', content: obsText });
+            history.push(roundImages.length > 0 ? { role: 'user', content: obsText, attachments: roundImages } : { role: 'user', content: obsText });
+            roundImages = [];
 
             tracker.start(`汇总执行结果，回喂模型继续规划（第 ${round + 2} 轮）`);
           }
@@ -1648,7 +1905,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
     } finally {
       setSessionLoading(sendSid, false);
     }
-  }, [inputText, attachments, isLoading, messages, projectId, selectedModel, currentFrame, modelOptions, scenes, characters, locations, studios, scripts, projectName, projectDescription, includeContext, contextTokenLimit, apiCreateSession, archiveMessage, activeSessionKey, updateSessionMessages, setSessionLoading, setSessionStreaming, showToast]);
+  }, [inputText, attachments, isLoading, messages, projectId, selectedModel, currentFrame, modelOptions, scenes, characters, locations, studios, props, scripts, projectName, projectDescription, includeContext, contextTokenLimit, apiCreateSession, archiveMessage, activeSessionKey, updateSessionMessages, setSessionLoading, setSessionStreaming, showToast, hydrateImageAttachments, resolveImageTargets]);
 
   // ── 上下文使用量估算（字符/4 作为 token 粗估） ──────────────
   const MAX_CONTEXT_TOKENS = 200000; // 默认 200k window
@@ -1795,6 +2052,22 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
         return;
       }
       triggerInspectQuality(sceneId);
+      return;
+    }
+
+    // 看图：非 agent 循环路径（用户直接点击建议）下，把图片作为附件填入输入区，发送后 AI 才能看到画面
+    if (action === 'view_image') {
+      const targets = resolveImageTargets(params);
+      if (targets.length === 0) {
+        showToast('没找到匹配的图片', 'warning');
+        return;
+      }
+      setAttachments((prev) => [
+        ...prev,
+        ...targets.filter((t) => !prev.some((p) => p.url === t.url)).map((t) => ({ type: 'image' as const, url: t.url, name: t.label })),
+      ]);
+      setInputText((prev) => prev || `请仔细查看这 ${targets.length} 张图（${targets.map((t) => t.label).join('、')}），描述实际画面内容并指出与分镜要求的差距。`);
+      showToast(`已附加 ${targets.length} 张图片，点击发送让 AI 查看`, 'info');
       return;
     }
 
@@ -2099,7 +2372,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
     // 在对话内挂载进度卡片（任务未完成时同样挂载）；同时把结果回传供 agent 循环构造观察。
     mountTaskCard(action, result, undefined, originSid);
     return result;
-  }, [currentFrame, triggerInspectQuality, onAction, showToast, archiveMessage, updateSessionMessages, projectId, selectedModel, scripts, mountTaskCard, TASK_ACTION_LABEL, appendActionResult]);
+  }, [currentFrame, triggerInspectQuality, resolveImageTargets, onAction, showToast, archiveMessage, updateSessionMessages, projectId, selectedModel, scripts, mountTaskCard, TASK_ACTION_LABEL, appendActionResult]);
 
   // 每次渲染同步最新 handleAction，供 handleSend 的 agent 循环调用
   handleActionRef.current = handleAction;
