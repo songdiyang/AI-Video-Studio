@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardBody, Button, Input, Textarea, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure, Chip, Spinner } from '@heroui/react';
-import { FolderOpen, Plus, Edit, Trash2, Search, BookOpen, Clock, Palette, Sparkles, ImagePlus, Globe, Upload, Users, Crop, ExternalLink, Settings } from 'lucide-react';
+import { FolderOpen, Plus, Edit, Trash2, Search, BookOpen, Clock, Palette, Sparkles, ImagePlus, Globe, Upload, Users, Crop, ExternalLink, Settings, AppWindow } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Project, fetchProjects, createProject, updateProject, deleteProject, UserStylePreset, fetchMyStyles, createMyStyle, updateMyStyle, deleteMyStyle } from '../services/projects';
 import { ProjectType, VISUAL_STYLE_BY_CATEGORY, StyleCategory, BodyProportionRatio, BODY_PROPORTION_PRESETS, inferStyleCategory } from '../types/projectTypes';
@@ -11,6 +11,8 @@ import { useWorkbench } from '../contexts/WorkbenchContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useVirtualList } from '../hooks/useVirtualList';
 import { usePreview } from '../components/PreviewProvider';
+import { openProjectWindow } from '../services/localApi';
+import { rememberProjectId } from '../services/windowProject';
 import QuickStartWizard from '../components/QuickStartWizard';
 import UpgradePrompt from '../components/UpgradePrompt';
 import ImageCropperModal, { CropSelection } from '../components/ImageCropperModal';
@@ -20,12 +22,10 @@ const VIRTUAL_LIST_THRESHOLD = 20;
 // 固定卡片高度
 const CARD_HEIGHT = 240;
 
-const LAST_PROJECT_KEY = 'nanostory_last_project_id';
-
 const Projects: React.FC = () => {
   const navigate = useNavigate();
   const { t } = useLanguage();
-  const { setCurrentProject } = useWorkbench();
+  const { setCurrentProject, switchProject } = useWorkbench();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -608,16 +608,29 @@ const Projects: React.FC = () => {
   };
 
   const handleEnterProject = (project: Project) => {
-    localStorage.setItem(LAST_PROJECT_KEY, project.id.toString());
-    // 同时更新 WorkbenchContext 中的当前项目，确保工作台能正确加载
-    setCurrentProject(project);
+    // 统一走 Workbench 的切换逻辑：独立窗口会绑定自身 URL，并在工程已被其它窗口打开时让位关闭
+    switchProject(project);
     navigate('/');
+  };
+
+  /** 在新窗口打开该工程：同进程独立窗口，每个窗口各自绑定一个工程 */
+  const handleOpenInNewWindow = async (project: Project) => {
+    setContextMenu(null);
+    if (!project.local_path) {
+      showToast('无法定位工程目录', 'error');
+      return;
+    }
+    try {
+      await openProjectWindow(project.local_path, project.name);
+    } catch (err: any) {
+      showToast(err?.message || '打开新窗口失败', 'error');
+    }
   };
 
   // 快速开始向导完成后
   const handleQuickStartComplete = async (projectId: number) => {
     setShowQuickStart(false);
-    localStorage.setItem(LAST_PROJECT_KEY, projectId.toString());
+    rememberProjectId(projectId);
     await loadProjects();
     navigate('/');
   };
@@ -945,6 +958,15 @@ const Projects: React.FC = () => {
               打开工程
             </button>
 
+            {/* 在新窗口打开（同进程多窗口，各窗口独立工程） */}
+            <button
+              className="w-full text-left px-3 py-1.5 text-sm text-(--text-primary) hover:bg-(--accent)/10 flex items-center gap-2.5 transition-colors"
+              onClick={() => handleOpenInNewWindow(contextMenu.project)}
+            >
+              <AppWindow className="w-4 h-4 text-(--text-secondary)" />
+              在新窗口打开
+            </button>
+
             {/* 编辑 */}
             {(!contextMenu.project.my_role || contextMenu.project.my_role !== 'viewer') && (
               <button
@@ -980,6 +1002,14 @@ const Projects: React.FC = () => {
                 >
                   <ExternalLink className="w-4 h-4 text-(--accent)" />
                   <span className="text-[10px] text-(--text-muted)">打开</span>
+                </button>
+                <button
+                  className="flex flex-col items-center gap-0.5 p-1.5 rounded hover:bg-(--accent)/10 transition-colors"
+                  onClick={() => handleOpenInNewWindow(contextMenu.project)}
+                  title="新窗口"
+                >
+                  <AppWindow className="w-4 h-4 text-(--text-secondary)" />
+                  <span className="text-[10px] text-(--text-muted)">新窗口</span>
                 </button>
                 {(!contextMenu.project.my_role || contextMenu.project.my_role !== 'viewer') && (
                   <button

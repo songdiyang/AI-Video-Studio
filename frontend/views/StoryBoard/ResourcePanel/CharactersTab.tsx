@@ -33,7 +33,7 @@ const CharactersTab: React.FC<CharactersTabProps> = ({
   onStoryboardStateChange,
 }) => {
   return (
-    <div className="space-y-3">
+    <div className="space-y-1">
       {isLoadingCharacters ? (
         <div className="text-center py-12">
           <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-2"></div>

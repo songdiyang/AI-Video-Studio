@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Card, CardBody, Button, Chip } from '@heroui/react';
-import { Wand2, X, Trash2, ExternalLink } from 'lucide-react';
+import { Card, CardBody, Tooltip } from '@heroui/react';
+import { Wand2, X, Trash2, ExternalLink, Loader2 } from 'lucide-react';
 import { PropItem } from './types';
 
 const openAssetEditTab = (prop: PropItem) => {
@@ -22,6 +22,7 @@ interface PropsTabProps {
   onDelete?: (prop: PropItem) => void;
 }
 
+/** 道具资源行（无头像单行紧凑）：与角色行同一套密度与交互语言。 */
 const PropsTab: React.FC<PropsTabProps> = ({ props, imageModel, imageAspectRatio, onDelete }) => {
   const [generatingIds, setGeneratingIds] = useState<Set<number>>(new Set());
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; prop: PropItem } | null>(null);
@@ -99,124 +100,115 @@ const PropsTab: React.FC<PropsTabProps> = ({ props, imageModel, imageAspectRatio
     generatingIds.has(prop.id) || prop.generation_status === 'generating';
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center mb-3">
-        <span className="text-sm font-semibold text-slate-300">全部道具 ({props.length})</span>
-      </div>
-      {props.map((prop) => (
-        <Card key={`${prop.id}-${prop.name}`} className="bg-slate-800/60 border border-slate-700/50 hover:border-emerald-500/30 transition-colors cursor-pointer" onDoubleClick={() => openAssetEditTab(prop)} onContextMenu={(e) => handleContextMenu(e, prop)}>
-          <CardBody className="p-3">
-            <div className="flex items-center justify-between h-[56px]">
-              <div className="flex-1 min-w-0">
-                <p className="font-semibold text-slate-100 truncate">{prop.name}</p>
-                <div className="flex gap-1 mt-1">
-                  {prop.prop_type && (
-                    <Chip size="sm" variant="flat" className={prop.prop_type === 'permanent' ? 'bg-blue-500/10 text-blue-400 text-[10px]' : 'bg-cyan-500/10 text-cyan-400 text-[10px]'}>
-                      {prop.prop_type === 'permanent' ? '永久' : '交互'}
-                    </Chip>
-                  )}
-                  {prop.generation_status && (
-                    <Chip size="sm" variant="flat" className={prop.generation_status === 'completed' ? 'bg-green-500/10 text-green-400 text-[10px]' : 'bg-amber-500/10 text-amber-400 text-[10px]'}>
-                      {prop.generation_status === 'completed' ? '已生成' : prop.generation_status === 'generating' ? '生成中' : '待生成'}
-                    </Chip>
+    <div className="space-y-1">
+      {props.map((prop) => {
+        const generating = isGenerating(prop);
+        const completed = prop.generation_status === 'completed';
+        const failed = prop.generation_status === 'failed';
+        return (
+          <Card
+            key={`${prop.id}-${prop.name}`}
+            className="group w-full rounded-lg border border-(--border-color) bg-(--bg-card) shadow-none transition-colors hover:border-(--accent)/30 hover:bg-(--bg-card-hover)"
+            onDoubleClick={() => openAssetEditTab(prop)}
+            onContextMenu={(e) => handleContextMenu(e, prop)}
+          >
+            <CardBody className="px-2.5 py-1.5">
+              <div className="flex items-center gap-1.5">
+                <h4 className="min-w-0 truncate text-[13px] font-semibold text-(--text-primary)">{prop.name}</h4>
+                {prop.prop_type && (
+                  <span className="shrink-0 text-[10px] text-(--text-muted)">
+                    {prop.prop_type === 'permanent' ? '永久' : '交互'}
+                  </span>
+                )}
+                {generating ? (
+                  <Tooltip content="道具图生成中">
+                    <span className="shrink-0 inline-flex">
+                      <Loader2 className="h-3 w-3 animate-spin text-(--accent)" />
+                    </span>
+                  </Tooltip>
+                ) : completed ? (
+                  <Tooltip content="道具图已生成">
+                    <span className="shrink-0 h-1.5 w-1.5 rounded-full bg-emerald-400/90" />
+                  </Tooltip>
+                ) : failed ? (
+                  <Tooltip content="上次生成失败，可重试">
+                    <span className="shrink-0 h-1.5 w-1.5 rounded-full bg-red-400/80" />
+                  </Tooltip>
+                ) : null}
+                <div className="ml-auto flex shrink-0 items-center gap-0.5">
+                  {prop.id > 0 && !completed && (
+                    generating ? (
+                      <Tooltip content="取消生成">
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); handleCancel(prop); }}
+                          className="rounded p-1 text-(--text-muted) transition-colors duration-150 hover:bg-white/5 hover:text-red-400 active:bg-white/10"
+                          title="取消生成"
+                          aria-label="取消生成"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </Tooltip>
+                    ) : (
+                      <Tooltip content="生成道具图">
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); handleGenerate(prop); }}
+                          className="rounded p-1 text-(--text-muted) opacity-0 transition-opacity duration-150 hover:bg-white/5 hover:text-(--text-primary) active:bg-white/10 group-hover:opacity-100 focus-visible:opacity-100"
+                          title="生成道具图"
+                          aria-label="生成道具图"
+                        >
+                          <Wand2 className="h-3.5 w-3.5" />
+                        </button>
+                      </Tooltip>
+                    )
                   )}
                 </div>
               </div>
-              {prop.id > 0 && prop.generation_status !== 'completed' && (
-                <div className="flex items-center gap-1 ml-2 shrink-0">
-                  {isGenerating(prop) ? (
-                    <Button
-                      size="sm"
-                      variant="flat"
-                      className="h-6 px-2 text-[10px] bg-red-500/10 text-red-400 hover:bg-red-500/20"
-                      startContent={<X className="w-3 h-3" />}
-                      onPress={() => handleCancel(prop)}
-                    >
-                      取消
-                    </Button>
-                  ) : (
-                    <Button
-                      size="sm"
-                      variant="flat"
-                      className="h-6 px-2 text-[10px] bg-purple-500/10 text-purple-400 hover:bg-purple-500/20"
-                      startContent={<Wand2 className="w-3 h-3" />}
-                      onPress={() => handleGenerate(prop)}
-                    >
-                      生成
-                    </Button>
-                  )}
-                </div>
-              )}
-            </div>
-          </CardBody>
-        </Card>
-      ))}
+            </CardBody>
+          </Card>
+        );
+      })}
       {props.length === 0 && (
-        <div className="text-center py-8 text-slate-500">
-          <p className="text-sm">暂无道具</p>
-          <p className="text-xs mt-1">在资产库中手动创建道具</p>
+        <div className="text-center py-6 text-(--text-muted)">
+          <p className="text-xs">暂无道具</p>
+          <p className="text-[10px] mt-1 opacity-70">在资产库中手动创建道具</p>
         </div>
       )}
 
       {/* 右键菜单 */}
       {contextMenu && (
         <div
-          className="fixed z-50 bg-slate-800 border border-slate-700 rounded-lg shadow-xl py-1.5 min-w-[180px] select-none"
+          className="fixed z-50 bg-[var(--bg-nav)] border border-[var(--border-color)] rounded-lg shadow-lg py-1 min-w-[140px] select-none"
           style={{ top: contextMenu.y, left: contextMenu.x }}
           onClick={(e) => e.stopPropagation()}
         >
-          {/* 打开 */}
           <button
-            className="w-full text-left px-3 py-1.5 text-sm text-slate-100 hover:bg-slate-700/50 flex items-center gap-2.5 transition-colors"
+            className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 text-(--text-primary) hover:bg-white/5 transition-colors"
             onClick={() => {
               openAssetEditTab(contextMenu.prop);
               setContextMenu(null);
             }}
           >
-            <ExternalLink className="w-4 h-4 text-emerald-400" />
+            <ExternalLink className="w-3.5 h-3.5 text-(--text-muted)" />
             打开详情
           </button>
 
-          {/* 分割线 */}
-          {onDelete && <div className="my-1 border-t border-slate-700" />}
-
-          {/* 删除 */}
           {onDelete && (
-            <button
-              className="w-full text-left px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 flex items-center gap-2.5 transition-colors"
-              onClick={() => {
-                onDelete(contextMenu.prop);
-                setContextMenu(null);
-              }}
-            >
-              <Trash2 className="w-4 h-4" />
-              删除道具
-            </button>
-          )}
-
-          {/* 底部快捷栏 */}
-          <div className="mt-1.5 pt-1.5 border-t border-slate-700 px-2 pb-1">
-            <div className="flex items-center justify-around">
+            <>
+              <div className="my-1 border-t border-[var(--border-color)]" />
               <button
-                className="flex flex-col items-center gap-0.5 p-1.5 rounded hover:bg-slate-700/50 transition-colors"
-                onClick={() => { openAssetEditTab(contextMenu.prop); setContextMenu(null); }}
-                title="打开"
+                className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 text-red-400 hover:bg-red-500/10 transition-colors"
+                onClick={() => {
+                  onDelete(contextMenu.prop);
+                  setContextMenu(null);
+                }}
               >
-                <ExternalLink className="w-4 h-4 text-emerald-400" />
-                <span className="text-[10px] text-slate-400">打开</span>
+                <Trash2 className="w-3.5 h-3.5" />
+                删除道具
               </button>
-              {onDelete && (
-                <button
-                  className="flex flex-col items-center gap-0.5 p-1.5 rounded hover:bg-red-500/10 transition-colors"
-                  onClick={() => { onDelete(contextMenu.prop); setContextMenu(null); }}
-                  title="删除"
-                >
-                  <Trash2 className="w-4 h-4 text-red-400" />
-                  <span className="text-[10px] text-red-400">删除</span>
-                </button>
-              )}
-            </div>
-          </div>
+            </>
+          )}
         </div>
       )}
     </div>

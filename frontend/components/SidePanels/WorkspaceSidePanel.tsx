@@ -179,9 +179,9 @@ const AccordionSection: React.FC<{
           disabled={!enabled}
           onClick={() => onToggle(meta.id)}
           aria-expanded={expanded}
-          className={`flex-1 flex items-center gap-2 px-2.5 py-1 text-left text-xs transition-colors shrink-0 select-none ${
+          className={`flex-1 flex items-center gap-2 px-2.5 py-1 text-left text-xs transition-colors duration-150 shrink-0 select-none ${
             enabled
-              ? 'text-(--text-primary) hover:bg-(--bg-card-hover)'
+              ? 'text-(--text-primary) hover:bg-(--bg-card-hover) active:bg-white/[0.04]'
               : 'text-(--text-muted) opacity-50 cursor-not-allowed'
           }`}
           title={enabled ? (expanded ? t.frame.workspace.clickCollapse : t.frame.workspace.clickExpand) : t.frame.workspace.availableInWorkspace}

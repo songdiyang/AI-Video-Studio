@@ -11,6 +11,7 @@ import React, {
   isValidElement,
 } from 'react';
 import { ResizablePanelProps } from './ResizablePanel';
+import { Maximize2, Minimize2 } from 'lucide-react';
 
 // 响应式断点 Hook
 function useMediaQuery(query: string): boolean {
@@ -80,9 +81,13 @@ interface DividerProps {
   direction: 'horizontal' | 'vertical';
   onDragStart: (index: number) => void;
   onDoubleClick: (index: number) => void;
+  /** 点击缝上的伸缩按钮：让左/上相邻面板最大化或还原 */
+  onToggleMaximize: (index: number) => void;
+  /** 相邻面板当前是否处于最大化 */
+  maximized: boolean;
 }
 
-const Divider: React.FC<DividerProps> = ({ index, direction, onDragStart, onDoubleClick }) => {
+const Divider: React.FC<DividerProps> = ({ index, direction, onDragStart, onDoubleClick, onToggleMaximize, maximized }) => {
   const [isHovered, setIsHovered] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const isHorizontal = direction === 'horizontal';
@@ -138,13 +143,39 @@ const Divider: React.FC<DividerProps> = ({ index, direction, onDragStart, onDoub
         `}
       />
       
+      {/* 缝上伸缩按钮：hover 显现，点击让相邻面板最大化/还原（VSCode 面板 [ ] 同款交互） */}
+      <button
+        type="button"
+        onMouseDown={(e) => e.stopPropagation()}
+        onDoubleClick={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggleMaximize(index);
+        }}
+        title={maximized ? '还原面板大小' : '最大化面板'}
+        aria-label={maximized ? '还原面板大小' : '最大化面板'}
+        aria-pressed={maximized}
+        className={`
+          absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-20
+          flex items-center justify-center w-4 h-4 rounded-[3px] cursor-pointer
+          bg-(--bg-card) border border-(--border-color)
+          text-(--text-muted) hover:text-(--accent) hover:border-(--accent)
+          transition-opacity duration-150
+          ${isHovered || maximized ? 'opacity-100' : 'opacity-0 pointer-events-none'}
+        `}
+      >
+        {maximized
+          ? <Minimize2 className="w-2.5 h-2.5" />
+          : <Maximize2 className="w-2.5 h-2.5" />}
+      </button>
+
       {/* 拖拽指示器 - 3个小点 */}
       <div
         className={`
           absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2
           flex gap-[2px] transition-opacity duration-150
           ${isHorizontal ? 'flex-col' : 'flex-row'}
-          ${isDragging || isHovered ? 'opacity-100' : 'opacity-0'}
+          ${isDragging ? 'opacity-100' : 'opacity-0'}
         `}
       >
         {[0, 1, 2].map((i) => (
@@ -189,6 +220,10 @@ const PanelGroup: React.FC<PanelGroupProps> = ({
     panelStatesRef.current = panelStates;
   }, [panelStates]);
   const [isInitialized, setIsInitialized] = useState(false);
+
+  // 缝上伸缩按钮：记录当前被最大化的面板索引与“最大化前”的尺寸快照，供再次点击还原
+  const [maximizedPanel, setMaximizedPanel] = useState<number | null>(null);
+  const maximizeSnapshotRef = useRef<Map<number, PanelState> | null>(null);
   
   // 响应式断点
   const isMobile = useMediaQuery('(max-width: 767px)');
@@ -431,6 +466,12 @@ const PanelGroup: React.FC<PanelGroupProps> = ({
   // 处理分割条拖拽开始
   const handleDragStart = useCallback((dividerIndex: number) => {
     if (!containerRef.current) return;
+
+    // 拖拽会改写尺寸，丢弃最大化快照，避免后续“还原”跳回旧布局
+    if (maximizeSnapshotRef.current) {
+      maximizeSnapshotRef.current = null;
+      setMaximizedPanel(null);
+    }
     
     const isHorizontal = direction === 'horizontal';
     const containerRect = containerRef.current.getBoundingClientRect();
@@ -607,6 +648,39 @@ const PanelGroup: React.FC<PanelGroupProps> = ({
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
   }, [direction, panelStates, saveToStorage, setPanelCollapsed]);
+
+  // 缝上伸缩：把左/上相邻面板拉到最大（其余面板收到各自 minSize），再次点击回到快照
+  const togglePanelMaximize = useCallback((index: number) => {
+    const snapshot = maximizeSnapshotRef.current;
+    const base = snapshot ? new Map(snapshot) : new Map(panelStatesRef.current);
+
+    if (snapshot && maximizedPanel === index) {
+      maximizeSnapshotRef.current = null;
+      setMaximizedPanel(null);
+      setPanelStates(base);
+      saveToStorage(base);
+      return;
+    }
+
+    const target = base.get(index);
+    const info = panelInfosRef.current.get(index);
+    if (!target || target.collapsed || !info) return;
+
+    const next = new Map(base);
+    let reserved = 0;
+    base.forEach((state, idx) => {
+      if (idx === index || state.collapsed) return;
+      const min = panelInfosRef.current.get(idx)?.minSize ?? 0;
+      reserved += min;
+      next.set(idx, { ...state, size: min });
+    });
+    next.set(index, { ...target, size: Math.max(5, 100 - reserved) });
+
+    maximizeSnapshotRef.current = base;
+    setMaximizedPanel(index);
+    setPanelStates(next);
+    saveToStorage(next);
+  }, [maximizedPanel, saveToStorage]);
 
   // 双击分割条切换相邻面板的折叠状态
   const handleDividerDoubleClick = useCallback((dividerIndex: number) => {
@@ -849,6 +923,8 @@ const PanelGroup: React.FC<PanelGroupProps> = ({
                 direction={direction}
                 onDragStart={handleDragStart}
                 onDoubleClick={handleDividerDoubleClick}
+                onToggleMaximize={togglePanelMaximize}
+                maximized={maximizedPanel === index}
               />
             );
           }
@@ -916,6 +992,8 @@ const PanelGroup: React.FC<PanelGroupProps> = ({
                 direction={direction}
                 onDragStart={handleDragStart}
                 onDoubleClick={handleDividerDoubleClick}
+                onToggleMaximize={togglePanelMaximize}
+                maximized={maximizedPanel === index}
               />
             );
           }

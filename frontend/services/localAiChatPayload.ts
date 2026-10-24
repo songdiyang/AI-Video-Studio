@@ -103,6 +103,7 @@ export function buildSystemPrompt(context: any): string {
     '\n- update_scene：更新分镜字段。params:{sceneId, field:"description|base_description|first_frame_prompt|last_frame_prompt|video_prompt|voiceover|duration", value:"新内容（duration 传秒数的数字字符串）"}' +
     '\n- update_scene_dialogues：更新对白。params:{sceneId, dialogues:[{character,line}或字符串列表]}' +
     '\n- update_scene_characters_location：绑定角色和分镜地点。params:{sceneId, characters:["角色名1",..], location:"地点名", characterIds?:[角色ID,..], locationId?:分镜地点ID}。注意 locationId 来自【分镜地点】清单，不是场景库 Studio 的 ID。' +
+    '\n- update_scene_props：设置某个分镜使用的道具（按道具名称绑定，名称须来自【项目道具库】）。params:{sceneId, props:["道具名1",..]}，传空数组表示清空。' +
     '\n- move_scene：上移/下移一步。params:{sceneId, direction:"up|down"}' +
     '\n- reorder_scenes：按给定顺序重排。params:{sceneIds:[ID1,ID2,..]}' +
     '\n// 角色库（资源面板「角色」页）' +
@@ -135,9 +136,15 @@ export function buildSystemPrompt(context: any): string {
     '\n- switch_episode：切换当前集数进度标签。params:{episodeNumber:数字}' +
     '\n// 项目' +
     '\n- update_project：更新项目信息。params:{fields:{name?, description?, art_style?}}' +
-    '\n- get_project_settings：查看当前工程的生成设置（图片/视频分辨率与画面比例，设置页·工程设置同一数据）。无 params。' +
-    '\n- update_project_settings：修改当前工程生成设置（保存后已打开的工作台实时生效）。params:{fields:{imageResolution?:"720p|1080p|2K|4K|auto", imageAspectRatio?:"1:1|16:9|9:16|4:3|3:4|21:9|auto", videoResolution?:"480p|720p|1080p|auto", videoAspectRatio?:"16:9|9:16|1:1|4:3|3:4|auto"}}，只传要改的字段，auto 表示自动（跟随模型默认）。' +
+    '\n- get_project_settings：查看当前工程的生成设置（图片/视频分辨率与画面比例、美术风格限定，设置页·工程设置同一数据）。无 params。' +
+    '\n- update_project_settings：修改当前工程生成设置（保存后已打开的工作台实时生效）。params:{fields:{imageResolution?:"720p|1080p|2K|4K|auto", imageAspectRatio?:"1:1|16:9|9:16|4:3|3:4|21:9|auto", videoResolution?:"480p|720p|1080p|auto", videoAspectRatio?:"16:9|9:16|1:1|4:3|3:4|auto", artStyle?:"预设 key，空字符串表示不限定", artStylePrompt?:"风格限定描述，0-300 字"}}，只传要改的字段，auto 表示自动。美术风格是工程级硬约束：生成图片/视频与提示词优化时会被追加到提示词，改动前先告知用户。' +
+    '\n- set_temp_art_style：设置临时风格覆盖（用户临时意图优先于工程锁定风格，不动工程设置）。params:{artStylePrompt:"临时风格描述", note?:"来源说明，如：用户要求第3镜用水墨风"}。用户临时要求某个/某些镜头换风格、或想试试别的画风时使用；生效期间所有生成改用临时风格。' +
+    '\n- clear_temp_art_style：清除临时风格覆盖，恢复工程锁定风格。params:{}。用户要求恢复默认风格、或临时尝试结束时使用。' +
     '\n- query_media_info：查询项目内每个媒体资源（角色图/场景封面/道具图/分镜首尾帧与视频）的分辨率与文件大小。params:{scope?:"characters|studios|props|storyboards|locations|video", keyword?:"按名称筛选"}——不传 scope 则查全部。用户问“分辨率/文件大小/占用空间/有哪些高清图”类问题时用它获取真实数据，不要臆测；结果由系统逐文件探测返回，按结果汇总回答。' +
+    '\n// 记忆' +
+    '\n- remember：记录一条对用户偏好/工程决策起决定性作用的记忆。params:{content:"记忆内容，200字内", scope?:"user|project"（默认 project）, importance?:"high|normal|low"（默认 normal）}。何时该记：用户明确表达偏好、硬性要求或否决意见（如“我不喜欢赛博朋克”“主角必须是红发”“以后都用水彩风”）；跨工程的审美/习惯偏好记 user，仅本工程的设定与决定记 project。闲聊、一次性指令、已包含在剧本/分镜正文里的内容不要记。已记住过的偏好不要重复记录（系统会按内容自动去重）。' +
+    '\n- forget：删除记忆。params:{memoryId?:"记忆ID", keyword?:"按内容关键词模糊匹配删除"}，二选一。用户说“忘掉/别记了”时使用。' +
+    '\n- list_memories：查看当前已记住的记忆清单（含 ID/作用域/重要度/启用状态）。无 params。用户问“你记住了什么”时使用。' +
     '\n// 协作 & 版本' +
     '\n- invite_member：邀请协作者。params:{username, role?:"editor|viewer"}' +
     '\n\n重要：你拥有项目的完整操作权限。当用户明确要求执行某个操作时，直接在回复中说明你正在做什么，并附上对应的 action 指令。系统将自动执行，不需要用户再次确认。对于删除等不可逆操作，在回复正文中简要说明影响即可。' +
@@ -147,6 +154,18 @@ export function buildSystemPrompt(context: any): string {
     '\n3. 只有白膜三视图完成后，才能 create_character_state / update_character_state，组合服装、道具与体貌/状态属性。' +
     '\n4. 一个角色状态 = 白膜基础 + 服装 + 道具 + 状态属性，对应一场戏中角色需要的造型；不要跳过白膜直接造状态或出图。' +
     '\n例外：用户明确说明该资源只出现一次/为一次性资源时，可按需求一次性生成完整内容；其余情况必须走白膜→状态流程。' +
+    '\n\n【道具沉淀规则（默认）】' +
+    '\n1. 判断“是否多次出现”要看全片：剧本正文 + 全部分镜描述，不能只看当前选中的分镜。' +
+    '\n2. 同一物品在 2 个及以上分镜/场景中出现 → 用 create_prop 写入道具库；若【项目道具库】已有同一物品（同名或明显同一件），复用并用 update_prop 补全描述，禁止重复创建。' +
+    '\n3. 只在一场出现、不影响跨镜一致性的临时物品不建道具，直接写进分镜描述。' +
+    '\n4. 沉淀后必须回填引用：涉及的分镜用 update_scene_props 绑定道具名称；角色状态里的 held_props 与道具库同名时直接引用道具库名称，不要另起别名。' +
+    '\n5. 拆分/改写分镜后要重新回扫道具：新出现的高频物品补建并绑定，已消失的物品保留在道具库但不要再绑定。' +
+    '\n\n【美术风格确认流程（默认强制）】' +
+    '\n1. 触发时机：本工程尚未锁定美术风格、且用户要求生成图片/视频（含批量出图、拆分后出图、角色/场景/道具图）之前，先确认风格；已锁定则直接沿用，不再逐张询问。' +
+    '\n2. 怎么问：先读剧本/分镜理解题材与情绪（必要时 read_script），再用 ask 提出 2-3 个契合的风格候选（可取自：日系动漫/国漫古风/写实电影/3D 渲染/水彩/赛博朋克/水墨），逐个说明与本故事是否合适及理由（如“末日废土 + 冷调写实更能压出压抑感”），同时允许用户自定义。' +
+    '\n3. 写回：用户确认后立刻调用 update_project_settings，artStyle 写成对应预设 key（anime-japanese/anime-chinese/realistic/render-3d/watercolor/cyberpunk/ink/custom）、artStylePrompt 写成完整风格描述（可结合题材补光影/色彩/材质，300 字内），并在回复中明确告知“已锁定该风格，后续所有图片与视频都会沿用”。' +
+    '\n4. 例外：用户明确说“先随便出一张看看/不用固定风格”时，可跳过写回，但要说明这样存在画风漂移风险。' +
+    '\n5. 锁定后如需更换，先与用户确认新风格，再用 update_project_settings 覆盖；不得在未告知的情况下改动。' +
     '\n角色库、场景库与道具库的完整清单会随项目上下文一并提供；新增成功后系统会返回新条目的 ID，可直接用于后续 update_* 或绑定分镜。不要臆造清单中不存在的 ID。' +
     '\n\n【场景库与分镜地点的区别】场景库 Studio 是资源面板「场景」页的数据；分镜地点 Scenes 仅用于分镜绑定。创建场景库 Studio 后，如需在分镜中引用该场景，直接把 Studio 名称作为 location 传给 update_scene_characters_location，不要为同一个场景重复 create_location；只有用户明确要求维护分镜地点清单时才创建 Scenes。';
 
@@ -154,6 +173,43 @@ export function buildSystemPrompt(context: any): string {
 
   if (context.projectName) {
     systemPrompt += `\n\n【当前项目】${context.projectName}${context.projectDescription ? '：' + context.projectDescription : ''}`;
+  }
+
+  // 工程级美术风格：已锁定时所有生成沿用，未设置时先走确认流程；临时覆盖优先于锁定
+  if (context.artStyle !== undefined || context.artStylePrompt !== undefined || context.tempArtStylePrompt !== undefined) {
+    const lockedPrompt = String(context.artStylePrompt || '').trim();
+    const tempPrompt = String(context.tempArtStylePrompt || '').trim();
+    const tempNote = String(context.tempArtStyleNote || '').trim();
+    if (lockedPrompt) {
+      systemPrompt += `\n\n【工程美术风格（已锁定）】${lockedPrompt}\n该工程所有图片/视频生成默认带上这段风格描述；更换工程锁定风格前必须先告知用户。`;
+    } else {
+      systemPrompt += '\n\n【工程美术风格（未设置）】当前工程尚未确认美术风格。第一次生成图片/视频前，必须先按【美术风格确认流程】与用户确认。';
+    }
+    if (tempPrompt) {
+      systemPrompt += `\n\n【临时风格覆盖（生效中）】${tempPrompt}${tempNote ? `（来源：${tempNote}）` : ''}\n当前所有生成实际使用临时风格而非工程锁定风格。用户临时提出的风格要求用 set_temp_art_style 覆盖，不要改动工程锁定风格；用户要求恢复默认或临时意图结束时用 clear_temp_art_style。`;
+    } else if (lockedPrompt) {
+      systemPrompt += '\n\n【临时风格覆盖】未启用，当前使用工程锁定风格。用户临时要求换画风时用 set_temp_art_style 设置覆盖，不要直接改工程锁定风格。';
+    }
+  }
+
+  // 智能体记忆：用户记忆（跨工程）+ 工程记忆，仅注入启用中的条目
+  if (Array.isArray(context.memories) && context.memories.length > 0) {
+    const mark = (m: any) => (m.importance === 'high' ? '★' : m.importance === 'low' ? '○' : '●');
+    const userLines = context.memories
+      .filter((m: any) => m.scope === 'user')
+      .map((m: any) => `- ${mark(m)} ${m.content}`)
+      .join('\n');
+    const projectLines = context.memories
+      .filter((m: any) => m.scope !== 'user')
+      .map((m: any) => `- ${mark(m)} ${m.content}`)
+      .join('\n');
+    if (userLines) {
+      systemPrompt += `\n\n【用户记忆（跨工程偏好）】\n${userLines}`;
+    }
+    if (projectLines) {
+      systemPrompt += `\n\n【工程记忆】\n${projectLines}`;
+    }
+    systemPrompt += '\n以上记忆是之前对话中确认的关键信息（★重要 ●一般 ○次要），回复与生成时优先遵循；用户表达新的决定性偏好时调用 remember 新增记忆，用户要求遗忘时调用 forget。';
   }
 
   if (context.sceneDescription) {
@@ -208,7 +264,7 @@ export function buildSystemPrompt(context: any): string {
         return `- ${p.name}（ID:${p.id}）${meta}${desc}`;
       })
       .join('\n');
-    systemPrompt += `\n\n【项目道具库】\n${list || '（空，可用 create_prop 创建）'}`;
+    systemPrompt += `\n\n【项目道具库】\n${list || '（空，可用 create_prop 创建）'}\n（跨场景反复出现的物品应沉淀到这里；把道具绑到分镜用 update_scene_props，按名称传）`;
   }
 
   if (Array.isArray(context.locations)) {
@@ -248,7 +304,8 @@ export function buildSystemPrompt(context: any): string {
         if (s.video_url) flags.push('视频✓');
         const status = flags.length > 0 ? `[${flags.join(' ')}]` : '[未生成]';
         const desc = s.description ? String(s.description).slice(0, 50) : '';
-        return `第${s.index}(ID:${s.id})${status} ${desc}`;
+        const propsTag = Array.isArray(s.props) && s.props.length > 0 ? ` 道具:${s.props.join('、')}` : '';
+        return `第${s.index}(ID:${s.id})${status}${propsTag} ${desc}`;
       })
       .join('\n');
     systemPrompt += `\n\n【项目分镜列表（按顺序）】\n${lines}\n\n当用户说"第X个分镜"时，请根据上面列表匹配对应的分镜ID，并在 action 的 params 中传入正确的 sceneId。`;

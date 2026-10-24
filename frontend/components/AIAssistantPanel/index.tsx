@@ -4,10 +4,13 @@ import { Sparkles, X, Send, Paperclip, ImagePlus, Trash2, Wand2, FileText, Setti
 import { useToast } from '../../contexts/ToastContext';
 import ChatMessageComponent, { ChatMessageData, ChatMessageStep, TaskCardData } from './ChatMessage';
 import MediaAttachment from './MediaAttachment';
+import MemoryPanel from './MemoryPanel';
 import { isLongTaskCapable } from '../../services/aiAssistant';
 import { getWorkflowStatus } from '../../hooks/useWorkflow';
 import { analyzeScript, optimizeScript, generateScript, type ScriptAnalysisResult } from '../../services/scripts';
 import { getLongTasksSummary, listLongTasks, registerLongTask } from '../../services/longTasks';
+import { loadProjectGenerationSettings } from '../../services/projectSettings';
+import { listActiveMemories, touchMemories, loadMemoryFlags } from '../../services/agentMemory';
 import { probeMediaBatch, formatBytes, formatResolution, toVisionImageUrls } from '../../services/mediaInfo';
 import { SCRIPT_ANALYSIS_EVENT, consumePendingScriptAnalysis, type ScriptAnalysisRequest } from '../../services/scriptAnalysisBridge';
 
@@ -232,6 +235,9 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
   onAction,
 }) => {
   const [messages, setMessages] = useState<ChatMessageData[]>([getWelcomeMessage(!!projectId)]);
+  // 工程 ID 快照：长任务登记/查询用 ref 读取，避免闭包过期与依赖数组频繁重建
+  const projectIdRef = useRef<number | null>(projectId);
+  projectIdRef.current = projectId ?? null;
   const [inputText, setInputText] = useState('');
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -306,6 +312,42 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
   const [scriptContent, setScriptContent] = useState('');
   const [isAnalyzingScript, setIsAnalyzingScript] = useState(false);
   const lastScriptContentRef = useRef<string>('');
+
+  // ── 智能体记忆面板状态（独立 Portal 弹层，避免被裁切） ──────────
+  const [showMemory, setShowMemory] = useState(false);
+  const memoryBtnRef = useRef<HTMLButtonElement>(null);
+  const memoryPopRef = useRef<HTMLDivElement>(null);
+  const [memoryPopPos, setMemoryPopPos] = useState<{ right: number; bottom: number } | null>(null);
+  useEffect(() => {
+    if (!showMemory) { setMemoryPopPos(null); return; }
+    const compute = () => {
+      const el = memoryBtnRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      setMemoryPopPos({
+        right: Math.max(8, window.innerWidth - r.right),
+        bottom: Math.max(8, window.innerHeight - r.top + 8),
+      });
+    };
+    compute();
+    window.addEventListener('resize', compute);
+    window.addEventListener('scroll', compute, true);
+    return () => {
+      window.removeEventListener('resize', compute);
+      window.removeEventListener('scroll', compute, true);
+    };
+  }, [showMemory]);
+  useEffect(() => {
+    if (!showMemory) return;
+    const onPointerDown = (e: PointerEvent) => {
+      const target = e.target as Node;
+      if (memoryPopRef.current?.contains(target)) return;
+      if (memoryBtnRef.current?.contains(target)) return;
+      setShowMemory(false);
+    };
+    document.addEventListener('pointerdown', onPointerDown, true);
+    return () => document.removeEventListener('pointerdown', onPointerDown, true);
+  }, [showMemory]);
   // agent 循环在 handleSend 中调用动作执行器，而 handleAction 定义在其后；
   // 用 ref 桥接避免 TDZ / 依赖顺序问题（每次渲染后同步为最新的 handleAction）。
   const handleActionRef = useRef<(action: string, params: any, onProgress?: (label: string) => void, originSid?: number | null, options?: { inlineResult?: boolean }) => Promise<unknown> | unknown>(() => {});
@@ -1422,16 +1464,33 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
       }));
     }
 
+    // 工程级美术风格：注入上下文，供模型判断是否需要先与用户确认风格
+    const artStyleSettings = projectIdRef.current
+      ? await loadProjectGenerationSettings(projectIdRef.current)
+      : {};
+
+    // 智能体记忆：遵循「记忆检索」总开关，注入启用中的用户记忆（跨工程）+ 工程记忆，发送后异步累计调用次数
+    const memoryFlags = loadMemoryFlags();
+    const activeMemories = memoryFlags.retrieval ? await listActiveMemories(projectIdRef.current) : [];
+    if (activeMemories.length > 0) {
+      void touchMemories(projectIdRef.current, activeMemories.map((m) => m.id)).catch(() => {});
+    }
+
     const contextPayload = includeContext ? {
       projectName: projectName || undefined,
       projectDescription: projectDescription || undefined,
+      artStyle: artStyleSettings.artStyle ?? '',
+      artStylePrompt: artStyleSettings.artStylePrompt ?? '',
+      tempArtStylePrompt: artStyleSettings.tempArtStylePrompt ?? '',
+      tempArtStyleNote: artStyleSettings.tempArtStyleNote ?? '',
+      memories: activeMemories.map((m) => ({ scope: m.scope, content: m.content, importance: m.importance })),
       characters,
       locations,
       studios,
       props,
       scripts: scriptsForContext,
       scenes,
-      longTasks: listLongTasks().slice(0, 10),
+      longTasks: listLongTasks(projectIdRef.current).slice(0, 10),
       ...(currentFrame ? {
         frameId: currentFrame.id,
         frameIndex: currentFrame.index,
@@ -2013,8 +2072,8 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
     // 读取实时的 currentSessionIdRef 会把卡片串写到另一个对话里。缺省时才退回当前会话。
     const sid = originSid === undefined ? currentSessionIdRef.current : originSid;
 
-    // 登记全局长任务：站内信任务区展示、后台轮询与模型上下文共用
-    if (jobId) registerLongTask({ jobId, title, kind, sessionId: sid });
+    // 登记本工程长任务：站内信任务区展示、后台轮询与模型上下文共用（其它工程不可见）
+    if (jobId) registerLongTask({ jobId, title, kind, sessionId: sid, projectId: projectIdRef.current });
 
     // 同一 jobId 只挂一张卡：单次点击、自动执行建议、agent 循环共用 handleAction，
     // 若同一作业结果被重复回报不应产生两张并行的轮询卡片。
@@ -2041,7 +2100,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
   const handleAction = useCallback(async (action: string, params: any, onProgress?: (label: string) => void, originSid?: number | null, options?: { inlineResult?: boolean }) => {
     // 查询后台长任务状态（供模型回答进度相关问题）
     if (action === 'get_task_status') {
-      return getLongTasksSummary(params?.jobId ? String(params.jobId) : undefined);
+      return getLongTasksSummary(params?.jobId ? String(params.jobId) : undefined, projectIdRef.current);
     }
 
     // 质检：前端自包，不走 onAction 回调
@@ -2909,6 +2968,27 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
               )}
             </div>
             <div className="flex-1" />
+            {/* 智能体记忆入口：查看/管理 AI 记住的用户偏好与工程决策 */}
+            <button
+              ref={memoryBtnRef}
+              type="button"
+              onClick={() => setShowMemory(!showMemory)}
+              className={`p-1 rounded-md transition-colors ${showMemory ? 'text-(--accent) bg-(--bg-app)' : 'text-(--text-muted) hover:text-(--accent) hover:bg-(--bg-app)'}`}
+              title="智能体记忆：查看/管理 AI 记住的偏好与决策"
+              aria-label="智能体记忆"
+            >
+              <Brain size={14} />
+            </button>
+            {showMemory && memoryPopPos && createPortal(
+              <div
+                ref={memoryPopRef}
+                className="fixed w-72 max-h-[calc(100vh-24px)] overflow-hidden rounded-xl border border-(--border-color) bg-(--bg-card) shadow-2xl"
+                style={{ zIndex: 9999, right: memoryPopPos.right, bottom: memoryPopPos.bottom }}
+              >
+                <MemoryPanel projectId={projectId} projectName={projectName} showToast={showToast} />
+              </div>,
+              document.body
+            )}
             {/* 压缩上下文：单图标，上下文达阈值后可点 */}
             <button
               type="button"

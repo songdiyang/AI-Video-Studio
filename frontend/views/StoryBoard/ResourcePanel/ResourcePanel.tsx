@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Settings2, Sparkles, ChevronRight, ChevronDown, User, MapPin, Box, Cloud, Building2, Shirt, Tags, RefreshCw, Plus } from 'lucide-react';
+import { Settings2, Sparkles, ChevronRight, User, MapPin, Box, Cloud, Building2, Shirt, Tags, RefreshCw, Plus } from 'lucide-react';
 import { Tooltip } from '@heroui/react';
 import { ResourcePanelProps } from './types';
 import { useStoryboardBridgeSafe } from '../../../contexts/StoryboardBridgeContext';
@@ -811,7 +811,6 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
         )}
         {visibleSections.map(section => {
           const expanded = expandedSections.has(section.key);
-          const ChevronIcon = expanded ? ChevronDown : ChevronRight;
           const Icon = section.kind === 'custom' ? Tags : SECTION_ICONS[section.kind as ResourceTypeKey];
           const count = sectionCounts[section.key] ?? 0;
           return (
@@ -822,10 +821,10 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
                 aria-expanded={expanded}
                 onClick={() => toggleSection(section.key)}
                 onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSection(section.key); } }}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs cursor-pointer text-(--text-primary) hover:bg-(--bg-card-hover) transition-colors"
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs cursor-pointer select-none text-(--text-primary) hover:bg-(--bg-card-hover) active:bg-white/[0.04] transition-colors duration-150"
                 title={expanded ? '点击折叠' : '点击展开'}
               >
-                <ChevronIcon className="w-3.5 h-3.5 opacity-40 shrink-0" />
+                <ChevronRight className={`w-3.5 h-3.5 opacity-40 shrink-0 transition-transform duration-200 ${expanded ? 'rotate-90' : ''}`} />
                 <Icon className="w-3.5 h-3.5 shrink-0 opacity-70" />
                 <span className="flex-1 truncate font-medium">{section.label}</span>
                 {section.custom?.aiGenerated && <Sparkles className="w-3 h-3 shrink-0 text-(--accent) opacity-70" />}
@@ -836,7 +835,7 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
                     type="button"
                     onClick={(e) => { e.stopPropagation(); handleOpenCreate('character'); }}
                     onKeyDown={(e) => e.stopPropagation()}
-                    className="shrink-0 inline-flex items-center justify-center h-5 w-5 rounded text-(--text-secondary) hover:text-(--text-primary) hover:bg-white/5 transition-colors"
+                    className="shrink-0 inline-flex items-center justify-center h-5 w-5 rounded text-(--text-secondary) hover:text-(--text-primary) hover:bg-white/5 active:bg-white/10 transition-colors duration-150"
                     title="新建角色"
                     aria-label="新建角色"
                   >
@@ -844,13 +843,21 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
                   </button>
                 )}
               </div>
-              {expanded && (
-                <div className="px-3 pb-3 max-h-[45vh] overflow-y-auto">
-                  {section.kind === 'custom'
-                    ? (section.custom && renderCustomContent(section.custom))
-                    : renderTypeContent(section.kind, categoryData)}
+              {/* 内容常驻挂载，用 grid-rows 0fr→1fr 过渡实现平滑展开/折叠；
+                  折叠时 inert 隔离焦点与交互，滚动位置得以保留 */}
+              <div
+                inert={!expanded}
+                aria-hidden={!expanded}
+                className={`grid transition-[grid-template-rows] duration-200 ease-out ${expanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}
+              >
+                <div className="min-h-0 overflow-hidden">
+                  <div className="px-3 pb-3 max-h-[45vh] overflow-y-auto">
+                    {section.kind === 'custom'
+                      ? (section.custom && renderCustomContent(section.custom))
+                      : renderTypeContent(section.kind, categoryData)}
+                  </div>
                 </div>
-              )}
+              </div>
             </div>
           );
         })}

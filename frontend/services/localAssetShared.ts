@@ -10,6 +10,7 @@ import { readDoc, writeDoc, getActiveProjectPath, resolveLocalPath, projectIdFor
 import { resolveModel, getOfflineModels, chatText, generateImage, type OfflineModel } from './localAI';
 import { persistGeneratedMedia } from './localMedia';
 import { submitAssetGeneration } from './localAssetJobs';
+import { loadEffectiveArtStylePrompt } from './projectSettings';
 import type { RestDoc } from './localRest';
 
 const EMPTY_DOC: RestDoc = { nextId: 1, items: [] };
@@ -142,11 +143,16 @@ export async function genImageToUrl(opts: {
   nameHint?: string;
   refImageUrls?: string[];
   aspectRatio?: string;
+  /** 白膜/中性基准图不应用工程美术风格（默认应用） */
+  skipArtStyle?: boolean;
 }): Promise<string> {
   const model = await pickImageModel(opts.imageModel);
   if (!model) throw new Error('未找到可用的图片生成模型，请在「设置 › 模型」中配置');
-  const prompt = (opts.prompt || '').trim();
-  if (!prompt) throw new Error('缺少图片生成提示词');
+  const basePrompt = (opts.prompt || '').trim();
+  if (!basePrompt) throw new Error('缺少图片生成提示词');
+  // 美术风格注入：临时覆盖优先于工程锁定；资源图/分镜图统一追加，保证画风一致
+  const artStyle = opts.skipArtStyle ? '' : await loadEffectiveArtStylePrompt(opts.projectId);
+  const prompt = artStyle ? `${basePrompt}，${artStyle}` : basePrompt;
   const { url, b64 } = await generateImage({
     model,
     prompt,

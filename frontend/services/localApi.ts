@@ -542,6 +542,87 @@ export async function openProject(path: string): Promise<ProjectMetadata> {
   return await invoke('open_project', { path });
 }
 
+/** 已授过 asset 协议权限的工程路径（进程内去重，避免启动时重复 IPC） */
+const grantedProjectScopes = new Set<string>();
+
+/**
+ * 授权工程 media/ 目录供 asset 协议读取。
+ * 冷启动恢复上次工程时只读注册表清单、不会走 open_project，需显式补授权；
+ * 失败（旧构建缺命令、路径失效）时静默跳过。
+ */
+export async function grantProjectScope(path: string): Promise<void> {
+  if (!isTauri() || grantedProjectScopes.has(path)) {
+    return;
+  }
+  // 先占位再发请求，避免并发调用重复 IPC；失败则回退占位以便下次重试
+  grantedProjectScopes.add(path);
+  try {
+    const { invoke } = await getTauriApi();
+    await invoke('grant_project_scope', { path });
+  } catch (err: any) {
+    grantedProjectScopes.delete(path);
+    console.warn('[localApi] 授予工程 asset 协议权限失败:', err);
+  }
+}
+
+// ==================== 系统夜间模式 ====================
+
+/**
+ * 查询 Windows 夜间模式是否开启。
+ * 浏览器模式或旧构建缺命令时回退到系统深色偏好（prefers-color-scheme）。
+ */
+export async function getNightLightEnabled(): Promise<boolean> {
+  if (!isTauri()) {
+    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  }
+  try {
+    const { invoke } = await getTauriApi();
+    return await invoke<boolean>('get_night_light_enabled');
+  } catch (err) {
+    console.warn('[localApi] 读取夜间模式状态失败，回退系统深色偏好:', err);
+    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  }
+}
+
+/**
+ * 订阅夜间模式状态变化，返回取消订阅函数。
+ * 浏览器模式下退化为监听 prefers-color-scheme 变化。
+ */
+export async function onNightLightChanged(handler: (enabled: boolean) => void): Promise<() => void> {
+  if (!isTauri()) {
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const listener = (e: MediaQueryListEvent) => handler(e.matches);
+    mediaQuery.addEventListener('change', listener);
+    return () => mediaQuery.removeEventListener('change', listener);
+  }
+
+  try {
+    const { listen } = await import('@tauri-apps/api/event');
+    const unlisten = await listen<boolean>('night-light-changed', (e) => handler(e.payload));
+    return unlisten;
+  } catch (err) {
+    console.warn('[localApi] 订阅夜间模式变化失败:', err);
+    return () => {};
+  }
+}
+
+/**
+ * 新建窗口（同进程多窗口）。传 path 则直接绑定该工程，不传则开空白独立窗口。
+ * 浏览器模式退化为新标签页，URL 参数与 Tauri 窗口一致。
+ */
+export async function openProjectWindow(path?: string | null, title?: string): Promise<void> {
+  if (!isTauri()) {
+    const url = new URL(window.location.href);
+    url.searchParams.set('window', 'detached');
+    if (path) url.searchParams.set('windowProject', path);
+    else url.searchParams.delete('windowProject');
+    window.open(url.toString(), '_blank', 'noopener');
+    return;
+  }
+  const { invoke } = await getTauriApi();
+  await invoke('open_project_window', { path: path || null, title: title ?? null });
+}
+
 /** 注册一个已存在的工程文件夹或其 project.json */
 export async function registerProject(path: string): Promise<ProjectMetadata> {
   if (!isTauri()) {
@@ -635,6 +716,20 @@ export async function loadProjectData(projectPath: string, fileName: string): Pr
   }
   const { invoke } = await getTauriApi();
   return await invoke('load_project_data', { projectPath, fileName });
+}
+
+/** 读应用级数据文档（应用数据目录 app_docs/<name>；浏览器模式返回 null） */
+export async function readAppDoc(name: string): Promise<string | null> {
+  if (!isTauri()) return null;
+  const { invoke } = await getTauriApi();
+  return await invoke<string | null>('read_app_doc', { name });
+}
+
+/** 写应用级数据文档（临时文件 + 原子替换；浏览器模式为空操作） */
+export async function writeAppDoc(name: string, content: string): Promise<void> {
+  if (!isTauri()) return;
+  const { invoke } = await getTauriApi();
+  await invoke('write_app_doc', { name, content });
 }
 
 /** 默认工程根目录（新建对话框预填） */

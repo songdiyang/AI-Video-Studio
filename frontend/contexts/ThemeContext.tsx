@@ -1,21 +1,84 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { flushSync } from 'react-dom';
+import { getNightLightEnabled, onNightLightChanged } from '../services/localApi';
 
-export type ThemeType = 'dark' | 'light' | 'high-contrast' | 'system';
+export type ThemeType = 'dark' | 'light' | 'high-contrast' | 'night-light';
 
-// 检测系统主题偏好
-const getSystemTheme = (): 'dark' | 'light' => {
-  if (typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-    return 'dark';
-  }
-  return 'light';
+type ResolvedTheme = 'dark' | 'light' | 'high-contrast';
+
+const STORAGE_KEY = 'nanostory-theme';
+/** 最近一次夜间模式解析结果（'1' = 深色），供 index.html 首屏内联脚本使用，避免闪烁 */
+const NIGHT_LIGHT_CACHE_KEY = 'nanostory-night-light-dark';
+
+// 读取已保存主题；旧值 'system'（跟随系统深浅偏好）迁移为 'night-light'（跟随夜间模式）
+const readStoredTheme = (): ThemeType => {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved === 'dark' || saved === 'light' || saved === 'high-contrast' || saved === 'night-light') return saved;
+    if (saved === 'system') return 'night-light';
+  } catch {}
+  return 'dark';
 };
 
-// 解析实际应用的主题
-const resolveTheme = (theme: ThemeType): 'dark' | 'light' | 'high-contrast' => {
-  if (theme === 'system') {
-    return getSystemTheme();
+// 夜间模式状态缓存：首屏用它与内联脚本保持一致，避免先深后浅的跳变
+const readCachedNightLight = (): boolean | null => {
+  try {
+    const cached = localStorage.getItem(NIGHT_LIGHT_CACHE_KEY);
+    if (cached === '1') return true;
+    if (cached === '0') return false;
+  } catch {}
+  return null;
+};
+
+// 解析实际应用的主题；夜间模式状态未知时按深色兜底，拿到真实值后立即校正
+const resolveTheme = (theme: ThemeType, nightLightEnabled: boolean | null): ResolvedTheme => {
+  if (theme === 'night-light') {
+    return nightLightEnabled === false ? 'light' : 'dark';
   }
   return theme;
+};
+
+// 将主题 class 同步到 <html>，返回实际生效的主题
+const applyThemeClasses = (theme: ThemeType, nightLightEnabled: boolean | null): ResolvedTheme => {
+  const root = document.documentElement;
+  const actualTheme = resolveTheme(theme, nightLightEnabled);
+
+  root.classList.remove('theme-dark', 'theme-light', 'theme-high-contrast');
+  root.classList.add(`theme-${actualTheme}`);
+
+  // HeroUI 需要 dark class；高对比度也基于深色
+  if (actualTheme === 'light') {
+    root.classList.remove('dark', 'high-contrast');
+  } else {
+    root.classList.add('dark');
+    root.classList.toggle('high-contrast', actualTheme === 'high-contrast');
+  }
+  return actualTheme;
+};
+
+const prefersReducedMotion = (): boolean =>
+  typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+type ViewTransitionDocument = Document & {
+  startViewTransition?: (callback: () => void) => unknown;
+};
+
+/**
+ * 执行主题切换：支持 View Transitions 时由浏览器拍一次整页快照做交叉淡化（合成层动画），
+ * 不再对整棵 DOM 树挂 transition（见 index.css「主题切换过渡动画」）。
+ * 不支持该 API 或用户偏好减少动效时直接切换。
+ */
+const commitThemeChange = (commit: () => void): void => {
+  const doc = document as ViewTransitionDocument;
+  if (typeof doc.startViewTransition !== 'function' || prefersReducedMotion()) {
+    commit();
+    return;
+  }
+  try {
+    doc.startViewTransition(commit);
+  } catch {
+    commit();
+  }
 };
 
 interface ThemeContextType {
@@ -30,108 +93,72 @@ const ThemeContext = createContext<ThemeContextType>({
 
 export const useTheme = () => useContext(ThemeContext);
 
-const STORAGE_KEY = 'nanostory-theme';
-
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [theme, setThemeState] = useState<ThemeType>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved === 'dark' || saved === 'light' || saved === 'high-contrast' || saved === 'system') return saved;
-    } catch {}
-    return 'dark';
-  });
+  const [theme, setThemeState] = useState<ThemeType>(readStoredTheme);
+  const [nightLightEnabled, setNightLightEnabled] = useState<boolean | null>(readCachedNightLight);
 
-  const transitionTimeoutRef = useRef<number | null>(null);
+  // 主题与夜间模式状态只由本 Provider 改写，用 ref 供同步路径（View Transition 回调）读取最新值
+  const themeRef = useRef<ThemeType>(theme);
+  const nightLightRef = useRef<boolean | null>(nightLightEnabled);
 
   const setTheme = useCallback((t: ThemeType) => {
-    // 添加过渡动画 class
-    document.documentElement.classList.add('theme-transitioning');
-    
-    // 清除之前的 timeout
-    if (transitionTimeoutRef.current !== null) {
-      clearTimeout(transitionTimeoutRef.current);
-    }
-    
-    // 350ms 后移除过渡 class
-    transitionTimeoutRef.current = window.setTimeout(() => {
-      document.documentElement.classList.remove('theme-transitioning');
-      transitionTimeoutRef.current = null;
-    }, 350);
-
-    setThemeState(t);
+    if (themeRef.current === t) return;
+    themeRef.current = t;
     try { localStorage.setItem(STORAGE_KEY, t); } catch {}
+
+    commitThemeChange(() => {
+      // flushSync 保证快照拍摄前 class 已落到 <html>（回调返回即拍快照）
+      flushSync(() => setThemeState(t));
+      applyThemeClasses(t, nightLightRef.current);
+    });
   }, []);
 
-  // 清理 timeout ref
+  // 跟随夜间模式：查询当前状态 + 订阅系统开关变化
   useEffect(() => {
+    if (theme !== 'night-light') return;
+
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    getNightLightEnabled().then((enabled) => {
+      if (disposed) return;
+      nightLightRef.current = enabled;
+      setNightLightEnabled(enabled);
+    });
+
+    onNightLightChanged((enabled) => {
+      if (disposed) return;
+      commitThemeChange(() => {
+        flushSync(() => {
+          nightLightRef.current = enabled;
+          setNightLightEnabled(enabled);
+        });
+        applyThemeClasses(themeRef.current, enabled);
+      });
+    }).then((fn) => {
+      unlisten = fn;
+      if (disposed) fn();
+    });
+
     return () => {
-      if (transitionTimeoutRef.current !== null) {
-        clearTimeout(transitionTimeoutRef.current);
-      }
+      disposed = true;
+      unlisten?.();
     };
-  }, []);
+  }, [theme]);
 
-  // 将主题 class 同步到 <html>
+  // 首屏与状态变化后同步 class，并缓存夜间模式解析结果供下次首屏使用
   useEffect(() => {
-    const root = document.documentElement;
-    // 管理后台激活时不修改根主题，避免影响管理端
-    if (root.dataset.adminMode === 'true') return;
-    const actualTheme = resolveTheme(theme);
-    
-    root.classList.remove('theme-dark', 'theme-light', 'theme-high-contrast');
-    root.classList.add(`theme-${actualTheme}`);
-
-    // HeroUI 需要 dark class；高对比度也基于深色
-    if (actualTheme === 'dark' || actualTheme === 'high-contrast') {
-      root.classList.add('dark');
-      // HeroUI 高对比度主题需要额外 class
-      if (actualTheme === 'high-contrast') {
-        root.classList.add('high-contrast');
-      } else {
-        root.classList.remove('high-contrast');
-      }
-    } else {
-      root.classList.remove('dark', 'high-contrast');
+    const actualTheme = applyThemeClasses(theme, nightLightEnabled);
+    if (theme === 'night-light' && nightLightEnabled !== null) {
+      try { localStorage.setItem(NIGHT_LIGHT_CACHE_KEY, actualTheme === 'dark' ? '1' : '0'); } catch {}
     }
-  }, [theme]);
+  }, [theme, nightLightEnabled]);
 
-  // 监听系统主题变化（仅当 theme === 'system' 时）
-  useEffect(() => {
-    if (theme !== 'system') return;
-
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    
-    const handleChange = () => {
-      const root = document.documentElement;
-      // 管理后台激活时不修改根主题
-      if (root.dataset.adminMode === 'true') return;
-      const actualTheme = getSystemTheme();
-      
-      // 添加过渡动画 class
-      root.classList.add('theme-transitioning');
-      
-      root.classList.remove('theme-dark', 'theme-light', 'theme-high-contrast');
-      root.classList.add(`theme-${actualTheme}`);
-
-      // HeroUI 需要 dark class
-      if (actualTheme === 'dark') {
-        root.classList.add('dark');
-      } else {
-        root.classList.remove('dark');
-      }
-      
-      // 350ms 后移除过渡 class
-      setTimeout(() => {
-        root.classList.remove('theme-transitioning');
-      }, 350);
-    };
-
-    mediaQuery.addEventListener('change', handleChange);
-    return () => mediaQuery.removeEventListener('change', handleChange);
-  }, [theme]);
+  // 稳定 context 引用，避免父级重渲染时连带所有消费者重渲染
+  const value = useMemo(() => ({ theme, setTheme }), [theme, setTheme]);
 
   return (
-    <ThemeContext.Provider value={{ theme, setTheme }}>
+    <ThemeContext.Provider value={value}>
       {children}
     </ThemeContext.Provider>
   );

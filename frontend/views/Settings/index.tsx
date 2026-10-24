@@ -1,20 +1,34 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Moon, Sun, Eye, Mail, ChevronDown, Check, 
+import {
+  Moon, MoonStar, Sun, Eye, Mail, ChevronDown, Check,
   Palette, MessageSquare, Info, ChevronRight, Sparkles, Monitor, Globe, RotateCcw, SlidersHorizontal, FileArchive,
-  Cpu, Database, BarChart3, Users, Gauge, AlertTriangle, Megaphone, ClipboardList, BookOpen, Key, Film, FolderInput, Clapperboard,
-  Image as ImageIcon
+  Cpu, Database, BarChart3, Users, Gauge, AlertTriangle, Megaphone, ClipboardList, BookOpen, Key, Film, FolderInput, Clapperboard, Type,
+  Image as ImageIcon, Brain, Eraser
 } from 'lucide-react';
 import { useTheme, ThemeType } from '../../contexts/ThemeContext';
 import { useLanguage, LanguageType } from '../../contexts/LanguageContext';
 import { useToast } from '../../contexts/ToastContext';
+import { useConfirm } from '../../contexts/ConfirmContext';
 import { useWorkbench } from '../../contexts/WorkbenchContext';
 import AIModelSettings from './AIModelSettings';
 import { getPreferredVideoFormat, setPreferredVideoFormat } from '../../services/localAI';
 import {
+  loadMemoryFlags,
+  saveMemoryFlags,
+  listMemories,
+  purgeLowMemories,
+  clampInjectMax,
+  AGENT_MEMORY_CHANGED,
+  type MemoryFlags,
+} from '../../services/agentMemory';
+import {
   loadProjectGenerationSettings,
   saveProjectGenerationSettings,
+  findArtStylePreset,
+  ART_STYLE_PRESETS,
+  PROJECT_SETTINGS_CHANGED,
+  clearTempArtStyle,
   type ProjectGenerationSettings,
 } from '../../services/projectSettings';
 import {
@@ -30,7 +44,7 @@ const FEEDBACK_EMAIL = 'songdiyang@aetherstudio.cn';
 
 interface ThemePreset {
   key: ThemeType;
-  nameKey: 'dark' | 'light' | 'highContrast' | 'system';
+  nameKey: 'dark' | 'light' | 'highContrast' | 'nightLight';
   icon: React.ReactNode;
   preview: {
     bg: string;
@@ -83,11 +97,11 @@ const THEME_PRESETS: ThemePreset[] = [
     },
   },
   {
-    key: 'system' as ThemeType,
-    nameKey: 'system',
-    icon: <Monitor className="w-5 h-5" />,
+    key: 'night-light',
+    nameKey: 'nightLight',
+    icon: <MoonStar className="w-5 h-5" />,
     preview: {
-      // 使用半深半浅的预览色
+      // 夜间模式开关决定深/浅，预览用半深半浅示意
       bg: '#1a1a2e',
       nav: '#f8fafc', 
       card: '#1e293b',
@@ -109,6 +123,7 @@ const SETTING_SECTIONS: SettingSection[] = [
   { id: 'general', icon: <SlidersHorizontal className="w-4 h-4" /> },
   { id: 'ai_models', icon: <Key className="w-4 h-4" /> }, // 新增：AI 模型密钥配置
   { id: 'project', icon: <Clapperboard className="w-4 h-4" /> }, // 工程设置：当前工程的画面生成参数
+  { id: 'memory', icon: <Brain className="w-4 h-4" /> }, // 记忆：AI 助手的学习与注入设置
   { id: 'feedback', icon: <MessageSquare className="w-4 h-4" /> },
   { id: 'about', icon: <Info className="w-4 h-4" /> },
 ];
@@ -185,10 +200,38 @@ const SettingsSelect: React.FC<{
   );
 };
 
+// 自定义开关（与 SettingsSelect 同一套视觉语言）
+const SettingsToggle: React.FC<{
+  on: boolean;
+  onChange: (v: boolean) => void;
+  ariaLabel?: string;
+}> = ({ on, onChange, ariaLabel }) => (
+  <button
+    type="button"
+    role="switch"
+    aria-checked={on}
+    aria-label={ariaLabel}
+    onClick={() => onChange(!on)}
+    className="relative h-6 w-11 shrink-0 rounded-full transition-colors cursor-pointer"
+    style={{ backgroundColor: on ? 'var(--accent-primary)' : 'var(--bg-input)', border: `1px solid ${on ? 'var(--accent-primary)' : 'var(--border-color)'}` }}
+  >
+    <span
+      className="absolute top-0.5 rounded-full transition-transform"
+      style={{
+        width: 18,
+        height: 18,
+        transform: `translateX(${on ? 20 : 2}px)`,
+        backgroundColor: on ? '#fff' : 'var(--text-muted)',
+      }}
+    />
+  </button>
+);
+
 const Settings: React.FC = () => {
   const { theme, setTheme } = useTheme();
   const { language, setLanguage, t } = useLanguage();
   const { showToast } = useToast();
+  const { confirm } = useConfirm();
   const { currentProject } = useWorkbench();
   
   // 从 localStorage 读取初始 section（用于从其他页面跳转时指定 section）
@@ -205,6 +248,31 @@ const Settings: React.FC = () => {
   useEffect(() => {
     getDefaultProjectsRoot().then(setSystemProjectsRoot).catch(() => {});
   }, []);
+
+  // 智能体记忆设置：全局开关 + 注入上限 + 记忆条数概况
+  const [memoryFlags, setMemoryFlags] = useState<MemoryFlags>(() => loadMemoryFlags());
+  const [memoryCounts, setMemoryCounts] = useState<{ user: number; project: number } | null>(null);
+  const refreshMemoryCounts = React.useCallback(async () => {
+    try {
+      const list = await listMemories(currentProject?.id);
+      setMemoryCounts({
+        user: list.filter((m) => m.scope === 'user').length,
+        project: list.filter((m) => m.scope === 'project').length,
+      });
+    } catch {
+      setMemoryCounts(null);
+    }
+  }, [currentProject?.id]);
+  React.useEffect(() => { void refreshMemoryCounts(); }, [refreshMemoryCounts]);
+  React.useEffect(() => {
+    // AI 助手侧的记忆增删/开关变化同步到这里（含 MemoryPanel 的修改）
+    const onChanged = () => {
+      setMemoryFlags(loadMemoryFlags());
+      void refreshMemoryCounts();
+    };
+    window.addEventListener(AGENT_MEMORY_CHANGED, onChanged);
+    return () => window.removeEventListener(AGENT_MEMORY_CHANGED, onChanged);
+  }, [refreshMemoryCounts]);
   
   // 清除 localStorage 中的 section（只使用一次）
   React.useEffect(() => {
@@ -297,7 +365,6 @@ const Settings: React.FC = () => {
               const preset = THEME_PRESETS.find((p) => p.key === v);
               if (!preset) return;
               setTheme(preset.key);
-              showToast(`${t.settings.appearance.switchedTo}${getThemeName(preset.nameKey)}`, 'success');
             }}
           />
         </div>
@@ -398,59 +465,8 @@ const Settings: React.FC = () => {
         </div>
       </div>
 
-      {/* 即将推出 */}
-      <div 
-        className="rounded-2xl p-6"
-        style={{ backgroundColor: 'var(--bg-input)', border: '1px dashed var(--border-color)' }}
-      >
-        <div className="flex items-center gap-3 mb-4">
-          <div 
-            className="w-8 h-8 rounded-lg flex items-center justify-center"
-            style={{ backgroundColor: 'var(--accent-primary)' }}
-          >
-            <Sparkles className="w-4 h-4 text-white" />
-          </div>
-          <div>
-            <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>{t.settings.about.comingSoon}</h3>
-            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{t.settings.about.moreTools}</p>
-          </div>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          {[
-            { key: 'comicWorkbench', label: '漫画工作台', icon: '📖' },
-            { key: 'novelWorkbench', label: '小说工作台', icon: '📝' },
-            { key: 'shortVideoWorkbench', label: '短视频工作台', icon: '🎬' },
-            { key: 'musicWorkbench', label: '音乐工作台', icon: '🎵' },
-          ].map((item) => (
-            <div 
-              key={item.key}
-              className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm transition-colors"
-              style={{ 
-                backgroundColor: 'var(--bg-card)',
-                color: 'var(--text-secondary)',
-              }}
-            >
-              <span className="text-base">{item.icon}</span>
-              <span>{(t.settings.about as any)[item.key] || item.label}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
       {/* 操作按钮组 */}
       <div className="flex gap-3">
-        <button
-          onClick={() => window.dispatchEvent(new Event('reset-onboarding'))}
-          className="flex-1 py-3 rounded-xl font-medium text-sm transition-all flex items-center justify-center gap-2 interactive-press hover:scale-[1.02]"
-          style={{
-            backgroundColor: 'var(--bg-input)',
-            border: '1px solid var(--border-color)',
-            color: 'var(--text-secondary)',
-          }}
-        >
-          <RotateCcw className="w-4 h-4" style={{ color: 'var(--accent-primary)' }} />
-          {t.onboarding?.replayButton || '重新播放新手引导'}
-        </button>
         <button
           onClick={() => { void handleAssociateJzp(); }}
           disabled={associatingJzp}
@@ -633,6 +649,17 @@ const Settings: React.FC = () => {
     return () => { cancelled = true; };
   }, [currentProject?.id]);
 
+  // 智能体可能在对话里锁定/更换美术风格，这里跟随事件刷新，避免页面显示旧值
+  useEffect(() => {
+    const onChanged = (e: Event) => {
+      const detail = (e as CustomEvent<{ projectId?: number; settings?: ProjectGenerationSettings }>).detail;
+      if (!currentProject?.id || detail?.projectId !== currentProject.id) return;
+      setProjectGenSettings(detail.settings || {});
+    };
+    window.addEventListener(PROJECT_SETTINGS_CHANGED, onChanged);
+    return () => window.removeEventListener(PROJECT_SETTINGS_CHANGED, onChanged);
+  }, [currentProject?.id]);
+
   const handleProjectSettingChange = async (key: keyof ProjectGenerationSettings, value: string) => {
     if (!currentProject?.id) return;
     const next = { ...projectGenSettings, [key]: value };
@@ -643,6 +670,142 @@ const Settings: React.FC = () => {
     } catch (e: any) {
       showToast(e?.message || t.settings.projectSettings.saveFailedToast, 'error');
     }
+  };
+
+  // 风格限定可能同时改两个字段（预设 + 提示词），用补丁式保存
+  const [artStyleDraft, setArtStyleDraft] = useState('');
+  useEffect(() => {
+    setArtStyleDraft(projectGenSettings.artStylePrompt || '');
+  }, [projectGenSettings.artStylePrompt]);
+
+  const handleProjectSettingsPatch = async (patch: Partial<ProjectGenerationSettings>) => {
+    if (!currentProject?.id) return;
+    const next = { ...projectGenSettings, ...patch };
+    setProjectGenSettings(next);
+    try {
+      await saveProjectGenerationSettings(currentProject.id, next);
+      showToast(t.settings.projectSettings.savedToast, 'success');
+    } catch (e: any) {
+      showToast(e?.message || t.settings.projectSettings.saveFailedToast, 'error');
+    }
+  };
+
+  // 渲染记忆设置区域：全局开关 + 注入上限 + 记忆概况与清理
+  const renderMemorySection = () => {
+    const ms = t.settings.memory;
+    const injectOptions = [5, 10, 20, 30, 50].map((n) => ({ value: String(n), label: `${n} ${ms.unit}` }));
+    const purge = async () => {
+      const ok = await confirm({
+        title: ms.purgeConfirmTitle,
+        message: ms.purgeConfirmMessage,
+        confirmText: ms.purge,
+        cancelText: ms.purgeCancel,
+        type: 'warning',
+      });
+      if (!ok) return;
+      const n = await purgeLowMemories(currentProject?.id);
+      showToast(
+        n > 0 ? ms.purgeDone.replace('{n}', String(n)) : ms.purgeNone,
+        n > 0 ? 'success' : 'info'
+      );
+    };
+    const row = (
+      key: string,
+      icon: React.ReactNode,
+      title: string,
+      desc: string,
+      control: React.ReactNode
+    ) => (
+      <React.Fragment key={key}>
+        <div className="h-px" style={{ backgroundColor: 'var(--border-color)' }} />
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-6">
+          <div className="min-w-0">
+            <h3 className="text-sm font-medium flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+              {icon}
+              {title}
+            </h3>
+            <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>{desc}</p>
+          </div>
+          <div className="w-full sm:w-40 shrink-0 flex sm:justify-end">{control}</div>
+        </div>
+      </React.Fragment>
+    );
+    /** 记忆条数小方块：标签在上、数字在下 */
+    const statTile = (label: string, value: string) => (
+      <div
+        className="flex-1 rounded-xl px-3.5 py-2.5 min-w-0"
+        style={{ backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-color)' }}
+      >
+        <p className="text-[10px] truncate" style={{ color: 'var(--text-muted)' }}>{label}</p>
+        <p className="text-lg font-semibold leading-6 mt-0.5" style={{ color: 'var(--text-primary)' }}>{value}</p>
+      </div>
+    );
+    return (
+      <div className="max-w-2xl space-y-5">
+        <div
+          className="rounded-xl border p-5 lg:p-6"
+          style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}
+        >
+          {row('autoLearn', <Sparkles className="w-4 h-4" />, ms.autoLearn, ms.autoLearnDesc, (
+            <SettingsToggle
+              on={memoryFlags.autoLearn}
+              ariaLabel={ms.autoLearn}
+              onChange={(v) => setMemoryFlags(saveMemoryFlags({ autoLearn: v }))}
+            />
+          ))}
+          {row('retrieval', <BookOpen className="w-4 h-4" />, ms.retrieval, ms.retrievalDesc, (
+            <SettingsToggle
+              on={memoryFlags.retrieval}
+              ariaLabel={ms.retrieval}
+              onChange={(v) => setMemoryFlags(saveMemoryFlags({ retrieval: v }))}
+            />
+          ))}
+          {row('injectMax', <Database className="w-4 h-4" />, ms.injectMax, ms.injectMaxDesc, (
+            <SettingsSelect
+              value={String(memoryFlags.injectMax)}
+              options={injectOptions}
+              onChange={(v) => setMemoryFlags(saveMemoryFlags({ injectMax: clampInjectMax(v) }))}
+            />
+          ))}
+        </div>
+
+        {/* 记忆概况 + 维护 */}
+        <div
+          className="rounded-xl border p-5 lg:p-6 space-y-4"
+          style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}
+        >
+          <div className="flex items-center gap-4">
+            {statTile(ms.statsUser, memoryCounts ? `${memoryCounts.user} ${ms.unit}` : '—')}
+            {statTile(
+              currentProject?.id ? ms.statsProject : ms.statsProjectInactive,
+              currentProject?.id ? (memoryCounts ? `${memoryCounts.project} ${ms.unit}` : '—') : ms.noProject
+            )}
+          </div>
+          <p className="text-xs flex items-start gap-1.5" style={{ color: 'var(--text-muted)' }}>
+            <Info className="w-3.5 h-3.5 shrink-0 mt-px" />
+            <span>{ms.manageHint}</span>
+          </p>
+          <div className="h-px" style={{ backgroundColor: 'var(--border-color)' }} />
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-6">
+            <div className="min-w-0">
+              <h3 className="text-sm font-medium flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+                <Eraser className="w-4 h-4" />
+                {ms.purge}
+              </h3>
+              <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>{ms.purgeDesc}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => void purge()}
+              className="px-4 py-2 rounded-xl text-sm font-medium transition-colors shrink-0 hover:bg-red-500/10"
+              style={{ color: '#f87171', border: '1px solid rgba(248,113,113,0.4)' }}
+            >
+              {ms.purgeAction}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   };
 
   // 渲染工程设置区域（未打开工程时展示空状态）
@@ -689,6 +852,18 @@ const Settings: React.FC = () => {
         label: ps.videoResolution,
         options: [autoOption, ...['480p', '720p', '1080p'].map((r) => ({ value: r, label: r }))],
       },
+      {
+        key: 'artStyle', icon: <Palette className="w-4 h-4" />,
+        label: ps.artStyle,
+        options: ART_STYLE_PRESETS.map((preset) => ({
+          value: preset.key,
+          label: preset.key === ''
+            ? ps.artStyleNone
+            : preset.key === 'custom'
+              ? ps.artStyleCustom
+              : ((ps.artStyleOptions as Record<string, string>)[preset.key] ?? preset.label),
+        })),
+      },
     ];
     return (
       <div className="max-w-2xl">
@@ -719,12 +894,89 @@ const Settings: React.FC = () => {
                   <SettingsSelect
                     value={projectGenSettings[row.key] || ''}
                     options={row.options}
-                    onChange={(v) => { void handleProjectSettingChange(row.key, v); }}
+                    onChange={(v) => {
+                      if (row.key === 'artStyle') {
+                        // 选预设时同步覆盖风格限定描述，用户可再手动微调
+                        const preset = findArtStylePreset(v);
+                        void handleProjectSettingsPatch({ artStyle: v, artStylePrompt: preset?.prompt ?? '' });
+                        return;
+                      }
+                      void handleProjectSettingChange(row.key, v);
+                    }}
                   />
                 </div>
               </div>
             </React.Fragment>
           ))}
+
+          {/* 美术风格限定：追加到该工程所有图片/视频生成提示词 */}
+          <div className="h-px" style={{ backgroundColor: 'var(--border-color)' }} />
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-6">
+            <div className="min-w-0">
+              <h3 className="text-sm font-medium flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+                <Type className="w-4 h-4" />
+                {ps.artStylePrompt}
+              </h3>
+              <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>{ps.artStylePromptHint}</p>
+            </div>
+            <div className="w-full sm:w-56 shrink-0">
+              <textarea
+                value={artStyleDraft}
+                onChange={(e) => setArtStyleDraft(e.target.value)}
+                onBlur={() => {
+                  const next = artStyleDraft.trim();
+                  if ((projectGenSettings.artStylePrompt || '') !== next) {
+                    void handleProjectSettingsPatch({ artStylePrompt: next });
+                  }
+                }}
+                rows={3}
+                maxLength={300}
+                placeholder={ps.artStylePromptPlaceholder}
+                className="w-full text-xs rounded-lg px-3 py-2 resize-none bg-(--bg-input) border border-(--border-color) text-(--text-primary) focus:outline-none focus:border-(--accent)"
+              />
+            </div>
+          </div>
+
+          {/* 临时风格覆盖：用户临时意图优先于工程限定，由 AI 对话或手动触发 */}
+          <div className="h-px" style={{ backgroundColor: 'var(--border-color)' }} />
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-6">
+            <div className="min-w-0">
+              <h3 className="text-sm font-medium flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+                <Sparkles className="w-4 h-4" />
+                {ps.tempStyleTitle}
+              </h3>
+              <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>{ps.tempStyleHint}</p>
+            </div>
+            <div className="w-full sm:w-56 shrink-0">
+              {projectGenSettings.tempArtStylePrompt?.trim() ? (
+                <div className="rounded-lg border border-(--accent)/30 bg-(--accent)/5 px-3 py-2 space-y-1.5">
+                  <p className="text-xs leading-5" style={{ color: 'var(--text-primary)' }}>
+                    {projectGenSettings.tempArtStylePrompt.trim()}
+                  </p>
+                  {projectGenSettings.tempArtStyleNote?.trim() && (
+                    <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                      {ps.tempStyleSource}{projectGenSettings.tempArtStyleNote.trim()}
+                    </p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!currentProject?.id) return;
+                      void clearTempArtStyle(currentProject.id).then(() =>
+                        showToast(ps.tempStyleCleared, 'success')
+                      );
+                    }}
+                    className="text-[11px] font-medium cursor-pointer hover:underline"
+                    style={{ color: 'var(--accent)' }}
+                  >
+                    {ps.tempStyleClear}
+                  </button>
+                </div>
+              ) : (
+                <p className="text-xs px-1 py-2" style={{ color: 'var(--text-muted)' }}>{ps.tempStyleEmpty}</p>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -754,6 +1006,7 @@ const Settings: React.FC = () => {
       case 'general': return renderGeneralSection();
       case 'ai_models': return <AIModelSettings />; // 新增：AI 模型密钥配置
       case 'project': return renderProjectSection(); // 工程设置：画面生成参数
+      case 'memory': return renderMemorySection(); // 记忆：学习与注入设置
       case 'feedback': return renderFeedbackSection();
       case 'about': return renderAboutSection();
       default: return renderAppearanceSection();

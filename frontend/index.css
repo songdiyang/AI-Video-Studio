@@ -207,21 +207,24 @@
 }
 
 /* =========== 主题切换过渡动画 =========== */
-html.theme-transitioning,
-html.theme-transitioning *,
-html.theme-transitioning *::before,
-html.theme-transitioning *::after {
-  transition: background-color 0.3s ease, color 0.2s ease, border-color 0.3s ease,
-              box-shadow 0.3s ease, fill 0.3s ease, stroke 0.3s ease !important;
-  transition-delay: 0s !important;
+/*
+ * 改用 View Transitions：整页快照一次交叉淡化（合成层动画）。
+ * 以往给 `html.theme-transitioning *` 挂 transition，会让上千节点逐一重算
+ * background/box-shadow/fill/stroke，切换瞬间明显掉帧；快照方案把逐元素重绘压成一次。
+ * 时长与缓动在此收口，切换逻辑见 contexts/ThemeContext.tsx。
+ */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 220ms;
+  animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Excalidraw 画布元素免受主题过渡动画影响，避免 SVG fill/stroke 过渡导致卡顿 */
-html.theme-transitioning .excalidraw,
-html.theme-transitioning .excalidraw *,
-html.theme-transitioning .excalidraw *::before,
-html.theme-transitioning .excalidraw *::after {
-  transition: none !important;
+/* 减少动效偏好：不做交叉淡化，主题直接生效 */
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation: none;
+  }
 }
 
 /* Excalidraw 内部样式隔离 —— 防止 Tailwind Preflight 覆盖 Excalidraw 的 SVG/按钮布局 */
@@ -1584,18 +1587,7 @@ html.theme-transitioning .excalidraw *::after {
   transition: opacity 0.25s ease-out, transform 0.25s ease-out;
 }
 
-/* 9. 增强主题切换过渡 */
-.theme-transitioning,
-.theme-transitioning * {
-  transition: background-color 0.4s ease, color 0.3s ease, border-color 0.35s ease, box-shadow 0.3s ease !important;
-}
-
-.theme-transitioning .excalidraw,
-.theme-transitioning .excalidraw * {
-  transition: none !important;
-}
-
-/* 10. 交互反馈微动效 */
+/* 9. 交互反馈微动效 */
 .interactive-press {
   transition: transform 0.15s ease;
 }

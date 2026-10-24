@@ -1,8 +1,10 @@
 // 模块声明
 mod commands;
+mod night_light;
 mod package;
 mod queue;
 mod storage;
+mod windows;
 
 use commands::*;
 use queue::Queue;
@@ -23,6 +25,12 @@ pub fn run() {
   }));
 
   builder
+    // 窗口销毁时释放它占用的工程（同一工程不允许多窗口重复打开）
+    .on_window_event(|window, event| {
+      if matches!(event, tauri::WindowEvent::Destroyed) {
+        windows::release_window(window.app_handle(), window.label());
+      }
+    })
     .setup(|app| {
       // 初始化日志
       if cfg!(debug_assertions) {
@@ -43,6 +51,13 @@ pub fn run() {
       // 注册应用状态
       app.manage(AppState { storage, pending_open: std::sync::Mutex::new(None) });
 
+      // 冷启动兜底：批量授予已注册工程的 media/ 目录读取权限。
+      // 前端恢复上次工程只读注册表清单、不走 open_project，缺少此步素材会因 asset 协议无权限而裂图
+      let registry_root = app.state::<AppState>().storage.root.clone();
+      for entry in crate::storage::read_registry(&registry_root) {
+        commands::grant_project_media_scope(app.handle(), &entry.path);
+      }
+
       // 打包版启动时自动注册 .jzp 文件关联（指向当前 exe，绿色版同样适用）
       #[cfg(all(target_os = "windows", not(debug_assertions)))]
       {
@@ -55,6 +70,12 @@ pub fn run() {
       let queue = Queue::new(app.handle().clone(), queue_path);
       app.manage(Arc::clone(&queue));
       queue.load_and_resume();
+
+      // 夜间模式监听：主题选“跟随夜间模式”时，前端根据事件切换深/浅色
+      night_light::spawn_watcher(app.handle().clone());
+
+      // 多窗口：注册窗口级工程占用表（同一工程只允许一个窗口打开）
+      windows::init(app);
 
       // 注册插件
       app.handle().plugin(tauri_plugin_dialog::init())?;
@@ -75,16 +96,22 @@ pub fn run() {
       create_project,
       list_projects,
       open_project,
+      grant_project_scope,
       register_project,
       delete_project,
       update_project_manifest,
       save_project_data,
       load_project_data,
+      read_app_doc,
+      write_app_doc,
       get_default_projects_root,
       import_project_package,
       export_project_package,
       take_pending_project,
       register_jzp_association,
+      night_light::get_night_light_enabled,
+      windows::open_project_window,
+      windows::claim_project_window,
       
       // 文件操作
       show_in_explorer,
