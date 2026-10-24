@@ -92,6 +92,7 @@ pub fn run() {
       import_media_file,
       download_media_file,
       read_media_data_url,
+      probe_media_file,
       
       // 路径获取
       get_app_data_dir,

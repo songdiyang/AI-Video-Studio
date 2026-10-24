@@ -17,7 +17,7 @@ const AIAssistantPanel = lazy(() => import('./AIAssistantPanel'));
 
 const AIAssistantDrawer: React.FC = () => {
   const { isOpen, close, projectId } = useAIAssistantUI();
-  const { currentFrame, scenes, onAction, characters, locations, studios, scripts, projectName, projectDescription } = useAIAssistantData();
+  const { currentFrame, scenes, onAction, characters, locations, studios, props, scripts, projectName, projectDescription } = useAIAssistantData();
   // 左缘拖拽伸缩（宽度持久化 + 双击复位）
   const resize = useResizableSidebar({
     storageKey: 'nanostory_ai_sidebar_width',
@@ -65,6 +65,7 @@ const AIAssistantDrawer: React.FC = () => {
               characters={characters}
               locations={locations}
               studios={studios}
+              props={props}
               scripts={scripts}
               onClose={close}
               onAction={onAction || undefined}

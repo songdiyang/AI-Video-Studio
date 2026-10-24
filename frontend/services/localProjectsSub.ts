@@ -166,8 +166,9 @@ async function handleCoverCrop(projectId: number, body: any): Promise<Response> 
   try {
     const dataUrl = await cropImageToDataUrl(String(sourceUrl), crop);
     coverUrl = await persistGeneratedMedia(projectId, dataUrl, 'cover_crop.png');
-  } catch {
-    // 裁剪不可用（跨域污染/无 canvas）：降级沿用原图地址，保证 UI 不阻塞
+  } catch (err: any) {
+    // 落地硬约束：裁剪或写入工程 media/ 失败时显式报错，不得把原地址（可能是临时 URL）写进工程
+    return jsonResponse({ message: '封面裁剪失败（无法本地持久化）：' + (err?.message || err) }, 500);
   }
   const path = await resolvePath(projectId);
   if (path) {
@@ -208,17 +209,21 @@ async function handleGenerateCover(body: any): Promise<Response> {
   if (!raw) return jsonResponse({ message: '图片生成成功但未返回图片地址' }, 500);
 
   const activeId = getActiveProjectId();
+  // 目标工程：调用方显式传 project_id（项目列表编辑模式）优先，兜底活动工程；
+  // 新建向导尚无工程时仅返回临时地址供预览（提交创建时本地 createProject 不落盘 cover_url）。
+  const targetPid = Number(body?.project_id ?? body?.projectId) || activeId;
   let coverUrl = raw;
-  if (activeId) {
+  if (targetPid) {
+    // 落地硬约束：有目标工程时必须写入其 media/，失败显式报错（不得回填厂商临时 URL）
     try {
-      coverUrl = await persistGeneratedMedia(activeId, raw, 'cover.png');
-      const path = await resolvePath(activeId);
+      coverUrl = await persistGeneratedMedia(targetPid, raw, 'cover.png');
+      const path = await resolvePath(targetPid);
       if (path) {
         const cov = await readDoc<{ coverUrl?: string }>(path, 'projectCover', {});
         writeDoc(path, 'projectCover', { ...cov, coverUrl });
       }
-    } catch {
-      coverUrl = raw;
+    } catch (err: any) {
+      return jsonResponse({ message: '封面保存到工程媒体目录失败：' + (err?.message || err) }, 500);
     }
   }
   return jsonResponse({ cover_url: coverUrl, prompt: coverPrompt });

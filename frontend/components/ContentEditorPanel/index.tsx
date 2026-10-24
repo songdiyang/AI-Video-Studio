@@ -108,20 +108,20 @@ const ContentEditorPanel: React.FC<ContentEditorPanelProps> = ({
           </button>
         ))}
       </div>
-      <div id={`${id}-content`} className="content-editor-body" role="tabpanel" aria-labelledby={`${id}-tab-${activeTab}`}>
+      <div id={`${id}-content`} className={`content-editor-body${onSave || actions ? ' has-actions' : ''}`} role="tabpanel" aria-labelledby={`${id}-tab-${activeTab}`}>
         {children}
+        {(onSave || actions) && (
+          <div className="content-editor-actions">
+            <div className="content-editor-domain-actions">{actions}</div>
+            {onSave && (
+              <button type="button" className="content-editor-save" disabled={status === 'saving'} onClick={() => { void onSave(); }}>
+                {status === 'saving' ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
+                {status === 'error' ? '重试保存' : '保存'}
+              </button>
+            )}
+          </div>
+        )}
       </div>
-      {(onSave || actions) && (
-        <div className="content-editor-actions">
-          <div className="content-editor-domain-actions">{actions}</div>
-          {onSave && (
-            <button type="button" className="content-editor-save" disabled={status === 'saving'} onClick={() => { void onSave(); }}>
-              {status === 'saving' ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
-              {status === 'error' ? '重试保存' : '保存'}
-            </button>
-          )}
-        </div>
-      )}
     </section>
   );
 };

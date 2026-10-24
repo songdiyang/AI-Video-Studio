@@ -3,12 +3,18 @@
  *
  * 左侧只展示项目下所有剧本的卡片列表（每集一个卡片），
  * 不显示剧本内容。用户点击卡片后在右侧标签页中打开剧本。
+ * 新增剧本通过本面板的上传对话框完成：指定集数 + 选择 .txt/.md 文件，
+ * 可选同步提交给智能体分析剧本。
  */
 
-import React, { useState, useMemo, useEffect } from 'react';
-import { FileText, Clapperboard, MessageSquare, Globe, Link2, Link2Off, Plus, Search, CheckCircle2, X, Sparkles, Pencil, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
-import { fetchScriptLibrary, deleteScript, type ScriptLibraryItem } from '../../services/scripts';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
+import { FileText, Clapperboard, MessageSquare, Globe, Link2, Link2Off, Plus, Search, CheckCircle2, X, Pencil, Trash2, ChevronDown, ChevronRight, Upload, Brain } from 'lucide-react';
+import { fetchScriptLibrary, deleteScript, uploadScriptFile, type ScriptLibraryItem } from '../../services/scripts';
 import { useToast } from '../../contexts/ToastContext';
+import { useAIAssistantUI } from '../../contexts/AIAssistantContext';
+import { useStoryboardBridgeSafe } from '../../contexts/StoryboardBridgeContext';
+import { requestScriptAnalysis } from '../../services/scriptAnalysisBridge';
 
 // ==================== 类型 ====================
 
@@ -651,6 +657,161 @@ const ScriptPicker: React.FC<ScriptPickerProps> = ({ projectId, currentScriptId,
   );
 };
 
+// ==================== 上传剧本对话框 ====================
+
+interface ScriptUploadDialogProps {
+  projectId?: number | null;
+  /** 默认集数：现有最大集数 + 1 */
+  defaultEpisode: number;
+  onClose: () => void;
+}
+
+const ScriptUploadDialog: React.FC<ScriptUploadDialogProps> = ({ projectId, defaultEpisode, onClose }) => {
+  const { showToast } = useToast();
+  const { open: openAssistant } = useAIAssistantUI();
+  const [episodeInput, setEpisodeInput] = useState(String(defaultEpisode));
+  const [file, setFile] = useState<{ name: string; content: string } | null>(null);
+  const [analyze, setAnalyze] = useState(true);
+  const [dragOver, setDragOver] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const selectFile = async (picked: File) => {
+    if (!/\.(txt|md)$/i.test(picked.name)) { showToast('仅支持 .txt 和 .md 文件', 'warning'); return; }
+    if (picked.size > 5 * 1024 * 1024) { showToast('文件不能超过 5MB', 'warning'); return; }
+    try {
+      const content = (await picked.text()).trim();
+      if (!content) { showToast(`文件为空：${picked.name}`, 'warning'); return; }
+      setFile({ name: picked.name, content });
+    } catch {
+      showToast('文件读取失败，请重新选择', 'error');
+    }
+  };
+
+  const submit = async () => {
+    if (submitting) return;
+    const episodeNumber = Number(episodeInput);
+    if (!Number.isInteger(episodeNumber) || episodeNumber < 1) { showToast('请输入有效的集数（正整数）', 'warning'); return; }
+    if (!file) { showToast('请先选择剧本文件', 'warning'); return; }
+    setSubmitting(true);
+    try {
+      const result = await uploadScriptFile({
+        file: new File([file.content], file.name, { type: 'text/plain' }),
+        projectId: projectId ?? undefined,
+        episodeNumber,
+        title: file.name.replace(/\.[^.]+$/, ''),
+        mode: 'save',
+      });
+      showToast(`第${episodeNumber}集剧本已上传`, 'success');
+      // 通知大纲刷新剧本列表
+      window.dispatchEvent(new CustomEvent('reload-scripts', { detail: { projectId, episodeNumber } }));
+      // 在剧本编辑标签页打开刚上传的剧本
+      if (result?.scriptId) {
+        window.dispatchEvent(new CustomEvent('openScriptGenerateTab', {
+          detail: {
+            episodeNumber: result.episodeNumber ?? episodeNumber,
+            scriptId: result.scriptId,
+            scriptTitle: result.title ?? '',
+            scriptContent: result.content ?? file.content,
+          },
+        }));
+      }
+      // 可选：把剧本正文提交给智能体分析（面板未挂载时由 pending 槽位兜底）
+      if (analyze) {
+        requestScriptAnalysis({ name: file.name, content: file.content });
+        openAssistant();
+      }
+      onClose();
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : '上传失败，请重试', 'error');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="absolute inset-0 bg-[var(--bg-app)]/95 backdrop-blur-sm z-20 flex flex-col">
+      <div className="shrink-0 px-3 py-2 border-b border-[var(--border-color)] flex items-center gap-2">
+        <Upload className="w-4 h-4 text-[var(--accent)]" />
+        <span className="text-sm font-medium text-[var(--text-primary)]">上传剧本</span>
+        <button
+          onClick={onClose}
+          className="ml-auto p-1 rounded hover:bg-[var(--bg-input)] text-[var(--text-muted)]"
+          title="关闭"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
+        <label className="block">
+          <span className="block text-[11px] text-[var(--text-secondary)] mb-1">这是第几集的剧本</span>
+          <input
+            type="number"
+            min={1}
+            step={1}
+            value={episodeInput}
+            onChange={(e) => setEpisodeInput(e.target.value)}
+            className="w-full px-2 py-1.5 rounded-md bg-[var(--bg-input)] border border-[var(--border-color)] text-xs text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
+          />
+        </label>
+
+        <input ref={inputRef} type="file" accept=".txt,.md" className="sr-only"
+          onChange={(e) => { const picked = e.target.files?.[0]; if (picked) void selectFile(picked); e.target.value = ''; }} />
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={(e) => { e.preventDefault(); setDragOver(false); const picked = e.dataTransfer.files[0]; if (picked) void selectFile(picked); }}
+          className={`w-full border-2 border-dashed rounded-lg p-4 text-center transition-colors ${
+            dragOver ? 'border-[var(--accent)]' : 'border-[var(--border-color)] hover:border-[var(--accent)]/40'
+          }`}
+        >
+          <FileText className="w-5 h-5 mx-auto mb-1.5 text-[var(--text-muted)]" />
+          {file ? (
+            <>
+              <span className="block text-xs text-[var(--text-primary)]">{file.name}</span>
+              <span className="block text-[10px] text-[var(--text-muted)] mt-0.5">{file.content.length} 字 · 点击可重新选择</span>
+            </>
+          ) : (
+            <>
+              <span className="block text-xs text-[var(--text-secondary)]">点击或拖拽上传剧本文件</span>
+              <span className="block text-[10px] text-[var(--text-muted)] mt-0.5">支持 .txt、.md 格式，最大 5MB</span>
+            </>
+          )}
+        </button>
+
+        <label className="flex items-start gap-2 px-2 py-2 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] cursor-pointer">
+          <input type="checkbox" checked={analyze} onChange={(e) => setAnalyze(e.target.checked)} className="mt-0.5 accent-[var(--accent)]" />
+          <span>
+            <span className="flex items-center gap-1 text-xs text-[var(--text-primary)]"><Brain className="w-3.5 h-3.5 text-emerald-400" />上传后提交给智能体分析</span>
+            <span className="block text-[10px] text-[var(--text-muted)] mt-0.5">自动打开 AI 助手并填入剧本，确认后开始分析</span>
+          </span>
+        </label>
+      </div>
+
+      <div className="shrink-0 px-3 py-2 border-t border-[var(--border-color)] flex items-center justify-end gap-2">
+        <button
+          onClick={onClose}
+          disabled={submitting}
+          className="px-3 py-1.5 rounded-md text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-input)] transition-colors disabled:opacity-50"
+        >
+          取消
+        </button>
+        <button
+          onClick={() => { void submit(); }}
+          disabled={submitting || !file}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-[var(--accent)] text-white hover:opacity-90 transition-opacity disabled:opacity-50"
+        >
+          {submitting ? <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+          上传
+        </button>
+      </div>
+    </div>
+  );
+};
+
 // ==================== 主组件 ====================
 
 const ScriptOutlinePanel: React.FC<ScriptOutlinePanelProps> = ({
@@ -667,8 +828,14 @@ const ScriptOutlinePanel: React.FC<ScriptOutlinePanelProps> = ({
   onPickScript,
 }) => {
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [uploadOpen, setUploadOpen] = useState(false);
+  // 上传入口以加号形式 portal 到侧栏「大纲」标题行右侧操作插槽（与资源面板工具栏同一机制）
+  const bridge = useStoryboardBridgeSafe();
+  const headerSlot = bridge?.sectionHeaderSlots['outline'] ?? null;
   const allowPick = !!canPick && !!onPickScript;
   const allowCreate = true;
+  // 默认下一集：取现有剧本最大集数 + 1，没有则默认 1
+  const nextEpisode = scripts.length > 0 ? Math.max(...scripts.map(s => s.episode_number)) + 1 : 1;
 
   if (isLoading) {
     return (
@@ -680,6 +847,18 @@ const ScriptOutlinePanel: React.FC<ScriptOutlinePanelProps> = ({
       </div>
     );
   }
+
+  const uploadButton = (
+    <button
+      type="button"
+      onClick={() => setUploadOpen(true)}
+      className="p-1.5 rounded text-(--text-muted) hover:text-(--text-primary) hover:bg-white/5"
+      title="上传已有剧本（.txt/.md），可指定集数并提交智能体分析"
+      aria-label="上传剧本"
+    >
+      <Plus className="w-3.5 h-3.5" />
+    </button>
+  );
 
   return (
     <div className="relative flex flex-col h-full overflow-hidden">
@@ -696,27 +875,23 @@ const ScriptOutlinePanel: React.FC<ScriptOutlinePanelProps> = ({
         }}
       />
 
-      {/* 底部：添加剧本按钮（自动计算下一集） */}
+      {/* 上传剧本入口：有标题行插槽时并入「大纲」标题行；独立使用时回退为底部加号 */}
       {allowCreate && (
-        <div className="shrink-0 px-2 py-2 border-t border-[var(--border-color)]">
-          <button
-            onClick={() => {
-              // 计算下一集：取现有剧本最大集数 + 1，没有则默认 1
-              const nextEpisode = scripts.length > 0
-                ? Math.max(...scripts.map(s => s.episode_number)) + 1
-                : 1;
-              // 打开剧本创作中心标签页（生成模式）
-              window.dispatchEvent(new CustomEvent('openScriptGenerateTab', {
-                detail: { episodeNumber: nextEpisode }
-              }));
-            }}
-            className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs text-[var(--text-muted)] hover:text-[var(--accent)] hover:bg-[var(--accent)]/5 border border-dashed border-[var(--border-color)] hover:border-[var(--accent)]/30 transition-all"
-            title="AI生成新剧本或上传已有剧本"
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            添加剧本
-          </button>
-        </div>
+        headerSlot
+          ? createPortal(uploadButton, headerSlot)
+          : (
+            <div className="shrink-0 px-2 py-1.5 border-t border-[var(--border-color)]">
+              {uploadButton}
+            </div>
+          )
+      )}
+
+      {uploadOpen && (
+        <ScriptUploadDialog
+          projectId={projectId}
+          defaultEpisode={nextEpisode}
+          onClose={() => setUploadOpen(false)}
+        />
       )}
 
       {pickerOpen && (

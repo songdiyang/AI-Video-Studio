@@ -3,13 +3,20 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Moon, Sun, Eye, Mail, ChevronDown, Check, 
   Palette, MessageSquare, Info, ChevronRight, Sparkles, Monitor, Globe, RotateCcw, SlidersHorizontal, FileArchive,
-  Cpu, Database, BarChart3, Users, Gauge, AlertTriangle, Megaphone, ClipboardList, BookOpen, Key, Film, FolderInput
+  Cpu, Database, BarChart3, Users, Gauge, AlertTriangle, Megaphone, ClipboardList, BookOpen, Key, Film, FolderInput, Clapperboard,
+  Image as ImageIcon
 } from 'lucide-react';
 import { useTheme, ThemeType } from '../../contexts/ThemeContext';
 import { useLanguage, LanguageType } from '../../contexts/LanguageContext';
 import { useToast } from '../../contexts/ToastContext';
+import { useWorkbench } from '../../contexts/WorkbenchContext';
 import AIModelSettings from './AIModelSettings';
 import { getPreferredVideoFormat, setPreferredVideoFormat } from '../../services/localAI';
+import {
+  loadProjectGenerationSettings,
+  saveProjectGenerationSettings,
+  type ProjectGenerationSettings,
+} from '../../services/projectSettings';
 import {
   getProjectsRootOverride,
   setProjectsRootOverride,
@@ -101,6 +108,7 @@ interface SettingSection {
 const SETTING_SECTIONS: SettingSection[] = [
   { id: 'general', icon: <SlidersHorizontal className="w-4 h-4" /> },
   { id: 'ai_models', icon: <Key className="w-4 h-4" /> }, // 新增：AI 模型密钥配置
+  { id: 'project', icon: <Clapperboard className="w-4 h-4" /> }, // 工程设置：当前工程的画面生成参数
   { id: 'feedback', icon: <MessageSquare className="w-4 h-4" /> },
   { id: 'about', icon: <Info className="w-4 h-4" /> },
 ];
@@ -181,6 +189,7 @@ const Settings: React.FC = () => {
   const { theme, setTheme } = useTheme();
   const { language, setLanguage, t } = useLanguage();
   const { showToast } = useToast();
+  const { currentProject } = useWorkbench();
   
   // 从 localStorage 读取初始 section（用于从其他页面跳转时指定 section）
   const initialSection = localStorage.getItem('settings_active_section') || 'general';
@@ -613,6 +622,114 @@ const Settings: React.FC = () => {
     );
   };
 
+  // ===== 工程设置：当前工程的图片/视频分辨率与画面比例（存工程 data/project_settings.json）=====
+  const [projectGenSettings, setProjectGenSettings] = useState<ProjectGenerationSettings>({});
+  useEffect(() => {
+    let cancelled = false;
+    if (!currentProject?.id) { setProjectGenSettings({}); return; }
+    loadProjectGenerationSettings(currentProject.id).then((s) => {
+      if (!cancelled) setProjectGenSettings(s);
+    });
+    return () => { cancelled = true; };
+  }, [currentProject?.id]);
+
+  const handleProjectSettingChange = async (key: keyof ProjectGenerationSettings, value: string) => {
+    if (!currentProject?.id) return;
+    const next = { ...projectGenSettings, [key]: value };
+    setProjectGenSettings(next);
+    try {
+      await saveProjectGenerationSettings(currentProject.id, next);
+      showToast(t.settings.projectSettings.savedToast, 'success');
+    } catch (e: any) {
+      showToast(e?.message || t.settings.projectSettings.saveFailedToast, 'error');
+    }
+  };
+
+  // 渲染工程设置区域（未打开工程时展示空状态）
+  const renderProjectSection = () => {
+    const ps = t.settings.projectSettings;
+    if (!currentProject?.id) {
+      return (
+        <div className="max-w-2xl">
+          <div
+            className="rounded-xl border p-8 flex flex-col items-center text-center gap-2"
+            style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}
+          >
+            <Clapperboard className="w-8 h-8" style={{ color: 'var(--text-muted)' }} />
+            <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{ps.noProjectTitle}</p>
+            <p className="text-xs max-w-xs" style={{ color: 'var(--text-muted)' }}>{ps.noProjectHint}</p>
+          </div>
+        </div>
+      );
+    }
+    const autoOption = { value: '', label: ps.auto };
+    const rows: Array<{
+      key: keyof ProjectGenerationSettings;
+      icon: React.ReactNode;
+      label: string;
+      options: SelectOption[];
+    }> = [
+      {
+        key: 'imageAspectRatio', icon: <ImageIcon className="w-4 h-4" />,
+        label: ps.imageAspectRatio,
+        options: [autoOption, ...['1:1', '16:9', '9:16', '4:3', '3:4', '21:9'].map((r) => ({ value: r, label: r }))],
+      },
+      {
+        key: 'imageResolution', icon: <ImageIcon className="w-4 h-4" />,
+        label: ps.imageResolution,
+        options: [autoOption, ...['720p', '1080p', '2K', '4K'].map((r) => ({ value: r, label: r }))],
+      },
+      {
+        key: 'videoAspectRatio', icon: <Film className="w-4 h-4" />,
+        label: ps.videoAspectRatio,
+        options: [autoOption, ...['16:9', '9:16', '1:1', '4:3', '3:4'].map((r) => ({ value: r, label: r }))],
+      },
+      {
+        key: 'videoResolution', icon: <Film className="w-4 h-4" />,
+        label: ps.videoResolution,
+        options: [autoOption, ...['480p', '720p', '1080p'].map((r) => ({ value: r, label: r }))],
+      },
+    ];
+    return (
+      <div className="max-w-2xl">
+        <div
+          className="rounded-xl border p-5 lg:p-6 space-y-4"
+          style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}
+        >
+          {/* 当前工程标识 */}
+          <div className="flex items-center gap-2 min-w-0">
+            <Clapperboard className="w-4 h-4 shrink-0" style={{ color: 'var(--accent-primary)' }} />
+            <span className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{currentProject.name}</span>
+            <span className="text-[10px] px-1.5 py-0.5 rounded border shrink-0" style={{ color: 'var(--text-muted)', borderColor: 'var(--border-color)' }}>
+              {ps.currentProjectTag}
+            </span>
+          </div>
+          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{ps.desc}</p>
+          {rows.map((row, i) => (
+            <React.Fragment key={row.key}>
+              {i > 0 && <div className="h-px" style={{ backgroundColor: 'var(--border-color)' }} />}
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-6">
+                <div className="min-w-0">
+                  <h3 className="text-sm font-medium flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+                    {row.icon}
+                    {row.label}
+                  </h3>
+                </div>
+                <div className="w-full sm:w-56 shrink-0">
+                  <SettingsSelect
+                    value={projectGenSettings[row.key] || ''}
+                    options={row.options}
+                    onChange={(v) => { void handleProjectSettingChange(row.key, v); }}
+                  />
+                </div>
+              </div>
+            </React.Fragment>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
   // 渲染通用设置区域（外观 + 语言整合）
   const renderGeneralSection = () => (
     <div className="max-w-2xl">
@@ -636,6 +753,7 @@ const Settings: React.FC = () => {
     switch (activeSection) {
       case 'general': return renderGeneralSection();
       case 'ai_models': return <AIModelSettings />; // 新增：AI 模型密钥配置
+      case 'project': return renderProjectSection(); // 工程设置：画面生成参数
       case 'feedback': return renderFeedbackSection();
       case 'about': return renderAboutSection();
       default: return renderAppearanceSection();

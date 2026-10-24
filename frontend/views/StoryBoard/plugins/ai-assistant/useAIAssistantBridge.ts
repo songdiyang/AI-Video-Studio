@@ -9,11 +9,17 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAIAssistantWorkbenchContext, AIAssistantAction, AIAssistantFrameContext, AIAssistantSceneSummary, AIAssistantStudioSummary } from '../../../../contexts/AIAssistantContext';
-import { createScript as createScriptApi, deleteScript as deleteScriptApi } from '../../../../services/scripts';
-import { fetchCharacter, fetchCharacterStates, createCharacterState, updateCharacterState, generateCharacterStateViews } from '../../../../services/assets';
+import { createScript as createScriptApi, deleteScript as deleteScriptApi, updateScript as updateScriptApi } from '../../../../services/scripts';
+import { fetchCharacter, fetchCharacterStates, createCharacterState, updateCharacterState, generateCharacterStateViews, createProp, updateProp, deleteProp } from '../../../../services/assets';
 import { updateProject as updateProjectApi } from '../../../../services/projects';
 import { registerLongTask } from '../../../../services/longTasks';
 import { listStudios, createStudio, updateStudio, deleteStudio } from '../../../../services/studios';
+import { probeMediaBatch, formatBytes, formatResolution, MediaKind } from '../../../../services/mediaInfo';
+import {
+  loadProjectGenerationSettings,
+  saveProjectGenerationSettings,
+  type ProjectGenerationSettings,
+} from '../../../../services/projectSettings';
 
 export interface StoryboardAIAssistantBridgeParams {
   state: any;
@@ -94,7 +100,7 @@ export function useStoryboardAIAssistantBridge(params: StoryboardAIAssistantBrid
       const msg = e?.message || String(e);
       return { success: false, error: msg || prefix };
     };
-    const notifyLibraryChanged = (type: 'characters' | 'studios') => {
+    const notifyLibraryChanged = (type: 'characters' | 'studios' | 'props') => {
       window.dispatchEvent(new CustomEvent('resource-library-changed', { detail: { type } }));
     };
     const ensureProject = () => {
@@ -395,6 +401,45 @@ export function useStoryboardAIAssistantBridge(params: StoryboardAIAssistantBrid
         })
         .catch(fail('删除场景失败'));
     }
+    // 道具库（资源面板「道具」页，data/props.json）
+    else if (action === 'create_prop') {
+      if (!ensureProject()) return;
+      const name = String(actionParams?.name || '').trim();
+      if (!name) return { success: false, error: '缺少道具名称 name' };
+      return createProp({
+        project_id: state.currentProjectId!,
+        name,
+        description: actionParams?.description || '',
+        category: actionParams?.category || '',
+      } as any)
+        .then((created: any) => {
+          resourceActions.fetchProjectProps?.();
+          notifyLibraryChanged('props');
+          return `已创建道具「${created.name}」（ID:${created.id}）`;
+        })
+        .catch(fail('创建道具失败'));
+    } else if (action === 'update_prop') {
+      const id = Number(actionParams?.propId);
+      if (!id) return { success: false, error: '缺少 propId' };
+      const fields = actionParams?.fields || {};
+      return updateProp(id, fields)
+        .then((p: any) => {
+          resourceActions.fetchProjectProps?.();
+          notifyLibraryChanged('props');
+          return `道具「${p?.name ?? `#${id}`}」（ID:${id}）已更新`;
+        })
+        .catch(fail('更新道具失败'));
+    } else if (action === 'delete_prop') {
+      const id = Number(actionParams?.propId);
+      if (!id) return { success: false, error: '缺少 propId' };
+      return deleteProp(id)
+        .then(() => {
+          resourceActions.fetchProjectProps?.();
+          notifyLibraryChanged('props');
+          return `道具 #${id} 已删除`;
+        })
+        .catch(fail('删除道具失败'));
+    }
     // 分镜地点（Scenes，用于分镜绑定；与场景库 Studio 独立）
     else if (action === 'create_location') {
       if (!ensureProject()) return;
@@ -444,6 +489,38 @@ export function useStoryboardAIAssistantBridge(params: StoryboardAIAssistantBrid
           setState('currentScriptId' as any, res.scriptId);
         })
         .catch(toastErr('创建剧本失败'));
+    } else if (action === 'update_script') {
+      // 写入/更新剧本正文：活动栏「大纲」面板由正文实时解析渲染（无独立大纲存储），
+      // AI 编写/修订每一集的大纲都落在这里；content 为该集全文整体替换。
+      const content = String(actionParams?.content ?? '');
+      if (!content.trim()) return { success: false, error: 'content 不能为空：写入大纲需提供该集完整正文' };
+      const scriptId = Number(actionParams?.scriptId);
+      const episodeNumber = Number(actionParams?.episodeNumber);
+      const scripts = Array.isArray(state.scripts) ? state.scripts : [];
+      let target: any = null;
+      if (Number.isFinite(scriptId) && scriptId > 0) target = scripts.find((sc: any) => Number(sc.id) === scriptId);
+      if (!target && Number.isFinite(episodeNumber) && episodeNumber > 0) {
+        target = scripts.find((sc: any) => Number(sc.episode_number) === episodeNumber);
+      }
+      if (!target && state.currentScriptId) {
+        target = scripts.find((sc: any) => Number(sc.id) === Number(state.currentScriptId));
+      }
+      if (!target) {
+        const epHint = Number.isFinite(episodeNumber) && episodeNumber > 0 ? `第 ${episodeNumber} 集` : '当前集';
+        return { success: false, error: `未找到${epHint}绑定的剧本。请先用 create_script（带 episodeNumber）新建该集剧本再写入大纲。` };
+      }
+      const title = actionParams?.title != null ? String(actionParams.title) : (target.title || `第${target.episode_number || 1}集`);
+      return Promise.resolve(updateScriptApi(target.id, title, content))
+        .then(() => {
+          // 当前集：同步工作台状态使大纲面板即时刷新；并通知剧本列表重新加载
+          if (Number(target.id) === Number(state.currentScriptId)) {
+            setState('scriptContent', content);
+            setState('scriptTitle', title);
+          }
+          window.dispatchEvent(new CustomEvent('reload-scripts', { detail: { projectId: state.currentProjectId } }));
+          return `已更新${title}（#${target.id}，第${target.episode_number || 1}集）正文 ${content.length} 字，大纲面板已同步渲染`;
+        })
+        .catch((e: any) => ({ success: false, error: e?.message || '更新剧本正文失败' }));
     } else if (action === 'delete_script') {
       const id = Number(actionParams?.scriptId);
       if (!id) { showToast('缺少 scriptId', 'warning'); return; }
@@ -519,6 +596,122 @@ export function useStoryboardAIAssistantBridge(params: StoryboardAIAssistantBrid
         .then(() => toastOk('项目已更新'))
         .catch(toastErr('项目更新失败'));
     }
+    // 工程设置（图片/视频分辨率与画面比例，存工程 data/project_settings.json）
+    else if (action === 'get_project_settings') {
+      if (!ensureProject()) return { success: false, error: '未选择项目' };
+      return loadProjectGenerationSettings(state.currentProjectId).then((s) => {
+        const label = (v?: string) => (v && v.trim() ? v : '自动（跟随模型默认）');
+        return [
+          `当前工程「${state.currentProject?.name ?? state.currentProjectId}」生成设置：`,
+          `- 图片分辨率: ${label(s.imageResolution)}`,
+          `- 图片画面比例: ${label(s.imageAspectRatio)}`,
+          `- 视频分辨率: ${label(s.videoResolution)}`,
+          `- 视频画面比例: ${label(s.videoAspectRatio)}`,
+        ].join('\n');
+      });
+    } else if (action === 'update_project_settings') {
+      if (!ensureProject()) return { success: false, error: '未选择项目' };
+      const ALLOWED: Record<keyof ProjectGenerationSettings, string[]> = {
+        imageResolution: ['', '720p', '1080p', '2K', '4K'],
+        videoResolution: ['', '480p', '720p', '1080p'],
+        imageAspectRatio: ['', '1:1', '16:9', '9:16', '4:3', '3:4', '21:9'],
+        videoAspectRatio: ['', '16:9', '9:16', '1:1', '4:3', '3:4'],
+      };
+      const raw = actionParams?.fields && typeof actionParams.fields === 'object' ? actionParams.fields : actionParams || {};
+      const patches: Partial<ProjectGenerationSettings> = {};
+      for (const key of Object.keys(ALLOWED) as Array<keyof ProjectGenerationSettings>) {
+        if (raw[key] === undefined) continue;
+        const v = String(raw[key]).trim();
+        const normalized = v === 'auto' || v === '自动' ? '' : v;
+        if (!ALLOWED[key].includes(normalized)) {
+          return { success: false, error: `${key} 取值非法: ${v}（可选: ${ALLOWED[key].filter(Boolean).join(' / ')}，或 auto 表示自动）` };
+        }
+        patches[key] = normalized;
+      }
+      if (Object.keys(patches).length === 0) {
+        return { success: false, error: '未提供可识别的设置字段（imageResolution/imageAspectRatio/videoResolution/videoAspectRatio）' };
+      }
+      return loadProjectGenerationSettings(state.currentProjectId)
+        .then((cur) => saveProjectGenerationSettings(state.currentProjectId!, { ...cur, ...patches }))
+        .then(() => {
+          const zh: Record<string, string> = {
+            imageResolution: '图片分辨率', imageAspectRatio: '图片画面比例',
+            videoResolution: '视频分辨率', videoAspectRatio: '视频画面比例',
+          };
+          const changed = Object.entries(patches)
+            .map(([k, v]) => `${zh[k] || k}=${(v && String(v).trim()) ? v : '自动'}`)
+            .join('，');
+          return `工程设置已更新（${changed}），已打开的工作台生成时实时生效`;
+        })
+        .catch((e: any) => ({ success: false, error: e?.message || '保存工程设置失败' }));
+    }
+    // 媒体资源元数据：分辨率 / 文件大小（逐资源探测本地文件，结果回传模型汇总回答）
+    else if (action === 'query_media_info') {
+      if (!ensureProject()) return { success: false, error: '未选择项目' };
+      const scope = String(actionParams?.scope || 'all').trim().toLowerCase();
+      const keyword = String(actionParams?.keyword || '').trim().toLowerCase();
+      interface Entry { group: string; label: string; src: string; kind?: MediaKind }
+      const entries: Entry[] = [];
+      const add = (group: string, label: string, src: any, kind?: MediaKind) => {
+        if (typeof src === 'string' && src.trim()) entries.push({ group, label, src: src.trim(), kind });
+      };
+      // 以下清单均为本组件 render 作用域内的 memo/state；handleAction 只在渲染完成后
+      // 被事件回调触发，闭包引用已初始化，无需 ref 镜像。
+      (aiCharacters as any[]).forEach((c: any) => {
+        add('角色', `「${c.name}」主图`, c.image_url, 'image');
+      });
+      (studios as any[]).forEach((s: any) => {
+        add('场景库', `「${s.name}」封面`, s.cover_image_url, 'image');
+        add('场景库', `「${s.name}」九宫格`, s.nine_grid_image_url, 'image');
+      });
+      (aiLocations as any[]).forEach((l: any) => add('分镜地点', `「${l.name}」图`, l.image_url, 'image'));
+      (aiProps as any[]).forEach((p: any) => add('道具', `「${p.name}」图`, p.image_url, 'image'));
+      (aiScenes as any[]).forEach((s: any) => {
+        add('分镜', `#${s.index} 首帧`, s.first_frame_url, 'image');
+        add('分镜', `#${s.index} 尾帧`, s.last_frame_url, 'image');
+        add('分镜', `#${s.index} 视频`, s.video_url, 'video');
+      });
+      const SCOPE_ALIAS: Record<string, string> = {
+        character: '角色', characters: '角色', studio: '场景库', studios: '场景库', scene: '场景库',
+        location: '分镜地点', locations: '分镜地点', prop: '道具', props: '道具',
+        storyboard: '分镜', storyboards: '分镜', frames: '分镜', video: '分镜', videos: '分镜',
+      };
+      const groupFilter = scope && scope !== 'all' ? SCOPE_ALIAS[scope] : undefined;
+      let filtered = entries.filter((e) => {
+        if (groupFilter && e.group !== groupFilter) return false;
+        if (scope === 'video' || scope === 'videos') return e.kind === 'video';
+        if (keyword) return `${e.group}${e.label}`.toLowerCase().includes(keyword);
+        return true;
+      });
+      if (filtered.length === 0) {
+        return `未找到匹配的媒体资源（scope=${scope || 'all'}${keyword ? `, keyword=${keyword}` : ''}）。可尝试 scope: characters/studios/props/storyboards 或留空查全部。`;
+      }
+      const MAX_ROWS = 150;
+      const truncated = filtered.length > MAX_ROWS;
+      if (truncated) filtered = filtered.slice(0, MAX_ROWS);
+      onProgress?.(`正在探测 ${filtered.length} 个媒体文件…`);
+      return probeMediaBatch(filtered.map((e) => ({ src: e.src, kind: e.kind }))).then((probes) => {
+        const lines: string[] = [];
+        let totalBytes = 0;
+        let counted = 0;
+        let missing = 0;
+        filtered.forEach((e, i) => {
+          const p = probes[i];
+          if (p.missing) {
+            missing += 1;
+            lines.push(`- ${e.group}${e.label}: 文件缺失`);
+            return;
+          }
+          if (p.bytes != null) { totalBytes += p.bytes; counted += 1; }
+          const res = formatResolution(p.width, p.height);
+          const size = formatBytes(p.bytes);
+          const err = p.error ? `（探测异常: ${p.error}）` : '';
+          lines.push(`- ${e.group}${e.label}: ${res} · ${size}${err}`);
+        });
+        const head = `媒体元数据（${filtered.length} 项${truncated ? `，已截断，共 ${entries.length} 项` : ''}）：已探测到大小 ${counted} 项，合计 ${formatBytes(totalBytes)}；缺失 ${missing} 项。分辨率/格式列为“未知”表示元素探测失败或视频元数据未加载。`;
+        return `${head}\n${lines.join('\n')}`;
+      });
+    }
     else {
       console.log('[AI Assistant] 未处理的 action:', action, actionParams);
       showToast(`未识别的 action: ${action}`, 'warning');
@@ -579,6 +772,18 @@ export function useStoryboardAIAssistantBridge(params: StoryboardAIAssistantBrid
     })),
     [state.projectScenes]
   );
+  // 道具库清单：工作台已随工程加载 projectProps（data/props.json），直接映射注入 AI 上下文
+  const aiProps = useMemo(() =>
+    (state.projectProps || []).map((p: any) => ({
+      id: p.id,
+      name: p.name,
+      description: p.description || undefined,
+      category: p.category || undefined,
+      image_url: p.image_url || undefined,
+    })),
+    [state.projectProps]
+  );
+
   const aiScripts = useMemo(() =>
     (state.scripts || []).map((sc: any) => ({
       id: sc.id,
@@ -600,6 +805,7 @@ export function useStoryboardAIAssistantBridge(params: StoryboardAIAssistantBrid
     characters: aiCharacters,
     locations: aiLocations,
     studios,
+    props: aiProps,
     scripts: aiScripts,
     onAction: handleAction,
     projectName: state.currentProject?.name ?? null,

@@ -44,6 +44,7 @@ const AUTO_EXECUTE_ACTIONS: ReadonlySet<string> = new Set([
   'update_location',
   'delete_location',
   'create_script',
+  'update_script',
   'bind_script',
   'update_project',
   'invite_member',

@@ -16,6 +16,7 @@ import { useToast } from '../../../contexts/ToastContext';
 import { useAIAssistantUI } from '../../../contexts/AIAssistantContext';
 import { normalizeCapabilityOptions } from '../../../utils/modelCapabilities';
 import { getVideoModelCapabilities } from '../../../services/localAI';
+import { loadProjectGenerationSettings, PROJECT_SETTINGS_CHANGED, type ProjectGenerationSettings } from '../../../services/projectSettings';
 import type { AIModel } from '../../../components/AIModelSelector';
 import type { 
   StoryboardCoreState, 
@@ -77,6 +78,29 @@ export function useStoryboardCore(options: UseStoryboardCoreOptions) {
   const [videoDuration, setVideoDuration] = useState<number | null>(null);
   const [imageResolution, setImageResolution] = useState(projectSettings?.imageResolution || '');
   const [videoResolution, setVideoResolution] = useState(projectSettings?.videoResolution || '');
+
+  // 工程生成参数（设置页·工程设置，存 data/project_settings.json）：
+  // 优先于宿主页面传入的 projectSettings（settings_json），保存后经事件实时生效
+  const [localProjectSettings, setLocalProjectSettings] = useState<ProjectGenerationSettings | null>(null);
+  useEffect(() => {
+    if (!currentProjectId) { setLocalProjectSettings(null); return; }
+    let cancelled = false;
+    loadProjectGenerationSettings(currentProjectId).then((s) => {
+      if (!cancelled && s && Object.keys(s).length > 0) setLocalProjectSettings(s);
+    });
+    const onChanged = (e: Event) => {
+      const detail = (e as CustomEvent).detail || {};
+      if (Number(detail.projectId) === Number(currentProjectId)) {
+        setLocalProjectSettings(detail.settings || {});
+      }
+    };
+    window.addEventListener(PROJECT_SETTINGS_CHANGED, onChanged);
+    return () => { cancelled = true; window.removeEventListener(PROJECT_SETTINGS_CHANGED, onChanged); };
+  }, [currentProjectId]);
+  const effectiveProjectSettings = useMemo(
+    () => (localProjectSettings ? { ...projectSettings, ...localProjectSettings } : projectSettings),
+    [projectSettings, localProjectSettings]
+  );
   const [isOptimizingAllPrompts, setIsOptimizingAllPrompts] = useState(false);
   const [isAnimaticOpen, setIsAnimaticOpen] = useState(false);
   const [isCommentPanelOpen, setIsCommentPanelOpen] = useState(false);
@@ -227,25 +251,25 @@ export function useStoryboardCore(options: UseStoryboardCoreOptions) {
     }
 
     // 图片比例/分辨率默认值
-    // 优先使用项目设置，项目设置不存在时才使用模型默认值
-    if (projectSettings?.imageAspectRatio) {
-      // 项目有设置，直接使用项目设置
-      setImageAspectRatio(projectSettings.imageAspectRatio);
+    // 优先使用工程设置（含设置页·工程配置的本地文档），不存在时才使用模型默认值
+    if (effectiveProjectSettings?.imageAspectRatio) {
+      // 工程有设置，直接使用
+      setImageAspectRatio(effectiveProjectSettings.imageAspectRatio);
     } else {
-      // 项目没有设置，使用模型的第一个选项
+      // 没有设置，使用模型的第一个选项
       if (imageAspectRatioOptions.length === 0) setImageAspectRatio('');
       else setImageAspectRatio(current => imageAspectRatioOptions.some(o => o.value === current) ? current : imageAspectRatioOptions[0].value);
     }
-    if (projectSettings?.imageResolution) {
-      setImageResolution(projectSettings.imageResolution);
+    if (effectiveProjectSettings?.imageResolution) {
+      setImageResolution(effectiveProjectSettings.imageResolution);
     } else {
       if (imageResolutionOptions.length === 0) setImageResolution('');
       else setImageResolution(current => imageResolutionOptions.some(o => o.value === current) ? current : imageResolutionOptions[0].value);
     }
 
     // 视频比例/时长默认值
-    if (projectSettings?.videoAspectRatio) {
-      setVideoAspectRatio(projectSettings.videoAspectRatio);
+    if (effectiveProjectSettings?.videoAspectRatio) {
+      setVideoAspectRatio(effectiveProjectSettings.videoAspectRatio);
     } else {
       if (videoAspectRatioOptions.length === 0) setVideoAspectRatio('');
       else setVideoAspectRatio(current => videoAspectRatioOptions.some(o => o.value === current) ? current : videoAspectRatioOptions[0].value);
@@ -259,15 +283,15 @@ export function useStoryboardCore(options: UseStoryboardCoreOptions) {
       });
     }
 
-    // 视频分辨率默认值：优先项目设置，但须在当前模型支持列表内，否则回退首项
+    // 视频分辨率默认值：优先工程设置，但须在当前模型支持列表内，否则回退首项
     if (videoResolutionOptions.length === 0) {
       setVideoResolution('');
-    } else if (projectSettings?.videoResolution && videoResolutionOptions.some(o => o.value === projectSettings.videoResolution)) {
-      setVideoResolution(projectSettings.videoResolution);
+    } else if (effectiveProjectSettings?.videoResolution && videoResolutionOptions.some(o => o.value === effectiveProjectSettings.videoResolution)) {
+      setVideoResolution(effectiveProjectSettings.videoResolution);
     } else {
       setVideoResolution(current => videoResolutionOptions.some(o => o.value === current) ? current : videoResolutionOptions[0].value);
     }
-  }, [models, currentMultimodalModel, imageAspectRatioOptions, imageResolutionOptions, videoAspectRatioOptions, videoDurationOptions, videoResolutionOptions, projectSettings]);
+  }, [models, currentMultimodalModel, imageAspectRatioOptions, imageResolutionOptions, videoAspectRatioOptions, videoDurationOptions, videoResolutionOptions, effectiveProjectSettings]);
 
   // ===== 分镜管理 =====
   const {

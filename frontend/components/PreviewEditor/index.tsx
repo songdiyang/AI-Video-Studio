@@ -3,6 +3,8 @@ import type { EditorSessionHandle } from '../ContentEditorPanel';
 import TabBar, { TabItem } from '../TabBar';
 import TabContent from '../TabContent';
 import BottomPanel from '../BottomPanel';
+import { BottomPanelTabBar, HubSearchInput, ResourceHub, type BottomPanelTabItem, type HubViewTab, type HubCharacterItem, type HubStudioItem } from '../BottomPanel/ResourceHub';
+import { Clapperboard, Users, MapPin, Film } from 'lucide-react';
 import ScenePreviewPanel, { type ScenePreviewPanelProps } from '../../views/StoryBoard/ScenePreviewPanel';
 import DirectorSpace from '../DirectorSpace';
 import { AnimaticPreview } from '../../views/StoryBoard/AnimaticPreview';
@@ -111,6 +113,9 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
   projectId,
 }) => {
   const { bottomPanelOpen, openBottomPanel, closeBottomPanel } = useAIAssistantUI();
+  // 底部面板视图：编辑区（导演空间/嵌入编辑器 Portal 宿主）与角色/影棚/分镜聚合视图
+  const [bottomView, setBottomView] = useState<'edit' | HubViewTab>('edit');
+  const [hubFilter, setHubFilter] = useState('');
   const [sceneTabs, setSceneTabs] = useState<TabItem[]>([]);
   // 当前已水合的工程：持久化只在 hydratedProjectId === projectId 时写入
   const [hydratedProjectId, setHydratedProjectId] = useState<number | null>(null);
@@ -173,7 +178,7 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
       result.push({ id: 'teams', type: 'teams', title: '团队管理' });
     }
     if (scriptGenerateTabOpen) {
-      const episodeTitle = scriptGenerateTabEpisode ? `第${scriptGenerateTabEpisode}集剧本` : '生成剧本';
+      const episodeTitle = scriptGenerateTabEpisode ? `第${scriptGenerateTabEpisode}集剧本` : '剧本编辑';
       result.push({ id: 'script-generate', type: 'script-generate', title: episodeTitle });
     }
     return result;
@@ -1196,6 +1201,43 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
     if (host) setBottomEditorHost(host as HTMLDivElement);
   }, [hasBottomWorkArea, bottomPanelOpen]);
 
+  // 切换主标签页时回到底部编辑视图，保持「打开分镜即见导演空间」的原有行为
+  useEffect(() => {
+    setBottomView('edit');
+  }, [activeTab?.id]);
+
+  // 聚合视图数据源：直接复用工作台已加载的项目资源，底部面板不另行发起加载
+  const hubCharacters = (directorSpaceProps.projectCharacters ?? []) as HubCharacterItem[];
+  const hubStudios = (directorSpaceProps.projectScenes ?? []) as HubStudioItem[];
+  const bottomViewTabs = useMemo<BottomPanelTabItem[]>(() => [
+    ...(hasBottomWorkArea
+      ? [{ id: 'edit', label: sceneEditorProps ? '导演空间' : '编辑区', icon: <Clapperboard className="w-3 h-3" />, title: '当前标签页的内容编辑器' }]
+      : []),
+    { id: 'characters', label: '角色', icon: <Users className="w-3 h-3" />, count: hubCharacters.length },
+    { id: 'studios', label: '影棚', icon: <MapPin className="w-3 h-3" />, count: hubStudios.length },
+    { id: 'storyboards', label: '分镜', icon: <Film className="w-3 h-3" />, count: scenes.length },
+  ], [hasBottomWorkArea, sceneEditorProps, hubCharacters.length, hubStudios.length, scenes.length]);
+
+  const handleBottomViewChange = useCallback((id: string) => {
+    setBottomView(id as 'edit' | HubViewTab);
+    // 从折叠状态切到聚合视图时自动拉起面板，保证视图可见
+    if (id !== 'edit' && !bottomPanelOpen) openBottomPanel();
+  }, [bottomPanelOpen, openBottomPanel]);
+
+  const handleHubEditCharacter = useCallback((character: HubCharacterItem) => {
+    window.dispatchEvent(new CustomEvent('openAssetEditTab', {
+      detail: { assetType: 'character', assetId: character.id, assetName: character.name, initialData: character },
+    }));
+  }, []);
+  const handleHubEditStudio = useCallback((studio: HubStudioItem) => {
+    window.dispatchEvent(new CustomEvent('openAssetEditTab', {
+      detail: { assetType: 'scene', assetId: studio.id, assetName: studio.name, initialData: studio },
+    }));
+  }, []);
+  const handleHubOpenStoryboard = useCallback((sceneId: number) => {
+    window.dispatchEvent(new CustomEvent('openSceneTab', { detail: { sceneId } }));
+  }, []);
+
   return (
     <div className="flex flex-col h-full bg-(--bg-app) min-h-0">
       {/* 标签栏 */}
@@ -1276,9 +1318,6 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
             <div className="w-full h-full overflow-hidden">
               <ScriptWorkshop
                 key={`script-workshop-${scriptGenerateTabEpisode || episodeNumber || 'default'}-${scriptWorkshopData?.scriptId || 'new'}`}
-                projects={projects}
-                aiModels={directorSpaceProps.models || []}
-                defaultTextModel={textModel}
                 lockProjectId={directorSpaceProps.projectId || undefined}
                 lockEpisodeNumber={scriptGenerateTabEpisode || episodeNumber || undefined}
                 initialScriptId={scriptWorkshopData?.scriptId}
@@ -1312,8 +1351,8 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
           )}
         </TabContent>
 
-        {/* 底部通用编辑宿主：内容编辑器通过 Portal 挂载，折叠只隐藏不卸载草稿 */}
-        {hasBottomWorkArea && (
+        {/* 底部面板：编辑区 + 角色/影棚/分镜聚合视图；编辑宿主切换视图时只隐藏不卸载草稿 */}
+        {(hasBottomWorkArea || bottomView !== 'edit') && (
         <BottomPanel
           collapsed={!bottomPanelOpen}
           onCollapsedChange={(collapsed) => {
@@ -1325,12 +1364,37 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
           defaultHeight={280}
           minHeight={160}
         >
-          <div ref={setBottomEditorHost} id="content-editor-bottom-host" className="h-full min-h-0 min-w-0">
-            {sceneEditorProps && (
-              <DirectorSpace
-                key={`director-${sceneEditorProps.scene.id}`}
-                scene={sceneEditorProps.scene}
-                {...sceneEditorProps.props}
+          <div className="flex h-full min-h-0 flex-col">
+            <BottomPanelTabBar
+              tabs={bottomViewTabs}
+              active={bottomView}
+              onChange={handleBottomViewChange}
+              trailing={bottomView !== 'edit' ? <HubSearchInput value={hubFilter} onChange={setHubFilter} /> : undefined}
+            />
+            <div className={`min-h-0 flex-1 ${bottomView === 'edit' ? '' : 'hidden'}`}>
+              <div ref={setBottomEditorHost} id="content-editor-bottom-host" className="h-full min-h-0 min-w-0">
+                {sceneEditorProps && (
+                  <DirectorSpace
+                    key={`director-${sceneEditorProps.scene.id}`}
+                    scene={sceneEditorProps.scene}
+                    {...sceneEditorProps.props}
+                  />
+                )}
+              </div>
+            </div>
+            {bottomView !== 'edit' && (
+              <ResourceHub
+                activeTab={bottomView}
+                filterText={hubFilter}
+                characters={hubCharacters}
+                studios={hubStudios}
+                storyboards={scenes}
+                currentSceneCharacters={sceneEditorProps?.scene.characters}
+                currentSceneLocation={sceneEditorProps?.scene.location}
+                activeStoryboardId={activeTab?.type === 'scene' ? sceneEditorProps?.scene.id : null}
+                onEditCharacter={handleHubEditCharacter}
+                onEditStudio={handleHubEditStudio}
+                onOpenStoryboard={handleHubOpenStoryboard}
               />
             )}
           </div>

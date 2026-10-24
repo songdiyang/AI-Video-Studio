@@ -41,11 +41,13 @@
 .content-editor-tab.is-active { opacity: 1; color: var(--text-primary); font-weight: 600; border-bottom-color: var(--accent); background: transparent; }
 .content-editor-tab:focus-visible, .content-editor-save:focus-visible { outline: 1px solid var(--accent); outline-offset: -2px; }
 .content-editor-body { flex: 1; min-height: 0; min-width: 0; overflow: auto; padding: 10px 12px; scrollbar-width: thin; scrollbar-color: var(--scrollbar-thumb) transparent; }
+.content-editor-body.has-actions { padding-bottom: 2px; }
 .content-editor-body::-webkit-scrollbar { width: 9px; height: 9px; }
 .content-editor-body::-webkit-scrollbar-track { background: transparent; }
 .content-editor-body::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 999px; border: 2px solid transparent; background-clip: padding-box; }
 .content-editor-body::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); background-clip: padding-box; }
-.content-editor-actions { display: flex; flex-wrap: nowrap; align-items: center; gap: 6px; padding: 6px 10px; border-top: 1px solid var(--border-color); flex-shrink: 0; background: var(--bg-nav); }
+/* 操作栏与表单内容同层：跟随正文排布，不再作为固定底栏 */
+.content-editor-actions { display: flex; flex-wrap: nowrap; align-items: center; gap: 6px; padding: 8px 0 10px; }
 .content-editor-domain-actions { display: flex; flex-wrap: nowrap; align-items: center; gap: 6px; flex: 1 1 auto; min-width: 0; }
 .content-editor-save {
   display: inline-flex; align-items: center; justify-content: center; gap: 5px;
@@ -104,6 +106,18 @@
   box-shadow: none !important;
   outline: none !important;
   background: transparent !important;
+}
+/* Tailwind v4 分层后，utilities 层内的 !important（HeroUI 自带 !outline-solid）会压过本文件（无分层）的
+   !important，导致 outline 以 solid + currentColor 常驻显示为白框。
+   去 outline 的规则必须同样放进 utilities 层，靠更高特异性取胜。 */
+@layer utilities {
+  .content-editor-field [data-slot="input-wrapper"] *,
+  .content-editor-hero-field input,
+  .content-editor-hero-field textarea {
+    outline-style: none !important;
+    outline-width: 0 !important;
+    outline-color: transparent !important;
+  }
 }
 .content-editor-field [data-slot="input"] {
   color: var(--text-primary) !important;
