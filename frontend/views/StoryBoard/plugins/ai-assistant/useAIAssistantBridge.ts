@@ -18,8 +18,21 @@ import { probeMediaBatch, formatBytes, formatResolution, MediaKind } from '../..
 import {
   loadProjectGenerationSettings,
   saveProjectGenerationSettings,
+  findArtStylePreset,
+  ART_STYLE_PRESETS,
+  setTempArtStyle,
+  clearTempArtStyle,
   type ProjectGenerationSettings,
 } from '../../../../services/projectSettings';
+import {
+  addMemory,
+  deleteMemory,
+  deleteMemoriesByKeyword,
+  listMemories,
+  loadMemoryFlags,
+  type MemoryScope,
+  type MemoryImportance,
+} from '../../../../services/agentMemory';
 
 export interface StoryboardAIAssistantBridgeParams {
   state: any;
@@ -107,6 +120,22 @@ export function useStoryboardAIAssistantBridge(params: StoryboardAIAssistantBrid
       if (!state.currentProjectId) { showToast('未选择项目', 'warning'); return false; }
       return true;
     };
+    // 生成前门禁：工程未锁定美术风格时拒绝出图/出视频，
+    // 让 agent 回到「结合剧本先问风格 → update_project_settings 写回」的流程，防止画风漂移
+    const ensureArtStyleLocked = (): Promise<{ success: false; error: string } | null> => {
+      const projectId = state.currentProjectId;
+      if (!projectId) return Promise.resolve(null);
+      return loadProjectGenerationSettings(projectId).then((settings) =>
+        settings.artStylePrompt?.trim()
+          ? null
+          : {
+              success: false as const,
+              error:
+                '当前工程尚未锁定美术风格。请先用 ask 结合剧本题材向用户确认风格（给出 2-3 个候选与适配理由），' +
+                '收到答复后用 update_project_settings 写入 artStyle 与 artStylePrompt，再重新执行生成。',
+            },
+      );
+    };
 
     // 分镜：生成与质检
     if (action === 'generate_frame') {
@@ -115,27 +144,33 @@ export function useStoryboardAIAssistantBridge(params: StoryboardAIAssistantBrid
       const target = scenes.find((s) => s.id === sceneId);
       const prompt = actionParams?.prompt || target?.description || selectedSceneData?.description || '';
       // 返回 Promise：把 { success, jobId, error } 回传给对话栏，用于挂后台任务进度卡片
-      return generationActions.generateImage(sceneId, prompt)
-        .then((result: any) => {
-          if (!result.success) showToast(result.error || '生成分镜图失败', 'error');
-          return result;
-        })
-        .catch((err: any) => {
-          showToast('生成分镜图失败: ' + (err?.message || err), 'error');
-          return { success: false, error: err?.message || String(err) };
-        });
+      return ensureArtStyleLocked().then((blocked) => {
+        if (blocked) return blocked;
+        return generationActions.generateImage(sceneId, prompt)
+          .then((result: any) => {
+            if (!result.success) showToast(result.error || '生成分镜图失败', 'error');
+            return result;
+          })
+          .catch((err: any) => {
+            showToast('生成分镜图失败: ' + (err?.message || err), 'error');
+            return { success: false, error: err?.message || String(err) };
+          });
+      });
     } else if (action === 'generate_video') {
       const sceneId = sceneIdFrom(actionParams);
       if (!sceneId) { showToast('请先选择分镜', 'warning'); return; }
-      return generationActions.generateVideo(sceneId)
-        .then((result: any) => {
-          if (!result.success) showToast(result.error || '生成视频失败', 'error');
-          return result;
-        })
-        .catch((err: any) => {
-          showToast('生成视频失败: ' + (err?.message || err), 'error');
-          return { success: false, error: err?.message || String(err) };
-        });
+      return ensureArtStyleLocked().then((blocked) => {
+        if (blocked) return blocked;
+        return generationActions.generateVideo(sceneId)
+          .then((result: any) => {
+            if (!result.success) showToast(result.error || '生成视频失败', 'error');
+            return result;
+          })
+          .catch((err: any) => {
+            showToast('生成视频失败: ' + (err?.message || err), 'error');
+            return { success: false, error: err?.message || String(err) };
+          });
+      });
     } else if (action === 'auto_storyboard') {
       // AI 自动触发时直接执行，不弹确认框。
       // 前置条件：必须已有绑定剧本。否则不得谎称「已启动」——抛错让 agent 循环感知失败，
@@ -161,7 +196,12 @@ export function useStoryboardAIAssistantBridge(params: StoryboardAIAssistantBrid
             onProgress?.(count != null ? `拆分完成，写入 ${count} 个分镜` : '拆分完成，已同步分镜列表');
           },
           onSplitError: (msg: string) => onProgress?.(`拆分失败：${msg}`),
-        })).then(() => ({ sceneCount: splitCount }));
+        })).then(() => {
+          // 拆分时会自动沉淀重复出现的道具，刷新资源面板「道具」页与 AI 上下文
+          resourceActions.fetchProjectProps?.();
+          notifyLibraryChanged('props');
+          return { sceneCount: splitCount };
+        });
       }
       // 回退：调用原来的方法（会弹窗）
       autoStoryboard.handleAutoGenerateClick();
@@ -230,6 +270,17 @@ export function useStoryboardAIAssistantBridge(params: StoryboardAIAssistantBrid
       const locationId: number | undefined = actionParams?.locationId != null ? Number(actionParams.locationId) : undefined;
       Promise.resolve(sceneActions.updateCharactersAndLocation(sceneId, characters, location, characterIds, locationId))
         .then(() => toastOk('角色/影棚绑定已更新')).catch(toastErr('更新失败'));
+    } else if (action === 'update_scene_props') {
+      const sceneId = sceneIdFrom(actionParams);
+      if (!sceneId) return { success: false, error: '缺少 sceneId' };
+      // 道具按名称绑定（与资源面板「道具」页同一套名称），需与 scene.props 的存储形态一致
+      const props: string[] = Array.isArray(actionParams?.props)
+        ? actionParams.props.map((v: any) => String(v).trim()).filter(Boolean)
+        : [];
+      const unique = Array.from(new Set(props));
+      return Promise.resolve(sceneActions.updateProps(sceneId, unique))
+        .then(() => `分镜 #${sceneId} 道具已更新：${unique.length ? unique.join('、') : '（已清空）'}`)
+        .catch(fail('更新分镜道具失败'));
     } else if (action === 'move_scene') {
       const sceneId = sceneIdFrom(actionParams);
       const direction = actionParams?.direction === 'down' ? 'down' : 'up';
@@ -406,6 +457,25 @@ export function useStoryboardAIAssistantBridge(params: StoryboardAIAssistantBrid
       if (!ensureProject()) return;
       const name = String(actionParams?.name || '').trim();
       if (!name) return { success: false, error: '缺少道具名称 name' };
+      // 道具按名称唯一：已有同名道具时改为补全字段，避免同一件物品在道具库里重复
+      const existing = (state.projectProps || []).find(
+        (p: any) => String(p?.name || '').trim().toLowerCase() === name.toLowerCase(),
+      );
+      if (existing) {
+        const fields: any = {};
+        if (actionParams?.description) fields.description = actionParams.description;
+        if (actionParams?.category) fields.category = actionParams.category;
+        if (Object.keys(fields).length === 0) {
+          return `道具库已有「${existing.name}」（ID:${existing.id}），无需重复创建`;
+        }
+        return updateProp(existing.id, fields)
+          .then(() => {
+            resourceActions.fetchProjectProps?.();
+            notifyLibraryChanged('props');
+            return `道具库已有「${existing.name}」（ID:${existing.id}），已补全字段而非重复创建`;
+          })
+          .catch(fail('更新道具失败'));
+      }
       return createProp({
         project_id: state.currentProjectId!,
         name,
@@ -564,6 +634,7 @@ export function useStoryboardAIAssistantBridge(params: StoryboardAIAssistantBrid
               jobId: String(started.jobId),
               title: `白膜三视图 · ${(char as any)?.name || `角色 #${cid}`}`,
               kind: 'image',
+              projectId: state.currentProjectId ?? null,
             });
           }
           toastOk('已启动白膜三视图生成；完成前请勿添加服装、道具或状态');
@@ -601,17 +672,92 @@ export function useStoryboardAIAssistantBridge(params: StoryboardAIAssistantBrid
       if (!ensureProject()) return { success: false, error: '未选择项目' };
       return loadProjectGenerationSettings(state.currentProjectId).then((s) => {
         const label = (v?: string) => (v && v.trim() ? v : '自动（跟随模型默认）');
+        const styleLabel = findArtStylePreset(s.artStyle)?.label || '未设置';
+        const tempLine = s.tempArtStylePrompt?.trim()
+          ? `- 临时风格覆盖: ${s.tempArtStylePrompt.trim()}${s.tempArtStyleNote?.trim() ? `（来源：${s.tempArtStyleNote.trim()}）` : ''}（生效中，优先生成）`
+          : '- 临时风格覆盖: 未启用';
         return [
           `当前工程「${state.currentProject?.name ?? state.currentProjectId}」生成设置：`,
           `- 图片分辨率: ${label(s.imageResolution)}`,
           `- 图片画面比例: ${label(s.imageAspectRatio)}`,
           `- 视频分辨率: ${label(s.videoResolution)}`,
           `- 视频画面比例: ${label(s.videoAspectRatio)}`,
+          `- 美术风格: ${styleLabel}`,
+          `- 风格限定: ${s.artStylePrompt?.trim() || '未设置'}`,
+          tempLine,
         ].join('\n');
+      });
+    }
+    // 临时风格覆盖：用户临时意图优先于工程锁定风格，不动工程设置
+    else if (action === 'set_temp_art_style') {
+      if (!ensureProject()) return { success: false, error: '未选择项目' };
+      const prompt = String(actionParams?.artStylePrompt || actionParams?.prompt || '').trim().slice(0, 300);
+      if (!prompt) return { success: false, error: '缺少 artStylePrompt（临时风格描述）' };
+      const note = String(actionParams?.note || '').trim().slice(0, 120);
+      return setTempArtStyle(state.currentProjectId!, prompt, note).then(() => {
+        toastOk('临时风格已生效，工程锁定风格不变');
+        return `临时风格覆盖已生效：${prompt}${note ? `（来源：${note}）` : ''}。后续所有图片/视频生成改用该风格；工程锁定风格保持不变，调用 clear_temp_art_style 可恢复。`;
+      }).catch((e: any) => ({ success: false, error: e?.message || '设置临时风格失败' }));
+    } else if (action === 'clear_temp_art_style') {
+      if (!ensureProject()) return { success: false, error: '未选择项目' };
+      return clearTempArtStyle(state.currentProjectId!).then(() => {
+        toastOk('已恢复工程锁定风格');
+        return '临时风格覆盖已清除，后续生成恢复使用工程锁定风格。';
+      }).catch((e: any) => ({ success: false, error: e?.message || '清除临时风格失败' }));
+    }
+    // 智能体记忆：记录 / 遗忘 / 自查
+    else if (action === 'remember') {
+      // 遵循「开启自动生成」总开关：关闭时 AI 不得主动记录，提示用户手动添加
+      if (!loadMemoryFlags().autoLearn) {
+        return { success: false, error: '用户已关闭记忆自动生成。如需记录，请引导用户在记忆面板手动添加，或请用户打开「开启自动生成」开关。' };
+      }
+      const content = String(actionParams?.content || '').trim();
+      if (!content) return { success: false, error: '缺少 content（记忆内容）' };
+      const scope: MemoryScope = actionParams?.scope === 'user' ? 'user' : 'project';
+      const impRaw = String(actionParams?.importance || 'normal');
+      const importance: MemoryImportance = impRaw === 'high' || impRaw === 'low' ? impRaw : 'normal';
+      return addMemory(state.currentProjectId, { content, scope, importance }).then((result) => {
+        if (result.status === 'invalid') return { success: false, error: '记忆内容为空' };
+        const mem = result.memory;
+        const scopeLabel = mem.scope === 'user' ? '用户记忆（跨工程）' : '工程记忆';
+        if (result.status === 'duplicate') {
+          return {
+            success: true,
+            memoryId: mem.id,
+            message: result.wasDisabled
+              ? `已存在相同记忆并重新启用（${scopeLabel}）：${mem.content}`
+              : `已有相同记忆，未重复记录（${scopeLabel}）：${mem.content}`,
+          };
+        }
+        return { success: true, memoryId: mem.id, message: `已记住（${scopeLabel}）：${mem.content}` };
+      }).catch((e: any) => ({ success: false, error: e?.message || '记录记忆失败' }));
+    } else if (action === 'forget') {
+      const memoryId = String(actionParams?.memoryId || '').trim();
+      const keyword = String(actionParams?.keyword || '').trim();
+      if (memoryId) {
+        return deleteMemory(state.currentProjectId, memoryId).then((ok) =>
+          ok ? `已删除记忆 ${memoryId}` : { success: false, error: `未找到记忆 ${memoryId}` }
+        );
+      }
+      if (keyword) {
+        return deleteMemoriesByKeyword(state.currentProjectId, keyword).then((n) =>
+          n > 0 ? `已删除 ${n} 条包含「${keyword}」的记忆` : { success: false, error: `没有包含「${keyword}」的记忆` }
+        );
+      }
+      return { success: false, error: '缺少 memoryId 或 keyword' };
+    } else if (action === 'list_memories') {
+      return listMemories(state.currentProjectId).then((list) => {
+        if (!list.length) return '当前没有任何记忆。';
+        const scopeLabel = (m: any) => (m.scope === 'user' ? '用户' : '工程');
+        const impLabel = (m: any) => (m.importance === 'high' ? '重要' : m.importance === 'low' ? '次要' : '一般');
+        const lines = list.map((m) =>
+          `- [${m.id}]（${scopeLabel(m)}/${impLabel(m)}${m.enabled ? '' : '/已停用'}/调用${m.useCount}次）${m.content}`
+        );
+        return `当前记忆（${list.length} 条）：\n${lines.join('\n')}`;
       });
     } else if (action === 'update_project_settings') {
       if (!ensureProject()) return { success: false, error: '未选择项目' };
-      const ALLOWED: Record<keyof ProjectGenerationSettings, string[]> = {
+      const ALLOWED: Partial<Record<keyof ProjectGenerationSettings, string[]>> = {
         imageResolution: ['', '720p', '1080p', '2K', '4K'],
         videoResolution: ['', '480p', '720p', '1080p'],
         imageAspectRatio: ['', '1:1', '16:9', '9:16', '4:3', '3:4', '21:9'],
@@ -623,13 +769,24 @@ export function useStoryboardAIAssistantBridge(params: StoryboardAIAssistantBrid
         if (raw[key] === undefined) continue;
         const v = String(raw[key]).trim();
         const normalized = v === 'auto' || v === '自动' ? '' : v;
-        if (!ALLOWED[key].includes(normalized)) {
-          return { success: false, error: `${key} 取值非法: ${v}（可选: ${ALLOWED[key].filter(Boolean).join(' / ')}，或 auto 表示自动）` };
+        if (!ALLOWED[key]!.includes(normalized)) {
+          return { success: false, error: `${key} 取值非法: ${v}（可选: ${ALLOWED[key]!.filter(Boolean).join(' / ')}，或 auto 表示自动）` };
         }
         patches[key] = normalized;
       }
+      // 美术风格：预设 key（见 ART_STYLE_PRESETS）与自由文本的风格限定
+      if (raw.artStyle !== undefined) {
+        const v = String(raw.artStyle).trim();
+        if (!ART_STYLE_PRESETS.some((preset) => preset.key === v)) {
+          return { success: false, error: `artStyle 取值非法: ${v}（可选: ${ART_STYLE_PRESETS.map((p) => p.key || 'none').join(' / ')}）` };
+        }
+        patches.artStyle = v;
+      }
+      if (raw.artStylePrompt !== undefined) {
+        patches.artStylePrompt = String(raw.artStylePrompt).trim().slice(0, 300);
+      }
       if (Object.keys(patches).length === 0) {
-        return { success: false, error: '未提供可识别的设置字段（imageResolution/imageAspectRatio/videoResolution/videoAspectRatio）' };
+        return { success: false, error: '未提供可识别的设置字段（imageResolution/imageAspectRatio/videoResolution/videoAspectRatio/artStyle/artStylePrompt）' };
       }
       return loadProjectGenerationSettings(state.currentProjectId)
         .then((cur) => saveProjectGenerationSettings(state.currentProjectId!, { ...cur, ...patches }))
@@ -637,6 +794,7 @@ export function useStoryboardAIAssistantBridge(params: StoryboardAIAssistantBrid
           const zh: Record<string, string> = {
             imageResolution: '图片分辨率', imageAspectRatio: '图片画面比例',
             videoResolution: '视频分辨率', videoAspectRatio: '视频画面比例',
+            artStyle: '美术风格', artStylePrompt: '风格限定',
           };
           const changed = Object.entries(patches)
             .map(([k, v]) => `${zh[k] || k}=${(v && String(v).trim()) ? v : '自动'}`)
@@ -735,6 +893,7 @@ export function useStoryboardAIAssistantBridge(params: StoryboardAIAssistantBrid
     id: s.id!,
     index: idx + 1,
     description: s.description,
+    props: Array.isArray(s.props) && s.props.length > 0 ? s.props : undefined,
     first_frame_url: s.startFrame,
     last_frame_url: s.endFrame,
     video_url: s.videoUrl,

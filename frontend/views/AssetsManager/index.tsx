@@ -568,7 +568,7 @@ const AssetsManager: React.FC = () => {
             textModel: params?.textModel || selectedTextModel || undefined,
           });
           if (res?.jobId) {
-            registerLongTask({ jobId: String(res.jobId), title: `白膜三视图 · ${char.name}`, kind: 'image' });
+            registerLongTask({ jobId: String(res.jobId), title: `白膜三视图 · ${char.name}`, kind: 'image', projectId: pid });
           }
           toastOk('白膜三视图生成已启动；完成前不能添加服装、道具或状态');
           loadData();

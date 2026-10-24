@@ -5,6 +5,29 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/png" href="/icon.png" />
     <title>AI视频编辑器</title>
+    <script>
+      // 首屏同步应用已保存主题，避免 React 挂载后才切换导致的整页暗色闪烁
+      (function () {
+        try {
+          var saved = localStorage.getItem('nanostory-theme') || 'dark';
+          if (saved === 'system') saved = 'night-light'; // 旧值迁移
+          var actual = saved;
+          if (saved === 'night-light') {
+            // 夜间模式状态要经 IPC 异步读取，首屏用上次解析结果兜底，无缓存时按深色
+            actual = localStorage.getItem('nanostory-night-light-dark') === '0' ? 'light' : 'dark';
+          }
+          var root = document.documentElement;
+          root.classList.remove('theme-dark', 'theme-light', 'theme-high-contrast');
+          root.classList.add('theme-' + actual);
+          if (actual === 'light') {
+            root.classList.remove('dark', 'high-contrast');
+          } else {
+            root.classList.add('dark');
+            if (actual === 'high-contrast') root.classList.add('high-contrast');
+          }
+        } catch (e) { /* 无 localStorage 时保持默认暗色 */ }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

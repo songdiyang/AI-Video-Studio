@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Film, User, Settings, Sparkles, Moon, Sun, Monitor, Contrast, UsersRound, Puzzle, PanelLeft, PanelRight, PanelBottom, ListTodo, FolderOpen, GripVertical, Check, X } from 'lucide-react';
+import { Film, User, Settings, Sparkles, Moon, MoonStar, Sun, Monitor, Contrast, UsersRound, Puzzle, PanelLeft, PanelRight, PanelBottom, ListTodo, FolderOpen, GripVertical, Check, X } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useKeyboardShortcuts, ShortcutConfig, GLOBAL_SHORTCUTS_CONFIG } from '../hooks/useKeyboardShortcuts';
 import KeyboardShortcutsHelp from './KeyboardShortcutsHelp';
@@ -21,7 +21,7 @@ import InternalMailbox from './InternalMailbox';
 // import LowBalanceBanner from './LowBalanceBanner';
 import { useRoutePreload } from '../hooks/useRoutePreload';
 import { isDesktop } from '../utils/runtimeMode';
-import { listProjects, openProject, type ProjectMetadata } from '../services/localApi';
+import { listProjects, openProject, openProjectWindow, type ProjectMetadata } from '../services/localApi';
 import { mapLocalProject } from '../services/projects';
 
 interface LayoutProps {
@@ -358,7 +358,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     { id: 'settings-dark', title: t.commandPalette.commands.themeDark, category: 'settings', icon: <Moon className="w-4 h-4" />, action: () => setTheme('dark'), keywords: ['theme', '主题', '深色', 'dark'] },
     { id: 'settings-light', title: t.commandPalette.commands.themeLight, category: 'settings', icon: <Sun className="w-4 h-4" />, action: () => setTheme('light'), keywords: ['theme', '主题', '浅色', 'light'] },
     { id: 'settings-high-contrast', title: t.commandPalette.commands.themeHighContrast, category: 'settings', icon: <Contrast className="w-4 h-4" />, action: () => setTheme('high-contrast'), keywords: ['theme', '主题', '高对比度', 'contrast'] },
-    { id: 'settings-system', title: t.commandPalette.commands.themeSystem, category: 'settings', icon: <Monitor className="w-4 h-4" />, action: () => setTheme('system'), keywords: ['theme', '主题', '系统', 'system'] },
+    { id: 'settings-night-light', title: t.commandPalette.commands.themeSystem, category: 'settings', icon: <MoonStar className="w-4 h-4" />, action: () => setTheme('night-light'), keywords: ['theme', '主题', '夜间', 'night light', 'nightlight'] },
     { id: 'settings-lang-zh', title: t.commandPalette.commands.langZh, category: 'settings', action: () => setLanguage('zh-CN'), keywords: ['language', '语言', '中文'] },
     { id: 'settings-lang-en', title: t.commandPalette.commands.langEn, category: 'settings', action: () => setLanguage('en-US'), keywords: ['language', '语言', 'english'] },
   ], [t, navigate, setTheme, setLanguage, switchWorkbenchLeftTab, openSettings]);
@@ -420,6 +420,14 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   }, [onboarding.resetOnboarding]);
 
   // ===== VSCode 式应用菜单（文件/编辑/查看/转到/帮助） =====
+  const handleNewWindow = useCallback(async () => {
+    try {
+      await openProjectWindow();
+    } catch (err: any) {
+      showToast(err?.message || '新建窗口失败', 'error');
+    }
+  }, [showToast]);
+
   const appMenus = useMemo<AppMenu[]>(() => {
     const execCmd = (cmd: string) => {
       try { (document as any).execCommand?.(cmd); } catch { /* 忽略 */ }
@@ -429,6 +437,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         id: 'file',
         label: t.menu.file,
         items: [
+          { label: t.menu.newWindow, action: () => { void handleNewWindow(); } },
           { label: t.menu.newProject, shortcut: 'Ctrl+N', action: () => { navigate('/welcome'); } },
           { label: t.menu.openProject, shortcut: 'Ctrl+O', action: () => { navigate('/welcome'); } },
           { label: t.menu.openRecent, action: () => navigate('/welcome'), submenu: recentLoading
@@ -474,7 +483,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           { label: t.menu.themeDark, checked: theme === 'dark', action: () => setTheme('dark') },
           { label: t.menu.themeLight, checked: theme === 'light', action: () => setTheme('light') },
           { label: t.menu.themeHighContrast, checked: theme === 'high-contrast', action: () => setTheme('high-contrast') },
-          { label: t.menu.themeSystem, checked: theme === 'system', action: () => setTheme('system') },
+          { label: t.menu.themeSystem, checked: theme === 'night-light', action: () => setTheme('night-light') },
         ],
       },
       {
@@ -504,7 +513,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     isFullscreen, toggleFullscreen,
     theme, setTheme, navigate, switchWorkbenchLeftTab,
     setIsCommandPaletteOpen, setShowShortcutsHelp, showToast, t,
-    recentProjects, recentLoading, handleOpenRecent, openSettings,
+    recentProjects, recentLoading, handleOpenRecent, openSettings, handleNewWindow,
   ]);
 
   return (

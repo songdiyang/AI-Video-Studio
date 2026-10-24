@@ -4,8 +4,20 @@
  */
 
 import React, { createContext, useContext, useState, useCallback, useEffect, useMemo } from 'react';
-import { Project, fetchProject } from '../services/projects';
+import { Project, fetchProject, fetchLocalProjects } from '../services/projects';
+import { grantProjectScope } from '../services/localApi';
+import {
+  getWindowProjectPath,
+  isDetachedProjectWindow,
+  rememberProjectId,
+  setWindowProjectPath,
+  claimProjectWindow,
+  claimProjectWindowOrCloseSelf,
+} from '../services/windowProject';
 import { setActiveProject, flushAll } from '../services/localStore';
+import { setLongTaskActiveProject } from '../services/longTasks';
+import { checkImportedMemories, resolveImportedMemories } from '../services/agentMemory';
+import { useConfirm } from './ConfirmContext';
 import { ProjectType, WorkbenchTab, isValidProjectType, mapLegacyProjectType } from '../types/projectTypes';
 import { 
   WorkbenchState, 
@@ -75,9 +87,11 @@ const LAST_PROJECT_KEY = 'nanostory_last_project_id';
 export function WorkbenchProvider({ children, initialProject = null }: WorkbenchProviderProps) {
   // 当前项目
   const [currentProject, setCurrentProject] = useState<Project | null>(initialProject);
-  
+
   // 加载状态
   const [isLoading, setIsLoading] = useState(true);
+
+  const { confirm } = useConfirm();
 
   // ===== VSCode 式布局：左侧面板 =====
   // 持久化激活的活动 id，默认收起（null）
@@ -125,9 +139,39 @@ export function WorkbenchProvider({ children, initialProject = null }: Workbench
     return createInitialWorkbenchState(initialProject?.id || null, projectType);
   });
 
-  // 初始化：自动加载上次打开的项目
+  // 初始化：独立窗口按 URL 绑定的工程加载；主窗口恢复上次打开的工程
   useEffect(() => {
     const initializeProject = async () => {
+      const windowPath = getWindowProjectPath();
+      if (isDetachedProjectWindow()) {
+        if (windowPath) {
+          try {
+            const local = await fetchLocalProjects();
+            const hit = local.find((p) => p.local_path === windowPath);
+            if (hit) {
+              if (hit.local_path) {
+                await grantProjectScope(hit.local_path);
+                // 同一工程只允许一个窗口：已被其它窗口打开时聚焦原窗口并关闭本窗口
+                if (!(await claimProjectWindowOrCloseSelf(hit.local_path))) {
+                  setIsLoading(false);
+                  return;
+                }
+              }
+              setCurrentProject(hit);
+              setIsLoading(false);
+              return;
+            }
+            console.warn('[Workbench] 独立窗口绑定的工程不存在:', windowPath);
+          } catch (e) {
+            console.warn('[Workbench] 独立窗口加载工程失败:', e);
+          }
+        }
+        // 独立窗口不继承主窗口的「上次工程」：未绑定工程时停在欢迎页
+        setCurrentProject(null);
+        setIsLoading(false);
+        return;
+      }
+
       try {
         const lastProjectId = localStorage.getItem(LAST_PROJECT_KEY);
         
@@ -136,6 +180,13 @@ export function WorkbenchProvider({ children, initialProject = null }: Workbench
           try {
             const project = await fetchProject(parseInt(lastProjectId));
             if (project) {
+              // 恢复上次工程时补授权 media/ 目录（幂等）：冷启动不走 open_project，
+              // 无此步工程内已落地素材会因 asset 协议无权限而裂图
+              if (project.local_path) {
+                await grantProjectScope(project.local_path);
+                // 主窗口也登记工程占用，作为“原先的窗口优先”的依据
+                void claimProjectWindow(project.local_path);
+              }
               setCurrentProject(project);
               setIsLoading(false);
               return;
@@ -180,7 +231,33 @@ export function WorkbenchProvider({ children, initialProject = null }: Workbench
     } else {
       setActiveProject(null);
     }
+    // 长任务注册表按工程隔离：切换工程后智能体只能看到本工程的任务
+    setLongTaskActiveProject(currentProject?.id ?? null);
   }, [currentProject]);
+
+  // 外部工程包（.jzp）携带的记忆：首次打开该工程时提示用户决定启用或停用，
+  // 防止外部提示词经工程包静默注入每次对话（package.rs 导入时打 imported/reviewed 标记）
+  useEffect(() => {
+    const path = currentProject?.local_path;
+    if (!path || currentProject.source !== 'local') return;
+    let disposed = false;
+    void (async () => {
+      const count = await checkImportedMemories(path);
+      if (disposed || count == null) return;
+      const keep = await confirm({
+        title: '导入的工程携带外部记忆',
+        message: `该工程包含 ${count} 条来自外部工程包的记忆，会在每次 AI 对话时自动注入上下文。\n\n保留启用，还是全部停用？停用不删除数据，之后可在 AI 助手的「记忆」面板中逐条启用。`,
+        confirmText: '保留启用',
+        cancelText: '全部停用',
+        type: 'warning',
+      });
+      if (disposed) return;
+      await resolveImportedMemories(path, keep);
+    })();
+    return () => { disposed = true; };
+    // confirm 来自 context，引用稳定（useCallback 空依赖）
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentProject, confirm]);
   
   // 设置活动标签页
   const setActiveTab = useCallback((tab: string) => {
@@ -200,7 +277,15 @@ export function WorkbenchProvider({ children, initialProject = null }: Workbench
   const switchProject = useCallback((project: Project) => {
     const projectType = getValidProjectType(project);
     setCurrentProject(project);
-    localStorage.setItem(LAST_PROJECT_KEY, project.id.toString());
+    rememberProjectId(project.id);
+    if (isDetachedProjectWindow()) {
+      // 独立窗口只在自身 URL 记录工程，刷新后仍停留在此工程
+      setWindowProjectPath(project.local_path ?? null);
+      // 该工程已在其它窗口打开：聚焦原窗口并关闭本窗口（原先的优先）
+      if (project.local_path) void claimProjectWindowOrCloseSelf(project.local_path);
+    } else if (project.local_path) {
+      void claimProjectWindow(project.local_path);
+    }
     setWorkbenchState(prevState => 
       updateWorkbenchStateForProject(prevState, project.id, projectType)
     );

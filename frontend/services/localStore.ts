@@ -40,6 +40,8 @@ export const LOCAL_DOCS = {
   uploadTasks: 'upload_tasks.json',
   /** 工程生成参数（图片/视频分辨率与比例，设置页·工程设置） */
   projectSettings: 'project_settings.json',
+  /** 智能体工程记忆（仅本工程调用；用户记忆在应用级 localStorage） */
+  agentMemory: 'agent_memory.json',
 } as const;
 
 export type LocalDocName = keyof typeof LOCAL_DOCS;

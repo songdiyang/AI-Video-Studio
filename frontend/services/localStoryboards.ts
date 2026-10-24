@@ -130,6 +130,13 @@ function toScene(raw: any, scope: string, id: number, index: number): LocalScene
     if (raw[k] !== undefined && raw[k] !== null && raw[k] !== '') variables[k] = raw[k];
   }
   if (raw.variables && typeof raw.variables === 'object') Object.assign(variables, raw.variables);
+  // 道具统一存名称字符串数组：模型偶尔会把顶层 {name,description} 结构带进分镜内 props
+  if (variables.props != null) {
+    const names = (Array.isArray(variables.props) ? variables.props : [variables.props])
+      .map((p: any) => String(typeof p === 'string' ? p : (p?.name ?? '')).trim())
+      .filter(Boolean);
+    variables.props = Array.from(new Set(names));
+  }
   return {
     id,
     index,
@@ -164,12 +171,15 @@ const SPLIT_SYSTEM =
   '严格只输出一个 JSON 对象（不要任何解释、不要 Markdown 代码围栏），格式为：' +
   '{"scenes":[{"title":"镜头标题","description":"该镜头的画面描述","video_prompt":"视频生成提示词",' +
   '"first_frame_prompt":"首帧画面提示词","last_frame_prompt":"尾帧画面提示词","dialogue":"对白，没有则留空",' +
-  '"characters":["出场角色"],"location":"场景/地点","shotType":"景别，如 远景/全景/中景/近景/特写","duration":3}],' +
+  '"characters":["出场角色"],"props":["该镜头出现的关键道具"],"location":"场景/地点","shotType":"景别，如 远景/全景/中景/近景/特写","duration":3}],' +
   '"characters":[{"name":"角色名","description":"该角色的外形/服装/气质简述，用于出图保持一致"}],' +
+  '"props":[{"name":"道具名","description":"该道具的外观/材质/尺寸简述，用于出图保持一致"}],' +
   '"locations":[{"name":"地点名","description":"该地点的环境/氛围/光线简述，用于出图"}]}。' +
   '要求：1) 拆分为 6-15 个镜头，完整覆盖剧本主要情节与转折；2) description / *_prompt 具体、可视化、可直接用于 AI 出图出视频；' +
   '3) 全部使用中文；4) duration 为整数秒；' +
-  '5) 顶层 characters / locations 为资源清单，需去重并覆盖所有分镜中出现的角色与地点，每个都给出可视化简述。';
+  '5) 顶层 characters / locations 为资源清单，需去重并覆盖所有分镜中出现的角色与地点，每个都给出可视化简述；' +
+  '6) props 只列对画面一致性有影响、且在 2 个及以上镜头重复出现的物品（如武器、信物、车辆、招牌菜）；' +
+  '只在单个镜头出现的临时物件写进 description 即可，不要列入 props；顶层 props 需与各镜头 props 名称一致，分镜内 props 写名称字符串。';
 
 function buildSplitUserPrompt(scriptTitle: string, content: string): string {
   const safe = (content || '').slice(0, 12000);
@@ -265,6 +275,48 @@ async function ensureResources(
     updated_at: now,
   }));
   return { characters: createdChars, locations: createdLocs };
+}
+
+/**
+ * 按名称去重补齐道具库（data/props.json：{ nextId, props: [] }），返回新建数量。
+ * 与角色/地点不同，道具文档不是 items 结构，故单独实现；已存在同名道具时只跳过，不覆盖用户编辑过的描述。
+ */
+async function ensureProps(
+  path: string,
+  projectId: number | null,
+  candidates: ResourceCandidate[],
+): Promise<number> {
+  if (projectId == null || candidates.length === 0) return 0;
+
+  const doc = await readDoc<{ nextId?: number; props?: any[] }>(path, 'props', {});
+  const items: any[] = Array.isArray(doc.props) ? doc.props : [];
+  let nextId = Number(doc.nextId) || 1;
+  const existing = new Set(
+    items
+      .filter((it) => String(it?.project_id ?? '') === String(projectId))
+      .map((it) => String(it?.name ?? '').trim().toLowerCase()),
+  );
+
+  const now = new Date().toISOString();
+  let created = 0;
+  for (const c of candidates) {
+    const name = c.name.trim();
+    const key = name.toLowerCase();
+    if (!key || existing.has(key)) continue;
+    items.push({
+      id: nextId++,
+      project_id: projectId,
+      name,
+      description: c.description,
+      created_at: now,
+      updated_at: now,
+    });
+    existing.add(key);
+    created++;
+  }
+
+  if (created > 0) writeDoc(path, 'props', { nextId, props: items });
+  return created;
 }
 
 // ==================== 主处理：自动拆分 ====================
@@ -384,14 +436,31 @@ async function handleAutoGenerate({ scriptId, projectId, body }: AutoGenArgs): P
   // 自动补齐资源：把分镜引用到的角色 / 地点落为真实资产，避免「分镜显示资源但资源不存在」。
   const charRefs: string[] = [];
   const locRefs: string[] = [];
+  const propRefs: string[] = [];
   for (const raw of list) {
     const chars = Array.isArray(raw?.characters) ? raw.characters : raw?.characters != null ? [raw.characters] : [];
     for (const c of chars) charRefs.push(String(c ?? ''));
     if (raw?.location) locRefs.push(String(raw.location));
+    const rawProps = Array.isArray(raw?.props) ? raw.props : raw?.props != null ? [raw.props] : [];
+    for (const p of rawProps) {
+      const name = String(typeof p === 'string' ? p : (p?.name ?? '')).trim();
+      if (name) propRefs.push(name);
+    }
   }
   const characters = collectResources(parsed?.characters, charRefs);
   const locations = collectResources(parsed?.locations ?? parsed?.scenes_locations, locRefs);
+
+  // 道具沉淀：同一物品在 2 个及以上分镜重复出现才入库，一次性小物件留在分镜描述里
+  const propHits = new Map<string, number>();
+  for (const name of propRefs) {
+    const key = name.toLowerCase();
+    propHits.set(key, (propHits.get(key) || 0) + 1);
+  }
+  const repeatedProps = collectResources(parsed?.props, propRefs)
+    .filter((p) => (propHits.get(p.name.toLowerCase()) || 0) >= 2);
+
   const createdResources = await ensureResources(path, resolvedProjectId ?? null, characters, locations);
+  const createdProps = await ensureProps(path, resolvedProjectId ?? null, repeatedProps);
 
   const jobId = `sbg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
   return jsonResponse({
@@ -403,6 +472,7 @@ async function handleAutoGenerate({ scriptId, projectId, body }: AutoGenArgs): P
     projectId: resolvedProjectId ?? null,
     createdCharacters: createdResources.characters,
     createdLocations: createdResources.locations,
+    createdProps,
     message: 'storyboards generated',
   });
 }

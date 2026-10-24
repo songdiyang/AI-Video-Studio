@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { Maximize2, Minimize2 } from 'lucide-react';
 
 interface BottomPanelProps {
   children: React.ReactNode;
@@ -31,10 +32,27 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
   // 拖拽回调在 mousedown 时闭包捕获，用 ref 读取最新状态，避免折叠/拉起后父级开关不同步
   const isCollapsedRef = useRef(isCollapsed);
   const heightRef = useRef(height);
+  // 缝上伸缩：记录最大化前的高度，供再次点击还原
+  const rootRef = useRef<HTMLDivElement>(null);
+  const prevHeightRef = useRef<number | null>(null);
+  const [isExpanded, setIsExpanded] = useState(false);
 
   useEffect(() => {
     heightRef.current = height;
   }, [height]);
+
+  // 最大化态跟随窗口尺寸，避免缩放后高度超出父容器
+  useEffect(() => {
+    if (!isExpanded) return;
+    const syncHeight = () => {
+      const containerHeight = rootRef.current?.parentElement?.clientHeight;
+      const target = Math.max(minHeight, (containerHeight ?? window.innerHeight) - COLLAPSED_HEIGHT);
+      setHeight(target);
+      heightRef.current = target;
+    };
+    window.addEventListener('resize', syncHeight);
+    return () => window.removeEventListener('resize', syncHeight);
+  }, [isExpanded, minHeight]);
 
   // 同步外部 collapsed prop
   useEffect(() => {
@@ -46,6 +64,24 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
     isCollapsedRef.current = newCollapsed;
     setIsCollapsed(newCollapsed);
     onCollapsedChange?.(newCollapsed);
+  };
+
+  // 缝上伸缩：面板高度撑满父容器（扣除拖拽条），再次点击回到原高度
+  const toggleExpanded = () => {
+    if (isExpanded) {
+      const prev = prevHeightRef.current ?? defaultHeight;
+      prevHeightRef.current = null;
+      setIsExpanded(false);
+      setHeight(prev);
+      heightRef.current = prev;
+      return;
+    }
+    prevHeightRef.current = heightRef.current;
+    const containerHeight = rootRef.current?.parentElement?.clientHeight;
+    const target = Math.max(minHeight, (containerHeight ?? window.innerHeight) - COLLAPSED_HEIGHT);
+    setIsExpanded(true);
+    setHeight(target);
+    heightRef.current = target;
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -124,15 +160,40 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
 
   return (
     <div
+      ref={rootRef}
       className="flex flex-col border-t border-[var(--border-color)] bg-[var(--bg-nav)] shrink-0"
       style={{ height: `${height}px` }}
     >
       {/* 拖拽条 */}
       <div
-        className="h-[11px] cursor-row-resize hover:bg-[var(--accent)]/30 transition-colors flex items-center justify-center group"
+        className="h-[11px] relative cursor-row-resize hover:bg-[var(--accent)]/30 transition-colors flex items-center justify-center group"
         onMouseDown={handleMouseDown}
       >
         <div className="w-8 h-[3px] rounded-full bg-[var(--border-color)] group-hover:bg-[var(--accent)] transition-colors" />
+        {/* 缝上伸缩按钮（VSCode 面板 [ ] 同款）：hover 显现，点击最大化/还原高度 */}
+        <button
+          type="button"
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            toggleExpanded();
+          }}
+          title={isExpanded ? '还原面板高度' : '最大化面板'}
+          aria-label={isExpanded ? '还原面板高度' : '最大化面板'}
+          aria-pressed={isExpanded}
+          className={`
+            absolute right-2 top-1/2 -translate-y-1/2 z-10
+            flex items-center justify-center w-4 h-4 rounded-[3px] cursor-pointer
+            bg-[var(--bg-nav)] border border-[var(--border-color)]
+            text-[var(--text-muted)] hover:text-[var(--accent)] hover:border-[var(--accent)]
+            transition-opacity duration-150
+            ${isExpanded ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}
+          `}
+        >
+          {isExpanded
+            ? <Minimize2 className="w-2.5 h-2.5" />
+            : <Maximize2 className="w-2.5 h-2.5" />}
+        </button>
       </div>
       {/* 内容区域 */}
       <div className="flex-1 overflow-auto px-3 pb-3">

@@ -1,6 +1,6 @@
-import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
-import { NotificationViewport } from '../notifications/NotificationViewport';
-import type { ToastItemData, ToastType } from '../notifications/types';
+import React, { createContext, useContext, useCallback, useMemo, ReactNode } from 'react';
+
+export type ToastType = 'debug' | 'info' | 'success' | 'warn' | 'error' | 'warning';
 
 interface ToastContextType {
   showToast: (message: string, type?: ToastType) => void;
@@ -20,27 +20,23 @@ interface ToastProviderProps {
   children: ReactNode;
 }
 
+/**
+ * 通知上下文，不渲染任何 UI。
+ * 右下角通知弹层已移除，showToast 仅作为静默出口保留：
+ * 业务侧数十处调用无需改动，错误与警告输出到 Console 便于排查。
+ */
 export const ToastProvider: React.FC<ToastProviderProps> = ({ children }) => {
-  const [toasts, setToasts] = useState<ToastItemData[]>([]);
-
-  const removeToast = useCallback((id: string) => {
-    setToasts(prev => prev.filter(t => t.id !== id));
+  const showToast = useCallback((message: string, type: ToastType = 'info') => {
+    if (type === 'error' || type === 'warning' || type === 'warn') {
+      console.warn('[toast]', type, message);
+    }
   }, []);
 
-  const showToast = useCallback((message: string, type: ToastType = 'info') => {
-    const id = Math.random().toString(36).substring(2, 9);
-    setToasts(prev => [...prev, { id, message, type }]);
-    
-    // Auto remove after 5 seconds
-    setTimeout(() => {
-      removeToast(id);
-    }, 5000);
-  }, [removeToast]);
+  const value = useMemo(() => ({ showToast }), [showToast]);
 
   return (
-    <ToastContext.Provider value={{ showToast }}>
+    <ToastContext.Provider value={value}>
       {children}
-      <NotificationViewport toasts={toasts} onClose={removeToast} />
     </ToastContext.Provider>
   );
 };

@@ -24,6 +24,7 @@ import {
   type AICategory,
 } from './localAI';
 import { readProjectDoc, resolveLocalPath } from './localStore';
+import { loadEffectiveArtStylePrompt } from './projectSettings';
 import { isTauri } from './localApi';
 import { persistGeneratedMedia } from './localMedia';
 import type { TaskPlan, JobMeta, JobView, TaskStep } from './queueTypes';
@@ -459,14 +460,18 @@ async function viewToJob(view: JobView): Promise<LocalWorkflowJob> {
 async function buildQueuePlanAndMeta(workflowType: string, projectId: number, params: any): Promise<{ plan: TaskPlan; meta: JobMeta }> {
   const category = classify(workflowType);
   const p = (params && typeof params === 'object' ? params : {}) as any;
+  // 美术风格注入：临时覆盖优先于工程锁定（用户临时意图机动性高于工程限定）
+  const artStyle = await loadEffectiveArtStylePrompt(projectId);
+  const withArtStyle = (base: string) => (artStyle ? `${base}，${artStyle}` : base);
   let plan: TaskPlan;
 
   if (category === 'video') {
     const model = await pickModel(p.videoModel || p.model, 'VIDEO');
     if (!model) throw new Error('未找到可用的视频生成模型，请在设置中配置');
     const ctx = await loadSceneContext(projectId, p.storyboardId);
-    const prompt = (p.prompt || ctx.prompt || '').trim();
-    if (!prompt) throw new Error('缺少视频生成提示词');
+    const rawPrompt = (p.prompt || ctx.prompt || '').trim();
+    if (!rawPrompt) throw new Error('缺少视频生成提示词');
+    const prompt = withArtStyle(rawPrompt);
     plan = await buildVideoTaskPlan(model, {
       prompt,
       firstFrame: p.imageUrl || p.firstFrame || ctx.firstFrame,
@@ -479,8 +484,9 @@ async function buildQueuePlanAndMeta(workflowType: string, projectId: number, pa
     const model = await pickModel(p.imageModel || p.model, 'IMAGE');
     if (!model) throw new Error('未找到可用的图片生成模型，请在设置中配置');
     const ctx = await loadSceneContext(projectId, p.storyboardId);
-    const prompt = (p.prompt || p.description || p.firstFramePrompt || ctx.prompt || '').trim();
-    if (!prompt) throw new Error('缺少图片生成提示词');
+    const rawPrompt = (p.prompt || p.description || p.firstFramePrompt || ctx.prompt || '').trim();
+    if (!rawPrompt) throw new Error('缺少图片生成提示词');
+    const prompt = withArtStyle(rawPrompt);
     const refImageUrls: string[] = [];
     for (const key of ['compositeImageUrl', 'sketchUrl', 'startSketchUrl', 'imageUrl', 'image_url', 'referenceImageUrl']) {
       const v = p[key];
@@ -489,7 +495,7 @@ async function buildQueuePlanAndMeta(workflowType: string, projectId: number, pa
     const steps: TaskStep[] = [buildImageTaskStep(model, { prompt, refImageUrls, aspectRatio: p.aspectRatio })];
     if (p.lastFramePrompt && workflowType === 'frame_generation') {
       const lastStep = buildImageTaskStep(model, {
-        prompt: p.lastFramePrompt,
+        prompt: withArtStyle(p.lastFramePrompt),
         aspectRatio: p.aspectRatio,
         nameHint: 'frame_last',
         aliases: ['last_frame_url', 'endFrame', 'lastFrameUrl'],
@@ -509,7 +515,8 @@ async function buildQueuePlanAndMeta(workflowType: string, projectId: number, pa
       '1. 保留原意，补充主体、动作、场景、镜头、光线、风格、画质等要素；\n' +
       '2. 语言精炼、结构清晰，便于模型执行；\n' +
       '3. 严格只输出一个 JSON 对象，不要任何解释或代码围栏，格式为：\n' +
-      '{"optimized": "改写后的正向提示词", "negativePrompt": "需要规避的负向提示词，没有则留空"}';
+      '{"optimized": "改写后的正向提示词", "negativePrompt": "需要规避的负向提示词，没有则留空"}' +
+      (artStyle ? `\n【工程统一美术风格（必须在提示词中体现）】${artStyle}` : '');
     const submit = buildChatHttpStep(
       model,
       [{ role: 'system', content: systemPrompt }, { role: 'user', content: basePrompt }],

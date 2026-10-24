@@ -3,6 +3,7 @@ import {
   listProjects as listLocalProjects,
   deleteProject as removeLocalProject,
   updateProjectManifest,
+  grantProjectScope,
   ProjectMetadata,
 } from './localApi';
 
@@ -133,6 +134,11 @@ export async function fetchProject(id: number): Promise<Project> {
     const hit = local.find(p => p.id === id);
     if (!hit) {
       throw new Error('本地工程不存在');
+    }
+    // 命中本地工程即补授权 media/ 目录：冷启动恢复工程不走 open_project，
+    // 缺少该授权时已落地素材在 asset 协议下会被拒读
+    if (hit.local_path) {
+      await grantProjectScope(hit.local_path);
     }
     return hit;
   }

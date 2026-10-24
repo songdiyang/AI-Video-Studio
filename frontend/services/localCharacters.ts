@@ -200,9 +200,10 @@ async function handleGenerateViews(charId: number, body: any): Promise<Response>
     projectId,
     inputParams: { characterId: charId, imageModel: body?.imageModel, characterName: ch.name },
     run: async () => {
-      const front = await genImageToUrl({ imageModel: body?.imageModel, prompt: prompts.front, projectId, nameHint: `char${charId}_front` });
-      const side = await genImageToUrl({ imageModel: body?.imageModel, prompt: prompts.side, projectId, nameHint: `char${charId}_side` });
-      const back = await genImageToUrl({ imageModel: body?.imageModel, prompt: prompts.back, projectId, nameHint: `char${charId}_back` });
+      // 白膜/基础三视图保持中性网格，不叠加工程美术风格
+      const front = await genImageToUrl({ imageModel: body?.imageModel, prompt: prompts.front, projectId, nameHint: `char${charId}_front`, skipArtStyle: true });
+      const side = await genImageToUrl({ imageModel: body?.imageModel, prompt: prompts.side, projectId, nameHint: `char${charId}_side`, skipArtStyle: true });
+      const back = await genImageToUrl({ imageModel: body?.imageModel, prompt: prompts.back, projectId, nameHint: `char${charId}_back`, skipArtStyle: true });
       const d2 = await loadRestDoc(path, 'characters');
       const c = findById(d2.items, charId);
       if (c) {

@@ -235,7 +235,41 @@ pub fn import_package(package: &Path, dest_root: &Path) -> Result<ProjectMetadat
     meta.path = project_dir.to_string_lossy().to_string();
     meta.updated_at = chrono::Utc::now().to_rfc3339();
     storage::write_manifest(&project_dir, &meta)?;
+    // 外部工程包可能携带智能体记忆（data/agent_memory.json），标记为「未审阅的外部记忆」，
+    // 前端首次打开该工程时提示用户决定启用或停用，避免外部提示词静默注入对话。
+    flag_imported_memories(&project_dir);
     Ok(meta)
+}
+
+/// 把工程包携带的 agent_memory.json 标记为待审阅（imported=true, reviewed=false）。
+/// 尽力而为：文件缺失/解析失败一律忽略，不影响导入主流程。
+fn flag_imported_memories(project_dir: &Path) {
+    let path = project_dir.join("data").join("agent_memory.json");
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return;
+    };
+    let Ok(mut doc) = serde_json::from_str::<serde_json::Value>(&text) else {
+        return;
+    };
+    let has_memories = doc
+        .get("memories")
+        .and_then(|m| m.as_array())
+        .map(|a| !a.is_empty())
+        .unwrap_or(false);
+    if !has_memories {
+        return;
+    }
+    let Some(obj) = doc.as_object_mut() else {
+        return;
+    };
+    obj.insert("imported".into(), serde_json::Value::Bool(true));
+    obj.insert("reviewed".into(), serde_json::Value::Bool(false));
+    if let Ok(pretty) = serde_json::to_string_pretty(&doc) {
+        let tmp = path.with_extension("json.tmp");
+        if std::fs::write(&tmp, pretty).is_ok() {
+            let _ = std::fs::rename(&tmp, &path);
+        }
+    }
 }
 
 #[cfg(test)]

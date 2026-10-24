@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { getWorkflowList, WorkflowJob } from '../../hooks/useWorkflow';
 import { activeLongTasks, getLongTask, updateLongTask } from '../../services/longTasks';
 import { pushInternalMail } from '../../services/localMail';
+import { useWorkbench } from '../../contexts/WorkbenchContext';
 
 // Polling interval constants (in milliseconds)
 const POLLING_ACTIVE = 3000;    // When there are active tasks
@@ -47,6 +48,9 @@ export interface UseTaskQueueReturn {
 
 export function useTaskQueue(options?: UseTaskQueueOptions): UseTaskQueueReturn {
   const { onJobFailed } = options || {};
+  // 任务按工程隔离：只展示/对账当前工程的任务
+  const { currentProject } = useWorkbench();
+  const projectId = currentProject?.id ?? null;
   const [jobs, setJobs] = useState<WorkflowJob[]>([]);
   const [loading, setLoading] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -80,7 +84,13 @@ export function useTaskQueue(options?: UseTaskQueueOptions): UseTaskQueueReturn 
       if (showLoading || isFirstLoad.current) {
         setLoading(true);
       }
-      const data = await getWorkflowList({ status: 'pending,running,failed' });
+      // 无当前工程时不拉取：避免把其它工程的任务显示到当前窗口
+      if (projectId == null) {
+        setJobs([]);
+        isFirstLoad.current = false;
+        return;
+      }
+      const data = await getWorkflowList({ status: 'pending,running,failed', projectId });
       const currentJobs = data.jobs || [];
       const currentJobIds = new Set(currentJobs.map((j: WorkflowJob) => j.id));
 
@@ -116,7 +126,7 @@ export function useTaskQueue(options?: UseTaskQueueOptions): UseTaskQueueReturn 
 
       // 首次加载时对账：已登记但已不在活跃列表中的任务视为已完成（覆盖关闭应用期间完成的任务）
       if (isFirstLoad.current) {
-        activeLongTasks().forEach((record) => {
+        activeLongTasks(projectId).forEach((record) => {
           if (currentJobIds.has(record.jobId)) return;
           updateLongTask(record.jobId, {
             status: 'completed',
@@ -216,12 +226,23 @@ export function useTaskQueue(options?: UseTaskQueueOptions): UseTaskQueueReturn 
       setLoading(false);
       isFetchingRef.current = false;
     }
-  }, []);
+  }, [projectId]);
+
+  // 切换工程时清空上一个工程的追踪快照，避免把别的工程的任务误判为完成/失败
+  useEffect(() => {
+    isFirstLoad.current = true;
+    prevJobIdsRef.current = new Set();
+    prevJobTypesRef.current = new Map();
+    prevStatusRef.current = new Map();
+    prevJobsSnapshotRef.current = '';
+    staleCountRef.current = 0;
+    setJobs([]);
+  }, [projectId]);
 
   // Calculate adaptive polling interval based on task states and panel visibility
   const getPollingInterval = useCallback(() => {
     // 有智能体长任务在跑时，即使面板收起也保持较快轮询，保证完成通知及时
-    const hasTrackedLongTask = activeLongTasks().length > 0;
+    const hasTrackedLongTask = activeLongTasks(projectId).length > 0;
     if (!isExpanded) {
       return hasTrackedLongTask ? POLLING_ACTIVE : POLLING_MINIMIZED;
     }
@@ -237,7 +258,7 @@ export function useTaskQueue(options?: UseTaskQueueOptions): UseTaskQueueReturn 
     if (staleCount < 6) return 5000;                   // 3-6次: 5s
     if (staleCount < 10) return 8000;                  // 6-10次: 8s
     return POLLING_MINIMIZED;                           // 10次+: 15s（和最小化一样）
-  }, [jobs, isExpanded]);
+  }, [jobs, isExpanded, projectId]);
 
   // Effect to manage adaptive polling interval
   useEffect(() => {

@@ -191,6 +191,45 @@ pub async fn load_project_data(
     }
 }
 
+// ==================== 应用级数据文档（非工程数据） ====================
+
+/// 应用级文档路径：应用数据目录 app_docs/<name>；name 不允许路径分隔符
+fn app_doc_path(name: &str, state: &State<'_, AppState>) -> Result<PathBuf, String> {
+    if name.is_empty() || name.contains('/') || name.contains('\\') || name.contains("..") {
+        return Err("Invalid app doc name".to_string());
+    }
+    Ok(state.storage.root.join("app_docs").join(name))
+}
+
+/// 读取应用级数据文档（不存在返回 None；如智能体用户记忆）
+#[tauri::command]
+pub async fn read_app_doc(name: String, state: State<'_, AppState>) -> Result<Option<String>, String> {
+    let path = app_doc_path(&name, &state)?;
+    match std::fs::read_to_string(&path) {
+        Ok(content) => Ok(Some(content)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(format!("Failed to read app doc: {}", e)),
+    }
+}
+
+/// 写入应用级数据文档（临时文件 + 原子替换）
+#[tauri::command]
+pub async fn write_app_doc(
+    name: String,
+    content: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let path = app_doc_path(&name, &state)?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create app docs dir: {}", e))?;
+    }
+    let tmp = path.with_extension("tmp");
+    std::fs::write(&tmp, content).map_err(|e| format!("Failed to write app doc: {}", e))?;
+    std::fs::rename(&tmp, &path).map_err(|e| format!("Failed to replace app doc: {}", e))?;
+    Ok(())
+}
+
 /// 更新工程清单的名称/描述（原地覆写清单文件，文件名保持不变）
 #[tauri::command]
 pub async fn update_project_manifest(
@@ -516,6 +555,25 @@ fn grant_media_scope(app: &AppHandle, dir: &PathBuf) {
         Ok(_) => log::info!("Granted asset protocol scope: {:?}", dir),
         Err(e) => log::warn!("Failed to grant asset protocol scope for {:?}: {}", dir, e),
     }
+}
+
+/// 为工程文件夹授予其 media/ 目录的 asset 协议读取权限（幂等；工程已失效仅告警）
+pub fn grant_project_media_scope(app: &AppHandle, project_path: &str) {
+    match crate::storage::resolve_manifest(project_path) {
+        Ok(manifest_path) => {
+            if let Some(dir) = manifest_path.parent() {
+                grant_media_scope(app, &dir.join("media"));
+            }
+        }
+        Err(e) => log::warn!("Skip asset scope grant for {:?}: {}", project_path, e),
+    }
+}
+
+/// 授权工程 media/ 目录供 asset 协议读取（前端冷启动恢复上次工程时补授权）
+#[tauri::command]
+pub async fn grant_project_scope(app: AppHandle, path: String) -> Result<(), String> {
+    grant_project_media_scope(&app, &path);
+    Ok(())
 }
 
 /// 由 MIME 猜测文件扩展名
