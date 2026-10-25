@@ -20,7 +20,7 @@ import { routeAiAssistantSessions } from './localAiAssistant';
 import { assertProject } from './localAssetShared';
 import { routeAiChatAndModels } from './localAiAssistantChat';
 import { routeScripts, resolveScriptReferences } from './localScripts';
-import { routeAutoGenerate } from './localStoryboards';
+import { routeAutoGenerate, ensureStudioByName } from './localStoryboards';
 import { routeStyles } from './localStyles';
 import { routeWorkflows } from './localWorkflowRouter';
 import { routeCharacters } from './localCharacters';
@@ -253,6 +253,13 @@ async function handleSceneContentPatch(idStr: string, body: any): Promise<Respon
     if (parsed) scene.variables = { ...scene.variables, ...parsed };
   }
   saveStoryboards(path, doc);
+  // 分镜绑定地点与资源面板影棚同源：绑定的地点名若在 studios 集合中不存在则自动补建空壳影棚，
+  // 杜绝「分镜里有影棚、资源里没有影棚」（覆盖手动选自定义影棚与 AI 助手绑定两条路径）。
+  const locName = typeof body.location === 'string' ? body.location.trim() : '';
+  if (locName) {
+    const pid = projectIdForPath(path);
+    await ensureStudioByName(path, pid, locName);
+  }
   return jsonResponse(scene);
 }
 
@@ -589,8 +596,8 @@ async function route(url: URL, method: string, body: any): Promise<Response | nu
     const res = await routeEnvironments(url, m, body);
     if (res) return res;
   }
-  // 影棚（详情/关联/剧本工作流/九宫） + 服装设定图生成
-  if (pathname.startsWith('/api/studios/') || pathname.startsWith('/api/costumes/')) {
+  // 影棚（列表自愈迁移/详情/关联/剧本工作流/九宫） + 服装设定图生成
+  if (pathname === '/api/studios' || pathname.startsWith('/api/studios/') || pathname.startsWith('/api/costumes/')) {
     const res = await routeStudios(url, m, body);
     if (res) return res;
   }

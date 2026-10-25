@@ -830,6 +830,10 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
       if (!res.ok) {
         throw new Error('保存角色/影棚失败');
       }
+      // 后端可能按绑定的地点名自动补建了影棚：广播刷新，令资源面板与分镜保持同一数据源。
+      if (location && location.trim()) {
+        window.dispatchEvent(new CustomEvent('resource-library-changed', { detail: { type: 'studios' } }));
+      }
       return true;
     } catch (error: any) {
       // 回滚

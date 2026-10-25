@@ -23,6 +23,48 @@ import {
   submitGenJob,
 } from './localAssetShared';
 
+/**
+ * 存量自愈迁移：把历史 scenes 集合里的影棚按名并入 studios（幂等，忽略大小写与首尾空白），
+ * 返回新建数量。影棚只有一个数据源（studios）：早期分镜拆分/绑定把影棚落进了 scenes，
+ * 导致「分镜/导演空间读 scenes 有影棚、资源面板读 studios 没有影棚」的分裂。
+ * 这里在读取 studios 前把存量补齐，让两个入口看到同一份影棚。
+ */
+export async function migrateScenesToStudios(path: string): Promise<number> {
+  const [scenes, studios] = await Promise.all([
+    loadRestDoc(path, 'scenes'),
+    loadRestDoc(path, 'studios'),
+  ]);
+  if (!scenes.items.length) return 0;
+  const existing = new Set(
+    studios.items.map((it: any) => String(it?.name ?? '').trim().toLowerCase()),
+  );
+  const now = new Date().toISOString();
+  let created = 0;
+  for (const sc of scenes.items) {
+    const name = String(sc?.name ?? '').trim();
+    if (!name) continue;
+    const key = name.toLowerCase();
+    if (existing.has(key)) continue;
+    studios.items.push({
+      id: studios.nextId++,
+      project_id: sc.project_id ?? null,
+      name,
+      description: sc.description ?? null,
+      environment_id: null,
+      building_ids: [],
+      element_ids: [],
+      generation_status: 'pending',
+      sort_order: studios.items.length,
+      created_at: sc.created_at ?? now,
+      updated_at: now,
+    });
+    existing.add(key);
+    created++;
+  }
+  if (created > 0) saveRestDoc(path, 'studios', studios);
+  return created;
+}
+
 // ==================== 影棚详情 ====================
 async function handleStudioDetail(studioId: number): Promise<Response | null> {
   const path = activePath();
@@ -228,6 +270,15 @@ export async function routeStudios(url: URL, method: string, body: any): Promise
   const p = url.pathname;
   const m = method.toUpperCase();
   let mt: RegExpMatchArray | null;
+
+  // 影棚列表自愈迁移：读取前把历史 scenes 影棚并入 studios，保证影棚只有 studios 一个数据源，
+  // 然后返回 null 交回 routeRest 正常输出 { studios } 列表。
+  if (p === '/api/studios' && m === 'GET') {
+    const pidRaw = url.searchParams.get('projectId');
+    const path = await resolvePath(pidRaw ? Number(pidRaw) : null);
+    if (path) await migrateScenesToStudios(path);
+    return null;
+  }
 
   // 影棚：剧本工作流（固定段）
   if (p === '/api/studios/extract-components' && m === 'POST') return handleExtractComponents(body || {});

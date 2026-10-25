@@ -190,6 +190,9 @@ function buildSplitUserPrompt(scriptTitle: string, content: string): string {
 // 拆分出的分镜会引用角色名与地点名，但若资源库里没有对应资产，就会出现
 // 「分镜显示资源、实际资源不存在」的问题。这里在写库后按名称去重建资源，
 // 已存在（同名，忽略大小写与首尾空白）则跳过，仅补空白项。
+// 影棚（地点）与资源面板同源：一律写入 studios 集合（= /api/studios 与
+// /api/resource-library 的 locations 数据源），不再落到独立的 scenes 集合，
+// 杜绝「分镜里有影棚、资源里没有影棚」的数据分裂。
 interface ResourceCandidate {
   name: string;
   description: string;
@@ -222,7 +225,57 @@ function collectResources(
   return [...byName.values()];
 }
 
-/** 在 characters / scenes 文档中按名称去重补齐资源，返回新建数量 */
+/**
+ * 构造影棚（studios）空壳条目：拆分批量补齐与分镜绑定单条补齐共用，
+ * 字段形状对齐 localStudios 的 compose-from-script。
+ * 影棚 = 环境(1:1) + 建筑(1:N) + 元素(M:N) 的聚合，自动补齐时先建空壳，
+ * 后续在影棚编辑器里绑定环境与建筑。
+ */
+function buildStudioShell(c: ResourceCandidate, id: number, projectId: number, now: string): any {
+  return {
+    id,
+    project_id: projectId,
+    name: String(c.name ?? '').trim(),
+    description: String(c.description ?? '').trim() || null,
+    environment_id: null,
+    building_ids: [],
+    element_ids: [],
+    generation_status: 'pending',
+    sort_order: 0,
+    created_at: now,
+    updated_at: now,
+  };
+}
+
+/**
+ * 确保工程 studios 集合中存在指定名称的影棚（按名去重，忽略大小写与首尾空白），返回是否新建。
+ * 分镜绑定的地点与资源面板影棚同源：任何被分镜引用的地点名都必须能在 studios 里找到，
+ * 否则就会出现「分镜里有影棚、资源里没有影棚」的数据分裂。
+ */
+export async function ensureStudioByName(
+  path: string,
+  projectId: number | null,
+  name: string,
+  description?: string,
+): Promise<boolean> {
+  const n = String(name ?? '').trim();
+  if (!n || projectId == null) return false;
+  const doc = await restStore.loadDoc(path, 'studios');
+  const key = n.toLowerCase();
+  const exists = doc.items.some(
+    (it: any) =>
+      String(it?.project_id) === String(projectId) &&
+      String(it?.name ?? '').trim().toLowerCase() === key,
+  );
+  if (exists) return false;
+  doc.items.push(
+    buildStudioShell({ name: n, description: description ?? '' }, doc.nextId++, projectId, new Date().toISOString()),
+  );
+  restStore.saveDoc(path, 'studios', doc);
+  return true;
+}
+
+/** 在 characters / studios 文档中按名称去重补齐资源，返回新建数量 */
 async function ensureResources(
   path: string,
   projectId: number | null,
@@ -233,7 +286,7 @@ async function ensureResources(
   const now = new Date().toISOString();
 
   const addMissing = async (
-    docName: 'characters' | 'scenes',
+    docName: 'characters' | 'studios',
     candidates: ResourceCandidate[],
     build: (c: ResourceCandidate, id: number) => any,
   ): Promise<number> => {
@@ -266,14 +319,9 @@ async function ensureResources(
     created_at: now,
     updated_at: now,
   }));
-  const createdLocs = await addMissing('scenes', locations, (c, id) => ({
-    id,
-    project_id: projectId,
-    name: c.name,
-    description: c.description,
-    created_at: now,
-    updated_at: now,
-  }));
+  const createdLocs = await addMissing('studios', locations, (c, id) =>
+    buildStudioShell(c, id, projectId as number, now),
+  );
   return { characters: createdChars, locations: createdLocs };
 }
 

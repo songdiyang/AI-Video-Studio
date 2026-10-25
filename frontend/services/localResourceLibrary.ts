@@ -9,6 +9,7 @@
  */
 import { readDoc, writeDoc } from './localStore';
 import { loadRestDoc, resolvePath, jsonResponse } from './localAssetShared';
+import { migrateScenesToStudios } from './localStudios';
 import type { ResourceCategoryConfig, ResourceTypeKey } from '../types/resourceLibrary';
 
 const RESOURCE_TYPES: ResourceTypeKey[] = [
@@ -91,6 +92,8 @@ export async function routeResourceLibrary(
   if (!path) return jsonResponse({ message: '未打开本地工程' }, 400);
 
   if (pathname === '/api/resource-library' && m === 'GET') {
+    // 影棚自愈迁移：读取前把历史 scenes 影棚并入 studios，保证资源面板与分镜看到同一份影棚
+    await migrateScenesToStudios(path);
     const [characters, studios, propsDoc, environments, buildings, costumes, categories] = await Promise.all([
       loadRestDoc(path, 'characters'),
       loadRestDoc(path, 'studios'),

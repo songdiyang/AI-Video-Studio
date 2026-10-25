@@ -148,6 +148,12 @@ export function useStoryboardGeneration({
 
       options.onSplitDone?.(typeof data?.count === 'number' ? data.count : undefined);
 
+      // 拆分自动补齐了角色/影棚/道具资源：广播资源库刷新（空 type = 全量刷新），
+      // 让资源面板与分镜保持同一数据源，避免「分镜里有影棚、资源里没有影棚」。
+      if (data?.createdCharacters || data?.createdLocations || data?.createdProps) {
+        window.dispatchEvent(new CustomEvent('resource-library-changed', { detail: {} }));
+      }
+
       // 启动工作流轮询 - 统一处理，无论哪种模式都返回单个 jobId
       recovery.startJob(data.jobId);
     } catch (error: any) {
