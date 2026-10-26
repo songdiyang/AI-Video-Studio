@@ -459,17 +459,33 @@ export async function fetchScenes(): Promise<Scene[]> {
   return (data.scenes || []).map(normalizeSceneUrls);
 }
 
-/** 按项目获取场景列表（支持团队成员访问）；可选 scriptId 按剧本过滤 */
+/** 按项目获取影棚列表（分镜绑定 / 导演空间 / 节点画布的影棚数据源）。
+ *  影棚唯一数据源是 studios 集合（= 资源面板「影棚」页），不再读旧的 scenes 集合，
+ *  保证「分镜里看到的影棚」与「资源面板里的影棚」始终一致。
+ *  scriptId 形参保留兼容：影棚按工程维度聚合，不再按剧本过滤。 */
 export async function fetchScenesByProject(projectId: number, scriptId?: number): Promise<Scene[]> {
-  const url = scriptId
-    ? `/api/scenes/project/${projectId}?scriptId=${scriptId}`
-    : `/api/scenes/project/${projectId}`;
-  const response = await fetch(url);
+  void scriptId;
+  const response = await fetch(`/api/studios?projectId=${projectId}`);
   if (!response.ok) {
-    throw new Error('获取项目场景列表失败');
+    throw new Error('获取项目影棚列表失败');
   }
   const data = await response.json();
-  return (data.scenes || []).map(normalizeSceneUrls);
+  return (data.studios || []).map((s: any): Scene => normalizeSceneUrls({
+    id: s.id,
+    user_id: s.user_id ?? 0,
+    project_id: s.project_id ?? projectId,
+    name: s.name ?? '',
+    description: s.description ?? '',
+    environment: '',
+    lighting: '',
+    mood: '',
+    image_url: s.cover_image_url ?? s.nine_grid_image_url ?? '',
+    tags: '',
+    studio_id: s.id,
+    studio_name: s.name ?? '',
+    created_at: s.created_at ?? '',
+    updated_at: s.updated_at ?? '',
+  }));
 }
 
 export async function createScene(scene: Partial<Scene>): Promise<Scene> {
