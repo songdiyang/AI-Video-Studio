@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Card, CardBody, Chip, Image } from '@heroui/react';
-import { LayoutGrid, Cloud, Building2, Trash2, ExternalLink, Settings } from 'lucide-react';
+import { Card, CardBody, Tooltip } from '@heroui/react';
+import { Trash2, ExternalLink, Edit2, Cloud, Building2, MapPin } from 'lucide-react';
 import { Scene } from './useSceneData';
 
 interface LocationsTabProps {
@@ -24,6 +24,8 @@ const openAssetEditTab = (scene: Scene) => {
   }));
 };
 
+/** 影棚资源行（无封面紧凑双行）：与角色/道具行同一套密度与交互语言。
+ *  关联摘要（环境/建筑）优先级高于描述——影棚多为按名空壳，关联信息区分度更高。 */
 const LocationsTab: React.FC<LocationsTabProps> = ({
   scenes,
   selectedId,
@@ -44,18 +46,13 @@ const LocationsTab: React.FC<LocationsTabProps> = ({
     if (!onDelete) return;
     setContextMenu({ x: e.clientX, y: e.clientY, scene });
   };
-  return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-sm font-semibold" style={{ color: 'var(--text-secondary)' }}>
-          全部影棚 ({scenes.length})
-        </span>
-      </div>
 
+  return (
+    <div className="space-y-1">
       {scenes.length === 0 && (
-        <div className="text-center py-8" style={{ color: 'var(--text-muted)' }}>
-          <p className="text-sm">暂无影棚</p>
-          <p className="text-xs mt-1">请先在资源管理中创建影棚</p>
+        <div className="text-center py-6 text-(--text-muted)">
+          <p className="text-xs">暂无影棚</p>
+          <p className="text-[10px] mt-1 opacity-70">生成分镜后自动按地点补齐，或在资产库手动创建</p>
         </div>
       )}
 
@@ -63,70 +60,58 @@ const LocationsTab: React.FC<LocationsTabProps> = ({
         const isSelected = selectedId != null && scene.id === selectedId;
         const env = scene._environment || null;
         const linkedBuildings = scene._buildings || [];
-        const hasNineGrid = !!scene.nine_grid_image_url;
+        // 行 2 摘要：环境/建筑关联优先，无关联再展示描述
+        const relationBits: string[] = [];
+        if (env) relationBits.push(env.name);
+        if (linkedBuildings.length) relationBits.push(`${linkedBuildings.map((b) => b.name).join('、')}`);
+        const summary = relationBits.length ? relationBits.join(' · ') : scene.description;
 
         return (
           <Card
             key={scene.id}
-            isPressable
-            onPress={() => onSelect?.(scene)}
+            className={`group w-full rounded-lg border shadow-none transition-colors ${
+              isSelected
+                ? 'border-(--accent) bg-(--accent)/5'
+                : 'border-(--border-color) bg-(--bg-card) hover:border-(--accent)/30 hover:bg-(--bg-card-hover)'
+            }`}
+            onClick={onSelect ? () => onSelect(scene) : undefined}
             onDoubleClick={() => openAssetEditTab(scene)}
             onContextMenu={(e) => handleContextMenu(e, scene)}
-            className={`border transition-all cursor-pointer ${
-              isSelected
-                ? 'ring-2 ring-(--accent) border-(--accent)'
-                : 'hover:border-(--accent)/40'
-            }`}
-            style={{
-              backgroundColor: 'var(--bg-card)',
-              borderColor: isSelected ? undefined : 'var(--border)',
-            }}
           >
-            <CardBody className="p-3">
-              <div className="flex items-start gap-3">
-                {/* 九宫图缩略图作为封面 */}
-                <div className="shrink-0 relative">
-                  {hasNineGrid ? (
-                    <Image
-                      src={scene.nine_grid_image_url!}
-                      alt={scene.name}
-                      removeWrapper
-                      className="w-14 h-14 object-cover rounded-lg border border-slate-700/50"
-                    />
-                  ) : (
-                    <div className="w-14 h-14 rounded-lg border border-dashed border-slate-600 flex items-center justify-center bg-slate-800/40">
-                      <LayoutGrid className="w-5 h-5 text-slate-500" />
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex-1 min-w-0 self-stretch flex flex-col">
-                  <p className="font-semibold text-sm truncate" style={{ color: 'var(--text-primary)' }}>
-                    {scene.name}
-                  </p>
-                  {scene.description && (
-                    <p className="text-xs mt-0.5 line-clamp-1" style={{ color: 'var(--text-muted)' }}>
-                      {scene.description}
-                    </p>
-                  )}
-
-                  {/* 环境 / 建筑标签 */}
-                  <div className="flex flex-wrap gap-1 mt-auto pt-1.5">
-                    {env && (
-                      <Chip size="sm" variant="flat" className="bg-sky-500/10 text-sky-300 h-5 text-[10px]">
-                        <Cloud className="w-2.5 h-2.5 mr-0.5 inline" />
-                        {env.name}
-                      </Chip>
-                    )}
-                    {linkedBuildings.map((b) => (
-                      <Chip key={b.id} size="sm" variant="flat" className="bg-amber-500/10 text-amber-300 h-5 text-[10px]">
-                        <Building2 className="w-2.5 h-2.5 mr-0.5 inline" />
-                        {b.name}
-                      </Chip>
-                    ))}
-                  </div>
-                </div>
+            <CardBody className="px-2.5 py-1.5">
+              {/* 行 1：名称 + 关联指示点 + 悬停编辑 */}
+              <div className="flex items-center gap-1.5">
+                <MapPin className="h-3 w-3 shrink-0 text-(--text-muted) opacity-70" />
+                <h4 className="min-w-0 truncate text-[13px] font-semibold text-(--text-primary)">{scene.name}</h4>
+                {env && (
+                  <Tooltip content={`环境：${env.name}`}>
+                    <span className="shrink-0 inline-flex text-sky-400/90">
+                      <Cloud className="h-3 w-3" />
+                    </span>
+                  </Tooltip>
+                )}
+                {linkedBuildings.length > 0 && (
+                  <Tooltip content={`建筑：${linkedBuildings.map((b) => b.name).join('、')}`}>
+                    <span className="shrink-0 inline-flex items-center gap-0.5 text-amber-400/90">
+                      <Building2 className="h-3 w-3" />
+                      {linkedBuildings.length > 1 && <span className="text-[9px] leading-3">{linkedBuildings.length}</span>}
+                    </span>
+                  </Tooltip>
+                )}
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); openAssetEditTab(scene); }}
+                  className="ml-auto shrink-0 rounded p-0.5 text-(--text-muted) opacity-0 transition-opacity duration-150 hover:bg-white/5 hover:text-(--text-primary) active:bg-white/10 group-hover:opacity-100 focus-visible:opacity-100"
+                  title="编辑影棚"
+                  aria-label="编辑影棚"
+                >
+                  <Edit2 className="h-3.5 w-3.5" />
+                </button>
               </div>
+              {/* 行 2：关联摘要或描述 */}
+              {summary && (
+                <p className="mt-0.5 truncate pl-[18px] text-[11px] leading-4 text-(--text-secondary)">{summary}</p>
+              )}
             </CardBody>
           </Card>
         );
@@ -136,62 +121,36 @@ const LocationsTab: React.FC<LocationsTabProps> = ({
       {contextMenu && (
         <div
           ref={menuRef}
-          className="fixed z-50 bg-(--bg-card) border border-(--border-color) rounded-lg shadow-xl py-1.5 min-w-[180px] select-none"
+          className="fixed z-50 bg-[var(--bg-nav)] border border-[var(--border-color)] rounded-lg shadow-lg py-1 min-w-[140px] select-none"
           style={{ top: contextMenu.y, left: contextMenu.x }}
           onClick={(e) => e.stopPropagation()}
         >
-          {/* 打开 */}
           <button
-            className="w-full text-left px-3 py-1.5 text-sm text-(--text-primary) hover:bg-(--accent)/10 flex items-center gap-2.5 transition-colors"
+            className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 text-(--text-primary) hover:bg-white/5 transition-colors"
             onClick={() => {
               openAssetEditTab(contextMenu.scene);
               setContextMenu(null);
             }}
           >
-            <ExternalLink className="w-4 h-4 text-(--accent)" />
+            <ExternalLink className="w-3.5 h-3.5 text-(--text-muted)" />
             打开详情
           </button>
 
-          {/* 分割线 */}
-          {onDelete && <div className="my-1 border-t border-(--border-color)" />}
-
-          {/* 删除 */}
           {onDelete && (
-            <button
-              className="w-full text-left px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 flex items-center gap-2.5 transition-colors"
-              onClick={() => {
-                onDelete(contextMenu.scene);
-                setContextMenu(null);
-              }}
-            >
-              <Trash2 className="w-4 h-4" />
-              删除影棚
-            </button>
-          )}
-
-          {/* 底部快捷栏 */}
-          <div className="mt-1.5 pt-1.5 border-t border-(--border-color) px-2 pb-1">
-            <div className="flex items-center justify-around">
+            <>
+              <div className="my-1 border-t border-[var(--border-color)]" />
               <button
-                className="flex flex-col items-center gap-0.5 p-1.5 rounded hover:bg-(--accent)/10 transition-colors"
-                onClick={() => { openAssetEditTab(contextMenu.scene); setContextMenu(null); }}
-                title="打开"
+                className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 text-red-400 hover:bg-red-500/10 transition-colors"
+                onClick={() => {
+                  onDelete(contextMenu.scene);
+                  setContextMenu(null);
+                }}
               >
-                <ExternalLink className="w-4 h-4 text-(--accent)" />
-                <span className="text-[10px] text-(--text-muted)">打开</span>
+                <Trash2 className="w-3.5 h-3.5" />
+                删除影棚
               </button>
-              {onDelete && (
-                <button
-                  className="flex flex-col items-center gap-0.5 p-1.5 rounded hover:bg-red-500/10 transition-colors"
-                  onClick={() => { onDelete(contextMenu.scene); setContextMenu(null); }}
-                  title="删除"
-                >
-                  <Trash2 className="w-4 h-4 text-red-400" />
-                  <span className="text-[10px] text-red-400">删除</span>
-                </button>
-              )}
-            </div>
-          </div>
+            </>
+          )}
         </div>
       )}
     </div>
