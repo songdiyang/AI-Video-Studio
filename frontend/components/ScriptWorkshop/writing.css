@@ -1,0 +1,158 @@
+/* WritingSurface - 番茄小说式沉浸式写作面样式（主题变量驱动，深浅色自适应） */
+
+.sw-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  background: var(--bg-app);
+  color: var(--text-primary);
+}
+
+/* 顶栏：降权，只保留专注 / 预览两个操作，主视线让给正文 */
+.sw-toolbar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--border-color);
+}
+.sw-toolbar-kind {
+  font-size: 12px;
+  color: var(--text-muted);
+  letter-spacing: .04em;
+}
+.sw-toolbar-actions { display: flex; align-items: center; gap: 4px; }
+.sw-tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: color .15s, background-color .15s;
+}
+.sw-tool:hover { color: var(--text-primary); background: var(--bg-input); }
+.sw-tool.is-active { color: var(--accent); background: var(--bg-input); }
+.sw-tool:focus-visible { outline: 1px solid var(--accent); outline-offset: -2px; }
+
+/* 滚动区：正文铺满、居中成舒适阅读列 */
+.sw-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 40px 24px 64px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+.sw-scroll::-webkit-scrollbar { width: 9px; }
+.sw-scroll::-webkit-scrollbar-track { background: transparent; }
+.sw-scroll::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.sw-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+  background-clip: padding-box;
+}
+.sw-column {
+  max-width: 42rem;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 标题：大字号、无边框内联输入，模拟网文标题排版 */
+.sw-title {
+  width: 100%;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.4;
+  letter-spacing: .01em;
+  padding: 0 0 8px;
+  margin-bottom: 12px;
+}
+.sw-title::placeholder { color: var(--text-muted); opacity: .5; }
+
+/* 正文写作画布：无边框、宽松行距、舒适字号，番茄小说书写手感 */
+.sw-canvas {
+  width: 100%;
+  min-height: 60vh;
+  border: 0;
+  outline: none;
+  resize: none;
+  overflow: hidden;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 18px;
+  line-height: 2;
+  letter-spacing: .01em;
+  padding: 0;
+  font-family: inherit;
+  caret-color: var(--accent);
+}
+.sw-canvas::placeholder { color: var(--text-muted); opacity: .55; }
+
+/* 专注（打字机）模式：轻微收拢顶部工具，聚焦正文 */
+.sw-root.is-focus .sw-toolbar { opacity: .5; transition: opacity .2s; }
+.sw-root.is-focus .sw-toolbar:hover { opacity: 1; }
+
+.sw-preview { color: var(--text-primary); }
+
+/* 底部状态栏：左字数、右保存状态，弱化存在感 */
+.sw-statusbar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 16px;
+  border-top: 1px solid var(--border-color);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.sw-count { letter-spacing: .02em; opacity: .85; }
+.sw-status-right { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.sw-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  color: var(--text-muted);
+  opacity: .8;
+  transition: color .15s, opacity .15s;
+}
+.sw-status:hover { opacity: 1; color: var(--text-secondary); }
+.sw-status.is-saved { color: #34d399; opacity: .9; }
+.sw-status.is-error { color: #f87171; opacity: 1; }
+.sw-status.is-dirty { color: #d49a36; opacity: 1; }
+.sw-status.is-saving { color: var(--accent); opacity: 1; }
+.sw-save {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 10px;
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color .15s;
+}
+.sw-save:hover { background: var(--accent-dark); }

@@ -1189,10 +1189,10 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
   // 仅「分镜标签」与「非剧本资产标签」有实质底部内容（导演空间 / 资产关联分镜）。
   // 设置、团队、扩展详情、剧本生成等整页型标签隐藏底部面板，让内容铺满整个区域，
   // 消除残留的「无可用的工作区域」，明确设置的模态为全屏标签页。
+  // 剧本标签页为沉浸式写作面，正文直接在标签页内编辑，不再需要底部编辑宿主。
   const hasBottomWorkArea =
     activeTab?.type === 'scene' ||
-    activeTab?.type === 'asset' ||
-    activeTab?.type === 'script-generate';
+    activeTab?.type === 'asset';
 
   // 底部编辑宿主必须先存在，内容编辑器才会 Portal 进去；折叠只隐藏，不卸载草稿。
   useEffect(() => {
@@ -1344,7 +1344,6 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
                   setScriptGenerateTabEpisode(undefined);
                   setScriptWorkshopData(undefined);
                 }}
-                editorPortalTarget={bottomEditorHost}
                 onRegisterEditor={registerEditor}
               />
             </div>

@@ -238,6 +238,10 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
   // 工程 ID 快照：长任务登记/查询用 ref 读取，避免闭包过期与依赖数组频繁重建
   const projectIdRef = useRef<number | null>(projectId);
   projectIdRef.current = projectId ?? null;
+  // 对话持久化闸门：切工程时先关闸并把 messages 重置为新工程初始态，再放行写入。
+  // 防止「messages 落盘 effect」在同一 commit 内用上一个工程的旧消息写入新工程的
+  // 存储键（ai_chat_${projectId}），造成跨工程对话串味。
+  const messagesReadyRef = useRef(false);
   const [inputText, setInputText] = useState('');
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -684,6 +688,12 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
 
   // 项目切换时恢复上次的标签栏打开集，并拉取会话列表修正激活会话
   useEffect(() => {
+    // 切工程 = 与上一个工程彻底隔离：先关持久化闸门，清掉上一个工程的会话缓存，
+    // 显示重置为空白欢迎对话，再按新工程水合标签栏/会话（新建工程即为空白）。
+    messagesReadyRef.current = false;
+    messagesCacheRef.current.clear();
+    setCurrentSessionId(null);
+    setMessages([getWelcomeMessage(!!projectId)]);
     // 先同步读回已落盘的打开集，让标签栏在 fetch 返回前就有正确内容（避免闪空）
     let stored: number[] | null = null;
     try {
@@ -742,6 +752,8 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
 
   // ── Persist messages on change ───────────────────────────────────
   useEffect(() => {
+    // 切工程水合期间（闸门关闭）不落盘，避免把上一个工程的消息写进新工程的存储键
+    if (!messagesReadyRef.current) return;
     // 不保存只有 welcome message 的空会话
     if (messages.length > 1 || (messages.length === 1 && messages[0].id !== 'welcome')) {
       saveMessages(messages);
@@ -750,6 +762,12 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
       if (sid !== null) messagesCacheRef.current.set(sid, messages);
     }
   }, [messages, saveMessages]);
+
+  // messages 已切换到当前工程的内容（重置/水合后的那一次 commit）后，再放行持久化写入。
+  // 声明在落盘 effect 之后：同一 commit 内落盘 effect 先跑，仍看到关闸状态。
+  useEffect(() => {
+    messagesReadyRef.current = true;
+  }, [messages]);
 
   // ── Auto-scroll to bottom ────────────────────────────────────────
   useEffect(() => {

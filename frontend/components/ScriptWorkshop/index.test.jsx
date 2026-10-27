@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-// 使用真实 React DOM 与共享外壳；仅 mock 网络、Toast 与 HeroUI 动画按钮。
-// 剧本工作坊现为「已有剧本的内容编辑器」：AI 生成与上传已移至左侧大纲面板。
+// 使用真实 React DOM 与沉浸式写作面；仅 mock 网络、Toast。
+// 剧本工作坊现为「标签页内直接编辑」的沉浸写作面：AI 生成与上传已移至左侧大纲面板。
 import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import ScriptWorkshop from './index';
@@ -10,13 +10,8 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock('../../services/scripts', () => ({ updateScript: mocks.update }));
 vi.mock('../../contexts/ToastContext', () => ({ useToast: () => ({ showToast: mocks.toast }) }));
-vi.mock('@heroui/react', () => ({
-  Button: ({ children, onPress, isDisabled, isLoading, startContent, color, variant, size, ...props }) => (
-    <button {...props} type="button" disabled={isDisabled || isLoading} onClick={onPress}>{startContent}{children}</button>
-  ),
-}));
 
-let root, container, host, props, register, handle;
+let root, container, props, register, handle;
 const base = { lockProjectId: 7, lockEpisodeNumber: 2, onClose: () => {} };
 const existing = { initialScriptId: 21, initialTitle: '旧标题', initialContent: '旧正文' };
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
@@ -26,10 +21,11 @@ async function render(patch = {}) {
   props = { ...props, ...patch };
   await act(async () => root.render(<ScriptWorkshop {...props} />));
 }
+// 沉浸式写作面以 aria-label 定位字段：标题内联输入、正文画布。
 function field(label, scope = document) {
-  const match = [...scope.querySelectorAll('label')].find(node => node.querySelector('span')?.textContent === label);
-  if (!match) throw new Error(`字段不存在：${label}`);
-  return match.querySelector('input,textarea,select');
+  const node = scope.querySelector(`[aria-label="${label}"]`);
+  if (!node) throw new Error(`字段不存在：${label}`);
+  return node;
 }
 function button(text, scope = document) {
   const match = [...scope.querySelectorAll('button')].find(node => node.textContent === text);
@@ -39,7 +35,7 @@ function button(text, scope = document) {
 async function input(label, value) {
   await act(async () => {
     const node = field(label);
-    const proto = node.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLSelectElement.prototype;
+    const proto = node.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
     Object.getOwnPropertyDescriptor(proto, 'value').set.call(node, value);
     node.dispatchEvent(new Event('input', { bubbles: true }));
   });
@@ -55,8 +51,7 @@ beforeEach(() => {
   mocks.toast.mockReset();
   vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('Unexpected network request')));
   container = document.createElement('div');
-  host = document.createElement('div');
-  document.body.append(container, host);
+  document.body.append(container);
   root = createRoot(container);
   handle = null;
   register = vi.fn(value => { handle = value; });
@@ -66,42 +61,25 @@ afterEach(async () => {
   vi.useRealTimers();
   vi.restoreAllMocks();
   await unmount();
-  container.remove(); host.remove();
+  container.remove();
   vi.unstubAllGlobals();
 });
 
-test('无剧本 ID 时展示引导空态，不渲染编辑字段', async () => {
+test('无剧本 ID 时展示引导空态，不渲染写作画布', async () => {
   await render();
   expect(container.textContent).toContain('尚未选择剧本');
   expect(container.querySelector('textarea')).toBeNull();
 });
 
-test('undefined 独立布局；null 等待宿主；Portal 移动和隐藏不复制实例或草稿', async () => {
+test('有剧本 ID 时直接在标签页渲染沉浸写作面（标题 + 正文）', async () => {
   await render(existing);
-  expect(container.querySelector('textarea')).not.toBeNull();
-  expect(host.childElementCount).toBe(0);
-  const registered = handle;
-  await render({ editorPortalTarget: null });
-  expect(document.querySelector('textarea')).toBeNull();
-  expect(container.textContent).toContain('旧正文');
-  await render({ editorPortalTarget: host });
-  expect(container.querySelector('textarea')).toBeNull();
-  expect(host.querySelectorAll('textarea')).toHaveLength(1);
-  await input('剧本名称', '新标题');
-  await input('剧本内容', '实时预览正文');
-  expect(container.textContent).toContain('实时预览正文');
-  expect(host.querySelector('.content-editor-title').textContent).toBe('新标题');
-  host.style.display = 'none';
-  await render();
-  host.style.display = '';
-  await render({ editorPortalTarget: null });
-  await render({ editorPortalTarget: host });
-  expect(field('剧本内容').value).toBe('实时预览正文');
-  expect(handle).toBe(registered);
-  expect(register).toHaveBeenCalledTimes(1);
-  expect(await flush()).toBe(true);
-  await unmount();
-  expect(register).toHaveBeenLastCalledWith(null);
+  await tick();
+  expect(field('剧本名称').value).toBe('旧标题');
+  expect(field('剧本内容').value).toBe('旧正文');
+  // 不再出现旧的 AI 生成 / 上传入口，也不残留分栏 Tab 外壳
+  expect(container.textContent).not.toContain('AI生成');
+  expect(container.textContent).not.toContain('上传剧本');
+  expect(container.querySelectorAll('[role="tab"]')).toHaveLength(0);
 });
 
 test('立即 flush 保存最新标题/正文，并通知父级更新名称与内容', async () => {
@@ -146,22 +124,20 @@ test('并发 flush 共享保存任务，并排空保存过程中产生的新输�
   expect(document.querySelector('[role="status"]').textContent).toContain('已保存');
 });
 
-test.each([false, { success: false }, new Error('断网')])('保存失败 %s 返回 false、保留输入并阻止关闭，可重试', async failure => {
+test.each([false, { success: false }, new Error('断网')])('保存失败 %s 返回 false、保留输入并提供重试', async failure => {
   mocks.update.mockImplementation(async () => { if (failure instanceof Error) throw failure; return failure; });
-  const onClose = vi.fn();
-  await render({ ...existing, onClose });
+  await render(existing);
   await input('剧本内容', '不能丢失');
   expect(await flush()).toBe(false);
   expect(field('剧本内容').value).toBe('不能丢失');
-  await click('关闭');
-  expect(onClose).not.toHaveBeenCalled();
   expect(fetch).not.toHaveBeenCalled();
   expect(document.querySelector('[role="status"]').textContent).toContain('保存失败');
   mocks.update.mockResolvedValue({ message: 'ok' });
   await click('重试保存');
+  await tick();
   expect(field('剧本内容').value).toBe('不能丢失');
-  await click('关闭');
-  expect(onClose).toHaveBeenCalledTimes(1);
+  expect(await flush()).toBe(true);
+  expect(document.querySelector('[role="status"]').textContent).toContain('已保存');
 });
 
 test('目标改变后旧请求不得通知新对象；迟到的外部回填不覆盖脏稿', async () => {
@@ -205,7 +181,7 @@ test('保存期间产生的新输入不被父级回填覆盖', async () => {
 });
 
 test('StrictMode 重放后句柄可用，编辑不会反复注册且不会重复保存', async () => {
-  props = { ...props, ...existing, editorPortalTarget: host };
+  props = { ...props, ...existing };
   await act(async () => root.render(<React.StrictMode><ScriptWorkshop {...props} /></React.StrictMode>));
   const count = register.mock.calls.length;
   expect(handle).not.toBeNull();
@@ -215,10 +191,13 @@ test('StrictMode 重放后句柄可用，编辑不会反复注册且不会重复
   expect(mocks.update).toHaveBeenCalledExactlyOnceWith(21, '旧标题', '严格模式草稿');
 });
 
-test('标签页只保留内容编辑，不再出现 AI生成/上传剧本', async () => {
+test('预览切换：写作 ↔ 结构化分镜预览', async () => {
   await render(existing);
   await tick();
-  expect([...document.querySelectorAll('[role="tab"]')].map(node => node.textContent)).toEqual(['内容']);
-  expect(document.body.textContent).not.toContain('AI生成');
-  expect(document.body.textContent).not.toContain('上传剧本');
+  expect(field('剧本内容')).toBeTruthy();
+  await click('预览');
+  expect(container.querySelector('[aria-label="剧本内容"]')).toBeNull();
+  expect(container.textContent).toContain('旧正文');
+  await click('写作');
+  expect(field('剧本内容').value).toBe('旧正文');
 });

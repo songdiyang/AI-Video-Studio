@@ -10,7 +10,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAIAssistantWorkbenchContext, AIAssistantAction, AIAssistantFrameContext, AIAssistantSceneSummary, AIAssistantStudioSummary } from '../../../../contexts/AIAssistantContext';
 import { createScript as createScriptApi, deleteScript as deleteScriptApi, updateScript as updateScriptApi } from '../../../../services/scripts';
-import { fetchCharacter, fetchCharacterStates, createCharacterState, updateCharacterState, generateCharacterStateViews, createProp, updateProp, deleteProp } from '../../../../services/assets';
+import { fetchCharacter, fetchCharacterStates, createCharacterState, updateCharacterState, deleteCharacterState, generateCharacterStateViews, createProp, updateProp, deleteProp } from '../../../../services/assets';
 import { updateProject as updateProjectApi } from '../../../../services/projects';
 import { registerLongTask } from '../../../../services/longTasks';
 import { listStudios, createStudio, updateStudio, deleteStudio } from '../../../../services/studios';
@@ -403,6 +403,61 @@ export function useStoryboardAIAssistantBridge(params: StoryboardAIAssistantBrid
           return `角色 #${id} 已删除`;
         })
         .catch(fail('删除角色失败'));
+    } else if (action === 'delete_character_state') {
+      // 删除单个角色状态图（含白膜：白膜也是 is_base_model 的状态记录）
+      const cid = Number(actionParams?.characterId);
+      const sid = Number(actionParams?.stateId);
+      if (!cid || !sid) return { success: false, error: '缺少 characterId 或 stateId' };
+      return (async () => {
+        try {
+          const states = await fetchCharacterStates(cid);
+          const target = states.find((s: any) => s.id === sid);
+          if (!target) return { success: false, error: `角色状态 #${sid} 不存在` };
+          await deleteCharacterState(cid, sid);
+          const isBase = !!target.is_base_model;
+          const label = isBase ? '白膜' : `状态「${target.name || `#${sid}`}」`;
+          const derived = isBase ? states.filter((s: any) => !s.is_base_model).length : 0;
+          const extra = isBase && derived
+            ? `；该角色仍有 ${derived} 个派生状态将失去白膜参考，建议重新生成白膜或用 delete_base_model(cascade) 一并删除。`
+            : '';
+          toastOk(`已删除角色 #${cid} 的${label}`);
+          resourceActions.fetchProjectCharacters?.();
+          notifyLibraryChanged('characters');
+          return `已删除角色 #${cid} 的${label}${extra}`;
+        } catch (e: any) {
+          showToast(e?.message || '删除角色状态失败', 'error');
+          return { success: false, error: e?.message || '删除角色状态失败' };
+        }
+      })();
+    } else if (action === 'delete_base_model') {
+      // 删除白膜；cascade=true 时连同该角色的派生状态图一并删除
+      const cid = Number(actionParams?.characterId);
+      if (!cid) return { success: false, error: '缺少 characterId' };
+      const cascade = Boolean(actionParams?.cascade);
+      return (async () => {
+        try {
+          const states = await fetchCharacterStates(cid);
+          const base = states.find((s: any) => s.is_base_model);
+          if (!base) return { success: false, error: '该角色尚无白膜' };
+          const derived = states.filter((s: any) => !s.is_base_model);
+          await deleteCharacterState(cid, base.id);
+          if (cascade) {
+            for (const s of derived) {
+              try { await deleteCharacterState(cid, s.id); } catch { /* 忽略单个失败 */ }
+            }
+          }
+          resourceActions.fetchProjectCharacters?.();
+          notifyLibraryChanged('characters');
+          const msg = cascade && derived.length
+            ? `已删除角色 #${cid} 的白膜及 ${derived.length} 个派生状态`
+            : `已删除角色 #${cid} 的白膜${derived.length ? `；保留 ${derived.length} 个派生状态（将失去白膜参考），如需一并删除请设 cascade=true` : ''}`;
+          toastOk(msg);
+          return msg;
+        } catch (e: any) {
+          showToast(e?.message || '删除白膜失败', 'error');
+          return { success: false, error: e?.message || '删除白膜失败' };
+        }
+      })();
     }
     // 场景库（Studio）CRUD：资源面板「场景」页的真实数据源
     else if (action === 'create_studio') {

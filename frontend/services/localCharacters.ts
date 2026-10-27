@@ -23,12 +23,42 @@ import {
 } from './localAssetShared';
 
 // ==================== 视图提示词组装 ====================
-function buildViewPrompts(ch: any): { front: string; side: string; back: string } {
-  const base = String(ch.front_prompt || ch.generation_prompt || ch.base_appearance || ch.description || ch.name || '角色设定图');
+// 白膜 = 角色默认参考素体：只锁定长相/体型/基础发型，强制无服装、无配饰、无道具、统一中性站姿。
+// 它是后续派生状态图的基准网格，因此不能带入服饰/剧情等细节，也不叠加工程美术风格。
+function buildBaseModelPrompts(src: any): { front: string; side: string; back: string } {
+  // 只取体貌字段（不含 outfit/description 等服装剧情描述），显式剔除服装与道具。
+  const body = String(src.base_appearance || src.hairstyle || src.appearance || '').trim();
+  const neutral = '角色白膜素体（默认参考态），固定同一长相、体型与基础发型，'
+    + '统一 A-Pose 中性站姿、双臂平展、中性表情，'
+    + '不着任何服装与配饰、不持任何道具，仅以简洁贴身素体呈现';
+  const identity = body ? `${body}，` : '';
   return {
-    front: ch.front_prompt || `${base}，正面全身设定图，白色背景`,
-    side: ch.side_prompt || `${base}，侧面全身设定图，白色背景`,
-    back: ch.back_prompt || `${base}，背面全身设定图，白色背景`,
+    front: src.front_prompt || `${identity}${neutral}，正面全身三视图，纯白背景`,
+    side: src.side_prompt || `${identity}${neutral}，侧面全身三视图，纯白背景`,
+    back: src.back_prompt || `${identity}${neutral}，背面全身三视图，纯白背景`,
+  };
+}
+
+// 状态图 = 白膜体貌（身份锚定）+ 服饰 + 状态参数；代表角色在某分镜中的造型，套用工程美术风格。
+function buildStatePrompts(ch: any, state: any): { front: string; side: string; back: string } {
+  const identity = String(state.base_appearance || ch.base_appearance || ch.appearance || '').trim();
+  const outfit = String(state.outfit || '').trim();
+  const extras = [state.hairstyle, state.age_stage, state.body_elements, state.accessories, state.held_props]
+    .map((v) => String(v || '').trim()).filter(Boolean).join('，');
+  const parts = [
+    identity ? `角色长相与体型与白膜保持一致：${identity}` : '角色长相与体型与白膜参考保持一致',
+    outfit ? `身着：${outfit}` : '',
+    extras ? `状态特征：${extras}` : '',
+    state.description ? `情境：${state.description}` : '',
+  ].filter(Boolean);
+  const core = parts.join('，');
+  const pose: Record<'front' | 'side' | 'back', string> = {
+    front: '正面全身设定图', side: '侧面全身设定图', back: '背面全身设定图',
+  };
+  return {
+    front: state.front_prompt || `${core}，${pose.front}，白色背景`,
+    side: state.side_prompt || `${core}，${pose.side}，白色背景`,
+    back: state.back_prompt || `${core}，${pose.back}，白色背景`,
   };
 }
 
@@ -159,7 +189,16 @@ async function handleStateGenerateViews(charId: number, stateId: number, body: a
   const ch = findById(cdoc.items, charId) || {};
   if (!assertProject(ch, path)) return jsonResponse({ message: '角色不存在' }, 404);
   const projectId = Number(ch.project_id) || 0;
-  const prompts = buildViewPrompts({ ...ch, ...state });
+  const isBase = !!state.is_base_model;
+  const prompts = isBase ? buildBaseModelPrompts({ ...ch, ...state }) : buildStatePrompts(ch, state);
+  // 状态图以白膜三视图作参考图保持同一角色一致；受角色/状态 use_reference_images 开关控制（白膜自身不用参考）。
+  const useRef = !isBase && Boolean(state.use_reference_images ?? ch.use_reference_images);
+  const baseState = isBase ? null : doc.items.find((s) => Number(s.character_id) === charId && s.is_base_model);
+  const refFor = (view: 'front' | 'side' | 'back'): string[] | undefined => {
+    if (!useRef || !baseState) return undefined;
+    const url = baseState[`${view}_view_url`];
+    return url ? [String(url)] : undefined;
+  };
   state.generation_status = 'generating';
   saveRestDoc(path, 'characterStates', doc);
   const jobId = submitGenJob({
@@ -168,9 +207,17 @@ async function handleStateGenerateViews(charId: number, stateId: number, body: a
     projectId,
     inputParams: { characterId: charId, stateId, imageModel: body?.imageModel, characterName: ch.name, stateName: state.name },
     run: async () => {
-      const front = await genImageToUrl({ imageModel: body?.imageModel, prompt: prompts.front, projectId, nameHint: `char${charId}_state${stateId}_front` });
-      const side = await genImageToUrl({ imageModel: body?.imageModel, prompt: prompts.side, projectId, nameHint: `char${charId}_state${stateId}_side` });
-      const back = await genImageToUrl({ imageModel: body?.imageModel, prompt: prompts.back, projectId, nameHint: `char${charId}_state${stateId}_back` });
+      const gen = (view: 'front' | 'side' | 'back') => genImageToUrl({
+        imageModel: body?.imageModel,
+        prompt: prompts[view],
+        projectId,
+        nameHint: `char${charId}_state${stateId}_${view}`,
+        refImageUrls: refFor(view),
+        skipArtStyle: isBase,
+      });
+      const front = await gen('front');
+      const side = await gen('side');
+      const back = await gen('back');
       const d2 = await loadRestDoc(path, 'characterStates');
       const st = findById(d2.items, stateId);
       if (st) {
@@ -191,7 +238,7 @@ async function handleGenerateViews(charId: number, body: any): Promise<Response>
   const ch = findById(doc.items, charId);
   if (!ch || !assertProject(ch, path)) return jsonResponse({ message: '角色不存在' }, 404);
   const projectId = Number(ch.project_id) || 0;
-  const prompts = buildViewPrompts(ch);
+  const prompts = buildBaseModelPrompts(ch);
   ch.generation_status = 'generating';
   saveRestDoc(path, 'characters', doc);
   const jobId = submitGenJob({
@@ -255,9 +302,11 @@ async function handleGenerateImagePrompt(charId: number, body: any): Promise<Res
   const model = await pickTextModel(body?.textModel);
   if (!model) return jsonResponse({ message: '请先配置可用的文本模型' }, 400);
   const sys =
-    '你是专业的 AI 绘画提示词工程师。基于角色设定，产出正面/侧面/背面三视图的高质量提示词。' +
+    '你是专业的 AI 绘画提示词工程师。为“角色白膜素体（默认参考态）”产出正面/侧面/背面三视图提示词。' +
+    '白膜只锁定长相、体型、基础发型，必须无服装、无配饰、无手持道具，统一 A-Pose 中性站姿、中性表情、纯白背景；' +
+    '只保留身体本身（如发色、瞳色、体型、肤色、疤痕/纹身等体貌），不得描述任何服装与剧情细节。' +
     '严格只输出 JSON：{"style":"画风","front":"正面提示词","side":"侧面提示词","back":"背面提示词"}，全部中文。';
-  const user = `角色名称：${ch.name || ''}\n基础外貌/设定：${ch.base_appearance || ch.description || ''}\n用户补充：${body?.userNote || ''}`;
+  const user = `角色名称：${ch.name || ''}\n基础体貌（不含服装）：${ch.base_appearance || ch.appearance || ''}\n用户补充：${body?.userNote || ''}`;
   const parsed = await chatJson(model, sys, user);
   const promptFront = body?.basePromptFront || parsed?.front || '';
   const promptSide = body?.basePromptSide || parsed?.side || '';

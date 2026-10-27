@@ -17,9 +17,13 @@ const RESOURCE_TYPES: ResourceTypeKey[] = [
 ];
 
 const DEFAULT_CATEGORIES: ResourceCategoryConfig = {
-  enabledTypes: ['characters', 'locations', 'props'],
+  // 环境/建筑是影棚的组成素材，默认展示在影棚分组之下，便于直接维护绑定来源
+  enabledTypes: ['characters', 'locations', 'environments', 'buildings', 'props'],
   customCategories: [],
 };
+
+/** 旧版默认三分类（升级识别用） */
+const LEGACY_DEFAULT_TYPES = ['characters', 'locations', 'props'];
 
 function normalizeCategories(raw: any): ResourceCategoryConfig {
   const enabledTypes = Array.isArray(raw?.enabledTypes)
@@ -38,6 +42,12 @@ function normalizeCategories(raw: any): ResourceCategoryConfig {
 
   // 完全空配置回退默认分类，保证资源库不会出现「有资源但零分类」的死状态。
   if (enabledTypes.length === 0 && customCategories.length === 0) {
+    return { ...DEFAULT_CATEGORIES, enabledTypes: [...DEFAULT_CATEGORIES.enabledTypes] };
+  }
+  // 存量工程一次性升级：落盘的还是旧版默认三分类时，换为含环境/建筑的新默认；
+  // 用户自定义过分类（内容或顺序不同、有自定义分组）则保持原样。
+  if (customCategories.length === 0 && enabledTypes.length === LEGACY_DEFAULT_TYPES.length
+    && enabledTypes.every((t, i) => t === LEGACY_DEFAULT_TYPES[i])) {
     return { ...DEFAULT_CATEGORIES, enabledTypes: [...DEFAULT_CATEGORIES.enabledTypes] };
   }
   return { enabledTypes, customCategories };

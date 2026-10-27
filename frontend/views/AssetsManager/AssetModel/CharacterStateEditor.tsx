@@ -9,7 +9,6 @@ import { useToast } from '../../../contexts/ToastContext';
 import { usePreview } from '../../../components/PreviewProvider';
 import { useConfirm } from '../../../contexts/ConfirmContext';
 import { useAIModels } from '../../../hooks/useAIModels';
-import AIModelSelector from '../../../components/AIModelSelector';
 import { type EmbeddedEditorProps, type EditorSaveStatus } from '../../../components/ContentEditorPanel';
 import '../../../components/ContentEditorPanel/styles.css';
 import { ResourceDraft, STATE_FIELDS, normalizeState, statePayload, pickResourceFields, type ResourceData } from '../../../components/AssetEditor/resourceDraft';
@@ -53,7 +52,8 @@ const CharacterStateSession: React.FC<CharacterStateEditorProps> = ({ characterI
   const { showToast } = useToast();
   const { confirm } = useConfirm();
   const { openPreview } = usePreview();
-  const { models, selected, setSelected } = useAIModels(projectId);
+  // 生成模型统一在「工程设置 → 生成模型」调整，这里只读取当前工程的已选模型
+  const { selected } = useAIModels(projectId);
   const [states, setStates] = useState<CharacterState[]>([]);
   const statesRef = useRef(states); statesRef.current = states;
   const savedVersion = useRef(0);
@@ -195,7 +195,7 @@ const CharacterStateSession: React.FC<CharacterStateEditorProps> = ({ characterI
    */
   const generateBaseThreeViews = async () => {
     if (disabled || !characterId || operationBusy || generationBusy) return;
-    if (!selected.image) { showToast('请先选择图像生成模型', 'warning'); return; }
+    if (!selected.image) { showToast('请先在工程设置中选择图像生成模型', 'warning'); return; }
     await runOperation(async () => {
       let baseState = statesRef.current.find(state => state.is_base_model);
       if (!baseState) {
@@ -298,7 +298,7 @@ const CharacterStateSession: React.FC<CharacterStateEditorProps> = ({ characterI
       // 先存角色本体，再排空当前状态；不能把父级复合 flush 传进来形成递归。
       if (callbacks.current.beforeGenerate && !(await callbacks.current.beforeGenerate())) return;
       if (!(await flush()) || !alive.current) return;
-      if (!selected.image) throw new Error('请先选择图像生成模型');
+      if (!selected.image) throw new Error('请先在工程设置中选择图像生成模型');
       const state = draftRef.current.data.id === stateId ? draftRef.current.data : statesRef.current.find(item => item.id === stateId);
       if (!state) throw new Error('请先保存状态');
       if (state.generation_status === 'generating') return;
@@ -328,7 +328,7 @@ const CharacterStateSession: React.FC<CharacterStateEditorProps> = ({ characterI
     try {
       if (callbacks.current.beforeGenerate && !(await callbacks.current.beforeGenerate())) return;
       if (!(await flush()) || !alive.current) return;
-      if (!selected.image) throw new Error('请先选择图像生成模型');
+      if (!selected.image) throw new Error('请先在工程设置中选择图像生成模型');
       await generateCostumeViews(costumeId, { imageModel: selected.image, textModel: selected.text || undefined });
       if (!alive.current) return;
       setCostumes(prev => prev.map(item => item.id === costumeId ? { ...item, generation_status: 'generating' } : item));
@@ -370,7 +370,7 @@ const CharacterStateSession: React.FC<CharacterStateEditorProps> = ({ characterI
     try {
       if (callbacks.current.beforeGenerate && !(await callbacks.current.beforeGenerate())) return;
       if (!(await target.flush()) || !alive.current) return;
-      if (!selected.text || !character) throw new Error('请先选择文本模型并加载角色');
+      if (!selected.text || !character) throw new Error('请先在工程设置中选择文本模型并加载角色');
       const revision = target.revision;
       const response = await fetch(`/api/characters/${characterId}/states/analyze`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -491,7 +491,7 @@ const CharacterStateSession: React.FC<CharacterStateEditorProps> = ({ characterI
             )}
             <Button size="sm" variant="flat" startContent={<RefreshCw size={13} />} isLoading={loading} onPress={() => { void loadStates(); }}>刷新状态</Button>
           </div>
-          {!baseReady && !selected.image && <p className="mt-3 text-[11px] text-amber-400/80">请先在底部选择图像生成模型。</p>}
+          {!baseReady && !selected.image && <p className="mt-3 text-[11px] text-amber-400/80">请先在工程设置中选择图像生成模型。</p>}
         </div>
       </div>
     )}
@@ -501,8 +501,6 @@ const CharacterStateSession: React.FC<CharacterStateEditorProps> = ({ characterI
     if (await target.flush() && alive.current && target.data.id) await generateViews(target.data.id);
   };
   const actions = !disabled ? <div className="flex flex-wrap items-center gap-2">
-    <div className="w-47.5 min-w-37.5 shrink-0"><AIModelSelector label="文本分析模型" models={models} selectedModel={selected.text} onModelChange={model => setSelected('text', model)} filterType="TEXT" size="sm" /></div>
-    <div className="w-47.5 min-w-37.5 shrink-0"><AIModelSelector label="图像生成模型" models={models} selectedModel={selected.image} onModelChange={model => setSelected('image', model)} filterType="IMAGE" size="sm" /></div>
     <Button size="sm" color="primary" isDisabled={!selected.image || generationBusy || selectedGenerating || (!data.id && !isNew)} startContent={<Wand2 size={13} />} onPress={() => { void generateCurrent(); }}>{current.is_base_model ? '生成白膜设定图' : '生成状态三视图'}</Button>
     {!current.is_base_model && current.id && (['front', 'side', 'back'] as const).map(view => <Button key={view} size="sm" isDisabled={!selected.image || generationBusy || selectedGenerating}
       onPress={() => { void generateViews(current.id, view); }}>重新生成{view === 'front' ? '正面' : view === 'side' ? '侧面' : '背面'}</Button>)}
@@ -518,14 +516,14 @@ const CharacterStateSession: React.FC<CharacterStateEditorProps> = ({ characterI
   </div>;
   const preview = (state: CharacterState) => {
     const slides = ([['image_url', '设定图'], ['front_view_url', '正面'], ['side_view_url', '侧面'], ['back_view_url', '背面']] as const)
-      .filter(([key]) => state[key]).map(([key, label]) => ({ src: state[key], alt: `${state.name} · ${label}` }));
+      .filter(([key]) => state[key]).map(([key, label]) => ({ src: state[key], alt: `${state.name} · ${label}`, label }));
     // 状态尚无媒体时回退到角色设定图：资源侧与角色页使用同一张视觉基准，
     // 同时明确标注它还不是白膜/状态三视图。
     if (!slides.length && characterImage) {
       return <div className="space-y-2">
         <div className="flex justify-center">
-          <button type="button" onClick={() => openPreview([{ src: characterImage, alt: `${character?.name || '角色'} · 设定图` }], 0)} className="rounded-lg overflow-hidden bg-(--bg-card) shadow-sm">
-            <img src={characterImage} alt={`${character?.name || '角色'} · 设定图`} className="max-h-64 max-w-full object-contain" />
+          <button type="button" onClick={() => openPreview([{ src: characterImage, alt: `${character?.name || '角色'} · 设定图` }], 0)} className="max-h-44 overflow-hidden rounded-lg bg-(--bg-card) shadow-sm">
+            <img src={characterImage} alt={`${character?.name || '角色'} · 设定图`} className="max-h-44 max-w-full object-contain" />
           </button>
         </div>
         <p className="text-center text-[11px] text-(--text-muted)">{state.id ? '当前状态暂无三视图，显示角色设定图参考' : '角色设定图 · 仅作参考，白膜三视图尚未生成'}</p>
@@ -542,12 +540,18 @@ const CharacterStateSession: React.FC<CharacterStateEditorProps> = ({ characterI
       : generation === 'failed' ? 'text-red-400 bg-red-500/10'
         : generation === 'generating' ? 'text-(--accent) bg-(--accent)/10'
           : 'text-(--text-muted) bg-(--bg-input)';
-    return <div className="space-y-2">
-      <div className="flex flex-wrap justify-center gap-2">{slides.length ? slides.map((slide, index) => <button key={`${slide.src}:${index}`} type="button" onClick={() => openPreview(slides, index)} className="rounded-lg overflow-hidden bg-(--bg-card) shadow-sm">
-        <img src={slide.src} alt={slide.alt} className="max-h-64 max-w-full object-contain" /><span className="text-xs">{slide.alt}</span></button>) : <div className="flex min-h-44 flex-col items-center justify-center gap-2 rounded-md border border-dashed border-(--border-color) text-(--text-muted)"><ImageIcon size={26} className="opacity-40" /><p className="text-xs">{!state.id ? '请先选择或新建角色状态' : `暂无「${state.name}」预览图`}</p>{state.id && <p className="text-[11px] opacity-70">生成状态三视图后在此预览</p>}</div>}</div>
-      {state.id && <p role="status" className="text-center"><span className={`inline-flex rounded px-1.5 py-0.5 text-[11px] ${generationTone}`}>{GENERATION_STATUS_TEXT[generation]}</span></p>}
+    return <div className="flex h-full min-h-0 flex-col gap-2">
+      {slides.length ? <div className="grid min-h-44 flex-1 gap-2" style={{ gridTemplateColumns: `repeat(${Math.min(slides.length, 4)}, minmax(0, 1fr))` }}>
+        {slides.map((slide, index) => <button key={`${slide.src}:${index}`} type="button" onClick={() => openPreview(slides, index)}
+          className="group relative min-h-0 w-full overflow-hidden rounded-lg bg-(--bg-card) shadow-sm">
+          <img src={slide.src} alt={slide.alt} loading="lazy" className="h-full w-full object-contain transition-transform duration-150 group-hover:scale-[1.02]" />
+          <span className="absolute bottom-1 left-1 truncate rounded bg-black/60 px-1.5 py-0.5 text-[10px] text-white/85">{slide.label}</span></button>)}</div>
+        : <div className="flex min-h-44 flex-1 flex-col items-center justify-center gap-2 rounded-md border border-dashed border-(--border-color) text-(--text-muted)"><ImageIcon size={26} className="opacity-40" /><p className="text-xs">{!state.id ? '请先选择或新建角色状态' : `暂无「${state.name}」预览图`}</p>{state.id && <p className="text-[11px] opacity-70">生成状态三视图后在此预览</p>}</div>}
       {generationErrors[state.id] && <p role="alert" className="text-danger text-xs">{generationErrors[state.id]}</p>}
-      {slides.length > 0 && !disabled && <Button size="sm" color="danger" variant="light" isDisabled={operationBusy || state.generation_status === 'generating'} onPress={() => { void deleteViews(state); }}>{state.is_base_model ? '删除白膜设定图' : '删除状态三视图'}</Button>}
+      {(state.id || (slides.length > 0 && !disabled)) && <div className="flex items-center justify-between gap-2">
+        <span role="status" className="min-w-0">{state.id && <span className={`inline-flex rounded px-1.5 py-0.5 text-[11px] ${generationTone}`}>{GENERATION_STATUS_TEXT[generation]}</span>}</span>
+        {slides.length > 0 && !disabled && <Button size="sm" color="danger" variant="light" isDisabled={operationBusy || state.generation_status === 'generating'} onPress={() => { void deleteViews(state); }}>{state.is_base_model ? '删除白膜设定图' : '删除状态三视图'}</Button>}
+      </div>}
     </div>;
   };
   const filtered = [...states].filter(state => activeCategory === 'all' || categories(state.state_category).includes(activeCategory))
@@ -570,7 +574,7 @@ const CharacterStateSession: React.FC<CharacterStateEditorProps> = ({ characterI
     </div>}
     {loadError && <p role="alert" className="text-xs text-danger">{loadError}（可刷新重试）</p>}
     {embedded ? <>
-      <div className="grid grid-cols-1 gap-3 md:min-h-0 md:flex-1 md:grid-cols-[minmax(210px,270px)_minmax(0,1fr)]">
+      <div className="grid grid-cols-1 gap-3 md:min-h-0 md:flex-1 md:grid-cols-[minmax(180px,220px)_minmax(0,1fr)]">
         <div className="min-w-0 space-y-2">
           <Select size="sm" variant="flat" labelPlacement="outside" classNames={ASSET_SELECT_CLASS_NAMES} label="状态" className="w-full" selectedKeys={data.id ? [String(data.id)] : []}
             onSelectionChange={keys => { const state = states.find(item => item.id === Number(Array.from(keys)[0])); if (state) void selectState(state); }}>

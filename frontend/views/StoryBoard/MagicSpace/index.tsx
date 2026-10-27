@@ -6,7 +6,7 @@ import LightingWidget, { LightingDirection } from './LightingWidget';
 import Scene3DViewer, { SceneCamera, SceneLighting } from './Scene3DViewer';
 import ImageCanvas, { ImageCanvasHandle } from './ImageCanvas';
 import PaintCanvas, { PaintCanvasHandle, ColorInstruction } from './PaintCanvas';
-import SketchCanvas, { SketchCanvasHandle } from './SketchCanvas';
+import SketchCanvas, { SketchCanvasHandle, prefetchSketchEditor } from './SketchCanvas';
 import { useWorkbench } from '../../../contexts/WorkbenchContext';
 import { fetchCharactersByProject } from '../../../services/assets';
 
@@ -71,6 +71,8 @@ const MagicSpacePanel: React.FC<MagicSpacePanelProps> = ({
         .then(chars => setProjectCharacters(chars))
         .catch(err => console.error('[MagicSpace] 加载角色失败:', err));
     }
+    // 无论初始为何种模式，先后台预热草图编辑器，切到草图时无需等待下载。
+    prefetchSketchEditor();
   }, [currentProject?.id]);
 
   // 扩图模式状态

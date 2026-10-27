@@ -5,6 +5,7 @@ import { ImageIcon, Video, Film, Camera, Users, MapPin, Zap, X, Trash2, ZoomIn, 
 import { StoryboardScene, DialogueLine } from './useSceneManager';
 import { TaskState } from '../../hooks/useTaskRunner';
 import MagicSpacePanel, { CameraGenerateParams, PaintGenerateParams, SketchGenerateParams } from './MagicSpace';
+import { prefetchSketchEditor } from './MagicSpace/SketchCanvas';
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import { validateFrameReadiness, formatValidationMessage } from './utils/validateFrameReadiness';
@@ -1091,6 +1092,22 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
   const { showToast } = useToast();
   const { confirm } = useConfirm();
 
+  // 空闲预热草图编辑器（Excalidraw chunk 较大）：面板挂载后趁空闲提前下载，
+  // 用户真正打开草图时 React.lazy 直接命中缓存，几乎无转场等待。
+  useEffect(() => {
+    const w = window as any;
+    let handle: ReturnType<typeof setTimeout> | number | undefined;
+    if (typeof w.requestIdleCallback === 'function') {
+      handle = w.requestIdleCallback(() => prefetchSketchEditor(), { timeout: 4000 });
+    } else {
+      handle = setTimeout(() => prefetchSketchEditor(), 1500);
+    }
+    return () => {
+      if (typeof w.cancelIdleCallback === 'function' && typeof handle === 'number') w.cancelIdleCallback(handle);
+      else if (typeof handle === 'number') clearTimeout(handle);
+    };
+  }, []);
+
   // 模型过滤
   const imageModels = useMemo(() => {
     const uniqueMap = new Map<string, typeof models[number]>();
@@ -1694,6 +1711,7 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
           {/* 草图阶段 */}
           <button
             onClick={() => setPreviewStage('sketch')}
+            onMouseEnter={() => prefetchSketchEditor()}
             title="草图"
             aria-label="草图阶段"
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${

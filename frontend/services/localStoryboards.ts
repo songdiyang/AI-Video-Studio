@@ -174,12 +174,19 @@ const SPLIT_SYSTEM =
   '"characters":["出场角色"],"props":["该镜头出现的关键道具"],"location":"场景/地点","shotType":"景别，如 远景/全景/中景/近景/特写","duration":3}],' +
   '"characters":[{"name":"角色名","description":"该角色的外形/服装/气质简述，用于出图保持一致"}],' +
   '"props":[{"name":"道具名","description":"该道具的外观/材质/尺寸简述，用于出图保持一致"}],' +
-  '"locations":[{"name":"地点名","description":"该地点的环境/氛围/光线简述，用于出图"}]}。' +
+  '"locations":[{"name":"地点名","description":"该地点的环境/氛围/光线简述，用于出图",' +
+  '"environmentNames":["该地点涉及的环境名，1个或多个，主环境在前"],' +
+  '"buildings":[{"name":"该地点涉及的建筑名","view":"镜头需要的视角 interior=室内/exterior=室外"}],' +
+  '"environments":[{"name":"环境名","description":"地形/天气/时段简述，用于出图","terrainType":"地形类型"}],' +
+  '"buildingsLibrary":[{"name":"建筑名","description":"外观简述，用于出图","interiorExterior":"interior|exterior|both"}]}]}。' +
   '要求：1) 拆分为 6-15 个镜头，完整覆盖剧本主要情节与转折；2) description / *_prompt 具体、可视化、可直接用于 AI 出图出视频；' +
   '3) 全部使用中文；4) duration 为整数秒；' +
   '5) 顶层 characters / locations 为资源清单，需去重并覆盖所有分镜中出现的角色与地点，每个都给出可视化简述；' +
   '6) props 只列对画面一致性有影响、且在 2 个及以上镜头重复出现的物品（如武器、信物、车辆、招牌菜）；' +
-  '只在单个镜头出现的临时物件写进 description 即可，不要列入 props；顶层 props 需与各镜头 props 名称一致，分镜内 props 写名称字符串。';
+  '只在单个镜头出现的临时物件写进 description 即可，不要列入 props；顶层 props 需与各镜头 props 名称一致，分镜内 props 写名称字符串；' +
+  '7) 每个 location 必须把地点拆解为环境与建筑两部分：environmentNames 列出该地点用到的环境（室内场景也要给所属建筑的环境），' +
+  'buildings 列出该地点出镜的建筑并标注镜头需要内景还是外景；' +
+  'environments / buildingsLibrary 给出这些环境与建筑各自的出图简述（名称与 environmentNames / buildings 对应，跨地点可复用同名）。';
 
 function buildSplitUserPrompt(scriptTitle: string, content: string): string {
   const safe = (content || '').slice(0, 12000);
@@ -196,6 +203,18 @@ function buildSplitUserPrompt(scriptTitle: string, content: string): string {
 interface ResourceCandidate {
   name: string;
   description: string;
+}
+
+/** 地点候选：除名称/描述外，携带拆分出的环境名与建筑（含内/外景视角） */
+interface LocationCandidate extends ResourceCandidate {
+  environmentNames: string[];
+  buildings: { name: string; view: string | null }[];
+}
+
+/** 环境/建筑库候选：出图简述与类型 */
+interface LibraryCandidate extends ResourceCandidate {
+  terrainType?: string;
+  interiorExterior?: string;
 }
 
 /** 归一化资源清单：兼容模型返回 [{name,description}] 或 [string]，并合并分镜内引用到的名称 */
@@ -226,10 +245,104 @@ function collectResources(
 }
 
 /**
+ * 收集地点候选及其环境/建筑拆解，同时汇总环境库、建筑库候选（跨地点按名去重）。
+ * 兼容模型把 environments / buildingsLibrary 放在地点内或顶层（extraEnvs / extraBlds）的情况。
+ */
+function collectLocationCandidates(
+  manifest: any,
+  sceneRefs: string[],
+  extraEnvs: any[] = [],
+  extraBlds: any[] = [],
+): {
+  locations: LocationCandidate[];
+  envLibrary: LibraryCandidate[];
+  bldLibrary: LibraryCandidate[];
+} {
+  const locations: LocationCandidate[] = [];
+  const locSeen = new Map<string, LocationCandidate>();
+  const envSeen = new Map<string, LibraryCandidate>();
+  const bldSeen = new Map<string, LibraryCandidate>();
+
+  const putEnv = (raw: any) => {
+    const n = String(typeof raw === 'string' ? raw : (raw?.name ?? '')).trim();
+    if (!n) return;
+    const key = n.toLowerCase();
+    const d = String(raw?.description ?? '').trim();
+    const t = raw?.terrainType ?? raw?.terrain_type ?? undefined;
+    const prev = envSeen.get(key);
+    if (!prev) envSeen.set(key, { name: n, description: d, terrainType: t });
+    else {
+      if (!prev.description && d) prev.description = d;
+      if (!prev.terrainType && t) prev.terrainType = t;
+    }
+  };
+  const putBld = (raw: any) => {
+    const n = String(typeof raw === 'string' ? raw : (raw?.name ?? '')).trim();
+    if (!n) return;
+    const key = n.toLowerCase();
+    const d = String(raw?.description ?? '').trim();
+    const ie = raw?.interiorExterior ?? raw?.interior_exterior ?? undefined;
+    const prev = bldSeen.get(key);
+    if (!prev) bldSeen.set(key, { name: n, description: d, interiorExterior: ie });
+    else {
+      if (!prev.description && d) prev.description = d;
+      if (!prev.interiorExterior && ie) prev.interiorExterior = ie;
+    }
+  };
+  const putLoc = (name: unknown, raw?: any): LocationCandidate | null => {
+    const n = String(name ?? '').trim();
+    if (!n) return null;
+    const key = n.toLowerCase();
+    const prev = locSeen.get(key);
+    if (prev) return prev;
+    const loc: LocationCandidate = { name: n, description: '', environmentNames: [], buildings: [] };
+    locSeen.set(key, loc);
+    locations.push(loc);
+    if (raw && typeof raw === 'object') {
+      loc.description = String(raw.description ?? '').trim();
+      const envNames = Array.isArray(raw.environmentNames) ? raw.environmentNames : [];
+      for (const en of envNames) {
+        const s = String(en ?? '').trim();
+        if (s && !loc.environmentNames.some((x) => x.toLowerCase() === s.toLowerCase())) loc.environmentNames.push(s);
+      }
+      const blds = Array.isArray(raw.buildings) ? raw.buildings : [];
+      for (const b of blds) {
+        const bn = String(typeof b === 'string' ? b : (b?.name ?? '')).trim();
+        if (!bn) continue;
+        if (!loc.buildings.some((x) => x.name.toLowerCase() === bn.toLowerCase())) {
+          const v = String(typeof b === 'object' ? (b?.view ?? '') : '');
+          loc.buildings.push({ name: bn, view: v === 'interior' || v === 'exterior' ? v : null });
+        }
+      }
+      // 地点内的环境/建筑库（带简述）
+      for (const e of Array.isArray(raw.environments) ? raw.environments : []) { putEnv(e); if (String(e?.name ?? '').trim()) pushEnvName(loc, String(e.name).trim()); }
+      for (const b of Array.isArray(raw.buildingsLibrary) ? raw.buildingsLibrary : []) putBld(b);
+      // environmentNames 引用的环境即使只在库中给名也要入库兜底
+      for (const s of loc.environmentNames) if (![...envSeen.keys()].includes(s.toLowerCase())) envSeen.set(s.toLowerCase(), { name: s, description: '' });
+    }
+    return loc;
+  };
+  const pushEnvName = (loc: LocationCandidate, n: string) => {
+    if (!loc.environmentNames.some((x) => x.toLowerCase() === n.toLowerCase())) loc.environmentNames.push(n);
+  };
+
+  if (Array.isArray(manifest)) {
+    for (const it of manifest) {
+      if (typeof it === 'string') putLoc(it);
+      else if (it && typeof it === 'object') putLoc(it.name ?? it.title, it);
+    }
+  }
+  for (const n of sceneRefs) putLoc(n);
+  for (const e of extraEnvs) putEnv(e);
+  for (const b of extraBlds) putBld(b);
+  return { locations, envLibrary: [...envSeen.values()], bldLibrary: [...bldSeen.values()] };
+}
+
+/**
  * 构造影棚（studios）空壳条目：拆分批量补齐与分镜绑定单条补齐共用，
  * 字段形状对齐 localStudios 的 compose-from-script。
- * 影棚 = 环境(1:1) + 建筑(1:N) + 元素(M:N) 的聚合，自动补齐时先建空壳，
- * 后续在影棚编辑器里绑定环境与建筑。
+ * 影棚 = 环境(1:N) + 建筑(1:N) + 元素(M:N) 的聚合，自动补齐时先建空壳，
+ * 再经 bindStudioComponents 把拆分出的环境/建筑绑定为链接（environment_id 为主环境镜像）。
  */
 function buildStudioShell(c: ResourceCandidate, id: number, projectId: number, now: string): any {
   return {
@@ -238,6 +351,7 @@ function buildStudioShell(c: ResourceCandidate, id: number, projectId: number, n
     name: String(c.name ?? '').trim(),
     description: String(c.description ?? '').trim() || null,
     environment_id: null,
+    environment_ids: [],
     building_ids: [],
     element_ids: [],
     generation_status: 'pending',
@@ -245,6 +359,59 @@ function buildStudioShell(c: ResourceCandidate, id: number, projectId: number, n
     created_at: now,
     updated_at: now,
   };
+}
+
+/**
+ * 把地点候选拆分出的环境/建筑绑定到影棚（只增不删，不动用户已有偏好）：
+ * - 环境写入 environment_ids 链接数组，并把首条镜像到旧字段 environment_id（主环境）；
+ *   仅当主环境发生变化时才同步 environment_view，避免覆盖用户手动选的面。
+ * - 建筑写入 building_ids 链接（view=interior/exterior 按镜头视角标注，未知则 null）。
+ * 返回是否发生了修改。
+ */
+function bindStudioComponents(
+  studio: any,
+  loc: LocationCandidate,
+  envIds: Map<string, number>,
+  bldIds: Map<string, number>,
+): boolean {
+  let dirty = false;
+  const links: { environment_id: number; view: string | null; sort_order: number }[] =
+    Array.isArray(studio.environment_ids) ? studio.environment_ids.slice() : [];
+  if (!links.length && Number(studio.environment_id) > 0) {
+    links.push({
+      environment_id: Number(studio.environment_id),
+      view: studio.environment_view === 'back' || studio.environment_view === 'front' ? studio.environment_view : null,
+      sort_order: 0,
+    });
+  }
+  for (const en of loc.environmentNames) {
+    const id = envIds.get(en.toLowerCase());
+    if (id && !links.some((l) => Number(l.environment_id) === id)) {
+      links.push({ environment_id: id, view: null, sort_order: links.length });
+      dirty = true;
+    }
+  }
+  if (links.length) {
+    const prevPrimary = Number(studio.environment_id) || null;
+    links.sort((a, b) => (Number(a.sort_order) || 0) - (Number(b.sort_order) || 0));
+    const newPrimary = Number(links[0].environment_id);
+    studio.environment_ids = links;
+    if (newPrimary !== prevPrimary) {
+      studio.environment_id = newPrimary;
+      studio.environment_view = links[0].view ?? null;
+      dirty = true;
+    }
+  }
+  const blinks: any[] = Array.isArray(studio.building_ids) ? studio.building_ids : [];
+  for (const b of loc.buildings) {
+    const id = bldIds.get(b.name.toLowerCase());
+    if (id && !blinks.some((l) => Number(l?.building_id) === id)) {
+      blinks.push({ building_id: id, view: b.view ?? null, sort_order: blinks.length });
+      dirty = true;
+    }
+  }
+  if (blinks.length) studio.building_ids = blinks;
+  return dirty;
 }
 
 /**
@@ -275,54 +442,116 @@ export async function ensureStudioByName(
   return true;
 }
 
-/** 在 characters / studios 文档中按名称去重补齐资源，返回新建数量 */
-async function ensureResources(
+/** 在 characters 文档中按名称去重补齐角色，返回新建数量 */
+async function ensureCharacters(
   path: string,
   projectId: number | null,
   characters: ResourceCandidate[],
-  locations: ResourceCandidate[],
-): Promise<{ characters: number; locations: number }> {
-  if (projectId == null) return { characters: 0, locations: 0 };
+): Promise<number> {
+  if (projectId == null || characters.length === 0) return 0;
   const now = new Date().toISOString();
-
-  const addMissing = async (
-    docName: 'characters' | 'studios',
-    candidates: ResourceCandidate[],
-    build: (c: ResourceCandidate, id: number) => any,
-  ): Promise<number> => {
-    if (candidates.length === 0) return 0;
-    const doc = await restStore.loadDoc(path, docName);
-    const existing = new Set(
-      doc.items
-        .filter((it: any) => String(it?.project_id) === String(projectId))
-        .map((it: any) => String(it?.name ?? '').trim().toLowerCase()),
-    );
-    let created = 0;
-    for (const c of candidates) {
-      const key = c.name.toLowerCase();
-      if (existing.has(key)) continue;
-      doc.items.push(build(c, doc.nextId++));
-      existing.add(key);
-      created++;
-    }
-    if (created > 0) restStore.saveDoc(path, docName, doc);
-    return created;
-  };
-
-  const createdChars = await addMissing('characters', characters, (c, id) => ({
-    id,
-    project_id: projectId,
-    name: c.name,
-    description: c.description,
-    base_appearance: c.description,
-    appearance: c.description,
-    created_at: now,
-    updated_at: now,
-  }));
-  const createdLocs = await addMissing('studios', locations, (c, id) =>
-    buildStudioShell(c, id, projectId as number, now),
+  const doc = await restStore.loadDoc(path, 'characters');
+  const existing = new Set(
+    doc.items
+      .filter((it: any) => String(it?.project_id) === String(projectId))
+      .map((it: any) => String(it?.name ?? '').trim().toLowerCase()),
   );
-  return { characters: createdChars, locations: createdLocs };
+  let created = 0;
+  for (const c of characters) {
+    const key = c.name.toLowerCase();
+    if (existing.has(key)) continue;
+    doc.items.push({
+      id: doc.nextId++,
+      project_id: projectId,
+      name: c.name,
+      description: c.description,
+      base_appearance: c.description,
+      appearance: c.description,
+      created_at: now,
+      updated_at: now,
+    });
+    existing.add(key);
+    created++;
+  }
+  if (created > 0) restStore.saveDoc(path, 'characters', doc);
+  return created;
+}
+
+/**
+ * 按名称去重补齐资产库文档（environments / buildings），返回 名称(小写)→id 映射与新建数量。
+ * 已存在同名条目只复用 id，不覆盖用户编辑过的描述/类型。
+ */
+async function ensureAssetLibrary(
+  path: string,
+  projectId: number | null,
+  docName: 'environments' | 'buildings',
+  candidates: LibraryCandidate[],
+): Promise<{ ids: Map<string, number>; created: number }> {
+  const ids = new Map<string, number>();
+  if (projectId == null) return { ids, created: 0 };
+  const doc = await restStore.loadDoc(path, docName);
+  for (const it of doc.items) {
+    if (String(it?.project_id) !== String(projectId)) continue;
+    const key = String(it?.name ?? '').trim().toLowerCase();
+    if (key && !ids.has(key)) ids.set(key, Number(it.id));
+  }
+  const now = new Date().toISOString();
+  let created = 0;
+  for (const c of candidates) {
+    const key = c.name.toLowerCase();
+    if (ids.has(key)) continue;
+    const id = doc.nextId++;
+    doc.items.push(
+      docName === 'environments'
+        ? { id, project_id: projectId, name: c.name, description: c.description || null, terrain_type: c.terrainType ?? null, generation_status: 'pending', sort_order: doc.items.length, created_at: now, updated_at: now }
+        : { id, project_id: projectId, name: c.name, description: c.description || null, interior_exterior: c.interiorExterior || 'exterior', structure_type: null, generation_status: 'pending', sort_order: doc.items.length, created_at: now, updated_at: now },
+    );
+    ids.set(key, id);
+    created++;
+  }
+  if (created > 0) restStore.saveDoc(path, docName, doc);
+  return { ids, created };
+}
+
+/**
+ * 在 studios 文档中按名称补齐影棚，并把地点拆出的环境/建筑绑定为链接
+ * （含存量空壳影棚的回填：已存在但缺链接的也会补上，只增不删）。
+ * 返回新建数量与是否发生过任意修改（新建/绑定）。
+ */
+async function ensureStudiosWithComponents(
+  path: string,
+  projectId: number | null,
+  locations: LocationCandidate[],
+  envIds: Map<string, number>,
+  bldIds: Map<string, number>,
+): Promise<{ created: number; touched: boolean }> {
+  if (projectId == null || locations.length === 0) return { created: 0, touched: false };
+  const now = new Date().toISOString();
+  const doc = await restStore.loadDoc(path, 'studios');
+  let created = 0;
+  let touched = false;
+  for (const loc of locations) {
+    const key = loc.name.toLowerCase();
+    let studio = doc.items.find(
+      (it: any) =>
+        String(it?.project_id) === String(projectId) &&
+        String(it?.name ?? '').trim().toLowerCase() === key,
+    );
+    if (!studio) {
+      studio = buildStudioShell(loc, doc.nextId++, projectId, now);
+      doc.items.push(studio);
+      created++;
+      touched = true;
+    }
+    if (bindStudioComponents(studio, loc, envIds, bldIds)) touched = true;
+  }
+  if (touched) {
+    for (const it of doc.items) {
+      if (String(it?.project_id) === String(projectId)) it.updated_at = now;
+    }
+    restStore.saveDoc(path, 'studios', doc);
+  }
+  return { created, touched };
 }
 
 /**
@@ -496,7 +725,14 @@ async function handleAutoGenerate({ scriptId, projectId, body }: AutoGenArgs): P
     }
   }
   const characters = collectResources(parsed?.characters, charRefs);
-  const locations = collectResources(parsed?.locations ?? parsed?.scenes_locations, locRefs);
+  // 地点拆解：把每个地点的环境名/建筑（内/外景视角）与出图库候选一并收集，
+  // 兼容模型把 environments / buildings 清单放在顶层的情况
+  const { locations, envLibrary, bldLibrary } = collectLocationCandidates(
+    parsed?.locations ?? parsed?.scenes_locations,
+    locRefs,
+    Array.isArray(parsed?.environments) ? parsed.environments : [],
+    Array.isArray(parsed?.buildings) ? parsed.buildings : [],
+  );
 
   // 道具沉淀：同一物品在 2 个及以上分镜重复出现才入库，一次性小物件留在分镜描述里
   const propHits = new Map<string, number>();
@@ -507,8 +743,13 @@ async function handleAutoGenerate({ scriptId, projectId, body }: AutoGenArgs): P
   const repeatedProps = collectResources(parsed?.props, propRefs)
     .filter((p) => (propHits.get(p.name.toLowerCase()) || 0) >= 2);
 
-  const createdResources = await ensureResources(path, resolvedProjectId ?? null, characters, locations);
-  const createdProps = await ensureProps(path, resolvedProjectId ?? null, repeatedProps);
+  // 补齐顺序：环境库/建筑库先落库拿 id → 影棚按地点绑定环境/建筑链接 → 角色/道具独立补齐
+  const pid = resolvedProjectId ?? null;
+  const createdChars = await ensureCharacters(path, pid, characters);
+  const envLib = await ensureAssetLibrary(path, pid, 'environments', envLibrary);
+  const bldLib = await ensureAssetLibrary(path, pid, 'buildings', bldLibrary);
+  const studioRes = await ensureStudiosWithComponents(path, pid, locations, envLib.ids, bldLib.ids);
+  const createdProps = await ensureProps(path, pid, repeatedProps);
 
   const jobId = `sbg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
   return jsonResponse({
@@ -518,8 +759,10 @@ async function handleAutoGenerate({ scriptId, projectId, body }: AutoGenArgs): P
     total: doc.scenes.filter((s) => s._scope === scope).length,
     scriptId: scriptId ?? null,
     projectId: resolvedProjectId ?? null,
-    createdCharacters: createdResources.characters,
-    createdLocations: createdResources.locations,
+    createdCharacters: createdChars,
+    createdLocations: studioRes.created,
+    createdEnvironments: envLib.created,
+    createdBuildings: bldLib.created,
     createdProps,
     message: 'storyboards generated',
   });

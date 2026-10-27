@@ -1,12 +1,11 @@
 /** 剧本工作坊：已有剧本的内容编辑器（AI 生成与上传入口已移至左侧大纲面板与智能体）。 */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { Button } from '@heroui/react';
-import { Pencil, Eye, EyeOff, X } from 'lucide-react';
 import { updateScript } from '../../services/scripts';
 import { useToast } from '../../contexts/ToastContext';
 import ScriptPreviewRenderer from '../ScriptPreviewRenderer';
-import ContentEditorPanel, { type EmbeddedEditorProps, type EditorSessionHandle, type EditorSaveStatus } from '../ContentEditorPanel';
+import type { EmbeddedEditorProps, EditorSessionHandle, EditorSaveStatus } from '../ContentEditorPanel';
+import WritingSurface from './WritingSurface';
+import './writing.css';
 
 export interface ScriptWorkshopPayload {
   scriptId: number;
@@ -46,17 +45,16 @@ function assertSaved(result: unknown) {
 
 const WorkshopSession: React.FC<ScriptWorkshopProps> = ({
   lockProjectId, lockEpisodeNumber,
-  initialScriptId, initialTitle = '', initialContent = '', onSuccess, onError, onClose,
-  editorPortalTarget, onRegisterEditor,
+  initialScriptId, initialTitle = '', initialContent = '', onSuccess, onError,
+  onRegisterEditor,
 }) => {
   const { showToast } = useToast();
-  const embedded = editorPortalTarget !== undefined;
   const mounted = useRef(true);
-  const callbacks = useRef({ onSuccess, onError, onClose, showToast });
-  callbacks.current = { onSuccess, onError, onClose, showToast };
+  const callbacks = useRef({ onSuccess, onError, showToast });
+  callbacks.current = { onSuccess, onError, showToast };
   const [showPreview, setShowPreview] = useState(false);
+  const [focusMode, setFocusMode] = useState(false);
   const [status, setStatus] = useState<EditorSaveStatus>(initialScriptId ? 'saved' : 'idle');
-  const [message, setMessage] = useState('');
   const saving = useRef<Promise<boolean> | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -70,7 +68,6 @@ const WorkshopSession: React.FC<ScriptWorkshopProps> = ({
   const report = useCallback((error: unknown) => {
     if (!mounted.current) return;
     const text = error instanceof Error ? error.message : String(error);
-    setMessage(text);
     callbacks.current.showToast(text, 'error');
     callbacks.current.onError?.(text);
   }, []);
@@ -99,7 +96,6 @@ const WorkshopSession: React.FC<ScriptWorkshopProps> = ({
         // 只通知最终保存版本；父级回填不能覆盖保存期间产生的新输入。
         if (mounted.current && serialize(scriptRef.current) === savedScript.current) {
           setStatus('saved');
-          setMessage('');
           callbacks.current.onSuccess?.(snapshot);
         }
       }
@@ -153,55 +149,36 @@ const WorkshopSession: React.FC<ScriptWorkshopProps> = ({
     replaceScript({ ...scriptRef.current, ...patch });
     setStatus(serialize(scriptRef.current) === savedScript.current && !saving.current ? 'saved' : 'dirty');
   };
-  const close = async () => { if (await flushRef.current() && mounted.current) callbacks.current.onClose(); };
 
   const previewContent = script?.content || '';
-  const preview = (
-    <div className="max-w-4xl mx-auto space-y-3">
-      <h2 className="text-sm font-medium text-[var(--text-primary)]">{script?.title || '剧本预览'}</h2>
-      {previewContent ? <ScriptPreviewRenderer content={previewContent} /> : (
-        <p className="text-sm text-[var(--text-muted)]">暂无剧本内容</p>
-      )}
-    </div>
-  );
-  const actions = (
-    <>
-      {!embedded && script && <Button size="sm" variant="flat" startContent={showPreview ? <EyeOff size={14} /> : <Eye size={14} />}
-        onPress={() => setShowPreview(value => !value)}>{showPreview ? '隐藏预览' : '预览'}</Button>}
-      {!embedded && <Button size="sm" variant="light" aria-label="关闭剧本工作坊"
-        startContent={<X size={14} />} onPress={close}>关闭</Button>}
-    </>
-  );
-  const editor = (
-    <ContentEditorPanel title={script?.title || '未命名剧本'} kind="剧本"
-      tabs={[{ id: 'edit', label: '内容', icon: <Pencil size={14} /> }]} activeTab="edit" onTabChange={() => {}}
-      status={status} onSave={async () => { if (await flushRef.current()) setMessage(''); }} actions={actions}>
-      <div className={embedded ? 'space-y-3' : 'max-w-4xl mx-auto space-y-4'}>
-        {message && <p role="alert" className="text-xs text-red-500">{message}</p>}
-        {script ? <div className="content-editor-fields">
-          <label className="content-editor-field content-editor-full-width"><span>剧本名称</span>
-            <input value={script.title} placeholder="输入剧本名称" onChange={e => editScript({ title: e.target.value })} />
-          </label>
-          {!embedded && showPreview ? <div className="content-editor-full-width">{preview}</div> : (
-            <label className="content-editor-field content-editor-full-width"><span>剧本内容</span>
-              <textarea rows={embedded ? 5 : 20} value={script.content} placeholder="在此输入或编辑剧本内容…"
-                onChange={e => editScript({ content: e.target.value })} />
-            </label>
-          )}
-        </div> : (
-          <p className="text-sm text-[var(--text-muted)]">尚未选择剧本。请在左侧「大纲」上传剧本，或点击剧本卡片打开编辑。</p>
-        )}
-        <p className="text-[11px] text-[var(--text-muted)]">标题和正文修改后 2 秒自动保存，也可手动保存。</p>
-      </div>
-    </ContentEditorPanel>
-  );
+  const preview = previewContent
+    ? <ScriptPreviewRenderer content={previewContent} />
+    : <p className="text-sm text-[var(--text-muted)]">暂无剧本内容</p>;
 
-  // null 是等待宿主，不回退到独立编辑布局；Portal 只搬运片段，所有状态仍在本实例。
+  // 尚未选剧：保留引导空态（不渲染写作画布）。
+  if (!script) {
+    return <div className="flex flex-col h-full min-h-0 min-w-0">
+      <div className="sw-scroll flex-1">
+        <p className="sw-column text-sm text-[var(--text-muted)]">尚未选择剧本。请在左侧「大纲」上传剧本，或点击剧本卡片打开编辑。</p>
+      </div>
+    </div>;
+  }
+
+  // 沉浸式写作面：标题内联 + 正文大画布，停止输入 2 秒自动保存；预览/专注收在顶栏。
   return <div className="flex flex-col h-full min-h-0 min-w-0">
-    {embedded ? <>
-      <div className="flex-1 min-h-0 overflow-y-auto p-4" aria-label="剧本正文预览">{preview}</div>
-      {editorPortalTarget ? createPortal(editor, editorPortalTarget) : null}
-    </> : editor}
+    <WritingSurface
+      title={script.title}
+      content={script.content}
+      status={status}
+      showPreview={showPreview}
+      focusMode={focusMode}
+      preview={preview}
+      onTitleChange={value => editScript({ title: value })}
+      onContentChange={value => editScript({ content: value })}
+      onTogglePreview={() => setShowPreview(value => !value)}
+      onToggleFocus={() => setFocusMode(value => !value)}
+      onSave={() => { void flushRef.current(); }}
+    />
   </div>;
 };
 

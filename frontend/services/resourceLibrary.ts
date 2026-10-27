@@ -16,7 +16,8 @@ const EMPTY_RESOURCES: ResourceLibraryResponse['resources'] = {
 };
 
 const DEFAULT_CATEGORIES: ResourceCategoryConfig = {
-  enabledTypes: ['characters', 'locations', 'props'],
+  // 与 localResourceLibrary 的默认保持一致：环境/建筑展示在影棚之下
+  enabledTypes: ['characters', 'locations', 'environments', 'buildings', 'props'],
   customCategories: [],
 };
 

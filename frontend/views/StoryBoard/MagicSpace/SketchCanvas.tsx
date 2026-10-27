@@ -2,21 +2,43 @@ import React, { useRef, useState, useEffect, useImperativeHandle, forwardRef, us
 import { RotateCcw, Loader2 } from 'lucide-react';
 import '@excalidraw/excalidraw/index.css';
 
-// 动态导入 Excalidraw 组件（避免增加首屏包体积）
-const Excalidraw = React.lazy(() => {
-  const startTime = performance.now();
-  return import('@excalidraw/excalidraw').then((module) => {
-    const loadTime = performance.now() - startTime;
-    console.log(`[SketchCanvas] Excalidraw loaded in ${loadTime.toFixed(0)}ms`);
-    return { default: module.Excalidraw };
-  });
+// Excalidraw 体积较大：用共享缓存的 import promise 加载，既能懒渲染，也支持提前预热。
+// 预热命中缓存后，React.lazy 工厂会立即 resolve，打开草图几乎无等待。
+let excalidrawModulePromise: Promise<typeof import('@excalidraw/excalidraw')> | null = null;
+function loadExcalidrawModule() {
+  if (!excalidrawModulePromise) {
+    const startTime = performance.now();
+    excalidrawModulePromise = import('@excalidraw/excalidraw')
+      .then((module) => {
+        const loadTime = performance.now() - startTime;
+        console.log(`[SketchCanvas] Excalidraw loaded in ${loadTime.toFixed(0)}ms`);
+        return module;
+      })
+      .catch((error) => {
+        // 失败不缓存，允许下次重试（如离线降级后恢复）。
+        excalidrawModulePromise = null;
+        throw error;
+      });
+  }
+  return excalidrawModulePromise;
+}
+
+/** 提前预热草图编辑器（下载/解析 Excalidraw chunk）；重复调用幂等、异常静默。 */
+export function prefetchSketchEditor(): void {
+  void loadExcalidrawModule().catch(() => {});
+}
+
+// 动态导入 Excalidraw 组件（复用上面的缓存 promise）
+const Excalidraw = React.lazy(async () => {
+  const module = await loadExcalidrawModule();
+  return { default: module.Excalidraw };
 });
 
 // 动态导入导出工具
 const exportToBlob = async (opts: any): Promise<Blob | null> => {
   try {
-    const { exportToBlob: fn } = await import('@excalidraw/excalidraw');
-    return await fn(opts);
+    const module = await loadExcalidrawModule();
+    return await module.exportToBlob(opts);
   } catch (error) {
     console.error('[SketchCanvas] exportToBlob failed:', error);
     return null;

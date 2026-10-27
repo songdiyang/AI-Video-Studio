@@ -38,14 +38,15 @@ const StudioModal: React.FC<StudioModalProps> = ({
   isOpen, onOpenChange, editMode, studioId, projectId, onSaved,
 }) => {
   const { showToast } = useToast();
-  const { selected: aiSelected } = useAIModels(null);
+  // 读取当前工程在「工程设置 → 生成模型」中选择的模型（此前传 null 只能拿全局默认）
+  const { selected: aiSelected } = useAIModels(projectId);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
   // 生成状态
   const [generatingBuildingView, setGeneratingBuildingView] = useState<Record<number, { interior?: boolean; exterior?: boolean }>>({});
   const [generatingNineGrid, setGeneratingNineGrid] = useState(false);
-  const [generatingEnvView, setGeneratingEnvView] = useState<{ front?: boolean; back?: boolean }>({});
+  const [generatingEnvView, setGeneratingEnvView] = useState<Record<number, { front?: boolean; back?: boolean }>>({});
 
   // 基础信息
   const [name, setName] = useState('');
@@ -146,22 +147,22 @@ const StudioModal: React.FC<StudioModalProps> = ({
     }
   };
 
-  // ===== 环境 1:1 =====
+  // ===== 环境 1:N（主环境=首条，environment_id 为镜像字段） =====
   const handleAttachEnvironment = async (environmentId: number) => {
     if (!studioId) return;
     try {
       await attachEnvironmentToStudio(studioId, environmentId);
-      showToast('环境已设置', 'success');
+      showToast('环境已关联', 'success');
       loadAll();
       onSaved();
     } catch (err: any) {
-      showToast(err?.message || '设置失败', 'error');
+      showToast(err?.message || '关联失败', 'error');
     }
   };
-  const handleDetachEnvironment = async () => {
+  const handleDetachEnvironment = async (environmentId?: number) => {
     if (!studioId) return;
     try {
-      await detachEnvironmentFromStudio(studioId);
+      await detachEnvironmentFromStudio(studioId, environmentId);
       showToast('环境已移除', 'success');
       loadAll();
       onSaved();
@@ -194,11 +195,11 @@ const StudioModal: React.FC<StudioModalProps> = ({
     }
   };
 
-  // ===== 视图偏好切换（组装图选面） =====
-  const handleSetEnvView = async (view: 'front' | 'back') => {
-    if (!studioId || !detail?.environment) return;
+  // ===== 视图偏好切换（组装图选面，作用于指定环境，缺省主环境） =====
+  const handleSetEnvView = async (view: 'front' | 'back', environmentId?: number) => {
+    if (!studioId) return;
     try {
-      await setStudioEnvironmentView(studioId, view);
+      await setStudioEnvironmentView(studioId, view, environmentId);
       showToast(`已切换为环境${view === 'back' ? '背面' : '正面'}`, 'success');
       loadAll();
     } catch (err: any) {
@@ -221,7 +222,7 @@ const StudioModal: React.FC<StudioModalProps> = ({
     if (!studioId) return;
     const imageModel = aiSelected?.image;
     if (!imageModel) {
-      showToast('请先在 AI 模型配置中选择图像模型', 'error');
+      showToast('请先在工程设置中选择图像生成模型', 'error');
       return;
     }
     if (!detail?.environment && !detail?.buildings?.length) {
@@ -268,17 +269,16 @@ const StudioModal: React.FC<StudioModalProps> = ({
     }
   };
 
-  // ===== 环境图生成 =====
-  const handleGenerateEnvImage = async (mode: 'front' | 'back') => {
-    if (!currentEnv) return;
+  // ===== 环境图生成（针对指定环境） =====
+  const handleGenerateEnvImage = async (env: Environment, mode: 'front' | 'back') => {
     const imageModel = aiSelected?.image;
     if (!imageModel) {
-      showToast('请先在 AI 模型配置中选择图像模型', 'error');
+      showToast('请先在工程设置中选择图像生成模型', 'error');
       return;
     }
-    setGeneratingEnvView(prev => ({ ...prev, [mode]: true }));
+    setGeneratingEnvView(prev => ({ ...prev, [env.id]: { ...prev[env.id], [mode]: true } }));
     try {
-      await generateEnvironmentImage(currentEnv.id, {
+      await generateEnvironmentImage(env.id, {
         imageModel,
         textModel: aiSelected?.text || undefined,
         mode,
@@ -289,7 +289,7 @@ const StudioModal: React.FC<StudioModalProps> = ({
     } catch (err: any) {
       showToast(err?.message || '生成失败', 'error');
     } finally {
-      setGeneratingEnvView(prev => ({ ...prev, [mode]: false }));
+      setGeneratingEnvView(prev => ({ ...prev, [env.id]: { ...prev[env.id], [mode]: false } }));
     }
   };
 
@@ -297,7 +297,7 @@ const StudioModal: React.FC<StudioModalProps> = ({
   const handleGenerateBuildingView = async (buildingId: number, viewType: 'interior' | 'exterior') => {
     const imageModel = aiSelected?.image;
     if (!imageModel) {
-      showToast('请先在 AI 模型配置中选择图像模型', 'error');
+      showToast('请先在工程设置中选择图像生成模型', 'error');
       return;
     }
     setGeneratingBuildingView(prev => ({
@@ -323,8 +323,9 @@ const StudioModal: React.FC<StudioModalProps> = ({
     }
   };
 
-  // 候选池过滤
-  const currentEnv = detail?.environment || null;
+  // 候选池过滤（环境 1:N：首个为主环境，environment_id 为镜像）
+  const linkedEnvs = detail?.environments || [];
+  const studioEnvIds = new Set(linkedEnvs.map(e => e.id));
   const studioBuildingIds = new Set((detail?.buildings || []).map(b => b.id));
   const studioElementIds = new Set((detail?.elements || []).map(e => e.id));
   const availableBuildings = projectBuildings.filter(b => !studioBuildingIds.has(b.id));
@@ -388,15 +389,17 @@ const StudioModal: React.FC<StudioModalProps> = ({
                         title={
                           <div className="flex items-center gap-2">
                             <Cloud className="w-4 h-4" />
-                            <span>环境 ({currentEnv ? 1 : 0})</span>
+                            <span>环境 ({linkedEnvs.length})</span>
                           </div>
                         }
                       >
                         <div className="mt-4 space-y-4">
                           <div>
-                            <div className="text-xs text-(--text-muted) mb-2">当前环境（1:1）</div>
-                            {currentEnv ? (
-                              <>
+                            <div className="text-xs text-(--text-muted) mb-2">已关联环境（{linkedEnvs.length}，首个为主环境）</div>
+                            {linkedEnvs.length ? (
+                              <div className="space-y-3">
+                              {linkedEnvs.map(currentEnv => (
+                                <div key={currentEnv.id}>
                                 <div className="flex items-center gap-3 p-2 rounded-md bg-(--bg-app) border border-(--border-color)">
                                   {currentEnv.image_url ? (
                                     <Image
@@ -411,7 +414,12 @@ const StudioModal: React.FC<StudioModalProps> = ({
                                     </div>
                                   )}
                                   <div className="flex-1 min-w-0">
-                                    <div className="text-sm text-(--text-primary) truncate">{currentEnv.name}</div>
+                                    <div className="text-sm text-(--text-primary) truncate">
+                                      {currentEnv.name}
+                                      {detail?.environment?.id === currentEnv.id && (
+                                        <span className="ml-1.5 text-[10px] text-(--accent)">主环境</span>
+                                      )}
+                                    </div>
                                     <div className="text-[11px] text-(--text-muted) truncate">
                                       {currentEnv.description || '无描述'}
                                     </div>
@@ -420,7 +428,7 @@ const StudioModal: React.FC<StudioModalProps> = ({
                                     size="sm"
                                     isIconOnly
                                     variant="light"
-                                    onPress={handleDetachEnvironment}
+                                    onPress={() => handleDetachEnvironment(currentEnv.id)}
                                     className="hover:bg-red-500/10"
                                     title="移除环境"
                                   >
@@ -430,11 +438,11 @@ const StudioModal: React.FC<StudioModalProps> = ({
 
                                 {/* 组装图采用哪一面 + 生成按钮 */}
                                 {(() => {
-                                  const envView = detail?.studio?.environment_view === 'back' ? 'back' : 'front';
+                                  const envView = currentEnv.environment_view === 'back' ? 'back' : 'front';
                                   const hasFront = !!currentEnv.image_url;
                                   const hasBack = !!currentEnv.image_back_url;
-                                  const isGenFront = !!generatingEnvView.front;
-                                  const isGenBack = !!generatingEnvView.back;
+                                  const isGenFront = !!generatingEnvView[currentEnv.id]?.front;
+                                  const isGenBack = !!generatingEnvView[currentEnv.id]?.back;
                                   return (
                                     <div className="mt-2 p-2 rounded-md bg-(--bg-app) border border-(--border-color)">
                                       <div className="text-[11px] text-(--text-muted) mb-2 flex items-center gap-1">
@@ -447,7 +455,7 @@ const StudioModal: React.FC<StudioModalProps> = ({
                                           <button
                                             type="button"
                                             disabled={!hasFront}
-                                            onClick={() => handleSetEnvView('front')}
+                                            onClick={() => handleSetEnvView('front', currentEnv.id)}
                                             className={`w-full flex items-center gap-2 p-1.5 rounded border transition ${
                                               envView === 'front'
                                                 ? 'border-(--accent) bg-(--accent)/10 ring-1 ring-(--accent)'
@@ -472,7 +480,7 @@ const StudioModal: React.FC<StudioModalProps> = ({
                                             color={hasFront ? 'default' : 'primary'}
                                             isLoading={isGenFront}
                                             isDisabled={isGenFront || isGenBack}
-                                            onPress={() => handleGenerateEnvImage('front')}
+                                            onPress={() => handleGenerateEnvImage(currentEnv, 'front')}
                                             startContent={!isGenFront ? <Wand2 className="w-3 h-3" /> : undefined}
                                             className="w-full text-[11px] h-7"
                                           >
@@ -484,7 +492,7 @@ const StudioModal: React.FC<StudioModalProps> = ({
                                           <button
                                             type="button"
                                             disabled={!hasBack}
-                                            onClick={() => handleSetEnvView('back')}
+                                            onClick={() => handleSetEnvView('back', currentEnv.id)}
                                             className={`w-full flex items-center gap-2 p-1.5 rounded border transition ${
                                               envView === 'back'
                                                 ? 'border-(--accent) bg-(--accent)/10 ring-1 ring-(--accent)'
@@ -509,7 +517,7 @@ const StudioModal: React.FC<StudioModalProps> = ({
                                             color={hasBack ? 'default' : 'primary'}
                                             isLoading={isGenBack}
                                             isDisabled={isGenFront || isGenBack}
-                                            onPress={() => handleGenerateEnvImage('back')}
+                                            onPress={() => handleGenerateEnvImage(currentEnv, 'back')}
                                             startContent={!isGenBack ? <Wand2 className="w-3 h-3" /> : undefined}
                                             className="w-full text-[11px] h-7"
                                           >
@@ -520,9 +528,11 @@ const StudioModal: React.FC<StudioModalProps> = ({
                                     </div>
                                   );
                                 })()}
-                              </>
+                                </div>
+                              ))}
+                              </div>
                             ) : (
-                              <div className="text-xs text-(--text-muted)">尚未设置环境</div>
+                              <div className="text-xs text-(--text-muted)">尚未关联环境，可从下方候选池关联</div>
                             )}
                           </div>
 
@@ -596,12 +606,12 @@ const StudioModal: React.FC<StudioModalProps> = ({
                                     <Button
                                       size="sm"
                                       variant="flat"
-                                      color={currentEnv?.id === env.id ? 'default' : 'primary'}
-                                      startContent={<Plus className="w-3 h-3" />}
+                                      color={studioEnvIds.has(env.id) ? 'default' : 'primary'}
+                                      startContent={studioEnvIds.has(env.id) ? undefined : <Plus className="w-3 h-3" />}
                                       onPress={() => handleAttachEnvironment(env.id)}
-                                      isDisabled={currentEnv?.id === env.id}
+                                      isDisabled={studioEnvIds.has(env.id)}
                                     >
-                                      {currentEnv?.id === env.id ? '已选' : '设为环境'}
+                                      {studioEnvIds.has(env.id) ? '已关联' : '关联环境'}
                                     </Button>
                                   </div>
                                 ))}

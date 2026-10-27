@@ -416,6 +416,10 @@ const zhCN = {
     projectSettings: {
       desc: '为当前工程设置默认画面参数与美术风格限定；生成图片/视频时优先于模型默认值，并随 .jzp 工程包携带。',
       currentProjectTag: '当前工程',
+      generationModels: '生成模型',
+      generationModelsHint: '整个工程的资源图片生成、分镜拆分与 AI 分析共用这里选择的模型，编辑器内不再单独选择',
+      imageModel: '图像生成模型',
+      textModel: '文本分析模型',
       imageAspectRatio: '图片比例',
       imageResolution: '图片分辨率',
       videoAspectRatio: '视频比例',

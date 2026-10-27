@@ -4,15 +4,18 @@ import type { Building } from './buildings';
 
 /**
  * 场景（Studio）service
- * 聚合环境(1:1) + 建筑(1:N) + 场景元素(M:N) 的创作空间实体
+ * 聚合环境(1:N) + 建筑(1:N) + 场景元素(M:N) 的创作空间实体
  */
 
 export interface Studio {
   id: number;
   user_id: number;
   project_id: number;
+  /** 主环境（= environment_ids 首条链接的镜像，兼容旧数据） */
   environment_id: number | null;
-  /** 影棚采用绑定环境的哪一面作为组装参考（front=正面，back=背面） */
+  /** 环境链接数组（1:N，主环境在前）：[{environment_id, view, sort_order}] */
+  environment_ids?: { environment_id: number; view?: 'front' | 'back' | null; sort_order?: number }[];
+  /** 主环境采用环境的哪一面作为组装参考（front=正面，back=背面） */
   environment_view?: 'front' | 'back' | null;
   name: string;
   description: string | null;
@@ -34,6 +37,12 @@ export type StudioBuildingItem = Building & {
   building_view?: 'exterior' | 'interior' | null;
 };
 
+/** 影棚内环境关联项：在 Environment 基础上附带影棚侧采用面偏好 */
+export type StudioEnvironmentItem = Environment & {
+  /** 影棚采用此环境的哪一面（front=正面，back=背面） */
+  environment_view?: 'front' | 'back' | null;
+};
+
 export interface StudioElementSummary {
   id: number;
   name: string;
@@ -46,7 +55,10 @@ export interface StudioElementSummary {
 
 export interface StudioDetail {
   studio: Studio;
+  /** 主环境 = environments[0]（兼容旧单值消费方） */
   environment: Environment | null;
+  /** 影棚绑定的全部环境（1:N，主环境在前） */
+  environments: StudioEnvironmentItem[];
   buildings: StudioBuildingItem[];
   elements: StudioElementSummary[];
 }
@@ -117,8 +129,9 @@ export async function deleteStudio(id: number): Promise<void> {
   await handle<{ message: string }>(resp);
 }
 
-// ========== 环境关联 ==========
+// ========== 环境关联（1:N） ==========
 
+/** 关联环境到影棚（已存在则更新采用面） */
 export async function attachEnvironmentToStudio(
   studioId: number,
   environmentId: number,
@@ -132,22 +145,25 @@ export async function attachEnvironmentToStudio(
   await handle<{ message: string }>(resp);
 }
 
-export async function detachEnvironmentFromStudio(studioId: number): Promise<void> {
-  const resp = await fetch(`/api/studios/${studioId}/environment`, {
+/** 解除影棚与某环境的关联；不传 environmentId 时清空全部环境 */
+export async function detachEnvironmentFromStudio(studioId: number, environmentId?: number): Promise<void> {
+  const qs = environmentId ? `?environmentId=${environmentId}` : '';
+  const resp = await fetch(`/api/studios/${studioId}/environment${qs}`, {
     method: 'DELETE',
   });
   await handle<{ message: string }>(resp);
 }
 
-/** 切换影棚所用的环境面（正/背） */
+/** 切换影棚所用环境面（正/背）；不传 environmentId 时作用于主环境 */
 export async function setStudioEnvironmentView(
   studioId: number,
-  view: 'front' | 'back'
+  view: 'front' | 'back',
+  environmentId?: number
 ): Promise<void> {
   const resp = await fetch(`/api/studios/${studioId}/environment-view`, {
     method: 'PATCH',
     headers: {  'Content-Type': 'application/json' },
-    body: JSON.stringify({ view })
+    body: JSON.stringify(environmentId ? { view, environmentId } : { view })
   });
   await handle<{ message: string }>(resp);
 }

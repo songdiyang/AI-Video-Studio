@@ -148,9 +148,9 @@ export function useStoryboardGeneration({
 
       options.onSplitDone?.(typeof data?.count === 'number' ? data.count : undefined);
 
-      // 拆分自动补齐了角色/影棚/道具资源：广播资源库刷新（空 type = 全量刷新），
+      // 拆分自动补齐了角色/影棚/环境/建筑/道具资源：广播资源库刷新（空 type = 全量刷新），
       // 让资源面板与分镜保持同一数据源，避免「分镜里有影棚、资源里没有影棚」。
-      if (data?.createdCharacters || data?.createdLocations || data?.createdProps) {
+      if (data?.createdCharacters || data?.createdLocations || data?.createdProps || data?.createdEnvironments || data?.createdBuildings) {
         window.dispatchEvent(new CustomEvent('resource-library-changed', { detail: {} }));
       }
 

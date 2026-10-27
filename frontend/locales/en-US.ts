@@ -418,6 +418,10 @@ const enUS: Translations = {
     projectSettings: {
       desc: 'Default picture settings and art-direction lock for the current project; take precedence over model defaults when generating images/videos, and travel with the .jzp project package.',
       currentProjectTag: 'Current project',
+      generationModels: 'Generation models',
+      generationModelsHint: 'Shared by asset image generation, storyboard splitting and AI analysis in this project; editors no longer pick models separately.',
+      imageModel: 'Image generation model',
+      textModel: 'Text analysis model',
       imageAspectRatio: 'Image aspect ratio',
       imageResolution: 'Image resolution',
       videoAspectRatio: 'Video aspect ratio',

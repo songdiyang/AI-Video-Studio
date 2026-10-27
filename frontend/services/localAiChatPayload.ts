@@ -113,6 +113,8 @@ export function buildSystemPrompt(context: any): string {
     '\n- generate_base_model：生成白膜三视图（基础网格）。params:{characterId}。默认强制流程：白膜三视图完成前不能创建派生状态；生成期间按长任务反馈。' +
     '\n- create_character_state：在白膜三视图完成后创建角色状态。params:{characterId, name, description?, state_category?, outfit?, age_stage?, hairstyle?, accessories?, body_elements?, held_props?, costume_id?, tags?}。状态 = 白膜基础 + 服装 + 道具 + 状态属性，对应一场戏中角色需要的造型。' +
     '\n- update_character_state：更新角色状态。params:{characterId, stateId, fields:{...}}。白膜三视图未完成时禁止修改派生状态。' +
+    '\n- delete_character_state：删除单个角色状态图（白膜也是 is_base_model 的状态，同样可删）。params:{characterId, stateId}（破坏性）。删除白膜时若仍有派生状态，会在结果中提示其将失去参考。' +
+    '\n- delete_base_model：删除角色白膜。params:{characterId, cascade?:true}（破坏性）。cascade=true 时连同该角色全部派生状态图一并删除；默认仅删白膜并保留派生状态。' +
     '\n// 场景库（资源面板「场景」页，Studio：环境+建筑）' +
     '\n- create_studio：新建场景库条目（会显示在资源面板「场景」页）。params:{name, description?, coverImageUrl?}' +
     '\n- update_studio：更新场景库条目。params:{studioId, fields:{name?, description?, coverImageUrl?}}' +

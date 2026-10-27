@@ -1,6 +1,9 @@
 // 影棚 / 服装 域本地路由（localStudios）
 //
-// 影棚（Studio）聚合 环境(1:1) + 建筑(1:N) + 场景元素(M:N)。
+// 影棚（Studio）聚合 环境(1:N) + 建筑(1:N) + 场景元素(M:N)。
+// 环境以链接数组 environment_ids=[{environment_id, view, sort_order}] 存储，
+// 首条链接为主环境，同步镜像到旧字段 environment_id / environment_view，
+// 保证只读旧字段的消费方（帧就绪校验、资源清单、单值历史数据）不受影响。
 // 接管 routeRest 通用 CRUD 之外的特殊子路径：
 //   详情（StudioDetail）、环境关联/切换面、建筑关联/切换视图、元素关联、
 //   九宫组装图生成、从剧本抽取环境/建筑（extract-components）、从剧本拼接影棚（compose-from-script）。
@@ -66,6 +69,56 @@ export async function migrateScenesToStudios(path: string): Promise<number> {
 }
 
 // ==================== 影棚详情 ====================
+
+/** 归一化影棚的环境链接数组：新数据读 environment_ids，存量单值数据合成首条链接 */
+function normalizeEnvLinks(studio: any): { environment_id: number; view: string | null; sort_order: number }[] {
+  const links = Array.isArray(studio?.environment_ids)
+    ? studio.environment_ids
+        .filter((l: any) => l && Number.isFinite(Number(l.environment_id)))
+        .map((l: any) => ({
+          environment_id: Number(l.environment_id),
+          view: l.view === 'back' ? 'back' : l.view === 'front' ? 'front' : null,
+          sort_order: Number(l.sort_order) || 0,
+        }))
+    : [];
+  if (!links.length && Number.isFinite(Number(studio?.environment_id)) && Number(studio?.environment_id) > 0) {
+    links.push({
+      environment_id: Number(studio.environment_id),
+      view: studio.environment_view === 'back' ? 'back' : studio.environment_view === 'front' ? 'front' : null,
+      sort_order: 0,
+    });
+  }
+  links.sort((a, b) => a.sort_order - b.sort_order);
+  // 按 id 去重（保留先出现的）
+  const seen = new Set<number>();
+  return links.filter((l) => (seen.has(l.environment_id) ? false : (seen.add(l.environment_id), true)));
+}
+
+/** 把链接数组镜像回单值旧字段：首条为主环境，空数组则清空 */
+function syncEnvPrimaryFields(studio: any, links: { environment_id: number; view: string | null }[]): void {
+  studio.environment_ids = links;
+  studio.environment_id = links.length ? links[0].environment_id : null;
+  studio.environment_view = links.length ? (links[0].view ?? null) : null;
+}
+
+/** 在链接数组上附加环境（按 id 去重，已存在则更新面/顺序） */
+function upsertEnvLink(
+  links: { environment_id: number; view: string | null; sort_order: number }[],
+  environmentId: number,
+  view?: string,
+  sortOrder?: number,
+): { environment_id: number; view: string | null; sort_order: number }[] {
+  const v = view === 'back' ? 'back' : view === 'front' ? 'front' : null;
+  const existing = links.find((l) => l.environment_id === environmentId);
+  if (existing) {
+    if (v) existing.view = v;
+    if (sortOrder != null) existing.sort_order = Number(sortOrder);
+  } else {
+    links.push({ environment_id: environmentId, view: v, sort_order: sortOrder ?? links.length });
+  }
+  return links;
+}
+
 async function handleStudioDetail(studioId: number): Promise<Response | null> {
   const path = activePath();
   if (!path) return null;
@@ -75,7 +128,11 @@ async function handleStudioDetail(studioId: number): Promise<Response | null> {
   const edoc = await loadRestDoc(path, 'environments');
   const bdoc = await loadRestDoc(path, 'buildings');
   const eldoc = await loadRestDoc(path, 'sceneElements');
-  const environment = studio.environment_id ? findById(edoc.items, studio.environment_id) || null : null;
+  const envLinks = normalizeEnvLinks(studio);
+  const environments = envLinks
+    .map((l) => { const e = findById(edoc.items, l.environment_id); return e ? { ...e, environment_view: l.view ?? null } : null; })
+    .filter(Boolean);
+  const environment = environments[0] || null; // 兼容旧消费方：主环境=首条链接
   const buildingLinks = Array.isArray(studio.building_ids) ? studio.building_ids : [];
   const buildings = buildingLinks
     .map((l: any) => { const b = findById(bdoc.items, l.building_id); return b ? { ...b, building_view: l.view ?? null } : null; })
@@ -85,7 +142,7 @@ async function handleStudioDetail(studioId: number): Promise<Response | null> {
     .map((l: any) => findById(eldoc.items, l.element_id))
     .filter(Boolean)
     .map((e: any) => ({ id: e.id, name: e.name, category: e.category, description: e.description ?? null, image_url: e.image_url ?? null, generation_status: e.generation_status, sort_order: e.sort_order ?? 0 }));
-  return jsonResponse({ studio, environment, buildings, elements });
+  return jsonResponse({ studio, environment, environments, buildings, elements });
 }
 
 async function mutateStudio(studioId: number, fn: (studio: any) => void): Promise<Response> {
@@ -101,8 +158,26 @@ async function mutateStudio(studioId: number, fn: (studio: any) => void): Promis
 }
 
 function attachEnvironment(studio: any, environmentId: number, view?: string) {
-  studio.environment_id = environmentId;
-  if (view) studio.environment_view = view;
+  const links = upsertEnvLink(normalizeEnvLinks(studio), environmentId, view);
+  syncEnvPrimaryFields(studio, links);
+}
+function detachEnvironment(studio: any, environmentId?: number) {
+  const links = normalizeEnvLinks(studio);
+  const next = environmentId
+    ? links.filter((l) => l.environment_id !== Number(environmentId))
+    : [];
+  syncEnvPrimaryFields(studio, next);
+}
+function setEnvironmentView(studio: any, view: string, environmentId?: number) {
+  const links = normalizeEnvLinks(studio);
+  const target = environmentId
+    ? links.find((l) => l.environment_id === Number(environmentId))
+    : links[0];
+  if (target && (view === 'front' || view === 'back')) {
+    target.view = view;
+    // 主环境镜像：被改面的链接若居首则同步 environment_view
+    syncEnvPrimaryFields(studio, links);
+  }
 }
 function attachBuilding(studio: any, buildingId: number, body: any) {
   studio.building_ids = Array.isArray(studio.building_ids) ? studio.building_ids : [];
@@ -129,7 +204,20 @@ async function handleNineGrid(studioId: number, body: any): Promise<Response> {
   const studio = findById(doc.items, studioId);
   if (!studio || !assertProject(studio, path)) return jsonResponse({ message: '影棚不存在' }, 404);
   const projectId = Number(studio.project_id) || 0;
-  const prompt = String(studio.description || studio.name || '影棚九宫组装图，3×3 九机位视角');
+  // 组装提示词聚合绑定的环境（1:N，主环境在前）与建筑，避免多环境影棚出图丢组件
+  const edoc = await loadRestDoc(path, 'environments');
+  const bdoc = await loadRestDoc(path, 'buildings');
+  const envNames = normalizeEnvLinks(studio)
+    .map((l) => findById(edoc.items, l.environment_id)?.name)
+    .filter(Boolean);
+  const buildNames = (Array.isArray(studio.building_ids) ? studio.building_ids : [])
+    .map((l: any) => findById(bdoc.items, l?.building_id)?.name)
+    .filter(Boolean);
+  const components = [...envNames.map((n: string) => `环境「${n}」`), ...buildNames.map((n: string) => `建筑「${n}」`)];
+  const prompt = String(
+    [studio.description, components.length ? `影棚组成：${components.join('、')}` : '']
+      .filter(Boolean).join('；') || studio.name || '影棚九宫组装图，3×3 九机位视角',
+  );
   studio.nine_grid_generation_status = 'generating';
   saveRestDoc(path, 'studios', doc);
   const jobId = submitGenJob({
@@ -211,7 +299,7 @@ async function handleComposeFromScript(body: any): Promise<Response> {
       if (!content) throw new Error('剧本内容为空，无法拼接');
       const model = await pickTextModel(body?.textModel);
       if (!model) throw new Error('请先配置可用的文本模型');
-      const sys = '你是场景总监。把剧本场景拼接为影棚（环境+建筑+元素）。严格只输出 JSON：{"studios":[{"name","description","environmentName","buildingNames":["..."]}]}，全部中文。';
+      const sys = '你是场景总监。把剧本场景拼接为影棚（环境+建筑+元素）。严格只输出 JSON：{"studios":[{"name","description","environmentNames":["环境名，可多个，主环境在前"],"buildingNames":["..."]}]}，全部中文。';
       const parsed = await chatJson(model, sys, content.slice(0, 12000));
       const edoc = await loadRestDoc(path, 'environments');
       const bdoc = await loadRestDoc(path, 'buildings');
@@ -219,12 +307,22 @@ async function handleComposeFromScript(body: any): Promise<Response> {
       const now = new Date().toISOString();
       const studios = Array.isArray(parsed?.studios) ? parsed.studios : [];
       for (const raw of studios) {
-        const env = edoc.items.find((e) => e.name === raw.environmentName);
+        // 兼容旧单值 environmentName：优先新数组 environmentNames
+        const envNames: string[] = Array.isArray(raw.environmentNames)
+          ? raw.environmentNames
+          : raw.environmentName ? [raw.environmentName] : [];
+        let elinks: { environment_id: number; view: string | null; sort_order: number }[] = [];
+        for (const en of envNames) {
+          const env = edoc.items.find((e) => e.name === String(en).trim());
+          if (env) elinks = upsertEnvLink(elinks, Number(env.id));
+        }
         const blinks = (Array.isArray(raw.buildingNames) ? raw.buildingNames : [])
           .map((bn: string) => bdoc.items.find((b) => b.name === bn))
           .filter(Boolean)
           .map((b: any, i: number) => ({ building_id: b.id, view: null, sort_order: i }));
-        sdoc.items.push({ id: sdoc.nextId++, project_id: projectId, name: String(raw.name || '影棚'), description: raw.description ?? null, environment_id: env?.id ?? null, building_ids: blinks, element_ids: [], generation_status: 'pending', sort_order: sdoc.items.length, created_at: now, updated_at: now });
+        const studioRow: any = { id: sdoc.nextId++, project_id: projectId, name: String(raw.name || '影棚'), description: raw.description ?? null, environment_id: null, environment_ids: [], environment_view: null, building_ids: blinks, element_ids: [], generation_status: 'pending', sort_order: sdoc.items.length, created_at: now, updated_at: now };
+        syncEnvPrimaryFields(studioRow, elinks);
+        sdoc.items.push(studioRow);
       }
       saveRestDoc(path, 'studios', sdoc);
       return { studios: studios.length };
@@ -287,13 +385,13 @@ export async function routeStudios(url: URL, method: string, body: any): Promise
   // 影棚：详情 GET（覆盖 routeRest 的单条形状）
   if ((mt = p.match(/^\/api\/studios\/(\d+)$/)) && m === 'GET') return handleStudioDetail(Number(mt[1]));
 
-  // 环境关联 / 切换面
+  // 环境关联 / 切换面（1:N：POST 追加、DELETE 可按 environmentId 定点移除，缺省清空全部）
   if ((mt = p.match(/^\/api\/studios\/(\d+)\/environment$/))) {
     if (m === 'POST') return mutateStudio(Number(mt[1]), (s) => attachEnvironment(s, Number(body?.environmentId), body?.view));
-    if (m === 'DELETE') return mutateStudio(Number(mt[1]), (s) => { s.environment_id = null; s.environment_view = null; });
+    if (m === 'DELETE') return mutateStudio(Number(mt[1]), (s) => detachEnvironment(s, body?.environmentId ? Number(body.environmentId) : Number(url.searchParams.get('environmentId')) || undefined));
   }
   if ((mt = p.match(/^\/api\/studios\/(\d+)\/environment-view$/)) && (m === 'PATCH' || m === 'PUT')) {
-    return mutateStudio(Number(mt[1]), (s) => { if (body?.view) s.environment_view = body.view; });
+    return mutateStudio(Number(mt[1]), (s) => setEnvironmentView(s, body?.view, body?.environmentId ? Number(body.environmentId) : undefined));
   }
 
   // 建筑关联 / 切换视图

@@ -4,7 +4,6 @@ import { Button, Input, Textarea, Select, SelectItem } from '@heroui/react';
 import { FileText, Layers, Image as ImageIcon, Camera, Wand2, Trash2 } from 'lucide-react';
 import ContentEditorPanel, { type EmbeddedEditorProps, type EditorSessionHandle, type EditorSaveStatus } from '../ContentEditorPanel';
 import AssetSceneRelations from '../AssetSceneRelations';
-import AIModelSelector from '../AIModelSelector';
 import { updateCharacter, updateScene, updateProp, updatePropStyleConfig, updateCharacterUseReferenceImages } from '../../services/assets';
 import { updateScript } from '../../services/scripts';
 import { updateCostume, fetchCostume, COSTUME_CATEGORIES } from '../../services/costumes';
@@ -92,7 +91,8 @@ const AssetEditorSession: React.FC<AssetEditorProps> = ({ tabId, assetType, init
     },
   ));
   const formData = useResourceDraft(session, data => onSaved?.(assetSavedData(assetType, data)));
-  const { models, selected, setSelected } = useAIModels(formData.project_id || null);
+  // 生成模型统一在「工程设置 → 生成模型」调整，这里只读取当前工程的已选模型
+  const { selected } = useAIModels(formData.project_id || null);
   const alive = useRef(true);
   const callbacks = useRef({ onSaved, onClose, onSelectScene });
   callbacks.current = { onSaved, onClose, onSelectScene };
@@ -204,7 +204,7 @@ const AssetEditorSession: React.FC<AssetEditorProps> = ({ tabId, assetType, init
     })();
   };
   const generate = (view?: string) => runOperation(async () => {
-    if (!selected.image) throw new Error('请先选择图像生成模型');
+    if (!selected.image) throw new Error('请先在工程设置中选择图像生成模型');
     if (session.data.generation_status === 'generating' || studioDetail?.studio.nine_grid_generation_status === 'generating') return;
     setGenerationError('');
     try {
@@ -264,16 +264,16 @@ const AssetEditorSession: React.FC<AssetEditorProps> = ({ tabId, assetType, init
   );
   const renderAssembly = () => {
     if (!studioDetail) return <p>影棚组装信息尚未加载。<Button size="sm" onPress={() => { void refresh(); }}>重试加载</Button></p>;
-    const env = studioDetail.environment;
+    const linkedEnvs = studioDetail.environments || [];
     const studioId = studioDetail.studio.id;
     return <div className="content-editor-fields">
-      <div className="content-editor-field space-y-2"><h4>环境绑定</h4>
-        {env ? <><p>{env.name}</p><div className="flex flex-wrap gap-2">
-          {(['front', 'back'] as const).map(view => <Button key={view} size="sm" variant={studioDetail.studio.environment_view === view ? 'solid' : 'flat'}
-            isDisabled={busy || !(view === 'front' ? env.image_url : env.image_back_url)} onPress={() => { void assemblyOperation(() => setStudioEnvironmentView(studioId, view)); }}>{view === 'front' ? '正面' : '背面'}</Button>)}
-          <Button size="sm" isDisabled={busy} onPress={() => { void assemblyOperation(() => detachEnvironmentFromStudio(studioId)); }}>解绑环境</Button></div></>
-          : <Select label="选择环境" selectedKeys={[]} isDisabled={busy} onSelectionChange={keys => { const id = Number(Array.from(keys)[0]); if (id) void assemblyOperation(() => attachEnvironmentToStudio(studioId, id)); }}>
-            {environments.map(item => <SelectItem key={String(item.id)} textValue={item.name}>{item.name}</SelectItem>)}</Select>}
+      <div className="content-editor-field space-y-2"><h4>环境绑定（{linkedEnvs.length}，首个为主环境）</h4>
+        {linkedEnvs.map((env, idx) => <div key={env.id} className="space-y-1"><p>{env.name}{idx === 0 && <span className="text-[10px] text-(--accent)">（主）</span>}</p><div className="flex flex-wrap gap-2">
+          {(['front', 'back'] as const).map(view => <Button key={view} size="sm" variant={(idx === 0 ? studioDetail.studio.environment_view : env.environment_view) === view ? 'solid' : 'flat'}
+            isDisabled={busy || !(view === 'front' ? env.image_url : env.image_back_url)} onPress={() => { void assemblyOperation(() => setStudioEnvironmentView(studioId, view, env.id)); }}>{view === 'front' ? '正面' : '背面'}</Button>)}
+          <Button size="sm" isDisabled={busy} onPress={() => { void assemblyOperation(() => detachEnvironmentFromStudio(studioId, env.id)); }}>解绑环境</Button></div></div>)}
+        <Select label="添加环境" selectedKeys={[]} isDisabled={busy} onSelectionChange={keys => { const id = Number(Array.from(keys)[0]); if (id) void assemblyOperation(() => attachEnvironmentToStudio(studioId, id)); }}>
+          {environments.filter(item => !linkedEnvs.some(e => e.id === item.id)).map(item => <SelectItem key={String(item.id)} textValue={item.name}>{item.name}</SelectItem>)}</Select>
       </div>
       <div className="content-editor-field space-y-2"><h4>建筑关联</h4>
         {studioDetail.buildings.map(item => <div key={item.id} className="space-y-1"><p>{item.name}</p><div className="flex flex-wrap gap-2">
@@ -298,8 +298,6 @@ const AssetEditorSession: React.FC<AssetEditorProps> = ({ tabId, assetType, init
   const actions = <>
     <div ref={setStateActionsTarget} hidden={activeTab !== 'states'} />
     {canGenerate && <>
-      <div style={{ width: 160 }}><AIModelSelector label="图像模型" models={models} selectedModel={selected.image} onModelChange={model => setSelected('image', model)} filterType="IMAGE" size="sm" /></div>
-      <div style={{ width: 160 }}><AIModelSelector label="文本模型" models={models} selectedModel={selected.text} onModelChange={model => setSelected('text', model)} filterType="TEXT" size="sm" /></div>
       {assetType === 'prop' && generationButton('生成道具设定图')}
       {assetType === 'environment' && <>{generationButton('生成环境正面图', 'front')}{generationButton('生成环境背面图', 'back')}{generationButton('生成环境双面图', 'both')}</>}
       {assetType === 'building' && <>{generationButton('生成建筑室外图', 'exterior')}{generationButton('生成建筑室内图', 'interior')}{generationButton('生成建筑双面图', 'both')}</>}

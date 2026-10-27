@@ -4,7 +4,7 @@ import {
   Moon, MoonStar, Sun, Eye, Mail, ChevronDown, Check,
   Palette, MessageSquare, Info, ChevronRight, Sparkles, Monitor, Globe, RotateCcw, SlidersHorizontal, FileArchive,
   Cpu, Database, BarChart3, Users, Gauge, AlertTriangle, Megaphone, ClipboardList, BookOpen, Key, Film, FolderInput, Clapperboard, Type,
-  Image as ImageIcon, Brain, Eraser
+  Image as ImageIcon, Brain, Eraser, Wand2
 } from 'lucide-react';
 import { useTheme, ThemeType } from '../../contexts/ThemeContext';
 import { useLanguage, LanguageType } from '../../contexts/LanguageContext';
@@ -12,6 +12,8 @@ import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import { useWorkbench } from '../../contexts/WorkbenchContext';
 import AIModelSettings from './AIModelSettings';
+import AIModelSelector from '../../components/AIModelSelector';
+import { useAIModels } from '../../hooks/useAIModels';
 import { getPreferredVideoFormat, setPreferredVideoFormat } from '../../services/localAI';
 import {
   loadMemoryFlags,
@@ -639,6 +641,8 @@ const Settings: React.FC = () => {
   };
 
   // ===== 工程设置：当前工程的图片/视频分辨率与画面比例（存工程 data/project_settings.json）=====
+  // 工程级生成模型选择：与资源编辑器/分镜工作台共用 useAIModels（存 /api/projects/:id/models）
+  const aiModels = useAIModels(currentProject?.id ?? null);
   const [projectGenSettings, setProjectGenSettings] = useState<ProjectGenerationSettings>({});
   useEffect(() => {
     let cancelled = false;
@@ -880,6 +884,22 @@ const Settings: React.FC = () => {
             </span>
           </div>
           <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{ps.desc}</p>
+
+          {/* 生成模型：全工程资源生成/分镜拆分/AI 分析共用，编辑器内不再单独选择 */}
+          <div>
+            <h3 className="text-sm font-medium flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+              <Wand2 className="w-4 h-4" />
+              {ps.generationModels}
+            </h3>
+            <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>{ps.generationModelsHint}</p>
+            <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <AIModelSelector label={ps.imageModel} models={aiModels.models} selectedModel={aiModels.selected.image}
+                onModelChange={model => aiModels.setSelected('image', model)} filterType="IMAGE" size="sm" />
+              <AIModelSelector label={ps.textModel} models={aiModels.models} selectedModel={aiModels.selected.text}
+                onModelChange={model => aiModels.setSelected('text', model)} filterType="TEXT" size="sm" />
+            </div>
+          </div>
+          <div className="h-px" style={{ backgroundColor: 'var(--border-color)' }} />
           {rows.map((row, i) => (
             <React.Fragment key={row.key}>
               {i > 0 && <div className="h-px" style={{ backgroundColor: 'var(--border-color)' }} />}
