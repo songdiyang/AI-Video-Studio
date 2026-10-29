@@ -4,14 +4,7 @@ on:
   push:
     branches:
       - main
-    tags:
-      - 'v*'
   workflow_dispatch:
-    inputs:
-      version:
-        description: 'Release version (e.g., v1.0.0)'
-        required: false
-        default: ''
 
 permissions:
   contents: write
@@ -47,14 +40,14 @@ jobs:
       - name: Build frontend
         run: npm --prefix frontend run build
 
-      - name: Compute version (Beijing time, to day)
+      - name: Compute version (Beijing time, to minute)
         id: version
         shell: pwsh
         run: |
-          # 北京时间 = UTC + 8，精确到日 yyyyMMdd
-          $version = (Get-Date).ToUniversalTime().AddHours(8).ToString("yyyyMMdd")
+          # 北京时间 = UTC + 8，精确到分钟 yyyyMMdd-HHmm；追加 run_number 保证同分钟内多次提交也不冲突
+          $version = (Get-Date).ToUniversalTime().AddHours(8).ToString("yyyyMMdd-HHmm") + "-r${{ github.run_number }}"
           echo "version=$version" >> $env:GITHUB_OUTPUT
-          echo "构建版本号(北京时间,精确到日): $version"
+          echo "构建版本号(北京时间,精确到分钟): $version"
 
       - name: Build Tauri Windows Setup
         run: npm --prefix frontend run tauri:build:windows
@@ -62,7 +55,7 @@ jobs:
       - name: Rename installers with version
         shell: pwsh
         run: |
-          # 将安装包文件名中的 semver(如 _1.0.0_) 替换为日期版本号；
+          # 将安装包文件名中的 semver(如 _1.0.0_) 替换为时间版本号；
           # 不改 tauri.conf/Cargo 的 version 字段，避免裸数字破坏 semver / MSI 版本上限
           $ver = "${{ steps.version.outputs.version }}"
           $dirs = @(
@@ -85,10 +78,9 @@ jobs:
           if-no-files-found: error
 
       - name: Create Release
-        if: startsWith(github.ref, 'refs/tags/') || github.event.inputs.version != ''
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || steps.version.outputs.version }}
+          tag_name: ${{ steps.version.outputs.version }}
           name: AI Video Studio ${{ steps.version.outputs.version }}
           draft: false
           prerelease: false
