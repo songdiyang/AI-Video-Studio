@@ -86,6 +86,12 @@ export function buildSystemPrompt(context: any): string {
     '\n\n当用户要求你执行操作时，直接在回复中告诉用户你正在做什么，并在末尾附上 action 指令，系统会自动执行。格式：\n[SUGGESTIONS]{"suggestions":[{"action":"操作标识","label":"执行内容描述","params":{}}]}[/SUGGESTIONS]\n你可以在一次回复中附带多个 action 指令，系统会依次自动执行。纯闲聊或简单提问不需要 SUGGESTIONS。注意：只能使用下方清单中的 action，严禁使用   或其他自定义的工具调用格式。';
 
   systemPrompt +=
+    '\n\n【执行铁律】回复正文不会改变任何数据，只有同一轮回复里附带的 action 才会被系统真正触发。' +
+    '因此只要用户要求的是执行类任务（拆分/生成/创建/写入/更新/优化/质检/绑定/删除…），本轮就必须同时输出对应 action；' +
+    '严禁只回复「我这就去拆分分镜」「我会检查…」这类承诺却不附带 action——那样系统什么都不会执行，软件会核验并把工程真实状态回喂给你。' +
+    '若因缺少前置条件确实无法执行，请直接说明缺什么、需要用户做什么，不要使用将来时承诺措辞，也不要声称已完成。';
+
+  systemPrompt +=
     '\n\n【可用 action 清单】' +
     '\n// 分镜生成与质检' +
     '\n- generate_frame：生成首尾帧图片。params:{sceneId}' +
@@ -93,10 +99,11 @@ export function buildSystemPrompt(context: any): string {
     '\n- upload_material：上传分镜素材。params:{sceneId}' +
     '\n- optimize_prompt：优化分镜提示词。params:{sceneId}' +
     '\n- auto_storyboard：由当前绑定的剧本自动拆分分镜。⚠️ 前置条件：必须已有绑定的剧本（currentScriptId 存在）；若当前没有剧本，禁止直接调用它，必须先用 ask 询问用户想要什么样的故事，收到回答后用 generate_script 生成剧本，再 auto_storyboard 拆分。' +
+    '\n- read_storyboards：读取当前工程真实分镜清单（直接读工程文档，含真实 sceneId、首尾帧/视频是否落地、地点/角色/道具）。params:{scriptId?, episode?, keyword?, max?}——全部缺省即读工程内所有分镜。以下三种情况必须先用它：① 上下文里没有【项目分镜列表】或你怀疑自己看不见分镜；② 需要 sceneId 来执行 generate_frame / generate_video / inspect_quality / update_scene 等动作；③ 你要断言“拆分已完成/出图已落地/素材库为空”之前的事实核验。⚠️ 严禁让用户“去分镜列表里点一下分镜把 ID 发给你”来绕过缺失的分镜可见性——那属于本动作能自己完成的事；也严禁在没调用过本动作时声称分镜库为空。' +
     '\n- inspect_quality：检查分镜质量。params:{sceneId}。自动执行时系统会采集该分镜的真实素材（提示词、首尾帧/视频生成情况、分辨率、文件大小）并把首尾帧图片一并回喂，你现在能直接看到画面，必须在后续回复正文中基于真实画面给出 1-5 星评级与改进建议，不得只说“我这就去质检”就结束。' +
     '\n- view_image：主动查看项目内的图片（分镜首尾帧/角色立绘/场景封面/道具图）。params:{sceneId?（分镜 ID，看该分镜首尾帧）, urls?（图片地址数组）, scope?"characters|studios|locations|props", keyword?"按名称筛选", max?（默认 4，最多 6）}。系统会把图片内联后附在下一条消息里给你，下一轮你必须先看清画面再作答（构图/色彩/人物与场景一致性/与分镜要求的偏差）。用户问“这张图里有什么/画面对不对/帮我看看”类问题时用它，不要臆测画面内容。' +
     '\n// 交互（向用户提问）' +
-    '\n- ask：向用户提出澄清问题并暂停，等待用户回答后再继续后续动作。params:{question:"要问用户的问题", options?["可选选项1","选项2"]}。当缺少必要信息（例如没有绑定剧本、不清楚要什么题材/风格/篇幅/主角）时必须先用它询问用户，不要臆测。' +
+    '\n- ask：向用户提出澄清问题并暂停，等待用户回答后再继续后续动作。params:{question:"要问用户的问题", options:["候选回答1","候选回答2"]}。当缺少必要信息（例如没有绑定剧本、不清楚要什么题材/风格/篇幅/主角）时必须先用它询问用户，不要臆测。options 必须结合当前对话与工程上下文生成 2-4 个最可能、彼此有区分度的简短答案，不要使用“选项1”之类的占位文本；界面会始终提供自定义回答输入框。' +
     '\n// 分镜 CRUD（破坏性）' +
     '\n- insert_scene：插入新分镜。params:{atIndex:从0开始}' +
     '\n- delete_scene：删除分镜。params:{sceneId}' +
@@ -111,7 +118,7 @@ export function buildSystemPrompt(context: any): string {
     '\n- update_character：更新角色字段。params:{characterId, fields:{name?, description?, appearance?, base_appearance?, outfit_appearance?, personality?, gender?, tags?}}' +
     '\n- delete_character：删除角色。params:{characterId}（破坏性）' +
     '\n- generate_base_model：生成白膜三视图（基础网格）。params:{characterId}。默认强制流程：白膜三视图完成前不能创建派生状态；生成期间按长任务反馈。' +
-    '\n- create_character_state：在白膜三视图完成后创建角色状态。params:{characterId, name, description?, state_category?, outfit?, age_stage?, hairstyle?, accessories?, body_elements?, held_props?, costume_id?, tags?}。状态 = 白膜基础 + 服装 + 道具 + 状态属性，对应一场戏中角色需要的造型。' +
+    '\n- create_character_state：在白膜三视图完成后创建角色状态。params:{characterId, name, description?, appearance?, personality?, state_category?, outfit?, age_stage?, hairstyle?, accessories?, body_elements?, held_props?, costume_id?, tags?}。状态 = 白膜基础 + 当前外貌/性格 + 妆面服装 + 道具 + 状态属性，对应一场戏中角色需要的造型。' +
     '\n- update_character_state：更新角色状态。params:{characterId, stateId, fields:{...}}。白膜三视图未完成时禁止修改派生状态。' +
     '\n- delete_character_state：删除单个角色状态图（白膜也是 is_base_model 的状态，同样可删）。params:{characterId, stateId}（破坏性）。删除白膜时若仍有派生状态，会在结果中提示其将失去参考。' +
     '\n- delete_base_model：删除角色白膜。params:{characterId, cascade?:true}（破坏性）。cascade=true 时连同该角色全部派生状态图一并删除；默认仅删白膜并保留派生状态。' +
@@ -131,8 +138,8 @@ export function buildSystemPrompt(context: any): string {
     '\n- create_script：新建剧本。params:{title?, episodeNumber?, content}' +
     '\n- update_script：写入/更新某一集的大纲（即剧本正文）。params:{scriptId?|episodeNumber?（二选一，缺省为当前集）, title?, content}。⚠️ content 为该集全文整体替换，请在正文中给出完整大纲/剧情；工作台「大纲」面板由此正文实时解析渲染。编写/修订每一集大纲就用 create_script（增）/ read_script（查）/ update_script（改）/ delete_script（删）组合完成，严禁臆造 update_outline 等清单外动作。' +
     '\n- read_script：查看/读取剧本正文。params:{scriptId?}——不传则读当前集剧本。需要参考剧情、回答“大纲/内容是什么”、或基于剧本拆分前，先用它获取完整正文。' +
-    '\n- generate_script：AI生成剧本。params:{projectId, episodeNumber?, title?, description?, style?, length?, textModel?}。启动异步工作流生成剧本，生成中剧本状态为 generating，完成后自动保存。' +
-    '\n- get_task_status：查看后台长任务状态。params:{jobId?}——不传返回最近长任务，传 jobId 查单个。用户问“任务进度/好了没”时使用。' +
+    '\n- generate_script：AI生成剧本。params:{projectId, episodeNumber?, title?, description?, style?, length?, textModel?}。生成完成后由系统自动保存到左侧剧本面板。调用此动作时回复正文必须留空，只输出 SUGGESTIONS；禁止在聊天回复中重复剧本正文。' +
+    '\n- get_task_status：查看后台长任务状态并核验资产落地。params:{jobId?}——不传返回最近长任务，传 jobId 查单个。用户问“任务进度/好了没”时必须使用；角色状态只有在工作流完成且正/侧/背三视图均写入后才算完成，禁止仅凭任务卡片或历史回复宣称完成。' +
     '\n- delete_script：删除剧本。params:{scriptId}（破坏性）' +
     '\n- bind_script：切换当前参考剧本（弱绑定）。params:{scriptId}——传 null 则解绑' +
     '\n- switch_episode：切换当前集数进度标签。params:{episodeNumber:数字}' +
@@ -307,10 +314,20 @@ export function buildSystemPrompt(context: any): string {
         const status = flags.length > 0 ? `[${flags.join(' ')}]` : '[未生成]';
         const desc = s.description ? String(s.description).slice(0, 50) : '';
         const propsTag = Array.isArray(s.props) && s.props.length > 0 ? ` 道具:${s.props.join('、')}` : '';
-        return `第${s.index}(ID:${s.id})${status}${propsTag} ${desc}`;
+        const locTag = s.location ? ` 地点:${s.location}` : '';
+        // 兜底注入的是工程全部分镜（跨剧本作用域），标出作用域以免“第X个分镜”歧义
+        const scopeTag = s.scope ? `[${s.scope}]` : '';
+        return `${scopeTag}第${s.index}(ID:${s.id})${status}${propsTag}${locTag} ${desc}`;
       })
       .join('\n');
     systemPrompt += `\n\n【项目分镜列表（按顺序）】\n${lines}\n\n当用户说"第X个分镜"时，请根据上面列表匹配对应的分镜ID，并在 action 的 params 中传入正确的 sceneId。`;
+  } else {
+    // 空态必须显式声明：否则模型会把“上下文里没有分镜”误读成“工程里没有分镜”，
+    // 进而编造结论（如“分镜素材库是空的”）或向用户索要 sceneId。
+    systemPrompt +=
+      '\n\n【项目分镜】当前上下文未注入分镜清单，这不代表工程里没有分镜（可能只是分镜工作台未挂载）。' +
+      '需要分镜信息、需要 sceneId、或准备断言分镜/素材状态前，必须先调用 read_storyboards 取工程内真实清单；' +
+      '未拿到结果前不得声称“分镜为空/素材库是空的”，更不得要求用户手动提供分镜 ID。';
   }
 
   if (Array.isArray(context.longTasks) && context.longTasks.length > 0) {
