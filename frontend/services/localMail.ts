@@ -10,10 +10,10 @@
 
 export interface LocalMailRecord {
   id: number;
-  sender_type: 'system' | 'admin';
+  sender_type: 'system' | 'admin' | 'friend';
   title: string;
   content: string;
-  mail_type: 'reply' | 'announce' | 'system' | 'task' | 'points_change';
+  mail_type: 'reply' | 'announce' | 'system' | 'task' | 'points_change' | 'warning';
   related_feedback_id: number | null;
   related_task_id: number | null;
   is_read: 0 | 1;
@@ -49,6 +49,7 @@ export interface PushMailInput {
   title: string;
   content: string;
   mail_type?: LocalMailRecord['mail_type'];
+  sender_type?: LocalMailRecord['sender_type'];
   dedupe_key?: string;
 }
 
@@ -61,7 +62,7 @@ export function pushInternalMail(input: PushMailInput): LocalMailRecord | null {
   const nextId = list.reduce((max, m) => Math.max(max, m.id || 0), 0) + 1;
   const mail: LocalMailRecord = {
     id: nextId,
-    sender_type: 'system',
+    sender_type: input.sender_type || 'system',
     title: input.title,
     content: input.content,
     mail_type: input.mail_type || 'system',
@@ -82,20 +83,31 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+export type MailCategory = 'system' | 'official' | 'friend';
+
+function matchCategory(mail: LocalMailRecord, category: MailCategory | null): boolean {
+  if (!category) return true;
+  if (category === 'official') return mail.sender_type === 'admin';
+  if (category === 'friend') return mail.sender_type === 'friend';
+  return category === 'system' && mail.sender_type === 'system';
+}
+
 /** 处理 /api/mail* 的本地路由；未匹配返回 null */
 export function routeLocalMail(url: URL, method: string): Response | null {
   const m = method.toUpperCase();
   const pathname = url.pathname;
+  const rawCategory = url.searchParams.get('category');
+  const category: MailCategory | null = rawCategory === 'system' || rawCategory === 'official' || rawCategory === 'friend' ? rawCategory : null;
 
   if (pathname === '/api/mail/unread-count' && m === 'GET') {
-    const count = read().filter((mail) => mail.is_read === 0).length;
+    const count = read().filter((mail) => mail.is_read === 0 && matchCategory(mail, category)).length;
     return jsonResponse({ count });
   }
 
   if (pathname === '/api/mail' && m === 'GET') {
     const page = Math.max(1, Number(url.searchParams.get('page')) || 1);
     const limit = Math.max(1, Number(url.searchParams.get('limit')) || 20);
-    const list = read();
+    const list = read().filter((mail) => matchCategory(mail, category));
     const start = (page - 1) * limit;
     return jsonResponse({
       mails: list.slice(start, start + limit),

@@ -14,9 +14,13 @@ import ResizeRevealHandle from './ResizeRevealHandle';
 const AIAssistantPanel = lazy(() => import('../AIAssistantPanel'));
 
 const AIAssistantSidePanel: React.FC = () => {
-  const { isOpen, open, close, projectId } = useAIAssistantUI();
+  const { isOpen, open, close, projectId, projectlessEntry } = useAIAssistantUI();
   const { currentFrame, scenes, onAction, characters, locations, studios, scripts, projectName, projectDescription } = useAIAssistantData();
   const { t } = useLanguage();
+
+  // 显示作用域：欢迎页/应用级标签页（新建工程入口）不继承上一个工程的会话缓存，
+  // key 随作用域变化 → 面板整体重挂载，水合到空白对话。
+  const panelProjectId = projectlessEntry ? null : projectId;
 
   const resize = useResizableSidebar({
     storageKey: 'nanostory_ai_sidebar_width',
@@ -60,7 +64,8 @@ const AIAssistantSidePanel: React.FC = () => {
             }
           >
             <AIAssistantPanel
-              projectId={projectId}
+              key={panelProjectId ?? 'global'}
+              projectId={panelProjectId}
               projectName={projectName}
               projectDescription={projectDescription}
               currentFrame={currentFrame}

@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Moon, MoonStar, Sun, Eye, Mail, ChevronDown, Check,
   Palette, MessageSquare, Info, ChevronRight, Sparkles, Monitor, Globe, RotateCcw, SlidersHorizontal, FileArchive,
-  Cpu, Database, BarChart3, Users, Gauge, AlertTriangle, Megaphone, ClipboardList, BookOpen, Key, Film, FolderInput, Clapperboard, Type,
+  Cpu, Database, BarChart3, Users, Gauge, AlertTriangle, Megaphone, ClipboardList, BookOpen, Key, Film, FolderInput, Clapperboard,
   Image as ImageIcon, Brain, Eraser, Wand2
 } from 'lucide-react';
 import { useTheme, ThemeType } from '../../contexts/ThemeContext';
@@ -203,6 +203,9 @@ const SettingsSelect: React.FC<{
 };
 
 // 自定义开关（与 SettingsSelect 同一套视觉语言）
+// 圆点必须显式 left/top：left:auto 会落在按钮内容的静态位置（按钮内容居中），
+// 再叠加 translateX 就把圆点推出轨道。轨道 44×24、边框 1、圆点 18：
+// 内区 42×22，left/top 各 2px，开启时平移 20px 后右侧仍留 2px。
 const SettingsToggle: React.FC<{
   on: boolean;
   onChange: (v: boolean) => void;
@@ -218,11 +221,11 @@ const SettingsToggle: React.FC<{
     style={{ backgroundColor: on ? 'var(--accent-primary)' : 'var(--bg-input)', border: `1px solid ${on ? 'var(--accent-primary)' : 'var(--border-color)'}` }}
   >
     <span
-      className="absolute top-0.5 rounded-full transition-transform"
+      className="absolute left-0.5 top-0.5 rounded-full transition-transform duration-200"
       style={{
         width: 18,
         height: 18,
-        transform: `translateX(${on ? 20 : 2}px)`,
+        transform: `translateX(${on ? 20 : 0}px)`,
         backgroundColor: on ? '#fff' : 'var(--text-muted)',
       }}
     />
@@ -708,11 +711,14 @@ const Settings: React.FC = () => {
       });
       if (!ok) return;
       const n = await purgeLowMemories(currentProject?.id);
+      void refreshMemoryCounts(); // 清理后同步概况数字
       showToast(
         n > 0 ? ms.purgeDone.replace('{n}', String(n)) : ms.purgeNone,
         n > 0 ? 'success' : 'info'
       );
     };
+    // 行式布局：左「标题 + 说明」/ 右控件；控件列固定宽度（与通用设置页一致），
+    // 分隔线由调用方放在两行之间，避免卡片顶部多出一条孤线。
     const row = (
       key: string,
       icon: React.ReactNode,
@@ -720,34 +726,39 @@ const Settings: React.FC = () => {
       desc: string,
       control: React.ReactNode
     ) => (
-      <React.Fragment key={key}>
-        <div className="h-px" style={{ backgroundColor: 'var(--border-color)' }} />
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-6">
-          <div className="min-w-0">
-            <h3 className="text-sm font-medium flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
-              {icon}
-              {title}
-            </h3>
-            <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>{desc}</p>
-          </div>
-          <div className="w-full sm:w-40 shrink-0 flex sm:justify-end">{control}</div>
+      <div key={key} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-6">
+        <div className="min-w-0">
+          <h3 className="text-sm font-medium flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+            {icon}
+            {title}
+          </h3>
+          <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>{desc}</p>
         </div>
-      </React.Fragment>
+        <div className="w-full sm:w-56 shrink-0 flex sm:justify-end">{control}</div>
+      </div>
     );
-    /** 记忆条数小方块：标签在上、数字在下 */
-    const statTile = (label: string, value: string) => (
+    const divider = <div className="h-px" style={{ backgroundColor: 'var(--border-color)' }} />;
+    /** 记忆条数：标签在上、数值在下；加载中/未打开工程时降级为一行说明文字，保持两块等高 */
+    const statTile = (label: string, value: string, unit?: string) => (
       <div
-        className="flex-1 rounded-xl px-3.5 py-2.5 min-w-0"
+        className="flex-1 rounded-lg px-4 py-3 min-w-0"
         style={{ backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-color)' }}
       >
-        <p className="text-[10px] truncate" style={{ color: 'var(--text-muted)' }}>{label}</p>
-        <p className="text-lg font-semibold leading-6 mt-0.5" style={{ color: 'var(--text-primary)' }}>{value}</p>
+        <p className="text-xs truncate" title={label} style={{ color: 'var(--text-muted)' }}>{label}</p>
+        {unit ? (
+          <p className="mt-1 flex items-baseline gap-1.5">
+            <span className="text-xl font-semibold leading-6" style={{ color: 'var(--text-primary)' }}>{value}</span>
+            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{unit}</span>
+          </p>
+        ) : (
+          <p className="text-sm mt-1 leading-6 truncate" style={{ color: 'var(--text-muted)' }}>{value}</p>
+        )}
       </div>
     );
     return (
       <div className="max-w-2xl space-y-5">
         <div
-          className="rounded-xl border p-5 lg:p-6"
+          className="rounded-xl border p-5 lg:p-6 space-y-4"
           style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}
         >
           {row('autoLearn', <Sparkles className="w-4 h-4" />, ms.autoLearn, ms.autoLearnDesc, (
@@ -757,6 +768,7 @@ const Settings: React.FC = () => {
               onChange={(v) => setMemoryFlags(saveMemoryFlags({ autoLearn: v }))}
             />
           ))}
+          {divider}
           {row('retrieval', <BookOpen className="w-4 h-4" />, ms.retrieval, ms.retrievalDesc, (
             <SettingsToggle
               on={memoryFlags.retrieval}
@@ -764,12 +776,15 @@ const Settings: React.FC = () => {
               onChange={(v) => setMemoryFlags(saveMemoryFlags({ retrieval: v }))}
             />
           ))}
+          {divider}
           {row('injectMax', <Database className="w-4 h-4" />, ms.injectMax, ms.injectMaxDesc, (
-            <SettingsSelect
-              value={String(memoryFlags.injectMax)}
-              options={injectOptions}
-              onChange={(v) => setMemoryFlags(saveMemoryFlags({ injectMax: clampInjectMax(v) }))}
-            />
+            <div className="w-full">
+              <SettingsSelect
+                value={String(memoryFlags.injectMax)}
+                options={injectOptions}
+                onChange={(v) => setMemoryFlags(saveMemoryFlags({ injectMax: clampInjectMax(v) }))}
+              />
+            </div>
           ))}
         </div>
 
@@ -778,35 +793,27 @@ const Settings: React.FC = () => {
           className="rounded-xl border p-5 lg:p-6 space-y-4"
           style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}
         >
-          <div className="flex items-center gap-4">
-            {statTile(ms.statsUser, memoryCounts ? `${memoryCounts.user} ${ms.unit}` : '—')}
-            {statTile(
-              currentProject?.id ? ms.statsProject : ms.statsProjectInactive,
-              currentProject?.id ? (memoryCounts ? `${memoryCounts.project} ${ms.unit}` : '—') : ms.noProject
-            )}
+          <div className="flex items-stretch gap-3">
+            {statTile(ms.statsUser, memoryCounts ? String(memoryCounts.user) : '—', memoryCounts ? ms.unit : undefined)}
+            {currentProject?.id
+              ? statTile(ms.statsProject, memoryCounts ? String(memoryCounts.project) : '—', memoryCounts ? ms.unit : undefined)
+              : statTile(ms.statsProjectInactive, ms.noProject)}
           </div>
           <p className="text-xs flex items-start gap-1.5" style={{ color: 'var(--text-muted)' }}>
             <Info className="w-3.5 h-3.5 shrink-0 mt-px" />
             <span>{ms.manageHint}</span>
           </p>
-          <div className="h-px" style={{ backgroundColor: 'var(--border-color)' }} />
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-6">
-            <div className="min-w-0">
-              <h3 className="text-sm font-medium flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
-                <Eraser className="w-4 h-4" />
-                {ms.purge}
-              </h3>
-              <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>{ms.purgeDesc}</p>
-            </div>
+          {divider}
+          {row('purge', <Eraser className="w-4 h-4" />, ms.purge, ms.purgeDesc, (
             <button
               type="button"
               onClick={() => void purge()}
-              className="px-4 py-2 rounded-xl text-sm font-medium transition-colors shrink-0 hover:bg-red-500/10"
+              className="px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors shrink-0 hover:bg-red-500/10"
               style={{ color: '#f87171', border: '1px solid rgba(248,113,113,0.4)' }}
             >
               {ms.purgeAction}
             </button>
-          </div>
+          ))}
         </div>
       </div>
     );
@@ -830,45 +837,34 @@ const Settings: React.FC = () => {
       );
     }
     const autoOption = { value: '', label: ps.auto };
-    const rows: Array<{
-      key: keyof ProjectGenerationSettings;
-      icon: React.ReactNode;
-      label: string;
-      options: SelectOption[];
-    }> = [
-      {
-        key: 'imageAspectRatio', icon: <ImageIcon className="w-4 h-4" />,
-        label: ps.imageAspectRatio,
-        options: [autoOption, ...['1:1', '16:9', '9:16', '4:3', '3:4', '21:9'].map((r) => ({ value: r, label: r }))],
-      },
-      {
-        key: 'imageResolution', icon: <ImageIcon className="w-4 h-4" />,
-        label: ps.imageResolution,
-        options: [autoOption, ...['720p', '1080p', '2K', '4K'].map((r) => ({ value: r, label: r }))],
-      },
-      {
-        key: 'videoAspectRatio', icon: <Film className="w-4 h-4" />,
-        label: ps.videoAspectRatio,
-        options: [autoOption, ...['16:9', '9:16', '1:1', '4:3', '3:4'].map((r) => ({ value: r, label: r }))],
-      },
-      {
-        key: 'videoResolution', icon: <Film className="w-4 h-4" />,
-        label: ps.videoResolution,
-        options: [autoOption, ...['480p', '720p', '1080p'].map((r) => ({ value: r, label: r }))],
-      },
-      {
-        key: 'artStyle', icon: <Palette className="w-4 h-4" />,
-        label: ps.artStyle,
-        options: ART_STYLE_PRESETS.map((preset) => ({
-          value: preset.key,
-          label: preset.key === ''
-            ? ps.artStyleNone
-            : preset.key === 'custom'
-              ? ps.artStyleCustom
-              : ((ps.artStyleOptions as Record<string, string>)[preset.key] ?? preset.label),
-        })),
-      },
-    ];
+    const imageAspectRatioOptions = [autoOption, ...['1:1', '16:9', '9:16', '4:3', '3:4', '21:9'].map((r) => ({ value: r, label: r }))];
+    const imageResolutionOptions = [autoOption, ...['720p', '1080p', '2K', '4K'].map((r) => ({ value: r, label: r }))];
+    const videoAspectRatioOptions = [autoOption, ...['16:9', '9:16', '1:1', '4:3', '3:4'].map((r) => ({ value: r, label: r }))];
+    const videoResolutionOptions = [autoOption, ...['480p', '720p', '1080p'].map((r) => ({ value: r, label: r }))];
+    const artStyleOptions = ART_STYLE_PRESETS.map((preset) => ({
+      value: preset.key,
+      label: preset.key === ''
+        ? ps.artStyleNone
+        : preset.key === 'custom'
+          ? ps.artStyleCustom
+          : ((ps.artStyleOptions as Record<string, string>)[preset.key] ?? preset.label),
+    }));
+    // 字段/组头用辅助函数直接调用（而非组件），避免每次渲染重建导致下拉收起、输入失焦
+    const field = (key: string, label: string, control: React.ReactNode) => (
+      <div key={key} className="min-w-0">
+        <div className="text-[11px] mb-1.5" style={{ color: 'var(--text-muted)' }}>{label}</div>
+        {control}
+      </div>
+    );
+    const groupHeader = (icon: React.ReactNode, title: string, hint?: string) => (
+      <div>
+        <h3 className="text-sm font-medium flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+          {icon}
+          {title}
+        </h3>
+        {hint && <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>{hint}</p>}
+      </div>
+    );
     return (
       <div className="max-w-2xl">
         <div
@@ -897,104 +893,107 @@ const Settings: React.FC = () => {
                 onModelChange={model => aiModels.setSelected('image', model)} filterType="IMAGE" size="sm" />
               <AIModelSelector label={ps.textModel} models={aiModels.models} selectedModel={aiModels.selected.text}
                 onModelChange={model => aiModels.setSelected('text', model)} filterType="TEXT" size="sm" />
+              <AIModelSelector label={ps.videoModel} models={aiModels.models} selectedModel={aiModels.selected.video}
+                onModelChange={model => aiModels.setSelected('video', model)} filterType="VIDEO" size="sm" />
             </div>
           </div>
           <div className="h-px" style={{ backgroundColor: 'var(--border-color)' }} />
-          {rows.map((row, i) => (
-            <React.Fragment key={row.key}>
-              {i > 0 && <div className="h-px" style={{ backgroundColor: 'var(--border-color)' }} />}
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-6">
-                <div className="min-w-0">
-                  <h3 className="text-sm font-medium flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
-                    {row.icon}
-                    {row.label}
-                  </h3>
-                </div>
-                <div className="w-full sm:w-56 shrink-0">
-                  <SettingsSelect
-                    value={projectGenSettings[row.key] || ''}
-                    options={row.options}
-                    onChange={(v) => {
-                      if (row.key === 'artStyle') {
-                        // 选预设时同步覆盖风格限定描述，用户可再手动微调
-                        const preset = findArtStylePreset(v);
-                        void handleProjectSettingsPatch({ artStyle: v, artStylePrompt: preset?.prompt ?? '' });
-                        return;
-                      }
-                      void handleProjectSettingChange(row.key, v);
-                    }}
-                  />
-                </div>
+
+          {/* 画面参数：图片/视频的比例与分辨率，留空（自动）跟随模型默认 */}
+          <div>
+            {groupHeader(<ImageIcon className="w-4 h-4" />, ps.params)}
+            <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {field('imageAspectRatio', ps.imageAspectRatio, (
+                <SettingsSelect value={projectGenSettings.imageAspectRatio || ''} options={imageAspectRatioOptions}
+                  onChange={(v) => void handleProjectSettingChange('imageAspectRatio', v)} />
+              ))}
+              {field('imageResolution', ps.imageResolution, (
+                <SettingsSelect value={projectGenSettings.imageResolution || ''} options={imageResolutionOptions}
+                  onChange={(v) => void handleProjectSettingChange('imageResolution', v)} />
+              ))}
+              {field('videoAspectRatio', ps.videoAspectRatio, (
+                <SettingsSelect value={projectGenSettings.videoAspectRatio || ''} options={videoAspectRatioOptions}
+                  onChange={(v) => void handleProjectSettingChange('videoAspectRatio', v)} />
+              ))}
+              {field('videoResolution', ps.videoResolution, (
+                <SettingsSelect value={projectGenSettings.videoResolution || ''} options={videoResolutionOptions}
+                  onChange={(v) => void handleProjectSettingChange('videoResolution', v)} />
+              ))}
+            </div>
+          </div>
+
+          <div className="h-px" style={{ backgroundColor: 'var(--border-color)' }} />
+
+          {/* 美术风格：预设 + 风格限定 + 临时覆盖 */}
+          <div>
+            {groupHeader(<Palette className="w-4 h-4" />, ps.artStyle)}
+            <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {field('artStyle', ps.artStylePreset, (
+                <SettingsSelect value={projectGenSettings.artStyle || ''} options={artStyleOptions}
+                  onChange={(v) => {
+                    // 选预设时同步覆盖风格限定描述，用户可再手动微调
+                    const preset = findArtStylePreset(v);
+                    void handleProjectSettingsPatch({ artStyle: v, artStylePrompt: preset?.prompt ?? '' });
+                  }} />
+              ))}
+              <div className="min-w-0">
+                <div className="text-[11px] mb-1.5" style={{ color: 'var(--text-muted)' }}>{ps.artStylePrompt}</div>
+                <textarea
+                  value={artStyleDraft}
+                  onChange={(e) => setArtStyleDraft(e.target.value)}
+                  onBlur={() => {
+                    const next = artStyleDraft.trim();
+                    if ((projectGenSettings.artStylePrompt || '') !== next) {
+                      void handleProjectSettingsPatch({ artStylePrompt: next });
+                    }
+                  }}
+                  rows={3}
+                  maxLength={300}
+                  placeholder={ps.artStylePromptPlaceholder}
+                  className="w-full text-xs rounded-lg px-3 py-2 resize-none bg-(--bg-input) border border-(--border-color) text-(--text-primary) focus:outline-none focus:border-(--accent)"
+                />
+                <p className="text-[10px] mt-1.5" style={{ color: 'var(--text-muted)' }}>{ps.artStylePromptHint}</p>
               </div>
-            </React.Fragment>
-          ))}
+            </div>
 
-          {/* 美术风格限定：追加到该工程所有图片/视频生成提示词 */}
-          <div className="h-px" style={{ backgroundColor: 'var(--border-color)' }} />
-          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-6">
-            <div className="min-w-0">
-              <h3 className="text-sm font-medium flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
-                <Type className="w-4 h-4" />
-                {ps.artStylePrompt}
-              </h3>
-              <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>{ps.artStylePromptHint}</p>
-            </div>
-            <div className="w-full sm:w-56 shrink-0">
-              <textarea
-                value={artStyleDraft}
-                onChange={(e) => setArtStyleDraft(e.target.value)}
-                onBlur={() => {
-                  const next = artStyleDraft.trim();
-                  if ((projectGenSettings.artStylePrompt || '') !== next) {
-                    void handleProjectSettingsPatch({ artStylePrompt: next });
-                  }
-                }}
-                rows={3}
-                maxLength={300}
-                placeholder={ps.artStylePromptPlaceholder}
-                className="w-full text-xs rounded-lg px-3 py-2 resize-none bg-(--bg-input) border border-(--border-color) text-(--text-primary) focus:outline-none focus:border-(--accent)"
-              />
-            </div>
-          </div>
-
-          {/* 临时风格覆盖：用户临时意图优先于工程限定，由 AI 对话或手动触发 */}
-          <div className="h-px" style={{ backgroundColor: 'var(--border-color)' }} />
-          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-6">
-            <div className="min-w-0">
-              <h3 className="text-sm font-medium flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
-                <Sparkles className="w-4 h-4" />
-                {ps.tempStyleTitle}
-              </h3>
-              <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>{ps.tempStyleHint}</p>
-            </div>
-            <div className="w-full sm:w-56 shrink-0">
-              {projectGenSettings.tempArtStylePrompt?.trim() ? (
-                <div className="rounded-lg border border-(--accent)/30 bg-(--accent)/5 px-3 py-2 space-y-1.5">
-                  <p className="text-xs leading-5" style={{ color: 'var(--text-primary)' }}>
-                    {projectGenSettings.tempArtStylePrompt.trim()}
-                  </p>
-                  {projectGenSettings.tempArtStyleNote?.trim() && (
-                    <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
-                      {ps.tempStyleSource}{projectGenSettings.tempArtStyleNote.trim()}
+            {/* 临时风格覆盖：用户临时意图优先于工程限定，由 AI 对话或手动触发 */}
+            <div className="mt-4 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-6">
+              <div className="min-w-0">
+                <h4 className="text-xs font-medium flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+                  <Sparkles className="w-3.5 h-3.5" />
+                  {ps.tempStyleTitle}
+                </h4>
+                <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>{ps.tempStyleHint}</p>
+              </div>
+              <div className="w-full sm:w-56 shrink-0">
+                {projectGenSettings.tempArtStylePrompt?.trim() ? (
+                  <div className="rounded-lg border border-(--accent)/30 bg-(--accent)/5 px-3 py-2 space-y-1.5">
+                    <p className="text-xs leading-5" style={{ color: 'var(--text-primary)' }}>
+                      {projectGenSettings.tempArtStylePrompt.trim()}
                     </p>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!currentProject?.id) return;
-                      void clearTempArtStyle(currentProject.id).then(() =>
-                        showToast(ps.tempStyleCleared, 'success')
-                      );
-                    }}
-                    className="text-[11px] font-medium cursor-pointer hover:underline"
-                    style={{ color: 'var(--accent)' }}
-                  >
-                    {ps.tempStyleClear}
-                  </button>
-                </div>
-              ) : (
-                <p className="text-xs px-1 py-2" style={{ color: 'var(--text-muted)' }}>{ps.tempStyleEmpty}</p>
-              )}
+                    {projectGenSettings.tempArtStyleNote?.trim() && (
+                      <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                        {ps.tempStyleSource}{projectGenSettings.tempArtStyleNote.trim()}
+                      </p>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!currentProject?.id) return;
+                        void clearTempArtStyle(currentProject.id).then(() =>
+                          showToast(ps.tempStyleCleared, 'success')
+                        );
+                      }}
+                      className="text-[11px] font-medium cursor-pointer hover:underline"
+                      style={{ color: 'var(--accent)' }}
+                    >
+                      {ps.tempStyleClear}
+                    </button>
+                  </div>
+                ) : (
+                  <p className="text-xs px-1 py-2" style={{ color: 'var(--text-muted)' }}>{ps.tempStyleEmpty}</p>
+                )}
+              </div>
             </div>
           </div>
         </div>

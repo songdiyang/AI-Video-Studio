@@ -14,6 +14,7 @@
 // 无活动工程时降级到 localStorage 应用级键，保证全局会话同样可持久化。
 
 import { readDoc, writeDoc, resolveLocalPath, getActiveProjectPath } from './localStore';
+import { ask as createAskCard, type AskCardData } from './agentAsk';
 
 // ==================== 数据模型 ====================
 
@@ -38,6 +39,8 @@ export interface StoredAssistantMessage {
   suggestions?: unknown;
   /** 后台任务进度卡片数据（TaskCardData 形状），缺省时该条消息不渲染卡片 */
   task?: unknown;
+  /** Agent 澄清卡片数据（AskCardData 形状） */
+  ask?: unknown;
   created_at: string;
 }
 
@@ -138,6 +141,21 @@ function safeJson(str: unknown): any {
   }
 }
 
+function toAskCardDto(raw: unknown): AskCardData | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const source = raw as Record<string, unknown>;
+  if (typeof source.question !== 'string' || !source.question.trim()) return undefined;
+  const card = createAskCard({ question: source.question, options: source.options }, source.question);
+  const answer = typeof source.answer === 'string' ? source.answer.trim() : '';
+  if (source.status !== 'answered' || !answer) return card;
+  return {
+    ...card,
+    status: 'answered',
+    answer,
+    answeredAt: typeof source.answeredAt === 'number' ? source.answeredAt : undefined,
+  };
+}
+
 function toMessageDto(m: StoredAssistantMessage) {
   const parsed = safeJson(m.content);
   return {
@@ -148,6 +166,7 @@ function toMessageDto(m: StoredAssistantMessage) {
     attachments: Array.isArray(m.attachments) ? m.attachments : undefined,
     suggestions: Array.isArray(m.suggestions) ? m.suggestions : undefined,
     task: toTaskCardDto(m.task),
+    ask: toAskCardDto(m.ask),
     timestamp: new Date(m.created_at).getTime(),
   };
 }
@@ -156,13 +175,18 @@ function toMessageDto(m: StoredAssistantMessage) {
 function toTaskCardDto(raw: unknown) {
   if (!raw || typeof raw !== 'object') return undefined;
   const t = raw as Record<string, unknown>;
-  if (t.kind !== 'storyboard' && t.kind !== 'image' && t.kind !== 'video') return undefined;
+  if (t.kind !== 'storyboard' && t.kind !== 'image' && t.kind !== 'video' && t.kind !== 'generic' && t.kind !== 'script') return undefined;
   if (typeof t.title !== 'string') return undefined;
+  const status = t.status === 'planning' || t.status === 'writing' || t.status === 'completed' || t.status === 'failed'
+    ? t.status
+    : undefined;
   return {
     kind: t.kind,
     jobId: t.jobId != null ? String(t.jobId) : undefined,
     sceneCount: typeof t.sceneCount === 'number' ? t.sceneCount : undefined,
     title: t.title,
+    status,
+    scriptId: typeof t.scriptId === 'number' ? t.scriptId : undefined,
   };
 }
 
@@ -278,10 +302,33 @@ async function handleMessagesLoad(idStr: string): Promise<Response> {
     .filter((m) => m.session_id === sessionId)
     .sort((a, b) => a.id - b.id)
     .map(toMessageDto);
+
+  // 归档采用追加写：用户回答不会改写原助手消息。加载时用其后的首条用户消息
+  // 还原卡片已回答状态，避免重开会话后旧卡片再次允许提交。
+  let pendingAskIndex = -1;
+  for (let i = 0; i < messages.length; i++) {
+    const current = messages[i];
+    if (current.role === 'assistant' && current.ask) {
+      pendingAskIndex = current.ask.status === 'pending' ? i : -1;
+      continue;
+    }
+    if (current.role !== 'user' || pendingAskIndex < 0) continue;
+    const pendingMessage = messages[pendingAskIndex];
+    const pendingAsk = pendingMessage.ask;
+    if (!pendingAsk) continue;
+    const answer = (typeof current.content === 'string' ? current.content : JSON.stringify(current.content)).trim();
+    if (!answer) continue;
+    messages[pendingAskIndex] = {
+      ...pendingMessage,
+      ask: { ...pendingAsk, status: 'answered', answer, answeredAt: current.timestamp },
+    };
+    pendingAskIndex = -1;
+  }
+
   return jsonResponse({ success: true, messages });
 }
 
-/** POST /sessions/:id/messages { role, content, reasoning?, attachments?, suggestions?, task? } */
+/** POST /sessions/:id/messages { role, content, reasoning?, attachments?, suggestions?, task?, ask? } */
 async function handleMessageAppend(idStr: string, body: any): Promise<Response> {
   const sessionId = Number(idStr);
   const located = await locateSession(sessionId);
@@ -302,6 +349,7 @@ async function handleMessageAppend(idStr: string, body: any): Promise<Response> 
     attachments: body.attachments ?? null,
     suggestions: body.suggestions ?? null,
     task: body.task ?? null,
+    ask: body.ask ?? null,
     created_at: now,
   };
   doc.messages.push(msg);

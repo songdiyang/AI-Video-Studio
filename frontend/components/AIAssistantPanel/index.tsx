@@ -2,17 +2,20 @@ import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom';
 import { Sparkles, X, Send, Paperclip, ImagePlus, Trash2, Wand2, FileText, Settings, Image as ImageIcon, Loader2, History, Plus, Edit3, Check, ChevronDown, MessageSquare, Video, Star, MessageCircle, ClipboardList, Brain, Shrink } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
-import ChatMessageComponent, { ChatMessageData, ChatMessageStep, TaskCardData } from './ChatMessage';
+import ChatMessageComponent, { AskCardData, ChatMessageData, ChatMessageStep, TaskCardData } from './ChatMessage';
 import MediaAttachment from './MediaAttachment';
+import { ask as createAskCard } from '../../services/agentAsk';
 import MemoryPanel from './MemoryPanel';
 import { isLongTaskCapable } from '../../services/aiAssistant';
 import { getWorkflowStatus } from '../../hooks/useWorkflow';
 import { analyzeScript, optimizeScript, generateScript, type ScriptAnalysisResult } from '../../services/scripts';
-import { getLongTasksSummary, listLongTasks, registerLongTask } from '../../services/longTasks';
+import { listLongTasks, registerLongTask, LONG_TASK_STATUS_LABEL } from '../../services/longTasks';
 import { loadProjectGenerationSettings } from '../../services/projectSettings';
 import { listActiveMemories, touchMemories, loadMemoryFlags } from '../../services/agentMemory';
 import { probeMediaBatch, formatBytes, formatResolution, toVisionImageUrls } from '../../services/mediaInfo';
 import { SCRIPT_ANALYSIS_EVENT, consumePendingScriptAnalysis, type ScriptAnalysisRequest } from '../../services/scriptAnalysisBridge';
+import { pushInternalMail } from '../../services/localMail';
+import { chatStorageKey, activeSessionStorageKey, openTabsStorageKey } from './scopeStorage';
 
 // ─── Types ──────────────────────────────────────────────────────────
 interface Attachment {
@@ -52,6 +55,129 @@ async function blobUrlToBase64(blobUrl: string): Promise<string> {
 /** 检查 URL 是否为 blob URL */
 function isBlobUrl(url: string): boolean {
   return url.startsWith('blob:');
+}
+
+/** 注入给智能体的分镜清单项（与 AIAssistantSceneSummary / buildSystemPrompt 消费字段对齐） */
+type AISceneSummary = NonNullable<AIAssistantPanelProps['scenes']>[number] & {
+  props?: string[];
+  characters?: string[];
+  location?: string;
+  scope?: string;
+};
+
+/** 变量槽里的名称数组（角色/道具可能存字符串或对象） */
+function toNameList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((v: any) => String(typeof v === 'string' ? v : (v?.name ?? '')).trim())
+    .filter(Boolean);
+}
+
+/**
+ * 本地分镜文档条目（LocalScene 形状）→ 智能体用的分镜清单项。
+ * 与 useSceneManager.mapStoryboardItems 取同一批字段，保证「工作台看到的」与「智能体看到的」一致。
+ */
+function toAIScene(raw: any, position: number): AISceneSummary {
+  const vars = (raw?.variables && typeof raw.variables === 'object') ? raw.variables : {};
+  return {
+    id: Number(raw?.id),
+    index: Number.isFinite(raw?.index) ? Number(raw.index) : position + 1,
+    description: String(raw?.prompt_template || raw?.description || '').trim(),
+    first_frame_url: raw?.first_frame_url || undefined,
+    last_frame_url: raw?.last_frame_url || undefined,
+    video_url: raw?.video_url || undefined,
+    first_frame_prompt: raw?.first_frame_prompt || undefined,
+    last_frame_prompt: raw?.last_frame_prompt || undefined,
+    video_prompt: raw?.video_prompt || undefined,
+    props: toNameList(vars.props),
+    characters: toNameList(vars.characters),
+    location: typeof vars.location === 'string' ? vars.location : undefined,
+    scope: typeof raw?._scope === 'string' ? raw._scope : undefined,
+  };
+}
+
+/** 从工程文档读取全部分镜（跨剧本/自由分镜 scope），不依赖分镜工作台是否挂载 */
+async function fetchProjectScenes(projectId: number): Promise<AISceneSummary[]> {
+  try {
+    const res = await fetch(`/api/storyboards/project/${projectId}`);
+    if (!res.ok) return [];
+    const data = await res.json().catch(() => null);
+    const list: any[] = Array.isArray(data?.scenes) ? data.scenes : [];
+    return list.map((raw, i) => toAIScene(raw, i));
+  } catch {
+    return [];
+  }
+}
+
+/** 把分镜清单渲染成给模型看的文本（含真实 ID 与素材落地标记） */
+function renderScenesForAgent(list: AISceneSummary[], max = 80): string {
+  const lines = list.slice(0, max).map((s) => {
+    const flags: string[] = [];
+    if (s.first_frame_url) flags.push('首帧✓');
+    if (s.last_frame_url) flags.push('尾帧✓');
+    if (s.video_url) flags.push('视频✓');
+    const meta: string[] = [];
+    if (s.location) meta.push(`地点:${s.location}`);
+    if (s.characters?.length) meta.push(`角色:${s.characters.join('、')}`);
+    if (s.props?.length) meta.push(`道具:${s.props.join('、')}`);
+    const desc = (s.description || '').replace(/\s+/g, ' ').slice(0, 60);
+    return `- #${s.index}(ID:${s.id}) [${flags.length ? flags.join(' ') : '未出图'}]${meta.length ? ` ${meta.join(' ')}` : ''} ${desc}`;
+  });
+  const rest = list.length > max ? `\n[…仅列出前 ${max} 个，共 ${list.length} 个分镜…]` : '';
+  return `${lines.join('\n')}${rest}`;
+}
+
+/**
+ * 变更类动词：用户要求系统改变工程状态（而非只是提问/咨询）。
+ * 用于判定“智能体声称要做事但本轮没触发任何 action”——这类空承诺必须做真实状态核验。
+ */
+const TASK_VERB_PATTERN = /(拆分|拆解|分成|分为|生成|创建|新建|建一|建个|写入|保存|存进|更新|修改|改成|改为|改一下|优化|质检|检查|重跑|重新生成|出图|首帧|尾帧|首尾帧|绑定|删除|整理|批量|导入|导出|补齐|做一个|做一下|来一个|来一段|写一个|写个|写下|写入)/;
+
+/** 用户这句话是不是“要执行”而不是“要信息” */
+function isTaskRequest(text: string): boolean {
+  const t = (text || '').trim();
+  if (!t) return false;
+  // 疑问句不是执行指令（“这个分镜怎么写更好？”）
+  if (/[?？]\s*$/.test(t)) return false;
+  if (/^(怎么|怎样|如何|为什么|为何|是什么|哪些|哪个|能否|能不能|可不可以|是否|有没有)/.test(t)) return false;
+  return TASK_VERB_PATTERN.test(t);
+}
+
+/** 读取工程当前真实落地状态（分镜数/素材数/剧本数），作为“动作是否真的发生”的客观依据 */
+async function verifyProjectState(projectId: number | null): Promise<string> {
+  if (!projectId) return '- 当前没有打开的工程，任何写操作都无法落地。';
+  const scripts = await (async () => {
+    try {
+      const res = await fetch(`/api/scripts/project/${projectId}`);
+      if (!res.ok) return null;
+      const data = await res.json().catch(() => null);
+      return Array.isArray(data?.scripts) ? (data.scripts as any[]) : null;
+    } catch {
+      return null;
+    }
+  })();
+  const sceneList = await fetchProjectScenes(projectId);
+  const lines = [
+    `- 分镜：${sceneList.length} 个${sceneList.length
+      ? `（ID：${sceneList.slice(0, 12).map((s) => s.id).join('、')}${sceneList.length > 12 ? '…' : ''}）`
+      : ''}`,
+    `- 已出首帧：${sceneList.filter((s) => s.first_frame_url).length} 个；已出尾帧：${sceneList.filter((s) => s.last_frame_url).length} 个；已出视频：${sceneList.filter((s) => s.video_url).length} 个`,
+  ];
+  if (scripts) {
+    lines.push(`- 剧本：${scripts.length} 个，其中 ${scripts.filter((s) => String(s?.content || '').trim()).length} 个有正文`);
+  }
+  return lines.join('\n');
+}
+
+/**
+ * 单轮（非 agent 循环）路径兜底：用户要求执行、模型只回了一段承诺却没给任何 action 时，
+ * 在回复上标注客观事实，避免“我这就去拆分”看起来像已经干了。无法在此补回执行，所以不假装成功。
+ */
+function annotateUnexecutedIntent(userText: string, reply: string, suggestions: any[]): string {
+  if (suggestions.length > 0) return reply;
+  if (!isTaskRequest(userText)) return reply;
+  const body = reply.trim();
+  return `${body ? `${body}\n\n` : ''}（系统核验：本轮没有触发任何工具动作，上述操作尚未执行。请重试并要求直接执行。）`;
 }
 
 export interface AIAssistantPanelProps {
@@ -389,7 +515,8 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
   }, [contextTokenLimit, patchSettings]);
 
   // ── localStorage key ─────────────────────────────────────────────
-  const storageKey = projectId ? `ai_chat_${projectId}` : 'ai_chat_global';
+  // 显示作用域键统一由 scopeStorage 提供（工程 id 为路径哈希，可能复用，见该模块注释）
+  const storageKey = chatStorageKey(projectId);
 
   const loadMessages = useCallback(() => {
     try {
@@ -442,11 +569,11 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
   useEffect(() => { currentSessionIdRef.current = currentSessionId; }, [currentSessionId]);
 
   const activeSessionKey = useMemo(
-    () => (projectId ? `ai_active_session_${projectId}` : 'ai_active_session_global'),
+    () => activeSessionStorageKey(projectId),
     [projectId]
   );
   const openTabsKey = useMemo(
-    () => (projectId ? `ai_open_tabs_${projectId}` : 'ai_open_tabs_global'),
+    () => openTabsStorageKey(projectId),
     [projectId]
   );
 
@@ -530,6 +657,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
       // 后台任务卡片必须落盘，否则重开会话后卡片消失、只剩一条空消息；
       // jobId 一并保存，重开时由卡片按幂等语义重新查询一次工作流状态。
       if (msg.task) body.task = msg.task;
+      if (msg.ask) body.ask = msg.ask;
       await fetch(`/api/ai-assistant/sessions/${sessionId}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1346,8 +1474,8 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
     if (currentSessionIdRef.current === targetSid) setStreamingId(streamId);
   }, []);
 
-  const handleSend = useCallback(async () => {
-    const text = inputText.trim();
+  const handleSend = useCallback(async (askReply?: { text: string; askMessageId: string }) => {
+    const text = (askReply?.text ?? inputText).trim();
     if (!text && attachments.length === 0) return;
     if (isLoading) return;
     if (!selectedModel) {
@@ -1374,8 +1502,17 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
     // ── 锁定发送时的 sessionId，确保异步全程归属同一会话 ──
     let sendSid = currentSessionIdRef.current;
 
-    // 通过 updateSessionMessages 同时更新显示 + 缓存
-    updateSessionMessages(sendSid, (prev) => [...prev, userMessage]);
+    // 卡片选项与自定义回答共用正常发送链路；先把对应卡片标记为已回答，避免重复提交。
+    updateSessionMessages(sendSid, (prev) => {
+      const next = askReply
+        ? prev.map((m) => (
+          m.id === askReply.askMessageId && m.ask?.status === 'pending'
+            ? { ...m, ask: { ...m.ask, status: 'answered' as const, answer: text, answeredAt: Date.now() } }
+            : m
+        ))
+        : prev;
+      return [...next, userMessage];
+    });
     setInputText('');
     setAttachments([]);
     setSessionLoading(sendSid, true);
@@ -1494,6 +1631,14 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
       void touchMemories(projectIdRef.current, activeMemories.map((m) => m.id)).catch(() => {});
     }
 
+    // 分镜兜底：分镜工作台未挂载（剧本工坊、资源页等）时注入的 context.scenes 为空，
+    // 模型会误判「工程里没有分镜」，转而向用户索要 sceneId。这里直接读工程文档补全，
+    // 保证智能体在任意页面都能看见当前工程真实分镜。
+    let scenesForContext = scenes;
+    if (includeContext && (!scenesForContext || scenesForContext.length === 0) && projectId) {
+      scenesForContext = await fetchProjectScenes(projectId);
+    }
+
     const contextPayload = includeContext ? {
       projectName: projectName || undefined,
       projectDescription: projectDescription || undefined,
@@ -1507,7 +1652,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
       studios,
       props,
       scripts: scriptsForContext,
-      scenes,
+      scenes: scenesForContext,
       longTasks: listLongTasks(projectIdRef.current).slice(0, 10),
       ...(currentFrame ? {
         frameId: currentFrame.id,
@@ -1530,6 +1675,8 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
         // 步骤跟踪器：像编码智能体一样边执行边刷新，收敛后折叠为摘要
         const tracker = createStepTracker(sendSid, assistantId, updateSessionMessages);
         tracker.start('理解需求，连接模型规划…');
+        let scriptGenerationHandled = false;
+        let scriptGenerationFailed = false;
 
         try {
           // 循环中跳过确需人工确认的动作；generate_script 等可自动执行的动作直接跑。
@@ -1541,7 +1688,10 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
           const MAX_ROUNDS = 5;
           const executedLog: string[] = [];
           let roundReply = '';
+          let askCard: AskCardData | null = null;
           let manualNotified = false;
+          // 空承诺核验标志：最多回喂一次，避免模型反复“只说不做”时循环卡死
+          let intentVerified = false;
 
           /** 本轮待回喂的实测图片（已转 data URL）；随观察消息一起交给模型 */
           let roundImages: AgentImage[] = [];
@@ -1648,6 +1798,22 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                 tracker.complete('人工动作需用户触发，已回喂收敛');
                 continue;
               }
+              // 软件自己检查一遍：用户下的是执行指令，模型却未附带任何 action，那么什么也不会发生。
+              // 不靠措辞猜，直接读工程真实状态回喂，迫使模型要么补上动作、要么据实说明未执行。
+              if (!intentVerified && !executedLog.length && isTaskRequest(text) && round < MAX_ROUNDS - 1) {
+                intentVerified = true;
+                const stateText = await verifyProjectState(projectId ?? null);
+                history.push({
+                  role: 'user',
+                  content:
+                    `【系统核验】你上一轮回复没有附带任何 action，系统没有执行任何操作，用户要求的「${text.slice(0, 60)}」仍在等待。\n` +
+                    `工程当前真实状态：\n${stateText}\n` +
+                    '请二选一：① 确实需要执行→本轮必须在回复末尾输出 [SUGGESTIONS] 并给出清单内的 action（如 auto_storyboard / generate_script / create_character），否则不会有任何效果；' +
+                    '② 因缺少前置条件无法执行→直接如实告知用户缺什么、下一步怎么做，不得使用「我这就去…/我会…」这类承诺措辞。',
+                });
+                tracker.complete('核验：本轮未触发任何动作，已回喂工程真实状态');
+                continue;
+              }
               break;
             }
 
@@ -1665,13 +1831,13 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
             let askedUser = false;
             for (const a of actions) {
               const label = a.label || a.action;
-              // ask：向用户提出澄清问题并暂停整个 agent 循环，等待用户在下一条消息中回答。
-              // 以问题作为本轮最终回复正文，不再继续执行后续动作。
+              // ask：生成澄清卡片并暂停整个 agent 循环；选项或自定义回答会作为下一条用户消息回传。
               if (a.action === 'ask') {
-                const question = String(a.params?.question || a.label || '').trim()
+                const fallbackQuestion = String(a.label || '').trim()
                   || '能告诉我你想要一个什么样的故事吗？（题材 / 风格 / 主角 / 篇幅）';
-                roundReply = question;
-                observations.push(`已向用户提问，等待其回答后再继续：${question}`);
+                askCard = createAskCard(a.params, fallbackQuestion);
+                roundReply = askCard.question;
+                observations.push(`已向用户提问，等待其回答后再继续：${askCard.question}`);
                 askedUser = true;
                 break;
               }
@@ -1729,13 +1895,24 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
               try {
                 // 执行前把进度刷到对话栏：长任务（如分镜拆分同步等待模型返回）期间显示「正在执行」
                 tracker.start(`执行：${label}`);
+                // 分镜拆分：执行前先读工程文档里的真实数量，执行后用它对比，不凭返回值宣称完成
+                const sceneCountBefore = a.action === 'auto_storyboard' && projectId
+                  ? (await fetchProjectScenes(projectId)).length
+                  : null;
+                if (a.action === 'generate_script') {
+                  scriptGenerationHandled = true;
+                  // 行为卡片接管后移除 Agent 规划消息，避免对话区同时出现两套进度反馈。
+                  updateSessionMessages(sendSid, (prev) => prev.filter((m) => m.id !== assistantId));
+                }
                 // 传入 sendSid：agent 循环是异步长流程，期间用户可能切换会话，卡片须归属发起会话
                 const result: any = await handleActionRef.current(a.action, a.params || {}, (sub) => tracker.touch(sub), sendSid, { inlineResult: false });
                 // handleAction 已把桥接异常转为结构化失败结果：步骤据实标记失败，避免误报「已执行」
                 const failed = !!result && typeof result === 'object' && (result.success === false || !!result.error);
+                if (a.action === 'generate_script' && failed) scriptGenerationFailed = true;
                 if (failed) tracker.fail(String(result.error) || '任务启动失败');
                 // 资源库动作的结果字符串直接展示在步骤详情中（对话内可展开回看）
                 else tracker.complete(typeof result === 'string' ? result.trim() : undefined);
+                const logIndex = executedLog.length;
                 executedLog.push(failed ? `✗ ${label}` : `✓ ${label}`);
                 const isTask = TASK_ACTIONS.has(a.action);
                 if (failed) {
@@ -1747,8 +1924,29 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                     `已在后台启动「${label}」（工作流 #${result.jobId}），进度将实时显示在对话中并在完成后自动更新。请告知用户任务已开始、可在对话卡片查看进度，不要虚构具体的分镜/图片/视频数量。`,
                   );
                 } else if (isTask && result && result.sceneCount != null) {
-                  // 离线分镜拆分同步完成：handleAction 已挂完成态卡片，此处据实回报写入数量
-                  observations.push(`「${label}」已完成，共写入 ${result.sceneCount} 个分镜。请如实告知用户分镜数量。`);
+                  // 离线分镜拆分同步完成：不直接相信返回的 sceneCount，回读工程文档核验是否真的落库
+                  const after = projectId ? await fetchProjectScenes(projectId) : [];
+                  const claimed = Number(result.sceneCount);
+                  if (after.length === 0) {
+                    tracker.fail('核验：工程文档里没有任何分镜，拆分未落库');
+                    executedLog[logIndex] = `✗ ${label}（核验未落库）`;
+                    observations.push(
+                      `【系统核验】「${label}」返回写入 ${claimed} 个分镜，但重新读取工程文档发现仍是 0 个——拆分并没有真正落库。` +
+                      '请如实告知用户拆分未成功及可能原因，不要宣称已完成；可先 read_script 确认剧本正文，再重试 auto_storyboard。',
+                    );
+                  } else if (sceneCountBefore != null && after.length <= sceneCountBefore) {
+                    tracker.fail(`核验：分镜数未增加（仍为 ${after.length} 个）`);
+                    executedLog[logIndex] = `✗ ${label}（核验未新增）`;
+                    observations.push(
+                      `【系统核验】「${label}」声称写入 ${claimed} 个，但工程内分镜从 ${sceneCountBefore} 个到 ${after.length} 个并未增加——本次拆分没有产生新分镜。` +
+                      '请据实告知用户，不要报成功。',
+                    );
+                  } else {
+                    observations.push(
+                      `「${label}」已完成并经系统核验：工程内现有 ${after.length} 个分镜${sceneCountBefore != null ? `（执行前 ${sceneCountBefore} 个）` : ''}，返回声称写入 ${claimed} 个。` +
+                      '请如实告知用户分镜数量（以核验值为准）；后续需要 sceneId 时用 read_storyboards 取真实清单。',
+                    );
+                  }
                 } else if (typeof result === 'string' && result.trim()) {
                   // 动作返回了实质内容（如 read_script 的剧本正文）：直接回喂给模型作为观察结果。
                   observations.push(result);
@@ -1761,7 +1959,11 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                     observations.push(`已执行「${label}」`);
                   }
                 } else {
-                  observations.push(`已执行「${label}」`);
+                  // 无 jobId、无返回内容、也无结构化凭证：不能断言“已执行”，否则模型会把没发生的事告诉用户
+                  observations.push(
+                    `「${label}」没有返回任何执行凭证（无任务 ID、无返回内容），系统无法确认它是否真的触发。` +
+                    '请用只读动作（read_storyboards / read_script / get_task_status）复核后再据实回复，不得宣称已完成。',
+                  );
                 }
               } catch (e: any) {
                 tracker.fail(e?.message || String(e));
@@ -1769,6 +1971,9 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                 observations.push(`执行「${label}」失败：${e?.message || e}`);
               }
             }
+
+            // 剧本失败已在行为卡片内收敛，不再让模型把错误详情改写成普通聊天消息。
+            if (scriptGenerationFailed) break;
 
             // 已向用户提问 → 结束本轮循环，把提问作为最终回复交还用户输入。
             if (askedUser) break;
@@ -1782,23 +1987,43 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
           }
 
           // 收尾：所有步骤折叠为摘要，正文换回最终回复（保留折叠步骤区供回看）
-          tracker.finishAll();
-          const finalContent = roundReply
-            || (executedLog.length ? `已处理以下任务：\n${executedLog.map((e, i) => `${i + 1}. ${e}`).join('\n')}` : '(无回复)');
-          updateSessionMessages(sendSid, (prev) => prev.map((m) => (
-            m.id === assistantId
-              ? { ...m, content: finalContent, running: false }
-              : m
-          )));
+          tracker.finishAll(scriptGenerationFailed);
+          // 剧本生成由独立行为卡片完整反馈；丢弃规划消息与模型最终正文，避免剧本再次进入对话历史。
+          if (scriptGenerationHandled && !askCard) {
+            updateSessionMessages(sendSid, (prev) => prev.filter((m) => m.id !== assistantId));
+            return;
+          }
+          const finalContent = (roundReply
+            || (executedLog.length ? `已处理以下任务：\n${executedLog.map((e, i) => `${i + 1}. ${e}`).join('\n')}` : '(无回复)'))
+            // 回喂核验后模型仍只承诺不动作（也未向用户提问）：把事实标注给用户，不把承诺当成结果
+            + (intentVerified && executedLog.length === 0 && !askCard
+              ? '\n\n（系统核验：本轮没有触发任何工具动作，上述操作尚未执行。）'
+              : '');
           const finalMsg: ChatMessageData = {
             id: assistantId,
             role: 'assistant',
             content: finalContent,
             timestamp: Date.now(),
+            ask: askCard ?? undefined,
           };
+          updateSessionMessages(sendSid, (prev) => (
+            prev.some((m) => m.id === assistantId)
+              ? prev.map((m) => (
+                m.id === assistantId
+                  ? { ...m, content: finalContent, running: false, ask: askCard ?? undefined }
+                  : m
+              ))
+              // 剧本卡片接管期间规划消息已移除；若后续还有澄清提问，则单独挂回提问卡片。
+              : [...prev, finalMsg]
+          ));
           if (sendSid) archiveMessage(sendSid, finalMsg);
           return;
         } catch (err: any) {
+          // 已进入剧本生成流程时不得回退到普通聊天，否则可能把正文或错误详情重新追加回来。
+          if (scriptGenerationHandled) {
+            updateSessionMessages(sendSid, (prev) => prev.filter((m) => m.id !== assistantId));
+            return;
+          }
           // 回退到旧的单轮 chat 流程（下面 isStream / 非流式分支处理）
           console.warn('[AIAssistant.Agent] 本地 agent 循环失败，回退到普通聊天:', err?.message);
           updateSessionMessages(sendSid, (prev) => prev.filter((m) => m.id !== assistantId));
@@ -1841,6 +2066,8 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
         let fullContent = '';
         let fullReasoning = '';
 
+        // action 标记位于流末尾，看到 generate_script 之前不能安全地逐字上屏。
+        // 先在内存缓冲；终态确认不是剧本生成后才渲染普通回复，否则只保留行为卡片。
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
@@ -1858,26 +2085,8 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
               if (parsed.error) {
                 throw new Error(parsed.error);
               }
-              if (parsed.delta) {
-                fullContent += parsed.delta;
-                const snapshotContent = fullContent;
-                const snapshotReasoning = fullReasoning;
-                updateSessionMessages(sendSid, (prev) =>
-                  prev.map((m) =>
-                    m.id === assistantId ? { ...m, content: snapshotContent, reasoning: snapshotReasoning || undefined } : m
-                  )
-                );
-              }
-              if (parsed.reasoningDelta) {
-                fullReasoning += parsed.reasoningDelta;
-                const snapshotContent = fullContent;
-                const snapshotReasoning = fullReasoning;
-                updateSessionMessages(sendSid, (prev) =>
-                  prev.map((m) =>
-                    m.id === assistantId ? { ...m, content: snapshotContent, reasoning: snapshotReasoning || undefined } : m
-                  )
-                );
-              }
+              if (parsed.delta) fullContent += parsed.delta;
+              if (parsed.reasoningDelta) fullReasoning += parsed.reasoningDelta;
             } catch {
               // ignore parse errors for non-delta events
             }
@@ -1916,6 +2125,15 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
         }
         if (!displayContent) displayContent = '（模型未返回正文，可尝试重新提问）';
 
+        const isScriptGeneration = suggestions.some((s) => s?.action === 'generate_script');
+        if (isScriptGeneration) {
+          displayContent = '';
+          displayReasoning = undefined;
+        } else {
+          // 单轮路径无法再回喂模型，至少把“没触发任何动作”这个事实标注到回复上
+          displayContent = annotateUnexecutedIntent(text, displayContent, suggestions);
+        }
+
         updateSessionMessages(sendSid, (prev) =>
           prev.map((m) =>
             m.id === assistantId
@@ -1925,7 +2143,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
         );
         setSessionStreaming(sendSid, null);
         setSessionLoading(sendSid, false);
-        if (sendSid) {
+        if (sendSid && !isScriptGeneration) {
           archiveMessage(sendSid, {
             id: assistantId,
             role: 'assistant',
@@ -1956,16 +2174,21 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
           throw new Error(data.error || data.message || `请求失败 (${res.status})`);
         }
 
+        const isScriptGeneration = Array.isArray(data.suggestions)
+          && data.suggestions.some((s: any) => s?.action === 'generate_script');
+        const rawReply = data.reply || data.content || data.message || '(无回复)';
         const assistantMessage: ChatMessageData = {
           id: `msg-${Date.now()}-ai`,
           role: 'assistant',
-          content: data.reply || data.content || data.message || '(无回复)',
+          content: isScriptGeneration
+            ? ''
+            : annotateUnexecutedIntent(text, rawReply, Array.isArray(data.suggestions) ? data.suggestions : []),
           suggestions: data.suggestions,
           timestamp: Date.now(),
         };
 
         updateSessionMessages(sendSid, (prev) => [...prev, assistantMessage]);
-        if (sendSid) archiveMessage(sendSid, assistantMessage);
+        if (sendSid && !isScriptGeneration) archiveMessage(sendSid, assistantMessage);
       }
     } catch (err: any) {
       console.error('[AIAssistant] Chat error:', err);
@@ -1983,6 +2206,12 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
       setSessionLoading(sendSid, false);
     }
   }, [inputText, attachments, isLoading, messages, projectId, selectedModel, currentFrame, modelOptions, scenes, characters, locations, studios, props, scripts, projectName, projectDescription, includeContext, contextTokenLimit, apiCreateSession, archiveMessage, activeSessionKey, updateSessionMessages, setSessionLoading, setSessionStreaming, showToast, hydrateImageAttachments, resolveImageTargets]);
+
+  const handleAskAnswer = useCallback((messageId: string, answer: string) => {
+    const text = answer.trim();
+    if (!text) return;
+    void handleSend({ text, askMessageId: messageId });
+  }, [handleSend]);
 
   // ── 上下文使用量估算（字符/4 作为 token 粗估） ──────────────
   const MAX_CONTEXT_TOKENS = 200000; // 默认 200k window
@@ -2067,6 +2296,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
     image: '分镜图',
     video: '分镜视频',
     generic: '任务',
+    script: '剧本生成',
   }), []);
   const mountTaskCard = useCallback((action: string, result: any, labelText?: string, originSid?: number | null) => {
     if (!result || typeof result !== 'object') return;
@@ -2116,9 +2346,45 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
   }, [updateSessionMessages, archiveMessage]);
 
   const handleAction = useCallback(async (action: string, params: any, onProgress?: (label: string) => void, originSid?: number | null, options?: { inlineResult?: boolean }) => {
-    // 查询后台长任务状态（供模型回答进度相关问题）
+    // 查询后台长任务状态：完成态必须同时核验工作流终态与资产落地，防止只凭注册表误报完成。
     if (action === 'get_task_status') {
-      return getLongTasksSummary(params?.jobId ? String(params.jobId) : undefined, projectIdRef.current);
+      const requestedJobId = params?.jobId ? String(params.jobId) : undefined;
+      const records = listLongTasks(projectIdRef.current).filter((task) => !requestedJobId || task.jobId === requestedJobId);
+      if (!records.length) return requestedJobId ? `未找到工作流 #${requestedJobId} 的记录。` : '当前没有后台长任务。';
+      const lines = await Promise.all(records.map(async (record) => {
+        let status = record.status;
+        let note = '';
+        if (status === 'completed') {
+          try {
+            const actual = await getWorkflowStatus(record.jobId);
+            if (actual.status !== 'completed') {
+              status = actual.status;
+              note = '工作流实际未完成';
+            } else {
+              let input = actual.input_params || {};
+              if (typeof input === 'string') { try { input = JSON.parse(input); } catch { input = {}; } }
+              const stateId = Number(input.stateId);
+              const characterId = Number(input.characterId);
+              if (stateId > 0 && characterId > 0) {
+                const response = await fetch(`/api/characters/${characterId}/states`);
+                const payload = response.ok ? await response.json() : { states: [] };
+                const state = (payload.states || []).find((item: any) => Number(item.id) === stateId);
+                if (!state || !state.front_view_url || !state.side_view_url || !state.back_view_url) {
+                  status = 'failed';
+                  note = '工作流虽完成，但角色状态未写入完整三视图，必须重新生成';
+                }
+              }
+            }
+          } catch {
+            status = 'failed';
+            note = '任务记录已失效或无法核验，不得宣称完成';
+          }
+        }
+        const count = record.total > 0 ? `（${record.current}/${record.total}）` : '';
+        return `- [${record.jobId}] ${record.title}：${LONG_TASK_STATUS_LABEL[status]} ${record.progress}%${count}${note ? `，${note}` : ''}`;
+      }));
+      const hasInvalid = lines.some((line) => line.includes('不得宣称完成') || line.includes('必须重新生成') || line.includes('实际未完成'));
+      return `后台长任务（已核验工作流与资产落地）：\n${lines.join('\n')}${hasInvalid ? '\n\n上述失败或未完成记录以本次核验为准，禁止向用户宣称全部完成。' : ''}`;
     }
 
     // 质检：前端自包，不走 onAction 回调
@@ -2233,31 +2499,90 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
       return;
     }
 
-    // AI生成剧本：侧边栏内启动工作流
+    // AI 生成剧本：正文只写入剧本服务；对话内始终只保留一张受控行为卡片。
     if (action === 'generate_script') {
       const targetProjectId = Number(params?.projectId || projectId);
       const episodeNumber = params?.episodeNumber ? Number(params.episodeNumber) : undefined;
-      if (!targetProjectId) {
-        showToast('缺少项目ID，无法生成剧本', 'warning');
-        return;
-      }
-      setIsLoading(true);
-      const currentSid = currentSessionIdRef.current;
-      // 发送启动消息
-      const startMsg: ChatMessageData = {
-        id: `script-gen-start-${Date.now()}`,
-        role: 'assistant',
-        content: `正在生成剧本「${params?.title || `第${episodeNumber || '新'}集`}」...`,
-        timestamp: Date.now(),
-        running: true,
+      const currentSid = originSid === undefined ? currentSessionIdRef.current : originSid;
+      const cardId = `script-gen-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const timestamp = Date.now();
+      const initialTitle = params?.title || `第${episodeNumber || '新'}集剧本`;
+      let cardTask: TaskCardData = { kind: 'script', status: 'planning', title: `剧本 · ${initialTitle}` };
+
+      const patchCard = (patch: Partial<TaskCardData>) => {
+        cardTask = { ...cardTask, ...patch };
+        updateSessionMessages(currentSid, (prev) => prev.map((m) => (
+          m.id === cardId ? { ...m, content: '', running: false, task: { ...cardTask } } : m
+        )));
       };
-      updateSessionMessages(currentSid, (prev) => [...prev, startMsg]);
-      if (currentSid) archiveMessage(currentSid, startMsg);
-      // 步骤跟踪：提交 → 等待/轮询 → 完成，折叠在消息内
-      const scriptTracker = createStepTracker(currentSid, startMsg.id, updateSessionMessages);
-      scriptTracker.start(`提交剧本生成请求（${params?.textModel || selectedModel || '自动选择模型'}）`);
+      const archiveCard = () => {
+        if (!currentSid) return;
+        void archiveMessage(currentSid, {
+          id: cardId,
+          role: 'assistant',
+          content: '',
+          timestamp,
+          task: { ...cardTask },
+        });
+      };
+      const stopLoading = () => {
+        if (options?.inlineResult !== false && currentSessionIdRef.current === currentSid) setIsLoading(false);
+      };
+      const notifyTerminal = (terminal: 'completed' | 'failed', error?: string) => {
+        const completed = terminal === 'completed';
+        pushInternalMail({
+          title: completed ? `任务完成：${cardTask.title}` : `任务未完成：${cardTask.title}`,
+          content: completed
+            ? `「${cardTask.title}」已完成，剧本已保存到左侧面板。`
+            : `「${cardTask.title}」生成失败${error ? `：${error}` : '。'}`,
+          mail_type: completed ? 'system' : 'warning',
+          dedupe_key: cardTask.jobId ? `job:${cardTask.jobId}:${terminal}` : `script:${cardId}:${terminal}`,
+        });
+      };
+      const failGeneration = (error: string, notify = true) => {
+        patchCard({ status: 'failed' });
+        archiveCard();
+        if (notify) notifyTerminal('failed', error);
+        onProgress?.('✗ 生成失败');
+        stopLoading();
+        return { success: false, error, scriptGeneration: true };
+      };
+      const completeGeneration = async (scriptId?: number, resultEp?: number | null, resultTitle?: string | null) => {
+        const title = resultTitle || initialTitle;
+        patchCard({ status: 'completed', title: `剧本 · ${title}`, scriptId });
+        notifyTerminal('completed');
+        archiveCard();
+        // 保存接口已成功后才通知左侧列表刷新；事件只携带元数据，不携带正文。
+        const detail: { projectId: number; episodeNumber?: number } = { projectId: targetProjectId };
+        const ep = Number(resultEp ?? episodeNumber);
+        if (Number.isFinite(ep) && ep > 0) detail.episodeNumber = ep;
+        window.dispatchEvent(new CustomEvent('reload-scripts', { detail }));
+        // 绑定新剧本供后续 auto_storyboard 使用；绑定失败不影响已保存结果。
+        if (scriptId) { try { await onAction?.('bind_script', { scriptId }); } catch { /* 忽略绑定失败 */ } }
+        onProgress?.('创作完毕 ✓');
+        stopLoading();
+        return {
+          success: true,
+          scriptGeneration: true,
+          status: 'completed',
+          scriptId,
+          episodeNumber: detail.episodeNumber,
+          title,
+        };
+      };
+
+      updateSessionMessages(currentSid, (prev) => [
+        ...prev,
+        { id: cardId, role: 'assistant', content: '', timestamp, task: { ...cardTask } },
+      ]);
+      if (options?.inlineResult !== false && currentSessionIdRef.current === currentSid) setIsLoading(true);
+      onProgress?.('创作构想中…');
+
+      if (!targetProjectId) return failGeneration('缺少项目ID，无法生成剧本');
 
       try {
+        patchCard({ status: 'writing' });
+        onProgress?.('内容写入中…');
         const result = await generateScript({
           projectId: targetProjectId,
           title: params?.title,
@@ -2268,108 +2593,55 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
           provider: params?.textModel || selectedModel,
         });
         const { jobId, scriptId, episodeNumber: resultEp, title: resultTitle } = result;
-        scriptTracker.complete(jobId ? `工作流已启动 #${jobId}` : '剧本已同步生成');
-        // 本地即时生成（无工作流 jobId）：直接展示结果，不走轮询
-        if (!jobId) {
-          const localContent = typeof (result as any).content === 'string' ? (result as any).content : '';
-          const completeMsg: ChatMessageData = {
-            id: `script-gen-complete-${Date.now()}`,
-            role: 'assistant',
-            content: `**剧本生成完成** 🎉\n\n- 标题：${resultTitle || params?.title || '未命名'}\n- 集数：第${resultEp ?? episodeNumber ?? '新'}集\n- 剧本ID：#${scriptId ?? '-'}`
-              + (localContent ? `\n\n---\n\n${localContent.slice(0, 800)}${localContent.length > 800 ? '...' : ''}` : ''),
-            timestamp: Date.now(),
+        patchCard({ title: `剧本 · ${resultTitle || initialTitle}`, jobId });
+
+        // 本地生成在 generateScript 返回时已持久化，无需回读或展示正文。
+        if (!jobId) return completeGeneration(scriptId, resultEp, resultTitle);
+
+        registerLongTask({
+          jobId,
+          title: `剧本 · ${resultTitle || initialTitle}`,
+          kind: 'script',
+          sessionId: currentSid,
+          projectId: targetProjectId,
+        });
+
+        // 云端工作流在同一张卡片上轮询到终态；完成前不把控制权交给模型输出总结。
+        return await new Promise((resolve) => {
+          let settled = false;
+          let polling = false;
+          let pollInterval: ReturnType<typeof setInterval> | undefined;
+          let timeout: ReturnType<typeof setTimeout> | undefined;
+          const finish = (value: unknown) => {
+            if (settled) return;
+            settled = true;
+            if (pollInterval) clearInterval(pollInterval);
+            if (timeout) clearTimeout(timeout);
+            resolve(value);
           };
-          updateSessionMessages(currentSid, (prev) => [...prev.filter((m) => m.id !== startMsg.id), completeMsg]);
-          if (currentSid) archiveMessage(currentSid, completeMsg);
-          // 关键：把新生成的剧本绑回工作台 currentScriptId，使后续 auto_storyboard 能直接拆分。
-          if (scriptId) { try { await onAction?.('bind_script', { scriptId }); } catch { /* 忽略绑定失败 */ } }
-          showToast('剧本生成完成', 'success');
-          setIsLoading(false);
-          return;
-        }
-        // 更新启动消息为进行中
-        // 长任务注册：对话内挂载轮询卡片，同时写入全局注册表（站内信/模型可见）
-        mountTaskCard('generate_script', { jobId }, resultTitle || `第${resultEp ?? episodeNumber ?? '新'}集剧本`, currentSid);
-        const progressMsgId = `script-gen-progress-${Date.now()}`;
-        updateSessionMessages(currentSid, (prev) => [
-          ...prev,
-          {
-            id: progressMsgId,
-            role: 'assistant',
-            content: `剧本「${resultTitle}」生成中（工作流 #${jobId}）...`,
-            timestamp: Date.now(),
-            running: true,
-          },
-        ]);
-        const pollTracker = createStepTracker(currentSid, progressMsgId, updateSessionMessages);
-        pollTracker.start('等待模型输出剧本（每 2 秒轮询工作流状态）');
-        let pollTicks = 0;
-
-        // 轮询工作流状态
-        const pollInterval = setInterval(async () => {
-          try {
-            const job = await getWorkflowStatus(jobId);
-            pollTicks += 1;
-            if (pollTicks % 3 === 1) pollTracker.touch(`工作流状态：${job.status}（已轮询 ${pollTicks} 次）`);
-            if (job.status === 'completed') {
-              clearInterval(pollInterval);
-              pollTracker.complete('工作流完成，回读剧本正文');
-              // 获取生成的剧本内容
-              const scriptRes = await fetch(`/api/scripts/project/${targetProjectId}`);
-              let scriptContent = '';
-              if (scriptRes.ok) {
-                const scriptData = await scriptRes.json();
-                const foundScript = scriptData.scripts?.find((s: any) => s.id === scriptId);
-                scriptContent = foundScript?.content || '';
+          const poll = async () => {
+            if (settled || polling) return;
+            polling = true;
+            try {
+              const job = await getWorkflowStatus(jobId);
+              if (job.status === 'completed') {
+                finish(await completeGeneration(scriptId, resultEp, resultTitle));
+              } else if (job.status === 'failed' || job.status === 'cancelled') {
+                finish(failGeneration(job.error_message || '剧本生成失败'));
               }
-              const completeMsg: ChatMessageData = {
-                id: `script-gen-complete-${Date.now()}`,
-                role: 'assistant',
-                content: `**剧本生成完成** 🎉\n\n- 标题：${resultTitle}\n- 集数：第${resultEp}集\n- 剧本ID：#${scriptId}\n\n${scriptContent ? `---\n\n${scriptContent.slice(0, 800)}${scriptContent.length > 800 ? '...' : ''}` : ''}`,
-                timestamp: Date.now(),
-              };
-              updateSessionMessages(currentSid, (prev) => [
-                ...prev.map((m) => (m.id === startMsg.id || m.id === progressMsgId ? { ...m, running: false } : m)),
-                completeMsg,
-              ]);
-              if (currentSid) archiveMessage(currentSid, completeMsg);
-              // 云端工作流完成后同样绑定新剧本，便于后续 auto_storyboard。
-              if (scriptId) { void onAction?.('bind_script', { scriptId }); }
-              showToast('剧本生成完成', 'success');
-              setIsLoading(false);
-            } else if (job.status === 'failed') {
-              clearInterval(pollInterval);
-              const failMsg: ChatMessageData = {
-                id: `script-gen-fail-${Date.now()}`,
-                role: 'system',
-                content: `⚠️ 剧本生成失败：${job.error_message || '未知错误'}`,
-                timestamp: Date.now(),
-              };
-              pollTracker.finishAll(true);
-              updateSessionMessages(currentSid, (prev) => [
-                ...prev.map((m) => (m.id === startMsg.id || m.id === progressMsgId ? { ...m, running: false } : m)),
-                failMsg,
-              ]);
-              if (currentSid) archiveMessage(currentSid, failMsg);
-              showToast('剧本生成失败', 'error');
-              setIsLoading(false);
+            } catch (pollErr: any) {
+              console.error('[ScriptGen] 轮询失败:', pollErr);
+            } finally {
+              polling = false;
             }
-            // running / pending 继续轮询
-          } catch (pollErr: any) {
-            console.error('[ScriptGen] 轮询失败:', pollErr);
-          }
-        }, 2000);
-
-        // 30秒超时保护
-        setTimeout(() => {
-          clearInterval(pollInterval);
-        }, 300000); // 5分钟超时
+          };
+          pollInterval = setInterval(() => { void poll(); }, 2000);
+          timeout = setTimeout(() => finish(failGeneration('剧本生成超时', false)), 300000);
+          void poll();
+        });
       } catch (err: any) {
-        scriptTracker.fail(err?.message || '启动剧本生成失败');
-        showToast(err?.message || '启动剧本生成失败', 'error');
-        setIsLoading(false);
+        return failGeneration(err?.message || '剧本生成失败');
       }
-      return;
     }
 
     // 查看/读取剧本正文：返回正文字符串，由 agent 循环作为观察结果回喂给模型。
@@ -2413,6 +2685,47 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
     // dismiss 不需要任何操作
     if (action === 'dismiss') {
       return;
+    }
+
+    // 主动读取当前工程分镜：直接读工程文档，不依赖分镜工作台是否挂载。
+    // 需要真实 sceneId、核实拆分是否落地、回答「有哪些分镜」时都用它，不得让用户去分镜列表里点选。
+    if (action === 'read_storyboards') {
+      if (!projectId) return '当前没有打开的工程，无法读取分镜。';
+      const sid = params?.scriptId != null ? Number(params.scriptId) : null;
+      const ep = params?.episode != null ? Number(params.episode) : null;
+      const keyword = String(params?.keyword || '').trim().toLowerCase();
+      // 工作台已注册的分镜优先（内存态最新，含刚拆分/刚改名的结果）；
+      // 若清单为空、或要按剧本/集数过滤但内存态没有作用域信息，则回落到工程文档，保证过滤条件有意义。
+      let list: AISceneSummary[] = ((scenes as AISceneSummary[] | undefined) || []).filter(Boolean);
+      const needScope = sid !== null || ep !== null;
+      if (list.length === 0 || (needScope && list.every((s) => !s.scope))) {
+        list = await fetchProjectScenes(projectId);
+      }
+      if (sid) list = list.filter((s) => !s.scope || s.scope === `s:${sid}`);
+      if (ep) list = list.filter((s) => !s.scope || s.scope === `p:${projectId}:${ep}`);
+      if (keyword) {
+        list = list.filter((s) => `${s.description || ''} ${s.location || ''} ${(s.characters || []).join(' ')} ${(s.props || []).join(' ')}`.toLowerCase().includes(keyword));
+      }
+      if (list.length === 0) {
+        return sid || ep || keyword
+          ? `【工程分镜清单】按条件（scriptId=${sid ?? '-'} / episode=${ep ?? '-'} / keyword=${keyword || '-'}）未找到分镜。可去掉条件重试一次读全量。`
+          : '【工程分镜清单】空：当前工程没有任何分镜（说明拆分尚未落库）。不要让用户去分镜列表里点选 ID；请先 read_script 取剧本正文，再执行 auto_storyboard 拆分，完成后用本动作复核数量。';
+      }
+      const scopeCount = new Map<string, number>();
+      list.forEach((s) => {
+        const k = s.scope || '未标注作用域';
+        scopeCount.set(k, (scopeCount.get(k) || 0) + 1);
+      });
+      const groups = [...scopeCount.entries()].map(([sc, n]) => `${sc}：${n} 个`).join('，');
+      return `【工程分镜清单】共 ${list.length} 个（${groups}）\n${renderScenesForAgent(list, Number(params?.max) || 80)}\n以上 ID 为工程内真实分镜 ID，可直接用于 generate_frame / generate_video / inspect_quality / update_scene 等动作的 sceneId。`;
+    }
+
+    // 工作台动作执行器未注册（当前页面没挂载分镜工作台/资源面板）时，
+    // 绝不能把「根本没执行」回报成「已执行」——否则智能体会宣称拆分完成而工程里空无一物。
+    if (!onAction) {
+      const message = `当前页面未挂载可执行「${action}」的工作台，动作没有执行。请提示用户切到分镜工作台（或资源面板）后重试；只读动作（read_script / read_storyboards / get_task_status）在本面板内直接完成，不受此限制。`;
+      if (options?.inlineResult !== false) appendActionResult(`✗ ${message}`, originSid);
+      return { success: false, error: message };
     }
 
     // 桥接执行：第三参 onProgress 让工作台回报子步骤（步骤流细粒度反馈依赖它），
@@ -2485,6 +2798,10 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
     // 期间用户可能切换会话，故把 sid 随动作一起透传，卡片只落回发起它的那个对话。
     const originSid = currentSessionIdRef.current;
     const t = setTimeout(() => {
+      // 旧流式/单轮路径：动作原始回复不归档，这里移除其空壳，再由 generate_script 自建唯一行为卡片。
+      if (targets.some((target) => target.action === 'generate_script')) {
+        updateSessionMessages(originSid, (prev) => prev.filter((m) => m.id !== last.id));
+      }
       targets.forEach((target, i) => {
         setTimeout(() => {
           void handleAction(target.action, target.params, undefined, originSid);
@@ -2695,7 +3012,13 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
         )}
         <div className="px-3 py-3 space-y-3 relative z-1">
           {messages.map((msg) => (
-            <ChatMessageComponent key={msg.id} message={msg} onAction={handleAction} />
+            <ChatMessageComponent
+              key={msg.id}
+              message={msg}
+              onAction={handleAction}
+              onAskAnswer={handleAskAnswer}
+              askDisabled={isLoading}
+            />
           ))}
           {isLoading && (
             <ChatMessageComponent
@@ -3051,7 +3374,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
               </button>
             ) : (
               <button
-                onClick={handleSend}
+                onClick={() => handleSend()}
                 disabled={!inputText.trim() && attachments.length === 0}
                 className="p-1 rounded-md bg-(--accent) text-white hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
                 title="发送 (Enter)"

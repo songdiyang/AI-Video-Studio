@@ -22,6 +22,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import { mapLocalProject } from '../../services/projects';
+import { clearProjectDisplayCache } from '../../components/AIAssistantPanel/scopeStorage';
 import {
   createProject,
   importProjectPackage,
@@ -236,6 +237,10 @@ const Welcome: React.FC = () => {
         parent_dir: location.trim() || null,
       });
       setCreateOpen(false);
+      // 新建空白工程 = 全新会话作用域：先清掉该作用域残留的显示缓存。
+      // 工程 id 由路径哈希得到，删除工程后在原位置重建同名工程会复用同一 id，
+      // 不清理则右侧 AI 助手会把上一个工程的对话当作“本工程历史”显示出来。
+      clearProjectDisplayCache(mapLocalProject(meta).id);
       activate(meta);
     } catch (err: any) {
       setCreateError(err?.message || w.createFailed);

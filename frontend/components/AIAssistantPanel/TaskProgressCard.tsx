@@ -3,7 +3,7 @@
  */
 import React, { useEffect, useState } from 'react';
 import { Progress } from '@heroui/react';
-import { Loader2, CheckCircle2, XCircle, Clock, Image as ImageIcon, Video, LayoutList, ListTodo } from 'lucide-react';
+import { Loader2, CheckCircle2, XCircle, Clock, Image as ImageIcon, Video, LayoutList, ListTodo, ChevronDown, FileText } from 'lucide-react';
 import { getWorkflowStatus, ApiError, WorkflowJob } from '../../hooks/useWorkflow';
 import type { TaskCardData } from './types';
 import { pushInternalMail } from '../../services/localMail';
@@ -76,6 +76,7 @@ const KIND_META = {
   image: { label: '分镜图', Icon: ImageIcon },
   video: { label: '分镜视频', Icon: Video },
   generic: { label: '任务', Icon: ListTodo },
+  script: { label: '剧本', Icon: FileText },
 } as const;
 
 const STATUS_META: Record<CardStatus, { label: string; color: string }> = {
@@ -110,7 +111,7 @@ function notifyTaskFinished(task: TaskCardData, status: CardStatus, error: strin
     content: completed
       ? `AI 助手发起的「${task.title}」已完成，可以回到工作台查看结果。`
       : `AI 助手发起的「${task.title}」${status === 'cancelled' ? '已取消' : '执行失败'}${error ? `：${error}` : '。'}`,
-    mail_type: 'system',
+    mail_type: completed ? 'system' : 'warning',
     dedupe_key: key,
   });
 }
@@ -119,6 +120,66 @@ interface TaskProgressCardProps {
   task: TaskCardData;
 }
 
+const SCRIPT_STATUS_META = {
+  planning: { label: '创作构想中…', color: 'var(--accent)' },
+  writing: { label: '内容写入中…', color: 'var(--accent)' },
+  completed: { label: '创作完毕 ✓', color: 'var(--success)' },
+  failed: { label: '✗ 生成失败', color: 'var(--danger)' },
+} as const;
+
+/** 剧本生成只呈现受控阶段与保存结果；正文和模型错误详情都不进入对话消息。 */
+const ScriptTaskProgressCard: React.FC<TaskProgressCardProps> = ({ task }) => {
+  const [expanded, setExpanded] = useState(false);
+  const status = task.status || 'writing';
+  const meta = SCRIPT_STATUS_META[status];
+  const running = status === 'planning' || status === 'writing';
+
+  return (
+    <div
+      className="mt-2 rounded-lg overflow-hidden"
+      style={{ border: '1px solid var(--border)', backgroundColor: 'var(--bg-secondary)' }}
+    >
+      <button
+        type="button"
+        aria-expanded={expanded}
+        onClick={() => setExpanded((value) => !value)}
+        className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-white/5 transition-colors cursor-pointer"
+      >
+        <FileText size={13} style={{ color: 'var(--text-secondary)' }} className="shrink-0" />
+        <span className="text-xs font-medium truncate flex-1" style={{ color: 'var(--text-primary)' }}>
+          {task.title}
+        </span>
+        <span
+          className="inline-flex items-center gap-1 text-[10px] font-medium shrink-0 px-1.5 py-0.5 rounded"
+          style={{ color: meta.color, backgroundColor: 'var(--bg-tertiary)' }}
+        >
+          {running && <Loader2 size={12} className="animate-spin" />}
+          {status === 'completed' && <CheckCircle2 size={12} />}
+          {status === 'failed' && <XCircle size={12} />}
+          {meta.label}
+        </span>
+        <ChevronDown
+          size={12}
+          className={`shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`}
+          style={{ color: 'var(--text-muted)' }}
+        />
+      </button>
+      {expanded && (
+        <div className="px-3 pb-2.5 text-[11px] leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+          {status === 'planning' && <span>正在规划故事结构与剧情节奏，完成后会通过站内信通知你。</span>}
+          {status === 'writing' && <span>正在生成正文并保存到左侧剧本面板，完成后会通过站内信通知你。</span>}
+          {status === 'completed' && (
+            <span style={{ color: 'var(--success)' }}>
+              已保存到左侧剧本面板{task.scriptId ? `（剧本 #${task.scriptId}）` : ''}。
+            </span>
+          )}
+          {status === 'failed' && <span style={{ color: 'var(--danger)' }}>剧本生成失败，请重试。</span>}
+        </div>
+      )}
+    </div>
+  );
+};
+
 /**
  * 对话内后台任务进度卡片。
  * - 只读：不调用 consumeWorkflow，避免与右下角全局 TaskQueueBubble 抢消费。
@@ -126,7 +187,7 @@ interface TaskProgressCardProps {
  * - 无 jobId（离线分镜拆分同步完成）时直接进入完成态，显示 sceneCount。
  * - 每张卡片只服务一个 jobId，同一 jobId 的卡片由挂载侧去重，因此并发任务不会重复轮询同一作业。
  */
-const TaskProgressCard: React.FC<TaskProgressCardProps> = ({ task }) => {
+const WorkflowTaskProgressCard: React.FC<TaskProgressCardProps> = ({ task }) => {
   const isStoryboardSync = task.kind === 'storyboard' && !task.jobId;
 
   const [state, setState] = useState<CardState>(() => {
@@ -349,5 +410,11 @@ const TaskProgressCard: React.FC<TaskProgressCardProps> = ({ task }) => {
     </div>
   );
 };
+
+const TaskProgressCard: React.FC<TaskProgressCardProps> = ({ task }) => (
+  task.kind === 'script'
+    ? <ScriptTaskProgressCard task={task} />
+    : <WorkflowTaskProgressCard task={task} />
+);
 
 export default TaskProgressCard;

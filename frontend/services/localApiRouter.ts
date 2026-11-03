@@ -467,6 +467,18 @@ async function route(url: URL, method: string, body: any): Promise<Response | nu
     }
   }
   if (pathname === '/api/storyboards/add' && m === 'POST') return handleSceneAdd(body || {});
+  // 工程全部分镜（跨 scope）：AI 助手在任意页面按工程读取权威清单，
+  // 不再依赖分镜工作台挂载后注入的 context.scenes（工作台未挂载时智能体会「看不见分镜」）。
+  if ((mt = pathname.match(/^\/api\/storyboards\/project\/(\d+)$/)) && m === 'GET') {
+    const projectId = num(mt[1]);
+    const path = await pathFor(projectId);
+    if (!path) return jsonResponse({ scenes: [], total: 0, projectOpen: false });
+    const doc = await loadStoryboards(path);
+    const list = [...doc.scenes].sort((a, b) =>
+      a._scope === b._scope ? a.index - b.index : (a._scope < b._scope ? -1 : 1),
+    );
+    return jsonResponse({ scenes: list, total: list.length, projectOpen: true });
+  }
   if (pathname === '/api/storyboards/reorder' && m === 'PATCH') return handleSceneReorder(body || {});
   if ((mt = pathname.match(/^\/api\/storyboards\/scene\/(\d+)$/)) && m === 'DELETE') return handleSceneDelete(mt[1]);
   if ((mt = pathname.match(/^\/api\/storyboards\/(\d+)\/content$/)) && m === 'PATCH') return handleSceneContentPatch(mt[1], body || {});

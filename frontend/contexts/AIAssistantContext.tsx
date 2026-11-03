@@ -30,6 +30,7 @@ import React, {
   useEffect,
   useRef,
 } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useWorkbench } from './WorkbenchContext';
 
 // ─── Types ──────────────────────────────────────────────────────────
@@ -120,6 +121,12 @@ export interface AIAssistantUIContextValue {
   close: () => void;
   toggle: () => void;
   projectId: number | null;
+  /**
+   * 当前停留在“工程无关入口页”（欢迎页 / 应用级标签页）。
+   * 欢迎页 = 新建工程流程所在处：此时面板必须脱离上一个工程的显示作用域，
+   * 显示空白对话，而不是继续沿用上一个工程的会话/标签栏缓存。
+   */
+  projectlessEntry: boolean;
   // 面板布局状态
   leftPanelOpen: boolean;
   rightPanelOpen: boolean;
@@ -172,6 +179,9 @@ const AIAssistantUIContext = createContext<AIAssistantUIContextValue | null>(nul
 const AIAssistantDataContext = createContext<AIAssistantDataContextValue | null>(null);
 const AIAssistantSettersContext = createContext<AIAssistantSettersContextValue | null>(null);
 
+/** 工程无关入口页路由：欢迎页（新建/打开工程入口）与应用级标签容器 */
+const PROJECTLESS_ENTRY_ROUTES = ['/welcome', '/app-tabs'];
+
 // ─── Provider ───────────────────────────────────────────────────────
 interface AIAssistantProviderProps {
   children: React.ReactNode;
@@ -180,6 +190,10 @@ interface AIAssistantProviderProps {
 export const AIAssistantProvider: React.FC<AIAssistantProviderProps> = ({ children }) => {
   const { currentProject } = useWorkbench();
   const projectId = currentProject?.id ?? null;
+  // 入口页判定：切到欢迎页/应用级标签页时 currentProject 不会自动清空，
+  // 面板若继续按旧工程 id 取水合缓存，就会把上一个工程的对话显示出来。
+  const location = useLocation();
+  const projectlessEntry = PROJECTLESS_ENTRY_ROUTES.includes(location.pathname);
 
   // —— UI 状态 —— 仅影响 Layout / Toggle 按钮 / Drawer 容器
   const [isOpen, setIsOpen] = useState(false);
@@ -216,8 +230,8 @@ export const AIAssistantProvider: React.FC<AIAssistantProviderProps> = ({ childr
   const closeBottomPanel = useCallback(() => setBottomPanelOpen(false), []);
 
   const uiValue = useMemo<AIAssistantUIContextValue>(
-    () => ({ isOpen, open, close, toggle, projectId, leftPanelOpen, rightPanelOpen, bottomPanelOpen, toggleLeftPanel, toggleRightPanel, toggleBottomPanel, openLeftPanel, openRightPanel, openBottomPanel, closeLeftPanel, closeRightPanel, closeBottomPanel }),
-    [isOpen, open, close, toggle, projectId, leftPanelOpen, rightPanelOpen, bottomPanelOpen, toggleLeftPanel, toggleRightPanel, toggleBottomPanel, openLeftPanel, openRightPanel, openBottomPanel, closeLeftPanel, closeRightPanel, closeBottomPanel],
+    () => ({ isOpen, open, close, toggle, projectId, projectlessEntry, leftPanelOpen, rightPanelOpen, bottomPanelOpen, toggleLeftPanel, toggleRightPanel, toggleBottomPanel, openLeftPanel, openRightPanel, openBottomPanel, closeLeftPanel, closeRightPanel, closeBottomPanel }),
+    [isOpen, open, close, toggle, projectId, projectlessEntry, leftPanelOpen, rightPanelOpen, bottomPanelOpen, toggleLeftPanel, toggleRightPanel, toggleBottomPanel, openLeftPanel, openRightPanel, openBottomPanel, closeLeftPanel, closeRightPanel, closeBottomPanel],
   );
 
   // —— Data 状态 —— 仅影响 AIAssistantPanel
@@ -444,8 +458,12 @@ export const AIAssistantProvider: React.FC<AIAssistantProviderProps> = ({ childr
   }, [onActionVersion]);
 
   const dataValue = useMemo<AIAssistantDataContextValue>(
-    () => ({ currentFrame, scenes, characters, locations, studios, props, scripts, onAction, projectName, projectDescription }),
-    [currentFrame, scenes, characters, locations, studios, props, scripts, onAction, projectName, projectDescription],
+    // 入口页是“无工程”作用域：不把上一个工程注册的工作台数据（分镜/角色/工程名）
+    // 透给面板，否则新建工程时 AI 仍带着上一个工程的上下文。
+    () => (projectlessEntry
+      ? { currentFrame: null, scenes: [], characters: [], locations: [], studios: [], props: [], scripts: [], onAction: null, projectName: null, projectDescription: null }
+      : { currentFrame, scenes, characters, locations, studios, props, scripts, onAction, projectName, projectDescription }),
+    [projectlessEntry, currentFrame, scenes, characters, locations, studios, props, scripts, onAction, projectName, projectDescription],
   );
 
   // setter 永远稳定，settersValue 永不变化，订阅方不会因此重渲染

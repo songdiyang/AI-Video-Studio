@@ -3,6 +3,10 @@
  * 独立成模块以消除 ChatMessage.tsx 与 TaskProgressCard.tsx 之间的循环引用。
  */
 
+import type { AskCardData } from '../../services/agentAsk';
+                                               
+export type { AskCardData } from '../../services/agentAsk';
+
 export interface ChatMessageAttachment {
   type: 'image' | 'video' | 'file' | 'script';
   url: string;
@@ -30,13 +34,17 @@ export interface ChatMessageStep {
 /** 后台任务进度卡片数据：由 agent 循环在提交长任务后挂到对话消息上，卡片自轮询工作流状态 */
 export interface TaskCardData {
   /** 任务类别 */
-  kind: 'storyboard' | 'image' | 'video' | 'generic';
+  kind: 'storyboard' | 'image' | 'video' | 'generic' | 'script';
   /** 工作流 jobId；离线分镜拆分同步完成时可缺省（直接进入完成态，用 sceneCount） */
   jobId?: string;
   /** 卡片标题（如「重新拆分 · 第1集」） */
   title: string;
   /** 分镜拆分完成数（无 jobId 的同步完成态使用） */
   sceneCount?: number;
+  /** 剧本生成阶段；卡片只记录状态与元数据，不记录剧本正文 */
+  status?: 'planning' | 'writing' | 'completed' | 'failed';
+  /** 已保存的剧本 ID，供完成态确认写入结果 */
+  scriptId?: number;
 }
 
 export interface ChatMessageData {
@@ -54,4 +62,6 @@ export interface ChatMessageData {
   steps?: ChatMessageStep[];
   /** 后台任务进度卡片：存在时渲染自轮询进度卡（回合结束后仍持续更新到终态） */
   task?: TaskCardData;
+  /** Agent 澄清卡片：回答后保留结果，并随用户回答继续原对话 */
+  ask?: AskCardData;
 }

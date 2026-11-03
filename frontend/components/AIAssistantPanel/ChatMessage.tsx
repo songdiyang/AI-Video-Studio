@@ -2,13 +2,16 @@ import React, { useState } from 'react';
 import { Check, AlertTriangle, Brain, Star, TrendingUp, TrendingDown, Lightbulb, MessageSquare, ChevronDown, Loader2, Circle } from 'lucide-react';
 import MediaAttachment from './MediaAttachment';
 import TaskProgressCard from './TaskProgressCard';
+import { useLanguage } from '../../contexts/LanguageContext';
 import type {
+  AskCardData,
   ChatMessageData,
   ChatMessageStep,
 } from './types';
 
 // 共享类型集中定义于 ./types，此处再导出以兼容既有从 './ChatMessage' 引入的调用方。
 export type {
+  AskCardData,
   ChatMessageAttachment,
   ChatMessageData,
   ChatMessageSuggestion,
@@ -45,6 +48,7 @@ const AUTO_EXECUTE_ACTIONS: ReadonlySet<string> = new Set([
   'delete_location',
   'create_script',
   'update_script',
+  'generate_script',
   'bind_script',
   'update_project',
   'invite_member',
@@ -57,6 +61,8 @@ const AUTO_EXECUTE_ACTIONS: ReadonlySet<string> = new Set([
 interface ChatMessageProps {
   message: ChatMessageData;
   onAction?: (action: string, params: any) => void;
+  onAskAnswer?: (messageId: string, answer: string) => void;
+  askDisabled?: boolean;
 }
 
 /** Lightweight markdown-ish renderer: bold, italic, inline code, code blocks, line breaks */
@@ -211,7 +217,81 @@ const MessageSteps: React.FC<{ steps: ChatMessageStep[] }> = ({ steps }) => {
   );
 };
 
-const ChatMessageComponent: React.FC<ChatMessageProps> = ({ message, onAction }) => {
+const AskCard: React.FC<{
+  data: AskCardData;
+  disabled?: boolean;
+  onAnswer?: (answer: string) => void;
+}> = ({ data, disabled = false, onAnswer }) => {
+  const { t } = useLanguage();
+  const [customAnswer, setCustomAnswer] = useState('');
+  const answered = data.status === 'answered';
+
+  const submitCustomAnswer = (event: React.FormEvent) => {
+    event.preventDefault();
+    const answer = customAnswer.trim();
+    if (!answer || disabled || !onAnswer) return;
+    onAnswer(answer);
+    setCustomAnswer('');
+  };
+
+  return (
+    <div className="mt-1 rounded-lg border border-(--border-color) bg-(--bg-nav)/60 p-3 space-y-2.5">
+      <div className="flex items-start gap-2 text-xs leading-relaxed text-(--text-primary)">
+        <MessageSquare size={13} className="mt-0.5 shrink-0 text-(--accent)" />
+        <span className="whitespace-pre-wrap wrap-break-word">{data.question}</span>
+      </div>
+
+      {answered ? (
+        <div className="rounded-md bg-black/10 px-2.5 py-2 text-[11px] leading-relaxed">
+          <div className="flex items-center gap-1 text-(--text-muted)">
+            <Check size={11} className="text-emerald-400" />
+            <span>{t.assistant.ask.answered}</span>
+          </div>
+          <div className="mt-0.5 whitespace-pre-wrap wrap-break-word text-(--text-secondary)">{data.answer}</div>
+        </div>
+      ) : (
+        <>
+          {data.options.length > 0 && (
+            <div className="flex flex-col gap-1.5">
+              {data.options.map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  disabled={disabled || !onAnswer}
+                  onClick={() => onAnswer?.(option)}
+                  className="w-full rounded-md border border-(--border-color) px-2.5 py-1.5 text-left text-[11px] leading-relaxed text-(--text-secondary) hover:border-(--accent)/50 hover:bg-(--accent)/5 hover:text-(--text-primary) disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                >
+                  {option}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <form onSubmit={submitCustomAnswer} className="flex items-center gap-1.5">
+            <input
+              value={customAnswer}
+              onChange={(event) => setCustomAnswer(event.target.value)}
+              disabled={disabled}
+              maxLength={2000}
+              placeholder={t.assistant.ask.customPlaceholder}
+              aria-label={t.assistant.ask.customPlaceholder}
+              className="min-w-0 flex-1 rounded-md border border-(--border-color) bg-black/10 px-2.5 py-1.5 text-[11px] text-(--text-primary) placeholder:text-(--text-muted) outline-none focus:border-(--accent)/60 disabled:opacity-40"
+            />
+            <button
+              type="submit"
+              disabled={disabled || !onAnswer || !customAnswer.trim()}
+              className="shrink-0 rounded-md bg-(--accent) px-2.5 py-1.5 text-[10px] font-medium text-white hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity cursor-pointer"
+            >
+              {t.assistant.ask.submit}
+            </button>
+          </form>
+        </>
+      )}
+    </div>
+  );
+};
+
+const ChatMessageComponent: React.FC<ChatMessageProps> = ({ message, onAction, onAskAnswer, askDisabled }) => {
   const isUser = message.role === 'user';
   const isSystem = message.role === 'system';
 
@@ -448,8 +528,16 @@ const ScriptAnalysisCard: React.FC<{
 
       {message.task && <TaskProgressCard task={message.task} />}
 
-      {/* 纯卡片消息（正文为空）不渲染正文容器，避免留下一块空白行 */}
-      {(message.content || message.running) && (
+      {message.ask && (
+        <AskCard
+          data={message.ask}
+          disabled={askDisabled}
+          onAnswer={onAskAnswer ? (answer) => onAskAnswer(message.id, answer) : undefined}
+        />
+      )}
+
+      {/* 澄清卡片已包含问题正文；其他纯卡片消息不渲染空白正文容器 */}
+      {!message.ask && (message.content || message.running) && (
         <div className="text-xs leading-relaxed whitespace-pre-wrap wrap-break-word text-(--text-primary)">
           {message.running && <span className="mr-1.5"><RunningSpinner /></span>}
           {renderMarkdown(message.content)}

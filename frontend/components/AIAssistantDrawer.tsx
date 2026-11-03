@@ -57,6 +57,7 @@ const AIAssistantDrawer: React.FC = () => {
             }
           >
             <AIAssistantPanel
+              key={projectId ?? 'global'}
               projectId={projectId}
               projectName={projectName}
               projectDescription={projectDescription}
