@@ -251,7 +251,6 @@ const AssetEditorSession: React.FC<AssetEditorProps> = ({ tabId, assetType, init
   );
   const renderProperties = () => (
     <div className="content-editor-fields">
-      {assetType === 'character' && field('personality', '性格')}
       {assetType === 'scene' && <>{field('environment', '环境')}{field('lighting', '光线')}{field('mood', '氛围')}</>}
       {assetType === 'prop' && <>{selectField('prop_type', '道具类型', [['held', '手持道具'], ['permanent', '永久道具'], ['interactive', '交互道具']])}{field('category', '道具分类')}
         <div className="content-editor-full-width resource-editor-prop-style"><PropStyleConfigPanel value={typeof formData.style_config === 'object' ? formData.style_config || {} : {}} onChange={value => session.edit({ style_config: value })} /></div></>}
@@ -285,8 +284,12 @@ const AssetEditorSession: React.FC<AssetEditorProps> = ({ tabId, assetType, init
       </div>
     </div>;
   };
+  useEffect(() => {
+    // 角色「属性」已并入状态编辑；热更新或旧会话停留在该标签时自动落到角色状态。
+    if (assetType === 'character' && activeTab === 'properties') setActiveTab('states');
+  }, [assetType, activeTab]);
   const tabs = [{ id: 'content', label: '内容', icon: <FileText size={13} /> }];
-  if (!['script', 'studio'].includes(assetType)) tabs.push({ id: 'properties', label: '属性', icon: <Layers size={13} /> });
+  if (!['script', 'studio', 'character'].includes(assetType)) tabs.push({ id: 'properties', label: '属性', icon: <Layers size={13} /> });
   if (assetType === 'costume') tabs.push({ id: 'prompts', label: '提示词', icon: <Wand2 size={13} /> });
   if (assetType === 'character') tabs.push({ id: 'states', label: '角色状态', icon: <Layers size={13} /> });
   if (assetType === 'scene' || assetType === 'studio') tabs.push({ id: 'assembly', label: '组装', icon: <Layers size={13} /> });

@@ -101,15 +101,19 @@ export async function routeWorkflows(url: URL, method: string, body: any): Promi
       const projectId = url.searchParams.get('projectId');
       const workflowType = url.searchParams.get('workflowType') || undefined;
       const status = url.searchParams.get('status') || undefined;
-      const jobs = await listJobs({
+      // 前端会传入 pending,running,failed；Rust/本地单状态查询逐值执行后合并，避免整串精确匹配导致空队列。
+      const statuses = status ? [...new Set(status.split(',').map((value) => value.trim()).filter(Boolean))] : undefined;
+      const baseFilter = {
         projectId: projectId !== null ? Number(projectId) : undefined,
         workflowType,
-        status,
-      });
+      };
+      const jobs = statuses?.length
+        ? (await Promise.all(statuses.map((value) => listJobs({ ...baseFilter, status: value })))).flat()
+        : await listJobs({ ...baseFilter, status });
       // 并入资产生成作业（角色/场景/建筑/环境/服装/影棚 生成）
       const assetJobs = listActiveAssetJobs(projectId !== null ? Number(projectId) : undefined)
         .map(assetJobToWorkflowJob)
-        .filter((j) => (!workflowType || j.workflow_type === workflowType) && (!status || j.status === status));
+        .filter((j) => (!workflowType || j.workflow_type === workflowType) && (!statuses || statuses.includes(j.status)));
       return jsonResponse({ jobs: [...jobs, ...assetJobs] });
     }
   }

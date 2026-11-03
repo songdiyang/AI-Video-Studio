@@ -1,14 +1,15 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Button, Input, Textarea, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Select, SelectItem, Chip } from '@heroui/react';
+import { Button, Input, Textarea, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Select, SelectItem, Chip, Tooltip } from '@heroui/react';
 import { Plus, Edit2, Trash2, Star, Copy, RefreshCw, Shirt, Image as ImageIcon, Wand2, AlertTriangle, Layers3 } from 'lucide-react';
 import { type Character, type CharacterState, type StateCategory, type TagGroup, STATE_CATEGORIES, AGE_STAGES,
-  fetchCharacter, fetchCharacterStates, createCharacterState, updateCharacterState, deleteCharacterState,
+  isStaleGeneratingState, fetchCharacter, fetchCharacterStates, createCharacterState, updateCharacterState, deleteCharacterState,
   deleteCharacterStateBaseModelImage, activateCharacterState, duplicateCharacterState, generateCharacterStateViews } from '../../../services/assets';
 import { useToast } from '../../../contexts/ToastContext';
 import { usePreview } from '../../../components/PreviewProvider';
 import { useConfirm } from '../../../contexts/ConfirmContext';
 import { useAIModels } from '../../../hooks/useAIModels';
+import { getActiveWorkflows } from '../../../hooks/useWorkflow';
 import { type EmbeddedEditorProps, type EditorSaveStatus } from '../../../components/ContentEditorPanel';
 import '../../../components/ContentEditorPanel/styles.css';
 import { ResourceDraft, STATE_FIELDS, normalizeState, statePayload, pickResourceFields, type ResourceData } from '../../../components/AssetEditor/resourceDraft';
@@ -43,7 +44,6 @@ const STATUS_TEXT: Record<string, string> = { idle: '就绪', dirty: '未保存'
   pending: '待生成', generating: '生成中', completed: '已生成', failed: '生成失败' };
 /** 图片生成状态独立命名：idle 表示尚未生成，而非“就绪”。 */
 const GENERATION_STATUS_TEXT: Record<string, string> = { idle: '未生成', pending: '待生成', generating: '生成中', completed: '已生成', failed: '生成失败' };
-
 /** 项目/角色身份固定，所有异步加载与生成只回写自己的会话。 */
 const CharacterStateEditor: React.FC<CharacterStateEditorProps> = props => <CharacterStateSession key={`${props.projectId ?? ''}:${props.characterId ?? ''}`} {...props} />;
 const CharacterStateSession: React.FC<CharacterStateEditorProps> = ({ characterId, disabled = false, projectId = null,
@@ -143,10 +143,41 @@ const CharacterStateSession: React.FC<CharacterStateEditorProps> = ({ characterI
     const savedCheckpoint = savedVersion.current;
     setLoading(true);
     try {
-      const [ch, fetched, wardrobe] = await Promise.all([fetchCharacter(characterId), fetchCharacterStates(characterId), fetchCharacterCostumes(characterId)]);
+      const workflowsRequest = projectId ? getActiveWorkflows(projectId) : Promise.resolve({ jobs: [] });
+      const [characterResult, statesResult, wardrobeResult, workflowsResult] = await Promise.allSettled([
+        fetchCharacter(characterId), fetchCharacterStates(characterId), fetchCharacterCostumes(characterId), workflowsRequest,
+      ]);
       if (!alive.current || sequence !== loadSequence.current) return;
-      const rows = acceptRows(fetched, savedCheckpoint);
-      setCharacter(ch); setCostumes(wardrobe.costumes || []); setLoadError('');
+      if (statesResult.status === 'rejected') throw statesResult.reason;
+      const activeStateIds = new Set<number>();
+      if (workflowsResult.status === 'fulfilled') {
+        for (const job of workflowsResult.value.jobs) {
+          if (job.status !== 'pending' && job.status !== 'running') continue;
+          let params = job.input_params || {};
+          if (typeof params === 'string') { try { params = JSON.parse(params); } catch { params = {}; } }
+          const stateId = Number(params.stateId);
+          if (Number.isFinite(stateId) && stateId > 0) activeStateIds.add(stateId);
+        }
+      }
+      const reconciled = statesResult.value.map(state => (
+        // 无活跃任务或超过 10 分钟未更新都视为失效，转为失败并开放重试。
+        state.generation_status === 'generating' && (
+          isStaleGeneratingState(state)
+          || (projectId && workflowsResult.status === 'fulfilled' && !activeStateIds.has(state.id))
+        )
+          ? { ...state, generation_status: 'failed' as const }
+          : state
+      ));
+      const rows = acceptRows(reconciled, savedCheckpoint);
+      if (characterResult.status === 'fulfilled') setCharacter(characterResult.value);
+      else console.warn('[CharacterState] 角色信息加载失败，保留状态列表可用:', characterResult.reason);
+      if (wardrobeResult.status === 'fulfilled') setCostumes(wardrobeResult.value.costumes || []);
+      else {
+        // 服装是编辑时的可选关联数据，不应拖垮整个状态工作区。
+        setCostumes([]);
+        console.warn('[CharacterState] 服装加载失败，已按无关联服装降级:', wardrobeResult.reason);
+      }
+      setLoadError('');
       if (!draftRef.current.data.id && !newRef.current) {
         const first = rows.find(state => state.is_base_model) || rows[0];
         if (first) { const next = makeDraft(first); draftRef.current = next; setDraft(next); }
@@ -156,7 +187,7 @@ const CharacterStateSession: React.FC<CharacterStateEditorProps> = ({ characterI
       }
     } catch (error: any) { if (alive.current && sequence === loadSequence.current) setLoadError(error.message || '加载角色状态失败'); }
     finally { if (alive.current && sequence === loadSequence.current) setLoading(false); }
-  }, [characterId]);
+  }, [characterId, projectId]);
   useEffect(() => { void loadStates(); }, [loadStates]);
   const base = states.find(state => state.is_base_model);
   // 白膜三视图齐全才算基础层就绪：设定图/单张白膜图只能作为参考，不能直接派生状态。
@@ -180,7 +211,8 @@ const CharacterStateSession: React.FC<CharacterStateEditorProps> = ({ characterI
     if (disabled || !baseReady || !(await flush()) || !alive.current) return;
     const latestBase = statesRef.current.find(state => state.is_base_model);
     const next = makeDraft({ character_id: characterId, project_id: projectId, name: '', description: '',
-      appearance: latestBase?.appearance || character?.appearance || '', outfit: latestBase?.outfit || '', age_stage: latestBase?.age_stage || '',
+      appearance: latestBase?.appearance || character?.base_appearance || character?.appearance || '', outfit: latestBase?.outfit || '', age_stage: latestBase?.age_stage || '',
+      personality: latestBase?.personality || character?.personality || '',
       hairstyle: latestBase?.hairstyle || '', accessories: latestBase?.accessories || '', held_props: '', body_elements: latestBase?.body_elements || '',
       state_category: ['daily'], tags: '[]', costume_id: null, voice_config: null }, true);
     newRef.current = true; setIsNew(true); draftRef.current = next; setDraft(next);
@@ -205,6 +237,7 @@ const CharacterStateSession: React.FC<CharacterStateEditorProps> = ({ characterI
           name: '白膜',
           description: character?.base_appearance || character?.appearance || character?.description || '',
           appearance: character?.base_appearance || character?.appearance || '',
+          personality: character?.personality || '',
           outfit: character?.outfit_appearance || '',
           is_base_model: true,
           is_active: false,
@@ -433,9 +466,21 @@ const CharacterStateSession: React.FC<CharacterStateEditorProps> = ({ characterI
       <div className="content-editor-fields">
       {editField('name', '状态名称')}
       <div className="content-editor-field"><span className="text-xs">自动分类：</span>{(data.costume_id || data.outfit) ? <Chip size="sm">服装变化</Chip> : null}{data.body_elements ? <Chip size="sm">效果状态</Chip> : null}{!data.costume_id && !data.outfit && !data.body_elements && <Chip size="sm">日常状态</Chip>}</div>
-      {editField('description', '状态描述', true)}{editField('appearance', '外貌特征', true)}
+      {editField('description', '状态描述', true)}
+      <div className="content-editor-full-width border-t border-(--border-color) pt-3">
+        <h5 className="text-xs font-medium">{current.is_base_model ? '白膜基础属性' : '白膜基础与表演属性'}</h5>
+        <p className="mt-1 text-[11px] leading-relaxed text-(--text-muted)">
+          {current.is_base_model ? '这里定义派生状态默认继承的体貌与表演基准。' : '以白膜为身份基准，当前状态可独立调整外貌、性格与身体特征。'}
+        </p>
+      </div>
+      {editField('appearance', current.is_base_model ? '白膜体貌（不含服装）' : '状态外貌（基于白膜调整）', true)}
+      {editField('personality', current.is_base_model ? '基础性格（供派生状态继承）' : '状态性格 / 表演方向', true)}
       {editField('body_elements', current.is_base_model ? '身体元素（纹身、疤痕等）' : '效果 / 附加描述', true)}
       {!current.is_base_model && <>
+        <div className="content-editor-full-width border-t border-(--border-color) pt-3">
+          <h5 className="text-xs font-medium">当前状态妆面</h5>
+          <p className="mt-1 text-[11px] leading-relaxed text-(--text-muted)">服装、发型、配饰与道具会作为当前状态的增量写入三视图提示词。</p>
+        </div>
         <div className="content-editor-full-width space-y-2"><h5 className="text-xs">服装（沿用角色已关联的服装）</h5>
           <div className="flex gap-2 overflow-x-auto">{costumes.map(costume => <button type="button" key={costume.id} disabled={disabled}
             className={`shrink-0 w-20 rounded-lg p-1 border ${data.costume_id === costume.id ? 'border-(--accent)' : 'border-(--border-color)'}`}
@@ -469,7 +514,7 @@ const CharacterStateSession: React.FC<CharacterStateEditorProps> = ({ characterI
         </div></details>
       </>}
       <Input className="content-editor-full-width" size="sm" variant="flat" labelPlacement="outside" classNames={ASSET_FIELD_CLASS_NAMES} label="状态标签（逗号分隔）" value={tags(data.tags).join(',')} isDisabled={disabled} onValueChange={value => draft.edit({ tags: JSON.stringify(value.split(/[,，]/)) })} />
-      <p className="content-editor-full-width text-xs text-(--text-muted)">{current.is_base_model ? '白膜生成沿用角色参考图页中的图片。身体元素会保留在白膜中。' : '状态三视图自动使用白膜作为参考。'} 修改后 2 秒自动保存。</p>
+      <p className="content-editor-full-width text-xs text-(--text-muted)">{current.is_base_model ? '白膜生成沿用角色参考图页中的图片，体貌与身体元素作为派生基准。' : '状态图提示词由白膜体貌、当前外貌与性格、妆面服装及道具自动组装。'} 标签仅用于分类；修改后 2 秒自动保存。</p>
     </div>
     </> : (
       <div className="flex min-h-80 items-center justify-center px-4 py-8">
@@ -509,12 +554,13 @@ const CharacterStateSession: React.FC<CharacterStateEditorProps> = ({ characterI
     {actionsPortalTarget === undefined && <Button size="sm" isDisabled={draft.status === 'saving'} onPress={() => { void flush(); }}>{draft.status === 'error' ? '重试保存状态' : '保存状态'}</Button>}
   </div> : null;
   const stateOperations = (state: CharacterState) => <div className="flex flex-wrap gap-1">
-    <Button size="sm" isDisabled={disabled || operationBusy} startContent={<Edit2 size={12} />} onPress={() => { void selectState(state, true); }}>编辑{state.is_base_model ? '白膜' : '状态'}</Button>
+    {!embedded && <Button size="sm" isDisabled={disabled || operationBusy} startContent={<Edit2 size={12} />} onPress={() => { void selectState(state, true); }}>编辑{state.is_base_model ? '白膜' : '状态'}</Button>}
     {!state.is_active && <Button size="sm" isDisabled={disabled || operationBusy} startContent={<Star size={12} />} onPress={() => { void activate(state); }}>设为当前</Button>}
     {!state.is_base_model && <><Button size="sm" isDisabled={disabled || operationBusy} startContent={<Copy size={12} />} onPress={() => { void duplicate(state); }}>复制</Button>
       <Button size="sm" isDisabled={disabled || operationBusy || state.generation_status === 'generating'} color="danger" variant="light" startContent={<Trash2 size={12} />} onPress={() => { void removeState(state); }}>删除状态</Button></>}
   </div>;
-  const preview = (state: CharacterState) => {
+  const preview = (state: CharacterState, currentDraft = false) => {
+    const creatingCurrent = currentDraft && isNew && !state.id;
     const slides = ([['image_url', '设定图'], ['front_view_url', '正面'], ['side_view_url', '侧面'], ['back_view_url', '背面']] as const)
       .filter(([key]) => state[key]).map(([key, label]) => ({ src: state[key], alt: `${state.name} · ${label}`, label }));
     // 状态尚无媒体时回退到角色设定图：资源侧与角色页使用同一张视觉基准，
@@ -526,7 +572,7 @@ const CharacterStateSession: React.FC<CharacterStateEditorProps> = ({ characterI
             <img src={characterImage} alt={`${character?.name || '角色'} · 设定图`} className="max-h-44 max-w-full object-contain" />
           </button>
         </div>
-        <p className="text-center text-[11px] text-(--text-muted)">{state.id ? '当前状态暂无三视图，显示角色设定图参考' : '角色设定图 · 仅作参考，白膜三视图尚未生成'}</p>
+        <p className="text-center text-[11px] text-(--text-muted)">{creatingCurrent ? '新状态尚未生成三视图，显示角色设定图参考' : state.id ? '当前状态暂无三视图，显示角色设定图参考' : '角色设定图 · 仅作参考，白膜三视图尚未生成'}</p>
         {!baseReady && <>
           <p className="text-center text-[11px] leading-relaxed text-(--text-muted)">白膜是基础网格；状态 = 白膜基础 + 服装 + 道具 + 状态属性</p>
           <div className="flex justify-center">
@@ -546,7 +592,18 @@ const CharacterStateSession: React.FC<CharacterStateEditorProps> = ({ characterI
           className="group relative min-h-0 w-full overflow-hidden rounded-lg bg-(--bg-card) shadow-sm">
           <img src={slide.src} alt={slide.alt} loading="lazy" className="h-full w-full object-contain transition-transform duration-150 group-hover:scale-[1.02]" />
           <span className="absolute bottom-1 left-1 truncate rounded bg-black/60 px-1.5 py-0.5 text-[10px] text-white/85">{slide.label}</span></button>)}</div>
-        : <div className="flex min-h-44 flex-1 flex-col items-center justify-center gap-2 rounded-md border border-dashed border-(--border-color) text-(--text-muted)"><ImageIcon size={26} className="opacity-40" /><p className="text-xs">{!state.id ? '请先选择或新建角色状态' : `暂无「${state.name}」预览图`}</p>{state.id && <p className="text-[11px] opacity-70">生成状态三视图后在此预览</p>}</div>}
+        : <div className="flex min-h-44 flex-1 flex-col items-center justify-center gap-2 rounded-md border border-dashed border-(--border-color) px-4 text-center text-(--text-muted)">
+          <ImageIcon size={26} className="opacity-40" />
+          <p className="text-xs">{creatingCurrent ? '正在新建状态' : !state.id ? (states.length ? '从左侧选择一个状态查看详情' : '尚未建立角色状态') : `暂无「${state.name}」预览图`}</p>
+          <p className="max-w-sm text-[11px] leading-relaxed opacity-70">
+            {creatingCurrent ? '在下方编辑区填写状态属性，保存后即可生成三视图。' : state.id ? '生成状态三视图后在此预览' : '每个状态都可独立编辑属性、生成三视图、复制或设为当前状态。'}
+          </p>
+          {!state.id && !creatingCurrent && <Button size="sm" color="primary" startContent={baseReady ? <Plus size={12} /> : <Wand2 size={12} />}
+            isDisabled={disabled || operationBusy || generationBusy || (!baseReady && !selected.image)}
+            onPress={() => { void (baseReady ? createFromBase() : generateBaseThreeViews()); }}>
+            {baseReady ? '基于白膜新建状态' : '生成白膜三视图'}
+          </Button>}
+        </div>}
       {generationErrors[state.id] && <p role="alert" className="text-danger text-xs">{generationErrors[state.id]}</p>}
       {(state.id || (slides.length > 0 && !disabled)) && <div className="flex items-center justify-between gap-2">
         <span role="status" className="min-w-0">{state.id && <span className={`inline-flex rounded px-1.5 py-0.5 text-[11px] ${generationTone}`}>{GENERATION_STATUS_TEXT[generation]}</span>}</span>
@@ -564,8 +621,16 @@ const CharacterStateSession: React.FC<CharacterStateEditorProps> = ({ characterI
         <span className="truncate text-[11px] text-(--text-muted)">{character?.name || ''}</span>
       </div>
       <div className="flex items-center gap-1.5">
-        <Button size="sm" isDisabled={disabled || !baseReady || operationBusy} startContent={<Plus size={12} />} onPress={() => { void createFromBase(); }}>基于白膜新建</Button>
-        <Button size="sm" variant="light" isLoading={loading} onPress={() => { void loadStates(); }}>刷新状态</Button>
+        <Tooltip content="基于白膜新建" placement="bottom">
+          <Button size="sm" isIconOnly aria-label="基于白膜新建" isDisabled={disabled || !baseReady || operationBusy} onPress={() => { void createFromBase(); }}>
+            <Plus size={14} />
+          </Button>
+        </Tooltip>
+        <Tooltip content="刷新状态" placement="bottom">
+          <Button size="sm" variant="light" isIconOnly aria-label="刷新状态" isLoading={loading} onPress={() => { void loadStates(); }}>
+            <RefreshCw size={14} />
+          </Button>
+        </Tooltip>
       </div>
     </div>
     {!baseReady && <div className="flex items-start gap-1.5 rounded-md border border-amber-500/25 bg-amber-500/10 px-2.5 py-1.5 text-[11px] leading-relaxed text-amber-400/90">
@@ -574,23 +639,76 @@ const CharacterStateSession: React.FC<CharacterStateEditorProps> = ({ characterI
     </div>}
     {loadError && <p role="alert" className="text-xs text-danger">{loadError}（可刷新重试）</p>}
     {embedded ? <>
-      <div className="grid grid-cols-1 gap-3 md:min-h-0 md:flex-1 md:grid-cols-[minmax(180px,220px)_minmax(0,1fr)]">
-        <div className="min-w-0 space-y-2">
-          <Select size="sm" variant="flat" labelPlacement="outside" classNames={ASSET_SELECT_CLASS_NAMES} label="状态" className="w-full" selectedKeys={data.id ? [String(data.id)] : []}
-            onSelectionChange={keys => { const state = states.find(item => item.id === Number(Array.from(keys)[0])); if (state) void selectState(state); }}>
-            {states.map(state => <SelectItem key={String(state.id)} textValue={state.name}>{state.is_base_model ? '白膜 · ' : ''}{state.name}</SelectItem>)}
-          </Select>
-          {current.id && <div className="flex flex-wrap gap-1.5">{stateOperations(current)}</div>}
-          <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-(--text-muted)">
-            <span>{states.length} 个状态</span>
-            {current.is_active && <span className="rounded bg-(--accent)/10 px-1.5 py-0.5 text-(--accent)">当前</span>}
-            {current.is_base_model && <span className="rounded bg-amber-500/10 px-1.5 py-0.5 text-amber-400/80">白膜</span>}
+      <div className="grid grid-cols-1 gap-3 md:min-h-0 md:flex-1 md:grid-rows-[minmax(160px,0.8fr)_minmax(220px,1.2fr)]">
+        <section className="flex max-h-72 min-h-0 flex-col rounded-lg border border-(--border-color) bg-black/10 md:max-h-none" aria-label="角色状态列表">
+          <div className="flex shrink-0 items-center justify-between border-b border-(--border-color) px-2.5 py-2 text-[11px]">
+            <span className="font-medium">状态列表</span>
+            <span className="text-(--text-muted)">{filtered.length} / {states.length}</span>
           </div>
-          {!states.length && <p className="text-[11px] text-(--text-muted)">暂无状态</p>}
-        </div>
-        <div className="min-h-45 rounded-lg border border-(--border-color) bg-black/10 p-2.5 md:h-full md:min-h-0 md:overflow-auto">
-          {preview(current)}
-        </div>
+          {states.length > 0 && <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-(--border-color) px-2 py-1.5">
+            <button type="button" onClick={() => setActiveCategory('all')} className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] transition-colors ${activeCategory === 'all' ? 'bg-(--accent)/15 text-(--accent)' : 'text-(--text-muted) hover:bg-white/5 hover:text-(--text-primary)'}`}>全部</button>
+            {STATE_CATEGORIES.map(category => {
+              const count = states.filter(state => categories(state.state_category).includes(category.key)).length;
+              if (!count) return null;
+              return <button key={category.key} type="button" onClick={() => setActiveCategory(category.key)}
+                className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] transition-colors ${activeCategory === category.key ? 'bg-(--accent)/15 text-(--accent)' : 'text-(--text-muted) hover:bg-white/5 hover:text-(--text-primary)'}`}>
+                {category.label} {count}
+              </button>;
+            })}
+          </div>}
+          <div role="listbox" aria-label="选择要处理的角色状态" className="min-h-0 flex-1 space-y-1 overflow-y-auto p-1.5">
+            {filtered.map(state => {
+              const selectedState = data.id === state.id;
+              const thumbnail = state.image_url || state.front_view_url || state.side_view_url || state.back_view_url || '';
+              const generation = state.generation_status || 'idle';
+              const categoryKey = categories(state.state_category)[0];
+              const categoryLabel = STATE_CATEGORIES.find(item => item.key === categoryKey)?.label || '未分类';
+              return <button key={state.id} type="button" role="option" aria-selected={selectedState}
+                onClick={() => { void selectState(state); }}
+                className={`flex w-full items-center gap-2 rounded-md border p-1.5 text-left transition-colors ${
+                  selectedState ? 'border-(--accent)/60 bg-(--accent)/10' : 'border-transparent hover:border-(--border-color) hover:bg-white/5'
+                }`}>
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded bg-(--bg-card) text-(--text-muted)">
+                  {thumbnail
+                    ? <img src={thumbnail} alt="" loading="lazy" className="h-full w-full object-cover" />
+                    : state.is_base_model ? <Layers3 size={17} className="opacity-60" /> : <ImageIcon size={17} className="opacity-40" />}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-1">
+                    <span className="truncate text-xs font-medium text-(--text-primary)">{state.is_base_model ? '白膜 · ' : ''}{state.name || '未命名状态'}</span>
+                    {state.is_active && <span className="shrink-0 rounded bg-(--accent)/15 px-1 py-px text-[9px] text-(--accent)">当前</span>}
+                  </span>
+                  <span className="mt-1 flex items-center gap-1.5 text-[10px] text-(--text-muted)">
+                    <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${generation === 'completed' ? 'bg-emerald-400' : generation === 'failed' ? 'bg-red-400' : generation === 'generating' ? 'animate-pulse bg-(--accent)' : 'bg-(--text-muted)'}`} />
+                    <span>{GENERATION_STATUS_TEXT[generation] || '未生成'}</span>
+                    <span className="opacity-40">·</span>
+                    <span className="truncate">{categoryLabel}</span>
+                  </span>
+                </span>
+              </button>;
+            })}
+            {loading && !states.length && <p className="px-2 py-6 text-center text-[11px] text-(--text-muted)">加载状态中…</p>}
+            {!loading && !states.length && <div className="px-3 py-6 text-center text-[11px] leading-relaxed text-(--text-muted)">
+              <p>还没有角色状态</p>
+              <p className="mt-1 opacity-70">从右侧入口建立白膜或新状态</p>
+            </div>}
+            {!loading && states.length > 0 && !filtered.length && <p className="px-2 py-6 text-center text-[11px] text-(--text-muted)">该分类暂无状态</p>}
+          </div>
+        </section>
+        <section className="flex min-h-45 flex-col rounded-lg border border-(--border-color) bg-black/10 md:h-full md:min-h-0 md:overflow-hidden">
+          {(current.id || isNew) && <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-(--border-color) px-2.5 py-2">
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5">
+                <span className="truncate text-xs font-medium">{current.name || (isNew ? '新建状态' : '未命名状态')}</span>
+                {current.is_base_model && <span className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-400/80">白膜</span>}
+                {current.is_active && <span className="rounded bg-(--accent)/10 px-1.5 py-0.5 text-[10px] text-(--accent)">当前</span>}
+              </div>
+              <p className="mt-0.5 text-[10px] text-(--text-muted)">在下方编辑区修改属性，修改后自动保存</p>
+            </div>
+            {current.id ? stateOperations(current) : <span className="text-[10px] text-(--text-muted)">未保存</span>}
+          </div>}
+          <div className="min-h-0 flex-1 overflow-auto p-2.5">{preview(current, true)}</div>
+        </section>
       </div>
       {editorPortalTarget ? createPortal(fields, editorPortalTarget) : null}
       {actionsPortalTarget ? createPortal(actions, actionsPortalTarget) : actionsPortalTarget === undefined ? actions : null}

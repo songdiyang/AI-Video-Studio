@@ -20,6 +20,8 @@ export interface HubStudioItem {
   id: number;
   name: string;
   description?: string;
+  cover_image_url?: string;
+  image_url?: string;
 }
 
 export interface BottomPanelTabItem {
@@ -39,7 +41,7 @@ export const BottomPanelTabBar: React.FC<{
 }> = ({ tabs, active, onChange, trailing }) => {
   const groupId = useId();
   return (
-    <div className="flex h-7 shrink-0 items-center gap-1 border-b border-(--border-color)">
+    <div className="flex h-8 shrink-0 items-center gap-1 border-b border-(--border-color) px-1">
       <div role="tablist" aria-label="底部面板视图" className="flex items-center gap-0.5">
         {tabs.map((tab, index) => (
           <button
@@ -71,7 +73,7 @@ export const BottomPanelTabBar: React.FC<{
             {tab.icon}
             <span>{tab.label}</span>
             {typeof tab.count === 'number' && (
-              <span className="text-[10px] opacity-60">{tab.count}</span>
+              <span className="rounded bg-white/5 px-1 text-[10px] leading-3.5 opacity-70">{tab.count}</span>
             )}
           </button>
         ))}
@@ -98,11 +100,14 @@ export interface ResourceHubProps {
   onOpenStoryboard: (sceneId: number) => void;
 }
 
-const CARD_BASE = 'group shrink-0 cursor-pointer rounded-lg border border-(--border-color) bg-(--bg-card) p-1.5 text-left transition-colors hover:border-(--accent)/50';
-const TITLE_BASE = 'truncate text-[11px] leading-4 text-(--text-secondary) group-hover:text-(--text-primary)';
+const CARD_BASE = 'group relative min-w-0 cursor-pointer overflow-hidden rounded-lg border border-(--border-color) bg-(--bg-card) p-1.5 text-left transition-colors hover:border-(--accent)/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-(--accent)';
+const TITLE_BASE = 'truncate text-[11px] font-medium leading-4 text-(--text-secondary) group-hover:text-(--text-primary)';
+const GRID_BASE = 'grid h-full min-h-0 content-start gap-2 overflow-y-auto p-2';
+const MEDIA_BASE = 'relative flex aspect-video w-full items-center justify-center overflow-hidden rounded-md bg-(--bg-input)';
+const ACTIVE_BADGE = 'absolute left-1.5 top-1.5 rounded bg-black/65 px-1.5 py-0.5 text-[9px] text-white/90 backdrop-blur-sm';
 
 const EmptyHint: React.FC<{ text: string }> = ({ text }) => (
-  <div className="flex h-full min-h-12 items-center justify-center text-xs text-(--text-muted)">{text}</div>
+  <div className="col-span-full flex h-full min-h-24 items-center justify-center text-xs text-(--text-muted)">{text}</div>
 );
 
 /** 底部面板聚合视图：角色 / 影棚 / 分镜三类项目资源的统一浏览入口。 */
@@ -117,7 +122,7 @@ export const ResourceHub: React.FC<ResourceHubProps> = ({
     const filtered = characters.filter(c => !query || c.name.toLowerCase().includes(query));
     return (
       <div className="flex h-full min-h-0 flex-col">
-        <div className="flex gap-2 overflow-x-auto py-2">
+        <div className={`${GRID_BASE} grid-cols-[repeat(auto-fill,minmax(140px,1fr))]`}>
           {filtered.length === 0 && <EmptyHint text={query ? '没有匹配的角色' : '项目暂无角色，可在左侧资源面板创建'} />}
           {filtered.map(c => {
             const thumb = c.active_state_image_url || c.base_front_view_url || c.front_view_url || c.image_url;
@@ -128,18 +133,19 @@ export const ResourceHub: React.FC<ResourceHubProps> = ({
                 type="button"
                 onClick={() => onEditCharacter(c)}
                 title={c.name}
-                className={`${CARD_BASE} w-[88px]${inScene ? ' border-(--accent)/60' : ''}`}
+                className={`${CARD_BASE}${inScene ? ' border-(--accent)/60' : ''}`}
               >
-                {thumb ? (
-                  <img src={thumb} alt={c.name} loading="lazy" className="h-16 w-full rounded-md object-cover" />
-                ) : (
-                  <span className="flex h-16 w-full items-center justify-center rounded-md bg-(--bg-input)">
-                    <Users className="w-5 h-5 text-(--text-muted)" />
-                  </span>
-                )}
-                <div className={`${TITLE_BASE} mt-1`}>{c.name}</div>
-                <div className="truncate text-[10px] leading-3.5 text-(--text-muted)">
-                  {inScene ? '当前分镜' : c.active_state_name || (c.states_count ? `${c.states_count} 个状态` : '白膜')}
+                <span className={MEDIA_BASE}>
+                  {thumb ? (
+                    <img src={thumb} alt={c.name} loading="lazy" className="h-full w-full object-contain transition-transform duration-150 group-hover:scale-[1.02]" />
+                  ) : (
+                    <Users className="h-6 w-6 text-(--text-muted)" />
+                  )}
+                  {inScene && <span className={ACTIVE_BADGE}>当前分镜</span>}
+                </span>
+                <div className={`${TITLE_BASE} mt-1.5`}>{c.name}</div>
+                <div className="mt-0.5 truncate text-[10px] leading-3.5 text-(--text-muted)">
+                  {c.active_state_name || (c.states_count ? `${c.states_count} 个状态` : '暂无状态')}
                 </div>
               </button>
             );
@@ -153,24 +159,30 @@ export const ResourceHub: React.FC<ResourceHubProps> = ({
     const filtered = studios.filter(s => !query || s.name.toLowerCase().includes(query) || (s.description || '').toLowerCase().includes(query));
     return (
       <div className="flex h-full min-h-0 flex-col">
-        <div className="flex gap-2 overflow-x-auto py-2">
+        <div className={`${GRID_BASE} grid-cols-[repeat(auto-fill,minmax(180px,1fr))]`}>
           {filtered.length === 0 && <EmptyHint text={query ? '没有匹配的影棚' : '项目暂无影棚资源'} />}
           {filtered.map(s => {
             const inScene = !!currentSceneLocation && s.name === currentSceneLocation;
+            const thumb = s.cover_image_url || s.image_url;
             return (
               <button
                 key={s.id}
                 type="button"
                 onClick={() => onEditStudio(s)}
                 title={s.description || s.name}
-                className={`${CARD_BASE} w-[124px]${inScene ? ' border-(--accent)/60' : ''}`}
+                className={`${CARD_BASE}${inScene ? ' border-(--accent)/60' : ''}`}
               >
-                <span className={`flex h-11 w-full items-center justify-center rounded-md ${inScene ? 'bg-(--accent)/10' : 'bg-(--bg-input)'}`}>
-                  <MapPin className={`w-5 h-5 ${inScene ? 'text-(--accent)' : 'text-(--text-muted)'}`} />
+                <span className={`${MEDIA_BASE}${inScene ? ' bg-(--accent)/10' : ''}`}>
+                  {thumb ? (
+                    <img src={thumb} alt={s.name} loading="lazy" className="h-full w-full object-cover transition-transform duration-150 group-hover:scale-[1.02]" />
+                  ) : (
+                    <MapPin className={`h-6 w-6 ${inScene ? 'text-(--accent)' : 'text-(--text-muted)'}`} />
+                  )}
+                  {inScene && <span className={ACTIVE_BADGE}>当前分镜</span>}
                 </span>
-                <div className={`${TITLE_BASE} mt-1`}>{s.name}</div>
-                <div className="truncate text-[10px] leading-3.5 text-(--text-muted)">
-                  {inScene ? '当前分镜' : s.description || '未填写描述'}
+                <div className={`${TITLE_BASE} mt-1.5`}>{s.name}</div>
+                <div className="mt-0.5 truncate text-[10px] leading-3.5 text-(--text-muted)">
+                  {s.description || '未填写描述'}
                 </div>
               </button>
             );
@@ -187,9 +199,9 @@ export const ResourceHub: React.FC<ResourceHubProps> = ({
   );
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex gap-2 overflow-x-auto py-2">
+      <div className={`${GRID_BASE} grid-cols-[repeat(auto-fill,minmax(160px,1fr))]`}>
         {filtered.length === 0 && <EmptyHint text={query ? '没有匹配的分镜' : '当前集还没有分镜'} />}
-        {filtered.map((s, index) => {
+        {filtered.map((s) => {
           const sceneIndex = storyboards.findIndex(item => item.id === s.id) + 1;
           const thumb = s.startFrame || s.imageUrl || s.videoUrl;
           const isActive = activeStoryboardId === s.id;
@@ -199,17 +211,18 @@ export const ResourceHub: React.FC<ResourceHubProps> = ({
               type="button"
               onClick={() => onOpenStoryboard(s.id)}
               title={s.description || `分镜 #${sceneIndex}`}
-              className={`${CARD_BASE} w-[116px]${isActive ? ' border-(--accent)/60' : ''}`}
+              className={`${CARD_BASE}${isActive ? ' border-(--accent)/60' : ''}`}
             >
-              {thumb ? (
-                <img src={thumb} alt="" loading="lazy" className="h-16 w-full rounded-md object-cover" />
-              ) : (
-                <span className="flex h-16 w-full items-center justify-center rounded-md bg-(--bg-input)">
-                  <Film className="w-5 h-5 text-(--text-muted)" />
-                </span>
-              )}
-              <div className={`${TITLE_BASE} mt-1`}>分镜 #{sceneIndex}{isActive ? '（当前）' : ''}</div>
-              <div className="truncate text-[10px] leading-3.5 text-(--text-muted)">
+              <span className={MEDIA_BASE}>
+                {thumb ? (
+                  <img src={thumb} alt={`分镜 #${sceneIndex}`} loading="lazy" className="h-full w-full object-cover transition-transform duration-150 group-hover:scale-[1.02]" />
+                ) : (
+                  <Film className="h-6 w-6 text-(--text-muted)" />
+                )}
+                {isActive && <span className={ACTIVE_BADGE}>当前分镜</span>}
+              </span>
+              <div className={`${TITLE_BASE} mt-1.5`}>分镜 #{sceneIndex}</div>
+              <div className="mt-0.5 truncate text-[10px] leading-3.5 text-(--text-muted)">
                 {s.location || '未选影棚'} · {s.duration || 0}s
               </div>
             </button>
@@ -225,9 +238,10 @@ export const HubSearchInput: React.FC<{
   value: string;
   onChange: (value: string) => void;
 }> = ({ value, onChange }) => (
-  <span className="flex h-5.5 w-36 items-center gap-1 rounded-md border border-(--border-color) bg-(--bg-input) px-1.5">
+  <span className="flex h-6 w-40 items-center gap-1.5 rounded-md border border-(--border-color) bg-(--bg-input) px-2 focus-within:border-(--accent)/50">
     <Search className="w-3 h-3 shrink-0 text-(--text-muted)" />
     <input
+      aria-label="搜索当前资源视图"
       className="min-w-0 flex-1 bg-transparent text-[11px] leading-4 text-(--text-primary) placeholder-(--text-muted) outline-none"
       placeholder="搜索..."
       value={value}

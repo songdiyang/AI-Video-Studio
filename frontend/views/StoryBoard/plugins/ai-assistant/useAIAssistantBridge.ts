@@ -346,6 +346,8 @@ export function useStoryboardAIAssistantBridge(params: StoryboardAIAssistantBrid
             project_id: state.currentProjectId,
             name: String(actionParams?.name || '新状态'),
             description: actionParams?.description || '',
+            appearance: actionParams?.appearance || base.appearance || '',
+            personality: actionParams?.personality || base.personality || '',
             state_category: actionParams?.state_category || 'daily',
             outfit: actionParams?.outfit || '',
             age_stage: actionParams?.age_stage || '',

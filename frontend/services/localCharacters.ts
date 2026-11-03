@@ -25,9 +25,20 @@ import {
 // ==================== 视图提示词组装 ====================
 // 白膜 = 角色默认参考素体：只锁定长相/体型/基础发型，强制无服装、无配饰、无道具、统一中性站姿。
 // 它是后续派生状态图的基准网格，因此不能带入服饰/剧情等细节，也不叠加工程美术风格。
-function buildBaseModelPrompts(src: any): { front: string; side: string; back: string } {
+const NON_BODY_CLAUSE = /冰镐|步枪|手枪|枪械|枪支|武器|匕首|刀具|铁钎|弹药|爆炸物|手持|持握|佩戴|携带|腰间|后腰|身着|穿着|防寒服|棉袄|棉袍|制服|护目镜|面罩|毛帽|皮鞋|袖口/;
+
+function cleanBaseAppearance(value: unknown): string {
+  // 老数据可能把服装/道具混入体貌字段；只净化发给模型的提示词，不改工程原文。
+  return String(value || '')
+    .split(/[\n。；;，,]/)
+    .map((clause) => clause.trim())
+    .filter((clause) => clause && !NON_BODY_CLAUSE.test(clause))
+    .join('，');
+}
+
+export function buildBaseModelPrompts(src: any): { front: string; side: string; back: string } {
   // 只取体貌字段（不含 outfit/description 等服装剧情描述），显式剔除服装与道具。
-  const body = String(src.base_appearance || src.hairstyle || src.appearance || '').trim();
+  const body = cleanBaseAppearance(src.base_appearance || src.hairstyle || src.appearance);
   const neutral = '角色白膜素体（默认参考态），固定同一长相、体型与基础发型，'
     + '统一 A-Pose 中性站姿、双臂平展、中性表情，'
     + '不着任何服装与配饰、不持任何道具，仅以简洁贴身素体呈现';
@@ -40,13 +51,16 @@ function buildBaseModelPrompts(src: any): { front: string; side: string; back: s
 }
 
 // 状态图 = 白膜体貌（身份锚定）+ 服饰 + 状态参数；代表角色在某分镜中的造型，套用工程美术风格。
-function buildStatePrompts(ch: any, state: any): { front: string; side: string; back: string } {
-  const identity = String(state.base_appearance || ch.base_appearance || ch.appearance || '').trim();
+export function buildStatePrompts(ch: any, state: any): { front: string; side: string; back: string } {
+  // 状态外貌优先：新状态创建时从白膜复制，后续修改必须真实进入生成提示词。
+  const identity = String(state.appearance || state.base_appearance || ch.base_appearance || ch.appearance || '').trim();
   const outfit = String(state.outfit || '').trim();
+  const performance = String(state.personality || '').trim();
   const extras = [state.hairstyle, state.age_stage, state.body_elements, state.accessories, state.held_props]
     .map((v) => String(v || '').trim()).filter(Boolean).join('，');
   const parts = [
-    identity ? `角色长相与体型与白膜保持一致：${identity}` : '角色长相与体型与白膜参考保持一致',
+    identity ? `角色长相与体型以白膜为基准：${identity}` : '角色长相与体型与白膜参考保持一致',
+    performance ? `性格与表演方向：${performance}` : '',
     outfit ? `身着：${outfit}` : '',
     extras ? `状态特征：${extras}` : '',
     state.description ? `情境：${state.description}` : '',
@@ -190,7 +204,9 @@ async function handleStateGenerateViews(charId: number, stateId: number, body: a
   if (!assertProject(ch, path)) return jsonResponse({ message: '角色不存在' }, 404);
   const projectId = Number(ch.project_id) || 0;
   const isBase = !!state.is_base_model;
-  const prompts = isBase ? buildBaseModelPrompts({ ...ch, ...state }) : buildStatePrompts(ch, state);
+  const prompts = isBase
+    ? buildBaseModelPrompts({ ...ch, ...state, base_appearance: state.appearance || state.base_appearance || ch.base_appearance })
+    : buildStatePrompts(ch, state);
   // 状态图以白膜三视图作参考图保持同一角色一致；受角色/状态 use_reference_images 开关控制（白膜自身不用参考）。
   const useRef = !isBase && Boolean(state.use_reference_images ?? ch.use_reference_images);
   const baseState = isBase ? null : doc.items.find((s) => Number(s.character_id) === charId && s.is_base_model);

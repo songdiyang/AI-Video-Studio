@@ -85,7 +85,6 @@ const BuildingsTab: React.FC<BuildingsTabProps> = ({
         </div>
       ) : buildings.length === 0 ? (
         <div className="text-center py-8" style={{ color: 'var(--text-muted)' }}>
-          <span className="text-4xl block mb-2">🏛️</span>
           <p className="text-sm">暂无任何建筑</p>
           <p className="text-xs mt-1">请先到资产管理中创建建筑</p>
         </div>

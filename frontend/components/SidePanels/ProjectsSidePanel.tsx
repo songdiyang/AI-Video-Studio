@@ -21,6 +21,7 @@ import {
   isTauri,
 } from '../../services/localApi';
 import { PROJECT_TYPES } from '../../types/projectTypes';
+import { clearProjectDisplayCache } from '../AIAssistantPanel/scopeStorage';
 import { useWorkbench } from '../../contexts/WorkbenchContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import { useLanguage } from '../../contexts/LanguageContext';
@@ -120,11 +121,13 @@ const ProjectsSidePanel: React.FC<ProjectsSidePanelProps> = ({ onOpenProject }) 
     setCreateError(null);
     try {
       const root = await getEffectiveProjectsRoot();
-      await createProject({
+      const meta = await createProject({
         name,
         project_type: 'comic_drama',
         parent_dir: root && !root.includes('模拟') ? root : null,
       });
+      // 新建工程是全新会话作用域：清掉同路径已删除工程残留的 AI 助手显示缓存
+      clearProjectDisplayCache(mapLocalProject(meta).id);
       setShowCreate(false);
       setNewName('');
       await loadProjects();

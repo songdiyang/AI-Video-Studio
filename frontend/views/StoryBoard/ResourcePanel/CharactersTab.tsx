@@ -1,5 +1,4 @@
 import React from 'react';
-import { UserRound } from 'lucide-react';
 import { Character } from './types';
 import CharacterCard from './CharacterCard';
 import SimpleCharacterCard from './SimpleCharacterCard';
@@ -69,7 +68,6 @@ const CharactersTab: React.FC<CharactersTabProps> = ({
         </>
       ) : (
         <div className="text-center py-10 text-(--text-secondary)">
-          <UserRound className="mx-auto mb-2 h-10 w-10 stroke-1 opacity-40" aria-hidden="true" />
           <p className="text-sm">暂无角色</p>
           <p className="text-xs mt-1 text-(--text-muted)">生成分镜后自动识别，或点击「新建角色」手动添加</p>
         </div>

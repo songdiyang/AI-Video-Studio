@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { getWorkflowList, WorkflowJob } from '../../hooks/useWorkflow';
-import { activeLongTasks, getLongTask, updateLongTask } from '../../services/longTasks';
+import { getWorkflowList, getWorkflowStatus, ApiError, WorkflowJob } from '../../hooks/useWorkflow';
+import { activeLongTasks, getLongTask, registerLongTask, updateLongTask, type LongTaskKind } from '../../services/longTasks';
 import { pushInternalMail } from '../../services/localMail';
 import { useWorkbench } from '../../contexts/WorkbenchContext';
 
@@ -32,6 +32,27 @@ const REFRESH_ON_COMPLETE_TYPES = [
   'variant_faces_generation',    // 环境变体8方位场景图生成
   'prop_image_generation',       // 道具图片生成
 ];
+
+function getWorkflowKind(job: WorkflowJob): LongTaskKind {
+  const type = job.workflow_type || '';
+  if (/script/i.test(type)) return 'script';
+  if (/video/i.test(type)) return 'video';
+  if (/auto_storyboard|storyboard_split/i.test(type)) return 'storyboard';
+  if (/image|frame|character|environment|building|costume|prop/i.test(type)) return 'image';
+  return 'generic';
+}
+
+function getWorkflowTitle(job: WorkflowJob): string {
+  const type = job.workflow_type || '';
+  const label = /script/i.test(type) ? '剧本生成'
+    : /video/i.test(type) ? '分镜视频'
+      : /auto_storyboard|storyboard_split/i.test(type) ? '分镜拆分'
+        : /character/i.test(type) ? '角色状态图'
+          : '生成任务';
+  const params = job.input_params || {};
+  const subject = params.characterName || params.sceneName || params.environmentName || params.buildingName || params.costumeName || params.title || params.name;
+  return subject ? `${label} · ${subject}` : `${label} #${job.id}`;
+}
 
 export interface UseTaskQueueOptions {
   onJobFailed?: (job: WorkflowJob) => void;
@@ -94,11 +115,15 @@ export function useTaskQueue(options?: UseTaskQueueOptions): UseTaskQueueReturn 
       const currentJobs = data.jobs || [];
       const currentJobIds = new Set(currentJobs.map((j: WorkflowJob) => j.id));
 
-      // 同步全局长任务注册表（智能体登记的后台任务）：
-      // 运行中持续刷新进度；失败立即写站内信；完成在下方消失检测中处理。
+      // 同步全局长任务注册表：运行中持续刷新进度；失败立即写站内信；完成在下方消失检测中处理。
       currentJobs.forEach((job) => {
-        const record = getLongTask(job.id);
-        if (!record) return;
+        // 所有工作流都纳入同一注册表：手动操作与 AI 发起的任务都有进行中反馈和终态通知。
+        const record = getLongTask(job.id) || registerLongTask({
+          jobId: job.id,
+          title: getWorkflowTitle(job),
+          kind: getWorkflowKind(job),
+          projectId,
+        });
         const total = job.tasks?.length ?? job.total_steps ?? 0;
         const current = job.tasks
           ? job.tasks.filter((task) => task.status === 'completed' || task.status === 'failed').length
@@ -117,30 +142,57 @@ export function useTaskQueue(options?: UseTaskQueueOptions): UseTaskQueueReturn 
         if (failed && record.status !== 'failed') {
           pushInternalMail({
             title: `任务未完成：${record.title}`,
-            content: `AI 助手发起的「${record.title}」执行失败${job.error_message ? `：${job.error_message}` : '。'}`,
-            mail_type: 'system',
+            content: `「${record.title}」执行失败${job.error_message ? `：${job.error_message}` : '。'}`,
+            mail_type: 'warning',
             dedupe_key: `job:${job.id}:failed`,
           });
         }
       });
 
-      // 首次加载时对账：已登记但已不在活跃列表中的任务视为已完成（覆盖关闭应用期间完成的任务）
+      // 首次加载对账必须核验真实终态：任务消失可能是完成，也可能是内存作业随重载丢失。
       if (isFirstLoad.current) {
-        activeLongTasks(projectId).forEach((record) => {
-          if (currentJobIds.has(record.jobId)) return;
-          updateLongTask(record.jobId, {
-            status: 'completed',
-            progress: 100,
-            current: record.total || record.current,
-            error: null,
-          });
-          pushInternalMail({
-            title: `任务完成：${record.title}`,
-            content: `AI 助手发起的「${record.title}」已完成，可以回到工作台查看结果。`,
-            mail_type: 'system',
-            dedupe_key: `job:${record.jobId}:completed`,
-          });
-        });
+        for (const record of activeLongTasks(projectId)) {
+          if (currentJobIds.has(record.jobId)) continue;
+          try {
+            const actual = await getWorkflowStatus(record.jobId);
+            if (actual.status === 'pending' || actual.status === 'running') {
+              const progress = actual.tasks?.length
+                ? Math.round(actual.tasks.reduce((sum, task) => sum + (task.progress || 0), 0) / actual.tasks.length)
+                : record.progress;
+              updateLongTask(record.jobId, { status: actual.status, progress, error: null });
+              continue;
+            }
+            const terminal = actual.status;
+            const completed = terminal === 'completed';
+            updateLongTask(record.jobId, {
+              status: terminal,
+              progress: completed ? 100 : record.progress,
+              current: record.total || record.current,
+              error: completed ? null : actual.error_message || '任务未完成',
+            });
+            pushInternalMail({
+              title: completed ? `任务完成：${record.title}` : `任务未完成：${record.title}`,
+              content: completed
+                ? `「${record.title}」已完成，可以回到工作台查看结果。`
+                : `「${record.title}」${terminal === 'cancelled' ? '已取消' : '执行失败'}${actual.error_message ? `：${actual.error_message}` : '。'}`,
+              mail_type: completed ? 'system' : 'warning',
+              dedupe_key: `job:${record.jobId}:${terminal}`,
+            });
+          } catch (error) {
+            if (!(error instanceof ApiError && error.status === 404)) {
+              console.warn('[TaskQueue] 终态核验失败，保留任务等待下轮对账:', error);
+              continue;
+            }
+            const message = '任务记录已失效，未写入生成结果，请重新生成';
+            updateLongTask(record.jobId, { status: 'failed', error: message });
+            pushInternalMail({
+              title: `任务未完成：${record.title}`,
+              content: `「${record.title}」${message}`,
+              mail_type: 'warning',
+              dedupe_key: `job:${record.jobId}:failed`,
+            });
+          }
+        }
       }
 
       // 检测已完成的任务（之前存在但现在不在列表中）
@@ -165,7 +217,7 @@ export function useTaskQueue(options?: UseTaskQueueOptions): UseTaskQueueReturn 
           });
           pushInternalMail({
             title: `任务完成：${record.title}`,
-            content: `AI 助手发起的「${record.title}」已完成，可以回到工作台查看结果。`,
+            content: `「${record.title}」已完成，可以回到工作台查看结果。`,
             mail_type: 'system',
             dedupe_key: `job:${id}:completed`,
           });

@@ -13,7 +13,7 @@ export const ASSET_FIELDS: Record<string, readonly string[]> = {
   building: ['name', 'description', 'interiorExterior', 'structureType'],
   script: ['name', 'content'],
 };
-export const STATE_FIELDS = ['name', 'description', 'appearance', 'outfit', 'age_stage', 'hairstyle',
+export const STATE_FIELDS = ['name', 'description', 'appearance', 'personality', 'outfit', 'age_stage', 'hairstyle',
   'accessories', 'body_elements', 'held_props', 'state_category', 'tags', 'costume_id', 'voice_config'] as const;
 const ALIASES: Record<string, Record<string, string>> = {
   environment: { timeOfDay: 'time_of_day', terrainType: 'terrain_type' },

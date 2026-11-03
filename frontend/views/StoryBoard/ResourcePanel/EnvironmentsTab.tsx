@@ -82,7 +82,6 @@ const EnvironmentsTab: React.FC<EnvironmentsTabProps> = ({
         </div>
       ) : environments.length === 0 ? (
         <div className="text-center py-8" style={{ color: 'var(--text-muted)' }}>
-          <span className="text-4xl block mb-2">🌍</span>
           <p className="text-sm">暂无任何环境</p>
           <p className="text-xs mt-1">请先到资产管理中创建环境</p>
         </div>

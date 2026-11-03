@@ -96,6 +96,9 @@ const LEGACY_ASSET_TABS_STORAGE_KEY = 'preview_editor_asset_tabs';
 const LEGACY_ASSET_ACTIVE_TAB_STORAGE_KEY = 'preview_editor_asset_active_tab';
 const LEGACY_ASSET_TAB_DATA_STORAGE_KEY = 'preview_editor_asset_tab_data';
 
+/** 单例工具标签：存在态由各自布尔值维护，激活态由 activeToolTabId 维护 */
+type ToolTabId = 'settings' | 'teams' | 'script-generate';
+
 const PreviewEditor: React.FC<PreviewEditorProps> = ({
   scenes,
   scenesLoading = false,
@@ -168,6 +171,29 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
     scriptContent?: string;
   } | undefined>(undefined);
 
+  // 工具标签的「存在态」（上面三个布尔）与「激活态」（下面这个 id）必须分离：
+  // 激活另一个标签时只切换 activeToolTabId，不能把设置 / 团队标签从标签栏里移除。
+  const [activeToolTabId, setActiveToolTabId] = useState<ToolTabId | null>(null);
+
+  const isToolTabOpen = useCallback((id: ToolTabId) => (
+    id === 'settings' ? settingsTabOpen : id === 'teams' ? teamsTabOpen : scriptGenerateTabOpen
+  ), [settingsTabOpen, teamsTabOpen, scriptGenerateTabOpen]);
+
+  /** 打开并激活工具标签：只置活目标，其余工具标签保留为「存在但未激活」。 */
+  const openToolTab = useCallback((id: ToolTabId) => {
+    if (id === 'settings') setSettingsTabOpen(true);
+    else if (id === 'teams') setTeamsTabOpen(true);
+    else setScriptGenerateTabOpen(true);
+    setActiveToolTabId(id);
+  }, []);
+
+  // 当前激活标签：工具标签激活期间优先于内容标签；内容标签的激活记忆不清除，
+  // 关闭工具标签即自动回到原来的分镜 / 资产 / 扩展标签。
+  const resolvedActiveTabId = useMemo(() => {
+    if (activeToolTabId && isToolTabOpen(activeToolTabId)) return activeToolTabId;
+    return activeExtensionDetailTabId || activeAssetTabId || activeTabId;
+  }, [activeToolTabId, isToolTabOpen, activeExtensionDetailTabId, activeAssetTabId, activeTabId]);
+
   // 获取当前显示的标签列表（合并所有分镜标签、资产标签、扩展详情标签、设置标签和剧本生成标签，全部平铺显示）
   const tabs = useMemo(() => {
     const result = [...sceneTabs, ...assetTabs, ...extensionDetailTabs];
@@ -188,6 +214,7 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
   // 切换工程先关闸：防止持久化 effect 用上一个工程的标签写进新工程。
   useEffect(() => {
     setHydratedProjectId(null);
+    setActiveToolTabId(null);
     awaitingInitialScriptRef.current = !scriptId;
     initialSceneSyncRef.current = false;
     if (!projectId) {
@@ -201,6 +228,7 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
       setExtensionDetailTabs([]);
       setActiveExtensionDetailTabId(null);
       setSettingsTabOpen(false);
+      setTeamsTabOpen(false);
       setScriptGenerateTabOpen(false);
       setScriptGenerateTabEpisode(undefined);
       setScriptWorkshopData(undefined);
@@ -303,6 +331,7 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
       // 加载剧本生成标签页状态（不恢复旧 episode，使用当前实际集数）
       let loadedScriptGenerateOpen = false;
       let loadedScriptGenerateEpisode: number | undefined;
+      let loadedScriptWorkshopData: { scriptId?: number; scriptTitle?: string; scriptContent?: string } | undefined;
       const savedScriptGenerate = localStorage.getItem(getScriptGenerateStorageKey(projectId));
       if (savedScriptGenerate) {
         try {
@@ -310,6 +339,13 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
           if (parsed?.open) {
             loadedScriptGenerateOpen = true;
             loadedScriptGenerateEpisode = episodeNumber !== undefined && episodeNumber !== null ? episodeNumber : parsed.episode;
+            const restoredScriptId = Number(parsed.scriptId);
+            if (Number.isFinite(restoredScriptId) && restoredScriptId > 0) {
+              loadedScriptWorkshopData = {
+                scriptId: restoredScriptId,
+                scriptTitle: typeof parsed.scriptTitle === 'string' ? parsed.scriptTitle : '',
+              };
+            }
           }
         } catch {
           // ignore
@@ -324,7 +360,7 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
       setSettingsTabOpen(loadedSettingsOpen);
       setScriptGenerateTabOpen(loadedScriptGenerateOpen);
       setScriptGenerateTabEpisode(loadedScriptGenerateEpisode);
-      setScriptWorkshopData(undefined);
+      setScriptWorkshopData(loadedScriptWorkshopData);
       // 同步当前集数，避免分集恢复 effect 用旧集数匹配旧标签
       setCurrentScriptId(scriptId || null);
 
@@ -336,10 +372,13 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
       let nextExtensionTabId: string | null = null;
       let nextSettingsOpen = loadedSettingsOpen;
       let nextScriptGenerateOpen = loadedScriptGenerateOpen;
+      let nextToolTabId: ToolTabId | null = null;
       if (savedActiveTab === 'settings') {
         nextSettingsOpen = true;
+        nextToolTabId = 'settings';
       } else if (savedActiveTab === 'script-generate') {
         nextScriptGenerateOpen = true;
+        nextToolTabId = 'script-generate';
       } else if (savedActiveTab && loadedAssetTabs.some(t => t.id === savedActiveTab)) {
         nextAssetTabId = savedActiveTab;
       } else if (savedActiveTab && loadedExtensionTabs.some(t => t.id === savedActiveTab)) {
@@ -356,6 +395,7 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
       setActiveExtensionDetailTabId(nextExtensionTabId);
       setSettingsTabOpen(nextSettingsOpen);
       setScriptGenerateTabOpen(nextScriptGenerateOpen);
+      setActiveToolTabId(nextToolTabId);
       if (nextSceneTabId?.startsWith('scene-')) {
         const sceneId = parseInt(nextSceneTabId.replace('scene-', ''), 10);
         if (Number.isFinite(sceneId)) onSelectScene(sceneId);
@@ -369,6 +409,7 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
       setActiveTabId(null);
       setActiveAssetTabId(null);
       setActiveExtensionDetailTabId(null);
+      setActiveToolTabId(null);
     } finally {
       initialSceneSyncRef.current = true;
       setHydratedProjectId(projectId);
@@ -382,15 +423,11 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
     try {
       if (localStorage.getItem('pending_open_settings') !== '1') return;
       localStorage.removeItem('pending_open_settings');
-      setActiveTabId(null);
-      setActiveAssetTabId(null);
-      setActiveExtensionDetailTabId(null);
-      setSettingsTabOpen(true);
-      setTeamsTabOpen(false);
+      openToolTab('settings');
     } catch {
       // ignore
     }
-  }, [projectId, hydratedProjectId]);
+  }, [projectId, hydratedProjectId, openToolTab]);
 
   // 当 scriptId 变化时，优先恢复上次在该集数下打开的标签
   useEffect(() => {
@@ -409,13 +446,11 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
     // 不能用“当前集首个分镜”覆盖，否则刷新 / 重开工程会丢失上次停留的标签。
     if (isInitialScriptSync && savedActiveTab) {
       if (savedActiveTab === 'settings') {
-        setActiveTabId(null); setActiveAssetTabId(null); setActiveExtensionDetailTabId(null);
-        setSettingsTabOpen(true);
+        openToolTab('settings');
         return;
       }
       if (savedActiveTab === 'script-generate') {
-        setActiveTabId(null); setActiveAssetTabId(null); setActiveExtensionDetailTabId(null);
-        setScriptGenerateTabOpen(true);
+        openToolTab('script-generate');
         return;
       }
       if (assetTabs.some(t => t.id === savedActiveTab)) {
@@ -459,7 +494,7 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
         onSelectScene(sceneId);
       }
     }
-  }, [scriptId, currentScriptId, sceneTabs, assetTabs, extensionDetailTabs, onSelectScene, projectId, hydratedProjectId]);
+  }, [scriptId, currentScriptId, sceneTabs, assetTabs, extensionDetailTabs, onSelectScene, projectId, hydratedProjectId, openToolTab]);
 
   // 保存标签状态到 localStorage（按 projectId 隔离）
   // 水合完成前不写入，避免旧工程状态污染新工程存储
@@ -475,9 +510,8 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
       localStorage.setItem(getTabsVersionKey(projectId), String(CURRENT_TABS_VERSION));
 
       // 确定当前活跃标签ID（综合所有类型）
-      const currentActiveId = activeExtensionDetailTabId || activeAssetTabId || activeTabId
-        || (settingsTabOpen ? 'settings' : null)
-        || (scriptGenerateTabOpen ? 'script-generate' : null);
+      // 活跃标签直接取「激活态」，不能用工具标签的存在态推断（存在 ≠ 激活）
+      const currentActiveId = resolvedActiveTabId;
       if (currentActiveId) {
         localStorage.setItem(getActiveTabStorageKey(projectId), currentActiveId);
       } else {
@@ -486,7 +520,7 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
     } catch {
       // ignore
     }
-  }, [sceneTabs, activeTabId, activeAssetTabId, activeExtensionDetailTabId, settingsTabOpen, scriptGenerateTabOpen, projectId, hydratedProjectId]);
+  }, [sceneTabs, resolvedActiveTabId, projectId, hydratedProjectId]);
 
   // 保存资产编辑标签状态到 localStorage（按 projectId 隔离）
   useEffect(() => {
@@ -550,6 +584,8 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
         localStorage.setItem(getScriptGenerateStorageKey(projectId), JSON.stringify({
           open: true,
           episode: scriptGenerateTabEpisode,
+          scriptId: scriptWorkshopData?.scriptId,
+          scriptTitle: scriptWorkshopData?.scriptTitle,
         }));
       } else {
         localStorage.removeItem(getScriptGenerateStorageKey(projectId));
@@ -557,7 +593,7 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
     } catch {
       // ignore
     }
-  }, [scriptGenerateTabOpen, scriptGenerateTabEpisode, projectId, hydratedProjectId]);
+  }, [scriptGenerateTabOpen, scriptGenerateTabEpisode, scriptWorkshopData?.scriptId, scriptWorkshopData?.scriptTitle, projectId, hydratedProjectId]);
 
   // 更新当前scriptId的标签列表
   const updateCurrentTabs = useCallback((updater: (prev: TabItem[]) => TabItem[]) => {
@@ -575,7 +611,7 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
     // 不得抢走已恢复的设置 / 剧本生成标签；此后的分镜选中仍正常生效。
     if (initialSceneSyncRef.current) {
       initialSceneSyncRef.current = false;
-      if (settingsTabOpen || scriptGenerateTabOpen) return;
+      if (activeToolTabId) return;
     }
 
     const existingTab = sceneTabs.find(t => t.id === `scene-${selectedScene}`);
@@ -597,7 +633,7 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
       setActiveTabId(newTab.id);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedScene, scenes, currentScriptId, projectId, hydratedProjectId, scenesLoading, settingsTabOpen, scriptGenerateTabOpen]);
+  }, [selectedScene, scenes, currentScriptId, projectId, hydratedProjectId, scenesLoading, activeToolTabId]);
 
   // 监听打开分镜标签页事件（从关联分镜等入口跳转）
   useEffect(() => {
@@ -701,8 +737,8 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
           }
           setActiveAssetTabId(tabId);
           setActiveTabId(null);
-          setSettingsTabOpen(false);
-          setTeamsTabOpen(false);
+          setActiveExtensionDetailTabId(null);
+          setActiveToolTabId(null);
           return prev;
         } else {
           // 创建新标签
@@ -721,8 +757,8 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
           }
           setActiveAssetTabId(tabId);
           setActiveTabId(null);
-          setSettingsTabOpen(false);
-          setTeamsTabOpen(false);
+          setActiveExtensionDetailTabId(null);
+          setActiveToolTabId(null);
           return [...prev, newTab];
         }
       });
@@ -738,10 +774,8 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
   useEffect(() => {
     const handleOpenSettingsTab = (e: Event) => {
       const customEvent = e as CustomEvent<{ tab?: string; section?: string }>;
-      setSettingsTabOpen(true);
-      setTeamsTabOpen(false);
-      setActiveAssetTabId(null);
-      setActiveTabId(null);
+      // 只切换激活态：设置以外的工具标签继续留在标签栏，不被移除
+      openToolTab('settings');
       
       // 如果指定了 section，存储到 localStorage 供 Settings 组件读取
       if (customEvent.detail?.section) {
@@ -753,23 +787,19 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
     return () => {
       window.removeEventListener('openSettingsTab', handleOpenSettingsTab as EventListener);
     };
-  }, []);
+  }, [openToolTab]);
 
   // 监听打开团队管理标签页事件
   useEffect(() => {
     const handleOpenTeamsTab = () => {
-      setTeamsTabOpen(true);
-      setSettingsTabOpen(false);
-      setActiveAssetTabId(null);
-      setActiveTabId(null);
-      setActiveExtensionDetailTabId(null);
+      openToolTab('teams');
     };
 
     window.addEventListener('openTeamsTab', handleOpenTeamsTab as EventListener);
     return () => {
       window.removeEventListener('openTeamsTab', handleOpenTeamsTab as EventListener);
     };
-  }, []);
+  }, [openToolTab]);
 
   // 宿主就绪标记：供左侧栏「管理团队」按钮判断能否以标签页打开（否则回退整页 /teams）
   useEffect(() => {
@@ -789,18 +819,14 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
     }>) => {
       const detail = event.detail || {};
       console.log('[PreviewEditor] 收到 openScriptGenerateTab 事件', detail);
-      setScriptGenerateTabOpen(true);
       setScriptGenerateTabEpisode(detail.episodeNumber);
       setScriptWorkshopData(detail.scriptId ? {
         scriptId: detail.scriptId,
         scriptTitle: detail.scriptTitle,
         scriptContent: detail.scriptContent,
       } : undefined);
-      setActiveAssetTabId(null);
-      setActiveTabId(null);
-      setActiveExtensionDetailTabId(null);
-      setSettingsTabOpen(false);
-      setTeamsTabOpen(false);
+      // 只接管激活态，保留内容标签的激活记忆与其它工具标签的存在态
+      openToolTab('script-generate');
       console.log('[PreviewEditor] 已打开剧本创作标签页，目标集数:', detail.episodeNumber, '剧本ID:', detail.scriptId);
     };
 
@@ -808,7 +834,7 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
     return () => {
       window.removeEventListener('openScriptGenerateTab', handleOpenScriptGenerateTab as EventListener);
     };
-  }, []);
+  }, [openToolTab]);
 
   // 当 episodeNumber 变化时，如果剧本生成标签页已打开，则更新 scriptGenerateTabEpisode
   // 修复：始终同步到当前集数，避免显示错误的集数信息
@@ -833,8 +859,7 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
         setActiveExtensionDetailTabId(tabId);
         setActiveTabId(null);
         setActiveAssetTabId(null);
-        setSettingsTabOpen(false);
-        setTeamsTabOpen(false);
+        setActiveToolTabId(null);
       } else {
         // 创建新标签
         const newTab: TabItem = {
@@ -847,8 +872,7 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
         setActiveExtensionDetailTabId(tabId);
         setActiveTabId(null);
         setActiveAssetTabId(null);
-        setSettingsTabOpen(false);
-        setTeamsTabOpen(false);
+        setActiveToolTabId(null);
       }
     };
 
@@ -861,35 +885,9 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
   // 点击标签切换
   const handleTabClick = useCallback((tabId: string) => {
     void withEditorFlush(() => {
-    // 判断是否为设置标签
-    if (tabId === 'settings') {
-      setActiveAssetTabId(null);
-      setActiveExtensionDetailTabId(null);
-      setActiveTabId(null);
-      setTeamsTabOpen(false);
-      // 确保设置标签页是打开的
-      setSettingsTabOpen(true);
-      return;
-    }
-    // 判断是否为团队管理标签
-    if (tabId === 'teams') {
-      setActiveAssetTabId(null);
-      setActiveExtensionDetailTabId(null);
-      setActiveTabId(null);
-      setSettingsTabOpen(false);
-      // 确保团队管理标签页是打开的
-      setTeamsTabOpen(true);
-      return;
-    }
-    // 判断是否为剧本生成标签
-    if (tabId === 'script-generate') {
-      setActiveAssetTabId(null);
-      setActiveTabId(null);
-      setActiveExtensionDetailTabId(null);
-      setSettingsTabOpen(false);
-      setTeamsTabOpen(false);
-      // 确保剧本生成标签页是打开的
-      setScriptGenerateTabOpen(true);
+    // 单例工具标签（设置 / 团队 / 剧本）：只切换激活态，其余工具标签留在标签栏变非激活
+    if (tabId === 'settings' || tabId === 'teams' || tabId === 'script-generate') {
+      openToolTab(tabId);
       return;
     }
 
@@ -899,6 +897,7 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
       setActiveAssetTabId(tabId);
       setActiveTabId(null);
       setActiveExtensionDetailTabId(null);
+      setActiveToolTabId(null);
       return;
     }
     // 判断是否为扩展详情标签
@@ -907,11 +906,13 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
       setActiveExtensionDetailTabId(tabId);
       setActiveTabId(null);
       setActiveAssetTabId(null);
+      setActiveToolTabId(null);
       return;
     }
     setActiveTabId(tabId);
     setActiveAssetTabId(null);
     setActiveExtensionDetailTabId(null);
+    setActiveToolTabId(null);
     if (tabId.startsWith('scene-')) {
       // 检测是否点击了其他集数的分镜标签，如果是则先切换集数
       const clickedTab = sceneTabs.find(t => t.id === tabId);
@@ -922,60 +923,43 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
       onSelectScene(sceneId);
     }
     });
-  }, [onSelectScene, assetTabs, extensionDetailTabs, sceneTabs, episodeNumber, onEpisodeChange, withEditorFlush]);
+  }, [onSelectScene, assetTabs, extensionDetailTabs, sceneTabs, episodeNumber, onEpisodeChange, withEditorFlush, openToolTab]);
 
   // 关闭标签（暴露给外部）
   const handleCloseTab = useCallback((tabId: string) => {
     void withEditorFlush(() => {
-    // 检查是否为剧本生成标签
-    if (tabId === 'script-generate') {
-      setScriptGenerateTabOpen(false);
-      setScriptGenerateTabEpisode(undefined);
-      // 关闭剧本后，尝试激活其他标签
-      if (settingsTabOpen) {
-        setActiveTabId(null);
-        setActiveAssetTabId(null);
-        setActiveExtensionDetailTabId(null);
-      } else if (extensionDetailTabs.length > 0) {
-        setActiveExtensionDetailTabId(extensionDetailTabs[extensionDetailTabs.length - 1].id);
-      } else if (assetTabs.length > 0) {
-        setActiveAssetTabId(assetTabs[assetTabs.length - 1].id);
-      } else if (sceneTabs.length > 0) {
-        setActiveTabId(sceneTabs[sceneTabs.length - 1].id);
+    // 单例工具标签（剧本 / 设置 / 团队）：关闭只影响自身存在态，不移除其它工具标签。
+    // 若关闭的是当前激活标签，激活态先回到仍存在的其它工具标签，再回到内容标签的既有记忆。
+    if (tabId === 'script-generate' || tabId === 'settings' || tabId === 'teams') {
+      if (tabId === 'script-generate') {
+        setScriptGenerateTabOpen(false);
+        setScriptGenerateTabEpisode(undefined);
+      } else if (tabId === 'settings') {
+        setSettingsTabOpen(false);
       } else {
-        setActiveTabId(null);
+        setTeamsTabOpen(false);
       }
-      return;
-    }
-    
-    // 先检查是否为设置标签
-    if (tabId === 'settings') {
-      setSettingsTabOpen(false);
-      // 关闭设置后，尝试激活其他标签
-      if (extensionDetailTabs.length > 0) {
-        setActiveExtensionDetailTabId(extensionDetailTabs[extensionDetailTabs.length - 1].id);
-      } else if (assetTabs.length > 0) {
-        setActiveAssetTabId(assetTabs[assetTabs.length - 1].id);
-      } else if (sceneTabs.length > 0) {
-        setActiveTabId(sceneTabs[sceneTabs.length - 1].id);
-      } else {
-        setActiveTabId(null);
-      }
-      return;
-    }
 
-    // 检查是否为团队管理标签
-    if (tabId === 'teams') {
-      setTeamsTabOpen(false);
-      // 关闭团队后，尝试激活其他标签
-      if (extensionDetailTabs.length > 0) {
-        setActiveExtensionDetailTabId(extensionDetailTabs[extensionDetailTabs.length - 1].id);
-      } else if (assetTabs.length > 0) {
-        setActiveAssetTabId(assetTabs[assetTabs.length - 1].id);
-      } else if (sceneTabs.length > 0) {
-        setActiveTabId(sceneTabs[sceneTabs.length - 1].id);
-      } else {
-        setActiveTabId(null);
+      const wasActive = activeToolTabId === tabId;
+      if (wasActive) {
+        // 关闭当前激活的工具标签：先回到内容标签的激活记忆，
+        // 没有任何内容标签时才退回仍存在的其它工具标签。
+        setActiveToolTabId(null);
+        if (!activeExtensionDetailTabId && !activeAssetTabId && !activeTabId) {
+          const nextTool = (['settings', 'teams', 'script-generate'] as ToolTabId[])
+            .find(id => id !== tabId && isToolTabOpen(id));
+          if (nextTool) {
+            setActiveToolTabId(nextTool);
+          } else if (extensionDetailTabs.length > 0) {
+            setActiveExtensionDetailTabId(extensionDetailTabs[extensionDetailTabs.length - 1].id);
+          } else if (assetTabs.length > 0) {
+            setActiveAssetTabId(assetTabs[assetTabs.length - 1].id);
+          } else if (sceneTabs.length > 0) {
+            setActiveTabId(sceneTabs[sceneTabs.length - 1].id);
+          } else {
+            setActiveTabId(null);
+          }
+        }
       }
       return;
     }
@@ -1049,76 +1033,60 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
       return newTabs;
     });
     });
-  }, [activeTabId, activeAssetTabId, activeExtensionDetailTabId, updateCurrentTabs, assetTabs, extensionDetailTabs, sceneTabs, settingsTabOpen, withEditorFlush]);
+  }, [activeTabId, activeAssetTabId, activeExtensionDetailTabId, updateCurrentTabs, assetTabs, extensionDetailTabs, sceneTabs, activeToolTabId, isToolTabOpen, withEditorFlush]);
 
   // 关闭标签
   const handleTabClose = useCallback((tabId: string) => {
     handleCloseTab(tabId);
   }, [handleCloseTab]);
 
+  // 批量关闭指定标签，并把激活态落到 activateId 上。
+  // 工具标签的存在态只在它自己入选时被关掉，不影响其它工具标签（与 openToolTab 同一口径）。
+  const closeTabIds = useCallback((victimIds: Set<string>, activateId: string) => {
+    if (victimIds.size > 0) {
+      if (victimIds.has('settings')) setSettingsTabOpen(false);
+      if (victimIds.has('teams')) setTeamsTabOpen(false);
+      if (victimIds.has('script-generate')) {
+        setScriptGenerateTabOpen(false);
+        setScriptGenerateTabEpisode(undefined);
+      }
+      setExtensionDetailTabs(prev => prev.filter(t => !victimIds.has(t.id)));
+      setAssetTabs(prev => prev.filter(t => !victimIds.has(t.id)));
+      setAssetTabData(prev => {
+        const next = new Map(prev);
+        Array.from(next.keys()).forEach(id => { if (victimIds.has(id)) next.delete(id); });
+        return next;
+      });
+      setSceneTabs(prev => prev.filter(t => !victimIds.has(t.id)));
+    }
+
+    if (activateId === 'settings' || activateId === 'teams' || activateId === 'script-generate') {
+      openToolTab(activateId);
+      return;
+    }
+    setActiveToolTabId(null);
+    const isExtension = extensionDetailTabs.some(t => t.id === activateId);
+    const isAsset = !isExtension && assetTabs.some(t => t.id === activateId);
+    setActiveExtensionDetailTabId(isExtension ? activateId : null);
+    setActiveAssetTabId(isAsset ? activateId : null);
+    setActiveTabId(isExtension || isAsset ? null : activateId);
+  }, [openToolTab, extensionDetailTabs, assetTabs]);
+
   // 关闭其他标签
   const handleCloseOthers = useCallback((tabId: string) => {
     void withEditorFlush(() => {
-    // 检查是否为设置标签
-    if (tabId === 'settings') {
-      setSettingsTabOpen(true);
-      setTeamsTabOpen(false);
-      setActiveAssetTabId(null);
-      setActiveExtensionDetailTabId(null);
-      setActiveTabId('settings');
-      return;
-    }
-    // 检查是否为团队管理标签
-    if (tabId === 'teams') {
-      setTeamsTabOpen(true);
-      setSettingsTabOpen(false);
-      setActiveAssetTabId(null);
-      setActiveExtensionDetailTabId(null);
-      setActiveTabId('teams');
-      return;
-    }
-    updateCurrentTabs(prev => prev.filter(t => t.id === tabId));
-    setAssetTabs([]);
-    setActiveAssetTabId(null);
-    setExtensionDetailTabs([]);
-    setActiveExtensionDetailTabId(null);
-    setSettingsTabOpen(false);
-    setTeamsTabOpen(false);
-    setActiveTabId(tabId);
+      closeTabIds(new Set(tabs.filter(t => t.id !== tabId).map(t => t.id)), tabId);
     });
-  }, [updateCurrentTabs, withEditorFlush]);
+  }, [tabs, closeTabIds, withEditorFlush]);
 
-  // 关闭右侧标签
+  // 关闭右侧标签（按标签栏实际顺序，目标右侧的资产 / 扩展 / 工具标签一并关闭）
   const handleCloseRight = useCallback((tabId: string) => {
     void withEditorFlush(() => {
-    // 检查是否为设置标签
-    if (tabId === 'settings') {
-      setSettingsTabOpen(true);
-      setTeamsTabOpen(false);
-      setActiveAssetTabId(null);
-      setActiveExtensionDetailTabId(null);
-      setActiveTabId('settings');
-      return;
-    }
-    // 检查是否为团队管理标签
-    if (tabId === 'teams') {
-      setTeamsTabOpen(true);
-      setSettingsTabOpen(false);
-      setActiveAssetTabId(null);
-      setActiveExtensionDetailTabId(null);
-      setActiveTabId('teams');
-      return;
-    }
-    updateCurrentTabs(prev => {
-      const currentIndex = prev.findIndex(t => t.id === tabId);
-      const newTabs = prev.slice(0, currentIndex + 1);
-      if (currentIndex < prev.length - 1 && activeTabId && !newTabs.find(t => t.id === activeTabId)) {
-        setActiveTabId(tabId);
-      }
-      return newTabs;
+      const currentIndex = tabs.findIndex(t => t.id === tabId);
+      if (currentIndex < 0) return;
+      closeTabIds(new Set(tabs.slice(currentIndex + 1).map(t => t.id)), tabId);
     });
-    });
-  }, [activeTabId, updateCurrentTabs, withEditorFlush]);
+  }, [tabs, closeTabIds, withEditorFlush]);
 
   // 键盘快捷键支持
   useEffect(() => {
@@ -1127,7 +1095,7 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
       if ((e.ctrlKey || e.metaKey) && e.key === 'w') {
         e.preventDefault();
         // 获取当前激活的标签ID
-        const currentActiveId = activeExtensionDetailTabId || activeAssetTabId || activeTabId || (settingsTabOpen ? 'settings' : null) || (teamsTabOpen ? 'teams' : null);
+        const currentActiveId = resolvedActiveTabId;
         if (currentActiveId) {
           handleTabClose(currentActiveId);
         }
@@ -1135,7 +1103,7 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
       // Ctrl+Tab / Cmd+Tab 切换到下一个标签
       if ((e.ctrlKey || e.metaKey) && e.key === 'Tab') {
         e.preventDefault();
-        const currentActiveId = activeExtensionDetailTabId || activeAssetTabId || activeTabId || (settingsTabOpen ? 'settings' : null) || (teamsTabOpen ? 'teams' : null);
+        const currentActiveId = resolvedActiveTabId;
         if (tabs.length > 1 && currentActiveId) {
           const currentIndex = tabs.findIndex(t => t.id === currentActiveId);
           const nextIndex = e.shiftKey
@@ -1156,21 +1124,24 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeTabId, activeAssetTabId, activeExtensionDetailTabId, settingsTabOpen, teamsTabOpen, tabs, handleTabClose, handleTabClick]);
+  }, [resolvedActiveTabId, tabs, handleTabClose, handleTabClick]);
 
-  // 拖拽排序
+  // 拖拽排序：标签栏是「分镜 + 资产 + 扩展 + 工具」多组状态的平铺视图，
+  // 不能把合并结果整体写回 sceneTabs（否则设置 / 剧本标签会被复制成分镜标签并落盘）。
+  // 这里只按拖后的相对顺序重排分镜子集，其余分组保持自身顺序。
   const handleTabReorder = useCallback((newTabs: TabItem[]) => {
-    updateCurrentTabs(() => newTabs);
-  }, [updateCurrentTabs]);
+    const sceneOrder = newTabs.filter(t => t.type === 'scene').map(t => t.id);
+    if (sceneOrder.length < 2) return;
+    setSceneTabs(prev => {
+      const byId = new Map(prev.map(t => [t.id, t] as const));
+      const ordered = sceneOrder.map(id => byId.get(id)).filter((t): t is TabItem => Boolean(t));
+      const rest = prev.filter(t => !sceneOrder.includes(t.id));
+      return [...ordered, ...rest];
+    });
+  }, []);
 
-  // 获取当前激活的标签（优先扩展详情标签，然后资产标签，然后检查设置单例标签，然后剧本生成标签）
-  const activeTab = tabs.find(t => t.id === activeExtensionDetailTabId)
-    || tabs.find(t => t.id === activeAssetTabId)
-    || tabs.find(t => t.id === activeTabId)
-    || (settingsTabOpen ? tabs.find(t => t.id === 'settings') : null)
-    || (teamsTabOpen ? tabs.find(t => t.id === 'teams') : null)
-    || (scriptGenerateTabOpen ? tabs.find(t => t.id === 'script-generate') : null)
-    || null;
+  // 获取当前激活的标签（由 resolvedActiveTabId 统一判定，工具标签只影响激活态不影响存在态）
+  const activeTab = tabs.find(t => t.id === resolvedActiveTabId) ?? null;
 
   // 分镜保存/生成回调由 PreviewEditorPlugin 按目标 sceneId 绑定，避免 selectedScene 滞后写错对象。
   const sceneEditorProps = useMemo(() => {
@@ -1243,7 +1214,7 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
       {/* 标签栏 */}
       <TabBar
         tabs={tabs}
-        activeTabId={activeExtensionDetailTabId || activeAssetTabId || activeTabId || (settingsTabOpen ? 'settings' : null) || (teamsTabOpen ? 'teams' : null) || (scriptGenerateTabOpen ? 'script-generate' : null)}
+        activeTabId={resolvedActiveTabId}
         onTabClick={handleTabClick}
         onTabClose={handleTabClose}
         onCloseOthers={handleCloseOthers}
@@ -1327,6 +1298,11 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
                   onScriptGenerated?.(payload);
                   // 派发剧本刷新事件，通知左侧大纲面板更新剧本列表和内容
                   if (payload) {
+                    setScriptWorkshopData({
+                      scriptId: payload.scriptId,
+                      scriptTitle: payload.title,
+                      scriptContent: payload.content,
+                    });
                     window.dispatchEvent(new CustomEvent('reload-scripts', {
                       detail: {
                         projectId: directorSpaceProps.projectId,
@@ -1340,9 +1316,8 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
                   // 错误处理由 ScriptWorkshop 内部处理
                 }}
                 onClose={() => {
-                  setScriptGenerateTabOpen(false);
-                  setScriptGenerateTabEpisode(undefined);
-                  setScriptWorkshopData(undefined);
+                  // 统一走关闭标签入口：只关自身，不能连带移除设置等其它工具标签
+                  handleCloseTab('script-generate');
                 }}
                 onRegisterEditor={registerEditor}
               />

@@ -81,12 +81,12 @@ const AccordionSection: React.FC<{
           aria-expanded={expanded}
           className={`flex-1 flex items-center gap-2 px-2.5 py-1 text-left text-xs transition-colors duration-150 shrink-0 select-none ${
             enabled
-              ? 'text-(--text-primary) hover:bg-(--bg-card-hover) active:bg-white/[0.04]'
+              ? 'text-(--text-primary) hover:bg-(--bg-card-hover) active:bg-white/[0.04] focus-visible:outline-none focus-visible:bg-(--bg-card-hover) focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-(--accent)/50'
               : 'text-(--text-muted) opacity-50 cursor-not-allowed'
           }`}
           title={enabled ? (expanded ? t.frame.workspace.clickCollapse : t.frame.workspace.clickExpand) : t.frame.workspace.availableInWorkspace}
         >
-          <ChevronRight className={`w-3.5 h-3.5 opacity-40 transition-transform duration-150 shrink-0 ${expanded ? 'rotate-90' : ''}`} />
+          <ChevronRight className={`w-3.5 h-3.5 opacity-40 transition-transform duration-150 motion-reduce:transition-none shrink-0 ${expanded ? 'rotate-90' : ''}`} />
           <Icon className="w-4 h-4 shrink-0 opacity-70" />
           <span className="flex-1 font-medium text-left">{label}</span>
         </button>
@@ -96,12 +96,17 @@ const AccordionSection: React.FC<{
         )}
       </div>
       {/* 分组内容容器：StoryBoard 通过 portal 填充。
-          折叠时只做 CSS 隐藏、不卸载，保证展开后滚动位置/草稿状态原样恢复。 */}
+          折叠时只做 CSS 折叠、不卸载，保证展开后滚动位置/草稿状态原样恢复。 */}
       {enabled && (
         <div
-          ref={containerRef}
-          className={`flex-1 min-h-0 overflow-y-auto ${expanded ? '' : 'hidden'}`}
-        />
+          inert={!expanded}
+          aria-hidden={!expanded}
+          className={`grid flex-1 min-h-0 transition-[grid-template-rows,opacity] duration-200 ease-in-out motion-reduce:transition-none ${
+            expanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
+          }`}
+        >
+          <div ref={containerRef} className="min-h-0 overflow-y-auto" />
+        </div>
       )}
     </div>
   );

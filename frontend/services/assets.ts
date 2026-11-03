@@ -257,6 +257,8 @@ export interface CharacterState {
   name: string;
   description: string;
   appearance: string;
+  /** 当前状态的性格与表演方向，创建时可从白膜继承并随状态独立调整 */
+  personality?: string;
   gender?: 'male' | 'female' | 'unknown';
   image_url: string;
   front_view_url: string;
@@ -288,6 +290,18 @@ export interface CharacterState {
   costume_outfit_prompt?: string | null;
   // 关联道具信息（LEFT JOIN character_state_props + props）
   equipped_props?: EquippedProp[];
+}
+
+const GENERATING_STALE_MS = 10 * 60 * 1000;
+
+/** 生成中超过 10 分钟未更新即视为失效，允许用户重新生成。 */
+export function isStaleGeneratingState(
+  state: Pick<CharacterState, 'generation_status' | 'updated_at' | 'created_at'>,
+  now = Date.now(),
+): boolean {
+  if (state.generation_status !== 'generating') return false;
+  const updated = Date.parse(state.updated_at || state.created_at || '');
+  return Number.isFinite(updated) && now - updated >= GENERATING_STALE_MS;
 }
 
 // 状态分类类型

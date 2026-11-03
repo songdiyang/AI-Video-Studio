@@ -70,6 +70,9 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
   onRefreshProps,
 }) => {
   const [expandedSections, setExpandedSections] = useState<Set<string>>(() => new Set(['characters']));
+  const listRef = useRef<HTMLDivElement>(null);
+  const sectionElementsRef = useRef(new Map<string, HTMLDivElement>());
+  const revealFrameRef = useRef<number | null>(null);
   /** AI/用户自定义模式：开启后自动隐藏无内容的分类分组 */
   const [aiMode, setAiMode] = useState(false);
   const [isCategoryModalOpen, setCategoryModalOpen] = useState(false);
@@ -629,13 +632,42 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
     typesWithResources.forEach(toggleType);
   }, [categoryConfig.enabledTypes.length, categoryConfig.customCategories.length, sectionCounts, toggleType]);
 
+  useEffect(() => () => {
+    if (revealFrameRef.current !== null) cancelAnimationFrame(revealFrameRef.current);
+  }, []);
+
+  /** 只在当前标题已离开视口或下方空间不足时定位，避免每次展开都强制跳动。 */
+  const revealSection = (key: string) => {
+    if (revealFrameRef.current !== null) cancelAnimationFrame(revealFrameRef.current);
+    revealFrameRef.current = requestAnimationFrame(() => {
+      revealFrameRef.current = null;
+      const container = listRef.current;
+      const section = sectionElementsRef.current.get(key);
+      const header = section?.querySelector<HTMLElement>('[data-resource-section-header]');
+      if (!container || !header) return;
+      const containerRect = container.getBoundingClientRect();
+      const headerRect = header.getBoundingClientRect();
+      const headerOutside = headerRect.top < containerRect.top || headerRect.bottom > containerRect.bottom;
+      const roomBelow = containerRect.bottom - headerRect.bottom;
+      const desiredRoom = Math.min(260, containerRect.height * 0.5);
+      if (!headerOutside && roomBelow >= desiredRoom) return;
+      const top = container.scrollTop + headerRect.top - containerRect.top - 4;
+      container.scrollTo({
+        top: Math.max(0, top),
+        behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+      });
+    });
+  };
+
   const toggleSection = (key: string) => {
+    const willExpand = !expandedSections.has(key);
     setExpandedSections(prev => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key);
       else next.add(key);
       return next;
     });
+    if (willExpand) revealSection(key);
   };
 
   /** 渲染某内置类型的 Tab 内容（data 为全量或自定义分类过滤后的子集） */
@@ -801,7 +833,7 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
       {headerSlot && createPortal(categoryToolbar, headerSlot)}
 
       {/* 手风琴分类列表：每类一分组，标题行 chevron + 图标 + 名称 + 计数 */}
-      <div className="flex-1 overflow-y-auto py-1">
+      <div ref={listRef} className="flex-1 min-h-0 overflow-y-auto py-1">
         {visibleSections.length === 0 && (
           <div className="px-3 py-6 text-center text-[11px] text-(--text-muted)">
             {aiMode && sections.length > 0
@@ -814,17 +846,25 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
           const Icon = section.kind === 'custom' ? Tags : SECTION_ICONS[section.kind as ResourceTypeKey];
           const count = sectionCounts[section.key] ?? 0;
           return (
-            <div key={section.key} className="border-b border-(--border-color) last:border-b-0">
+            <div
+              key={section.key}
+              ref={(el) => {
+                if (el) sectionElementsRef.current.set(section.key, el);
+                else sectionElementsRef.current.delete(section.key);
+              }}
+              className="border-b border-(--border-color) last:border-b-0"
+            >
               <div
+                data-resource-section-header
                 role="button"
                 tabIndex={0}
                 aria-expanded={expanded}
                 onClick={() => toggleSection(section.key)}
                 onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSection(section.key); } }}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs cursor-pointer select-none text-(--text-primary) hover:bg-(--bg-card-hover) active:bg-white/[0.04] transition-colors duration-150"
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs cursor-pointer select-none text-(--text-primary) hover:bg-(--bg-card-hover) active:bg-white/[0.04] focus-visible:outline-none focus-visible:bg-(--bg-card-hover) focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-(--accent)/50 transition-colors duration-150"
                 title={expanded ? '点击折叠' : '点击展开'}
               >
-                <ChevronRight className={`w-3.5 h-3.5 opacity-40 shrink-0 transition-transform duration-200 ${expanded ? 'rotate-90' : ''}`} />
+                <ChevronRight className={`w-3.5 h-3.5 opacity-40 shrink-0 transition-transform duration-200 motion-reduce:transition-none ${expanded ? 'rotate-90' : ''}`} />
                 <Icon className="w-3.5 h-3.5 shrink-0 opacity-70" />
                 <span className="flex-1 truncate font-medium">{section.label}</span>
                 {section.custom?.aiGenerated && <Sparkles className="w-3 h-3 shrink-0 text-(--accent) opacity-70" />}
@@ -848,10 +888,10 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
               <div
                 inert={!expanded}
                 aria-hidden={!expanded}
-                className={`grid transition-[grid-template-rows] duration-200 ease-out ${expanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}
+                className={`grid transition-[grid-template-rows,opacity] duration-200 ease-in-out motion-reduce:transition-none ${expanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}
               >
                 <div className="min-h-0 overflow-hidden">
-                  <div className="px-3 pb-3 max-h-[45vh] overflow-y-auto">
+                  <div className="px-3 pb-3">
                     {section.kind === 'custom'
                       ? (section.custom && renderCustomContent(section.custom))
                       : renderTypeContent(section.kind, categoryData)}

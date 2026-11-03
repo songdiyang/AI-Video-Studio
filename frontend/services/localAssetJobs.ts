@@ -41,7 +41,11 @@ export interface SubmitAssetJobOptions {
   inputParams?: Record<string, unknown>;
   /** 后台执行体：出图 + 回写资产文档；返回 result_data（供作业展示） */
   run: () => Promise<any>;
+  /** 整体超时；默认 10 分钟，测试可注入更短时长 */
+  timeoutMs?: number;
 }
+
+const DEFAULT_JOB_TIMEOUT_MS = 10 * 60 * 1000;
 
 /**
  * 提交一个资产生成作业：登记为 running，异步执行 run()，立即返回 jobId（ag_ 前缀）。
@@ -65,16 +69,26 @@ export function submitAssetGeneration(opts: SubmitAssetJobOptions): string {
     consumed: false,
   };
   store.set(id, job);
+  // 厂商调用或媒体落地异常悬停时也必须进入终态，否则 UI 与注册表会永久保持生成中。
+  const watchdog = setTimeout(() => {
+    if (job.status !== 'running') return;
+    job.status = 'failed';
+    job.error_message = '生成任务超时，请重新生成';
+    job.completed_at = new Date().toISOString();
+  }, Math.max(1, opts.timeoutMs ?? DEFAULT_JOB_TIMEOUT_MS));
   void (async () => {
     try {
       const result = await opts.run();
+      if (job.status !== 'running') return; // 超时后不接受迟到结果覆盖终态
       job.result_data = result ?? null;
       job.status = 'completed';
     } catch (err: any) {
+      if (job.status !== 'running') return;
       job.status = 'failed';
       job.error_message = err?.message || '生成失败';
     } finally {
-      job.completed_at = new Date().toISOString();
+      clearTimeout(watchdog);
+      job.completed_at ||= new Date().toISOString();
     }
   })();
   return id;
