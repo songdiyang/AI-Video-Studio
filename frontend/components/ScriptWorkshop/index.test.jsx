@@ -168,6 +168,40 @@ test('未编辑时接收异步初始正文；清空标题/正文按允许字段�
   expect(mocks.update).toHaveBeenCalledExactlyOnceWith(21, '', '');
 });
 
+test('显式空字符串是有效空剧本，不触发回读且可直接编辑', async () => {
+  await render({ initialScriptId: 21, initialTitle: '空剧本', initialContent: '' });
+  expect(field('剧本内容').value).toBe('');
+  expect(fetch).not.toHaveBeenCalled();
+  await input('剧本内容', '从空剧本开始');
+  expect(await flush()).toBe(true);
+  expect(mocks.update).toHaveBeenCalledExactlyOnceWith(21, '空剧本', '从空剧本开始');
+});
+
+test('初始正文暂缺不代表空剧本，不得清空已显示的干净正文', async () => {
+  fetch.mockResolvedValue({
+    ok: true,
+    json: async () => ({ scripts: [{ id: 21, title: '旧标题', content: '旧正文' }] }),
+  });
+  await render(existing);
+  await render({ initialContent: undefined });
+  await tick();
+  expect(field('剧本内容').value).toBe('旧正文');
+  expect(mocks.update).not.toHaveBeenCalled();
+});
+
+test('刷新恢复标签时只有工程/集数，应自动回读剧本正文', async () => {
+  fetch.mockResolvedValue({
+    ok: true,
+    json: async () => ({ script: { id: 21, title: '恢复标题', content: '恢复正文', project_id: 7, episode_number: 2 } }),
+  });
+  await render();
+  await tick();
+  expect(fetch).toHaveBeenCalledWith('/api/scripts/project/7/episode/2');
+  expect(field('剧本名称').value).toBe('恢复标题');
+  expect(field('剧本内容').value).toBe('恢复正文');
+  expect(mocks.update).not.toHaveBeenCalled();
+});
+
 test('保存期间产生的新输入不被父级回填覆盖', async () => {
   const pending = deferred();
   mocks.update.mockImplementationOnce(() => pending.promise);

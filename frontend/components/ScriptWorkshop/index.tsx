@@ -45,7 +45,7 @@ function assertSaved(result: unknown) {
 
 const WorkshopSession: React.FC<ScriptWorkshopProps> = ({
   lockProjectId, lockEpisodeNumber,
-  initialScriptId, initialTitle = '', initialContent = '', onSuccess, onError,
+  initialScriptId, initialTitle = '', initialContent, onSuccess, onError,
   onRegisterEditor,
 }) => {
   const { showToast } = useToast();
@@ -55,11 +55,13 @@ const WorkshopSession: React.FC<ScriptWorkshopProps> = ({
   const [showPreview, setShowPreview] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
   const [status, setStatus] = useState<EditorSaveStatus>(initialScriptId ? 'saved' : 'idle');
+  const [loadingScript, setLoadingScript] = useState(false);
+  const [loadError, setLoadError] = useState('');
   const saving = useRef<Promise<boolean> | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [script, scriptRef, replaceScript] = useDraft<ScriptWorkshopPayload | null>(() => initialScriptId ? {
-    scriptId: initialScriptId, title: initialTitle, content: initialContent,
+    scriptId: initialScriptId, title: initialTitle, content: initialContent ?? '',
     projectId: lockProjectId ?? 0, episodeNumber: lockEpisodeNumber ?? 1,
   } : null);
   const savedScript = useRef(serialize(script));
@@ -133,6 +135,8 @@ const WorkshopSession: React.FC<ScriptWorkshopProps> = ({
 
   // 支持初始数据异步到达；脏稿/在途请求不得被父级旧数据回填覆盖。
   useEffect(() => {
+    // undefined 表示父级尚未提供正文；只有显式字符串（包括 ''）才是有效正文载荷。
+    if (initialContent === undefined) return;
     const incoming = serialize({ initialTitle, initialContent });
     if (incoming === incomingScript.current) return;
     incomingScript.current = incoming;
@@ -143,6 +147,49 @@ const WorkshopSession: React.FC<ScriptWorkshopProps> = ({
     replaceScript(next);
     if (mounted.current) setStatus('saved');
   }, [initialTitle, initialContent, initialScriptId, replaceScript, scriptRef]);
+
+  // 刷新恢复时父级只保留工程/集数，正文需要按对象回读；响应只能写入仍然干净的当前草稿。
+  useEffect(() => {
+    if (initialContent !== undefined || !lockProjectId || !lockEpisodeNumber) return;
+    const current = scriptRef.current;
+    if (current && serialize(current) !== savedScript.current) return;
+    let cancelled = false;
+    setLoadingScript(true);
+    setLoadError('');
+    const endpoint = initialScriptId
+      ? `/api/scripts/project/${lockProjectId}`
+      : `/api/scripts/project/${lockProjectId}/episode/${lockEpisodeNumber}`;
+    void (async () => {
+      try {
+        const response = await fetch(endpoint);
+        if (!response.ok) throw new Error(`加载剧本失败 (${response.status})`);
+        const payload = await response.json();
+        const found = initialScriptId
+          ? payload.scripts?.find((item: any) => Number(item.id) === Number(initialScriptId))
+          : payload.script;
+        if (cancelled || !mounted.current || !found) return;
+        const latest = scriptRef.current;
+        if (latest && serialize(latest) !== savedScript.current) return;
+        const next: ScriptWorkshopPayload = {
+          scriptId: Number(found.id),
+          title: found.title || initialTitle || '',
+          content: typeof found.content === 'string' ? found.content : '',
+          projectId: lockProjectId,
+          episodeNumber: Number(found.episode_number ?? lockEpisodeNumber),
+        };
+        savedScript.current = serialize(next);
+        replaceScript(next);
+        setStatus('saved');
+      } catch (error) {
+        if (cancelled || !mounted.current) return;
+        setLoadError('剧本正文加载失败，请重新打开标签重试');
+        report(error);
+      } finally {
+        if (!cancelled && mounted.current) setLoadingScript(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [initialContent, initialScriptId, initialTitle, lockProjectId, lockEpisodeNumber, replaceScript, report, scriptRef]);
 
   const editScript = (patch: Partial<Pick<ScriptWorkshopPayload, 'title' | 'content'>>) => {
     if (!scriptRef.current) return;
@@ -159,7 +206,10 @@ const WorkshopSession: React.FC<ScriptWorkshopProps> = ({
   if (!script) {
     return <div className="flex flex-col h-full min-h-0 min-w-0">
       <div className="sw-scroll flex-1">
-        <p className="sw-column text-sm text-[var(--text-muted)]">尚未选择剧本。请在左侧「大纲」上传剧本，或点击剧本卡片打开编辑。</p>
+        <p className="sw-column text-sm text-[var(--text-muted)]">
+          {loadingScript ? '正在加载剧本正文…' : '尚未选择剧本。请在左侧「大纲」上传剧本，或点击剧本卡片打开编辑。'}
+        </p>
+        {loadError && <p role="alert" className="sw-column mt-2 text-xs text-[var(--danger)]">{loadError}</p>}
       </div>
     </div>;
   }
