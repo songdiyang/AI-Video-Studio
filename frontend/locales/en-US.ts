@@ -419,9 +419,12 @@ const enUS: Translations = {
       desc: 'Default picture settings and art-direction lock for the current project; take precedence over model defaults when generating images/videos, and travel with the .jzp project package.',
       currentProjectTag: 'Current project',
       generationModels: 'Generation models',
-      generationModelsHint: 'Shared by asset image generation, storyboard splitting and AI analysis in this project; editors no longer pick models separately.',
+      generationModelsHint: 'Shared by asset image generation, storyboard splitting, storyboard video generation and AI analysis in this project; editors no longer pick models separately.',
       imageModel: 'Image generation model',
       textModel: 'Text analysis model',
+      videoModel: 'Video generation model',
+      params: 'Picture parameters',
+      artStylePreset: 'Style preset',
       imageAspectRatio: 'Image aspect ratio',
       imageResolution: 'Image resolution',
       videoAspectRatio: 'Video aspect ratio',
@@ -499,6 +502,13 @@ const enUS: Translations = {
       saveFailed: 'Failed to save',
       currentThreshold: 'Current Threshold',
       disabled: 'Disabled',
+    },
+  },
+  assistant: {
+    ask: {
+      customPlaceholder: 'Type your answer…',
+      submit: 'Send answer',
+      answered: 'Answered',
     },
   },
   // Command Palette
