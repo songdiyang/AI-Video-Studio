@@ -2,14 +2,14 @@
   "name": "ai-video-studio",
   "private": true,
   "version": "0.5.1",
-  "description": "AI视频编辑器 仓库级编排入口：委托 frontend/ 完成前端与 Tauri 构建，scripts/ 承载扩展打包与资源工具。前端依赖请见 frontend/package.json。",
+  "description": "AI视频编辑器 仓库级编排入口：脚本一律委托 frontend/ 执行（--prefix 保证工作目录落在 frontend），命令的唯一实现处是 frontend/package.json；scripts/ 承载扩展打包与资源工具。前端依赖请见 frontend/package.json。",
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "build": "cd frontend && npm run build",
-    "tauri": "cd frontend && npm run tauri",
-    "tauri:dev": "cd frontend && npm run tauri:dev",
-    "tauri:build": "cd frontend && npm run tauri:build",
-    "tauri:build:windows": "cd frontend && npm run tauri:build:windows"
+    "build": "npm --prefix frontend run build",
+    "tauri": "npm --prefix frontend run tauri",
+    "tauri:dev": "npm --prefix frontend run tauri:dev",
+    "tauri:build": "npm --prefix frontend run tauri:build",
+    "tauri:build:windows": "npm --prefix frontend run tauri:build:windows"
   }
 }
