@@ -1,8 +1,12 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import ReactDOM from 'react-dom';
-import { Mail, X, Check, CheckCheck, Trash2, MessageSquare, Megaphone, Bell, ChevronLeft, ClipboardList, Clock, Flag, ExternalLink, CheckCircle, XCircle } from 'lucide-react';
+import { Mail, X, Check, CheckCheck, Trash2, MessageSquare, Megaphone, Bell, ChevronLeft, ClipboardList, Clock, Flag, ExternalLink, CheckCircle, XCircle, AlertTriangle, MoveDiagonal2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useLanguage } from '../contexts/LanguageContext';
+import { useWorkbench } from '../contexts/WorkbenchContext';
+import { activeLongTasks, LONG_TASKS_UPDATED_EVENT, LONG_TASK_STATUS_LABEL, type LongTaskRecord } from '../services/longTasks';
+import type { MailCategory } from '../services/localMail';
+import { useTaskQueue } from './TaskQueueBubble/useTaskQueue';
 
 interface TaskData {
   taskId: number;
@@ -21,10 +25,10 @@ interface TaskData {
 
 interface InternalMail {
   id: number;
-  sender_type: 'system' | 'admin';
+  sender_type: 'system' | 'admin' | 'friend';
   title: string;
   content: string;
-  mail_type: 'reply' | 'announce' | 'system' | 'task' | 'points_change';
+  mail_type: 'reply' | 'announce' | 'system' | 'task' | 'points_change' | 'warning';
   related_feedback_id: number | null;
   related_task_id: number | null;
   is_read: number;
@@ -35,6 +39,7 @@ const MAIL_TYPE_CONFIG: Record<string, { label: string; icon: React.ReactNode; c
   reply: { label: '反馈回复', icon: <MessageSquare className="w-3.5 h-3.5" />, color: 'var(--accent-primary)' },
   announce: { label: '系统公告', icon: <Megaphone className="w-3.5 h-3.5" />, color: '#f59e0b' },
   system: { label: '系统通知', icon: <Bell className="w-3.5 h-3.5" />, color: '#10b981' },
+  warning: { label: '任务警告', icon: <AlertTriangle className="w-3.5 h-3.5" />, color: '#ef4444' },
   task: { label: '任务指派', icon: <ClipboardList className="w-3.5 h-3.5" />, color: '#8b5cf6' },
   points_change: { label: '积分变动', icon: <Bell className="w-3.5 h-3.5" />, color: '#f59e0b' },
 };
@@ -162,7 +167,12 @@ function renderLightMarkdown(text: string): React.ReactNode[] {
 
 const InternalMailbox: React.FC = () => {
   const { t } = useLanguage();
+  const { currentProject } = useWorkbench();
+  // 站内信是常驻宿主：任务轮询在此启动，不再依赖已移除的悬浮任务球。
+  useTaskQueue();
   const [isOpen, setIsOpen] = useState(false);
+  const [category, setCategory] = useState<MailCategory>('system');
+  const [activeTasks, setActiveTasks] = useState<LongTaskRecord[]>([]);
   const [mails, setMails] = useState<InternalMail[]>([]);
   const [total, setTotal] = useState(0);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -172,22 +182,35 @@ const InternalMailbox: React.FC = () => {
   const [taskStatus, setTaskStatus] = useState<Record<number, string>>({});
   const [taskLoading, setTaskLoading] = useState<number | null>(null);
   const [panelPosition, setPanelPosition] = useState<{ x: number; y: number }>({ x: 200, y: 60 });
+  const [panelSize, setPanelSize] = useState({ width: 380, height: 520 });
   const panelRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const dragState = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null);
   const limit = 20;
+  const refreshActiveTasks = useCallback(() => {
+    setActiveTasks(activeLongTasks(currentProject?.id ?? null));
+  }, [currentProject?.id]);
+
+  useEffect(() => {
+    refreshActiveTasks();
+    window.addEventListener(LONG_TASKS_UPDATED_EVENT, refreshActiveTasks);
+    return () => window.removeEventListener(LONG_TASKS_UPDATED_EVENT, refreshActiveTasks);
+  }, [refreshActiveTasks]);
+
+  useEffect(() => {
+    setPage(1);
+    setSelectedMail(null);
+  }, [category]);
 
   // 打开前将面板定位到站内信按钮下方（钳制在视口内）
   const locatePanelNearTrigger = useCallback(() => {
     if (!triggerRef.current) return;
     const rect = triggerRef.current.getBoundingClientRect();
-    const PANEL_W = 380;
-    const PANEL_H = 520;
     setPanelPosition({
-      x: Math.max(8, Math.min(rect.left - 150, window.innerWidth - PANEL_W - 8)),
-      y: Math.max(8, Math.min(rect.bottom + 8, window.innerHeight - PANEL_H - 8)),
+      x: Math.max(8, Math.min(rect.left - 150, window.innerWidth - panelSize.width - 8)),
+      y: Math.max(8, Math.min(rect.bottom + 8, window.innerHeight - panelSize.height - 8)),
     });
-  }, []);
+  }, [panelSize.width, panelSize.height]);
 
   // 支持外部事件打开（菜单栏/状态栏「任务」入口）
   useEffect(() => {
@@ -213,7 +236,7 @@ const InternalMailbox: React.FC = () => {
   const fetchMails = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/mail?page=${page}&limit=${limit}`);
+      const res = await fetch(`/api/mail?page=${page}&limit=${limit}&category=${category}`);
       if (res.ok) {
         const data = await res.json();
         setMails(data.mails || []);
@@ -224,7 +247,7 @@ const InternalMailbox: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [page]);
+  }, [page, category]);
 
   // Poll unread count every 30s
   useEffect(() => {
@@ -406,6 +429,60 @@ const InternalMailbox: React.FC = () => {
     window.addEventListener('mouseup', onUp);
   }, []);
 
+  const onResizeStart = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
+    const panel = panelRef.current;
+    if (!panel) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const target = event.currentTarget;
+    const rect = panel.getBoundingClientRect();
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const startWidth = rect.width;
+    const startHeight = rect.height;
+    let frame: number | null = null;
+    let pending = { width: startWidth, height: startHeight };
+    target.setPointerCapture(event.pointerId);
+
+    const commit = () => {
+      frame = null;
+      setPanelSize(pending);
+    };
+    const onMove = (moveEvent: PointerEvent) => {
+      const maxWidth = Math.max(320, window.innerWidth - rect.left - 8);
+      const maxHeight = Math.max(300, window.innerHeight - rect.top - 8);
+      pending = {
+        width: Math.max(320, Math.min(maxWidth, startWidth + moveEvent.clientX - startX)),
+        height: Math.max(300, Math.min(maxHeight, startHeight + moveEvent.clientY - startY)),
+      };
+      if (frame === null) frame = requestAnimationFrame(commit);
+    };
+    const onStop = () => {
+      target.removeEventListener('pointermove', onMove);
+      target.removeEventListener('pointerup', onStop);
+      target.removeEventListener('pointercancel', onStop);
+      if (frame !== null) cancelAnimationFrame(frame);
+      if (target.hasPointerCapture(event.pointerId)) target.releasePointerCapture(event.pointerId);
+      setPanelSize(pending);
+    };
+    target.addEventListener('pointermove', onMove);
+    target.addEventListener('pointerup', onStop);
+    target.addEventListener('pointercancel', onStop);
+  }, []);
+
+  const onResizeKeyDown = useCallback((event: React.KeyboardEvent<HTMLButtonElement>) => {
+    const dx = event.key === 'ArrowRight' ? 16 : event.key === 'ArrowLeft' ? -16 : 0;
+    const dy = event.key === 'ArrowDown' ? 16 : event.key === 'ArrowUp' ? -16 : 0;
+    if (!dx && !dy) return;
+    event.preventDefault();
+    const rect = panelRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setPanelSize(prev => ({
+      width: Math.max(320, Math.min(window.innerWidth - rect.left - 8, prev.width + dx)),
+      height: Math.max(300, Math.min(window.innerHeight - rect.top - 8, prev.height + dy)),
+    }));
+  }, []);
+
   const panelContent = (
     <AnimatePresence>
       {isOpen && (
@@ -421,10 +498,12 @@ const InternalMailbox: React.FC = () => {
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.96 }}
             transition={{ duration: 0.2 }}
-            className="fixed w-95 max-h-130 rounded-2xl overflow-hidden shadow-2xl z-9999 flex flex-col"
+            className="fixed rounded-2xl overflow-hidden shadow-2xl z-9999 flex flex-col"
             style={{
               top: panelPosition.y,
               left: panelPosition.x,
+              width: panelSize.width,
+              height: panelSize.height,
               backgroundColor: 'var(--bg-card)',
               border: '1px solid var(--border-color)',
             }}
@@ -456,14 +535,36 @@ const InternalMailbox: React.FC = () => {
                     <CheckCheck className="w-4 h-4" style={{ color: 'var(--text-muted)' }} />
                   </button>
                 )}
-                <button onClick={() => { setIsOpen(false); setSelectedMail(null); }} className="p-1.5 rounded-lg hover:bg-(--bg-input) transition-colors">
+                {!selectedMail && (
+                  <div role="tablist" aria-label="站内信分类" className="ml-1 flex items-center gap-0.5 border-l border-(--border-color) pl-1">
+                    {([
+                      ['system', '系统信息', Bell],
+                      ['official', '官方信息', Megaphone],
+                      ['friend', '好友信息', MessageSquare],
+                    ] as const).map(([id, label, Icon]) => (
+                      <button
+                        key={id}
+                        type="button"
+                        role="tab"
+                        aria-label={label}
+                        aria-selected={category === id}
+                        title={label}
+                        onClick={() => setCategory(id)}
+                        className={`rounded-md p-1.5 transition-colors ${category === id ? 'bg-(--accent-primary)/12 text-(--accent-primary)' : 'text-(--text-muted) hover:bg-(--bg-input) hover:text-(--text-primary)'}`}
+                      >
+                        <Icon className="h-3.5 w-3.5" />
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <button onClick={() => { setIsOpen(false); setSelectedMail(null); }} className="p-1.5 rounded-lg hover:bg-(--bg-input) transition-colors" aria-label="关闭站内信">
                   <X className="w-4 h-4" style={{ color: 'var(--text-muted)' }} />
                 </button>
               </div>
             </div>
 
             {/* Content */}
-            <div className="flex-1 overflow-y-auto" style={{ maxHeight: '420px' }}>
+            <div className="flex-1 min-h-0 overflow-y-auto">
               <AnimatePresence mode="wait">
                 {selectedMail ? (
                   /* Detail View */
@@ -644,12 +745,35 @@ const InternalMailbox: React.FC = () => {
                     animate={{ opacity: 1, x: 0 }}
                     exit={{ opacity: 0, x: 20 }}
                   >
+                    {activeTasks.length > 0 && (
+                      <section className="mx-3 mb-2 rounded-lg border border-(--accent-primary)/20 bg-(--accent-primary)/5 p-2.5" aria-label="进行中的后台任务">
+                        <div className="mb-2 flex items-center gap-1.5 text-[11px] font-medium text-(--accent-primary)">
+                          <ClipboardList className="h-3.5 w-3.5" />
+                          <span>后台任务进行中</span>
+                          <span className="ml-auto text-[10px] opacity-75">{activeTasks.length}</span>
+                        </div>
+                        <div className="space-y-2">
+                          {activeTasks.slice(0, 3).map(task => (
+                            <div key={task.jobId}>
+                              <div className="flex items-center gap-2 text-[11px]">
+                                <span className="min-w-0 flex-1 truncate text-(--text-primary)">{task.title}</span>
+                                <span className="shrink-0 text-[10px] text-(--text-muted)">{LONG_TASK_STATUS_LABEL[task.status]} {task.progress}%</span>
+                              </div>
+                              <div className="mt-1 h-1 overflow-hidden rounded-full bg-(--bg-input)">
+                                <div className="h-full rounded-full bg-(--accent-primary) transition-[width] duration-300" style={{ width: `${Math.max(0, Math.min(100, task.progress))}%` }} />
+                              </div>
+                            </div>
+                          ))}
+                          {activeTasks.length > 3 && <p className="text-[10px] text-(--text-muted)">另有 {activeTasks.length - 3} 个任务进行中</p>}
+                        </div>
+                      </section>
+                    )}
                     {loading ? (
                       <div className="py-12 text-center text-sm" style={{ color: 'var(--text-muted)' }}>加载中...</div>
                     ) : mails.length === 0 ? (
                       <div className="py-12 text-center">
                         <Mail className="w-10 h-10 mx-auto mb-3" style={{ color: 'var(--text-muted)', opacity: 0.3 }} />
-                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>暂无站内信</p>
+                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>暂无{category === 'system' ? '系统' : category === 'official' ? '官方' : '好友'}信息</p>
                       </div>
                     ) : (
                       <>
@@ -724,6 +848,16 @@ const InternalMailbox: React.FC = () => {
                 )}
               </AnimatePresence>
             </div>
+            <button
+              type="button"
+              aria-label="调整站内信窗口大小"
+              title="拖拽调整大小；方向键可微调"
+              onPointerDown={onResizeStart}
+              onKeyDown={onResizeKeyDown}
+              className="absolute bottom-1 right-1 z-10 rounded p-1 text-(--text-muted) hover:text-(--text-primary) hover:bg-white/5 cursor-nwse-resize touch-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-(--accent-primary)"
+            >
+              <MoveDiagonal2 className="h-3.5 w-3.5" />
+            </button>
           </motion.div>
           </>
         )}
@@ -750,6 +884,10 @@ const InternalMailbox: React.FC = () => {
         {unreadCount > 0 ? (
           <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center leading-none">
             {unreadCount > 99 ? '99+' : unreadCount}
+          </span>
+        ) : activeTasks.length > 0 ? (
+          <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 bg-blue-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center leading-none" title={`${activeTasks.length} 个后台任务进行中`}>
+            {activeTasks.length > 99 ? '99+' : activeTasks.length}
           </span>
         ) : null}
       </button>
