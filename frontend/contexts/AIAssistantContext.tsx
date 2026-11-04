@@ -58,6 +58,11 @@ export interface AIAssistantSceneSummary {
   video_prompt?: string;
   /** 已绑定的道具名称（来自资源面板「道具」页），供 AI 判断哪些物品已沉淀 */
   props?: string[];
+  /**
+   * 本镜头台词（一行一个说话人）。视频模型不认识角色名、只认画面可见的外貌特征，
+   * 所以智能体需要同时看到「谁说的」与「该角色的外貌特征」才能把台词正确归属给对应主体。
+   */
+  dialogues?: { character: string; line: string }[];
 }
 
 /** 动作执行器；onProgress 供长任务（如分镜拆分）回报细粒度步骤，由面板刷新到消息。返回值（如 jobId / sceneCount / 结果）回传给调用方供对话挂进度卡片 */
@@ -283,7 +288,9 @@ export const AIAssistantProvider: React.FC<AIAssistantProviderProps> = ({ childr
             a.first_frame_url !== b.first_frame_url || a.last_frame_url !== b.last_frame_url ||
             a.video_url !== b.video_url || a.first_frame_prompt !== b.first_frame_prompt ||
             a.last_frame_prompt !== b.last_frame_prompt || a.video_prompt !== b.video_prompt ||
-            (a.props || []).join('\u0001') !== (b.props || []).join('\u0001')
+            (a.props || []).join('\u0001') !== (b.props || []).join('\u0001') ||
+            (a.dialogues || []).map((d) => `${d.character}\u0002${d.line}`).join('\u0001') !==
+              (b.dialogues || []).map((d) => `${d.character}\u0002${d.line}`).join('\u0001')
           ) {
             same = false;
             break;

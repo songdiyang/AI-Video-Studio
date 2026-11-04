@@ -3,9 +3,10 @@
  * 原 PreviewEditor 组件的插件化包装
  */
 
-import React, { useCallback } from 'react';
+import React, { useCallback, useRef } from 'react';
 import PreviewEditor from '../../../../components/PreviewEditor';
 import { useStoryboardContext } from '../../core/StoryboardContext';
+import { useConfirm } from '../../../../contexts/ConfirmContext';
 
 const PreviewEditorPlugin: React.FC = () => {
   const {
@@ -20,7 +21,11 @@ const PreviewEditorPlugin: React.FC = () => {
     handleEpisodeSelect,
     showToast,
     isLoading,
+    autoStoryboard,
   } = useStoryboardContext();
+  const { confirm } = useConfirm();
+  // 拆分追问去重：工作坊每次防抖保存都会回调生成成功，同一剧本只问一次
+  const splitAskedRef = useRef<Set<number>>(new Set());
 
   const selectedSceneData = scenes.find(s => s.id === selectedScene);
 
@@ -80,7 +85,22 @@ const PreviewEditorPlugin: React.FC = () => {
     } catch (err) {
       console.error('[PreviewEditorPlugin] 剧本生成后刷新失败:', err);
     }
-  }, [showToast, setState, state.currentProjectId]);
+
+    // 剧本创作完成后必问：是否拆分为分镜。仅当保存的就是当前绑定剧本、且工程内还没有分镜时
+    // 才追问（已有分镜时拆分需覆盖确认，交给工作台「智能拆分」按钮处理）。
+    const sid = Number(payload.scriptId);
+    if (!sid || sid !== Number(state.currentScriptId)) return;
+    if (scenes.length > 0 || splitAskedRef.current.has(sid)) return;
+    splitAskedRef.current.add(sid);
+    const goSplit = await confirm({
+      title: '拆分为分镜',
+      message: `《${payload.title || state.scriptTitle || '本集剧本'}》已写好，是否现在由 AI 拆分为分镜？`,
+      confirmText: '立即拆分',
+      cancelText: '先不用',
+      type: 'info',
+    });
+    if (goSplit) autoStoryboard.handleAutoGenerateClick();
+  }, [showToast, setState, state.currentProjectId, state.currentScriptId, state.scriptTitle, scenes, autoStoryboard, confirm]);
 
   return (
     <PreviewEditor
