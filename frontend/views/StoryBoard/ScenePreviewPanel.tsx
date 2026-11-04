@@ -1,14 +1,14 @@
 import React, { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Button, Textarea, Chip, Select, SelectItem } from '@heroui/react';
-import { ImageIcon, Video, Film, Camera, Users, MapPin, Zap, X, Trash2, ZoomIn, ZoomOut, RotateCw, Maximize2, Blocks, ChevronDown, ChevronUp, History, Loader2, Pencil, Check, Plus, Search, Sparkles, Clock, Star, Shirt, Settings2, Package } from 'lucide-react';
+import { ImageIcon, Video, Film, Camera, Users, MapPin, Zap, X, Trash2, ZoomIn, ZoomOut, RotateCw, Maximize2, Blocks, ChevronDown, ChevronUp, History, Loader2, Pencil, Check, Plus, Search, Sparkles, Clock, Star, Shirt, Package } from 'lucide-react';
 import { StoryboardScene, DialogueLine } from './useSceneManager';
 import { TaskState } from '../../hooks/useTaskRunner';
 import MagicSpacePanel, { CameraGenerateParams, PaintGenerateParams, SketchGenerateParams } from './MagicSpace';
 import { prefetchSketchEditor } from './MagicSpace/SketchCanvas';
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
-import { validateFrameReadiness, formatValidationMessage } from './utils/validateFrameReadiness';
+import { validateFrameReadiness, formatValidationMessage, type ValidationIssue } from './utils/validateFrameReadiness';
 // import SketchPanel from './SceneCard/SketchPanel'; // 草图功能已集成到魔术空间
 import BlockEditor from './BlockEditor';
 import FrameHistoryPanel from './FrameHistoryPanel';
@@ -17,6 +17,7 @@ import { bustCache } from '../../services/mediaCache';
 import { getVideoModelCapabilities } from '../../services/localAI';
 import { startWorkflow, getWorkflowStatus } from '../../hooks/useWorkflow';
 import StoryboardLockButton from './components/StoryboardLockButton';
+import AssetGateNotice from './components/AssetGateNotice';
 import VideoHistorySidebar from './components/VideoHistorySidebar';
 
 const POPOVER_GAP = 4;
@@ -1235,6 +1236,41 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
       ? (videoTask?.progress ?? 0)
       : 0;
 
+  // 资产没出齐时，空状态要显示「先生成资源」而不是「生成图片」。
+  // 判定直接复用点击生成时的同一个预检（validateFrameReadiness）：两处必须同口径，
+  // 否则会出现「按钮说能生成、点了又被拦」。读不到工程/判定异常时不拦，退回原样。
+  const [frameBlockers, setFrameBlockers] = useState<ValidationIssue[]>([]);
+  const [gateToken, setGateToken] = useState(0);
+
+  useEffect(() => {
+    if (!projectId || !scene?.id) {
+      setFrameBlockers([]);
+      return;
+    }
+    let alive = true;
+    validateFrameReadiness(projectId, scene.characters || [], scene.location || '', scriptId || undefined, scene.id)
+      .then((res) => { if (alive) setFrameBlockers(res.ready ? [] : res.blockingIssues); })
+      .catch((e) => {
+        console.warn('[ScenePreviewPanel] 资产就绪判定失败，不拦住生成入口:', e);
+        if (alive) setFrameBlockers([]);
+      });
+    return () => { alive = false; };
+    // 依赖只取基本类型：本面板重渲染频繁，传数组引用会反复重算
+  }, [projectId, scriptId, scene?.id, scene?.characters?.join('|'), scene?.location, scene?.props?.join('|'), scene?.description, gateToken]);
+
+  // 资产库变化 / 生成任务完成后重算：补完图入口还写着「先生成资源」就等于没生效
+  useEffect(() => {
+    const bump = () => setGateToken((v) => v + 1);
+    window.addEventListener('resource-library-changed', bump);
+    window.addEventListener('asset:taskCompleted', bump);
+    return () => {
+      window.removeEventListener('resource-library-changed', bump);
+      window.removeEventListener('asset:taskCompleted', bump);
+    };
+  }, []);
+
+  // 资产没齐时的跳转由 AssetGateNotice 走 openAssetEditTab 事件，与资源面板同源
+
   // 预检：生成首尾帧前校验
   const validateForFrame = async (): Promise<{ ready: boolean; blocking: boolean; message?: string }> => {
     if (!projectId || !scene) return { ready: true, blocking: false };
@@ -1403,7 +1439,7 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
         ? '该分镜已生成视频，删除首帧可能需要重新生成视频。\n\n确定要删除首帧吗？尾帧将保留。'
         : '确定要删除首帧吗？尾帧将保留，下次生成时可以参考尾帧。',
       type: scene.videoUrl ? 'warning' : 'danger',
-      confirmText: '删除首帧',
+      confirmText: '删除',
       cancelText: '取消'
     });
     if (!confirmed) return;
@@ -1437,7 +1473,7 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
       title: '删除尾帧',
       message: '确定要删除尾帧吗？首帧将保留，下次生成时可以参考首帧。',
       type: 'danger',
-      confirmText: '删除尾帧',
+      confirmText: '删除',
       cancelText: '取消'
     });
     if (!confirmed) return;
@@ -2022,19 +2058,22 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
 
                   {/* 标题 */}
                   <h3 className="text-[15px] font-semibold text-(--text-primary) mb-1">
-                    {scene.hasAction ? '暂无首帧' : '暂无图片'}
+                    {frameBlockers.length ? '先生成资源' : scene.hasAction ? '暂无首帧' : '暂无图片'}
                   </h3>
 
                   {/* 草图提示 */}
-                  {scene.hasAction && scene.startSketchUrl && (
+                  {!frameBlockers.length && scene.hasAction && scene.startSketchUrl && (
                     <div className="flex items-center gap-1.5 mb-4 px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20">
                       <Pencil className="w-3.5 h-3.5 text-amber-500" />
                       <span className="text-xs text-amber-500">已设置首帧草图参考</span>
                     </div>
                   )}
 
-                  {/* 操作按钮组 */}
+                  {/* 操作按钮组：资产没齐时先摆「缺什么」，不给能点了被拦的生成按钮 */}
                   <div className="mt-5 flex flex-col items-center gap-4">
+                    {frameBlockers.length ? (
+                      <AssetGateNotice blockers={frameBlockers} readyLabel={scene.hasAction ? '生成首尾帧' : '生成图片'} />
+                    ) : (
                     <div className="flex items-center gap-3">
                       <Button
                         size="sm"
@@ -2060,6 +2099,7 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                         </Button>
                       )}
                     </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -2154,19 +2194,22 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
 
                   {/* 标题 */}
                   <h3 className="text-[15px] font-semibold text-(--text-primary) mb-1">
-                    暂无尾帧
+                    {frameBlockers.length ? '先生成资源' : '暂无尾帧'}
                   </h3>
 
                   {/* 草图提示 */}
-                  {scene.endSketchUrl && (
+                  {!frameBlockers.length && scene.endSketchUrl && (
                     <div className="flex items-center gap-1.5 mb-4 px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20">
                       <Pencil className="w-3.5 h-3.5 text-amber-500" />
                       <span className="text-xs text-amber-500">已设置尾帧草图参考</span>
                     </div>
                   )}
 
-                  {/* 操作按钮组 */}
+                  {/* 操作按钮组：尾帧同样不能凭空出，资产没齐时走同一个入口 */}
                   <div className="mt-5 flex flex-col items-center gap-4">
+                    {frameBlockers.length ? (
+                      <AssetGateNotice blockers={frameBlockers} readyLabel="生成首尾帧" />
+                    ) : (
                     <div className="flex items-center gap-3">
                       <Button
                         size="sm"
@@ -2192,6 +2235,7 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                         </Button>
                       )}
                     </div>
+                    )}
                   </div>
                 </div>
               )}

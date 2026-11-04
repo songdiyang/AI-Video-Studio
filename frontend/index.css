@@ -1651,3 +1651,17 @@
 [role="switch"] > span {
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
+
+/*
+ * 确认弹窗的勾选框：HeroUI 的 danger/warning 是它自己的色板（danger 偏品红），
+ * 与全局 --danger/--warning 不同源，勾选后和红色确认按钮视觉上打架。
+ * 选中态色块其实是 control 上的 ::after 伪元素，用 tailwind 类覆盖会被组件库的
+ * tailwind-merge 当作冲突类丢弃，所以这里用非工具类的自定义类名。
+ */
+.confirm-check-danger::after {
+  background-color: var(--danger) !important;
+}
+
+.confirm-check-warning::after {
+  background-color: var(--warning) !important;
+}
