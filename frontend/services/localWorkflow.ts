@@ -24,6 +24,16 @@ import {
   type AICategory,
 } from './localAI';
 import { readProjectDoc, resolveLocalPath } from './localStore';
+import { buildVideoDialogueClause } from './localStoryboards';
+import { DIALOGUE_CLAUSE_MARK } from './sceneDialogues';
+import {
+  checkStoryboardReadiness,
+  formatReadinessMessage,
+  readinessFixHints,
+  appendReferenceClause,
+  type ReadinessResult,
+  type ReadinessType,
+} from './sceneReadiness';
 import { loadEffectiveArtStylePrompt } from './projectSettings';
 import { isTauri } from './localApi';
 import { persistGeneratedMedia } from './localMedia';
@@ -183,20 +193,97 @@ async function loadSceneContext(projectId: number, storyboardId: number | undefi
 
 // ==================== 执行器 ====================
 
+/**
+ * 视频提示词必须带上「定义主体 + {} 台词」：视频模型不认识角色名，只认画面可见的外貌特征。
+ * 拆分阶段已将该段写入 video_prompt；存量分镜、手工改写过提示词或只补了台词的镜头会缺失，
+ * 这里按分镜当前台词与角色库外貌现场补上（仅用于本次生成，不回写用户的 video_prompt）。
+ */
+async function composeVideoPrompt(
+  projectId: number | null | undefined,
+  storyboardId: number | string | undefined,
+  rawPrompt: string,
+): Promise<string> {
+  if (rawPrompt.includes(DIALOGUE_CLAUSE_MARK)) return rawPrompt;
+  const clause = await buildVideoDialogueClause(projectId, storyboardId).catch(() => '');
+  if (!clause) return rawPrompt;
+  const base = rawPrompt.trim();
+  return `${base}${base && !base.endsWith('。') ? '。' : ''}${DIALOGUE_CLAUSE_MARK}${clause}`;
+}
+
+/**
+ * 由提示词直接「凭空」画新画面的分镜出图类型。
+ * 高清修复等基于既有画面的加工不在其中 —— 它们不需要资产库出齐图，拦了只会挡住正常修图。
+ */
+const GATED_FRAME_TYPES = new Set([
+  'frame_generation',
+  'single_frame_generation',
+  'sketch_frame_generation',
+  'camera_frame_generation',
+  'magic_paint_generation',
+]);
+
+/**
+ * 出图/出视频前的硬门禁：分镜引用的角色、影棚、道具必须都已出图，提示词必须存在。
+ * 之前预检只在前端两个组件里做，且依赖一个本地从未实现的校验端点 ——
+ * 未命中的请求被兜底成 200 空对象，预检恒等于通过，于是出现了「角色还没白膜就生成首帧」。
+ * 这里放在执行层，UI 按钮、批量生成、智能体动作都绕不过。
+ */
+async function gateStoryboardGeneration(
+  projectId: number | null | undefined,
+  storyboardId: number | string | undefined,
+  workflowType: string,
+  type: ReadinessType,
+): Promise<ReadinessResult | null> {
+  if (!storyboardId) return null;
+  if (type === 'frame' && !GATED_FRAME_TYPES.has(workflowType)) return null;
+  const result = await checkStoryboardReadiness(projectId ?? null, storyboardId, type);
+  // 读不到工程或分镜时不在此处假装通过，交给后续按缺参/缺上下文正常报错
+  if (!result) return null;
+  if (!result.ready) {
+    const label = type === 'video' ? '无法生成视频' : '无法生成画面';
+    const hints = readinessFixHints(result);
+    throw new Error(
+      `${label}：${formatReadinessMessage(result)}。` +
+      (hints.length ? `补齐方式：${hints.join('；')}。` : '') +
+      '资产图齐备前不会凭空生成（可用 get_task_status 核验任务完成后重试）。',
+    );
+  }
+  return result;
+}
+
+/** 参考图合并：资产参考图在前（提示词按这个顺序编号指代），调用方显式传入的草图/合成图在后 */
+function mergeReferenceUrls(explicit: string[], result: ReadinessResult | null): string[] {
+  const out: string[] = [];
+  for (const ref of result?.references || []) {
+    if (!out.includes(ref.url)) out.push(ref.url);
+  }
+  for (const url of explicit) {
+    if (url && !out.includes(url)) out.push(url);
+  }
+  return out;
+}
+
+function pickExplicitRefs(source: Record<string, unknown>): string[] {
+  const out: string[] = [];
+  for (const key of ['compositeImageUrl', 'sketchUrl', 'startSketchUrl', 'imageUrl', 'image_url', 'referenceImageUrl']) {
+    const v = source[key];
+    if (typeof v === 'string' && v) out.push(v);
+  }
+  return out;
+}
+
 async function runImage(job: LocalWorkflowJob, task: LocalWorkflowTask, params: any): Promise<void> {
   const model = await pickModel(params.imageModel || params.model, 'IMAGE');
   if (!model) throw new Error('未找到可用的图片生成模型，请在设置中配置');
   task.model_name = model.model_name;
 
   const ctx = await loadSceneContext(job.project_id, params.storyboardId);
-  const prompt = (params.prompt || params.description || params.firstFramePrompt || ctx.prompt || '').trim();
-  if (!prompt) throw new Error('缺少图片生成提示词');
+  const rawPrompt = (params.prompt || params.description || params.firstFramePrompt || ctx.prompt || '').trim();
+  if (!rawPrompt) throw new Error('缺少图片生成提示词');
 
-  const refImageUrls: string[] = [];
-  for (const key of ['compositeImageUrl', 'sketchUrl', 'startSketchUrl', 'imageUrl', 'image_url', 'referenceImageUrl']) {
-    const v = params[key];
-    if (typeof v === 'string' && v) refImageUrls.push(v);
-  }
+  const gate = await gateStoryboardGeneration(job.project_id, params.storyboardId, job.workflow_type, 'frame');
+  const prompt = gate ? appendReferenceClause(rawPrompt, gate.references) : rawPrompt;
+  const refImageUrls = mergeReferenceUrls(pickExplicitRefs(params), gate);
 
   task.status = 'processing';
   task.progress = 15;
@@ -223,7 +310,12 @@ async function runImage(job: LocalWorkflowJob, task: LocalWorkflowTask, params: 
   if (lastPrompt && job.workflow_type === 'frame_generation') {
     try {
       task.progress = 70;
-      const second = await generateImage({ model, prompt: lastPrompt, aspectRatio: params.aspectRatio });
+      const second = await generateImage({
+        model,
+        prompt: gate ? appendReferenceClause(lastPrompt, gate.references) : lastPrompt,
+        refImageUrls,
+        aspectRatio: params.aspectRatio,
+      });
       const rawLast = second.url || (second.b64 ? `data:image/png;base64,${second.b64}` : null);
       if (rawLast) {
         const lastUrl = await persistGeneratedMedia(job.project_id, rawLast, 'frame_last');
@@ -243,8 +335,10 @@ async function runVideo(job: LocalWorkflowJob, task: LocalWorkflowTask, params: 
   if (!model) throw new Error('未找到可用的视频生成模型，请在设置中配置');
   task.model_name = model.model_name;
 
+  await gateStoryboardGeneration(job.project_id, params.storyboardId, job.workflow_type, 'video');
+
   const ctx = await loadSceneContext(job.project_id, params.storyboardId);
-  const prompt = (params.prompt || ctx.prompt || '').trim();
+  const prompt = await composeVideoPrompt(job.project_id, params.storyboardId, (params.prompt || ctx.prompt || '').trim());
   const firstFrame = params.imageUrl || params.firstFrame || ctx.firstFrame;
   const lastFrame = params.lastFrame || ctx.lastFrame;
 
@@ -468,8 +562,13 @@ async function buildQueuePlanAndMeta(workflowType: string, projectId: number, pa
   if (category === 'video') {
     const model = await pickModel(p.videoModel || p.model, 'VIDEO');
     if (!model) throw new Error('未找到可用的视频生成模型，请在设置中配置');
+    await gateStoryboardGeneration(projectId, p.storyboardId, workflowType, 'video');
     const ctx = await loadSceneContext(projectId, p.storyboardId);
-    const rawPrompt = (p.prompt || ctx.prompt || '').trim();
+    const rawPrompt = await composeVideoPrompt(
+      projectId,
+      p.storyboardId,
+      (p.prompt || ctx.prompt || '').trim(),
+    );
     if (!rawPrompt) throw new Error('缺少视频生成提示词');
     const prompt = withArtStyle(rawPrompt);
     plan = await buildVideoTaskPlan(model, {
@@ -486,16 +585,14 @@ async function buildQueuePlanAndMeta(workflowType: string, projectId: number, pa
     const ctx = await loadSceneContext(projectId, p.storyboardId);
     const rawPrompt = (p.prompt || p.description || p.firstFramePrompt || ctx.prompt || '').trim();
     if (!rawPrompt) throw new Error('缺少图片生成提示词');
-    const prompt = withArtStyle(rawPrompt);
-    const refImageUrls: string[] = [];
-    for (const key of ['compositeImageUrl', 'sketchUrl', 'startSketchUrl', 'imageUrl', 'image_url', 'referenceImageUrl']) {
-      const v = p[key];
-      if (typeof v === 'string' && v) refImageUrls.push(v);
-    }
-    const steps: TaskStep[] = [buildImageTaskStep(model, { prompt, refImageUrls, aspectRatio: p.aspectRatio })];
+    const gate = await gateStoryboardGeneration(projectId, p.storyboardId, workflowType, 'frame');
+    const prompt = withArtStyle(gate ? appendReferenceClause(rawPrompt, gate.references) : rawPrompt);
+    const refImageUrls = mergeReferenceUrls(pickExplicitRefs(p), gate);
+    const steps: TaskStep[] = [await buildImageTaskStep(model, { prompt, refImageUrls, aspectRatio: p.aspectRatio })];
     if (p.lastFramePrompt && workflowType === 'frame_generation') {
-      const lastStep = buildImageTaskStep(model, {
-        prompt: withArtStyle(p.lastFramePrompt),
+      const lastStep = await buildImageTaskStep(model, {
+        prompt: withArtStyle(gate ? appendReferenceClause(p.lastFramePrompt, gate.references) : p.lastFramePrompt),
+        refImageUrls,
         aspectRatio: p.aspectRatio,
         nameHint: 'frame_last',
         aliases: ['last_frame_url', 'endFrame', 'lastFrameUrl'],

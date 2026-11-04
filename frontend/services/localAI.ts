@@ -497,8 +497,9 @@ export async function generateImage(opts: {
   };
   const size = sizeFromRatio(opts.aspectRatio, 1024 * 1024);
   if (size) body.size = size;
-  const imgs = (opts.refImageUrls || []).filter(Boolean);
-  if (imgs.length && !/t2i/i.test(opts.model.model_name)) body.image = imgs;
+  // 参考图必须转成厂商可读形态：工程资产图都是本地 asset/file 地址，方舟拉不到，原样提交等于没给参考图
+  const imgs = await resolveImageInputs(opts.refImageUrls, opts.model.model_name);
+  if (imgs.length) body.image = imgs;
 
   const data = await vendorFetch({
     url: `${base}/images/generations`,
@@ -549,6 +550,7 @@ function assetUrlToPath(src: string): string | null {
 
 /** 本地图片转 data URL：Tauri 下直读文件（绕开 CSP/CORS），浏览器下回退 fetch */
 async function localImageToDataUrl(src: string): Promise<string> {
+  const label = decodeURIComponent((src.split(/[?#]/)[0].split('/').pop() || src).slice(0, 60));
   if (isTauri()) {
     const path = assetUrlToPath(src);
     if (path) {
@@ -560,11 +562,16 @@ async function localImageToDataUrl(src: string): Promise<string> {
       }
     }
   }
-  const res = await fetch(src);
-  if (!res.ok) throw new Error(`本地帧读取失败（HTTP ${res.status}），无法提交视频任务`);
+  let res: Response;
+  try {
+    res = await fetch(src);
+  } catch (err) {
+    throw new Error(`参考图「${label}」读不出来：${(err as Error)?.message || err}`);
+  }
+  if (!res.ok) throw new Error(`参考图「${label}」读取失败（HTTP ${res.status}）`);
   const blob = await res.blob();
-  if (!blob.size) throw new Error('本地参考帧为空，无法提交视频任务');
-  if (blob.size > ARK_IMAGE_MAX_BYTES) throw new Error('本地参考帧超过 20MB，无法提交视频任务');
+  if (!blob.size) throw new Error(`参考图「${label}」是个空文件，请重新生成该资产图片`);
+  if (blob.size > ARK_IMAGE_MAX_BYTES) throw new Error(`参考图「${label}」超过 20MB，厂商无法接收`);
 
   const mime = blob.type && blob.type.startsWith('image/') ? blob.type : 'image/png';
   const bytes = new Uint8Array(await blob.arrayBuffer());
@@ -839,11 +846,26 @@ export async function buildVideoTaskPlan(
   };
 }
 
+/**
+ * 归一化出图参考图：过滤空值、把本地 asset/file/blob 地址转成 data URL。
+ * 纯文生图（t2i）模型不吃参考图，此时明确告警，避免「以为带了参考图其实没带」。
+ */
+async function resolveImageInputs(refImageUrls: string[] | undefined, modelName: string): Promise<string[]> {
+  const imgs = (refImageUrls || []).filter(Boolean);
+  if (!imgs.length) return [];
+  if (/t2i/i.test(modelName || '')) {
+    console.warn(`[localAI] 模型 ${modelName} 仅支持文生图，${imgs.length} 张参考图被忽略，角色/场景一致性无法保证`);
+    return [];
+  }
+  const resolved = await Promise.all(imgs.map((u) => toArkImageInput(u)));
+  return resolved.filter((u): u is string => Boolean(u));
+}
+
 /** 构造图片任务步骤（seedream 系）：单请求 + 成品落地；结果字段别名与旧 runImage 一致 */
-export function buildImageTaskStep(
+export async function buildImageTaskStep(
   model: OfflineModel,
   opts: { prompt: string; refImageUrls?: string[]; aspectRatio?: string; nameHint?: string; aliases?: string[] },
-): TaskStep {
+): Promise<TaskStep> {
   const base = getApiBase(model);
   const body: Record<string, unknown> = {
     model: model.model_name,
@@ -853,8 +875,8 @@ export function buildImageTaskStep(
   };
   const size = sizeFromRatio(opts.aspectRatio, 1024 * 1024);
   if (size) body.size = size;
-  const imgs = (opts.refImageUrls || []).filter(Boolean);
-  if (imgs.length && !/t2i/i.test(model.model_name)) body.image = imgs;
+  const imgs = await resolveImageInputs(opts.refImageUrls, model.model_name);
+  if (imgs.length) body.image = imgs;
   return {
     submit: {
       url: `${base}/images/generations`,

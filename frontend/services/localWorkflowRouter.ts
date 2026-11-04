@@ -94,8 +94,15 @@ export async function routeWorkflows(url: URL, method: string, body: any): Promi
       const projectId = Number(body?.projectId ?? body?.project_id ?? 0) || 0;
       const params = body?.params ?? {};
       if (!workflowType) return jsonResponse({ message: '缺少 workflowType' }, 400);
-      const { jobId, tasks } = await start(workflowType, projectId, params);
-      return jsonResponse({ jobId, tasks });
+      // 前置门禁（资产未出齐、缺提示词等）以 400 + message 返回：
+      // 既避免 useWorkflow 把 5xx 当瞬时故障重试，也让阻断原因原样抵达界面与智能体回执。
+      let started: { jobId: string; tasks: any[] };
+      try {
+        started = await start(workflowType, projectId, params);
+      } catch (err: any) {
+        return jsonResponse({ message: err?.message || '任务启动失败', error: err?.message || '' }, 400);
+      }
+      return jsonResponse({ jobId: started.jobId, tasks: started.tasks });
     }
     if (m === 'GET') {
       const projectId = url.searchParams.get('projectId');
