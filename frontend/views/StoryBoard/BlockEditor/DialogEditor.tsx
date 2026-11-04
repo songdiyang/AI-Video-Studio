@@ -2,13 +2,14 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Button } from '@heroui/react';
-import { Save, Trash2, MessageCircle, Mic, History, RotateCcw, GitCompare, Sparkles, Undo2, Loader2, Plus, X as XIcon, ImageIcon, Film } from 'lucide-react';
+import { Save, Trash2, MessageCircle, Mic, History, RotateCcw, GitCompare, Sparkles, Undo2, Loader2, Plus, X as XIcon, ImageIcon, Film, AlertTriangle } from 'lucide-react';
 import { useToast } from '../../../contexts/ToastContext';
 import { BLOCK_OPTIONS } from './utils/blockRegistry';
 import SketchFramesPanel from './SketchFramesPanel';
 import { startWorkflow, getWorkflowStatus } from '../../../hooks/useWorkflow';
 import { filterModelsForTaskSlot } from '../../../utils/modelCapabilities';
 import DropdownSelect from '../../../components/ui/DropdownSelect';
+import { normalizeSceneDialogues, matchSpeaker } from '../../../services/sceneDialogues';
 import type { EditorSaveStatus, EditorSessionHandle } from '../../../components/ContentEditorPanel';
 
 interface PromptVersion {
@@ -16,6 +17,8 @@ interface PromptVersion {
   is_current: boolean; source: 'manual' | 'ai'; created_by_name?: string; created_at: string;
 }
 interface DialogueLine { character: string; line: string }
+/** 行内残留的「名字：」前缀（台词应一行一人，名字只放 character；长度与 sceneDialogues 同口径） */
+const SPEAKER_IN_LINE_RE = /[\u4e00-\u9fa5A-Za-z0-9·_]{1,6}\s*[:：]/;
 export type PromptField = 'content' | 'first' | 'last' | 'video';
 export interface DialogEditorProps {
   storyboardId: number;
@@ -220,7 +223,12 @@ const DialogEditorSession: React.FC<DialogEditorProps> = (props) => {
     content: panel?.fields.content.value ?? '', first: panel?.fields.first.value ?? '',
     last: panel?.fields.last.value ?? '', video: panel?.fields.video.value ?? '',
     prompt: props.initialPrompt ?? '',
-    dialogues: props.dialogues?.length ? props.dialogues : props.dialogue ? [{ character: names.length === 1 ? names[0] : '', line: props.dialogue }] : [],
+    // 旧数据与手工录入常把多个角色的话挤在一行「名字：…」，这里按说话人前缀拆成一行一人。
+    // 不拆会出现截图里那种「说话人为空 + 整段台词挤一格」，而视频模型只认外貌特征，
+    // 台词归属一旦模糊，生成出来的画面就会让错的角色开口。
+    dialogues: props.dialogues?.length
+      ? props.dialogues
+      : normalizeSceneDialogues({ dialogue: props.dialogue ?? '' }, names).lines.map((l) => ({ character: l.character, line: l.line })),
     voiceover: props.voiceover ?? '', negative: props.negativePrompt ?? '', videoFrames: {},
   };
   const patchContent = async (body: object) => {
@@ -505,6 +513,28 @@ const DialogEditorSession: React.FC<DialogEditorProps> = (props) => {
   const handleAddDialogueLine = (character = names[0] || '') => session.update('dialogues', [...session.values.dialogues, { character, line: '' }]);
   const handleUpdateDialogueLine = (index: number, key: 'character' | 'line', value: string) => session.update('dialogues', session.values.dialogues.map((d, i) => i === index ? { ...d, [key]: value } : d));
   const handleRemoveDialogueLine = (index: number) => session.update('dialogues', session.values.dialogues.filter((_, i) => i !== index));
+  /** 一行一个说话人校验：缺说话人 / 行内仍混多人 / 说话人不在出场角色里 */
+  const dialogueIssues = (list: DialogueLine[]) => {
+    const spoken = list.filter((d) => String(d.line || '').trim());
+    const noSpeaker = spoken.filter((d) => !String(d.character || '').trim()).length;
+    const mixed = spoken.filter((d) => SPEAKER_IN_LINE_RE.test(String(d.line || ''))).length;
+    const unknown = names.length
+      ? [...new Set(spoken.map((d) => String(d.character || '').trim()).filter((c) => !!c && !names.includes(matchSpeaker(c, names))))]
+      : [];
+    return { noSpeaker, mixed, unknown };
+  };
+  /** 手动拆行：把现有台词按「名字：」前缀重新切分并归位说话人（空行会被丢弃） */
+  const handleResplitDialogues = () => {
+    const { lines, check } = normalizeSceneDialogues({ dialogues: session.values.dialogues }, names);
+    if (!lines.length) { showToast('没有可拆分的台词', 'warning'); return; }
+    session.update('dialogues', lines.map((l) => ({ character: l.character, line: l.line })));
+    showToast(
+      check.missing > 0
+        ? `已拆成 ${lines.length} 行，其中 ${check.missing} 行未识别出说话人，请手工指定`
+        : `已拆成 ${lines.length} 行台词`,
+      check.missing > 0 ? 'warning' : 'success',
+    );
+  };
   const inputClass = 'w-full min-w-0 text-[13px] px-3 py-2 rounded-md bg-[var(--bg-input)] border border-[var(--border-color)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]/25 transition-colors';
   const buttonClass = 'inline-flex items-center justify-center gap-1 h-[26px] px-2 rounded-md text-[11px] bg-[var(--bg-input)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:text-[var(--accent)] hover:border-[var(--accent)]/40 disabled:opacity-40 disabled:cursor-not-allowed transition-colors';
   const actionButtonClass = 'inline-flex items-center justify-center gap-1 h-7 px-2.5 rounded-md text-[11px] text-[var(--text-secondary)] bg-transparent border border-[var(--border-color)] hover:text-[var(--text-primary)] hover:border-[var(--text-muted)] disabled:opacity-40 disabled:cursor-not-allowed transition-all active:scale-[0.98]';
@@ -525,6 +555,18 @@ const DialogEditorSession: React.FC<DialogEditorProps> = (props) => {
         return <div className="content-editor-field space-y-2">
           <div className="flex items-center justify-between"><span>角色台词</span>{!panel && <button className={buttonClass} disabled={isSaving} onClick={() => void handleSave()}><Save size={12} />保存台词</button>}</div>
           {values.dialogues.length === 0 && <div className="text-[var(--text-muted)] py-3 text-center">暂无台词</div>}
+          {(() => {
+            const iss = dialogueIssues(values.dialogues);
+            if (!iss.noSpeaker && !iss.mixed && !iss.unknown.length) return null;
+            const bits: string[] = [];
+            if (iss.noSpeaker) bits.push(`${iss.noSpeaker} 行未指定说话人`);
+            if (iss.mixed) bits.push(`${iss.mixed} 行里混了多个「名字：」`);
+            if (iss.unknown.length) bits.push(`说话人不在出场角色：${iss.unknown.join('、')}`);
+            return <div className="rounded-md border border-amber-500/30 bg-amber-500/5 px-2.5 py-2 text-[11px] text-amber-500 space-y-1.5">
+              <div className="flex items-start gap-1"><AlertTriangle size={12} className="mt-0.5 shrink-0" /><span>台词校验：{bits.join('；')}。一行只能一个说话人，否则写进视频提示词时台词会归属到错的角色。</span></div>
+              {iss.noSpeaker + iss.mixed + iss.unknown.length > 0 && <button type="button" className={buttonClass} onClick={handleResplitDialogues}><RotateCcw size={12} />按说话人自动拆行</button>}
+            </div>;
+          })()}
           {values.dialogues.map((dl, idx) => <div key={idx} className="space-y-1.5">
             <div className="flex gap-2 min-w-0">
               {names.length ? <DropdownSelect
@@ -538,6 +580,7 @@ const DialogEditorSession: React.FC<DialogEditorProps> = (props) => {
               <button className="p-1 self-center rounded-md text-red-400 hover:bg-red-500/10 transition-colors" onClick={() => handleRemoveDialogueLine(idx)} title="删除此行台词" aria-label={`删除第${idx + 1}行台词`}><XIcon size={14} /></button>
             </div>
             <textarea aria-label={`第${idx + 1}行台词`} value={dl.line} onChange={e => handleUpdateDialogueLine(idx, 'line', e.target.value)} placeholder="输入台词内容..." rows={2} className={inputClass} />
+            {SPEAKER_IN_LINE_RE.test(String(dl.line || '')) && <div className="text-[10px] text-amber-500/80">行内疑似带了「名字：」前缀，可用上方「按说话人自动拆行」处理</div>}
           </div>)}
           <button className={`${buttonClass} justify-center border border-dashed border-[var(--border-color)]`} onClick={() => handleAddDialogueLine()}><Plus size={13} />添加台词</button>
           {!values.dialogues.length && names.length > 0 && <div className="flex flex-wrap gap-1">{names.map(name => <button key={name} className={buttonClass} onClick={() => handleAddDialogueLine(name)}>+ {name}</button>)}</div>}
