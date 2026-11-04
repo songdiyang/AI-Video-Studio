@@ -10,11 +10,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAIAssistantWorkbenchContext, AIAssistantAction, AIAssistantFrameContext, AIAssistantSceneSummary, AIAssistantStudioSummary } from '../../../../contexts/AIAssistantContext';
 import { createScript as createScriptApi, deleteScript as deleteScriptApi, updateScript as updateScriptApi } from '../../../../services/scripts';
-import { fetchCharacter, fetchCharacterStates, createCharacterState, updateCharacterState, deleteCharacterState, generateCharacterStateViews, createProp, updateProp, deleteProp } from '../../../../services/assets';
+import { fetchCharacter, fetchCharacterStates, createCharacterState, updateCharacterState, deleteCharacterState, generateCharacterStateViews, createProp, updateProp, deleteProp, generatePropImage } from '../../../../services/assets';
+import { generatePropViews } from '../../../../services/costumes';
 import { updateProject as updateProjectApi } from '../../../../services/projects';
 import { registerLongTask } from '../../../../services/longTasks';
-import { listStudios, createStudio, updateStudio, deleteStudio } from '../../../../services/studios';
+import { listStudios, createStudio, updateStudio, deleteStudio, generateStudioNineGrid } from '../../../../services/studios';
 import { probeMediaBatch, formatBytes, formatResolution, MediaKind } from '../../../../services/mediaInfo';
+import { normalizeSceneDialogues } from '../../../../services/sceneDialogues';
 import {
   loadProjectGenerationSettings,
   saveProjectGenerationSettings,
@@ -182,29 +184,46 @@ export function useStoryboardAIAssistantBridge(params: StoryboardAIAssistantBrid
       // 返回 Promise：本地离线端会同步完成拆分并落库后再 resolve，
       // 供 AI 助手 agent 循环 await，避免「未真正完成就宣称完成」。
       onProgress?.('已校验剧本绑定，正在读取剧本正文…');
-      const { startGeneration } = autoStoryboard as any;
-      if (startGeneration) {
-        let splitCount: number | undefined;
-        return Promise.resolve(startGeneration(state.textModel, true, false, {
-          conflictStrategy: 'skip',
-          referenceScriptContent: state.scriptContent || undefined,
-          referenceScriptTitle: state.currentProject?.name || undefined,
-          // 拆分关键阶段回报到对话栏步骤
-          onSplitProgress: (label: string) => onProgress?.(label),
-          onSplitDone: (count?: number) => {
-            splitCount = count;
-            onProgress?.(count != null ? `拆分完成，写入 ${count} 个分镜` : '拆分完成，已同步分镜列表');
-          },
-          onSplitError: (msg: string) => onProgress?.(`拆分失败：${msg}`),
-        })).then(() => {
-          // 拆分时会自动沉淀重复出现的道具，刷新资源面板「道具」页与 AI 上下文
-          resourceActions.fetchProjectProps?.();
-          notifyLibraryChanged('props');
-          return { sceneCount: splitCount };
-        });
+      const startGeneration = autoStoryboard.startGeneration;
+      if (!startGeneration) {
+        // 不得静默回落到会弹工作台确认框的 handleAutoGenerateClick：它返回 undefined，
+        // agent 循环拿不到任何执行凭证，用户只看到「执行完成」却没有回执。
+        throw new Error('分镜工作台未提供拆分能力（startGeneration），请在分镜工作台手动点击「智能拆分」。');
       }
-      // 回退：调用原来的方法（会弹窗）
-      autoStoryboard.handleAutoGenerateClick();
+      let splitCount: number | undefined;
+      // 拆分是否真正走完（端点返回 count 缺省时也置真，由 agent 循环回读工程核验真实分镜数）
+      let splitDone = false;
+      // 前置校验失败（无剧本/已有任务）时 startGeneration 只回调不抛错，需在此拦下，避免误报完成
+      let splitError: string | undefined;
+      // 台词校验结论（拆了多句、哪些没说话人），需一并回喂智能体，否则它只能盲猜台词归属
+      let splitDialogueNote: string | undefined;
+      return Promise.resolve(startGeneration(state.textModel, true, false, {
+        conflictStrategy: 'skip',
+        referenceScriptContent: state.scriptContent || undefined,
+        referenceScriptTitle: state.currentProject?.name || undefined,
+        // 拆分关键阶段回报到对话栏步骤
+        onSplitProgress: (label: string) => onProgress?.(label),
+        onSplitDone: (count?: number, dialogueNote?: string) => {
+          splitDone = true;
+          splitCount = count;
+          splitDialogueNote = dialogueNote;
+          onProgress?.(count != null ? `拆分完成，写入 ${count} 个分镜` : '拆分完成，已同步分镜列表');
+          if (dialogueNote) onProgress?.(dialogueNote);
+        },
+        onSplitError: (msg: string) => {
+          splitError = msg;
+          onProgress?.(`拆分失败：${msg}`);
+        },
+      })).then(() => {
+        if (splitError) throw new Error(splitError);
+        if (!splitDone) {
+          throw new Error('拆分没有真正启动或未完成落库（可能被其它分镜任务占用，或已转交后台工作流），请读取分镜清单确认后再回复用户。');
+        }
+        // 拆分时会自动沉淀重复出现的道具，刷新资源面板「道具」页与 AI 上下文
+        resourceActions.fetchProjectProps?.();
+        notifyLibraryChanged('props');
+        return { sceneCount: splitCount ?? 0, dialogueNote: splitDialogueNote };
+      });
     } else if (action === 'optimize_prompt' || action === 'upload_material') {
       showToast(`请在分镜卡片上手动${action === 'optimize_prompt' ? '触发提示词优化' : '上传素材'}`, 'info');
     }
@@ -255,12 +274,29 @@ export function useStoryboardAIAssistantBridge(params: StoryboardAIAssistantBrid
       const sceneId = sceneIdFrom(actionParams);
       if (!sceneId) { showToast('缺少 sceneId', 'warning'); return; }
       const raw = actionParams?.dialogues;
-      const list = Array.isArray(raw) ? raw.map((d: any, i: number) => typeof d === 'string'
-        ? { character: '', line: d, order: i }
-        : { character: String(d.character || ''), line: String(d.line || d.text || ''), order: i })
-        : [];
-      Promise.resolve(sceneActions.updateDialogues(sceneId, list as any))
-        .then(() => toastOk('对白已更新')).catch(toastErr('更新失败'));
+      // 智能体写的台词必须走与拆分阶段同一套校验：一行一个说话人、说话人落在出场角色里。
+      // 少了这一步，模型把两个人的话写进同一行会原样落库，视频里开口的人跟着错。
+      const target = scenes.find((s: any) => Number(s?.id) === Number(sceneId));
+      const cast = (Array.isArray(target?.characters) ? target.characters : [])
+        .map((c: any) => String(typeof c === 'string' ? c : (c?.name ?? '')).trim())
+        .filter(Boolean);
+      const { lines, check } = normalizeSceneDialogues(
+        Array.isArray(raw) ? { dialogues: raw } : { dialogue: String(raw ?? '') },
+        cast,
+      );
+      if (!lines.length) { showToast('没有可保存的台词', 'warning'); return { success: false, error: 'dialogues 为空或全是空行，未做任何修改' }; }
+      return Promise.resolve(sceneActions.updateDialogues(sceneId, lines as any)).then((ok: any) => {
+        if (ok === false) {
+          showToast('更新对白失败', 'error');
+          return { success: false, error: '更新对白失败' };
+        }
+        toastOk('对白已更新');
+        const notes: string[] = [`已按说话人拆成 ${lines.length} 行`];
+        if (check.missing > 0) notes.push(`${check.missing} 行未识别出说话人，需用户确认`);
+        if (check.unknown.length) notes.push(`${check.unknown.join('、')} 不在该镜头的出场角色里`);
+        // 回报校验结论：否则 agent 会以为写进去了，实际台词归属仍有问题
+        return { success: true, lines: lines.length, dialogueNote: notes.join('；') };
+      });
     } else if (action === 'update_scene_characters_location') {
       const sceneId = sceneIdFrom(actionParams);
       if (!sceneId) { showToast('缺少 sceneId', 'warning'); return; }
@@ -604,7 +640,7 @@ export function useStoryboardAIAssistantBridge(params: StoryboardAIAssistantBrid
       if (!ensureProject()) return;
       const content = String(actionParams?.content || '');
       if (!content.trim()) { showToast('剧本内容不能为空', 'warning'); return; }
-      createScriptApi({
+      return createScriptApi({
         projectId: state.currentProjectId!,
         title: actionParams?.title || '新剧本',
         content,
@@ -614,6 +650,9 @@ export function useStoryboardAIAssistantBridge(params: StoryboardAIAssistantBrid
           toastOk(`已创建剧本「${actionParams?.title || '新剧本'}」`);
           // 刷新 scripts 列表
           setState('currentScriptId' as any, res.scriptId);
+          // 剧本刚创作完：把结果与拆分口径一起回喂，避免模型未经用户确认就 auto_storyboard
+          return `已创建剧本「${actionParams?.title || '新剧本'}」（ID:${res.scriptId}）并设为当前参考剧本。` +
+            '请按【剧本完成后的拆分确认（默认强制）】用 ask 询问用户是否拆分为分镜，用户确认前禁止执行 auto_storyboard。';
         })
         .catch(toastErr('创建剧本失败'));
     } else if (action === 'update_script') {
@@ -637,6 +676,11 @@ export function useStoryboardAIAssistantBridge(params: StoryboardAIAssistantBrid
         return { success: false, error: `未找到${epHint}绑定的剧本。请先用 create_script（带 episodeNumber）新建该集剧本再写入大纲。` };
       }
       const title = actionParams?.title != null ? String(actionParams.title) : (target.title || `第${target.episode_number || 1}集`);
+      // 只有“该集此前没有正文”才算首次定稿（即创作完剧本）；日常修订不重复追问拆分
+      const prevContent = Number(target.id) === Number(state.currentScriptId)
+        ? String(state.scriptContent || '')
+        : String(target?.content || '');
+      const isFirstDraft = !prevContent.trim();
       return Promise.resolve(updateScriptApi(target.id, title, content))
         .then(() => {
           // 当前集：同步工作台状态使大纲面板即时刷新；并通知剧本列表重新加载
@@ -645,7 +689,10 @@ export function useStoryboardAIAssistantBridge(params: StoryboardAIAssistantBrid
             setState('scriptTitle', title);
           }
           window.dispatchEvent(new CustomEvent('reload-scripts', { detail: { projectId: state.currentProjectId } }));
-          return `已更新${title}（#${target.id}，第${target.episode_number || 1}集）正文 ${content.length} 字，大纲面板已同步渲染`;
+          const done = `已更新${title}（#${target.id}，第${target.episode_number || 1}集）正文 ${content.length} 字，大纲面板已同步渲染`;
+          return isFirstDraft
+            ? `${done}\n该集大纲首次定稿，请按【剧本完成后的拆分确认（默认强制）】用 ask 询问用户是否拆分为分镜，用户确认前禁止执行 auto_storyboard。`
+            : done;
         })
         .catch((e: any) => ({ success: false, error: e?.message || '更新剧本正文失败' }));
     } else if (action === 'delete_script') {
@@ -702,6 +749,75 @@ export function useStoryboardAIAssistantBridge(params: StoryboardAIAssistantBrid
           return { success: false, error: e?.message || '白膜三视图生成失败' };
         }
       })();
+    } else if (action === 'generate_studio_nine_grid') {
+      // 出图门禁的影棚项：影棚没有场景图时，由智能体直接补生成，不必让用户去资源面板翻
+      if (!ensureProject()) return;
+      if (!state.currentImageModel) return { success: false, error: '未选择图像生成模型，请先在工程设置里选择' };
+      const sid = Number(actionParams?.studioId);
+      const sname = String(actionParams?.studioName || '').trim();
+      const studio = sid
+        ? studios.find((s) => Number(s.id) === sid)
+        : sname
+          ? studios.find((s) => String(s.name || '').trim().toLowerCase() === sname.toLowerCase())
+          : null;
+      if (!studio) {
+        return { success: false, error: sid ? `场景库中没有 ID=${sid} 的影棚` : `场景库中没有名为「${sname}」的影棚，请先 create_studio` };
+      }
+      const reprocess = !!studio.nine_grid_image_url;
+      return generateStudioNineGrid(Number(studio.id), {
+        imageModel: state.currentImageModel,
+        textModel: state.textModel || undefined,
+      })
+        .then((r: any) => {
+          if (r?.jobId) {
+            registerLongTask({
+              jobId: String(r.jobId),
+              title: `影棚九宫格 · ${studio.name}`,
+              kind: 'image',
+              projectId: state.currentProjectId ?? null,
+            });
+          }
+          loadStudios();
+          notifyLibraryChanged('studios');
+          return `影棚「${studio.name}」（ID:${studio.id}）已启动${reprocess ? '重新' : ''}生成九宫组装图（任务 #${r?.jobId || '-'}）。完成后该影棚才有场景图，引用它的分镜才允许出图；可用 get_task_status 查看进度。`;
+        })
+        .catch(fail('影棚九宫格生成失败'));
+    } else if (action === 'generate_prop_image') {
+      // 出图门禁的道具项：已入库道具必须有道具图，缺图时由智能体补生成
+      if (!ensureProject()) return;
+      if (!state.currentImageModel) return { success: false, error: '未选择图像生成模型，请先在工程设置里选择' };
+      const pid = Number(actionParams?.propId);
+      const pname = String(actionParams?.propName || '').trim();
+      const prop = pid
+        ? (state.projectProps || []).find((p: any) => Number(p?.id) === pid)
+        : pname
+          ? (state.projectProps || []).find((p: any) => String(p?.name || '').trim().toLowerCase() === pname.toLowerCase())
+          : null;
+      if (!prop) {
+        return { success: false, error: pid ? `道具库中没有 ID=${pid} 的道具` : `道具库中没有名为「${pname}」的道具，请先 create_prop` };
+      }
+      if (!String((prop as any)?.description || '').trim()) {
+        return { success: false, error: `道具「${(prop as any)?.name}」没有描述，无法生成道具图；先用 update_prop 补全 description（材质、形状、颜色、磨损等可见特征）` };
+      }
+      const multiView = (actionParams as any)?.multiView !== false;
+      const call = multiView
+        ? generatePropViews(Number(prop.id), { imageModel: state.currentImageModel, textModel: state.textModel || undefined })
+        : generatePropImage(Number(prop.id), { imageModel: state.currentImageModel, textModel: state.textModel || undefined });
+      return call
+        .then((r: any) => {
+          if (r?.jobId) {
+            registerLongTask({
+              jobId: String(r.jobId),
+              title: `道具图 · ${(prop as any)?.name}`,
+              kind: 'image',
+              projectId: state.currentProjectId ?? null,
+            });
+          }
+          resourceActions.fetchProjectProps?.();
+          notifyLibraryChanged('props');
+          return `道具「${(prop as any)?.name}」（ID:${prop.id}）已启动${multiView ? '三视图设定图' : '图片'}生成（任务 #${r?.jobId || '-'}）。道具图写入后，引用它的分镜才允许出图；可用 get_task_status 查看进度。`;
+        })
+        .catch(fail('道具图生成失败'));
     } else if (action === 'inspect_quality') {
       showToast('请将当前分镜图片发送到 AI 助手，然后询问"检查这个分镜质量"', 'info');
     }
@@ -951,6 +1067,12 @@ export function useStoryboardAIAssistantBridge(params: StoryboardAIAssistantBrid
     index: idx + 1,
     description: s.description,
     props: Array.isArray(s.props) && s.props.length > 0 ? s.props : undefined,
+    // 台词必须逐句带给智能体：视频模型只认外貌特征不认角色名，
+    // 智能体要靠「说话人名 → 外貌特征」的对应关系把台词写进正确的主体指代。
+    dialogues: (s.dialogues || []).map((d: any) => ({
+      character: String(d?.character || '').trim(),
+      line: String(d?.line || '').trim(),
+    })).filter((d: any) => d.line),
     first_frame_url: s.startFrame,
     last_frame_url: s.endFrame,
     video_url: s.videoUrl,
