@@ -1169,20 +1169,36 @@ export async function generateCharacterStateViews(
   stateId: number,
   params: { imageModel: string; textModel?: string; regenerateOnly?: ('front' | 'side' | 'back')[]; generateMode?: 'design_sheet' | 'three_views' }
 ): Promise<{ message: string; jobId: string; characterId: number; stateId: number; status: string }> {
-  const response = await fetch(`/api/characters/${characterId}/states/${stateId}/generate-views`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(params)
-  });
-  if (!response.ok) {
-    const result = await response.json();
-    const err: any = new Error(result.message || '启动生成失败');
-    if (result.code) err.code = result.code;
-    throw err;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30000);
+  try {
+    const response = await fetch(`/api/characters/${characterId}/states/${stateId}/generate-views`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(params),
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      const result = await response.json();
+      const requestTimeout = response.status === 408 || response.status === 504;
+      const err: any = new Error(requestTimeout ? '启动角色状态图生成超时，请检查网络后重试' : result.message || '启动生成失败');
+      if (requestTimeout) err.code = 'GENERATION_TIMEOUT';
+      else if (result.code) err.code = result.code;
+      throw err;
+    }
+    return await response.json();
+  } catch (error: any) {
+    if (error?.name === 'AbortError') {
+      const err: any = new Error('启动角色状态图生成超时（30 秒），请检查网络后重试');
+      err.code = 'GENERATION_TIMEOUT';
+      throw err;
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
   }
-  return await response.json();
 }
 
 /**

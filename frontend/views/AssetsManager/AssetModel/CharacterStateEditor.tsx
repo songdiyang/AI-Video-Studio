@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Button, Input, Textarea, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Select, SelectItem, Chip, Tooltip } from '@heroui/react';
-import { Plus, Edit2, Trash2, Star, Copy, RefreshCw, Shirt, Image as ImageIcon, Wand2, AlertTriangle, Layers3 } from 'lucide-react';
+import { Plus, Edit2, Trash2, Star, Copy, RefreshCw, Shirt, Image as ImageIcon, Wand2, Layers3 } from 'lucide-react';
+import DropdownSelect from '../../../components/ui/DropdownSelect';
 import { type Character, type CharacterState, type StateCategory, type TagGroup, STATE_CATEGORIES, AGE_STAGES,
   isStaleGeneratingState, fetchCharacter, fetchCharacterStates, createCharacterState, updateCharacterState, deleteCharacterState,
   deleteCharacterStateBaseModelImage, activateCharacterState, duplicateCharacterState, generateCharacterStateViews } from '../../../services/assets';
@@ -192,7 +193,6 @@ const CharacterStateSession: React.FC<CharacterStateEditorProps> = ({ characterI
   const base = states.find(state => state.is_base_model);
   // 白膜三视图齐全才算基础层就绪：设定图/单张白膜图只能作为参考，不能直接派生状态。
   const baseReady = !!(base?.front_view_url && base?.side_view_url && base?.back_view_url);
-  const hasBaseState = Boolean(base);
   // 资源侧卡片优先展示角色设定图（characters.image_url）；状态页只认角色状态媒体，
   // 因此在尚未建立白膜时需要一个“角色设定图”回退展示，避免两边视觉不一致。
   const characterImage = character?.image_url || character?.base_model_image_url || character?.concept_image_url || '';
@@ -315,10 +315,23 @@ const CharacterStateSession: React.FC<CharacterStateEditorProps> = ({ characterI
       if (state && draftRef.current.data.id === stateId) draftRef.current.media(state);
       if (state?.generation_status === 'completed') { finishGeneration(key); showToast('角色状态图片生成完成', 'success'); return; }
       if (state?.generation_status === 'failed') throw new Error('角色状态图片生成失败，请重试');
-      if (attempt >= 60) throw new Error('生成超时，请刷新状态后重试');
+      if (attempt >= 60) {
+        const error: any = new Error('角色状态图生成超时，请刷新确认结果后再重试');
+        error.code = 'GENERATION_TIMEOUT';
+        throw error;
+      }
       schedule(() => { void pollGeneration(stateId, key, attempt + 1); }, 5000);
     } catch (error: any) {
-      if (alive.current) setGenerationErrors(prev => ({ ...prev, [stateId]: error.message }));
+      if (alive.current) {
+        const message = error?.message || '角色状态图片生成失败，请重试';
+        setGenerationErrors(prev => ({ ...prev, [stateId]: message }));
+        if (error?.code === 'GENERATION_TIMEOUT') {
+          const next = statesRef.current.map(item => item.id === stateId ? { ...item, generation_status: 'failed' as const } : item);
+          statesRef.current = next; setStates(next);
+          if (draftRef.current.data.id === stateId) draftRef.current.media({ generation_status: 'failed' });
+          showToast(message, 'error');
+        }
+      }
       finishGeneration(key);
     }
   };
@@ -613,12 +626,30 @@ const CharacterStateSession: React.FC<CharacterStateEditorProps> = ({ characterI
   };
   const filtered = [...states].filter(state => activeCategory === 'all' || categories(state.state_category).includes(activeCategory))
     .sort((a, b) => Number(!!b.is_base_model) - Number(!!a.is_base_model) || (a.sort_order || 0) - (b.sort_order || 0));
+  // 标题行的状态切换条：列出全部状态而不跟分类 tab 走，否则当前状态被过滤掉时下拉框会显示成 ID。
+  const stateOptions = [...states]
+    .sort((a, b) => Number(!!b.is_base_model) - Number(!!a.is_base_model) || (a.sort_order || 0) - (b.sort_order || 0))
+    .map(state => ({ value: String(state.id), label: `${state.is_base_model ? '白膜 · ' : ''}${state.name || '未命名状态'}` }));
   if (!characterId) return <p className="text-xs text-(--text-muted)">请先保存角色后管理状态。</p>;
   return <div className={embedded ? 'flex h-full min-h-0 flex-col gap-2.5 text-(--text-primary)' : 'space-y-2.5 text-(--text-primary)'}>
     <div className="flex flex-wrap items-center justify-between gap-2">
-      <div className="flex items-center gap-2 min-w-0">
-        <h4 className="text-sm font-medium">角色状态</h4>
-        <span className="truncate text-[11px] text-(--text-muted)">{character?.name || ''}</span>
+      <div className="flex min-w-0 flex-1 items-center gap-2">
+        <h4 className="shrink-0 text-sm font-medium">{character?.name || '角色'}</h4>
+        <div className="w-40 min-w-28 max-w-[55%]">
+          <DropdownSelect
+            label="角色状态"
+            value={String(current.id || '')}
+            options={stateOptions}
+            placeholder={isNew ? '新建状态' : loading ? '加载中…' : '角色状态'}
+            disabled={disabled || operationBusy || loading || !stateOptions.length}
+            onChange={value => {
+              const next = states.find(state => String(state.id) === value);
+              // 切换前先落盘未保存的修改，失败就不切走。
+              if (next) void selectState(next);
+            }}
+            className="h-7 rounded-lg text-[11px]"
+          />
+        </div>
       </div>
       <div className="flex items-center gap-1.5">
         <Tooltip content="基于白膜新建" placement="bottom">
@@ -633,69 +664,10 @@ const CharacterStateSession: React.FC<CharacterStateEditorProps> = ({ characterI
         </Tooltip>
       </div>
     </div>
-    {!baseReady && <div className="flex items-start gap-1.5 rounded-md border border-amber-500/25 bg-amber-500/10 px-2.5 py-1.5 text-[11px] leading-relaxed text-amber-400/90">
-      <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" />
-      <span>{hasBaseState ? '白膜三视图未完成。请先补齐白膜正/侧/背面，再添加服装、道具与状态属性。' : '角色设定图仅作参考。请先生成白膜三视图，再添加服装、道具与状态属性，组合成拍摄所需造型。'}</span>
-    </div>}
     {loadError && <p role="alert" className="text-xs text-danger">{loadError}（可刷新重试）</p>}
     {embedded ? <>
-      <div className="grid grid-cols-1 gap-3 md:min-h-0 md:flex-1 md:grid-rows-[minmax(160px,0.8fr)_minmax(220px,1.2fr)]">
-        <section className="flex max-h-72 min-h-0 flex-col rounded-lg border border-(--border-color) bg-black/10 md:max-h-none" aria-label="角色状态列表">
-          <div className="flex shrink-0 items-center justify-between border-b border-(--border-color) px-2.5 py-2 text-[11px]">
-            <span className="font-medium">状态列表</span>
-            <span className="text-(--text-muted)">{filtered.length} / {states.length}</span>
-          </div>
-          {states.length > 0 && <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-(--border-color) px-2 py-1.5">
-            <button type="button" onClick={() => setActiveCategory('all')} className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] transition-colors ${activeCategory === 'all' ? 'bg-(--accent)/15 text-(--accent)' : 'text-(--text-muted) hover:bg-white/5 hover:text-(--text-primary)'}`}>全部</button>
-            {STATE_CATEGORIES.map(category => {
-              const count = states.filter(state => categories(state.state_category).includes(category.key)).length;
-              if (!count) return null;
-              return <button key={category.key} type="button" onClick={() => setActiveCategory(category.key)}
-                className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] transition-colors ${activeCategory === category.key ? 'bg-(--accent)/15 text-(--accent)' : 'text-(--text-muted) hover:bg-white/5 hover:text-(--text-primary)'}`}>
-                {category.label} {count}
-              </button>;
-            })}
-          </div>}
-          <div role="listbox" aria-label="选择要处理的角色状态" className="min-h-0 flex-1 space-y-1 overflow-y-auto p-1.5">
-            {filtered.map(state => {
-              const selectedState = data.id === state.id;
-              const thumbnail = state.image_url || state.front_view_url || state.side_view_url || state.back_view_url || '';
-              const generation = state.generation_status || 'idle';
-              const categoryKey = categories(state.state_category)[0];
-              const categoryLabel = STATE_CATEGORIES.find(item => item.key === categoryKey)?.label || '未分类';
-              return <button key={state.id} type="button" role="option" aria-selected={selectedState}
-                onClick={() => { void selectState(state); }}
-                className={`flex w-full items-center gap-2 rounded-md border p-1.5 text-left transition-colors ${
-                  selectedState ? 'border-(--accent)/60 bg-(--accent)/10' : 'border-transparent hover:border-(--border-color) hover:bg-white/5'
-                }`}>
-                <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded bg-(--bg-card) text-(--text-muted)">
-                  {thumbnail
-                    ? <img src={thumbnail} alt="" loading="lazy" className="h-full w-full object-cover" />
-                    : state.is_base_model ? <Layers3 size={17} className="opacity-60" /> : <ImageIcon size={17} className="opacity-40" />}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="flex items-center gap-1">
-                    <span className="truncate text-xs font-medium text-(--text-primary)">{state.is_base_model ? '白膜 · ' : ''}{state.name || '未命名状态'}</span>
-                    {state.is_active && <span className="shrink-0 rounded bg-(--accent)/15 px-1 py-px text-[9px] text-(--accent)">当前</span>}
-                  </span>
-                  <span className="mt-1 flex items-center gap-1.5 text-[10px] text-(--text-muted)">
-                    <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${generation === 'completed' ? 'bg-emerald-400' : generation === 'failed' ? 'bg-red-400' : generation === 'generating' ? 'animate-pulse bg-(--accent)' : 'bg-(--text-muted)'}`} />
-                    <span>{GENERATION_STATUS_TEXT[generation] || '未生成'}</span>
-                    <span className="opacity-40">·</span>
-                    <span className="truncate">{categoryLabel}</span>
-                  </span>
-                </span>
-              </button>;
-            })}
-            {loading && !states.length && <p className="px-2 py-6 text-center text-[11px] text-(--text-muted)">加载状态中…</p>}
-            {!loading && !states.length && <div className="px-3 py-6 text-center text-[11px] leading-relaxed text-(--text-muted)">
-              <p>还没有角色状态</p>
-              <p className="mt-1 opacity-70">从右侧入口建立白膜或新状态</p>
-            </div>}
-            {!loading && states.length > 0 && !filtered.length && <p className="px-2 py-6 text-center text-[11px] text-(--text-muted)">该分类暂无状态</p>}
-          </div>
-        </section>
-        <section className="flex min-h-45 flex-col rounded-lg border border-(--border-color) bg-black/10 md:h-full md:min-h-0 md:overflow-hidden">
+      <div className="flex min-h-0 flex-1 flex-col">
+        <section className="flex min-h-45 flex-1 flex-col rounded-lg border border-(--border-color) bg-black/10 md:min-h-0 md:overflow-hidden">
           {(current.id || isNew) && <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-(--border-color) px-2.5 py-2">
             <div className="min-w-0">
               <div className="flex items-center gap-1.5">
