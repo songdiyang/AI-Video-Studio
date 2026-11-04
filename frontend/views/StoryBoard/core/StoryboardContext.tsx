@@ -53,6 +53,13 @@ export interface StoryboardContextValue {
     setShowConfirmModal: (show: boolean) => void;
     handleAutoGenerateClick: () => void;
     handleConfirmGenerate: (mode: any) => void;
+    /** 无确认弹窗直接启动拆分，本地模式下同步完成落库后才 resolve（AI 助手 agent 循环依赖） */
+    startGeneration: (
+      textModel: string,
+      byScene?: boolean,
+      appendMode?: boolean,
+      options?: Record<string, any>,
+    ) => Promise<void>;
     dontShowAgain: boolean;
     setDontShowAgain: (v: boolean) => void;
     progress: any;

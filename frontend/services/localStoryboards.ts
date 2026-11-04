@@ -17,6 +17,7 @@ import { readDoc, writeDoc, resolveLocalPath, getActiveProjectPath } from './loc
 import { resolveModel, getOfflineModels, chatText, type OfflineModel } from './localAI';
 import { resolveScriptReferences } from './localScripts';
 import { restStore } from './localRest';
+import { enforceSceneDialogues, normalizeSceneDialogues, buildSubjectDefinition, buildDialogueClause, type DialogueCheck } from './sceneDialogues';
 
 // ==================== 文档类型（对齐 localApiRouter，仅取所需字段） ====================
 
@@ -170,7 +171,8 @@ const SPLIT_SYSTEM =
   '你是一名专业的影视分镜师。请把用户提供的剧本正文，按叙事顺序拆分为若干分镜（镜头）。' +
   '严格只输出一个 JSON 对象（不要任何解释、不要 Markdown 代码围栏），格式为：' +
   '{"scenes":[{"title":"镜头标题","description":"该镜头的画面描述","video_prompt":"视频生成提示词",' +
-  '"first_frame_prompt":"首帧画面提示词","last_frame_prompt":"尾帧画面提示词","dialogue":"对白，没有则留空",' +
+  '"first_frame_prompt":"首帧画面提示词","last_frame_prompt":"尾帧画面提示词",' +
+  '"dialogues":[{"speaker":"说话角色名","line":"这一句台词原文，不要重复带角色名前缀"}],"voiceover":"画外音/旁白原文，没有则留空",' +
   '"characters":["出场角色"],"props":["该镜头出现的关键道具"],"location":"场景/地点","shotType":"景别，如 远景/全景/中景/近景/特写","duration":3}],' +
   '"characters":[{"name":"角色名","description":"该角色的外形/服装/气质简述，用于出图保持一致"}],' +
   '"props":[{"name":"道具名","description":"该道具的外观/材质/尺寸简述，用于出图保持一致"}],' +
@@ -186,11 +188,84 @@ const SPLIT_SYSTEM =
   '只在单个镜头出现的临时物件写进 description 即可，不要列入 props；顶层 props 需与各镜头 props 名称一致，分镜内 props 写名称字符串；' +
   '7) 每个 location 必须把地点拆解为环境与建筑两部分：environmentNames 列出该地点用到的环境（室内场景也要给所属建筑的环境），' +
   'buildings 列出该地点出镜的建筑并标注镜头需要内景还是外景；' +
-  'environments / buildingsLibrary 给出这些环境与建筑各自的出图简述（名称与 environmentNames / buildings 对应，跨地点可复用同名）。';
+  'environments / buildingsLibrary 给出这些环境与建筑各自的出图简述（名称与 environmentNames / buildings 对应，跨地点可复用同名）；' +
+  '8) 台词硬约束：每句台词单独一条 dialogue，一条只属于一个 speaker，严禁把多个角色的话写进同一句；' +
+  'line 内不得出现「某某：」这样的说话人前缀（前缀只能写进 speaker）；' +
+  'speaker 必须是该镜头 characters 里出现过的名字，且与顶层 characters 名称逐字一致；' +
+  '无人称的旁白/解说写进 voiceover 而不是 dialogue；台词语言统一（除专有名词外不中英混用）；' +
+  '9) 顶层 characters 的 description 必须给出 2-3 个画面中稳定可见的静态特征（发型/体型/服饰/显著标志），' +
+  '因为视频模型不认识剧本里的角色名，只能靠这些外貌特征把台词与开口说话的人对应上。';
 
 function buildSplitUserPrompt(scriptTitle: string, content: string): string {
   const safe = (content || '').slice(0, 12000);
   return `剧本标题：${scriptTitle || '未命名'}\n\n剧本正文：\n${safe}\n\n请据此拆分分镜并只输出 JSON。`;
+}
+
+/**
+ * 角色名 → 外貌特征：优先工程角色库（白膜体貌/当前造型），缺失时用本次拆分清单的简述兜底。
+ * 视频提示词要的是特征而不是名字，所以必须给出可用于画面指代的描述。
+ */
+async function loadCharacterAppearance(
+  path: string,
+  projectId: number | null,
+  manifest: ResourceCandidate[],
+): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  // 先放拆分清单的简述：新建角色此刻还没入库，只有模型给的特征可用
+  for (const c of manifest) {
+    if (c.description) map.set(c.name.toLowerCase(), c.description.trim());
+  }
+  if (projectId == null) return map;
+  try {
+    const doc = await restStore.loadDoc(path, 'characters');
+    for (const it of doc.items as any[]) {
+      if (String(it?.project_id) !== String(projectId)) continue;
+      const name = String(it?.name ?? '').trim().toLowerCase();
+      if (!name) continue;
+      const feat = String(it?.base_appearance || it?.appearance || it?.outfit_appearance || it?.description || '').trim();
+      // 角色库是既有事实，优先于模型本次编的简述
+      if (feat) map.set(name, feat);
+    }
+  } catch {
+    /* 读不到角色库时沿用拆分清单 */
+  }
+  return map;
+}
+
+/**
+ * 为视频生成现场拼装「角色指代 + 台词」段（不写库）。
+ * 拆分阶段已把该段写进 video_prompt，但存量分镜、手工改写过的提示词、或只填了台词没重拆的镜头
+ * 会缺失这一段；视频模型只认画面可见的外貌特征、不认角色名，缺了这段就只能凭脸猜谁在说话。
+ */
+export async function buildVideoDialogueClause(
+  projectId: number | string | null | undefined,
+  storyboardId: number | string | undefined,
+): Promise<string> {
+  const sid = Number(storyboardId);
+  if (!Number.isFinite(sid)) return '';
+  const path = await pathFor(projectId ?? null);
+  if (!path) return '';
+  let scene: LocalScene | undefined;
+  try {
+    scene = (await loadStoryboards(path)).scenes.find((s) => Number(s.id) === sid);
+  } catch {
+    return '';
+  }
+  if (!scene) return '';
+  const vars = (scene.variables || {}) as LocalVariables;
+  const host = scene as unknown as Record<string, unknown>;
+  const pick = (key: string) => (vars[key] !== undefined ? vars[key] : host[key]);
+  const cast = (Array.isArray(pick('characters')) ? (pick('characters') as unknown[]) : pick('characters') != null ? [pick('characters')] : [])
+    .map((c: any) => String(typeof c === 'string' ? c : (c?.name ?? '')).trim())
+    .filter(Boolean);
+  const { lines } = normalizeSceneDialogues({ dialogues: pick('dialogues'), dialogue: pick('dialogue') }, cast);
+  const voiceover = String(pick('voiceover') ?? '').trim();
+  if (!lines.length && !voiceover) return '';
+  const appearance = await loadCharacterAppearance(path, Number.isFinite(Number(projectId)) ? Number(projectId) : null, []);
+  // 与拆分阶段同口径：只有有人说话时才需要定义主体，纯旁白镜头只补画外音。
+  const subject = lines.length ? buildSubjectDefinition(cast, appearance) : '';
+  const speech = lines.length || voiceover ? buildDialogueClause(lines, voiceover) : '';
+  return [subject, speech].filter(Boolean).join('');
 }
 
 // ==================== 自动补齐资源（角色 / 影棚地点） ====================
@@ -690,10 +765,38 @@ async function handleAutoGenerate({ scriptId, projectId, body }: AutoGenArgs): P
     doc.scenes = doc.scenes.filter((s) => s._scope !== scope);
   }
 
+  // 台词校验与资源补齐都依赖「分镜引用到的名字」，先统一收集一次
+  const charRefs: string[] = [];
+  const locRefs: string[] = [];
+  const propRefs: string[] = [];
+  for (const raw of list) {
+    const chars = Array.isArray(raw?.characters) ? raw.characters : raw?.characters != null ? [raw.characters] : [];
+    for (const c of chars) {
+      const name = String(typeof c === 'string' ? c : (c?.name ?? '')).trim();
+      if (name) charRefs.push(name);
+    }
+    if (raw?.location) locRefs.push(String(raw.location));
+    const rawProps = Array.isArray(raw?.props) ? raw.props : raw?.props != null ? [raw.props] : [];
+    for (const p of rawProps) {
+      const name = String(typeof p === 'string' ? p : (p?.name ?? '')).trim();
+      if (name) propRefs.push(name);
+    }
+  }
+  const characters = collectResources(parsed?.characters, charRefs);
+  // 台词得按「外貌特征」而不是名字交给视频模型，故先把角色特征表取出来
+  const appearance = await loadCharacterAppearance(path, resolvedProjectId ?? null, characters);
+  const dialogueStat = { lines: 0, missing: 0, resplit: 0, unknown: new Set<string>() };
+
   let added = 0;
   list.forEach((raw, i) => {
     const description = String(raw?.description ?? raw?.prompt_template ?? raw?.title ?? '').trim();
     if (conflictStrategy === 'skip' && description && existingDescs.has(description)) return;
+    // 拆分阶段就把台词按说话人拆开，并把角色外貌指代写进视频提示词
+    const chk = enforceSceneDialogues(raw, appearance);
+    dialogueStat.lines += chk.lines;
+    dialogueStat.missing += chk.missing;
+    dialogueStat.resplit += chk.resplit;
+    chk.unknown.forEach((n) => dialogueStat.unknown.add(n));
     const id = doc.nextId++;
     const index = Number.isFinite(raw?.index) ? Number(raw.index) : baseIndex + i + 1;
     doc.scenes.push(toScene(raw, scope, id, index));
@@ -711,20 +814,9 @@ async function handleAutoGenerate({ scriptId, projectId, body }: AutoGenArgs): P
   saveStoryboards(path, doc);
 
   // 自动补齐资源：把分镜引用到的角色 / 地点落为真实资产，避免「分镜显示资源但资源不存在」。
-  const charRefs: string[] = [];
-  const locRefs: string[] = [];
-  const propRefs: string[] = [];
-  for (const raw of list) {
-    const chars = Array.isArray(raw?.characters) ? raw.characters : raw?.characters != null ? [raw.characters] : [];
-    for (const c of chars) charRefs.push(String(c ?? ''));
-    if (raw?.location) locRefs.push(String(raw.location));
-    const rawProps = Array.isArray(raw?.props) ? raw.props : raw?.props != null ? [raw.props] : [];
-    for (const p of rawProps) {
-      const name = String(typeof p === 'string' ? p : (p?.name ?? '')).trim();
-      if (name) propRefs.push(name);
-    }
-  }
-  const characters = collectResources(parsed?.characters, charRefs);
+  // 地点（影棚）与资源面板同源：一律写入 studios 集合（= /api/studios 与
+  // /api/resource-library 的 locations 数据源），不再落到独立的 scenes 集合。
+  // 角色/地点/道具引用名称已在写库前统一收集（charRefs / locRefs / propRefs）。
   // 地点拆解：把每个地点的环境名/建筑（内/外景视角）与出图库候选一并收集，
   // 兼容模型把 environments / buildings 清单放在顶层的情况
   const { locations, envLibrary, bldLibrary } = collectLocationCandidates(
@@ -752,6 +844,13 @@ async function handleAutoGenerate({ scriptId, projectId, body }: AutoGenArgs): P
   const createdProps = await ensureProps(path, pid, repeatedProps);
 
   const jobId = `sbg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  // 台词校验结论同时回报给界面步骤流与智能体，避免「拆了但台词归属不清」无人知晓
+  const dialogueNote = dialogueStat.lines
+    ? `台词校验：${dialogueStat.lines} 句已按说话人拆行` +
+      (dialogueStat.resplit ? `，${dialogueStat.resplit} 处多角色混写已自动拆开` : '') +
+      (dialogueStat.missing ? `；${dialogueStat.missing} 句未识别说话人，请在「台词与旁白」中指定` : '') +
+      (dialogueStat.unknown.size ? `；${[...dialogueStat.unknown].join('、')} 不在对应镜头的出场角色中` : '')
+    : '';
   return jsonResponse({
     success: true,
     jobId,
@@ -759,6 +858,13 @@ async function handleAutoGenerate({ scriptId, projectId, body }: AutoGenArgs): P
     total: doc.scenes.filter((s) => s._scope === scope).length,
     scriptId: scriptId ?? null,
     projectId: resolvedProjectId ?? null,
+    dialogueNote,
+    dialogueCheck: {
+      lines: dialogueStat.lines,
+      missing: dialogueStat.missing,
+      resplit: dialogueStat.resplit,
+      unknown: [...dialogueStat.unknown],
+    },
     createdCharacters: createdChars,
     createdLocations: studioRes.created,
     createdEnvironments: envLib.created,

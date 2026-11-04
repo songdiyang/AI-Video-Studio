@@ -137,6 +137,9 @@ export function useAutoStoryboard({
     setShowConfirmModal,
     handleAutoGenerateClick,
     handleConfirmGenerate,
+    // 直接启动拆分（无确认弹窗、可 await）：AI 助手 agent 循环依赖它拿到「拆分完成」凭证，
+    // 缺此导出会让桥接静默回落到 handleAutoGenerateClick（返回 undefined），导致任务完成没有回执。
+    startGeneration,
     dontShowAgain,
     setDontShowAgain,
     progress,

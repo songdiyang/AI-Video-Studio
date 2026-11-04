@@ -57,8 +57,11 @@ export interface StartGenerationOptions {
   referenceScriptTitle?: string | null;
   /** 拆分关键阶段进度回调（供 AI 助手对话栏逐步展示） */
   onSplitProgress?: (label: string) => void;
-  /** 拆分完成回调（携带拆分数量时供步骤展示结果） */
-  onSplitDone?: (count?: number) => void;
+  /**
+   * 拆分完成回调：count 为写入分镜数，dialogueNote 为台词校验结论
+   * （多少句已按说话人拆行、哪些未识别到说话人），供步骤流与智能体据实回报。
+   */
+  onSplitDone?: (count?: number, dialogueNote?: string) => void;
   /** 拆分失败回调：传入时不再静默吞错，供调用方（AI 助手）感知失败 */
   onSplitError?: (message: string) => void;
 }
@@ -146,7 +149,7 @@ export function useStoryboardGeneration({
         throw new ApiError(data.message || '生成失败', res.status, data);
       }
 
-      options.onSplitDone?.(typeof data?.count === 'number' ? data.count : undefined);
+      options.onSplitDone?.(typeof data?.count === 'number' ? data.count : undefined, data?.dialogueNote || undefined);
 
       // 拆分自动补齐了角色/影棚/环境/建筑/道具资源：广播资源库刷新（空 type = 全量刷新），
       // 让资源面板与分镜保持同一数据源，避免「分镜里有影棚、资源里没有影棚」。
