@@ -5,6 +5,8 @@ import { useToast } from '../../contexts/ToastContext';
 import ChatMessageComponent, { AskCardData, ChatMessageData, ChatMessageStep, TaskCardData } from './ChatMessage';
 import MediaAttachment from './MediaAttachment';
 import { ask as createAskCard } from '../../services/agentAsk';
+import { parseSuggestions } from '../../services/localAiChatPayload';
+import { normalizeSceneDialogues } from '../../services/sceneDialogues';
 import MemoryPanel from './MemoryPanel';
 import { isLongTaskCapable } from '../../services/aiAssistant';
 import { getWorkflowStatus } from '../../hooks/useWorkflow';
@@ -63,6 +65,8 @@ type AISceneSummary = NonNullable<AIAssistantPanelProps['scenes']>[number] & {
   characters?: string[];
   location?: string;
   scope?: string;
+  /** 画外音/旁白（无说话人），视频模型需要与台词分开表述 */
+  voiceover?: string;
 };
 
 /** 变量槽里的名称数组（角色/道具可能存字符串或对象） */
@@ -79,6 +83,13 @@ function toNameList(value: unknown): string[] {
  */
 function toAIScene(raw: any, position: number): AISceneSummary {
   const vars = (raw?.variables && typeof raw.variables === 'object') ? raw.variables : {};
+  const cast = toNameList(vars.characters);
+  // 台词走与拆分阶段同一套校验：旧工程里常有一行混多个「名字：」的脏数据，
+  // 直接会给智能体造成「谁说了哪句」歧义，导致视频提示词里台词归属错人。
+  const { lines } = normalizeSceneDialogues(
+    { dialogues: Array.isArray(vars.dialogues) ? vars.dialogues : undefined, dialogue: vars.dialogue },
+    cast,
+  );
   return {
     id: Number(raw?.id),
     index: Number.isFinite(raw?.index) ? Number(raw.index) : position + 1,
@@ -90,7 +101,9 @@ function toAIScene(raw: any, position: number): AISceneSummary {
     last_frame_prompt: raw?.last_frame_prompt || undefined,
     video_prompt: raw?.video_prompt || undefined,
     props: toNameList(vars.props),
-    characters: toNameList(vars.characters),
+    characters: cast,
+    dialogues: lines.map((l) => ({ character: l.character, line: l.line })),
+    voiceover: typeof vars.voiceover === 'string' && vars.voiceover.trim() ? vars.voiceover.trim() : undefined,
     location: typeof vars.location === 'string' ? vars.location : undefined,
     scope: typeof raw?._scope === 'string' ? raw._scope : undefined,
   };
@@ -121,7 +134,13 @@ function renderScenesForAgent(list: AISceneSummary[], max = 80): string {
     if (s.characters?.length) meta.push(`角色:${s.characters.join('、')}`);
     if (s.props?.length) meta.push(`道具:${s.props.join('、')}`);
     const desc = (s.description || '').replace(/\s+/g, ' ').slice(0, 60);
-    return `- #${s.index}(ID:${s.id}) [${flags.length ? flags.join(' ') : '未出图'}]${meta.length ? ` ${meta.join(' ')}` : ''} ${desc}`;
+    // 逐句台词带说话人：智能体需要靠它把台词绑到对应角色的外貌特征上
+    const speech: string[] = (s.dialogues || [])
+      .map((d) => (d.character ? `${d.character}{${d.line}}` : `{${d.line}}`))
+      .filter((t) => t.includes('{'));
+    if (s.voiceover) speech.push(`画外音{${s.voiceover}}`);
+    const tail = speech.length ? ` 台词：${speech.join('，')}` : '';
+    return `- #${s.index}(ID:${s.id}) [${flags.length ? flags.join(' ') : '未出图'}]${meta.length ? ` ${meta.join(' ')}` : ''} ${desc}${tail}`;
   });
   const rest = list.length > max ? `\n[…仅列出前 ${max} 个，共 ${list.length} 个分镜…]` : '';
   return `${lines.join('\n')}${rest}`;
@@ -209,6 +228,8 @@ export interface AIAssistantPanelProps {
     first_frame_prompt?: string;
     last_frame_prompt?: string;
     video_prompt?: string;
+    /** 一行一个说话人的台词（与 AIAssistantSceneSummary.dialogues 对齐） */
+    dialogues?: { character: string; line: string }[];
   }[];
   /** 项目角色库清单（含外貌/当前造型，AI 可基于此推理 action 参数） */
   characters?: {
@@ -1942,8 +1963,17 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                       '请据实告知用户，不要报成功。',
                     );
                   } else {
+                    // 台词校验结论一并回喂：否则智能体不知道哪些句子还没说话人，只能盲猜归属
+                    const unresolved = after.reduce(
+                      (n, s) => n + (s.dialogues || []).filter((d) => !String(d?.character || '').trim()).length,
+                      0,
+                    );
                     observations.push(
                       `「${label}」已完成并经系统核验：工程内现有 ${after.length} 个分镜${sceneCountBefore != null ? `（执行前 ${sceneCountBefore} 个）` : ''}，返回声称写入 ${claimed} 个。` +
+                      (typeof result.dialogueNote === 'string' && result.dialogueNote ? ` ${result.dialogueNote}。` : '') +
+                      (unresolved > 0
+                        ? ` 其中 ${unresolved} 句台词尚未识别出说话人，需用户确认或你用 ask 追问后再接上，不得猜归属。`
+                        : '') +
                       '请如实告知用户分镜数量（以核验值为准）；后续需要 sceneId 时用 read_storyboards 取真实清单。',
                     );
                   }
@@ -1957,6 +1987,31 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                     observations.push(`已执行「${label}」：${detail.length > 800 ? detail.slice(0, 800) + '…' : detail}`);
                   } catch {
                     observations.push(`已执行「${label}」`);
+                  }
+                } else if (isTask) {
+                  // 任务动作没给凭证：不能只留一句「无法确认」就结束（用户看到「执行完成」却没有回执，
+                  // 还得模型自己再发一轮 read_storyboards 才能确认）。系统直接回读工程真实状态兜底。
+                  const after = a.action === 'auto_storyboard' && projectId
+                    ? await fetchProjectScenes(projectId).catch(() => [])
+                    : null;
+                  if (after && after.length > 0) {
+                    observations.push(
+                      `「${label}」未返回执行凭证，但系统回读工程文档确认现有 ${after.length} 个分镜` +
+                      `${sceneCountBefore != null ? `（执行前 ${sceneCountBefore} 个）` : ''}。` +
+                      '请以该核验值为准直接回复用户，不要再调用 read_storyboards 复核。',
+                    );
+                  } else if (after) {
+                    tracker.fail('核验：动作未返回凭证且工程内没有分镜');
+                    executedLog[logIndex] = `✗ ${label}（未落库）`;
+                    observations.push(
+                      `【系统核验】「${label}」未返回凭证，且工程文档里仍然是 0 个分镜——拆分未落库。` +
+                      '请如实告知用户未成功及原因，不得宣称已完成。',
+                    );
+                  } else {
+                    observations.push(
+                      `「${label}」没有返回任何执行凭证（无任务 ID、无返回内容），系统无法确认它是否真的触发。` +
+                      '请用只读动作（read_storyboards / read_script / get_task_status）复核后再据实回复，不得宣称已完成。',
+                    );
                   }
                 } else {
                   // 无 jobId、无返回内容、也无结构化凭证：不能断言“已执行”，否则模型会把没发生的事告诉用户
@@ -2101,26 +2156,16 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
         const safeContent = stripFakeToolCalls(fullContent);
         const safeReasoning = stripFakeToolCalls(fullReasoning);
 
-        // 解析建议
-        const suggestionMatch = safeContent.match(/\[SUGGESTIONS\](.*?)\[\/SUGGESTIONS\]/s);
-        let suggestions: any[] = [];
-        let cleanContent = safeContent;
-        if (suggestionMatch) {
-          try {
-            const parsed = JSON.parse(suggestionMatch[1]);
-            suggestions = parsed.suggestions || [];
-            cleanContent = safeContent.replace(/\[SUGGESTIONS\].*?\[\/SUGGESTIONS\]/s, '').trim();
-          } catch { /* ignore */ }
-        }
+        // 解析建议：统一走服务层的容错解析（兼容 [S] 等简写标签并保证协议原文不泄漏到正文）
+        const { cleanReply: parsedClean, suggestions } = parseSuggestions(safeContent);
+        let cleanContent = parsedClean;
 
         // 回复兜底：推理模型（如 DeepSeek Reasoner）可能把答案全部写进 reasoning_content
         // 而正文 content 为空——此时将思考内容提升为正式回复，避免出现"(无回复)"
         let displayContent = cleanContent;
         let displayReasoning = safeReasoning || undefined;
         if (!displayContent && safeReasoning.trim()) {
-          displayContent = safeReasoning
-            .replace(/\[SUGGESTIONS\].*?\[\/SUGGESTIONS\]/s, '')
-            .trim();
+          displayContent = parseSuggestions(safeReasoning).cleanReply.trim();
           displayReasoning = undefined; // 已作为正文展示，折叠区不再重复
         }
         if (!displayContent) displayContent = '（模型未返回正文，可尝试重新提问）';
@@ -2547,6 +2592,28 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
         stopLoading();
         return { success: false, error, scriptGeneration: true };
       };
+      // 剧本创作完成后必问拆分：以澄清卡片落回发起会话，用户的选择作为下一条消息回传，
+      // 由 agent 循环按回答决定是否执行 auto_storyboard（模型未获确认不得自行拆分）。
+      // 卡片 id 按剧本 ID 生成，配合更新函数去重，避免同一剧本重复追问。
+      const pushSplitInquiry = (scriptId?: number, title?: string) => {
+        const inquiry: ChatMessageData = {
+          id: `script-split-${scriptId || Date.now()}`,
+          role: 'assistant',
+          content: '',
+          timestamp: Date.now(),
+          ask: createAskCard(
+            {
+              question: `剧本《${title || initialTitle}》已写好，要不要现在就拆成分镜？`,
+              options: ['立即拆分为分镜', '先修改剧本再拆分', '暂时不用拆分'],
+            },
+            '剧本已写好，是否拆分为分镜？',
+          ),
+        };
+        updateSessionMessages(currentSid, (prev) =>
+          prev.some((m) => m.id === inquiry.id) ? prev : [...prev, inquiry],
+        );
+        if (currentSid) archiveMessage(currentSid, inquiry);
+      };
       const completeGeneration = async (scriptId?: number, resultEp?: number | null, resultTitle?: string | null) => {
         const title = resultTitle || initialTitle;
         patchCard({ status: 'completed', title: `剧本 · ${title}`, scriptId });
@@ -2561,6 +2628,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
         if (scriptId) { try { await onAction?.('bind_script', { scriptId }); } catch { /* 忽略绑定失败 */ } }
         onProgress?.('创作完毕 ✓');
         stopLoading();
+        pushSplitInquiry(scriptId, title);
         return {
           success: true,
           scriptGeneration: true,
@@ -2568,6 +2636,8 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
           scriptId,
           episodeNumber: detail.episodeNumber,
           title,
+          // 观察结果里讲清「已追问」，否则模型会把追问当成自己的事再补一次或直接拆分
+          nextStep: '系统已在对话中追问用户是否需要拆分为分镜。除非用户本轮已明确要求拆分，在用户回答之前禁止执行 auto_storyboard。',
         };
       };
 
