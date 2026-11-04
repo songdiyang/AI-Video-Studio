@@ -21,12 +21,14 @@ import { assertProject } from './localAssetShared';
 import { routeAiChatAndModels } from './localAiAssistantChat';
 import { routeScripts, resolveScriptReferences } from './localScripts';
 import { routeAutoGenerate, ensureStudioByName } from './localStoryboards';
+import { checkStoryboardReadiness, deriveCharacterReadinessFields, readinessFixHints } from './sceneReadiness';
 import { routeStyles } from './localStyles';
 import { routeWorkflows } from './localWorkflowRouter';
 import { routeCharacters } from './localCharacters';
 import { routeScenes } from './localScenes';
 import { routeEnvironments } from './localEnvironments';
 import { routeStudios } from './localStudios';
+import { routeProps } from './localProps';
 import { routeProjectsSub } from './localProjectsSub';
 import { routeNovels } from './localNovels';
 import { routeMisc } from './localMisc';
@@ -483,6 +485,37 @@ async function route(url: URL, method: string, body: any): Promise<Response | nu
   if ((mt = pathname.match(/^\/api\/storyboards\/scene\/(\d+)$/)) && m === 'DELETE') return handleSceneDelete(mt[1]);
   if ((mt = pathname.match(/^\/api\/storyboards\/(\d+)\/content$/)) && m === 'PATCH') return handleSceneContentPatch(mt[1], body || {});
   if ((mt = pathname.match(/^\/api\/storyboards\/(\d+)\/media$/)) && m === 'PATCH') return handleSceneMediaPatch(mt[1], body || {});
+  // 分镜出图/出视频前置校验：必须真实实现。
+  // 该端点此前不存在，未命中会被兜底成 200 + 空对象，前端预检据此认为「一切就绪」，
+  // 于是角色白膜、影棚图、道具图都还没生成就能凭空出首帧。
+  if ((mt = pathname.match(/^\/api\/storyboards\/(\d+)\/validate$/)) && m === 'GET') {
+    const type = url.searchParams.get('type') === 'video' ? 'video' : 'frame';
+    const result = await checkStoryboardReadiness(null, mt[1], type);
+    if (!result) {
+      return jsonResponse({
+        ready: false,
+        issues: [{ type: 'scene_not_found', message: '未找到该分镜或尚未打开本地工程', blocking: true }],
+      });
+    }
+    return jsonResponse({ ready: result.ready, issues: result.issues, fixHints: result.ready ? [] : readinessFixHints(result) });
+  }
+  if (pathname === '/api/storyboards/batch-validate' && m === 'POST') {
+    const type = body?.type === 'video' ? 'video' : 'frame';
+    const ids: unknown[] = Array.isArray(body?.sceneIds) ? body.sceneIds : [];
+    const results = [];
+    for (const id of ids) {
+      const result = await checkStoryboardReadiness(body?.projectId ?? null, String(id), type);
+      const issues = result?.issues || [{ type: 'scene_not_found', message: `未找到分镜 ${id}`, blocking: true }];
+      results.push({
+        sceneId: Number(id),
+        ready: !issues.some((i) => i.blocking),
+        blockingIssues: issues.filter((i) => i.blocking).map((i) => i.message),
+        warningIssues: issues.filter((i) => !i.blocking).map((i) => i.message),
+        fixHints: result && !result.ready ? readinessFixHints(result) : [],
+      });
+    }
+    return jsonResponse({ results });
+  }
   if ((mt = pathname.match(/^\/api\/storyboards\/(\d+)$/))) {
     const scriptId = num(mt[1]);
     const path = await pathFor();
@@ -562,6 +595,11 @@ async function route(url: URL, method: string, body: any): Promise<Response | nu
   }
 
   // ---- 道具（本地 CRUD + 集合读取）----
+  // 先接管道具出图等特殊子路径（该端点此前本地未实现，会被兜底成 200 空对象造成假成功）
+  if (pathname.startsWith('/api/props/')) {
+    const res = await routeProps(url, m, body);
+    if (res) return res;
+  }
   if ((mt = pathname.match(/^\/api\/props\/project\/(\d+)$/)) && m === 'GET') {
     const projectId = num(mt[1]);
     const path = await pathFor(projectId);
@@ -637,7 +675,24 @@ async function route(url: URL, method: string, body: any): Promise<Response | nu
   // 通用 CRUD：仅接管 /api/<base> 与 /api/<base>/<数字>；多段特殊子路径返回 null。
   {
     const res = await routeRest(url, m, body);
-    if (res) return res;
+    if (res) {
+      // 角色列表的「就绪」派生字段在云端由后端算好，本地只存 characterStates，必须在这里补齐：
+      // 否则分镜元数据条里的角色 chip 永远显示未就绪，与出图门禁的结论互相矛盾。
+      if (m === 'GET') {
+        const charList = pathname.match(/^\/api\/characters(?:\/project\/(\d+))?$/);
+        if (charList) {
+          const path = await pathFor(charList[1] || url.searchParams.get('projectId') || null);
+          if (path) {
+            const data = await res.json().catch(() => null);
+            if (Array.isArray(data?.characters)) {
+              data.characters = await deriveCharacterReadinessFields(path, data.characters);
+              return jsonResponse(data);
+            }
+          }
+        }
+      }
+      return res;
+    }
   }
 
   // 未命中任何本地已实现域：返回 null，统一交由 routeToResponse 的中性空响应兜底。
