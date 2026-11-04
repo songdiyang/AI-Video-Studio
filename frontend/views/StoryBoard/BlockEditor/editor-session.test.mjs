@@ -14,6 +14,7 @@ const root = fileURLToPath(new URL('../../../', import.meta.url));
 const dialogFile = path.join(root, 'views/StoryBoard/BlockEditor/DialogEditor.tsx');
 const blockFile = path.join(root, 'views/StoryBoard/BlockEditor/index.tsx');
 const directorFile = path.join(root, 'components/DirectorSpace/index.tsx');
+const sceneDialoguesFile = path.join(root, 'services/sceneDialogues.ts');
 const compiled = new Map();
 const tick = async () => { for (let i = 0; i < 8; i++) await new Promise(resolve => setImmediate(resolve)); };
 const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
@@ -88,6 +89,16 @@ function harness() {
       if (name.endsWith('/SketchFramesPanel')) return { default: 'sketches', __esModule: true };
       if (name.endsWith('/ContentEditorPanel')) return { default: p => jsx('shell', { ...p, children: [p.children, p.actions] }), __esModule: true };
       if (name.endsWith('/DialogEditor')) return load(dialogFile);
+      // 台词校验是纯函数模块，真实加载：DialogEditor 的拆行行为必须走同一套实现
+      if (name.endsWith('/sceneDialogues')) return load(sceneDialoguesFile);
+      if (name.endsWith('/modelCapabilities')) return { filterModelsForTaskSlot: () => [] };
+      if (name.endsWith('/DropdownSelect')) return { default: (p) => jsx('select', { ...p }), __esModule: true };
+      if (name.endsWith('/ScenePreviewPanel')) return { default: (p) => jsx('scene-preview', { ...p }), __esModule: true };
+      if (name.endsWith('/StoryboardLockButton')) return { default: () => null, __esModule: true };
+      // 厂商能力查询属网络/模型服务，与编辑器会话无关：给哑桩，避免真实模块被拉起
+      if (name.endsWith('/localAI')) {
+        return new Proxy({ __esModule: true }, { get: (_, key) => (key === '__esModule' ? true : () => ({ })) });
+      }
       if (name.endsWith('/BlockEditor')) return load(blockFile);
       throw new Error(`Unexpected import: ${name}`);
     };
