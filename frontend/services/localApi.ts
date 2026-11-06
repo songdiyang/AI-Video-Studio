@@ -2,6 +2,8 @@
 // 使用 Tauri 命令完成本地能力，不依赖任何后端服务器
 // 非 Tauri 环境下降级为 localStorage 等浏览器原生能力（仅作本地实现，非联网后端）
 
+import { makeUniqueName } from './uniqueName';
+
 // 类型定义
 export interface AIModelConfig {
   provider: string;
@@ -501,26 +503,51 @@ function writeBrowserProjects(list: ProjectMetadata[]) {
   localStorage.setItem(BROWSER_PROJECTS_KEY, JSON.stringify(list));
 }
 
+/**
+ * 同名工程处理。
+ *
+ * 为什么必须消歧：工程列表只展示名称，重名会让人分不清点进去的是哪一个；
+ * 更关键的是浏览器模拟模式下工程数据按 `local_project_data:<path>:<file>` 存放，
+ * 而 path 早期由名称拼出——两个同名工程会落到同一份数据上互相串写。
+ * Rust 侧只对**文件夹**追加了 `-1/-2`，显示名仍然重复，所以名称这一层在前端收口。
+ *
+ * `excludePath` 用于改名场景：不能把自己算作冲突项。
+ */
+async function uniqueProjectName(name: string, excludePath?: string): Promise<string> {
+  const clean = String(name || '').trim();
+  if (!clean) return clean;
+  const taken = await listProjects().catch(() => [] as ProjectMetadata[]);
+  const others = taken.filter((p) => !excludePath || p.path !== excludePath).map((p) => p.name);
+  return makeUniqueName(clean, others) || clean;
+}
+
 export async function createProject(params: CreateProjectParams): Promise<ProjectMetadata> {
+  const finalName = await uniqueProjectName(params.name);
   if (!isTauri()) {
     const now = new Date().toISOString();
+    const list = readBrowserProjects();
+    // id 同时充当 path 与数据键的一部分，必须唯一；同一毫秒连点时向后递增
+    // （本地工程数值 ID 约定 ≥2e9，Date.now() 递增后仍满足）
+    const taken = new Set(list.map((p) => p.id));
+    let id = Date.now().toString();
+    while (taken.has(id)) id = String(Number(id) + 1);
     const project: ProjectMetadata = {
       schema_version: 1,
-      id: Date.now().toString(),
-      name: params.name,
+      id,
+      name: finalName,
       description: params.description,
       project_type: params.project_type,
       created_at: now,
       updated_at: now,
-      path: `local://projects/${encodeURIComponent(params.name)}`,
+      // path 用 id 而非名称：同名工程必须是两份互不相干的存储
+      path: `local://projects/${id}`,
     };
-    const list = readBrowserProjects();
     list.unshift(project);
     writeBrowserProjects(list);
     return project;
   }
   const { invoke } = await getTauriApi();
-  return await invoke('create_project', { params });
+  return await invoke('create_project', { params: { ...params, name: finalName } });
 }
 
 export async function listProjects(): Promise<ProjectMetadata[]> {
@@ -681,11 +708,13 @@ export async function updateProjectManifest(
   projectPath: string,
   patch: { name?: string; description?: string },
 ): Promise<ProjectMetadata> {
+  // 改名同样走同名消歧：excludePath 把自己排除掉，改成原名不会莫名多出 " (2)"
+  const finalName = patch.name?.trim() ? await uniqueProjectName(patch.name, projectPath) : patch.name;
   if (!isTauri()) {
     const list = readBrowserProjects();
     const project = list.find((p) => p.path === projectPath);
     if (!project) throw new Error(`工程不存在: ${projectPath}`);
-    if (patch.name?.trim()) project.name = patch.name.trim();
+    if (finalName?.trim()) project.name = finalName.trim();
     if (patch.description !== undefined) project.description = patch.description;
     project.updated_at = new Date().toISOString();
     writeBrowserProjects(list);
@@ -694,7 +723,7 @@ export async function updateProjectManifest(
   const { invoke } = await getTauriApi();
   return await invoke('update_project_manifest', {
     projectPath,
-    name: patch.name ?? null,
+    name: finalName ?? null,
     description: patch.description ?? null,
   });
 }

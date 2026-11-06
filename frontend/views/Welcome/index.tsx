@@ -38,6 +38,7 @@ import {
   isTauri,
   type ProjectMetadata,
 } from '../../services/localApi';
+import { makeUniqueName } from '../../services/uniqueName';
 
 const RECENT_LIMIT = 6;
 
@@ -249,6 +250,15 @@ const Welcome: React.FC = () => {
     }
   };
 
+  // 同名预检：工程列表只按名称展示，重名会让人分不清点进去的是哪一个。
+  // 创建时系统会自动追加「 (2)」，这里在用户输入时就把手，提前说明最终名称。
+  const renamedPreview = (() => {
+    const value = name.trim();
+    if (!value) return '';
+    const next = makeUniqueName(value, recent.map((p) => p.name));
+    return next !== value ? next : '';
+  })();
+
   const templates = [
     { key: 'comic_drama', label: w.comicDrama, icon: Film, available: true },
     { key: 'manga', label: t.settings.about.comicWorkbench, icon: BookOpen, available: false },
@@ -451,6 +461,11 @@ const Welcome: React.FC = () => {
                           input: 'text-sm text-(--text-primary) placeholder:text-(--text-muted)',
                         }}
                       />
+                      {renamedPreview && (
+                        <p className="mt-1.5 text-xs" style={{ color: 'var(--text-muted)' }}>
+                          {w.renamedOnCreate.replace('{name}', renamedPreview)}
+                        </p>
+                      )}
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-(--text-secondary) mb-1.5">{w.location}</label>

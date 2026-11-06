@@ -21,6 +21,7 @@ import {
   isTauri,
 } from '../../services/localApi';
 import { PROJECT_TYPES } from '../../types/projectTypes';
+import { duplicateNameKeys, isDuplicateName, pathLeaf } from '../../services/uniqueName';
 import { clearProjectDisplayCache } from '../AIAssistantPanel/scopeStorage';
 import { useWorkbench } from '../../contexts/WorkbenchContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
@@ -85,6 +86,10 @@ const ProjectsSidePanel: React.FC<ProjectsSidePanelProps> = ({ onOpenProject }) 
     );
   }, [projects, keyword]);
 
+  // 重名标注基于全量列表（不是过滤后的可见项），否则一搜索就看不出彼此是同名的；
+  // 导入的 .jzp 名称由清单决定、程序不改写，只能在界面上标出所在文件夹。
+  const dupNameKeys = useMemo(() => duplicateNameKeys(projects.map((p) => p.name)), [projects]);
+
   const handleOpen = async (project: Project) => {
     if (project.source === 'local' && project.local_path) {
       try {
@@ -130,6 +135,10 @@ const ProjectsSidePanel: React.FC<ProjectsSidePanelProps> = ({ onOpenProject }) 
       clearProjectDisplayCache(mapLocalProject(meta).id);
       setShowCreate(false);
       setNewName('');
+      // 同名消歧是系统自动改的名，必须说出口，否则用户会以为自己打的字丢了
+      if (meta.name && meta.name !== name) {
+        showToast(t.frame.projects.renamedOnCreate.replace('{name}', meta.name), 'warning');
+      }
       await loadProjects();
     } catch (err: any) {
       setCreateError(err?.message || t.frame.projects.createFailed);
@@ -287,6 +296,10 @@ const ProjectsSidePanel: React.FC<ProjectsSidePanelProps> = ({ onOpenProject }) 
               const typeMeta = PROJECT_TYPES[project.type];
               const isActive = currentProject?.id === project.id;
               const isLocal = project.source === 'local';
+              // 重名多为导入/外部注册的工程（名称由清单决定，程序不改写），
+              // 只能用所在文件夹末段区分——Rust 侧建夹时已对同名目录追加 -1/-2。
+              // 取不到目录末段就不标，免得界面上挂个空徽标。
+              const folderTag = isLocal && isDuplicateName(project.name, dupNameKeys) ? pathLeaf(project.local_path) : '';
               return (
                 <li key={`${project.source || 'cloud'}-${project.id}`} className="group relative">
                   <button
@@ -302,6 +315,15 @@ const ProjectsSidePanel: React.FC<ProjectsSidePanelProps> = ({ onOpenProject }) 
                       className={`w-2 h-2 rounded-full shrink-0 bg-linear-to-br ${typeMeta?.color || 'from-blue-500 to-cyan-500'}`}
                     />
                     <span className="flex-1 truncate text-xs font-medium">{project.name}</span>
+                    {folderTag && (
+                      <span
+                        className="shrink-0 max-w-[72px] truncate text-[10px]"
+                        style={{ color: 'var(--text-muted)' }}
+                        title={t.frame.projects.duplicateBadge.replace('{folder}', folderTag)}
+                      >
+                        {folderTag}
+                      </span>
+                    )}
                     {isLocal ? (
                       <Monitor className="w-3 h-3 shrink-0 text-(--text-muted)" aria-label={t.frame.projects.localProject} />
                     ) : (
