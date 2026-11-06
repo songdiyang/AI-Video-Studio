@@ -65,6 +65,10 @@ interface CharacterAsset {
   name: string;
   views: { front: string; side: string; back: string };
   refUrl: string;
+  /** 白膜状态的生成终态：拦住分镜时要能说清是“还没生成”、“生成中”还是“失败可重做” */
+  baseStatus?: string;
+  /** 上一轮失败原因（服务层回写） */
+  baseError?: string;
 }
 interface StudioAsset {
   /** 影棚库 ID（只有来自 studios 的条目才认，场景同名条目无法用 getStudio 打开） */
@@ -179,7 +183,13 @@ export function evaluateShot(shot: ShotAssets, snapshot: AssetSnapshot, type: Re
     }
     const { front, side, back } = asset.views;
     if (!(front && side && back)) {
-      issues.push({ type: 'character_views_missing', message: `角色「${name}」尚未生成白膜三视图（正/侧/背缺一不可）`, blocking: true, asset: assetRef('character', asset) });
+      // 同一句“缺图”掩盖了三种完全不同的下一步：等任务、重做、或首次生成。
+      const tail = asset.baseStatus === 'failed'
+        ? `白膜上一轮生成失败${asset.baseError ? `：${asset.baseError}` : ''}，可重新生成`
+        : asset.baseStatus === 'generating'
+          ? '白膜三视图仍在生成中，请等当前任务结束'
+          : '尚未生成白膜三视图';
+      issues.push({ type: 'character_views_missing', message: `角色「${name}」${tail}（正/侧/背缺一不可）`, blocking: true, asset: assetRef('character', asset) });
       continue;
     }
     if (asset.refUrl) references.push({ kind: 'character', name, url: asset.refUrl });
@@ -267,7 +277,7 @@ function sameProject(it: any, projectId: number | null): boolean {
 }
 
 /** 从角色的状态列表里抬出「白膜三视图 + 当前参考图」（白膜优先，没有则回退角色本体字段） */
-function pickCharacterViews(ch: any, mine: any[]): { views: { front: string; side: string; back: string }; refUrl: string } {
+function pickCharacterViews(ch: any, mine: any[]): { views: { front: string; side: string; back: string }; refUrl: string; baseStatus: string; baseError: string } {
   const base = mine.find((s) => s?.is_base_model) || ch;
   const active = mine.find((s) => s?.is_active) || null;
   const views = {
@@ -276,7 +286,7 @@ function pickCharacterViews(ch: any, mine: any[]): { views: { front: string; sid
     back: str(base?.back_view_url),
   };
   const refUrl = str(active?.front_view_url) || str(active?.image_url) || views.front || str(ch?.image_url);
-  return { views, refUrl };
+  return { views, refUrl, baseStatus: str(base?.generation_status), baseError: str(base?.generation_error) };
 }
 
 /** 角色资产：白膜三视图（优先白膜状态，其次角色自身字段）+ 当前状态正面图作为参考图 */
@@ -292,8 +302,8 @@ async function loadCharacterAssets(path: string, projectId: number | null): Prom
     const name = str(ch?.name);
     if (!name) continue;
     const mine = states.filter((s) => Number(s.character_id) === Number(ch.id));
-    const { views, refUrl } = pickCharacterViews(ch, mine);
-    out.push({ id: Number(ch.id) || undefined, name, views, refUrl });
+    const { views, refUrl, baseStatus, baseError } = pickCharacterViews(ch, mine);
+    out.push({ id: Number(ch.id) || undefined, name, views, refUrl, baseStatus, baseError });
   }
   return out;
 }
@@ -467,7 +477,7 @@ export function readinessFixHints(result: ReadinessResult): string[] {
         break;
       case 'character_views_missing':
       case 'character_image_missing':
-        hints.add('用 generate_base_model 为角色生成白膜三视图');
+        hints.add('用 generate_base_model 为角色生成白膜三视图（失败或缺张会按视图重做，要换一版传 force=true）');
         break;
       case 'no_location':
         hints.add('用 update_scene_characters_location 给该分镜指定地点');

@@ -100,6 +100,24 @@ test('白膜三视图不齐的角色必须拦住，且该角色不得进参考�
   assert.deepEqual(r.references.map((x) => x.name), ['炉城-三号换热站', '扳手']);
 });
 
+test('白膜“生成失败”与“仍在生成中”必须给出不同的下一步，不能都写成未生成', () => {
+  const half = { name: '老李', views: { ...fullViews, back: '' }, refUrl: '' };
+  const failed = evaluateShot(shot({ characters: ['老李'] }), snapshot({ characters: [{ ...half, baseStatus: 'failed', baseError: '厂商返回 503' }] }), 'frame');
+  const text = formatReadinessMessage(failed);
+  assert.match(text, /上一轮生成失败/, '失败项要说清是失败，不是“还没生成”');
+  assert.match(text, /厂商返回 503/, '服务层回写的原因必须随门禁回执传出去');
+  assert.match(text, /可重新生成/);
+  const hints = readinessFixHints(failed).join('\n');
+  assert.match(hints, /generate_base_model/);
+  assert.match(hints, /force/, '提示词需告诉智能体怎么重做（换一版传 force）');
+
+  const running = evaluateShot(shot({ characters: ['老李'] }), snapshot({ characters: [{ ...half, baseStatus: 'generating', baseError: '' }] }), 'frame');
+  assert.match(formatReadinessMessage(running), /仍在生成中/, '在途任务应引导等任务而不是重复提交');
+
+  const fresh = evaluateShot(shot({ characters: ['老李'] }), snapshot({ characters: [half] }), 'frame');
+  assert.match(formatReadinessMessage(fresh), /尚未生成白膜三视图/, '旧快照无状态字段时仍按未生成描述');
+});
+
 test('角色不在角色库、影棚不在影棚库都算阻断项', () => {
   const r = evaluateShot(shot({ characters: ['陌生人甲'], location: '天台' }), snapshot(), 'frame');
   assert.equal(r.ready, false);

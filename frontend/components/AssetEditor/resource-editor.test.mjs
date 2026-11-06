@@ -59,6 +59,7 @@ function environment() {
       if (name === 'react-dom') return { createPortal: (child, target) => jsx('Portal', { children: child, target }) };
       if (name === '@heroui/react' || name === 'lucide-react') return new Proxy({}, { get: (_, key) => key });
       if (name.includes('/services/')) return mockApi;
+      if (name.includes('useWorkflow')) return { getActiveWorkflows: async () => ({ jobs: [] }), consumeWorkflow: async () => ({}) };
       if (name.includes('ToastContext')) return { useToast: () => ({ showToast() {} }) };
       if (name.includes('ConfirmContext')) return { useConfirm: () => ({ confirm: async () => true }) };
       if (name.includes('PreviewProvider')) return { usePreview: () => ({ openPreview() {} }) };
@@ -96,6 +97,9 @@ const nodes = (node, predicate) => {
   if (Array.isArray(node)) return node.flatMap(child => nodes(child, predicate));
   return [...(predicate(node) ? [node] : []), ...nodes(node.props?.children, predicate)];
 };
+/** HeroUI 按钮里多个插值子节点会被编译成数组，断言文本需先拼接 */
+const label = node => Array.isArray(node.props?.children) ? node.props.children.map(String).join('') : String(node.props?.children ?? '');
+const button = (runner, text) => nodes(runner.tree, node => node.type === 'Button' && label(node) === text)[0];
 const panel = runner => nodes(runner.tree, node => node.type === 'ContentEditorPanel')[0];
 const input = (runner, label) => nodes(runner.tree, node => node.props?.label === label && typeof node.props.onValueChange === 'function')[0];
 const plain = value => JSON.parse(JSON.stringify(value));
@@ -223,7 +227,9 @@ test('角色状态单实例 Portal：内部切换失败保留最新草稿与稳�
   await tick(); runner.render();
   assert.equal(input(runner, '身体元素（纹身、疤痕等）').props.value, '纹身');
   input(runner, '状态描述').props.onValueChange('新描述'); runner.render();
-  const selector = nodes(runner.tree, node => node.props?.label === '正在预览 / 编辑的状态')[0]; selector.props.onSelectionChange(new Set(['8'])); await tick(); runner.render();
+  const selector = nodes(runner.tree, node => node.props?.label === '角色状态' && typeof node.props.onChange === 'function')[0];
+  assert.ok(selector, '标题行必须有角色状态下拉');
+  selector.props.onChange('8'); await tick(); runner.render();
   assert.equal(input(runner, '状态描述').props.value, '新描述'); assert.equal(await handle.flush(), false); assert.equal(registrations.length, 1);
   assert.equal(nodes(runner.tree, node => node.type === 'Portal').length, 2); runner.unmount();
 });
@@ -247,4 +253,49 @@ test('服装生成中阻止破坏性的全量 PUT，保留失败草稿', async (
   const runner = env.mount(assetFile, { tabId: 'asset-costume-7', assetType: 'costume', initialData: initial, onClose() {}, editorPortalTarget: {}, onRegisterEditor: value => { handle = value; } });
   input(runner, '名称').props.onValueChange('新服装'); runner.render();
   assert.equal(await handle.flush(), false); assert.equal(env.calls.some(([name]) => name === 'updateCostume'), false); runner.unmount();
+});
+
+test('白膜生成失败：预览区摊开失败原因并给出可点的「重新生成白膜三视图」', async () => {
+  const env = environment();
+  const rows = [{ ...initial, character_id: 3, name: '白膜', is_base_model: true, image_url: '', front_view_url: '', side_view_url: '', back_view_url: '',
+    generation_status: 'failed', generation_error: '厂商返回 503' }];
+  env.api.fetchCharacter = async () => ({ ...initial, image_url: 'role.png' });
+  env.api.fetchCharacterStates = async () => rows;
+  env.api.fetchCharacterCostumes = async () => ({ costumes: [] });
+  const runner = env.mount(stateFile, { characterId: 3, projectId: 9, editorPortalTarget: {}, actionsPortalTarget: {} });
+  await tick(); runner.render();
+
+  const alert = nodes(runner.tree, node => node.props?.role === 'alert' && label(node).includes('503'))[0];
+  assert.ok(alert, '失败原因必须直接可读，不能只留一个红色状态标签');
+  const retry = button(runner, '重新生成白膜三视图');
+  assert.ok(retry, '失败态必须出现重新生成入口');
+  assert.equal(retry.props.isDisabled, false, '失败态不得把按钮锁死');
+  assert.ok(button(runner, '生成白膜三视图') === undefined, '失败态不能还写“生成”');
+
+  retry.props.onPress(); retry.props.onPress(); await tick();
+  const submitted = env.calls.filter(([name]) => name === 'generateCharacterStateViews');
+  assert.equal(submitted.length, 1, '连点不得重复提交付费作业');
+  assert.equal(submitted[0][1], 3); assert.equal(submitted[0][2], 7);
+  assert.equal(submitted[0][3].regenerateOnly, undefined, '三张全缺时整套重做，不传局部视图');
+  runner.unmount();
+});
+
+test('白膜只缺部分视图：只补生成缺的那一张，保留已生成的好图', async () => {
+  const env = environment();
+  const rows = [{ ...initial, character_id: 3, name: '白膜', is_base_model: true, image_url: 'front.png',
+    front_view_url: 'front.png', side_view_url: 'side.png', back_view_url: '', generation_status: 'completed', generation_error: null }];
+  env.api.fetchCharacter = async () => ({ ...initial, image_url: 'role.png' });
+  env.api.fetchCharacterStates = async () => rows;
+  env.api.fetchCharacterCostumes = async () => ({ costumes: [] });
+  const runner = env.mount(stateFile, { characterId: 3, projectId: 9, editorPortalTarget: {}, actionsPortalTarget: {} });
+  await tick(); runner.render();
+
+  const patch = button(runner, '补生成背面');
+  assert.ok(patch, '缺哪面就应该能单独补哪面');
+  patch.props.onPress(); await tick();
+  const submitted = env.calls.filter(([name]) => name === 'generateCharacterStateViews');
+  assert.equal(submitted.length, 1);
+  assert.deepEqual(plain(submitted[0][3].regenerateOnly), ['back'], '只重做缺的背面，不能再把三张全重生成');
+  assert.ok(button(runner, '生成白膜三视图'), '主按钮仍保留整套重做入口');
+  runner.unmount();
 });

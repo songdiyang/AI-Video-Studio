@@ -16,10 +16,10 @@ import {
   generateCharacterStateViews,
   createCharacterState,
   fetchCharacterStates,
-  fetchCharacter,
   updateCharacterState,
   deleteCharacterState,
 } from '../../services/assets';
+import { startBaseModelGeneration } from '../../services/characterBaseModel';
 import { Project, fetchProjects } from '../../services/projects';
 import { registerLongTask } from '../../services/longTasks';
 import { createStudio, updateStudio, deleteStudio } from '../../services/studios';
@@ -540,41 +540,28 @@ const AssetsManager: React.FC = () => {
       const pid = ensureProject(); if (!pid) return;
       const imageModel = params?.imageModel || selectedImageModel;
       if (!imageModel) { showToast('请先选择图像生成模型', 'warning'); return; }
-      (async () => {
+      return (async () => {
         try {
-          const char = await fetchCharacter(id);
-          const states = await fetchCharacterStates(id);
-          let baseState = states.find((s) => s.is_base_model);
-          if (!baseState) {
-            // 设定图只是参考；先建立白膜状态，再生成三视图基础网格。
-            baseState = await createCharacterState(id, {
-              project_id: pid,
-              name: '白膜',
-              description: char.base_appearance || char.appearance || char.description || '',
-              appearance: char.base_appearance || char.appearance || '',
-              outfit: char.outfit_appearance || '',
-              is_base_model: true,
-              image_url: char.image_url || '',
-              front_view_url: char.front_view_url || '',
-              side_view_url: char.side_view_url || '',
-              back_view_url: char.back_view_url || '',
-              state_category: 'daily',
-              tags: '[]',
-              generation_status: 'idle',
-            } as any);
-          }
-          if (!baseState?.id) throw new Error('白膜状态创建失败');
-          const res = await generateCharacterStateViews(id, baseState.id, {
+          // 与智能体桥接、角色状态编辑器同一口径：失败可重做、缺张只补那张、在途任务不重复提交
+          const { plan, state: base, jobId, character } = await startBaseModelGeneration(id, {
+            projectId: pid,
             imageModel,
             textModel: params?.textModel || selectedTextModel || undefined,
+            force: Boolean(params?.force),
+            views: Array.isArray(params?.views) ? params.views : null,
           });
-          if (res?.jobId) {
-            registerLongTask({ jobId: String(res.jobId), title: `白膜三视图 · ${char.name}`, kind: 'image', projectId: pid });
+          const trackedJobId = jobId || (plan.mode === 'in_progress' ? base?.generation_job_id : null);
+          if (trackedJobId) {
+            registerLongTask({ jobId: String(trackedJobId), title: `白膜三视图 · ${character.name || `角色 #${id}`}`, kind: 'image', projectId: pid });
           }
-          toastOk('白膜三视图生成已启动；完成前不能添加服装、道具或状态');
           loadData();
+          if (plan.mode === 'in_progress') return `${plan.reason}（任务 #${trackedJobId || '-'}）；本轮未重复提交生成。`;
+          if (plan.mode === 'ready') return `${plan.reason}；确实需要换一版请带 force=true 重新调用。`;
+          const detail = plan.mode === 'partial' ? `只重做 ${plan.views.join('、')} 视图，其余视图保留` : '整套重做正/侧/背三视图';
+          return `角色 #${id} 的白膜状态 #${base?.id ?? '-'} ${plan.mode === 'first' ? '已建立并启动生成' : '已启动重生成'}：${detail}（任务 #${jobId || '-'}）。${plan.failed && base?.generation_error ? `上一轮失败原因：${base.generation_error}。` : ''}白膜三视图完成前不能添加服装、道具或状态。`;
         } catch (e: any) {
           showToast(e?.message || '生成失败', 'error');
+          return { success: false, error: e?.message || '白膜三视图生成失败' };
         }
       })();
     }

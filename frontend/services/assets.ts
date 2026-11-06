@@ -95,6 +95,10 @@ export interface Character {
   concept_image_url?: string;
   concept_generation_status?: 'idle' | 'generating' | 'completed' | 'failed';
   generation_status?: 'idle' | 'generating' | 'completed' | 'failed';
+  /** 上一次生成失败的原因（服务层回写），用于界面与智能体给出可重试的提示 */
+  generation_error?: string | null;
+  /** 本次生成任务号；失败回写靠它认领，避免迟到失败覆盖新一轮生成 */
+  generation_job_id?: string | null;
   generation_prompt?: string;
   tags: string;
   tag_groups_json?: CharacterTagGroupEntry[] | null;
@@ -278,6 +282,9 @@ export interface CharacterState {
   is_active?: boolean;       // 是否激活
   generation_prompt?: string;
   generation_status?: 'idle' | 'generating' | 'completed' | 'failed';
+  /** 上一次生成失败的原因（服务层回写）；失败态需要可重试，不能只停在「生成中」 */
+  generation_error?: string | null;
+  generation_job_id?: string | null;
   // 状态分类和标签
   state_category?: StateCategory | StateCategory[];  // 状态分类（支持多选）
   tags?: string;                   // 状态标签JSON数组

@@ -45,6 +45,10 @@ const STATUS_TEXT: Record<string, string> = { idle: '就绪', dirty: '未保存'
   pending: '待生成', generating: '生成中', completed: '已生成', failed: '生成失败' };
 /** 图片生成状态独立命名：idle 表示尚未生成，而非“就绪”。 */
 const GENERATION_STATUS_TEXT: Record<string, string> = { idle: '未生成', pending: '待生成', generating: '生成中', completed: '已生成', failed: '生成失败' };
+/** 三视图键名与中文名：失败重试要能按视图补齐，而不是只能整套重做。 */
+const VIEW_KEYS = [['front', '正面'], ['side', '侧面'], ['back', '背面']] as const;
+type ViewKey = typeof VIEW_KEYS[number][0];
+const missingViews = (state: CharacterState): ViewKey[] => VIEW_KEYS.filter(([key]) => !String(state[`${key}_view_url`] || '').trim()).map(([key]) => key as ViewKey);
 /** 项目/角色身份固定，所有异步加载与生成只回写自己的会话。 */
 const CharacterStateEditor: React.FC<CharacterStateEditorProps> = props => <CharacterStateSession key={`${props.projectId ?? ''}:${props.characterId ?? ''}`} {...props} />;
 const CharacterStateSession: React.FC<CharacterStateEditorProps> = ({ characterId, disabled = false, projectId = null,
@@ -314,7 +318,8 @@ const CharacterStateSession: React.FC<CharacterStateEditorProps> = ({ characterI
       }
       if (state && draftRef.current.data.id === stateId) draftRef.current.media(state);
       if (state?.generation_status === 'completed') { finishGeneration(key); showToast('角色状态图片生成完成', 'success'); return; }
-      if (state?.generation_status === 'failed') throw new Error('角色状态图片生成失败，请重试');
+      // 失败原因由服务层回写在记录上，直接转述它，不再笼统报“生成失败请重试”。
+      if (state?.generation_status === 'failed') throw new Error(state.generation_error || '角色状态图片生成失败，可点击重新生成');
       if (attempt >= 60) {
         const error: any = new Error('角色状态图生成超时，请刷新确认结果后再重试');
         error.code = 'GENERATION_TIMEOUT';
@@ -347,13 +352,14 @@ const CharacterStateSession: React.FC<CharacterStateEditorProps> = ({ characterI
       if (!selected.image) throw new Error('请先在工程设置中选择图像生成模型');
       const state = draftRef.current.data.id === stateId ? draftRef.current.data : statesRef.current.find(item => item.id === stateId);
       if (!state) throw new Error('请先保存状态');
-      if (state.generation_status === 'generating') return;
-      if (!state.is_base_model && !baseReady) throw new Error('请先生成白膜角色设定图');
+      // 生成中且任务未失效才挡住；失效的“生成中”必须允许重新生成，否则点不动。
+      if (state.generation_status === 'generating' && !isStaleGeneratingState(state as CharacterState)) return;
+      if (!state.is_base_model && !baseReady) throw new Error('请先生成白膜三视图，再派生状态图');
       // 保留原有服装/道具就绪校验，由现有生成接口返回 COSTUME_NOT_READY / PROPS_NOT_READY。
       setGenerationErrors(prev => ({ ...prev, [stateId]: '' }));
-      const hasViews = !!(state.front_view_url || state.side_view_url || state.back_view_url);
+      // 单视图重做交给服务层按视图补做，其余视图保留已生成的好图。
       await generateCharacterStateViews(characterId!, stateId, { imageModel: selected.image, textModel: selected.text || undefined,
-        regenerateOnly: view ? [view] : !state.is_base_model && hasViews ? ['front', 'side', 'back'] : undefined });
+        regenerateOnly: view ? [view] : undefined });
       started = true;
       if (!alive.current) return;
       setStates(prev => prev.map(item => item.id === stateId ? { ...item, generation_status: 'generating' } : item));
@@ -535,17 +541,17 @@ const CharacterStateSession: React.FC<CharacterStateEditorProps> = ({ characterI
           <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-(--accent)/10 text-(--accent)">
             <Layers3 size={18} />
           </div>
-          <h5 className="mt-3 text-sm font-medium">{baseReady ? '选择一个角色状态' : '先生成白膜三视图'}</h5>
+          <h5 className="mt-3 text-sm font-medium">{baseReady ? '选择一个角色状态' : base?.generation_status === 'failed' ? '白膜三视图生成失败' : '先生成白膜三视图'}</h5>
           <p className="mt-1 text-xs leading-relaxed text-(--text-muted)">
             {baseReady
               ? '从状态列表选择要编辑的状态，或基于白膜创建一个新状态。状态属性独立保存，不影响角色本体。'
-              : '角色设定图只是参考，白膜三视图才是基础层。白膜三视图完成后再添加服装、道具与状态属性，组合成拍摄所需造型。'}
+              : base?.generation_error || '角色设定图只是参考，白膜三视图才是基础层。白膜三视图完成后再添加服装、道具与状态属性，组合成拍摄所需造型。'}
           </p>
           <div className="mt-4 flex flex-wrap justify-center gap-2">
             {baseReady ? (
               <Button size="sm" color="primary" startContent={<Plus size={13} />} isDisabled={disabled || operationBusy} onPress={() => { void createFromBase(); }}>基于白膜新建</Button>
             ) : (
-              <Button size="sm" color="primary" startContent={<Wand2 size={13} />} isDisabled={disabled || operationBusy || generationBusy || !selected.image} onPress={() => { void generateBaseThreeViews(); }}>生成白膜三视图</Button>
+              <Button size="sm" color="primary" startContent={<Wand2 size={13} />} isDisabled={disabled || operationBusy || generationBusy || !selected.image} onPress={() => { void generateBaseThreeViews(); }}>{base?.generation_status === 'failed' ? '重新生成白膜三视图' : '生成白膜三视图'}</Button>
             )}
             <Button size="sm" variant="flat" startContent={<RefreshCw size={13} />} isLoading={loading} onPress={() => { void loadStates(); }}>刷新状态</Button>
           </div>
@@ -559,9 +565,9 @@ const CharacterStateSession: React.FC<CharacterStateEditorProps> = ({ characterI
     if (await target.flush() && alive.current && target.data.id) await generateViews(target.data.id);
   };
   const actions = !disabled ? <div className="flex flex-wrap items-center gap-2">
-    <Button size="sm" color="primary" isDisabled={!selected.image || generationBusy || selectedGenerating || (!data.id && !isNew)} startContent={<Wand2 size={13} />} onPress={() => { void generateCurrent(); }}>{current.is_base_model ? '生成白膜设定图' : '生成状态三视图'}</Button>
-    {!current.is_base_model && current.id && (['front', 'side', 'back'] as const).map(view => <Button key={view} size="sm" isDisabled={!selected.image || generationBusy || selectedGenerating}
-      onPress={() => { void generateViews(current.id, view); }}>重新生成{view === 'front' ? '正面' : view === 'side' ? '侧面' : '背面'}</Button>)}
+    <Button size="sm" color="primary" isDisabled={!selected.image || generationBusy || selectedGenerating || (!data.id && !isNew)} startContent={<Wand2 size={13} />} onPress={() => { void generateCurrent(); }}>{`${current.generation_status === 'failed' ? '重新生成' : '生成'}${current.is_base_model ? '白膜三视图' : '状态三视图'}`}</Button>
+    {current.id && VIEW_KEYS.map(([view, label]) => <Button key={view} size="sm" isDisabled={!selected.image || generationBusy || selectedGenerating}
+      onPress={() => { void generateViews(current.id, view); }}>重新生成{label}</Button>)}
     {currentCostume && !['completed', 'generating'].includes(currentCostume.generation_status || '') && <Button size="sm" isDisabled={!selected.image || generationBusy} onPress={() => { void generateCostume(currentCostume.id); }}>生成关联服装设定图</Button>}
     {!current.is_base_model && <Button size="sm" variant="flat" isDisabled={!selected.text || analyzingVoice || (!data.id && !isNew)} startContent={<Wand2 size={13} />} onPress={() => { void analyzeVoice(); }}>AI分析音色</Button>}
     {actionsPortalTarget === undefined && <Button size="sm" isDisabled={draft.status === 'saving'} onPress={() => { void flush(); }}>{draft.status === 'error' ? '重试保存状态' : '保存状态'}</Button>}
@@ -572,6 +578,38 @@ const CharacterStateSession: React.FC<CharacterStateEditorProps> = ({ characterI
     {!state.is_base_model && <><Button size="sm" isDisabled={disabled || operationBusy} startContent={<Copy size={12} />} onPress={() => { void duplicate(state); }}>复制</Button>
       <Button size="sm" isDisabled={disabled || operationBusy || state.generation_status === 'generating'} color="danger" variant="light" startContent={<Trash2 size={12} />} onPress={() => { void removeState(state); }}>删除状态</Button></>}
   </div>;
+  /**
+   * 生成失败 / 视图缺张时的重做入口：
+   * 主按钮整套重做（白膜三视图需同源，失败通常是提示词或模型层面问题）；
+   * 「补生成某面」只重做缺的那一张，保留已生成的好图，不重复付费。
+   */
+  const retryActions = (state: CharacterState) => {
+    if (!state.id || disabled) return null;
+    const missing = missingViews(state);
+    const failed = state.generation_status === 'failed';
+    const busy = disabled || operationBusy || !selected.image || state.generation_status === 'generating'
+      || generationBusy || generationLocks.current.has(`state:${state.id}`);
+    return <div className="flex flex-wrap items-center gap-1.5">
+      <Button size="sm" color="primary" startContent={<RefreshCw size={12} />} isDisabled={busy}
+        onPress={() => { void generateViews(state.id!); }}>{failed ? '重新生成' : '生成'}{state.is_base_model ? '白膜三视图' : '状态三视图'}</Button>
+      {missing.length > 0 && missing.length < 3 && missing.map(key => <Button key={key} size="sm" variant="flat" isDisabled={busy}
+        onPress={() => { void generateViews(state.id!, key); }}>补生成{VIEW_KEYS.find(([k]) => k === key)?.[1]}</Button>)}
+    </div>;
+  };
+  /** 失败/缺张提示：把服务层回写的失败原因摊开，不能只留一个看不懂的红色小标签。 */
+  const retryNotice = (state: CharacterState) => {
+    if (!state.id || disabled) return null;
+    const missing = missingViews(state);
+    const failed = state.generation_status === 'failed';
+    const message = generationErrors[state.id] || state.generation_error || '';
+    if (!failed && !message && !(missing.length && state.generation_status !== 'generating')) return null;
+    return <div className="space-y-2 rounded-lg border border-red-500/30 bg-red-500/5 px-2.5 py-2">
+      <p role="alert" className="text-[11px] leading-relaxed text-red-400">
+        {message || `${state.is_base_model ? '白膜' : '状态'}三视图还缺${missing.map(key => VIEW_KEYS.find(([k]) => k === key)?.[1]).join('、')}`}
+      </p>
+      {retryActions(state)}
+    </div>;
+  };
   const preview = (state: CharacterState, currentDraft = false) => {
     const creatingCurrent = currentDraft && isNew && !state.id;
     const slides = ([['image_url', '设定图'], ['front_view_url', '正面'], ['side_view_url', '侧面'], ['back_view_url', '背面']] as const)
@@ -588,9 +626,9 @@ const CharacterStateSession: React.FC<CharacterStateEditorProps> = ({ characterI
         <p className="text-center text-[11px] text-(--text-muted)">{creatingCurrent ? '新状态尚未生成三视图，显示角色设定图参考' : state.id ? '当前状态暂无三视图，显示角色设定图参考' : '角色设定图 · 仅作参考，白膜三视图尚未生成'}</p>
         {!baseReady && <>
           <p className="text-center text-[11px] leading-relaxed text-(--text-muted)">白膜是基础网格；状态 = 白膜基础 + 服装 + 道具 + 状态属性</p>
-          <div className="flex justify-center">
+          {state.id ? retryNotice(state) : <div className="flex justify-center">
             <Button size="sm" variant="flat" startContent={<Wand2 size={12} />} isDisabled={disabled || operationBusy || generationBusy || !selected.image} onPress={() => { void generateBaseThreeViews(); }}>生成白膜三视图</Button>
-          </div>
+          </div>}
         </>}
       </div>;
     }
@@ -617,7 +655,7 @@ const CharacterStateSession: React.FC<CharacterStateEditorProps> = ({ characterI
             {baseReady ? '基于白膜新建状态' : '生成白膜三视图'}
           </Button>}
         </div>}
-      {generationErrors[state.id] && <p role="alert" className="text-danger text-xs">{generationErrors[state.id]}</p>}
+      {retryNotice(state)}
       {(state.id || (slides.length > 0 && !disabled)) && <div className="flex items-center justify-between gap-2">
         <span role="status" className="min-w-0">{state.id && <span className={`inline-flex rounded px-1.5 py-0.5 text-[11px] ${generationTone}`}>{GENERATION_STATUS_TEXT[generation]}</span>}</span>
         {slides.length > 0 && !disabled && <Button size="sm" color="danger" variant="light" isDisabled={operationBusy || state.generation_status === 'generating'} onPress={() => { void deleteViews(state); }}>{state.is_base_model ? '删除白膜设定图' : '删除状态三视图'}</Button>}

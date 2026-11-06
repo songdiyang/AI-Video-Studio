@@ -43,6 +43,12 @@ export interface SubmitAssetJobOptions {
   run: () => Promise<any>;
   /** 整体超时；默认 10 分钟，测试可注入更短时长 */
   timeoutMs?: number;
+  /**
+   * 作业进入失败终态（厂商报错或看门狗超时）时的补偿回写。
+   * run() 只在成功路径写资产文档，缺这一环记录会永远停在「生成中」，
+   * 界面与智能体都读不到失败原因，也就无法提供「重新生成」。
+   */
+  onFail?: (error: Error) => void;
 }
 
 const DEFAULT_JOB_TIMEOUT_MS = 10 * 60 * 1000;
@@ -69,12 +75,24 @@ export function submitAssetGeneration(opts: SubmitAssetJobOptions): string {
     consumed: false,
   };
   store.set(id, job);
+  // 失败回写只允许发生一次：看门狗超时后 run() 的迟到异常不应再覆盖资产记录。
+  let failNotified = false;
+  const notifyFail = (message: string) => {
+    if (failNotified || !opts.onFail) return;
+    failNotified = true;
+    try {
+      opts.onFail(new Error(message));
+    } catch (err) {
+      console.warn(`[assetJobs] ${opts.workflowType} 失败回写异常:`, err);
+    }
+  };
   // 厂商调用或媒体落地异常悬停时也必须进入终态，否则 UI 与注册表会永久保持生成中。
   const watchdog = setTimeout(() => {
     if (job.status !== 'running') return;
     job.status = 'failed';
     job.error_message = '生成任务超时，请重新生成';
     job.completed_at = new Date().toISOString();
+    notifyFail(job.error_message);
   }, Math.max(1, opts.timeoutMs ?? DEFAULT_JOB_TIMEOUT_MS));
   void (async () => {
     try {
@@ -86,6 +104,7 @@ export function submitAssetGeneration(opts: SubmitAssetJobOptions): string {
       if (job.status !== 'running') return;
       job.status = 'failed';
       job.error_message = err?.message || '生成失败';
+      notifyFail(job.error_message);
     } finally {
       clearTimeout(watchdog);
       job.completed_at ||= new Date().toISOString();

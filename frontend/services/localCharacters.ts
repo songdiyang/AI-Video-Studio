@@ -20,11 +20,50 @@ import {
   chatJson,
   genImageToUrl,
   submitGenJob,
+  isAssetJobRunning,
 } from './localAssetShared';
 
+// ==================== 生成任务：视图选择与失败回写 ====================
+// 三视图键名：与 *_view_url 字段一一对应
+const STATE_VIEWS = ['front', 'side', 'back'] as const;
+type CharacterView = (typeof STATE_VIEWS)[number];
+
+/** 请求带 regenerateOnly 时只重做指定视图（失败重试不应冲掉已生成的好图）；缺省或非法值退回全量三视图。 */
+export function resolveTargetViews(requested: unknown): CharacterView[] {
+  if (!Array.isArray(requested)) return [...STATE_VIEWS];
+  const picked = requested.map((v) => String(v)).filter((v): v is CharacterView => (STATE_VIEWS as readonly string[]).includes(v));
+  return picked.length ? [...new Set(picked)] : [...STATE_VIEWS];
+}
+
+/**
+ * 把失败终态写回资产记录：run() 只覆盖成功路径，作业失败/超时若不落库，
+ * 记录会永远停在 generating，界面与智能体都没有「重新生成」的判断依据。
+ * 仅当记录仍属于本次任务时才回写（新任务提交时会把 generation_job_id 置空），
+ * 避免上一个任务的迟到失败把新一轮「生成中」误标成失败。
+ */
+function markGenerationFailed(
+  path: string,
+  docName: 'characterStates' | 'characters',
+  recordId: number,
+  jobId: string,
+  message: string,
+): void {
+  void loadRestDoc(path, docName)
+    .then((doc) => {
+      const record = findById(doc.items, recordId);
+      if (!record || record.generation_status !== 'generating') return;
+      if (String(record.generation_job_id ?? '') !== jobId) return;
+      Object.assign(record, { generation_status: 'failed', generation_error: message, updated_at: new Date().toISOString() });
+      saveRestDoc(path, docName, doc);
+    })
+    .catch((err) => console.warn(`[characters] ${docName} 生成失败回写异常:`, err));
+}
+
 // ==================== 视图提示词组装 ====================
-// 白膜 = 角色默认参考素体：只锁定长相/体型/基础发型，强制无服装、无配饰、无道具、统一中性站姿。
+// 白膜 = 角色默认参考素体：只锁定长相/体型/基础发型，提示词不引入服饰/道具描述，统一中性站姿。
 // 它是后续派生状态图的基准网格，因此不能带入服饰/剧情等细节，也不叠加工程美术风格。
+// 防审核注意：发往绘图模型的文案必须正向、明确着装（统一纯白素体衣），禁止"无服装/不着装"
+// 这类负向裸体暗示表述——既往有过触发厂商 output sensitive information 拦截的事故。
 const NON_BODY_CLAUSE = /冰镐|步枪|手枪|枪械|枪支|武器|匕首|刀具|铁钎|弹药|爆炸物|手持|持握|佩戴|携带|腰间|后腰|身着|穿着|防寒服|棉袄|棉袍|制服|护目镜|面罩|毛帽|皮鞋|袖口/;
 
 function cleanBaseAppearance(value: unknown): string {
@@ -37,11 +76,10 @@ function cleanBaseAppearance(value: unknown): string {
 }
 
 export function buildBaseModelPrompts(src: any): { front: string; side: string; back: string } {
-  // 只取体貌字段（不含 outfit/description 等服装剧情描述），显式剔除服装与道具。
+  // 只取体貌字段（不含 outfit/description 等服装剧情描述），服饰/道具描述只剔除、不写入。
   const body = cleanBaseAppearance(src.base_appearance || src.hairstyle || src.appearance);
-  const neutral = '角色白膜素体（默认参考态），固定同一长相、体型与基础发型，'
-    + '统一 A-Pose 中性站姿、双臂平展、中性表情，'
-    + '不着任何服装与配饰、不持任何道具，仅以简洁贴身素体呈现';
+  const neutral = '角色白色哑光人台模型，身穿简洁贴身的纯白素体衣（短袖连体款），'
+    + '固定同一长相、体型与基础发型，A-Pose 中性站姿、双臂约45度自然下斜，中性表情，双手空置';
   const identity = body ? `${body}，` : '';
   return {
     front: src.front_prompt || `${identity}${neutral}，正面全身三视图，纯白背景`,
@@ -187,6 +225,9 @@ async function handleStateBaseModelImageDelete(charId: number, stateId: number):
   const state = findById(doc.items, stateId);
   if (!state || !assertProject(state, path)) return jsonResponse({ message: '状态不存在' }, 404);
   for (const f of ['image_url', 'front_view_url', 'side_view_url', 'back_view_url']) state[f] = null;
+  // 图片清空后不能保留「已生成/生成失败」，否则界面状态与实际媒体矛盾，也看不出需要重新生成。
+  state.generation_status = 'idle';
+  state.generation_error = null;
   state.updated_at = new Date().toISOString();
   saveRestDoc(path, 'characterStates', doc);
   return jsonResponse({ state });
@@ -215,13 +256,23 @@ async function handleStateGenerateViews(charId: number, stateId: number, body: a
     const url = baseState[`${view}_view_url`];
     return url ? [String(url)] : undefined;
   };
+  const views = resolveTargetViews(body?.regenerateOnly);
+  // 上一轮任务仍在跑时直接拦住：重复提交会双倍付费，两个任务还会互相覆盖同一记录的回写。
+  if (state.generation_status === 'generating' && isAssetJobRunning(state.generation_job_id)) {
+    return jsonResponse({ message: '该角色状态的三视图仍在生成中，请等当前任务结束（可在站内信查看进度）', code: 'GENERATION_IN_PROGRESS' }, 409);
+  }
   state.generation_status = 'generating';
+  // 提交时先清空上一轮的任务号与失败原因：失败回写靠任务号认领本次任务，迟到失败不能接管新一轮生成。
+  state.generation_job_id = null;
+  state.generation_error = null;
   saveRestDoc(path, 'characterStates', doc);
-  const jobId = submitGenJob({
+  let jobId = '';
+  jobId = submitGenJob({
     workflowType: 'character_state_views_generation',
     workflowName: '角色状态三视图生成',
     projectId,
-    inputParams: { characterId: charId, stateId, imageModel: body?.imageModel, characterName: ch.name, stateName: state.name },
+    inputParams: { characterId: charId, stateId, imageModel: body?.imageModel, characterName: ch.name, stateName: state.name, views },
+    onFail: (err) => markGenerationFailed(path, 'characterStates', stateId, jobId, err?.message || '生成失败'),
     run: async () => {
       const gen = (view: 'front' | 'side' | 'back') => genImageToUrl({
         imageModel: body?.imageModel,
@@ -231,19 +282,32 @@ async function handleStateGenerateViews(charId: number, stateId: number, body: a
         refImageUrls: refFor(view),
         skipArtStyle: isBase,
       });
-      const front = await gen('front');
-      const side = await gen('side');
-      const back = await gen('back');
+      // 只重做请求的视图，其余视图沿用已有图（失败重试不把已生成的三视图一并冲掉）。
+      const fresh = await loadRestDoc(path, 'characterStates');
+      const current = findById(fresh.items, stateId) || state;
+      const urls: Record<'front' | 'side' | 'back', string> = {
+        front: String(current.front_view_url || ''),
+        side: String(current.side_view_url || ''),
+        back: String(current.back_view_url || ''),
+      };
+      for (const view of views) urls[view] = await gen(view);
       const d2 = await loadRestDoc(path, 'characterStates');
       const st = findById(d2.items, stateId);
       if (st) {
-        Object.assign(st, { front_view_url: front, side_view_url: side, back_view_url: back, image_url: front, generation_status: 'completed', updated_at: new Date().toISOString() });
+        Object.assign(st, { front_view_url: urls.front, side_view_url: urls.side, back_view_url: urls.back,
+          // image_url 以正面为准；本次未重做正面时保留原设定图，不回到空图。
+          image_url: views.includes('front') ? urls.front : String(st.image_url || urls.front || ''),
+          generation_status: 'completed', generation_error: null, updated_at: new Date().toISOString() });
         saveRestDoc(path, 'characterStates', d2);
       }
-      return { front_view_url: front, side_view_url: side, back_view_url: back };
+      return { ...urls, views };
     },
   });
-  return jsonResponse({ message: 'generating', jobId, characterId: charId, stateId, status: 'generating' });
+  // 任务号必须同步落到刚保存的文档上：异步补登记会让“秒失败”的作业在登记前就回调 onFail，
+  // 比对不上任务号，失败原因就永远写不进记录。
+  state.generation_job_id = jobId;
+  saveRestDoc(path, 'characterStates', doc);
+  return jsonResponse({ message: 'generating', jobId, characterId: charId, stateId, status: 'generating', views });
 }
 
 // 角色三视图生成（作用于 character 本体，白膜降级路径）
@@ -255,13 +319,20 @@ async function handleGenerateViews(charId: number, body: any): Promise<Response>
   if (!ch || !assertProject(ch, path)) return jsonResponse({ message: '角色不存在' }, 404);
   const projectId = Number(ch.project_id) || 0;
   const prompts = buildBaseModelPrompts(ch);
+  if (ch.generation_status === 'generating' && isAssetJobRunning(ch.generation_job_id)) {
+    return jsonResponse({ message: '该角色的三视图仍在生成中，请等当前任务结束（可在站内信查看进度）', code: 'GENERATION_IN_PROGRESS' }, 409);
+  }
   ch.generation_status = 'generating';
+  ch.generation_job_id = null;
+  ch.generation_error = null;
   saveRestDoc(path, 'characters', doc);
-  const jobId = submitGenJob({
+  let jobId = '';
+  jobId = submitGenJob({
     workflowType: 'character_views_generation',
     workflowName: '角色三视图生成',
     projectId,
     inputParams: { characterId: charId, imageModel: body?.imageModel, characterName: ch.name },
+    onFail: (err) => markGenerationFailed(path, 'characters', charId, jobId, err?.message || '生成失败'),
     run: async () => {
       // 白膜/基础三视图保持中性网格，不叠加工程美术风格
       const front = await genImageToUrl({ imageModel: body?.imageModel, prompt: prompts.front, projectId, nameHint: `char${charId}_front`, skipArtStyle: true });
@@ -270,12 +341,14 @@ async function handleGenerateViews(charId: number, body: any): Promise<Response>
       const d2 = await loadRestDoc(path, 'characters');
       const c = findById(d2.items, charId);
       if (c) {
-        Object.assign(c, { front_view_url: front, side_view_url: side, back_view_url: back, image_url: front, generation_status: 'completed', updated_at: new Date().toISOString() });
+        Object.assign(c, { front_view_url: front, side_view_url: side, back_view_url: back, image_url: front, generation_status: 'completed', generation_error: null, updated_at: new Date().toISOString() });
         saveRestDoc(path, 'characters', d2);
       }
       return { front_view_url: front, side_view_url: side, back_view_url: back, image_url: front };
     },
   });
+  ch.generation_job_id = jobId;
+  saveRestDoc(path, 'characters', doc);
   return jsonResponse({ message: 'generating', jobId, characterId: charId, status: 'generating' });
 }
 
@@ -319,8 +392,9 @@ async function handleGenerateImagePrompt(charId: number, body: any): Promise<Res
   if (!model) return jsonResponse({ message: '请先配置可用的文本模型' }, 400);
   const sys =
     '你是专业的 AI 绘画提示词工程师。为“角色白膜素体（默认参考态）”产出正面/侧面/背面三视图提示词。' +
-    '白膜只锁定长相、体型、基础发型，必须无服装、无配饰、无手持道具，统一 A-Pose 中性站姿、中性表情、纯白背景；' +
-    '只保留身体本身（如发色、瞳色、体型、肤色、疤痕/纹身等体貌），不得描述任何服装与剧情细节。' +
+    '白膜只锁定长相、体型、基础发型，统一穿着简洁贴身的纯白素体衣（短袖连体款），A-Pose 中性站姿、双臂约45度自然下斜、中性表情、纯白背景；' +
+    '只保留身体本身（如发色、瞳色、体型、肤色等体貌），不得引入服饰、道具与剧情细节；' +
+    '提示词必须正向描述着装，严禁出现“裸体/无服装/不着装/无配饰”等敏感表述。' +
     '严格只输出 JSON：{"style":"画风","front":"正面提示词","side":"侧面提示词","back":"背面提示词"}，全部中文。';
   const user = `角色名称：${ch.name || ''}\n基础体貌（不含服装）：${ch.base_appearance || ch.appearance || ''}\n用户补充：${body?.userNote || ''}`;
   const parsed = await chatJson(model, sys, user);

@@ -9,7 +9,7 @@
 import { readDoc, writeDoc, getActiveProjectPath, resolveLocalPath, projectIdForPath, type LocalDocName } from './localStore';
 import { resolveModel, getOfflineModels, chatText, generateImage, type OfflineModel } from './localAI';
 import { persistGeneratedMedia } from './localMedia';
-import { submitAssetGeneration } from './localAssetJobs';
+import { submitAssetGeneration, getAssetJob } from './localAssetJobs';
 import { loadEffectiveArtStylePrompt } from './projectSettings';
 import type { RestDoc } from './localRest';
 
@@ -167,6 +167,7 @@ export async function genImageToUrl(opts: {
 /**
  * 提交一个资产生成作业（非阻塞）：run() 内完成出图 + 回写资产文档。
  * 返回 ag_ 前缀 jobId，供前端 useWorkflowTargetMonitor 轮询 /workflows/active。
+ * onFail 用于把失败终态也回写进资产文档（run() 只覆盖成功路径）。
  */
 export function submitGenJob(opts: {
   workflowType: string;
@@ -174,6 +175,12 @@ export function submitGenJob(opts: {
   projectId: number;
   inputParams?: Record<string, unknown>;
   run: () => Promise<any>;
+  onFail?: (error: Error) => void;
 }): string {
   return submitAssetGeneration(opts);
+}
+
+/** 资产作业是否仍在跑：用于挡住重复提交（同一记录并行出图会双倍付费且互相覆盖回写） */
+export function isAssetJobRunning(jobId?: string | null): boolean {
+  return !!jobId && getAssetJob(jobId)?.status === 'running';
 }
