@@ -10,9 +10,9 @@ import { normalizeSceneDialogues } from '../../services/sceneDialogues';
 import MemoryPanel from './MemoryPanel';
 import { isLongTaskCapable } from '../../services/aiAssistant';
 import { getWorkflowStatus } from '../../hooks/useWorkflow';
-import { analyzeScript, optimizeScript, generateScript, type ScriptAnalysisResult } from '../../services/scripts';
+import { analyzeScript, optimizeScript, generateScript, type ScriptAnalysisResult, type ScriptWriterInfo } from '../../services/scripts';
 import { listLongTasks, registerLongTask, LONG_TASK_STATUS_LABEL } from '../../services/longTasks';
-import { loadProjectGenerationSettings } from '../../services/projectSettings';
+import { loadProjectGenerationSettings, loadEffectiveWriter } from '../../services/projectSettings';
 import { listActiveMemories, touchMemories, loadMemoryFlags } from '../../services/agentMemory';
 import { probeMediaBatch, formatBytes, formatResolution, toVisionImageUrls } from '../../services/mediaInfo';
 import { SCRIPT_ANALYSIS_EVENT, consumePendingScriptAnalysis, type ScriptAnalysisRequest } from '../../services/scriptAnalysisBridge';
@@ -1644,6 +1644,10 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
     const artStyleSettings = projectIdRef.current
       ? await loadProjectGenerationSettings(projectIdRef.current)
       : {};
+    // 工程级代笔写手：区分「未指派」与「不限定」，故 raw writerKey 与生效结果都要传
+    const effectiveWriter = projectIdRef.current
+      ? await loadEffectiveWriter(projectIdRef.current).catch(() => null)
+      : null;
 
     // 智能体记忆：遵循「记忆检索」总开关，注入启用中的用户记忆（跨工程）+ 工程记忆，发送后异步累计调用次数
     const memoryFlags = loadMemoryFlags();
@@ -1667,6 +1671,15 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
       artStylePrompt: artStyleSettings.artStylePrompt ?? '',
       tempArtStylePrompt: artStyleSettings.tempArtStylePrompt ?? '',
       tempArtStyleNote: artStyleSettings.tempArtStyleNote ?? '',
+      // 写手：writerKey 保持 undefined（工程从未设置）以触发「未指派」提示；
+      // 临时覆盖优先，故署名/笔法取 effectiveWriter（内部已按 temp 优先解析）
+      writerKey: artStyleSettings.writerKey,
+      writerName: effectiveWriter?.writer?.name ?? '',
+      writerStylePrompt: effectiveWriter?.stylePrompt ?? '',
+      writerNote: effectiveWriter?.note ?? '',
+      tempWriterKey: effectiveWriter?.temp ? effectiveWriter.key : '',
+      tempWriterName: effectiveWriter?.temp ? (effectiveWriter.writer?.name ?? '') : '',
+      tempWriterNote: effectiveWriter?.temp ? effectiveWriter.note : '',
       memories: activeMemories.map((m) => ({ scope: m.scope, content: m.content, importance: m.importance })),
       characters,
       locations,
@@ -2424,11 +2437,14 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
             status = 'failed';
             note = '任务记录已失效或无法核验，不得宣称完成';
           }
+        } else if (status === 'failed') {
+          // 失败不是终点：把回写的失败原因说清楚，智能体才能自己重做而不是只汇报“失败了”。
+          note = `${record.error ? `${record.error}；` : ''}该任务未产出可用资产，应重新生成后继续，不得宣称完成`;
         }
         const count = record.total > 0 ? `（${record.current}/${record.total}）` : '';
         return `- [${record.jobId}] ${record.title}：${LONG_TASK_STATUS_LABEL[status]} ${record.progress}%${count}${note ? `，${note}` : ''}`;
       }));
-      const hasInvalid = lines.some((line) => line.includes('不得宣称完成') || line.includes('必须重新生成') || line.includes('实际未完成'));
+      const hasInvalid = lines.some((line) => line.includes('不得宣称完成') || line.includes('必须重新生成') || line.includes('应重新生成') || line.includes('实际未完成'));
       return `后台长任务（已核验工作流与资产落地）：\n${lines.join('\n')}${hasInvalid ? '\n\n上述失败或未完成记录以本次核验为准，禁止向用户宣称全部完成。' : ''}`;
     }
 
@@ -2614,7 +2630,12 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
         );
         if (currentSid) archiveMessage(currentSid, inquiry);
       };
-      const completeGeneration = async (scriptId?: number, resultEp?: number | null, resultTitle?: string | null) => {
+      const completeGeneration = async (
+        scriptId?: number,
+        resultEp?: number | null,
+        resultTitle?: string | null,
+        writer?: ScriptWriterInfo,
+      ) => {
         const title = resultTitle || initialTitle;
         patchCard({ status: 'completed', title: `剧本 · ${title}`, scriptId });
         notifyTerminal('completed');
@@ -2636,8 +2657,15 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
           scriptId,
           episodeNumber: detail.episodeNumber,
           title,
+          // 执笔者回执：模型据此如实播报「本轮由谁执笔」，不得虚构
+          writer,
           // 观察结果里讲清「已追问」，否则模型会把追问当成自己的事再补一次或直接拆分
-          nextStep: '系统已在对话中追问用户是否需要拆分为分镜。除非用户本轮已明确要求拆分，在用户回答之前禁止执行 auto_storyboard。',
+          nextStep: '系统已在对话中追问用户是否需要拆分为分镜。除非用户本轮已明确要求拆分，在用户回答之前禁止执行 auto_storyboard。'
+            + (writer?.name ? ` 本轮剧本由 ${writer.name} 执笔${writer.recast ? '（本轮为重新选角）' : ''}，请在回复中如实播报执笔者并引用回执中的 writer 字段。` : '')
+            // 同名原作：把结论交给模型转述，避免用户看到名著标题就以为系统在改编原作
+            + (writer?.sameWork?.work
+              ? ` 标题与 ${writer.sameWork.writer || writer.name} 的代表作《${writer.sameWork.work}》同名：系统只沿用笔法，未移植原作人物与情节，请用一句话向用户说明这是同名而非改编。`
+              : ''),
         };
       };
 
@@ -2661,12 +2689,13 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
           length: params?.length,
           episodeNumber,
           provider: params?.textModel || selectedModel,
+          recastWriter: params?.recastWriter === true || String(params?.recastWriter) === 'true',
         });
-        const { jobId, scriptId, episodeNumber: resultEp, title: resultTitle } = result;
+        const { jobId, scriptId, episodeNumber: resultEp, title: resultTitle, writer: resultWriter } = result;
         patchCard({ title: `剧本 · ${resultTitle || initialTitle}`, jobId });
 
         // 本地生成在 generateScript 返回时已持久化，无需回读或展示正文。
-        if (!jobId) return completeGeneration(scriptId, resultEp, resultTitle);
+        if (!jobId) return completeGeneration(scriptId, resultEp, resultTitle, resultWriter);
 
         registerLongTask({
           jobId,
@@ -2695,7 +2724,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
             try {
               const job = await getWorkflowStatus(jobId);
               if (job.status === 'completed') {
-                finish(await completeGeneration(scriptId, resultEp, resultTitle));
+                finish(await completeGeneration(scriptId, resultEp, resultTitle, resultWriter));
               } else if (job.status === 'failed' || job.status === 'cancelled') {
                 finish(failGeneration(job.error_message || '剧本生成失败'));
               }

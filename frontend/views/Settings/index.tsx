@@ -4,7 +4,7 @@ import {
   Moon, MoonStar, Sun, Eye, Mail, ChevronDown, Check,
   Palette, MessageSquare, Info, ChevronRight, Sparkles, Monitor, Globe, RotateCcw, SlidersHorizontal, FileArchive,
   Cpu, Database, BarChart3, Users, Gauge, AlertTriangle, Megaphone, ClipboardList, BookOpen, Key, Film, FolderInput, Clapperboard,
-  Image as ImageIcon, Brain, Eraser, Wand2
+  Image as ImageIcon, Brain, Eraser, Wand2, Feather,
 } from 'lucide-react';
 import { useTheme, ThemeType } from '../../contexts/ThemeContext';
 import { useLanguage, LanguageType } from '../../contexts/LanguageContext';
@@ -31,8 +31,11 @@ import {
   ART_STYLE_PRESETS,
   PROJECT_SETTINGS_CHANGED,
   clearTempArtStyle,
+  clearTempWriter,
   type ProjectGenerationSettings,
 } from '../../services/projectSettings';
+import { WRITER_PRESETS, findWriterPreset, detectSameTitleWork } from '../../services/writerStyle';
+import { castWriterForScript } from '../../services/scripts';
 import {
   getProjectsRootOverride,
   setProjectsRootOverride,
@@ -697,6 +700,52 @@ const Settings: React.FC = () => {
     }
   };
 
+  // 代笔写手笔法：与风格限定同样用草稿 + 失焦保存，避免逐字写盘
+  const [writerDraft, setWriterDraft] = useState('');
+  useEffect(() => {
+    setWriterDraft(projectGenSettings.writerStylePrompt || '');
+  }, [projectGenSettings.writerStylePrompt]);
+  const [writerCasting, setWriterCasting] = useState(false);
+  /**
+   * 就地回执：本应用的成功类 toast 是静默出口（右下角弹层已移除），
+   * 选角失败或没选出人时若只发 toast，按钮看起来就是毫无反应，所以结果必须写在分组里。
+   */
+  const [writerCastNotice, setWriterCastNotice] = useState('');
+
+  /** AI 重新选角：按工程描述重新指派一位写手并覆盖工程锁定值 */
+  const handleWriterRecast = async () => {
+    if (!currentProject?.id || writerCasting) return;
+    setWriterCasting(true);
+    setWriterCastNotice('');
+    try {
+      const res = await castWriterForScript({
+        projectId: currentProject.id,
+        // 描述常为空，补上工程名，避免按钮点了没结果
+        title: currentProject.name || '',
+        description: currentProject.description || '',
+        force: true,
+      });
+      await handleProjectSettingsPatch({
+        writerKey: res.writer?.key || '',
+        writerStylePrompt: res.writer?.stylePrompt || '',
+        writerNote: res.writer?.rationale || '',
+      });
+      showToast(
+        res.writer?.name
+          ? `${t.settings.projectSettings.writerRecastDone.replace('{name}', res.writer.name)}`
+          : t.settings.projectSettings.writerRecastNone,
+        'success',
+      );
+      if (!res.writer?.name) setWriterCastNotice(t.settings.projectSettings.writerRecastNone);
+    } catch (e: any) {
+      const message = e?.message || t.settings.projectSettings.writerRecastFailed;
+      setWriterCastNotice(message);
+      showToast(message, 'error');
+    } finally {
+      setWriterCasting(false);
+    }
+  };
+
   // 渲染记忆设置区域：全局开关 + 注入上限 + 记忆概况与清理
   const renderMemorySection = () => {
     const ms = t.settings.memory;
@@ -822,6 +871,14 @@ const Settings: React.FC = () => {
   // 渲染工程设置区域（未打开工程时展示空状态）
   const renderProjectSection = () => {
     const ps = t.settings.projectSettings;
+    // 同名原作提示：工程名恰好等于锁定写手的代表作名（如「罗生门」「活着」）时说明清楚
+    // "只借笔法、不改编原作"，否则用户会以为系统在复刻名著剧情
+    const sameWorkHit = projectGenSettings.writerKey
+      ? detectSameTitleWork({
+          title: currentProject?.name || '',
+          description: currentProject?.description || '',
+        }).find((h) => h.writerKey === projectGenSettings.writerKey) || null
+      : null;
     if (!currentProject?.id) {
       return (
         <div className="max-w-2xl">
@@ -849,6 +906,19 @@ const Settings: React.FC = () => {
           ? ps.artStyleCustom
           : ((ps.artStyleOptions as Record<string, string>)[preset.key] ?? preset.label),
     }));
+    const writerLabel = (key: string) => {
+      const preset = findWriterPreset(key);
+      if (!preset) return ps.writerNone;
+      return language === 'en-US' ? preset.nameEn : preset.name;
+    };
+    const writerOptions = [
+      { value: '', label: ps.writerNone },
+      ...WRITER_PRESETS.map((preset) => ({
+        value: preset.key,
+        label: (language === 'en-US' ? preset.nameEn : preset.name) + ' · ' + preset.genres.slice(0, 2).join(language === 'en-US' ? ', ' : '、'),
+      })),
+    ];
+
     // 字段/组头用辅助函数直接调用（而非组件），避免每次渲染重建导致下拉收起、输入失焦
     const field = (key: string, label: string, control: React.ReactNode) => (
       <div key={key} className="min-w-0">
@@ -992,6 +1062,123 @@ const Settings: React.FC = () => {
                   </div>
                 ) : (
                   <p className="text-xs px-1 py-2" style={{ color: 'var(--text-muted)' }}>{ps.tempStyleEmpty}</p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="h-px" style={{ backgroundColor: 'var(--border-color)' }} />
+
+          {/* 代笔写手：剧本正文与分镜台词的笔调基准（去 AI 味） */}
+          <div>
+            {groupHeader(<Feather className="w-4 h-4" />, ps.writer, ps.writerGroupHint)}
+            <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {field('writerKey', ps.writerPreset, (
+                <>
+                  <SettingsSelect value={projectGenSettings.writerKey || ''} options={writerOptions}
+                    onChange={(v) => {
+                      // 选写手时同步覆盖笔法文本，用户可再手动微调
+                      const preset = findWriterPreset(v);
+                      void handleProjectSettingsPatch({ writerKey: v, writerStylePrompt: preset?.voice ?? '' });
+                    }} />
+                  {/* 未指派与「显式不限定」都存成空值，这里补一行真实状态避免误读 */}
+                  <p className="text-[10px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                    {projectGenSettings.writerKey === undefined
+                      ? ps.writerAuto
+                      : (findWriterPreset(projectGenSettings.writerKey)?.name || ps.writerNone)}
+                  </p>
+                </>
+              ))}
+              <div className="min-w-0">
+                <div className="text-[11px] mb-1.5" style={{ color: 'var(--text-muted)' }}>{ps.writerStylePrompt}</div>
+                <textarea
+                  value={writerDraft}
+                  onChange={(e) => setWriterDraft(e.target.value)}
+                  onBlur={() => {
+                    const next = writerDraft.trim();
+                    if ((projectGenSettings.writerStylePrompt || '') !== next) {
+                      void handleProjectSettingsPatch({ writerStylePrompt: next });
+                    }
+                  }}
+                  rows={3}
+                  maxLength={600}
+                  placeholder={ps.writerStylePromptPlaceholder}
+                  className="w-full text-xs rounded-lg px-3 py-2 resize-none bg-(--bg-input) border border-(--border-color) text-(--text-primary) focus:outline-none focus:border-(--accent)"
+                />
+                <p className="text-[10px] mt-1.5" style={{ color: 'var(--text-muted)' }}>{ps.writerStylePromptHint}</p>
+              </div>
+            </div>
+
+            {/* 选角理由 + AI 重新选角：结果锁定进工程设置，后续集复用 */}
+            <div className="mt-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+              <p className="text-[11px] min-w-0 flex-1 leading-5" style={{ color: 'var(--text-muted)' }}>
+                {projectGenSettings.writerNote?.trim()
+                  ? `${ps.writerNoteLabel}${projectGenSettings.writerNote.trim()}`
+                  : (writerCastNotice || ps.writerNoteEmpty)}
+              </p>
+              <button
+                type="button"
+                onClick={() => void handleWriterRecast()}
+                disabled={writerCasting}
+                className="shrink-0 inline-flex items-center gap-1.5 text-[11px] font-medium px-3 py-1.5 rounded-lg border cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                {writerCasting ? ps.writerRecasting : ps.writerRecast}
+              </button>
+            </div>
+
+            {sameWorkHit && (
+              <p
+                className="text-[11px] mt-2 leading-5 px-2.5 py-1.5 rounded-lg border"
+                style={{
+                  borderColor: 'var(--border-color)',
+                  backgroundColor: 'var(--bg-input)',
+                  color: 'var(--text-muted)',
+                }}
+              >
+                {ps.writerSameWork
+                  .replace('{name}', sameWorkHit.writerName)
+                  .replace('{work}', sameWorkHit.work)}
+              </p>
+            )}
+
+            {/* 临时写手覆盖：本集换一位执笔者，不动工程锁定写手 */}
+            <div className="mt-4 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-6">
+              <div className="min-w-0">
+                <h4 className="text-xs font-medium flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+                  <Feather className="w-3.5 h-3.5" />
+                  {ps.tempWriterTitle}
+                </h4>
+                <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>{ps.tempWriterHint}</p>
+              </div>
+              <div className="w-full sm:w-56 shrink-0">
+                {projectGenSettings.tempWriterKey?.trim() ? (
+                  <div className="rounded-lg border border-(--accent)/30 bg-(--accent)/5 px-3 py-2 space-y-1.5">
+                    <p className="text-xs leading-5" style={{ color: 'var(--text-primary)' }}>
+                      {writerLabel(projectGenSettings.tempWriterKey.trim())}
+                    </p>
+                    {projectGenSettings.tempWriterNote?.trim() && (
+                      <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                        {ps.tempWriterSource}{projectGenSettings.tempWriterNote.trim()}
+                      </p>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!currentProject?.id) return;
+                        void clearTempWriter(currentProject.id).then(() =>
+                          showToast(ps.tempWriterCleared, 'success')
+                        );
+                      }}
+                      className="text-[11px] font-medium cursor-pointer hover:underline"
+                      style={{ color: 'var(--accent)' }}
+                    >
+                      {ps.tempWriterClear}
+                    </button>
+                  </div>
+                ) : (
+                  <p className="text-xs px-1 py-2" style={{ color: 'var(--text-muted)' }}>{ps.tempWriterEmpty}</p>
                 )}
               </div>
             </div>

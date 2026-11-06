@@ -27,6 +27,7 @@ import { persistGeneratedMedia } from './localMedia';
 import { chatText, generateImage } from './localAI';
 import { loadNovelDoc, saveNovelDoc } from './localNovels';
 import { resolveScriptReferences } from './localScripts';
+import { WRITER_PRESETS, findWriterPreset, rankWritersByFit } from './writerStyle';
 
 // ==================== 视觉风格预设（与前端 Projects.tsx 键名一致） ====================
 const VISUAL_STYLE_PRESETS: Record<string, string> = {
@@ -237,10 +238,18 @@ async function handleSuggestSettings(body: any): Promise<Response> {
   if (!name && !description) return jsonResponse({ message: '请提供项目名称或描述' }, 400);
   const model = await pickTextModel(body?.modelName);
   const styleKeys = Object.keys(VISUAL_STYLE_PRESETS).filter((k) => k !== 'custom');
+  // 代笔写手：无论模型是否可用，都先用本地适配度打分兜底，保证新建工程一定带一位执笔者
+  const brief = `${name || ''} ${description || ''}`.trim();
+  const localWriter = rankWritersByFit(brief, 1)[0];
   if (!model) {
-    return jsonResponse({ suggestions: { visualStyle: 'animeJapanese', visualStylePrompt: VISUAL_STYLE_PRESETS.animeJapanese, storyStyle: '热血少年漫', storyConstraints: '' } });
+    return jsonResponse({ suggestions: {
+      visualStyle: 'animeJapanese', visualStylePrompt: VISUAL_STYLE_PRESETS.animeJapanese,
+      storyStyle: '热血少年漫', storyConstraints: '',
+      writerKey: localWriter?.key || '', writerName: localWriter?.name || '', writerNote: localWriter?.reason || '',
+    } });
   }
-  const prompt = `你是一个专业的动漫/影视项目顾问。请根据以下项目信息，推荐最合适的风格设置。\n\n项目名称：${name || '未提供'}\n项目描述：${description || '未提供'}\n\n可选的视觉风格键：${styleKeys.join('、')}\n\n请以JSON格式返回，格式如下：\n{\n  "visualStyle": "推荐的视觉风格键（必须严格从可选列表中选择）",\n  "storyStyle": "推荐的叙事风格",\n  "storyConstraints": "推荐的剧本约束（简短一句话）"\n}\n只返回JSON，不要有其他文字说明。`;
+  const writerKeys = WRITER_PRESETS.map((w) => w.key).join('、');
+  const prompt = `你是一个专业的动漫/影视项目顾问。请根据以下项目信息，推荐最合适的风格设置。\n\n项目名称：${name || '未提供'}\n项目描述：${description || '未提供'}\n\n可选的视觉风格键：${styleKeys.join('、')}\n\n可选的代笔写手键（只影响剧本文风，须严格从中选一）：${writerKeys}\n\n请以JSON格式返回，格式如下：\n{\n  "visualStyle": "推荐的视觉风格键（必须严格从可选列表中选择）",\n  "storyStyle": "推荐的叙事风格",\n  "storyConstraints": "推荐的剧本约束（简短一句话）",\n  "writerKey": "推荐的代笔写手键（必须严格从可选写手键中选择）",\n  "writerReason": "一句话说明为什么这位写手的笔法适配该题材"\n}\n只返回JSON，不要有其他文字说明。`;
   let suggestions: any = null;
   try {
     suggestions = await chatJson(model, '你是专业的项目风格顾问，只输出JSON。', prompt);
@@ -252,12 +261,20 @@ async function handleSuggestSettings(body: any): Promise<Response> {
   }
   if (!VISUAL_STYLE_PRESETS[suggestions.visualStyle]) suggestions.visualStyle = 'animeJapanese';
   suggestions.visualStylePrompt = VISUAL_STYLE_PRESETS[suggestions.visualStyle] || '';
+  // 写手键非法（臆造/大小写漂移）时回落本地打分结果，不给下游留空值
+  const writerPreset = findWriterPreset(suggestions.writerKey);
+  const writerKey = writerPreset ? writerPreset.key : (localWriter?.key || '');
+  const writerCard = findWriterPreset(writerKey);
   return jsonResponse({
     suggestions: {
       visualStyle: suggestions.visualStyle,
       visualStylePrompt: suggestions.visualStylePrompt,
       storyStyle: suggestions.storyStyle || '热血少年漫',
       storyConstraints: suggestions.storyConstraints || '',
+      writerKey,
+      writerName: writerCard?.name || '',
+      writerStylePrompt: writerCard?.voice || '',
+      writerNote: String(suggestions.writerReason || '').trim() || localWriter?.reason || '',
     },
   });
 }

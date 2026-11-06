@@ -164,22 +164,38 @@ const ScriptList: React.FC<ScriptListProps> = ({ scripts, scriptId, projectId, o
 // ==================== 剧本解析 ====================
 
 /**
+ * 场景标题 / 台词的识别正则。
+ * 这是「剧本正文 → 大纲树」的解析契约，与 services/writerStyle.ts 的 FORMAT_GUARD 互为约束：
+ * 写手人格生成的正文必须能被这两条正则解析，改动任一处都要同步另一处（有单测锁定）。
+ */
+export const SCENE_HEADING_RE = /^(第[零一二三四五六七八九十百千\d]+[场幕集]|Scene\s+\d+|INT\.|EXT\.|内景|外景|【[^】]+】)/i;
+export const DIALOGUE_RE = /^[\p{Script=Han}\w]{1,10}[：:（(]/u;
+
+/** 去掉说话人及其语气标注（如「（内心）：」），只留下可演出的台词正文 */
+function stripDialogueBody(line: string, speakerLen: number): string {
+  return line
+    .slice(speakerLen)
+    .replace(/^[（(][^）)]*[）)]\s*[：:]?\s*/, '')
+    .replace(/^[：:]\s*/, '');
+}
+
+/**
  * 将纯文本剧本解析为大纲树
  * 支持常见格式：
  *   - 场景标题：第X场 / 第X幕 / Scene X / INT. / EXT. / 【场景名】
  *   - 台词：角色名：/ 角色名（...）
  *   - 其他视为动作描述
  */
-function parseScriptToOutline(text: string): OutlineNode[] {
+export function parseScriptToOutline(text: string): OutlineNode[] {
   const lines = text.split('\n');
   const nodes: OutlineNode[] = [];
   let currentScene: OutlineNode | null = null;
   let nodeIndex = 0;
 
   // 场景标题正则
-  const sceneHeadingRe = /^(第[零一二三四五六七八九十百千\d]+[场幕集]|Scene\s+\d+|INT\.|EXT\.|内景|外景|【[^】]+】)/i;
+  const sceneHeadingRe = SCENE_HEADING_RE;
   // 台词正则：角色名后跟冒号或括号
-  const dialogueRe = /^[\p{Script=Han}\w]{1,10}[：:（(]/u;
+  const dialogueRe = DIALOGUE_RE;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
@@ -211,7 +227,7 @@ function parseScriptToOutline(text: string): OutlineNode[] {
         id: `dialogue-${nodeIndex++}`,
         type: 'dialogue',
         label: charName,
-        content: line.slice(charName.length + 1).replace(/^[：:)\）]\s*/, ''),
+        content: stripDialogueBody(line, charName.length),
         lineNumber: i + 1,
       });
     } else if (currentScene) {

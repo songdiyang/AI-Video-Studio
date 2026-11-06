@@ -13,6 +13,7 @@ import { useVirtualList } from '../hooks/useVirtualList';
 import { usePreview } from '../components/PreviewProvider';
 import { openProjectWindow } from '../services/localApi';
 import { rememberProjectId } from '../services/windowProject';
+import { lockWriter, loadEffectiveWriter } from '../services/projectSettings';
 import QuickStartWizard from '../components/QuickStartWizard';
 import UpgradePrompt from '../components/UpgradePrompt';
 import ImageCropperModal, { CropSelection } from '../components/ImageCropperModal';
@@ -62,9 +63,15 @@ const Projects: React.FC = () => {
     videoAspectRatio: '',
     videoResolution: '',
     // AI 输出语言
-    outputLanguage: 'zh' as string
+    outputLanguage: 'zh' as string,
+    // 代笔写手：AI 推荐回填后随工程设置落地，约束剧本与台词笔调
+    writerKey: '',
+    writerName: '',
+    writerNote: ''
   });
   const [aiSuggesting, setAiSuggesting] = useState(false);
+  // 写手推荐只在用户确实拿到/改过推荐时才落库：否则会把「未指派」误写成「不限定」
+  const [writerDirty, setWriterDirty] = useState(false);
   const [coverGenerating, setCoverGenerating] = useState(false);
   const [coverUploading, setCoverUploading] = useState(false);
   const coverInputRef = useRef<HTMLInputElement>(null);
@@ -275,8 +282,23 @@ const Projects: React.FC = () => {
       imageResolution: settings.imageResolution || '',
       videoAspectRatio: settings.videoAspectRatio || '',
       videoResolution: settings.videoResolution || '',
-      outputLanguage: settings.outputLanguage || 'zh'
+      outputLanguage: settings.outputLanguage || 'zh',
+      writerKey: settings.writerKey || '',
+      writerName: '',
+      writerNote: ''
     });
+    // 代笔写手落在工程 data/project_settings.json（不在 settings_json），异步回填真实生效值
+    if (project.id) {
+      void loadEffectiveWriter(project.id).then((eff) => {
+        setFormData((prev) => ({
+          ...prev,
+          writerKey: eff.key,
+          writerName: eff.writer?.name || '',
+          writerNote: eff.note || '',
+        }));
+      }).catch(() => { /* 读不到写手就不改动表单 */ });
+    }
+    setWriterDirty(false);
     onOpen();
   };
 
@@ -295,6 +317,7 @@ const Projects: React.FC = () => {
         styleCategory, bodyProportionRatio,
         imageAspectRatio, imageResolution,
         videoAspectRatio, videoResolution,
+        writerKey, writerNote,
         outputLanguage, _coverFile, ...rest } = formData;
       const settingsObj: any = {};
       if (styleCategory) settingsObj.styleCategory = styleCategory;
@@ -312,10 +335,22 @@ const Projects: React.FC = () => {
       // AI 输出语言
       if (outputLanguage) settingsObj.outputLanguage = outputLanguage;
       const saveData: any = { ...rest, type: editProjectType, settings_json: JSON.stringify(settingsObj) };
+      // 写手只落在工程设置里（settings_json 里没有这一项），且仅在拿到 AI 推荐后才写，
+      // 否则会把「未指派」误固化为「不限定」，后续再生成都不会自动选角。
+      const persistWriter = async (targetId?: number | null) => {
+        if (!targetId || !writerDirty || !writerKey) return;
+        try {
+          await lockWriter(targetId, writerKey, undefined, writerNote || '新建工程时由 AI 按题材推荐');
+        } catch (e) {
+          console.warn('[Projects] 代笔写手写入工程设置失败:', e);
+        }
+      };
       if (editMode && currentId) {
         await updateProject(currentId, saveData);
+        await persistWriter(currentId);
       } else {
         const newProject = await createProject(saveData);
+        await persistWriter(newProject?.id);
         // 新建项目后，如果有待上传的封面文件，立即上传
         if (newProject?.id && formData._coverFile) {
           try {
@@ -332,6 +367,7 @@ const Projects: React.FC = () => {
         }
       }
       await loadProjects();
+      setWriterDirty(false);
       onOpenChange();
     } catch (error: any) {
       console.error('保存工程失败:', error);
@@ -421,8 +457,16 @@ const Projects: React.FC = () => {
         visualStyle: suggestions.visualStyle || prev.visualStyle,
         visualStylePrompt: suggestions.visualStylePrompt || prev.visualStylePrompt,
         storyStyle: suggestions.storyStyle || prev.storyStyle,
-        storyConstraints: suggestions.storyConstraints || prev.storyConstraints
+        storyConstraints: suggestions.storyConstraints || prev.storyConstraints,
+        writerKey: suggestions.writerKey ?? prev.writerKey,
+        writerName: suggestions.writerName || prev.writerName,
+        writerNote: suggestions.writerNote || prev.writerNote
       }));
+      // 推荐里带了写手才标记待落库：保存时写进工程设置，避免把「未指派」覆盖成「不限定」
+      if (suggestions.writerKey) setWriterDirty(true);
+      if (suggestions.writerName) {
+        showToast(`已按题材推荐写手：建议由 ${suggestions.writerName} 执笔`, 'success');
+      }
 
     } catch (error: any) {
       console.error('AI推荐失败:', error);

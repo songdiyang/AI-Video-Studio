@@ -10,7 +10,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAIAssistantWorkbenchContext, AIAssistantAction, AIAssistantFrameContext, AIAssistantSceneSummary, AIAssistantStudioSummary } from '../../../../contexts/AIAssistantContext';
 import { createScript as createScriptApi, deleteScript as deleteScriptApi, updateScript as updateScriptApi } from '../../../../services/scripts';
-import { fetchCharacter, fetchCharacterStates, createCharacterState, updateCharacterState, deleteCharacterState, generateCharacterStateViews, createProp, updateProp, deleteProp, generatePropImage } from '../../../../services/assets';
+import { fetchCharacterStates, createCharacterState, updateCharacterState, deleteCharacterState, createProp, updateProp, deleteProp, generatePropImage } from '../../../../services/assets';
+import { startBaseModelGeneration } from '../../../../services/characterBaseModel';
 import { generatePropViews } from '../../../../services/costumes';
 import { updateProject as updateProjectApi } from '../../../../services/projects';
 import { registerLongTask } from '../../../../services/longTasks';
@@ -24,8 +25,17 @@ import {
   ART_STYLE_PRESETS,
   setTempArtStyle,
   clearTempArtStyle,
+  loadEffectiveWriter,
+  lockWriter,
+  setTempWriter,
+  clearTempWriter,
   type ProjectGenerationSettings,
 } from '../../../../services/projectSettings';
+import {
+  WRITER_PRESETS,
+  findWriterPreset,
+} from '../../../../services/writerStyle';
+import { castWriterForScript } from '../../../../services/scripts';
 import {
   addMemory,
   deleteMemory,
@@ -708,42 +718,31 @@ export function useStoryboardAIAssistantBridge(params: StoryboardAIAssistantBrid
       if (!state.currentImageModel) { showToast('请先选择图像生成模型', 'warning'); return; }
       return (async () => {
         try {
-          const char = await fetchCharacter(cid);
-          const states = await fetchCharacterStates(cid);
-          let base = states.find((s: any) => s.is_base_model);
-          if (!base) {
-            // 没有白膜状态时先建立基础状态，再生成三视图；设定图只作为参考输入。
-            base = await createCharacterState(cid, {
-              project_id: state.currentProjectId,
-              name: '白膜',
-              description: (char as any)?.base_appearance || (char as any)?.appearance || (char as any)?.description || '',
-              appearance: (char as any)?.base_appearance || (char as any)?.appearance || '',
-              outfit: (char as any)?.outfit_appearance || '',
-              is_base_model: true,
-              image_url: (char as any)?.image_url || '',
-              front_view_url: (char as any)?.front_view_url || '',
-              side_view_url: (char as any)?.side_view_url || '',
-              back_view_url: (char as any)?.back_view_url || '',
-              state_category: 'daily',
-              tags: '[]',
-              generation_status: 'idle',
-            } as any);
-          }
-          const started = await generateCharacterStateViews(cid, base.id, {
+          // 重生成口径统一收口在 characterBaseModel：失败可重做、缺张只补那张、在途任务不重复付费提交
+          const { plan, state: base, jobId, character } = await startBaseModelGeneration(cid, {
+            projectId: state.currentProjectId,
             imageModel: state.currentImageModel,
             textModel: state.textModel || undefined,
+            force: Boolean(actionParams?.force),
+            views: Array.isArray(actionParams?.views) ? actionParams.views : null,
           });
-          if (started?.jobId) {
-            registerLongTask({
-              jobId: String(started.jobId),
-              title: `白膜三视图 · ${(char as any)?.name || `角色 #${cid}`}`,
-              kind: 'image',
-              projectId: state.currentProjectId ?? null,
-            });
-          }
-          toastOk('已启动白膜三视图生成；完成前请勿添加服装、道具或状态');
           resourceActions.fetchProjectCharacters?.();
-          return `角色 #${cid} 的白膜状态 #${base.id} 已启动三视图生成（任务 #${started?.jobId || '-'}）。白膜三视图完成前不能创建派生状态；可用 get_task_status 查看进度。`;
+          const title = `白膜三视图 · ${(character as any)?.name || `角色 #${cid}`}`;
+          if (plan.mode === 'in_progress') {
+            const runningJobId = base?.generation_job_id || jobId;
+            if (runningJobId) registerLongTask({ jobId: String(runningJobId), title, kind: 'image', projectId: state.currentProjectId ?? null });
+            return `${plan.reason}${runningJobId ? `（任务 #${runningJobId}，可用 get_task_status 查询）` : ''}。白膜三视图完成前不能创建派生状态；本轮未重复提交生成。`;
+          }
+          if (plan.mode === 'ready') {
+            return `${plan.reason}；确实需要换一版时请带 force=true 重新调用 generate_base_model。`;
+          }
+          if (jobId) {
+            registerLongTask({ jobId: String(jobId), title, kind: 'image', projectId: state.currentProjectId ?? null });
+          }
+          toastOk(`已启动${plan.failed ? '重新' : ''}生成白膜三视图；完成前请勿添加服装、道具或状态`);
+          const detail = plan.mode === 'partial' ? `只重做 ${plan.views.join('、')} 视图，其余视图保留` : '整套重做正/侧/背三视图';
+          const failedNote = plan.failed && base?.generation_error ? `上一轮失败原因：${base.generation_error}。` : '';
+          return `角色 #${cid} 的白膜状态 #${base?.id ?? '-'} ${plan.mode === 'first' ? '已建立并启动生成' : '已启动重生成'}：${detail}（任务 #${jobId || '-'}）。${failedNote}白膜三视图完成前不能创建派生状态；可用 get_task_status 查看进度。`;
         } catch (e: any) {
           showToast(e?.message || '白膜三视图生成失败', 'error');
           return { success: false, error: e?.message || '白膜三视图生成失败' };
@@ -843,12 +842,20 @@ export function useStoryboardAIAssistantBridge(params: StoryboardAIAssistantBrid
     // 工程设置（图片/视频分辨率与画面比例，存工程 data/project_settings.json）
     else if (action === 'get_project_settings') {
       if (!ensureProject()) return { success: false, error: '未选择项目' };
-      return loadProjectGenerationSettings(state.currentProjectId).then((s) => {
+      return Promise.all([
+        loadProjectGenerationSettings(state.currentProjectId),
+        loadEffectiveWriter(state.currentProjectId),
+      ]).then(([s, writer]) => {
         const label = (v?: string) => (v && v.trim() ? v : '自动（跟随模型默认）');
         const styleLabel = findArtStylePreset(s.artStyle)?.label || '未设置';
         const tempLine = s.tempArtStylePrompt?.trim()
           ? `- 临时风格覆盖: ${s.tempArtStylePrompt.trim()}${s.tempArtStyleNote?.trim() ? `（来源：${s.tempArtStyleNote.trim()}）` : ''}（生效中，优先生成）`
           : '- 临时风格覆盖: 未启用';
+        const writerLabel = writer.temp
+          ? `${writer.writer?.name || '未识别'}（临时覆盖中）`
+          : s.writerKey === undefined
+            ? '未指派（写剧本前先 cast_writer）'
+            : writer.writer?.name || '不限定（仅套通用去 AI 味清单）';
         return [
           `当前工程「${state.currentProject?.name ?? state.currentProjectId}」生成设置：`,
           `- 图片分辨率: ${label(s.imageResolution)}`,
@@ -858,7 +865,10 @@ export function useStoryboardAIAssistantBridge(params: StoryboardAIAssistantBrid
           `- 美术风格: ${styleLabel}`,
           `- 风格限定: ${s.artStylePrompt?.trim() || '未设置'}`,
           tempLine,
-        ].join('\n');
+          `- 代笔写手: ${writerLabel}`,
+          writer.stylePrompt ? `- 写手笔法: ${writer.stylePrompt.slice(0, 120)}` : '',
+          writer.note ? `- 选角理由: ${writer.note}` : '',
+        ].filter(Boolean).join('\n');
       });
     }
     // 临时风格覆盖：用户临时意图优先于工程锁定风格，不动工程设置
@@ -877,6 +887,58 @@ export function useStoryboardAIAssistantBridge(params: StoryboardAIAssistantBrid
         toastOk('已恢复工程锁定风格');
         return '临时风格覆盖已清除，后续生成恢复使用工程锁定风格。';
       }).catch((e: any) => ({ success: false, error: e?.message || '清除临时风格失败' }));
+    }
+    // 代笔写手：按题材适配度指派一位大师执笔，结果锁定进工程设置供后续集复用
+    else if (action === 'cast_writer') {
+      if (!ensureProject()) return { success: false, error: '未选择项目' };
+      const description = String(actionParams?.description || state.currentProject?.description || '').trim();
+      const title = String(actionParams?.title || '').trim();
+      if (!description && !title) {
+        return { success: false, error: '缺少 description（题材/故事描述），无法判断写手适配度' };
+      }
+      const force = actionParams?.force === true || String(actionParams?.force) === 'true';
+      return castWriterForScript({
+        projectId: state.currentProjectId,
+        title: title || undefined,
+        description: description || undefined,
+        style: String(actionParams?.style || '').trim() || undefined,
+        force,
+      }).then((res) => {
+        const ranked = (res.candidates || [])
+          .map((c, i) => `${i + 1}. ${c.name}（${c.fit}）${c.reason ? `：${c.reason}` : ''}`)
+          .join('\n');
+        if (!res.writer?.key) {
+          return `本轮未指派写手（${res.writer?.name || '不限定'}），仅套用通用去 AI 味清单。`;
+        }
+        return [
+          `已指派 ${res.writer.name} 执笔（key=${res.writer.key}，已写入工程设置，后续集复用${res.recast ? '，本轮为强制重新选角' : ''}）。`,
+          res.writer.rationale ? `选角理由：${res.writer.rationale}` : '',
+          `笔法要点：${(res.writer.stylePrompt || '').slice(0, 160)}`,
+          ranked ? `候选排名：\n${ranked}` : '',
+          res.writer.sameWork?.work
+            ? `注意：标题与 ${res.writer.sameWork.writer || res.writer.name} 的代表作《${res.writer.sameWork.work}》同名，只借笔法、不改编原作，请向用户说明。`
+            : '',
+          '后续 create_script / update_script / generate_script 均沿用该笔法，仍须遵守剧本格式硬约束；更换需先告知用户。',
+        ].filter(Boolean).join('\n');
+      }).catch((e: any) => ({ success: false, error: e?.message || '写手选角失败' }));
+    } else if (action === 'set_temp_writer') {
+      if (!ensureProject()) return { success: false, error: '未选择项目' };
+      const key = String(actionParams?.writerKey || actionParams?.key || '').trim();
+      const preset = findWriterPreset(key);
+      if (!preset) {
+        return { success: false, error: `writerKey 非法: ${key || '（空）'}（可选: ${WRITER_PRESETS.map((p) => p.key).join(' / ')}）` };
+      }
+      const note = String(actionParams?.note || '').trim().slice(0, 120);
+      return setTempWriter(state.currentProjectId!, preset.key, note).then(() => {
+        toastOk(`临时写手已生效：${preset.name}`);
+        return `临时写手覆盖已生效：本集由 ${preset.name}（${preset.nameEn}）执笔${note ? `（来源：${note}）` : ''}。笔法：${preset.voice.slice(0, 160)}。工程锁定写手不变，用户要求恢复时调用 clear_temp_writer。`;
+      }).catch((e: any) => ({ success: false, error: e?.message || '设置临时写手失败' }));
+    } else if (action === 'clear_temp_writer') {
+      if (!ensureProject()) return { success: false, error: '未选择项目' };
+      return clearTempWriter(state.currentProjectId!).then(() => {
+        toastOk('已恢复工程锁定写手');
+        return '临时写手覆盖已清除，后续剧本与分镜台词恢复使用工程锁定写手。';
+      }).catch((e: any) => ({ success: false, error: e?.message || '清除临时写手失败' }));
     }
     // 智能体记忆：记录 / 遗忘 / 自查
     else if (action === 'remember') {
@@ -958,8 +1020,27 @@ export function useStoryboardAIAssistantBridge(params: StoryboardAIAssistantBrid
       if (raw.artStylePrompt !== undefined) {
         patches.artStylePrompt = String(raw.artStylePrompt).trim().slice(0, 300);
       }
+      // 代笔写手：key 必须命中 WRITER_PRESETS（'' = 不限定）；风格文本允许用户改写，截 600 字
+      if (raw.writerKey !== undefined) {
+        const vRaw = String(raw.writerKey).trim();
+        const v = ['none', 'auto', '无', '不限定', '不限'].includes(vRaw.toLowerCase()) ? '' : vRaw;
+        if (v !== '' && !findWriterPreset(v)) {
+          return { success: false, error: `writerKey 取值非法: ${vRaw}（可选: none / ${WRITER_PRESETS.map((p) => p.key).join(' / ')}；none 或空串表示不限定写手）` };
+        }
+        patches.writerKey = v;
+        // 切换写手且未同时提供风格文本时，用新写手的内置笔法覆盖，避免沿用上一位写手的描述
+        if (raw.writerStylePrompt === undefined) {
+          patches.writerStylePrompt = findWriterPreset(v)?.voice ?? '';
+        }
+      }
+      if (raw.writerStylePrompt !== undefined) {
+        patches.writerStylePrompt = String(raw.writerStylePrompt).trim().slice(0, 600);
+      }
+      if (raw.writerNote !== undefined) {
+        patches.writerNote = String(raw.writerNote).trim().slice(0, 200);
+      }
       if (Object.keys(patches).length === 0) {
-        return { success: false, error: '未提供可识别的设置字段（imageResolution/imageAspectRatio/videoResolution/videoAspectRatio/artStyle/artStylePrompt）' };
+        return { success: false, error: '未提供可识别的设置字段（imageResolution/imageAspectRatio/videoResolution/videoAspectRatio/artStyle/artStylePrompt/writerKey/writerStylePrompt）' };
       }
       return loadProjectGenerationSettings(state.currentProjectId)
         .then((cur) => saveProjectGenerationSettings(state.currentProjectId!, { ...cur, ...patches }))
@@ -968,9 +1049,15 @@ export function useStoryboardAIAssistantBridge(params: StoryboardAIAssistantBrid
             imageResolution: '图片分辨率', imageAspectRatio: '图片画面比例',
             videoResolution: '视频分辨率', videoAspectRatio: '视频画面比例',
             artStyle: '美术风格', artStylePrompt: '风格限定',
+            writerKey: '代笔写手', writerStylePrompt: '写手笔法', writerNote: '选角理由',
           };
           const changed = Object.entries(patches)
-            .map(([k, v]) => `${zh[k] || k}=${(v && String(v).trim()) ? v : '自动'}`)
+            .map(([k, v]) => {
+              const text = v === undefined ? '' : String(v).trim();
+              if (k === 'writerKey') return `${zh[k]}=${text ? (findWriterPreset(text)?.name || text) : '不限定'}`;
+              if (k === 'writerStylePrompt') return `${zh[k]}=${text ? `${text.slice(0, 40)}${text.length > 40 ? '…' : ''}` : '清空（回落写手内置笔法）'}`;
+              return `${zh[k] || k}=${text || '自动'}`;
+            })
             .join('，');
           return `工程设置已更新（${changed}），已打开的工作台生成时实时生效`;
         })

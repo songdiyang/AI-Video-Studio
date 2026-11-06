@@ -3,7 +3,7 @@
  * 整合AI生成、上传剧本两大功能
  */
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   Button,
   Input,
@@ -15,11 +15,17 @@ import {
 import {
   Sparkles, Info, X, Upload, FileText,
   Check, ArrowLeftRight, Save,
-  Loader2
+  Loader2, Feather
 } from 'lucide-react';
 import { useWorkflow, consumeWorkflow } from '../../hooks/useWorkflow';
 import type { Project } from '../../services/projects';
 import { uploadScriptFile } from '../../services/scripts';
+import {
+  loadProjectGenerationSettings,
+  loadEffectiveWriter,
+  lockWriter,
+} from '../../services/projectSettings';
+import { WRITER_PRESETS, findWriterPreset } from '../../services/writerStyle';
 import { useToast } from '../../contexts/ToastContext';
 import { filterModelsForTaskSlot } from '../../utils/modelCapabilities';
 
@@ -78,6 +84,7 @@ const GeneratePanel: React.FC<{
   onSuccess?: (payload?: ScriptGeneratedPayload) => void;
   onError?: (msg: string) => void;
 }> = ({ projects, aiModels, defaultTextModel, lockProjectId, lockEpisodeNumber, onSuccess, onError }) => {
+  const { showToast } = useToast();
   const [projectId, setProjectId] = useState<string>('');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -94,10 +101,66 @@ const GeneratePanel: React.FC<{
     progress: number;
   } | null>(null);
 
+  // 代笔写手：文风人格按题材选定后锁定进工程设置，此处只做展示与手动更换
+  const [writerKey, setWriterKey] = useState('');
+  const [writerLabel, setWriterLabel] = useState('按题材自动选角');
+  const refreshWriter = useCallback(async () => {
+    const pid = Number(projectId);
+    if (!pid) {
+      setWriterKey('');
+      setWriterLabel('按题材自动选角');
+      return;
+    }
+    try {
+      const [settings, eff] = await Promise.all([
+        loadProjectGenerationSettings(pid),
+        loadEffectiveWriter(pid),
+      ]);
+      setWriterKey(settings.writerKey || '');
+      if (eff.temp) setWriterLabel(`${eff.writer?.name || '临时写手'}（本集临时更换）`);
+      else if (eff.writer) setWriterLabel(eff.writer.name);
+      else setWriterLabel(settings.writerKey === '' ? '不限定写手（仅通用去 AI 味）' : '按题材自动选角');
+    } catch {
+      // 读不到工程设置时保持「按题材自动选角」，不阻塞表单
+      setWriterLabel('按题材自动选角');
+    }
+  }, [projectId]);
+
+  useEffect(() => {
+    void refreshWriter();
+  }, [refreshWriter]);
+
+  const handleWriterChange = async (key: string) => {
+    const pid = Number(projectId);
+    if (!pid) {
+      onError?.('请选择项目');
+      return;
+    }
+    try {
+      await lockWriter(pid, key, findWriterPreset(key)?.voice, key ? '用户在剧本创作页手动更换' : '用户选择不限定写手');
+      await refreshWriter();
+      showToast(
+        key ? `后续剧本与分镜台词改由 ${findWriterPreset(key)?.name || key} 执笔` : '已取消写手指派，仅套用通用去 AI 味清单',
+        'success',
+      );
+    } catch (err: any) {
+      showToast(err?.message || '写手设置失败', 'error');
+    }
+  };
+
   const textModels = useMemo(
     () => filterModelsForTaskSlot(aiModels, 'TEXT'),
     [aiModels]
   );
+
+  // 写手下拉：首项为「不限定」（writerKey = ''），其余取内置写手卡
+  const writerSelectItems = useMemo(() => [
+    { key: '', label: '不限定写手（仅通用去 AI 味）' },
+    ...WRITER_PRESETS.map((preset) => ({
+      key: preset.key,
+      label: `${preset.name} · ${preset.genres.slice(0, 2).join('、')}`,
+    })),
+  ], []);
 
   useEffect(() => {
     if (lockProjectId) {
@@ -226,6 +289,38 @@ const GeneratePanel: React.FC<{
       const data = await res.json();
       if (!res.ok) {
         throw new Error(data.message || '生成启动失败');
+      }
+      // 本地直连模型时同步返回完整剧本（无 jobId）：立即播报执笔者并回调，不进入轮询分支
+      if (!data.jobId) {
+        const writer = data.writer as {
+          key?: string;
+          name?: string;
+          rationale?: string;
+          sameWork?: { writer?: string; work?: string } | null;
+        } | undefined;
+        setGenerating(false);
+        void refreshWriter();
+        showToast(
+          [
+            writer?.name
+              ? `本集由 ${writer.name} 执笔${writer.rationale ? `｜${writer.rationale}` : ''}`
+              : '剧本已生成并保存',
+            // 与写手代表作同名时要点明"只借笔法"，否则用户会以为系统在复刻原作
+            writer?.sameWork?.work
+              ? `标题与《${writer.sameWork.work}》同名，只沿用笔法，未改编原作`
+              : '',
+            data.titleRenamed ? `已存在同名剧本，本集另存为「${data.title}」` : '',
+          ].filter(Boolean).join('；'),
+          'success',
+        );
+        onSuccess?.({
+          scriptId: Number(data.scriptId),
+          content: data.content || '',
+          title: data.title || '',
+          projectId: data.projectId || targetProjectId,
+          episodeNumber: data.episodeNumber ?? targetEpisode,
+        });
+        return;
       }
       setGeneratingScriptId(data.scriptId);
       setJobId(data.jobId);
@@ -357,6 +452,36 @@ const GeneratePanel: React.FC<{
             {description.length}/{DESC_MAX} 字
           </span>
         </div>
+      </div>
+
+      {/* 代笔写手：文风人格行——已锁定显示署名，未锁定显示按题材自动选角，可手动更换 */}
+      <div className="flex flex-col sm:flex-row sm:items-center gap-2 px-3 py-2 rounded-lg bg-(--bg-input)/40 border border-(--border-color)/50">
+        <div className="min-w-0 flex-1">
+          <p className="flex items-center gap-1.5 text-xs text-(--text-secondary)">
+            <Feather className="w-3.5 h-3.5 shrink-0" />
+            代笔写手
+          </p>
+          <p className="text-[11px] text-(--text-muted) mt-0.5 truncate" title={writerLabel}>
+            {writerLabel}
+          </p>
+        </div>
+        <Select
+          aria-label="换一个写手"
+          selectedKeys={[writerKey]}
+          onSelectionChange={(keys) => {
+            const selected = Array.from(keys)[0] as string;
+            if (selected !== undefined) void handleWriterChange(selected);
+          }}
+          classNames={{
+            trigger: controlWrapper + ' h-8 min-h-8',
+            value: 'text-(--text-primary) text-xs',
+          }}
+          className="w-full sm:w-56 shrink-0"
+        >
+          {writerSelectItems.map((item) => (
+            <SelectItem key={item.key} textValue={item.label}>{item.label}</SelectItem>
+          ))}
+        </Select>
       </div>
 
       <Select

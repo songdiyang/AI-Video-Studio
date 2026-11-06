@@ -6,6 +6,8 @@
 //  - parseSuggestions(reply)：解析 [SUGGESTIONS]...[/SUGGESTIONS]
 //  - buildChatMessages(...)：组装最终发给厂商的 OpenAI messages（含 system）
 
+import { FORMAT_GUARD } from './writerStyle';
+
 /** 前端传入的消息项（与 AIAssistantPanel 的 apiMessages 对齐） */
 export interface ChatInputMessage {
   role: string;
@@ -146,7 +148,7 @@ export function buildSystemPrompt(context: any): string {
     '\n- create_character：新建角色。params:{name, description?, appearance?, base_appearance?, outfit_appearance?, personality?, gender?, tags?}。仅生成角色设定图/参考图，不是白膜。' +
     '\n- update_character：更新角色字段。params:{characterId, fields:{name?, description?, appearance?, base_appearance?, outfit_appearance?, personality?, gender?, tags?}}' +
     '\n- delete_character：删除角色。params:{characterId}（破坏性）' +
-    '\n- generate_base_model：生成白膜三视图（基础网格）。params:{characterId}。默认强制流程：白膜三视图完成前不能创建派生状态；生成期间按长任务反馈。' +
+    '\n- generate_base_model：生成/重新生成白膜三视图（基础网格）。params:{characterId, force?:true（三张已齐但用户要求换一版）, views?:["front|side|back"]（只重做指定视图）}。默认强制流程：白膜三视图完成前不能创建派生状态；生成期间按长任务反馈。上一轮失败（回执会带失败原因）时必须由你重做，不要把活儿推回让用户去资源面板点按钮；同一角色已有任务在跑时重复调用会被挡住，应用 get_task_status 等当前任务结束。用户说“重生成/再来一版/这张不行”就带 force=true 调它，不要先删除白膜再重建。' +
     '\n- create_character_state：在白膜三视图完成后创建角色状态。params:{characterId, name, description?, appearance?, personality?, state_category?, outfit?, age_stage?, hairstyle?, accessories?, body_elements?, held_props?, costume_id?, tags?}。状态 = 白膜基础 + 当前外貌/性格 + 妆面服装 + 道具 + 状态属性，对应一场戏中角色需要的造型。' +
     '\n- update_character_state：更新角色状态。params:{characterId, stateId, fields:{...}}。白膜三视图未完成时禁止修改派生状态。' +
     '\n- delete_character_state：删除单个角色状态图（白膜也是 is_base_model 的状态，同样可删）。params:{characterId, stateId}（破坏性）。删除白膜时若仍有派生状态，会在结果中提示其将失去参考。' +
@@ -166,10 +168,11 @@ export function buildSystemPrompt(context: any): string {
     '\n- update_location：更新分镜地点。params:{locationId, fields:{name?, description?}}' +
     '\n- delete_location：删除分镜地点。params:{locationId}（破坏性）' +
     '\n// 剧本' +
-    '\n- create_script：新建剧本。params:{title?, episodeNumber?, content}' +
-    '\n- update_script：写入/更新某一集的大纲（即剧本正文）。params:{scriptId?|episodeNumber?（二选一，缺省为当前集）, title?, content}。⚠️ content 为该集全文整体替换，请在正文中给出完整大纲/剧情；工作台「大纲」面板由此正文实时解析渲染。编写/修订每一集大纲就用 create_script（增）/ read_script（查）/ update_script（改）/ delete_script（删）组合完成，严禁臆造 update_outline 等清单外动作。' +
+    '\n- create_script：新建剧本。params:{title?, episodeNumber?, content}。content 必须遵守【剧本写作风格与去 AI 味规范】的格式硬约束。同工程内已有同名剧本时系统会自动给标题追加「 (2)」，回执里的 title 是最终标题，后续引用以它为准。' +
+    '\n- update_script：写入/更新某一集的大纲（即剧本正文）。params:{scriptId?|episodeNumber?（二选一，缺省为当前集）, title?, content}。⚠️ content 为该集全文整体替换，请在正文中给出完整大纲/剧情；工作台「大纲」面板由此正文实时解析渲染。编写/修订每一集大纲就用 create_script（增）/ read_script（查）/ update_script（改）/ delete_script（删）组合完成，严禁臆造 update_outline 等清单外动作。content 必须遵守【剧本写作风格与去 AI 味规范】：以该工程锁定写手的笔法撰写，并满足其中的格式硬约束（否则大纲面板与分镜拆分会解析失败）。' +
     '\n- read_script：查看/读取剧本正文。params:{scriptId?}——不传则读当前集剧本。需要参考剧情、回答“大纲/内容是什么”、或基于剧本拆分前，先用它获取完整正文。' +
-    '\n- generate_script：AI生成剧本。params:{projectId, episodeNumber?, title?, description?, style?, length?, textModel?}。生成完成后由系统自动保存到左侧剧本面板，并自动追问用户是否需要拆分为分镜——你不得在同一轮接着输出 auto_storyboard。调用此动作时回复正文必须留空，只输出 SUGGESTIONS；禁止在聊天回复中重复剧本正文。' +
+    '\n- cast_writer：按题材适配度指派本工程的代笔写手（去 AI 味的关键步骤）。params:{description?（题材/故事描述，缺省用当前工程描述）, title?（本集标题）, force?（true 才覆盖已锁定写手）}。返回候选写手排名与理由；未锁定时会选角并写入工程设置 writerKey/writerStylePrompt，后续所有剧本与分镜台词都沿用该写手。回执 sameWork 非空表示标题与该写手某部代表作同名——只可借笔法，不得据此改编原作，并要主动向用户说明这一点。' +
+    '\n- generate_script：AI生成剧本。params:{projectId, episodeNumber?, title?, description?, style?, length?, textModel?, recastWriter?}。系统会先按题材指派代笔写手再以该笔法执笔，回执中的 writer 字段告诉你本集由谁执笔，请在回复中如实播报。recastWriter:true 才重新选角。生成完成后由系统自动保存到左侧剧本面板，并自动追问用户是否需要拆分为分镜——你不得在同一轮接着输出 auto_storyboard。调用此动作时回复正文必须留空，只输出 SUGGESTIONS；禁止在聊天回复中重复剧本正文。' +
     '\n- get_task_status：查看后台长任务状态并核验资产落地。params:{jobId?}——不传返回最近长任务，传 jobId 查单个。用户问“任务进度/好了没”时必须使用；角色状态只有在工作流完成且正/侧/背三视图均写入后才算完成，禁止仅凭任务卡片或历史回复宣称完成。' +
     '\n- delete_script：删除剧本。params:{scriptId}（破坏性）' +
     '\n- bind_script：切换当前参考剧本（弱绑定）。params:{scriptId}——传 null 则解绑' +
@@ -177,9 +180,11 @@ export function buildSystemPrompt(context: any): string {
     '\n// 项目' +
     '\n- update_project：更新项目信息。params:{fields:{name?, description?, art_style?}}' +
     '\n- get_project_settings：查看当前工程的生成设置（图片/视频分辨率与画面比例、美术风格限定，设置页·工程设置同一数据）。无 params。' +
-    '\n- update_project_settings：修改当前工程生成设置（保存后已打开的工作台实时生效）。params:{fields:{imageResolution?:"720p|1080p|2K|4K|auto", imageAspectRatio?:"1:1|16:9|9:16|4:3|3:4|21:9|auto", videoResolution?:"480p|720p|1080p|auto", videoAspectRatio?:"16:9|9:16|1:1|4:3|3:4|auto", artStyle?:"预设 key，空字符串表示不限定", artStylePrompt?:"风格限定描述，0-300 字"}}，只传要改的字段，auto 表示自动。美术风格是工程级硬约束：生成图片/视频与提示词优化时会被追加到提示词，改动前先告知用户。' +
+    '\n- update_project_settings：修改当前工程生成设置（保存后已打开的工作台实时生效）。params:{fields:{imageResolution?:"720p|1080p|2K|4K|auto", imageAspectRatio?:"1:1|16:9|9:16|4:3|3:4|21:9|auto", videoResolution?:"480p|720p|1080p|auto", videoAspectRatio?:"16:9|9:16|1:1|4:3|3:4|auto", artStyle?:"预设 key，空字符串表示不限定", artStylePrompt?:"风格限定描述，0-300 字", writerKey?:"代笔写手 key，空字符串表示不限定", writerStylePrompt?:"写手笔法指令，0-600 字，留空则用该写手内置笔法"}}，只传要改的字段，auto 表示自动。美术风格是工程级硬约束：生成图片/视频与提示词优化时会被追加到提示词，改动前先告知用户。写手约束剧本正文与分镜台词的笔调，改动前同样要先告知用户。' +
     '\n- set_temp_art_style：设置临时风格覆盖（用户临时意图优先于工程锁定风格，不动工程设置）。params:{artStylePrompt:"临时风格描述", note?:"来源说明，如：用户要求第3镜用水墨风"}。用户临时要求某个/某些镜头换风格、或想试试别的画风时使用；生效期间所有生成改用临时风格。' +
     '\n- clear_temp_art_style：清除临时风格覆盖，恢复工程锁定风格。params:{}。用户要求恢复默认风格、或临时尝试结束时使用。' +
+    '\n- set_temp_writer：临时更换代笔写手（用户临时意图优先于工程锁定写手，不动工程设置）。params:{writerKey:"写手 key", note?:"来源说明，如：用户要求本集换成余华式冷叙述"}。writerKey 取值见【本工程代笔写手】清单或 cast_writer 返回的候选。只对文字笔调生效。' +
+    '\n- clear_temp_writer：清除临时写手覆盖，恢复工程锁定写手。params:{}。' +
     '\n- query_media_info：查询项目内每个媒体资源（角色图/场景封面/道具图/分镜首尾帧与视频）的分辨率与文件大小。params:{scope?:"characters|studios|props|storyboards|locations|video", keyword?:"按名称筛选"}——不传 scope 则查全部。用户问“分辨率/文件大小/占用空间/有哪些高清图”类问题时用它获取真实数据，不要臆测；结果由系统逐文件探测返回，按结果汇总回答。' +
     '\n// 记忆' +
     '\n- remember：记录一条对用户偏好/工程决策起决定性作用的记忆。params:{content:"记忆内容，200字内", scope?:"user|project"（默认 project）, importance?:"high|normal|low"（默认 normal）}。何时该记：用户明确表达偏好、硬性要求或否决意见（如“我不喜欢赛博朋克”“主角必须是红发”“以后都用水彩风”）；跨工程的审美/习惯偏好记 user，仅本工程的设定与决定记 project。闲聊、一次性指令、已包含在剧本/分镜正文里的内容不要记。已记住过的偏好不要重复记录（系统会按内容自动去重）。' +
@@ -191,6 +196,7 @@ export function buildSystemPrompt(context: any): string {
     '\n\n【角色状态生产流程（默认强制）】' +
     '\n1. create_character 生成角色设定图/参考图；设定图只是参考层，不是白膜。' +
     '\n2. generate_base_model 生成白膜三视图；这是基础网格，必须先完成并等待任务结束。' +
+    '\n2.1 白膜生成可能因厂商报错或超时失败，失败原因会回写到白膜状态上。你必须主动重做（再次调用 generate_base_model，必要时按回执里的缺失视图传 views），只有同一份提示词反复失败或模型/额度问题时才告知用户；严禁把“生成失败”当成终态直接收尾，也严禁声称已完成。' +
     '\n3. 只有白膜三视图完成后，才能 create_character_state / update_character_state，组合服装、道具与体貌/状态属性。' +
     '\n4. 一个角色状态 = 白膜基础 + 服装 + 道具 + 状态属性，对应一场戏中角色需要的造型；不要跳过白膜直接造状态或出图。' +
     '\n例外：用户明确说明该资源只出现一次/为一次性资源时，可按需求一次性生成完整内容；其余情况必须走白膜→状态流程。' +
@@ -206,6 +212,19 @@ export function buildSystemPrompt(context: any): string {
     '\n3. 写回：用户确认后立刻调用 update_project_settings，artStyle 写成对应预设 key（anime-japanese/anime-chinese/realistic/render-3d/watercolor/cyberpunk/ink/custom）、artStylePrompt 写成完整风格描述（可结合题材补光影/色彩/材质，300 字内），并在回复中明确告知“已锁定该风格，后续所有图片与视频都会沿用”。' +
     '\n4. 例外：用户明确说“先随便出一张看看/不用固定风格”时，可跳过写回，但要说明这样存在画风漂移风险。' +
     '\n5. 锁定后如需更换，先与用户确认新风格，再用 update_project_settings 覆盖；不得在未告知的情况下改动。' +
+    '\n\n【剧本写作风格与去 AI 味规范（写正文时强制遵循）】' +
+    '\n1. 通用模型腔一律禁止：不得使用「仿佛/宛如/不禁/缓缓地/微微地/深深地/值得一提/无声的/凝固/岁月静好」等套话；' +
+    '不得在段末升华或总结；不得三段排比收束；不得用旁白替角色说出心理。' +
+    '要具体名词 + 强动词、句长参差、留白与潜台词优先，每句台词必须是演员能直接演出的话。' +
+    '\n2. 写手优先：写剧本正文（generate_script 或你自己用 create_script/update_script 撰写）前，先看上下文里的【本工程代笔写手】；' +
+    '已锁定就以其笔法执笔，不得改用中性解说腔。尚未锁定时先调用 cast_writer 指派一位（按题材适配度自动选定并写入工程设置），再继续写。' +
+    '\n3. 更换写手要告知：用户说「换个笔法/不要这位写手」时，用 cast_writer{force:true} 或直接 update_project_settings{fields:{writerKey}} 覆盖，并在回复中说明换成谁、为什么合适。' +
+    '\n4. 格式硬约束永远压过文风（违反会导致大纲面板与分镜拆分解析失败）：' +
+    FORMAT_GUARD.replace(/^【[^】]*】\n?/, '').replace(/\n/g, ' ') +
+    '\n5. 写手只影响文字笔调，不影响事实：出场角色名、地点、道具名必须与工程资源库逐字一致，不得为文采而改名或臆造新角色。' +
+    '\n6. 同名不等于改编：用户给出的标题/题材若与某位写手的代表作同名（如「罗生门」「活着」「雪国」），' +
+    '那只是风格线索。严禁沿用原作的人物姓名、专有名词、情节走向与标志性意象，也不要把用户当成"要改编名著"来回应；' +
+    '按本工程既定的人物与事件写，必要时一句话说明"同名只作风格参考"。' +
     '\n\n【剧本完成后的拆分确认（默认强制）】' +
     '\n1. 触发时机：每一次剧本创作完成之后——generate_script 生成成功、create_script 写入完整剧本、或 update_script 首次把某集大纲定稿。' +
     '\n2. 必问：用 ask 询问用户「是否现在把剧本拆分为分镜？」，options 给出「立即拆分为分镜 / 先修改剧本再拆分 / 暂时不用拆分」三类候选（可结合剧情措辞微调，界面始终提供自定义回答）。' +
@@ -247,6 +266,25 @@ export function buildSystemPrompt(context: any): string {
       systemPrompt += `\n\n【临时风格覆盖（生效中）】${tempPrompt}${tempNote ? `（来源：${tempNote}）` : ''}\n当前所有生成实际使用临时风格而非工程锁定风格。用户临时提出的风格要求用 set_temp_art_style 覆盖，不要改动工程锁定风格；用户要求恢复默认或临时意图结束时用 clear_temp_art_style。`;
     } else if (lockedPrompt) {
       systemPrompt += '\n\n【临时风格覆盖】未启用，当前使用工程锁定风格。用户临时要求换画风时用 set_temp_art_style 设置覆盖，不要直接改工程锁定风格。';
+    }
+  }
+
+  // 工程级代笔写手：剧本正文与分镜台词的笔调基准（详见【剧本写作风格与去 AI 味规范】）
+  if (context.writerKey !== undefined || context.writerStylePrompt !== undefined || context.tempWriterKey !== undefined) {
+    const lockedName = String(context.writerName || '').trim();
+    const lockedPrompt = String(context.writerStylePrompt || '').trim();
+    const lockedNote = String(context.writerNote || '').trim();
+    const tempKey = String(context.tempWriterKey || '').trim();
+    if (tempKey) {
+      systemPrompt += `\n\n【临时写手覆盖（生效中）】当前由 ${context.tempWriterName || tempKey} 执笔${String(context.tempWriterNote || '').trim() ? `（来源：${String(context.tempWriterNote).trim()}）` : ''}。本轮剧本与分镜台词沿用该笔法；用户要求恢复工程写手时用 clear_temp_writer。`;
+    } else if (lockedName && lockedPrompt) {
+      systemPrompt += `\n\n【本工程代笔写手（已锁定）】${lockedName}${lockedNote ? `｜选角理由：${lockedNote}` : ''}\n笔法：${lockedPrompt}\n写剧本正文与分镜台词必须沿用此笔法；更换需先告知用户。`;
+    } else if (lockedName) {
+      systemPrompt += `\n\n【本工程代笔写手（已锁定）】${lockedName}\n写剧本正文与分镜台词必须沿用此笔法；更换需先告知用户。`;
+    } else if (context.writerKey === '') {
+      systemPrompt += '\n\n【本工程代笔写手（用户显式选择不限定）】只套用【剧本写作风格与去 AI 味规范】的通用清单，不指派写手；除非用户明确要求换风格，不要自行 cast_writer。';
+    } else {
+      systemPrompt += '\n\n【本工程代笔写手（未指派）】写第一份剧本正文前先调用 cast_writer 按题材指派一位，系统会自动写入工程设置供后续集复用。';
     }
   }
 

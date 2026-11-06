@@ -16,6 +16,8 @@
 import { readDoc, writeDoc, resolveLocalPath, getActiveProjectPath } from './localStore';
 import { resolveModel, getOfflineModels, chatText, type OfflineModel } from './localAI';
 import { resolveScriptReferences } from './localScripts';
+import { loadEffectiveWriter } from './projectSettings';
+import { writerVoiceDigest } from './writerStyle';
 import { restStore } from './localRest';
 import { enforceSceneDialogues, normalizeSceneDialogues, buildSubjectDefinition, buildDialogueClause, type DialogueCheck } from './sceneDialogues';
 
@@ -194,11 +196,16 @@ const SPLIT_SYSTEM =
   'speaker 必须是该镜头 characters 里出现过的名字，且与顶层 characters 名称逐字一致；' +
   '无人称的旁白/解说写进 voiceover 而不是 dialogue；台词语言统一（除专有名词外不中英混用）；' +
   '9) 顶层 characters 的 description 必须给出 2-3 个画面中稳定可见的静态特征（发型/体型/服饰/显著标志），' +
-  '因为视频模型不认识剧本里的角色名，只能靠这些外貌特征把台词与开口说话的人对应上。';
+  '因为视频模型不认识剧本里的角色名，只能靠这些外貌特征把台词与开口说话的人对应上；' +
+  '10) 台词与旁白的文字笔调沿用剧本正文（同一执笔写手），只做必要拆分与压缩，不得改写成通用解说腔；' +
+  '但上述 JSON 字段规则、说话人口径与 description 的可出图要求一律优先于文风沿用。';
 
-function buildSplitUserPrompt(scriptTitle: string, content: string): string {
+function buildSplitUserPrompt(scriptTitle: string, content: string, writerDigest = ''): string {
   const safe = (content || '').slice(0, 12000);
-  return `剧本标题：${scriptTitle || '未命名'}\n\n剧本正文：\n${safe}\n\n请据此拆分分镜并只输出 JSON。`;
+  const style = writerDigest.trim()
+    ? `【本集执笔写手笔法（仅供台词/旁白沿用，不得因此改变输出结构）】\n${writerDigest.trim()}\n\n`
+    : '';
+  return `${style}剧本标题：${scriptTitle || '未命名'}\n\n剧本正文：\n${safe}\n\n请据此拆分分镜并只输出 JSON。`;
 }
 
 /**
@@ -724,13 +731,21 @@ async function handleAutoGenerate({ scriptId, projectId, body }: AutoGenArgs): P
   }
 
   // 同步调用模型拆分（完成后才落库并返回，避免「假完成」）
+  // 台词/旁白沿用本集执笔写手的笔调（只给摘要，控 token；不改 JSON 契约）
+  let writerDigest = '';
+  try {
+    const eff = await loadEffectiveWriter(resolvedProjectId);
+    writerDigest = eff.writer
+      ? `${eff.writer.name}：${writerVoiceDigest(eff.stylePrompt, 150)}`
+      : '';
+  } catch { /* 读不到写手就按原样拆分，不阻塞 */ }
   let rawContent = '';
   try {
     const gen = await chatText({
       model,
       messages: [
         { role: 'system', content: SPLIT_SYSTEM },
-        { role: 'user', content: buildSplitUserPrompt(scriptTitle, content) },
+        { role: 'user', content: buildSplitUserPrompt(scriptTitle, content, writerDigest) },
       ],
       temperature: 0.6,
     });

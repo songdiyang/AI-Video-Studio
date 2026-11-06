@@ -11,6 +11,20 @@
 
 import { resolveModel, chatText, type OfflineModel } from './localAI';
 import { readDoc, writeDoc, resolveLocalPath, getActiveProjectPath } from './localStore';
+import {
+  buildWriterSystem,
+  castWriter,
+  detectSameTitleWork,
+  type SameTitleMatch,
+  type WriterCastResult,
+  type WriterPreset,
+} from './writerStyle';
+import {
+  loadProjectGenerationSettings,
+  loadEffectiveWriter,
+  lockWriter,
+} from './projectSettings';
+import { makeUniqueScriptTitle } from './uniqueName';
 
 const NO_MODEL_MSG = '请先在「设置 › 模型」中配置可用的文本模型';
 
@@ -107,18 +121,121 @@ export async function resolveScriptReferences<T extends Record<string, any>>(scr
   return out;
 }
 
+// ==================== 代笔写手（选角与注入） ====================
+
+/**
+ * 本模块自用的 JSON 调用：复用 chatText + extractJsonObject，
+ * 不引入 localAssetShared（它会经 localAssetJobs → localWorkflow → localStoryboards 绕回本模块，形成运行时循环引用）。
+ */
+async function chatJsonLocal(model: OfflineModel, system: string, user: string): Promise<any | null> {
+  const { content } = await chatText({
+    model,
+    temperature: 0.5,
+    messages: [
+      { role: 'system', content: system },
+      { role: 'user', content: user },
+    ],
+  });
+  return extractJsonObject(content || '');
+}
+
+export interface ResolvedScriptWriter {
+  /** 命中的写手卡；null = 不注入人格（仅套通用护栏） */
+  writer: WriterPreset | null;
+  /** 生效风格文本 */
+  stylePrompt: string;
+  /** 选角/来源说明 */
+  note: string;
+  /** 本次是否执行了选角（false = 复用工程已锁定写手） */
+  recast: boolean;
+  candidates: WriterCastResult['candidates'];
+  /** 标题/题材与写手代表作同名时的命中结果（null = 未命中），用于追加护栏与回执提示 */
+  sameWork: SameTitleMatch | null;
+}
+
+/** 从 brief / 标题里挑出与生效写手对应的那条同名命中 */
+function pickSameWork(brief: string, title: string, writerKey?: string | null): SameTitleMatch | null {
+  const hits = detectSameTitleWork({ title, description: brief });
+  return hits.find((h) => h.writerKey === writerKey) || hits[0] || null;
+}
+
+/** 把用户填的题材信息拼成给选角用的 brief */
+function buildWriterBrief(body: any): string {
+  const parts: string[] = [];
+  if (body?.title) parts.push(`标题：${body.title}`);
+  if (body?.description) parts.push(`题材/故事描述：${body.description}`);
+  if (body?.style) parts.push(`用户风格要求：${body.style}`);
+  if (body?.length) parts.push(`篇幅：${body.length}`);
+  if (body?.storyStyle) parts.push(`工程叙事风格：${body.storyStyle}`);
+  return parts.join('\n');
+}
+
+/**
+ * 解析本集代笔写手。
+ *  - 工程 writerKey 已有值（含显式 ''=不限定）且未 force → 直接复用，不调用模型；
+ *  - 从未设置过 → 选角一次并写回工程设置，后续集复用（工程级一致）；
+ *  - 无文本模型 / 模型返回非法 key → 回落本地确定性打分，绝不阻塞剧本生成。
+ */
+async function resolveScriptWriter(opts: {
+  projectId: number | null | undefined;
+  brief: string;
+  model: OfflineModel | null;
+  force?: boolean;
+  /** 本集/工程标题，用于同名原作判定（brief 里的「标题：」行不算强信号） */
+  title?: string;
+}): Promise<ResolvedScriptWriter> {
+  const settings = await loadProjectGenerationSettings(opts.projectId);
+  const settled = settings.writerKey !== undefined;
+  const eff = await loadEffectiveWriter(opts.projectId);
+  if (settled && !opts.force) {
+    return {
+      writer: eff.writer,
+      stylePrompt: eff.stylePrompt,
+      note: eff.note || (eff.writer ? `沿用工程锁定写手：${eff.writer.name}` : '本工程不限定代笔写手'),
+      recast: false,
+      candidates: [],
+      sameWork: eff.writer ? pickSameWork(opts.brief, opts.title || '', eff.writer.key) : null,
+    };
+  }
+
+  const cast = await castWriter({
+    brief: opts.brief,
+    title: opts.title,
+    chat: opts.model
+      ? (system, user) => chatJsonLocal(opts.model!, system, user)
+      : undefined,
+  });
+  const chosen = cast.chosen;
+  if (!chosen) {
+    return { writer: null, stylePrompt: '', note: cast.rationale, recast: true, candidates: cast.candidates, sameWork: null };
+  }
+  // 选角结果落库：只写工程设置，不改动任何正文
+  if (opts.projectId && !eff.temp) {
+    try { await lockWriter(opts.projectId, chosen.key, chosen.voice, cast.rationale); } catch { /* 落库失败不影响本次生成 */ }
+  }
+  return {
+    writer: chosen,
+    stylePrompt: chosen.voice,
+    note: cast.rationale,
+    recast: true,
+    candidates: cast.candidates,
+    sameWork: cast.sameWork ?? pickSameWork(opts.brief, opts.title || '', chosen.key),
+  };
+}
+
 // ==================== 生成 ====================
 
+/** 输出契约（人格与护栏由 buildWriterSystem 在此前后拼装，此段优先级最高） */
 const SCRIPT_SYSTEM =
-  '你是专业的短剧/影视编剧助手。根据用户提供的题材描述、风格与篇幅要求，创作一集结构完整的中文剧本正文。' +
-  '要求：1) 使用规范的剧本格式（场景标题、人物动作描写、角色对白）；2) 情节连贯、对白自然、有冲突与推进；' +
-  '3) 只输出剧本正文本身，不要输出解释、标题编号前缀或 Markdown 代码围栏。';
+  '根据用户提供的题材描述、风格与篇幅要求，创作一集结构完整的中文剧本正文。' +
+  '要求：1) 情节连贯、对白自然、有冲突与推进；2) 出场角色与地点名称前后一致，便于后续拆分为分镜；' +
+  '3) 只输出剧本正文本身，不要输出解释、创作说明、标题编号前缀或 Markdown 代码围栏。';
 
 function buildScriptPrompt(body: any): string {
   const parts: string[] = [];
   if (body?.title) parts.push(`剧本标题：${body.title}`);
   if (body?.description) parts.push(`题材/故事描述：${body.description}`);
-  if (body?.style) parts.push(`风格：${body.style}`);
+  if (body?.style) parts.push(`用户附加风格要求：${body.style}`);
   if (body?.length) parts.push(`篇幅：${body.length}`);
   const ep = Number(body?.episodeNumber) || 1;
   parts.push(`集数：第${ep}集`);
@@ -133,12 +250,28 @@ async function handleGenerate(body: any): Promise<Response> {
   const model: OfflineModel | null = await resolveModel(body?.provider || '');
   if (!model) return jsonResponse({ message: NO_MODEL_MSG }, 400);
 
+  // 先定写手（未锁定则选角一次），再以其笔法执笔本集
+  const writer = await resolveScriptWriter({
+    projectId,
+    brief: buildWriterBrief(body),
+    model,
+    force: Boolean(body?.recastWriter ?? body?.forceRecast),
+    title: body?.title ? String(body.title) : '',
+  });
+  const system = buildWriterSystem({
+    base: SCRIPT_SYSTEM,
+    writer: writer.writer,
+    stylePrompt: writer.stylePrompt,
+    extra: body?.style ? String(body.style) : '',
+    sameWork: writer.sameWork,
+  });
+
   let gen: { content: string; usage?: any };
   try {
     gen = await chatText({
       model,
       messages: [
-        { role: 'system', content: SCRIPT_SYSTEM },
+        { role: 'system', content: system },
         { role: 'user', content: buildScriptPrompt(body) },
       ],
     });
@@ -154,7 +287,11 @@ async function handleGenerate(body: any): Promise<Response> {
   const epRaw = body?.episodeNumber;
   const ep: number | undefined = epRaw != null && epRaw !== '' ? Number(epRaw) : undefined;
   const firstLine = (content.split('\n')[0] || '').trim();
-  const title = (body?.title && String(body.title).trim()) || firstLine.slice(0, 40) || '未命名剧本';
+  const rawTitle = (body?.title && String(body.title).trim()) || firstLine.slice(0, 40) || '未命名剧本';
+  // 同工程内已有同名剧本时追加序号：标题是大纲面板与「按标题绑定」的引用键，
+  // 重名会让两集内容互相错挂，所以在这里一次性消歧，并把改名回执带给调用方。
+  const title = makeUniqueScriptTitle(rawTitle, doc.scripts.map((s) => s.title));
+  const titleRenamed = title !== rawTitle;
   const script: LocalScript = {
     id,
     title,
@@ -178,14 +315,70 @@ async function handleGenerate(body: any): Promise<Response> {
     projectId: projectId ?? null,
     episodeNumber: ep ?? null,
     title,
+    titleRenamed,
     content,
+    // 执笔者回执：供 UI 与智能体播报「本集由谁执笔」
+    writer: {
+      key: writer.writer?.key ?? '',
+      name: writer.writer?.name ?? '',
+      rationale: writer.note,
+      recast: writer.recast,
+      candidates: writer.candidates,
+      // 同名原作命中：供 UI 说明「只是同名，不是改编」，避免用户以为模型抄了原作
+      sameWork: writer.sameWork
+        ? { writer: writer.sameWork.writerName, work: writer.sameWork.work }
+        : null,
+    },
+  });
+}
+
+// ==================== 选角（供 UI 按钮与智能体动作共用同一实现） ====================
+
+async function handleCastWriter(body: any): Promise<Response> {
+  const projectId = body?.projectId ?? null;
+  const path = await pathFor(projectId);
+  if (!path) return jsonResponse({ message: '未打开本地工程' }, 400);
+  const model: OfflineModel | null = await resolveModel(body?.provider || body?.textModel || '');
+  const brief = buildWriterBrief(body);
+  if (!brief.trim()) return jsonResponse({ message: '缺少题材描述，无法评估写手适配度' }, 400);
+
+  const writer = await resolveScriptWriter({
+    projectId,
+    brief,
+    model,
+    // force 或未锁定时都会重选；已锁定且未 force 则直接复用
+    force: Boolean(body?.force),
+    title: body?.title ? String(body.title) : '',
+  });
+  return jsonResponse({
+    success: true,
+    writer: {
+      key: writer.writer?.key ?? '',
+      name: writer.writer?.name ?? '',
+      stylePrompt: writer.stylePrompt,
+      rationale: writer.note,
+      sameWork: writer.sameWork
+        ? { writer: writer.sameWork.writerName, work: writer.sameWork.work }
+        : null,
+    },
+    candidates: writer.candidates,
+    recast: writer.recast,
+    sameWork: writer.sameWork
+      ? { writer: writer.sameWork.writerName, work: writer.sameWork.work }
+      : null,
+    message: writer.recast
+      ? (writer.writer ? `已指派 ${writer.writer.name} 执笔` : '未能确定写手，已按不限定风格处理')
+      : `沿用工程锁定写手：${writer.writer?.name || '不限定'}`,
   });
 }
 
 // ==================== 分析 ====================
 
 const ANALYZE_SYSTEM =
-  '你是资深剧本评估专家。请从「故事结构、人物塑造、对白质量、节奏张力、主题表达」等维度分析给定剧本，' +
+  '你是资深剧本评估专家。请从「故事结构、人物塑造、对白质量、节奏张力、主题表达、去 AI 味、风格一致性」等维度分析给定剧本。' +
+  '其中「去 AI 味」按以下硬标准打分：出现「仿佛/宛如/不禁/缓缓地/深深地/值得一提」等模型腔词、段末升华总结、' +
+  '三段排比收束、旁白替角色说心理，每一项都要扣分并在 comment 里举出原文例证；' +
+  '「风格一致性」判断全文笔法是否统一于指定写手（无指定时判断是否有稳定个人笔法）。' +
   '并严格只输出一个 JSON 对象（不要代码围栏、不要多余文字），字段：' +
   '{"overallScore":0-100整数,"dimensions":[{"name":string,"score":0-100整数,"comment":string}],' +
   '"strengths":[string],"weaknesses":[string],"suggestions":[string],"summary":string}。全部使用中文。';
@@ -202,11 +395,17 @@ async function handleAnalyze(body: any): Promise<Response> {
   const model = await resolveModel(body?.textModel || '');
   if (!model) return jsonResponse({ message: NO_MODEL_MSG }, 400);
 
+  // 有锁定写手时，「风格一致性」就有了具体对标对象
+  const eff = await loadEffectiveWriter(body?.projectId ?? null);
+  const writerHint = eff.writer
+    ? `本工程指定写手：${eff.writer.name}（笔法：${eff.stylePrompt.slice(0, 120)}……）\n\n`
+    : '';
+
   const { content: raw } = await chatText({
     model,
     messages: [
       { role: 'system', content: ANALYZE_SYSTEM },
-      { role: 'user', content: `请分析以下剧本：\n\n${content}` },
+      { role: 'user', content: `${writerHint}请分析以下剧本：\n\n${content}` },
     ],
   });
   const parsed = extractJsonObject(raw) || {};
@@ -224,7 +423,7 @@ async function handleAnalyze(body: any): Promise<Response> {
 // ==================== 优化 ====================
 
 const OPTIMIZE_SYSTEM =
-  '你是剧本润色与改写专家。根据用户的优化指令对给定剧本进行改写，保留原有故事骨架与人物关系，显著提升质量。' +
+  '根据用户的优化指令对给定剧本进行改写，保留原有故事骨架与人物关系，显著提升质量。' +
   '严格只输出一个 JSON 对象（不要代码围栏、不要多余文字）：{"optimizedContent":string,"changes":[string]}。中文。';
 
 async function handleOptimize(body: any): Promise<Response> {
@@ -241,10 +440,27 @@ async function handleOptimize(body: any): Promise<Response> {
   const model = await resolveModel(body?.textModel || '');
   if (!model) return jsonResponse({ message: NO_MODEL_MSG }, 400);
 
+  // 润色沿用同一写手笔法：只读工程锁定值，不在这里改动选角
+  const eff = await loadEffectiveWriter(body?.projectId ?? null);
+  // 润色同样要拦住"顺手把原作剧情补回来"：原稿标题/正文点名了原作就追加提醒
+  const optimizeTitle = String(body?.title || '').trim();
+  const sameWork = eff.writer
+    ? pickSameWork(`${optimizeTitle}\n${instruction}\n${original.slice(0, 600)}`, optimizeTitle, eff.writer.key)
+    : null;
+  const system = buildWriterSystem({
+    base: OPTIMIZE_SYSTEM,
+    writer: eff.writer,
+    stylePrompt: eff.stylePrompt,
+    extra: eff.writer
+      ? `本次修订由 ${eff.writer.name} 本人按其原有笔法重写，只优化文字与戏，不得改动故事骨架、人物关系与场景顺序。`
+      : '',
+    sameWork,
+  });
+
   const { content: raw, usage } = await chatText({
     model,
     messages: [
-      { role: 'system', content: OPTIMIZE_SYSTEM },
+      { role: 'system', content: system },
       { role: 'user', content: `优化指令：\n${instruction}\n\n原剧本：\n${original}` },
     ],
   });
@@ -274,6 +490,8 @@ async function handleOptimize(body: any): Promise<Response> {
     } else {
       const id = doc.nextId++;
       const now = nowIso();
+      // 另存为新剧本：与同工程既有标题消歧（overwrite 分支改的是同一条记录，不动标题）
+      title = makeUniqueScriptTitle(title, doc.scripts.map((s) => s.title));
       const script: LocalScript = {
         id,
         title,
@@ -363,7 +581,12 @@ async function handleBind(body: any): Promise<Response> {
       : (source.script.episode_number ?? undefined);
   const ref: LocalScript = {
     id,
-    title: body?.titleOverride || source.script.title || '参考剧本',
+    // 参考引用的标题同样消歧：绑定关系统一走 source_script_id，改名不影响回溯，
+    // 但能让目标工程大纲面板里两本同名剧本一眼分得开。
+    title: makeUniqueScriptTitle(
+      body?.titleOverride || source.script.title || '参考剧本',
+      doc.scripts.map((s) => s.title),
+    ),
     content: '', // 不深拷贝正文，仅作参考引用
     project_id: targetProjectId,
     episode_number: ep,
@@ -404,9 +627,11 @@ async function handleUpload(body: any): Promise<Response> {
   const doc = await loadScripts(path);
   const id = doc.nextId++;
   const now = nowIso();
+  // 重复导入同一份稿件是常见操作：标题与同工程既有剧本消歧，避免大纲面板出现两本同名
+  const uniqueTitle = makeUniqueScriptTitle(title, doc.scripts.map((s) => s.title));
   const script: LocalScript = {
     id,
-    title,
+    title: uniqueTitle,
     content,
     project_id: projectId,
     episode_number: ep,
@@ -429,7 +654,7 @@ async function handleUpload(body: any): Promise<Response> {
     scriptId: id,
     projectId,
     episodeNumber: ep,
-    title,
+    title: script.title,
     content,
     mode,
     analysis,
@@ -446,6 +671,7 @@ export async function routeScripts(url: URL, method: string, body: any): Promise
 
   if (m === 'POST') {
     if (pathname === '/api/scripts/generate') return handleGenerate(body);
+    if (pathname === '/api/scripts/cast-writer') return handleCastWriter(body);
     if (pathname === '/api/scripts/analyze') return handleAnalyze(body);
     if (pathname === '/api/scripts/optimize') return handleOptimize(body);
     if (pathname === '/api/scripts/bind') return handleBind(body);

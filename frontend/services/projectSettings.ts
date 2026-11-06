@@ -11,6 +11,7 @@
  */
 
 import { readProjectDoc, writeProjectDoc } from './localStore';
+import { findWriterPreset, type WriterPreset } from './writerStyle';
 
 /** 工程生成参数：'' 或缺省表示自动（跟随模型默认） */
 export interface ProjectGenerationSettings {
@@ -26,6 +27,30 @@ export interface ProjectGenerationSettings {
   tempArtStylePrompt?: string;
   /** 临时风格来源说明（如「用户要求第3镜用水墨风」），便于 UI 展示与 AI 理解 */
   tempArtStyleNote?: string;
+  /** 代笔写手预设 key（见 WRITER_PRESETS），'' 表示不限定：只套去 AI 味与格式护栏，不加人格 */
+  writerKey?: string;
+  /** 写手风格指令：注入剧本生成/润色/拆分提示词；留空则回落写手卡内置 voice */
+  writerStylePrompt?: string;
+  /** 选角理由（cast-writer 写入），供设置页与智能体播报 */
+  writerNote?: string;
+  /** 临时写手覆盖：某一集想换个笔法时用，非空时优先于 writerKey */
+  tempWriterKey?: string;
+  /** 临时写手来源说明 */
+  tempWriterNote?: string;
+}
+
+/** 工程当前生效的代笔写手 */
+export interface EffectiveWriter {
+  /** 生效 key（'' = 不限定） */
+  key: string;
+  /** 命中的写手卡，未限定或 key 非法时为 null */
+  writer: WriterPreset | null;
+  /** 生效风格文本：用户改写优先，其次写手卡内置 voice，皆空表示不注入人格 */
+  stylePrompt: string;
+  /** 选角理由 */
+  note: string;
+  /** 是否为临时覆盖 */
+  temp: boolean;
 }
 
 /** 美术风格预设：key 存库，prompt 是追加到生成提示词里的风格描述 */
@@ -120,5 +145,84 @@ export async function clearTempArtStyle(projectId: number): Promise<boolean> {
   const next: ProjectGenerationSettings = { ...settings };
   delete next.tempArtStylePrompt;
   delete next.tempArtStyleNote;
+  return saveProjectGenerationSettings(projectId, next);
+}
+
+// ==================== 代笔写手（剧本文风） ====================
+
+/**
+ * 取当前生效的代笔写手。
+ * 临时覆盖优先于工程锁定（与美术风格同一口径）；
+ * writerStylePrompt 是用户可改写的第一真源，留空才回落到写手卡内置 voice。
+ */
+export async function loadEffectiveWriter(
+  projectId: number | null | undefined
+): Promise<EffectiveWriter> {
+  const settings = await loadProjectGenerationSettings(projectId);
+  const tempKey = (settings.tempWriterKey || '').trim();
+  if (tempKey) {
+    const writer = findWriterPreset(tempKey);
+    return {
+      key: writer ? tempKey : '',
+      writer,
+      stylePrompt: writer?.voice ?? '',
+      note: (settings.tempWriterNote || '').trim(),
+      temp: true,
+    };
+  }
+  const key = (settings.writerKey || '').trim();
+  const writer = findWriterPreset(key);
+  const edited = (settings.writerStylePrompt || '').trim();
+  return {
+    key: writer ? key : '',
+    writer,
+    stylePrompt: edited || writer?.voice || '',
+    note: (settings.writerNote || '').trim(),
+    temp: false,
+  };
+}
+
+/**
+ * 锁定工程代笔写手（选角结果落库处）。
+ * 传入 null / '' 表示不限定；stylePrompt 留空则使用写手卡内置 voice。
+ */
+export async function lockWriter(
+  projectId: number,
+  key: string | null | undefined,
+  stylePrompt?: string,
+  note?: string
+): Promise<boolean> {
+  const settings = await loadProjectGenerationSettings(projectId);
+  const writer = findWriterPreset(key);
+  const next: ProjectGenerationSettings = {
+    ...settings,
+    writerKey: writer ? writer.key : '',
+    writerStylePrompt: (stylePrompt || '').trim() || writer?.voice || '',
+    writerNote: (note || '').trim(),
+  };
+  return saveProjectGenerationSettings(projectId, next);
+}
+
+/** 设置临时写手覆盖（不动工程锁定写手），用于"这一集换个笔法" */
+export async function setTempWriter(
+  projectId: number,
+  key: string,
+  note?: string
+): Promise<boolean> {
+  const settings = await loadProjectGenerationSettings(projectId);
+  const next: ProjectGenerationSettings = {
+    ...settings,
+    tempWriterKey: (key || '').trim(),
+    tempWriterNote: (note || '').trim(),
+  };
+  return saveProjectGenerationSettings(projectId, next);
+}
+
+/** 清除临时写手覆盖，恢复工程锁定写手 */
+export async function clearTempWriter(projectId: number): Promise<boolean> {
+  const settings = await loadProjectGenerationSettings(projectId);
+  const next: ProjectGenerationSettings = { ...settings };
+  delete next.tempWriterKey;
+  delete next.tempWriterNote;
   return saveProjectGenerationSettings(projectId, next);
 }

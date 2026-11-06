@@ -20,6 +20,7 @@ import { routeAiAssistantSessions } from './localAiAssistant';
 import { assertProject } from './localAssetShared';
 import { routeAiChatAndModels } from './localAiAssistantChat';
 import { routeScripts, resolveScriptReferences } from './localScripts';
+import { makeUniqueScriptTitle } from './uniqueName';
 import { routeAutoGenerate, ensureStudioByName } from './localStoryboards';
 import { checkStoryboardReadiness, deriveCharacterReadinessFields, readinessFixHints } from './sceneReadiness';
 import { routeStyles } from './localStyles';
@@ -336,9 +337,12 @@ async function handleScriptCreate(body: any): Promise<Response> {
   const doc = await loadScripts(path);
   const id = doc.nextId++;
   const now = new Date().toISOString();
+  // 新建（含智能体 create_script）与生成/上传同口径：同工程内标题消歧，
+  // 因为分镜与参考引用按标题挂接，重名会让两本剧本互相错挂。
+  const title = makeUniqueScriptTitle(body.title, doc.scripts.map((s) => s.title)) || null;
   const script: LocalScript = {
     id,
-    title: body.title ?? null,
+    title,
     content: body.content ?? '',
     project_id: projectId ?? null,
     episode_number: body.episodeNumber || 1,
@@ -551,9 +555,10 @@ async function route(url: URL, method: string, body: any): Promise<Response | nu
     if (m === 'DELETE') return handleScriptDelete(mt[1]);
   }
 
-  // ---- 剧本生成/分析/优化/库/绑定/上传（本地直连厂商 + 本地存储）----
+  // ---- 剧本生成/选角/分析/优化/库/绑定/上传（本地直连厂商 + 本地存储）----
   if (
     pathname === '/api/scripts/generate' ||
+    pathname === '/api/scripts/cast-writer' ||
     pathname === '/api/scripts/analyze' ||
     pathname === '/api/scripts/optimize' ||
     pathname === '/api/scripts/bind' ||
