@@ -169,6 +169,8 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
     scriptId?: number;
     scriptTitle?: string;
     scriptContent?: string;
+    scriptStreaming?: boolean;
+    scriptGenerationError?: string;
   } | undefined>(undefined);
 
   // 工具标签的「存在态」（上面三个布尔）与「激活态」（下面这个 id）必须分离：
@@ -205,10 +207,11 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
     }
     if (scriptGenerateTabOpen) {
       const episodeTitle = scriptGenerateTabEpisode ? `第${scriptGenerateTabEpisode}集剧本` : '剧本编辑';
-      result.push({ id: 'script-generate', type: 'script-generate', title: episodeTitle });
+      const scriptTitle = scriptWorkshopData?.scriptTitle?.trim() || episodeTitle;
+      result.push({ id: 'script-generate', type: 'script-generate', title: scriptTitle });
     }
     return result;
-  }, [sceneTabs, assetTabs, extensionDetailTabs, settingsTabOpen, teamsTabOpen, scriptGenerateTabOpen]);
+  }, [sceneTabs, assetTabs, extensionDetailTabs, settingsTabOpen, teamsTabOpen, scriptGenerateTabOpen, scriptGenerateTabEpisode, scriptWorkshopData?.scriptTitle]);
 
   // 从 localStorage 恢复所有标签状态（带版本控制，按 projectId 隔离）
   // 切换工程先关闸：防止持久化 effect 用上一个工程的标签写进新工程。
@@ -816,6 +819,7 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
       scriptId?: number;
       scriptTitle?: string;
       scriptContent?: string;
+      scriptStreaming?: boolean;
     }>) => {
       const detail = event.detail || {};
       console.log('[PreviewEditor] 收到 openScriptGenerateTab 事件', detail);
@@ -824,6 +828,8 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
         scriptId: detail.scriptId,
         scriptTitle: detail.scriptTitle,
         scriptContent: detail.scriptContent,
+        scriptStreaming: detail.scriptStreaming === true,
+        scriptGenerationError: '',
       } : undefined);
       // 只接管激活态，保留内容标签的激活记忆与其它工具标签的存在态
       openToolTab('script-generate');
@@ -835,6 +841,33 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
       window.removeEventListener('openScriptGenerateTab', handleOpenScriptGenerateTab as EventListener);
     };
   }, [openToolTab]);
+
+  // 正文流只更新已打开的对应剧本；用户切去其它标签后不被逐段增量抢回焦点。
+  useEffect(() => {
+    const handleScriptGenerationStream = (event: CustomEvent<{
+      scriptId?: number;
+      delta?: string;
+      content?: string;
+      streaming?: boolean;
+      error?: string;
+    }>) => {
+      const detail = event.detail || {};
+      if (!detail.scriptId) return;
+      setScriptWorkshopData(prev => {
+        if (!prev || Number(prev.scriptId) !== Number(detail.scriptId)) return prev;
+        return {
+          ...prev,
+          scriptContent: typeof detail.content === 'string'
+            ? detail.content
+            : `${prev.scriptContent || ''}${detail.delta || ''}`,
+          scriptStreaming: detail.streaming === true,
+          scriptGenerationError: detail.error || '',
+        };
+      });
+    };
+    window.addEventListener('streamScriptGeneration', handleScriptGenerationStream as EventListener);
+    return () => window.removeEventListener('streamScriptGeneration', handleScriptGenerationStream as EventListener);
+  }, []);
 
   // 当 episodeNumber 变化时，如果剧本生成标签页已打开，则更新 scriptGenerateTabEpisode
   // 修复：始终同步到当前集数，避免显示错误的集数信息
@@ -1294,6 +1327,8 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
                 initialScriptId={scriptWorkshopData?.scriptId}
                 initialTitle={scriptWorkshopData?.scriptTitle}
                 initialContent={scriptWorkshopData?.scriptContent}
+                initialStreaming={scriptWorkshopData?.scriptStreaming}
+                initialGenerationError={scriptWorkshopData?.scriptGenerationError}
                 onSuccess={(payload) => {
                   onScriptGenerated?.(payload);
                   // 派发剧本刷新事件，通知左侧大纲面板更新剧本列表和内容
@@ -1302,6 +1337,8 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
                       scriptId: payload.scriptId,
                       scriptTitle: payload.title,
                       scriptContent: payload.content,
+                      scriptStreaming: false,
+                      scriptGenerationError: '',
                     });
                     window.dispatchEvent(new CustomEvent('reload-scripts', {
                       detail: {

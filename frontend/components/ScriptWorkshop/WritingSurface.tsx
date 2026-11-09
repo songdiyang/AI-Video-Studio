@@ -11,6 +11,8 @@ export interface WritingSurfaceProps {
   title: string;
   content: string;
   status: EditorSaveStatus;
+  streaming?: boolean;
+  generationError?: string;
   showPreview: boolean;
   focusMode: boolean;
   /** 结构化预览内容（showPreview 时替换正文渲染区）。 */
@@ -44,7 +46,7 @@ const STATUS_ICONS: Record<EditorSaveStatus, typeof Circle> = {
 const countWords = (value: string) => value.replace(/\s/g, '').length;
 
 const WritingSurface: React.FC<WritingSurfaceProps> = ({
-  title, content, status, showPreview, focusMode, preview,
+  title, content, status, streaming = false, generationError = '', showPreview, focusMode, preview,
   onTitleChange, onContentChange, onTogglePreview, onToggleFocus, onSave,
   placeholder = '在此开始你的创作…',
 }) => {
@@ -59,6 +61,13 @@ const WritingSurface: React.FC<WritingSurfaceProps> = ({
     ta.style.height = 'auto';
     ta.style.height = `${ta.scrollHeight}px`;
   }, [content, showPreview]);
+
+  // 生成期间始终跟随最新正文，用户切换标签后仍由宿主保留进度。
+  useLayoutEffect(() => {
+    if (!streaming || showPreview) return;
+    const sc = scrollRef.current;
+    if (sc) sc.scrollTop = sc.scrollHeight;
+  }, [content, streaming, showPreview]);
 
   // 打字机模式：把光标所在行稳定停在视口上部约 40% 处，形成"向下书写"的沉浸手感。
   const scrollToCaret = React.useCallback(() => {
@@ -80,11 +89,14 @@ const WritingSurface: React.FC<WritingSurfaceProps> = ({
     requestAnimationFrame(scrollToCaret);
   };
 
-  const StatusIcon = STATUS_ICONS[status];
+  const displayStatus = generationError ? 'error' : status;
+  const StatusIcon = streaming ? Loader2 : STATUS_ICONS[displayStatus];
+  const statusLabel = streaming ? '正在创作' : generationError ? '生成失败' : STATUS_LABELS[displayStatus];
+  const statusHint = streaming ? '标题已就绪，正文正在流式生成…' : generationError || STATUS_HINTS[displayStatus];
   const words = countWords(content);
 
   return (
-    <div className={`sw-root${focusMode ? ' is-focus' : ''}`}>
+    <div className={`sw-root${focusMode ? ' is-focus' : ''}`} aria-busy={streaming}>
       <div className="sw-toolbar">
         <span className="sw-toolbar-kind">剧本</span>
         <div className="sw-toolbar-actions">
@@ -117,6 +129,7 @@ const WritingSurface: React.FC<WritingSurfaceProps> = ({
             aria-label="剧本名称"
             value={title}
             placeholder="标题"
+            readOnly={streaming}
             onChange={event => onTitleChange(event.target.value)}
           />
           {showPreview ? (
@@ -127,7 +140,9 @@ const WritingSurface: React.FC<WritingSurfaceProps> = ({
               className="sw-canvas"
               aria-label="剧本内容"
               value={content}
-              placeholder={placeholder}
+              placeholder={streaming ? '标题已就绪，正在等待正文…' : placeholder}
+              readOnly={streaming}
+              aria-busy={streaming}
               spellCheck={false}
               wrap="soft"
               onChange={handleCanvasInput}
@@ -142,15 +157,15 @@ const WritingSurface: React.FC<WritingSurfaceProps> = ({
         <span className="sw-count" title="正文字数（不含空格）">{words} 字</span>
         <div className="sw-status-right">
           <span
-            className={`sw-status is-${status}`}
+            className={`sw-status is-${streaming ? 'saving' : displayStatus}`}
             role="status"
             aria-live="polite"
-            title={STATUS_HINTS[status]}
+            title={statusHint}
           >
-            <StatusIcon size={12} className={status === 'saving' ? 'animate-spin' : ''} />
-            {STATUS_LABELS[status]}
+            <StatusIcon size={12} className={streaming || status === 'saving' ? 'animate-spin' : ''} />
+            {statusLabel}
           </span>
-          {(status === 'dirty' || status === 'error') && (
+          {!streaming && !generationError && (status === 'dirty' || status === 'error') && (
             <button type="button" className="sw-save" onClick={onSave}>
               {status === 'error' ? '重试保存' : '保存'}
             </button>

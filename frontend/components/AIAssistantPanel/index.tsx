@@ -10,7 +10,7 @@ import { normalizeSceneDialogues } from '../../services/sceneDialogues';
 import MemoryPanel from './MemoryPanel';
 import { isLongTaskCapable } from '../../services/aiAssistant';
 import { getWorkflowStatus } from '../../hooks/useWorkflow';
-import { analyzeScript, optimizeScript, generateScript, type ScriptAnalysisResult, type ScriptWriterInfo } from '../../services/scripts';
+import { analyzeScript, optimizeScript, generateScriptStream, type ScriptAnalysisResult, type ScriptWriterInfo } from '../../services/scripts';
 import { listLongTasks, registerLongTask, LONG_TASK_STATUS_LABEL } from '../../services/longTasks';
 import { loadProjectGenerationSettings, loadEffectiveWriter } from '../../services/projectSettings';
 import { listActiveMemories, touchMemories, loadMemoryFlags } from '../../services/agentMemory';
@@ -2568,6 +2568,20 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
       const cardId = `script-gen-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
       const timestamp = Date.now();
       const initialTitle = params?.title || `第${episodeNumber || '新'}集剧本`;
+      let activeStreamScriptId: number | undefined;
+      let streamedContent = '';
+      const finishScriptTab = (content?: string, error?: string) => {
+        if (!activeStreamScriptId) return;
+        window.dispatchEvent(new CustomEvent('streamScriptGeneration', {
+          detail: { scriptId: activeStreamScriptId, content, streaming: false, error: error || '' },
+        }));
+        if (error) {
+          window.dispatchEvent(new CustomEvent('reload-scripts', {
+            detail: { projectId: targetProjectId, episodeNumber },
+          }));
+        }
+        activeStreamScriptId = undefined;
+      };
       let cardTask: TaskCardData = { kind: 'script', status: 'planning', title: `剧本 · ${initialTitle}` };
 
       const patchCard = (patch: Partial<TaskCardData>) => {
@@ -2601,6 +2615,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
         });
       };
       const failGeneration = (error: string, notify = true) => {
+        finishScriptTab(undefined, error);
         patchCard({ status: 'failed' });
         archiveCard();
         if (notify) notifyTerminal('failed', error);
@@ -2637,6 +2652,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
         writer?: ScriptWriterInfo,
       ) => {
         const title = resultTitle || initialTitle;
+        finishScriptTab(streamedContent || undefined);
         patchCard({ status: 'completed', title: `剧本 · ${title}`, scriptId });
         notifyTerminal('completed');
         archiveCard();
@@ -2681,7 +2697,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
       try {
         patchCard({ status: 'writing' });
         onProgress?.('内容写入中…');
-        const result = await generateScript({
+        const result = await generateScriptStream({
           projectId: targetProjectId,
           title: params?.title,
           description: params?.description,
@@ -2690,6 +2706,33 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
           episodeNumber,
           provider: params?.textModel || selectedModel,
           recastWriter: params?.recastWriter === true || String(params?.recastWriter) === 'true',
+        }, {
+          onMetadata: (metadata) => {
+            const metadataId = Number(metadata.scriptId);
+            const title = metadata.title || initialTitle;
+            patchCard({ title: `剧本 · ${title}` });
+            if (!Number.isFinite(metadataId) || metadataId <= 0) return;
+            activeStreamScriptId = metadataId;
+            window.dispatchEvent(new CustomEvent('openScriptGenerateTab', {
+              detail: {
+                episodeNumber: metadata.episodeNumber ?? episodeNumber,
+                scriptId: metadataId,
+                scriptTitle: title,
+                scriptContent: '',
+                scriptStreaming: true,
+              },
+            }));
+            window.dispatchEvent(new CustomEvent('reload-scripts', {
+              detail: { projectId: targetProjectId, episodeNumber: metadata.episodeNumber ?? episodeNumber },
+            }));
+          },
+          onDelta: (delta) => {
+            streamedContent += delta;
+            if (!activeStreamScriptId) return;
+            window.dispatchEvent(new CustomEvent('streamScriptGeneration', {
+              detail: { scriptId: activeStreamScriptId, delta, streaming: true },
+            }));
+          },
         });
         const { jobId, scriptId, episodeNumber: resultEp, title: resultTitle, writer: resultWriter } = result;
         patchCard({ title: `剧本 · ${resultTitle || initialTitle}`, jobId });

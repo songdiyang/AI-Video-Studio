@@ -98,6 +98,13 @@ export interface GenerateScriptResponse extends ScriptItem {
   };
 }
 
+export interface ScriptGenerationStreamHandlers {
+  /** 标题与草稿已落库，可立即打开剧本标签页。 */
+  onMetadata?: (metadata: GenerateScriptResponse) => void;
+  /** 正文增量；只在当前标签页内追加，不重新激活标签。 */
+  onDelta?: (delta: string) => void;
+}
+
 export async function fetchScripts(): Promise<ScriptItem[]> {
   const res = await fetch('/api/scripts');
 
@@ -229,6 +236,83 @@ export async function generateScript(params: GenerateScriptParams): Promise<Gene
     throw new Error(data?.message || 'Failed to generate script');
   }
   return data as GenerateScriptResponse;
+}
+
+function assertGenerationResult(data: unknown): GenerateScriptResponse {
+  if (!data || typeof data !== 'object') throw new Error('剧本生成返回了无效结果');
+  const result = data as GenerateScriptResponse & { success?: boolean; error?: string; message?: string };
+  if (result.success === false) throw new Error(result.error || result.message || '剧本生成失败');
+  const scriptId = Number(result.scriptId);
+  if (!result.jobId && (!Number.isFinite(scriptId) || scriptId <= 0)) {
+    throw new Error('剧本生成未返回有效的剧本 ID');
+  }
+  return result;
+}
+
+/** 标题先行、正文逐段返回的剧本生成；非 SSE 服务自动兼容原同步契约。 */
+export async function generateScriptStream(
+  params: GenerateScriptParams,
+  handlers: ScriptGenerationStreamHandlers = {},
+): Promise<GenerateScriptResponse> {
+  const res = await fetch('/api/scripts/generate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...params, stream: true }),
+  });
+  const contentType = res.headers.get('content-type') || '';
+
+  // 云端或未升级的服务仍返回 JSON：保留原能力，但调用方无需维护第二条链路。
+  if (!res.ok || !contentType.includes('text/event-stream')) {
+    const data = await res.json().catch(() => null);
+    if (!res.ok) throw new Error(data?.message || data?.error || '剧本生成失败');
+    const result = assertGenerationResult(data);
+    handlers.onMetadata?.(result);
+    if (result.content) handlers.onDelta?.(result.content);
+    return result;
+  }
+  if (!res.body) throw new Error('无法读取剧本生成流');
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder('utf-8');
+  let buffer = '';
+  let completed: GenerateScriptResponse | undefined;
+
+  const consumeBlock = (block: string) => {
+    const data = block.split(/\r?\n/)
+      .filter(line => line.startsWith('data: '))
+      .map(line => line.slice(6))
+      .join('\n');
+    if (!data || data === '[DONE]') return;
+    const event = JSON.parse(data);
+    if (event.type === 'metadata') handlers.onMetadata?.(event.metadata || event);
+    else if (event.type === 'delta' && event.delta) handlers.onDelta?.(String(event.delta));
+    else if (event.type === 'complete') completed = event.result || event;
+    else if (event.type === 'error') throw new Error(event.error || '剧本生成失败');
+  };
+  const consumeBlocks = (final = false) => {
+    const blocks = buffer.split(/\r?\n\r?\n/);
+    buffer = blocks.pop() || '';
+    blocks.forEach(consumeBlock);
+    if (final && buffer.trim()) {
+      consumeBlock(buffer);
+      buffer = '';
+    }
+  };
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      consumeBlocks();
+    }
+    buffer += decoder.decode();
+    consumeBlocks(true);
+  } finally {
+    reader.releaseLock();
+  }
+  if (!completed) throw new Error('剧本生成流未返回完成结果');
+  return assertGenerationResult(completed);
 }
 
 /**

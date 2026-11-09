@@ -5,11 +5,11 @@
 // （与 localApiRouter 的 loadScripts/saveScripts 使用同一存储与形状）。
 //
 // 设计：
-//  - 生成/分析/优化为「同步」执行（await chatText），完成后直接返回结果，不产生 workflow jobId，
-//    消费方（AIAssistantPanel）在无 jobId 时走本地即时分支。
+//  - 生成默认同步执行；body.stream=true 时返回 SSE，标题 metadata 先行、正文 delta 随后。
+//  - 分析/优化仍为「同步」执行（await chatText）；均不产生 workflow jobId，消费方走本地即时分支。
 //  - 仅处理新增子路径；create / :id / project 仍由 localApiRouter 内联处理。
 
-import { resolveModel, chatText, type OfflineModel } from './localAI';
+import { resolveModel, chatText, chatTextStream, type OfflineModel } from './localAI';
 import { readDoc, writeDoc, resolveLocalPath, getActiveProjectPath } from './localStore';
 import {
   buildWriterSystem,
@@ -243,6 +243,42 @@ function buildScriptPrompt(body: any): string {
   return parts.join('\n');
 }
 
+const SCRIPT_TITLE_SYSTEM =
+  '你是剧本标题策划。根据用户的故事描述拟定一个准确、有辨识度、便于剧集管理的中文剧本标题。' +
+  '只输出标题本身，不要书名号、引号、解释或 Markdown；标题不超过 24 个汉字，不得剧透关键反转。';
+
+function fallbackScriptTitle(body: any): string {
+  const description = String(body?.description || '').trim();
+  const summary = description.split(/[\n。！？!?]/).map(part => part.trim()).find(Boolean) || '';
+  const ep = Number(body?.episodeNumber);
+  return summary.slice(0, 24) || (ep > 0 ? `第${ep}集剧本` : '未命名剧本');
+}
+
+async function generateScriptTitle(body: any, model: OfflineModel): Promise<string> {
+  const provided = String(body?.title || '').trim();
+  if (provided) return provided.slice(0, 40);
+  try {
+    const { content } = await chatText({
+      model,
+      temperature: 0.4,
+      messages: [
+        { role: 'system', content: SCRIPT_TITLE_SYSTEM },
+        { role: 'user', content: buildWriterBrief(body) || fallbackScriptTitle(body) },
+      ],
+    });
+    const firstLine = String(content || '').split('\n').map(line => line.trim()).find(Boolean) || '';
+    const title = firstLine
+      .replace(/^(?:剧本)?标题\s*[:：]\s*/, '')
+      .replace(/^[《「『"“']+|[》」』"”']+$/g, '')
+      .trim()
+      .slice(0, 40);
+    return title || fallbackScriptTitle(body);
+  } catch {
+    // 标题是展示元数据，生成失败不应阻塞正文；用故事摘要兜底。
+    return fallbackScriptTitle(body);
+  }
+}
+
 async function handleGenerate(body: any): Promise<Response> {
   const projectId = body?.projectId ?? null;
   const path = await pathFor(projectId);
@@ -329,6 +365,180 @@ async function handleGenerate(body: any): Promise<Response> {
         ? { writer: writer.sameWork.writerName, work: writer.sameWork.work }
         : null,
     },
+  });
+}
+
+/** SSE 帧与前端 generateScriptStream 对齐；生成在后台执行，响应立即建立。 */
+function makeScriptSseResponse(
+  generate: (emit: (payload: unknown) => void) => Promise<void>,
+): Response {
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      let closed = false;
+      const emit = (payload: unknown) => {
+        if (!closed) controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
+      };
+      const close = () => {
+        if (closed) return;
+        closed = true;
+        controller.close();
+      };
+      void generate(emit)
+        .catch((error: any) => emit({ type: 'error', error: error?.message || '剧本生成失败' }))
+        .finally(close);
+    },
+  });
+  return new Response(stream, {
+    headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' },
+  });
+}
+
+/**
+ * 流式生成：先写一份只有标题的 generating 草稿并发出 metadata，再逐段输出正文。
+ * 最终只落库一次完整正文；若流中断，已生成片段以 failed 状态保留，避免静默丢稿。
+ */
+function handleGenerateStream(body: any): Response {
+  return makeScriptSseResponse(async (emit) => {
+    const projectId = body?.projectId ?? null;
+    let path: string | null = null;
+    let scriptId: number | undefined;
+    let partial = '';
+    try {
+      path = await pathFor(projectId);
+      if (!path) throw new Error('未打开本地工程');
+      const model: OfflineModel | null = await resolveModel(body?.provider || body?.textModel || '');
+      if (!model) throw new Error(NO_MODEL_MSG);
+
+      // 标题是首个对用户可见的成果；完成后立即建稿，绝不等待正文首行。
+      const rawTitle = await generateScriptTitle(body, model);
+      const draftDoc = await loadScripts(path);
+      const id = draftDoc.nextId++;
+      scriptId = id;
+      const epRaw = body?.episodeNumber;
+      const ep: number | undefined = epRaw != null && epRaw !== '' ? Number(epRaw) : undefined;
+      const title = makeUniqueScriptTitle(rawTitle, draftDoc.scripts.map((s) => s.title));
+      const titleRenamed = title !== rawTitle;
+      const createdAt = nowIso();
+      const draft: LocalScript = {
+        id,
+        title,
+        content: '',
+        project_id: projectId ?? null,
+        episode_number: ep,
+        status: 'generating',
+        model_provider: model.provider ?? null,
+        token_used: 0,
+        created_at: createdAt,
+        updated_at: createdAt,
+      };
+      draftDoc.scripts.push(draft);
+      saveScripts(path, draftDoc);
+      emit({
+        type: 'metadata',
+        metadata: {
+          success: true,
+          ...draft,
+          scriptId: id,
+          projectId: projectId ?? null,
+          episodeNumber: ep ?? null,
+          title,
+          titleRenamed,
+          content: '',
+        },
+      });
+
+      const generationBody = { ...body, title };
+      const writer = await resolveScriptWriter({
+        projectId,
+        brief: buildWriterBrief(generationBody),
+        model,
+        force: Boolean(body?.recastWriter ?? body?.forceRecast),
+        title,
+      });
+      const system = buildWriterSystem({
+        base: SCRIPT_SYSTEM,
+        writer: writer.writer,
+        stylePrompt: writer.stylePrompt,
+        extra: body?.style ? String(body.style) : '',
+        sameWork: writer.sameWork,
+      });
+      const messages = [
+        { role: 'system', content: system },
+        { role: 'user', content: buildScriptPrompt(generationBody) },
+      ];
+
+      let usage: any = null;
+      try {
+        const generated = await chatTextStream({
+          model,
+          messages,
+          onDelta: (delta) => {
+            partial += delta;
+            emit({ type: 'delta', delta });
+          },
+        });
+        usage = generated.usage;
+      } catch (streamError) {
+        // ai_proxy 不支持流式；尚未收到任何正文时回退同步调用，避免厂商 CORS 让创作失败。
+        if (partial) throw streamError;
+        const generated = await chatText({ model, messages });
+        partial = generated.content || '';
+        usage = generated.usage;
+        if (partial) emit({ type: 'delta', delta: partial });
+      }
+
+      const content = partial.trim();
+      if (!content) throw new Error('模型未返回剧本内容');
+      const latestDoc = await loadScripts(path);
+      const target = latestDoc.scripts.find((item) => item.id === id);
+      if (!target) throw new Error('剧本草稿已被移除，无法保存生成结果');
+      target.content = content;
+      target.status = 'completed';
+      target.token_used = usage?.total_tokens || 0;
+      target.updated_at = nowIso();
+      saveScripts(path, latestDoc);
+
+      emit({
+        type: 'complete',
+        result: {
+          success: true,
+          ...target,
+          scriptId: id,
+          projectId: projectId ?? null,
+          episodeNumber: target.episode_number ?? null,
+          title: target.title || title,
+          titleRenamed,
+          content,
+          writer: {
+            key: writer.writer?.key ?? '',
+            name: writer.writer?.name ?? '',
+            rationale: writer.note,
+            recast: writer.recast,
+            candidates: writer.candidates,
+            sameWork: writer.sameWork
+              ? { writer: writer.sameWork.writerName, work: writer.sameWork.work }
+              : null,
+          },
+        },
+      });
+    } catch (error: any) {
+      if (path && scriptId) {
+        try {
+          const failedDoc = await loadScripts(path);
+          const target = failedDoc.scripts.find((item) => item.id === scriptId);
+          if (target) {
+            target.content = partial.trim();
+            target.status = 'failed';
+            target.updated_at = nowIso();
+            saveScripts(path, failedDoc);
+          }
+        } catch {
+          // 保留原始生成错误；失败状态的二次落库异常不覆盖它。
+        }
+      }
+      emit({ type: 'error', error: error?.message || '剧本生成失败', scriptId });
+    }
   });
 }
 
@@ -670,7 +880,9 @@ export async function routeScripts(url: URL, method: string, body: any): Promise
   const m = method.toUpperCase();
 
   if (m === 'POST') {
-    if (pathname === '/api/scripts/generate') return handleGenerate(body);
+    if (pathname === '/api/scripts/generate') {
+      return body?.stream === true ? handleGenerateStream(body) : handleGenerate(body);
+    }
     if (pathname === '/api/scripts/cast-writer') return handleCastWriter(body);
     if (pathname === '/api/scripts/analyze') return handleAnalyze(body);
     if (pathname === '/api/scripts/optimize') return handleOptimize(body);

@@ -64,6 +64,15 @@ const LOCAL_AI = `
     globalThis.__chats.push({ system, user, model, temperature });
     return { content: globalThis.__reply({ system, user }), usage: { total_tokens: 12 } };
   };
+  const chatTextStream = async ({ model, messages, temperature, onDelta }) => {
+    const system = String(messages?.[0]?.content || '');
+    const user = String(messages?.[1]?.content || '');
+    globalThis.__chats.push({ system, user, model, temperature });
+    const content = globalThis.__reply({ system, user });
+    const chunks = globalThis.__streamChunks || [content];
+    for (const chunk of chunks) onDelta?.(chunk);
+    return { content: chunks.join(''), usage: { total_tokens: 12 } };
+  };
 `;
 
 // 依赖顺序加载：writerStyle → uniqueName → projectSettings → localScripts
@@ -80,6 +89,7 @@ const { routeScripts } = await loadTs('./localScripts.ts', {
   stubs: { localAI: LOCAL_AI, localStore: LOCAL_STORE_FOR_SCRIPTS },
   remotes: { writerStyle: 'writerStyle', projectSettings: 'projectSettings', uniqueName: 'uniqueName' },
 });
+const { generateScriptStream } = await loadTs('./scripts.ts');
 const { WRITER_PRESETS, findWriterPreset, rankWritersByFit } = MODS.writerStyle;
 
 const PROJECT_ID = 7;
@@ -123,6 +133,16 @@ const post = async (url, body) => {
   const resp = await routeScripts(url, 'POST', body);
   assert.ok(resp, `${url.pathname} 未被本地路由接管（会落到中性兜底造成假成功）`);
   return { status: resp.status, data: await resp.json() };
+};
+const postStream = async (url, body) => {
+  const resp = await routeScripts(url, 'POST', { ...body, stream: true });
+  assert.ok(resp, `${url.pathname} 未被本地流式路由接管`);
+  const text = await resp.text();
+  const events = text.split(/\r?\n\r?\n/).filter(block => block.trim()).map((block) => {
+    const line = block.split(/\r?\n/).find((item) => item.startsWith('data: '));
+    return line ? JSON.parse(line.slice(6)) : null;
+  });
+  return { status: resp.status, contentType: resp.headers.get('content-type'), events };
 };
 const settingsDoc = () => globalThis.__store[`test://p${PROJECT_ID}#projectSettings`] || {};
 const scriptsDoc = () => globalThis.__store[`test://p${PROJECT_ID}#scripts`] || { nextId: 1, scripts: [] };
@@ -401,4 +421,63 @@ test('润色：原稿或指令点名原作时追加同名提醒', async () => {
   assert.match(system, /同名原作提醒/);
   assert.match(system, /《活着》/);
   assert.ok(!system.includes('福贵'), '不得把原作人物名塞进提示词');
+});
+
+test('流式生成：标题 metadata 先行，正文 delta 随后，最终只更新同一份草稿', async () => {
+  setup();
+  const baseReply = globalThis.__reply;
+  globalThis.__reply = (context) => context.system.includes('剧本标题策划') ? '雨夜旧课桌' : baseReply(context);
+  globalThis.__streamChunks = [SCRIPT_TEXT.slice(0, 12), SCRIPT_TEXT.slice(12)];
+
+  const { status, contentType, events } = await postStream(generateUrl, {
+    projectId: PROJECT_ID, episodeNumber: 1, description: '校园悬疑，旧课桌里的日记',
+  });
+  assert.equal(status, 200);
+  assert.match(contentType, /text\/event-stream/);
+  assert.deepEqual(events.map((event) => event.type), ['metadata', 'delta', 'delta', 'complete']);
+  const [metadata] = events;
+  assert.equal(metadata.metadata.title, '雨夜旧课桌');
+  assert.equal(metadata.metadata.status, 'generating');
+  assert.equal(metadata.metadata.content, '', '标题阶段不得等待或携带正文');
+  assert.equal(events[1].delta + events[2].delta, SCRIPT_TEXT);
+  assert.equal(events[3].result.scriptId, metadata.metadata.scriptId);
+  assert.equal(events[3].result.title, '雨夜旧课桌');
+
+  const saved = scriptsDoc().scripts.find((script) => script.id === metadata.metadata.scriptId);
+  assert.equal(saved.status, 'completed');
+  assert.equal(saved.content, SCRIPT_TEXT);
+  assert.equal(scriptsDoc().scripts.length, 1, '正文完成必须更新草稿而不是另建剧本');
+  const bodyCall = globalThis.__chats.find(({ system }) => system.includes('根据用户提供的题材描述'));
+  assert.match(bodyCall.user, /剧本标题：雨夜旧课桌/);
+});
+
+test('SSE 客户端：跨块事件按 metadata → delta → complete 解码并回调', async () => {
+  const originalFetch = globalThis.fetch;
+  const content = '第一场\n老李：来了。';
+  const frames = [
+    'data: {"type":"metadata","metadata":{"scriptId":9,"title":"雨夜"}}\n\n',
+    'data: {"type":"delta","delta":"第一场"}\n\n',
+    'data: {"type":"delta","delta":"\\n老李：来了。"}\n\n',
+    `data: ${JSON.stringify({ type: 'complete', result: { scriptId: 9, title: '雨夜', content } })}\n\n`,
+  ].join('');
+  const bytes = new TextEncoder().encode(frames);
+  globalThis.fetch = async () => new Response(new ReadableStream({
+    start(controller) {
+      for (let offset = 0; offset < bytes.length; offset += 17) controller.enqueue(bytes.slice(offset, offset + 17));
+      controller.close();
+    },
+  }), { headers: { 'Content-Type': 'text/event-stream' } });
+  try {
+    const metadata = [];
+    const deltas = [];
+    const result = await generateScriptStream({ projectId: PROJECT_ID }, {
+      onMetadata: (value) => metadata.push(value),
+      onDelta: (value) => deltas.push(value),
+    });
+    assert.deepEqual(metadata.map((value) => value.title), ['雨夜']);
+    assert.deepEqual(deltas, ['第一场', '\n老李：来了。']);
+    assert.equal(result.content, content);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });

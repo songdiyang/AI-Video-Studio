@@ -22,6 +22,9 @@ export interface ScriptWorkshopProps extends EmbeddedEditorProps {
   initialScriptId?: number;
   initialTitle?: string;
   initialContent?: string;
+  /** 生成期间正文由流式事件驱动，编辑器只读且不做防抖自动保存。 */
+  initialStreaming?: boolean;
+  initialGenerationError?: string;
   onSuccess?: (payload?: ScriptWorkshopPayload) => void;
   onError?: (msg: string) => void;
   onClose: () => void;
@@ -45,8 +48,8 @@ function assertSaved(result: unknown) {
 
 const WorkshopSession: React.FC<ScriptWorkshopProps> = ({
   lockProjectId, lockEpisodeNumber,
-  initialScriptId, initialTitle = '', initialContent, onSuccess, onError,
-  onRegisterEditor,
+  initialScriptId, initialTitle = '', initialContent, initialStreaming = false, initialGenerationError = '',
+  onSuccess, onError, onRegisterEditor,
 }) => {
   const { showToast } = useToast();
   const mounted = useRef(true);
@@ -54,7 +57,7 @@ const WorkshopSession: React.FC<ScriptWorkshopProps> = ({
   callbacks.current = { onSuccess, onError, showToast };
   const [showPreview, setShowPreview] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
-  const [status, setStatus] = useState<EditorSaveStatus>(initialScriptId ? 'saved' : 'idle');
+  const [status, setStatus] = useState<EditorSaveStatus>(initialGenerationError ? 'error' : initialScriptId ? 'saved' : 'idle');
   const [loadingScript, setLoadingScript] = useState(false);
   const [loadError, setLoadError] = useState('');
   const saving = useRef<Promise<boolean> | null>(null);
@@ -65,7 +68,7 @@ const WorkshopSession: React.FC<ScriptWorkshopProps> = ({
     projectId: lockProjectId ?? 0, episodeNumber: lockEpisodeNumber ?? 1,
   } : null);
   const savedScript = useRef(serialize(script));
-  const incomingScript = useRef(serialize({ initialTitle, initialContent }));
+  const incomingScript = useRef(serialize({ initialTitle, initialContent, initialStreaming, initialGenerationError }));
 
   const report = useCallback((error: unknown) => {
     if (!mounted.current) return;
@@ -128,25 +131,31 @@ const WorkshopSession: React.FC<ScriptWorkshopProps> = ({
   }, []);
 
   useEffect(() => {
+    if (initialStreaming) {
+      clearTimer();
+      return;
+    }
     if (serialize(script) === savedScript.current) return;
     timer.current = setTimeout(() => { void saveScript(); }, 2000);
     return clearTimer;
-  }, [script, saveScript]);
+  }, [script, saveScript, initialStreaming]);
 
   // 支持初始数据异步到达；脏稿/在途请求不得被父级旧数据回填覆盖。
   useEffect(() => {
     // undefined 表示父级尚未提供正文；只有显式字符串（包括 ''）才是有效正文载荷。
     if (initialContent === undefined) return;
-    const incoming = serialize({ initialTitle, initialContent });
+    const incoming = serialize({ initialTitle, initialContent, initialStreaming, initialGenerationError });
     if (incoming === incomingScript.current) return;
     incomingScript.current = incoming;
     const current = scriptRef.current;
-    if (!current || current.scriptId !== initialScriptId || saving.current || serialize(current) !== savedScript.current) return;
+    if (!current || current.scriptId !== initialScriptId || saving.current) return;
+    // 流式正文由生成服务统一持久化，不在每个 delta 上触发自动保存；普通回填仍服从脏稿保护。
+    if (!initialStreaming && serialize(current) !== savedScript.current) return;
     const next = { ...current, title: initialTitle, content: initialContent };
     savedScript.current = serialize(next);
     replaceScript(next);
-    if (mounted.current) setStatus('saved');
-  }, [initialTitle, initialContent, initialScriptId, replaceScript, scriptRef]);
+    if (mounted.current) setStatus(initialGenerationError ? 'error' : initialStreaming ? 'idle' : 'saved');
+  }, [initialTitle, initialContent, initialStreaming, initialGenerationError, initialScriptId, replaceScript, scriptRef]);
 
   // 刷新恢复时父级只保留工程/集数，正文需要按对象回读；响应只能写入仍然干净的当前草稿。
   useEffect(() => {
@@ -220,6 +229,8 @@ const WorkshopSession: React.FC<ScriptWorkshopProps> = ({
       title={script.title}
       content={script.content}
       status={status}
+      streaming={initialStreaming}
+      generationError={initialGenerationError}
       showPreview={showPreview}
       focusMode={focusMode}
       preview={preview}

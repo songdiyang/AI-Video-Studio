@@ -177,6 +177,27 @@ test('显式空字符串是有效空剧本，不触发回读且可直接编辑',
   expect(mocks.update).toHaveBeenCalledExactlyOnceWith(21, '空剧本', '从空剧本开始');
 });
 
+test('流式生成先显示标题，再逐段回填正文，期间不自动保存', async () => {
+  await render({ initialScriptId: 21, initialTitle: '流式标题', initialContent: '', initialStreaming: true });
+  expect(field('剧本名称').value).toBe('流式标题');
+  expect(field('剧本名称').readOnly).toBe(true);
+  expect(field('剧本内容').readOnly).toBe(true);
+  expect(container.textContent).toContain('正在创作');
+
+  await render({ initialContent: '第一场\n' });
+  await render({ initialContent: '第一场\n老李：来了。' });
+  expect(field('剧本内容').value).toBe('第一场\n老李：来了。');
+  expect(mocks.update).not.toHaveBeenCalled();
+
+  await render({ initialContent: '第一场\n老李：来了。', initialStreaming: false });
+  expect(field('剧本内容').readOnly).toBe(false);
+  expect(document.querySelector('[role="status"]').textContent).toContain('已保存');
+  expect(mocks.update).not.toHaveBeenCalled();
+  await input('剧本内容', '第一场\n老李：来了。\n陈默：请坐。');
+  expect(await flush()).toBe(true);
+  expect(mocks.update).toHaveBeenCalledExactlyOnceWith(21, '流式标题', '第一场\n老李：来了。\n陈默：请坐。');
+});
+
 test('初始正文暂缺不代表空剧本，不得清空已显示的干净正文', async () => {
   fetch.mockResolvedValue({
     ok: true,
