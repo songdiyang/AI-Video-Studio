@@ -174,16 +174,18 @@ export async function bindScriptToProject(payload: {
 }
 
 /**
- * 删除剧本（复用 DELETE /api/scripts/:id 旧接口）
+ * 删除剧本（复用 DELETE /api/scripts/:id 旧接口）。
+ * 返回被级联删除的分镜数，供智能体据实回报影响面。
  */
-export async function deleteScript(scriptId: number): Promise<void> {
+export async function deleteScript(scriptId: number): Promise<{ deletedScenes: number }> {
   const res = await fetch(`/api/scripts/${scriptId}`, {
     method: 'DELETE',
   });
+  const data = await res.json().catch(() => null);
   if (!res.ok) {
-    const data = await res.json().catch(() => null);
     throw new Error(data?.message || '删除剧本失败');
   }
+  return { deletedScenes: Number(data?.deletedScenes) || 0 };
 }
 
 /**

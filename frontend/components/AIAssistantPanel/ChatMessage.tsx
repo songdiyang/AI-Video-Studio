@@ -3,6 +3,7 @@ import { Check, AlertTriangle, Brain, Star, TrendingUp, TrendingDown, Lightbulb,
 import MediaAttachment from './MediaAttachment';
 import TaskProgressCard from './TaskProgressCard';
 import { useLanguage } from '../../contexts/LanguageContext';
+import { IRREVERSIBLE_ACTIONS, NO_BUTTON_ACTIONS } from '../../services/agentActionCatalog';
 import type {
   AskCardData,
   ChatMessageData,
@@ -19,44 +20,9 @@ export type {
   TaskCardData,
 } from './types';
 
-const DESTRUCTIVE_ACTIONS: ReadonlySet<string> = new Set([
-  'delete_scene', 'update_scene', 'insert_scene',
-  'update_scene_dialogues', 'update_scene_characters_location',
-  'move_scene', 'reorder_scenes',
-  'delete_character', 'update_character',
-  'delete_location', 'update_location',
-  'delete_script', 'bind_script',
-  'update_project',
-  'restore_version',
-]);
-
-// 会自动执行的 action（这些不需要显示操作按钮）
-const AUTO_EXECUTE_ACTIONS: ReadonlySet<string> = new Set([
-  'auto_storyboard',
-  'generate_frame',
-  'generate_video',
-  'insert_scene',
-  'delete_scene',
-  'update_scene',
-  'update_scene_dialogues',
-  'update_scene_characters_location',
-  'move_scene',
-  'reorder_scenes',
-  'update_character',
-  'delete_character',
-  'update_location',
-  'delete_location',
-  'create_script',
-  'update_script',
-  'generate_script',
-  'bind_script',
-  'update_project',
-  'invite_member',
-  'switch_episode',
-  'create_next_episode',
-  'optimize_prompt',
-  'upload_material',
-]);
+// 动作清单与风险分级统一在 services/agentActionCatalog：气泡只按清单渲染。
+// 之前这里维护一份副本，结果删除类动作被隐藏了按钮却只在部分路径执行，
+// 邀请/下一集等没有实现的动作连按钮都不给，用户点了也毫无反馈。
 
 interface ChatMessageProps {
   message: ChatMessageData;
@@ -547,9 +513,9 @@ const ScriptAnalysisCard: React.FC<{
       {message.suggestions && message.suggestions.length > 0 && (
         <div className="flex gap-1.5 flex-wrap mt-0.5 justify-end">
           {message.suggestions
-            .filter((s) => !AUTO_EXECUTE_ACTIONS.has(s.action))
+            .filter((s) => !NO_BUTTON_ACTIONS.has(s.action))
             .map((s, idx) => {
-              const destructive = DESTRUCTIVE_ACTIONS.has(s.action);
+              const destructive = IRREVERSIBLE_ACTIONS.has(s.action);
               return (
                 <button
                   key={`${s.action}-${idx}`}

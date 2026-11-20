@@ -2,7 +2,7 @@
  * StoryBoard → AI 助手全局侧边栏 桥接
  * ──────────────────────────────────────────────────────────────
  * 原 AIAssistantPlugin 在工作台右侧内联渲染 AI 面板；
- * 现在 AI 助手统一为 Layout 层的全局右侧停靠侧边栏（AIAssistantDrawer），
+ * 现在 AI 助手统一为 Layout 层的全局右侧停靠侧边栏（AIAssistantSidePanel），
  * 本 Hook 负责把工作台的分镜数据 / 资源清单 / 动作处理器注册到
  * AIAssistantContext，供全局侧边栏消费。
  */
@@ -45,6 +45,47 @@ import {
   type MemoryScope,
   type MemoryImportance,
 } from '../../../../services/agentMemory';
+import { toErrorMessage } from '../../../../utils/errorMessage';
+import { actionOk, actionFail } from '../../../../services/agentActionOutcome';
+
+/**
+ * 读取工程真实分镜 id 清单；未选工程或回读失败时返回 null。
+ * 删除/插入后的核验都基于它，避免两个动作各自拼一份 fetch。
+ */
+async function readProjectSceneIds(projectId: unknown): Promise<number[] | null> {
+  const pid = Number(projectId);
+  if (!Number.isFinite(pid) || pid <= 0) return null;
+  try {
+    const res = await fetch(`/api/storyboards/project/${pid}`);
+    if (!res.ok) return null;
+    const data = await res.json().catch(() => null as any);
+    const list: any[] = Array.isArray(data?.scenes) ? data.scenes : [];
+    return list.map((s) => Number(s?.id)).filter((n) => Number.isFinite(n));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 删除分镜后的回读核验。
+ * DELETE 返回 2xx 不代表目标真的从工程文档消失：本地离线路由、并发写回
+ * 都可能造成「假成功」。skipped 表示无法核验（未选工程 / 本地临时分镜 /
+ * 回读失败），此时不判失败，只在回执里注明。
+ */
+async function verifySceneDeleted(projectId: unknown, sceneId: number) {
+  // 本地临时分镜（Date.now() 生成）从不进入工程文档，回读必然找不到，不能据此判失败
+  if (sceneId > 1_000_000_000) {
+    return { status: 'skipped' as const, sceneIds: null as number[] | null };
+  }
+  const sceneIds = await readProjectSceneIds(projectId);
+  if (!sceneIds) {
+    return { status: 'skipped' as const, sceneIds: null as number[] | null };
+  }
+  return {
+    status: sceneIds.includes(sceneId) ? ('still-there' as const) : ('removed' as const),
+    sceneIds,
+  };
+}
 
 export interface StoryboardAIAssistantBridgeParams {
   state: any;
@@ -235,38 +276,80 @@ export function useStoryboardAIAssistantBridge(params: StoryboardAIAssistantBrid
         return { sceneCount: splitCount ?? 0, dialogueNote: splitDialogueNote };
       });
     } else if (action === 'optimize_prompt' || action === 'upload_material') {
+      // 这两个动作只能在分镜卡片上由用户手动操作。返回失败回执而不是 undefined：
+      // 否则 agent 循环会把「没执行」当成「无凭证」，继续重复规划同一动作。
+      const msg = `「${action === 'optimize_prompt' ? '优化提示词' : '上传素材'}」只能在分镜卡片上手动操作，系统没有执行该动作`;
       showToast(`请在分镜卡片上手动${action === 'optimize_prompt' ? '触发提示词优化' : '上传素材'}`, 'info');
+      return actionFail(msg);
     }
     // 分镜 CRUD
     else if (action === 'insert_scene') {
       const atIndex = typeof actionParams?.atIndex === 'number' ? actionParams.atIndex : scenes.length;
-      sceneActions.insertScene(Math.max(0, Math.min(atIndex, scenes.length)))
-        .then(() => {
+      return Promise.resolve(sceneActions.insertScene(Math.max(0, Math.min(atIndex, scenes.length))))
+        .then(async () => {
+          // 插入后回读权威清单：给 agent 一个可核验的凭证，避免「插了但没人看见」的死循环
+          await Promise.resolve(sceneActions.refreshScenes?.()).catch(() => undefined);
+          const sceneIds = await readProjectSceneIds(state.currentProjectId);
+          const countNote = sceneIds ? `，工程内现有 ${sceneIds.length} 个分镜` : '（未做回读核验）';
           toastOk(`已在位置 ${atIndex + 1} 插入新分镜`);
-          // AI 驱动的新增走全局侧边栏树，乐观更新可能与服务端回写竞态导致列表不即时刷新；
-          // 完成后从服务端重新拉取权威列表，保证分镜列表及时同步。
-          sceneActions.refreshScenes?.();
+          return actionOk(`已在位置 ${atIndex + 1} 插入新分镜${countNote}`, {
+            atIndex,
+            sceneCount: sceneIds?.length,
+            verified: !!sceneIds,
+          });
         })
-        .catch(toastErr('插入失败'));
+        .catch((e: any) => {
+          const msg = toErrorMessage(e) || '插入分镜失败';
+          showToast(msg, 'error');
+          return actionFail(msg);
+        });
     } else if (action === 'delete_scene') {
       const sceneId = sceneIdFrom(actionParams);
-      if (!sceneId) { showToast('缺少 sceneId', 'warning'); return; }
-      sceneActions.deleteScene(sceneId)
-        .then(() => { toastOk('分镜已删除'); sceneActions.refreshScenes?.(); })
-        .catch(toastErr('删除失败'));
+      if (!sceneId) return actionFail('缺少 sceneId，未删除任何分镜');
+      return Promise.resolve(sceneActions.deleteScene(sceneId))
+        .then(async (ok: boolean) => {
+          if (ok === false) {
+            // 落到这里说明工程文档没写成功：不能回 success，否则模型会以为已删
+            const msg = `删除分镜 #${sceneId} 失败：工程文档未落盘，分镜列表未变更`;
+            showToast(msg, 'error');
+            return actionFail(msg);
+          }
+          // 先刷新权威列表，再回读工程文档确认目标 id 真的消失
+          await Promise.resolve(sceneActions.refreshScenes?.()).catch(() => undefined);
+          const check = await verifySceneDeleted(state.currentProjectId, sceneId);
+          if (check.status === 'still-there') {
+            const msg = `删除分镜 #${sceneId} 未生效：回读工程文档后该分镜仍然存在`;
+            showToast(msg, 'error');
+            return actionFail(msg);
+          }
+          const remainNote = check.sceneIds ? `，工程内现有 ${check.sceneIds.length} 个分镜` : '';
+          const skipNote = check.status === 'skipped' ? '（未做回读核验）' : '';
+          return actionOk(`已删除分镜 #${sceneId}${remainNote}${skipNote}`, {
+            sceneId,
+            removed: true,
+            remainingScenes: check.sceneIds?.length,
+            verified: check.status === 'removed',
+          });
+        })
+        .catch((e: any) => {
+          const msg = toErrorMessage(e) || '删除分镜失败';
+          showToast(msg, 'error');
+          return actionFail(msg);
+        });
     } else if (action === 'update_scene') {
       const sceneId = sceneIdFrom(actionParams);
       const field = String(actionParams?.field || '');
       const rawValue = actionParams?.value;
-      if (!sceneId || !field) { showToast('缺少 sceneId 或 field', 'warning'); return; }
+      if (!sceneId || !field) return actionFail('缺少 sceneId 或 field，未做任何修改');
+      let task: Promise<unknown>;
+      let label = field;
       if (field === 'voiceover') {
-        Promise.resolve(sceneActions.updateVoiceover(sceneId, String(rawValue ?? '')))
-          .then(() => toastOk('旁白已更新')).catch(toastErr('更新失败'));
+        task = Promise.resolve(sceneActions.updateVoiceover(sceneId, String(rawValue ?? '')));
       } else if (field === 'duration') {
         const d = Number(rawValue);
-        if (!Number.isFinite(d) || d <= 0) { showToast('duration 必须为正数秒', 'warning'); return; }
-        Promise.resolve(sceneActions.updateDuration(sceneId, d))
-          .then(() => toastOk(`时长已更新为 ${d}s`)).catch(toastErr('更新失败'));
+        if (!Number.isFinite(d) || d <= 0) return actionFail('duration 必须为正数秒，未做任何修改');
+        task = Promise.resolve(sceneActions.updateDuration(sceneId, d));
+        label = `时长 ${d}s`;
       } else {
         const fieldMap: Record<string, (id: number, v: string) => any> = {
           description: sceneActions.updateDescription,
@@ -276,10 +359,23 @@ export function useStoryboardAIAssistantBridge(params: StoryboardAIAssistantBrid
           video_prompt: sceneActions.updateVideoPrompt,
         };
         const fn = fieldMap[field];
-        if (!fn) { showToast(`不支持的字段: ${field}`, 'warning'); return; }
-        Promise.resolve(fn(sceneId, String(rawValue ?? '')))
-          .then(() => toastOk(`已更新 ${field}`)).catch(toastErr('更新失败'));
+        if (!fn) return actionFail(`不支持的字段 ${field}，未做任何修改`);
+        task = Promise.resolve(fn(sceneId, String(rawValue ?? '')));
       }
+      return task
+        .then((ok: any) => {
+          if (ok === false) {
+            const msg = `更新分镜 #${sceneId} 的 ${field} 失败：工程文档未落盘`;
+            showToast(msg, 'error');
+            return actionFail(msg);
+          }
+          return actionOk(`已更新分镜 #${sceneId} 的 ${label}`, { sceneId, field });
+        })
+        .catch((e: any) => {
+          const msg = toErrorMessage(e) || `更新分镜 #${sceneId} 的 ${field} 失败`;
+          showToast(msg, 'error');
+          return actionFail(msg);
+        });
     } else if (action === 'update_scene_dialogues') {
       const sceneId = sceneIdFrom(actionParams);
       if (!sceneId) { showToast('缺少 sceneId', 'warning'); return; }
@@ -294,28 +390,47 @@ export function useStoryboardAIAssistantBridge(params: StoryboardAIAssistantBrid
         Array.isArray(raw) ? { dialogues: raw } : { dialogue: String(raw ?? '') },
         cast,
       );
-      if (!lines.length) { showToast('没有可保存的台词', 'warning'); return { success: false, error: 'dialogues 为空或全是空行，未做任何修改' }; }
+      if (!lines.length) { showToast('没有可保存的台词', 'warning'); return actionFail('dialogues 为空或全是空行，未做任何修改'); }
       return Promise.resolve(sceneActions.updateDialogues(sceneId, lines as any)).then((ok: any) => {
         if (ok === false) {
           showToast('更新对白失败', 'error');
-          return { success: false, error: '更新对白失败' };
+          return actionFail('更新对白失败：工程文档未落盘');
         }
         toastOk('对白已更新');
         const notes: string[] = [`已按说话人拆成 ${lines.length} 行`];
         if (check.missing > 0) notes.push(`${check.missing} 行未识别出说话人，需用户确认`);
         if (check.unknown.length) notes.push(`${check.unknown.join('、')} 不在该镜头的出场角色里`);
         // 回报校验结论：否则 agent 会以为写进去了，实际台词归属仍有问题
-        return { success: true, lines: lines.length, dialogueNote: notes.join('；') };
+        return actionOk(`分镜 #${sceneId} 对白已更新：${notes.join('；')}`, {
+          sceneId,
+          lines: lines.length,
+          dialogueNote: notes.join('；'),
+        });
       });
     } else if (action === 'update_scene_characters_location') {
       const sceneId = sceneIdFrom(actionParams);
-      if (!sceneId) { showToast('缺少 sceneId', 'warning'); return; }
+      if (!sceneId) return actionFail('缺少 sceneId，未做任何修改');
       const characters: string[] = Array.isArray(actionParams?.characters) ? actionParams.characters.map(String) : [];
       const location: string = String(actionParams?.location || '');
       const characterIds: number[] | undefined = Array.isArray(actionParams?.characterIds) ? actionParams.characterIds.map(Number) : undefined;
       const locationId: number | undefined = actionParams?.locationId != null ? Number(actionParams.locationId) : undefined;
-      Promise.resolve(sceneActions.updateCharactersAndLocation(sceneId, characters, location, characterIds, locationId))
-        .then(() => toastOk('角色/影棚绑定已更新')).catch(toastErr('更新失败'));
+      return Promise.resolve(sceneActions.updateCharactersAndLocation(sceneId, characters, location, characterIds, locationId))
+        .then((ok: any) => {
+          if (ok === false) {
+            const msg = `更新分镜 #${sceneId} 的角色/影棚绑定失败：工程文档未落盘`;
+            showToast(msg, 'error');
+            return actionFail(msg);
+          }
+          return actionOk(
+            `分镜 #${sceneId} 角色/影棚绑定已更新：角色 ${characters.length ? characters.join('、') : '（已清空）'}，影棚 ${location || '（未指定）'}`,
+            { sceneId, characters, location },
+          );
+        })
+        .catch((e: any) => {
+          const msg = toErrorMessage(e) || '更新角色/影棚绑定失败';
+          showToast(msg, 'error');
+          return actionFail(msg);
+        });
     } else if (action === 'update_scene_props') {
       const sceneId = sceneIdFrom(actionParams);
       if (!sceneId) return { success: false, error: '缺少 sceneId' };
@@ -408,9 +523,9 @@ export function useStoryboardAIAssistantBridge(params: StoryboardAIAssistantBrid
           resourceActions.fetchProjectCharacters?.();
           notifyLibraryChanged('characters');
           return `已创建角色状态「${created.name}」（ID:${created.id}）。状态由白膜基础 + 服装 + 道具 + 状态属性组合而成。`;
-        } catch (e: any) {
-          showToast(e?.message || '创建角色状态失败', 'error');
-          return { success: false, error: e?.message || '创建角色状态失败' };
+        } catch (e) {
+          showToast(toErrorMessage(e) || '创建角色状态失败', 'error');
+          return { success: false, error: toErrorMessage(e) || '创建角色状态失败' };
         }
       })();
     } else if (action === 'update_character_state') {
@@ -435,9 +550,9 @@ export function useStoryboardAIAssistantBridge(params: StoryboardAIAssistantBrid
           resourceActions.fetchProjectCharacters?.();
           notifyLibraryChanged('characters');
           return `角色状态 #${sid} 已更新`;
-        } catch (e: any) {
-          showToast(e?.message || '更新角色状态失败', 'error');
-          return { success: false, error: e?.message || '更新角色状态失败' };
+        } catch (e) {
+          showToast(toErrorMessage(e) || '更新角色状态失败', 'error');
+          return { success: false, error: toErrorMessage(e) || '更新角色状态失败' };
         }
       })();
     } else if (action === 'delete_character') {
@@ -472,9 +587,9 @@ export function useStoryboardAIAssistantBridge(params: StoryboardAIAssistantBrid
           resourceActions.fetchProjectCharacters?.();
           notifyLibraryChanged('characters');
           return `已删除角色 #${cid} 的${label}${extra}`;
-        } catch (e: any) {
-          showToast(e?.message || '删除角色状态失败', 'error');
-          return { success: false, error: e?.message || '删除角色状态失败' };
+        } catch (e) {
+          showToast(toErrorMessage(e) || '删除角色状态失败', 'error');
+          return { success: false, error: toErrorMessage(e) || '删除角色状态失败' };
         }
       })();
     } else if (action === 'delete_base_model') {
@@ -501,9 +616,9 @@ export function useStoryboardAIAssistantBridge(params: StoryboardAIAssistantBrid
             : `已删除角色 #${cid} 的白膜${derived.length ? `；保留 ${derived.length} 个派生状态（将失去白膜参考），如需一并删除请设 cascade=true` : ''}`;
           toastOk(msg);
           return msg;
-        } catch (e: any) {
-          showToast(e?.message || '删除白膜失败', 'error');
-          return { success: false, error: e?.message || '删除白膜失败' };
+        } catch (e) {
+          showToast(toErrorMessage(e) || '删除白膜失败', 'error');
+          return { success: false, error: toErrorMessage(e) || '删除白膜失败' };
         }
       })();
     }
@@ -707,10 +822,34 @@ export function useStoryboardAIAssistantBridge(params: StoryboardAIAssistantBrid
         .catch((e: any) => ({ success: false, error: e?.message || '更新剧本正文失败' }));
     } else if (action === 'delete_script') {
       const id = Number(actionParams?.scriptId);
-      if (!id) { showToast('缺少 scriptId', 'warning'); return; }
-      deleteScriptApi(id)
-        .then(() => toastOk('剧本已删除'))
-        .catch(toastErr('删除剧本失败'));
+      if (!id) return actionFail('缺少 scriptId，未删除任何剧本');
+      const target = (Array.isArray(state.scripts) ? state.scripts : [])
+        .find((sc: any) => Number(sc.id) === id);
+      const title = target?.title || `#${id}`;
+      return deleteScriptApi(id)
+        .then((res) => {
+          const deletedScenes = Number(res?.deletedScenes) || 0;
+          const wasCurrent = Number(state.currentScriptId) === id;
+          // 删的正是当前参考集：必须解绑并清空正文，否则后续 update_script /
+          // auto_storyboard 仍指向已不存在的剧本。分镜列表由 currentScriptId
+          // 变化的副作用自动重载，这里不能同步调用 refreshScenes（闭包仍指向已删剧本）。
+          if (wasCurrent) {
+            setState('currentScriptId', null);
+            setState('scriptContent', '');
+            setState('scriptTitle', '');
+          }
+          window.dispatchEvent(new CustomEvent('reload-scripts', { detail: { projectId: state.currentProjectId } }));
+          const bound = wasCurrent ? '，已解绑当前参考剧本' : '';
+          return actionOk(
+            `已删除剧本「${title}」(#${id})及其 ${deletedScenes} 个分镜${bound}`,
+            { scriptId: id, deletedScenes, wasCurrent },
+          );
+        })
+        .catch((e: any) => {
+          const msg = toErrorMessage(e) || '删除剧本失败';
+          showToast(msg, 'error');
+          return actionFail(msg);
+        });
     } else if (action === 'generate_base_model') {
       const cid = Number(actionParams?.characterId);
       if (!cid) { showToast('缺少 characterId', 'warning'); return; }
@@ -743,9 +882,9 @@ export function useStoryboardAIAssistantBridge(params: StoryboardAIAssistantBrid
           const detail = plan.mode === 'partial' ? `只重做 ${plan.views.join('、')} 视图，其余视图保留` : '整套重做正/侧/背三视图';
           const failedNote = plan.failed && base?.generation_error ? `上一轮失败原因：${base.generation_error}。` : '';
           return `角色 #${cid} 的白膜状态 #${base?.id ?? '-'} ${plan.mode === 'first' ? '已建立并启动生成' : '已启动重生成'}：${detail}（任务 #${jobId || '-'}）。${failedNote}白膜三视图完成前不能创建派生状态；可用 get_task_status 查看进度。`;
-        } catch (e: any) {
-          showToast(e?.message || '白膜三视图生成失败', 'error');
-          return { success: false, error: e?.message || '白膜三视图生成失败' };
+        } catch (e) {
+          showToast(toErrorMessage(e) || '白膜三视图生成失败', 'error');
+          return { success: false, error: toErrorMessage(e) || '白膜三视图生成失败' };
         }
       })();
     } else if (action === 'generate_studio_nine_grid') {
@@ -1131,8 +1270,12 @@ export function useStoryboardAIAssistantBridge(params: StoryboardAIAssistantBrid
       });
     }
     else {
-      console.log('[AI Assistant] 未处理的 action:', action, actionParams);
-      showToast(`未识别的 action: ${action}`, 'warning');
+      // 未注册的动作必须明确失败：返回 undefined 会让 agent 循环把「没执行」
+      // 当成「无凭证」再回喂一轮，用户看到的仍是模型含糊的承诺。
+      console.warn('[AI Assistant] 未处理的 action:', action, actionParams);
+      const msg = `未识别的 action「${action}」：系统没有执行任何操作。请只使用提示词清单中的动作。`;
+      showToast(msg, 'warning');
+      return actionFail(msg);
     }
   };
 

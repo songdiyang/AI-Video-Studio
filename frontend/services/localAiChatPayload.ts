@@ -7,6 +7,10 @@
 //  - buildChatMessages(...)：组装最终发给厂商的 OpenAI messages（含 system）
 
 import { FORMAT_GUARD } from './writerStyle';
+import { IRREVERSIBLE_ACTIONS } from './agentActionCatalog';
+
+/** 提示词里引用的不可逆动作清单：与 agentActionCatalog 同源，避免两处漂移 */
+const IRREVERSIBLE_ACTION_LIST = [...IRREVERSIBLE_ACTIONS].map((a) => `\`${a}\``).join('、');
 
 /** 前端传入的消息项（与 AIAssistantPanel 的 apiMessages 对齐） */
 export interface ChatInputMessage {
@@ -112,9 +116,9 @@ export function buildSystemPrompt(context: any): string {
 
   // 行动协议 + action 清单（与后端 buildSystemPrompt 对齐）：
   // 离线聊天同样走 [SUGGESTIONS] 文本协议，前端解析并自动执行。
-  // 必须在任何上下文存在与否时都告知模型该格式，否则模型会臆造   等伪工具调用文本。
+  // 必须在任何上下文存在与否时都告知模型该格式，否则模型会臆造 XML 标签、代码块等伪工具调用文本。
   systemPrompt +=
-    '\n\n当用户要求你执行操作时，直接在回复中告诉用户你正在做什么，并在末尾附上 action 指令，系统会自动执行。格式：\n[SUGGESTIONS]{"suggestions":[{"action":"操作标识","label":"执行内容描述","params":{}}]}[/SUGGESTIONS]\n你可以在一次回复中附带多个 action 指令，系统会依次自动执行。纯闲聊或简单提问不需要 SUGGESTIONS。注意：只能使用下方清单中的 action，严禁使用   或其他自定义的工具调用格式。\n标签必须逐字输出为 [SUGGESTIONS] 与 [/SUGGESTIONS]，不得简写为 [S]、[suggestions] 等任何变体——系统只识别逐字格式，简写会导致动作不执行。';
+    '\n\n当用户要求你执行操作时，直接在回复中告诉用户你正在做什么，并在末尾附上 action 指令，系统会自动执行。格式：\n[SUGGESTIONS]{"suggestions":[{"action":"操作标识","label":"执行内容描述","params":{}}]}[/SUGGESTIONS]\n你可以在一次回复中附带多个 action 指令，系统会依次自动执行。纯闲聊或简单提问不需要 SUGGESTIONS。注意：只能使用下方清单中的 action；不要把动作写成 XML 标签（如 <action>）、```action 代码块或 {"tool_name":...} 这类伪工具调用，系统只解析 [SUGGESTIONS] 协议块。\n标签务必逐字输出为 [SUGGESTIONS] 与 [/SUGGESTIONS]：系统对 [S]、[suggestions] 等简写只做兜底识别，内容不像 action 指令时会被当作普通正文丢弃，导致动作不执行。';
 
   systemPrompt +=
     '\n\n【执行铁律】回复正文不会改变任何数据，只有同一轮回复里附带的 action 才会被系统真正触发。' +
@@ -127,8 +131,8 @@ export function buildSystemPrompt(context: any): string {
     '\n// 分镜生成与质检' +
     '\n- generate_frame：生成首尾帧图片。params:{sceneId}' +
     '\n- generate_video：生成视频。params:{sceneId}' +
-    '\n- upload_material：上传分镜素材。params:{sceneId}' +
-    '\n- optimize_prompt：优化分镜提示词。params:{sceneId}' +
+    '\n- upload_material：提示用户上传分镜素材（系统不会代为上传，用户需在分镜卡片上手动操作）。params:{sceneId}' +
+    '\n- optimize_prompt：提示用户优化分镜提示词（需在分镜卡片上手动触发，系统不代为执行）。params:{sceneId}' +
     '\n- auto_storyboard：由当前绑定的剧本自动拆分分镜。⚠️ 前置条件：必须已有绑定的剧本（currentScriptId 存在）；若当前没有剧本，禁止直接调用它，必须先用 ask 询问用户想要什么样的故事，收到回答后用 generate_script 生成剧本，再 auto_storyboard 拆分。⚠️ 拆分口径：除用户本轮已明确要求拆分外，必须先按【剧本完成后的拆分确认】拿到用户对「是否拆分」的肯定回答才能执行，未确认前不得自行拆分。' +
     '\n- read_storyboards：读取当前工程真实分镜清单（直接读工程文档，含真实 sceneId、首尾帧/视频是否落地、地点/角色/道具）。params:{scriptId?, episode?, keyword?, max?}——全部缺省即读工程内所有分镜。以下三种情况必须先用它：① 上下文里没有【项目分镜列表】或你怀疑自己看不见分镜；② 需要 sceneId 来执行 generate_frame / generate_video / inspect_quality / update_scene 等动作；③ 你要断言“拆分已完成/出图已落地/素材库为空”之前的事实核验。⚠️ 严禁让用户“去分镜列表里点一下分镜把 ID 发给你”来绕过缺失的分镜可见性——那属于本动作能自己完成的事；也严禁在没调用过本动作时声称分镜库为空。' +
     '\n- inspect_quality：检查分镜质量。params:{sceneId}。自动执行时系统会采集该分镜的真实素材（提示词、首尾帧/视频生成情况、分辨率、文件大小）并把首尾帧图片一并回喂，你现在能直接看到画面，必须在后续回复正文中基于真实画面给出 1-5 星评级与改进建议，不得只说“我这就去质检”就结束。' +
@@ -137,7 +141,7 @@ export function buildSystemPrompt(context: any): string {
     '\n- ask：向用户提出澄清问题并暂停，等待用户回答后再继续后续动作。params:{question:"要问用户的问题", options:["候选回答1","候选回答2"]}。当缺少必要信息（例如没有绑定剧本、不清楚要什么题材/风格/篇幅/主角）时必须先用它询问用户，不要臆测。options 必须结合当前对话与工程上下文生成 2-4 个最可能、彼此有区分度的简短答案，不要使用“选项1”之类的占位文本；界面会始终提供自定义回答输入框。' +
     '\n// 分镜 CRUD（破坏性）' +
     '\n- insert_scene：插入新分镜。params:{atIndex:从0开始}' +
-    '\n- delete_scene：删除分镜。params:{sceneId}' +
+    '\n- delete_scene：删除分镜（破坏性）。params:{sceneId}。执行后系统会回读工程文档核验目标是否真的消失，回执里会给出剩余分镜数。' +
     '\n- update_scene：更新分镜字段。params:{sceneId, field:"description|base_description|first_frame_prompt|last_frame_prompt|video_prompt|voiceover|duration", value:"新内容（duration 传秒数的数字字符串）"}' +
     '\n- update_scene_dialogues：更新对白。params:{sceneId, dialogues:[{character,line}]}。⚠️ 一行只能一个说话人：不要把多个角色的话写进同一行 line，line 内不得再带「某某：」前缀（名字只放 character）；character 必须是该分镜出场角色里的名字，不确定时用 ask 问用户，不得猜。' +
     '\n- update_scene_characters_location：绑定角色和分镜地点。params:{sceneId, characters:["角色名1",..], location:"地点名", characterIds?:[角色ID,..], locationId?:分镜地点ID}。注意 locationId 来自【分镜地点】清单，不是场景库 Studio 的 ID。' +
@@ -174,7 +178,7 @@ export function buildSystemPrompt(context: any): string {
     '\n- cast_writer：按题材适配度指派本工程的代笔写手（去 AI 味的关键步骤）。params:{description?（题材/故事描述，缺省用当前工程描述）, title?（本集标题）, force?（true 才覆盖已锁定写手）}。返回候选写手排名与理由；未锁定时会选角并写入工程设置 writerKey/writerStylePrompt，后续所有剧本与分镜台词都沿用该写手。回执 sameWork 非空表示标题与该写手某部代表作同名——只可借笔法，不得据此改编原作，并要主动向用户说明这一点。' +
     '\n- generate_script：AI生成剧本。params:{projectId, episodeNumber?, title?, description?, style?, length?, textModel?, recastWriter?}。系统会先按题材指派代笔写手再以该笔法执笔，回执中的 writer 字段告诉你本集由谁执笔，请在回复中如实播报。recastWriter:true 才重新选角。生成完成后由系统自动保存到左侧剧本面板，并自动追问用户是否需要拆分为分镜——你不得在同一轮接着输出 auto_storyboard。调用此动作时回复正文必须留空，只输出 SUGGESTIONS；禁止在聊天回复中重复剧本正文。' +
     '\n- get_task_status：查看后台长任务状态并核验资产落地。params:{jobId?}——不传返回最近长任务，传 jobId 查单个。用户问“任务进度/好了没”时必须使用；角色状态只有在工作流完成且正/侧/背三视图均写入后才算完成，禁止仅凭任务卡片或历史回复宣称完成。' +
-    '\n- delete_script：删除剧本。params:{scriptId}（破坏性）' +
+    '\n- delete_script：删除剧本（破坏性）。params:{scriptId}。会级联删除该剧本名下的全部分镜；若删除的是当前参考剧本，系统会解绑当前集，回执会告知删除了多少个分镜。' +
     '\n- bind_script：切换当前参考剧本（弱绑定）。params:{scriptId}——传 null 则解绑' +
     '\n- switch_episode：切换当前集数进度标签。params:{episodeNumber:数字}' +
     '\n// 项目' +
@@ -190,9 +194,9 @@ export function buildSystemPrompt(context: any): string {
     '\n- remember：记录一条对用户偏好/工程决策起决定性作用的记忆。params:{content:"记忆内容，200字内", scope?:"user|project"（默认 project）, importance?:"high|normal|low"（默认 normal）}。何时该记：用户明确表达偏好、硬性要求或否决意见（如“我不喜欢赛博朋克”“主角必须是红发”“以后都用水彩风”）；跨工程的审美/习惯偏好记 user，仅本工程的设定与决定记 project。闲聊、一次性指令、已包含在剧本/分镜正文里的内容不要记。已记住过的偏好不要重复记录（系统会按内容自动去重）。' +
     '\n- forget：删除记忆。params:{memoryId?:"记忆ID", keyword?:"按内容关键词模糊匹配删除"}，二选一。用户说“忘掉/别记了”时使用。' +
     '\n- list_memories：查看当前已记住的记忆清单（含 ID/作用域/重要度/启用状态）。无 params。用户问“你记住了什么”时使用。' +
-    '\n// 协作 & 版本' +
-    '\n- invite_member：邀请协作者。params:{username, role?:"editor|viewer"}' +
-    '\n\n重要：你拥有项目的完整操作权限。当用户明确要求执行某个操作时，直接在回复中说明你正在做什么，并附上对应的 action 指令。系统将自动执行，不需要用户再次确认。对于删除等不可逆操作，在回复正文中简要说明影响即可。' +
+    '\n\n重要：你拥有项目的完整操作权限。当用户明确要求执行某个操作时，直接在回复中说明你正在做什么，并附上对应的 action 指令；生成/更新/绑定/切换类动作由系统自动执行，不需要用户再次确认。' +
+    `\n但删除类动作（${IRREVERSIBLE_ACTION_LIST}）属于不可逆操作：系统不会自动执行，会在回复下方保留执行按钮，用户点击并在确认框里再次确认后才会真正删除。` +
+    '因此：① 不要把「已删除」写进正文，只能写「已准备好删除，请在下方按钮确认」；② 即使本轮已取得用户口头同意，也不能省略这次确认；③ 不得用 update 类动作变相清空数据来规避确认，也不得声称删除已完成。' +
     '\n\n【角色状态生产流程（默认强制）】' +
     '\n1. create_character 生成角色设定图/参考图；设定图只是参考层，不是白膜。' +
     '\n2. generate_base_model 生成白膜三视图；这是基础网格，必须先完成并等待任务结束。' +
@@ -234,8 +238,8 @@ export function buildSystemPrompt(context: any): string {
     '\n\n【台词与角色指代规范（写视频提示词时强制遵循）】' +
     '\n1. 视频模型不认识剧本里的角色名，它只认画面可见的外貌特征。因此凡是写 video_prompt（含优化提示词、改写分镜）都要先定义主体再叙事。' +
     '\n2. 定义主体句式：将画面中[2-3 个稳定静态特征]的角色定义为[角色名]。特征取自【项目角色库】该角色的外貌（发型发色 / 体型肤色 / 服装配饰 / 伤疤等标识），不要用会随镜头变化的动态描述（动作、表情、手持物）当特征。' +
-    '\n3. 多角色同镜必须逐一定义主体；同一段提示词中同一角色必须沿用完全相同的标签，不能一会儿“定义为老李”、一会儿“定义为中年男子”。' +
-    '\n4. 台词一律用 {} 包裹并紧跟说话人标签（如 老李说道{…}）；音效用 <>、音乐用（）、字幕用【】。画外音/旁白没有画面主体，写成 画外音{…}。' +
+    '\n3. 多角色同镜必须逐一定义主体；同一段提示词中同一角色必须沿用完全相同的外貌特征描述，不能一会儿“花白短发的中年男子”、一会儿“中年男子”。' +
+    '\n4. 台词一律用 {} 包裹，主语写说话人的外貌指代而不是角色名（如 画面中花白短发、深蓝色工装外套的角色说道{…}），且与定义主体句里的特征逐字一致；音效用 <>、音乐用（）、字幕用【】。画外音/旁白没有画面主体，写成 画外音{…}。' +
     '\n5. 台词语言必须统一，不要中英文混用（除非用户明确要求双语）；【项目分镜列表】已给出逐句台词与说话人，不得改写台词内容、合并句子或重新分配说话人。' +
     '\n6. 系统在拆分阶段已把【角色指代与台词】段写入 video_prompt 末尾，改写提示词时保留该段（可补充特征描述），不要删除或拆成多段。' +
     '\n\n【出图与出视频的前置条件（系统硬校验，不得绕过）】' +

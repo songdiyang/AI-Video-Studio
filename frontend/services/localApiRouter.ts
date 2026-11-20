@@ -36,6 +36,7 @@ import { routeMisc } from './localMisc';
 import { routeRest } from './localRest';
 import { routeResourceLibrary } from './localResourceLibrary';
 import { routeLocalMail } from './localMail';
+import { toErrorMessage } from '../utils/errorMessage';
 
 // ==================== 本地数据模型 ====================
 
@@ -372,13 +373,24 @@ async function handleScriptUpdate(idStr: string, body: any): Promise<Response> {
 async function handleScriptDelete(idStr: string): Promise<Response> {
   const path = await pathFor(null);
   if (!path) return jsonResponse({ message: '未打开本地工程' }, 400);
-  const doc = await loadScripts(path);
   const id = Number(idStr);
+  if (!Number.isFinite(id) || id <= 0) return jsonResponse({ message: '剧本 ID 非法' }, 400);
+  const doc = await loadScripts(path);
   const target = doc.scripts.find((s) => s.id === id);
   if (target && !assertProject(target, path)) return jsonResponse({ message: '剧本不存在' }, 404);
   doc.scripts = doc.scripts.filter((s) => s.id !== id);
   saveScripts(path, doc);
-  return okJson({ message: 'deleted' });
+
+  // 级联删除该剧本作用域下的分镜：只删剧本会留下无法再从 UI 访问的孤儿分镜，
+  // 后续 auto_storyboard 还会把它们当成“已有分镜”跳过。
+  const boards = await loadStoryboards(path);
+  const scope = scopeForScript(id);
+  const before = boards.scenes.length;
+  boards.scenes = boards.scenes.filter((s) => s._scope !== scope);
+  const deletedScenes = before - boards.scenes.length;
+  if (deletedScenes > 0) saveStoryboards(path, boards);
+
+  return okJson({ message: 'deleted', deletedScenes });
 }
 
 // ==================== 道具路由（本地 CRUD）====================
@@ -449,6 +461,19 @@ async function route(url: URL, method: string, body: any): Promise<Response | nu
   const pathname = url.pathname;
   const m = method.toUpperCase();
   let mt: RegExpMatchArray | null;
+
+  // ---- 健康检查 ----
+  // 纯本地运行：本地存储可用即视为健康，供 Layout 状态栏的真实连通性指示使用。
+  if (pathname === '/api/health' && m === 'GET') {
+    let storageOk = true;
+    try {
+      localStorage.setItem('__health_probe__', '1');
+      localStorage.removeItem('__health_probe__');
+    } catch {
+      storageOk = false;
+    }
+    return jsonResponse({ status: storageOk ? 'ok' : 'degraded', storage: storageOk }, storageOk ? 200 : 503);
+  }
 
   // ---- 分镜 ----
   // 自动拆分分镜 / 重生成前清理（本地直连厂商模型，同步落库后返回可轮询的完成态 jobId）
@@ -745,9 +770,9 @@ async function routeToResponse(rawUrl: string, method: string, body: any): Promi
     if (res) return res;
     console.warn('[localRouter] 未处理的本地请求，返回空响应：', method, parsed.pathname);
     return jsonResponse({ success: true, data: null, items: [], results: [], count: 0, total: 0, path: parsed.pathname });
-  } catch (err: any) {
+  } catch (err) {
     console.error('[localRouter] 处理失败', parsed.pathname, err);
-    return jsonResponse({ success: false, error: err?.message || '本地处理失败' }, 500);
+    return jsonResponse({ success: false, error: toErrorMessage(err) || '本地处理失败' }, 500);
   }
 }
 
@@ -781,8 +806,8 @@ function installXhrRouter(): void {
       try {
         const body = await buildRequestBody(payload);
         response = await routeToResponse(self.__localApi.url, self.__localApi.method, body);
-      } catch (err: any) {
-        response = jsonResponse({ message: err?.message || '上传失败' }, 500);
+      } catch (err) {
+        response = jsonResponse({ message: toErrorMessage(err) || '上传失败' }, 500);
       }
       let text = '';
       try { text = await response.clone().text(); } catch { text = ''; }

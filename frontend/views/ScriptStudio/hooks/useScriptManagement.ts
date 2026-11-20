@@ -5,7 +5,9 @@
 
 import { useState } from 'react';
 import { startWorkflow } from '../../../hooks/useWorkflow';
+import { deleteScript as deleteScriptApi } from '../../../services/scripts';
 import type { SplitEpisode } from '../ScriptSplitPreview';
+import { toErrorMessage } from '../../../utils/errorMessage';
 
 export interface Script {
   id: number;
@@ -117,13 +119,10 @@ export function useScriptManagement(options: UseScriptManagementOptions = {}) {
     }
   };
 
-  // 删除某集（分镜+剧本+返回孤立资源）
-  interface OrphanResource { id: number; name: string; image_url?: string; }
+  // 删除某集（剧本 + 其名下分镜）
   interface DeleteEpisodeResult {
     success: boolean;
     message: string;
-    orphanCharacters?: OrphanResource[];
-    orphanScenes?: OrphanResource[];
   }
 
   const handleDeleteScript = async (): Promise<DeleteEpisodeResult> => {
@@ -131,27 +130,19 @@ export function useScriptManagement(options: UseScriptManagementOptions = {}) {
 
     try {
       setLoading(true);
-      const res = await fetch(`/api/scripts/${scriptId}/episode`, {
-        method: 'DELETE',
-      });
-
-      const data = await res.json();
-      if (res.ok) {
-        setScriptId(null);
-        setTitle('');
-        setContent('');
-        return {
-          success: true,
-          message: '',
-          orphanCharacters: data.orphanCharacters || [],
-          orphanScenes: data.orphanScenes || []
-        };
-      } else {
-        return { success: false, message: '' };
-      }
+      // 与 AI 桥接层同一条接口：DELETE /api/scripts/:id 会级联删除该剧本名下的分镜。
+      // 旧代码请求的 /api/scripts/:id/episode 端点从未实现，删除必然失败。
+      const { deletedScenes } = await deleteScriptApi(scriptId);
+      setScriptId(null);
+      setTitle('');
+      setContent('');
+      return {
+        success: true,
+        message: deletedScenes ? `已删除剧本及其 ${deletedScenes} 个分镜` : '已删除剧本',
+      };
     } catch (error: any) {
       console.error('删除剧本失败:', error);
-      return { success: false, message: '删除剧本失败，请稍后重试' };
+      return { success: false, message: toErrorMessage(error) || '删除剧本失败，请稍后重试' };
     } finally {
       setLoading(false);
     }
@@ -318,16 +309,16 @@ export function useScriptManagement(options: UseScriptManagementOptions = {}) {
             onError?.(errMsg);
             return null;
           }
-        } catch (pollErr: any) {
-          console.warn('[useScriptManagement] 轮询拆集结果失败:', pollErr.message);
+        } catch (pollErr) {
+          console.warn('[useScriptManagement] 轮询拆集结果失败:', toErrorMessage(pollErr));
         }
       }
 
       onError?.('拆集超时，请重试');
       return null;
-    } catch (error: any) {
+    } catch (error) {
       console.error('[useScriptManagement] 拆集失败:', error);
-      onError?.(error.message || '拆集失败');
+      onError?.(toErrorMessage(error) || '拆集失败');
       return null;
     } finally {
       setLoading(false);
@@ -376,9 +367,9 @@ export function useScriptManagement(options: UseScriptManagementOptions = {}) {
         onError?.('创建剧本失败');
         return false;
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error('[useScriptManagement] 批量创建失败:', error);
-      onError?.(error.message || '批量创建失败');
+      onError?.(toErrorMessage(error) || '批量创建失败');
       return false;
     } finally {
       setLoading(false);

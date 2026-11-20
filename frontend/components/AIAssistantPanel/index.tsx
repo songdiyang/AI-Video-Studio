@@ -1,12 +1,12 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Sparkles, X, Send, Paperclip, ImagePlus, Trash2, Wand2, FileText, Settings, Image as ImageIcon, Loader2, History, Plus, Edit3, Check, ChevronDown, MessageSquare, Video, Star, MessageCircle, ClipboardList, Brain, Shrink } from 'lucide-react';
+import { Sparkles, X, Send, Paperclip, ImagePlus, Wand2, FileText, Settings, Image as ImageIcon, Loader2, History, Plus, Edit3, Check, ChevronDown, Video, Star, MessageCircle, ClipboardList, Brain, Shrink } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
-import ChatMessageComponent, { AskCardData, ChatMessageData, ChatMessageStep, TaskCardData } from './ChatMessage';
+import { useConfirm } from '../../contexts/ConfirmContext';
+import ChatMessageComponent, { AskCardData, ChatMessageData, ChatMessageStep, ChatMessageSuggestion, TaskCardData } from './ChatMessage';
 import MediaAttachment from './MediaAttachment';
 import { ask as createAskCard } from '../../services/agentAsk';
 import { parseSuggestions } from '../../services/localAiChatPayload';
-import { normalizeSceneDialogues } from '../../services/sceneDialogues';
 import MemoryPanel from './MemoryPanel';
 import { isLongTaskCapable } from '../../services/aiAssistant';
 import { getWorkflowStatus } from '../../hooks/useWorkflow';
@@ -18,353 +18,36 @@ import { probeMediaBatch, formatBytes, formatResolution, toVisionImageUrls } fro
 import { SCRIPT_ANALYSIS_EVENT, consumePendingScriptAnalysis, type ScriptAnalysisRequest } from '../../services/scriptAnalysisBridge';
 import { pushInternalMail } from '../../services/localMail';
 import { chatStorageKey, activeSessionStorageKey, openTabsStorageKey } from './scopeStorage';
+import { getViewportSize } from '../../utils/runtimeMode';
+import { toErrorMessage } from '../../utils/errorMessage';
 
-// ─── Types ──────────────────────────────────────────────────────────
-interface Attachment {
-  type: 'image' | 'video' | 'file' | 'script';
-  url: string;
-  name?: string;
-  /** 剧本附件的文本内容（AI 上下文用） */
-  textContent?: string;
-}
-
-// ─── Helper Functions ───────────────────────────────────────────────
-/**
- * 需要转 data URL 的图片附件：工程内的图片是 asset 协议 URL（仅本机能访问），
- * blob: 同理；而 file:// 前缀是已上传到厂商的文件句柄、data: 已是内联，保持原样。
- */
-function needsVisionHydrate(a: { type: string; url?: string }): boolean {
-  return a.type === 'image' && !!a.url && !/^data:/i.test(a.url) && !/^file:\/\//i.test(a.url);
-}
-
-/** 将 blob URL 转换为 base64 data URL */
-async function blobUrlToBase64(blobUrl: string): Promise<string> {
-  try {
-    const response = await fetch(blobUrl);
-    const blob = await response.blob();
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
-  } catch (error) {
-    console.error('Failed to convert blob URL to base64:', error);
-    return blobUrl; // 失败时返回原始 URL
-  }
-}
-
-/** 检查 URL 是否为 blob URL */
-function isBlobUrl(url: string): boolean {
-  return url.startsWith('blob:');
-}
-
-/** 注入给智能体的分镜清单项（与 AIAssistantSceneSummary / buildSystemPrompt 消费字段对齐） */
-type AISceneSummary = NonNullable<AIAssistantPanelProps['scenes']>[number] & {
-  props?: string[];
-  characters?: string[];
-  location?: string;
-  scope?: string;
-  /** 画外音/旁白（无说话人），视频模型需要与台词分开表述 */
-  voiceover?: string;
-};
-
-/** 变量槽里的名称数组（角色/道具可能存字符串或对象） */
-function toNameList(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((v: any) => String(typeof v === 'string' ? v : (v?.name ?? '')).trim())
-    .filter(Boolean);
-}
-
-/**
- * 本地分镜文档条目（LocalScene 形状）→ 智能体用的分镜清单项。
- * 与 useSceneManager.mapStoryboardItems 取同一批字段，保证「工作台看到的」与「智能体看到的」一致。
- */
-function toAIScene(raw: any, position: number): AISceneSummary {
-  const vars = (raw?.variables && typeof raw.variables === 'object') ? raw.variables : {};
-  const cast = toNameList(vars.characters);
-  // 台词走与拆分阶段同一套校验：旧工程里常有一行混多个「名字：」的脏数据，
-  // 直接会给智能体造成「谁说了哪句」歧义，导致视频提示词里台词归属错人。
-  const { lines } = normalizeSceneDialogues(
-    { dialogues: Array.isArray(vars.dialogues) ? vars.dialogues : undefined, dialogue: vars.dialogue },
-    cast,
-  );
-  return {
-    id: Number(raw?.id),
-    index: Number.isFinite(raw?.index) ? Number(raw.index) : position + 1,
-    description: String(raw?.prompt_template || raw?.description || '').trim(),
-    first_frame_url: raw?.first_frame_url || undefined,
-    last_frame_url: raw?.last_frame_url || undefined,
-    video_url: raw?.video_url || undefined,
-    first_frame_prompt: raw?.first_frame_prompt || undefined,
-    last_frame_prompt: raw?.last_frame_prompt || undefined,
-    video_prompt: raw?.video_prompt || undefined,
-    props: toNameList(vars.props),
-    characters: cast,
-    dialogues: lines.map((l) => ({ character: l.character, line: l.line })),
-    voiceover: typeof vars.voiceover === 'string' && vars.voiceover.trim() ? vars.voiceover.trim() : undefined,
-    location: typeof vars.location === 'string' ? vars.location : undefined,
-    scope: typeof raw?._scope === 'string' ? raw._scope : undefined,
-  };
-}
-
-/** 从工程文档读取全部分镜（跨剧本/自由分镜 scope），不依赖分镜工作台是否挂载 */
-async function fetchProjectScenes(projectId: number): Promise<AISceneSummary[]> {
-  try {
-    const res = await fetch(`/api/storyboards/project/${projectId}`);
-    if (!res.ok) return [];
-    const data = await res.json().catch(() => null);
-    const list: any[] = Array.isArray(data?.scenes) ? data.scenes : [];
-    return list.map((raw, i) => toAIScene(raw, i));
-  } catch {
-    return [];
-  }
-}
-
-/** 把分镜清单渲染成给模型看的文本（含真实 ID 与素材落地标记） */
-function renderScenesForAgent(list: AISceneSummary[], max = 80): string {
-  const lines = list.slice(0, max).map((s) => {
-    const flags: string[] = [];
-    if (s.first_frame_url) flags.push('首帧✓');
-    if (s.last_frame_url) flags.push('尾帧✓');
-    if (s.video_url) flags.push('视频✓');
-    const meta: string[] = [];
-    if (s.location) meta.push(`地点:${s.location}`);
-    if (s.characters?.length) meta.push(`角色:${s.characters.join('、')}`);
-    if (s.props?.length) meta.push(`道具:${s.props.join('、')}`);
-    const desc = (s.description || '').replace(/\s+/g, ' ').slice(0, 60);
-    // 逐句台词带说话人：智能体需要靠它把台词绑到对应角色的外貌特征上
-    const speech: string[] = (s.dialogues || [])
-      .map((d) => (d.character ? `${d.character}{${d.line}}` : `{${d.line}}`))
-      .filter((t) => t.includes('{'));
-    if (s.voiceover) speech.push(`画外音{${s.voiceover}}`);
-    const tail = speech.length ? ` 台词：${speech.join('，')}` : '';
-    return `- #${s.index}(ID:${s.id}) [${flags.length ? flags.join(' ') : '未出图'}]${meta.length ? ` ${meta.join(' ')}` : ''} ${desc}${tail}`;
-  });
-  const rest = list.length > max ? `\n[…仅列出前 ${max} 个，共 ${list.length} 个分镜…]` : '';
-  return `${lines.join('\n')}${rest}`;
-}
-
-/**
- * 变更类动词：用户要求系统改变工程状态（而非只是提问/咨询）。
- * 用于判定“智能体声称要做事但本轮没触发任何 action”——这类空承诺必须做真实状态核验。
- */
-const TASK_VERB_PATTERN = /(拆分|拆解|分成|分为|生成|创建|新建|建一|建个|写入|保存|存进|更新|修改|改成|改为|改一下|优化|质检|检查|重跑|重新生成|出图|首帧|尾帧|首尾帧|绑定|删除|整理|批量|导入|导出|补齐|做一个|做一下|来一个|来一段|写一个|写个|写下|写入)/;
-
-/** 用户这句话是不是“要执行”而不是“要信息” */
-function isTaskRequest(text: string): boolean {
-  const t = (text || '').trim();
-  if (!t) return false;
-  // 疑问句不是执行指令（“这个分镜怎么写更好？”）
-  if (/[?？]\s*$/.test(t)) return false;
-  if (/^(怎么|怎样|如何|为什么|为何|是什么|哪些|哪个|能否|能不能|可不可以|是否|有没有)/.test(t)) return false;
-  return TASK_VERB_PATTERN.test(t);
-}
-
-/** 读取工程当前真实落地状态（分镜数/素材数/剧本数），作为“动作是否真的发生”的客观依据 */
-async function verifyProjectState(projectId: number | null): Promise<string> {
-  if (!projectId) return '- 当前没有打开的工程，任何写操作都无法落地。';
-  const scripts = await (async () => {
-    try {
-      const res = await fetch(`/api/scripts/project/${projectId}`);
-      if (!res.ok) return null;
-      const data = await res.json().catch(() => null);
-      return Array.isArray(data?.scripts) ? (data.scripts as any[]) : null;
-    } catch {
-      return null;
-    }
-  })();
-  const sceneList = await fetchProjectScenes(projectId);
-  const lines = [
-    `- 分镜：${sceneList.length} 个${sceneList.length
-      ? `（ID：${sceneList.slice(0, 12).map((s) => s.id).join('、')}${sceneList.length > 12 ? '…' : ''}）`
-      : ''}`,
-    `- 已出首帧：${sceneList.filter((s) => s.first_frame_url).length} 个；已出尾帧：${sceneList.filter((s) => s.last_frame_url).length} 个；已出视频：${sceneList.filter((s) => s.video_url).length} 个`,
-  ];
-  if (scripts) {
-    lines.push(`- 剧本：${scripts.length} 个，其中 ${scripts.filter((s) => String(s?.content || '').trim()).length} 个有正文`);
-  }
-  return lines.join('\n');
-}
-
-/**
- * 单轮（非 agent 循环）路径兜底：用户要求执行、模型只回了一段承诺却没给任何 action 时，
- * 在回复上标注客观事实，避免“我这就去拆分”看起来像已经干了。无法在此补回执行，所以不假装成功。
- */
-function annotateUnexecutedIntent(userText: string, reply: string, suggestions: any[]): string {
-  if (suggestions.length > 0) return reply;
-  if (!isTaskRequest(userText)) return reply;
-  const body = reply.trim();
-  return `${body ? `${body}\n\n` : ''}（系统核验：本轮没有触发任何工具动作，上述操作尚未执行。请重试并要求直接执行。）`;
-}
-
-export interface AIAssistantPanelProps {
-  projectId: number | null;
-  /** 项目名称，注入系统提示词供 AI 理解上下文 */
-  projectName?: string | null;
-  /** 项目描述，注入系统提示词 */
-  projectDescription?: string | null;
-  currentFrame?: {
-    id: number;
-    index?: number;
-    first_frame_url?: string;
-    last_frame_url?: string;
-    video_url?: string;
-    scene_description?: string;
-    /** 提示词信息 */
-    first_frame_prompt?: string;
-    last_frame_prompt?: string;
-    video_prompt?: string;
-  } | null;
-  /** 项目中所有分镜清单（AI 用来识别"第几个分镜"、质检降级、上下文推理） */
-  scenes?: {
-    id: number;
-    index: number;
-    description?: string;
-    first_frame_url?: string;
-    last_frame_url?: string;
-    video_url?: string;
-    first_frame_prompt?: string;
-    last_frame_prompt?: string;
-    video_prompt?: string;
-    /** 一行一个说话人的台词（与 AIAssistantSceneSummary.dialogues 对齐） */
-    dialogues?: { character: string; line: string }[];
-  }[];
-  /** 项目角色库清单（含外貌/当前造型，AI 可基于此推理 action 参数） */
-  characters?: {
-    id: number;
-    name: string;
-    description?: string;
-    appearance?: string;
-    base_appearance?: string;
-    outfit_appearance?: string;
-    active_state_name?: string;
-    active_state_outfit?: string;
-    states_count?: number;
-    has_base_model_views?: boolean;
-    image_url?: string;
-  }[];
-  /** 项目场景清单 */
-  locations?: { id: number; name: string; description?: string }[];
-  /** 项目场景库（资源面板中的 Studio，与环境/建筑关联） */
-  studios?: {
-    id: number;
-    name: string;
-    description?: string;
-    environment_name?: string;
-    building_names?: string[];
-    cover_image_url?: string;
-    scene_count?: number;
-    element_count?: number;
-    nine_grid_image_url?: string;
-  }[];
-  /** 项目道具库清单（资源面板「道具」页） */
-  props?: { id: number; name: string; description?: string; category?: string; image_url?: string }[];
-  /** 项目剧本清单（含内容） */
-  scripts?: { id: number; episode_number: number; title?: string; content?: string }[];
-  onClose: () => void;
-  /**
-   * 工作台动作桥接：第三参 onProgress 回报子步骤，返回值是动作的执行结果
-   * （后台任务返回 { jobId }、离线分镜拆分返回 { sceneCount }），进度卡片依赖它挂载。
-   */
-  onAction?: (action: string, params: any, onProgress?: (label: string) => void) => unknown;
-}
-
-// ─── Welcome message ────────────────────────────────────────────────
-const getWelcomeMessage = (hasProject: boolean): ChatMessageData => ({
-  id: 'welcome',
-  role: 'assistant',
-  content: hasProject
-    ? '你好！我是AI助手，可以帮你分析图片、视频和文档内容。你可以发送当前分镜帧让我进行分析，或者直接提问。'
-    : '你好！我是AI助手，可以帮你从零开始创作。试试说"帮我创建一个关于仙侠爱情的项目"，我会为你创建项目并规划后续创作步骤。',
-  timestamp: Date.now(),
-});
-
-// ─── Token 估算（用于按 token 预算裁剪对话上下文）─────────────────
-function estimateTokens(text: string): number {
-  if (!text) return 0;
-  let cjk = 0;
-  for (const ch of text) {
-    if (/[\u3400-\u4DBF\u4E00-\u9FFF\u3040-\u30FF\uAC00-\uD7AF\u3000-\u303F\uFF00-\uFFEF]/.test(ch)) cjk++;
-  }
-  const other = text.length - cjk;
-  return Math.ceil(cjk + other / 4);
-}
-function estimateMessageTokens(m: { content?: string; attachments?: any[] }): number {
-  let t = estimateTokens(m.content || '') + 4;
-  if (m.attachments?.length) t += m.attachments.length * 512;
-  return t;
-}
-
-// 上下文窗口候选（token 预算，0=不限）
-const CONTEXT_WINDOW_OPTIONS = [2048, 4096, 8192, 16384, 0];
-
-// 标签栏最多同时打开的会话数
-const MAX_OPEN_TABS = 5;
-
-// 资源库动作：执行结果直接追加到对话中，替代全局成功 toast
-const INLINE_RESULT_ACTIONS = new Set([
-  'create_character', 'update_character', 'delete_character',
-  'create_studio', 'update_studio', 'delete_studio',
-  'create_location', 'update_location', 'delete_location',
-]);
-
-/**
- * 步骤跟踪器：编码智能体风格的「边执行边刷新 + 完成后折叠」。
- * 维护内部步骤列表，每次变更把整份列表补丁到同一条助手消息上；
- * 消息渲染层在全部步骤结束后自动折叠为摘要。
- */
-function createStepTracker(
-  sid: number | null,
-  msgId: string,
-  update: (targetSid: number | null, updater: (prev: ChatMessageData[]) => ChatMessageData[]) => void,
-) {
-  const steps: ChatMessageStep[] = [];
-  let seq = 0;
-  const patch = (content?: string, running?: boolean) => {
-    const snapshot = steps.map((s) => ({ ...s }));
-    update(sid, (prev) => prev.map((m) => (m.id === msgId ? {
-      ...m,
-      ...(content !== undefined ? { content } : {}),
-      ...(running !== undefined ? { running } : {}),
-      steps: snapshot,
-    } : m)));
-  };
-  return {
-    /** 把上一个进行中步骤标为完成，追加新步骤并开始计时 */
-    start(title: string): number {
-      const prevRunning = steps.find((s) => s.status === 'running');
-      if (prevRunning) { prevRunning.status = 'completed'; prevRunning.endedAt = Date.now(); }
-      steps.push({ id: `st-${++seq}`, title, status: 'running', startedAt: Date.now() });
-      patch();
-      return seq - 1;
-    },
-    /** 仅刷新当前进行中步骤的文案（detail / 标题） */
-    touch(detail: string): void {
-      const cur = [...steps].reverse().find((s) => s.status === 'running');
-      if (cur) cur.detail = detail;
-      patch();
-    },
-    /** 完成当前（或指定标题的进行中）步骤 */
-    complete(detail?: string): void {
-      const cur = [...steps].reverse().find((s) => s.status === 'running');
-      if (cur) { cur.status = 'completed'; cur.endedAt = Date.now(); if (detail) cur.detail = detail; }
-      patch();
-    },
-    /** 当前步骤失败（或按标题匹配），并停止 running 标志 */
-    fail(detail?: string): void {
-      const cur = [...steps].reverse().find((s) => s.status === 'running');
-      if (cur) { cur.status = 'failed'; cur.endedAt = Date.now(); if (detail) cur.detail = detail; }
-      patch(undefined, false);
-    },
-    /** 收尾：所有进行中步骤置为完成（或失败），折叠并停止转圈 */
-    finishAll(failed = false): void {
-      steps.forEach((s) => { if (s.status === 'running') { s.status = failed ? 'failed' : 'completed'; s.endedAt = Date.now(); } });
-      patch(undefined, false);
-    },
-  };
-}
+import {
+  type Attachment,
+  type AISceneSummary,
+  type AIAssistantPanelProps,
+  type SessionLite,
+  needsVisionHydrate,
+  blobUrlToBase64,
+  isBlobUrl,
+  toNameList,
+  toAIScene,
+  fetchProjectScenes,
+  renderScenesForAgent,
+  isTaskRequest,
+  verifyProjectState,
+  annotateUnexecutedIntent,
+  getWelcomeMessage,
+  estimateTokens,
+  estimateMessageTokens,
+  CONTEXT_WINDOW_OPTIONS,
+  MAX_OPEN_TABS,
+  INLINE_RESULT_ACTIONS,
+  createStepTracker,
+} from './helpers';
+export type { AIAssistantPanelProps } from './helpers';
+import { actionErrorText, actionSuccessText, actionFail, isActionFailure } from '../../services/agentActionOutcome';
+import { IRREVERSIBLE_ACTIONS, MANUAL_ONLY_ACTIONS, getActionConfirmCopy, requiresUserConfirm } from '../../services/agentActionCatalog';
+import HistoryModal from './HistoryModal';
 
 // ─── Component ──────────────────────────────────────────────────────
 const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
@@ -408,6 +91,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
   const imageInputRef = useRef<HTMLInputElement>(null);
   const scriptInputRef = useRef<HTMLInputElement>(null);
   const { showToast } = useToast();
+  const { confirm } = useConfirm();
 
   // ── 提示词增强 / 压缩 / 设置面板状态 ───────────────
   const [isEnhancing, setIsEnhancing] = useState(false);
@@ -430,8 +114,8 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
       if (!el) return;
       const r = el.getBoundingClientRect();
       setPopoverPos({
-        right: Math.max(8, window.innerWidth - r.right),
-        bottom: Math.max(8, window.innerHeight - r.top + 8),
+        right: Math.max(8, getViewportSize().width - r.right),
+        bottom: Math.max(8, getViewportSize().height - r.top + 8),
       });
     };
     compute();
@@ -476,8 +160,8 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
       if (!el) return;
       const r = el.getBoundingClientRect();
       setMemoryPopPos({
-        right: Math.max(8, window.innerWidth - r.right),
-        bottom: Math.max(8, window.innerHeight - r.top + 8),
+        right: Math.max(8, getViewportSize().width - r.right),
+        bottom: Math.max(8, getViewportSize().height - r.top + 8),
       });
     };
     compute();
@@ -570,14 +254,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
   }, [storageKey, showToast, projectId]);
 
   // ── Sessions 管理（一个项目一个历史记录） ─────────────────────────
-  interface SessionLite {
-    id: number;
-    title: string;
-    model_name: string | null;
-    message_count: number;
-    last_message_at: string | null;
-    created_at: string;
-  }
+  // SessionLite 已移至 helpers.ts（历史弹窗与主组件共用）
   // allSessions = 本地档/后端里的全部历史会话（历史对话面板的数据源）
   // openTabIds  = 标签栏当前打开的会话 id（持久化到 localStorage）
   const [allSessions, setAllSessions] = useState<SessionLite[]>([]);
@@ -726,9 +403,9 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
       } else {
         showToast(data.error || '加载会话失败', 'error');
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error('[AIAssistant] switch session failed:', err);
-      showToast(err.message || '加载会话失败', 'error');
+      showToast(toErrorMessage(err) || '加载会话失败', 'error');
     }
   }, [activeSessionKey, showToast, messages, onAction, openTabInList]);
 
@@ -1115,9 +792,9 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
         },
       ]);
       
-    } catch (error: any) {
+    } catch (error) {
       console.error('添加当前帧失败:', error);
-      showToast(`添加失败：${error.message}`, 'error');
+      showToast(`添加失败：${toErrorMessage(error)}`, 'error');
     }
   }, [currentFrame, attachments, showToast, selectedModel, modelOptions]);
 
@@ -1179,9 +856,9 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
         },
       ]);
       
-    } catch (error: any) {
+    } catch (error) {
       console.error('添加当前视频失败:', error);
-      showToast(`添加失败：${error.message}`, 'error');
+      showToast(`添加失败：${toErrorMessage(error)}`, 'error');
     }
   }, [currentFrame, attachments, showToast, selectedModel, modelOptions]);
 
@@ -1237,9 +914,9 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
       
       setInputText(analysisPrompt);
       showToast('提示词分析请求已准备，请发送', 'success');
-    } catch (err: any) {
+    } catch (err) {
       console.error('[AIAssistant] Analyze prompt failed:', err);
-      showToast(err.message || '获取分镜信息失败', 'error');
+      showToast(toErrorMessage(err) || '获取分镜信息失败', 'error');
     } finally {
       setIsAnalyzingPrompt(false);
     }
@@ -1315,9 +992,9 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
         }]);
         
         showToast(`${file.name} 上传成功`, 'success');
-      } catch (error: any) {
+      } catch (error) {
         console.error('图片处理失败:', error);
-        showToast(`图片上传失败：${error.message}`, 'error');
+        showToast(`图片上传失败：${toErrorMessage(error)}`, 'error');
       }
     }
     
@@ -1411,8 +1088,8 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
         setInputText(data.enhanced);
         showToast('提示词已增强', 'success');
       }
-    } catch (err: any) {
-      showToast(err.message || '提示词增强失败', 'error');
+    } catch (err) {
+      showToast(toErrorMessage(err) || '提示词增强失败', 'error');
     } finally {
       setIsEnhancing(false);
     }
@@ -1455,8 +1132,8 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
       setMessages([getWelcomeMessage(!!projectId), summaryMsg]);
       showToast(`对话已压缩：${realMsgs.length} 条 → 1 段摘要`, 'success');
       setShowSettings(false);
-    } catch (err: any) {
-      showToast(err.message || '压缩失败', 'error');
+    } catch (err) {
+      showToast(toErrorMessage(err) || '压缩失败', 'error');
     } finally {
       setIsCompressing(false);
     }
@@ -1570,8 +1247,8 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
     if (apiAttachments.some(needsVisionHydrate)) {
       try {
         payloadAttachments = await hydrateImageAttachments(apiAttachments);
-      } catch (e: any) {
-        console.warn('[AIAssistant] 图片附件内联失败，按原地址发送:', e?.message);
+      } catch (e) {
+        console.warn('[AIAssistant] 图片附件内联失败，按原地址发送:', toErrorMessage(e));
       }
     }
 
@@ -1713,9 +1390,19 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
         let scriptGenerationFailed = false;
 
         try {
-          // 循环中跳过确需人工确认的动作；generate_script 等可自动执行的动作直接跑。
-          // inspect_quality 不再当人工动作：循环内自动收集分镜素材（提示词/生成情况/分辨率/大小）回喂模型，确保看完有反馈。
-          const AGENT_MANUAL_ACTIONS = new Set(['dismiss', 'optimize_script', 'reanalyze_script']);
+          // 循环内不执行两类动作：① 依赖界面上下文的人工动作；② 删除类不可逆动作。
+          // inspect_quality 不在此列：循环内自动采集分镜素材（提示词/生成情况/分辨率/大小）回喂模型。
+          // 不可逆动作保留为气泡按钮，用户点击后还要在确认框里二次确认。
+          const AGENT_BLOCKED_ACTIONS = new Set([...MANUAL_ONLY_ACTIONS, ...IRREVERSIBLE_ACTIONS]);
+          // 本轮被拦下的不可逆动作：挂回最终消息的按钮，避免「跳过了但用户没有入口」
+          const pendingConfirm: ChatMessageSuggestion[] = [];
+          const pendingKeys = new Set<string>();
+          const queueConfirm = (s: any) => {
+            const key = `${s.action}:${JSON.stringify(s.params ?? {})}`;
+            if (pendingKeys.has(key)) return;
+            pendingKeys.add(key);
+            pendingConfirm.push({ action: s.action, label: s.label || s.action, params: s.params });
+          };
           type AgentImage = { type: 'image'; url: string; name?: string };
           type AgentHistoryItem = { role: string; content: string; attachments?: AgentImage[] };
           const history: AgentHistoryItem[] = apiMessages.map((m) => ({ role: m.role, content: m.content, attachments: m.attachments as AgentImage[] | undefined }));
@@ -1814,8 +1501,10 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
 
             roundReply = planData.reply || '';
             const rawSuggestions: any[] = Array.isArray(planData.suggestions) ? planData.suggestions : [];
-            const actions = rawSuggestions.filter((s) => s && s.action && !AGENT_MANUAL_ACTIONS.has(s.action));
-            const skippedManual = rawSuggestions.filter((s) => s && s.action && AGENT_MANUAL_ACTIONS.has(s.action));
+            const actions = rawSuggestions.filter((s) => s && s.action && !AGENT_BLOCKED_ACTIONS.has(s.action));
+            const skippedManual = rawSuggestions.filter((s) => s && s.action && MANUAL_ONLY_ACTIONS.has(s.action));
+            const skippedIrreversible = rawSuggestions.filter((s) => s && s.action && IRREVERSIBLE_ACTIONS.has(s.action));
+            skippedIrreversible.forEach(queueConfirm);
             history.push({ role: 'assistant', content: planData.reply || '' });
             tracker.complete(`第 ${round + 1} 轮规划返回`);
 
@@ -1823,13 +1512,22 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
             // 但若模型请求了人工动作，正文会停在「我打算去做…」的承诺上、看完没反馈；
             // 改为回喂一次说明让模型基于已有信息收敛出最终回复，不静默丢弃。
             if (actions.length === 0) {
-              if (skippedManual.length > 0 && !manualNotified && round < MAX_ROUNDS - 1) {
+              // 被拦下的动作不能静默丢弃：人工动作要用户去界面点，不可逆动作要用户
+              // 在气泡按钮里确认。回喂一次说明后收敛，不再让模型重复发同一批动作。
+              const blockedNotes: string[] = [];
+              if (skippedManual.length > 0) {
+                blockedNotes.push(`${skippedManual.map((s) => s.label || s.action).join('、')} 需要用户在界面上手动触发，本次已跳过`);
+              }
+              if (skippedIrreversible.length > 0) {
+                blockedNotes.push(`${skippedIrreversible.map((s) => s.label || s.action).join('、')} 属于不可逆操作，系统不会代为执行；已在对话底部保留执行按钮，用户点击并确认后才会执行`);
+              }
+              if (blockedNotes.length > 0 && !manualNotified && round < MAX_ROUNDS - 1) {
                 manualNotified = true;
                 history.push({
                   role: 'user',
-                  content: `【执行结果】\n${skippedManual.map((s) => s.action).join('、')} 需要用户在界面上手动触发，本次已跳过。请不要再附带 SUGGESTIONS，直接基于已有信息给出面向用户的最终回复。`,
+                  content: `【执行结果】\n${blockedNotes.join('；')}。请不要再重复输出这些 action，也不要附带 SUGGESTIONS，直接基于已有信息给出面向用户的最终回复。`,
                 });
-                tracker.complete('人工动作需用户触发，已回喂收敛');
+                tracker.complete('待用户确认的动作已保留按钮，已回喂收敛');
                 continue;
               }
               // 软件自己检查一遍：用户下的是执行指令，模型却未附带任何 action，那么什么也不会发生。
@@ -1889,10 +1587,10 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                   } else tracker.fail('未找到对应分镜');
                   executedLog.push(`${ok ? '✓' : '✗'} ${label}`);
                   if (!ok) observations.push(report.text);
-                } catch (e: any) {
-                  tracker.fail(e?.message || '素材采集失败');
+                } catch (e) {
+                  tracker.fail(toErrorMessage(e) || '素材采集失败');
                   executedLog.push(`✗ ${label}`);
-                  observations.push(`质检素材采集失败：${e?.message || e}。请如实告知用户并给出后续建议。`);
+                  observations.push(`质检素材采集失败：${toErrorMessage(e) || e}。请如实告知用户并给出后续建议。`);
                 }
                 continue;
               }
@@ -1919,10 +1617,10 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                       observations.push(`view_image 找到 ${targets.length} 张图片但都无法读取：\n${got.failedNote}。请如实告知用户并建议重新生成该画面或检查工程 media/ 目录。`);
                     }
                   }
-                } catch (e: any) {
-                  tracker.fail(e?.message || '图片读取失败');
+                } catch (e) {
+                  tracker.fail(toErrorMessage(e) || '图片读取失败');
                   executedLog.push(`✗ ${label}`);
-                  observations.push(`查看图片失败：${e?.message || e}。请告知用户并改用文字素材作答。`);
+                  observations.push(`查看图片失败：${toErrorMessage(e) || e}。请告知用户并改用文字素材作答。`);
                 }
                 continue;
               }
@@ -1941,17 +1639,17 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                 // 传入 sendSid：agent 循环是异步长流程，期间用户可能切换会话，卡片须归属发起会话
                 const result: any = await handleActionRef.current(a.action, a.params || {}, (sub) => tracker.touch(sub), sendSid, { inlineResult: false });
                 // handleAction 已把桥接异常转为结构化失败结果：步骤据实标记失败，避免误报「已执行」
-                const failed = !!result && typeof result === 'object' && (result.success === false || !!result.error);
+                const failed = isActionFailure(result);
                 if (a.action === 'generate_script' && failed) scriptGenerationFailed = true;
-                if (failed) tracker.fail(String(result.error) || '任务启动失败');
-                // 资源库动作的结果字符串直接展示在步骤详情中（对话内可展开回看）
-                else tracker.complete(typeof result === 'string' ? result.trim() : undefined);
+                if (failed) tracker.fail(actionErrorText(result) || '任务启动失败');
+                // 资源库/分镜动作的成功回执：字符串或结构化 summary 都直接展示在步骤详情中
+                else tracker.complete(actionSuccessText(result) || undefined);
                 const logIndex = executedLog.length;
                 executedLog.push(failed ? `✗ ${label}` : `✓ ${label}`);
                 const isTask = TASK_ACTIONS.has(a.action);
                 if (failed) {
                   // 动作明确失败：回喂真实失败原因（handleAction 已跳过挂卡片）
-                  observations.push(`执行「${label}」失败：${result.error || '任务启动失败'}`);
+                  observations.push(`执行「${label}」失败：${actionErrorText(result) || '任务启动失败'}`);
                 } else if (isTask && result && result.jobId) {
                   // 后台任务已提交：进度卡片由 handleAction 挂载并实时更新，此处据实回报
                   observations.push(
@@ -1993,6 +1691,10 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                 } else if (typeof result === 'string' && result.trim()) {
                   // 动作返回了实质内容（如 read_script 的剧本正文）：直接回喂给模型作为观察结果。
                   observations.push(result);
+                } else if (actionSuccessText(result)) {
+                  // 结构化成功回执（删除/更新类动作）：summary 已是面向模型与用户的一行结论，
+                  // 比整包 JSON 更好读；模型若需细节会自己调用只读动作复核。
+                  observations.push(actionSuccessText(result));
                 } else if (result && typeof result === 'object') {
                   // 结构化结果（如新建角色/场景返回的 ID）回喂给模型，便于串联后续动作。
                   try {
@@ -2033,10 +1735,10 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                     '请用只读动作（read_storyboards / read_script / get_task_status）复核后再据实回复，不得宣称已完成。',
                   );
                 }
-              } catch (e: any) {
-                tracker.fail(e?.message || String(e));
+              } catch (e) {
+                tracker.fail(toErrorMessage(e) || String(e));
                 executedLog.push(`✗ ${label}`);
-                observations.push(`执行「${label}」失败：${e?.message || e}`);
+                observations.push(`执行「${label}」失败：${toErrorMessage(e) || e}`);
               }
             }
 
@@ -2064,8 +1766,12 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
           const finalContent = (roundReply
             || (executedLog.length ? `已处理以下任务：\n${executedLog.map((e, i) => `${i + 1}. ${e}`).join('\n')}` : '(无回复)'))
             // 回喂核验后模型仍只承诺不动作（也未向用户提问）：把事实标注给用户，不把承诺当成结果
-            + (intentVerified && executedLog.length === 0 && !askCard
+            + (intentVerified && executedLog.length === 0 && !askCard && pendingConfirm.length === 0
               ? '\n\n（系统核验：本轮没有触发任何工具动作，上述操作尚未执行。）'
+              : '')
+            // 删除类动作被智能体循环拦下：必须显式告诉用户去哪儿确认，否则「已删除」就成了空话
+            + (pendingConfirm.length
+              ? '\n\n（删除类操作不会自动执行，请在下方按钮中确认。）'
               : '');
           const finalMsg: ChatMessageData = {
             id: assistantId,
@@ -2073,12 +1779,19 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
             content: finalContent,
             timestamp: Date.now(),
             ask: askCard ?? undefined,
+            suggestions: pendingConfirm.length ? pendingConfirm : undefined,
           };
           updateSessionMessages(sendSid, (prev) => (
             prev.some((m) => m.id === assistantId)
               ? prev.map((m) => (
                 m.id === assistantId
-                  ? { ...m, content: finalContent, running: false, ask: askCard ?? undefined }
+                  ? {
+                    ...m,
+                    content: finalContent,
+                    running: false,
+                    ask: askCard ?? undefined,
+                    suggestions: pendingConfirm.length ? pendingConfirm : undefined,
+                  }
                   : m
               ))
               // 剧本卡片接管期间规划消息已移除；若后续还有澄清提问，则单独挂回提问卡片。
@@ -2086,14 +1799,14 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
           ));
           if (sendSid) archiveMessage(sendSid, finalMsg);
           return;
-        } catch (err: any) {
+        } catch (err) {
           // 已进入剧本生成流程时不得回退到普通聊天，否则可能把正文或错误详情重新追加回来。
           if (scriptGenerationHandled) {
             updateSessionMessages(sendSid, (prev) => prev.filter((m) => m.id !== assistantId));
             return;
           }
           // 回退到旧的单轮 chat 流程（下面 isStream / 非流式分支处理）
-          console.warn('[AIAssistant.Agent] 本地 agent 循环失败，回退到普通聊天:', err?.message);
+          console.warn('[AIAssistant.Agent] 本地 agent 循环失败，回退到普通聊天:', toErrorMessage(err));
           updateSessionMessages(sendSid, (prev) => prev.filter((m) => m.id !== assistantId));
           // continue to legacy flow below
         }
@@ -2248,13 +1961,13 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
         updateSessionMessages(sendSid, (prev) => [...prev, assistantMessage]);
         if (sendSid && !isScriptGeneration) archiveMessage(sendSid, assistantMessage);
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error('[AIAssistant] Chat error:', err);
 
       const errorMessage: ChatMessageData = {
         id: `msg-${Date.now()}-err`,
         role: 'system',
-        content: `⚠️ ${err.message || '请求失败，请稍后重试'}`,
+        content: `⚠️ ${toErrorMessage(err) || '请求失败，请稍后重试'}`,
         timestamp: Date.now(),
       };
 
@@ -2348,6 +2061,9 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
     auto_storyboard: '自动分镜拆分',
     generate_frame: '分镜图生成',
     generate_video: '分镜视频生成',
+    delete_scene: '删除分镜',
+    delete_script: '删除剧本',
+    update_scene: '更新分镜',
   }), []);
   const TASK_KIND_LABEL: Record<TaskCardData['kind'], string> = useMemo(() => ({
     storyboard: '分镜拆分',
@@ -2404,6 +2120,19 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
   }, [updateSessionMessages, archiveMessage]);
 
   const handleAction = useCallback(async (action: string, params: any, onProgress?: (label: string) => void, originSid?: number | null, options?: { inlineResult?: boolean }) => {
+    // 不可逆动作必须二次确认：智能体循环已拦截，这里覆盖「用户点击气泡按钮」的路径。
+    // 取消也要留回执，否则用户点完不知道是不小心取消了还是根本没生效。
+    if (requiresUserConfirm(action)) {
+      const copy = getActionConfirmCopy(action);
+      const accepted = await confirm({ type: 'danger', ...copy });
+      if (!accepted) {
+        const canceled = `已取消「${copy.title}」`;
+        if (INLINE_RESULT_ACTIONS.has(action) && options?.inlineResult !== false) {
+          appendActionResult(`✗ ${canceled}`, originSid);
+        }
+        return actionFail(canceled);
+      }
+    }
     // 查询后台长任务状态：完成态必须同时核验工作流终态与资产落地，防止只凭注册表误报完成。
     if (action === 'get_task_status') {
       const requestedJobId = params?.jobId ? String(params.jobId) : undefined;
@@ -2499,8 +2228,8 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
         updateSessionMessages(currentSid, (prev) => [...prev, optimizeMsg]);
         if (currentSid) archiveMessage(currentSid, optimizeMsg);
         showToast('优化完成', 'success');
-      } catch (err: any) {
-        showToast(err?.message || '优化失败', 'error');
+      } catch (err) {
+        showToast(toErrorMessage(err) || '优化失败', 'error');
       } finally {
         setIsLoading(false);
       }
@@ -2552,8 +2281,8 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
           if (currentSid) archiveMessage(currentSid, followUpMsg);
         }, 500);
         showToast('重新分析完成', 'success');
-      } catch (err: any) {
-        showToast(err?.message || '重新分析失败', 'error');
+      } catch (err) {
+        showToast(toErrorMessage(err) || '重新分析失败', 'error');
       } finally {
         setIsAnalyzingScript(false);
       }
@@ -2781,8 +2510,8 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
           timeout = setTimeout(() => finish(failGeneration('剧本生成超时', false)), 300000);
           void poll();
         });
-      } catch (err: any) {
-        return failGeneration(err?.message || '剧本生成失败');
+      } catch (err) {
+        return failGeneration(toErrorMessage(err) || '剧本生成失败');
       }
     }
 
@@ -2819,8 +2548,8 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
           ? content.slice(0, MAX) + `\n[…正文已截断，原长 ${content.length} 字符…]`
           : content;
         return `剧本《${target?.title || '未命名'}》(ID:${target?.id ?? '-'}) 正文：\n${shown}`;
-      } catch (e: any) {
-        return `读取剧本失败：${e?.message || e}`;
+      } catch (e) {
+        return `读取剧本失败：${toErrorMessage(e) || e}`;
       }
     }
 
@@ -2875,10 +2604,10 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
     let result: any;
     try {
       result = await onAction?.(action, params, onProgress);
-    } catch (err: any) {
+    } catch (err) {
       // 桥接抛错转为结构化失败结果：既让单次点击路径有明确反馈（不产生游离 Promise rejection），
       // 也让 agent 循环据实回报失败原因，避免误报成功。
-      const message = err?.message || String(err) || '动作执行失败';
+      const message = toErrorMessage(err) || String(err) || '动作执行失败';
       if (INLINE_RESULT_ACTIONS.has(action)) {
         if (options?.inlineResult !== false) {
           appendActionResult(`✗ ${TASK_ACTION_LABEL[action] || action}失败：${message}`, originSid);
@@ -2888,12 +2617,10 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
       }
       return { success: false, error: message };
     }
-    // 资源库动作：把成功/失败结果直接挂到对话中，和 agent 步骤流一起构成完整反馈。
+    // 资源库与删除类动作：把成功/失败结果直接挂到对话中，和 agent 步骤流一起构成完整反馈。
     if (INLINE_RESULT_ACTIONS.has(action) && options?.inlineResult !== false) {
-      const errorText = result && typeof result === 'object' && (result.success === false || result.error)
-        ? String(result.error || '未知错误')
-        : '';
-      const successText = typeof result === 'string' ? result.trim() : '';
+      const errorText = actionErrorText(result);
+      const successText = actionSuccessText(result);
       if (errorText) {
         appendActionResult(`✗ ${TASK_ACTION_LABEL[action] || action}失败：${errorText}`, originSid);
       } else if (successText) {
@@ -2904,7 +2631,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
     // 在对话内挂载进度卡片（任务未完成时同样挂载）；同时把结果回传供 agent 循环构造观察。
     mountTaskCard(action, result, undefined, originSid);
     return result;
-  }, [currentFrame, triggerInspectQuality, resolveImageTargets, onAction, showToast, archiveMessage, updateSessionMessages, projectId, selectedModel, scripts, mountTaskCard, TASK_ACTION_LABEL, appendActionResult]);
+  }, [currentFrame, triggerInspectQuality, resolveImageTargets, onAction, showToast, confirm, archiveMessage, updateSessionMessages, projectId, selectedModel, scripts, mountTaskCard, TASK_ACTION_LABEL, appendActionResult]);
 
   // 每次渲染同步最新 handleAction，供 handleSend 的 agent 循环调用
   handleActionRef.current = handleAction;
@@ -2932,9 +2659,11 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
     if (!last.suggestions || last.suggestions.length === 0) return;
     if (autoExecutedRef.current.has(last.id)) return;
     autoExecutedRef.current.add(last.id);
-    // 执行所有非质检类、非剧本分析类的 action（这些需要用户手动点击）
-    const MANUAL_ACTIONS = new Set(['inspect_quality', 'optimize_script', 'reanalyze_script', 'dismiss']);
-    const targets = last.suggestions.filter((s) => !MANUAL_ACTIONS.has(s.action));
+    // 人工动作（质检/优化/剧本分析）需要用户手动点击；
+    // 删除类不可逆动作同样不自动执行——气泡上会显示按钮，用户点击后还要二次确认。
+    const targets = last.suggestions.filter((s) =>
+      !MANUAL_ONLY_ACTIONS.has(s.action) && s.action !== 'inspect_quality' && !requiresUserConfirm(s.action)
+    );
     if (targets.length === 0) return;
     // 锁定发起会话：内层定时器不在本 effect 的清理范围内（取消会丢失已标记执行的动作），
     // 期间用户可能切换会话，故把 sid 随动作一起透传，卡片只落回发起它的那个对话。
@@ -3115,8 +2844,8 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                   setShowScriptAnalysis(false);
                   setScriptContent('');
                   showToast('分析完成', 'success');
-                } catch (err: any) {
-                  showToast(err?.message || '分析失败', 'error');
+                } catch (err) {
+                  showToast(toErrorMessage(err) || '分析失败', 'error');
                 } finally {
                   setIsAnalyzingScript(false);
                 }
@@ -3558,132 +3287,22 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
       />
 
       {/* History modal */}
+      {/* History modal */}
       {showHistory && (
-        <div className="absolute inset-0 bg-black/40 flex items-start justify-center pt-10 z-20" onClick={() => setShowHistory(false)}>
-          <div
-            className="bg-(--bg-nav) border border-(--border-color) rounded-lg shadow-xl w-80 max-w-[92%] max-h-[80%] flex flex-col overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between px-3 py-2 border-b border-(--border-color)">
-              <div className="flex items-center gap-2">
-                <History size={14} className="text-(--accent)" />
-                <span className="font-semibold text-sm text-(--text-primary)">历史对话</span>
-                <span className="text-[10px] text-(--text-muted)">({allSessions.length})</span>
-              </div>
-              <button
-                onClick={() => setShowHistory(false)}
-                className="p-0.5 rounded hover:bg-(--bg-input) text-(--text-muted)"
-              >
-                <X size={14} />
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto">
-              {/* 历史列表用全量 allSessions：已关闭的标签仍可从历史重新打开 */}
-              {allSessions.length === 0 ? (
-                <div className="p-6 text-center text-[11px] text-(--text-muted)">
-                  <MessageSquare size={20} className="mx-auto mb-2 opacity-50" />
-                  <div>还没有历史对话</div>
-                  <div className="mt-1 opacity-70">发送消息或点右上角 + 号开始</div>
-                </div>
-              ) : (
-                <ul className="py-1">
-                  {allSessions.map((s) => {
-                    const isActive = s.id === currentSessionId;
-                    const isEditing = editingTitleId === s.id;
-                    const timeStr = s.last_message_at
-                      ? new Date(s.last_message_at).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
-                      : new Date(s.created_at).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
-                    return (
-                      <li
-                        key={s.id}
-                        className={`group px-2 py-1.5 mx-1 rounded-md cursor-pointer transition-colors ${
-                          isActive
-                            ? 'bg-(--accent)/15 border border-(--accent)/40'
-                            : 'hover:bg-(--bg-input) border border-transparent'
-                        }`}
-                        onClick={() => { if (!isEditing) switchSession(s.id); }}
-                      >
-                        <div className="flex items-center gap-2">
-                          <MessageSquare size={12} className={isActive ? 'text-(--accent)' : 'text-(--text-muted)'} />
-                          {isEditing ? (
-                            <input
-                              autoFocus
-                              value={editingTitleDraft}
-                              onChange={(e) => setEditingTitleDraft(e.target.value)}
-                              onClick={(e) => e.stopPropagation()}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  renameSessionFn(s.id, editingTitleDraft);
-                                  setEditingTitleId(null);
-                                } else if (e.key === 'Escape') {
-                                  setEditingTitleId(null);
-                                }
-                              }}
-                              className="flex-1 text-xs bg-(--bg-app) border border-(--border-color) rounded px-1.5 py-0.5 text-(--text-primary) focus:outline-none focus:border-(--accent)"
-                            />
-                          ) : (
-                            <span className="flex-1 text-xs text-(--text-primary) truncate" title={s.title}>
-                              {s.title}
-                            </span>
-                          )}
-                          <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                            {isEditing ? (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  renameSessionFn(s.id, editingTitleDraft);
-                                  setEditingTitleId(null);
-                                }}
-                                className="p-0.5 rounded hover:bg-(--bg-app) text-(--accent)"
-                                title="保存"
-                              >
-                                <Check size={11} />
-                              </button>
-                            ) : (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setEditingTitleId(s.id);
-                                  setEditingTitleDraft(s.title);
-                                }}
-                                className="p-0.5 rounded hover:bg-(--bg-app) text-(--text-muted) hover:text-(--text-primary)"
-                                title="重命名"
-                              >
-                                <Edit3 size={11} />
-                              </button>
-                            )}
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                deleteSessionFn(s.id);
-                              }}
-                              className="p-0.5 rounded hover:bg-(--bg-app) text-(--text-muted) hover:text-red-400"
-                              title="删除"
-                            >
-                              <Trash2 size={11} />
-                            </button>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2 mt-0.5 pl-4.5 text-[10px] text-(--text-muted)">
-                          <span>{s.message_count} 条</span>
-                          <span>·</span>
-                          <span>{timeStr}</span>
-                          {openTabIds.includes(s.id) && (
-                            <>
-                              <span>·</span>
-                              <span className="text-(--accent)">已打开</span>
-                            </>
-                          )}
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </div>
-          </div>
-        </div>
+        <HistoryModal
+          sessions={allSessions}
+          currentSessionId={currentSessionId}
+          editingTitleId={editingTitleId}
+          editingTitleDraft={editingTitleDraft}
+          openTabIds={openTabIds}
+          onClose={() => setShowHistory(false)}
+          onSwitchSession={switchSession}
+          onStartEdit={(id, title) => { setEditingTitleId(id); setEditingTitleDraft(title); }}
+          onDraftChange={setEditingTitleDraft}
+          onCommitEdit={(id, draft) => { renameSessionFn(id, draft); setEditingTitleId(null); }}
+          onCancelEdit={() => setEditingTitleId(null)}
+          onDelete={deleteSessionFn}
+        />
       )}
 
     </div>

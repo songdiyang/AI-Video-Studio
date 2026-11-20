@@ -465,7 +465,12 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
     }
   };
 
-  const deleteScene = async (id: number) => {
+  /**
+   * 删除分镜。
+   * 返回值必须如实反映落盘结果：AI 动作桥接层据此决定是否回报成功，
+   * 之前失败时静默 resolve undefined，会让智能体把「没删掉」当成「无回执」。
+   */
+  const deleteScene = async (id: number): Promise<boolean> => {
     console.log('[useSceneManager] deleteScene 调用, id:', id, 'type:', typeof id, 'scriptId:', scriptId);
     // 本地新增的分镜（Date.now() 生成的 ID 远大于数据库自增 ID）无需调用后端
     const isLocalOnly = id > 1_000_000_000;
@@ -481,7 +486,7 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
         if (!res.ok && res.status !== 404) {
           const data = await res.json().catch(() => ({}));
           console.error('[useSceneManager] 删除分镜失败: status=', res.status, 'body=', JSON.stringify(data));
-          return;
+          return false;
         }
         if (res.status === 404) {
           console.warn('[useSceneManager] 分镜在服务端已不存在, id:', id);
@@ -491,12 +496,13 @@ export const useSceneManager = (scriptId: number | null, projectId?: number | nu
         }
       } catch (err) {
         console.error('[useSceneManager] 删除分镜网络错误:', err);
-        return;
+        return false;
       }
     } else {
       console.log('[useSceneManager] 删除本地分镜:', id);
     }
     setScenes(prev => prev.filter(s => s.id !== id));
+    return true;
   };
 
   const moveScene = (id: number, direction: 'up' | 'down') => {

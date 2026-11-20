@@ -87,7 +87,6 @@ export interface StoryboardCoreState {
   referenceScriptTitle: string;
   
   // UI 状态
-  showBatchDownloadModal: boolean;
   isOptimizingAllPrompts: boolean;
   isAnimaticOpen: boolean;
   isCommentPanelOpen: boolean;
@@ -103,7 +102,7 @@ export interface SceneActions {
   // CRUD
   addScene: () => Promise<any>;
   insertScene: (atIndex: number) => Promise<any>;
-  deleteScene: (id: number) => Promise<any>;
+  deleteScene: (id: number) => Promise<boolean>;
   moveScene: (id: number, direction: 'up' | 'down') => void;
   reorderScenes: (scenes: StoryboardScene[]) => void;
   
