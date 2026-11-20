@@ -47,6 +47,7 @@ import {
 export type { AIAssistantPanelProps } from './helpers';
 import { actionErrorText, actionSuccessText, actionFail, isActionFailure } from '../../services/agentActionOutcome';
 import { IRREVERSIBLE_ACTIONS, MANUAL_ONLY_ACTIONS, getActionConfirmCopy, requiresUserConfirm } from '../../services/agentActionCatalog';
+import { refreshAgentContext, truncateScriptContent } from '../../services/agentContextRefresh';
 import HistoryModal from './HistoryModal';
 
 // ─── Component ──────────────────────────────────────────────────────
@@ -68,6 +69,11 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
   // 工程 ID 快照：长任务登记/查询用 ref 读取，避免闭包过期与依赖数组频繁重建
   const projectIdRef = useRef<number | null>(projectId);
   projectIdRef.current = projectId ?? null;
+  // 实体实时快照：agent 多轮循环里 contextPayload 是发送瞬间的闭包快照，会随动作执行过期。
+  // 工作台每次把最新实体推回 props 时同步到此 ref，循环每轮请求前据此重建上下文，
+  // 避免模型照着旧清单重复创建或误判「不存在」。
+  const liveEntitiesRef = useRef({ scenes, characters, locations, studios, props, scripts });
+  liveEntitiesRef.current = { scenes, characters, locations, studios, props, scripts };
   // 对话持久化闸门：切工程时先关闸并把 messages 重置为新工程初始态，再放行写入。
   // 防止「messages 落盘 effect」在同一 commit 内用上一个工程的旧消息写入新工程的
   // 存储键（ai_chat_${projectId}），造成跨工程对话串味。
@@ -1129,7 +1135,26 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
         content: `📜 已压缩前 ${realMsgs.length} 条对话为摘要：\n\n${data.summary}`,
         timestamp: Date.now(),
       };
-      setMessages([getWelcomeMessage(!!projectId), summaryMsg]);
+      // 先整段替换会话档再改界面：只 setMessages 的话，重开/切换会话时缓存为空，
+      // switchSession 会从后端归档拉回完整历史，把压缩结果冲掉。落盘失败则保留原历史不动。
+      const sid = currentSessionIdRef.current;
+      if (sid !== null) {
+        const putRes = await fetch(`/api/ai-assistant/sessions/${sid}/messages`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ messages: [{ role: summaryMsg.role, content: summaryMsg.content }] }),
+        });
+        const putData = await putRes.json().catch(() => ({}));
+        if (!putRes.ok || putData.success === false) {
+          throw new Error(putData.error || `压缩结果保存失败 (${putRes.status})`);
+        }
+      }
+      const nextMessages = [getWelcomeMessage(!!projectId), summaryMsg];
+      // updateSessionMessages 为稳定回调（点击时已初始化），同步 per-session 缓存与当前界面
+      if (sid !== null) updateSessionMessages(sid, () => nextMessages);
+      else setMessages(nextMessages);
       showToast(`对话已压缩：${realMsgs.length} 条 → 1 段摘要`, 'success');
       setShowSettings(false);
     } catch (err) {
@@ -1309,11 +1334,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
       // 无 RAG 结果：回退到原始剧本内容（截断）
       scriptsForContext = scripts?.map(s => ({
         ...s,
-        content: s.content
-          ? (s.content.length > MAX_SCRIPT_CHARS
-            ? s.content.slice(0, MAX_SCRIPT_CHARS) + `\n[…剧本已截断，原长 ${s.content.length} 字符…]`
-            : s.content)
-          : undefined,
+        content: truncateScriptContent(s.content, MAX_SCRIPT_CHARS),
       }));
     }
 
@@ -1481,7 +1502,26 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
             };
           };
 
+          // 多轮上下文刷新：contextPayload 是发送瞬间的快照，循环内 create/update/delete
+          // 会让它过期。每轮请求前用工作台实时实体重建（工程级设置/记忆/写手沿用 base），
+          // 第 0 轮保持发送瞬间的 RAG 剧本片段，后续轮改用最新全量截断清单。
+          let liveContext: any = contextPayload;
+          const refreshLiveContext = async () => {
+            if (!includeContext) return;
+            const live = liveEntitiesRef.current;
+            let resolvedScenes = live.scenes;
+            if ((!resolvedScenes || resolvedScenes.length === 0) && projectId) {
+              resolvedScenes = await fetchProjectScenes(projectId);
+            }
+            liveContext = refreshAgentContext(contextPayload as any, live, {
+              scenes: resolvedScenes || [],
+              longTasks: listLongTasks(projectIdRef.current).slice(0, 10),
+              maxScriptChars: MAX_SCRIPT_CHARS,
+            });
+          };
+
           for (let round = 0; round < MAX_ROUNDS; round++) {
+            if (round > 0) await refreshLiveContext();
             const planRes = await fetch('/api/ai-assistant/chat', {
               method: 'POST',
               headers: {
@@ -1491,7 +1531,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
                 projectId,
                 modelName: selectedModel,
                 messages: history,
-                context: contextPayload,
+                context: liveContext,
               }),
             });
             const planData = await planRes.json().catch(() => ({}));

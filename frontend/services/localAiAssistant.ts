@@ -6,6 +6,7 @@
 //  - POST   /api/ai-assistant/sessions                 → { success, session }
 //  - GET    /api/ai-assistant/sessions/:id/messages    → { success, messages }
 //  - POST   /api/ai-assistant/sessions/:id/messages    → { success, messageId }
+//  - PUT    /api/ai-assistant/sessions/:id/messages    → { success, messageCount }（整段替换，压缩历史用）
 //  - PATCH  /api/ai-assistant/sessions/:id             → { success }
 //  - DELETE /api/ai-assistant/sessions/:id             → { success }
 //  - POST   /api/ai-assistant/sessions/:id/generate-title → { success, title }（本地启发式截取）
@@ -360,6 +361,44 @@ async function handleMessageAppend(idStr: string, body: any): Promise<Response> 
   return jsonResponse({ success: true, messageId: msg.id });
 }
 
+/** PUT /sessions/:id/messages { messages: [...] } —— 整段替换会话消息（压缩历史用）。
+ * 追加写无法表达「把 N 条历史折叠成 1 段摘要」：若只改前端 state，重开/切换会话时
+ * 后端归档会把完整历史又灌回来，压缩结果丢失。故提供替换语义：清空该会话旧消息后
+ * 按传入顺序重新归档，并同步 message_count / last_message_at。 */
+async function handleMessagesReplace(idStr: string, body: any): Promise<Response> {
+  const sessionId = Number(idStr);
+  const located = await locateSession(sessionId);
+  if (!located) return jsonResponse({ success: false, error: '会话不存在' }, 404);
+  const { doc, projectId } = located;
+  const session = doc.sessions.find((s) => s.id === sessionId)!;
+  const list = Array.isArray(body?.messages) ? body.messages : null;
+  if (!list) return jsonResponse({ success: false, error: '缺少 messages 数组' }, 400);
+  const now = new Date().toISOString();
+  doc.messages = doc.messages.filter((m) => m.session_id !== sessionId);
+  for (const item of list) {
+    const role = item?.role;
+    const content = item?.content;
+    if (!role || content == null) continue;
+    doc.messages.push({
+      id: doc.nextMsgId++,
+      session_id: sessionId,
+      role: String(role).slice(0, 16),
+      content: typeof content === 'string' ? content : JSON.stringify(content),
+      reasoning: item.reasoning || null,
+      attachments: item.attachments ?? null,
+      suggestions: item.suggestions ?? null,
+      task: item.task ?? null,
+      ask: item.ask ?? null,
+      created_at: now,
+    });
+  }
+  session.message_count = doc.messages.filter((m) => m.session_id === sessionId).length;
+  session.last_message_at = now;
+  session.updated_at = now;
+  saveScopedDoc(doc, projectId);
+  return jsonResponse({ success: true, messageCount: session.message_count });
+}
+
 /** POST /sessions/:id/generate-title —— 离线无法调用 LLM，用首条用户消息启发式截取 */
 async function handleGenerateTitle(idStr: string): Promise<Response> {
   const sessionId = Number(idStr);
@@ -401,6 +440,7 @@ export async function routeAiAssistantSessions(
   if ((mt = pathname.match(/^\/api\/ai-assistant\/sessions\/(\d+)\/messages$/))) {
     if (m === 'GET') return handleMessagesLoad(mt[1]);
     if (m === 'POST') return handleMessageAppend(mt[1], body);
+    if (m === 'PUT') return handleMessagesReplace(mt[1], body);
     return null;
   }
   if ((mt = pathname.match(/^\/api\/ai-assistant\/sessions\/(\d+)\/generate-title$/)) && m === 'POST') {
