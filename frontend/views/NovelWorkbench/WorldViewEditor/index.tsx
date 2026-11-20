@@ -8,6 +8,7 @@ import { Button, Textarea, Input, Card, CardBody, Progress } from '@heroui/react
 import { Wand2, Save, Globe, BookOpen, Sparkles } from 'lucide-react';
 import { useToast } from '../../../contexts/ToastContext';
 import { AIModel } from '../../../components/AIModelSelector';
+import { toErrorMessage } from '../../../utils/errorMessage';
 
 // ==================== 类型定义 ====================
 
@@ -98,8 +99,8 @@ const WorldViewEditor: React.FC<WorldViewEditorProps> = ({
       } else {
         throw new Error('保存失败');
       }
-    } catch (error: any) {
-      showToast(error.message || '保存失败', 'error');
+    } catch (error) {
+      showToast(toErrorMessage(error) || '保存失败', 'error');
     } finally {
       setSaving(false);
     }
@@ -141,8 +142,8 @@ const WorldViewEditor: React.FC<WorldViewEditorProps> = ({
         const error = await res.json();
         throw new Error(error.message || '生成失败');
       }
-    } catch (error: any) {
-      showToast(error.message || '生成失败', 'error');
+    } catch (error) {
+      showToast(toErrorMessage(error) || '生成失败', 'error');
     } finally {
       setTimeout(() => {
         setGenerating(false);

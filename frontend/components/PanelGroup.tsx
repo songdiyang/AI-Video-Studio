@@ -12,21 +12,24 @@ import React, {
 } from 'react';
 import { ResizablePanelProps } from './ResizablePanel';
 import { Maximize2, Minimize2 } from 'lucide-react';
+import { matchesViewportQuery } from '../utils/runtimeMode';
 
 // 响应式断点 Hook
 function useMediaQuery(query: string): boolean {
-  const [matches, setMatches] = useState(
-    () => typeof window !== 'undefined' && window.matchMedia(query).matches
-  );
+  const [matches, setMatches] = useState(() => matchesViewportQuery(query));
   
   useEffect(() => {
     if (typeof window === 'undefined') return;
     
     const mql = window.matchMedia(query);
-    const handler = (e: MediaQueryListEvent) => setMatches(e.matches);
+    const handler = () => setMatches(matchesViewportQuery(query));
     
     mql.addEventListener('change', handler);
-    return () => mql.removeEventListener('change', handler);
+    window.addEventListener('resize', handler);
+    return () => {
+      mql.removeEventListener('change', handler);
+      window.removeEventListener('resize', handler);
+    };
   }, [query]);
   
   return matches;

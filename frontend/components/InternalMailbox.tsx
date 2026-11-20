@@ -7,6 +7,7 @@ import { useWorkbench } from '../contexts/WorkbenchContext';
 import { activeLongTasks, LONG_TASKS_UPDATED_EVENT, LONG_TASK_STATUS_LABEL, type LongTaskRecord } from '../services/longTasks';
 import type { MailCategory } from '../services/localMail';
 import { useTaskQueue } from './TaskQueueBubble/useTaskQueue';
+import { getViewportSize } from '../utils/runtimeMode';
 
 interface TaskData {
   taskId: number;
@@ -207,8 +208,8 @@ const InternalMailbox: React.FC = () => {
     if (!triggerRef.current) return;
     const rect = triggerRef.current.getBoundingClientRect();
     setPanelPosition({
-      x: Math.max(8, Math.min(rect.left - 150, window.innerWidth - panelSize.width - 8)),
-      y: Math.max(8, Math.min(rect.bottom + 8, window.innerHeight - panelSize.height - 8)),
+      x: Math.max(8, Math.min(rect.left - 150, getViewportSize().width - panelSize.width - 8)),
+      y: Math.max(8, Math.min(rect.bottom + 8, getViewportSize().height - panelSize.height - 8)),
     });
   }, [panelSize.width, panelSize.height]);
 
@@ -416,8 +417,8 @@ const InternalMailbox: React.FC = () => {
       const dx = ev.clientX - dragState.current.startX;
       const dy = ev.clientY - dragState.current.startY;
       setPanelPosition({
-        x: Math.max(0, Math.min(window.innerWidth - 380, dragState.current.origX + dx)),
-        y: Math.max(0, Math.min(window.innerHeight - 100, dragState.current.origY + dy)),
+        x: Math.max(0, Math.min(getViewportSize().width - 380, dragState.current.origX + dx)),
+        y: Math.max(0, Math.min(getViewportSize().height - 100, dragState.current.origY + dy)),
       });
     };
     const onUp = () => {
@@ -449,8 +450,8 @@ const InternalMailbox: React.FC = () => {
       setPanelSize(pending);
     };
     const onMove = (moveEvent: PointerEvent) => {
-      const maxWidth = Math.max(320, window.innerWidth - rect.left - 8);
-      const maxHeight = Math.max(300, window.innerHeight - rect.top - 8);
+      const maxWidth = Math.max(320, getViewportSize().width - rect.left - 8);
+      const maxHeight = Math.max(300, getViewportSize().height - rect.top - 8);
       pending = {
         width: Math.max(320, Math.min(maxWidth, startWidth + moveEvent.clientX - startX)),
         height: Math.max(300, Math.min(maxHeight, startHeight + moveEvent.clientY - startY)),
@@ -478,8 +479,8 @@ const InternalMailbox: React.FC = () => {
     const rect = panelRef.current?.getBoundingClientRect();
     if (!rect) return;
     setPanelSize(prev => ({
-      width: Math.max(320, Math.min(window.innerWidth - rect.left - 8, prev.width + dx)),
-      height: Math.max(300, Math.min(window.innerHeight - rect.top - 8, prev.height + dy)),
+      width: Math.max(320, Math.min(getViewportSize().width - rect.left - 8, prev.width + dx)),
+      height: Math.max(300, Math.min(getViewportSize().height - rect.top - 8, prev.height + dy)),
     }));
   }, []);
 

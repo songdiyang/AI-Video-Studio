@@ -21,6 +21,7 @@ import {
   type AiCommitResponse,
 } from '../../services/assets';
 import { filterModelsForTaskSlot } from '../../utils/modelCapabilities';
+import { toErrorMessage } from '../../utils/errorMessage';
 
 interface AIModel {
   name: string;
@@ -120,9 +121,9 @@ const CharacterDraftPreviewModal: React.FC<CharacterDraftPreviewModalProps> = ({
       setEstimatedResources(res.estimatedResources);
       setEstimatedCredits(res.estimatedCredits);
       setStage('preview');
-    } catch (err: any) {
+    } catch (err) {
       console.error('[CharacterDraftPreviewModal] 生成草稿失败:', err);
-      onError?.(err?.message || 'AI 生成草稿失败');
+      onError?.(toErrorMessage(err) || 'AI 生成草稿失败');
     } finally {
       setDrafting(false);
     }
@@ -149,9 +150,9 @@ const CharacterDraftPreviewModal: React.FC<CharacterDraftPreviewModalProps> = ({
       });
       onCommitted?.(res);
       onOpenChange(false);
-    } catch (err: any) {
+    } catch (err) {
       console.error('[CharacterDraftPreviewModal] 提交草稿失败:', err);
-      onError?.(err?.message || 'AI 提交角色失败');
+      onError?.(toErrorMessage(err) || 'AI 提交角色失败');
       setStage('preview');
     } finally {
       setCommitting(false);

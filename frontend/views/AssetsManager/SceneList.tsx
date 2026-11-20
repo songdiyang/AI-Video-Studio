@@ -5,6 +5,7 @@ import { Scene, uploadSceneSketch, deleteSceneSketch } from '../../services/asse
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import { usePreview } from '../../components/PreviewProvider';
+import { toErrorMessage } from '../../utils/errorMessage';
 
 interface SceneListProps {
   scenes: Scene[];
@@ -60,9 +61,9 @@ const SceneList: React.FC<SceneListProps> = ({ scenes, onEdit, onDelete, onViewD
       await uploadSceneSketch(uploadingSceneId, file);
       showToast('草图上传成功', 'success');
       onSceneUpdate?.();
-    } catch (error: any) {
+    } catch (error) {
       console.error('上传草图失败:', error);
-      showToast(error.message || '上传草图失败', 'error');
+      showToast(toErrorMessage(error) || '上传草图失败', 'error');
     } finally {
       resetUploadState();
     }
@@ -83,9 +84,9 @@ const SceneList: React.FC<SceneListProps> = ({ scenes, onEdit, onDelete, onViewD
       await deleteSceneSketch(scene.id);
       showToast('草图删除成功', 'success');
       onSceneUpdate?.();
-    } catch (error: any) {
+    } catch (error) {
       console.error('删除草图失败:', error);
-      showToast(error.message || '删除草图失败', 'error');
+      showToast(toErrorMessage(error) || '删除草图失败', 'error');
     }
   };
 
@@ -100,7 +101,7 @@ const SceneList: React.FC<SceneListProps> = ({ scenes, onEdit, onDelete, onViewD
         onChange={handleFileChange}
       />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mt-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 design:grid-cols-4 gap-4 mt-6">
         {scenes.map((scene) => {
           const hasSketch = !!scene.sketch_url;
           const hasImage = !!scene.image_url;

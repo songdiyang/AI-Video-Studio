@@ -5,6 +5,7 @@ import JsonTextarea from './JsonTextarea';
 import ErrorDisplay from './ErrorDisplay';
 import ImportInstructions from './ImportInstructions';
 import { parseAndFixJSON } from './jsonParser';
+import { toErrorMessage } from '../../../utils/errorMessage';
 
 interface ImportStoryboardModalProps {
   isOpen: boolean;
@@ -53,9 +54,9 @@ const ImportStoryboardModal: React.FC<ImportStoryboardModalProps> = ({
       onOpenChange(false);
       setJsonText('');
       
-    } catch (err: any) {
+    } catch (err) {
       console.error('[ImportStoryboard] 解析失败:', err);
-      setError(err.message || '解析失败，请检查 JSON 格式');
+      setError(toErrorMessage(err) || '解析失败，请检查 JSON 格式');
     } finally {
       setIsProcessing(false);
     }

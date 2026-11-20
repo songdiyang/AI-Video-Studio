@@ -23,6 +23,7 @@ import {
 } from './types';
 import { useToast } from '../../contexts/ToastContext';
 import { startWorkflow, getWorkflowStatus } from '../../hooks/useWorkflow';
+import { toErrorMessage } from '../../utils/errorMessage';
 
 // 生成唯一ID
 const generateId = () => `node_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -555,8 +556,8 @@ const NodeCanvas: React.FC<NodeCanvasProps> = ({
         }
       };
       poll();
-    } catch (error: any) {
-      showToast(error.message || '启动视频生成失败', 'error');
+    } catch (error) {
+      showToast(toErrorMessage(error) || '启动视频生成失败', 'error');
       setNodes(prev => prev.map(n =>
         n.id === nodeId ? { ...n, status: 'failed' } : n
       ));

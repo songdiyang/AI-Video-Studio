@@ -45,7 +45,7 @@ const StudioList: React.FC<StudioListProps> = ({ studios, onEdit, onDelete, sele
 
   return (
     <>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-6 items-stretch">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 design:grid-cols-3 gap-4 mt-6 items-stretch">
         {studios.map((s) => {
           const isGeneratingNineGrid = generatingNineGridIds.has(s.id);
           const envData = (s as any).environment as { id: number; name: string; image_url: string | null } | null;

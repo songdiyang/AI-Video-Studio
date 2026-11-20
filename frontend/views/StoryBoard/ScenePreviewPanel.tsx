@@ -9,7 +9,6 @@ import { prefetchSketchEditor } from './MagicSpace/SketchCanvas';
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import { validateFrameReadiness, formatValidationMessage, type ValidationIssue } from './utils/validateFrameReadiness';
-// import SketchPanel from './SceneCard/SketchPanel'; // 草图功能已集成到魔术空间
 import BlockEditor from './BlockEditor';
 import FrameHistoryPanel from './FrameHistoryPanel';
 import { BlockEditorState } from './BlockEditor/types/blockTypes';
@@ -19,6 +18,8 @@ import { startWorkflow, getWorkflowStatus } from '../../hooks/useWorkflow';
 import StoryboardLockButton from './components/StoryboardLockButton';
 import AssetGateNotice from './components/AssetGateNotice';
 import VideoHistorySidebar from './components/VideoHistorySidebar';
+import { getViewportSize } from '../../utils/runtimeMode';
+import { toErrorMessage } from '../../utils/errorMessage';
 
 const POPOVER_GAP = 4;
 const POPOVER_EDGE = 8;
@@ -48,10 +49,10 @@ const AnchoredPopover: React.FC<{
       if (!anchor) return;
       const rect = anchor.getBoundingClientRect();
       const { offsetWidth: width = 0, offsetHeight: height = 0 } = popoverRef.current ?? {};
-      let left = Math.min(rect.left, window.innerWidth - POPOVER_EDGE - width);
+      let left = Math.min(rect.left, getViewportSize().width - POPOVER_EDGE - width);
       let top = rect.bottom + POPOVER_GAP;
       // 下方放不下且上方更宽裕时，向上翻转
-      if (top + height > window.innerHeight - POPOVER_EDGE && rect.top - POPOVER_GAP > height + POPOVER_EDGE) {
+      if (top + height > getViewportSize().height - POPOVER_EDGE && rect.top - POPOVER_GAP > height + POPOVER_EDGE) {
         top = rect.top - POPOVER_GAP - height;
       }
       setPosition({ left: Math.max(POPOVER_EDGE, left), top });
@@ -921,9 +922,9 @@ const DescriptionEditor: React.FC<{
       } else {
         showToast('提示词生成失败，请重试', 'error');
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error('[DescriptionEditor] 一键双优化失败:', err);
-      showToast(err.message || '优化任务启动失败', 'error');
+      showToast(toErrorMessage(err) || '优化任务启动失败', 'error');
     } finally {
       setIsOptimizing(false);
     }
@@ -1643,8 +1644,8 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                 }
                 setShowMagicSpace(false);
                 showToast('首帧草图已保存', 'success');
-              } catch (err: any) {
-                showToast(err.message || '保存草图失败', 'error');
+              } catch (err) {
+                showToast(toErrorMessage(err) || '保存草图失败', 'error');
               }
             }}
             onCancel={() => setShowMagicSpace(false)}
@@ -1696,8 +1697,8 @@ const ScenePreviewPanel: React.FC<ScenePreviewPanelProps> = ({
                 }
                 setShowMagicSpace(false);
                 showToast('尾帧草图已保存', 'success');
-              } catch (err: any) {
-                showToast(err.message || '保存草图失败', 'error');
+              } catch (err) {
+                showToast(toErrorMessage(err) || '保存草图失败', 'error');
               }
             }}
             onCancel={() => setShowMagicSpace(false)}

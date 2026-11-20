@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardBody, Tooltip } from '@heroui/react';
 import { Wand2, X, Trash2, ExternalLink, Loader2 } from 'lucide-react';
 import { PropItem } from './types';
+import { toErrorMessage } from '../../../utils/errorMessage';
 
 const openAssetEditTab = (prop: PropItem) => {
   window.dispatchEvent(new CustomEvent('openAssetEditTab', {
@@ -64,9 +65,9 @@ const PropsTab: React.FC<PropsTabProps> = ({ props, imageModel, imageAspectRatio
       window.dispatchEvent(new CustomEvent('prop:generationStarted', {
         detail: { propId: prop.id }
       }));
-    } catch (error: any) {
+    } catch (error) {
       console.error('[PropsTab] 生成失败:', error);
-      alert('生成失败: ' + error.message);
+      alert('生成失败: ' + toErrorMessage(error));
       // 失败后从本地 generatingIds 中移除
       setGeneratingIds(prev => {
         const next = new Set(prev);
@@ -90,9 +91,9 @@ const PropsTab: React.FC<PropsTabProps> = ({ props, imageModel, imageAspectRatio
       window.dispatchEvent(new CustomEvent('prop:generationCancelled', {
         detail: { propId: prop.id }
       }));
-    } catch (error: any) {
+    } catch (error) {
       console.error('[PropsTab] 取消失败:', error);
-      alert('取消失败: ' + error.message);
+      alert('取消失败: ' + toErrorMessage(error));
     }
   };
 

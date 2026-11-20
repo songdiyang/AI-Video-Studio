@@ -7,6 +7,7 @@ import { useCallback, useMemo } from 'react';
 import { ApiError } from '../../../hooks/useWorkflow';
 import { useToast } from '../../../contexts/ToastContext';
 import { useWorkflowRecovery } from './useWorkflowRecovery';
+import { toErrorMessage } from '../../../utils/errorMessage';
 
 // 步骤名称映射（用于用户友好展示）
 const STEP_NAMES: Record<string, string> = {
@@ -159,12 +160,12 @@ export function useStoryboardGeneration({
 
       // 启动工作流轮询 - 统一处理，无论哪种模式都返回单个 jobId
       recovery.startJob(data.jobId);
-    } catch (error: any) {
+    } catch (error) {
       console.error('自动生成分镜失败:', error);
       showToast('自动生成分镜失败，请稍后重试', 'error');
       // 存在失败回调（AI 助手链路）时向上抛出，让 agent 循环把步骤标为失败而非误报成功
       if (options.onSplitError) {
-        options.onSplitError(error?.message || '自动生成分镜失败');
+        options.onSplitError(toErrorMessage(error) || '自动生成分镜失败');
         throw error;
       }
     }

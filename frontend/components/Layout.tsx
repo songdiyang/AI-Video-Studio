@@ -18,11 +18,11 @@ import ActivityBarSidebar from './ActivityBar/ActivityBarSidebar';
 import AIAssistantSidePanel from './ActivityBar/AIAssistantSidePanel';
 import AppMenuBar, { AppMenu } from './ActivityBar/AppMenuBar';
 import InternalMailbox from './InternalMailbox';
-// import LowBalanceBanner from './LowBalanceBanner';
 import { useRoutePreload } from '../hooks/useRoutePreload';
-import { isDesktop } from '../utils/runtimeMode';
+import { isDesktop, matchesViewportQuery } from '../utils/runtimeMode';
 import { listProjects, openProject, openProjectWindow, type ProjectMetadata } from '../services/localApi';
 import { mapLocalProject } from '../services/projects';
+import { toErrorMessage } from '../utils/errorMessage';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -30,18 +30,20 @@ interface LayoutProps {
 
 // 响应式断点 Hook
 function useMediaQuery(query: string): boolean {
-  const [matches, setMatches] = useState(
-    () => typeof window !== 'undefined' && window.matchMedia(query).matches
-  );
+  const [matches, setMatches] = useState(() => matchesViewportQuery(query));
   
   useEffect(() => {
     if (typeof window === 'undefined') return;
     
     const mql = window.matchMedia(query);
-    const handler = (e: MediaQueryListEvent) => setMatches(e.matches);
+    const handler = () => setMatches(matchesViewportQuery(query));
     
     mql.addEventListener('change', handler);
-    return () => mql.removeEventListener('change', handler);
+    window.addEventListener('resize', handler);
+    return () => {
+      mql.removeEventListener('change', handler);
+      window.removeEventListener('resize', handler);
+    };
   }, [query]);
   
   return matches;
@@ -91,8 +93,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       switchProject(project);
       localStorage.setItem('nanostory_last_project_id', String(project.id));
       navigate('/');
-    } catch (err: any) {
-      showToast(err?.message || t.welcome.openFailed, 'error');
+    } catch (err) {
+      showToast(toErrorMessage(err) || t.welcome.openFailed, 'error');
     }
   }, [navigate, switchProject, showToast, t]);
 
@@ -267,8 +269,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
 
 
-  // 真实后端连接状态检测（每30秒 ping 一次 /api/health）
-  // 离线模式（桌面端）不依赖后端，直接视为"本地模式"，跳过轮询。
+  // 连接状态检测（每30秒 ping 一次 /api/health；本地路由层返回本地存储健康度）
+  // 离线模式（桌面端）不依赖轮询，直接视为"本地模式"。
   useEffect(() => {
     if (offlineMode) {
       setIsConnected(true);
@@ -423,8 +425,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const handleNewWindow = useCallback(async () => {
     try {
       await openProjectWindow();
-    } catch (err: any) {
-      showToast(err?.message || '新建窗口失败', 'error');
+    } catch (err) {
+      showToast(toErrorMessage(err) || '新建窗口失败', 'error');
     }
   }, [showToast]);
 
@@ -517,7 +519,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   ]);
 
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden">
+    <div className={`flex flex-col overflow-hidden ${isDesktop() ? 'h-screen w-screen' : 'h-full w-full'}`}>
       {/* 顶部菜单栏 - 通栏（VSCode 式，横跨活动栏与主区域） */}
       <header data-tauri-drag-region className="pro-toolbar relative z-50 h-11 items-center justify-between pl-3 pr-2 bg-(--bg-nav) border-b border-(--border-color) hide-on-mobile flex select-none shrink-0 w-full">
         {/* 左侧：VSCode 式应用菜单（原 logo 位置） */}

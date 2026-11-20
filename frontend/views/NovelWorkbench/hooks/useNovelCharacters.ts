@@ -3,6 +3,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
+import { toErrorMessage } from '../../../utils/errorMessage';
 
 export interface NovelCharacter {
   id: number;
@@ -55,8 +56,8 @@ export function useNovelCharacters(projectId: number) {
       } else {
         throw new Error('加载人物列表失败');
       }
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      setError(toErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -85,8 +86,8 @@ export function useNovelCharacters(projectId: number) {
       } else {
         throw new Error('创建人物失败');
       }
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      setError(toErrorMessage(err));
       throw err;
     }
   }, [projectId]);
@@ -109,8 +110,8 @@ export function useNovelCharacters(projectId: number) {
       } else {
         throw new Error('更新人物失败');
       }
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      setError(toErrorMessage(err));
       throw err;
     }
   }, [projectId]);
@@ -128,8 +129,8 @@ export function useNovelCharacters(projectId: number) {
       } else {
         throw new Error('删除人物失败');
       }
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      setError(toErrorMessage(err));
       throw err;
     }
   }, [projectId]);

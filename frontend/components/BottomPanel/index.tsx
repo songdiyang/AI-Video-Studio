@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Maximize2, Minimize2 } from 'lucide-react';
+import { getViewportSize } from '../../utils/runtimeMode';
 
 interface BottomPanelProps {
   children: React.ReactNode;
@@ -46,7 +47,7 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
     if (!isExpanded) return;
     const syncHeight = () => {
       const containerHeight = rootRef.current?.parentElement?.clientHeight;
-      const target = Math.max(minHeight, (containerHeight ?? window.innerHeight) - COLLAPSED_HEIGHT);
+      const target = Math.max(minHeight, (containerHeight ?? getViewportSize().height) - COLLAPSED_HEIGHT);
       setHeight(target);
       heightRef.current = target;
     };
@@ -78,7 +79,7 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
     }
     prevHeightRef.current = heightRef.current;
     const containerHeight = rootRef.current?.parentElement?.clientHeight;
-    const target = Math.max(minHeight, (containerHeight ?? window.innerHeight) - COLLAPSED_HEIGHT);
+    const target = Math.max(minHeight, (containerHeight ?? getViewportSize().height) - COLLAPSED_HEIGHT);
     setIsExpanded(true);
     setHeight(target);
     heightRef.current = target;
@@ -107,7 +108,7 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
         // 正常拖拽调整高度
         // allowFullExpand 模式下，允许向上拖拽到接近容器顶部（只留拖拽条空间）
         const effectiveMaxHeight = allowFullExpand
-          ? window.innerHeight - COLLAPSED_HEIGHT
+          ? getViewportSize().height - COLLAPSED_HEIGHT
           : maxHeight;
         const newHeight = Math.min(effectiveMaxHeight, Math.max(0, startHeight + deltaY));
         if (newHeight < COLLAPSE_THRESHOLD) {

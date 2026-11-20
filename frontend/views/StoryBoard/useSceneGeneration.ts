@@ -4,6 +4,7 @@ import { useTaskRunner, TaskState } from '../../hooks/useTaskRunner';
 import { WorkflowJob } from '../../hooks/useWorkflow';
 import { StoryboardScene } from './useSceneManager';
 import { CameraGenerateParams, PaintGenerateParams, SketchGenerateParams } from './MagicSpace';
+import { toErrorMessage } from '../../utils/errorMessage';
 
 interface UseSceneGenerationOptions {
   projectId: number | null;
@@ -303,9 +304,9 @@ export function useSceneGeneration({
       }
       
       return { success: true, jobId };
-    } catch (error: any) {
+    } catch (error) {
       console.error('图片生成失败:', error);
-      return { success: false, error: error.message || '图片生成失败' };
+      return { success: false, error: toErrorMessage(error) || '图片生成失败' };
     }
   };
 
@@ -341,9 +342,9 @@ export function useSceneGeneration({
         isRegenerate: !!scene.videoUrl
       });
       return { success: true, jobId };
-    } catch (error: any) {
+    } catch (error) {
       console.error('视频生成失败:', error);
-      return { success: false, error: error.message || '视频生成失败' };
+      return { success: false, error: toErrorMessage(error) || '视频生成失败' };
     }
   };
 
@@ -390,9 +391,9 @@ export function useSceneGeneration({
         if (!compositeImageUrl) {
           throw new Error('上传画布图片返回无效URL');
         }
-      } catch (uploadErr: any) {
+      } catch (uploadErr) {
         console.error('[useSceneGeneration] 上传画布合成图失败:', uploadErr);
-        return { success: false, error: uploadErr.message || '上传画布图片失败' };
+        return { success: false, error: toErrorMessage(uploadErr) || '上传画布图片失败' };
       }
 
       console.log('[useSceneGeneration] 魔术空间-视角生成, mode:', cameraParams.mode, 'rotation:', {
@@ -419,9 +420,9 @@ export function useSceneGeneration({
       });
 
       return { success: true };
-    } catch (error: any) {
+    } catch (error) {
       console.error('魔术空间-视角生成失败:', error);
-      return { success: false, error: error.message || '魔术空间-视角生成失败' };
+      return { success: false, error: toErrorMessage(error) || '魔术空间-视角生成失败' };
     }
   };
 
@@ -461,9 +462,9 @@ export function useSceneGeneration({
         const uploadData = await uploadRes.json();
         compositeImageUrl = uploadData.url || uploadData.fileUrl || uploadData.filePath || '';
         if (!compositeImageUrl) throw new Error('上传合成图返回无效URL');
-      } catch (uploadErr: any) {
+      } catch (uploadErr) {
         console.error('[useSceneGeneration] 上传涂改合成图失败:', uploadErr);
-        return { success: false, error: uploadErr.message || '上传合成图失败' };
+        return { success: false, error: toErrorMessage(uploadErr) || '上传合成图失败' };
       }
 
       // 上传掩膜图
@@ -491,9 +492,9 @@ export function useSceneGeneration({
         const uploadData = await uploadRes.json();
         maskImageUrl = uploadData.url || uploadData.fileUrl || uploadData.filePath || '';
         if (!maskImageUrl) throw new Error('上传掩膜图返回无效URL');
-      } catch (uploadErr: any) {
+      } catch (uploadErr) {
         console.error('[useSceneGeneration] 上传掩膜图失败:', uploadErr);
-        return { success: false, error: uploadErr.message || '上传掩膜图失败' };
+        return { success: false, error: toErrorMessage(uploadErr) || '上传掩膜图失败' };
       }
 
       console.log('[useSceneGeneration] 涂改生成, colors:', paintParams.colorInstructions.length);
@@ -513,9 +514,9 @@ export function useSceneGeneration({
       });
 
       return { success: true };
-    } catch (error: any) {
+    } catch (error) {
       console.error('涂改生成失败:', error);
-      return { success: false, error: error.message || '涂改生成失败' };
+      return { success: false, error: toErrorMessage(error) || '涂改生成失败' };
     }
   };
 
@@ -555,9 +556,9 @@ export function useSceneGeneration({
         const uploadData = await uploadRes.json();
         sketchUrl = uploadData.url || uploadData.fileUrl || uploadData.filePath || '';
         if (!sketchUrl) throw new Error('上传草图返回无效URL');
-      } catch (uploadErr: any) {
+      } catch (uploadErr) {
         console.error('[useSceneGeneration] 上传草图失败:', uploadErr);
-        return { success: false, error: uploadErr.message || '上传草图失败' };
+        return { success: false, error: toErrorMessage(uploadErr) || '上传草图失败' };
       }
 
       console.log('[useSceneGeneration] 草图生成, sketchUrl:', sketchUrl);
@@ -576,9 +577,9 @@ export function useSceneGeneration({
       });
 
       return { success: true };
-    } catch (error: any) {
+    } catch (error) {
       console.error('草图生成失败:', error);
-      return { success: false, error: error.message || '草图生成失败' };
+      return { success: false, error: toErrorMessage(error) || '草图生成失败' };
     }
   };
 
@@ -613,9 +614,9 @@ export function useSceneGeneration({
       });
 
       return { success: true };
-    } catch (error: any) {
+    } catch (error) {
       console.error('高清修复失败:', error);
-      return { success: false, error: error.message || '高清修复失败' };
+      return { success: false, error: toErrorMessage(error) || '高清修复失败' };
     }
   };
 
@@ -644,9 +645,9 @@ export function useSceneGeneration({
       ));
       
       return { success: true, warnings: data.warnings };
-    } catch (err: any) {
+    } catch (err) {
       console.error('删除首帧失败:', err);
-      return { success: false, error: err.message || '删除首帧失败' };
+      return { success: false, error: toErrorMessage(err) || '删除首帧失败' };
     }
   };
 
@@ -671,9 +672,9 @@ export function useSceneGeneration({
       ));
       
       return { success: true };
-    } catch (err: any) {
+    } catch (err) {
       console.error('删除尾帧失败:', err);
-      return { success: false, error: err.message || '删除尾帧失败' };
+      return { success: false, error: toErrorMessage(err) || '删除尾帧失败' };
     }
   };
 

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useStoryboardGeneration, GenerationProgress } from './hooks/useStoryboardGeneration';
 import { StoryboardScene } from './useSceneManager';
 import { GenerateMode } from './AutoStoryboardModal';
+import { toErrorMessage } from '../../utils/errorMessage';
 
 interface UseAutoStoryboardOptions {
   scriptId: number | null;
@@ -105,9 +106,9 @@ export function useAutoStoryboard({
       if (data.deletedStoryboards > 0 || data.deletedCharacters > 0 || data.deletedScenes > 0) {
         console.log(`[AutoStoryboard] 已删除: ${data.deletedStoryboards} 个分镜, ${data.deletedCharacters} 个角色, ${data.deletedScenes} 个场景`);
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error('[AutoStoryboard] 清理失败:', err);
-      onError?.('清理旧数据失败: ' + err.message);
+      onError?.('清理旧数据失败: ' + toErrorMessage(err));
       return;
     }
     startGeneration(textModel, useSceneMode, false, {

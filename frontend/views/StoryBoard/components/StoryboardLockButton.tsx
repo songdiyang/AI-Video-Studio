@@ -7,6 +7,7 @@ import { Button, Tooltip } from '@heroui/react';
 import { Lock, Unlock, Loader2 } from 'lucide-react';
 import { useToast } from '../../../contexts/ToastContext';
 import { lockStoryboard, unlockStoryboard } from '../../../services/storyboards';
+import { toErrorMessage } from '../../../utils/errorMessage';
 
 interface StoryboardLockButtonProps {
   storyboardId: number;
@@ -38,8 +39,8 @@ const StoryboardLockButton: React.FC<StoryboardLockButtonProps> = ({
         showToast(result.message, 'success');
         onLockChange?.(true, result.locked_by);
       }
-    } catch (error: any) {
-      showToast(error.message || '操作失败', 'error');
+    } catch (error) {
+      showToast(toErrorMessage(error) || '操作失败', 'error');
     } finally {
       setLoading(false);
     }

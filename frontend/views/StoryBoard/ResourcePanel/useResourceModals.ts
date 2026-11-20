@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useDisclosure } from '@heroui/react';
 import { fetchReferenceImages } from '../../../services/assets';
 import { ResourceItem } from './types';
+import { toErrorMessage } from '../../../utils/errorMessage';
 
 /** URL 缓存破坏：追加时间戳参数，强制浏览器加载最新图片 */
 function bustCache(url: string | null | undefined): string | undefined {
@@ -151,8 +152,8 @@ export const useResourceModals = (options: UseResourceModalsOptions = {}) => {
       
       // 关闭弹窗
       closeViewsModal();
-    } catch (error: any) {
-      onError?.('生成失败: ' + error.message);
+    } catch (error) {
+      onError?.('生成失败: ' + toErrorMessage(error));
     } finally {
       setIsGenerating(false);
     }

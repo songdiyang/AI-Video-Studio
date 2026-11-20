@@ -24,6 +24,7 @@ import {
 import { listSceneElements, SceneElement } from '../../../services/sceneElements';
 import { useToast } from '../../../contexts/ToastContext';
 import { useAIModels } from '../../../hooks/useAIModels';
+import { toErrorMessage } from '../../../utils/errorMessage';
 
 interface StudioModalProps {
   isOpen: boolean;
@@ -98,9 +99,9 @@ const StudioModal: React.FC<StudioModalProps> = ({
         setProjectBuildings([]);
         setProjectElements([]);
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error('[StudioModal] load failed:', err);
-      showToast(err?.message || '加载失败', 'error');
+      showToast(toErrorMessage(err) || '加载失败', 'error');
     } finally {
       setLoading(false);
     }
@@ -139,9 +140,9 @@ const StudioModal: React.FC<StudioModalProps> = ({
       }
       onSaved();
       onOpenChange();
-    } catch (err: any) {
+    } catch (err) {
       console.error('[StudioModal] save failed:', err);
-      showToast(err?.message || '保存失败', 'error');
+      showToast(toErrorMessage(err) || '保存失败', 'error');
     } finally {
       setSaving(false);
     }
@@ -155,8 +156,8 @@ const StudioModal: React.FC<StudioModalProps> = ({
       showToast('环境已关联', 'success');
       loadAll();
       onSaved();
-    } catch (err: any) {
-      showToast(err?.message || '关联失败', 'error');
+    } catch (err) {
+      showToast(toErrorMessage(err) || '关联失败', 'error');
     }
   };
   const handleDetachEnvironment = async (environmentId?: number) => {
@@ -166,8 +167,8 @@ const StudioModal: React.FC<StudioModalProps> = ({
       showToast('环境已移除', 'success');
       loadAll();
       onSaved();
-    } catch (err: any) {
-      showToast(err?.message || '移除失败', 'error');
+    } catch (err) {
+      showToast(toErrorMessage(err) || '移除失败', 'error');
     }
   };
 
@@ -179,8 +180,8 @@ const StudioModal: React.FC<StudioModalProps> = ({
       showToast('建筑已关联', 'success');
       loadAll();
       onSaved();
-    } catch (err: any) {
-      showToast(err?.message || '关联失败', 'error');
+    } catch (err) {
+      showToast(toErrorMessage(err) || '关联失败', 'error');
     }
   };
   const handleDetachBuilding = async (buildingId: number) => {
@@ -190,8 +191,8 @@ const StudioModal: React.FC<StudioModalProps> = ({
       showToast('建筑已解除', 'success');
       loadAll();
       onSaved();
-    } catch (err: any) {
-      showToast(err?.message || '解除失败', 'error');
+    } catch (err) {
+      showToast(toErrorMessage(err) || '解除失败', 'error');
     }
   };
 
@@ -202,8 +203,8 @@ const StudioModal: React.FC<StudioModalProps> = ({
       await setStudioEnvironmentView(studioId, view, environmentId);
       showToast(`已切换为环境${view === 'back' ? '背面' : '正面'}`, 'success');
       loadAll();
-    } catch (err: any) {
-      showToast(err?.message || '切换环境面失败', 'error');
+    } catch (err) {
+      showToast(toErrorMessage(err) || '切换环境面失败', 'error');
     }
   };
   const handleSetBuildingView = async (buildingId: number, view: 'exterior' | 'interior') => {
@@ -212,8 +213,8 @@ const StudioModal: React.FC<StudioModalProps> = ({
       await setStudioBuildingView(studioId, buildingId, view);
       showToast(`已切换为建筑${view === 'interior' ? '内景' : '外景'}`, 'success');
       loadAll();
-    } catch (err: any) {
-      showToast(err?.message || '切换建筑视图失败', 'error');
+    } catch (err) {
+      showToast(toErrorMessage(err) || '切换建筑视图失败', 'error');
     }
   };
 
@@ -238,8 +239,8 @@ const StudioModal: React.FC<StudioModalProps> = ({
       showToast('九宫组装图生成已启动', 'success');
       loadAll();
       onSaved();
-    } catch (err: any) {
-      showToast(err?.message || '启动生成失败', 'error');
+    } catch (err) {
+      showToast(toErrorMessage(err) || '启动生成失败', 'error');
     } finally {
       setGeneratingNineGrid(false);
     }
@@ -253,8 +254,8 @@ const StudioModal: React.FC<StudioModalProps> = ({
       showToast('元素已关联', 'success');
       loadAll();
       onSaved();
-    } catch (err: any) {
-      showToast(err?.message || '关联失败', 'error');
+    } catch (err) {
+      showToast(toErrorMessage(err) || '关联失败', 'error');
     }
   };
   const handleDetachElement = async (elementId: number) => {
@@ -264,8 +265,8 @@ const StudioModal: React.FC<StudioModalProps> = ({
       showToast('元素已解除', 'success');
       loadAll();
       onSaved();
-    } catch (err: any) {
-      showToast(err?.message || '解除失败', 'error');
+    } catch (err) {
+      showToast(toErrorMessage(err) || '解除失败', 'error');
     }
   };
 
@@ -286,8 +287,8 @@ const StudioModal: React.FC<StudioModalProps> = ({
       showToast(`环境${mode === 'back' ? '背面' : '正面'}图生成已启动`, 'success');
       loadAll();
       onSaved();
-    } catch (err: any) {
-      showToast(err?.message || '生成失败', 'error');
+    } catch (err) {
+      showToast(toErrorMessage(err) || '生成失败', 'error');
     } finally {
       setGeneratingEnvView(prev => ({ ...prev, [env.id]: { ...prev[env.id], [mode]: false } }));
     }
@@ -313,8 +314,8 @@ const StudioModal: React.FC<StudioModalProps> = ({
       showToast(`${viewType === 'interior' ? '室内' : '室外'}图生成已启动`, 'success');
       loadAll();
       onSaved();
-    } catch (err: any) {
-      showToast(err?.message || '生成失败', 'error');
+    } catch (err) {
+      showToast(toErrorMessage(err) || '生成失败', 'error');
     } finally {
       setGeneratingBuildingView(prev => ({
         ...prev,

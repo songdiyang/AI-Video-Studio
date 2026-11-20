@@ -8,6 +8,7 @@ import { Button, Input, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter
 import { Plus, Trash2, Edit2, User, Users, Skull, UserCircle } from 'lucide-react';
 import { useNovelCharacters, NovelCharacter } from '../hooks/useNovelCharacters';
 import { useToast } from '../../../contexts/ToastContext';
+import { toErrorMessage } from '../../../utils/errorMessage';
 
 // ==================== 类型定义 ====================
 
@@ -317,8 +318,8 @@ const CharacterManager: React.FC<CharacterManagerProps> = ({ projectId }) => {
         showToast('人物已创建', 'success');
       }
       onClose();
-    } catch (error: any) {
-      showToast(error.message || '操作失败', 'error');
+    } catch (error) {
+      showToast(toErrorMessage(error) || '操作失败', 'error');
     } finally {
       setIsSubmitting(false);
     }
@@ -330,8 +331,8 @@ const CharacterManager: React.FC<CharacterManagerProps> = ({ projectId }) => {
     try {
       await deleteCharacter(character.id);
       showToast('人物已删除', 'success');
-    } catch (error: any) {
-      showToast(error.message || '删除失败', 'error');
+    } catch (error) {
+      showToast(toErrorMessage(error) || '删除失败', 'error');
     }
   };
 
@@ -391,7 +392,7 @@ const CharacterManager: React.FC<CharacterManagerProps> = ({ projectId }) => {
             <p className="text-sm text-[var(--text-muted)] mt-2">点击"添加人物"开始创建</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 design:grid-cols-2 gap-4">
             {filteredCharacters.map((character) => (
               <CharacterCard
                 key={character.id}

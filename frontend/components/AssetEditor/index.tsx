@@ -22,6 +22,7 @@ import { StoryboardScene } from '../../views/StoryBoard/useSceneManager';
 import { ResourceDraft, ASSET_FIELDS, normalizeAsset, assetSavedData, pickResourceFields, type ResourceData } from './resourceDraft';
 import { ASSET_FIELD_CLASS_NAMES, ASSET_SELECT_CLASS_NAMES } from './fieldStyles';
 import { useResourceDraft } from './useResourceDraft';
+import { toErrorMessage } from '../../utils/errorMessage';
 
 export interface AssetEditorProps extends EmbeddedEditorProps {
   tabId: string;
@@ -151,7 +152,7 @@ const AssetEditorSession: React.FC<AssetEditorProps> = ({ tabId, assetType, init
       if (!alive.current || sequence !== refreshSequence.current) return;
       if (data) session.receive(normalizeAsset(assetType, data), checkpoint);
       setLoadError('');
-    } catch (error: any) { if (alive.current && sequence === refreshSequence.current) setLoadError(error.message || '加载资源详情失败'); }
+    } catch (error) { if (alive.current && sequence === refreshSequence.current) setLoadError(toErrorMessage(error) || '加载资源详情失败'); }
   }, [assetId, assetType, session]);
   useEffect(() => {
     void refresh();
@@ -175,7 +176,7 @@ const AssetEditorSession: React.FC<AssetEditorProps> = ({ tabId, assetType, init
     try {
       if (!(await flush()) || !alive.current) return;
       await operation();
-    } catch (error: any) { if (alive.current) showToast(error.message || '操作失败', 'error'); }
+    } catch (error) { if (alive.current) showToast(toErrorMessage(error) || '操作失败', 'error'); }
     finally { busyRef.current = false; if (alive.current) setBusy(false); }
   };
   const assemblyOperation = (operation: () => Promise<void>) => runOperation(async () => { await operation(); await refresh(); });
@@ -200,7 +201,7 @@ const AssetEditorSession: React.FC<AssetEditorProps> = ({ tabId, assetType, init
         if (data.status !== 'generating') return;
         if (attempt >= 60) throw new Error('生成状态查询超时，请刷新状态后重试');
         pollTimer.current = setTimeout(() => pollProp(attempt + 1, sequence), 3000);
-      } catch (error: any) { if (alive.current && sequence === propPollSequence.current) setGenerationError(error.message); }
+      } catch (error) { if (alive.current && sequence === propPollSequence.current) setGenerationError(toErrorMessage(error)); }
     })();
   };
   const generate = (view?: string) => runOperation(async () => {
@@ -226,7 +227,7 @@ const AssetEditorSession: React.FC<AssetEditorProps> = ({ tabId, assetType, init
       if (assetType !== 'scene' && assetType !== 'studio') publishMedia({ generation_status: 'generating' });
       showToast('生成任务已启动', 'success');
       if (assetType === 'prop') pollProp(); else await refresh();
-    } catch (error: any) { if (alive.current) setGenerationError(error.message || '生成失败，请重试'); }
+    } catch (error) { if (alive.current) setGenerationError(toErrorMessage(error) || '生成失败，请重试'); }
   });
   const deleteAsset = () => runOperation(async () => {
     const ok = await confirm({ title: `删除${kind}`, message: `确定删除「${session.data.name}」？此操作不可撤销。`, type: 'danger', confirmText: '删除' });

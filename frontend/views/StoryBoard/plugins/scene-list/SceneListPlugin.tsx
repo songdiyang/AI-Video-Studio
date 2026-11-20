@@ -52,7 +52,6 @@ const SceneListPlugin: React.FC = () => {
       isBatchGeneratingVideo={state.isBatchVideoSubmitting}
       batchVideoProgress={0}
       isLoading={isLoading}
-      onBatchDownload={() => setState('showBatchDownloadModal', true)}
       onPlayAnimatic={() => {
         const event = new CustomEvent('openAnimaticTab', {
           detail: { scriptId: state.currentScriptId }

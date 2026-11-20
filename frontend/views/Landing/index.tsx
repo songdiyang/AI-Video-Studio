@@ -69,9 +69,9 @@ const Landing: React.FC = () => {
   const { t } = useLanguage();
 
   return (
-    <div className="min-h-screen overflow-y-auto overflow-x-hidden" style={{ backgroundColor: 'var(--bg-app)' }}>
+    <div className="h-full min-h-full overflow-y-auto overflow-x-hidden" style={{ backgroundColor: 'var(--bg-app)' }}>
       {/* Hero Section */}
-      <section className="relative min-h-screen flex items-center justify-center px-4 py-20 overflow-hidden">
+      <section className="relative min-h-full flex items-center justify-center px-4 py-20 overflow-hidden">
         {/* 背景装饰 */}
         <div className="absolute inset-0 pointer-events-none">
           <div className="absolute top-0 left-1/4 w-150 h-150 bg-(--accent)/10 rounded-full blur-[120px]" />
@@ -115,7 +115,7 @@ const Landing: React.FC = () => {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.3, duration: 0.6 }}
-              className="text-4xl md:text-5xl lg:text-6xl font-black leading-tight mb-6"
+              className="text-4xl md:text-5xl lg:text-6xl design:text-6xl font-black leading-tight mb-6"
               style={{ color: 'var(--text-primary)' }}
             >
               {t.landing?.hero?.title || '让每个有故事的人，都能做出百万播放的 AI 漫剧'}
@@ -203,7 +203,7 @@ const Landing: React.FC = () => {
             </motion.p>
           </AnimatedSection>
 
-          <AnimatedSection className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <AnimatedSection className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 design:grid-cols-3 gap-6">
             {(['scriptStudio', 'storyboard', 'sketchStudio', 'assetManager', 'videoComposer', 'aiEngine'] as const).map((key) => {
               const Icon = FEATURE_ICONS[key];
               const colorClass = FEATURE_COLORS[key];

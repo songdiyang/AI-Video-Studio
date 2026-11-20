@@ -7,6 +7,7 @@ import { useLanguage } from '../../contexts/LanguageContext';
 import { useTaskQueue } from './useTaskQueue';
 import TaskItem, { getTaskName } from './TaskItem';
 import CompletedSection from './CompletedSection';
+import { getViewportSize } from '../../utils/runtimeMode';
 
 // 自定义滚动条样式
 const scrollbarStyles = `
@@ -75,8 +76,8 @@ const TaskQueueBubble: React.FC = () => {
   const dragCurrentPos = useRef({ x: 0, y: 0 });
 
   // 弹簧动画值 - 初始位置设为右下角，避免首帧闪烁
-  const defaultX = typeof window !== 'undefined' ? window.innerWidth - BUBBLE_SIZE + BUBBLE_HIDDEN - BUBBLE_SIZE / 2 : 0;
-  const defaultY = typeof window !== 'undefined' ? window.innerHeight - STATUS_BAR_HEIGHT - BUBBLE_SIZE - 20 : 0;
+  const defaultX = typeof window !== 'undefined' ? getViewportSize().width - BUBBLE_SIZE + BUBBLE_HIDDEN - BUBBLE_SIZE / 2 : 0;
+  const defaultY = typeof window !== 'undefined' ? getViewportSize().height - STATUS_BAR_HEIGHT - BUBBLE_SIZE - 20 : 0;
   const springX = useSpring(defaultX, SNAP_SPRING);
   const springY = useSpring(defaultY, SNAP_SPRING);
 
@@ -108,14 +109,14 @@ const TaskQueueBubble: React.FC = () => {
   // 计算吸附位置
   const getSnappedX = useCallback((side: SnapSide) => {
     return side === 'right'
-      ? window.innerWidth - BUBBLE_SIZE + BUBBLE_HIDDEN - BUBBLE_SIZE / 2
+      ? getViewportSize().width - BUBBLE_SIZE + BUBBLE_HIDDEN - BUBBLE_SIZE / 2
       : -BUBBLE_HIDDEN + BUBBLE_SIZE / 2;
   }, []);
 
   // 初始化位置 - 直接同步设置，避免首帧闪到左上角
   useEffect(() => {
     if (!initialized) {
-      const y = window.innerHeight - STATUS_BAR_HEIGHT - BUBBLE_SIZE - 20;
+      const y = getViewportSize().height - STATUS_BAR_HEIGHT - BUBBLE_SIZE - 20;
       setSnapY(y);
       setSnapSide('right');
       springX.jump(getSnappedX('right'));
@@ -127,7 +128,7 @@ const TaskQueueBubble: React.FC = () => {
   // 窗口大小变化
   useEffect(() => {
     const handleResize = () => {
-      const maxY = window.innerHeight - STATUS_BAR_HEIGHT - BUBBLE_SIZE - 8;
+      const maxY = getViewportSize().height - STATUS_BAR_HEIGHT - BUBBLE_SIZE - 8;
       setSnapY(prev => {
         const clamped = Math.min(prev, maxY);
         springY.set(clamped);
@@ -175,7 +176,7 @@ const TaskQueueBubble: React.FC = () => {
     if (hasDragged.current) {
       const newX = dragCurrentPos.current.x + dx;
       const newY = Math.max(8, Math.min(
-        window.innerHeight - STATUS_BAR_HEIGHT - BUBBLE_SIZE - 8,
+        getViewportSize().height - STATUS_BAR_HEIGHT - BUBBLE_SIZE - 8,
         dragCurrentPos.current.y + dy
       ));
       // 拖拽时直接设值（跳过弹簧），保持手感跟手
@@ -204,7 +205,7 @@ const TaskQueueBubble: React.FC = () => {
     const currentX = springX.get();
     const currentY = springY.get();
     const centerX = currentX + BUBBLE_SIZE / 2;
-    const side: SnapSide = centerX < window.innerWidth / 2 ? 'left' : 'right';
+    const side: SnapSide = centerX < getViewportSize().width / 2 ? 'left' : 'right';
 
     setSnapSide(side);
     setSnapY(currentY);
@@ -248,22 +249,22 @@ const TaskQueueBubble: React.FC = () => {
   const getPopupPosition = () => {
     const margin = 12;
     const bubbleVisibleX = snapSide === 'right'
-      ? window.innerWidth - BUBBLE_SIZE + BUBBLE_HIDDEN - BUBBLE_SIZE / 2
+      ? getViewportSize().width - BUBBLE_SIZE + BUBBLE_HIDDEN - BUBBLE_SIZE / 2
       : -BUBBLE_HIDDEN + BUBBLE_SIZE / 2;
 
     let left: number;
     if (snapSide === 'right') {
       // 球在右边，弹窗在左边
-      left = window.innerWidth - (BUBBLE_SIZE - BUBBLE_HIDDEN + BUBBLE_SIZE / 2) - POPUP_WIDTH - margin;
+      left = getViewportSize().width - (BUBBLE_SIZE - BUBBLE_HIDDEN + BUBBLE_SIZE / 2) - POPUP_WIDTH - margin;
     } else {
       // 球在左边，弹窗在右边
       left = (BUBBLE_SIZE - BUBBLE_HIDDEN + BUBBLE_SIZE / 2) + margin;
     }
-    left = Math.max(margin, Math.min(left, window.innerWidth - POPUP_WIDTH - margin));
+    left = Math.max(margin, Math.min(left, getViewportSize().width - POPUP_WIDTH - margin));
 
     let top = snapY;
-    if (top + POPUP_MAX_HEIGHT > window.innerHeight - STATUS_BAR_HEIGHT - margin) {
-      top = window.innerHeight - STATUS_BAR_HEIGHT - POPUP_MAX_HEIGHT - margin;
+    if (top + POPUP_MAX_HEIGHT > getViewportSize().height - STATUS_BAR_HEIGHT - margin) {
+      top = getViewportSize().height - STATUS_BAR_HEIGHT - POPUP_MAX_HEIGHT - margin;
     }
     if (top < margin) top = margin;
 

@@ -9,6 +9,7 @@ import {
   type SketchFrameInfo,
 } from '../../../services/storyboards';
 import { useToast } from '../../../contexts/ToastContext';
+import { toErrorMessage } from '../../../utils/errorMessage';
 
 interface SketchFramesPanelProps {
   storyboardId: number;
@@ -65,9 +66,9 @@ const SketchFramesPanel: React.FC<SketchFramesPanelProps> = ({ storyboardId }) =
         updated_at: new Date().toISOString(),
       });
       showToast(`首帧草图已保存 (v${result.version})`, 'success');
-    } catch (error: any) {
+    } catch (error) {
       console.error('[SketchFramesPanel] Failed to save first sketch:', error);
-      showToast(error.message || '保存首帧草图失败', 'error');
+      showToast(toErrorMessage(error) || '保存首帧草图失败', 'error');
     } finally {
       setSavingFirst(false);
     }
@@ -92,9 +93,9 @@ const SketchFramesPanel: React.FC<SketchFramesPanelProps> = ({ storyboardId }) =
         updated_at: new Date().toISOString(),
       });
       showToast(`尾帧草图已保存 (v${result.version})`, 'success');
-    } catch (error: any) {
+    } catch (error) {
       console.error('[SketchFramesPanel] Failed to save last sketch:', error);
-      showToast(error.message || '保存尾帧草图失败', 'error');
+      showToast(toErrorMessage(error) || '保存尾帧草图失败', 'error');
     } finally {
       setSavingLast(false);
     }
@@ -109,9 +110,9 @@ const SketchFramesPanel: React.FC<SketchFramesPanelProps> = ({ storyboardId }) =
       setFirstSketchInfo(null);
       firstCanvasRef.current?.resetCanvas();
       showToast('首帧草图已删除', 'success');
-    } catch (error: any) {
+    } catch (error) {
       console.error('[SketchFramesPanel] Failed to delete first sketch:', error);
-      showToast(error.message || '删除首帧草图失败', 'error');
+      showToast(toErrorMessage(error) || '删除首帧草图失败', 'error');
     }
   };
 
@@ -124,9 +125,9 @@ const SketchFramesPanel: React.FC<SketchFramesPanelProps> = ({ storyboardId }) =
       setLastSketchInfo(null);
       lastCanvasRef.current?.resetCanvas();
       showToast('尾帧草图已删除', 'success');
-    } catch (error: any) {
+    } catch (error) {
       console.error('[SketchFramesPanel] Failed to delete last sketch:', error);
-      showToast(error.message || '删除尾帧草图失败', 'error');
+      showToast(toErrorMessage(error) || '删除尾帧草图失败', 'error');
     }
   };
 

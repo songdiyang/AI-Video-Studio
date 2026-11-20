@@ -32,7 +32,7 @@ const BuildingList: React.FC<BuildingListProps> = ({ buildings, onEdit, onDelete
 
   return (
     <>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-6 items-stretch">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 design:grid-cols-3 gap-4 mt-6 items-stretch">
         {buildings.map((b) => {
           const isGenerating = b.generation_status === 'generating';
           const hasExt = !!b.exterior_image_url;

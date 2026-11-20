@@ -7,6 +7,7 @@ import {
   deleteSceneReferenceImage,
 } from '../../../services/assets';
 import { useToast } from '../../../contexts/ToastContext';
+import { toErrorMessage } from '../../../utils/errorMessage';
 
 interface SceneModalProps {
   isOpen: boolean;
@@ -108,8 +109,8 @@ const SceneModal: React.FC<SceneModalProps> = ({
       const result = await uploadSceneReferenceImage(formData.id, file);
       setFormData({ ...formData, reference_image_url: result.reference_image_url });
       showToast('参考图上传成功', 'success');
-    } catch (err: any) {
-      showToast(err?.message || '上传参考图失败', 'error');
+    } catch (err) {
+      showToast(toErrorMessage(err) || '上传参考图失败', 'error');
     } finally {
       setUploadingRef(false);
     }
@@ -121,8 +122,8 @@ const SceneModal: React.FC<SceneModalProps> = ({
       await deleteSceneReferenceImage(formData.id);
       setFormData({ ...formData, reference_image_url: null });
       showToast('参考图已删除', 'success');
-    } catch (err: any) {
-      showToast(err?.message || '删除参考图失败', 'error');
+    } catch (err) {
+      showToast(toErrorMessage(err) || '删除参考图失败', 'error');
     }
   };
 

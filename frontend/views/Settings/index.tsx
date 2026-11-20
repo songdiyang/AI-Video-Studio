@@ -43,6 +43,7 @@ import {
   selectDirectory,
   registerJzpAssociation,
 } from '../../services/localApi';
+import { toErrorMessage } from '../../utils/errorMessage';
 
 // 用户反馈邮递收件箱（不在应用内入库，仅唤起系统邮件客户端发送）
 const FEEDBACK_EMAIL = 'songdiyang@aetherstudio.cn';
@@ -345,8 +346,8 @@ const Settings: React.FC = () => {
     try {
       const exe = await registerJzpAssociation();
       showToast(t.settings.about.associateJzpSuccess.replace('{path}', exe), 'success');
-    } catch (err: any) {
-      showToast(err?.message || t.settings.about.associateJzpFailed, 'error');
+    } catch (err) {
+      showToast(toErrorMessage(err) || t.settings.about.associateJzpFailed, 'error');
     } finally {
       setAssociatingJzp(false);
     }
@@ -677,8 +678,8 @@ const Settings: React.FC = () => {
     try {
       await saveProjectGenerationSettings(currentProject.id, next);
       showToast(t.settings.projectSettings.savedToast, 'success');
-    } catch (e: any) {
-      showToast(e?.message || t.settings.projectSettings.saveFailedToast, 'error');
+    } catch (e) {
+      showToast(toErrorMessage(e) || t.settings.projectSettings.saveFailedToast, 'error');
     }
   };
 
@@ -695,8 +696,8 @@ const Settings: React.FC = () => {
     try {
       await saveProjectGenerationSettings(currentProject.id, next);
       showToast(t.settings.projectSettings.savedToast, 'success');
-    } catch (e: any) {
-      showToast(e?.message || t.settings.projectSettings.saveFailedToast, 'error');
+    } catch (e) {
+      showToast(toErrorMessage(e) || t.settings.projectSettings.saveFailedToast, 'error');
     }
   };
 
@@ -737,8 +738,8 @@ const Settings: React.FC = () => {
         'success',
       );
       if (!res.writer?.name) setWriterCastNotice(t.settings.projectSettings.writerRecastNone);
-    } catch (e: any) {
-      const message = e?.message || t.settings.projectSettings.writerRecastFailed;
+    } catch (e) {
+      const message = toErrorMessage(e) || t.settings.projectSettings.writerRecastFailed;
       setWriterCastNotice(message);
       showToast(message, 'error');
     } finally {
@@ -807,7 +808,7 @@ const Settings: React.FC = () => {
     return (
       <div className="max-w-2xl space-y-5">
         <div
-          className="rounded-xl border p-5 lg:p-6 space-y-4"
+          className="rounded-xl border p-5 lg:p-6 design:p-6 space-y-4"
           style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}
         >
           {row('autoLearn', <Sparkles className="w-4 h-4" />, ms.autoLearn, ms.autoLearnDesc, (
@@ -839,7 +840,7 @@ const Settings: React.FC = () => {
 
         {/* 记忆概况 + 维护 */}
         <div
-          className="rounded-xl border p-5 lg:p-6 space-y-4"
+          className="rounded-xl border p-5 lg:p-6 design:p-6 space-y-4"
           style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}
         >
           <div className="flex items-stretch gap-3">
@@ -938,7 +939,7 @@ const Settings: React.FC = () => {
     return (
       <div className="max-w-2xl">
         <div
-          className="rounded-xl border p-5 lg:p-6 space-y-4"
+          className="rounded-xl border p-5 lg:p-6 design:p-6 space-y-4"
           style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}
         >
           {/* 当前工程标识 */}
@@ -1192,7 +1193,7 @@ const Settings: React.FC = () => {
   const renderGeneralSection = () => (
     <div className="max-w-2xl">
       <div
-        className="rounded-xl border p-5 lg:p-6 space-y-4"
+        className="rounded-xl border p-5 lg:p-6 design:p-6 space-y-4"
         style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}
       >
         {renderAppearanceSection()}
@@ -1223,14 +1224,14 @@ const Settings: React.FC = () => {
 
   return (
     <div className="h-full overflow-y-auto" style={{ background: 'var(--bg-body)', color: 'var(--text-primary)' }}>
-      <div className="flex flex-col lg:flex-row min-h-full">
+      <div className="flex flex-col lg:flex-row design:flex-row min-h-full">
         {/* 左侧导航 */}
         <aside
-          className="lg:w-36 shrink-0 p-4 lg:p-4 border-b lg:border-b-0 lg:border-r"
+          className="lg:w-36 design:w-36 shrink-0 p-4 lg:p-4 border-b lg:border-b-0 lg:border-r design:border-b-0 design:border-r"
           style={{ borderColor: 'var(--border-color)' }}
         >
           {/* 导航：所有分区同级排列（选中态为文字高亮 + 左侧短竖线） */}
-          <nav className="flex lg:flex-col gap-1 flex-wrap">
+          <nav className="flex lg:flex-col design:flex-col gap-1 flex-wrap">
             {(() => {
               const visible = SETTING_SECTIONS.filter(section => !section.isAdmin || isAdmin);
               const renderButton = (section: SettingSection) => {
@@ -1264,7 +1265,7 @@ const Settings: React.FC = () => {
         </aside>
 
         {/* 右侧内容 */}
-        <main className="flex-1 min-w-0 p-6 lg:p-8">
+        <main className="flex-1 min-w-0 p-6 lg:p-8 design:p-8">
           {/* 区域头部：大标题 + 描述（ai_models 页自带「模型」标题，不重复渲染） */}
           {activeSection !== 'ai_models' && (
             <div className="flex items-start justify-between gap-4 mb-6">

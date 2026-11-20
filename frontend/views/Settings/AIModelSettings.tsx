@@ -15,6 +15,8 @@ import {
   updateAIModelConfigFlags, testAIModelConnection, testModelByCategory, DEFAULT_API_BASES,
   type AIModelConfig, type ConnectionTestResult,
 } from '../../services/localApi';
+import { getViewportSize } from '../../utils/runtimeMode';
+import { toErrorMessage } from '../../utils/errorMessage';
 
 // ─── 提供商目录 ───────────────────────────────────────────────
 type ProviderCategory = 'multimodal' | 'text' | 'image' | 'video';
@@ -230,7 +232,7 @@ const GroupedSelect: React.FC<{
     if (!trigger) return;
     const rect = trigger.getBoundingClientRect();
     const margin = 8;
-    const viewportH = window.innerHeight;
+    const viewportH = getViewportSize().height;
     const spaceBelow = viewportH - rect.bottom - margin;
     const spaceAbove = rect.top - margin;
     const flipUp = spaceBelow < 220 && spaceAbove > spaceBelow;
@@ -591,11 +593,11 @@ const AIModelSettings: React.FC = () => {
       setAddTestResult(result);
       setAddTestPassed(result.ok);
       return result.ok;
-    } catch (err: any) {
+    } catch (err) {
       const failResult: ConnectionTestResult = {
         ok: false, status: 'failed',
         message: '测试请求异常',
-        detail: err?.message || '未知错误',
+        detail: toErrorMessage(err) || '未知错误',
       };
       setAddTestResult(failResult);
       setAddTestPassed(false);

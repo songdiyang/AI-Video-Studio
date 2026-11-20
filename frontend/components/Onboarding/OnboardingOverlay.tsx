@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronLeft, ChevronRight, X, Sparkles } from 'lucide-react';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { OnboardingStep } from '../../hooks/useOnboarding';
+import { getViewportSize } from '../../utils/runtimeMode';
 
 interface OnboardingOverlayProps {
   isActive: boolean;
@@ -85,8 +86,8 @@ const OnboardingOverlay: React.FC<OnboardingOverlayProps> = ({
     }
     
     // 边界检测
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
+    const viewportWidth = getViewportSize().width;
+    const viewportHeight = getViewportSize().height;
     
     if (left < 16) left = 16;
     if (left + bubbleRect.width > viewportWidth - 16) {

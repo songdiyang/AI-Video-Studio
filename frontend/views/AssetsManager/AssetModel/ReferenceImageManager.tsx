@@ -10,6 +10,7 @@ import {
   uploadFileToMinIO
 } from '../../../services/assets';
 import { useToast } from '../../../contexts/ToastContext';
+import { toErrorMessage } from '../../../utils/errorMessage';
 
 interface ReferenceImageManagerProps {
   assetType: AssetReferenceType;
@@ -107,9 +108,9 @@ const ReferenceImageManager: React.FC<ReferenceImageManagerProps> = ({
       );
       await loadImages();
       showToast(`${assetLabel}上传成功`, 'success');
-    } catch (error: any) {
+    } catch (error) {
       console.error('上传失败:', error);
-      showToast(error.message || '上传失败，请重试', 'error');
+      showToast(toErrorMessage(error) || '上传失败，请重试', 'error');
     } finally {
       setUploading(false);
       setUploadProgress(0);
@@ -132,8 +133,8 @@ const ReferenceImageManager: React.FC<ReferenceImageManagerProps> = ({
       await deleteReferenceImage(sheetImage.id);
       await loadImages();
       showToast(`${assetLabel}已删除`, 'success');
-    } catch (error: any) {
-      showToast(error.message || '删除失败', 'error');
+    } catch (error) {
+      showToast(toErrorMessage(error) || '删除失败', 'error');
     }
   };
 
@@ -143,8 +144,8 @@ const ReferenceImageManager: React.FC<ReferenceImageManagerProps> = ({
       await updateReferenceImage(sheetImage.id, { is_enabled: !sheetImage.is_enabled });
       await loadImages();
       showToast(sheetImage.is_enabled ? '参考图已禁用' : '参考图已启用', 'success');
-    } catch (error: any) {
-      showToast(error.message || '操作失败', 'error');
+    } catch (error) {
+      showToast(toErrorMessage(error) || '操作失败', 'error');
     }
   };
 

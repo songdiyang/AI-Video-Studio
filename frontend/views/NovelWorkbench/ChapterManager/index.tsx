@@ -10,6 +10,7 @@ import { NovelChapter } from '../../../types/projectTypes';
 import { useToast } from '../../../contexts/ToastContext';
 import { useTaskRunner, TaskState } from '../../../hooks/useTaskRunner';
 import { AIModel } from '../../../components/AIModelSelector';
+import { toErrorMessage } from '../../../utils/errorMessage';
 
 // ==================== 类型定义 ====================
 
@@ -404,8 +405,8 @@ const ChapterManager: React.FC<ChapterManagerProps> = ({
         modelName: textModel,
       });
       showToast('AI 续写任务已启动', 'success');
-    } catch (error: any) {
-      showToast(error.message || 'AI 续写启动失败', 'error');
+    } catch (error) {
+      showToast(toErrorMessage(error) || 'AI 续写启动失败', 'error');
     }
   };
 

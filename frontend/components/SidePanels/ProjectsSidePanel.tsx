@@ -27,6 +27,7 @@ import { useWorkbench } from '../../contexts/WorkbenchContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { useToast } from '../../contexts/ToastContext';
+import { toErrorMessage } from '../../utils/errorMessage';
 
 interface ProjectsSidePanelProps {
   /** 打开项目后回调（用于关闭侧边栏面板） */
@@ -66,9 +67,9 @@ const ProjectsSidePanel: React.FC<ProjectsSidePanelProps> = ({ onOpenProject }) 
         if (aLocal !== bLocal) return bLocal - aLocal;
         return new Date(b.updated_at || 0).getTime() - new Date(a.updated_at || 0).getTime();
       }));
-    } catch (err: any) {
+    } catch (err) {
       setProjects([]); // 加载失败时清掉旧列表，避免移除后残留
-      setError(err?.message || t.frame.projects.loadFailed);
+      setError(toErrorMessage(err) || t.frame.projects.loadFailed);
     } finally {
       setLoading(false);
     }
@@ -140,8 +141,8 @@ const ProjectsSidePanel: React.FC<ProjectsSidePanelProps> = ({ onOpenProject }) 
         showToast(t.frame.projects.renamedOnCreate.replace('{name}', meta.name), 'warning');
       }
       await loadProjects();
-    } catch (err: any) {
-      setCreateError(err?.message || t.frame.projects.createFailed);
+    } catch (err) {
+      setCreateError(toErrorMessage(err) || t.frame.projects.createFailed);
     } finally {
       setCreating(false);
     }
@@ -164,8 +165,8 @@ const ProjectsSidePanel: React.FC<ProjectsSidePanelProps> = ({ onOpenProject }) 
       await loadProjects();
       showToast(t.frame.projects.addJzpSuccess, 'success');
       await handleOpen(mapLocalProject(meta));
-    } catch (err: any) {
-      showToast(err?.message || t.frame.projects.addJzpFailed, 'error');
+    } catch (err) {
+      showToast(toErrorMessage(err) || t.frame.projects.addJzpFailed, 'error');
     } finally {
       setImportingJzp(false);
     }
@@ -185,8 +186,8 @@ const ProjectsSidePanel: React.FC<ProjectsSidePanelProps> = ({ onOpenProject }) 
     try {
       const saved = await exportProjectPackage(project.local_path, dest);
       showToast(t.frame.projects.exportJzpSuccess.replace('{path}', saved), 'success');
-    } catch (err: any) {
-      showToast(err?.message || t.frame.projects.exportJzpFailed, 'error');
+    } catch (err) {
+      showToast(toErrorMessage(err) || t.frame.projects.exportJzpFailed, 'error');
     } finally {
       setExportingPath(null);
     }

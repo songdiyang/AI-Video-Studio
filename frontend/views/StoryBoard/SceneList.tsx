@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Button, Tooltip } from '@heroui/react';
-import { Plus, Video, Download, Film, Image, Trash2, Play } from 'lucide-react';
+import { Plus, Video, Film, Image, Trash2, Play } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import SceneCard from './SceneCard';
 import { StoryboardScene } from './useSceneManager';
@@ -43,7 +43,6 @@ interface SceneListProps {
   isBatchGeneratingVideo?: boolean;
   batchVideoProgress?: number;
   sceneValidationMap?: Map<number, StoryboardValidationIssue[]>;
-  onBatchDownload?: () => void;
   onPlayAnimatic?: () => void;
   onEpisodeSelect?: (script: Script | null) => void;
   onStandaloneEpisodeChange?: (episode: number) => void;
@@ -117,7 +116,6 @@ const SceneList: React.FC<SceneListProps> = ({
   tasks,
   onReorderScenes,
   sceneValidationMap,
-  onBatchDownload,
   onPlayAnimatic,
   onEpisodeSelect,
   onStandaloneEpisodeChange,
@@ -297,17 +295,6 @@ const SceneList: React.FC<SceneListProps> = ({
               </button>
             </Tooltip>
           )}
-          {/* 批量下载 */}
-          {onBatchDownload && (
-            <Tooltip content="批量下载打包" placement="bottom">
-              <button
-                onClick={onBatchDownload}
-                className="h-7 w-7 flex items-center justify-center rounded-md text-xs text-[var(--text-secondary)] hover:bg-emerald-500/15 hover:text-emerald-400 transition-all cursor-pointer"
-              >
-                <Download className="w-3.5 h-3.5" />
-              </button>
-            </Tooltip>
-          )}
           {/* 播放分镜 */}
           {onPlayAnimatic && (
             <Tooltip content="播放分镜预览" placement="bottom">
@@ -368,7 +355,8 @@ const SceneList: React.FC<SceneListProps> = ({
         ) : (
           <motion.div
             variants={containerVariants}
-            initial="hidden"
+            // Portal 面板可能在折叠或后台状态挂载，不能停留在 hidden 的透明首帧
+            initial={false}
             animate="show"
             className="space-y-0"
           >
@@ -377,6 +365,7 @@ const SceneList: React.FC<SceneListProps> = ({
                 <motion.div
                   data-scene-id={scene.id}
                   variants={itemVariants}
+                  initial={false}
                   layout={hasLoaded}
                   draggable
                   onDragStart={(e) => handleDragStart(e as any, index)}

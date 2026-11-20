@@ -14,6 +14,7 @@ import { mapStudioItems, type Scene } from './useSceneData';
 import { ALL_RESOURCE_TYPES, DEFAULT_ENABLED_TYPES, type CategoryConfig, type CategoryMemberRef, type CustomCategory } from './resourceCategories';
 import { fetchResourceLibrary, saveResourceLibraryCategories } from '../../../services/resourceLibrary';
 import type { ResourceLibraryResponse } from '../../../types/resourceLibrary';
+import { toErrorMessage } from '../../../utils/errorMessage';
 
 export interface ResourceLibraryData {
   characters: Character[];
@@ -96,9 +97,9 @@ export function useResourceLibrary(projectId?: number | null, scriptId?: number 
       loadedProjectRef.current = projectId;
       lastSavedRef.current = JSON.stringify(nextCategories);
       setError(null);
-    } catch (e: any) {
+    } catch (e) {
       if (reqId !== requestIdRef.current) return;
-      setError(e?.message || '加载资源库失败');
+      setError(toErrorMessage(e) || '加载资源库失败');
     } finally {
       if (reqId === requestIdRef.current) setIsLoading(false);
     }

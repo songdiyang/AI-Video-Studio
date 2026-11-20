@@ -14,6 +14,7 @@ import { VideoEffect, TransitionType, FilterType } from '../../../types/projectT
 import { useToast } from '../../../contexts/ToastContext';
 import type { useAIModels } from '../../../hooks/useAIModels';
 import type { useTaskRunner, TaskState } from '../../../hooks/useTaskRunner';
+import { toErrorMessage } from '../../../utils/errorMessage';
 
 // ==================== 类型定义 ====================
 
@@ -447,8 +448,8 @@ const EffectsEditor: React.FC<EffectsEditorProps> = ({
         effectConfig: effect.effect_config,
         modelName: aiModels.selected.video || aiModels.selected.image,
       });
-    } catch (err: any) {
-      showToast(err.message || '启动渲染任务失败', 'error');
+    } catch (err) {
+      showToast(toErrorMessage(err) || '启动渲染任务失败', 'error');
       setRenderingEffectId(null);
     }
   }, [runTask, aiModels, effects, projectId, showToast]);

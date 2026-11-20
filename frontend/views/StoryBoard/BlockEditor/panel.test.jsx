@@ -75,7 +75,7 @@ test('所有字段回读及外部 flush；首尾帧/视频提示词不串写', a
   expect(await flush()).toBe(true);
   expect(props.onUpdateFirstFramePrompt).toHaveBeenCalledWith('首'); expect(props.onUpdateLastFramePrompt).toHaveBeenCalledWith('尾');
   expect(props.onUpdateVideoPrompt).toHaveBeenCalledWith('视频'); expect(props.onUpdateNegativePrompt).toHaveBeenCalledWith('排除水印');
-  await click('台词与旁白'); await input('第1行台词', '台词'); await click('画外音'); await input('旁白', '旁白');
+  await click('台词与旁白'); await input('第1行台词', '台词'); await input('第2行台词', '旁白');
   expect(await flush()).toBe(true); expect(props.onUpdateDialogues).toHaveBeenCalledWith([{ character: '小明', line: '台词' }]); expect(props.onUpdateVoiceover).toHaveBeenCalledWith('旁白');
   await click('提示词'); await click('图片首帧'); expect(find('首帧提示词').textContent).toBe('首');
 });

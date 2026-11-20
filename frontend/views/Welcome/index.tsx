@@ -39,6 +39,7 @@ import {
   type ProjectMetadata,
 } from '../../services/localApi';
 import { makeUniqueName } from '../../services/uniqueName';
+import { toErrorMessage } from '../../utils/errorMessage';
 
 const RECENT_LIMIT = 6;
 
@@ -101,8 +102,8 @@ const Welcome: React.FC = () => {
     }
     try {
       activate(await openProject(meta.path));
-    } catch (err: any) {
-      showToast(err?.message || w.openFailed, 'error');
+    } catch (err) {
+      showToast(toErrorMessage(err) || w.openFailed, 'error');
       void loadRecent();
     }
   };
@@ -117,8 +118,8 @@ const Welcome: React.FC = () => {
     if (!dir) return;
     try {
       activate(await registerProject(dir));
-    } catch (err: any) {
-      showToast(err?.message || w.openFailed, 'error');
+    } catch (err) {
+      showToast(toErrorMessage(err) || w.openFailed, 'error');
     }
   };
 
@@ -134,8 +135,8 @@ const Welcome: React.FC = () => {
     if (!path) return;
     try {
       activate(await importProjectPackage(path));
-    } catch (err: any) {
-      showToast(err?.message || w.openFailed, 'error');
+    } catch (err) {
+      showToast(toErrorMessage(err) || w.openFailed, 'error');
     }
   };
 
@@ -156,8 +157,8 @@ const Welcome: React.FC = () => {
     try {
       const saved = await exportProjectPackage(meta.path, dest);
       showToast(t.frame.projects.exportJzpSuccess.replace('{path}', saved), 'success');
-    } catch (err: any) {
-      showToast(err?.message || t.frame.projects.exportJzpFailed, 'error');
+    } catch (err) {
+      showToast(toErrorMessage(err) || t.frame.projects.exportJzpFailed, 'error');
     } finally {
       setExportingPath(null);
     }
@@ -178,8 +179,8 @@ const Welcome: React.FC = () => {
       await deleteProject(meta.path, true);
       showToast(w.deleteSuccess, 'success');
       await loadRecent();
-    } catch (err: any) {
-      showToast(err?.message || w.deleteFailed, 'error');
+    } catch (err) {
+      showToast(toErrorMessage(err) || w.deleteFailed, 'error');
     } finally {
       setDeletingId(null);
     }
@@ -243,8 +244,8 @@ const Welcome: React.FC = () => {
       // 不清理则右侧 AI 助手会把上一个工程的对话当作“本工程历史”显示出来。
       clearProjectDisplayCache(mapLocalProject(meta).id);
       activate(meta);
-    } catch (err: any) {
-      setCreateError(err?.message || w.createFailed);
+    } catch (err) {
+      setCreateError(toErrorMessage(err) || w.createFailed);
     } finally {
       setCreating(false);
     }
@@ -287,7 +288,7 @@ const Welcome: React.FC = () => {
           </button>
         </div>
 
-        <div className="mt-14 grid grid-cols-1 gap-12 lg:grid-cols-[minmax(0,400px)_minmax(0,1fr)] lg:gap-16">
+        <div className="mt-14 grid grid-cols-1 gap-12 lg:grid-cols-[minmax(0,400px)_minmax(0,1fr)] lg:gap-16 design:grid-cols-[minmax(0,400px)_minmax(0,1fr)] design:gap-16">
           {/* 主操作 */}
           <div className="space-y-3">
             <button

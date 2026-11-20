@@ -653,6 +653,10 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
       const tabId = `scene-${sceneId}`;
       const existingTab = sceneTabs.find(t => t.id === tabId);
 
+      // 用户显式打开分镜是强意图，需覆盖工具标签（设置/团队/剧本生成）的激活优先级，
+      // 否则设置标签激活期间双击场景只会创建标签而不切换，用户感知为“没反应”。
+      setActiveToolTabId(null);
+
       if (existingTab) {
         // 标签已存在，直接切换激活
         setActiveAssetTabId(null);
@@ -695,6 +699,9 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
       if (targetScriptId !== currentScriptId) {
         setCurrentScriptId(targetScriptId);
       }
+
+      // 显式打开 Animatic 同样覆盖工具标签激活优先级（与 openSceneTab 一致）
+      setActiveToolTabId(null);
 
       const existingTab = sceneTabs.find(t => t.id === 'animatic');
       if (existingTab) {

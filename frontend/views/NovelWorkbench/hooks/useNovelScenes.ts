@@ -3,6 +3,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
+import { toErrorMessage } from '../../../utils/errorMessage';
 
 export interface NovelScene {
   id: number;
@@ -39,8 +40,8 @@ export function useNovelScenes(projectId: number) {
       } else {
         throw new Error('加载场景列表失败');
       }
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      setError(toErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -69,8 +70,8 @@ export function useNovelScenes(projectId: number) {
       } else {
         throw new Error('创建场景失败');
       }
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      setError(toErrorMessage(err));
       throw err;
     }
   }, [projectId]);
@@ -93,8 +94,8 @@ export function useNovelScenes(projectId: number) {
       } else {
         throw new Error('更新场景失败');
       }
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      setError(toErrorMessage(err));
       throw err;
     }
   }, [projectId]);
@@ -112,8 +113,8 @@ export function useNovelScenes(projectId: number) {
       } else {
         throw new Error('删除场景失败');
       }
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      setError(toErrorMessage(err));
       throw err;
     }
   }, [projectId]);

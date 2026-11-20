@@ -14,6 +14,7 @@ import { MangaPage } from '../../../types/projectTypes';
 import { AIModel } from '../../../components/AIModelSelector';
 import { useToast } from '../../../contexts/ToastContext';
 import { useTaskRunner } from '../../../hooks/useTaskRunner';
+import { toErrorMessage } from '../../../utils/errorMessage';
 
 // ==================== 类型定义 ====================
 
@@ -517,8 +518,8 @@ const AIPanel: React.FC<AIPanelProps> = ({ projectId, imageModel }) => {
         prompt: prompt || '清晰的漫画线稿',
       });
       showToast('线稿生成任务已启动', 'success');
-    } catch (err: any) {
-      showToast(err.message || '启动任务失败', 'error');
+    } catch (err) {
+      showToast(toErrorMessage(err) || '启动任务失败', 'error');
     }
   };
   
@@ -536,8 +537,8 @@ const AIPanel: React.FC<AIPanelProps> = ({ projectId, imageModel }) => {
         prompt: prompt || '精美的漫画上色',
       });
       showToast('自动上色任务已启动', 'success');
-    } catch (err: any) {
-      showToast(err.message || '启动任务失败', 'error');
+    } catch (err) {
+      showToast(toErrorMessage(err) || '启动任务失败', 'error');
     }
   };
   

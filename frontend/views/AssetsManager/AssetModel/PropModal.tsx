@@ -18,6 +18,7 @@ import ReferenceImageManager from './ReferenceImageManager';
 import PropStyleConfigPanel, { PropStyleConfig } from './PropStyleConfig';
 import { useAIModels } from '../../../hooks/useAIModels';
 import { filterModelsForTaskSlot } from '../../../utils/modelCapabilities';
+import { toErrorMessage } from '../../../utils/errorMessage';
 
 interface PropModalProps {
   isOpen: boolean;
@@ -124,10 +125,10 @@ const PropModal: React.FC<PropModalProps> = ({
 
       // 开始轮询状态
       pollGenerationStatus();
-    } catch (error: any) {
+    } catch (error) {
       console.error('生成失败:', error);
       setGenerationStatus('failed');
-      alert('生成失败: ' + error.message);
+      alert('生成失败: ' + toErrorMessage(error));
     } finally {
       setIsGenerating(false);
     }

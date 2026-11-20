@@ -17,6 +17,7 @@ import { ResourceDraft, STATE_FIELDS, normalizeState, statePayload, pickResource
 import { ASSET_FIELD_CLASS_NAMES, ASSET_SELECT_CLASS_NAMES } from '../../../components/AssetEditor/fieldStyles';
 import { useResourceDraft } from '../../../components/AssetEditor/useResourceDraft';
 import { generateCostumeViews, fetchCharacterCostumes, type Costume } from '../../../services/costumes';
+import { toErrorMessage } from '../../../utils/errorMessage';
 
 export interface CharacterStateEditorProps extends EmbeddedEditorProps {
   characterId: number | null;
@@ -190,7 +191,7 @@ const CharacterStateSession: React.FC<CharacterStateEditorProps> = ({ characterI
         const current = rows.find(state => state.id === target.data.id);
         if (current) target.receive(normalizeState(current), checkpoint);
       }
-    } catch (error: any) { if (alive.current && sequence === loadSequence.current) setLoadError(error.message || '加载角色状态失败'); }
+    } catch (error) { if (alive.current && sequence === loadSequence.current) setLoadError(toErrorMessage(error) || '加载角色状态失败'); }
     finally { if (alive.current && sequence === loadSequence.current) setLoading(false); }
   }, [characterId, projectId]);
   useEffect(() => { void loadStates(); }, [loadStates]);
@@ -267,7 +268,7 @@ const CharacterStateSession: React.FC<CharacterStateEditorProps> = ({ characterI
     if (operationLock.current || disabled) return;
     operationLock.current = true; setOperationBusy(true);
     try { if (!(await flush()) || !alive.current) return; await operation(); }
-    catch (error: any) { if (alive.current) showToast(error.message || '操作失败', 'error'); }
+    catch (error) { if (alive.current) showToast(toErrorMessage(error) || '操作失败', 'error'); }
     finally { operationLock.current = false; if (alive.current) setOperationBusy(false); }
   };
   const activate = (state: CharacterState) => runOperation(async () => {
@@ -386,7 +387,7 @@ const CharacterStateSession: React.FC<CharacterStateEditorProps> = ({ characterI
       setCostumes(prev => prev.map(item => item.id === costumeId ? { ...item, generation_status: 'generating' } : item));
       showToast('关联服装设定图生成已启动', 'success');
       await loadStates();
-    } catch (error: any) { if (alive.current) showToast(error.message || '服装生成失败', 'error'); }
+    } catch (error) { if (alive.current) showToast(toErrorMessage(error) || '服装生成失败', 'error'); }
     finally { finishGeneration(key); }
   };
   const openEquip = (state: CharacterState) => runOperation(async () => {
@@ -440,7 +441,7 @@ const CharacterStateSession: React.FC<CharacterStateEditorProps> = ({ characterI
         style: voice.style || 'gentle', speed: typeof voice.speed === 'number' ? voice.speed : 1,
         pitch: typeof voice.pitch === 'number' ? voice.pitch : 0, volume: typeof voice.volume === 'number' ? voice.volume : 1,
         dialect: voice.dialect || '', seedance_prompt: voice.seedance_prompt || '' } });
-    } catch (error: any) { if (alive.current) showToast(error.message || '音色分析失败', 'error'); }
+    } catch (error) { if (alive.current) showToast(toErrorMessage(error) || '音色分析失败', 'error'); }
     finally { voiceLock.current = false; if (alive.current) setAnalyzingVoice(false); }
   };
 

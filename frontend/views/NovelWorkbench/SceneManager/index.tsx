@@ -8,6 +8,7 @@ import { Button, Input, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter
 import { Plus, Trash2, Edit2, MapPin, Star, Circle, Minus } from 'lucide-react';
 import { useNovelScenes, NovelScene } from '../hooks/useNovelScenes';
 import { useToast } from '../../../contexts/ToastContext';
+import { toErrorMessage } from '../../../utils/errorMessage';
 
 // ==================== 类型定义 ====================
 
@@ -267,8 +268,8 @@ const SceneManager: React.FC<SceneManagerProps> = ({ projectId }) => {
         showToast('场景已创建', 'success');
       }
       onClose();
-    } catch (error: any) {
-      showToast(error.message || '操作失败', 'error');
+    } catch (error) {
+      showToast(toErrorMessage(error) || '操作失败', 'error');
     } finally {
       setIsSubmitting(false);
     }
@@ -280,8 +281,8 @@ const SceneManager: React.FC<SceneManagerProps> = ({ projectId }) => {
     try {
       await deleteScene(scene.id);
       showToast('场景已删除', 'success');
-    } catch (error: any) {
-      showToast(error.message || '删除失败', 'error');
+    } catch (error) {
+      showToast(toErrorMessage(error) || '删除失败', 'error');
     }
   };
 
@@ -340,7 +341,7 @@ const SceneManager: React.FC<SceneManagerProps> = ({ projectId }) => {
             <p className="text-sm text-[var(--text-muted)] mt-2">点击"添加场景"开始创建</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 design:grid-cols-2 gap-4">
             {filteredScenes.map((scene) => (
               <SceneCard
                 key={scene.id}

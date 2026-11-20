@@ -1,4 +1,5 @@
-/**
+
+import { toErrorMessage } from '../../../utils/errorMessage';/**
  * JSON 解析和修复工具
  * 与后端工作流使用相同的逻辑
  */
@@ -24,8 +25,8 @@ export const parseAndFixJSON = (jsonStr: string): any[] => {
     const result = JSON.parse(jsonStr);
     console.log('[ImportStoryboard] 直接解析成功');
     return result;
-  } catch (e: any) {
-    console.log('[ImportStoryboard] 直接解析失败:', e.message);
+  } catch (e) {
+    console.log('[ImportStoryboard] 直接解析失败:', toErrorMessage(e));
     console.log('[ImportStoryboard] 尝试修复格式错误...');
   }
   
@@ -54,8 +55,8 @@ export const parseAndFixJSON = (jsonStr: string): any[] => {
     const result = JSON.parse(fixedStr);
     console.log('[ImportStoryboard] 修复后解析成功，共', result.length, '个分镜');
     return result;
-  } catch (e: any) {
-    console.error('[ImportStoryboard] 修复后仍然失败:', e.message);
-    throw new Error(`JSON 解析失败: ${e.message}`);
+  } catch (e) {
+    console.error('[ImportStoryboard] 修复后仍然失败:', toErrorMessage(e));
+    throw new Error(`JSON 解析失败: ${toErrorMessage(e)}`);
   }
 };

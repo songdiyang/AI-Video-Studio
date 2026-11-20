@@ -17,6 +17,7 @@ import { lockWriter, loadEffectiveWriter } from '../services/projectSettings';
 import QuickStartWizard from '../components/QuickStartWizard';
 import UpgradePrompt from '../components/UpgradePrompt';
 import ImageCropperModal, { CropSelection } from '../components/ImageCropperModal';
+import { toErrorMessage } from '../utils/errorMessage';
 
 // 虚拟列表启用阈值
 const VIRTUAL_LIST_THRESHOLD = 20;
@@ -194,8 +195,8 @@ const Projects: React.FC = () => {
       }
       myStylesDisclosure.onClose();
       loadMyStyles();
-    } catch (error: any) {
-      showToast(error.message || '操作失败', 'error');
+    } catch (error) {
+      showToast(toErrorMessage(error) || '操作失败', 'error');
     }
   };
 
@@ -216,8 +217,8 @@ const Projects: React.FC = () => {
       if (formData.visualStyle === `myStyle_${style.id}`) {
         setFormData({ ...formData, visualStyle: '', visualStylePrompt: '' });
       }
-    } catch (error: any) {
-      showToast(error.message || '删除失败', 'error');
+    } catch (error) {
+      showToast(toErrorMessage(error) || '删除失败', 'error');
     }
   };
 
@@ -565,9 +566,9 @@ const Projects: React.FC = () => {
         setFormData(prev => ({ ...prev, cover_url: data.coverUrl }));
         await loadProjects();
         showToast('封面上传成功', 'success');
-      } catch (error: any) {
+      } catch (error) {
         console.error('封面上传失败:', error);
-        showToast(error.message || '封面上传失败', 'error');
+        showToast(toErrorMessage(error) || '封面上传失败', 'error');
       } finally {
         setCoverUploading(false);
         // 清空 input 以允许重复选择同一文件
@@ -614,9 +615,9 @@ const Projects: React.FC = () => {
         setFormData(prev => ({ ...prev, cover_url: data.coverUrl }));
         await loadProjects();
         showToast('裁剪完成，封面已更新', 'success');
-      } catch (error: any) {
+      } catch (error) {
         console.error('裁剪封面失败:', error);
-        showToast(error.message || '裁剪封面失败', 'error');
+        showToast(toErrorMessage(error) || '裁剪封面失败', 'error');
       } finally {
         setCoverUploading(false);
       }
@@ -666,8 +667,8 @@ const Projects: React.FC = () => {
     }
     try {
       await openProjectWindow(project.local_path, project.name);
-    } catch (err: any) {
-      showToast(err?.message || '打开新窗口失败', 'error');
+    } catch (err) {
+      showToast(toErrorMessage(err) || '打开新窗口失败', 'error');
     }
   };
 
@@ -899,7 +900,7 @@ const Projects: React.FC = () => {
           </div>
         ) : (
           /* 常规网格模式（项目数 <= 20） */
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 design:grid-cols-3 gap-4">
             {filteredProjects.map((project) => (
               <Card 
                 key={project.id} 

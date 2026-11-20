@@ -15,6 +15,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { useAIAssistantUI } from '../../contexts/AIAssistantContext';
 import { useStoryboardBridgeSafe } from '../../contexts/StoryboardBridgeContext';
 import { requestScriptAnalysis } from '../../services/scriptAnalysisBridge';
+import { toErrorMessage } from '../../utils/errorMessage';
 
 // ==================== 类型 ====================
 
@@ -556,8 +557,8 @@ const ScriptPicker: React.FC<ScriptPickerProps> = ({ projectId, currentScriptId,
       }
       // 重新加载列表
       loadItems();
-    } catch (err: any) {
-      showToast(err?.message || '删除失败', 'error');
+    } catch (err) {
+      showToast(toErrorMessage(err) || '删除失败', 'error');
     } finally {
       setDeletingId(null);
     }

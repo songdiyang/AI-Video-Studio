@@ -72,6 +72,7 @@ import { usePreview } from '../../components/PreviewProvider';
 import { AIModel } from '../../components/AIModelSelector';
 import type { CharacterState } from '../../services/assets';
 import { useAIAssistantWorkbenchContext } from '../../contexts/AIAssistantContext';
+import { toErrorMessage } from '../../utils/errorMessage';
 
 type TabType = 'characters' | 'studios' | 'props' | 'costumes' | 'scripts' | 'environments' | 'buildings';
 
@@ -501,9 +502,9 @@ const AssetsManager: React.FC = () => {
         });
         showToast('白膜生成完成，正在生成默认服装画风版…', 'success');
         loadData();
-      } catch (e: any) {
+      } catch (e) {
         console.error('[AssetsManager] 启动默认服装画风版失败:', e);
-        showToast(e?.message || '启动默认服装画风版失败', 'error');
+        showToast(toErrorMessage(e) || '启动默认服装画风版失败', 'error');
       } finally {
         setPendingCharGen(null);
       }
@@ -559,9 +560,9 @@ const AssetsManager: React.FC = () => {
           if (plan.mode === 'ready') return `${plan.reason}；确实需要换一版请带 force=true 重新调用。`;
           const detail = plan.mode === 'partial' ? `只重做 ${plan.views.join('、')} 视图，其余视图保留` : '整套重做正/侧/背三视图';
           return `角色 #${id} 的白膜状态 #${base?.id ?? '-'} ${plan.mode === 'first' ? '已建立并启动生成' : '已启动重生成'}：${detail}（任务 #${jobId || '-'}）。${plan.failed && base?.generation_error ? `上一轮失败原因：${base.generation_error}。` : ''}白膜三视图完成前不能添加服装、道具或状态。`;
-        } catch (e: any) {
-          showToast(e?.message || '生成失败', 'error');
-          return { success: false, error: e?.message || '白膜三视图生成失败' };
+        } catch (e) {
+          showToast(toErrorMessage(e) || '生成失败', 'error');
+          return { success: false, error: toErrorMessage(e) || '白膜三视图生成失败' };
         }
       })();
     }
@@ -604,8 +605,8 @@ const AssetsManager: React.FC = () => {
           } as any);
           toastOk('角色状态已创建');
           loadData();
-        } catch (e: any) {
-          showToast(e?.message || '创建状态失败', 'error');
+        } catch (e) {
+          showToast(toErrorMessage(e) || '创建状态失败', 'error');
         }
       })();
     }
@@ -630,8 +631,8 @@ const AssetsManager: React.FC = () => {
           await updateCharacterState(charId, stateId, { project_id: pid, ...fields } as any);
           toastOk('角色状态已更新');
           loadData();
-        } catch (e: any) {
-          showToast(e?.message || '更新状态失败', 'error');
+        } catch (e) {
+          showToast(toErrorMessage(e) || '更新状态失败', 'error');
         }
       })();
     }
@@ -696,9 +697,9 @@ const AssetsManager: React.FC = () => {
           toastOk(`已删除角色 #${charId} 的${label}`);
           loadAllData();
           return `已删除角色 #${charId} 的${label}${extra}`;
-        } catch (e: any) {
-          showToast(e?.message || '删除角色状态失败', 'error');
-          return { success: false, error: e?.message || '删除角色状态失败' };
+        } catch (e) {
+          showToast(toErrorMessage(e) || '删除角色状态失败', 'error');
+          return { success: false, error: toErrorMessage(e) || '删除角色状态失败' };
         }
       })();
     } else if (action === 'delete_base_model') {
@@ -724,9 +725,9 @@ const AssetsManager: React.FC = () => {
             : `已删除角色 #${charId} 的白膜${derived.length ? `；保留 ${derived.length} 个派生状态（将失去白膜参考），如需一并删除请设 cascade=true` : ''}`;
           toastOk(msg);
           return msg;
-        } catch (e: any) {
-          showToast(e?.message || '删除白膜失败', 'error');
-          return { success: false, error: e?.message || '删除白膜失败' };
+        } catch (e) {
+          showToast(toErrorMessage(e) || '删除白膜失败', 'error');
+          return { success: false, error: toErrorMessage(e) || '删除白膜失败' };
         }
       })();
     }
@@ -1154,8 +1155,8 @@ const AssetsManager: React.FC = () => {
       const label = mode === 'front' ? '正面图' : mode === 'back' ? '背面图' : '环境图';
       showToast(`${label}生成已启动`, 'success');
       loadData();
-    } catch (err: any) {
-      showToast(err?.message || '启动环境图生成失败', 'error');
+    } catch (err) {
+      showToast(toErrorMessage(err) || '启动环境图生成失败', 'error');
     }
   };
 
@@ -1182,8 +1183,8 @@ const AssetsManager: React.FC = () => {
         showToast('所有环境描述均已为纯自然场景描述', 'success');
       }
       await loadData();
-    } catch (err: any) {
-      showToast(err?.message || '清洗环境描述失败', 'error');
+    } catch (err) {
+      showToast(toErrorMessage(err) || '清洗环境描述失败', 'error');
     } finally {
       setSanitizingEnvs(false);
     }
@@ -1230,8 +1231,8 @@ const AssetsManager: React.FC = () => {
             : '建筑图（外景四方位+内景九宫格）';
       showToast(`${label}生成已启动`, 'success');
       loadData();
-    } catch (err: any) {
-      showToast(err?.message || '建筑设定图生成失败', 'error');
+    } catch (err) {
+      showToast(toErrorMessage(err) || '建筑设定图生成失败', 'error');
     }
   };
 
@@ -1240,8 +1241,8 @@ const AssetsManager: React.FC = () => {
       await deleteBuildingImage(id);
       showToast('设定图已删除', 'success');
       loadData();
-    } catch (err: any) {
-      showToast(err?.message || '删除设定图失败', 'error');
+    } catch (err) {
+      showToast(toErrorMessage(err) || '删除设定图失败', 'error');
     }
   };
 
@@ -1649,9 +1650,9 @@ const AssetsManager: React.FC = () => {
       showToast(projectId ? '剧本已保存到项目' : '已保存到个人剧本库', 'success');
       onScriptCreateOpenChange();
       await loadData();
-    } catch (err: any) {
+    } catch (err) {
       console.error('[ScriptCreate]', err);
-      showToast(err?.message || '创建剧本失败', 'error');
+      showToast(toErrorMessage(err) || '创建剧本失败', 'error');
     } finally {
       setScriptCreating(false);
     }
@@ -1669,9 +1670,9 @@ const AssetsManager: React.FC = () => {
       const res = await bindScriptToProject(payload as any);
       showToast(res.message || '已绑定到项目', 'success');
       await loadData();
-    } catch (err: any) {
+    } catch (err) {
       console.error('[ScriptBind]', err);
-      showToast(err?.message || '绑定失败', 'error');
+      showToast(toErrorMessage(err) || '绑定失败', 'error');
       throw err;
     }
   };
@@ -1689,9 +1690,9 @@ const AssetsManager: React.FC = () => {
       await Promise.all(ids.map(id => deleteScriptApi(id)));
       showToast('已删除整组剧本', 'success');
       await loadData();
-    } catch (err: any) {
+    } catch (err) {
       console.error('[ScriptDeleteGroup]', err);
-      showToast(err?.message || '删除失败', 'error');
+      showToast(toErrorMessage(err) || '删除失败', 'error');
     }
   };
 
@@ -1706,9 +1707,9 @@ const AssetsManager: React.FC = () => {
       });
       showToast(`已添加第${episodeNumber}集`, 'success');
       await loadData();
-    } catch (err: any) {
+    } catch (err) {
       console.error('[ScriptCreateEpisode]', err);
-      showToast(err?.message || '添加集数失败', 'error');
+      showToast(toErrorMessage(err) || '添加集数失败', 'error');
     }
   };
 
@@ -1976,7 +1977,7 @@ const AssetsManager: React.FC = () => {
                     {heldPropsRefs.length}
                   </span>
                 </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 design:grid-cols-4 gap-2">
                   {heldPropsRefs.map((ref, idx) => {
                     const isCreating = creatingPropFromRef === ref.state_id;
                     return (
@@ -2026,8 +2027,8 @@ const AssetsManager: React.FC = () => {
                               });
                               showToast(t.assetsManager.heldProps.propImageGenStarted, 'success');
                               loadData();
-                            } catch (e: any) {
-                              showToast(e.message || '创建道具失败', 'error');
+                            } catch (e) {
+                              showToast(toErrorMessage(e) || '创建道具失败', 'error');
                             } finally {
                               setCreatingPropFromRef(null);
                             }
@@ -2058,7 +2059,7 @@ const AssetsManager: React.FC = () => {
                   {t.assetsManager.counts.costumes.replace('{count}', String(filteredCostumes.length))}
                 </span>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 design:grid-cols-4 gap-4">
                 {filteredCostumes.map((c) => {
                   const hasImage = !!c.image_url;
                   const isGenerating = c.generation_status === 'generating';
@@ -2071,8 +2072,8 @@ const AssetsManager: React.FC = () => {
                       await generateCostumeViews(c.id, { imageModel: selectedImageModel });
                       showToast(t.assetsManager.costume.generateDesign, 'success');
                       setTimeout(() => loadData(), 500);
-                    } catch (e: any) {
-                      showToast(e.message || '生成失败', 'error');
+                    } catch (e) {
+                      showToast(toErrorMessage(e) || '生成失败', 'error');
                     }
                   };
                   return (
@@ -2132,8 +2133,8 @@ const AssetsManager: React.FC = () => {
                                 });
                                 showToast(t.assetsManager.costume.descUpdated, 'success');
                                 loadData();
-                              } catch (e: any) {
-                                showToast(e.message || '更新失败', 'error');
+                              } catch (e) {
+                                showToast(toErrorMessage(e) || '更新失败', 'error');
                               }
                             }
                             setEditingCostumeDesc(null);

@@ -25,6 +25,7 @@ import type {
   ResourceActions,
   Script
 } from './types';
+import { toErrorMessage } from '../../../utils/errorMessage';
 
 interface UseStoryboardCoreOptions {
   scriptId?: number | null;
@@ -72,7 +73,6 @@ export function useStoryboardCore(options: UseStoryboardCoreOptions) {
   const [currentMultimodalModel, setCurrentMultimodalModel] = useState('');
 
   // UI 状态
-  const [showBatchDownloadModal, setShowBatchDownloadModal] = useState(false);
   const [imageAspectRatio, setImageAspectRatio] = useState(projectSettings?.imageAspectRatio || '');
   const [videoAspectRatio, setVideoAspectRatio] = useState(projectSettings?.videoAspectRatio || '');
   const [videoDuration, setVideoDuration] = useState<number | null>(null);
@@ -590,8 +590,8 @@ export function useStoryboardCore(options: UseStoryboardCoreOptions) {
       const data = await res.json();
       const typeLabel = targetType === 'video' ? '视频' : '图片';
       showToast(`${typeLabel}提示词优化任务已启动（任务ID: ${String(data.jobId || '').slice(-6) || '...'}）`, 'success');
-    } catch (error: any) {
-      showToast('批量优化失败：' + (error.message || '未知错误'), 'error');
+    } catch (error) {
+      showToast('批量优化失败：' + (toErrorMessage(error) || '未知错误'), 'error');
     } finally {
       setIsOptimizingAllPrompts(false);
     }
@@ -710,9 +710,9 @@ export function useStoryboardCore(options: UseStoryboardCoreOptions) {
       }
       showToast(`成功导入 ${formattedScenes.length} 个分镜！`, 'success');
       await refreshScenes();
-    } catch (error: any) {
+    } catch (error) {
       console.error('[ImportScenes] 保存失败:', error);
-      showToast('导入失败: ' + error.message, 'error');
+      showToast('导入失败: ' + toErrorMessage(error), 'error');
     }
   }, [currentProjectId, currentScriptId, refreshScenes, showToast]);
 
@@ -745,9 +745,9 @@ export function useStoryboardCore(options: UseStoryboardCoreOptions) {
         setCurrentScriptId(res.scriptId);
         setCurrentEpisode(nextEp);
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error('[StoryBoard.createNextEpisode]', err);
-      showToast(err?.message || '添加集数失败', 'error');
+      showToast(toErrorMessage(err) || '添加集数失败', 'error');
     }
   }, [currentProjectId, scripts, currentScriptId, onEpisodeChange, showToast]);
 
@@ -790,7 +790,6 @@ export function useStoryboardCore(options: UseStoryboardCoreOptions) {
       case 'currentProjectId': setCurrentProjectId(value as number | null); break;
       case 'currentEpisode': setCurrentEpisode(value as number); break;
       case 'scripts': setScripts(value as Script[]); break;
-      case 'showBatchDownloadModal': setShowBatchDownloadModal(value as boolean); break;
       case 'isAnimaticOpen': setIsAnimaticOpen(value as boolean); break;
       case 'isCommentPanelOpen': setIsCommentPanelOpen(value as boolean); break;
       case 'isGenerateScriptOpen': setIsGenerateScriptOpen(value as boolean); break;
@@ -817,7 +816,7 @@ export function useStoryboardCore(options: UseStoryboardCoreOptions) {
     projectCharacters: effectiveProjectCharacters, projectScenes, projectProps,
     scriptContent, scriptTitle, isLoadingScript,
     referenceScriptContent, referenceScriptTitle,
-    showBatchDownloadModal, isOptimizingAllPrompts, isAnimaticOpen, isCommentPanelOpen, isGenerateScriptOpen,
+    isOptimizingAllPrompts, isAnimaticOpen, isCommentPanelOpen, isGenerateScriptOpen,
     isBatchFrameSubmitting, isBatchVideoSubmitting,
   };
 

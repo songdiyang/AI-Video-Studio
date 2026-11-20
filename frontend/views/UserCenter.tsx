@@ -167,7 +167,7 @@ const UserCenter: React.FC = () => {
 
   return (
     <div className="h-full overflow-auto bg-(--bg-app)">
-      <div className="max-w-7xl mx-auto p-4 lg:p-6">
+      <div className="max-w-7xl mx-auto p-4 lg:p-6 design:p-6">
         {/* 顶部精简用户信息 */}
         <div className="flex items-center gap-4 mb-5 pb-5 border-b border-(--border-color)">
           {/* 头像 */}

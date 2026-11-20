@@ -16,6 +16,7 @@ import { Sparkles, Wand2, Info } from 'lucide-react';
 import { useWorkflow, consumeWorkflow } from '../../hooks/useWorkflow';
 import { filterModelsForTaskSlot } from '../../utils/modelCapabilities';
 import type { Project } from '../../services/projects';
+import { toErrorMessage } from '../../utils/errorMessage';
 
 interface AIModel {
   name: string;
@@ -221,9 +222,9 @@ const ScriptGenerateModal: React.FC<ScriptGenerateModalProps> = ({
 
         onSuccess?.(payload);
         onOpenChange(false);
-      } catch (err: any) {
+      } catch (err) {
         console.error('[ScriptGenerateModal] 保存失败:', err);
-        onError?.(err.message || '剧本生成完成但保存失败');
+        onError?.(toErrorMessage(err) || '剧本生成完成但保存失败');
       } finally {
         setGenerating(false);
         setJobId(null);
@@ -299,10 +300,10 @@ const ScriptGenerateModal: React.FC<ScriptGenerateModalProps> = ({
 
       setJobId(data.jobId);
       setGeneratingScriptId(data.scriptId);
-    } catch (err: any) {
+    } catch (err) {
       console.error('[ScriptGenerateModal] 生成启动失败:', err);
       setGenerating(false);
-      onError?.(err.message || '生成启动失败');
+      onError?.(toErrorMessage(err) || '生成启动失败');
     }
   };
 

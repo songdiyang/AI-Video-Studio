@@ -16,6 +16,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { fetchProject, Project } from '../../services/projects';
 import { fetchScriptLibrary } from '../../services/scripts';
 import { useDisclosure } from '@heroui/react';
+import { toErrorMessage } from '../../utils/errorMessage';
 
 interface ScriptRow {
   id: number;
@@ -109,10 +110,10 @@ const StoryBoardPage: React.FC = () => {
 
         setCurrentScriptId(script.id);
         setCurrentEpisode(script.episode_number || 1);
-      } catch (e: any) {
+      } catch (e) {
         if (!cancelled) {
-          setError(e?.message || '加载失败');
-          showToast(e?.message || '加载分镜失败', 'error');
+          setError(toErrorMessage(e) || '加载失败');
+          showToast(toErrorMessage(e) || '加载分镜失败', 'error');
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -177,8 +178,8 @@ const StoryBoardPage: React.FC = () => {
         setCurrentEpisode(nextEp);
       }
       showToast(`已新建第${nextEp}集`, 'success');
-    } catch (e: any) {
-      showToast(e?.message || '新建下一集失败', 'error');
+    } catch (e) {
+      showToast(toErrorMessage(e) || '新建下一集失败', 'error');
     }
   }, [project, scripts, showToast]);
 

@@ -28,6 +28,7 @@ import {
 import { WRITER_PRESETS, findWriterPreset } from '../../services/writerStyle';
 import { useToast } from '../../contexts/ToastContext';
 import { filterModelsForTaskSlot } from '../../utils/modelCapabilities';
+import { toErrorMessage } from '../../utils/errorMessage';
 
 interface AIModel {
   name: string;
@@ -143,8 +144,8 @@ const GeneratePanel: React.FC<{
         key ? `后续剧本与分镜台词改由 ${findWriterPreset(key)?.name || key} 执笔` : '已取消写手指派，仅套用通用去 AI 味清单',
         'success',
       );
-    } catch (err: any) {
-      showToast(err?.message || '写手设置失败', 'error');
+    } catch (err) {
+      showToast(toErrorMessage(err) || '写手设置失败', 'error');
     }
   };
 
@@ -239,9 +240,9 @@ const GeneratePanel: React.FC<{
         } else {
           onError?.(data.message || '保存剧本失败');
         }
-      } catch (err: any) {
+      } catch (err) {
         console.error('[ScriptGenerateTab] 保存剧本失败:', err);
-        onError?.(err?.message || '保存剧本失败');
+        onError?.(toErrorMessage(err) || '保存剧本失败');
       }
     },
   });
@@ -324,9 +325,9 @@ const GeneratePanel: React.FC<{
       }
       setGeneratingScriptId(data.scriptId);
       setJobId(data.jobId);
-    } catch (err: any) {
+    } catch (err) {
       console.error('[ScriptGenerateTab] 生成失败:', err);
-      onError?.(err?.message || '生成失败');
+      onError?.(toErrorMessage(err) || '生成失败');
       setGenerating(false);
     }
   };
@@ -636,9 +637,9 @@ const UploadPanel: React.FC<{
         projectId: result.projectId || lockProjectId || 0,
         episodeNumber: result.episodeNumber,
       });
-    } catch (err: any) {
-      showToast(err?.message || '操作失败', 'error');
-      onError?.(err?.message || '操作失败');
+    } catch (err) {
+      showToast(toErrorMessage(err) || '操作失败', 'error');
+      onError?.(toErrorMessage(err) || '操作失败');
     } finally {
       setUploading(false);
     }

@@ -7,6 +7,7 @@
 import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, ChevronDown } from 'lucide-react';
+import { getViewportSize } from '../../utils/runtimeMode';
 
 export interface DropdownOption {
   value: string;
@@ -58,8 +59,8 @@ const DropdownSelect: React.FC<DropdownSelectProps> = ({
     const rect = trigger.getBoundingClientRect();
     const width = Math.max(rect.width, MENU_MIN_WIDTH);
     const height = menuRef.current?.offsetHeight ?? 0;
-    const left = Math.max(MENU_EDGE, Math.min(rect.left, window.innerWidth - MENU_EDGE - width));
-    const spaceBelow = window.innerHeight - rect.bottom;
+    const left = Math.max(MENU_EDGE, Math.min(rect.left, getViewportSize().width - MENU_EDGE - width));
+    const spaceBelow = getViewportSize().height - rect.bottom;
     const flipUp = height > 0 && spaceBelow < height + MENU_GAP + MENU_EDGE && rect.top > height + MENU_GAP + MENU_EDGE;
     const top = flipUp ? rect.top - MENU_GAP - height : rect.bottom + MENU_GAP;
     setPosition({ left, top, width });

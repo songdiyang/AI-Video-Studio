@@ -14,6 +14,7 @@ import { VideoEffect } from '../../types/projectTypes';
 import { useAIModels } from '../../hooks/useAIModels';
 import { useTaskRunner } from '../../hooks/useTaskRunner';
 import type { VideoClip } from './TimelineEditor';
+import { toErrorMessage } from '../../utils/errorMessage';
 
 // 懒加载子组件
 const TimelineEditor = lazy(() => import('./TimelineEditor'));
@@ -111,8 +112,8 @@ const VideoScriptPanel: React.FC<VideoScriptPanelProps> = ({
           projectId,
           modelName: aiModels?.selected.text,
         });
-      } catch (err: any) {
-        showToast(err.message || '启动生成任务失败', 'error');
+      } catch (err) {
+        showToast(toErrorMessage(err) || '启动生成任务失败', 'error');
       }
       return;
     }

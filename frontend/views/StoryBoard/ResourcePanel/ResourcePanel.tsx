@@ -41,6 +41,7 @@ import {
   makeCustomKey,
   buildAllResourceEntries,
 } from './resourceCategories';
+import { toErrorMessage } from '../../../utils/errorMessage';
 
 export interface StoryboardStateOverride {
   stateId: number;
@@ -347,8 +348,8 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
       await deleteCharacter(characterId);
       showToast('角色已删除', 'success');
       await loadCharacters();
-    } catch (error: any) {
-      showToast('删除失败: ' + error.message, 'error');
+    } catch (error) {
+      showToast('删除失败: ' + toErrorMessage(error), 'error');
     }
   };
 
@@ -393,8 +394,8 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
       await deleteCharacter(character.id);
       showToast('角色已删除', 'success');
       await loadCharacters();
-    } catch (error: any) {
-      showToast('删除失败: ' + (error?.message || '未知错误'), 'error');
+    } catch (error) {
+      showToast('删除失败: ' + (toErrorMessage(error) || '未知错误'), 'error');
     }
   };
 
@@ -412,8 +413,8 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
       await deleteStudio(scene.id);
       showToast('影棚已删除', 'success');
       await loadScenes();
-    } catch (error: any) {
-      showToast('删除失败: ' + (error?.message || '未知错误'), 'error');
+    } catch (error) {
+      showToast('删除失败: ' + (toErrorMessage(error) || '未知错误'), 'error');
     }
   };
 
@@ -433,8 +434,8 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
       showToast('道具已删除', 'success');
       await refreshLibrary();
       onRefreshProps?.();
-    } catch (error: any) {
-      showToast('删除失败: ' + (error?.message || '未知错误'), 'error');
+    } catch (error) {
+      showToast('删除失败: ' + (toErrorMessage(error) || '未知错误'), 'error');
     }
   };
 
@@ -454,8 +455,8 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
       await loadEnvironments();
       // 广播事件通知 AssetEditor 等组件
       window.dispatchEvent(new CustomEvent('environment:deleted', { detail: { environmentId: env.id } }));
-    } catch (error: any) {
-      showToast('删除失败: ' + (error?.message || '未知错误'), 'error');
+    } catch (error) {
+      showToast('删除失败: ' + (toErrorMessage(error) || '未知错误'), 'error');
     }
   };
 
@@ -475,8 +476,8 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
       await loadBuildings();
       // 广播事件通知 AssetEditor 等组件
       window.dispatchEvent(new CustomEvent('building:deleted', { detail: { buildingId: b.id } }));
-    } catch (error: any) {
-      showToast('删除失败: ' + (error?.message || '未知错误'), 'error');
+    } catch (error) {
+      showToast('删除失败: ' + (toErrorMessage(error) || '未知错误'), 'error');
     }
   };
 
@@ -494,8 +495,8 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
       await deleteCostume(costume.id);
       showToast('服装已删除', 'success');
       await loadCostumes();
-    } catch (error: any) {
-      showToast('删除失败: ' + (error?.message || '未知错误'), 'error');
+    } catch (error) {
+      showToast('删除失败: ' + (toErrorMessage(error) || '未知错误'), 'error');
     }
   };
 
@@ -535,9 +536,9 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
       
       // 立即刷新工作流状态，确保只有当前目标进入生成中
       await sceneImageMonitor.refreshNow();
-    } catch (error: any) {
+    } catch (error) {
       console.error('[ResourcePanel] 生成场景图片失败:', error);
-      showToast('生成影棚图片失败: ' + error.message, 'error');
+      showToast('生成影棚图片失败: ' + toErrorMessage(error), 'error');
       throw error;
     }
   };
@@ -551,8 +552,8 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
       const res = await extractStudioComponentsFromScript({ projectId, scriptId, textModel });
       showToast(res.message || '已启动拆分影棚组件', 'success');
       setTimeout(() => { loadScenes(); }, 1500);
-    } catch (error: any) {
-      showToast('启动失败: ' + (error?.message || '未知错误'), 'error');
+    } catch (error) {
+      showToast('启动失败: ' + (toErrorMessage(error) || '未知错误'), 'error');
     } finally {
       setIsExtractingComponents(false);
     }
@@ -567,8 +568,8 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
       const res = await composeStudiosFromScript({ projectId, scriptId, textModel });
       showToast(res.message || '已启动拼接影棚', 'success');
       setTimeout(() => { loadScenes(); }, 1500);
-    } catch (error: any) {
-      showToast('启动失败: ' + (error?.message || '未知错误'), 'error');
+    } catch (error) {
+      showToast('启动失败: ' + (toErrorMessage(error) || '未知错误'), 'error');
     } finally {
       setIsComposingStudios(false);
     }
@@ -721,8 +722,8 @@ const ResourcePanel: React.FC<ResourcePanelProps & {
                 await generateCostumeViews(costume.id, { imageModel: effectiveImageModel, textModel });
                 await costumeViewsMonitor.refreshNow();
                 showToast('已启动服装设定图生成', 'success');
-              } catch (error: any) {
-                showToast('启动失败: ' + (error?.message || '未知错误'), 'error');
+              } catch (error) {
+                showToast('启动失败: ' + (toErrorMessage(error) || '未知错误'), 'error');
               }
             }}
             onDelete={handleDeleteCostumeFromCard}

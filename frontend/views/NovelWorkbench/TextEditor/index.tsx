@@ -347,7 +347,7 @@ const TextEditor: React.FC<TextEditorProps> = ({
         action: 'continue',
       });
       showToast('AI 续写任务已启动', 'success');
-    } catch (error: any) {
+    } catch (error) {
       // 回退到本地模拟
       const mockContinuation = '\n\n他深吸一口气，目光穿过朚胧的晨雾，看向远方那座若隐若现的山峰。心中那股说不清道不明的感觉愈发强烈，仿佛有什么重要的事情正在等待着他。';
       handleContentChange(content + mockContinuation);

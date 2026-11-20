@@ -2,7 +2,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Button } from '@heroui/react';
-import { Save, Trash2, MessageCircle, Mic, History, RotateCcw, GitCompare, Sparkles, Undo2, Loader2, Plus, X as XIcon, ImageIcon, Film, AlertTriangle } from 'lucide-react';
+import { Save, Trash2, History, RotateCcw, GitCompare, Sparkles, Undo2, Loader2, Plus, X as XIcon, ImageIcon, Film, AlertTriangle } from 'lucide-react';
 import { useToast } from '../../../contexts/ToastContext';
 import { BLOCK_OPTIONS } from './utils/blockRegistry';
 import SketchFramesPanel from './SketchFramesPanel';
@@ -11,6 +11,7 @@ import { filterModelsForTaskSlot } from '../../../utils/modelCapabilities';
 import DropdownSelect from '../../../components/ui/DropdownSelect';
 import { normalizeSceneDialogues, matchSpeaker } from '../../../services/sceneDialogues';
 import type { EditorSaveStatus, EditorSessionHandle } from '../../../components/ContentEditorPanel';
+import { toErrorMessage } from '../../../utils/errorMessage';
 
 interface PromptVersion {
   id: number; storyboard_id: number; prompt_text: string; version_number: number;
@@ -187,10 +188,8 @@ function getRangeFromPoint(x: number, y: number): Range | null {
   range.setStart(pos.offsetNode, pos.offset); range.collapse(true);
   return range;
 }
-const COMPONENT_CATEGORIES = [
-  { key: 'dialogue', label: '台词', icon: MessageCircle },
-  { key: 'voiceover', label: '画外音', icon: Mic },
-];
+/** 画外音（旁白）在统一台词列表中的说话人标记：保存时该行写回 voiceover 字段，其余行写回 dialogues */
+const NARRATOR_SPEAKER = '画外音';
 
 const DialogEditorSession: React.FC<DialogEditorProps> = (props) => {
   const { storyboardId, projectId, panel, availableFrames, sceneCharacters = [], models = [] } = props;
@@ -202,7 +201,7 @@ const DialogEditorSession: React.FC<DialogEditorProps> = (props) => {
   const editorRef = useRef<HTMLDivElement>(null);
   const lastRenderedRef = useRef('');
   const composing = useRef(false);
-  const [activeTab, setActiveTab] = useState('dialogue');
+  const [activeTab] = useState('dialogue');
   const [referenceImages, setReferenceImages] = useState<ReferenceImage[]>([]);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [previewImage, setPreviewImage] = useState<{ url: string; title: string } | null>(null);
@@ -433,7 +432,7 @@ const DialogEditorSession: React.FC<DialogEditorProps> = (props) => {
         if (await flush() && alive.current) showToast(optimize ? 'AI 优化完成并已保存' : '提示词已生成并保存', 'success');
         return;
       }
-    } catch (error: any) { if (alive.current) showToast(error.message || '提示词生成失败', 'error'); }
+    } catch (error) { if (alive.current) showToast(toErrorMessage(error) || '提示词生成失败', 'error'); }
     finally { finish(); }
   };
   const handleGeneratePrompt = () => runPromptWorkflow(false);
@@ -461,7 +460,7 @@ const DialogEditorSession: React.FC<DialogEditorProps> = (props) => {
       const target = panel ? (field === 'last' ? 'last' : 'first') : p.hasAction ? (p.imageFrameTab || 'first') : 'both';
       const result = video ? await p.onGenerateVideo!(storyboardId) : await p.onGenerateImage!(storyboardId, text, target, false);
       if (alive.current) showToast(result.success ? (video ? '视频生成任务已提交' : '图片生成任务已提交') : result.error || '生成失败', result.success ? 'success' : 'error');
-    } catch (error: any) { if (alive.current) showToast(error.message || '生成失败', 'error'); }
+    } catch (error) { if (alive.current) showToast(toErrorMessage(error) || '生成失败', 'error'); }
     finally { finish(); }
   };
   const handleGenerateImage = () => generateMedia(false);
@@ -474,7 +473,7 @@ const DialogEditorSession: React.FC<DialogEditorProps> = (props) => {
       if (!res.ok) throw new Error('加载版本历史失败');
       const data = await res.json();
       if (alive.current) setVersions(data.history || []);
-    } catch (error: any) { if (alive.current) showToast(error.message, 'error'); }
+    } catch (error) { if (alive.current) showToast(toErrorMessage(error), 'error'); }
     finally { if (alive.current) setLoadingVersions(false); }
   };
   const handleOpenVersionPanel = () => {
@@ -496,7 +495,7 @@ const DialogEditorSession: React.FC<DialogEditorProps> = (props) => {
       if (session.revision(field) !== revision) { showToast('恢复期间内容已修改，已保留最新草稿', 'warning'); return; }
       updatePrompt(version.prompt_text);
       if (await flush() && alive.current) { showToast(`已恢复到版本 v${version.version_number}`, 'success'); setShowVersionPanel(false); }
-    } catch (error: any) { if (alive.current) showToast(error.message || '恢复失败', 'error'); }
+    } catch (error) { if (alive.current) showToast(toErrorMessage(error) || '恢复失败', 'error'); }
     finally { finish(); }
   };
   const computeDiff = (textA: string, textB: string) => {
@@ -511,8 +510,18 @@ const DialogEditorSession: React.FC<DialogEditorProps> = (props) => {
   };
   const formatVersionTime = (date: string) => new Date(date).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
   const handleAddDialogueLine = (character = names[0] || '') => session.update('dialogues', [...session.values.dialogues, { character, line: '' }]);
-  const handleUpdateDialogueLine = (index: number, key: 'character' | 'line', value: string) => session.update('dialogues', session.values.dialogues.map((d, i) => i === index ? { ...d, [key]: value } : d));
-  const handleRemoveDialogueLine = (index: number) => session.update('dialogues', session.values.dialogues.filter((_, i) => i !== index));
+  /** 统一台词列表（角色行 + 常驻画外音行）：编辑后按说话人拆回 dialogues 与 voiceover 两个字段 */
+  const handleUpdateLine = (index: number, key: 'character' | 'line', value: string) => {
+    const unified = [...session.values.dialogues, { character: NARRATOR_SPEAKER, line: session.values.voiceover }]
+      .map((d, i) => (i === index ? { ...d, [key]: value } : d));
+    session.update('dialogues', unified.filter(d => d.character !== NARRATOR_SPEAKER));
+    session.update('voiceover', unified.filter(d => d.character === NARRATOR_SPEAKER).map(d => String(d.line || '').trim()).filter(Boolean).join('\n'));
+  };
+  /** 画外音行常驻列表（清空内容即可），仅角色行可删除 */
+  const handleRemoveLine = (index: number) => {
+    if (index >= session.values.dialogues.length) { session.update('voiceover', ''); return; }
+    session.update('dialogues', session.values.dialogues.filter((_, i) => i !== index));
+  };
   /** 一行一个说话人校验：缺说话人 / 行内仍混多人 / 说话人不在出场角色里 */
   const dialogueIssues = (list: DialogueLine[]) => {
     const spoken = list.filter((d) => String(d.line || '').trim());
@@ -551,10 +560,31 @@ const DialogEditorSession: React.FC<DialogEditorProps> = (props) => {
           return <button key={opt.value} className={buttonClass} title={opt.description} onClick={() => insertComponent(text)} draggable onDragStart={e => e.dataTransfer.setData('application/json', JSON.stringify({ componentType: activeTab, template: text }))}>{opt.icon} {opt.label}</button>;
         })}</div>)}</div>;
       }
-      case 'dialogue':
-        return <div className="content-editor-field space-y-2">
-          <div className="flex items-center justify-between"><span>角色台词</span>{!panel && <button className={buttonClass} disabled={isSaving} onClick={() => void handleSave()}><Save size={12} />保存台词</button>}</div>
-          {values.dialogues.length === 0 && <div className="text-[var(--text-muted)] py-3 text-center">暂无台词</div>}
+      case 'dialogue': {
+        // 画外音（旁白）就是列表里的一个常驻说话人：不再单独开输入区，保存时画外音行写回 voiceover，其余写回 dialogues
+        const unified = [...values.dialogues, { character: NARRATOR_SPEAKER, line: values.voiceover }];
+        const spokenCount = unified.filter(d => String(d.line || '').trim()).length;
+        // 台词行专用控件样式：与 inputClass 解耦，避免 py 类冲突导致行高不齐
+        const lineControlClass = 'min-w-0 rounded-md bg-[var(--bg-input)] border border-[var(--border-color)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)]/25 transition-colors';
+        // 台词框按内容自适应高度（上限约 120px），长句不会被压成单行；非真实 DOM（测试沙箱）直接跳过
+        const autoGrow = (el: HTMLTextAreaElement | null) => {
+          if (!el || !el.style || typeof el.scrollHeight !== 'number') return;
+          el.style.height = 'auto';
+          el.style.height = `${Math.min(el.scrollHeight + 2, 122)}px`;
+        };
+        // 说话人列：定宽，画外音行是固定标签（不可编辑），角色行用下拉或手填
+        const speakerControl = (dl: { character: string }, idx: number, isNarrator: boolean) => {
+          if (isNarrator) return <span title="画外音（旁白）：无画面主体，生成视频时写作 画外音{…}" className="inline-flex items-center justify-center h-[30px] w-full rounded-md border border-dashed border-[var(--border-color)] text-[11px] text-[var(--text-muted)]">画外音</span>;
+          if (names.length) return <DropdownSelect label={`第${idx + 1}行角色`} value={dl.character} placeholder="选择角色"
+            options={[...names.map(name => ({ value: name, label: name })), { value: NARRATOR_SPEAKER, label: '画外音（旁白）' }]}
+            onChange={value => handleUpdateLine(idx, 'character', value)} className="h-[30px] text-xs" />;
+          return <input data-slot="dialogue-speaker" aria-label={`第${idx + 1}行角色`} value={dl.character} onChange={e => handleUpdateLine(idx, 'character', e.target.value)} placeholder="角色名" className={`${lineControlClass} w-full h-[30px] px-2.5 py-0 text-xs`} />;
+        };
+        return <div className="content-editor-field space-y-2 max-w-3xl">
+          <div className="flex items-center justify-between gap-2 min-h-[26px]">
+            <span className="flex items-baseline gap-1.5">台词与旁白{spokenCount > 0 && <span className="text-[10px] font-normal tabular-nums text-[var(--text-muted)]">{spokenCount} 句</span>}</span>
+            {!panel && <button className={buttonClass} disabled={isSaving} onClick={() => void handleSave()}><Save size={12} />保存台词</button>}
+          </div>
           {(() => {
             const iss = dialogueIssues(values.dialogues);
             if (!iss.noSpeaker && !iss.mixed && !iss.unknown.length) return null;
@@ -567,29 +597,23 @@ const DialogEditorSession: React.FC<DialogEditorProps> = (props) => {
               {iss.noSpeaker + iss.mixed + iss.unknown.length > 0 && <button type="button" className={buttonClass} onClick={handleResplitDialogues}><RotateCcw size={12} />按说话人自动拆行</button>}
             </div>;
           })()}
-          {values.dialogues.map((dl, idx) => <div key={idx} className="space-y-1.5">
-            <div className="flex gap-2 min-w-0">
-              {names.length ? <DropdownSelect
-                label={`第${idx + 1}行角色`}
-                value={dl.character}
-                placeholder="选择角色"
-                options={names.map(name => ({ value: name, label: name }))}
-                onChange={value => handleUpdateDialogueLine(idx, 'character', value)}
-                className="h-[30px] text-xs"
-              /> : <input aria-label={`第${idx + 1}行角色`} value={dl.character} onChange={e => handleUpdateDialogueLine(idx, 'character', e.target.value)} placeholder="角色名" className={inputClass} />}
-              <button className="p-1 self-center rounded-md text-red-400 hover:bg-red-500/10 transition-colors" onClick={() => handleRemoveDialogueLine(idx)} title="删除此行台词" aria-label={`删除第${idx + 1}行台词`}><XIcon size={14} /></button>
-            </div>
-            <textarea aria-label={`第${idx + 1}行台词`} value={dl.line} onChange={e => handleUpdateDialogueLine(idx, 'line', e.target.value)} placeholder="输入台词内容..." rows={2} className={inputClass} />
-            {SPEAKER_IN_LINE_RE.test(String(dl.line || '')) && <div className="text-[10px] text-amber-500/80">行内疑似带了「名字：」前缀，可用上方「按说话人自动拆行」处理</div>}
-          </div>)}
-          <button className={`${buttonClass} justify-center border border-dashed border-[var(--border-color)]`} onClick={() => handleAddDialogueLine()}><Plus size={13} />添加台词</button>
+          <div className="space-y-1.5">
+            {unified.map((dl, idx) => {
+              const isNarrator = dl.character === NARRATOR_SPEAKER;
+              return <div key={idx} className="space-y-1 min-w-0">
+                <div className="flex items-start gap-1.5 min-w-0">
+                  <div className="w-24 shrink-0">{speakerControl(dl, idx, isNarrator)}</div>
+                  <textarea data-slot="dialogue-line" ref={autoGrow} aria-label={`第${idx + 1}行台词`} value={dl.line} onChange={e => handleUpdateLine(idx, 'line', e.target.value)} placeholder={isNarrator ? '输入旁白内容...' : '输入台词内容...'} rows={1} className={`${lineControlClass} flex-1 px-2.5 py-[5px] leading-[18px] text-[13px] resize-none overflow-y-auto`} />
+                  {!isNarrator && <button className="inline-flex items-center justify-center h-[30px] w-6 shrink-0 rounded-md text-red-400/75 hover:text-red-400 hover:bg-red-500/10 transition-colors" onClick={() => handleRemoveLine(idx)} title="删除此行台词" aria-label={`删除第${idx + 1}行台词`}><XIcon size={13} /></button>}
+                </div>
+                {!isNarrator && SPEAKER_IN_LINE_RE.test(String(dl.line || '')) && <div className="text-[10px] text-amber-500/80 pl-[102px]">行内疑似带了「名字：」前缀，可用「按说话人自动拆行」处理</div>}
+              </div>;
+            })}
+          </div>
+          <button className={`${buttonClass} self-start border border-dashed border-[var(--border-color)]`} onClick={() => handleAddDialogueLine()}><Plus size={13} />添加台词</button>
           {!values.dialogues.length && names.length > 0 && <div className="flex flex-wrap gap-1">{names.map(name => <button key={name} className={buttonClass} onClick={() => handleAddDialogueLine(name)}>+ {name}</button>)}</div>}
         </div>;
-      case 'voiceover':
-        return <label className="content-editor-field"><span>画外音说明</span><span>旁白/解说声音，生成视频时作为音频提示注入。</span>
-          <textarea aria-label="旁白" value={values.voiceover} onChange={e => session.update('voiceover', e.target.value)} placeholder="例如：时光轮转，三年过去了……" rows={4} className={inputClass} />
-          {!panel && <button type="button" className={buttonClass} disabled={isSaving} onClick={() => void handleSave()}><Save size={12} />保存旁白</button>}
-        </label>;
+      }
       case 'text': return <div>{['角色', '场景', '动作', '表情', '服装', '道具'].map(text => <button key={text} className={buttonClass} onClick={() => insertComponent(`${text}：`)}>{text}：</button>)}</div>;
       default: return null;
     }
@@ -640,14 +664,11 @@ const DialogEditorSession: React.FC<DialogEditorProps> = (props) => {
   return <div className={panel ? 'relative min-w-0 h-full min-h-0 flex flex-col' : 'relative flex flex-col h-full bg-[var(--bg-body)] rounded-lg border border-[var(--border-color)] overflow-hidden'}>
     <div className={panel ? 'min-w-0 flex-1 min-h-0 flex flex-col' : 'flex flex-1 overflow-hidden min-h-0'}>
       {showDialogue && <div className={panel ? 'content-editor-full-width' : 'w-56 shrink-0 bg-[var(--bg-card)] border-r border-[var(--border-color)] flex flex-col'}>
-        <div className="flex flex-wrap gap-1 pb-2">
-          {COMPONENT_CATEGORIES.map(cat => <button key={cat.key} type="button" aria-pressed={activeTab === cat.key} className={`${buttonClass} ${activeTab === cat.key ? 'text-[var(--accent)]' : ''}`} onClick={async () => { if (await flush()) setActiveTab(cat.key); }}><cat.icon size={13} />{cat.label}</button>)}
-        </div>
         {activeTab === 'sketches' ? <SketchFramesPanel storyboardId={storyboardId} /> : <div className="flex-1 min-w-0 overflow-y-auto p-1">{renderComponentButtons()}</div>}
         {!panel && frameReferences}
       </div>}
-      {showText && <div className={panel ? (isContent ? 'flex flex-col flex-1 min-h-0' : 'content-editor-fields') : 'flex-1 flex flex-col p-4 min-h-0 min-w-0 overflow-auto'}>
-        <div className={`content-editor-field ${isContent ? 'flex-1 min-h-0' : 'content-editor-full-width'}`}>
+      {showText && <div className={panel ? (isContent ? 'flex flex-col flex-1 min-h-0 gap-3' : 'content-editor-fields') : 'flex-1 flex flex-col p-4 min-h-0 min-w-0 overflow-auto'}>
+        <div className={`content-editor-field ${isContent ? '' : 'content-editor-full-width'}`}>
           <div className="flex shrink-0 items-center justify-between gap-2 min-h-5">
             <span className="text-[11px] font-medium text-[var(--text-secondary)]">{fieldLabel}</span>
             <div className="flex items-center gap-1.5">
@@ -664,7 +685,7 @@ const DialogEditorSession: React.FC<DialogEditorProps> = (props) => {
               </button>
             </div>
           </div>
-          <div className={`relative ${isContent ? 'flex-1 min-h-0' : ''} ${isDraggingOver ? 'ring-2 ring-[var(--accent)]' : ''}`} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}>
+          <div className={`relative ${isDraggingOver ? 'ring-2 ring-[var(--accent)]' : ''}`} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}>
             <div ref={editorRef} role="textbox" aria-multiline="true" aria-label={fieldLabel} contentEditable suppressContentEditableWarning
               onInput={syncEditor} onCompositionStart={() => { composing.current = true; }} onCompositionEnd={() => { composing.current = false; syncEditor(); if (session.isDirty) void flush(); }}
               onPaste={e => { e.preventDefault(); insertComponent(e.clipboardData.getData('text/plain')); }}
@@ -675,8 +696,10 @@ const DialogEditorSession: React.FC<DialogEditorProps> = (props) => {
                 else if (e.key.toLowerCase() === 's') { e.preventDefault(); void handleSave(); }
               }}
               data-placeholder={isContent ? '输入分镜原始描述...' : '输入提示词，或拖拽参考图到此处...'}
-              className={`${inputClass} content-editor-rich-text overflow-y-auto leading-relaxed ${isContent ? 'h-full' : ''} empty:before:content-[attr(data-placeholder)] empty:before:text-[var(--text-muted)]`}
-              style={{ minHeight: 160, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }} />
+              className={`${inputClass} content-editor-rich-text overflow-y-auto leading-relaxed empty:before:content-[attr(data-placeholder)] empty:before:text-[var(--text-muted)]`}
+              style={isContent
+                ? { minHeight: 96, maxHeight: '34vh', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }
+                : { minHeight: 160, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }} />
             {isDraggingOver && <div className="absolute inset-0 flex items-center justify-center bg-[var(--accent)]/10 pointer-events-none">释放以插入</div>}
           </div>
         </div>

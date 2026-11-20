@@ -15,6 +15,7 @@ const dialogFile = path.join(root, 'views/StoryBoard/BlockEditor/DialogEditor.ts
 const blockFile = path.join(root, 'views/StoryBoard/BlockEditor/index.tsx');
 const directorFile = path.join(root, 'components/DirectorSpace/index.tsx');
 const sceneDialoguesFile = path.join(root, 'services/sceneDialogues.ts');
+const errorMessageFile = path.join(root, 'utils/errorMessage.ts');
 const compiled = new Map();
 const tick = async () => { for (let i = 0; i < 8; i++) await new Promise(resolve => setImmediate(resolve)); };
 const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
@@ -91,6 +92,7 @@ function harness() {
       if (name.endsWith('/DialogEditor')) return load(dialogFile);
       // 台词校验是纯函数模块，真实加载：DialogEditor 的拆行行为必须走同一套实现
       if (name.endsWith('/sceneDialogues')) return load(sceneDialoguesFile);
+      if (name.endsWith('/errorMessage')) return load(errorMessageFile);
       if (name.endsWith('/modelCapabilities')) return { filterModelsForTaskSlot: () => [] };
       if (name.endsWith('/DropdownSelect')) return { default: (p) => jsx('select', { ...p }), __esModule: true };
       if (name.endsWith('/ScenePreviewPanel')) return { default: (p) => jsx('scene-preview', { ...p }), __esModule: true };
@@ -217,8 +219,8 @@ test('首帧/尾帧/视频独立保存；提示词全宽、负向折叠、外部
 test('台词/旁白复用回调且内部切换 flush；固定栏保存覆盖全部草稿', async () => {
   const h = harness(), saves = [];
   h.mount(directorFile, directorProps({ onUpdateDialogues: async value => { saves.push(['dialogues', plain(value)]); return true; }, onUpdateVoiceover: async value => { saves.push(['voice', value]); return true; } }));
-  await switchTab(h, 'dialogue'); h.input('第1行台词', '新台词'); await click(h, '画外音');
-  h.input('旁白', '新旁白'); await h.find(n => n.type === 'shell').props.onSave();
+  await switchTab(h, 'dialogue'); h.input('第1行台词', '新台词'); h.input('第2行台词', '新旁白');
+  await h.find(n => n.type === 'shell').props.onSave();
   assert.deepEqual(saves, [['dialogues', [{ character: '小明', line: '新台词' }]], ['voice', '新旁白']]); h.dispose();
 });
 for (const fail of [false, 'throw']) test(`失败 ${fail} 阻止切标签、手动成功 toast 和生成`, async () => {

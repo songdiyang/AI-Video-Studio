@@ -26,6 +26,7 @@ import {
   aiGenerateCharacterDraft,
   aiGenerateSceneDraft,
 } from '../../../services/assets';
+import { toErrorMessage } from '../../../utils/errorMessage';
 
 export type CreateAssetType = 'character' | 'scene';
 type CreateMode = 'manual' | 'ai';
@@ -137,8 +138,8 @@ const CreateAssetModal: React.FC<CreateAssetModalProps> = ({
         setMood(d.mood || '');
       }
       setMode('manual'); // 切回手动编辑
-    } catch (e: any) {
-      setError(e?.message || 'AI 生成失败，请稍后重试');
+    } catch (e) {
+      setError(toErrorMessage(e) || 'AI 生成失败，请稍后重试');
     } finally {
       setAiGenerating(false);
     }
@@ -179,8 +180,8 @@ const CreateAssetModal: React.FC<CreateAssetModalProps> = ({
       }
       onCreated();
       onClose();
-    } catch (e: any) {
-      setError(e?.message || '创建失败');
+    } catch (e) {
+      setError(toErrorMessage(e) || '创建失败');
     } finally {
       setSubmitting(false);
     }

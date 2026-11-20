@@ -8,6 +8,7 @@ import {
   generateSceneElementImage,
   SceneElementLink,
 } from '../../../services/sceneElements';
+import { toErrorMessage } from '../../../utils/errorMessage';
 
 interface SceneElementsPanelProps {
   sceneId: number;
@@ -50,8 +51,8 @@ const SceneElementsPanel: React.FC<SceneElementsPanelProps> = ({
     try {
       const data = await listSceneElementLinks(sceneId);
       setLinks(data);
-    } catch (err: any) {
-      setError(err?.message || '加载场景元素失败');
+    } catch (err) {
+      setError(toErrorMessage(err) || '加载场景元素失败');
     } finally {
       setLoading(false);
     }
@@ -79,8 +80,8 @@ const SceneElementsPanel: React.FC<SceneElementsPanelProps> = ({
       // 抽取是异步任务，等任务完成后列表会自动刷新；轻微延迟一次刷新提升体感
       setTimeout(load, 2000);
       onDataChanged?.();
-    } catch (err: any) {
-      setError(err?.message || '启动元素抽取失败');
+    } catch (err) {
+      setError(toErrorMessage(err) || '启动元素抽取失败');
     } finally {
       setExtracting(false);
     }
@@ -98,8 +99,8 @@ const SceneElementsPanel: React.FC<SceneElementsPanelProps> = ({
       onDataChanged?.();
       // 启动后立刻刷新一次，让状态变 generating
       await load();
-    } catch (err: any) {
-      setError(err?.message || '启动元素图片生成失败');
+    } catch (err) {
+      setError(toErrorMessage(err) || '启动元素图片生成失败');
     } finally {
       setGeneratingIds(prev => {
         const next = new Set(prev);
@@ -125,8 +126,8 @@ const SceneElementsPanel: React.FC<SceneElementsPanelProps> = ({
     try {
       await removeSceneElementLink(sceneId, elementId);
       await load();
-    } catch (err: any) {
-      setError(err?.message || '解除关联失败');
+    } catch (err) {
+      setError(toErrorMessage(err) || '解除关联失败');
     }
   };
 

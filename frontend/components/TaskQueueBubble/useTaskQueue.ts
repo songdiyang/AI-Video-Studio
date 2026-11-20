@@ -3,6 +3,7 @@ import { getWorkflowList, getWorkflowStatus, ApiError, WorkflowJob } from '../..
 import { activeLongTasks, getLongTask, registerLongTask, updateLongTask, type LongTaskKind } from '../../services/longTasks';
 import { pushInternalMail } from '../../services/localMail';
 import { useWorkbench } from '../../contexts/WorkbenchContext';
+import { debugLog } from '../../utils/debugLog';
 
 // Polling interval constants (in milliseconds)
 const POLLING_ACTIVE = 3000;    // When there are active tasks
@@ -95,7 +96,7 @@ export function useTaskQueue(options?: UseTaskQueueOptions): UseTaskQueueReturn 
   const fetchJobs = useCallback(async (showLoading = false) => {
     // 请求去重：如果上一次请求还未返回，跳过本次
     if (isFetchingRef.current) {
-      console.log('[TaskQueue] 跳过重叠请求');
+      debugLog('TaskQueue', '跳过重叠请求');
       return;
     }
     isFetchingRef.current = true;
@@ -230,7 +231,7 @@ export function useTaskQueue(options?: UseTaskQueueOptions): UseTaskQueueReturn 
         });
 
         if (refreshJobIds.length > 0) {
-          console.log('[TaskQueue] 检测到生成类任务完成，派发刷新事件', refreshJobIds);
+          debugLog('TaskQueue', '检测到生成类任务完成，派发刷新事件', refreshJobIds);
           const detail = { completedJobIds: refreshJobIds };
           // 历史事件名（StoryBoard 监听）
           window.dispatchEvent(new CustomEvent('storyboard:taskCompleted', { detail }));
@@ -323,7 +324,7 @@ export function useTaskQueue(options?: UseTaskQueueOptions): UseTaskQueueReturn 
       }
       currentIntervalRef.current = newInterval;
       intervalRef.current = setInterval(() => fetchJobs(false), newInterval);
-      console.log(`[TaskQueue] Polling interval adjusted to ${newInterval}ms`);
+      debugLog('TaskQueue', `Polling interval adjusted to ${newInterval}ms`);
     }
 
     return () => {
@@ -342,14 +343,14 @@ export function useTaskQueue(options?: UseTaskQueueOptions): UseTaskQueueReturn 
         if (intervalRef.current) {
           clearInterval(intervalRef.current);
           intervalRef.current = null;
-          console.log('[TaskQueue] 页面不可见，暂停轮询');
+          debugLog('TaskQueue', '页面不可见，暂停轮询');
         }
       } else {
         // 页面可见时立即获取一次并恢复轮询
         fetchJobs(false);
         if (!intervalRef.current) {
           intervalRef.current = setInterval(() => fetchJobs(false), currentIntervalRef.current);
-          console.log('[TaskQueue] 页面可见，恢复轮询');
+          debugLog('TaskQueue', '页面可见，恢复轮询');
         }
       }
     };
@@ -360,7 +361,7 @@ export function useTaskQueue(options?: UseTaskQueueOptions): UseTaskQueueReturn 
   // 网络状态感知：离线时暂停轮询，上线时恢复
   useEffect(() => {
     const handleOnline = () => {
-      console.log('[TaskQueue] 网络恢复，立即获取数据');
+      debugLog('TaskQueue', '网络恢复，立即获取数据');
       fetchJobs(false);
       // 恢复轮询
       if (!intervalRef.current) {
@@ -369,7 +370,7 @@ export function useTaskQueue(options?: UseTaskQueueOptions): UseTaskQueueReturn 
     };
 
     const handleOffline = () => {
-      console.log('[TaskQueue] 网络离线，暂停轮询');
+      debugLog('TaskQueue', '网络离线，暂停轮询');
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
         intervalRef.current = null;

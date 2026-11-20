@@ -148,7 +148,7 @@ const EnvironmentList: React.FC<EnvironmentListProps> = ({
 
   return (
     <>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-6 items-stretch">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 design:grid-cols-3 gap-4 mt-6 items-stretch">
         {environments.map((env) => {
           const isGenerating = generatingIds.has(env.id) || env.generation_status === 'generating';
           const hasImage = !!env.image_url;

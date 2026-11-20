@@ -175,7 +175,7 @@ const PropList: React.FC<PropListProps> = ({ props, onEdit, onDelete }) => {
 
   // 常规网格模式
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-6 items-stretch">
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 design:grid-cols-3 gap-4 mt-6 items-stretch">
       {props.map((prop) => renderPropCard(prop))}
     </div>
   );
