@@ -76,7 +76,10 @@ test('视频提示词写入「定义主体 + {} 台词」，重复执行不堆�
     { character: '顾北', line: '不拧就不完整。', order: 1 },
   ]);
   assert.ok(raw.video_prompt.includes('将画面中花白短发、深蓝色工装外套的角色定义为老李'));
-  assert.ok(raw.video_prompt.includes('顾北说道{不拧就不完整。}'));
+  // 台词主语必须是外貌指代，不能直接写角色名
+  assert.ok(raw.video_prompt.includes('画面中花白短发、深蓝色工装外套的角色说道{别拧了。}'));
+  assert.ok(raw.video_prompt.includes('画面中黑色长发、银色耳钉的角色说道{不拧就不完整。}'));
+  assert.ok(!raw.video_prompt.includes('老李说道{'));
   assert.ok(raw.video_prompt.includes('画外音{那天是冬至}'));
   const once = raw.video_prompt;
   enforceSceneDialogues(raw, appearance);

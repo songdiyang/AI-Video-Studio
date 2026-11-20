@@ -12,6 +12,7 @@ import { readDoc, writeDoc, getActiveProjectId } from './localStore';
 import { jsonResponse, resolvePath } from './localAssetShared';
 import { persistGeneratedMedia } from './localMedia';
 import { fetchLocalProjects } from './projects';
+import { toErrorMessage } from '../utils/errorMessage';
 
 // ==================== 通用助手 ====================
 
@@ -140,7 +141,7 @@ async function routeUpload(m: string, body: any, url: URL): Promise<Response | n
     if (pid) {
       // 落地硬约束：已选工程时必须写入工程 media/，失败显式报错（不再内联 base64 存文档）
       try { url2 = await persistGeneratedMedia(pid, dataUrl, file.name || 'upload.png'); }
-      catch (e: any) { return jsonResponse({ message: '文件保存到工程媒体目录失败：' + (e?.message || e) }, 500); }
+      catch (e) { return jsonResponse({ message: '文件保存到工程媒体目录失败：' + (toErrorMessage(e) || e) }, 500); }
     }
     const { asset_type, asset_id, view_type = 'other', description } = body || {};
     let image: any = null;
@@ -218,7 +219,7 @@ async function routeUsers(pathname: string, m: string, body: any, url: URL): Pro
     if (activeId) {
       // 落地硬约束：有工程时失败显式报错；无工程才允许内联（localStorage 头像）
       try { avatarUrl = await persistGeneratedMedia(activeId, dataUrl, 'avatar.png'); }
-      catch (e: any) { return jsonResponse({ message: '头像保存到工程媒体目录失败：' + (e?.message || e) }, 500); }
+      catch (e) { return jsonResponse({ message: '头像保存到工程媒体目录失败：' + (toErrorMessage(e) || e) }, 500); }
     }
     const profile = readLocalProfile();
     profile.avatar_url = avatarUrl;
@@ -284,7 +285,7 @@ export async function routeMisc(url: URL, method: string, body: any): Promise<Re
     if (pid) {
       // 落地硬约束：已选工程时必须写入工程 media/，失败显式报错
       try { outUrl = await persistGeneratedMedia(pid, dataUrl, file.name || 'general'); }
-      catch (e: any) { return jsonResponse({ message: '文件保存到工程媒体目录失败：' + (e?.message || e) }, 500); }
+      catch (e) { return jsonResponse({ message: '文件保存到工程媒体目录失败：' + (toErrorMessage(e) || e) }, 500); }
     }
     return jsonResponse({ url: outUrl, filePath: outUrl, size: file.size, mimeType: file.type || 'application/octet-stream' });
   }

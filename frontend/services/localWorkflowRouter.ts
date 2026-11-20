@@ -30,6 +30,7 @@ import {
   consumeAssetJob,
   assetJobToWorkflowJob,
 } from './localAssetJobs';
+import { toErrorMessage } from '../utils/errorMessage';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -99,8 +100,8 @@ export async function routeWorkflows(url: URL, method: string, body: any): Promi
       let started: { jobId: string; tasks: any[] };
       try {
         started = await start(workflowType, projectId, params);
-      } catch (err: any) {
-        return jsonResponse({ message: err?.message || '任务启动失败', error: err?.message || '' }, 400);
+      } catch (err) {
+        return jsonResponse({ message: toErrorMessage(err) || '任务启动失败', error: toErrorMessage(err) || '' }, 400);
       }
       return jsonResponse({ jobId: started.jobId, tasks: started.tasks });
     }

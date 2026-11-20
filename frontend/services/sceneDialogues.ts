@@ -140,19 +140,38 @@ export function normalizeSceneDialogues(raw: any, cast: string[]): { lines: Dial
   return { lines, check: { lines: lines.length, missing, unknown: [...unknown], resplit } };
 }
 
+/**
+ * 主体特征在提示词中的最大长度。定义句与台词指代必须共用同一截断，
+ * 否则同一角色在两处出现的特征不一致，模型会当成两个人。
+ */
+const SUBJECT_FEATURE_MAX = 60;
+
+/** 角色在提示词里的主体特征（取自角色库外貌），供定义主体与台词指代共用 */
+function subjectFeature(name: string, appearance: Map<string, string>): string {
+  return String(appearance.get(name.toLowerCase()) || '').replace(/\s+/g, ' ').trim().slice(0, SUBJECT_FEATURE_MAX);
+}
+
 /** 出场角色的「定义主体」句：用外貌特征把画面中的人绑定到角色名 */
 export function buildSubjectDefinition(cast: string[], appearance: Map<string, string>): string {
   const defs: string[] = [];
   for (const name of cast) {
-    const feat = String(appearance.get(name.toLowerCase()) || '').replace(/\s+/g, ' ').trim();
-    if (feat) defs.push(`将画面中${feat.slice(0, 60)}的角色定义为${name}`);
+    const feat = subjectFeature(name, appearance);
+    if (feat) defs.push(`将画面中${feat}的角色定义为${name}`);
   }
   return defs.length ? `${defs.join('，')}。` : '';
 }
 
-/** 台词句：沿用角色标签指代，台词按 Seedance 规范用 {} 包裹 */
-export function buildDialogueClause(lines: DialogueLineOut[], voiceover: string): string {
-  const spoken = lines.map((l) => (l.character ? `${l.character}说道{${l.line}}` : `{${l.line}}`)).join('，');
+/**
+ * 台词句：主语一律用外貌指代而不是角色名——视频模型不认识剧本里的名字，
+ * 只认画面中可见的稳定特征；名字仅由「定义主体」句负责绑定。
+ * 台词按 Seedance 规范用 {} 包裹；外貌缺失时才回退名字。
+ */
+export function buildDialogueClause(lines: DialogueLineOut[], voiceover: string, appearance?: Map<string, string>): string {
+  const subject = (name: string) => {
+    const feat = appearance ? subjectFeature(name, appearance) : '';
+    return feat ? `画面中${feat}的角色` : name;
+  };
+  const spoken = lines.map((l) => (l.character ? `${subject(l.character)}说道{${l.line}}` : `{${l.line}}`)).join('，');
   return [spoken, voiceover ? `画外音{${voiceover}}` : ''].filter(Boolean).join('，');
 }
 
@@ -175,7 +194,7 @@ export function enforceSceneDialogues(raw: any, appearance: Map<string, string>)
   // 否则会往用户可见的 video_prompt 里注入一堆用不上的主体定义。
   const clause = [
     lines.length ? buildSubjectDefinition(cast, appearance) : '',
-    lines.length || voiceover ? buildDialogueClause(lines, voiceover) : '',
+    lines.length || voiceover ? buildDialogueClause(lines, voiceover, appearance) : '',
   ]
     .filter(Boolean)
     .join('');

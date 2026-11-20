@@ -10,6 +10,7 @@
 import { isTauri, getApiBase } from './localApi';
 import { listAIModelConfigs, AIModelConfig } from './localApi';
 import type { HttpStep, PollSpec, TaskStep, TaskPlan } from './queueTypes';
+import { toErrorMessage } from '../utils/errorMessage';
 
 export type AICategory = 'TEXT' | 'IMAGE' | 'VIDEO' | 'MULTIMODAL';
 
@@ -161,9 +162,9 @@ export async function uploadFileToAI(file: File, model: OfflineModel): Promise<s
 
     const data: FileUploadResponse = await response.json();
     return data.id;
-  } catch (error: any) {
+  } catch (error) {
     console.error('[File Upload] 上传失败:', error);
-    throw new Error(`文件上传失败: ${error.message}`);
+    throw new Error(`文件上传失败: ${toErrorMessage(error)}`);
   }
 }
 
@@ -275,9 +276,9 @@ async function vendorFetch(req: VendorRequest): Promise<any> {
       }
       if (status >= 200 && status < 300) return data;
       throw new Error(extractErrorMessage(data) || `HTTP ${status}`);
-    } catch (err: any) {
+    } catch (err) {
       // ai_proxy 命令未实现（旧构建）→ 回退浏览器直连
-      if (/ai_proxy|command not found|unknown command/i.test(err?.message || '')) {
+      if (/ai_proxy|command not found|unknown command/i.test(toErrorMessage(err) || '')) {
         return directFetch(req);
       }
       throw err;

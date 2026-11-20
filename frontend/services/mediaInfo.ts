@@ -12,6 +12,7 @@
 // 结果按 URL 缓存（含 in-flight Promise 去重），重复查询零开销。
 
 import { isTauri } from './localApi';
+import { toErrorMessage } from '../utils/errorMessage';
 
 export type MediaKind = 'image' | 'video' | 'other';
 
@@ -314,8 +315,8 @@ export async function toVisionImageUrls(
   return runLimited(srcs, concurrency, async (src) => {
     try {
       return { src, dataUrl: await toVisionImageUrl(src) };
-    } catch (err: any) {
-      return { src, error: err?.message || String(err) };
+    } catch (err) {
+      return { src, error: toErrorMessage(err) || String(err) };
     }
   });
 }

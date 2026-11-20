@@ -78,59 +78,6 @@ export async function listSceneElements(params: {
   const data = await handleJson<{ elements: SceneElement[] }>(res);
   return (data.elements || []).map(normalizeElement);
 }
-
-export async function getSceneElement(id: number): Promise<SceneElement> {
-  const res = await fetch(`/api/scene-elements/${id}`, {
-    headers: jsonHeaders(),
-  });
-  const data = await handleJson<{ element: SceneElement }>(res);
-  return normalizeElement(data.element);
-}
-
-export async function createSceneElement(payload: {
-  projectId: number;
-  name: string;
-  category?: 'building' | 'scenery';
-  description?: string;
-  sortOrder?: number;
-}): Promise<SceneElement> {
-  const res = await fetch('/api/scene-elements', {
-    method: 'POST',
-    headers: jsonHeaders(),
-    body: JSON.stringify(payload),
-  });
-  const data = await handleJson<{ element: SceneElement }>(res);
-  return normalizeElement(data.element);
-}
-
-export async function updateSceneElement(
-  id: number,
-  payload: Partial<{
-    name: string;
-    category: 'building' | 'scenery';
-    description: string | null;
-    sortOrder: number;
-    imageUrl: string | null;
-    generationStatus: SceneElement['generation_status'];
-  }>
-): Promise<SceneElement> {
-  const res = await fetch(`/api/scene-elements/${id}`, {
-    method: 'PATCH',
-    headers: jsonHeaders(),
-    body: JSON.stringify(payload),
-  });
-  const data = await handleJson<{ element: SceneElement }>(res);
-  return normalizeElement(data.element);
-}
-
-export async function deleteSceneElement(id: number): Promise<void> {
-  const res = await fetch(`/api/scene-elements/${id}`, {
-    method: 'DELETE',
-    headers: jsonHeaders(),
-  });
-  await handleJson(res);
-}
-
 // ============ 生成 ============
 
 export async function generateSceneElementImage(
@@ -157,32 +104,6 @@ export async function listSceneElementLinks(sceneId: number): Promise<SceneEleme
     image_url: normalizeStorageUrl(l.image_url),
   })) as SceneElementLink[];
 }
-
-export async function addSceneElementLink(sceneId: number, body: {
-  elementId: number;
-  positionHint?: string;
-  sortOrder?: number;
-}): Promise<{ linkId: number }> {
-  const res = await fetch(`/api/scenes/${sceneId}/elements`, {
-    method: 'POST',
-    headers: jsonHeaders(),
-    body: JSON.stringify(body),
-  });
-  return handleJson(res);
-}
-
-export async function updateSceneElementLink(sceneId: number, elementId: number, body: {
-  positionHint?: string;
-  sortOrder?: number;
-}): Promise<void> {
-  const res = await fetch(`/api/scenes/${sceneId}/elements/${elementId}`, {
-    method: 'PATCH',
-    headers: jsonHeaders(),
-    body: JSON.stringify(body),
-  });
-  await handleJson(res);
-}
-
 export async function removeSceneElementLink(sceneId: number, elementId: number): Promise<void> {
   const res = await fetch(`/api/scenes/${sceneId}/elements/${elementId}`, {
     method: 'DELETE',

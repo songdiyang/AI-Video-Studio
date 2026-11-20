@@ -707,27 +707,6 @@ export async function deleteProp(id: number): Promise<void> {
     throw new Error(data.message || '删除道具失败');
   }
 }
-
-export async function extractPropsFromScript(payload: {
-  projectId: number;
-  scriptId: number;
-  textModel: string;
-  imageModel?: string;
-}): Promise<{ message: string; jobId?: string; status: string }> {
-  const response = await fetch('/api/props/extract-from-script', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(payload)
-  });
-  if (!response.ok) {
-    const data = await response.json();
-    throw new Error(data.message || '提取道具失败');
-  }
-  return response.json();
-}
-
 // ============================================================
 // 标签分组 API
 // ============================================================
@@ -856,59 +835,6 @@ export async function generateCharacterViews(
   }
   return response.json();
 }
-
-/**
- * 生成角色概念分解图
- */
-export async function generateConceptBreakdown(
-  characterId: number,
-  params: GenerateConceptParams
-): Promise<GenerateConceptResponse> {
-  const response = await fetch(`/api/characters/${characterId}/generate-concept`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(params)
-  });
-  if (!response.ok) {
-    const result = await response.json();
-    throw new Error(result.message || '启动概念分解图生成失败');
-  }
-  return response.json();
-}
-
-/**
- * 删除角色单个视图
- */
-export async function deleteCharacterViewApi(
-  characterId: number,
-  viewType: 'front' | 'side' | 'back'
-): Promise<{ message: string; front_view_url: string | null; side_view_url: string | null; back_view_url: string | null; image_url: string | null }> {
-  const response = await fetch(`/api/characters/${characterId}/views/${viewType}`, {
-    method: 'DELETE',
-  });
-  if (!response.ok) {
-    const result = await response.json();
-    throw new Error(result.message || '删除视图失败');
-  }
-  return response.json();
-}
-
-/**
- * 查询角色三视图生成状态
- */
-export async function getCharacterViewStatus(
-  characterId: number
-): Promise<GenerationStatusResponse> {
-  const response = await fetch(`/api/characters/${characterId}/generation-status`);
-  if (!response.ok) {
-    const result = await response.json();
-    throw new Error(result.message || '查询生成状态失败');
-  }
-  return response.json();
-}
-
 /**
  * 更新角色使用参考图开关
  */
@@ -929,74 +855,6 @@ export async function updateCharacterUseReferenceImages(
   }
   return response.json();
 }
-
-/**
- * 下载单个视图图片
- */
-export async function downloadCharacterView(
-  url: string,
-  fileName: string
-): Promise<void> {
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error('下载图片失败');
-  }
-  const blob = await response.blob();
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = fileName;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(a.href);
-}
-
-/**
- * 批量下载角色三视图为ZIP文件
- */
-export async function downloadAllCharacterViews(
-  character: Character
-): Promise<void> {
-  const JSZip = (await import('jszip')).default;
-  const zip = new JSZip();
-  
-  const views = [
-    { url: character.front_view_url, name: `${character.name}_正面.png` },
-    { url: character.side_view_url, name: `${character.name}_侧面.png` },
-    { url: character.back_view_url, name: `${character.name}_背面.png` },
-  ].filter(item => item.url);
-  
-  if (views.length === 0) {
-    throw new Error('没有可下载的三视图');
-  }
-  
-  // 下载所有图片并添加到 ZIP
-  const downloadPromises = views.map(async (item) => {
-    if (!item.url) return;
-    try {
-      const response = await fetch(item.url);
-      if (response.ok) {
-        const blob = await response.blob();
-        zip.file(item.name, blob);
-      }
-    } catch (e) {
-      console.error(`下载 ${item.name} 失败:`, e);
-    }
-  });
-  
-  await Promise.all(downloadPromises);
-  
-  // 生成并下载 ZIP 文件
-  const content = await zip.generateAsync({ type: 'blob' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(content);
-  a.download = `${character.name}_三视图.zip`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(a.href);
-}
-
 // ============================================================
 // 角色状态 API
 // ============================================================
@@ -1013,36 +871,6 @@ export async function fetchCharacterStates(characterId: number): Promise<Charact
   const data = await response.json();
   return (data.states || []).map(normalizeStateUrls);
 }
-
-/**
- * 按分类获取角色状态
- */
-export async function fetchCharacterStatesByCategory(
-  characterId: number,
-  category?: StateCategory
-): Promise<{ states: CharacterState[]; grouped: Record<string, CharacterState[]> }> {
-  const queryParams = new URLSearchParams();
-  if (category) queryParams.append('category', category);
-
-  const url = `/api/characters/${characterId}/states/by-category${queryParams.toString() ? '?' + queryParams.toString() : ''}`;
-  const response = await fetch(url);
-  if (!response.ok) {
-    const result = await response.json();
-    throw new Error(result.message || '获取角色状态分类失败');
-  }
-  const result = await response.json();
-  // 规范化 states 和 grouped 中的 URL
-  if (result.states) {
-    result.states = result.states.map(normalizeStateUrls);
-  }
-  if (result.grouped) {
-    for (const key of Object.keys(result.grouped)) {
-      result.grouped[key] = result.grouped[key].map(normalizeStateUrls);
-    }
-  }
-  return result;
-}
-
 /**
  * 创建角色状态
  */
@@ -1207,53 +1035,6 @@ export async function generateCharacterStateViews(
     clearTimeout(timeout);
   }
 }
-
-/**
- * 获取角色的激活状态
- */
-export async function getActiveCharacterState(
-  characterId: number
-): Promise<CharacterState | null> {
-  const response = await fetch(`/api/characters/${characterId}/active-state`);
-  if (!response.ok) {
-    const result = await response.json();
-    throw new Error(result.message || '获取激活状态失败');
-  }
-  const data = await response.json();
-  return data.state ? normalizeStateUrls(data.state) : null;
-}
-
-/**
- * 获取角色状态变更历史
- */
-export async function fetchCharacterStateHistory(
-  characterId: number,
-  params?: { stateId?: number; action?: string; limit?: number; offset?: number }
-): Promise<CharacterStateHistoryResponse> {
-  const queryParams = new URLSearchParams();
-  if (params?.action) queryParams.append('action', params.action);
-  if (params?.limit) queryParams.append('limit', String(params.limit));
-  if (params?.offset) queryParams.append('offset', String(params.offset));
-
-  const queryString = queryParams.toString();
-  let url: string;
-
-  if (params?.stateId) {
-    url = `/api/characters/${characterId}/states/${params.stateId}/history`;
-  } else {
-    url = `/api/characters/${characterId}/states/history`;
-  }
-
-  if (queryString) url += `?${queryString}`;
-
-  const response = await fetch(url);
-  if (!response.ok) {
-    const result = await response.json();
-    throw new Error(result.message || '获取状态历史失败');
-  }
-  return response.json();
-}
-
 // ============================================================
 // 参考图 API
 // ============================================================
@@ -1285,40 +1066,6 @@ export async function fetchReferenceImages(
   const data = await response.json();
   return data.images || [];
 }
-
-/**
- * 上传参考图
- */
-export async function uploadReferenceImage(
-  assetType: AssetReferenceType,
-  assetId: number,
-  imageUrl: string,
-  description?: string,
-  viewType?: ReferenceViewType,
-  isEnabled: boolean = true
-): Promise<AssetReferenceImage> {
-  const response = await fetch('/api/reference-images', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      asset_type: assetType,
-      asset_id: assetId,
-      image_url: imageUrl,
-      description,
-      view_type: viewType || 'other',
-      is_enabled: isEnabled
-    })
-  });
-  if (!response.ok) {
-    const result = await response.json();
-    throw new Error(result.message || '上传参考图失败');
-  }
-  const result = await response.json();
-  return result.image;
-}
-
 /**
  * 更新参考图
  */
@@ -1353,26 +1100,6 @@ export async function deleteReferenceImage(imageId: number): Promise<void> {
     throw new Error(result.message || '删除参考图失败');
   }
 }
-
-/**
- * 批量重排序参考图
- */
-export async function batchReorderReferenceImages(
-  orders: { id: number; sort_order: number }[]
-): Promise<void> {
-  const response = await fetch('/api/reference-images/batch-reorder', {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ orders })
-  });
-  if (!response.ok) {
-    const result = await response.json();
-    throw new Error(result.message || '重排序参考图失败');
-  }
-}
-
 // ============================================================
 // 道具生成 API
 // ============================================================
@@ -1401,21 +1128,6 @@ export async function generatePropImage(
   }
   return response.json();
 }
-
-/**
- * 获取道具生成状态
- */
-export async function getPropGenerationStatus(
-  propId: number
-): Promise<PropGenerationStatusResponse> {
-  const response = await fetch(`/api/props/${propId}/generation-status`);
-  if (!response.ok) {
-    const result = await response.json();
-    throw new Error(result.message || '查询道具生成状态失败');
-  }
-  return response.json();
-}
-
 /**
  * 更新道具样式配置
  */
@@ -1436,85 +1148,6 @@ export async function updatePropStyleConfig(
   }
   return response.json();
 }
-
-// ============================================================
-// 道具状态 API
-// ============================================================
-
-/**
- * 获取道具的所有状态
- */
-export async function fetchPropStates(propId: number): Promise<PropState[]> {
-  const response = await fetch(`/api/props/${propId}/states`);
-  if (!response.ok) {
-    const result = await response.json();
-    throw new Error(result.message || '获取道具状态失败');
-  }
-  const data = await response.json();
-  return data.states || [];
-}
-
-/**
- * 创建道具状态
- */
-export async function createPropState(
-  propId: number,
-  data: Partial<PropState>
-): Promise<PropState> {
-  const response = await fetch(`/api/props/${propId}/states`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(data)
-  });
-  if (!response.ok) {
-    const result = await response.json();
-    throw new Error(result.message || '创建道具状态失败');
-  }
-  const result = await response.json();
-  return result.state;
-}
-
-/**
- * 更新道具状态
- */
-export async function updatePropState(
-  propId: number,
-  stateId: number,
-  data: Partial<PropState>
-): Promise<PropState> {
-  const response = await fetch(`/api/props/${propId}/states/${stateId}`, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(data)
-  });
-  if (!response.ok) {
-    const result = await response.json();
-    throw new Error(result.message || '更新道具状态失败');
-  }
-  const result = await response.json();
-  return result.state;
-}
-
-/**
- * 删除道具状态
- */
-export async function deletePropState(
-  propId: number,
-  stateId: number
-): Promise<void> {
-  const response = await fetch(`/api/props/${propId}/states/${stateId}`, {
-    method: 'DELETE',
-  });
-  if (!response.ok) {
-    const result = await response.json();
-    throw new Error(result.message || '删除道具状态失败');
-  }
-}
-
 // ============================================================
 // 场景草图 API
 // ============================================================
@@ -1558,24 +1191,6 @@ export async function deleteSceneSketch(sceneId: number): Promise<void> {
     throw new Error(result.message || '删除场景草图失败');
   }
 }
-
-/**
- * 获取场景草图
- * @param sceneId 场景ID
- * @returns 草图URL
- */
-export async function getSceneSketch(
-  sceneId: number
-): Promise<{ sketch_url: string | null }> {
-  const response = await fetch(`/api/scenes/${sceneId}/sketch`);
-
-  if (!response.ok) {
-    const result = await response.json();
-    throw new Error(result.message || '获取场景草图失败');
-  }
-  return response.json();
-}
-
 /**
  * 上传场景参考图
  * @param sceneId 场景ID
@@ -1690,25 +1305,6 @@ export async function uploadFileToMinIO(
     xhr.send(formData);
   });
 }
-
-/**
- * 检查上传服务状态
- * @returns 服务状态
- */
-export async function checkUploadStatus(): Promise<{
-  ready: boolean;
-  maxFileSize: number;
-  allowedTypes: string[];
-}> {
-  const response = await fetch('/api/upload/status');
-
-  if (!response.ok) {
-    const result = await response.json();
-    throw new Error(result.message || '检查上传服务状态失败');
-  }
-  return response.json();
-}
-
 // ============================================================
 // 角色装配 + 合成预览 (T5)
 // ============================================================
@@ -1738,53 +1334,6 @@ export interface CharacterCompositeResponse {
     costumeRawHit: boolean;
   };
 }
-
-/** 读取角色当前装配 */
-export async function fetchCharacterLoadout(characterId: number): Promise<{ characterId: number; loadout: CharacterLoadout }> {
-  const response = await fetch(`/api/characters/${characterId}/loadout`);
-  if (!response.ok) {
-    const r = await response.json().catch(() => ({}));
-    throw new Error(r.message || '获取装配信息失败');
-  }
-  return response.json();
-}
-
-/** 更新角色当前装配（传 null 清空） */
-export async function updateCharacterLoadout(
-  characterId: number,
-  data: { costumeStateId?: number | null; expressionStateId?: number | null }
-): Promise<{ message: string; characterId: number; loadout: { costumeStateId: number | null; expressionStateId: number | null } }> {
-  const response = await fetch(`/api/characters/${characterId}/loadout`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  });
-  if (!response.ok) {
-    const r = await response.json().catch(() => ({}));
-    throw new Error(r.message || '更新装配失败');
-  }
-  return response.json();
-}
-
-/** 获取角色合成预览（基于项目画风 + 白膜 + 装配） */
-export async function fetchCharacterComposite(
-  characterId: number,
-  projectId: number,
-  overrides?: { costumeStateId?: number; expressionStateId?: number }
-): Promise<CharacterCompositeResponse> {
-  const params = new URLSearchParams({ projectId: String(projectId) });
-  if (overrides?.costumeStateId != null) params.append('costumeStateId', String(overrides.costumeStateId));
-  if (overrides?.expressionStateId != null) params.append('expressionStateId', String(overrides.expressionStateId));
-  const response = await fetch(`/api/characters/${characterId}/composite?${params.toString()}`);
-  if (!response.ok) {
-    const r = await response.json().catch(() => ({}));
-    const err: any = new Error(r.message || '获取合成预览失败');
-    err.code = r.code;
-    throw err;
-  }
-  return response.json();
-}
-
 // ============================================================
 // 角色-项目 一对多绑定 (T6)
 // ============================================================
@@ -1796,83 +1345,6 @@ export interface ProjectBinding {
   project_title?: string;
   project_type?: string;
 }
-
-/** 读取角色绑定的所有项目 */
-export async function fetchCharacterBindings(characterId: number): Promise<{ characterId: number; bindings: ProjectBinding[] }> {
-  const response = await fetch(`/api/characters/${characterId}/bindings`);
-  if (!response.ok) {
-    const r = await response.json().catch(() => ({}));
-    throw new Error(r.message || '获取角色绑定失败');
-  }
-  return response.json();
-}
-
-/** 添加角色-项目绑定 */
-export async function addCharacterBinding(characterId: number, projectId: number): Promise<{ message: string }> {
-  const response = await fetch(`/api/characters/${characterId}/bindings`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ projectId }),
-  });
-  if (!response.ok) {
-    const r = await response.json().catch(() => ({}));
-    throw new Error(r.message || '添加绑定失败');
-  }
-  return response.json();
-}
-
-/** 解除角色-项目绑定（不能解除 owner） */
-export async function removeCharacterBinding(characterId: number, projectId: number): Promise<{ message: string }> {
-  const response = await fetch(`/api/characters/${characterId}/bindings/${projectId}`, {
-    method: 'DELETE',
-  });
-  if (!response.ok) {
-    const r = await response.json().catch(() => ({}));
-    const err: any = new Error(r.message || '解除绑定失败');
-    err.code = r.code;
-    throw err;
-  }
-  return response.json();
-}
-
-/** 读取场景绑定的所有项目 (T7) */
-export async function fetchSceneBindings(sceneId: number): Promise<{ sceneId: number; bindings: ProjectBinding[] }> {
-  const response = await fetch(`/api/scenes/${sceneId}/bindings`);
-  if (!response.ok) {
-    const r = await response.json().catch(() => ({}));
-    throw new Error(r.message || '获取场景绑定失败');
-  }
-  return response.json();
-}
-
-/** 添加场景-项目绑定 */
-export async function addSceneBinding(sceneId: number, projectId: number): Promise<{ message: string }> {
-  const response = await fetch(`/api/scenes/${sceneId}/bindings`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ projectId }),
-  });
-  if (!response.ok) {
-    const r = await response.json().catch(() => ({}));
-    throw new Error(r.message || '添加绑定失败');
-  }
-  return response.json();
-}
-
-/** 解除场景-项目绑定 */
-export async function removeSceneBinding(sceneId: number, projectId: number): Promise<{ message: string }> {
-  const response = await fetch(`/api/scenes/${sceneId}/bindings/${projectId}`, {
-    method: 'DELETE',
-  });
-  if (!response.ok) {
-    const r = await response.json().catch(() => ({}));
-    const err: any = new Error(r.message || '解除绑定失败');
-    err.code = r.code;
-    throw err;
-  }
-  return response.json();
-}
-
 // ============================================================
 // （已移除）按项目画风渲染的角色状态 / 场景缓存接口
 // 该模块已在 2026-04 下线，渲染通过三视图管线统一处理

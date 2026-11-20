@@ -3,6 +3,7 @@
 // 非 Tauri 环境下降级为 localStorage 等浏览器原生能力（仅作本地实现，非联网后端）
 
 import { makeUniqueName } from './uniqueName';
+import { toErrorMessage } from '../utils/errorMessage';
 
 // 类型定义
 export interface AIModelConfig {
@@ -113,12 +114,6 @@ export async function saveAIModelKey(config: AIModelConfig): Promise<void> {
   }
   writeAIConfigs(configs);
 }
-
-export async function getAIModelKey(provider: string, modelName: string): Promise<string> {
-  const config = readAIConfigs().find((c) => c.provider === provider && c.model_name === modelName);
-  return config?.api_key || '';
-}
-
 export async function listAIModelConfigs(): Promise<AIModelConfig[]> {
   return readAIConfigs();
 }
@@ -158,13 +153,6 @@ export async function updateAIModelConfigFlags(
   }
   writeAIConfigs(configs);
 }
-
-// 获取默认且启用的模型（无默认则取第一个启用的）
-export async function getDefaultAIModel(): Promise<AIModelConfig | null> {
-  const configs = readAIConfigs().filter((c) => c.enabled !== false);
-  return configs.find((c) => c.is_default) || configs[0] || null;
-}
-
 export interface ConnectionTestResult {
   ok: boolean;
   status: 'success' | 'failed' | 'unknown';
@@ -304,9 +292,9 @@ async function proxyVendorFetch(url: string, init: RequestInit, timeoutMs = 1500
       const status = res?.status ?? 200;
       const bodyText = typeof res?.body === 'string' ? res.body : JSON.stringify(res?.body ?? null);
       return new Response(bodyText, { status, headers: { 'Content-Type': 'application/json' } });
-    } catch (err: any) {
+    } catch (err) {
       // 仅当 ai_proxy 命令不存在时回退直连；其他错误继续抛出由上层捕获
-      if (!/ai_proxy|command not found|unknown command/i.test(err?.message || '')) throw err;
+      if (!/ai_proxy|command not found|unknown command/i.test(toErrorMessage(err) || '')) throw err;
     }
   }
   return fetchWithTimeout(url, init, timeoutMs);
@@ -335,8 +323,8 @@ async function testTextModel(base: string, apiKey: string, modelId: string): Pro
     }
     const detail = await extractErrorMessage(res);
     return { ok: false, status: 'failed', message: '文本模型测试失败', detail };
-  } catch (err: any) {
-    return { ok: false, status: 'failed', message: '文本模型请求异常', detail: err?.message || '网络错误' };
+  } catch (err) {
+    return { ok: false, status: 'failed', message: '文本模型请求异常', detail: toErrorMessage(err) || '网络错误' };
   }
 }
 
@@ -380,8 +368,8 @@ async function testMultimodalModel(base: string, apiKey: string, modelId: string
     }
     
     return { ok: false, status: 'failed', message: '多模态模型测试失败', detail };
-  } catch (err: any) {
-    return { ok: false, status: 'failed', message: '多模态模型请求异常', detail: err?.message || '网络错误' };
+  } catch (err) {
+    return { ok: false, status: 'failed', message: '多模态模型请求异常', detail: toErrorMessage(err) || '网络错误' };
   }
 }
 
@@ -410,8 +398,8 @@ async function testImageModel(base: string, apiKey: string, modelId: string): Pr
     }
     const detail = await extractErrorMessage(res);
     return { ok: false, status: 'failed', message: '图片模型测试失败', detail };
-  } catch (err: any) {
-    return { ok: false, status: 'failed', message: '图片模型请求异常', detail: err?.message || '网络错误' };
+  } catch (err) {
+    return { ok: false, status: 'failed', message: '图片模型请求异常', detail: toErrorMessage(err) || '网络错误' };
   }
 }
 
@@ -444,8 +432,8 @@ async function testVideoModel(base: string, apiKey: string, modelId: string): Pr
     }
     const detail = await extractErrorMessage(res);
     return { ok: false, status: 'failed', message: '视频模型测试失败', detail };
-  } catch (err: any) {
-    return { ok: false, status: 'failed', message: '视频模型请求异常', detail: err?.message || '网络错误' };
+  } catch (err) {
+    return { ok: false, status: 'failed', message: '视频模型请求异常', detail: toErrorMessage(err) || '网络错误' };
   }
 }
 
@@ -831,21 +819,6 @@ export async function saveFile(title: string, defaultPath?: string, filters?: { 
   });
   return (result as string | null) ?? null;
 }
-
-export async function selectFiles(title: string, filters?: { name: string; extensions: string[] }[]): Promise<string[]> {
-  if (!isTauri()) {
-    console.warn('Not in Tauri environment, file selection not available');
-    return [];
-  }
-  const { open } = await import('@tauri-apps/plugin-dialog');
-  const result = await open({
-    title,
-    filters: filters?.map(f => ({ name: f.name, extensions: f.extensions })),
-    multiple: true,
-  });
-  return (result as string[]) || [];
-}
-
 export async function selectDirectory(title: string): Promise<string | null> {
   if (!isTauri()) {
     console.warn('Not in Tauri environment, directory selection not available');
@@ -857,40 +830,4 @@ export async function selectDirectory(title: string): Promise<string | null> {
     directory: true,
   });
   return result as string | null;
-}
-
-export async function showInExplorer(path: string): Promise<void> {
-  if (!isTauri()) {
-    console.warn('Not in Tauri environment, cannot show in explorer');
-    return;
-  }
-  const { invoke } = await getTauriApi();
-  await invoke('show_in_explorer', { path });
-}
-
-/** 导入媒体文件到工程 media/ 目录（projectPath 为工程文件夹路径） */
-export async function importMediaFile(projectPath: string, sourcePath: string): Promise<MediaFileInfo> {
-  if (!isTauri()) {
-    throw new Error('Not in Tauri environment');
-  }
-  const { invoke } = await getTauriApi();
-  return await invoke('import_media_file', { projectPath, sourcePath });
-}
-
-// ==================== 路径获取 ====================
-
-export async function getAppDataDir(): Promise<string> {
-  if (!isTauri()) {
-    return '/mock/app/data';
-  }
-  const { invoke } = await getTauriApi();
-  return await invoke('get_app_data_dir');
-}
-
-export async function getProjectDir(projectId: string): Promise<string> {
-  if (!isTauri()) {
-    return `/mock/project/${projectId}`;
-  }
-  const { invoke } = await getTauriApi();
-  return await invoke('get_project_dir', { projectId });
 }

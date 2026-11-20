@@ -6,7 +6,7 @@ function ErrorFallbackUI({ onReset }: { onReset: () => void }) {
   // 这里不能用 useLanguage，因为 ErrorBoundary 可能在 LanguageProvider 出错时触发
   // 使用硬编码的双语文本作为降级方案
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[var(--bg-app)] px-4"
+    <div className="min-h-full flex items-center justify-center bg-[var(--bg-app)] px-4"
          style={{ background: 'var(--bg-body, #1e1e2e)' }}>
       <div className="max-w-md w-full text-center space-y-6">
         <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-[var(--danger,#ef4444)]/10">

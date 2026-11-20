@@ -9,9 +9,18 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 
-const source = readFileSync(fileURLToPath(new URL('./localCharacters.ts', import.meta.url)), 'utf8');
+const raw = readFileSync(fileURLToPath(new URL('./localCharacters.ts', import.meta.url)), 'utf8')
+  // ../utils/errorMessage 无运行时依赖，直接内联：data: URL 模块解析不了相对路径
+  .replace(
+    /import\s*\{\s*toErrorMessage\s*\}\s*from\s*'\.\.\/utils\/errorMessage';/,
+    `function toErrorMessage(err) {
+  if (err instanceof Error) return err.message;
+  if (err !== null && typeof err === 'object' && 'message' in err) return String(err.message);
+  return String(err);
+}`,
+  );
 // 用正则而非字面量匹配 import：仓库是 CRLF，多行字面量会静静匹配不上，桩失效后报错误导人
-const stubbed = source.replace(
+const stubbed = raw.replace(
   /import\s*\{[^}]*\}\s*from\s*'\.\/localAssetShared';/,
   `const activePath = () => (globalThis.__noProject ? null : 'test://proj');
    const resolvePath = async () => (globalThis.__noProject ? null : 'test://proj');

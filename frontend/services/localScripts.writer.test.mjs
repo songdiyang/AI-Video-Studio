@@ -22,6 +22,15 @@ globalThis.CustomEvent = globalThis.CustomEvent
 
 async function loadTs(file, { as, stubs = {}, remotes = {} } = {}) {
   let source = readFileSync(fileURLToPath(new URL(file, import.meta.url)), 'utf8');
+  // ../utils/errorMessage 无运行时依赖，直接内联：data: URL 模块解析不了相对路径
+  source = source.replace(
+    /import\s*\{\s*toErrorMessage\s*\}\s*from\s*'\.\.\/utils\/errorMessage';/,
+    `function toErrorMessage(err) {
+  if (err instanceof Error) return err.message;
+  if (err !== null && typeof err === 'object' && 'message' in err) return String(err.message);
+  return String(err);
+}`,
+  );
   for (const [spec, code] of Object.entries(stubs)) {
     const re = new RegExp(`import\\s*\\{[^}]*\\}\\s*from\\s*'\\./${spec}';`);
     assert.ok(re.test(source), `${file} 未找到 ./${spec} 依赖（import 形态变了要同步改测试）`);

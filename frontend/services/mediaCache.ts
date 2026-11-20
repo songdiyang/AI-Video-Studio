@@ -69,29 +69,6 @@ export async function cacheMedia(url: string): Promise<boolean> {
     return false;
   }
 }
-
-/**
- * 获取缓存的资源 URL（返回 blob URL 以加速渲染）
- * 如果缓存不存在，返回原始 URL
- * @param url 原始资源 URL
- * @returns blob URL（缓存命中）或原始 URL（缓存未命中）
- */
-export async function getCachedUrl(url: string): Promise<string> {
-  if (!isCacheSupported() || !isCacheableUrl(url)) return url;
-
-  try {
-    const cache = await caches.open(CACHE_NAME);
-    const cached = await cache.match(url);
-    if (cached) {
-      const blob = await cached.blob();
-      return URL.createObjectURL(blob);
-    }
-  } catch (err) {
-    console.warn('[MediaCache] 读取缓存失败:', url, err);
-  }
-  return url;
-}
-
 /**
  * 尝试从缓存加载，未命中则从网络加载并缓存
  * @param url 资源 URL
@@ -156,40 +133,7 @@ export async function getCacheStats(): Promise<{ count: number; size: number }> 
     console.warn('[MediaCache] 获取缓存统计失败:', err);
     return { count: 0, size: 0 };
   }
-}
-
-/**
- * 清除所有媒体缓存
- * @returns 是否成功清除
- */
-export async function clearMediaCache(): Promise<boolean> {
-  if (!isCacheSupported()) return false;
-
-  try {
-    const deleted = await caches.delete(CACHE_NAME);
-    console.log('[MediaCache] 缓存已清除:', deleted);
-    return deleted;
-  } catch (err) {
-    console.error('[MediaCache] 清除缓存失败:', err);
-    return false;
-  }
-}
-
-/**
- * 格式化文件大小显示
- * @param bytes 字节数
- * @returns 格式化后的字符串（如 "12.5 MB"）
- */
-export function formatCacheSize(bytes: number): string {
-  if (bytes === 0) return '0 B';
-  const units = ['B', 'KB', 'MB', 'GB'];
-  const k = 1024;
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  const size = bytes / Math.pow(k, i);
-  return `${size.toFixed(i > 0 ? 1 : 0)} ${units[i]}`;
-}
-
-/**
+}/**
  * 为 URL 添加缓存破坏参数，确保浏览器加载最新内容
  * 帧图片使用固定 MinIO 路径，重新生成后 URL 不变，需要强制刷新缓存
  * @param url 原始 URL

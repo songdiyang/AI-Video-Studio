@@ -12,6 +12,7 @@
 // 并入 /workflows 与 /workflows/active，驱动消费方在下次轮询刷新资产列表。
 
 import type { LocalWorkflowJob, LocalWorkflowTask } from './localWorkflow';
+import { toErrorMessage } from '../utils/errorMessage';
 
 export interface AssetJob {
   id: string;
@@ -100,10 +101,10 @@ export function submitAssetGeneration(opts: SubmitAssetJobOptions): string {
       if (job.status !== 'running') return; // 超时后不接受迟到结果覆盖终态
       job.result_data = result ?? null;
       job.status = 'completed';
-    } catch (err: any) {
+    } catch (err) {
       if (job.status !== 'running') return;
       job.status = 'failed';
-      job.error_message = err?.message || '生成失败';
+      job.error_message = toErrorMessage(err) || '生成失败';
       notifyFail(job.error_message);
     } finally {
       clearTimeout(watchdog);

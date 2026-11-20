@@ -59,6 +59,8 @@ function environment() {
       if (name === 'react-dom') return { createPortal: (child, target) => jsx('Portal', { children: child, target }) };
       if (name === '@heroui/react' || name === 'lucide-react') return new Proxy({}, { get: (_, key) => key });
       if (name.includes('/services/')) return mockApi;
+      // 本地 API 层依赖的统一异常文案工具：无需真加载，给同名实现即可
+      if (name.includes('utils/errorMessage')) return { toErrorMessage: (err) => (err instanceof Error ? err.message : String(err?.message ?? err)) };
       if (name.includes('useWorkflow')) return { getActiveWorkflows: async () => ({ jobs: [] }), consumeWorkflow: async () => ({}) };
       if (name.includes('ToastContext')) return { useToast: () => ({ showToast() {} }) };
       if (name.includes('ConfirmContext')) return { useConfirm: () => ({ confirm: async () => true }) };

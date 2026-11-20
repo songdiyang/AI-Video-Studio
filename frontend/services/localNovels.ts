@@ -16,6 +16,7 @@
 import { readDoc, writeDoc, resolveLocalPath, getActiveProjectPath } from './localStore';
 import { jsonResponse, pickTextModel, chatJson } from './localAssetShared';
 import { chatText } from './localAI';
+import { toErrorMessage } from '../utils/errorMessage';
 
 // ==================== 类型 ====================
 
@@ -136,8 +137,8 @@ async function handleWorldviewGenerate(path: string, projectId: number, body: an
   try {
     const resp = await chatText({ model, temperature: 0.7, messages: [{ role: 'user', content: prompt }] });
     content = resp.content || '';
-  } catch (err: any) {
-    return jsonResponse({ message: '生成世界观失败: ' + (err?.message || err) }, 500);
+  } catch (err) {
+    return jsonResponse({ message: '生成世界观失败: ' + (toErrorMessage(err) || err) }, 500);
   }
   doc.project!.world_view = content;
   doc.project!.updated_at = new Date().toISOString();

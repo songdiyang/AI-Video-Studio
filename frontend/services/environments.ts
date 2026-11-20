@@ -144,27 +144,6 @@ export async function sanitizeEnvironmentDescriptions(projectId: number): Promis
   });
   return handle<SanitizeDescriptionResult>(resp);
 }
-
-/** 清洗单个环境的描述 */
-export async function sanitizeEnvironmentDescription(id: number): Promise<{
-  message: string;
-  before: string;
-  after: string;
-  changed: boolean;
-  environment: Environment;
-}> {
-  const resp = await fetch(`/api/environments/${id}/sanitize-description`, {
-    method: 'POST',
-  });
-  return handle<{
-    message: string;
-    before: string;
-    after: string;
-    changed: boolean;
-    environment: Environment;
-  }>(resp);
-}
-
 export interface TerrainRecognitionResult {
   message: string;
   environmentId: number;
@@ -190,20 +169,4 @@ export interface BatchTerrainRecognitionResult {
     terrainTypes: string[];
     changed: boolean;
   }>;
-}
-
-/** 批量识别项目下所有环境的地貌类型 */
-export async function recognizeAllEnvironmentTerrains(projectId: number): Promise<BatchTerrainRecognitionResult> {
-  const resp = await fetch('/api/environments/recognize-all-terrains', {
-    method: 'POST',
-    headers: {  'Content-Type': 'application/json' },
-    body: JSON.stringify({ projectId })
-  });
-  return handle<BatchTerrainRecognitionResult>(resp);
-}
-
-/** 获取支持的所有地貌类型列表 */
-export async function fetchTerrainTypes(): Promise<{ terrainTypes: string[]; total: number }> {
-  const resp = await fetch('/api/environments/terrain-types');
-  return handle<{ terrainTypes: string[]; total: number }>(resp);
 }

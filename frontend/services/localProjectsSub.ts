@@ -28,6 +28,7 @@ import { chatText, generateImage } from './localAI';
 import { loadNovelDoc, saveNovelDoc } from './localNovels';
 import { resolveScriptReferences } from './localScripts';
 import { WRITER_PRESETS, findWriterPreset, rankWritersByFit } from './writerStyle';
+import { toErrorMessage } from '../utils/errorMessage';
 
 // ==================== 视觉风格预设（与前端 Projects.tsx 键名一致） ====================
 const VISUAL_STYLE_PRESETS: Record<string, string> = {
@@ -145,8 +146,8 @@ async function handleCoverUpload(projectId: number, body: any): Promise<Response
   try {
     const dataUrl = await fileToDataUrl(file);
     coverUrl = await persistGeneratedMedia(projectId, dataUrl, 'cover.png');
-  } catch (err: any) {
-    return jsonResponse({ message: '封面上传失败：' + (err?.message || err) }, 500);
+  } catch (err) {
+    return jsonResponse({ message: '封面上传失败：' + (toErrorMessage(err) || err) }, 500);
   }
   const path = await resolvePath(projectId);
   if (path) {
@@ -167,9 +168,9 @@ async function handleCoverCrop(projectId: number, body: any): Promise<Response> 
   try {
     const dataUrl = await cropImageToDataUrl(String(sourceUrl), crop);
     coverUrl = await persistGeneratedMedia(projectId, dataUrl, 'cover_crop.png');
-  } catch (err: any) {
+  } catch (err) {
     // 落地硬约束：裁剪或写入工程 media/ 失败时显式报错，不得把原地址（可能是临时 URL）写进工程
-    return jsonResponse({ message: '封面裁剪失败（无法本地持久化）：' + (err?.message || err) }, 500);
+    return jsonResponse({ message: '封面裁剪失败（无法本地持久化）：' + (toErrorMessage(err) || err) }, 500);
   }
   const path = await resolvePath(projectId);
   if (path) {
@@ -194,8 +195,8 @@ async function handleGenerateCover(body: any): Promise<Response> {
   try {
     const textResult = await chatText({ model: textModel, temperature: 0.7, messages: [{ role: 'user', content: promptForCover }] });
     coverPrompt = (textResult.content || '').replace(/^```[\s\S]*?\n/, '').replace(/```$/, '').trim();
-  } catch (err: any) {
-    return jsonResponse({ message: '封面提示词生成失败: ' + (err?.message || err) }, 500);
+  } catch (err) {
+    return jsonResponse({ message: '封面提示词生成失败: ' + (toErrorMessage(err) || err) }, 500);
   }
 
   const imageModel = await pickImageModel(body?.imageModel);
@@ -204,8 +205,8 @@ async function handleGenerateCover(body: any): Promise<Response> {
   try {
     const imgResult = await generateImage({ model: imageModel, prompt: coverPrompt, aspectRatio: '1:1' });
     raw = imgResult.url || (imgResult.b64 ? `data:image/png;base64,${imgResult.b64}` : null);
-  } catch (err: any) {
-    return jsonResponse({ message: '图片生成失败: ' + (err?.message || err) }, 500);
+  } catch (err) {
+    return jsonResponse({ message: '图片生成失败: ' + (toErrorMessage(err) || err) }, 500);
   }
   if (!raw) return jsonResponse({ message: '图片生成成功但未返回图片地址' }, 500);
 
@@ -223,8 +224,8 @@ async function handleGenerateCover(body: any): Promise<Response> {
         const cov = await readDoc<{ coverUrl?: string }>(path, 'projectCover', {});
         writeDoc(path, 'projectCover', { ...cov, coverUrl });
       }
-    } catch (err: any) {
-      return jsonResponse({ message: '封面保存到工程媒体目录失败：' + (err?.message || err) }, 500);
+    } catch (err) {
+      return jsonResponse({ message: '封面保存到工程媒体目录失败：' + (toErrorMessage(err) || err) }, 500);
     }
   }
   return jsonResponse({ cover_url: coverUrl, prompt: coverPrompt });

@@ -17,6 +17,7 @@ import {
 } from './localAiChatPayload';
 import { readProjectDoc, writeProjectDoc, resolveLocalPath } from './localStore';
 import type { AIModel } from '../components/AIModelSelector';
+import { toErrorMessage } from '../utils/errorMessage';
 
 const NO_MODEL_MSG = '请先在「设置 › 模型」中配置模型';
 
@@ -105,8 +106,8 @@ function handleChatStream(body: any): Promise<Response> {
             onReasoning: (t) => emit(`data: ${JSON.stringify({ reasoningDelta: t })}\n\n`),
           });
           emit('data: [DONE]\n\n');
-        } catch (err: any) {
-          emit(`data: ${JSON.stringify({ error: err?.message || 'AI 对话失败' })}\n\n`);
+        } catch (err) {
+          emit(`data: ${JSON.stringify({ error: toErrorMessage(err) || 'AI 对话失败' })}\n\n`);
           emit('data: [DONE]\n\n');
         } finally {
           done();

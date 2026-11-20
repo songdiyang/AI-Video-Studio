@@ -22,6 +22,7 @@ import {
   submitGenJob,
   isAssetJobRunning,
 } from './localAssetShared';
+import { toErrorMessage } from '../utils/errorMessage';
 
 // ==================== 生成任务：视图选择与失败回写 ====================
 // 三视图键名：与 *_view_url 字段一一对应
@@ -424,8 +425,8 @@ async function handleUploadImage(charId: number, body: any): Promise<Response> {
     // 落地硬约束：失败时不得回填厂商临时 URL（必过期）或内联 base64（膨胀文档），直接显式报错
     try {
       imageUrl = await genPersistFromSrc(Number(ch.project_id) || 0, imageUrl);
-    } catch (e: any) {
-      return jsonResponse({ message: '图片保存到工程媒体目录失败：' + (e?.message || e) }, 500);
+    } catch (e) {
+      return jsonResponse({ message: '图片保存到工程媒体目录失败：' + (toErrorMessage(e) || e) }, 500);
     }
   }
   ch.image_url = imageUrl;

@@ -25,6 +25,7 @@ import {
   lockWriter,
 } from './projectSettings';
 import { makeUniqueScriptTitle } from './uniqueName';
+import { toErrorMessage } from '../utils/errorMessage';
 
 const NO_MODEL_MSG = '请先在「设置 › 模型」中配置可用的文本模型';
 
@@ -311,8 +312,8 @@ async function handleGenerate(body: any): Promise<Response> {
         { role: 'user', content: buildScriptPrompt(body) },
       ],
     });
-  } catch (err: any) {
-    return jsonResponse({ message: err?.message || '剧本生成失败' }, 500);
+  } catch (err) {
+    return jsonResponse({ message: toErrorMessage(err) || '剧本生成失败' }, 500);
   }
   const content = (gen.content || '').trim();
   if (!content) return jsonResponse({ message: '模型未返回剧本内容' }, 500);
@@ -522,7 +523,7 @@ function handleGenerateStream(body: any): Response {
           },
         },
       });
-    } catch (error: any) {
+    } catch (error) {
       if (path && scriptId) {
         try {
           const failedDoc = await loadScripts(path);
@@ -537,7 +538,7 @@ function handleGenerateStream(body: any): Response {
           // 保留原始生成错误；失败状态的二次落库异常不覆盖它。
         }
       }
-      emit({ type: 'error', error: error?.message || '剧本生成失败', scriptId });
+      emit({ type: 'error', error: toErrorMessage(error) || '剧本生成失败', scriptId });
     }
   });
 }

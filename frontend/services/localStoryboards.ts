@@ -20,6 +20,7 @@ import { loadEffectiveWriter } from './projectSettings';
 import { writerVoiceDigest } from './writerStyle';
 import { restStore } from './localRest';
 import { enforceSceneDialogues, normalizeSceneDialogues, buildSubjectDefinition, buildDialogueClause, type DialogueCheck } from './sceneDialogues';
+import { toErrorMessage } from '../utils/errorMessage';
 
 // ==================== 文档类型（对齐 localApiRouter，仅取所需字段） ====================
 
@@ -269,9 +270,10 @@ export async function buildVideoDialogueClause(
   const voiceover = String(pick('voiceover') ?? '').trim();
   if (!lines.length && !voiceover) return '';
   const appearance = await loadCharacterAppearance(path, Number.isFinite(Number(projectId)) ? Number(projectId) : null, []);
-  // 与拆分阶段同口径：只有有人说话时才需要定义主体，纯旁白镜头只补画外音。
+  // 与拆分阶段同口径：只有有人说话时才需要定义主体，纯旁白镜头只补画外音；
+  // 台词主语同样用外貌指代，角色名只出现在定义主体句里。
   const subject = lines.length ? buildSubjectDefinition(cast, appearance) : '';
-  const speech = lines.length || voiceover ? buildDialogueClause(lines, voiceover) : '';
+  const speech = lines.length || voiceover ? buildDialogueClause(lines, voiceover, appearance) : '';
   return [subject, speech].filter(Boolean).join('');
 }
 
@@ -750,8 +752,8 @@ async function handleAutoGenerate({ scriptId, projectId, body }: AutoGenArgs): P
       temperature: 0.6,
     });
     rawContent = gen.content || '';
-  } catch (err: any) {
-    return jsonResponse({ success: false, message: err?.message || '分镜拆分失败' }, 500);
+  } catch (err) {
+    return jsonResponse({ success: false, message: toErrorMessage(err) || '分镜拆分失败' }, 500);
   }
 
   const parsed = extractJsonObject(rawContent);

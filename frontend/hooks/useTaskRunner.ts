@@ -12,8 +12,8 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { startWorkflow, getWorkflowStatus, getActiveWorkflows, consumeWorkflow, resumeWorkflow, WorkflowJob, ApiError } from './useWorkflow';
-// 商业化功能已移除
-// import { triggerInsufficientPoints } from '../contexts/PointsContext';
+import { debugLog } from '../utils/debugLog';
+import { toErrorMessage } from '../utils/errorMessage';
 
 export interface TaskState {
   jobId: string;
@@ -146,7 +146,7 @@ export function useTaskRunner(options: UseTaskRunnerOptions = {}) {
             if (currentRetry < maxRetries) {
               retryCountRef.current[key] = currentRetry + 1;
               const delay = Math.min(30000, 2000 * Math.pow(2, currentRetry));
-              console.log(`[useTaskRunner] 任务 ${key} 失败，${delay/1000}秒后自动重试 (${currentRetry + 1}/${maxRetries})`);
+              debugLog('useTaskRunner', `任务 ${key} 失败，${delay/1000}秒后自动重试 (${currentRetry + 1}/${maxRetries})`);
               
               updateTask(key, {
                 status: 'pending',
@@ -168,7 +168,7 @@ export function useTaskRunner(options: UseTaskRunnerOptions = {}) {
               }, delay);
               return;
             }
-            console.log(`[useTaskRunner] 任务 ${key} 已达最大重试次数 (${maxRetries})`);
+            debugLog('useTaskRunner', `任务 ${key} 已达最大重试次数 (${maxRetries})`);
           }
           
           updateTask(key, {
@@ -177,14 +177,14 @@ export function useTaskRunner(options: UseTaskRunnerOptions = {}) {
           });
           return;
         }
-      } catch (err: any) {
+      } catch (err) {
         failCount++;
-        console.error(`[useTaskRunner] 轮询失败 (${failCount}/${MAX_FAIL}): ${key}`, err.message);
+        console.error(`[useTaskRunner] 轮询失败 (${failCount}/${MAX_FAIL}): ${key}`, toErrorMessage(err));
         if (failCount >= MAX_FAIL) {
           stopPolling(key);
           updateTask(key, {
             status: 'failed',
-            error: err.message || '网络请求失败，请检查网络连接'
+            error: toErrorMessage(err) || '网络请求失败，请检查网络连接'
           });
           return;
         }
@@ -239,19 +239,6 @@ export function useTaskRunner(options: UseTaskRunnerOptions = {}) {
 
       return jobId;
     } catch (error: any) {
-      // 商业化功能已移除 - 402 积分不足处理
-      // if (error instanceof ApiError && error.status === 402) {
-      //   const required = error.data?.required || 0;
-      //   const current = error.data?.balance || 0;
-      //   triggerInsufficientPoints({ required, current });
-      //   activeKeysRef.current.delete(key);
-      //   updateTask(key, {
-      //     status: 'failed',
-      //     error: '积分不足，请充值后重试'
-      //   });
-      //   throw error;
-      // }
-
       if (error instanceof ApiError && error.status === 409 && error.data?.jobId) {
         const conflictJobId = String(error.data.jobId);
         updateTask(key, {
@@ -300,7 +287,7 @@ export function useTaskRunner(options: UseTaskRunnerOptions = {}) {
         // 跳过已在跟踪的任务
         if (tasksRef.current[key]) continue;
 
-        console.log(`[useTaskRunner] 恢复任务: key=${key}, jobId=${job.id}, type=${job.workflow_type}`);
+        debugLog('useTaskRunner', `恢复任务: key=${key}, jobId=${job.id}, type=${job.workflow_type}`);
         activeKeysRef.current.add(key);
         updateTask(key, {
           jobId: job.id,
@@ -352,14 +339,14 @@ export function useTaskRunner(options: UseTaskRunnerOptions = {}) {
           clearTimeout(timersRef.current[key]);
           delete timersRef.current[key];
         });
-        console.log('[useTaskRunner] 页面不可见，暂停所有轮询');
+        debugLog('useTaskRunner', '页面不可见，暂停所有轮询');
       } else {
         // 页面可见时恢复所有活跃任务的轮询
         const tasksToResume = tasksRef.current;
         Object.entries(tasksToResume).forEach(([key, task]) => {
           if (task.status === 'pending' || task.status === 'running') {
             if (task.jobId && !timersRef.current[key]) {
-              console.log(`[useTaskRunner] 恢复任务轮询: ${key}`);
+              debugLog('useTaskRunner', `恢复任务轮询: ${key}`);
               // 复用 startPolling，但不重置 pollCountRef 以保留自适应间隔状态
               activeKeysRef.current.add(key);
               const savedPollCount = pollCountRef.current[key] || 0;

@@ -8,7 +8,16 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 
-const source = readFileSync(fileURLToPath(new URL('./localAssetJobs.ts', import.meta.url)), 'utf8');
+const source = readFileSync(fileURLToPath(new URL('./localAssetJobs.ts', import.meta.url)), 'utf8')
+  // ../utils/errorMessage 无运行时依赖，直接内联：data: URL 模块解析不了相对路径
+  .replace(
+    /import\s*\{\s*toErrorMessage\s*\}\s*from\s*'\.\.\/utils\/errorMessage';/,
+    `function toErrorMessage(err) {
+  if (err instanceof Error) return err.message;
+  if (err !== null && typeof err === 'object' && 'message' in err) return String(err.message);
+  return String(err);
+}`,
+  );
 const js = ts.transpileModule(source, {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
 }).outputText;

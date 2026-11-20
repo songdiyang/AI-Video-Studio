@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { toErrorMessage } from '../utils/errorMessage';
 
 // ============================================================
 // Types
@@ -339,8 +340,8 @@ export function useWorkflow(jobId: string | null, options: UseWorkflowOptions = 
     try {
       await resumeWorkflow(jobId);
       startPolling();
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      setError(toErrorMessage(err));
     }
   }, [jobId, startPolling]);
 
@@ -351,8 +352,8 @@ export function useWorkflow(jobId: string | null, options: UseWorkflowOptions = 
       await cancelWorkflow(jobId);
       stopPolling();
       await fetchJob();
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      setError(toErrorMessage(err));
     }
   }, [jobId, stopPolling, fetchJob]);
 

@@ -33,13 +33,6 @@ async function handle<T>(resp: Response): Promise<T> {
   }
   return resp.json() as Promise<T>;
 }
-
-export async function listEnvironmentVariants(environmentId: number): Promise<EnvironmentVariant[]> {
-  const resp = await fetch(`/api/environment-variants?environmentId=${environmentId}`);
-  const data = await handle<{ variants: EnvironmentVariant[] }>(resp);
-  return data.variants || [];
-}
-
 export async function createEnvironmentVariant(payload: {
   environmentId: number;
   timeOfDay: string;
@@ -55,24 +48,6 @@ export async function createEnvironmentVariant(payload: {
   const data = await handle<{ variant: EnvironmentVariant }>(resp);
   return data.variant;
 }
-
-export async function updateEnvironmentVariant(id: number, payload: {
-  timeOfDay?: string | null;
-  weather?: string | null;
-  lighting?: string | null;
-  mood?: string | null;
-  imageUrl?: string | null;
-  generationStatus?: EnvironmentVariant['generation_status'];
-}): Promise<EnvironmentVariant> {
-  const resp = await fetch(`/api/environment-variants/${id}`, {
-    method: 'PATCH',
-    headers: {  'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  });
-  const data = await handle<{ variant: EnvironmentVariant }>(resp);
-  return data.variant;
-}
-
 export async function deleteEnvironmentVariant(id: number): Promise<void> {
   const resp = await fetch(`/api/environment-variants/${id}`, {
     method: 'DELETE',

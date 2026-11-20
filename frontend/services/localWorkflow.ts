@@ -38,6 +38,7 @@ import { loadEffectiveArtStylePrompt } from './projectSettings';
 import { isTauri } from './localApi';
 import { persistGeneratedMedia } from './localMedia';
 import type { TaskPlan, JobMeta, JobView, TaskStep } from './queueTypes';
+import { toErrorMessage } from '../utils/errorMessage';
 
 /** 本地分镜文档形状（对齐 services/localApiRouter 的 StoryboardsDoc，仅取所需字段） */
 interface StoryboardsDocLike {
@@ -503,9 +504,9 @@ function dispatch(job: LocalWorkflowJob): void {
       // 若提交后被取消，则不覆盖取消态
       if (job.status === 'cancelled') return;
       finalizeJob(job, true);
-    } catch (err: any) {
+    } catch (err) {
       if (job.status === 'cancelled') return;
-      finalizeJob(job, false, err?.message || '工作流执行失败');
+      finalizeJob(job, false, toErrorMessage(err) || '工作流执行失败');
     }
   })();
 }

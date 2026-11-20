@@ -26,6 +26,15 @@ const MODS = {};
 globalThis.__mods = MODS;
 async function loadTs(file, { as, remotes = {} } = {}) {
   let source = readFileSync(fileURLToPath(new URL(file, import.meta.url)), 'utf8');
+  // ../utils/errorMessage 无运行时依赖，直接内联：data: URL 模块解析不了相对路径
+  source = source.replace(
+    /import\s*\{\s*toErrorMessage\s*\}\s*from\s*'\.\.\/utils\/errorMessage';/,
+    `function toErrorMessage(err) {
+  if (err instanceof Error) return err.message;
+  if (err !== null && typeof err === 'object' && 'message' in err) return String(err.message);
+  return String(err);
+}`,
+  );
   for (const [spec, modName] of Object.entries(remotes)) {
     const re = new RegExp(`import\\s*\\{([^}]*)\\}\\s*from\\s*'\\./${spec}';`);
     const matched = re.exec(source);

@@ -134,32 +134,11 @@ export function writeDoc<T>(projectPath: string, doc: LocalDocName, data: T): vo
   }, WRITE_DEBOUNCE_MS);
   pendingWrites.set(k, { projectPath, file, data, timer });
 }
-
-/** 强制立即落盘指定文档（若有待写） */
-export async function flushDoc(projectPath: string, doc: LocalDocName): Promise<void> {
-  await commitWrite(key(projectPath, LOCAL_DOCS[doc]));
-}
-
 /** 强制落盘所有待写文档（退出/切工程前调用） */
 export async function flushAll(): Promise<void> {
   const keys = [...pendingWrites.keys()];
   await Promise.all(keys.map((k) => commitWrite(k).catch(() => {})));
 }
-
-/** 失效缓存（工程外部变更 / 需要强制重读时）；不传 doc 则失效整个工程缓存 */
-export function invalidate(projectPath: string, doc?: LocalDocName): void {
-  if (doc) {
-    const file = LOCAL_DOCS[doc];
-    cache.get(projectPath)?.delete(file);
-    void commitWrite(key(projectPath, file)).catch(() => {});
-  } else {
-    cache.delete(projectPath);
-    for (const k of [...pendingWrites.keys()]) {
-      if (k.startsWith(`${projectPath}::`)) void commitWrite(k).catch(() => {});
-    }
-  }
-}
-
 // ==================== project id → path 适配 ====================
 
 // id -> path 解析缓存（含 null 结果，避免重复扫描注册表）
@@ -182,12 +161,6 @@ export async function resolveLocalPath(projectId: number | string | null | undef
     return null;
   }
 }
-
-/** 工程外部被删除/重注册时清除 id→path 解析缓存 */
-export function clearPathCache(): void {
-  pathByProjectId.clear();
-}
-
 /** 反查工程绝对路径对应的本地工程 id；未解析过返回 null（供写入归属校验使用）。 */
 export function projectIdForPath(projectPath: string | null | undefined): number | null {
   if (!projectPath) return null;

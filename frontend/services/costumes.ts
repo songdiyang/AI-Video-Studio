@@ -116,28 +116,6 @@ export async function fetchCostume(id: number): Promise<Costume> {
   const data = await response.json();
   return data.costume;
 }
-
-/**
- * 创建服装
- */
-export async function createCostume(input: CostumeCreateInput): Promise<Costume> {
-  const response = await fetch('/api/costumes', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(input)
-  });
-
-  if (!response.ok) {
-    const data = await response.json();
-    throw new Error(data.message || '创建服装失败');
-  }
-
-  const data = await response.json();
-  return data.costume;
-}
-
 /**
  * 更新服装
  */
@@ -193,76 +171,6 @@ export async function fetchCharacterCostumes(characterId: number): Promise<{
 
   return await response.json();
 }
-
-/**
- * 为角色穿戴服装
- */
-export async function equipCostume(characterId: number, costumeId: number): Promise<Costume> {
-  const response = await fetch(
-    `/api/characters/${characterId}/costumes/${costumeId}/equip`,
-    {
-      method: 'POST',
-    }
-  );
-
-  if (!response.ok) {
-    const data = await response.json();
-    throw new Error(data.message || '穿戴服装失败');
-  }
-
-  const data = await response.json();
-  return data.costume;
-}
-
-/**
- * 为角色脱下服装
- */
-export async function unequipCostume(characterId: number, costumeId: number): Promise<void> {
-  const response = await fetch(
-    `/api/characters/${characterId}/costumes/${costumeId}/unequip`,
-    {
-      method: 'POST',
-    }
-  );
-
-  if (!response.ok) {
-    const data = await response.json();
-    throw new Error(data.message || '脱下服装失败');
-  }
-}
-
-/**
- * 移除角色服装关联
- */
-export async function removeCharacterCostume(characterId: number, costumeId: number): Promise<void> {
-  const response = await fetch(
-    `/api/characters/${characterId}/costumes/${costumeId}`,
-    {
-      method: 'DELETE',
-    }
-  );
-
-  if (!response.ok) {
-    const data = await response.json();
-    throw new Error(data.message || '移除服装关联失败');
-  }
-}
-
-/**
- * 获取当前穿戴的服装
- */
-export async function fetchEquippedCostume(characterId: number): Promise<Costume | null> {
-  const response = await fetch(`/api/characters/${characterId}/equipped-costume`);
-
-  if (!response.ok) {
-    const data = await response.json();
-    throw new Error(data.message || '获取穿戴服装失败');
-  }
-
-  const data = await response.json();
-  return data.costume;
-}
-
 /**
  * 生成服装设定图（异步任务）
  * 基于通用白色 mannequin + outfit 描述，跨角色复用
