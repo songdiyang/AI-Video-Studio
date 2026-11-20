@@ -11,6 +11,9 @@ artifacts/
 .env.local
 .env.*.local
 
+# 自动更新签名私钥（绝不入库；公钥在 tauri.conf.json，私钥存 GitHub Secrets）
+.updater-keys/
+
 # Logs
 *.log
 npm-debug.log*

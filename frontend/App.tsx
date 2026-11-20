@@ -8,6 +8,7 @@ import { AIAssistantProvider } from './contexts/AIAssistantContext';
 import { StoryboardBridgeProvider } from './contexts/StoryboardBridgeContext';
 import Skeleton from './components/Skeleton';
 import ErrorBoundary from './components/ErrorBoundary';
+import UpdatePrompt from './components/UpdatePrompt';
 import { isTauri, openProject, takePendingProject, type ProjectMetadata } from './services/localApi';
 import { mapLocalProject } from './services/projects';
 
@@ -219,6 +220,7 @@ const App: React.FC = () => {
                       <AnimatedRoutes />
                     </Layout>
                     <PendingProjectOpen />
+                    <UpdatePrompt />
                   </StoryboardBridgeProvider>
                 </AIAssistantProvider>
               </WorkbenchProvider>

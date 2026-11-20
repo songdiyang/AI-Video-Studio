@@ -12,6 +12,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import { useWorkbench } from '../../contexts/WorkbenchContext';
 import AIModelSettings from './AIModelSettings';
+import ProjectSnapshots from './ProjectSnapshots';
 import AIModelSelector from '../../components/AIModelSelector';
 import { useAIModels } from '../../hooks/useAIModels';
 import { getPreferredVideoFormat, setPreferredVideoFormat } from '../../services/localAI';
@@ -1184,6 +1185,11 @@ const Settings: React.FC = () => {
               </div>
             </div>
           </div>
+
+          <div className="h-px" style={{ backgroundColor: 'var(--border-color)' }} />
+
+          {/* 快照与恢复：不可逆操作的后悔药（智能体删除前自动备份，也可手动备份/还原） */}
+          <ProjectSnapshots projectId={currentProject?.id ?? null} />
         </div>
       </div>
     );

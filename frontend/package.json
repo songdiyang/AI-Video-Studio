@@ -34,6 +34,7 @@
     "@ffmpeg/util": "^0.12.2",
     "@heroui/react": "^2.8.7",
     "@tauri-apps/plugin-dialog": "^2.7.3",
+    "@tauri-apps/plugin-updater": "^2.14.1",
     "@types/three": "^0.184.0",
     "dexie": "^4.4.6",
     "framer-motion": "^12.23.26",

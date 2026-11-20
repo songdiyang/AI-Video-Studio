@@ -139,6 +139,21 @@ export async function flushAll(): Promise<void> {
   const keys = [...pendingWrites.keys()];
   await Promise.all(keys.map((k) => commitWrite(k).catch(() => {})));
 }
+
+/**
+ * 失效某工程的全部内存缓存与待写文档（快照恢复后调用）。
+ * 清掉防抖定时器，避免恢复前的旧数据在恢复后落盘覆盖还原结果；
+ * 调用方随后应重载窗口，让视图从恢复后的文档重建。
+ */
+export function invalidateProjectCache(projectPath: string): void {
+  cache.delete(projectPath);
+  for (const [k, pending] of [...pendingWrites.entries()]) {
+    if (pending.projectPath === projectPath) {
+      clearTimeout(pending.timer);
+      pendingWrites.delete(k);
+    }
+  }
+}
 // ==================== project id → path 适配 ====================
 
 // id -> path 解析缓存（含 null 结果，避免重复扫描注册表）

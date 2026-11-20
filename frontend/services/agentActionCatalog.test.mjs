@@ -52,12 +52,13 @@ test('删除与分镜写入动作都要留对话回执', () => {
   }
 });
 
-test('每个不可逆动作都有确认文案，且说明不可撤销', () => {
+test('每个不可逆动作都有确认文案，说明不可撤销且告知快照安全网', () => {
   for (const action of IRREVERSIBLE_ACTIONS) {
     const copy = ACTION_CONFIRM_COPY[action];
     assert.ok(copy, `${action} 缺少确认文案`);
     assert.ok(copy.title.length > 0 && copy.confirmText.length > 0);
     assert.match(copy.message, /无法撤销|失去/, `${action} 的文案要说清影响面`);
+    assert.match(copy.message, /快照/, `${action} 的文案要告知执行前自动备份快照`);
   }
 });
 

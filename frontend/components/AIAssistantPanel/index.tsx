@@ -48,6 +48,7 @@ export type { AIAssistantPanelProps } from './helpers';
 import { actionErrorText, actionSuccessText, actionFail, isActionFailure } from '../../services/agentActionOutcome';
 import { IRREVERSIBLE_ACTIONS, MANUAL_ONLY_ACTIONS, getActionConfirmCopy, requiresUserConfirm } from '../../services/agentActionCatalog';
 import { refreshAgentContext, truncateScriptContent } from '../../services/agentContextRefresh';
+import { snapshotBeforeDestructive } from '../../services/projectSnapshots';
 import HistoryModal from './HistoryModal';
 
 // ─── Component ──────────────────────────────────────────────────────
@@ -2171,6 +2172,18 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
           appendActionResult(`✗ ${canceled}`, originSid);
         }
         return actionFail(canceled);
+      }
+      // 后悔药：执行前自动打工程快照（保留最近 10 份，设置›工程设置可恢复）。
+      // 备份失败则阻止执行——宁可不做，也不做没有备份的不可逆操作。
+      try {
+        await snapshotBeforeDestructive(projectIdRef.current, copy.title);
+      } catch (e) {
+        const blocked = `快照备份失败，已阻止「${copy.title}」：${toErrorMessage(e) || e}`;
+        showToast(blocked, 'error');
+        if (INLINE_RESULT_ACTIONS.has(action) && options?.inlineResult !== false) {
+          appendActionResult(`✗ ${blocked}`, originSid);
+        }
+        return actionFail(blocked);
       }
     }
     // 查询后台长任务状态：完成态必须同时核验工作流终态与资产落地，防止只凭注册表误报完成。

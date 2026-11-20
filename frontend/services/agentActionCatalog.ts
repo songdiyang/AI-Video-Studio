@@ -121,46 +121,47 @@ export interface ActionConfirmCopy {
   confirmText: string;
 }
 
-/** 二次确认文案：把影响面写清楚，而不是笼统的「确定删除吗」 */
+/** 二次确认文案：把影响面写清楚，而不是笼统的「确定删除吗」；
+ *  同时告知快照安全网——执行前自动备份，确认错了也能从快照还原。 */
 export const ACTION_CONFIRM_COPY: Record<string, ActionConfirmCopy> = {
   delete_scene: {
     title: '删除分镜',
-    message: '将删除该分镜及其已生成的首尾帧、视频，且无法撤销。确定继续？',
+    message: '将删除该分镜及其已生成的首尾帧、视频引用，且无法撤销。执行前会自动备份工程快照，确认错了可在 设置 › 工程设置 › 快照与恢复 中还原。确定继续？',
     confirmText: '删除分镜',
   },
   delete_script: {
     title: '删除剧本',
-    message: '将同时删除该剧本名下的全部分镜；若它是当前参考剧本，还会解绑当前集。此操作无法撤销。',
+    message: '将同时删除该剧本名下的全部分镜；若它是当前参考剧本，还会解绑当前集。此操作无法撤销，但执行前会自动备份工程快照，可在 设置 › 工程设置 › 快照与恢复 中还原。',
     confirmText: '删除剧本',
   },
   delete_character: {
     title: '删除角色',
-    message: '将删除该角色及其全部状态图，已绑定该角色的分镜会失去角色引用。此操作无法撤销。',
+    message: '将删除该角色及其全部状态图，已绑定该角色的分镜会失去角色引用。此操作无法撤销，但执行前会自动备份工程快照，可在 设置 › 工程设置 › 快照与恢复 中还原。',
     confirmText: '删除角色',
   },
   delete_character_state: {
     title: '删除角色状态',
-    message: '删除白膜会让其派生状态失去参考；删除状态图会使引用该状态的镜头失去造型依据。此操作无法撤销。',
+    message: '删除白膜会让其派生状态失去参考；删除状态图会使引用该状态的镜头失去造型依据。此操作无法撤销，但执行前会自动备份工程快照，可在 设置 › 工程设置 › 快照与恢复 中还原。',
     confirmText: '删除状态',
   },
   delete_base_model: {
     title: '删除角色白膜',
-    message: '白膜是角色派生状态的基础网格，删除后相关状态与镜头造型会失去参考。此操作无法撤销。',
+    message: '白膜是角色派生状态的基础网格，删除后相关状态与镜头造型会失去参考。此操作无法撤销，但执行前会自动备份工程快照，可在 设置 › 工程设置 › 快照与恢复 中还原。',
     confirmText: '删除白膜',
   },
   delete_studio: {
     title: '删除场景库条目',
-    message: '将删除该场景库条目及其封面/九宫图，引用它的分镜会缺少场景图。此操作无法撤销。',
+    message: '将删除该场景库条目及其封面/九宫图，引用它的分镜会缺少场景图。此操作无法撤销，但执行前会自动备份工程快照，可在 设置 › 工程设置 › 快照与恢复 中还原。',
     confirmText: '删除场景',
   },
   delete_prop: {
     title: '删除道具',
-    message: '将删除该道具及其道具图，已绑定它的分镜会失去道具引用。此操作无法撤销。',
+    message: '将删除该道具及其道具图，已绑定它的分镜会失去道具引用。此操作无法撤销，但执行前会自动备份工程快照，可在 设置 › 工程设置 › 快照与恢复 中还原。',
     confirmText: '删除道具',
   },
   delete_location: {
     title: '删除分镜地点',
-    message: '已绑定该地点的分镜会失去地点信息。此操作无法撤销。',
+    message: '已绑定该地点的分镜会失去地点信息。此操作无法撤销，但执行前会自动备份工程快照，可在 设置 › 工程设置 › 快照与恢复 中还原。',
     confirmText: '删除地点',
   },
 };
@@ -169,7 +170,7 @@ export const ACTION_CONFIRM_COPY: Record<string, ActionConfirmCopy> = {
 export function getActionConfirmCopy(action: string, label?: string): ActionConfirmCopy {
   return ACTION_CONFIRM_COPY[action] ?? {
     title: '确认执行不可逆操作',
-    message: `「${label || action}」无法撤销，确定继续？`,
+    message: `「${label || action}」无法撤销。执行前会自动备份工程快照，可在 设置 › 工程设置 › 快照与恢复 中还原。确定继续？`,
     confirmText: '继续执行',
   };
 }

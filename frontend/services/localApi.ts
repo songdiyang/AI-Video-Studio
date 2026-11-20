@@ -13,6 +13,8 @@ export interface AIModelConfig {
   api_base?: string;
   enabled?: boolean;
   is_default?: boolean;
+  /** 桌面端：密钥已存入 DPAPI 保险箱，api_key 字段留空，读取时水合 */
+  key_stored?: boolean;
 }
 
 export interface ProjectMetadata {
@@ -64,10 +66,35 @@ async function getTauriApi() {
 }
 
 // ==================== AI 模型配置 ====================
-// 说明：桌面端（Tauri WebView）与浏览器端统一使用 localStorage 持久化，
-// Rust 侧 SQLite 密钥存储命令尚为 TODO 空实现，因此以前端 localStorage 为准。
+// 配置元数据（provider / model_name / api_base / 启用与默认标记）存 localStorage。
+// 密钥本体：桌面端交给 Rust DPAPI 保险箱（app_docs/secrets/，按当前 Windows 用户加密），
+// 配置里只留 key_stored 标记；listAIModelConfigs 读取时解密水合回 api_key，
+// 下游请求代码（localAI 等）无感知。旧版明文密钥首次读取时一次性迁移进保险箱。
+// 浏览器降级形态（非 Tauri）无系统凭据库可用，沿用 localStorage 明文。
 
 const AI_CONFIGS_KEY = 'ai_model_configs';
+
+// ==================== 密钥保险箱（Rust DPAPI） ====================
+
+/** 密钥在保险箱中的名字：provider_model 清洗为字母数字与 -_ */
+function secretKeyId(provider: string, modelName: string): string {
+  return `ai_key_${provider}_${modelName}`.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 200);
+}
+
+async function secretSet(name: string, value: string): Promise<void> {
+  const { invoke } = await getTauriApi();
+  await invoke('secret_set', { name, value });
+}
+
+async function secretGet(name: string): Promise<string | null> {
+  const { invoke } = await getTauriApi();
+  return await invoke<string | null>('secret_get', { name });
+}
+
+async function secretDelete(name: string): Promise<void> {
+  const { invoke } = await getTauriApi();
+  await invoke('secret_delete', { name });
+}
 
 // 各提供商默认 API Base（用于连接测试时未填写 api_base 的情况）
 export const DEFAULT_API_BASES: Record<string, string> = {
@@ -100,22 +127,62 @@ function writeAIConfigs(list: AIModelConfig[]): void {
 export async function saveAIModelKey(config: AIModelConfig): Promise<void> {
   const configs = readAIConfigs();
   const index = configs.findIndex((c) => c.provider === config.provider && c.model_name === config.model_name);
+  // 桌面端：密钥本体进 DPAPI 保险箱，配置文档只留标记。
+  // 空密钥提交（仅改元数据）不清空已有保险箱密钥。
+  let stored: AIModelConfig = config;
+  if (isTauri()) {
+    if (config.api_key && config.api_key.trim()) {
+      await secretSet(secretKeyId(config.provider, config.model_name), config.api_key.trim());
+      stored = { ...config, api_key: '', key_stored: true };
+    } else {
+      stored = { ...config, api_key: '', key_stored: (index >= 0 ? configs[index].key_stored : undefined) ?? config.key_stored };
+    }
+  }
   if (index >= 0) {
     // 更新：保留原有的 enabled / is_default 标记
     configs[index] = {
       ...configs[index],
-      ...config,
-      enabled: config.enabled ?? configs[index].enabled,
-      is_default: config.is_default ?? configs[index].is_default,
+      ...stored,
+      enabled: stored.enabled ?? configs[index].enabled,
+      is_default: stored.is_default ?? configs[index].is_default,
     };
   } else {
     const isFirst = configs.length === 0;
-    configs.push({ ...config, enabled: config.enabled ?? true, is_default: config.is_default ?? isFirst });
+    configs.push({ ...stored, enabled: stored.enabled ?? true, is_default: stored.is_default ?? isFirst });
   }
   writeAIConfigs(configs);
 }
 export async function listAIModelConfigs(): Promise<AIModelConfig[]> {
-  return readAIConfigs();
+  const configs = readAIConfigs();
+  if (!isTauri()) return configs;
+  // 水合：从保险箱解密回 api_key；顺带把旧版明文密钥一次性迁移进保险箱
+  let migrated = false;
+  const hydrated: AIModelConfig[] = [];
+  for (const c of configs) {
+    const keyId = secretKeyId(c.provider, c.model_name);
+    if (c.api_key && c.api_key.trim()) {
+      try {
+        await secretSet(keyId, c.api_key.trim());
+        c.api_key = '';
+        c.key_stored = true;
+        migrated = true;
+      } catch (e) {
+        console.warn('[localApi] 密钥迁移进保险箱失败，暂保留原状:', e);
+      }
+    }
+    if (c.key_stored) {
+      try {
+        const key = await secretGet(keyId);
+        hydrated.push({ ...c, api_key: key ?? '' });
+        continue;
+      } catch (e) {
+        console.warn('[localApi] 密钥水合失败:', e);
+      }
+    }
+    hydrated.push(c);
+  }
+  if (migrated) writeAIConfigs(configs);
+  return hydrated;
 }
 
 export async function deleteAIModelConfig(provider: string, modelName: string): Promise<void> {
@@ -127,6 +194,14 @@ export async function deleteAIModelConfig(provider: string, modelName: string): 
     fallback.is_default = true;
   }
   writeAIConfigs(filtered);
+  // 配置删除后同步清掉保险箱里的密钥，不留孤儿密文
+  if (isTauri()) {
+    try {
+      await secretDelete(secretKeyId(provider, modelName));
+    } catch (e) {
+      console.warn('[localApi] 保险箱密钥清理失败:', e);
+    }
+  }
 }
 
 // 更新启用 / 默认标记

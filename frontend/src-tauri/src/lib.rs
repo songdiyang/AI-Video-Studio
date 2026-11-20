@@ -3,6 +3,8 @@ mod commands;
 mod night_light;
 mod package;
 mod queue;
+mod secrets;
+mod snapshots;
 mod storage;
 mod windows;
 
@@ -23,6 +25,10 @@ pub fn run() {
       commands::handle_open_package(app, path);
     }
   }));
+
+  // 自动更新（桌面端）：前端启动后静默检查 GitHub Release，发现新版提示安装
+  #[cfg(desktop)]
+  let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
 
   builder
     // 窗口销毁时释放它占用的工程（同一工程不允许多窗口重复打开）
@@ -104,6 +110,15 @@ pub fn run() {
       load_project_data,
       read_app_doc,
       write_app_doc,
+      // 工程快照（不可逆操作前的后悔药）
+      snapshots::create_project_snapshot,
+      snapshots::list_project_snapshots,
+      snapshots::restore_project_snapshot,
+      snapshots::delete_project_snapshot,
+      // API 密钥保险箱（Windows DPAPI）
+      secrets::secret_set,
+      secrets::secret_get,
+      secrets::secret_delete,
       get_default_projects_root,
       import_project_package,
       export_project_package,

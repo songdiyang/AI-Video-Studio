@@ -49,14 +49,42 @@ jobs:
           echo "version=$version" >> $env:GITHUB_OUTPUT
           echo "构建版本号(北京时间,精确到分钟): $version"
 
+      - name: Bump release version (semver for updater)
+        id: bump
+        shell: pwsh
+        run: |
+          # 自动更新按 semver 比较版本：安装包内部版本必须随发布递增，
+          # 否则 updater 永远认为「已是最新」。用 1.0.<run_number>（单调递增，MSI 兼容）。
+          # 安装包文件名仍由下一步替换为时间版本号，便于用户识别。
+          $v = "1.0.${{ github.run_number }}"
+          $conf = "frontend/src-tauri/tauri.conf.json"
+          $json = Get-Content $conf -Raw | ConvertFrom-Json
+          $json.version = $v
+          $json | ConvertTo-Json -Depth 100 | Set-Content $conf -Encoding UTF8
+          $cargo = "frontend/src-tauri/Cargo.toml"
+          (Get-Content $cargo -Raw) -replace '(?m)^version = "[^"]+"', "version = `"$v`"" | Set-Content $cargo -Encoding UTF8
+          echo "release_version=$v" >> $env:GITHUB_OUTPUT
+          echo " updater 语义化版本: $v"
+
       - name: Build Tauri Windows Setup
-        run: npm --prefix frontend run tauri:build:windows
+        shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          if (-not $env:TAURI_SIGNING_PRIVATE_KEY) {
+            Write-Output "::warning::未配置 TAURI_SIGNING_PRIVATE_KEY Secret，本次构建不产出更新签名包（自动更新不可用，安装包照常发布）"
+            npm --prefix frontend run tauri:build:windows -- --config '{"bundle":{"createUpdaterArtifacts":false}}'
+          } else {
+            npm --prefix frontend run tauri:build:windows
+          }
 
       - name: Rename installers with version
         shell: pwsh
         run: |
           # 将安装包文件名中的 semver(如 _1.0.0_) 替换为时间版本号；
           # 不改 tauri.conf/Cargo 的 version 字段，避免裸数字破坏 semver / MSI 版本上限
+          # 注意：.nsis.zip 更新包不改名，latest.json 的 url 直接引用其原名
           $ver = "${{ steps.version.outputs.version }}"
           $dirs = @(
             "frontend/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi",
@@ -67,6 +95,32 @@ jobs:
             Rename-Item $_.FullName -NewName $new
             Write-Output "renamed -> $new"
           }
+
+      - name: Generate updater manifest (latest.json)
+        shell: pwsh
+        run: |
+          # Tauri updater 清单：version + 签名 + 更新包下载地址。
+          # 随 Release 发布后，客户端通过 releases/latest/download/latest.json 拉取。
+          $nsis = "frontend/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis"
+          $zip = Get-ChildItem -Path $nsis -Filter *.nsis.zip -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $zip) {
+            Write-Output "无更新签名包（未配置签名 Secret），跳过 latest.json"
+            exit 0
+          }
+          $sig = (Get-Content "$($zip.FullName).sig" -Raw).Trim()
+          $tag = "${{ steps.version.outputs.version }}"
+          $v = "${{ steps.bump.outputs.release_version }}"
+          $url = "https://github.com/songdiyang/AI-Video-Studio/releases/download/$tag/$($zip.Name)"
+          $manifest = @{
+            version = $v
+            notes = "AI Video Studio $tag"
+            pub_date = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+            platforms = @{
+              "windows-x86_64" = @{ signature = $sig; url = $url }
+            }
+          } | ConvertTo-Json -Depth 10
+          Set-Content -Path "$nsis/latest.json" -Value $manifest -Encoding UTF8
+          Write-Output "latest.json -> version=$v url=$url"
 
       - name: Upload Windows Setup artifacts
         uses: actions/upload-artifact@v4
@@ -87,3 +141,6 @@ jobs:
           files: |
             frontend/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
             frontend/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+            frontend/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.nsis.zip
+            frontend/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.sig
+            frontend/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/latest.json
