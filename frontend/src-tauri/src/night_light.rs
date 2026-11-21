@@ -1,8 +1,10 @@
-//! Windows 夜间模式（Night light）状态读取与变化监听。
+//! 夜间模式（Night light / Night Shift）状态读取与变化监听。
 //!
-//! Windows 未提供获取夜间模式开关的公开 API，只能读取注册表 CloudStore 中的
-//! bluelightreductionstate；字节布局来自社区逆向（AutoDarkMode 等项目），跨系统版本可能变化。
-//! 任何读取失败都按"关闭"处理，由前端回退到系统深色偏好兜底。
+//! 三端均无公开 API，按平台各自策略探测，任何失败都按"关闭"处理，
+//! 由前端回退到系统深色偏好兜底：
+//!  - Windows：注册表 CloudStore bluelightreductionstate（社区逆向字节布局，跨版本可能变化）；
+//!  - macOS：Night Shift 无公开接口，尝试 CoreBrightness 偏好键（不可用则关闭）；
+//!  - Linux：GNOME 夜间模式 gsettings（其它桌面环境不可用则关闭）。
 
 use tauri::{AppHandle, Emitter};
 
@@ -10,7 +12,7 @@ use tauri::{AppHandle, Emitter};
 pub const NIGHT_LIGHT_EVENT: &str = "night-light-changed";
 
 #[cfg(target_os = "windows")]
-mod probe {
+mod platform {
     use winreg::enums::{HKEY_CURRENT_USER, KEY_READ};
     use winreg::RegKey;
 
@@ -31,32 +33,58 @@ mod probe {
     }
 }
 
-#[cfg(not(target_os = "windows"))]
-mod probe {
+#[cfg(target_os = "macos")]
+mod platform {
+    /// Night Shift 无公开 API；尝试读 CoreBrightness 偏好（历史系统可用）。
+    /// 读不到或键不存在一律按关闭处理，由前端用系统深色偏好兜底。
     pub fn is_enabled() -> bool {
-        false
+        let out = std::process::Command::new("defaults")
+            .args(["read", "com.apple.CoreBrightness", "CBBlueLightReductionEnabled"])
+            .output();
+        match out {
+            Ok(o) if o.status.success() => {
+                String::from_utf8_lossy(&o.stdout).trim() == "1"
+            }
+            _ => false,
+        }
+    }
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+mod platform {
+    /// GNOME 夜间模式（gsettings）；其它桌面环境/未安装时按关闭处理。
+    pub fn is_enabled() -> bool {
+        let out = std::process::Command::new("gsettings")
+            .args(["get", "org.gnome.settings-daemon.plugins.color", "night-light-enabled"])
+            .output();
+        match out {
+            Ok(o) if o.status.success() => {
+                String::from_utf8_lossy(&o.stdout).trim() == "true"
+            }
+            _ => false,
+        }
     }
 }
 
 /// 查询夜间模式是否开启
 #[tauri::command]
 pub async fn get_night_light_enabled() -> Result<bool, String> {
-    let enabled = probe::is_enabled();
+    let enabled = platform::is_enabled();
     log::info!("Night light queried: {}", enabled);
     Ok(enabled)
 }
 
-/// 启动状态监听：每 5 秒读一次注册表，变化时向前端推送事件。
-/// Windows 侧没有可靠的变更通知通道，轮询单个二进制值开销可忽略。
+/// 启动状态监听：每 5 秒探测一次，变化时向前端推送事件。
+/// 三端都没有可靠的变更通知通道，轮询单个布尔值开销可忽略。
 pub fn spawn_watcher(app: AppHandle) {
-    let initial = probe::is_enabled();
+    let initial = platform::is_enabled();
     log::info!("Night light initial state: {}", initial);
 
     tauri::async_runtime::spawn(async move {
         let mut last = initial;
         loop {
             tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-            let current = probe::is_enabled();
+            let current = platform::is_enabled();
             if current == last {
                 continue;
             }

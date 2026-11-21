@@ -51,6 +51,8 @@ import { refreshAgentContext, truncateScriptContent } from '../../services/agent
 import { snapshotBeforeDestructive } from '../../services/projectSnapshots';
 import { runAgentLoop } from '../../services/agentOrchestrator';
 import { saveLoopState, loadLoopState, clearLoopState, buildInterruptionNotice } from '../../services/agentLoopState';
+import { buildProjectImageIndex, resolveImageTargets as locateImageTargets } from '../../services/projectImageIndex';
+import { buildSceneInspectionReport } from '../../services/sceneInspection';
 import HistoryModal from './HistoryModal';
 
 // ─── Component ──────────────────────────────────────────────────────
@@ -708,67 +710,16 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
     });
   }, []);
 
-  // 项目内可查看的图片清单（按业务语义命名，供 view_image 定位）
-  const projectImageIndex = useMemo(() => {
-    const out: Array<{ group: string; label: string; url: string; id?: number }> = [];
-    (characters || []).forEach((c: any) => {
-      if (c.image_url) out.push({ group: '角色', label: `角色「${c.name}」主图`, url: c.image_url });
-    });
-    (studios || []).forEach((s: any) => {
-      if (s.cover_image_url) out.push({ group: '场景库', label: `场景「${s.name}」封面`, url: s.cover_image_url });
-      if (s.nine_grid_image_url) out.push({ group: '场景库', label: `场景「${s.name}」九宫格`, url: s.nine_grid_image_url });
-    });
-    (locations || []).forEach((l: any) => {
-      if (l.image_url) out.push({ group: '分镜地点', label: `地点「${l.name}」图`, url: l.image_url });
-    });
-    (props || []).forEach((p: any) => {
-      if (p.image_url) out.push({ group: '道具', label: `道具「${p.name}」图`, url: p.image_url });
-    });
-    (scenes || []).forEach((s: any) => {
-      if (s.first_frame_url) out.push({ group: '分镜', label: `分镜#${s.index} 首帧`, url: s.first_frame_url, id: s.id });
-      if (s.last_frame_url && s.last_frame_url !== s.first_frame_url) {
-        out.push({ group: '分镜', label: `分镜#${s.index} 尾帧`, url: s.last_frame_url, id: s.id });
-      }
-    });
-    return out;
-  }, [characters, studios, locations, props, scenes]);
+  // 项目内可查看的图片清单（按业务语义命名，供 view_image 定位；规则收敛在 services/projectImageIndex）
+  const projectImageIndex = useMemo(
+    () => buildProjectImageIndex({ characters, studios, locations, props, scenes }),
+    [characters, studios, locations, props, scenes],
+  );
 
   /** 按 sceneId / urls / scope / keyword 定位待看的图片（sceneId 只对应分镜，避免与资产 id 歧义） */
-  const resolveImageTargets = useCallback((params: any): Array<{ label: string; url: string }> => {
-    const explicit: string[] = Array.isArray(params?.urls)
-      ? params.urls.filter((u: any) => typeof u === 'string' && u.trim())
-      : (typeof params?.url === 'string' && params.url.trim() ? [params.url.trim()] : []);
-    if (explicit.length > 0) {
-      return explicit.slice(0, 6).map((u, i) => {
-        const known = projectImageIndex.find((e) => e.url === u);
-        return { label: known?.label || `图片${i + 1}`, url: u };
-      });
-    }
-    const sceneId = Number(params?.sceneId) || Number(currentFrame?.id) || 0;
-    if (sceneId) {
-      const frames = projectImageIndex.filter((e) => e.group === '分镜' && e.id === sceneId);
-      if (frames.length > 0) return frames.slice(0, 4).map((f) => ({ label: f.label, url: f.url }));
-      const target = (scenes || []).find((s) => s.id === sceneId) || (currentFrame && currentFrame.id === sceneId ? currentFrame : null);
-      if (target) return []; // 分镜存在但尚无画面
-    }
-    const SCOPE_ALIAS: Record<string, string> = {
-      character: '角色', characters: '角色', studio: '场景库', studios: '场景库',
-      location: '分镜地点', locations: '分镜地点', prop: '道具', props: '道具',
-      storyboard: '分镜', storyboards: '分镜', frame: '分镜', frames: '分镜',
-    };
-    const group = SCOPE_ALIAS[String(params?.scope || '').trim().toLowerCase()];
-    if (params?.scope && !group && String(params.scope).trim().toLowerCase() !== 'all') {
-      return [];
-    }
-    const keyword = String(params?.keyword || '').trim().toLowerCase();
-    const cap = Math.min(Math.max(Number(params?.max) || 4, 1), 6);
-    const matched = projectImageIndex.filter((e) => {
-      if (group && e.group !== group) return false;
-      if (keyword && !e.label.toLowerCase().includes(keyword)) return false;
-      return true;
-    });
-    return matched.slice(0, cap);
-  }, [projectImageIndex, scenes, currentFrame]);
+  const resolveImageTargets = useCallback((params: any): Array<{ label: string; url: string }> => (
+    locateImageTargets(params, { index: projectImageIndex, scenes, currentFrameId: currentFrame?.id ?? null })
+  ), [projectImageIndex, scenes, currentFrame]);
 
   // ── Attach current frame ─────────────────────────────────────────
   // 附件芯片已在输入区可见，成功/进行中不再弹右下角 toast，仅保留需要用户处理的警告/错误
@@ -1470,43 +1421,11 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
         try {
           // 编排逻辑已抽到 services/agentOrchestrator（纯模块、端口可注入、可编排级测试）；
           // 这里只负责把 React 侧副作用接成端口，并处理最终消息/落盘/回退。
-          // 质检素材报告：汇总分镜的提示词、生成情况与本地文件元数据（分辨率/大小），并交出画面图片供模型真看
+          // 质检素材报告：逻辑收敛在 services/sceneInspection（注入媒体探测，可单测）
           const buildInspectionReport = async (sceneId: number): Promise<{ text: string; images: Array<{ label: string; url: string }> }> => {
             const target = scenes?.find((s) => s.id === sceneId)
               || (currentFrame && currentFrame.id === sceneId ? currentFrame : null);
-            if (!target) return { text: '质检失败：找不到对应分镜（sceneId 无效）。请告知用户先选中一个分镜。', images: [] };
-            const mediaEntries: Array<{ key: string; url: string; kind: 'image' | 'video' }> = [];
-            if (target.first_frame_url) mediaEntries.push({ key: '首帧', url: target.first_frame_url, kind: 'image' });
-            if (target.last_frame_url && target.last_frame_url !== target.first_frame_url) mediaEntries.push({ key: '尾帧', url: target.last_frame_url, kind: 'image' });
-            if (target.video_url) mediaEntries.push({ key: '视频', url: target.video_url, kind: 'video' });
-            const probes = mediaEntries.length > 0
-              ? await probeMediaBatch(mediaEntries.map((m) => ({ src: m.url, kind: m.kind })))
-              : [];
-            const mediaLines = mediaEntries.map((m, i) => {
-              const p = probes[i];
-              if (p?.missing) return `- ${m.key}：文件缺失（清单有引用但工程 media/ 无实体）`;
-              return `- ${m.key}：${formatResolution(p?.width, p?.height)} · ${formatBytes(p?.bytes)}`;
-            });
-            if (mediaLines.length === 0) mediaLines.push('- 尚未生成任何画面/视频');
-            const images = mediaEntries
-              .map((m, i) => ({ m, missing: !!probes[i]?.missing }))
-              .filter(({ m, missing }) => m.kind === 'image' && !missing)
-              .map(({ m }) => ({ label: `分镜#${target.index} ${m.key}`, url: m.url }));
-            const sight = images.length > 0
-              ? '本条消息已附带该分镜的真实画面图片，你必须看清画面后再评价构图/色彩/人物一致性，不得臆测图中没有的内容。'
-              : '该分镜没有可用画面，请仅基于提示词分析，并如实告知用户看不到画面。';
-            return {
-              text: [
-                `【分镜质检素材 #${target.index}（ID:${target.id}）】`,
-                `描述：${(target as any).description || (target as any).scene_description || '（无）'}`,
-                ...mediaLines,
-                `首帧提示词：${(target as any).first_frame_prompt || '（无）'}`,
-                `尾帧提示词：${(target as any).last_frame_prompt || '（无）'}`,
-                `视频提示词：${(target as any).video_prompt || '（无）'}`,
-                `请基于以上真实素材给出 1-5 星评级与具体改进建议，并把反馈直接写进回复正文交给用户。${sight}`,
-              ].join('\n'),
-              images,
-            };
+            return buildSceneInspectionReport(target);
           };
 
           // 多轮上下文刷新：contextPayload 是发送瞬间的快照，循环内 create/update/delete

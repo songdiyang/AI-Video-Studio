@@ -1,0 +1,87 @@
+{
+  "version": 1,
+  "description": "智能体系统提示词 golden set：改提示词/动作目录后跑 node scripts/prompt-eval.mjs，量化行为约束是否仍成立（离线、确定性）。",
+  "cases": [
+    {
+      "id": "identity-and-output",
+      "description": "空上下文也必须有身份与「单独输出最终回复」约束",
+      "context": {},
+      "mustContain": ["NanoStory 的 AI 助手", "单独输出", "最终回复"],
+      "mustNotContain": ["undefined", "\\[object Object\\]"]
+    },
+    {
+      "id": "action-catalog-sync",
+      "description": "不可逆动作清单与 agentActionCatalog 同源（防漂移）",
+      "context": {},
+      "mustContain": ["delete_scene", "delete_script", "delete_character", "delete_location", "delete_studio", "delete_prop", "delete_base_model"],
+      "mustNotContain": []
+    },
+    {
+      "id": "irreversible-confirm",
+      "description": "不可逆动作必须二次确认、系统不代为执行",
+      "context": {},
+      "mustContain": ["不可逆", "确认"],
+      "mustNotContain": []
+    },
+    {
+      "id": "writer-locked",
+      "description": "工程锁定写手的署名与笔法注入",
+      "context": { "writerKey": "akutagawa", "writerName": "芥川龙之介", "writerStylePrompt": "冷静的手术刀式叙述" },
+      "mustContain": ["芥川龙之介", "冷静的手术刀式叙述"],
+      "mustNotContain": []
+    },
+    {
+      "id": "temp-writer-override",
+      "description": "临时写手覆盖优先于锁定写手",
+      "context": {
+        "writerKey": "akutagawa",
+        "writerName": "芥川龙之介",
+        "tempWriterName": "老舍",
+        "tempWriterKey": "laoshe",
+        "tempWriterNote": "本次用京味口语"
+      },
+      "mustContain": ["老舍", "京味口语"],
+      "mustNotContain": []
+    },
+    {
+      "id": "art-style",
+      "description": "工程美术风格注入且明确强制",
+      "context": { "artStyle": "动漫", "artStylePrompt": "日系赛璐璐，低饱和" },
+      "mustContain": ["日系赛璐璐，低饱和"],
+      "mustNotContain": []
+    },
+    {
+      "id": "scenes-context",
+      "description": "分镜清单注入（id/描述可被模型引用）",
+      "context": {
+        "scenes": [
+          { "id": 11, "index": 1, "description": "雨夜巷口，主角撑伞", "video_url": "" },
+          { "id": 12, "index": 2, "description": "屋顶追逐", "video_url": "" }
+        ]
+      },
+      "mustContain": ["雨夜巷口", "屋顶追逐"],
+      "mustNotContain": []
+    },
+    {
+      "id": "memories-injection",
+      "description": "启用中的记忆按重要性注入",
+      "context": { "memories": [{ "scope": "user", "content": "用户偏好悬疑短剧", "importance": 5 }] },
+      "mustContain": ["悬疑短剧"],
+      "mustNotContain": []
+    },
+    {
+      "id": "long-tasks",
+      "description": "后台长任务清单注入，避免模型假装知道进度",
+      "context": { "longTasks": [{ "jobId": 42, "label": "分镜拆分", "status": "running" }] },
+      "mustContain": ["42", "分镜拆分"],
+      "mustNotContain": []
+    },
+    {
+      "id": "no-placeholder-leak",
+      "description": "不出现未替换占位符/序列化错误",
+      "context": { "projectName": "测试工程", "characters": [{ "id": 1, "name": "阿明" }] },
+      "mustContain": ["测试工程"],
+      "mustNotContain": ["NaN", "null（", "{{"]
+    }
+  ]
+}

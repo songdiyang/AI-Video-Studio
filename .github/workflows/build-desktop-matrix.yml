@@ -1,0 +1,64 @@
+name: Build Desktop (macOS / Linux)
+
+# 跨平台发布矩阵：现有 build-windows-setup.yml 只出 Windows 安装包，
+# 本工作流补齐 macOS / Linux 构建（不签名、不带 updater 产物），
+# 与 Windows 工作流并行触发，产物上传 Actions Artifacts。
+#
+# 夜间模式等平台差异由 Rust night_light 的平台抽象层吸收
+# （windows 注册表 / macOS CoreBrightness / Linux gsettings），前端无需分叉。
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact: macos-arm64
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            artifact: linux-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install Linux dependencies
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Install frontend dependencies
+        run: npm ci --prefix frontend
+
+      - name: Build desktop app (bundle, 无 updater 签名)
+        run: |
+          npm --prefix frontend run tauri:build -- --target ${{ matrix.target }} --config '{"bundle":{"createUpdaterArtifacts":false}}'
+
+      - name: Upload bundles
+        uses: actions/upload-artifact@v4
+        with:
+          name: aivs-${{ matrix.artifact }}
+          path: |
+            frontend/src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+            frontend/src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.app
+            frontend/src-tauri/target/${{ matrix.target }}/release/bundle/deb/*.deb
+            frontend/src-tauri/target/${{ matrix.target }}/release/bundle/appimage/*.AppImage
+          if-no-files-found: warn
