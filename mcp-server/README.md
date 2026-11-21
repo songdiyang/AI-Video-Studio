@@ -99,4 +99,9 @@ npm install -g ./aivs-mcp-1.0.0.tgz
 ```bash
 npm test     # 数据层 9 例（临时夹具，覆盖快照/白名单/越界/台词清洗）
 npm run smoke # MCP 协议级冒烟：真实 stdio 客户端 initialize→tools/list→tools/call
+
+# 对真实工程联调（只读巡检）
+npm run demo -- --project 末日求生
+# 可回滚写演示：先快照 → 改写一条分镜描述 → 回读校验 → 还原原值
+npm run demo -- --project 末日求生 --demo-write
 ```

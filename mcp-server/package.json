@@ -15,7 +15,8 @@
   "scripts": {
     "start": "node server.mjs",
     "test": "node --test tools.test.mjs",
-    "smoke": "node stdio-smoke.mjs"
+    "smoke": "node stdio-smoke.mjs",
+    "demo": "node demo-call.mjs"
   },
   "engines": {
     "node": ">=18"
