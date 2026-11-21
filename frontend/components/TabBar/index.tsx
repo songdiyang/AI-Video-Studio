@@ -1,10 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Camera, Users, UsersRound, Mountain, X, ChevronDown, Play, Box, Settings, Puzzle, Sparkles } from 'lucide-react';
+import { Camera, Users, UsersRound, Mountain, X, ChevronDown, Play, Box, Settings, Puzzle, Sparkles, Film } from 'lucide-react';
 import { useLanguage } from '../../contexts/LanguageContext';
 
 export interface TabItem {
   id: string;
-  type: 'scene' | 'character' | 'location' | 'animatic' | 'asset' | 'settings' | 'extension' | 'extension-detail' | 'script-generate' | 'teams';
+  type: 'scene' | 'character' | 'location' | 'animatic' | 'asset' | 'settings' | 'extension' | 'extension-detail' | 'script-generate' | 'teams' | 'composition';
   title: string;
   sceneIndex?: number; // 分镜序号
   scriptId?: number;   // 所属集数ID（用于跨集标签页显示）
@@ -88,6 +88,8 @@ const TabBar: React.FC<TabBarProps> = ({
         return <Puzzle size={12} />;
       case 'script-generate':
         return <Sparkles size={12} />;
+      case 'composition':
+        return <Film size={12} />;
       default:
         return null;
     }

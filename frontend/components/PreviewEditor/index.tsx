@@ -11,6 +11,7 @@ import { AnimaticPreview } from '../../views/StoryBoard/AnimaticPreview';
 import AssetEditor from '../AssetEditor';
 import Settings from '../../views/Settings';
 import ScriptWorkshop from '../ScriptWorkshop';
+import VideoComposition from '../../views/VideoComposition';
 import { StoryboardScene } from '../../views/StoryBoard/useSceneManager';
 import { useAIAssistantUI } from '../../contexts/AIAssistantContext';
 
@@ -97,7 +98,7 @@ const LEGACY_ASSET_ACTIVE_TAB_STORAGE_KEY = 'preview_editor_asset_active_tab';
 const LEGACY_ASSET_TAB_DATA_STORAGE_KEY = 'preview_editor_asset_tab_data';
 
 /** 单例工具标签：存在态由各自布尔值维护，激活态由 activeToolTabId 维护 */
-type ToolTabId = 'settings' | 'teams' | 'script-generate';
+type ToolTabId = 'settings' | 'teams' | 'script-generate' | 'composition';
 
 const PreviewEditor: React.FC<PreviewEditorProps> = ({
   scenes,
@@ -164,6 +165,8 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
 
   // 剧本生成标签页（单例，可关闭）
   const [scriptGenerateTabOpen, setScriptGenerateTabOpen] = useState(false);
+  // 视频合成标签页（单例，可关闭）：成片时间线/导出/台词配音入口
+  const [compositionTabOpen, setCompositionTabOpen] = useState(false);
   const [scriptGenerateTabEpisode, setScriptGenerateTabEpisode] = useState<number | undefined>(undefined);
   const [scriptWorkshopData, setScriptWorkshopData] = useState<{
     scriptId?: number;
@@ -178,13 +181,17 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
   const [activeToolTabId, setActiveToolTabId] = useState<ToolTabId | null>(null);
 
   const isToolTabOpen = useCallback((id: ToolTabId) => (
-    id === 'settings' ? settingsTabOpen : id === 'teams' ? teamsTabOpen : scriptGenerateTabOpen
-  ), [settingsTabOpen, teamsTabOpen, scriptGenerateTabOpen]);
+    id === 'settings' ? settingsTabOpen
+      : id === 'teams' ? teamsTabOpen
+        : id === 'composition' ? compositionTabOpen
+          : scriptGenerateTabOpen
+  ), [settingsTabOpen, teamsTabOpen, scriptGenerateTabOpen, compositionTabOpen]);
 
   /** 打开并激活工具标签：只置活目标，其余工具标签保留为「存在但未激活」。 */
   const openToolTab = useCallback((id: ToolTabId) => {
     if (id === 'settings') setSettingsTabOpen(true);
     else if (id === 'teams') setTeamsTabOpen(true);
+    else if (id === 'composition') setCompositionTabOpen(true);
     else setScriptGenerateTabOpen(true);
     setActiveToolTabId(id);
   }, []);
@@ -210,8 +217,11 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
       const scriptTitle = scriptWorkshopData?.scriptTitle?.trim() || episodeTitle;
       result.push({ id: 'script-generate', type: 'script-generate', title: scriptTitle });
     }
+    if (compositionTabOpen) {
+      result.push({ id: 'composition', type: 'composition', title: '视频合成' });
+    }
     return result;
-  }, [sceneTabs, assetTabs, extensionDetailTabs, settingsTabOpen, teamsTabOpen, scriptGenerateTabOpen, scriptGenerateTabEpisode, scriptWorkshopData?.scriptTitle]);
+  }, [sceneTabs, assetTabs, extensionDetailTabs, settingsTabOpen, teamsTabOpen, scriptGenerateTabOpen, scriptGenerateTabEpisode, scriptWorkshopData?.scriptTitle, compositionTabOpen]);
 
   // 从 localStorage 恢复所有标签状态（带版本控制，按 projectId 隔离）
   // 切换工程先关闸：防止持久化 effect 用上一个工程的标签写进新工程。
@@ -424,9 +434,14 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
   useEffect(() => {
     if (!projectId || hydratedProjectId !== projectId) return;
     try {
-      if (localStorage.getItem('pending_open_settings') !== '1') return;
-      localStorage.removeItem('pending_open_settings');
-      openToolTab('settings');
+      if (localStorage.getItem('pending_open_settings') === '1') {
+        localStorage.removeItem('pending_open_settings');
+        openToolTab('settings');
+      }
+      if (localStorage.getItem('pending_open_composition') === '1') {
+        localStorage.removeItem('pending_open_composition');
+        openToolTab('composition');
+      }
     } catch {
       // ignore
     }
@@ -801,6 +816,18 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
     };
   }, [openToolTab]);
 
+  // 监听打开视频合成标签页事件（顶栏入口 / 命令跳转）
+  useEffect(() => {
+    const handleOpenCompositionTab = () => {
+      try { localStorage.removeItem('pending_open_composition'); } catch { /* ignore */ }
+      openToolTab('composition');
+    };
+    window.addEventListener('openCompositionTab', handleOpenCompositionTab as EventListener);
+    return () => {
+      window.removeEventListener('openCompositionTab', handleOpenCompositionTab as EventListener);
+    };
+  }, [openToolTab]);
+
   // 监听打开团队管理标签页事件
   useEffect(() => {
     const handleOpenTeamsTab = () => {
@@ -927,8 +954,8 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
   // 点击标签切换
   const handleTabClick = useCallback((tabId: string) => {
     void withEditorFlush(() => {
-    // 单例工具标签（设置 / 团队 / 剧本）：只切换激活态，其余工具标签留在标签栏变非激活
-    if (tabId === 'settings' || tabId === 'teams' || tabId === 'script-generate') {
+    // 单例工具标签（设置 / 团队 / 剧本 / 视频合成）：只切换激活态，其余工具标签留在标签栏变非激活
+    if (tabId === 'settings' || tabId === 'teams' || tabId === 'script-generate' || tabId === 'composition') {
       openToolTab(tabId);
       return;
     }
@@ -972,12 +999,14 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
     void withEditorFlush(() => {
     // 单例工具标签（剧本 / 设置 / 团队）：关闭只影响自身存在态，不移除其它工具标签。
     // 若关闭的是当前激活标签，激活态先回到仍存在的其它工具标签，再回到内容标签的既有记忆。
-    if (tabId === 'script-generate' || tabId === 'settings' || tabId === 'teams') {
+    if (tabId === 'script-generate' || tabId === 'settings' || tabId === 'teams' || tabId === 'composition') {
       if (tabId === 'script-generate') {
         setScriptGenerateTabOpen(false);
         setScriptGenerateTabEpisode(undefined);
       } else if (tabId === 'settings') {
         setSettingsTabOpen(false);
+      } else if (tabId === 'composition') {
+        setCompositionTabOpen(false);
       } else {
         setTeamsTabOpen(false);
       }
@@ -988,7 +1017,7 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
         // 没有任何内容标签时才退回仍存在的其它工具标签。
         setActiveToolTabId(null);
         if (!activeExtensionDetailTabId && !activeAssetTabId && !activeTabId) {
-          const nextTool = (['settings', 'teams', 'script-generate'] as ToolTabId[])
+          const nextTool = (['settings', 'teams', 'script-generate', 'composition'] as ToolTabId[])
             .find(id => id !== tabId && isToolTabOpen(id));
           if (nextTool) {
             setActiveToolTabId(nextTool);
@@ -1325,6 +1354,11 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
           {activeTab?.type === 'settings' && (
             <div className="w-full h-full overflow-hidden">
               <Settings />
+            </div>
+          )}
+          {activeTab?.type === 'composition' && (
+            <div className="w-full h-full overflow-hidden">
+              <VideoComposition projectId={directorSpaceProps.projectId ?? projectId ?? null} />
             </div>
           )}
           {activeTab?.type === 'script-generate' && (

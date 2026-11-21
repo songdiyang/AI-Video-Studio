@@ -126,6 +126,16 @@ test('冒烟4：上下文压缩 → 摘要替换历史并落盘', async ({ page 
   await page.screenshot({ path: testInfo.outputPath('e2e-04-compressed.png') });
 });
 
+test('冒烟6：顶栏「视频合成」入口 → 工具标签可达（导出/配音所在页）', async ({ page }, testInfo) => {
+  await seedInit(page);
+  await createProject(page, 'E2E 合成工程');
+  // P1-6 曾因 VideoComposition 只挂在死代码 ComicDramaWorkbench 而不可达；此用例守住入口
+  await page.locator('button[title="视频合成"], button[aria-label="视频合成"]').first().click();
+  await expect(page.getByText('视频合成', { exact: true }).first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole('button', { name: /导出合成视频/ })).toBeVisible({ timeout: 20_000 });
+  await page.screenshot({ path: testInfo.outputPath('e2e-06-composition.png') });
+});
+
 test('冒烟5：重开工程对话持久化 + 循环中断如实告知与续跑入口', async ({ page }, testInfo) => {
   await seedInit(page);
   await fakeVendor(page);

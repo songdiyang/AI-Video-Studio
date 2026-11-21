@@ -111,6 +111,17 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     }
   }, [currentProject, navigate]);
 
+  /** 视频合成：有工程时在工作台以标签页打开（成片时间线/导出/台词配音入口） */
+  const openComposition = useCallback(() => {
+    if (currentProject) {
+      localStorage.setItem('pending_open_composition', '1');
+      navigate('/');
+      window.dispatchEvent(new CustomEvent('openCompositionTab'));
+    } else {
+      navigate('/app-tabs');
+    }
+  }, [currentProject, navigate]);
+
   const [isConnected, setIsConnected] = useState(true);
   // 纯网络连通性指示（在线/无网），不再把“离线模式/本地模式”当作功能概念展示
   const [netOnline, setNetOnline] = useState(() => (typeof navigator !== 'undefined' ? navigator.onLine : true));
@@ -587,6 +598,15 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
               <PanelRight className="w-4 h-4" />
             </button>
           </div>
+          {/* 视频合成入口：成片时间线、独立音轨与导出 */}
+          <button
+            onClick={openComposition}
+            className="p-1 rounded transition-colors text-(--text-muted) hover:text-(--text-primary) hover:bg-white/5"
+            aria-label="视频合成"
+            title="视频合成"
+          >
+            <Film className="w-4 h-4" />
+          </button>
           {/* 设置入口：在分镜工作台内以标签页打开，与菜单入口保持一致 */}
           <button
             onClick={openSettings}
