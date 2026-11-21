@@ -1,0 +1,34 @@
+{
+  "name": "aivs-mcp",
+  "version": "1.0.0",
+  "description": "AI Video Studio 的 MCP 服务器：把本地工程（剧本/分镜/角色/道具/影棚）以 Model Context Protocol 工具开放给外部智能体（Claude Desktop / Cursor / Cline 等），自带工程快照安全网。",
+  "type": "module",
+  "bin": {
+    "aivs-mcp": "./server.mjs"
+  },
+  "main": "./lib.mjs",
+  "files": [
+    "server.mjs",
+    "lib.mjs",
+    "README.md"
+  ],
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test tools.test.mjs",
+    "smoke": "node stdio-smoke.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "ai-video-studio",
+    "agent"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "zod": "^3.24.0"
+  }
+}

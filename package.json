@@ -10,6 +10,9 @@
     "tauri": "npm --prefix frontend run tauri",
     "tauri:dev": "npm --prefix frontend run tauri:dev",
     "tauri:build": "npm --prefix frontend run tauri:build",
-    "tauri:build:windows": "npm --prefix frontend run tauri:build:windows"
+    "tauri:build:windows": "npm --prefix frontend run tauri:build:windows",
+    "mcp": "npm --prefix mcp-server start",
+    "mcp:test": "npm --prefix mcp-server test",
+    "mcp:smoke": "npm --prefix mcp-server run smoke"
   }
 }
