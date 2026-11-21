@@ -42,6 +42,10 @@ export interface ExportOptions {
   resolution: '480p' | '720p' | '1080p' | '1440p' | '4k';
   fps: 24 | 30 | 60;
   quality: 'low' | 'medium' | 'high';
+  /** 桌面原生导出目录（工程 exports/）；缺省时走 FFmpeg.wasm */
+  workdir?: string;
+  /** 独立音轨：BGM / 台词配音 / 字幕烧录（原生导出专用） */
+  tracks?: import('../../services/nativeExportPlan').NativeTracks;
 }
 
 export interface ExportProgress {

@@ -4,7 +4,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Button, Progress } from '@heroui/react';
-import { Download, Trash2, RotateCcw, ChevronUp, ChevronDown, Bug, CheckCircle2, XCircle, Settings2 } from 'lucide-react';
+import { Download, Trash2, RotateCcw, ChevronUp, ChevronDown, Bug, CheckCircle2, XCircle, Settings2, Mic } from 'lucide-react';
 import type { ExportProgress, ExportOptions } from '../types';
 import ExportSettingsPanel from './ExportSettingsPanel';
 
@@ -16,6 +16,10 @@ interface ExportToolbarProps {
   onExport: () => void;
   onClearTimeline: () => void;
   onOptionsChange: (options: ExportOptions) => void;
+  /** 台词 TTS 配音：生成独立音频轨（桌面端） */
+  onGenerateVoice?: () => void;
+  voiceBusy?: boolean;
+  voiceCount?: number;
 }
 
 function useElapsed(startTime?: number, running?: boolean) {
@@ -37,7 +41,10 @@ const ExportToolbar: React.FC<ExportToolbarProps> = ({
   exportOptions,
   onExport,
   onClearTimeline,
-  onOptionsChange
+  onOptionsChange,
+  onGenerateVoice,
+  voiceBusy = false,
+  voiceCount = 0
 }) => {
   const isExporting = exportProgress.stage === 'loading' || exportProgress.stage === 'processing';
   const showProgress = exportProgress.stage !== 'idle';
@@ -164,6 +171,20 @@ const ExportToolbar: React.FC<ExportToolbarProps> = ({
               isDisabled={isExporting}
             >
               清空
+            </Button>
+          )}
+
+          {clipCount > 0 && (
+            <Button
+              size="sm"
+              variant="flat"
+              className="bg-slate-800/60 text-slate-300 font-medium"
+              startContent={voiceBusy ? <RotateCcw className="w-3.5 h-3.5 animate-spin" /> : <Mic className="w-3.5 h-3.5" />}
+              onPress={onGenerateVoice}
+              isDisabled={isExporting || voiceBusy}
+              title="把各分镜台词合成配音，导出时作为独立音轨混入"
+            >
+              {voiceBusy ? '配音中...' : voiceCount > 0 ? `配音已生成 (${voiceCount})` : '生成台词配音'}
             </Button>
           )}
 

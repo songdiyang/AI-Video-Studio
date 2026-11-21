@@ -101,8 +101,11 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   /** 设置：有工程时打开工作台设置标签；无工程时进入应用级标签容器 */
   const openSettings = useCallback(() => {
     if (currentProject) {
+      // 双保险：PreviewEditor 已挂载时事件立即生效；尚未水合完成时（如刚建完工程
+      // 就点设置）靠一次性标记在水合后消费，避免 100ms 定时器赶不上挂载而丢事件。
+      localStorage.setItem('pending_open_settings', '1');
       navigate('/');
-      setTimeout(() => window.dispatchEvent(new CustomEvent('openSettingsTab')), 100);
+      window.dispatchEvent(new CustomEvent('openSettingsTab'));
     } else {
       navigate('/app-tabs');
     }

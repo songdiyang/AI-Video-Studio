@@ -12,6 +12,9 @@ export function useFFmpegExport() {
   const ffmpegRef = useRef<FFmpeg | null>(null);
   const logsRef = useRef<string[]>([]);
   const startTimeRef = useRef<number>(0);
+  // 原生导出产物：桌面 ffmpeg 已把文件写到工程 exports/，下载=另存对话框
+  const nativePathRef = useRef<string | null>(null);
+  const nativeUrlRef = useRef<string | null>(null);
   const [progress, setProgress] = useState<ExportProgress>({
     stage: 'idle',
     percent: 0,
@@ -66,6 +69,63 @@ export function useFFmpegExport() {
     return ffmpeg;
   }, [addLog, updateProgress]);
 
+  /** ── 桌面原生 ffmpeg 优先：可用则直接返回产物 URL，否则 undefined 走 wasm ── */
+  const tryNativeExport = useCallback(async (
+    clips: CompositionClip[],
+    options: ExportOptions
+  ): Promise<string | undefined> => {
+    if (!options.workdir) return undefined;
+    try {
+      const mod = await import('../../../services/nativeExport');
+      const version = await mod.probeNativeFfmpeg();
+      if (!version) return undefined;
+      const paths = clips.map((c) => mod.resolveLocalMediaPath(c.videoUrl));
+      if (paths.some((p) => !p)) {
+        addLog('原生导出跳过：存在无法解析为本机路径的片段（blob/远端），回退 wasm');
+        return undefined;
+      }
+      addLog(`原生 ffmpeg 可用（${version}），走桌面编码`);
+      logsRef.current = [];
+      startTimeRef.current = Date.now();
+      updateProgress({ stage: 'processing', percent: 3, message: '原生 ffmpeg 导出中…', detail: `${options.resolution} / ${options.fps}fps / ${options.format}`, startTime: startTimeRef.current });
+      const outcome = await mod.exportNative({
+        clips: paths.map((p, i) => ({ path: p as string, duration: clips[i].duration })),
+        workdir: options.workdir,
+        format: options.format,
+        resolution: options.resolution,
+        fps: options.fps,
+        quality: options.quality,
+        tracks: options.tracks,
+        outputName: `composition_${Date.now()}.${options.format}`,
+        onProgress: (percent, timeSec) => {
+          updateProgress({
+            percent: Math.min(99, 3 + Math.round(percent * 0.95)),
+            message: `原生编码中... ${Math.round(percent)}%`,
+            detail: `已编码 ${timeSec.toFixed(1)}s · ${options.resolution}`,
+          });
+        },
+      });
+      outcome.log_tail.slice(-10).forEach((l) => addLog(`[native] ${l}`));
+      addLog(`原生导出完成: ${outcome.output_path} (${formatBytes(outcome.bytes)})`);
+      const { convertFileSrc } = await import('@tauri-apps/api/core');
+      const url = convertFileSrc(outcome.output_path);
+      nativePathRef.current = outcome.output_path;
+      nativeUrlRef.current = url;
+      updateProgress({
+        stage: 'done',
+        percent: 100,
+        message: '导出完成！',
+        detail: `${formatBytes(outcome.bytes)} · 原生 ffmpeg（已写入工程 exports/）`,
+        debugLogs: logsRef.current,
+        startTime: startTimeRef.current,
+      });
+      return url;
+    } catch (e: any) {
+      addLog(`原生导出失败，回退 wasm: ${e?.message || e}`);
+      return undefined;
+    }
+  }, [addLog, updateProgress, formatBytes]);
+
   const exportVideo = useCallback(async (
     clips: CompositionClip[],
     options: ExportOptions = { format: 'mp4', resolution: '1080p', fps: 30, quality: 'high' }
@@ -74,6 +134,10 @@ export function useFFmpegExport() {
       setProgress({ stage: 'error', percent: 0, message: '没有可导出的片段' });
       return null;
     }
+
+    // 桌面：原生 ffmpeg 优先生效（空/失败自动回退下方 wasm 路径）
+    const nativeUrl = await tryNativeExport(clips, options);
+    if (nativeUrl) return nativeUrl;
 
     const totalSteps = clips.length + 3; // download × N + concat + encode + output
     logsRef.current = [];
@@ -258,9 +322,19 @@ export function useFFmpegExport() {
     }
   }, [loadFFmpeg, addLog, updateProgress, formatBytes]);
 
-  const downloadVideo = useCallback((blobUrl: string, filename: string = 'composition.mp4', format: string = 'mp4') => {
+  const downloadVideo = useCallback(async (blobUrl: string, filename: string = 'composition.mp4', format: string = 'mp4') => {
     // 确保文件名有正确的扩展名
     const finalFilename = filename.endsWith(`.${format}`) ? filename : `${filename}.${format}`;
+    // 桌面原生导出：产物已在磁盘，下载=另存对话框
+    if (nativePathRef.current && nativeUrlRef.current === blobUrl) {
+      try {
+        const { saveNativeExport } = await import('../../../services/nativeExport');
+        await saveNativeExport(nativePathRef.current, finalFilename);
+      } catch (e) {
+        console.warn('[FFmpegExport] 另存失败:', e);
+      }
+      return;
+    }
     const a = document.createElement('a');
     a.href = blobUrl;
     a.download = finalFilename;

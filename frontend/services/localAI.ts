@@ -393,6 +393,35 @@ export async function chatText(opts: {
 }
 
 /**
+ * 台词配音（TTS）：OpenAI 兼容 /audio/speech。
+ * 返回音频二进制（mp3）；模型不支持时抛错，由调用方如实告知用户。
+ */
+export async function synthesizeSpeech(opts: {
+  model: OfflineModel;
+  text: string;
+  voice?: string;
+}): Promise<Uint8Array> {
+  const base = getApiBase(opts.model);
+  if (!base) throw new Error('模型缺少 API Base，无法合成配音');
+  const res = await fetch(`${base}/audio/speech`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${opts.model.api_key}` },
+    body: JSON.stringify({
+      model: opts.model.model_name,
+      input: opts.text,
+      voice: opts.voice || 'alloy',
+      response_format: 'mp3',
+    }),
+  });
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '');
+    throw new Error(extractErrorMessage(errText) || `TTS 请求失败 (${res.status})`);
+  }
+  const buf = await res.arrayBuffer();
+  return new Uint8Array(buf);
+}
+
+/**
  * 流式文本对话（SSE）。
  * 必须走 WebView 直连 fetch（ai_proxy 返回整体 body，不支持流），
  * 逐块回调 onDelta / onReasoning，返回累计文本。

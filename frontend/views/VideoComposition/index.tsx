@@ -75,15 +75,56 @@ const VideoComposition: React.FC<VideoCompositionProps> = ({ projectId, projectN
     bgm.syncPlayState(playing);
   }, [timeline.setPlaying, bgm.syncPlayState]);
 
-  // 导出
+  // 台词配音（TTS）：独立音频轨，导出时按片段起始时间混入
+  const [dialogueVoice, setDialogueVoice] = useState<Array<{ path: string; startSec: number }>>([]);
+  const [voiceBusy, setVoiceBusy] = useState(false);
+  const handleGenerateVoice = useCallback(async () => {
+    if (!projectId || timeline.clips.length === 0) return;
+    setVoiceBusy(true);
+    try {
+      const { generateDialogueVoiceovers } = await import('../../services/dialogueVoice');
+      const items = await generateDialogueVoiceovers(projectId, timeline.clips, (done, total, label) => {
+        showToast(`台词配音 ${done}/${total}：${label}`, 'info');
+      });
+      if (items.length === 0) {
+        showToast('各分镜没有台词文本，未生成配音', 'info');
+      } else {
+        setDialogueVoice(items.map((i) => ({ path: i.path, startSec: i.startSec })));
+        showToast(`台词配音已生成（${items.length} 条），导出时作为独立音轨混入`, 'success');
+      }
+    } catch (e: any) {
+      showToast(e?.message || '台词配音失败', 'error');
+    } finally {
+      setVoiceBusy(false);
+    }
+  }, [projectId, timeline.clips, showToast]);
+
+  // 导出：桌面原生 ffmpeg 优先（拼接 + BGM/台词/字幕独立轨），浏览器回退 wasm
   const handleExport = useCallback(async () => {
     if (timeline.clips.length === 0) return;
-    const url = await ffmpeg.exportVideo(timeline.clips, exportOptions);
+    // 音轨：BGM/台词/字幕来自时间线现有轨道；路径无法还原为本地文件时如实跳过该轨
+    const { resolveLocalMediaPath } = await import('../../services/nativeExport');
+    const { resolveLocalPath } = await import('../../services/localStore');
+    const projectPath = projectId ? await resolveLocalPath(projectId) : null;
+    const tracks: ExportOptions['tracks'] = {};
+    if (bgm.bgm?.url) {
+      const p = resolveLocalMediaPath(bgm.bgm.url);
+      if (p) tracks.bgm = { path: p, volume: bgm.bgm.volume, startOffset: bgm.bgm.startOffset, loop: bgm.bgm.loop };
+    }
+    if (dialogueVoice.length > 0) tracks.dialogue = dialogueVoice;
+    if (subtitles.subtitles.length > 0) {
+      tracks.subtitles = subtitles.subtitles.map((s) => ({ startTime: s.startTime, endTime: s.endTime, text: s.text }));
+    }
+    const url = await ffmpeg.exportVideo(timeline.clips, {
+      ...exportOptions,
+      workdir: projectPath ? `${projectPath}/exports` : undefined,
+      tracks,
+    });
     if (url) {
       const filename = `composition_ep${compositionData.selectedEpisode || 1}`;
-      ffmpeg.downloadVideo(url, filename, exportOptions.format);
+      void ffmpeg.downloadVideo(url, filename, exportOptions.format);
     }
-  }, [timeline.clips, ffmpeg, compositionData.selectedEpisode, exportOptions]);
+  }, [timeline.clips, ffmpeg, compositionData.selectedEpisode, exportOptions, projectId, bgm.bgm, subtitles.subtitles, dialogueVoice]);
 
   // 视频合成快捷键
   const compositionShortcuts = useMemo<ShortcutConfig[]>(() => [
@@ -313,6 +354,9 @@ const VideoComposition: React.FC<VideoCompositionProps> = ({ projectId, projectN
         onExport={handleExport}
         onClearTimeline={timeline.clearTimeline}
         onOptionsChange={setExportOptions}
+        onGenerateVoice={() => void handleGenerateVoice()}
+        voiceBusy={voiceBusy}
+        voiceCount={dialogueVoice.length}
       />
 
       {/* 单个分镜视频预览弹窗 */}

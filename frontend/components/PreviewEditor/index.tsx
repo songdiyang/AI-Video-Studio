@@ -784,6 +784,8 @@ const PreviewEditor: React.FC<PreviewEditorProps> = ({
   useEffect(() => {
     const handleOpenSettingsTab = (e: Event) => {
       const customEvent = e as CustomEvent<{ tab?: string; section?: string }>;
+      // 事件已生效：清掉一次性标记，避免下次水合时重复打开设置标签
+      try { localStorage.removeItem('pending_open_settings'); } catch { /* ignore */ }
       // 只切换激活态：设置以外的工具标签继续留在标签栏，不被移除
       openToolTab('settings');
       

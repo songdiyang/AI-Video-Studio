@@ -32,6 +32,10 @@ Thumbs.db
 .cache/
 .parcel-cache/
 
+# Playwright 产物（报告/trace/截图证据本地留存，不入库）
+test-results/
+playwright-report/
+
 # Binary extensions
 *.aom
 

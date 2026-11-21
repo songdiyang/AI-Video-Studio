@@ -89,6 +89,8 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
 
   // ── Per-session 独立状态 ───────────────────────────────────
   const messagesCacheRef = useRef<Map<number | null, ChatMessageData[]>>(new Map());
+  // 会话消息加载/更新序列号：用于丢弃过期的异步水合响应（见 switchSession / updateSessionMessages）
+  const sessionLoadSeqRef = useRef(0);
   const loadingSessionsRef = useRef<Set<number | null>>(new Set());
   const streamingSessionsRef = useRef<Map<number | null, string>>(new Map());
   // 响应式状态，驱动标签页加载指示器重绘
@@ -375,7 +377,26 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
     }
   }, []);
 
+  /** 重启续跑：水合会话消息时注入中断告知（纯注入，不做标记/归档）。
+   *  标记与归档交给下方收敛式 effect，避免双重 restore 的异步覆盖把告知冲掉后误标 interrupted。 */
+  const consumeInterruptionNotice = useCallback((sid: number, msgs: ChatMessageData[]): ChatMessageData[] => {
+    const state = loadLoopState(projectId, sid);
+    if (!state || state.status !== 'running') return msgs;
+    if (msgs.some((m) => m.id.endsWith('-interrupted'))) return msgs;
+    const notice: ChatMessageData = {
+      id: `msg-${Date.now()}-interrupted`,
+      role: 'assistant',
+      content: buildInterruptionNotice(state),
+      timestamp: Date.now(),
+      suggestions: [{ action: 'resume_agent_loop', label: '继续未完成任务', params: {} }],
+    };
+    return [...msgs, notice];
+  }, [projectId]);
+
   const switchSession = useCallback(async (sessionId: number) => {
+    // 会话加载序列号：丢弃过期响应。双重 restore / 压缩等更新会把序列号推进，
+    // 先发起但后返回的 fetch 不得覆盖更新的消息（否则压缩摘要/中断告知会被冲掉）。
+    const seq = ++sessionLoadSeqRef.current;
     // 从历史对话打开未加载的会话时，同步把它加回标签栏
     openTabInList(sessionId);
     // 保存当前会话的消息到缓存
@@ -386,9 +407,11 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
     // 先尝试从缓存恢复，若缓存有则立即显示
     const cached = messagesCacheRef.current.get(sessionId);
     if (cached && cached.length > 0) {
+      const withNotice = consumeInterruptionNotice(sessionId, cached);
+      messagesCacheRef.current.set(sessionId, withNotice);
       setCurrentSessionId(sessionId);
       try { localStorage.setItem(activeSessionKey, String(sessionId)); } catch { /* ignore */ }
-      setMessages(cached);
+      setMessages(withNotice);
       // 恢复该会话的 loading / streaming 状态
       setIsLoading(loadingSessionsRef.current.has(sessionId));
       setStreamingId(streamingSessionsRef.current.get(sessionId) || null);
@@ -399,9 +422,11 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
     try {
       const res = await fetch(`/api/ai-assistant/sessions/${sessionId}/messages`);
       const data = await res.json();
+      // 过期响应丢弃：期间已有更新的加载或消息更新（压缩/发送/中断告知）
+      if (sessionLoadSeqRef.current !== seq) return;
       if (data.success) {
         const loaded = (data.messages || []) as ChatMessageData[];
-        const msgs = loaded.length > 0 ? loaded : [getWelcomeMessage(!!projectId)];
+        const msgs = consumeInterruptionNotice(sessionId, loaded.length > 0 ? loaded : [getWelcomeMessage(!!projectId)]);
         messagesCacheRef.current.set(sessionId, msgs);
         setCurrentSessionId(sessionId);
         try { localStorage.setItem(activeSessionKey, String(sessionId)); } catch { /* ignore */ }
@@ -416,7 +441,7 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
       console.error('[AIAssistant] switch session failed:', err);
       showToast(toErrorMessage(err) || '加载会话失败', 'error');
     }
-  }, [activeSessionKey, showToast, messages, onAction, openTabInList]);
+  }, [activeSessionKey, showToast, messages, onAction, openTabInList, consumeInterruptionNotice]);
 
   const createNewSession = useCallback(async () => {
     // 保存当前会话的消息到缓存
@@ -1175,6 +1200,8 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
   // 辅助函数：更新指定会话的消息（缓存 + 当前显示）
   const updateSessionMessages = useCallback(
     (targetSid: number | null, updater: (prev: ChatMessageData[]) => ChatMessageData[]) => {
+      // 任何显式消息更新都推进序列号，使在途的过期水合 fetch 失效
+      sessionLoadSeqRef.current++;
       if (targetSid !== null) {
         const prev = messagesCacheRef.current.get(targetSid) || [];
         const next = updater(prev);
@@ -1188,14 +1215,21 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
     []
   );
 
-  // ── 重启续跑：检测上次未收敛的循环 checkpoint，如实告知中断点 ──────
+  // ── 重启续跑：收敛式消费中断 checkpoint ─────────────────────────
   // status=running 的残留只可能来自应用退出/崩溃（正常收敛会清除）。
-  // 会话水合先于 currentSessionId 变更（switchSession 先填缓存），此处追加不会丢。
-  // 告知一次后标记 interrupted，避免每次切会话重复追加。
+  // 水合存在双重 restore 的异步覆盖竞态：告知可能被后到的 setMessages 冲掉。
+  // 这里盯着 messages 收敛——缺告知就补（state 仍 running），告知在位才标记
+  // interrupted + 归档，保证「如实告知中断点」最终一定成立且只告知一次。
   useEffect(() => {
-    if (currentSessionId == null) return;
+    if (projectId == null || currentSessionId == null) return;
     const state = loadLoopState(projectId, currentSessionId);
     if (!state || state.status !== 'running') return;
+    const existing = messages.find((m) => m.id.endsWith('-interrupted'));
+    if (existing) {
+      saveLoopState(projectId, currentSessionId, { ...state, status: 'interrupted' });
+      void archiveMessage(currentSessionId, existing);
+      return;
+    }
     const notice: ChatMessageData = {
       id: `msg-${Date.now()}-interrupted`,
       role: 'assistant',
@@ -1203,10 +1237,11 @@ const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
       timestamp: Date.now(),
       suggestions: [{ action: 'resume_agent_loop', label: '继续未完成任务', params: {} }],
     };
-    updateSessionMessages(currentSessionId, (prev) => [...prev, notice]);
-    void archiveMessage(currentSessionId, notice);
-    saveLoopState(projectId, currentSessionId, { ...state, status: 'interrupted' });
-  }, [projectId, currentSessionId, updateSessionMessages, archiveMessage]);
+    updateSessionMessages(currentSessionId, (prev) => (
+      prev.some((m) => m.id.endsWith('-interrupted')) ? prev : [...prev, notice]
+    ));
+  }, [projectId, currentSessionId, messages, updateSessionMessages, archiveMessage]);
+
   const setSessionLoading = useCallback((targetSid: number | null, loading: boolean) => {
     if (loading) loadingSessionsRef.current.add(targetSid);
     else loadingSessionsRef.current.delete(targetSid);

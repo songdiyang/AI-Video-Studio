@@ -1,5 +1,6 @@
 // 模块声明
 mod commands;
+mod media_export;
 mod night_light;
 mod package;
 mod queue;
@@ -125,6 +126,11 @@ pub fn run() {
       take_pending_project,
       register_jzp_association,
       night_light::get_night_light_enabled,
+      // 原生 ffmpeg 导出（桌面 sidecar/PATH，替代浏览器 wasm 软编码）
+      media_export::native_ffmpeg_probe,
+      media_export::native_ffmpeg_export,
+      media_export::save_export_file,
+      media_export::save_media_bytes,
       windows::open_project_window,
       windows::claim_project_window,
       
